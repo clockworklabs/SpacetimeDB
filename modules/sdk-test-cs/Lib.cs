@@ -12,7 +12,7 @@ static partial class Module
     }
 
     [SpacetimeDB.Type]
-    public partial struct EnumWithPayload
+    public partial record EnumWithPayload
         : SpacetimeDB.TaggedEnum<(
             byte U8,
             ushort U16,
@@ -34,7 +34,7 @@ static partial class Module
             List<int> Ints,
             List<string> Strings,
             List<SimpleEnum> SimpleEnums
-        )> { }
+        )>;
 
     [SpacetimeDB.Type]
     public partial struct UnitStruct { }

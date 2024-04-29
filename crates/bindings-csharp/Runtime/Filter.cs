@@ -11,7 +11,7 @@ class ErasedValue(Action<BinaryWriter> write)
     private static readonly TypeInfo<ErasedValue> erasedTypeInfo = new TypeInfo<ErasedValue>(
         // uninhabited type (sum type with zero variants)
         // we don't really intent to use it but need to put something here to conform to the GetSatsTypeInfo() "interface"
-        new SumType(),
+        AlgebraicType.Uninhabited,
         (reader) => throw new NotSupportedException("cannot deserialize type-erased value"),
         (writer, value) => value.write(writer)
     );
@@ -22,7 +22,7 @@ class ErasedValue(Action<BinaryWriter> write)
 }
 
 [SpacetimeDB.Type]
-partial struct Rhs : SpacetimeDB.TaggedEnum<(ErasedValue Value, byte Field)> { }
+partial record Rhs : SpacetimeDB.TaggedEnum<(ErasedValue Value, byte Field)>;
 
 [SpacetimeDB.Type]
 partial struct CmpArgs(byte lhsField, Rhs rhs)
@@ -79,7 +79,7 @@ partial struct Unary(OpUnary op, Expr arg)
 }
 
 [SpacetimeDB.Type]
-partial struct Expr : SpacetimeDB.TaggedEnum<(Cmp Cmp, Logic Logic, Unary Unary)> { }
+partial record Expr : SpacetimeDB.TaggedEnum<(Cmp Cmp, Logic Logic, Unary Unary)>;
 
 public class Filter
 {
@@ -136,7 +136,7 @@ public class Filter
         var rhsWrite = fieldTypeInfos[lhsFieldIndex].Value.Write;
         var erasedRhs = new ErasedValue((writer) => rhsWrite(writer, rhs));
 
-        var args = new CmpArgs(lhsFieldIndex, new Rhs { Value = erasedRhs });
+        var args = new CmpArgs(lhsFieldIndex, new Rhs.Value(erasedRhs));
 
         var op = expr.NodeType switch
         {
@@ -179,9 +179,9 @@ public class Filter
                     or ExpressionType.GreaterThan
                     or ExpressionType.GreaterThanOrEqual
             }
-                => new Expr { Cmp = HandleCmp(expr) },
+                => new Expr.Cmp(HandleCmp(expr)),
             BinaryExpression { NodeType: ExpressionType.And or ExpressionType.Or }
-                => new Expr { Logic = HandleLogic(expr) },
+                => new Expr.Logic(HandleLogic(expr)),
             _ => throw new NotSupportedException("unsupported expression")
         };
 
@@ -195,7 +195,7 @@ public class Filter
             _ => throw new NotSupportedException("unsupported unary operation")
         };
 
-        return new Expr { Unary = new Unary(op, arg) };
+        return new Expr.Unary(new Unary(op, arg));
     }
 
     Expr HandleExpr(Expression expr) =>

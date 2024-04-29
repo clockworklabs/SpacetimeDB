@@ -9,10 +9,11 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static Utils;
 
-struct VariableDeclaration
+struct VariableDeclaration(string name, ITypeSymbol typeSymbol)
 {
-    public string Name;
-    public ITypeSymbol TypeSymbol;
+    public string Name = name;
+    public string Type = SymbolToName(typeSymbol);
+    public string TypeInfo = GetTypeInfo(typeSymbol);
 }
 
 [Generator]
@@ -26,7 +27,7 @@ public class Type : IIncrementalGenerator
             (node) =>
             {
                 // structs and classes should be always processed
-                if (!(node is EnumDeclarationSyntax enumType))
+                if (node is not EnumDeclarationSyntax enumType)
                     return true;
 
                 // Ensure variants are contiguous as SATS enums don't support explicit tags.
@@ -103,11 +104,10 @@ public class Type : IIncrementalGenerator
                                     NullableAnnotation.Annotated
                                 );
                             }
-                            return f.Declaration.Variables.Select(v => new VariableDeclaration
-                            {
-                                Name = v.Identifier.Text,
-                                TypeSymbol = typeSymbol,
-                            });
+                            return f.Declaration.Variables.Select(v => new VariableDeclaration(
+                                v.Identifier.Text,
+                                typeSymbol
+                            ));
                         });
 
                     if (taggedEnumVariants is not null)
@@ -116,106 +116,92 @@ public class Type : IIncrementalGenerator
                         {
                             throw new InvalidOperationException("Tagged enums cannot have fields.");
                         }
-                        fields = taggedEnumVariants
-                            .Value.Select(v => new VariableDeclaration
-                            {
-                                Name = v.Name,
-                                TypeSymbol = v.Type,
-                            })
-                            .ToArray();
+                        fields = taggedEnumVariants.Value.Select(v => new VariableDeclaration(
+                            v.Name,
+                            v.Type
+                        ));
                     }
 
                     return new
                     {
                         Scope = new Scope(type),
+                        ShortName = type.Identifier.Text,
                         FullName = SymbolToName(context.SemanticModel.GetDeclaredSymbol(type, ct)!),
                         GenericName = $"{type.Identifier}{type.TypeParameterList}",
                         IsTaggedEnum = taggedEnumVariants is not null,
                         TypeParams = type.TypeParameterList?.Parameters
                             .Select(p => p.Identifier.Text)
                             .ToArray() ?? [],
-                        Members = fields,
+                        Members = fields.ToArray(),
                     };
                 }
             )
             .Select(
                 (type, ct) =>
                 {
-                    var typeKind = type.IsTaggedEnum ? "Sum" : "Product";
-
-                    string read,
+                    string typeKind,
+                        read,
                         write;
 
                     var typeDesc = "";
 
-                    var fieldIO = type.Members.Select(m => new
-                    {
-                        m.Name,
-                        Read = $"{m.Name} = fieldTypeInfo.{m.Name}.Read(reader),",
-                        Write = $"fieldTypeInfo.{m.Name}.Write(writer, value.{m.Name});"
-                    });
+                    var fieldNames = type.Members.Select(m => m.Name);
 
                     if (type.IsTaggedEnum)
                     {
+                        typeKind = "Sum";
+
                         typeDesc +=
                             $@"
-                            public enum TagKind: byte
-                            {{
-                                {string.Join(", ", type.Members.Select(m => m.Name))}
-                            }}
+                            private {type.ShortName}() {{ }}
 
-                            public TagKind Tag {{ get; private set; }}
-                            private object? boxedValue;
+                            public enum @enum: byte
+                            {{
+                                {string.Join(",\n", fieldNames)}
+                            }}
                         ";
 
                         typeDesc += string.Join(
                             "\n",
                             type.Members.Select(m =>
-                            {
-                                var name = m.Name;
-                                var type = m.TypeSymbol.ToDisplayString();
-
-                                return $@"
-                                public bool Is{name} => Tag == TagKind.{name};
-
-                                public {type} {name} {{
-                                    get => Is{name} ? ({type})boxedValue! : throw new System.InvalidOperationException($""Expected {name} but got {{Tag}}"");
-                                    set {{
-                                        Tag = TagKind.{name};
-                                        boxedValue = value;
-                                    }}
-                                }}
-                                ";
-                            })
+                                // C# puts field names in the same namespace as records themselves, and will complain about clashes if they match.
+                                // To avoid this, we append an underscore to the field name.
+                                // In most cases the field name shouldn't matter anyway as you'll idiomatically use pattern matching to extract the value.
+                                $@"public sealed record {m.Name}({m.Type} {m.Name}_) : {type.ShortName};"
+                            )
                         );
 
                         read =
-                            $@"(TagKind)reader.ReadByte() switch {{
-                                {string.Join("\n", fieldIO.Select(m => $"TagKind.{m.Name} => new {type.GenericName} {{ {m.Read} }},"))}
-                                var tag => throw new System.InvalidOperationException($""Unknown tag {{tag}}"")
+                            $@"(@enum)reader.ReadByte() switch {{
+                                {string.Join("\n", fieldNames.Select(name => $"@enum.{name} => new {name}(fieldTypeInfo.{name}.Read(reader)),"))}
+                                _ => throw new System.InvalidOperationException(""Invalid tag value, this state should be unreachable."")
                             }}";
 
                         write =
-                            $@"writer.Write((byte)value.Tag);
-                            switch (value.Tag) {{
-                                {string.Join("\n", fieldIO.Select(m => $@"
-                                    case TagKind.{m.Name}:
-                                        {m.Write};
+                            $@"switch (value) {{
+                                {string.Join("\n", fieldNames.Select(name => $@"
+                                    case {name}(var inner):
+                                        writer.Write((byte)@enum.{name});
+                                        fieldTypeInfo.{name}.Write(writer, inner);
                                         break;
                                 "))}
-                                default:
-                                    throw new System.InvalidOperationException($""Tagged enum is corrupted and has an unsupported tag {{value.Tag}}"");
-                            }}
-                        ";
+                            }}";
                     }
                     else
                     {
+                        typeKind = "Product";
+
                         read =
                             $@"new {type.GenericName} {{
-                                {string.Join("\n", fieldIO.Select(m => m.Read))}
+                                {string.Join(",\n", fieldNames.Select(name => $"{name} = fieldTypeInfo.{name}.Read(reader)"))}
                             }}";
 
-                        write = string.Join("\n", fieldIO.Select(m => m.Write));
+                        write = string.Join(
+                            "\n",
+                            fieldNames.Select(name =>
+                                $"fieldTypeInfo.{name}.Write(writer, value.{name});"
+                            )
+                        );
                     }
 
                     typeDesc +=
@@ -237,13 +223,13 @@ public static SpacetimeDB.SATS.TypeInfo<{type.GenericName}> GetSatsTypeInfo({str
         (writer, value) => write(writer, value)
     );
     var fieldTypeInfo = new {{
-        {string.Join("\n", type.Members.Select(m => $"{m.Name} = {GetTypeInfo(m.TypeSymbol)},"))}
+        {string.Join("\n", type.Members.Select(m => $"{m.Name} = {m.TypeInfo},"))}
     }};
     SpacetimeDB.Module.FFI.SetTypeRef<{type.GenericName}>(
         typeRef,
-        new SpacetimeDB.SATS.{typeKind}Type {{
-            {string.Join("\n", type.Members.Select(m => $"{{ nameof({m.Name}), fieldTypeInfo.{m.Name}.AlgebraicType }},"))}
-        }},
+        new SpacetimeDB.SATS.AlgebraicType.{typeKind}(new SpacetimeDB.SATS.AggregateElement[] {{
+            {string.Join("\n", type.Members.Select(m => $"new(nameof({m.Name}), fieldTypeInfo.{m.Name}.AlgebraicType),"))}
+        }}),
         {(
             fullyQualifiedMetadataName == "SpacetimeDB.TableAttribute"
             // anonymous (don't register type alias) if it's a table that will register its own name in a different way

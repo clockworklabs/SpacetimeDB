@@ -128,7 +128,7 @@ public class Module : IIncrementalGenerator
                                         )
                                     "))} }}
                                 ),
-                                {t.Name}.GetSatsTypeInfo().AlgebraicType.TypeRef
+                                (SpacetimeDB.SATS.AlgebraicType.Ref){t.Name}.GetSatsTypeInfo().AlgebraicType
                             );
 
                             public static IEnumerable<{t.Name}> Query(System.Linq.Expressions.Expression<Func<{t.Name}, bool>> filter) =>
@@ -244,7 +244,7 @@ public class Module : IIncrementalGenerator
                                 SpacetimeDB.Module.ReducerDef IReducer.MakeReducerDef() {{
                                     return new (
                                         ""{r.ExportName}""
-                                        {string.Join("", r.Args.Where(a => !a.IsContextArg).Select(a => $",\nnew SpacetimeDB.SATS.ProductTypeElement(nameof({a.Name}), {a.Name}.AlgebraicType)"))}
+                                        {string.Join("", r.Args.Where(a => !a.IsContextArg).Select(a => $",\nnew SpacetimeDB.SATS.AggregateElement(nameof({a.Name}), {a.Name}.AlgebraicType)"))}
                                     );
                                 }}
 
