@@ -8,9 +8,10 @@ use super::{
     layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayout, RowTypeLayout},
     page::Page,
     row_hash::read_from_bytes,
-    util::{range_move, slice_assume_init_ref},
+    util::range_move,
     var_len::VarLenRef,
 };
+use spacetimedb_sats::algebraic_value::ser::slice_assume_init_ref;
 
 /// Equates row `a` in `page_a` with its fixed part starting at `fixed_offset_a`
 /// to row `b` in `page_b` with its fixed part starting at `fixed_offset_b`.

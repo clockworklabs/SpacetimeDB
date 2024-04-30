@@ -496,8 +496,7 @@ mod test {
             let mut index = new_index(&ty, &cols, is_unique);
             let mut table = table(ty);
             let mut blob_store = HashMapBlobStore::default();
-            let ptr = table.insert(&mut blob_store, &pv).unwrap().1;
-            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+            let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
             prop_assert_eq!(index.delete(&cols, row_ref).unwrap(), false);
             prop_assert!(index.idx.is_empty());
         }
@@ -507,8 +506,7 @@ mod test {
             let mut index = new_index(&ty, &cols, is_unique);
             let mut table = table(ty);
             let mut blob_store = HashMapBlobStore::default();
-            let ptr = table.insert(&mut blob_store, &pv).unwrap().1;
-            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+            let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
 
             prop_assert_eq!(index.idx.len(), 0);
@@ -528,8 +526,7 @@ mod test {
             let mut index = new_index(&ty, &cols, true);
             let mut table = table(ty);
             let mut blob_store = HashMapBlobStore::default();
-            let ptr = table.insert(&mut blob_store, &pv).unwrap().1;
-            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+            let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
 
             // Nothing in the index yet.
@@ -548,7 +545,7 @@ mod test {
             prop_assert_eq!(violates_unique_constraint(&index, &cols, &pv), true);
             prop_assert_eq!(
                 index.get_rows_that_violate_unique_constraint(&value).unwrap().collect::<Vec<_>>(),
-                [ptr]
+                [row_ref.pointer()]
             );
         }
 
@@ -571,9 +568,8 @@ mod test {
             // Insert `prev`, `needle`, and `next`.
             for x in range.clone() {
                 let row = product![x];
-                let ptr = table.insert(&mut blob_store, &row).unwrap().1;
-                val_to_ptr.insert(x, ptr);
-                let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+                let row_ref = table.insert(&mut blob_store, &row).unwrap().1;
+                val_to_ptr.insert(x, row_ref.pointer());
                 index.insert(&cols, row_ref).unwrap();
             }
 
