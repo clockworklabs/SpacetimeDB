@@ -1510,47 +1510,6 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
             // Closing brace for struct ReducerArgs
             writeln!(output, "}}");
         }
-        writeln!(output);
-        writeln!(output, "public object[] GetArgsAsObjectArray()");
-        writeln!(output, "{{");
-        {
-            indent_scope!(output);
-            writeln!(output, "switch (Reducer)");
-            writeln!(output, "{{");
-            {
-                indent_scope!(output);
-                for reducer in &reducers {
-                    let reducer_name = reducer.name.deref().to_case(Case::Pascal);
-                    writeln!(output, "case ReducerType.{reducer_name}:");
-                    writeln!(output, "{{");
-                    {
-                        indent_scope!(output);
-                        writeln!(output, "var args = {reducer_name}Args;");
-                        writeln!(output, "return new object[] {{");
-                        {
-                            indent_scope!(output);
-                            for (i, arg) in reducer.args.iter().enumerate() {
-                                let arg_name = arg
-                                    .name
-                                    .clone()
-                                    .unwrap_or_else(|| format!("arg_{i}").into())
-                                    .deref()
-                                    .to_case(Case::Pascal);
-                                writeln!(output, "args.{arg_name},");
-                            }
-                        }
-                        writeln!(output, "}};");
-                    }
-                    // Closing brace for switch
-                    writeln!(output, "}}");
-                }
-                writeln!(output, "default: throw new System.Exception($\"Unhandled reducer case: {{Reducer}}. Please run SpacetimeDB code generator\");");
-            }
-            // Closing brace for switch
-            writeln!(output, "}}");
-        }
-        // Closing brace for ctor
-        writeln!(output, "}}");
     }
     // Closing brace for ReducerEvent
     writeln!(output, "}}");
