@@ -1,6 +1,6 @@
 use crate::algebraic_value::AlgebraicValue;
 use crate::db::auth::{StAccess, StTableType};
-use crate::db::error::RelationError;
+use crate::db::error::{RelationError, TypeError};
 use crate::satn::Satn;
 use crate::{algebraic_type, AlgebraicType};
 use core::fmt;
@@ -173,8 +173,10 @@ impl Header {
                     p.push(self.fields[pos.idx()].clone());
                 }
                 FieldExpr::Value(col) => {
-                    let ty = col.type_of();
                     let field = FieldName::new(self.table_id, pos.into());
+                    let ty = col.type_of().ok_or_else(|| {
+                        RelationError::TypeInference(field, TypeError::CannotInferType { value: col })
+                    })?;
                     p.push(Column::new(field, ty));
                 }
             }
