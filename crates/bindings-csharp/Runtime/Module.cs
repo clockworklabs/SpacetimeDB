@@ -2,10 +2,8 @@ namespace SpacetimeDB.Module;
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using SpacetimeDB.SATS;
 
 [SpacetimeDB.Type]
@@ -71,7 +69,7 @@ public partial struct TableDef(string tableName, ColumnDefWithAttrs[] columns)
 {
     string TableName = tableName;
     ColumnDef[] Columns = columns.Select(col => col.ColumnDef).ToArray();
-    IndexDef[] Indices = Array.Empty<IndexDef>();
+    IndexDef[] Indices = [];
     ConstraintDef[] Constraints = columns
         // Important: the position must be stored here, before filtering.
         .Select((col, pos) => (col, pos))
@@ -79,10 +77,10 @@ public partial struct TableDef(string tableName, ColumnDefWithAttrs[] columns)
         .Select(pair => new ConstraintDef(
             $"ct_{tableName}_{pair.col.ColumnDef.ColName}_{pair.col.Attrs}",
             pair.col.Attrs,
-            new[] { (uint)pair.pos }
+            [(uint)pair.pos]
         ))
         .ToArray();
-    SequenceDef[] Sequences = Array.Empty<SequenceDef>();
+    SequenceDef[] Sequences = [];
 
     // "system" | "user"
     string TableType = "user";

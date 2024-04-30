@@ -120,16 +120,10 @@ static class Utils
     // Borrowed & modified code for generating in-place extensions for partial structs/classes/etc. Source:
     // https://andrewlock.net/creating-a-source-generator-part-5-finding-a-type-declarations-namespace-and-type-hierarchy/
 
-    public class Scope
+    public class Scope(TypeDeclarationSyntax type)
     {
-        private string nameSpace;
-        private ParentClass? parentClasses;
-
-        public Scope(TypeDeclarationSyntax type)
-        {
-            nameSpace = GetNamespace(type);
-            parentClasses = GetParentClasses(type);
-        }
+        private string nameSpace = GetNamespace(type);
+        private ParentClass? parentClasses = GetParentClasses(type);
 
         // determine the namespace the class/enum/struct is declared in, if any
         static string GetNamespace(BaseTypeDeclarationSyntax syntax)
@@ -178,20 +172,17 @@ static class Utils
             return nameSpace;
         }
 
-        public class ParentClass
+        public class ParentClass(
+            string keyword,
+            string name,
+            string constraints,
+            Scope.ParentClass? child
+        )
         {
-            public ParentClass(string keyword, string name, string constraints, ParentClass? child)
-            {
-                Keyword = keyword;
-                Name = name;
-                Constraints = constraints;
-                Child = child;
-            }
-
-            public ParentClass? Child { get; }
-            public string Keyword { get; }
-            public string Name { get; }
-            public string Constraints { get; }
+            public readonly ParentClass? Child = child;
+            public readonly string Keyword = keyword;
+            public readonly string Name = name;
+            public readonly string Constraints = constraints;
         }
 
         static ParentClass? GetParentClasses(TypeDeclarationSyntax typeSyntax)
