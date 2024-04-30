@@ -34,7 +34,6 @@ spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 
 ahash.workspace = true
-bit-vec.workspace = true
 blake3.workspace = true
 decorum.workspace = true
 derive_more.workspace = true

@@ -816,10 +816,8 @@ impl RelationalDB {
 
 #[cfg(any(test, feature = "test"))]
 pub mod tests_utils {
-    use std::fs::create_dir_all;
-    use std::ops::Deref;
-
     use super::*;
+    use core::ops::Deref;
     use tempfile::TempDir;
 
     /// A [`RelationalDB`] in a temporary directory.

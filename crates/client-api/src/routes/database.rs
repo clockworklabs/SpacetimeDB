@@ -38,7 +38,6 @@ use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::sats::WithTypespace;
 use spacetimedb_lib::ProductTypeElement;
-use std::convert::From;
 
 pub(crate) struct DomainParsingRejection;
 

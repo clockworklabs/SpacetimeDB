@@ -5,10 +5,6 @@ use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{FieldExpr, Header, RowCount};
 use std::sync::Arc;
 
-pub(crate) trait ResultExt<T> {
-    fn unpack_fold(self) -> Result<T, ErrorVm>;
-}
-
 /// A trait for dealing with fallible iterators for the database.
 pub trait RelOps<'a> {
     fn head(&self) -> &Arc<Header>;

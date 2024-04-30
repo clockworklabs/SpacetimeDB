@@ -602,16 +602,15 @@ impl_deserialize!([] spacetimedb_primitives::TableId, de => u32::deserialize(de)
 impl_deserialize!([] spacetimedb_primitives::IndexId, de => u32::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::SequenceId, de => u32::deserialize(de).map(Self));
 
-impl_deserialize!([] spacetimedb_primitives::ColList, de => {
-    impl GrowingVec<ColId> for ColListBuilder {
-        fn with_capacity(_: usize) -> Self {
-            Self::new()
-        }
-        fn push(&mut self, elem: ColId) {
-            self.push(elem);
-        }
+impl GrowingVec<ColId> for ColListBuilder {
+    fn with_capacity(_: usize) -> Self {
+        Self::new()
     }
-
+    fn push(&mut self, elem: ColId) {
+        self.push(elem);
+    }
+}
+impl_deserialize!([] spacetimedb_primitives::ColList, de => {
     struct ColListVisitor;
     impl<'de> ArrayVisitor<'de, ColId> for ColListVisitor {
         type Output = ColListBuilder;

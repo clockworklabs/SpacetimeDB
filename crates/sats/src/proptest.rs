@@ -10,8 +10,6 @@ use proptest::{
     collection::{vec, SizeRange},
     prelude::*,
     prop_oneof,
-    strategy::Just,
-    strategy::{BoxedStrategy, Strategy},
 };
 
 const SIZE: usize = 16;
