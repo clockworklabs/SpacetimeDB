@@ -375,43 +375,31 @@ impl Table {
     }
 
     /// Deletes the row identified by `ptr` from the table.
-    /// NOTE: This method skips updating indexes. Use `delete` to delete a row with index updating.
-    pub fn delete_internal(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) -> Option<ProductValue> {
-        let row = self.get_row_ref(blob_store, ptr)?;
-        let row_value = row.to_product_value();
+    ///
+    /// NOTE: This method skips updating indexes.
+    /// Use `delete_unchecked` or `delete` to delete a row with index updating.
+    ///
+    /// SAFETY: `self.is_row_present(row)` must hold.
+    unsafe fn delete_internal(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) {
+        // SAFETY: `self.is_row_present(row)` holds.
+        let row = unsafe { self.get_row_ref_unchecked(blob_store, ptr) };
 
         // Remove the set semantic association.
         let _remove_result = self.pointer_map.remove(row.row_hash(), ptr);
         debug_assert!(_remove_result);
 
         // Delete the physical row.
-        // SAFETY: `ptr` points to a valid row in this table as we extracted `row_value`.
+        // SAFETY: `ptr` points to a valid row in this table as `self.is_row_present(row)` holds.
         unsafe {
             self.delete_internal_skip_pointer_map(blob_store, ptr);
         };
-
-        Some(row_value)
     }
 
     /// Deletes the row identified by `ptr` from the table.
-    // TODO(perf,bikeshedding): Make this `unsafe` and trust `ptr`; remove `Option` from return.
-    //     See TODO comment on `Table::is_row_present`.
-    // TODO(perf): Remove returned `ProductValue`.
-    //     Require callers who want the row to read it out explicitly before deleting.
-    pub fn delete(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) -> Option<ProductValue> {
-        // TODO(bikeshedding,integration): Do we want to make this method unsafe?
-        // We currently use `ptr` to ask the page if `is_row_present` which checks alignment.
-        // Based on this, we can input `ptr` to `row_hash_for`.
-        // This has some minor costs though.
-        //
-        // Current theory is that there's no reason to make this method safe;
-        // it will be used through higher-level safe methods, like `delete_by_col_eq`,
-        // which discover a known-valid `RowPointer` and pass it to this method.
-        //
-        // But for now since we need to check whether the row is present,
-        // the method can be safe.
-
-        // SAFETY: `ptr` points to a valid row in this table as we extracted `row_value`.
+    ///
+    /// SAFETY: `self.is_row_present(row)` must hold.
+    unsafe fn delete_unchecked(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) {
+        // SAFETY: `self.is_row_present(row)` holds.
         let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
 
         // Delete row from indices.
@@ -422,7 +410,37 @@ impl Table {
             debug_assert!(deleted);
         }
 
-        self.delete_internal(blob_store, ptr)
+        // SAFETY: We've checked above that `self.is_row_present(ptr)`.
+        unsafe { self.delete_internal(blob_store, ptr) }
+    }
+
+    /// Deletes the row identified by `ptr` from the table.
+    ///
+    /// The function `before` is run on the to-be-deleted row,
+    /// if it is present, before deleting.
+    /// This enables callers to extract the deleted row.
+    /// E.g. applying deletes when squashing/merging a transaction into the committed state
+    /// passes `|row| row.to_product_value()` as `before`
+    /// so that the resulting `ProductValue`s can be passed to the subscription evaluator.
+    pub fn delete<'a, R>(
+        &'a mut self,
+        blob_store: &'a mut dyn BlobStore,
+        ptr: RowPointer,
+        before: impl for<'b> FnOnce(RowRef<'b>) -> R,
+    ) -> Option<R> {
+        if !self.is_row_present(ptr) {
+            return None;
+        };
+
+        // SAFETY: We only call `get_row_ref_unchecked` when `is_row_present` holds.
+        let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
+
+        let ret = before(row_ref);
+
+        // SAFETY: We've checked above that `self.is_row_present(ptr)`.
+        unsafe { self.delete_unchecked(blob_store, ptr) }
+
+        Some(ret)
     }
 
     /// If a row exists in `self` which matches `row`
@@ -455,14 +473,14 @@ impl Table {
         // - We just inserted `temp_ptr` and computed `hash`, so they're valid.
         let existing_row_ptr = unsafe { Self::find_same_row(self, self, temp_ptr, hash) };
 
+        // If an equal row was present, delete it.
         if let Some(existing_row_ptr) = existing_row_ptr {
             if skip_index_update {
-                self.delete_internal(blob_store, existing_row_ptr)
-                    .expect("Found a row by `Table::find_same_row`, but then failed to delete it");
+                // SAFETY: `find_same_row` ensures that the pointer is valid.
+                unsafe { self.delete_internal(blob_store, existing_row_ptr) }
             } else {
-                // If an equal row was present, delete it.
-                self.delete(blob_store, existing_row_ptr)
-                    .expect("Found a row by `Table::find_same_row`, but then failed to delete it");
+                // SAFETY: `find_same_row` ensures that the pointer is valid.
+                unsafe { self.delete_unchecked(blob_store, existing_row_ptr) }
             }
         }
 
@@ -1121,7 +1139,7 @@ pub(crate) mod test {
             prop_assert_eq!(table.inner.pages[PageIndex(0)].num_rows(), 1);
             prop_assert_eq!(&table.scan_rows(&blob_store).map(|r| r.pointer()).collect::<Vec<_>>(), &[ptr]);
 
-            table.delete(&mut blob_store, ptr);
+            table.delete(&mut blob_store, ptr, |_| ());
 
             prop_assert_eq!(table.pointer_map.pointers_for(hash), &[]);
 

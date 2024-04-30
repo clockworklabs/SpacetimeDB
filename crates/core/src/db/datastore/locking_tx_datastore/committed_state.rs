@@ -408,7 +408,9 @@ impl CommittedState {
                     debug_assert!(row_ptr.squashed_offset().is_committed_state());
 
                     // TODO: re-write `TxData` to remove `ProductValue`s
-                    let pv = table.delete(blob_store, row_ptr).expect("Delete for non-existent row!");
+                    let pv = table
+                        .delete(blob_store, row_ptr, |row| row.to_product_value())
+                        .expect("Delete for non-existent row!");
                     let table_name = &*table.get_schema().table_name;
                     //Increment rows deleted metric
                     ctx.metrics
