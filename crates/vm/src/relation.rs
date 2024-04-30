@@ -3,10 +3,8 @@ use spacetimedb_sats::bsatn::ser::BsatnError;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::product_value::ProductValue;
-use spacetimedb_sats::relation::{
-    DbTable, FieldExpr, FieldExprRef, FieldName, Header, HeaderOnlyField, Relation, RowCount,
-};
-use spacetimedb_sats::{bsatn, impl_serialize, AlgebraicValue, ProductType};
+use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldExprRef, FieldName, Header, Relation, RowCount};
+use spacetimedb_sats::{bsatn, impl_serialize, AlgebraicValue};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
@@ -159,13 +157,6 @@ impl<'a> RelValue<'a> {
 }
 
 /// An in-memory table
-#[derive(Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct MemTableWithoutTableName<'a> {
-    pub head: HeaderOnlyField<'a>,
-    pub data: &'a [ProductValue],
-}
-
-/// An in-memory table
 // TODO(perf): Remove `Clone` impl.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct MemTable {
@@ -190,24 +181,11 @@ impl MemTable {
         }
     }
 
-    /// For testing purposes only this provides a single-col header / product value.
-    pub fn from_value(of: AlgebraicValue) -> Self {
-        let head = ProductType::from(of.type_of()).into();
-        Self::new(Arc::new(head), StAccess::Public, [of.into()].into())
-    }
-
-    pub fn from_iter(head: Arc<Header>, data: impl Iterator<Item = ProductValue>) -> Self {
+    pub fn from_iter(head: Arc<Header>, data: impl IntoIterator<Item = ProductValue>) -> Self {
         Self {
             head,
-            data: data.collect(),
+            data: data.into_iter().collect(),
             table_access: StAccess::Public,
-        }
-    }
-
-    pub fn as_without_table_name(&self) -> MemTableWithoutTableName {
-        MemTableWithoutTableName {
-            head: self.head.as_without_table_name(),
-            data: &self.data,
         }
     }
 

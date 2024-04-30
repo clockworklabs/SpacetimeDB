@@ -2,15 +2,14 @@ use crate::algebraic_value::AlgebraicValue;
 use crate::db::auth::{StAccess, StTableType};
 use crate::db::error::RelationError;
 use crate::satn::Satn;
-use crate::{algebraic_type, AlgebraicType, ProductType, Typespace, WithTypespace};
+use crate::{algebraic_type, AlgebraicType, Typespace, WithTypespace};
 use core::fmt;
-use core::hash::{BuildHasher, Hash};
+use core::hash::Hash;
 use derive_more::From;
-use spacetimedb_data_structures::map::DefaultHashBuilder;
 use spacetimedb_primitives::{ColId, ColList, ColListBuilder, Constraints, TableId};
 use std::sync::Arc;
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
 pub struct FieldName {
     pub table: TableId,
     pub col: ColId,
@@ -47,10 +46,15 @@ impl FieldExpr {
     }
 }
 
+impl fmt::Debug for FieldName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
+
 impl fmt::Display for FieldName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self { table, col } = self;
-        write!(f, "#{table}.#{col}")
+        write!(f, "table#{}.col#{}", self.table, self.col)
     }
 }
 
@@ -76,12 +80,6 @@ pub enum FieldExprRef<'a> {
     Value(&'a AlgebraicValue),
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct ColumnOnlyField<'a> {
-    pub field: ColId,
-    pub algebraic_type: &'a AlgebraicType,
-}
-
 // TODO(perf): Remove `Clone` derivation.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Column {
@@ -93,21 +91,9 @@ impl Column {
     pub fn new(field: FieldName, algebraic_type: AlgebraicType) -> Self {
         Self { field, algebraic_type }
     }
-
-    pub fn as_without_table(&self) -> ColumnOnlyField {
-        ColumnOnlyField {
-            field: self.field.field(),
-            algebraic_type: &self.algebraic_type,
-        }
-    }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct HeaderOnlyField<'a> {
-    pub fields: Vec<ColumnOnlyField<'a>>,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Header {
     pub table_id: TableId,
     pub table_name: Box<str>,
@@ -143,12 +129,6 @@ impl Header {
             self.fields.clone(),
             self.constraints.clone(),
         )
-    }
-
-    pub fn as_without_table_name(&self) -> HeaderOnlyField {
-        HeaderOnlyField {
-            fields: self.fields.iter().map(|x| x.as_without_table()).collect(),
-        }
     }
 
     /// Finds the index of the column wth a matching `FieldName`.
@@ -253,23 +233,6 @@ impl fmt::Display for Header {
     }
 }
 
-impl From<ProductType> for Header {
-    fn from(fields: ProductType) -> Self {
-        let table_id = u32::MAX.into();
-
-        let hash = DefaultHashBuilder::default().hash_one(&fields);
-        let table_name = format!("mem#{:x}", hash).into();
-
-        let cols = Vec::from(fields.elements)
-            .into_iter()
-            .enumerate()
-            .map(|(pos, f)| Column::new(FieldName::new(table_id, pos.into()), f.algebraic_type))
-            .collect();
-
-        Self::new(table_id, table_name, cols, Default::default())
-    }
-}
-
 /// An estimate for the range of rows in the [Relation]
 #[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct RowCount {
@@ -364,28 +327,22 @@ mod tests {
         let mut empty = head.clone_for_error();
         empty.fields.clear();
         empty.constraints.clear();
-
         assert_eq!(empty, new);
 
         let all = head.clone_for_error();
         let new = head.project(&[FieldName::new(t1, a), FieldName::new(t1, b)]).unwrap();
-
         assert_eq!(all, new);
 
         let mut first = head.clone_for_error();
         first.fields.pop();
         first.constraints = first.retain_constraints(&a.into());
-
         let new = head.project(&[FieldName::new(t1, a)]).unwrap();
-
         assert_eq!(first, new);
 
         let mut second = head.clone_for_error();
         second.fields.remove(0);
         second.constraints = second.retain_constraints(&b.into());
-
         let new = head.project(&[FieldName::new(t1, b)]).unwrap();
-
         assert_eq!(second, new);
     }
 
@@ -404,15 +361,12 @@ mod tests {
         let new = head_lhs.extend(&head_rhs);
 
         let lhs = new.project(&[FieldName::new(t1, a), FieldName::new(t1, b)]).unwrap();
-
         assert_eq!(head_lhs, lhs);
 
         let mut head_rhs = head(t2, "t2", (c, d), 2);
+        head_rhs.table_id = t1;
         head_rhs.table_name = head_lhs.table_name.clone();
-        head_rhs.table_id = head_lhs.table_id;
-
         let rhs = new.project(&[FieldName::new(t2, c), FieldName::new(t2, d)]).unwrap();
-
         assert_eq!(head_rhs, rhs);
     }
 }

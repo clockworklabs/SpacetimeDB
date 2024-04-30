@@ -809,11 +809,11 @@ impl RelationalDB {
     }
 
     /// Set a runtime configurations setting of the database
-    pub fn set_config(&self, key: &str, value: AlgebraicValue) -> Result<(), ErrorVm> {
+    pub(crate) fn set_config(&self, key: &str, value: AlgebraicValue) -> Result<(), ErrorVm> {
         self.config.write().set_config(key, value)
     }
     /// Read the runtime configurations settings of the database
-    pub fn read_config(&self) -> DatabaseConfig {
+    pub(crate) fn read_config(&self) -> DatabaseConfig {
         *self.config.read()
     }
 }

@@ -95,9 +95,6 @@ pub fn classify(expr: &QueryExpr) -> Option<Supported> {
 
 #[cfg(test)]
 mod tests {
-    use std::borrow::Cow;
-    use std::sync::Arc;
-
     use super::*;
     use crate::client::Protocol;
     use crate::db::datastore::traits::IsolationLevel;
@@ -120,11 +117,13 @@ mod tests {
     use spacetimedb_sats::db::def::*;
     use spacetimedb_sats::relation::FieldName;
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
-    use spacetimedb_vm::dsl::{mem_table, scalar};
     use spacetimedb_vm::eval::run_ast;
+    use spacetimedb_vm::eval::test_helpers::{mem_table, mem_table_without_table_name, scalar};
     use spacetimedb_vm::expr::{Expr, SourceSet};
     use spacetimedb_vm::operator::OpCmp;
     use spacetimedb_vm::relation::MemTable;
+    use std::borrow::Cow;
+    use std::sync::Arc;
 
     /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
     fn run_query<const N: usize>(
@@ -178,17 +177,15 @@ mod tests {
         head: &ProductType,
         row: &ProductValue,
     ) -> ResultTest<(Arc<TableSchema>, MemTable, DatabaseTableUpdate, QueryExpr)> {
-        let table = mem_table(head.clone(), [row.clone()]);
-        let table_id = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()])?;
+        let schema = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()])?;
+        let table = mem_table(schema.table_id, schema.get_row_type().clone(), [row.clone()]);
 
         let data = DatabaseTableUpdate {
-            table_id,
+            table_id: schema.table_id,
             table_name: table_name.into(),
             deletes: [].into(),
             inserts: [row.clone()].into(),
         };
-
-        let schema = db.schema_for_table_mut(tx, table_id).unwrap();
 
         let q = QueryExpr::new(&*schema);
 
@@ -267,8 +264,8 @@ mod tests {
         )?;
 
         assert_eq!(
-            Some(table.as_without_table_name()),
-            result.first().map(|x| x.as_without_table_name())
+            Some(mem_table_without_table_name(table)),
+            result.first().map(mem_table_without_table_name)
         );
 
         Ok(())

@@ -567,12 +567,7 @@ impl Relation for SourceExpr {
 
 impl From<&TableSchema> for SourceExpr {
     fn from(value: &TableSchema) -> Self {
-        SourceExpr::DbTable(DbTable::new(
-            Arc::new(value.into()),
-            value.table_id,
-            value.table_type,
-            value.table_access,
-        ))
+        SourceExpr::DbTable(value.into())
     }
 }
 
@@ -2118,7 +2113,6 @@ impl From<Code> for CodeResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dsl::db_table;
     use spacetimedb_sats::relation::Column;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use typed_arena::Arena;
@@ -2613,8 +2607,8 @@ mod tests {
             ),
         );
 
-        let lhs_source = SourceExpr::DbTable(db_table(&lhs, TableId(0)));
-        let rhs_source = SourceExpr::DbTable(db_table(&rhs, TableId(0)));
+        let lhs_source = SourceExpr::from(&lhs);
+        let rhs_source = SourceExpr::from(&rhs);
 
         let q = QueryExpr::new(lhs_source.clone())
             .with_join_inner(
@@ -2667,8 +2661,8 @@ mod tests {
             ),
         );
 
-        let lhs_source = SourceExpr::DbTable(db_table(&lhs, TableId(0)));
-        let rhs_source = SourceExpr::DbTable(db_table(&rhs, TableId(0)));
+        let lhs_source = SourceExpr::from(&lhs);
+        let rhs_source = SourceExpr::from(&rhs);
 
         let q = QueryExpr::new(lhs_source.clone()).with_join_inner(
             rhs_source.clone(),
@@ -2698,8 +2692,8 @@ mod tests {
             ),
         );
 
-        let lhs_source = SourceExpr::DbTable(db_table(&lhs, TableId(0)));
-        let rhs_source = SourceExpr::DbTable(db_table(&rhs, TableId(0)));
+        let lhs_source = SourceExpr::from(&lhs);
+        let rhs_source = SourceExpr::from(&rhs);
 
         let q = QueryExpr::new(lhs_source.clone())
             .with_join_inner(

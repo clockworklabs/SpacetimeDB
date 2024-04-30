@@ -1,11 +1,11 @@
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
+use core::ops::Deref;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::relation::{self, DbTable, FieldExpr, FieldName, Header};
-use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
 use spacetimedb_vm::expr::{CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
 use std::sync::Arc;
@@ -88,20 +88,14 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
         });
     }
 
-    let source_expr = SourceExpr::DbTable(db_table_raw(
-        &*table.root,
-        table.root.table_id,
-        table.root.table_type,
-        table.root.table_access,
-    ));
-
-    let mut q = query(source_expr);
+    let source_expr: SourceExpr = table.root.deref().into();
+    let mut q = QueryExpr::new(source_expr);
 
     if let Some(ref joins) = table.join {
         for join in joins {
             match join {
                 Join::Inner { rhs, on } => {
-                    let rhs_source_expr = SourceExpr::DbTable(db_table(&**rhs, rhs.table_id));
+                    let rhs_source_expr: SourceExpr = rhs.deref().into();
                     match on.op {
                         OpCmp::Eq => {}
                         x => unreachable!("Unsupported operator `{x}` for joins"),

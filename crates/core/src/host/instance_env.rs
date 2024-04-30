@@ -21,7 +21,7 @@ use spacetimedb_primitives::{ColId, ColListBuilder, TableId};
 use spacetimedb_sats::db::def::{IndexDef, IndexType};
 use spacetimedb_sats::relation::{FieldExpr, FieldName};
 use spacetimedb_sats::Typespace;
-use spacetimedb_vm::expr::{ColumnOp, NoInMemUsed};
+use spacetimedb_vm::expr::{ColumnOp, NoInMemUsed, QueryExpr};
 
 #[derive(Clone)]
 pub struct InstanceEnv {
@@ -362,7 +362,7 @@ impl InstanceEnv {
         .map_err(NodesError::DecodeFilter)?;
 
         // TODO(Centril): consider caching from `filter: &[u8] -> query: QueryExpr`.
-        let query = spacetimedb_vm::dsl::query(schema.as_ref())
+        let query = QueryExpr::new(schema.as_ref())
             .with_select(filter_to_column_op(table_id, filter))
             .optimize(&|table_id, table_name| stdb.row_count(table_id, table_name));
 
