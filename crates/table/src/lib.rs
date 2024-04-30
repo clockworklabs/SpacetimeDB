@@ -12,6 +12,7 @@ pub mod bflatn_to_bsatn_fast_path;
 pub mod blob_store;
 pub mod btree_index;
 pub mod eq;
+pub mod eq_to_pv;
 pub mod indexes;
 pub mod layout;
 pub mod page;

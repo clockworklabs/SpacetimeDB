@@ -1,20 +1,19 @@
 use super::{
     bflatn_from::serialize_row_from_page,
     bflatn_to::write_row_to_pages,
+    bflatn_to_bsatn_fast_path::StaticBsatnLayout,
     blob_store::{BlobStore, NullBlobStore},
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
     eq::eq_row_in_page,
+    eq_to_pv::eq_row_in_page_to_pv,
     indexes::{Bytes, PageIndex, PageOffset, RowHash, RowPointer, Size, SquashedOffset},
     layout::RowTypeLayout,
     page::{FixedLenRowsIter, Page},
     pages::Pages,
     pointer_map::PointerMap,
+    read_column::{ReadColumn, TypeError},
     row_hash::hash_row_in_page,
     row_type_visitor::{row_type_visitor, VarLenVisitorProgram},
-};
-use crate::{
-    bflatn_to_bsatn_fast_path::StaticBsatnLayout,
-    read_column::{ReadColumn, TypeError},
     static_assert_size,
 };
 use core::hash::{Hash, Hasher};
@@ -778,6 +777,16 @@ impl PartialEq for RowRef<'_> {
         let (page_b, offset_b) = other.page_and_offset();
         // SAFETY: `offset_a/b` are valid rows in `page_a/b` typed at `a_ty`.
         unsafe { eq_row_in_page(page_a, page_b, offset_a, offset_b, a_ty) }
+    }
+}
+
+impl PartialEq<ProductValue> for RowRef<'_> {
+    fn eq(&self, rhs: &ProductValue) -> bool {
+        let ty = self.row_layout();
+        let (page, offset) = self.page_and_offset();
+        // SAFETY: By having `RowRef`,
+        // we know that `offset` is a valid offset for a row in `page` typed at `ty`.
+        unsafe { eq_row_in_page_to_pv(self.blob_store, page, offset, rhs, ty) }
     }
 }
 
