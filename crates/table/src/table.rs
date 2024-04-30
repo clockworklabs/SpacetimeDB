@@ -415,6 +415,13 @@ impl Table {
     }
 
     /// Deletes the row identified by `ptr` from the table.
+    ///
+    /// The function `before` is run on the to-be-deleted row,
+    /// if it is present, before deleting.
+    /// This enables callers to extract the deleted row.
+    /// E.g. applying deletes when squashing/merging a transaction into the committed state
+    /// passes `|row| row.to_product_value()` as `before`
+    /// so that the resulting `ProductValue`s can be passed to the subscription evaluator.
     pub fn delete<'a, R>(
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
