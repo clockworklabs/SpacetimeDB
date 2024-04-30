@@ -18,9 +18,11 @@ use spacetimedb_sats::bsatn::{eq::eq_bsatn, Deserializer};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 
 /// Equates row `lhs` in `page` with its fixed part starting at `fixed_offset` to `rhs`.
-/// Both rows are typed at `ty` but it is only required for safety that `lhs` is.
-/// That is, row `lhs` last for `ty.size()` bytes
-/// and is assumed to be typed at `ty` and must be valid for `ty`.
+/// It is required for safety that `lhs` be typed at `ty`.
+/// That is, row `lhs` has length `ty.size()` bytes,
+/// is assumed to be typed at `ty` and must be valid for `ty`.
+/// `rhs` should also be typed at `ty`, but this is only a logical requirement,
+/// not a safety requirement.
 ///
 /// Returns whether row `lhs` is equal to `rhs`.
 ///
@@ -178,7 +180,7 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_>, ty: &AlgebraicTypeLayout, rhs: &Algebrai
     }
 }
 
-/// Equates `ctx.lhs`, known to store a string at `ctx.current_offset` to `rhs`,
+/// Equates `ctx.lhs`, known to store a string at `ctx.current_offset`, to `rhs`,
 /// and advances `ctx.current_offset`.
 ///
 /// SAFETY: `lhs = ctx.lhs.bytes[range_move(0..size_of::<VarLenRef>(), *curr_offset)]`
@@ -213,7 +215,7 @@ unsafe fn eq_str(ctx: &mut EqCtx<'_>, rhs: &str) -> bool {
     }
 }
 
-/// Equates `lhs` assumed to be typed at `T` to `rhs`.
+/// Equates `lhs`, assumed to be typed at `T`, to `rhs`.
 ///
 /// SAFETY: Let `lhs = &ctx.lhs.bytes[range_move(0..size_of::<T>(), ctx.curr_offset)]`.
 /// Then `lhs` must point to a valid `T` and must be properly aligned for `T`.
