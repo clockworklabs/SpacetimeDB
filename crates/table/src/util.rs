@@ -24,20 +24,6 @@ pub fn maybe_uninit_write_slice<T: Copy>(this: &mut [MaybeUninit<T>], src: &[T])
     this[0..uninit_src.len()].copy_from_slice(uninit_src);
 }
 
-/// Convert a `[MaybeUninit<T>]` into a `[T]` by asserting all elements are initialized.
-///
-/// Identitcal copy of the source of `MaybeUninit::slice_assume_init_ref`, but that's not stabilized.
-/// https://doc.rust-lang.org/std/mem/union.MaybeUninit.html#method.slice_assume_init_ref
-///
-/// SAFETY: all elements of `slice` must be initialized.
-pub const unsafe fn slice_assume_init_ref<T>(slice: &[MaybeUninit<T>]) -> &[T] {
-    // SAFETY: casting `slice` to a `*const [T]` is safe since the caller guarantees that
-    // `slice` is initialized, and `MaybeUninit` is guaranteed to have the same layout as `T`.
-    // The pointer obtained is valid since it refers to memory owned by `slice` which is a
-    // reference and thus guaranteed to be valid for reads.
-    unsafe { &*(slice as *const [MaybeUninit<T>] as *const [T]) }
-}
-
 /// Asserts that `$ty` is `$size` bytes in `static_assert_size($ty, $size)`.
 ///
 /// Example:

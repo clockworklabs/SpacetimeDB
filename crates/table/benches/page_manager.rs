@@ -524,16 +524,19 @@ fn use_type_throughput<T>(group: &mut BenchmarkGroup<'_, impl Measurement>) {
 
 fn table_insert_one_row(c: &mut Criterion) {
     fn bench_insert_row<R: Row>(group: Group<'_, '_>, val: R, name: &str) {
-        let mut table = make_table_for_row_type::<R>(name);
+        let table = make_table_for_row_type::<R>(name);
         let val = black_box(val.to_product());
 
         // Insert before benching to alloc and fault in a page.
-        let ptr = table.insert(&mut NullBlobStore, &val).unwrap().1;
-        let pre = |_, table: &mut Table| {
-            table.delete(&mut NullBlobStore, ptr).unwrap();
+        let mut ctx = (table, NullBlobStore);
+        let ptr = ctx.0.insert(&mut ctx.1, &val).unwrap().1.pointer();
+        let pre = |_, (table, bs): &mut (Table, NullBlobStore)| {
+            table.delete(bs, ptr).unwrap();
         };
         group.bench_function(name, |b| {
-            iter_time_with(b, &mut table, pre, |_, _, table| table.insert(&mut NullBlobStore, &val));
+            iter_time_with(b, &mut ctx, pre, |_, _, (table, bs)| {
+                table.insert(bs, &val).map(|r| r.1.pointer())
+            });
         });
     }
 
@@ -571,16 +574,15 @@ fn table_insert_one_row(c: &mut Criterion) {
 
 fn table_delete_one_row(c: &mut Criterion) {
     fn bench_delete_row<R: Row>(group: Group<'_, '_>, val: R, name: &str) {
-        let mut table = make_table_for_row_type::<R>(name);
+        let table = make_table_for_row_type::<R>(name);
         let val = val.to_product();
 
         // Insert before benching to alloc and fault in a page.
-        let insert = |_, table: &mut Table| table.insert(&mut NullBlobStore, &val).unwrap().1;
+        let mut ctx = (table, NullBlobStore);
+        let insert = |_: u64, (table, bs): &mut (Table, NullBlobStore)| table.insert(bs, &val).unwrap().1.pointer();
 
         group.bench_function(name, |b| {
-            iter_time_with(b, &mut table, insert, |ptr, _, table| {
-                table.delete(&mut NullBlobStore, ptr)
-            });
+            iter_time_with(b, &mut ctx, insert, |row, _, (table, bs)| table.delete(bs, row));
         });
     }
 
@@ -621,16 +623,10 @@ fn table_extract_one_row(c: &mut Criterion) {
         let mut table = make_table_for_row_type::<R>(name);
         let val = val.to_product();
 
-        let ptr = table.insert(&mut NullBlobStore, &val).unwrap().1;
+        let mut blob_store = NullBlobStore;
+        let row = black_box(table.insert(&mut blob_store, &val).unwrap().1);
         group.bench_function(name, |b| {
-            b.iter_with_large_drop(|| {
-                black_box(
-                    black_box(&table)
-                        .get_row_ref(&NullBlobStore, black_box(ptr))
-                        .unwrap()
-                        .to_product_value(),
-                )
-            });
+            b.iter_with_large_drop(|| black_box(row.to_product_value()));
         });
     }
 
@@ -760,7 +756,7 @@ fn insert_num_same<R: IndexedRow>(
             if let Some(slot) = row.elements.get_mut(1) {
                 *slot = n.into();
             }
-            tbl.insert(&mut NullBlobStore, &row).map(|(_, ptr)| ptr).ok()
+            tbl.insert(&mut NullBlobStore, &row).map(|(_, row)| row.pointer()).ok()
         })
         .last()
         .flatten()
@@ -815,18 +811,21 @@ fn index_insert(c: &mut Criterion) {
         same_ratio: f64,
     ) {
         let make_row_move = &mut make_row;
-        let (mut tbl, num_same, _) = make_table_with_same_ratio::<R>(make_row_move, num_rows, same_ratio);
+        let (tbl, num_same, _) = make_table_with_same_ratio::<R>(make_row_move, num_rows, same_ratio);
+        let mut ctx = (tbl, NullBlobStore);
 
         group.bench_with_input(
             bench_id_for_index(name, num_rows, same_ratio, num_same),
             &num_rows,
             |b, &num_rows| {
-                let pre = |_, tbl: &mut Table| {
+                let pre = |_, (tbl, _): &mut (Table, NullBlobStore)| {
                     clear_all_same::<R>(tbl, num_rows);
                     insert_num_same(tbl, || make_row(num_rows), num_same - 1);
                     make_row(num_rows).to_product()
                 };
-                iter_time_with(b, &mut tbl, pre, |row, _, tbl| tbl.insert(&mut NullBlobStore, &row));
+                iter_time_with(b, &mut ctx, pre, |row, _, (tbl, bs)| {
+                    tbl.insert(bs, &row).map(|r| r.1.pointer())
+                });
             },
         );
     }

@@ -780,11 +780,12 @@ impl MutTxId {
             .ok_or(TableError::IdNotFoundState(table_id))?;
 
         match tx_table.insert(tx_blob_store, row) {
-            Ok((hash, ptr)) => {
+            Ok((hash, row_ref)) => {
                 // `row` not previously present in insert tables,
                 // but may still be a set-semantic conflict with a row
                 // in the committed state.
 
+                let ptr = row_ref.pointer();
                 if let Some(commit_table) = commit_table {
                     // Safety:
                     // - `commit_table` and `tx_table` use the same schema
@@ -912,9 +913,9 @@ impl MutTxId {
                 "Table::insert_internal_allow_duplicates returned error of unexpected variant: {:?}",
                 e
             ),
-            Ok(ptr) => {
-                // Safety: `ptr` must be valid, because we just inserted it and haven't deleted it since.
-                let hash = unsafe { tx_table.row_hash_for(ptr) };
+            Ok(row_ref) => {
+                let hash = row_ref.row_hash();
+                let ptr = row_ref.pointer();
 
                 // First, check if a matching row exists in the `tx_table`.
                 // If it does, no need to check the `commit_table`.
