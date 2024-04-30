@@ -160,7 +160,7 @@ pub fn build_query<'a>(
                 let probe_side = build_query(ctx, stdb, tx, probe_side, sources)?;
                 let probe_col = probe_side
                     .head()
-                    .column_pos(probe_field)
+                    .column_pos(*probe_field)
                     .expect("query compiler should have ensured the column exist");
                 Box::new(IndexSemiJoin {
                     ctx,
@@ -226,8 +226,8 @@ fn join_inner<'a>(
 ) -> Result<impl RelOps<'a> + 'a, ErrorVm> {
     let semi = rhs.semi;
 
-    let col_lhs = FieldExprRef::Name(&rhs.col_lhs);
-    let col_rhs = FieldExprRef::Name(&rhs.col_rhs);
+    let col_lhs = FieldExprRef::Name(rhs.col_lhs);
+    let col_rhs = FieldExprRef::Name(rhs.col_rhs);
     let key_lhs = [col_lhs];
     let key_rhs = [col_rhs];
 
@@ -625,18 +625,18 @@ pub(crate) mod tests {
     use crate::db::datastore::system_tables::{
         st_columns_schema, st_indexes_schema, st_sequences_schema, st_table_schema, StColumnFields, StColumnRow,
         StIndexFields, StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, ST_COLUMNS_ID,
-        ST_COLUMNS_NAME, ST_INDEXES_NAME, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_NAME,
+        ST_COLUMNS_NAME, ST_INDEXES_ID, ST_INDEXES_NAME, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID,
+        ST_TABLES_NAME,
     };
-    use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::execution_context::ExecutionContext;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
-    use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType};
-    use spacetimedb_sats::relation::{DbTable, FieldName};
+    use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableSchema};
+    use spacetimedb_sats::relation::FieldName;
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
-    use spacetimedb_vm::dsl::*;
     use spacetimedb_vm::eval::run_ast;
+    use spacetimedb_vm::eval::test_helpers::{mem_table, mem_table_one_u64, scalar};
     use spacetimedb_vm::operator::OpCmp;
 
     pub(crate) fn create_table_with_rows(
@@ -645,7 +645,7 @@ pub(crate) mod tests {
         table_name: &str,
         schema: ProductType,
         rows: &[ProductValue],
-    ) -> ResultTest<TableId> {
+    ) -> ResultTest<Arc<TableSchema>> {
         let columns: Vec<_> = Vec::from(schema.elements)
             .into_iter()
             .enumerate()
@@ -661,163 +661,120 @@ pub(crate) mod tests {
                 .with_type(StTableType::User)
                 .with_access(StAccess::for_name(table_name)),
         )?;
+        let schema = db.schema_for_table_mut(tx, table_id)?;
+
         for row in rows {
             db.insert(tx, table_id, row.clone())?;
         }
 
-        Ok(table_id)
+        Ok(schema)
     }
 
-    pub(crate) fn create_table_from_program(
-        p: &mut DbProgram,
-        table_name: &str,
-        schema: ProductType,
-        rows: &[ProductValue],
-    ) -> ResultTest<TableId> {
-        let db = &mut p.db;
-        match p.tx {
-            TxMode::MutTx(tx) => create_table_with_rows(db, tx, table_name, schema, rows),
-            TxMode::Tx(_) => panic!("tx type should be mutable"),
-        }
+    /// Creates a table "inventory" with `(inventory_id: u64, name : String)` as columns.
+    fn create_inv_table(db: &RelationalDB, tx: &mut MutTx) -> ResultTest<(Arc<TableSchema>, ProductValue)> {
+        let schema_ty = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
+        let row = product!(1u64, "health");
+        let schema = create_table_with_rows(db, tx, "inventory", schema_ty.clone(), &[row.clone()])?;
+        Ok((schema, row))
     }
 
     #[test]
-    /// Inventory
-    /// | inventory_id: u64 | name : String |
-    /// Player
-    /// | entity_id: u64 | inventory_id : u64 |
-    /// Location
-    /// | entity_id: u64 | x : f32 | z : f32 |
     fn test_db_query_inner_join() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
-        let tx_mode = &mut TxMode::MutTx(&mut tx);
-        let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
+        let (schema, _) = stdb.with_auto_commit(&ctx, |tx| create_inv_table(&stdb, tx))?;
+        let table_id = schema.table_id;
 
-        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
-        let row = product!(1u64, "health");
-        let table_id = create_table_from_program(p, "inventory", head.clone(), &[row])?;
-
-        let schema = TableDef::from_product("inventory", head).into_schema(table_id);
-
-        let data = MemTable::from_value(scalar(1u64));
-        let rhs = data.get_field_pos(0).unwrap().clone();
-
+        let data = mem_table_one_u64(u32::MAX.into());
+        let rhs = *data.get_field_pos(0).unwrap();
         let mut sources = SourceSet::<_, 1>::empty();
         let rhs_source_expr = sources.add_mem_table(data);
+        let q =
+            QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, FieldName::new(table_id, 0.into()), rhs, false);
 
-        let q = query(&schema).with_join_inner(rhs_source_expr, FieldName::positional("inventory", 0), rhs, false);
+        let result = stdb.with_read_only(&ctx, |tx| {
+            let mut tx_mode = (&*tx).into();
+            let p = &mut DbProgram::new(&ctx, &stdb, &mut tx_mode, AuthCtx::for_testing());
+            match run_ast(p, q.into(), sources) {
+                Code::Table(x) => x,
+                x => panic!("invalid result {x}"),
+            }
+        });
 
-        let result = match run_ast(p, q.into(), sources) {
-            Code::Table(x) => x,
-            x => panic!("invalid result {x}"),
-        };
-
-        //The expected result
-        let inv = ProductType::from([
-            (Some("inventory_id"), AlgebraicType::U64),
-            (Some("name"), AlgebraicType::String),
-            (None, AlgebraicType::U64),
-        ]);
-        let row = product!(scalar(1u64), scalar("health"), scalar(1u64));
-        let input = mem_table(inv, vec![row]);
+        // The expected result.
+        let inv = ProductType::from([AlgebraicType::U64, AlgebraicType::String, AlgebraicType::U64]);
+        let row = product![1u64, "health", 1u64];
+        let input = mem_table(table_id, inv, vec![row]);
 
         assert_eq!(result.data, input.data, "Inventory");
-
-        stdb.rollback_mut_tx(&ctx, tx);
 
         Ok(())
     }
 
     #[test]
-    /// Inventory
-    /// | inventory_id: u64 | name : String |
-    /// Player
-    /// | entity_id: u64 | inventory_id : u64 |
-    /// Location
-    /// | entity_id: u64 | x : f32 | z : f32 |
     fn test_db_query_semijoin() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
-        let tx_mode = &mut TxMode::MutTx(&mut tx);
-        let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
+        let (schema, row) = stdb.with_auto_commit(&ctx, |tx| create_inv_table(&stdb, tx))?;
+        let table_id = schema.table_id;
 
-        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
-        let row = product!(1u64, "health");
-        let table_id = create_table_from_program(p, "inventory", head.clone(), &[row])?;
-
-        let schema = TableDef::from_product("test", head).into_schema(table_id);
-
-        let data = MemTable::from_value(scalar(1u64));
-        let rhs = data.get_field_pos(0).unwrap().clone();
-
+        let data = mem_table_one_u64(u32::MAX.into());
+        let rhs = *data.get_field_pos(0).unwrap();
         let mut sources = SourceSet::<_, 1>::empty();
         let rhs_source_expr = sources.add_mem_table(data);
 
-        let q = query(&schema).with_join_inner(rhs_source_expr, FieldName::positional("inventory", 0), rhs, true);
+        let q =
+            QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, FieldName::new(table_id, 0.into()), rhs, true);
 
-        let result = match run_ast(p, q.into(), sources) {
-            Code::Table(x) => x,
-            x => panic!("invalid result {x}"),
-        };
+        let result = stdb.with_read_only(&ctx, |tx| {
+            let mut tx_mode = (&*tx).into();
+            let p = &mut DbProgram::new(&ctx, &stdb, &mut tx_mode, AuthCtx::for_testing());
+            match run_ast(p, q.into(), sources) {
+                Code::Table(x) => x,
+                x => panic!("invalid result {x}"),
+            }
+        });
 
-        //The expected result
-        let inv = ProductType::from([
-            (Some("inventory_id"), AlgebraicType::U64),
-            (Some("name"), AlgebraicType::String),
-        ]);
-        let row = product!(scalar(1u64), scalar("health"));
-        let input = mem_table(inv, vec![row]);
-
+        // The expected result.
+        let input = mem_table(schema.table_id, schema.get_row_type().clone(), vec![row]);
         assert_eq!(result.data, input.data, "Inventory");
-
-        stdb.rollback_mut_tx(&ctx, tx);
 
         Ok(())
     }
 
-    fn check_catalog(p: &mut DbProgram, name: &str, row: ProductValue, q: QueryExpr, schema: DbTable) {
-        let result = run_ast(p, q.into(), [].into());
+    fn check_catalog(db: &RelationalDB, name: &str, row: ProductValue, q: QueryExpr, schema: &TableSchema) {
+        let ctx = ExecutionContext::default();
+        let result = db.with_read_only(&ctx, |tx| {
+            let tx_mode = &mut (&*tx).into();
+            let p = &mut DbProgram::new(&ctx, db, tx_mode, AuthCtx::for_testing());
+            run_ast(p, q.into(), [].into())
+        });
 
-        //The expected result
-        let input = mem_table(schema.head.clone_for_error(), vec![row]);
-
+        // The expected result.
+        let input = MemTable::from_iter(Header::from(schema).into(), [row]);
         assert_eq!(result, Code::Table(input), "{}", name);
     }
 
     #[test]
     fn test_query_catalog_tables() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
+        let schema = st_table_schema();
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        let ctx = ExecutionContext::default();
-        let tx_mode = &mut TxMode::MutTx(&mut tx);
-        let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
-
-        let q = query(&st_table_schema()).with_select_cmp(
+        let q = QueryExpr::new(&schema).with_select_cmp(
             OpCmp::Eq,
-            FieldName::named(ST_TABLES_NAME, StTableFields::TableName.name()),
+            FieldName::new(ST_TABLES_ID, StTableFields::TableName.into()),
             scalar(ST_TABLES_NAME),
         );
-        check_catalog(
-            p,
-            ST_TABLES_NAME,
-            StTableRow {
-                table_id: ST_TABLES_ID,
-                table_name: ST_TABLES_NAME.into(),
-                table_type: StTableType::System,
-                table_access: StAccess::Public,
-            }
-            .into(),
-            q,
-            DbTable::from(&st_table_schema()),
-        );
-
-        stdb.rollback_mut_tx(&ctx, tx);
+        let st_table_row = StTableRow {
+            table_id: ST_TABLES_ID,
+            table_name: ST_TABLES_NAME.into(),
+            table_type: StTableType::System,
+            table_access: StAccess::Public,
+        }
+        .into();
+        check_catalog(&stdb, ST_TABLES_NAME, st_table_row, q, &schema);
 
         Ok(())
     }
@@ -826,37 +783,26 @@ pub(crate) mod tests {
     fn test_query_catalog_columns() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        let ctx = ExecutionContext::default();
-        let tx_mode = &mut TxMode::MutTx(&mut tx);
-        let p = &mut DbProgram::new(&ctx, &stdb, tx_mode, AuthCtx::for_testing());
-
-        let q = query(&st_columns_schema())
+        let schema = st_columns_schema();
+        let q = QueryExpr::new(&schema)
             .with_select_cmp(
                 OpCmp::Eq,
-                FieldName::named(ST_COLUMNS_NAME, StColumnFields::TableId.name()),
+                FieldName::new(ST_COLUMNS_ID, StColumnFields::TableId.into()),
                 scalar(ST_COLUMNS_ID),
             )
             .with_select_cmp(
                 OpCmp::Eq,
-                FieldName::named(ST_COLUMNS_NAME, StColumnFields::ColPos.name()),
+                FieldName::new(ST_COLUMNS_ID, StColumnFields::ColPos.into()),
                 scalar(StColumnFields::TableId as u32),
             );
-        check_catalog(
-            p,
-            ST_COLUMNS_NAME,
-            StColumnRow {
-                table_id: ST_COLUMNS_ID,
-                col_pos: StColumnFields::TableId.col_id(),
-                col_name: StColumnFields::TableId.col_name(),
-                col_type: AlgebraicType::U32,
-            }
-            .into(),
-            q,
-            (&st_columns_schema()).into(),
-        );
-
-        stdb.rollback_mut_tx(&ctx, tx);
+        let st_column_row = StColumnRow {
+            table_id: ST_COLUMNS_ID,
+            col_pos: StColumnFields::TableId.col_id(),
+            col_name: StColumnFields::TableId.col_name(),
+            col_type: AlgebraicType::U32,
+        }
+        .into();
+        check_catalog(&stdb, ST_COLUMNS_NAME, st_column_row, q, &schema);
 
         Ok(())
     }
@@ -865,42 +811,29 @@ pub(crate) mod tests {
     fn test_query_catalog_indexes() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
-        let row = product!(1u64, "health");
-
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
-        let table_id = create_table_with_rows(&db, &mut tx, "inventory", head, &[row])?;
-        db.commit_tx(&ctx, tx)?;
+        let (schema, _) = db.with_auto_commit(&ctx, |tx| create_inv_table(&db, tx))?;
+        let table_id = schema.table_id;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
         let index = IndexDef::btree("idx_1".into(), ColId(0), true);
-        let index_id = db.create_index(&mut tx, table_id, index)?;
-        let tx_mode = &mut TxMode::MutTx(&mut tx);
-        let p = &mut DbProgram::new(&ctx, &db, tx_mode, AuthCtx::for_testing());
+        let index_id = db.with_auto_commit(&ctx, |tx| db.create_index(tx, table_id, index))?;
 
-        let q = query(&st_indexes_schema()).with_select_cmp(
+        let indexes_schema = st_indexes_schema();
+        let q = QueryExpr::new(&indexes_schema).with_select_cmp(
             OpCmp::Eq,
-            FieldName::named(ST_INDEXES_NAME, StIndexFields::IndexName.name()),
+            FieldName::new(ST_INDEXES_ID, StIndexFields::IndexName.into()),
             scalar("idx_1"),
         );
-        check_catalog(
-            p,
-            ST_INDEXES_NAME,
-            StIndexRow {
-                index_id,
-                index_name: "idx_1".into(),
-                table_id,
-                columns: ColList::new(0.into()),
-                is_unique: true,
-                index_type: IndexType::BTree,
-            }
-            .into(),
-            q,
-            (&st_indexes_schema()).into(),
-        );
-
-        db.rollback_mut_tx(&ctx, tx);
+        let st_index_row = StIndexRow {
+            index_id,
+            index_name: "idx_1".into(),
+            table_id,
+            columns: ColList::new(0.into()),
+            is_unique: true,
+            index_type: IndexType::BTree,
+        }
+        .into();
+        check_catalog(&db, ST_INDEXES_NAME, st_index_row, q, &indexes_schema);
 
         Ok(())
     }
@@ -909,36 +842,25 @@ pub(crate) mod tests {
     fn test_query_catalog_sequences() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-        let ctx = ExecutionContext::default();
-        let tx_mode = &mut TxMode::MutTx(&mut tx);
-        let p = &mut DbProgram::new(&ctx, &db, tx_mode, AuthCtx::for_testing());
-
-        let q = query(&st_sequences_schema()).with_select_cmp(
+        let schema = st_sequences_schema();
+        let q = QueryExpr::new(&schema).with_select_cmp(
             OpCmp::Eq,
-            FieldName::named(ST_SEQUENCES_NAME, StSequenceFields::TableId.name()),
+            FieldName::new(ST_SEQUENCES_ID, StSequenceFields::TableId.into()),
             scalar(ST_SEQUENCES_ID),
         );
-        check_catalog(
-            p,
-            ST_SEQUENCES_NAME,
-            StSequenceRow {
-                sequence_id: 3.into(),
-                sequence_name: "seq_st_sequence_sequence_id_primary_key_auto".into(),
-                table_id: 2.into(),
-                col_pos: 0.into(),
-                increment: 1,
-                start: 4,
-                min_value: 1,
-                max_value: i128::MAX,
-                allocated: 4096,
-            }
-            .into(),
-            q,
-            (&st_sequences_schema()).into(),
-        );
-
-        db.rollback_mut_tx(&ctx, tx);
+        let st_sequence_row = StSequenceRow {
+            sequence_id: 3.into(),
+            sequence_name: "seq_st_sequence_sequence_id_primary_key_auto".into(),
+            table_id: 2.into(),
+            col_pos: 0.into(),
+            increment: 1,
+            start: 4,
+            min_value: 1,
+            max_value: i128::MAX,
+            allocated: 4096,
+        }
+        .into();
+        check_catalog(&db, ST_SEQUENCES_NAME, st_sequence_row, q, &schema);
 
         Ok(())
     }

@@ -3,9 +3,7 @@ use spacetimedb_sats::bsatn::ser::BsatnError;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::product_value::ProductValue;
-use spacetimedb_sats::relation::{
-    DbTable, FieldExpr, FieldExprRef, FieldName, Header, HeaderOnlyField, Relation, RowCount,
-};
+use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldExprRef, FieldName, Header, Relation, RowCount};
 use spacetimedb_sats::{bsatn, impl_serialize, AlgebraicValue};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
@@ -101,7 +99,7 @@ impl<'a> RelValue<'a> {
             FieldExprRef::Name(col) => {
                 let pos = header.column_pos_or_err(col)?.idx();
                 self.read_column(pos)
-                    .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col.clone()))?
+                    .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col))?
             }
             FieldExprRef::Value(x) => Cow::Borrowed(x),
         };
@@ -133,9 +131,9 @@ impl<'a> RelValue<'a> {
         for col in cols {
             let val = match col {
                 FieldExpr::Name(col) => {
-                    let pos = header.column_pos_or_err(col)?.idx();
+                    let pos = header.column_pos_or_err(*col)?.idx();
                     self.read_or_take_column(pos)
-                        .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col.clone()))?
+                        .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, *col))?
                 }
                 FieldExpr::Value(x) => x.clone(),
             };
@@ -156,13 +154,6 @@ impl<'a> RelValue<'a> {
             RelValue::ProjRef(row) => bsatn::to_writer(buf, row),
         }
     }
-}
-
-/// An in-memory table
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
-pub struct MemTableWithoutTableName<'a> {
-    pub head: HeaderOnlyField<'a>,
-    pub data: &'a [ProductValue],
 }
 
 /// An in-memory table
@@ -190,33 +181,16 @@ impl MemTable {
         }
     }
 
-    /// For testing purposes only this provides a single-col header / product value.
-    pub fn from_value(of: AlgebraicValue) -> Self {
-        let head = Header::for_mem_table(of.type_of().into());
-        Self::new(Arc::new(head), StAccess::Public, [of.into()].into())
-    }
-
-    pub fn from_iter(head: Arc<Header>, data: impl Iterator<Item = ProductValue>) -> Self {
+    pub fn from_iter(head: Arc<Header>, data: impl IntoIterator<Item = ProductValue>) -> Self {
         Self {
             head,
-            data: data.collect(),
+            data: data.into_iter().collect(),
             table_access: StAccess::Public,
-        }
-    }
-
-    pub fn as_without_table_name(&self) -> MemTableWithoutTableName {
-        MemTableWithoutTableName {
-            head: self.head.as_without_table_name(),
-            data: &self.data,
         }
     }
 
     pub fn get_field_pos(&self, pos: usize) -> Option<&FieldName> {
         self.head.fields.get(pos).map(|x| &x.field)
-    }
-
-    pub fn get_field_named(&self, name: &str) -> Option<&FieldName> {
-        self.head.find_by_name(name).map(|x| &x.field)
     }
 }
 

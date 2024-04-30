@@ -1,7 +1,7 @@
 use crate::db::auth::{StAccess, StTableType};
 use crate::db::error::{DefType, SchemaError};
 use crate::product_value::InvalidFieldError;
-use crate::relation::{Column, DbTable, FieldName, FieldOnly, Header};
+use crate::relation::{Column, DbTable, FieldName, Header};
 use crate::{de, impl_deserialize, impl_serialize, ser};
 use crate::{AlgebraicType, ProductType, ProductTypeElement};
 use derive_more::Display;
@@ -292,12 +292,6 @@ pub struct FieldDef<'a> {
     pub table_name: &'a str,
 }
 
-impl From<FieldDef<'_>> for FieldName {
-    fn from(value: FieldDef) -> Self {
-        FieldName::named(value.table_name, &value.column.col_name)
-    }
-}
-
 impl From<FieldDef<'_>> for ProductTypeElement {
     fn from(value: FieldDef) -> Self {
         ProductTypeElement::new(value.column.col_type.clone(), Some(value.column.col_name.clone()))
@@ -585,16 +579,11 @@ impl TableSchema {
 
     /// Check if the specified `field` exists in this [TableSchema].
     ///
-    /// This function can handle both named and positional fields.
-    ///
     /// # Warning
     ///
-    /// This function ignores the `table_name` when searching for a column.
-    pub fn get_column_by_field(&self, field: &FieldName) -> Option<&ColumnSchema> {
-        match field.field() {
-            FieldOnly::Name(x) => self.get_column_by_name(x),
-            FieldOnly::Pos(x) => self.get_column(x),
-        }
+    /// This function ignores the `table_id` when searching for a column.
+    pub fn get_column_by_field(&self, field: FieldName) -> Option<&ColumnSchema> {
+        self.get_column(field.col.idx())
     }
 
     pub fn get_columns(&self, columns: &ColList) -> Vec<(ColId, Option<&ColumnSchema>)> {
@@ -937,10 +926,10 @@ impl From<&TableSchema> for Header {
         let fields = value
             .columns
             .iter()
-            .map(|x| Column::new(FieldName::named(&value.table_name, &x.col_name), x.col_type.clone()))
+            .map(|x| Column::new(FieldName::new(value.table_id, x.col_pos), x.col_type.clone()))
             .collect();
 
-        Header::new(value.table_name.clone(), fields, constraints)
+        Header::new(value.table_id, value.table_name.clone(), fields, constraints)
     }
 }
 
@@ -1173,12 +1162,9 @@ impl TableDef {
 
     /// Check if the `name` of the [FieldName] exist on this [TableDef]
     ///
-    /// Warning: It ignores the `table_name`
-    pub fn get_column_by_field(&self, field: &FieldName) -> Option<&ColumnDef> {
-        match field.field() {
-            FieldOnly::Name(x) => self.get_column_by_name(x),
-            FieldOnly::Pos(x) => self.get_column(x),
-        }
+    /// Warning: It ignores the `table_id`
+    pub fn get_column_by_field(&self, field: FieldName) -> Option<&ColumnDef> {
+        self.get_column(field.col.idx())
     }
 
     pub fn get_column(&self, pos: usize) -> Option<&ColumnDef> {
