@@ -119,8 +119,14 @@ pub struct DatabaseTableUpdate {
 
 impl From<DatabaseTableUpdate> for TableUpdate {
     fn from(table: DatabaseTableUpdate) -> Self {
-        let deletes = table.deletes.iter().map(|r| pv_to_tro_binary(r, OpType::Delete));
-        let inserts = table.inserts.iter().map(|r| pv_to_tro_binary(r, OpType::Insert));
+        let deletes = table
+            .deletes
+            .iter()
+            .map(|r| product_to_table_row_op_binary(r, OpType::Delete));
+        let inserts = table
+            .inserts
+            .iter()
+            .map(|r| product_to_table_row_op_binary(r, OpType::Insert));
         let table_row_operations = deletes.chain(inserts).collect();
         Self {
             table_id: table.table_id.into(),
@@ -132,8 +138,14 @@ impl From<DatabaseTableUpdate> for TableUpdate {
 
 impl From<DatabaseTableUpdate> for TableUpdateJson {
     fn from(table: DatabaseTableUpdate) -> Self {
-        let deletes = table.deletes.iter().map(|r| pv_to_tro_json(r.clone(), OpType::Delete));
-        let inserts = table.inserts.iter().map(|r| pv_to_tro_json(r.clone(), OpType::Insert));
+        let deletes = table
+            .deletes
+            .iter()
+            .map(|r| product_to_table_row_op_json(r.clone(), OpType::Delete));
+        let inserts = table
+            .inserts
+            .iter()
+            .map(|r| product_to_table_row_op_json(r.clone(), OpType::Insert));
         let table_row_operations = deletes.chain(inserts).map_into().collect();
         Self {
             table_id: table.table_id.into(),
@@ -144,24 +156,24 @@ impl From<DatabaseTableUpdate> for TableUpdateJson {
 }
 
 #[derive(Debug)]
-pub struct DatabaseUpdateRV<'a> {
-    pub tables: Vec<DatabaseTableUpdateRV<'a>>,
+pub struct DatabaseUpdateRelValue<'a> {
+    pub tables: Vec<DatabaseTableUpdateRelValue<'a>>,
 }
 
 #[derive(PartialEq, Debug)]
-pub struct DatabaseTableUpdateRV<'a> {
+pub struct DatabaseTableUpdateRelValue<'a> {
     pub table_id: TableId,
     pub table_name: Box<str>,
-    pub updates: UpdatesRV<'a>,
+    pub updates: UpdatesRelValue<'a>,
 }
 
 #[derive(Default, PartialEq, Debug)]
-pub struct UpdatesRV<'a> {
+pub struct UpdatesRelValue<'a> {
     pub deletes: Vec<RelValue<'a>>,
     pub inserts: Vec<RelValue<'a>>,
 }
 
-impl UpdatesRV<'_> {
+impl UpdatesRelValue<'_> {
     /// Returns whether there are any updates.
     pub fn has_updates(&self) -> bool {
         !(self.deletes.is_empty() && self.inserts.is_empty())
@@ -176,27 +188,27 @@ impl UpdatesRV<'_> {
     }
 }
 
-impl From<&UpdatesRV<'_>> for Vec<TableRowOperation> {
-    fn from(updates: &UpdatesRV<'_>) -> Self {
+impl From<&UpdatesRelValue<'_>> for Vec<TableRowOperation> {
+    fn from(updates: &UpdatesRelValue<'_>) -> Self {
         let mut scratch = Vec::new();
         updates
             .iter()
-            .map(|(op, row)| rv_to_tro_binary(&mut scratch, row, op))
+            .map(|(op, row)| rel_value_to_table_row_op_binary(&mut scratch, row, op))
             .collect()
     }
 }
 
-impl From<&UpdatesRV<'_>> for Vec<TableRowOperationJson> {
-    fn from(updates: &UpdatesRV<'_>) -> Self {
+impl From<&UpdatesRelValue<'_>> for Vec<TableRowOperationJson> {
+    fn from(updates: &UpdatesRelValue<'_>) -> Self {
         updates
             .iter()
-            .map(|(op, row)| rv_to_tro_json(row.clone(), op))
+            .map(|(op, row)| rel_value_to_table_row_op_json(row.clone(), op))
             .collect()
     }
 }
 
-impl From<&UpdatesRV<'_>> for Vec<ProductValue> {
-    fn from(updates: &UpdatesRV<'_>) -> Self {
+impl From<&UpdatesRelValue<'_>> for Vec<ProductValue> {
+    fn from(updates: &UpdatesRelValue<'_>) -> Self {
         updates
             .iter()
             .map(|(_, row)| row.clone().into_product_value())
@@ -237,12 +249,16 @@ impl From<OpType> for i32 {
 }
 
 /// Annotate `row` with `op` as a `TableRowOperationJson`.
-pub(crate) fn rv_to_tro_json(row: RelValue<'_>, op: OpType) -> TableRowOperationJson {
-    pv_to_tro_json(row.into_product_value(), op)
+pub(crate) fn rel_value_to_table_row_op_json(row: RelValue<'_>, op: OpType) -> TableRowOperationJson {
+    product_to_table_row_op_json(row.into_product_value(), op)
 }
 
 /// Annotate `row` BSATN-encoded with `op` as a `TableRowOperation`.
-pub(crate) fn rv_to_tro_binary(scratch: &mut Vec<u8>, row: &RelValue<'_>, op: OpType) -> TableRowOperation {
+pub(crate) fn rel_value_to_table_row_op_binary(
+    scratch: &mut Vec<u8>,
+    row: &RelValue<'_>,
+    op: OpType,
+) -> TableRowOperation {
     let op = op.into();
 
     row.to_bsatn_extend(scratch).unwrap();
@@ -253,14 +269,14 @@ pub(crate) fn rv_to_tro_binary(scratch: &mut Vec<u8>, row: &RelValue<'_>, op: Op
 }
 
 /// Annotate `row` BSATN-encoded with `op` as a `TableRowOperation`.
-fn pv_to_tro_binary(row: &ProductValue, op: OpType) -> TableRowOperation {
+fn product_to_table_row_op_binary(row: &ProductValue, op: OpType) -> TableRowOperation {
     let op = op.into();
     let row = to_vec(&row).unwrap();
     TableRowOperation { op, row }
 }
 
 /// Annotate `row` with `op` as a `TableRowOperationJson`.
-fn pv_to_tro_json(row: ProductValue, op: OpType) -> TableRowOperationJson {
+fn product_to_table_row_op_json(row: ProductValue, op: OpType) -> TableRowOperationJson {
     let op = op.as_json_str().into();
     let row = row.elements.into();
     TableRowOperationJson { op, row }

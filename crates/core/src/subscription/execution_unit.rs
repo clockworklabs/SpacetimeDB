@@ -4,7 +4,8 @@ use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{
-    rv_to_tro_binary, rv_to_tro_json, DatabaseTableUpdate, DatabaseTableUpdateRV, OpType, UpdatesRV,
+    rel_value_to_table_row_op_binary, rel_value_to_table_row_op_json, DatabaseTableUpdate, DatabaseTableUpdateRelValue,
+    OpType, UpdatesRelValue,
 };
 use crate::json::client_api::TableUpdateJson;
 use crate::util::slow::SlowQueryLogger;
@@ -219,7 +220,7 @@ impl ExecutionUnit {
         sql: &str,
     ) -> Result<Option<TableUpdateJson>, DBError> {
         let table_row_operations = Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, |row| {
-            rv_to_tro_json(row, OpType::Insert)
+            rel_value_to_table_row_op_json(row, OpType::Insert)
         })?;
         Ok((!table_row_operations.is_empty()).then(|| TableUpdateJson {
             table_id: self.return_table().into(),
@@ -239,7 +240,7 @@ impl ExecutionUnit {
     ) -> Result<Option<TableUpdate>, DBError> {
         let mut scratch = Vec::new();
         let table_row_operations = Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, |row| {
-            rv_to_tro_binary(&mut scratch, &row, OpType::Insert)
+            rel_value_to_table_row_op_binary(&mut scratch, &row, OpType::Insert)
         })?;
         Ok((!table_row_operations.is_empty()).then(|| TableUpdate {
             table_id: self.return_table().into(),
@@ -272,7 +273,7 @@ impl ExecutionUnit {
         tx: &'a TxMode<'a>,
         sql: &'a str,
         tables: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
-    ) -> Result<Option<DatabaseTableUpdateRV<'a>>, DBError> {
+    ) -> Result<Option<DatabaseTableUpdateRelValue<'a>>, DBError> {
         let slow_query = SlowQueryLogger::incremental_updates(ctx, sql);
         let updates = match &self.eval_incr_plan {
             EvalIncrPlan::Select(plan) => Self::eval_incr_query_expr(ctx, db, tx, tables, plan, self.return_table())?,
@@ -280,7 +281,7 @@ impl ExecutionUnit {
         };
         slow_query.log();
 
-        Ok(updates.has_updates().then(|| DatabaseTableUpdateRV {
+        Ok(updates.has_updates().then(|| DatabaseTableUpdateRelValue {
             table_id: self.return_table(),
             table_name: self.return_name(),
             updates,
@@ -308,7 +309,7 @@ impl ExecutionUnit {
         tables: impl Iterator<Item = &'a DatabaseTableUpdate>,
         eval_incr_plan: &'a QueryExpr,
         return_table: TableId,
-    ) -> Result<UpdatesRV<'a>, DBError> {
+    ) -> Result<UpdatesRelValue<'a>, DBError> {
         assert!(
             eval_incr_plan.source.is_mem_table(),
             "Expected in-mem table in `eval_incr_plan`, but found `DbTable`"
@@ -330,7 +331,7 @@ impl ExecutionUnit {
                 Self::collect_rows(&mut deletes, query)?;
             }
         }
-        Ok(UpdatesRV { deletes, inserts })
+        Ok(UpdatesRelValue { deletes, inserts })
     }
 
     /// Collect the results of `query` into a vec `sink`.

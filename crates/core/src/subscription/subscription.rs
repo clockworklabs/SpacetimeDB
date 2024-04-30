@@ -30,7 +30,7 @@ use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{
-    DatabaseTableUpdate, DatabaseUpdate, DatabaseUpdateRV, ProtocolDatabaseUpdate, UpdatesRV,
+    DatabaseTableUpdate, DatabaseUpdate, DatabaseUpdateRelValue, ProtocolDatabaseUpdate, UpdatesRelValue,
 };
 use crate::json::client_api::TableUpdateJson;
 use crate::vm::{build_query, TxMode};
@@ -359,7 +359,7 @@ impl IncrementalJoin {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         updates: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
-    ) -> Result<UpdatesRV<'a>, DBError> {
+    ) -> Result<UpdatesRelValue<'a>, DBError> {
         // Find any updates to the tables mentioned by `self` and group them into [`JoinSide`]s.
         //
         // The supplied updates are assumed to be the full set of updates from a single transaction.
@@ -493,7 +493,7 @@ impl IncrementalJoin {
         }
         inserts.extend(join_5);
 
-        Ok(UpdatesRV { deletes, inserts })
+        Ok(UpdatesRelValue { deletes, inserts })
     }
 }
 
@@ -569,14 +569,14 @@ impl ExecutionSet {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         database_update: &'a DatabaseUpdate,
-    ) -> Result<DatabaseUpdateRV<'_>, DBError> {
+    ) -> Result<DatabaseUpdateRelValue<'_>, DBError> {
         let mut tables = Vec::new();
         for unit in &self.exec_units {
             if let Some(table) = unit.eval_incr(ctx, db, tx, &unit.sql, database_update.tables.iter())? {
                 tables.push(table);
             }
         }
-        Ok(DatabaseUpdateRV { tables })
+        Ok(DatabaseUpdateRelValue { tables })
     }
 }
 
