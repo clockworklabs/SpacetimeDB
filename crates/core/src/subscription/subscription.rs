@@ -30,7 +30,7 @@ use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{
-    DatabaseTableUpdate, DatabaseUpdate, DatabaseUpdateCow, ProtocolDatabaseUpdate, UpdatesCow,
+    DatabaseTableUpdate, DatabaseUpdate, DatabaseUpdateRelValue, ProtocolDatabaseUpdate, UpdatesRelValue,
 };
 use crate::json::client_api::TableUpdateJson;
 use crate::vm::{build_query, TxMode};
@@ -48,7 +48,6 @@ use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
-use std::borrow::Cow;
 use std::hash::Hash;
 use std::iter;
 use std::ops::Deref;
@@ -129,7 +128,7 @@ impl AsRef<QueryExpr> for SupportedQuery {
     }
 }
 
-type ResCowPV<'a> = Result<Cow<'a, ProductValue>, ErrorVm>;
+type ResRV<'a> = Result<RelValue<'a>, ErrorVm>;
 
 /// Evaluates `query` and returns all the updates.
 fn eval_updates<'a>(
@@ -138,14 +137,9 @@ fn eval_updates<'a>(
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
     mut sources: impl SourceProvider<'a>,
-) -> Result<impl 'a + Iterator<Item = ResCowPV<'a>>, DBError> {
+) -> Result<impl 'a + Iterator<Item = ResRV<'a>>, DBError> {
     let mut query = build_query(ctx, db, tx, query, &mut sources)?;
-    Ok(iter::from_fn(move || {
-        query
-            .next()
-            .map(|x| x.map(|rv| rv.into_product_value_cow()))
-            .transpose()
-    }))
+    Ok(iter::from_fn(move || query.next().transpose()))
 }
 
 /// A [`query::Supported::Semijoin`] compiled for incremental evaluations.
@@ -277,7 +271,7 @@ impl IncrementalJoin {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
-    ) -> Result<impl Iterator<Item = ResCowPV<'a>>, DBError> {
+    ) -> Result<impl Iterator<Item = ResRV<'a>>, DBError> {
         eval_updates(ctx, db, tx, self.plan_for_delta_lhs(), Some(lhs.map(RelValue::ProjRef)))
     }
 
@@ -288,7 +282,7 @@ impl IncrementalJoin {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         rhs: impl 'a + Iterator<Item = &'a ProductValue>,
-    ) -> Result<impl Iterator<Item = ResCowPV<'a>>, DBError> {
+    ) -> Result<impl Iterator<Item = ResRV<'a>>, DBError> {
         eval_updates(ctx, db, tx, self.plan_for_delta_rhs(), Some(rhs.map(RelValue::ProjRef)))
     }
 
@@ -300,7 +294,7 @@ impl IncrementalJoin {
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
         rhs: impl 'a + Iterator<Item = &'a ProductValue>,
-    ) -> Result<impl Iterator<Item = ResCowPV<'a>>, DBError> {
+    ) -> Result<impl Iterator<Item = ResRV<'a>>, DBError> {
         let is = Either::Left(lhs.map(RelValue::ProjRef));
         let ps = Either::Right(rhs.map(RelValue::ProjRef));
         let sources: SourceSet<_, 2> = if self.return_index_rows { [is, ps] } else { [ps, is] }.into();
@@ -365,7 +359,7 @@ impl IncrementalJoin {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         updates: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
-    ) -> Result<UpdatesCow<'a>, DBError> {
+    ) -> Result<UpdatesRelValue<'a>, DBError> {
         // Find any updates to the tables mentioned by `self` and group them into [`JoinSide`]s.
         //
         // The supplied updates are assumed to be the full set of updates from a single transaction.
@@ -499,7 +493,7 @@ impl IncrementalJoin {
         }
         inserts.extend(join_5);
 
-        Ok(UpdatesCow { deletes, inserts })
+        Ok(UpdatesRelValue { deletes, inserts })
     }
 }
 
@@ -575,14 +569,14 @@ impl ExecutionSet {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         database_update: &'a DatabaseUpdate,
-    ) -> Result<DatabaseUpdateCow<'_>, DBError> {
+    ) -> Result<DatabaseUpdateRelValue<'_>, DBError> {
         let mut tables = Vec::new();
         for unit in &self.exec_units {
             if let Some(table) = unit.eval_incr(ctx, db, tx, &unit.sql, database_update.tables.iter())? {
                 tables.push(table);
             }
         }
-        Ok(DatabaseUpdateCow { tables })
+        Ok(DatabaseUpdateRelValue { tables })
     }
 }
 

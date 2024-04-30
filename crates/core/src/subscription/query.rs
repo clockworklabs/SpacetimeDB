@@ -121,8 +121,7 @@ mod tests {
     use spacetimedb_vm::eval::test_helpers::{mem_table, mem_table_without_table_name, scalar};
     use spacetimedb_vm::expr::{Expr, SourceSet};
     use spacetimedb_vm::operator::OpCmp;
-    use spacetimedb_vm::relation::MemTable;
-    use std::borrow::Cow;
+    use spacetimedb_vm::relation::{MemTable, RelValue};
     use std::sync::Arc;
 
     /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
@@ -291,7 +290,7 @@ mod tests {
         let result = result
             .tables
             .into_iter()
-            .flat_map(|update| update.updates.iter().map(|t| t.row).cloned().collect::<Vec<_>>())
+            .flat_map(|update| <Vec<ProductValue>>::from(&update.updates))
             .sorted()
             .collect::<Vec<_>>();
 
@@ -382,7 +381,7 @@ mod tests {
 
         let op = &update.deletes[0];
 
-        assert_eq!(&**op, &product!(13u64, 3u64));
+        assert_eq!(op.clone().into_product_value(), product!(13u64, 3u64));
         Ok(())
     }
 
@@ -732,7 +731,7 @@ mod tests {
                 .tables
                 .into_iter()
                 .map(|update| {
-                    let convert = |cows: Vec<_>| cows.into_iter().map(Cow::into_owned).collect();
+                    let convert = |rvs: Vec<_>| rvs.into_iter().map(RelValue::into_product_value).collect();
                     DatabaseTableUpdate {
                         table_id: update.table_id,
                         table_name: update.table_name,

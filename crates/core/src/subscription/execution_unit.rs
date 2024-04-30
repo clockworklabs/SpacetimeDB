@@ -3,11 +3,14 @@ use super::subscription::{IncrementalJoin, SupportedQuery};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateCow, TableOp, UpdatesCow};
+use crate::host::module_host::{
+    rel_value_to_table_row_op_binary, rel_value_to_table_row_op_json, DatabaseTableUpdate, DatabaseTableUpdateRelValue,
+    OpType, UpdatesRelValue,
+};
 use crate::json::client_api::TableUpdateJson;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
-use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
+use spacetimedb_client_api_messages::client_api::TableUpdate;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::relation::DbTable;
@@ -15,7 +18,6 @@ use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::{NoInMemUsed, Query, QueryExpr, SourceExpr, SourceId};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::RelValue;
-use std::borrow::Cow;
 use std::hash::Hash;
 
 /// A hash for uniquely identifying query execution units,
@@ -218,7 +220,7 @@ impl ExecutionUnit {
         sql: &str,
     ) -> Result<Option<TableUpdateJson>, DBError> {
         let table_row_operations = Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, |row| {
-            TableOp::insert(row.into_product_value()).into()
+            rel_value_to_table_row_op_json(row, OpType::Insert)
         })?;
         Ok((!table_row_operations.is_empty()).then(|| TableUpdateJson {
             table_id: self.return_table().into(),
@@ -236,12 +238,9 @@ impl ExecutionUnit {
         tx: &Tx,
         sql: &str,
     ) -> Result<Option<TableUpdate>, DBError> {
-        let mut buf = Vec::new();
+        let mut scratch = Vec::new();
         let table_row_operations = Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, |row| {
-            row.to_bsatn_extend(&mut buf).unwrap();
-            let row = buf.clone();
-            buf.clear();
-            TableRowOperation { op: 1, row }
+            rel_value_to_table_row_op_binary(&mut scratch, &row, OpType::Insert)
         })?;
         Ok((!table_row_operations.is_empty()).then(|| TableUpdate {
             table_id: self.return_table().into(),
@@ -274,7 +273,7 @@ impl ExecutionUnit {
         tx: &'a TxMode<'a>,
         sql: &'a str,
         tables: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
-    ) -> Result<Option<DatabaseTableUpdateCow<'a>>, DBError> {
+    ) -> Result<Option<DatabaseTableUpdateRelValue<'a>>, DBError> {
         let slow_query = SlowQueryLogger::incremental_updates(ctx, sql);
         let updates = match &self.eval_incr_plan {
             EvalIncrPlan::Select(plan) => Self::eval_incr_query_expr(ctx, db, tx, tables, plan, self.return_table())?,
@@ -282,7 +281,7 @@ impl ExecutionUnit {
         };
         slow_query.log();
 
-        Ok(updates.has_updates().then(|| DatabaseTableUpdateCow {
+        Ok(updates.has_updates().then(|| DatabaseTableUpdateRelValue {
             table_id: self.return_table(),
             table_name: self.return_name(),
             updates,
@@ -310,7 +309,7 @@ impl ExecutionUnit {
         tables: impl Iterator<Item = &'a DatabaseTableUpdate>,
         eval_incr_plan: &'a QueryExpr,
         return_table: TableId,
-    ) -> Result<UpdatesCow<'a>, DBError> {
+    ) -> Result<UpdatesRelValue<'a>, DBError> {
         assert!(
             eval_incr_plan.source.is_mem_table(),
             "Expected in-mem table in `eval_incr_plan`, but found `DbTable`"
@@ -332,13 +331,13 @@ impl ExecutionUnit {
                 Self::collect_rows(&mut deletes, query)?;
             }
         }
-        Ok(UpdatesCow { deletes, inserts })
+        Ok(UpdatesRelValue { deletes, inserts })
     }
 
     /// Collect the results of `query` into a vec `sink`.
-    fn collect_rows<'a>(sink: &mut Vec<Cow<'a, ProductValue>>, mut query: Box<IterRows<'a>>) -> Result<(), DBError> {
+    fn collect_rows<'a>(sink: &mut Vec<RelValue<'a>>, mut query: Box<IterRows<'a>>) -> Result<(), DBError> {
         while let Some(row) = query.next()? {
-            sink.push(row.into_product_value_cow());
+            sink.push(row);
         }
         Ok(())
     }
