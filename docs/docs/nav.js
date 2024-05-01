@@ -1,52 +1,246 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-function page(title, slug, path, props) {
-    return { type: "page", path, slug, title, ...props };
+module.exports = {
+  items: [
+    {
+      type: 'section',
+      title: 'Intro'
+    },
+    {
+      type: 'page',
+      path: 'index.md',
+      slug: 'index',
+      title: 'Overview'
+    },
+    {
+      type: 'page',
+      path: 'getting-started.md',
+      slug: 'getting-started',
+      title: 'Getting Started'
+    },
+    {
+      type: 'section',
+      title: 'Deploying'
+    },
+    {
+      type: 'page',
+      path: 'deploying/testnet.md',
+      slug: 'deploying/testnet',
+      title: 'Testnet'
+    },
+    {
+      type: 'section',
+      title: 'Unity Tutorial - Basic Multiplayer'
+    },
+    {
+      type: 'page',
+      path: 'unity/index.md',
+      slug: 'unity-tutorial',
+      title: 'Overview'
+    },
+    {
+      type: 'page',
+      path: 'unity/part-1.md',
+      slug: 'unity/part-1',
+      title: '1 - Setup'
+    },
+    {
+      type: 'page',
+      path: 'unity/part-2a-rust.md',
+      slug: 'unity/part-2a-rust',
+      title: '2a - Server (Rust)'
+    },
+    {
+      type: 'page',
+      path: 'unity/part-2b-c-sharp.md',
+      slug: 'unity/part-2b-c-sharp',
+      title: '2b - Server (C#)'
+    },
+    {
+      type: 'page',
+      path: 'unity/part-3.md',
+      slug: 'unity/part-3',
+      title: '3 - Client'
+    },
+    {
+      type: 'section',
+      title: 'Unity Tutorial - Advanced'
+    },
+    {
+      type: 'page',
+      path: 'unity/part-4.md',
+      slug: 'unity/part-4',
+      title: '4 - Resources And Scheduling'
+    },
+    {
+      type: 'page',
+      path: 'unity/part-5.md',
+      slug: 'unity/part-5',
+      title: '5 - BitCraft Mini'
+    },
+    {
+      type: 'section',
+      title: 'Server Module Languages'
+    },
+    {
+      type: 'page',
+      path: 'modules/index.md',
+      slug: 'modules',
+      title: 'Overview'
+    },
+    {
+      type: 'page',
+      path: 'modules/rust/quickstart.md',
+      slug: 'modules/rust/quickstart',
+      title: 'Rust Quickstart'
+    },
+    {
+      type: 'page',
+      path: 'modules/rust/index.md',
+      slug: 'modules/rust',
+      title: 'Rust Reference'
+    },
+    {
+      type: 'page',
+      path: 'modules/c-sharp/quickstart.md',
+      slug: 'modules/c-sharp/quickstart',
+      title: 'C# Quickstart'
+    },
+    {
+      type: 'page',
+      path: 'modules/c-sharp/index.md',
+      slug: 'modules/c-sharp',
+      title: 'C# Reference'
+    },
+    {
+      type: 'section',
+      title: 'Client SDK Languages'
+    },
+    {
+      type: 'page',
+      path: 'sdks/index.md',
+      slug: 'sdks',
+      title: 'Overview'
+    },
+    {
+      type: 'page',
+      path: 'sdks/typescript/quickstart.md',
+      slug: 'sdks/typescript/quickstart',
+      title: 'Typescript Quickstart'
+    },
+    {
+      type: 'page',
+      path: 'sdks/typescript/index.md',
+      slug: 'sdks/typescript',
+      title: 'Typescript Reference'
+    },
+    {
+      type: 'page',
+      path: 'sdks/rust/quickstart.md',
+      slug: 'sdks/rust/quickstart',
+      title: 'Rust Quickstart'
+    },
+    {
+      type: 'page',
+      path: 'sdks/rust/index.md',
+      slug: 'sdks/rust',
+      title: 'Rust Reference'
+    },
+    {
+      type: 'page',
+      path: 'sdks/python/quickstart.md',
+      slug: 'sdks/python/quickstart',
+      title: 'Python Quickstart'
+    },
+    {
+      type: 'page',
+      path: 'sdks/python/index.md',
+      slug: 'sdks/python',
+      title: 'Python Reference'
+    },
+    {
+      type: 'page',
+      path: 'sdks/c-sharp/quickstart.md',
+      slug: 'sdks/c-sharp/quickstart',
+      title: 'C# Quickstart'
+    },
+    {
+      type: 'page',
+      path: 'sdks/c-sharp/index.md',
+      slug: 'sdks/c-sharp',
+      title: 'C# Reference'
+    },
+    {
+      type: 'section',
+      title: 'WebAssembly ABI'
+    },
+    {
+      type: 'page',
+      path: 'webassembly-abi/index.md',
+      slug: 'webassembly-abi',
+      title: 'Module ABI Reference'
+    },
+    {
+      type: 'section',
+      title: 'HTTP API'
+    },
+    {
+      type: 'page',
+      path: 'http/index.md',
+      slug: 'http',
+      title: 'HTTP'
+    },
+    {
+      type: 'page',
+      path: 'http/identity.md',
+      slug: 'http/identity',
+      title: '`/identity`'
+    },
+    {
+      type: 'page',
+      path: 'http/database.md',
+      slug: 'http/database',
+      title: '`/database`'
+    },
+    {
+      type: 'page',
+      path: 'http/energy.md',
+      slug: 'http/energy',
+      title: '`/energy`'
+    },
+    {
+      type: 'section',
+      title: 'WebSocket API Reference'
+    },
+    {
+      type: 'page',
+      path: 'ws/index.md',
+      slug: 'ws',
+      title: 'WebSocket'
+    },
+    {
+      type: 'section',
+      title: 'Data Format'
+    },
+    {
+      type: 'page',
+      path: 'satn.md',
+      slug: 'satn',
+      title: 'SATN'
+    },
+    {
+      type: 'page',
+      path: 'bsatn.md',
+      slug: 'bsatn',
+      title: 'BSATN'
+    },
+    {
+      type: 'section',
+      title: 'SQL'
+    },
+    {
+      type: 'page',
+      path: 'sql/index.md',
+      slug: 'sql',
+      title: 'SQL Reference'
+    }
+  ]
 }
-function section(title) {
-    return { type: "section", title };
-}
-const nav = {
-    items: [
-        section("Intro"),
-        page("Overview", "index", "index.md"),
-        page("Getting Started", "getting-started", "getting-started.md"),
-        section("Deploying"),
-        page("Testnet", "deploying/testnet", "deploying/testnet.md"),
-        section("Unity Tutorial"),
-        page("Part 1 - Basic Multiplayer", "unity/part-1", "unity/part-1.md"),
-        page("Part 2 - Resources And Scheduling", "unity/part-2", "unity/part-2.md"),
-        page("Part 3 - BitCraft Mini", "unity/part-3", "unity/part-3.md"),
-        section("Server Module Languages"),
-        page("Overview", "modules", "modules/index.md"),
-        page("Rust Quickstart", "modules/rust/quickstart", "modules/rust/quickstart.md"),
-        page("Rust Reference", "modules/rust", "modules/rust/index.md"),
-        page("C# Quickstart", "modules/c-sharp/quickstart", "modules/c-sharp/quickstart.md"),
-        page("C# Reference", "modules/c-sharp", "modules/c-sharp/index.md"),
-        section("Client SDK Languages"),
-        page("Overview", "sdks", "sdks/index.md"),
-        page("Typescript Quickstart", "sdks/typescript/quickstart", "sdks/typescript/quickstart.md"),
-        page("Typescript Reference", "sdks/typescript", "sdks/typescript/index.md"),
-        page("Rust Quickstart", "sdks/rust/quickstart", "sdks/rust/quickstart.md"),
-        page("Rust Reference", "sdks/rust", "sdks/rust/index.md"),
-        page("Python Quickstart", "sdks/python/quickstart", "sdks/python/quickstart.md"),
-        page("Python Reference", "sdks/python", "sdks/python/index.md"),
-        page("C# Quickstart", "sdks/c-sharp/quickstart", "sdks/c-sharp/quickstart.md"),
-        page("C# Reference", "sdks/c-sharp", "sdks/c-sharp/index.md"),
-        section("WebAssembly ABI"),
-        page("Module ABI Reference", "webassembly-abi", "webassembly-abi/index.md"),
-        section("HTTP API"),
-        page("HTTP", "http", "http/index.md"),
-        page("`/identity`", "http/identity", "http/identity.md"),
-        page("`/database`", "http/database", "http/database.md"),
-        page("`/energy`", "http/energy", "http/energy.md"),
-        section("WebSocket API Reference"),
-        page("WebSocket", "ws", "ws/index.md"),
-        section("Data Format"),
-        page("SATN", "satn", "satn.md"),
-        page("BSATN", "bsatn", "bsatn.md"),
-        section("SQL"),
-        page("SQL Reference", "sql", "sql/index.md"),
-    ],
-};
-exports.default = nav;

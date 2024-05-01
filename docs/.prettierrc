@@ -1,0 +1,19 @@
+{
+    "tabWidth": 4,
+    "useTabs": false,
+    "semi": true,
+    "singleQuote": true,
+    "arrowParens": "avoid",
+    "jsxSingleQuote": false,
+    "trailingComma": "none",
+    "endOfLine": "auto",
+    "printWidth": 80,
+    "overrides": [
+        {
+            "files": "*.md",
+            "options": {
+                "tabWidth": 2
+            }
+        }
+    ]
+}
