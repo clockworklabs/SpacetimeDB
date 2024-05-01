@@ -711,16 +711,12 @@ fn autogen_csharp_product_table_common(
                 output,
                 "public delegate void DeleteEventHandler({name} deletedValue, {namespace}.ReducerEvent dbEvent);"
             );
-            writeln!(output, "public delegate void RowUpdateEventHandler(SpacetimeDBClient.TableOp op, {name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);");
             writeln!(output, "public static event InsertEventHandler OnInsert;");
             if has_primary_key {
                 writeln!(output, "public static event UpdateEventHandler OnUpdate;");
             }
             writeln!(output, "public static event DeleteEventHandler OnBeforeDelete;");
             writeln!(output, "public static event DeleteEventHandler OnDelete;");
-
-            writeln!(output, "public static event RowUpdateEventHandler OnRowUpdate;");
-
             writeln!(output);
 
             writeln!(
@@ -767,18 +763,6 @@ fn autogen_csharp_product_table_common(
                     output,
                     "OnDelete?.Invoke(({name})oldValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
                 );
-            });
-            writeln!(output);
-
-            writeln!(
-                    output,
-                    "public static void OnRowUpdateEvent(SpacetimeDBClient.TableOp op, object oldValue, object newValue, ClientApi.Event dbEvent)"
-                );
-            indented_block(output, |output| {
-                writeln!(
-                        output,
-                        "OnRowUpdate?.Invoke(op, ({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
-                    );
             });
         }
     });
