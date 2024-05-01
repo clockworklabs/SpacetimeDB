@@ -222,7 +222,7 @@ public class Module : IIncrementalGenerator
                             (
                                 p.Name,
                                 p.Type,
-                                IsDbEvent: p.Type.ToString() == "SpacetimeDB.Runtime.DbEventArgs"
+                                IsDbEvent: p.Type.ToString() == "SpacetimeDB.Runtime.ReducerContext"
                             )
                         )
                         .ToArray(),
@@ -247,7 +247,7 @@ public class Module : IIncrementalGenerator
                                     );
                                 }}
 
-                                void IReducer.Invoke(BinaryReader reader, SpacetimeDB.Runtime.DbEventArgs dbEvent) {{
+                                void IReducer.Invoke(BinaryReader reader, SpacetimeDB.Runtime.ReducerContext dbEvent) {{
                                     {r.FullName}({string.Join(", ", r.Args.Select(a => a.IsDbEvent ? "dbEvent" : $"{a.Name}.Read(reader)"))});
                                 }}
                             }}
