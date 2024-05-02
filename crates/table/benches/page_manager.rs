@@ -46,6 +46,9 @@ fn iter_time_with<P, B, X>(
     })
 }
 
+// Strictly this would be unsafe,
+// since it causes UB when applied to types that contain padding/`poison`,
+// but it's a benchmark so who cares.
 fn as_bytes<T>(t: &T) -> &Bytes {
     let ptr = (t as *const T).cast::<Byte>();
     unsafe { std::slice::from_raw_parts(ptr, mem::size_of::<T>()) }
@@ -65,6 +68,9 @@ unsafe trait Row {
 }
 
 #[allow(clippy::missing_safety_doc)] // It's a benchmark, clippy. Who cares.
+/// Apply only to types which:
+/// - Contain no padding bytes.
+/// - Contain no members which are stored BFLATN as var-len.
 unsafe trait FixedLenRow: Row + Sized {
     fn as_bytes(&self) -> &Bytes {
         as_bytes(self)
@@ -235,6 +241,7 @@ fn insert_one_page_fixed_len(c: &mut Criterion) {
         ));
         group.bench_function(name, |b| {
             let mut pages = Pages::default();
+            // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
             insert_one_page_worth_fixed_len(&mut pages, visitor, &R::from_u64(0xa5a5a5a5_a5a5a5a5));
             let pre = |_, pages: &mut Pages| pages.clear();
             iter_time_with(b, &mut pages, pre, |_, _, pages| {

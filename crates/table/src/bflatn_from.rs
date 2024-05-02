@@ -110,8 +110,7 @@ unsafe fn serialize_sum<S: Serializer>(
     ty: &SumTypeLayout,
 ) -> Result<S::Ok, S::Error> {
     // Read the tag of the sum value.
-    // SAFETY: `bytes[curr_offset..]` hold a sum value at `ty`.
-    let (tag, data_ty) = unsafe { read_tag(bytes, ty, curr_offset.get()) };
+    let (tag, data_ty) = read_tag(bytes, ty, curr_offset.get());
 
     // Serialize the variant data value.
     let data_offset = &Cell::new(curr_offset.get() + ty.offset_of_variant_data(tag));
@@ -133,15 +132,7 @@ unsafe fn serialize_sum<S: Serializer>(
 }
 
 /// Reads the tag of the sum value and selects the data variant type.
-///
-/// # Safety
-///
-/// `bytes[curr_offset..]` has a sum value typed at `ty`.
-pub unsafe fn read_tag<'ty>(
-    bytes: &Bytes,
-    ty: &'ty SumTypeLayout,
-    curr_offset: usize,
-) -> (u8, &'ty AlgebraicTypeLayout) {
+pub fn read_tag<'ty>(bytes: &Bytes, ty: &'ty SumTypeLayout, curr_offset: usize) -> (u8, &'ty AlgebraicTypeLayout) {
     let tag_offset = ty.offset_of_tag();
     let tag = bytes[curr_offset + tag_offset];
 
