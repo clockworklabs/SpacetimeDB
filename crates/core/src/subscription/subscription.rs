@@ -29,9 +29,7 @@ use crate::client::Protocol;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{
-    DatabaseTableUpdate, DatabaseUpdate, DatabaseUpdateRelValue, ProtocolDatabaseUpdate, UpdatesRelValue,
-};
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdateRelValue, ProtocolDatabaseUpdate, UpdatesRelValue};
 use crate::json::client_api::TableUpdateJson;
 use crate::vm::{build_query, TxMode};
 use anyhow::Context;
@@ -568,11 +566,11 @@ impl ExecutionSet {
         ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
-        database_update: &'a DatabaseUpdate,
-    ) -> Result<DatabaseUpdateRelValue<'_>, DBError> {
+        database_update: &'a [&'a DatabaseTableUpdate],
+    ) -> Result<DatabaseUpdateRelValue<'a>, DBError> {
         let mut tables = Vec::new();
         for unit in &self.exec_units {
-            if let Some(table) = unit.eval_incr(ctx, db, tx, &unit.sql, database_update.tables.iter())? {
+            if let Some(table) = unit.eval_incr(ctx, db, tx, &unit.sql, database_update.iter().copied())? {
                 tables.push(table);
             }
         }

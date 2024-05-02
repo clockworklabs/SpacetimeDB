@@ -4483,6 +4483,7 @@ name = "spacetimedb-core"
 version = "0.8.2"
 dependencies = [
  "anyhow",
+ "arrayvec",
  "async-trait",
  "backtrace",
  "base64 0.21.4",

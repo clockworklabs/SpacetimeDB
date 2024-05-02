@@ -3,7 +3,7 @@ use spacetimedb::client::Protocol;
 use spacetimedb::db::relational_db::RelationalDB;
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
-use spacetimedb::host::module_host::{DatabaseTableUpdate, DatabaseUpdate};
+use spacetimedb::host::module_host::DatabaseTableUpdate;
 use spacetimedb::subscription::query::compile_read_only_query;
 use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb::util::slow::SlowQueryConfig;
@@ -97,10 +97,7 @@ fn eval(c: &mut Criterion) {
 
     let ins_lhs = insert_op(lhs, "footprint", new_lhs_row);
     let ins_rhs = insert_op(rhs, "location", new_rhs_row);
-
-    let update = DatabaseUpdate {
-        tables: vec![ins_lhs, ins_rhs],
-    };
+    let update = [&ins_lhs, &ins_rhs];
 
     let bench_eval = |c: &mut Criterion, name, sql| {
         c.bench_function(name, |b| {
