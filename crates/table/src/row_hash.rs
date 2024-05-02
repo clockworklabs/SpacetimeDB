@@ -98,8 +98,7 @@ unsafe fn hash_value(
     match ty {
         AlgebraicTypeLayout::Sum(ty) => {
             // Read and hash the tag of the sum value.
-            // SAFETY: `bytes[curr_offset..]` hold a sum value at `ty`.
-            let (tag, data_ty) = unsafe { read_tag(bytes, ty, *curr_offset) };
+            let (tag, data_ty) = read_tag(bytes, ty, *curr_offset);
             tag.hash(hasher);
 
             // Hash the variant data value.
@@ -245,7 +244,7 @@ mod tests {
     use spacetimedb_sats::proptest::generate_typed_row;
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(2048))]
+        #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]
         #[test]
         fn pv_row_ref_hash_same_std_random_state((ty, val) in generate_typed_row()) {
             // Turn `val` into a `RowRef`.

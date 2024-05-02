@@ -10,10 +10,7 @@ use crate::{
     table::RowRef,
 };
 use spacetimedb_sats::{
-    algebraic_value::{
-        ser::{slice_assume_init_ref, ValueSerializer},
-        Packed,
-    },
+    algebraic_value::{ser::ValueSerializer, Packed},
     AlgebraicType, AlgebraicValue, ArrayValue, MapValue, ProductType, ProductValue, SumValue,
 };
 use std::{cell::Cell, mem};
@@ -188,7 +185,8 @@ unsafe impl ReadColumn for bool {
         let data: *const bool = data.as_ptr().cast();
         // SAFETY: We trust that the `row_ref` refers to a valid, initialized row,
         // and that the `offset_in_bytes` refers to a column of type `Bool` within that row.
-        // A valid row can never have an uninitialized column or a column of an invalid value,
+        // A valid row can never have a column of an invalid value,
+        // and no byte in `Page.row_data` is ever uninit,
         // so `data` must be initialized as either 0 or 1.
         unsafe { *data }
     }
@@ -211,11 +209,6 @@ macro_rules! impl_read_column_number {
                 let col_offset = offset + PageOffset(layout.offset);
 
                 let data = page.get_row_data(col_offset, Size(mem::size_of::<Self>() as u16));
-                // SAFETY: We trust that the `row_ref` refers to a valid, initialized row,
-                // and that the `offset_in_bytes` refers to a column of type `Self` within that row.
-                // A valid row can never have an uninitialized column,
-                // so `data` must be initialized.
-                let data = unsafe { slice_assume_init_ref(data) };
                 let data: Result<[u8; mem::size_of::<Self>()], _> = data.try_into();
                 // SAFETY: `<[u8; N] as TryFrom<&[u8]>` succeeds if and only if the slice's length is `N`.
                 // We used `mem::size_of::<Self>()` as both the length of the slice and the array,
@@ -360,7 +353,7 @@ mod test {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(2048))]
+        #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]
 
         #[test]
         /// Test that `AlgebraicValue::read_column` returns expected values.

@@ -1,5 +1,5 @@
 use core::iter;
-use core::mem::{self, MaybeUninit};
+use core::mem;
 use core::time::Duration;
 use criterion::measurement::{Measurement, WallTime};
 use criterion::{
@@ -12,7 +12,8 @@ use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_table::blob_store::NullBlobStore;
 use spacetimedb_table::btree_index::BTreeIndex;
-use spacetimedb_table::indexes::{PageOffset, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE};
+use spacetimedb_table::indexes::Byte;
+use spacetimedb_table::indexes::{Bytes, PageOffset, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE};
 use spacetimedb_table::layout::{row_size_for_bytes, row_size_for_type};
 use spacetimedb_table::pages::Pages;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
@@ -45,8 +46,11 @@ fn iter_time_with<P, B, X>(
     })
 }
 
-fn as_bytes<T>(t: &T) -> &[MaybeUninit<u8>] {
-    let ptr = (t as *const T).cast::<MaybeUninit<u8>>();
+// Strictly this would be unsafe,
+// since it causes UB when applied to types that contain padding/`poison`,
+// but it's a benchmark so who cares.
+fn as_bytes<T>(t: &T) -> &Bytes {
+    let ptr = (t as *const T).cast::<Byte>();
     unsafe { std::slice::from_raw_parts(ptr, mem::size_of::<T>()) }
 }
 
@@ -64,12 +68,15 @@ unsafe trait Row {
 }
 
 #[allow(clippy::missing_safety_doc)] // It's a benchmark, clippy. Who cares.
+/// Apply only to types which:
+/// - Contain no padding bytes.
+/// - Contain no members which are stored BFLATN as var-len.
 unsafe trait FixedLenRow: Row + Sized {
-    fn as_bytes(&self) -> &[MaybeUninit<u8>] {
+    fn as_bytes(&self) -> &Bytes {
         as_bytes(self)
     }
 
-    unsafe fn from_bytes(bytes: &[MaybeUninit<u8>]) -> &Self {
+    unsafe fn from_bytes(bytes: &Bytes) -> &Self {
         let ptr = bytes.as_ptr();
         debug_assert_eq!(ptr as usize % mem::align_of::<Self>(), 0);
         debug_assert_eq!(bytes.len(), mem::size_of::<Self>());
@@ -234,6 +241,7 @@ fn insert_one_page_fixed_len(c: &mut Criterion) {
         ));
         group.bench_function(name, |b| {
             let mut pages = Pages::default();
+            // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
             insert_one_page_worth_fixed_len(&mut pages, visitor, &R::from_u64(0xa5a5a5a5_a5a5a5a5));
             let pre = |_, pages: &mut Pages| pages.clear();
             iter_time_with(b, &mut pages, pre, |_, _, pages| {

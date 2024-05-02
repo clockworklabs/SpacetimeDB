@@ -5,13 +5,16 @@ use super::util::range_move;
 use crate::static_assert_size;
 use ahash::RandomState;
 use core::fmt;
-use core::mem::MaybeUninit;
 use core::ops::{AddAssign, Div, Mul, Range, SubAssign};
 use derive_more::{Add, Sub};
 use spacetimedb_data_structures::map::ValidAsIdentityHash;
 
-/// A byte is a possibly uninit `u8`.
-pub type Byte = MaybeUninit<u8>;
+/// A byte is a `u8`.
+///
+/// Previous implementations used `MaybeUninit<u8>` here,
+/// but it became necessary to serialize pages to enable snapshotting,
+/// so we require that all bytes in a page be valid `u8`s, never uninit.
+pub type Byte = u8;
 
 /// A slice of [`Byte`]s.
 pub type Bytes = [Byte];

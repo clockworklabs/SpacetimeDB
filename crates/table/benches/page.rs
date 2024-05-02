@@ -1,5 +1,5 @@
 use core::hash::BuildHasher;
-use core::mem::{self, MaybeUninit};
+use core::mem;
 use core::time::Duration;
 use criterion::measurement::{Measurement, WallTime};
 use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId, Criterion, Throughput};
@@ -12,12 +12,11 @@ use spacetimedb_table::bflatn_from::serialize_row_from_page;
 use spacetimedb_table::bflatn_to::write_row_to_page;
 use spacetimedb_table::blob_store::NullBlobStore;
 use spacetimedb_table::eq::eq_row_in_page;
-use spacetimedb_table::indexes::{PageOffset, RowHash};
+use spacetimedb_table::indexes::{Byte, Bytes, PageOffset, RowHash};
 use spacetimedb_table::layout::{row_size_for_type, RowTypeLayout};
 use spacetimedb_table::page::Page;
 use spacetimedb_table::row_hash::hash_row_in_page;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
-use spacetimedb_table::util;
 use spacetimedb_table::var_len::{AlignedVarLenOffsets, NullVarLenVisitor, VarLenGranule, VarLenMembers, VarLenRef};
 
 fn time<R>(acc: &mut Duration, body: impl FnOnce() -> R) -> R {
@@ -51,8 +50,11 @@ fn clear_zero(page: &mut Page) {
     unsafe { page.zero_data() };
 }
 
-fn as_bytes<T>(t: &T) -> &[MaybeUninit<u8>] {
-    let ptr = (t as *const T).cast::<MaybeUninit<u8>>();
+// Strictly this would be unsafe,
+// since it causes UB when applied to types that contain padding/`poison`,
+// but it's a benchmark so who cares.
+fn as_bytes<T>(t: &T) -> &Bytes {
+    let ptr = (t as *const T).cast::<Byte>();
     unsafe { std::slice::from_raw_parts(ptr, mem::size_of::<T>()) }
 }
 
@@ -66,12 +68,15 @@ unsafe trait Row {
 }
 
 #[allow(clippy::missing_safety_doc)] // It's a benchmark, clippy. Who cares.
+/// Apply only to types which:
+/// - Contain no padding bytes.
+/// - Contain no members which are stored BFLATN as var-len.
 unsafe trait FixedLenRow: Row + Sized {
-    fn as_bytes(&self) -> &[MaybeUninit<u8>] {
+    fn as_bytes(&self) -> &Bytes {
         as_bytes(self)
     }
 
-    unsafe fn from_bytes(bytes: &[MaybeUninit<u8>]) -> &Self {
+    unsafe fn from_bytes(bytes: &Bytes) -> &Self {
         let ptr = bytes.as_ptr();
         debug_assert_eq!(ptr as usize % mem::align_of::<Self>(), 0);
         debug_assert_eq!(bytes.len(), mem::size_of::<Self>());
@@ -241,6 +246,7 @@ fn insert_var_len_clean_page(c: &mut Criterion, visitor: &impl VarLenMembers, vi
             |b, &len_in_bytes| {
                 let mut page = Page::new(row_size_for_type::<VarLenRef>());
                 unsafe { page.zero_data() };
+                // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
                 let data = [0xa5u8].repeat(len_in_bytes);
                 iter_time_with_page(b, &mut page, clear_zero, |_, _, page| {
                     fill_with_var_len(page, &data, visitor)
@@ -263,6 +269,7 @@ fn insert_var_len_dirty_page(c: &mut Criterion, visitor: &impl VarLenMembers, vi
             &len_in_bytes,
             |b, &len_in_bytes| {
                 let mut page = Page::new(row_size_for_type::<VarLenRef>());
+                // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
                 let data = [0xa5u8].repeat(len_in_bytes);
                 fill_with_var_len(&mut page, &data, visitor);
 
@@ -294,11 +301,13 @@ fn insert_opt_str(c: &mut Criterion) {
     assert!(fixed_row_size.len() == 6);
     let mut clean_page_group = c.benchmark_group("insert_optional_str/clean_page");
 
-    let mut variant_none = util::uninit_array::<u8, 6>();
-    variant_none[4].write(1);
+    // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
+    let mut variant_none = [0xa5u8; 6];
+    variant_none[0] = 1;
 
-    let mut variant_some = util::uninit_array::<u8, 6>();
-    variant_some[4].write(0);
+    // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
+    let mut variant_some = [0xa5u8; 6];
+    variant_some[0] = 0;
 
     for some_ratio in [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0] {
         for &data_length_in_bytes in if some_ratio == 0.0 { &[0][..] } else { &VL_SIZES } {
@@ -311,6 +320,7 @@ fn insert_opt_str(c: &mut Criterion) {
 
             clean_page_group.throughput(Throughput::Bytes((rows_per_page * avg_row_useful_size) as u64));
 
+            // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
             let var_len_data = [0xa5].repeat(data_length_in_bytes);
             clean_page_group.bench_with_input(
                 BenchmarkId::new(
@@ -391,6 +401,7 @@ fn iter_read_fixed_len<Row: FixedLenRow>(c: &mut Criterion) {
         // Construct a page which is approximately `fullness_ratio` full,
         // i.e. contains approximately `fullness_ratio * U64S_PER_PAGE` rows.
         let mut partial_page = Page::new(row_size_for_type::<Row>());
+        // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
         fill_with_fixed_len::<Row>(&mut partial_page, Row::from_u64(0xa5a5a5a5_a5a5a5a5), &visitor);
         // `delete_u64s_to_approx_fullness_ratio` uses a seeded `StdRng`,
         // so this should be consistent-ish.
@@ -414,6 +425,7 @@ fn iter_read_fixed_len<Row: FixedLenRow>(c: &mut Criterion) {
     }
 
     let mut full_page = Page::new(row_size_for_type::<Row>());
+    // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
     fill_with_fixed_len(&mut full_page, Row::from_u64(0xa5a5a5a5_a5a5a5a5), &visitor);
     group.throughput(Throughput::Bytes((full_page.num_rows() * mem::size_of::<Row>()) as u64));
     group.bench_with_input(
@@ -436,6 +448,7 @@ fn copy_filter_into_fixed_len_keep_ratio<Row: FixedLenRow>(b: &mut Bencher, keep
     let mut target_page = Page::new(row_size_for_type::<Row>());
 
     let mut src_page = Page::new(row_size_for_type::<Row>());
+    // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
     fill_with_fixed_len::<Row>(&mut src_page, Row::from_u64(0xa5a5a5a5_a5a5a5a5), &visitor);
 
     let mut rng = StdRng::seed_from_u64(0xa5a5a5a5_a5a5a5a5);
@@ -525,6 +538,7 @@ fn product_value_test_cases() -> impl Iterator<
         (
             "U32",
             [AlgebraicType::U32].into(),
+            // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
             product![0xa5a5_a5a5u32],
             Some(NullVarLenVisitor),
             Some(AlignedVarLenOffsets::from_offsets(&[])),
@@ -539,6 +553,7 @@ fn product_value_test_cases() -> impl Iterator<
         (
             "Option<U32>/Some",
             [AlgebraicType::option(AlgebraicType::U32)].into(),
+            // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
             product![AlgebraicValue::OptionSome(AlgebraicValue::U32(0xa5a5_a5a5))],
             Some(NullVarLenVisitor),
             Some(AlignedVarLenOffsets::from_offsets(&[])),
