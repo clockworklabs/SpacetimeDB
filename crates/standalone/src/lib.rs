@@ -28,21 +28,21 @@ use spacetimedb::host::{HostController, Scheduler, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, IdentityEmail, Node};
 use spacetimedb::module_host_context::ModuleHostContext;
-use spacetimedb::object_db::ObjectDb;
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::stdb_path;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_client_api_messages::recovery::RecoveryCode;
+use spacetimedb_lib::hash_bytes;
 use std::fs::File;
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 pub struct StandaloneEnv {
     control_db: ControlDb,
     db_inst_ctx_controller: DatabaseInstanceContextController,
-    object_db: ObjectDb,
     host_controller: Arc<HostController>,
     client_actor_index: ClientActorIndex,
     public_key: DecodingKey,
@@ -50,7 +50,11 @@ pub struct StandaloneEnv {
     public_key_bytes: Box<[u8]>,
     metrics_registry: prometheus::Registry,
 
-    /// The following config applies to the whole environment minus the control_db and object_db.
+    /// The path to the directory we store modules in. We don't actually mutate the path;
+    /// the mutex is moreso around the directory.
+    program_bytes_path: Mutex<PathBuf>,
+
+    /// The following config applies to the whole environment minus the control_db.
     config: Config,
 }
 
@@ -58,7 +62,6 @@ impl StandaloneEnv {
     pub async fn init(config: Config) -> anyhow::Result<Arc<Self>> {
         let control_db = ControlDb::new()?;
         let energy_monitor = Arc::new(StandaloneEnergyMonitor::new(control_db.clone()));
-        let object_db = ObjectDb::init()?;
         let db_inst_ctx_controller = DatabaseInstanceContextController::new(energy_monitor.clone());
         let host_controller = Arc::new(HostController::new(energy_monitor.clone()));
         let client_actor_index = ClientActorIndex::new();
@@ -68,16 +71,19 @@ impl StandaloneEnv {
         metrics_registry.register(Box::new(&*WORKER_METRICS)).unwrap();
         metrics_registry.register(Box::new(&*DB_METRICS)).unwrap();
 
+        let program_bytes_path = stdb_path("control_node/program_bytes");
+        tokio::fs::create_dir_all(&program_bytes_path).await?;
+
         Ok(Arc::new(Self {
             control_db,
             db_inst_ctx_controller,
-            object_db,
             host_controller,
             client_actor_index,
             public_key,
             private_key,
             public_key_bytes,
             metrics_registry,
+            program_bytes_path: Mutex::new(program_bytes_path),
             config,
         }))
     }
@@ -289,7 +295,15 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         spec: spacetimedb_client_api::DatabaseDef,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
         let existing_db = self.control_db.get_database_by_address(&spec.address)?;
-        let program_bytes_address = self.object_db.insert_object(spec.program_bytes)?;
+        let program_bytes_address = hash_bytes(&spec.program_bytes);
+        {
+            let program_bytes_path = self.program_bytes_path.lock().await;
+            tokio::fs::write(
+                program_bytes_path.join(&*program_bytes_address.to_hex()),
+                &spec.program_bytes,
+            )
+            .await?
+        }
         let mut database = match existing_db.as_ref() {
             Some(existing) => Database {
                 address: spec.address,
@@ -636,11 +650,18 @@ impl StandaloneEnv {
         instance_id: u64,
     ) -> anyhow::Result<ModuleHostContext> {
         let host_type = database.host_type;
-        let program_bytes = self
-            .object_db
-            .get_object(&database.program_bytes_address)
-            .context("failed to load module program")?
-            .ok_or_else(|| anyhow!("missing object: {}", database.program_bytes_address.to_hex()))?;
+
+        let result = {
+            let program_bytes_path = self.program_bytes_path.lock().await;
+            tokio::fs::read(program_bytes_path.join(&*database.program_bytes_address.to_hex())).await
+        };
+        let program_bytes = match result {
+            Ok(x) => x,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                anyhow::bail!("missing object: {}", database.program_bytes_address)
+            }
+            Err(e) => return Err(e).context("failed to load module program"),
+        };
 
         let root_db_path = stdb_path("worker_node/database_instances");
 
