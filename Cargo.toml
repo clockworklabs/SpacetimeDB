@@ -109,7 +109,7 @@ axum-extra = { version = "0.9", features = ["typed-header"] }
 backtrace = "0.3.66"
 base64 = "0.21.2"
 bitflags = "2.3.3"
-blake3 = "1.5"
+blake3 = "1.5.1"
 brotli = "3.5"
 byte-unit = "4.0.18"
 bytes = "1.2.1"
