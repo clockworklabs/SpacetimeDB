@@ -109,7 +109,6 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_>, ty: &AlgebraicTypeLayout, rhs: &Algebrai
     match (ty, rhs) {
         (AlgebraicTypeLayout::Sum(ty), AlgebraicValue::Sum(rhs)) => {
             // Read the tag of the sum value of `lhs`.
-            // SAFETY: `ctx.lhs.bytes[curr_offset..]` hold a sum value at `ty`.
             let (tag_lhs, data_ty) = read_tag(ctx.lhs.bytes, ty, ctx.curr_offset);
 
             // The tags must match!

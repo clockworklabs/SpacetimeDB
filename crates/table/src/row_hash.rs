@@ -98,8 +98,7 @@ unsafe fn hash_value(
     match ty {
         AlgebraicTypeLayout::Sum(ty) => {
             // Read and hash the tag of the sum value.
-            // SAFETY: `bytes[curr_offset..]` hold a sum value at `ty`.
-            let (tag, data_ty) = unsafe { read_tag(bytes, ty, *curr_offset) };
+            let (tag, data_ty) = read_tag(bytes, ty, *curr_offset);
             tag.hash(hasher);
 
             // Hash the variant data value.
