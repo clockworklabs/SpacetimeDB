@@ -5,9 +5,9 @@ use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, ProtocolDatabaseUpdate};
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
+use arrayvec::ArrayVec;
 use itertools::Either;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use smallvec::SmallVec;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
 use spacetimedb_data_structures::map::{Entry, HashMap, HashSet, IntMap};
 use spacetimedb_lib::{Address, Identity};
@@ -128,11 +128,11 @@ impl SubscriptionManager {
             // Collect the delta tables for each query.
             // For selects this is just a single table.
             // For joins it's two tables.
-            let mut units: HashMap<_, SmallVec<[_; 2]>> = HashMap::new();
+            let mut units: HashMap<_, ArrayVec<_, 2>> = HashMap::new();
             for table @ DatabaseTableUpdate { table_id, .. } in tables {
                 if let Some(hashes) = self.tables.get(table_id) {
                     for hash in hashes {
-                        units.entry(hash).or_insert_with(SmallVec::new).push(table);
+                        units.entry(hash).or_insert_with(ArrayVec::new).push(table);
                     }
                 }
             }
@@ -141,10 +141,10 @@ impl SubscriptionManager {
             let ctx = ExecutionContext::incremental_update(db.address(), slow);
             let tx = &tx.deref().into();
             let eval = units
-                .into_par_iter()
-                .filter_map(|(hash, tables)| self.queries.get(hash).map(|unit| (hash, tables, unit)))
-                .filter_map(|(hash, tables, unit)| {
-                    match unit.eval_incr(&ctx, db, tx, &unit.sql, tables.into_iter()) {
+                .par_iter()
+                .filter_map(|(&hash, tables)| {
+                    let unit = self.queries.get(hash)?;
+                    match unit.eval_incr(&ctx, db, tx, &unit.sql, tables.iter().copied()) {
                         Ok(None) => None,
                         Ok(Some(table)) => Some((hash, table)),
                         Err(err) => {

@@ -27,6 +27,7 @@ spacetimedb-table.workspace = true
 spacetimedb-vm.workspace = true
 
 anyhow = { workspace = true, features = ["backtrace"] }
+arrayvec.workspace = true
 async-trait.workspace = true
 backtrace.workspace = true
 base64.workspace = true
