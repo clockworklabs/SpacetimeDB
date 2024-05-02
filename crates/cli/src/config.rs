@@ -109,6 +109,48 @@ pub struct RawConfig {
 pub struct Config {
     proj: RawConfig,
     home: RawConfig,
+
+    /// Lockfile for the project config, if a file exists for the project config.
+    ///
+    /// Created before reading the project config, and closed upon dropping the config.
+    /// Allows us to mutate the config via [`Config::save`] without worrying about other processes.
+    proj_lock: Option<PathBuf>,
+
+    /// Lockfile for the system config.
+    ///
+    /// Created before reading or creating the home config, and closed upon dropping the config.
+    /// Allows us to mutate the config via [`Config::save`] without worrying about other processes.
+    home_lock: PathBuf,
+}
+
+impl Drop for Config {
+    fn drop(&mut self) {
+        // Delete lockfiles so other processes can access the config.
+        let proj_result = self.proj_lock.as_ref().map(std::fs::remove_file);
+        let home_result = std::fs::remove_file(&self.home_lock);
+
+        // Release both locks before checking for errors to avoid stale lockfiles sitting around.
+        match (proj_result, home_result) {
+            (Some(Err(proj_err)), Err(home_err)) => panic!(
+                "Encountered errors while releasing both the project configuration lock and system configuration lock.
+
+System: {home_err:#?}
+
+Project: {proj_err:#?}"
+            ),
+            (Some(Err(proj_err)), _) => panic!(
+                "Encountered error while releasing the project configuration lock.
+
+{proj_err:#?}"
+            ),
+            (_, Err(home_err)) => panic!(
+                "Encountered error while releasing the system configuration lock.
+
+{home_err:#?}"
+            ),
+            _ => (),
+        }
+    }
 }
 
 const HOME_CONFIG_DIR: &str = ".spacetime";
@@ -790,13 +832,52 @@ impl Config {
             .find(|path| path.exists())
     }
 
-    fn load_raw(config_dir: PathBuf, is_project: bool) -> RawConfig {
+    fn lockfile_path(config_path: impl AsRef<Path>) -> PathBuf {
+        let mut lockfile = config_path.as_ref().to_path_buf();
+        lockfile.set_extension("lock");
+        lockfile
+    }
+
+    fn create_lockfile_or_panic(config_path: impl AsRef<Path> + std::fmt::Debug) -> PathBuf {
+        let lockfile = Self::lockfile_path(&config_path);
+        std::fs::File::create_new(&lockfile).unwrap_or_else(|e| {
+            panic!(
+                "Unable to acquire lock on config file: {config_path:?}.
+
+Attempted to create a lockfile {lockfile:?}, but got: {e:#?}"
+            )
+        });
+        lockfile
+    }
+
+    /// Load a [`RawConfig`] from a file, creating a lockfile.
+    ///
+    /// The second value is the path of the created lockfile.
+    ///
+    /// Panics if unable to create the lockfile, e.g. because another process has already locked the config.
+    ///
+    /// If `!is_project` and the env var `SPACETIME_CONFIG_FILE` is set,
+    /// use that rather than `config_dir`.
+    ///
+    /// If `is_project` and the path does not exist, return an empty config.
+    /// Do not create a lockfile.
+    ///
+    /// If `!is_project` and the path does not exist, return a config with sensible defaults.
+    /// Do create a lockfile.
+    fn load_raw(config_dir: PathBuf, is_project: bool) -> (RawConfig, Option<PathBuf>) {
         // If a config file overload has been specified, use that instead
         if !is_project {
             if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
-                return Self::load_from_file(config_path.as_ref())
-                    .inspect_err(|e| eprintln!("SPACETIME_CONFIG_FILE does not point to a valid config file: {e:#}"))
-                    .unwrap_or_default();
+                let lockfile = Self::create_lockfile_or_panic(&config_path);
+
+                return (
+                    Self::load_from_file(config_path.as_ref())
+                        .inspect_err(|e| {
+                            eprintln!("SPACETIME_CONFIG_FILE does not point to a valid config file: {e:#}")
+                        })
+                        .unwrap_or_default(),
+                    Some(lockfile),
+                );
             }
         }
         if !config_dir.exists() {
@@ -806,18 +887,28 @@ impl Config {
         let Some(config_path) = Self::find_config_path(&config_dir) else {
             return if is_project {
                 // Return an empty config without creating a file.
-                RawConfig::default()
+                // As we will never write the project path to disk,
+                // no need to create a lockfile.
+                (RawConfig::default(), None)
             } else {
+                // Lock the config file, even though it doesn't exist yet,
+                // to prevent another process from racing to create the default.
+                let lockfile = Self::create_lockfile_or_panic(config_dir.join(CONFIG_FILENAME));
                 // Return a default config with http://127.0.0.1:3000 as the default server.
                 // Do not (yet) create a file.
                 // The config file will be created later by `Config::save` if necessary.
-                RawConfig::new_with_localhost()
+                (RawConfig::new_with_localhost(), Some(lockfile))
             };
         };
 
-        Self::load_from_file(&config_path)
-            .inspect_err(|e| eprintln!("config file is invalid: {e:#}"))
-            .unwrap_or_default()
+        let lockfile = Self::create_lockfile_or_panic(&config_path);
+
+        (
+            Self::load_from_file(&config_path)
+                .inspect_err(|e| eprintln!("config file is invalid: {e:#}"))
+                .unwrap_or_default(),
+            Some(lockfile),
+        )
     }
 
     fn load_from_file(config_path: &Path) -> anyhow::Result<RawConfig> {
@@ -827,25 +918,34 @@ impl Config {
 
     pub fn load() -> Self {
         let home_dir = dirs::home_dir().unwrap();
-        let home_config = Self::load_raw(home_dir.join(HOME_CONFIG_DIR), false);
+        let (home_config, home_lock) = Self::load_raw(home_dir.join(HOME_CONFIG_DIR), false);
 
         // TODO(cloutiertyler): For now we're checking for a spacetime.toml file
         // in the current directory. Eventually this should really be that we
         // search parent directories above the current directory to find
         // spacetime.toml files like a .gitignore file
         let cur_dir = std::env::current_dir().expect("No current working directory!");
-        let cur_config = Self::load_raw(cur_dir, true);
+        let (cur_config, cur_lock) = Self::load_raw(cur_dir, true);
 
         Self {
             home: home_config,
             proj: cur_config,
+
+            home_lock: home_lock.unwrap(),
+            proj_lock: cur_lock,
         }
     }
 
+    #[doc(hidden)]
+    /// Used in tests, bound to a `static` so its `Drop` is never called.
     pub fn new_with_localhost() -> Self {
         Self {
             home: RawConfig::new_with_localhost(),
             proj: RawConfig::default(),
+
+            // Any arbitrary value will work for the `home_lock`, as the tests never drop their config.
+            home_lock: PathBuf::default(),
+            proj_lock: None,
         }
     }
 
