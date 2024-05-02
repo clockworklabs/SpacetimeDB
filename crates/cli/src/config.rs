@@ -120,18 +120,21 @@ pub struct Config {
     ///
     /// Created before reading or creating the home config, and closed upon dropping the config.
     /// Allows us to mutate the config via [`Config::save`] without worrying about other processes.
-    home_lock: PathBuf,
+    ///
+    /// None only in tests, which are allowed to concurrently mutate configurations as much as they want,
+    /// since they use a hardcoded configuration rather than loading from a file.
+    home_lock: Option<PathBuf>,
 }
 
 impl Drop for Config {
     fn drop(&mut self) {
         // Delete lockfiles so other processes can access the config.
         let proj_result = self.proj_lock.as_ref().map(std::fs::remove_file);
-        let home_result = std::fs::remove_file(&self.home_lock);
+        let home_result = self.home_lock.as_ref().map(std::fs::remove_file);
 
         // Release both locks before checking for errors to avoid stale lockfiles sitting around.
         match (proj_result, home_result) {
-            (Some(Err(proj_err)), Err(home_err)) => panic!(
+            (Some(Err(proj_err)), Some(Err(home_err))) => panic!(
                 "Encountered errors while releasing both the project configuration lock and system configuration lock.
 
 System: {home_err:#?}
@@ -143,7 +146,7 @@ Project: {proj_err:#?}"
 
 {proj_err:#?}"
             ),
-            (_, Err(home_err)) => panic!(
+            (_, Some(Err(home_err))) => panic!(
                 "Encountered error while releasing the system configuration lock.
 
 {home_err:#?}"
@@ -931,25 +934,31 @@ Attempted to create a lockfile {lockfile:?}, but got: {e:#?}"
             home: home_config,
             proj: cur_config,
 
-            home_lock: home_lock.unwrap(),
+            home_lock,
             proj_lock: cur_lock,
         }
     }
 
     #[doc(hidden)]
-    /// Used in tests, bound to a `static` so its `Drop` is never called.
+    /// Used in tests; not backed by a file.
     pub fn new_with_localhost() -> Self {
         Self {
             home: RawConfig::new_with_localhost(),
             proj: RawConfig::default(),
 
-            // Any arbitrary value will work for the `home_lock`, as the tests never drop their config.
-            home_lock: PathBuf::default(),
+            home_lock: None,
             proj_lock: None,
         }
     }
 
     pub fn save(&self) {
+        if self.home_lock.is_none() {
+            // We don't hold a lockfile,
+            // likely because we were created by `Self::new_with_localhost` for a test,
+            // so don't write to disk.
+            return;
+        }
+
         let config_var = std::env::var_os("SPACETIME_CONFIG_FILE");
         let config_var_exists = config_var.is_some();
         let config_path = if let Some(config_path) = config_var {
