@@ -7,7 +7,7 @@ use std::fmt;
 /// rather than unnecessary indirections and tags of `AlgebraicValue`.
 /// We can do this as we know statically that the type of each element is the same
 /// as arrays are homogenous dynamically sized product types.
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum ArrayValue {
     /// An array of [`SumValue`](crate::SumValue)s.
     Sum(Box<[SumValue]>),

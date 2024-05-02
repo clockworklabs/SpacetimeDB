@@ -1,11 +1,8 @@
 namespace SpacetimeDB;
 
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
-using static System.Text.Encoding;
 
 public static partial class RawBindings
 {
@@ -14,9 +11,9 @@ public static partial class RawBindings
     // `LibraryImport` directly.
     const string StdbNamespace =
 #if EXPERIMENTAL_WASM_AOT
-    "spacetime_7.0"
+        "spacetime_7.0"
 #else
-    "bindings"
+        "bindings"
 #endif
     ;
 

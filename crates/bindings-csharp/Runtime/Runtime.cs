@@ -26,7 +26,7 @@ public static class Runtime
     private class BufferIter : IEnumerator<byte[]>, IDisposable
     {
         private RawBindings.BufferIter handle;
-        public byte[] Current { get; private set; } = new byte[0];
+        public byte[] Current { get; private set; } = [];
 
         object IEnumerator.Current => Current;
 
@@ -82,16 +82,11 @@ public static class Runtime
         }
     }
 
-    public class RawTableIter : IEnumerable<byte[]>
+    public class RawTableIter(RawBindings.TableId tableId, byte[]? filterBytes = null)
+        : IEnumerable<byte[]>
     {
-        private readonly RawBindings.TableId tableId;
-        private readonly byte[]? filterBytes;
-
-        public RawTableIter(RawBindings.TableId tableId, byte[]? filterBytes = null)
-        {
-            this.tableId = tableId;
-            this.filterBytes = filterBytes;
-        }
+        private readonly RawBindings.TableId tableId = tableId;
+        private readonly byte[]? filterBytes = filterBytes;
 
         public IEnumerator<byte[]> GetEnumerator()
         {
@@ -138,11 +133,9 @@ public static class Runtime
         );
     }
 
-    public struct Identity : IEquatable<Identity>
+    public struct Identity(byte[] bytes) : IEquatable<Identity>
     {
-        private readonly byte[] bytes;
-
-        public Identity(byte[] bytes) => this.bytes = bytes;
+        private readonly byte[] bytes = bytes;
 
         public bool Equals(Identity other) =>
             StructuralComparisons.StructuralEqualityComparer.Equals(bytes, other.bytes);
@@ -173,12 +166,9 @@ public static class Runtime
         public static SpacetimeDB.SATS.TypeInfo<Identity> GetSatsTypeInfo() => satsTypeInfo;
     }
 
-    public struct Address : IEquatable<Address>
+    public struct Address(byte[] bytes) : IEquatable<Address>
     {
-        private readonly byte[] bytes;
-
-        public Address(byte[] bytes) => this.bytes = bytes;
-
+        private readonly byte[] bytes = bytes;
         public static readonly Address Zero = new(new byte[16]);
 
         public bool Equals(Address other) =>

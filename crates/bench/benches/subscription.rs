@@ -3,7 +3,7 @@ use spacetimedb::client::Protocol;
 use spacetimedb::db::relational_db::RelationalDB;
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
-use spacetimedb::host::module_host::{DatabaseTableUpdate, DatabaseUpdate};
+use spacetimedb::host::module_host::DatabaseTableUpdate;
 use spacetimedb::subscription::query::compile_read_only_query;
 use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb::util::slow::SlowQueryConfig;
@@ -95,8 +95,9 @@ fn eval(c: &mut Criterion) {
         let footprint = AlgebraicValue::sum(1, AlgebraicValue::unit());
         let owner = 6u64;
 
-        let new_lhs_row = product!(entity_id, footprint, owner);
-        let new_rhs_row = product!(entity_id, chunk_index, x, z, dimension);
+    let ins_lhs = insert_op(lhs, "footprint", new_lhs_row);
+    let ins_rhs = insert_op(rhs, "location", new_rhs_row);
+    let update = [&ins_lhs, &ins_rhs];
 
         let update = DatabaseUpdate {
             tables: vec![

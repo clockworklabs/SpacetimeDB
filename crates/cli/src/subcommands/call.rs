@@ -198,10 +198,10 @@ fn reducer_signature(schema_json: Value, reducer_name: &str) -> Option<String> {
     fn ctx(typespace: &Typespace, r: AlgebraicTypeRef) -> String {
         let ty = &typespace[r];
         let mut ty_str = String::new();
-        write_type(&|r| ctx(typespace, r), &mut ty_str, ty);
+        write_type(&|r| ctx(typespace, r), &mut ty_str, ty).unwrap();
         ty_str
     }
-    write_arglist_no_delimiters(&|r| ctx(&typespace, r), &mut args, &params, None);
+    write_arglist_no_delimiters(&|r| ctx(&typespace, r), &mut args, &params, None).unwrap();
     let args = args.trim().trim_end_matches(',').replace('\n', " ");
 
     // Print the full signature to `reducer_fmt`.

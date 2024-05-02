@@ -5,9 +5,9 @@ use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, ProtocolDatabaseUpdate};
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
-use itertools::{Either, Itertools as _};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use smallvec::SmallVec;
+use arrayvec::ArrayVec;
+use itertools::Either;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
 use spacetimedb_data_structures::map::{Entry, HashMap, HashSet, IntMap};
 use spacetimedb_lib::{Address, Identity};
@@ -128,11 +128,11 @@ impl SubscriptionManager {
             // Collect the delta tables for each query.
             // For selects this is just a single table.
             // For joins it's two tables.
-            let mut units: HashMap<_, SmallVec<[_; 2]>> = HashMap::new();
+            let mut units: HashMap<_, ArrayVec<_, 2>> = HashMap::new();
             for table @ DatabaseTableUpdate { table_id, .. } in tables {
                 if let Some(hashes) = self.tables.get(table_id) {
                     for hash in hashes {
-                        units.entry(hash).or_insert_with(SmallVec::new).push(table);
+                        units.entry(hash).or_insert_with(ArrayVec::new).push(table);
                     }
                 }
             }
@@ -144,10 +144,10 @@ impl SubscriptionManager {
                 .into_iter()
                 .zip(&all_ctx)
                 .collect::<Vec<_>>()
-                .into_par_iter()
-                .filter_map(|((hash, tables), ctx)| {
-                    let unit = self.queries.get(hash)?;
-                    match unit.eval_incr(ctx, db, tx, &unit.sql, tables.into_iter()) {
+                .par_iter()
+                .filter_map(|((&hash, tables), ctx)| {
+                    let unit = self.queries.get(&hash)?;
+                    match unit.eval_incr(ctx, db, tx, &unit.sql, tables.iter().copied()) {
                         Ok(None) => None,
                         Ok(Some(table)) => Some((hash, table)),
                         Err(err) => {
@@ -171,18 +171,14 @@ impl SubscriptionManager {
                     // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
                     let mut ops_bin: Option<Vec<TableRowOperation>> = None;
                     let mut ops_json: Option<Vec<TableRowOperationJson>> = None;
-                    self.subscribers.get(hash).into_iter().flatten().map(move |id| {
+                    self.subscribers.get(&hash).into_iter().flatten().map(move |id| {
                         let ops = match self.clients[id].protocol {
-                            Protocol::Binary => Either::Left(
-                                ops_bin
-                                    .get_or_insert_with(|| delta.updates.iter().map_into().collect())
-                                    .clone(),
-                            ),
-                            Protocol::Text => Either::Right(
-                                ops_json
-                                    .get_or_insert_with(|| delta.updates.iter().map_into().collect())
-                                    .clone(),
-                            ),
+                            Protocol::Binary => {
+                                Either::Left(ops_bin.get_or_insert_with(|| (&delta.updates).into()).clone())
+                            }
+                            Protocol::Text => {
+                                Either::Right(ops_json.get_or_insert_with(|| (&delta.updates).into()).clone())
+                            }
                         };
                         (id, table_id, table_name.clone(), ops)
                     })

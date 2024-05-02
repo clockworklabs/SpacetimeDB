@@ -26,8 +26,9 @@ use crate::{
         AlgebraicTypeLayout, HasLayout, PrimitiveType, ProductTypeElementLayout, ProductTypeLayout, RowTypeLayout,
         SumTypeLayout, SumTypeVariantLayout,
     },
-    util::{range_move, slice_assume_init_ref},
+    util::range_move,
 };
+use spacetimedb_sats::algebraic_value::ser::slice_assume_init_ref;
 
 /// A precomputed BSATN layout for a type whose encoded length is a known constant,
 /// enabling fast BFLATN -> BSATN conversion.
@@ -274,9 +275,9 @@ impl LayoutBuilder {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{blob_store::HashMapBlobStore, proptest_sats::generate_typed_row};
+    use crate::blob_store::HashMapBlobStore;
     use proptest::prelude::*;
-    use spacetimedb_sats::{bsatn, AlgebraicType, ProductType};
+    use spacetimedb_sats::{bsatn, proptest::generate_typed_row, AlgebraicType, ProductType};
 
     fn assert_expected_layout(ty: ProductType, bsatn_length: u16, fields: &[(u16, u16, u16)]) {
         let expected_layout = StaticBsatnLayout {
@@ -482,13 +483,13 @@ mod test {
                 return Err(TestCaseError::reject("Var-length type"));
             };
 
-            let (_, ptr) = table.insert(&mut blob_store, &val).unwrap();
+            let size = table.row_layout().size();
+            let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
 
-            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
             let slow_path = bsatn::to_vec(&row_ref).unwrap();
 
             let (page, offset) = row_ref.page_and_offset();
-            let bytes = page.get_row_data(offset, table.row_layout().size());
+            let bytes = page.get_row_data(offset, size);
 
             let mut fast_path = vec![0u8; bsatn_layout.bsatn_length as usize];
             unsafe {

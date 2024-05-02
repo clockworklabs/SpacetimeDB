@@ -23,7 +23,7 @@ harness = false
 
 [features]
 # Allows using `Arbitrary` impls defined in this crate.
-proptest = ["dep:proptest", "dep:proptest-derive"]
+proptest = ["dep:proptest", "dep:proptest-derive", "spacetimedb-sats/proptest"]
 
 # Needed for miri
 blake3_pure = ["blake3/pure"]
@@ -34,7 +34,6 @@ spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 
 ahash.workspace = true
-bit-vec.workspace = true
 blake3.workspace = true
 decorum.workspace = true
 derive_more.workspace = true
@@ -48,6 +47,7 @@ proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
 
 [dev-dependencies]
+spacetimedb-sats = { workspace = true, features = ["proptest"] }
 criterion.workspace = true
 proptest.workspace = true
 proptest-derive.workspace = true

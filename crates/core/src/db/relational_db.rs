@@ -158,14 +158,41 @@ impl RelationalDB {
     where
         T: durability::History<TxData = Txdata>,
     {
-        log::debug!("[{}] DATABASE: applying transaction history...", self.address);
-        // TODO: Output progress
+        log::info!("[{}] DATABASE: applying transaction history...", self.address);
+
+        // TODO: Revisit once we actually replay history suffixes, ie. starting
+        // from an offset larger than the history's min offset.
+        // TODO: We may want to require that a `tokio::runtime::Handle` is
+        // always supplied when constructing a `RelationalDB`. This would allow
+        // to spawn a timer task here which just prints the progress periodically
+        // in case the history is finite but very long.
+        let max_tx_offset = history.max_tx_offset();
+        let mut last_logged_percentage = 0;
+        let progress = |tx_offset: u64| {
+            if let Some(max_tx_offset) = max_tx_offset {
+                let percentage = f64::floor((tx_offset as f64 / max_tx_offset as f64) * 100.0) as i32;
+                if percentage > last_logged_percentage && percentage % 10 == 0 {
+                    log::info!(
+                        "[{}] Loaded {}% ({}/{})",
+                        self.address,
+                        percentage,
+                        tx_offset,
+                        max_tx_offset
+                    );
+                    last_logged_percentage = percentage;
+                }
+            // Print _something_ even if we don't know what's still ahead.
+            } else if tx_offset % 10_000 == 0 {
+                log::info!("[{}] Loading transaction {}", self.address, tx_offset);
+            }
+        };
+
         history
-            .fold_transactions_from(0, self.inner.replay())
+            .fold_transactions_from(0, self.inner.replay(progress))
             .map_err(anyhow::Error::from)?;
-        log::debug!("[{}] DATABASE: applied transaction history", self.address);
+        log::info!("[{}] DATABASE: applied transaction history", self.address);
         self.inner.rebuild_state_after_replay()?;
-        log::debug!("[{}] DATABASE: rebuilt state after replay", self.address);
+        log::info!("[{}] DATABASE: rebuilt state after replay", self.address);
 
         Ok(self)
     }
@@ -521,10 +548,6 @@ impl RelationalDB {
     }
 
     pub fn drop_table(&self, ctx: &ExecutionContext, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
-        let _guard = DB_METRICS
-            .rdb_drop_table_time
-            .with_label_values(&table_id.0)
-            .start_timer();
         let table_name = self
             .table_name_from_id_mut(ctx, tx, table_id)?
             .map(|name| name.to_string())
@@ -782,21 +805,19 @@ impl RelationalDB {
     }
 
     /// Set a runtime configurations setting of the database
-    pub fn set_config(&self, key: &str, value: AlgebraicValue) -> Result<(), ErrorVm> {
+    pub(crate) fn set_config(&self, key: &str, value: AlgebraicValue) -> Result<(), ErrorVm> {
         self.config.write().set_config(key, value)
     }
     /// Read the runtime configurations settings of the database
-    pub fn read_config(&self) -> DatabaseConfig {
+    pub(crate) fn read_config(&self) -> DatabaseConfig {
         *self.config.read()
     }
 }
 
 #[cfg(any(test, feature = "test"))]
 pub mod tests_utils {
-    use std::fs::create_dir_all;
-    use std::ops::Deref;
-
     use super::*;
+    use core::ops::Deref;
     use tempfile::TempDir;
 
     /// A [`RelationalDB`] in a temporary directory.
@@ -1325,7 +1346,6 @@ mod tests {
 
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
-        dbg!("reopen...");
         let stdb = stdb.reopen()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);

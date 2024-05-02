@@ -1,12 +1,13 @@
 use crate::util::slow::SlowQueryConfig;
-use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType};
-use spacetimedb_vm::dsl::mem_table;
+use spacetimedb_sats::relation::{Column, FieldName, Header};
+use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue};
 use spacetimedb_vm::errors::{ConfigError, ErrorVm};
 use spacetimedb_vm::relation::MemTable;
 use std::env::temp_dir;
 use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -207,12 +208,12 @@ pub struct DatabaseConfig {
 
 impl DatabaseConfig {
     /// Creates a new `DatabaseConfig` with the specified slow query settings.
-    pub fn with_slow_query(slow_query: SlowQueryConfig) -> Self {
+    pub(crate) fn with_slow_query(slow_query: SlowQueryConfig) -> Self {
         Self { slow_query }
     }
 
     /// Reads a configuration setting specified by parsing `key`.
-    pub fn read(&self, key: &str) -> Result<Option<Duration>, ConfigError> {
+    fn read(&self, key: &str) -> Result<Option<Duration>, ConfigError> {
         let key = ReadConfigOption::from_str(key)?;
 
         Ok(match key {
@@ -225,35 +226,26 @@ impl DatabaseConfig {
     /// Reads a configuration setting specified by parsing `key` and converts it into a `MemTable`.
     ///
     /// For returning as `table` for `SQL` queries.
-    pub fn read_key_into_table(&self, key: &str) -> Result<MemTable, ConfigError> {
-        let value = if let Some(value) = self.read(key)? {
-            value.as_millis()
-        } else {
-            0u128
-        };
+    pub(crate) fn read_key_into_table(&self, key: &str) -> Result<MemTable, ConfigError> {
+        let value: AlgebraicValue = self.read(key)?.map(|v| v.as_millis()).into();
 
-        let value: AlgebraicValue = if value == 0 {
-            AlgebraicValue::OptionNone()
-        } else {
-            AlgebraicValue::OptionSome(value.into())
-        };
+        let table_id = u32::MAX.into();
+        let col = Column::new(
+            FieldName::new(table_id, 0.into()),
+            AlgebraicType::option(AlgebraicType::U128),
+        );
+        let head = Header::new(table_id, "mem#read_key_into_table".into(), [col].into(), Vec::new());
 
-        let head = ProductType::from([(key, value.type_of())]);
-
-        Ok(mem_table(head, vec![product!(value)]))
+        Ok(MemTable::from_iter(Arc::new(head), [product![value]]))
     }
 
     /// Writes the configuration setting specified by parsing `key` and `value`.
-    pub fn set_config(&mut self, key: &str, value: AlgebraicValue) -> Result<(), ErrorVm> {
+    pub(crate) fn set_config(&mut self, key: &str, value: AlgebraicValue) -> Result<(), ErrorVm> {
         let config = ReadConfigOption::from_str(key)?;
-        let millis = if let Some(value) = value.as_u64() {
-            if *value == 0 {
-                None
-            } else {
-                Some(Duration::from_millis(*value))
-            }
-        } else {
-            return Err(ConfigError::TypeError(key.into(), value, AlgebraicType::U64).into());
+        let millis = match value.as_u64() {
+            Some(0) => None,
+            Some(value) => Some(Duration::from_millis(*value)),
+            None => return Err(ConfigError::TypeError(key.into(), value, AlgebraicType::U64).into()),
         };
 
         match config {

@@ -103,3 +103,15 @@ pub fn init() {
         with self.assertRaises(Exception):
             self.spacetime("sql", self.address, "select * from _Secret")
 
+
+class LifecycleReducers(Smoketest):
+    def test_lifecycle_reducers_cant_be_called(self):
+        """Ensure that reducers like __init__ can't be called"""
+
+        with self.assertRaises(Exception):
+            self.call("__init__")
+        with self.assertRaises(Exception):
+            self.call("__identity_connected__")
+        with self.assertRaises(Exception):
+            self.call("__identity_disconnected__")
+

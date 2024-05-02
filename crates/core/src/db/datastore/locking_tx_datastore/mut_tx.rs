@@ -780,11 +780,12 @@ impl MutTxId {
             .ok_or(TableError::IdNotFoundState(table_id))?;
 
         match tx_table.insert(tx_blob_store, row) {
-            Ok((hash, ptr)) => {
+            Ok((hash, row_ref)) => {
                 // `row` not previously present in insert tables,
                 // but may still be a set-semantic conflict with a row
                 // in the committed state.
 
+                let ptr = row_ref.pointer();
                 if let Some(commit_table) = commit_table {
                     // Safety:
                     // - `commit_table` and `tx_table` use the same schema
@@ -816,7 +817,7 @@ impl MutTxId {
                         // - Insert Row A
                         // This is impossible to recover if `Running 2` elides its insert.
                         tx_table
-                            .delete(tx_blob_store, ptr)
+                            .delete(tx_blob_store, ptr, |_| ())
                             .expect("Failed to delete a row we just inserted");
 
                         // It's possible that `row` appears in the committed state,
@@ -863,7 +864,7 @@ impl MutTxId {
                     .tx_state
                     .get_table_and_blob_store(table_id)
                     .ok_or_else(|| TableError::IdNotFoundState(table_id))?;
-                Ok(table.delete(blob_store, row_pointer).is_some())
+                Ok(table.delete(blob_store, row_pointer, |_| ()).is_some())
             }
             SquashedOffset::COMMITTED_STATE => {
                 // NOTE: We trust the `row_pointer` refers to an extant row,
@@ -912,9 +913,9 @@ impl MutTxId {
                 "Table::insert_internal_allow_duplicates returned error of unexpected variant: {:?}",
                 e
             ),
-            Ok(ptr) => {
-                // Safety: `ptr` must be valid, because we just inserted it and haven't deleted it since.
-                let hash = unsafe { tx_table.row_hash_for(ptr) };
+            Ok(row_ref) => {
+                let hash = row_ref.row_hash();
+                let ptr = row_ref.pointer();
 
                 // First, check if a matching row exists in the `tx_table`.
                 // If it does, no need to check the `commit_table`.

@@ -85,6 +85,8 @@ fn get_subcommands() -> Vec<Command> {
         Command::new("list").about("List saved identities which apply to a server")
             .arg(
                 Arg::new("server")
+                    .short('s')
+                    .long("server")
                     .help("The nickname, host name or URL of the server to list identities for")
                     .conflicts_with("all")
             )

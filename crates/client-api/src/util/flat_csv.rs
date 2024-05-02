@@ -22,7 +22,6 @@
 
 #![allow(clippy::all)]
 
-use std::iter::FromIterator;
 use std::marker::PhantomData;
 
 use bytes::BytesMut;

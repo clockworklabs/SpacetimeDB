@@ -8,10 +8,12 @@ use crate::{
     indexes::{PageOffset, Size},
     layout::{AlgebraicTypeLayout, PrimitiveType, ProductTypeElementLayout, VarLenType},
     table::RowRef,
-    util::slice_assume_init_ref,
 };
 use spacetimedb_sats::{
-    algebraic_value::{ser::ValueSerializer, Packed},
+    algebraic_value::{
+        ser::{slice_assume_init_ref, ValueSerializer},
+        Packed,
+    },
     AlgebraicType, AlgebraicValue, ArrayValue, MapValue, ProductType, ProductValue, SumValue,
 };
 use std::{cell::Cell, mem};
@@ -343,13 +345,12 @@ impl_read_column_via_from! {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        blob_store::HashMapBlobStore, indexes::SquashedOffset, proptest_sats::generate_typed_row, table::Table,
-    };
+    use crate::{blob_store::HashMapBlobStore, indexes::SquashedOffset, table::Table};
     use proptest::{prelude::*, prop_assert_eq, proptest, test_runner::TestCaseResult};
     use spacetimedb_sats::{
         db::def::{TableDef, TableSchema},
         product,
+        proptest::generate_typed_row,
     };
 
     fn table(ty: ProductType) -> Table {
@@ -371,9 +372,7 @@ mod test {
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty);
 
-            let (_, ptr) = table.insert(&mut blob_store, &val).unwrap();
-
-            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+            let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
 
             for (idx, orig_col_value) in val.into_iter().enumerate() {
                 let read_col_value = row_ref.read_col::<AlgebraicValue>(idx).unwrap();
@@ -389,9 +388,7 @@ mod test {
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
 
-            let (_, ptr) = table.insert(&mut blob_store, &val).unwrap();
-
-            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+            let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
 
             for (idx, col_ty) in ty.elements.iter().enumerate() {
                 assert_wrong_type_error::<u8>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::U8)?;
@@ -419,9 +416,7 @@ mod test {
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
 
-            let (_, ptr) = table.insert(&mut blob_store, &val).unwrap();
-
-            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+            let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
 
             let oob = ty.elements.len();
 
@@ -479,8 +474,7 @@ mod test {
                 let mut table = table(ProductType::from_iter([$algebraic_type]));
 
                 let val: $rust_type = $val;
-                let (_, ptr) = table.insert(&mut blob_store, &product![val.clone()]).unwrap();
-                let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+                let (_, row_ref) = table.insert(&mut blob_store, &product![val.clone()]).unwrap();
 
                 assert_eq!(val, row_ref.read_col::<$rust_type>(0).unwrap());
             }

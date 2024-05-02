@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, Address, ModuleDef, TableDesc};
+use spacetimedb_lib::{bsatn, Address, ModuleDef, ModuleValidationError, TableDesc};
 use spacetimedb_vm::expr::CrudExpr;
 
 use super::instrumentation::CallTimes;
@@ -90,6 +90,8 @@ pub(crate) struct WasmModuleHostActor<T: WasmModule> {
 pub enum InitializationError {
     #[error(transparent)]
     Validation(#[from] ValidationError),
+    #[error(transparent)]
+    ModuleValidation(#[from] ModuleValidationError),
     #[error("setup function returned an error: {0}")]
     Setup(Box<str>),
     #[error("wasm trap while calling {func:?}")]
@@ -153,7 +155,8 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         )?;
 
         let desc = instance.extract_descriptions()?;
-        let desc = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
+        let desc: ModuleDef = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
+        desc.validate_reducers()?;
         let ModuleDef {
             mut typespace,
             mut tables,
@@ -173,7 +176,10 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             tables
                 .into_iter()
                 .map(|x| (x.schema.table_name.clone(), EntityDef::Table(x))),
-            reducers.iter().map(|x| (x.name.clone(), EntityDef::Reducer(x.clone()))),
+            reducers
+                .iter()
+                .filter(|r| !(r.name.starts_with("__") && r.name.ends_with("__")))
+                .map(|x| (x.name.clone(), EntityDef::Reducer(x.clone()))),
         )
         .collect();
         let reducers = ReducersMap(reducers.into_iter().map(|x| (x.name.clone(), x)).collect());
@@ -503,10 +509,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let stdb = &*dbic.relational_db.clone();
         let address = dbic.address;
         let reducer_name = &*self.info.reducers[reducer_id].name;
-        WORKER_METRICS
-            .reducer_count
-            .with_label_values(&address, reducer_name)
-            .inc();
 
         let _outer_span = tracing::trace_span!("call_reducer",
             reducer_name,
@@ -570,11 +572,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             );
         }
         reducer_span.exit();
-
-        WORKER_METRICS
-            .reducer_compute_time
-            .with_label_values(&address, reducer_name)
-            .observe(timings.total_duration.as_secs_f64());
 
         // Take a lock on our subscriptions now. Otherwise, we could have a race condition where we commit
         // the tx, someone adds a subscription and receives this tx as an initial update, and then receives the

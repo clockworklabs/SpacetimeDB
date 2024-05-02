@@ -82,7 +82,7 @@ pub enum Supported {
 /// evaluation is not currently supported for the expression.
 pub fn classify(expr: &QueryExpr) -> Option<Supported> {
     use expr::Query::*;
-    if expr.query.len() == 1 && matches!(expr.query[0], IndexJoin(_)) {
+    if matches!(&*expr.query, [IndexJoin(_)]) {
         return Some(Supported::Semijoin);
     }
     for op in &expr.query {
@@ -95,9 +95,6 @@ pub fn classify(expr: &QueryExpr) -> Option<Supported> {
 
 #[cfg(test)]
 mod tests {
-    use std::borrow::Cow;
-    use std::sync::Arc;
-
     use super::*;
     use crate::client::Protocol;
     use crate::db::datastore::traits::IsolationLevel;
@@ -106,7 +103,7 @@ mod tests {
     use crate::execution_context::ExecutionContext;
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate};
     use crate::sql::execute::collect_result;
-    use crate::sql::execute::run;
+    use crate::sql::execute::tests::run_for_testing;
     use crate::subscription::subscription::ExecutionSet;
     use crate::util::slow::SlowQueryConfig;
     use crate::vm::tests::create_table_with_rows;
@@ -120,11 +117,12 @@ mod tests {
     use spacetimedb_sats::db::def::*;
     use spacetimedb_sats::relation::FieldName;
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
-    use spacetimedb_vm::dsl::{mem_table, scalar};
     use spacetimedb_vm::eval::run_ast;
+    use spacetimedb_vm::eval::test_helpers::{mem_table, mem_table_without_table_name, scalar};
     use spacetimedb_vm::expr::{Expr, SourceSet};
     use spacetimedb_vm::operator::OpCmp;
-    use spacetimedb_vm::relation::MemTable;
+    use spacetimedb_vm::relation::{MemTable, RelValue};
+    use std::sync::Arc;
 
     /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
     fn run_query<const N: usize>(
@@ -178,17 +176,15 @@ mod tests {
         head: &ProductType,
         row: &ProductValue,
     ) -> ResultTest<(Arc<TableSchema>, MemTable, DatabaseTableUpdate, QueryExpr)> {
-        let table = mem_table(head.clone(), [row.clone()]);
-        let table_id = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()])?;
+        let schema = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()])?;
+        let table = mem_table(schema.table_id, schema.get_row_type().clone(), [row.clone()]);
 
         let data = DatabaseTableUpdate {
-            table_id,
+            table_id: schema.table_id,
             table_name: table_name.into(),
             deletes: [].into(),
             inserts: [row.clone()].into(),
         };
-
-        let schema = db.schema_for_table_mut(tx, table_id).unwrap();
 
         let q = QueryExpr::new(&*schema);
 
@@ -212,10 +208,7 @@ mod tests {
         let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
 
         // For filtering out the hidden field `OP_TYPE_FIELD_NAME`
-        let fields = &[
-            FieldName::named(table_name, "inventory_id").into(),
-            FieldName::named(table_name, "name").into(),
-        ];
+        let fields = &[0, 1].map(|c| FieldName::new(schema.table_id, c.into()).into());
 
         let q = q.with_project(fields, None);
 
@@ -232,11 +225,7 @@ mod tests {
 
         let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
 
-        // For filtering out the hidden field `OP_TYPE_FIELD_NAME`
-        let fields = &[
-            FieldName::named(table_name, "player_id").into(),
-            FieldName::named(table_name, "name").into(),
-        ];
+        let fields = &[0, 1].map(|c| FieldName::new(schema.table_id, c.into()).into());
 
         let q = q.with_project(fields, None);
 
@@ -274,8 +263,8 @@ mod tests {
         )?;
 
         assert_eq!(
-            Some(table.as_without_table_name()),
-            result.first().map(|x| x.as_without_table_name())
+            Some(mem_table_without_table_name(table)),
+            result.first().map(mem_table_without_table_name)
         );
 
         Ok(())
@@ -291,7 +280,8 @@ mod tests {
     ) -> ResultTest<()> {
         let ctx = &ExecutionContext::incremental_update(db.address(), SlowQueryConfig::default());
         let tx = &tx.into();
-        let result = s.eval_incr(ctx, db, tx, update)?;
+        let update = update.tables.iter().collect::<Vec<_>>();
+        let result = s.eval_incr(ctx, db, tx, &update)?;
         assert_eq!(
             result.tables.len(),
             total_tables,
@@ -301,7 +291,7 @@ mod tests {
         let result = result
             .tables
             .into_iter()
-            .flat_map(|update| update.updates.iter().map(|t| t.row).cloned().collect::<Vec<_>>())
+            .flat_map(|update| <Vec<ProductValue>>::from(&update.updates))
             .sorted()
             .collect::<Vec<_>>();
 
@@ -381,6 +371,7 @@ mod tests {
 
         let ctx = &ExecutionContext::incremental_update(db.address(), SlowQueryConfig::default());
         let tx = (&tx).into();
+        let update = update.tables.iter().collect::<Vec<_>>();
         let result = query.eval_incr(ctx, &db, &tx, &update)?;
 
         assert_eq!(result.tables.len(), 1);
@@ -392,7 +383,7 @@ mod tests {
 
         let op = &update.deletes[0];
 
-        assert_eq!(&**op, &product!(13u64, 3u64));
+        assert_eq!(op.clone().into_product_value(), product!(13u64, 3u64));
         Ok(())
     }
 
@@ -411,7 +402,7 @@ mod tests {
         let q_1 = q.clone();
         check_query(&db, &table, &tx, &q_1, &data)?;
 
-        let q_2 = q.with_select_cmp(OpCmp::Eq, FieldName::named("inventory", "inventory_id"), scalar(1u64));
+        let q_2 = q.with_select_cmp(OpCmp::Eq, FieldName::new(schema.table_id, 0.into()), scalar(1u64));
         check_query(&db, &table, &tx, &q_2, &data)?;
 
         Ok(())
@@ -433,10 +424,10 @@ mod tests {
         let tx = db.begin_tx();
         check_query(&db, &table, &tx, &q, &data)?;
 
-        //SELECT * FROM inventory WHERE inventory_id = 1
+        // SELECT * FROM inventory WHERE inventory_id = 1
         let q_id = QueryExpr::new(&*schema).with_select_cmp(
             OpCmp::Eq,
-            FieldName::named("_inventory", "inventory_id"),
+            FieldName::new(schema.table_id, 0.into()),
             scalar(1u64),
         );
 
@@ -519,7 +510,7 @@ mod tests {
 
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (1, 1181485940, 1633678837, 1158301365, 132191327);
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (2, 2017368418, 194072456, 34423057, 1296770410);";
-        run(&db, sql_insert, AuthCtx::for_testing())?;
+        run_for_testing(&db, sql_insert)?;
 
         let sql_query = "\
             SELECT EnemyState.* FROM EnemyState \
@@ -737,12 +728,13 @@ mod tests {
         let update = DatabaseUpdate { tables };
         db.with_read_only(ctx, |tx| {
             let tx = (&*tx).into();
+            let update = update.tables.iter().collect::<Vec<_>>();
             let result = query.eval_incr(ctx, db, &tx, &update)?;
             let tables = result
                 .tables
                 .into_iter()
                 .map(|update| {
-                    let convert = |cows: Vec<_>| cows.into_iter().map(Cow::into_owned).collect();
+                    let convert = |rvs: Vec<_>| rvs.into_iter().map(RelValue::into_product_value).collect();
                     DatabaseTableUpdate {
                         table_id: update.table_id,
                         table_name: update.table_name,

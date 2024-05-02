@@ -20,6 +20,7 @@
 
 use super::{
     blob_store::BlobStore,
+    fixed_bit_set::FixedBitSet,
     indexes::{Byte, Bytes, PageOffset, Size, PAGE_HEADER_SIZE, PAGE_SIZE},
     layout::MIN_ROW_SIZE,
     util::maybe_uninit_write_slice,
@@ -28,7 +29,7 @@ use super::{
         VarLenRef,
     },
 };
-use crate::static_assert_size;
+use crate::{fixed_bit_set::IterSet, static_assert_size};
 use core::{
     mem::{self, MaybeUninit},
     ops::ControlFlow,
@@ -118,7 +119,6 @@ impl FreeCellRef {
 
 /// All the fixed size header information.
 #[repr(C)] // Required for a stable ABI.
-#[derive(Debug)]
 struct FixedHeader {
     /// A pointer to the head of the freelist which stores
     /// all the unused (freed) fixed row cells.
@@ -141,17 +141,17 @@ struct FixedHeader {
     // TODO(stable-module-abi): should this be inlined into the page?
     /// For each fixed-length row slot, true if a row is stored there,
     /// false if the slot is uninit.
-    present_rows: bit_vec::BitVec,
+    present_rows: FixedBitSet,
 
     #[cfg(debug_assertions)]
     fixed_row_size: Size,
 }
 
 #[cfg(debug_assertions)]
-static_assert_size!(FixedHeader, 48);
+static_assert_size!(FixedHeader, 18);
 
 #[cfg(not(debug_assertions))]
-static_assert_size!(FixedHeader, 40);
+static_assert_size!(FixedHeader, 16);
 
 impl FixedHeader {
     /// Returns a new `FixedHeader`
@@ -163,7 +163,7 @@ impl FixedHeader {
             // Points one after the last allocated fixed-length row, or `NULL` for an empty page.
             last: PageOffset::VAR_LEN_NULL,
             num_rows: 0,
-            present_rows: bit_vec::BitVec::from_elem(PageOffset::PAGE_END.idx().div_ceil(fixed_row_size.len()), false),
+            present_rows: FixedBitSet::new(PageOffset::PAGE_END.idx().div_ceil(fixed_row_size.len())),
             #[cfg(debug_assertions)]
             fixed_row_size,
         }
@@ -198,7 +198,7 @@ impl FixedHeader {
     #[inline]
     fn is_row_present(&self, offset: PageOffset, fixed_row_size: Size) -> bool {
         self.debug_check_fixed_row_size(fixed_row_size);
-        self.present_rows.get(offset / fixed_row_size).unwrap()
+        self.present_rows.get(offset / fixed_row_size)
     }
 
     /// Resets the header information to its state
@@ -216,7 +216,6 @@ impl FixedHeader {
 
 /// All the var-len header information.
 #[repr(C)] // Required for a stable ABI.
-#[derive(Debug)]
 struct VarHeader {
     /// A pointer to the head of the freelist which stores
     /// all the unused (freed) var-len granules.
@@ -1245,11 +1244,10 @@ impl Page {
     /// this iterator are valid when used to do anything `unsafe`.
     fn iter_fixed_len_from(&self, fixed_row_size: Size, starting_from: PageOffset) -> FixedLenRowsIter<'_> {
         self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
+        let idx = starting_from / fixed_row_size;
         FixedLenRowsIter {
-            next_row: starting_from,
-            header: &self.header.fixed,
+            idx_iter: self.header.fixed.present_rows.iter_set_from(idx),
             fixed_row_size,
-            rows_traversed_so_far: 0,
         }
     }
 
@@ -1262,7 +1260,11 @@ impl Page {
     /// It is the caller's responsibility to ensure that `PageOffset`s derived from
     /// this iterator are valid when used to do anything `unsafe`.
     pub fn iter_fixed_len(&self, fixed_row_size: Size) -> FixedLenRowsIter<'_> {
-        self.iter_fixed_len_from(fixed_row_size, PageOffset::VAR_LEN_NULL)
+        self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
+        FixedLenRowsIter {
+            idx_iter: self.header.fixed.present_rows.iter_set(),
+            fixed_row_size,
+        }
     }
 
     /// Returns an iterator over all the `VarLenGranule`s of the var-len object
@@ -1604,52 +1606,18 @@ pub struct FixedLenRowsIter<'page> {
     /// The fixed header of the page,
     /// used to determine where the last fixed row is
     /// and whether the fixed row slot is actually a fixed row.
-    header: &'page FixedHeader,
-    /// Location of the next fixed row slot, not necessarily the next row.
-    next_row: PageOffset,
+    idx_iter: IterSet<'page>,
     /// The size of a row in bytes.
     fixed_row_size: Size,
-    /// Stored so we can implement `Iterator::size_hint` efficiently.
-    rows_traversed_so_far: usize,
 }
 
 impl Iterator for FixedLenRowsIter<'_> {
     type Item = PageOffset;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // TODO(perf): can we use the bitmap with count leading zeros (or similar)
-        //       to skip ahead to the next present row?
-        //       `BitVec` does not provide this interface,
-        //       so we'd have to consider alternative crates or roll our own.
-        //
-        //       If `next_row` points to a zero bit in the present? bitvec,
-        //       it should be possible to do some masks and CLZs
-        //       to determine that the next N bits in the bitvec are also zero,
-        //       and thus to skip ahead to the next present row.
-        //
-        //       First step: determine overhead.
-
-        // As long as we haven't reached the high water mark,
-        while self.next_row != self.header.last {
-            // Wish we could do `self.next_row.post_increment(1)`...
-            let this_row = self.next_row;
-            self.next_row += self.fixed_row_size;
-            // If `this_row` is present, i.e. has not been deleted,
-            // return it.
-            // Otherwise, continue the loop to search the next row.
-            if self.header.is_row_present(this_row, self.fixed_row_size) {
-                self.rows_traversed_so_far += 1;
-                return Some(this_row);
-            }
-        }
-
-        // When we reach the high water mark, there are no more rows.
-        None
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let num_remaining = self.header.num_rows as usize - self.rows_traversed_so_far;
-        (num_remaining, Some(num_remaining))
+        self.idx_iter
+            .next()
+            .map(|idx| PageOffset(idx as u16 * self.fixed_row_size.0))
     }
 }
 
@@ -1693,12 +1661,10 @@ impl<'page> Iterator for VarLenGranulesIter<'page> {
 mod tests {
     use super::*;
     use crate::{
-        blob_store::NullBlobStore,
-        layout::row_size_for_type,
-        util::{slice_assume_init_ref, uninit_array},
-        var_len::AlignedVarLenOffsets,
+        blob_store::NullBlobStore, layout::row_size_for_type, util::uninit_array, var_len::AlignedVarLenOffsets,
     };
     use proptest::{collection::vec, prelude::*};
+    use spacetimedb_sats::algebraic_value::ser::slice_assume_init_ref;
     use std::slice::from_raw_parts;
 
     fn as_uninit(slice: &[u8]) -> &Bytes {

@@ -1,6 +1,7 @@
 pub mod algebraic_type;
 mod algebraic_type_ref;
 pub mod algebraic_value;
+mod algebraic_value_hash;
 pub mod array_type;
 pub mod array_value;
 pub mod bsatn;
@@ -26,9 +27,13 @@ pub mod sum_type_variant;
 pub mod sum_value;
 pub mod typespace;
 
+#[cfg(any(test, feature = "proptest"))]
+pub mod proptest;
+
 pub use algebraic_type::AlgebraicType;
 pub use algebraic_type_ref::AlgebraicTypeRef;
 pub use algebraic_value::{AlgebraicValue, F32, F64};
+pub use algebraic_value_hash::hash_bsatn;
 pub use array_type::ArrayType;
 pub use array_value::ArrayValue;
 pub use builtin_type::BuiltinType;
