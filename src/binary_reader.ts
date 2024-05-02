@@ -75,19 +75,19 @@ export default class BinaryReader {
     return value;
   }
 
-  readI64(): BigInt {
+  readI64(): bigint {
     const value = this.buffer.getBigInt64(this.offset, true);
     this.offset += 8;
     return value;
   }
 
-  readU64(): BigInt {
+  readU64(): bigint {
     const value = this.buffer.getBigUint64(this.offset, true);
     this.offset += 8;
     return value;
   }
 
-  readU128(): BigInt {
+  readU128(): bigint {
     const lowerPart = this.buffer.getBigUint64(this.offset, true);
     const upperPart = this.buffer.getBigUint64(this.offset + 8, true);
     this.offset += 16;
@@ -95,7 +95,7 @@ export default class BinaryReader {
     return (upperPart << BigInt(64)) + lowerPart;
   }
 
-  readI128(): BigInt {
+  readI128(): bigint {
     const lowerPart = this.buffer.getBigInt64(this.offset, true);
     const upperPart = this.buffer.getBigInt64(this.offset + 8, true);
     this.offset += 16;

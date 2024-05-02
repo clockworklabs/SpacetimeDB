@@ -23,10 +23,10 @@ export class Message extends DatabaseTable {
   public static db: ClientDB = __SPACETIMEDB__.clientDB;
   public static tableName = "Message";
   public sender: Identity;
-  public sent: BigInt;
+  public sent: bigint;
   public text: string;
 
-  constructor(sender: Identity, sent: BigInt, text: string) {
+  constructor(sender: Identity, sent: bigint, text: string) {
     super();
     this.sender = sender;
     this.sent = sent;
