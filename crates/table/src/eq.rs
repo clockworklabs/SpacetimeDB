@@ -11,7 +11,6 @@ use super::{
     util::range_move,
     var_len::VarLenRef,
 };
-use spacetimedb_sats::algebraic_value::ser::slice_assume_init_ref;
 
 /// Equates row `a` in `page_a` with its fixed part starting at `fixed_offset_a`
 /// to row `b` in `page_b` with its fixed part starting at `fixed_offset_b`.
@@ -158,11 +157,7 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
         | &AlgebraicTypeLayout::I128
         | &AlgebraicTypeLayout::U128
         | &AlgebraicTypeLayout::F32
-        | &AlgebraicTypeLayout::F64 => {
-            // SAFETY: `value_a/b` are valid,
-            // so `&ctx.a/b.bytes[range_move(0..ty.size(), *ctx.curr_offset)]` contains init bytes.
-            unsafe { eq_byte_array(ctx, ty.size()) }
-        }
+        | &AlgebraicTypeLayout::F64 => eq_byte_array(ctx, ty.size()),
 
         // The var-len cases.
         &AlgebraicTypeLayout::String | AlgebraicTypeLayout::VarLen(_) => {
@@ -209,15 +204,9 @@ unsafe fn eq_vlo(ctx: &mut EqCtx<'_, '_>) -> bool {
 
 /// Equates the byte arrays `data_a/data_b = ctx.a/b.bytes[range_move(0..len, ctx.curr_offset)]`
 /// and advances the offset.
-///
-/// SAFETY: `data_a/b` must both be initialized as valid `&[u8]`s.
-unsafe fn eq_byte_array(ctx: &mut EqCtx<'_, '_>, len: usize) -> bool {
+fn eq_byte_array(ctx: &mut EqCtx<'_, '_>, len: usize) -> bool {
     let data_a = &ctx.a.bytes[range_move(0..len, ctx.curr_offset)];
     let data_b = &ctx.b.bytes[range_move(0..len, ctx.curr_offset)];
     ctx.curr_offset += len;
-    // SAFETY: Caller promised that `data_a` was initialized.
-    let data_a = unsafe { slice_assume_init_ref(data_a) };
-    // SAFETY: Caller promised that `data_b` was initialized.
-    let data_b = unsafe { slice_assume_init_ref(data_b) };
     data_a == data_b
 }

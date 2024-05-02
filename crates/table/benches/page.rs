@@ -1,5 +1,5 @@
 use core::hash::BuildHasher;
-use core::mem::{self, MaybeUninit};
+use core::mem;
 use core::time::Duration;
 use criterion::measurement::{Measurement, WallTime};
 use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId, Criterion, Throughput};
@@ -12,12 +12,11 @@ use spacetimedb_table::bflatn_from::serialize_row_from_page;
 use spacetimedb_table::bflatn_to::write_row_to_page;
 use spacetimedb_table::blob_store::NullBlobStore;
 use spacetimedb_table::eq::eq_row_in_page;
-use spacetimedb_table::indexes::{PageOffset, RowHash};
+use spacetimedb_table::indexes::{Byte, Bytes, PageOffset, RowHash};
 use spacetimedb_table::layout::{row_size_for_type, RowTypeLayout};
 use spacetimedb_table::page::Page;
 use spacetimedb_table::row_hash::hash_row_in_page;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
-use spacetimedb_table::util;
 use spacetimedb_table::var_len::{AlignedVarLenOffsets, NullVarLenVisitor, VarLenGranule, VarLenMembers, VarLenRef};
 
 fn time<R>(acc: &mut Duration, body: impl FnOnce() -> R) -> R {
@@ -51,8 +50,8 @@ fn clear_zero(page: &mut Page) {
     unsafe { page.zero_data() };
 }
 
-fn as_bytes<T>(t: &T) -> &[MaybeUninit<u8>] {
-    let ptr = (t as *const T).cast::<MaybeUninit<u8>>();
+fn as_bytes<T>(t: &T) -> &Bytes {
+    let ptr = (t as *const T).cast::<Byte>();
     unsafe { std::slice::from_raw_parts(ptr, mem::size_of::<T>()) }
 }
 
@@ -67,11 +66,11 @@ unsafe trait Row {
 
 #[allow(clippy::missing_safety_doc)] // It's a benchmark, clippy. Who cares.
 unsafe trait FixedLenRow: Row + Sized {
-    fn as_bytes(&self) -> &[MaybeUninit<u8>] {
+    fn as_bytes(&self) -> &Bytes {
         as_bytes(self)
     }
 
-    unsafe fn from_bytes(bytes: &[MaybeUninit<u8>]) -> &Self {
+    unsafe fn from_bytes(bytes: &Bytes) -> &Self {
         let ptr = bytes.as_ptr();
         debug_assert_eq!(ptr as usize % mem::align_of::<Self>(), 0);
         debug_assert_eq!(bytes.len(), mem::size_of::<Self>());
@@ -294,11 +293,11 @@ fn insert_opt_str(c: &mut Criterion) {
     assert!(fixed_row_size.len() == 6);
     let mut clean_page_group = c.benchmark_group("insert_optional_str/clean_page");
 
-    let mut variant_none = util::uninit_array::<u8, 6>();
-    variant_none[4].write(1);
+    let mut variant_none = [0xa5u8; 6];
+    variant_none[0] = 1;
 
-    let mut variant_some = util::uninit_array::<u8, 6>();
-    variant_some[4].write(0);
+    let mut variant_some = [0xa5u8; 6];
+    variant_some[0] = 0;
 
     for some_ratio in [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0] {
         for &data_length_in_bytes in if some_ratio == 0.0 { &[0][..] } else { &VL_SIZES } {

@@ -35,7 +35,6 @@ use super::{
 };
 use core::fmt;
 use core::marker::PhantomData;
-use core::mem::MaybeUninit;
 use itertools::Itertools;
 use std::sync::Arc;
 
@@ -408,7 +407,7 @@ unsafe impl VarLenMembers for VarLenVisitorProgram {
         //
         // - Caller promised that `row` is properly aligned for the row type
         //   so based on this assumption, our program will yield references that are properly
-        //   aligned for `MaybeUninit<VarLenGranule>`s.
+        //   aligned for `VarLenGranule`s.
         //
         // - Caller promised that `row.len() == row_type.size()`.
         //   This ensures that our program will yield references that are in bounds of `row`.
@@ -441,7 +440,7 @@ pub struct VarLenVisitorProgramIter<'visitor, 'row> {
 }
 
 impl<'row> Iterator for VarLenVisitorProgramIter<'_, 'row> {
-    type Item = &'row MaybeUninit<VarLenRef>;
+    type Item = &'row VarLenRef;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Reads the `tag: u8` at `offset`.
@@ -456,7 +455,7 @@ impl<'row> Iterator for VarLenVisitorProgramIter<'_, 'row> {
         // Moreover, `self.row` is non-null, so adding the offset to it results in a non-null pointer.
         // By having `self.row: &'row Bytes` we also know that the pointer is valid for reads
         // and that it will be for `'row` which is tied to the lifetime of `Self::Item`.
-        Some(unsafe { get_ref::<MaybeUninit<VarLenRef>>(self.row, offset) })
+        Some(unsafe { get_ref::<VarLenRef>(self.row, offset) })
     }
 }
 
@@ -472,7 +471,7 @@ pub struct VarLenVisitorProgramIterMut<'visitor, 'row> {
 }
 
 impl<'row> Iterator for VarLenVisitorProgramIterMut<'_, 'row> {
-    type Item = &'row mut MaybeUninit<VarLenRef>;
+    type Item = &'row mut VarLenRef;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Reads the `tag: u8` at `offset`.
@@ -482,7 +481,7 @@ impl<'row> Iterator for VarLenVisitorProgramIterMut<'_, 'row> {
         let offset = next_vlr_offset(self.program, &mut self.instr_ptr, read_tag)?;
         // SAFETY: Constructing the iterator is a promise that
         // `offset`s produced by the program will be in bounds of `self.row`.
-        let vlr_ptr: *mut MaybeUninit<VarLenRef> = unsafe { self.row.add(offset.idx()).cast() };
+        let vlr_ptr: *mut VarLenRef = unsafe { self.row.add(offset.idx()).cast() };
         // SAFETY: Constructing the iterator is a promise that
         // The derived pointer must be properly aligned for a `VarLenRef`.
         //
@@ -496,7 +495,7 @@ impl<'row> Iterator for VarLenVisitorProgramIterMut<'_, 'row> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{indexes::Size, util::uninit_array};
+    use crate::indexes::Size;
     use spacetimedb_sats::{AlgebraicType, ProductType};
 
     fn row_type<T: Into<ProductType>>(row_ty: T) -> RowTypeLayout {
@@ -521,9 +520,9 @@ mod test {
         let ty = row_type([AlgebraicType::U32, AlgebraicType::String, AlgebraicType::U8]);
         assert_eq!(ty.size(), Size(12));
 
-        // alloc an uninit_array of u32 to ensure 4-byte alignment.
-        let row = &uninit_array::<u32, 3>();
-        let row = row.as_ptr().cast::<[MaybeUninit<u8>; 12]>();
+        // alloc an array of u32 to ensure 4-byte alignment.
+        let row = &[0xa5a5_a5a5u32; 3];
+        let row = row.as_ptr().cast::<[Byte; 12]>();
         let row = unsafe { &*row };
 
         check_addrs(&row_type_visitor(&ty), row, [4]);
@@ -540,9 +539,9 @@ mod test {
         ]);
         assert_eq!(ty.size(), Size(24));
 
-        // Alloc an uninit_array of u32 to ensure 4-byte alignment.
-        let row = &uninit_array::<u32, 6>();
-        let row = row.as_ptr().cast::<[MaybeUninit<u8>; 24]>();
+        // Alloc an array of u32 to ensure 4-byte alignment.
+        let row = &[0xa5a5_a5a5u32; 6];
+        let row = row.as_ptr().cast::<[Byte; 24]>();
         let row = unsafe { &*row };
 
         check_addrs(&row_type_visitor(&ty), row, [4, 16]);
@@ -558,17 +557,17 @@ mod test {
         let outer_sum = &ty[0].as_sum().unwrap();
         let outer_tag = outer_sum.offset_of_tag();
 
-        let row = &mut uninit_array::<u16, 3>();
-        let row_ptr = row.as_mut_ptr().cast::<[MaybeUninit<u8>; 6]>();
+        let row = &mut [0xa5a5u16; 3];
+        let row_ptr = row.as_mut_ptr().cast::<[Byte; 6]>();
         let row = unsafe { &mut *row_ptr };
 
         let program = row_type_visitor(&ty);
         // Variant 1 (String) is live
-        row[outer_tag].write(0);
+        row[outer_tag] = 0;
         check_addrs(&program, row, [2]);
 
         // Variant 1 (none) is live
-        row[outer_tag].write(1);
+        row[outer_tag] = 1;
         check_addrs(&program, row, []);
     }
 
@@ -596,33 +595,33 @@ mod test {
         let inner_tag = outer_sum.offset_of_variant_data(3) + inner_sum.offset_of_tag();
         assert_eq!(inner_tag, 4);
 
-        let row = &mut uninit_array::<u32, 3>();
-        let row_ptr = row.as_mut_ptr().cast::<[MaybeUninit<u8>; 12]>();
+        let row = &mut [0xa5a5_a5a5u32; 3];
+        let row_ptr = row.as_mut_ptr().cast::<[Byte; 12]>();
         let row = unsafe { &mut *row_ptr };
 
         let program = row_type_visitor(&ty);
 
         // Variant 0 (U32) is live
-        row[outer_tag].write(0);
+        row[outer_tag] = 0;
         check_addrs(&program, row, []);
 
         // Variant 1 (String) is live
-        row[outer_tag].write(1);
+        row[outer_tag] = 1;
         check_addrs(&program, row, [4]);
 
         // Variant 2 (Product) is live
-        row[outer_tag].write(2);
+        row[outer_tag] = 2;
         check_addrs(&program, row, [8]);
 
-        // Variant 3 (Sum) is live but its tag is not init yet.
-        row[outer_tag].write(3);
+        // Variant 3 (Sum) is live but its tag is not valid yet.
+        row[outer_tag] = 3;
 
         // Variant 3, 0 (Sum, U32) is live.
-        row[inner_tag].write(0);
+        row[inner_tag] = 0;
         check_addrs(&program, row, []);
 
         // Variant 3, 1 (Sum, String) is live.
-        row[inner_tag].write(1);
+        row[inner_tag] = 1;
         check_addrs(&program, row, [8]);
     }
 }

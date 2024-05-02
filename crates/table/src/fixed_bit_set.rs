@@ -274,7 +274,7 @@ pub(crate) mod test {
     const MAX_NBITS: usize = 1000;
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(2048))]
+        #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]
 
         #[test]
         fn after_new_there_are_no_bits_set(nbits in 0..MAX_NBITS) {

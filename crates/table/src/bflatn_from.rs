@@ -144,9 +144,6 @@ pub unsafe fn read_tag<'ty>(
 ) -> (u8, &'ty AlgebraicTypeLayout) {
     let tag_offset = ty.offset_of_tag();
     let tag = bytes[curr_offset + tag_offset];
-    // SAFETY: Caller promised that `bytes[curr_offset..]` has a sum value typed at `ty`.
-    // We can therefore assume that `curr_offset + tag_offset` refers to a valid `u8`.
-    let tag = unsafe { tag.assume_init() };
 
     // Extract the variant data type depending on the tag.
     let data_ty = &ty.variants[tag as usize].ty;

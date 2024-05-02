@@ -230,7 +230,7 @@ mod tests {
     use spacetimedb_sats::proptest::generate_typed_row;
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(2048))]
+        #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]
         #[test]
         fn pv_row_ref_eq((ty, val) in generate_typed_row()) {
             // Turn `val` into a `RowRef`.

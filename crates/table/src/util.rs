@@ -1,4 +1,3 @@
-use core::mem::{self, MaybeUninit};
 use core::ops::Range;
 
 /// Translates the range `r` by adding `by` to both its `start` and its `end`.
@@ -6,22 +5,6 @@ use core::ops::Range;
 /// The resulting range will have the same length as `r`.
 pub const fn range_move(r: Range<usize>, by: usize) -> Range<usize> {
     (r.start + by)..(r.end + by)
-}
-
-/// Copy elements from `src` into `this`, initializing those elements of `this`.
-///
-/// If `this` is longer than `src`, write only the first `src.len()` elements of `this`.
-///
-/// If `src` is longer than `this`, panic.
-///
-/// Copy of the source of `MaybeUninit::write_slice`, but that's not stabilized.
-/// https://doc.rust-lang.org/std/mem/union.MaybeUninit.html#method.write_slice
-/// Unlike that function, this does not return a reference to the initialized bytes.
-pub fn maybe_uninit_write_slice<T: Copy>(this: &mut [MaybeUninit<T>], src: &[T]) {
-    // SAFETY: &[T] and &[MaybeUninit<T>] have the same layout
-    let uninit_src: &[MaybeUninit<T>] = unsafe { mem::transmute(src) };
-
-    this[0..uninit_src.len()].copy_from_slice(uninit_src);
 }
 
 /// Asserts that `$ty` is `$size` bytes in `static_assert_size($ty, $size)`.
@@ -50,16 +33,4 @@ macro_rules! static_assert_align {
     ($ty:ty, $align:expr) => {
         const _: [(); $align] = [(); ::core::mem::align_of::<$ty>()];
     };
-}
-
-/// Construct an uninitialized array of `N` elements.
-///
-/// The array will be appropriately sized and aligned to hold `N` elements of type `T`,
-/// but those elements will be uninitialized.
-///
-/// Identitcal copy of the source of `MaybeUninit::uninit_array`, but that's not stabilized.
-/// https://doc.rust-lang.org/std/mem/union.MaybeUninit.html#method.uninit_array
-pub const fn uninit_array<T, const N: usize>() -> [MaybeUninit<T>; N] {
-    // SAFETY: An uninitialized `[MaybeUninit<_>; N]` is valid.
-    unsafe { MaybeUninit::<[MaybeUninit<T>; N]>::uninit().assume_init() }
 }
