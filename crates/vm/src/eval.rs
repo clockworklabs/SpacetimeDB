@@ -1,11 +1,11 @@
 use crate::errors::ErrorVm;
-use crate::expr::{Code, SourceExpr, SourceSet};
+use crate::expr::{Code, JoinExpr, SourceExpr, SourceSet};
 use crate::expr::{Expr, Query};
 use crate::iterators::RelIter;
 use crate::program::{ProgramVm, Sources};
 use crate::rel_ops::RelOps;
 use crate::relation::RelValue;
-use spacetimedb_sats::relation::{FieldExprRef, Relation};
+use spacetimedb_sats::relation::Relation;
 use spacetimedb_sats::ProductValue;
 use std::sync::Arc;
 
@@ -46,52 +46,36 @@ pub fn build_query<'a, const N: usize>(
                 }
             }
             Query::JoinInner(q) => {
-                // Pick the smaller set to be at the left.
-                let col_lhs = FieldExprRef::Name(q.col_lhs);
-                let col_rhs = FieldExprRef::Name(q.col_rhs);
-
                 let rhs = build_source_expr_query(sources, &q.rhs.source);
                 let rhs = build_query(rhs, &q.rhs.query, sources)?;
-
-                let lhs = result;
-                let key_lhs_header = lhs.head().clone();
-                let key_rhs_header = rhs.head().clone();
-                let col_lhs_header = lhs.head().clone();
-                let col_rhs_header = rhs.head().clone();
-
-                if q.semi {
-                    let iter = lhs.join_inner(
-                        rhs,
-                        col_lhs_header.clone(),
-                        move |row| Ok(row.get(col_lhs, &key_lhs_header)?.into_owned().into()),
-                        move |row| Ok(row.get(col_rhs, &key_rhs_header)?.into_owned().into()),
-                        move |l, r| {
-                            let l = l.get(col_lhs, &col_lhs_header)?;
-                            let r = r.get(col_rhs, &col_rhs_header)?;
-                            Ok(l == r)
-                        },
-                        |l, _| l,
-                    )?;
-                    Box::new(iter)
-                } else {
-                    let iter = lhs.join_inner(
-                        rhs,
-                        Arc::new(col_lhs_header.extend(&col_rhs_header)),
-                        move |row| Ok(row.get(col_lhs, &key_lhs_header)?.into_owned().into()),
-                        move |row| Ok(row.get(col_rhs, &key_rhs_header)?.into_owned().into()),
-                        move |l, r| {
-                            let l = l.get(col_lhs, &col_lhs_header)?;
-                            let r = r.get(col_rhs, &col_rhs_header)?;
-                            Ok(l == r)
-                        },
-                        move |l, r| l.extend(r),
-                    )?;
-                    Box::new(iter)
-                }
+                join_inner(result, rhs, q)?
             }
         };
     }
     Ok(result)
+}
+
+pub fn join_inner<'a>(
+    lhs: impl RelOps<'a> + 'a,
+    rhs: impl RelOps<'a> + 'a,
+    q: &'a JoinExpr,
+) -> Result<Box<IterRows<'a>>, ErrorVm> {
+    let lhs_head = lhs.head();
+    let rhs_head = rhs.head();
+    let col_lhs = lhs_head.column_pos_or_err(q.col_lhs)?;
+    let col_rhs = rhs_head.column_pos_or_err(q.col_rhs)?;
+
+    let key_lhs = move |row: &RelValue<'_>| row.read_column(col_lhs.idx()).unwrap().into_owned();
+    let key_rhs = move |row: &RelValue<'_>| row.read_column(col_rhs.idx()).unwrap().into_owned();
+    let pred = move |l: &RelValue<'_>, r: &RelValue<'_>| l.read_column(col_lhs.idx()) == r.read_column(col_rhs.idx());
+
+    Ok(if q.semi {
+        let head = lhs_head.clone();
+        Box::new(lhs.join_inner(rhs, head, key_lhs, key_rhs, pred, move |l, _| l)?)
+    } else {
+        let head = Arc::new(lhs_head.extend(rhs_head));
+        Box::new(lhs.join_inner(rhs, head, key_lhs, key_rhs, pred, move |l, r| l.extend(r))?)
+    })
 }
 
 pub(crate) fn build_source_expr_query<'a, const N: usize>(
