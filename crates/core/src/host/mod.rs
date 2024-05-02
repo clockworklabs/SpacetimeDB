@@ -10,6 +10,7 @@ use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{ProductValue, ReducerDef};
 use spacetimedb_sats::WithTypespace;
 
+mod disk_storage;
 mod host_controller;
 #[allow(clippy::too_many_arguments)]
 pub mod module_host;
@@ -20,6 +21,7 @@ pub mod instance_env;
 mod timestamp;
 mod wasm_common;
 
+pub use disk_storage::DiskStorage;
 pub use host_controller::{
     DescribedEntityType, ExternalStorage, HostController, ProgramStorage, ReducerCallResult, ReducerOutcome,
 };
