@@ -63,10 +63,10 @@ export interface ValueAdapter {
   readU16: () => number;
   readI32: () => number;
   readU32: () => number;
-  readI64: () => BigInt;
-  readU64: () => BigInt;
-  readU128: () => BigInt;
-  readI128: () => BigInt;
+  readI64: () => bigint;
+  readU64: () => bigint;
+  readU128: () => bigint;
+  readI128: () => bigint;
   readF32: () => number;
   readF64: () => number;
 
@@ -161,16 +161,16 @@ export class BinaryAdapter implements ValueAdapter {
   readU32(): number {
     return this.reader.readU32();
   }
-  readI64(): BigInt {
+  readI64(): bigint {
     return this.reader.readI64();
   }
-  readU64(): BigInt {
+  readU64(): bigint {
     return this.reader.readU64();
   }
-  readU128(): BigInt {
+  readU128(): bigint {
     return this.reader.readU128();
   }
-  readI128(): BigInt {
+  readI128(): bigint {
     return this.reader.readI128();
   }
   readF32(): number {
@@ -281,16 +281,16 @@ export class JSONAdapter implements ValueAdapter {
   readU32(): number {
     return this.value;
   }
-  readI64(): BigInt {
+  readI64(): bigint {
     return this.value;
   }
-  readU64(): BigInt {
+  readU64(): bigint {
     return this.value;
   }
-  readU128(): BigInt {
+  readU128(): bigint {
     return this.value;
   }
-  readI128(): BigInt {
+  readI128(): bigint {
     return this.value;
   }
   readF32(): number {
@@ -305,10 +305,10 @@ export class JSONAdapter implements ValueAdapter {
 export class SumValue {
   /** A tag representing the choice of one variant of the sum type's variants. */
   public tag: number;
-  /** 
-  * Given a variant `Var(Ty)` in a sum type `{ Var(Ty), ... }`,
-  * this provides the `value` for `Ty`.
-  */
+  /**
+   * Given a variant `Var(Ty)` in a sum type `{ Var(Ty), ... }`,
+   * this provides the `value` for `Ty`.
+   */
   public value: AlgebraicValue;
 
   constructor(tag: number, value: AlgebraicValue) {
@@ -329,12 +329,12 @@ export class SumValue {
   }
 }
 
-/** 
-* A product value is made of a list of
-* "elements" / "fields" / "factors" of other `AlgebraicValue`s.
-*
-* The type of product value is a [product type](`ProductType`).
-*/
+/**
+ * A product value is made of a list of
+ * "elements" / "fields" / "factors" of other `AlgebraicValue`s.
+ *
+ * The type of product value is a [product type](`ProductType`).
+ */
 export class ProductValue {
   elements: AlgebraicValue[];
 
@@ -360,7 +360,7 @@ type BuiltinValueType =
   | string
   | number
   | AlgebraicValue[]
-  | BigInt
+  | bigint
   | Map<AlgebraicValue, AlgebraicValue>
   | Uint8Array;
 
@@ -430,8 +430,8 @@ export class BuiltinValue {
     return this.value as boolean;
   }
 
-  public asBigInt(): BigInt {
-    return this.value as BigInt;
+  public asBigInt(): bigint {
+    return this.value as bigint;
   }
 
   public asBoolean(): boolean {
@@ -529,7 +529,7 @@ export class AlgebraicValue {
     return (this.builtin as BuiltinValue).asBool();
   }
 
-  public asBigInt(): BigInt {
+  public asBigInt(): bigint {
     this.assertBuiltin();
     return (this.builtin as BuiltinValue).asBigInt();
   }
