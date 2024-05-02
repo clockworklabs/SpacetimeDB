@@ -272,7 +272,6 @@ impl<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> RelOps<'a> for JoinInner<'a, Lhs,
 where
     Lhs: RelOps<'a>,
     Rhs: RelOps<'a>,
-    // TODO(Centril): consider using keys that aren't `ProductValue`s.
     KeyLhs: FnMut(&RelValue<'a>) -> AlgebraicValue,
     KeyRhs: FnMut(&RelValue<'a>) -> AlgebraicValue,
     Pred: FnMut(&RelValue<'a>, &RelValue<'a>) -> bool,
