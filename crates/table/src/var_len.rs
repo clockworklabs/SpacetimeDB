@@ -328,8 +328,9 @@ pub unsafe trait VarLenMembers {
     /// Treats `row` as storage for a row of the particular type handled by `self`,
     /// and iterates over the (possibly stale) `VarLenRef`s within it.
     ///
-    /// Visited `VarLenRef`s will always be valid from Rust/LLVM's perspective,
-    /// i.e. will never be `poison`,
+    /// Visited `VarLenRef`s are valid-unconstrained
+    /// and will always be valid from Rust/LLVM's perspective,
+    /// i.e. will never be uninit,
     /// but will not necessarily point to properly-allocated `VarLenGranule`s.
     ///
     /// Callers are responsible for maintaining whether var-len members have been initialized.
@@ -359,8 +360,9 @@ pub unsafe trait VarLenMembers {
     /// Treats `row` as storage for a row of the particular type handled by `self`,
     /// and iterates over the (possibly stale) `VarLenRef`s within it.
     ///
-    /// Visited `VarLenRef`s will always be valid from Rust/LLVM's perspective,
-    /// i.e. will never be `poison`,
+    /// Visited `VarLenRef`s are valid-unconstrained
+    /// and will always be valid from Rust/LLVM's perspective,
+    /// i.e. will never be uninit,
     /// but will not necessarily point to properly-allocated `VarLenGranule`s.
     ///
     /// Callers are responsible for maintaining whether var-len members have been initialized.
@@ -501,8 +503,8 @@ impl<'offsets, 'row> Iterator for AlignedVarLenOffsetsIter<'offsets, 'row> {
                 unsafe { self.row.add(curr_offset_idx * mem::align_of::<VarLenRef>()).cast() };
 
             // SAFETY: `elt_ptr` is aligned and inbounds.
-            //         Any sequence of non-`poison` bytes is valid at `VarLenRef`,
-            //         and the `row_data` in a `Page` is never `poison`,
+            //         Any pattern of init bytes is valid at `VarLenRef`,
+            //         and the `row_data` in a `Page` is never uninit,
             //         so it's safe to create an `&mut` to any value in the page,
             //         though the resulting `VarLenRef` may be garbage.
             Some(unsafe { &*elt_ptr })
@@ -537,8 +539,8 @@ impl<'offsets, 'row> Iterator for AlignedVarLenOffsetsIterMut<'offsets, 'row> {
                 unsafe { self.row.add(curr_offset_idx * mem::align_of::<VarLenRef>()).cast() };
 
             // SAFETY: `elt_ptr` is aligned and inbounds.
-            //         Any sequence of non-`poison` bytes is valid at `VarLenRef`,
-            //         and the `row_data` in a `Page` is never `poison`,
+            //         Any pattern of init bytes is valid at `VarLenRef`,
+            //         and the `row_data` in a `Page` is never uninit,
             //         so it's safe to create an `&mut` to any value in the page,
             //         though the resulting `VarLenRef` may be garbage.
             Some(unsafe { &mut *elt_ptr })

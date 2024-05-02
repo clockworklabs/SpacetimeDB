@@ -305,7 +305,7 @@ impl BflatnSerializedRowBuffer<'_> {
             // Write directly to the page.
             // SAFETY: `vlr.first_granule` points to a granule
             // even though the granule's data is not initialized as of yet.
-            // Note that the granule stores valid non-`poison` bytes,
+            // Note that the granule stores valid-unconstrained bytes (i.e. they are not uninit),
             // but they may be leftovers from a previous allocation.
             let iter = unsafe { self.var_view.granule_offset_iter(vlr.first_granule) };
             let mut writer = GranuleBufWriter { buf: None, iter };

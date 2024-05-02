@@ -186,7 +186,7 @@ unsafe impl ReadColumn for bool {
         // SAFETY: We trust that the `row_ref` refers to a valid, initialized row,
         // and that the `offset_in_bytes` refers to a column of type `Bool` within that row.
         // A valid row can never have a column of an invalid value,
-        // and no byte in `Page.row_data` is ever uninitialized/`poison`,
+        // and no byte in `Page.row_data` is ever uninit,
         // so `data` must be initialized as either 0 or 1.
         unsafe { *data }
     }

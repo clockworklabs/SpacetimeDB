@@ -13,7 +13,7 @@ use spacetimedb_data_structures::map::ValidAsIdentityHash;
 ///
 /// Previous implementations used `MaybeUninit<u8>` here,
 /// but it became necessary to serialize pages to enable snapshotting,
-/// so we require that all bytes in a page be valid `u8`s, never `poison`/`uninit`.
+/// so we require that all bytes in a page be valid `u8`s, never uninit.
 pub type Byte = u8;
 
 /// A slice of [`Byte`]s.

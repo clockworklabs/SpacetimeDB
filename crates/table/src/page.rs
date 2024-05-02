@@ -14,13 +14,13 @@
 //! - `valid` refers to, when referring to a type, granule, or row,
 //!    depending on the context, a memory location that holds a *safe* object.
 //!    When "valid for writes" is used, the location must be properly aligned
-//!    and none of its bytes may be `poison`/`uninit`,
+//!    and none of its bytes may be uninit,
 //!    but the value need not be valid at the type in question.
 //!    "Valid for writes" is equivalent to valid-unconstrained.
 //!
 //! - `valid-unconstrained`, when referring to a memory location with a given type,
 //!    that the location stores a byte pattern which Rust/LLVM's memory model recognizes as valid,
-//!    and therefore must not contain any `poison`/`uninit`,
+//!    and therefore must not contain any uninit,
 //!    but the value is not required to be logically meaningful,
 //!    and no code may depend on the data within it to uphold any invariants.
 //!    E.g. an unallocated [`VarLenGranule`] within a page stores valid-unconstrained bytes,
@@ -148,7 +148,7 @@ struct FixedHeader {
     /// For each fixed-length row slot, true if a row is stored there,
     /// false if the slot is unallocated.
     ///
-    /// Unallocated row slots store valid-unconstrained bytes, i.e. are never `poison`.
+    /// Unallocated row slots store valid-unconstrained bytes, i.e. are never uninit.
     present_rows: FixedBitSet,
 
     #[cfg(debug_assertions)]
@@ -1026,8 +1026,8 @@ impl Page {
 
         let layout = Layout::new::<Page>();
 
-        // Allocate with `alloc_zeroed` so that the bytes are initially 0, rather than `poison`.
-        // We will never write a `poison` byte into the page except in the `PageHeader`,
+        // Allocate with `alloc_zeroed` so that the bytes are initially 0, rather than uninit.
+        // We will never write an uninit byte into the page except in the `PageHeader`,
         // so it is safe for `row_data` to have type `[u8; _]` rather than `[MaybeUninit<u8>; _]`.
         // `alloc_zeroed` may be more efficient than `alloc` + `memset`;
         // in particular, it may `mmap` pages directly from the OS, which are always zeroed for security reasons.
