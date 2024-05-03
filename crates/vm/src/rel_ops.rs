@@ -1,7 +1,7 @@
 use crate::errors::ErrorVm;
 use crate::relation::RelValue;
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_sats::relation::{FieldExpr, Header, RowCount};
+use spacetimedb_sats::relation::{ColExpr, Header, RowCount};
 use spacetimedb_sats::AlgebraicValue;
 use std::sync::Arc;
 
@@ -41,9 +41,9 @@ pub trait RelOps<'a> {
     ///
     /// It is the equivalent of a `SELECT` clause on SQL.
     #[inline]
-    fn project<'b, P>(self, after_head: &'b Arc<Header>, cols: &'b [FieldExpr], extractor: P) -> Project<'b, Self, P>
+    fn project<'b, P>(self, after_head: &'b Arc<Header>, cols: &'b [ColExpr], extractor: P) -> Project<'b, Self, P>
     where
-        P: for<'c> FnMut(&[FieldExpr], RelValue<'c>) -> Result<RelValue<'c>, ErrorVm>,
+        P: for<'c> FnMut(&[ColExpr], RelValue<'c>) -> Result<RelValue<'c>, ErrorVm>,
         Self: Sized,
     {
         let count = self.row_count();
@@ -173,7 +173,7 @@ where
 pub struct Project<'a, I, P> {
     pub(crate) head: &'a Arc<Header>,
     pub(crate) count: RowCount,
-    pub(crate) cols: &'a [FieldExpr],
+    pub(crate) cols: &'a [ColExpr],
     pub(crate) iter: I,
     pub(crate) extractor: P,
 }
@@ -183,7 +183,7 @@ impl<'a, I, P> Project<'a, I, P> {
         iter: I,
         count: RowCount,
         head: &'a Arc<Header>,
-        cols: &'a [FieldExpr],
+        cols: &'a [ColExpr],
         extractor: P,
     ) -> Project<'a, I, P> {
         Project {
@@ -199,7 +199,7 @@ impl<'a, I, P> Project<'a, I, P> {
 impl<'a, I, P> RelOps<'a> for Project<'_, I, P>
 where
     I: RelOps<'a>,
-    P: FnMut(&[FieldExpr], RelValue<'a>) -> Result<RelValue<'a>, ErrorVm>,
+    P: FnMut(&[ColExpr], RelValue<'a>) -> Result<RelValue<'a>, ErrorVm>,
 {
     fn head(&self) -> &Arc<Header> {
         self.head

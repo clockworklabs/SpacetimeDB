@@ -31,17 +31,17 @@ impl FieldName {
 
 // TODO(perf): Remove `Clone` derivation.
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash, From)]
-pub enum FieldExpr {
-    Name(FieldName),
+pub enum ColExpr {
+    Col(ColId),
     Value(AlgebraicValue),
 }
 
-impl FieldExpr {
-    /// Returns a borrowed version of `FieldExpr`.
-    pub fn borrowed(&self) -> FieldExprRef<'_> {
+impl ColExpr {
+    /// Returns a borrowed version of `ColExpr`.
+    pub fn borrowed(&self) -> ColExprRef<'_> {
         match self {
-            Self::Name(x) => FieldExprRef::Name(*x),
-            Self::Value(x) => FieldExprRef::Value(x),
+            Self::Col(x) => ColExprRef::Col(*x),
+            Self::Value(x) => ColExprRef::Value(x),
         }
     }
 }
@@ -58,19 +58,19 @@ impl fmt::Display for FieldName {
     }
 }
 
-impl fmt::Display for FieldExpr {
+impl fmt::Display for ColExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FieldExpr::Name(x) => write!(f, "{x}"),
-            FieldExpr::Value(x) => write!(f, "{}", x.to_satn()),
+            ColExpr::Col(x) => write!(f, "{x}"),
+            ColExpr::Value(x) => write!(f, "{}", x.to_satn()),
         }
     }
 }
 
 /// A borrowed version of `FieldExpr`.
 #[derive(Clone, Copy)]
-pub enum FieldExprRef<'a> {
-    Name(FieldName),
+pub enum ColExprRef<'a> {
+    Col(ColId),
     Value(&'a AlgebraicValue),
 }
 
@@ -156,22 +156,21 @@ impl Header {
             .any(|(col, ct)| col.contains(field) && ct.contains(&constraint))
     }
 
-    /// Project the [FieldExpr] & the [Constraints] that referenced them
-    pub fn project(&self, cols: &[impl Into<FieldExpr> + Clone]) -> Result<Self, RelationError> {
+    /// Project the [ColExpr]s & the [Constraints] that referenced them
+    pub fn project(&self, cols: &[ColExpr]) -> Result<Self, RelationError> {
         let mut p = Vec::with_capacity(cols.len());
         let mut to_keep = ColListBuilder::new();
 
         for (pos, col) in cols.iter().enumerate() {
-            match col.clone().into() {
-                FieldExpr::Name(col) => {
-                    let pos = self.column_pos_or_err(col)?;
-                    to_keep.push(pos);
-                    p.push(self.fields[pos.idx()].clone());
+            match col {
+                ColExpr::Col(col) => {
+                    to_keep.push(*col);
+                    p.push(self.fields[col.idx()].clone());
                 }
-                FieldExpr::Value(col) => {
+                ColExpr::Value(val) => {
                     let field = FieldName::new(self.table_id, pos.into());
-                    let ty = col.type_of().ok_or_else(|| {
-                        RelationError::TypeInference(field, TypeError::CannotInferType { value: col })
+                    let ty = val.type_of().ok_or_else(|| {
+                        RelationError::TypeInference(field, TypeError::CannotInferType { value: val.clone() })
                     })?;
                     p.push(Column::new(field, ty));
                 }
@@ -309,12 +308,11 @@ mod tests {
 
     #[test]
     fn test_project() {
-        let t1 = 0.into();
         let a = 0.into();
         let b = 1.into();
 
-        let head = head(t1, "t1", (a, b), 0);
-        let new = head.project(&[] as &[FieldName]).unwrap();
+        let head = head(0, "t1", (a, b), 0);
+        let new = head.project(&[] as &[ColExpr]).unwrap();
 
         let mut empty = head.clone_for_error();
         empty.fields.clear();
@@ -322,26 +320,26 @@ mod tests {
         assert_eq!(empty, new);
 
         let all = head.clone_for_error();
-        let new = head.project(&[FieldName::new(t1, a), FieldName::new(t1, b)]).unwrap();
+        let new = head.project(&[a, b].map(ColExpr::Col)).unwrap();
         assert_eq!(all, new);
 
         let mut first = head.clone_for_error();
         first.fields.pop();
         first.constraints = first.retain_constraints(&a.into());
-        let new = head.project(&[FieldName::new(t1, a)]).unwrap();
+        let new = head.project(&[a].map(ColExpr::Col)).unwrap();
         assert_eq!(first, new);
 
         let mut second = head.clone_for_error();
         second.fields.remove(0);
         second.constraints = second.retain_constraints(&b.into());
-        let new = head.project(&[FieldName::new(t1, b)]).unwrap();
+        let new = head.project(&[b].map(ColExpr::Col)).unwrap();
         assert_eq!(second, new);
     }
 
     #[test]
     fn test_extend() {
         let t1 = 0.into();
-        let t2 = 1.into();
+        let t2: TableId = 1.into();
         let a = 0.into();
         let b = 1.into();
         let c = 0.into();
@@ -352,13 +350,13 @@ mod tests {
 
         let new = head_lhs.extend(&head_rhs);
 
-        let lhs = new.project(&[FieldName::new(t1, a), FieldName::new(t1, b)]).unwrap();
+        let lhs = new.project(&[a, b].map(ColExpr::Col)).unwrap();
         assert_eq!(head_lhs, lhs);
 
         let mut head_rhs = head(t2, "t2", (c, d), 2);
         head_rhs.table_id = t1;
         head_rhs.table_name = head_lhs.table_name.clone();
-        let rhs = new.project(&[FieldName::new(t2, c), FieldName::new(t2, d)]).unwrap();
+        let rhs = new.project(&[2, 3].map(ColId).map(ColExpr::Col)).unwrap();
         assert_eq!(head_rhs, rhs);
     }
 }

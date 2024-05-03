@@ -90,8 +90,8 @@ pub enum RelationError {
     TypeInference(FieldName, TypeError),
     #[error("Field declaration only support `table.field` or `field`. It gets instead `{0}`")]
     FieldPathInvalid(String),
-    #[error("Field `{1}` not found at position {0}")]
-    FieldNotFoundAtPos(usize, FieldName),
+    #[error("Field not found at position {0}")]
+    FieldNotFoundAtPos(ColId),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Display)]

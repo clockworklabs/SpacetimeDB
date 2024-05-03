@@ -3,7 +3,7 @@ use spacetimedb_sats::bsatn::ser::BsatnError;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::product_value::ProductValue;
-use spacetimedb_sats::relation::{FieldExpr, FieldExprRef, FieldName, Header, Relation, RowCount};
+use spacetimedb_sats::relation::{ColExpr, ColExprRef, FieldName, Header, Relation, RowCount};
 use spacetimedb_sats::{bsatn, impl_serialize, AlgebraicValue};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
@@ -116,27 +116,19 @@ impl<'a> RelValue<'a> {
         }
     }
 
-    pub fn get<'b>(
-        &'a self,
-        col: FieldExprRef<'a>,
-        header: &'b Header,
-    ) -> Result<Cow<'a, AlgebraicValue>, RelationError> {
-        let val = match col {
-            FieldExprRef::Name(col) => {
-                let pos = header.column_pos_or_err(col)?.idx();
-                self.read_column(pos)
-                    .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col))?
-            }
-            FieldExprRef::Value(x) => Cow::Borrowed(x),
-        };
-
-        Ok(val)
+    pub fn get(&'a self, col: ColExprRef<'a>) -> Result<Cow<'a, AlgebraicValue>, RelationError> {
+        match col {
+            ColExprRef::Col(col) => self
+                .read_column(col.idx())
+                .ok_or_else(|| RelationError::FieldNotFoundAtPos(col)),
+            ColExprRef::Value(x) => Ok(Cow::Borrowed(x)),
+        }
     }
 
-    pub fn project(&self, cols: &[FieldExprRef<'_>], header: &'a Header) -> Result<ProductValue, RelationError> {
+    pub fn project(&self, cols: &[ColExprRef<'_>]) -> Result<ProductValue, RelationError> {
         let mut elements = Vec::with_capacity(cols.len());
         for col in cols {
-            elements.push(self.get(*col, header)?.into_owned());
+            elements.push(self.get(*col)?.into_owned());
         }
         Ok(elements.into())
     }
@@ -152,16 +144,14 @@ impl<'a> RelValue<'a> {
         }
     }
 
-    pub fn project_owned(mut self, cols: &[FieldExpr], header: &Header) -> Result<ProductValue, RelationError> {
+    pub fn project_owned(mut self, cols: &[ColExpr]) -> Result<ProductValue, RelationError> {
         let mut elements = Vec::with_capacity(cols.len());
         for col in cols {
             let val = match col {
-                FieldExpr::Name(col) => {
-                    let pos = header.column_pos_or_err(*col)?.idx();
-                    self.read_or_take_column(pos)
-                        .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, *col))?
-                }
-                FieldExpr::Value(x) => x.clone(),
+                ColExpr::Col(col) => self
+                    .read_or_take_column(col.idx())
+                    .ok_or_else(|| RelationError::FieldNotFoundAtPos(*col))?,
+                ColExpr::Value(x) => x.clone(),
             };
             elements.push(val);
         }

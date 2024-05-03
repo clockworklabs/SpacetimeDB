@@ -2,11 +2,12 @@ use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
 use core::ops::Deref;
-use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_primitives::ColId;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
-use spacetimedb_sats::relation::{self, DbTable, FieldExpr, FieldName, Header};
-use spacetimedb_vm::expr::{CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
+use spacetimedb_sats::relation::{self, ColExpr, DbTable, FieldName, Header};
+use spacetimedb_vm::expr::{CrudExpr, DbType, Expr, FieldExpr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
 use std::sync::Arc;
 
@@ -55,12 +56,12 @@ fn compile_where(mut q: QueryExpr, filter: Selection) -> QueryExpr {
 }
 
 /// Compiles a `SELECT ...` clause
-fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection>) -> Result<QueryExpr, PlanError> {
+fn compile_select(table: From, project: Box<[Column]>, selection: Option<Selection>) -> Result<QueryExpr, PlanError> {
     let mut not_found = Vec::with_capacity(project.len());
     let mut col_ids = Vec::new();
     let mut qualified_wildcards = Vec::new();
     //Match columns to their tables...
-    for select_item in project {
+    for select_item in Vec::from(project) {
         match select_item {
             Column::UnnamedExpr(x) => match expr_for_projection(&table, x) {
                 Ok(field) => col_ids.push(field),
@@ -124,17 +125,17 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
     // It is also important to identify a wildcard project of the form `table.*`.
     // This implies a potential semijoin and additional optimization opportunities.
     let qualified_wildcard = (qualified_wildcards.len() == 1).then(|| qualified_wildcards[0]);
-    q = q.with_project(&col_ids, qualified_wildcard)?;
+    q = q.with_project(col_ids, qualified_wildcard)?;
 
     Ok(q)
 }
 
 /// Builds the schema description [DbTable] from the [TableSchema] and their list of columns
-fn compile_columns(table: &TableSchema, field_names: Vec<FieldName>) -> DbTable {
-    let mut columns = Vec::with_capacity(field_names.len());
-    let cols = field_names
-        .into_iter()
-        .filter_map(|col| table.get_column_by_field(col))
+fn compile_columns(table: &TableSchema, cols: &[ColId]) -> DbTable {
+    let mut columns = Vec::with_capacity(cols.len());
+    let cols = cols
+        .iter()
+        .filter_map(|col| table.get_column(col.idx()))
         .map(|col| relation::Column::new(FieldName::new(table.table_id, col.col_pos), col.col_type.clone()));
     columns.extend(cols);
 
@@ -149,18 +150,18 @@ fn compile_columns(table: &TableSchema, field_names: Vec<FieldName>) -> DbTable 
 }
 
 /// Compiles a `INSERT ...` clause
-fn compile_insert(table: &TableSchema, columns: Vec<FieldName>, values: Vec<Vec<FieldExpr>>) -> CrudExpr {
-    let table = compile_columns(table, columns);
+fn compile_insert(table: &TableSchema, cols: &[ColId], values: Box<[Box<[ColExpr]>]>) -> CrudExpr {
+    let table = compile_columns(table, cols);
 
     let mut rows = Vec::with_capacity(values.len());
-    for x in values {
+    for x in Vec::from(values) {
         let mut row = Vec::with_capacity(x.len());
-        for v in x {
+        for v in Vec::from(x) {
             match v {
-                FieldExpr::Name(x) => {
+                ColExpr::Col(x) => {
                     todo!("Deal with idents in insert?: {}", x)
                 }
-                FieldExpr::Value(x) => {
+                ColExpr::Value(x) => {
                     row.push(x);
                 }
             }
@@ -185,7 +186,7 @@ fn compile_delete(table: Arc<TableSchema>, selection: Option<Selection>) -> Crud
 /// Compiles a `UPDATE ...` clause
 fn compile_update(
     table: Arc<TableSchema>,
-    assignments: HashMap<FieldName, FieldExpr>,
+    assignments: IntMap<ColId, ColExpr>,
     selection: Option<Selection>,
 ) -> CrudExpr {
     let query = QueryExpr::new(&*table);
@@ -199,7 +200,7 @@ fn compile_update(
 }
 
 /// Compiles a `CREATE TABLE ...` clause
-fn compile_create_table(table: TableDef) -> CrudExpr {
+fn compile_create_table(table: Box<TableDef>) -> CrudExpr {
     CrudExpr::CreateTable { table }
 }
 
@@ -220,7 +221,7 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
             project,
             selection,
         } => CrudExpr::Query(compile_select(from, project, selection)?),
-        SqlAst::Insert { table, columns, values } => compile_insert(&table, columns, values),
+        SqlAst::Insert { table, columns, values } => compile_insert(&table, &columns, values),
         SqlAst::Update {
             table,
             assignments,
@@ -657,14 +658,13 @@ mod tests {
             panic!("unexpected operator {:#?}", query[0]);
         };
 
-        let ColumnOp::Field(FieldExpr::Name(FieldName { table, col })) = **lhs else {
+        let ColumnOp::Col(ColExpr::Col(col)) = **lhs else {
             panic!("unexpected left hand side {:#?}", **lhs);
         };
 
-        assert_eq!(table, lhs_id);
         assert_eq!(col, 0.into());
 
-        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
+        let ColumnOp::Col(ColExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
             panic!("unexpected right hand side {:#?}", **rhs);
         };
 
@@ -742,14 +742,13 @@ mod tests {
             panic!("unexpected operator {:#?}", rhs.query[0]);
         };
 
-        let ColumnOp::Field(FieldExpr::Name(FieldName { table, col })) = **lhs else {
+        let ColumnOp::Col(ColExpr::Col(col)) = **lhs else {
             panic!("unexpected left hand side {:#?}", **lhs);
         };
 
-        assert_eq!(table, rhs_id);
         assert_eq!(col, 1.into());
 
-        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
+        let ColumnOp::Col(ColExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
             panic!("unexpected right hand side {:#?}", **rhs);
         };
         Ok(())
@@ -902,14 +901,13 @@ mod tests {
             panic!("unexpected operator {:#?}", rhs[0]);
         };
 
-        let ColumnOp::Field(FieldExpr::Name(FieldName { table, col })) = **field else {
+        let ColumnOp::Col(ColExpr::Col(col)) = **field else {
             panic!("unexpected left hand side {:#?}", field);
         };
 
-        assert_eq!(table, rhs_id);
         assert_eq!(col, 2.into());
 
-        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **value else {
+        let ColumnOp::Col(ColExpr::Value(AlgebraicValue::U64(3))) = **value else {
             panic!("unexpected right hand side {:#?}", value);
         };
         Ok(())
@@ -990,14 +988,13 @@ mod tests {
             panic!("unexpected operator {:#?}", rhs[0]);
         };
 
-        let ColumnOp::Field(FieldExpr::Name(FieldName { table, col })) = **field else {
+        let ColumnOp::Col(ColExpr::Col(col)) = **field else {
             panic!("unexpected left hand side {:#?}", field);
         };
 
-        assert_eq!(table, rhs_id);
         assert_eq!(col, 2.into());
 
-        let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **value else {
+        let ColumnOp::Col(ColExpr::Value(AlgebraicValue::U64(3))) = **value else {
             panic!("unexpected right hand side {:#?}", value);
         };
         Ok(())
