@@ -374,8 +374,8 @@ impl InstanceEnv {
         let mut query = build_query(ctx, stdb, &tx, &query, &mut NoInMemUsed)?;
 
         // write all rows and flush at row boundaries.
-        let query_iter = std::iter::from_fn(|| query.next().transpose());
-        let chunks = itertools::process_results(query_iter, |it| ChunkedWriter::collect_iter(it))?;
+        let query_iter = std::iter::from_fn(|| query.next());
+        let chunks = ChunkedWriter::collect_iter(query_iter);
         Ok(chunks)
     }
 }

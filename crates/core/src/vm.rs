@@ -139,7 +139,7 @@ pub fn build_query<'a>(
                 } else if cols.is_singleton() {
                     // For singleton constraints, we compare the column directly against `bounds`.
                     let head = cols.head().idx();
-                    let iter = result.select(move |row| Ok(bounds.contains(&*row.read_column(head).unwrap())));
+                    let iter = result.select(move |row| bounds.contains(&*row.read_column(head).unwrap()));
                     Box::new(iter) as Box<IterRows<'a>>
                 } else {
                     // For multi-col constraints, these are stored as bounds of product values,
@@ -154,12 +154,12 @@ pub fn build_query<'a>(
                         // and compare against the column in the row.
                         // All columns must match to include the row,
                         // which is essentially the same as a big `AND` of `ColumnOp`s.
-                        Ok(cols.iter().enumerate().all(|(idx, col)| {
+                        cols.iter().enumerate().all(|(idx, col)| {
                             let start_bound = start_bound.map(|pv| &pv[idx]);
                             let end_bound = end_bound.map(|pv| &pv[idx]);
                             let read_col = row.read_column(col.idx()).unwrap();
                             (start_bound, end_bound).contains(&*read_col)
-                        }))
+                        })
                     }))
                 }
             }
@@ -320,13 +320,13 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
         &self.header
     }
 
-    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
+    fn next(&mut self) -> Option<RelValue<'a>> {
         // Return a value from the current index iterator, if not exhausted.
         if self.return_index_rows {
             while let Some(value) = self.index_iter.as_mut().and_then(|iter| iter.next()) {
                 let value = RelValue::Row(value);
                 if self.filter(&value) {
-                    return Ok(Some(self.map(value, None)));
+                    return Some(self.map(value, None));
                 }
             }
         }
@@ -334,22 +334,23 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
         // Otherwise probe the index with a row from the probe side.
         let table_id = self.index_table;
         let col_id = self.index_col;
-        while let Some(mut row) = self.probe_side.next()? {
+        while let Some(mut row) = self.probe_side.next() {
             if let Some(value) = row.read_or_take_column(self.probe_col.idx()) {
-                let mut index_iter = match self.tx {
-                    TxMode::MutTx(tx) => self.db.iter_by_col_range_mut(self.ctx, tx, table_id, col_id, value)?,
-                    TxMode::Tx(tx) => self.db.iter_by_col_range(self.ctx, tx, table_id, col_id, value)?,
+                let index_iter = match self.tx {
+                    TxMode::MutTx(tx) => self.db.iter_by_col_range_mut(self.ctx, tx, table_id, col_id, value),
+                    TxMode::Tx(tx) => self.db.iter_by_col_range(self.ctx, tx, table_id, col_id, value),
                 };
+                let mut index_iter = index_iter.expect("any table id passed should have been validated");
                 while let Some(value) = index_iter.next() {
                     let value = RelValue::Row(value);
                     if self.filter(&value) {
                         self.index_iter = Some(index_iter);
-                        return Ok(Some(self.map(value, Some(row))));
+                        return Some(self.map(value, Some(row)));
                     }
                 }
             }
         }
-        Ok(None)
+        None
     }
 }
 
@@ -407,7 +408,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             sources.take(id).map(|mt| mt.into_iter().map(RelValue::Projection))
         })?;
         let head = result.head().clone();
-        let rows = result.collect_vec(|row| row.into_product_value())?;
+        let rows = result.collect_vec(|row| row.into_product_value());
 
         Ok(Code::Table(MemTable::new(head, table_access, rows)))
     }
@@ -551,8 +552,8 @@ impl<'a> RelOps<'a> for TableCursor<'a> {
         &self.table.head
     }
 
-    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
-        Ok(self.iter.next().map(RelValue::Row))
+    fn next(&mut self) -> Option<RelValue<'a>> {
+        self.iter.next().map(RelValue::Row)
     }
 }
 
@@ -561,8 +562,8 @@ impl<'a, R: RangeBounds<AlgebraicValue>> RelOps<'a> for IndexCursor<'a, R> {
         &self.table.head
     }
 
-    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
-        Ok(self.iter.next().map(RelValue::Row))
+    fn next(&mut self) -> Option<RelValue<'a>> {
+        self.iter.next().map(RelValue::Row)
     }
 }
 

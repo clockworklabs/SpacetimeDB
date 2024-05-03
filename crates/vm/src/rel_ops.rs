@@ -1,4 +1,3 @@
-use crate::errors::ErrorVm;
 use crate::relation::RelValue;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_sats::relation::{ColExpr, Header, RowCount};
@@ -12,7 +11,7 @@ pub trait RelOps<'a> {
         RowCount::unknown()
     }
     /// Advances the `iterator` and returns the next [RelValue].
-    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm>;
+    fn next(&mut self) -> Option<RelValue<'a>>;
 
     /// Creates an `Iterator` which uses a closure to determine if a [RelValueRef] should be yielded.
     ///
@@ -25,7 +24,7 @@ pub trait RelOps<'a> {
     #[inline]
     fn select<P>(self, predicate: P) -> Select<Self, P>
     where
-        P: FnMut(&RelValue<'_>) -> Result<bool, ErrorVm>,
+        P: FnMut(&RelValue<'_>) -> bool,
         Self: Sized,
     {
         Select::new(self, predicate)
@@ -43,7 +42,7 @@ pub trait RelOps<'a> {
     #[inline]
     fn project<'b, P>(self, after_head: &'b Arc<Header>, cols: &'b [ColExpr], extractor: P) -> Project<'b, Self, P>
     where
-        P: for<'c> FnMut(&[ColExpr], RelValue<'c>) -> Result<RelValue<'c>, ErrorVm>,
+        P: for<'c> FnMut(&[ColExpr], RelValue<'c>) -> RelValue<'c>,
         Self: Sized,
     {
         let count = self.row_count();
@@ -83,7 +82,7 @@ pub trait RelOps<'a> {
 
     /// Collect all the rows in this relation into a `Vec<T>` given a function `RelValue<'a> -> T`.
     #[inline]
-    fn collect_vec<T>(mut self, mut convert: impl FnMut(RelValue<'a>) -> T) -> Result<Vec<T>, ErrorVm>
+    fn collect_vec<T>(mut self, mut convert: impl FnMut(RelValue<'a>) -> T) -> Vec<T>
     where
         Self: Sized,
     {
@@ -91,11 +90,11 @@ pub trait RelOps<'a> {
         let estimate = count.max.unwrap_or(count.min);
         let mut result = Vec::with_capacity(estimate);
 
-        while let Some(row) = self.next()? {
+        while let Some(row) = self.next() {
             result.push(convert(row));
         }
 
-        Ok(result)
+        result
     }
 }
 
@@ -108,7 +107,7 @@ impl<'a, I: RelOps<'a> + ?Sized> RelOps<'a> for Box<I> {
         (**self).row_count()
     }
 
-    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
+    fn next(&mut self) -> Option<RelValue<'a>> {
         (**self).next()
     }
 }
@@ -132,8 +131,8 @@ impl<'a> RelOps<'a> for EmptyRelOps {
         &self.head
     }
 
-    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
-        Ok(None)
+    fn next(&mut self) -> Option<RelValue<'a>> {
+        None
     }
 }
 
@@ -152,20 +151,20 @@ impl<I, P> Select<I, P> {
 impl<'a, I, P> RelOps<'a> for Select<I, P>
 where
     I: RelOps<'a>,
-    P: FnMut(&RelValue<'a>) -> Result<bool, ErrorVm>,
+    P: FnMut(&RelValue<'a>) -> bool,
 {
     fn head(&self) -> &Arc<Header> {
         self.iter.head()
     }
 
-    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
+    fn next(&mut self) -> Option<RelValue<'a>> {
         let filter = &mut self.predicate;
-        while let Some(v) = self.iter.next()? {
-            if filter(&v)? {
-                return Ok(Some(v));
+        while let Some(v) = self.iter.next() {
+            if filter(&v) {
+                return Some(v);
             }
         }
-        Ok(None)
+        None
     }
 }
 
@@ -199,7 +198,7 @@ impl<'a, I, P> Project<'a, I, P> {
 impl<'a, I, P> RelOps<'a> for Project<'_, I, P>
 where
     I: RelOps<'a>,
-    P: FnMut(&[ColExpr], RelValue<'a>) -> Result<RelValue<'a>, ErrorVm>,
+    P: FnMut(&[ColExpr], RelValue<'a>) -> RelValue<'a>,
 {
     fn head(&self) -> &Arc<Header> {
         self.head
@@ -209,12 +208,8 @@ where
         self.count
     }
 
-    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
-        let extract = &mut self.extractor;
-        if let Some(v) = self.iter.next()? {
-            return Ok(Some(extract(self.cols, v)?));
-        }
-        Ok(None)
+    fn next(&mut self) -> Option<RelValue<'a>> {
+        self.iter.next().map(|v| (self.extractor)(self.cols, v))
     }
 }
 
@@ -270,11 +265,11 @@ where
         &self.head
     }
 
-    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
+    fn next(&mut self) -> Option<RelValue<'a>> {
         // Consume `Rhs`, building a map `KeyRhs => Rhs`.
         if !self.filled_rhs {
             self.map = HashMap::with_capacity(self.rhs.row_count().min);
-            while let Some(row_rhs) = self.rhs.next()? {
+            while let Some(row_rhs) = self.rhs.next() {
                 let key_rhs = (self.key_rhs)(&row_rhs);
                 self.map.entry(key_rhs).or_default().push(row_rhs);
             }
@@ -285,10 +280,7 @@ where
             // Consume a row in `Lhs` and project to `KeyLhs`.
             let lhs = match &self.left {
                 Some(left) => left,
-                None => match self.lhs.next()? {
-                    Some(x) => self.left.insert(x),
-                    None => return Ok(None),
-                },
+                None => self.left.insert(self.lhs.next()?),
             };
             let k = (self.key_lhs)(lhs);
 
@@ -297,7 +289,7 @@ where
             if let Some(rvv) = self.map.get_mut(&k) {
                 if let Some(rhs) = rvv.pop() {
                     if (self.predicate)(lhs, &rhs) {
-                        return Ok(Some((self.projection)(lhs.clone(), rhs)));
+                        return Some((self.projection)(lhs.clone(), rhs));
                     }
                 }
             }

@@ -263,7 +263,7 @@ impl ExecutionUnit {
         let tx: TxMode = tx.into();
         let _slow_query = SlowQueryLogger::subscription(ctx, sql).log_guard();
         let query = build_query(ctx, db, &tx, eval_plan, &mut NoInMemUsed)?;
-        let ops = query.collect_vec(convert)?;
+        let ops = query.collect_vec(convert);
         Ok(ops)
     }
 
@@ -337,7 +337,7 @@ impl ExecutionUnit {
 
     /// Collect the results of `query` into a vec `sink`.
     fn collect_rows<'a>(sink: &mut Vec<RelValue<'a>>, mut query: Box<IterRows<'a>>) -> Result<(), DBError> {
-        while let Some(row) = query.next()? {
+        while let Some(row) = query.next() {
             sink.push(row);
         }
         Ok(())
