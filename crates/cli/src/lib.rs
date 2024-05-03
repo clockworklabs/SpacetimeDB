@@ -2,6 +2,7 @@ pub mod api;
 mod config;
 mod edit_distance;
 mod errors;
+mod lockfile;
 mod subcommands;
 mod tasks;
 pub mod util;
