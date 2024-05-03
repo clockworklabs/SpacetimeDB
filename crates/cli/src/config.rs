@@ -105,55 +105,72 @@ pub struct RawConfig {
     server_configs: Vec<ServerConfig>,
 }
 
-#[derive(Clone)]
+#[derive(Debug)]
+/// A file used as an exclusive lock on access to another file.
+///
+/// Constructing a `Lockfile` creates the `path` with [`std::fs::File::create_new`],
+/// a.k.a. `O_EXCL`, erroring if the file already exists.
+///
+/// Dropping a `Lockfile` deletes the `path`, releasing the lock.
+///
+/// Used to guarantee exclusive access to the system config file,
+/// in order to prevent racy concurrent modifications.
+struct Lockfile {
+    path: PathBuf,
+}
+
+impl Lockfile {
+    /// Acquire an exclusive lock on the configuration file `config_path`.
+    ///
+    /// `config_path` should be the full name of the SpacetimeDB configuration file.
+    fn for_config(config_path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        // Ensure the directory exists before attempting to create the lockfile.
+        let parent = config_path.as_ref().parent().unwrap();
+        if parent != Path::new("") {
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "Unable to create directory {parent:?} to build lockfile for {:?}",
+                    config_path.as_ref(),
+                )
+            })?;
+        }
+
+        let mut path = config_path.as_ref().to_path_buf();
+        path.set_extension("lock");
+        // Open with `create_new`, which fails if the file already exists.
+        std::fs::File::create_new(&path).with_context(|| {
+            "Unable to acquire lock on config file {config_path:?}: failed to create lockfile {path:?}"
+        })?;
+
+        Ok(Lockfile { path })
+    }
+}
+
+impl Drop for Lockfile {
+    fn drop(&mut self) {
+        std::fs::remove_file(&self.path)
+            .with_context(|| format!("Unable to remove lockfile {:?}", self.path))
+            .unwrap();
+    }
+}
+
 pub struct Config {
     proj: RawConfig,
     home: RawConfig,
 
-    /// Lockfile for the project config, if a file exists for the project config.
+    /// The path from which we loaded the system config `home`,
+    /// and a [`Lockfile`] which guarantees us exclusive access to it.
     ///
-    /// Created before reading the project config, and closed upon dropping the config.
-    /// Allows us to mutate the config via [`Config::save`] without worrying about other processes.
-    proj_lock: Option<PathBuf>,
-
-    /// Lockfile for the system config.
-    ///
-    /// Created before reading or creating the home config, and closed upon dropping the config.
-    /// Allows us to mutate the config via [`Config::save`] without worrying about other processes.
+    /// The lockfile is created before reading or creating the home config,
+    /// and closed upon dropping the config.
+    /// This allows us to mutate the config via [`Config::save`] without worrying about other processes.
     ///
     /// None only in tests, which are allowed to concurrently mutate configurations as much as they want,
     /// since they use a hardcoded configuration rather than loading from a file.
-    home_lock: Option<PathBuf>,
-}
-
-impl Drop for Config {
-    fn drop(&mut self) {
-        // Delete lockfiles so other processes can access the config.
-        let proj_result = self.proj_lock.as_ref().map(std::fs::remove_file);
-        let home_result = self.home_lock.as_ref().map(std::fs::remove_file);
-
-        // Release both locks before checking for errors to avoid stale lockfiles sitting around.
-        match (proj_result, home_result) {
-            (Some(Err(proj_err)), Some(Err(home_err))) => panic!(
-                "Encountered errors while releasing both the project configuration lock and system configuration lock.
-
-System: {home_err:#?}
-
-Project: {proj_err:#?}"
-            ),
-            (Some(Err(proj_err)), _) => panic!(
-                "Encountered error while releasing the project configuration lock.
-
-{proj_err:#?}"
-            ),
-            (_, Some(Err(home_err))) => panic!(
-                "Encountered error while releasing the system configuration lock.
-
-{home_err:#?}"
-            ),
-            _ => (),
-        }
-    }
+    ///
+    /// Note that it's not necessary to lock or remember the path of the project config,
+    /// since we never write to that file.
+    home_file: Option<(PathBuf, Lockfile)>,
 }
 
 const HOME_CONFIG_DIR: &str = ".spacetime";
@@ -835,83 +852,14 @@ impl Config {
             .find(|path| path.exists())
     }
 
-    fn lockfile_path(config_path: impl AsRef<Path>) -> PathBuf {
-        let mut lockfile = config_path.as_ref().to_path_buf();
-        lockfile.set_extension("lock");
-        lockfile
-    }
-
-    fn create_lockfile_or_panic(config_path: impl AsRef<Path> + std::fmt::Debug) -> PathBuf {
-        let lockfile = Self::lockfile_path(&config_path);
-        std::fs::File::create_new(&lockfile).unwrap_or_else(|e| {
-            panic!(
-                "Unable to acquire lock on config file: {config_path:?}.
-
-Attempted to create a lockfile {lockfile:?}, but got: {e:#?}"
-            )
-        });
-        lockfile
-    }
-
-    /// Load a [`RawConfig`] from a file, creating a lockfile.
-    ///
-    /// The second value is the path of the created lockfile.
-    ///
-    /// Panics if unable to create the lockfile, e.g. because another process has already locked the config.
-    ///
-    /// If `!is_project` and the env var `SPACETIME_CONFIG_FILE` is set,
-    /// use that rather than `config_dir`.
-    ///
-    /// If `is_project` and the path does not exist, return an empty config.
-    /// Do not create a lockfile.
-    ///
-    /// If `!is_project` and the path does not exist, return a config with sensible defaults.
-    /// Do create a lockfile.
-    fn load_raw(config_dir: PathBuf, is_project: bool) -> (RawConfig, Option<PathBuf>) {
-        // If a config file overload has been specified, use that instead
-        if !is_project {
-            if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
-                let lockfile = Self::create_lockfile_or_panic(&config_path);
-
-                return (
-                    Self::load_from_file(config_path.as_ref())
-                        .inspect_err(|e| {
-                            eprintln!("SPACETIME_CONFIG_FILE does not point to a valid config file: {e:#}")
-                        })
-                        .unwrap_or_default(),
-                    Some(lockfile),
-                );
-            }
+    fn system_config_path() -> PathBuf {
+        if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
+            config_path.into()
+        } else {
+            let mut config_path = dirs::home_dir().unwrap();
+            config_path.push(HOME_CONFIG_DIR);
+            Self::find_config_path(&config_path).unwrap_or_else(|| config_path.join(CONFIG_FILENAME))
         }
-        if !config_dir.exists() {
-            fs::create_dir_all(&config_dir).unwrap();
-        }
-
-        let Some(config_path) = Self::find_config_path(&config_dir) else {
-            return if is_project {
-                // Return an empty config without creating a file.
-                // As we will never write the project path to disk,
-                // no need to create a lockfile.
-                (RawConfig::default(), None)
-            } else {
-                // Lock the config file, even though it doesn't exist yet,
-                // to prevent another process from racing to create the default.
-                let lockfile = Self::create_lockfile_or_panic(config_dir.join(CONFIG_FILENAME));
-                // Return a default config with http://127.0.0.1:3000 as the default server.
-                // Do not (yet) create a file.
-                // The config file will be created later by `Config::save` if necessary.
-                (RawConfig::new_with_localhost(), Some(lockfile))
-            };
-        };
-
-        let lockfile = Self::create_lockfile_or_panic(&config_path);
-
-        (
-            Self::load_from_file(&config_path)
-                .inspect_err(|e| eprintln!("config file is invalid: {e:#}"))
-                .unwrap_or_default(),
-            Some(lockfile),
-        )
     }
 
     fn load_from_file(config_path: &Path) -> anyhow::Result<RawConfig> {
@@ -919,23 +867,39 @@ Attempted to create a lockfile {lockfile:?}, but got: {e:#?}"
         Ok(toml::from_str(&text)?)
     }
 
-    pub fn load() -> Self {
-        let home_dir = dirs::home_dir().unwrap();
-        let (home_config, home_lock) = Self::load_raw(home_dir.join(HOME_CONFIG_DIR), false);
-
+    fn load_proj_config() -> RawConfig {
         // TODO(cloutiertyler): For now we're checking for a spacetime.toml file
         // in the current directory. Eventually this should really be that we
         // search parent directories above the current directory to find
         // spacetime.toml files like a .gitignore file
         let cur_dir = std::env::current_dir().expect("No current working directory!");
-        let (cur_config, cur_lock) = Self::load_raw(cur_dir, true);
+        if let Some(config_path) = Self::find_config_path(&cur_dir) {
+            Self::load_from_file(&config_path)
+                .inspect_err(|e| eprintln!("config file {config_path:?} is invalid: {e:#}"))
+                .unwrap_or_default()
+        } else {
+            Default::default()
+        }
+    }
+
+    pub fn load() -> Self {
+        let home_path = Self::system_config_path();
+        let home_lock = Lockfile::for_config(&home_path).unwrap();
+        let home = if home_path.exists() {
+            Self::load_from_file(&home_path)
+                .inspect_err(|e| eprintln!("config file {home_path:?} is invalid: {e:#?}"))
+                .unwrap_or_default()
+        } else {
+            RawConfig::new_with_localhost()
+        };
+
+        let proj = Self::load_proj_config();
 
         Self {
-            home: home_config,
-            proj: cur_config,
+            home,
+            proj,
 
-            home_lock,
-            proj_lock: cur_lock,
+            home_file: Some((home_path, home_lock)),
         }
     }
 
@@ -946,39 +910,38 @@ Attempted to create a lockfile {lockfile:?}, but got: {e:#?}"
             home: RawConfig::new_with_localhost(),
             proj: RawConfig::default(),
 
-            home_lock: None,
-            proj_lock: None,
+            home_file: None,
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn clone_for_test(&self) -> Self {
+        assert!(
+            self.home_file.is_none(),
+            "Cannot clone_for_test a Config derived from file {:?}",
+            self.home_file,
+        );
+        Config {
+            home: self.home.clone(),
+            proj: self.proj.clone(),
+            home_file: None,
         }
     }
 
     pub fn save(&self) {
-        if self.home_lock.is_none() {
-            // We don't hold a lockfile,
-            // likely because we were created by `Self::new_with_localhost` for a test,
-            // so don't write to disk.
+        let Some((home_path, _)) = &self.home_file else {
             return;
-        }
-
-        let config_var = std::env::var_os("SPACETIME_CONFIG_FILE");
-        let config_var_exists = config_var.is_some();
-        let config_path = if let Some(config_path) = config_var {
-            PathBuf::from(config_path)
-        } else {
-            let home_dir = dirs::home_dir().unwrap();
-            let config_dir = home_dir.join(HOME_CONFIG_DIR);
-            if !config_dir.exists() {
-                fs::create_dir_all(&config_dir).unwrap();
-            }
-
-            Self::find_config_path(&config_dir).unwrap_or_else(|| config_dir.join(CONFIG_FILENAME))
         };
+
+        let parent = home_path.parent().unwrap();
+        if parent != Path::new("") {
+            std::fs::create_dir_all(parent).unwrap();
+        }
 
         let config = toml::to_string_pretty(&self.home).unwrap();
 
-        if let Err(e) = std::fs::write(config_path, config) {
-            if !config_var_exists {
-                eprintln!("could not save config file: {e}")
-            }
+        if let Err(e) = std::fs::write(home_path, config) {
+            eprintln!("could not save config file: {e}")
         }
     }
 
