@@ -4,8 +4,7 @@ use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{
-    rel_value_to_table_row_op_binary, rel_value_to_table_row_op_json, DatabaseTableUpdate, DatabaseTableUpdateRelValue,
-    OpType, UpdatesRelValue,
+    rel_value_to_table_row_op_binary, rel_value_to_table_row_op_binary_bench, rel_value_to_table_row_op_json, DatabaseTableUpdate, DatabaseTableUpdateRelValue, OpType, UpdatesRelValue
 };
 use crate::json::client_api::TableUpdateJson;
 use crate::util::slow::SlowQueryLogger;
@@ -226,6 +225,28 @@ impl ExecutionUnit {
             table_id: self.return_table().into(),
             table_name: self.return_name(),
             table_row_operations,
+        }))
+    }
+
+    /// Evaluate this execution unit against the database using the binary format.
+    #[tracing::instrument(skip_all)]
+    pub fn eval_binary_bench(
+        &self,
+        ctx: &ExecutionContext,
+        db: &RelationalDB,
+        tx: &Tx,
+        sql: &str,
+    ) -> Result<Option<(TableId, String, Vec<u8>)>, DBError> {
+        let mut table_row_operations = Vec::new();
+        Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, |row| {
+            rel_value_to_table_row_op_binary_bench(&mut table_row_operations, &row, OpType::Insert)
+        })?;
+        Ok((!table_row_operations.is_empty()).then(|| {
+            (
+                self.return_table().into(),
+                self.return_name().into(),
+                table_row_operations,
+            )
         }))
     }
 

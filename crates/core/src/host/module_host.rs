@@ -254,6 +254,17 @@ pub(crate) fn rel_value_to_table_row_op_json(row: RelValue<'_>, op: OpType) -> T
 }
 
 /// Annotate `row` BSATN-encoded with `op` as a `TableRowOperation`.
+pub(crate) fn rel_value_to_table_row_op_binary_bench(
+    scratch: &mut Vec<u8>,
+    row: &RelValue<'_>,
+    op: OpType,
+) {
+    scratch.push(op as u8);
+
+    row.to_bsatn_extend(scratch).unwrap();
+}
+
+/// Annotate `row` BSATN-encoded with `op` as a `TableRowOperation`.
 pub(crate) fn rel_value_to_table_row_op_binary(
     scratch: &mut Vec<u8>,
     row: &RelValue<'_>,

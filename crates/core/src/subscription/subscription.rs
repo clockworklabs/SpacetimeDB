@@ -540,6 +540,34 @@ impl ExecutionSet {
         Ok(ProtocolDatabaseUpdate { tables })
     }
 
+    pub fn eval_bench(
+        &self,
+        ctx: &ExecutionContext,
+        protocol: Protocol,
+        db: &RelationalDB,
+        tx: &Tx,
+    ) -> Result<Vec<(TableId, String, Vec<u8>)>, DBError> {
+        let tables = match protocol {
+            Protocol::Binary => self.eval_binary_bench(ctx, db, tx)?,
+            Protocol::Text => todo!(),
+        };
+        Ok(tables)
+    }
+    #[tracing::instrument(skip_all)]
+    fn eval_binary_bench(
+        &self,
+        ctx: &ExecutionContext,
+        db: &RelationalDB,
+        tx: &Tx,
+    ) -> Result<Vec<(TableId, String, Vec<u8>)>, DBError> {
+        // evaluate each of the execution units in this ExecutionSet in parallel
+        self.exec_units
+            // if you need eval to run single-threaded for debugging, change this to .iter()
+            .par_iter()
+            .filter_map(|unit| unit.eval_binary_bench(ctx, db, tx, &unit.sql).transpose())
+            .collect::<Result<Vec<_>, _>>()
+    }
+
     #[tracing::instrument(skip_all)]
     fn eval_json(&self, ctx: &ExecutionContext, db: &RelationalDB, tx: &Tx) -> Result<Vec<TableUpdateJson>, DBError> {
         // evaluate each of the execution units in this ExecutionSet in parallel
