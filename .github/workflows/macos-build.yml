@@ -5,6 +5,7 @@ on:
     tags:
       - '**'
     branches:
+      - drogus/rebuild-0.9.0-beta
       - master
       - release/*
 
