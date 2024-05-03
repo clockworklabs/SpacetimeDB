@@ -858,6 +858,8 @@ impl Config {
             return;
         };
         let parent = save_path.parent().unwrap();
+        // `make_dir_all` on the empty path is invalid, so we need to avoid doing that to handle
+        // the case where the config path is a relative path with no directory component.
         if parent != Path::new("") {
             std::fs::create_dir_all(parent).unwrap();
         }
