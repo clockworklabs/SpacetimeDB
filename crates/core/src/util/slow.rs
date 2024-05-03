@@ -123,7 +123,7 @@ mod tests {
         let tx = db.begin_tx();
         let q = compile_sql(db, &tx, &sql)?;
         let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
-        Ok(execute_sql(db, &sql, q, AuthCtx::for_testing(), &subs)?.pop().unwrap())
+        Ok(execute_sql(db, &sql, q, AuthCtx::for_testing(), Some(&subs))?.pop().unwrap())
     }
 
     fn run_query_write(db: &RelationalDB, sql: String) -> ResultTest<()> {
@@ -132,7 +132,7 @@ mod tests {
         drop(tx);
 
         let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
-        execute_sql(db, &sql, q, AuthCtx::for_testing(), &subs)?;
+        execute_sql(db, &sql, q, AuthCtx::for_testing(), Some(&subs))?;
 
         Ok(())
     }
@@ -161,7 +161,7 @@ mod tests {
         let slow = SlowQueryLogger::query(&ctx, sql);
 
         let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
-        let result = execute_sql(&db, sql, q, AuthCtx::for_testing(), &subs)?;
+        let result = execute_sql(&db, sql, q, AuthCtx::for_testing(), Some(&subs))?;
         assert_eq!(result[0].data[0], product![1, 2]);
         assert!(slow.log().is_some());
 

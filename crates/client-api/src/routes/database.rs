@@ -523,22 +523,13 @@ where
     let instance_id = database_instance.id;
 
     let host = worker_ctx.host_controller();
-    let module_host = match host.get_module_host(instance_id) {
-        Ok(module_host) => module_host,
-        Err(_) => {
-            let dbic = worker_ctx
-                .load_module_host_context(database, instance_id)
-                .await
-                .map_err(log_and_500)?;
-            host.spawn_module_host(dbic).await.map_err(log_and_500)?
-        }
-    };
+    let module_host = host.get_or_launch_module_host(database.clone(), instance_id).await.map_err(log_and_500)?;
     let json = host.using_database(
         database,
         instance_id,
         move |db| -> axum::response::Result<_, (StatusCode, String)> {
             tracing::info!(sql = body);
-            let results = sql::execute::run(db, &body, auth).map_err(|e| {
+            let results = sql::execute::run(db, &body, auth, Some(&module_host.info().subscriptions)).map_err(|e| {
                 log::warn!("{}", e);
                 if let Some(auth_err) = e.get_auth_error() {
                     (StatusCode::UNAUTHORIZED, auth_err.to_string())

@@ -479,7 +479,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             .get_db_table()
             .expect("source for Update should be a DbTable");
 
-        self._execute_delete(table, deleted.data.clone());
+        self._execute_delete(table, deleted.data.clone())?;
 
         // Replace the columns in the matched rows with the assigned
         // values. No typechecking is performed here, nor that all

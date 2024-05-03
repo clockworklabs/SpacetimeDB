@@ -39,8 +39,8 @@ pub fn eval<const N: usize, P: ProgramVm>(p: &mut P, code: Code, sources: Source
             let mut result = Vec::with_capacity(lines.len());
             for x in lines {
                 match eval(p, x, sources) {
-                    Code::Pass(None) => {},
-                    r => result.push(r)
+                    Code::Pass(None) => {}
+                    r => result.push(r),
                 };
             }
 
