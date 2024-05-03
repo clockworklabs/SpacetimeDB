@@ -1,0 +1,408 @@
+error: type parameters are not allowed on reducers
+  --> tests/ui/reducers.rs:25:15
+   |
+25 | fn type_param<T>() {}
+   |               ^
+
+error: const parameters are not allowed on reducers
+  --> tests/ui/reducers.rs:28:16
+   |
+28 | fn const_param<const X: u8>() {}
+   |                ^^^^^^^^^^^
+
+error[E0277]: invalid reducer signature
+ --> tests/ui/reducers.rs:6:4
+  |
+5 | #[spacetimedb(reducer)]
+  | ----------------------- required by a bound introduced by this call
+6 | fn bad_type(_a: Test) {}
+  |    ^^^^^^^^ this reducer signature is not valid; parameters and return type must implement `SpacetimeType`
+  |
+  = help: the trait `Reducer<'_, _, _>` is not implemented for fn item `fn(Test) {bad_type}`
+  = note:
+  = note: reducer signatures must match the following pattern:
+  = note:     Fn([ReducerContext,] [T where T: SpacetimeType, ...]) [-> Result<(), impl Display>]
+  = note:
+note: required by a bound in `register_reducer`
+ --> src/rt.rs
+  |
+  | pub fn register_reducer<'a, A: Args<'a>, T, I: ReducerInfo>(_: impl Reducer<'a, A, T>) {
+  |                                                                     ^^^^^^^^^^^^^^^^^ required by this bound in `register_reducer`
+
+error[E0277]: the reducer argument `Test` does not implement `SpacetimeType`
+ --> tests/ui/reducers.rs:6:17
+  |
+6 | fn bad_type(_a: Test) {}
+  |                 ^^^^ the trait `SpacetimeType` is not implemented for `Test`, which is required by `Test: ReducerArg`
+  |
+  = help: the trait `ReducerArg` is implemented for `spacetimedb::ReducerContext`
+  = note: required for `Test` to implement `ReducerArg`
+
+error[E0277]: invalid reducer signature
+ --> tests/ui/reducers.rs:6:4
+  |
+5 | #[spacetimedb(reducer)]
+  | ----------------------- required by a bound introduced by this call
+6 | fn bad_type(_a: Test) {}
+  |    ^^^^^^^^ this reducer signature is not valid; parameters and return type must implement `SpacetimeType`
+  |
+  = help: the trait `Reducer<'_, _, _>` is not implemented for fn item `fn(Test) {bad_type}`
+  = note:
+  = note: reducer signatures must match the following pattern:
+  = note:     Fn([ReducerContext,] [T where T: SpacetimeType, ...]) [-> Result<(), impl Display>]
+  = note:
+note: required by a bound in `invoke_reducer`
+ --> src/rt.rs
+  |
+  | pub fn invoke_reducer<'a, A: Args<'a>, T>(
+  |        -------------- required by a bound in this function
+  |     reducer: impl Reducer<'a, A, T>,
+  |                   ^^^^^^^^^^^^^^^^^ required by this bound in `invoke_reducer`
+
+error[E0277]: invalid reducer signature
+ --> tests/ui/reducers.rs:6:4
+  |
+5 | #[spacetimedb(reducer)]
+  | ----------------------- required by a bound introduced by this call
+6 | fn bad_type(_a: Test) {}
+  |    ^^^^^^^^ this reducer signature is not valid; parameters and return type must implement `SpacetimeType`
+  |
+  = help: the trait `Reducer<'_, _, _>` is not implemented for fn item `fn(Test) {bad_type}`
+  = note:
+  = note: reducer signatures must match the following pattern:
+  = note:     Fn([ReducerContext,] [T where T: SpacetimeType, ...]) [-> Result<(), impl Display>]
+  = note:
+note: required by a bound in `spacetimedb::rt::schedule`
+ --> src/rt.rs
+  |
+  | pub fn schedule<'de, R: ReducerInfo, A: Args<'de>, T>(
+  |        -------- required by a bound in this function
+  |     time: Timestamp,
+  |     _: impl Reducer<'de, A, T>,
+  |             ^^^^^^^^^^^^^^^^^^ required by this bound in `schedule`
+
+error[E0277]: the trait bound `Test: SpacetimeType` is not satisfied
+ --> tests/ui/reducers.rs:5:1
+  |
+5 | #[spacetimedb(reducer)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^ the trait `SpacetimeType` is not implemented for `Test`, which is required by `(Test,): ScheduleArgs<'_>`
+  |
+  = note: if you own the type, try adding `#[derive(SpacetimeType)]` to its definition
+  = help: the following other types implement trait `SpacetimeType`:
+            bool
+            i8
+            i16
+            i32
+            i64
+            i128
+            u8
+            u16
+          and $N others
+  = note: required for `(Test,)` to implement `spacetimedb::rt::Args<'_>`
+  = note: required for `(Test,)` to implement `ScheduleArgs<'_>`
+note: required by a bound in `spacetimedb::rt::schedule`
+ --> src/rt.rs
+  |
+  | pub fn schedule<'de, R: ReducerInfo, A: Args<'de>, T>(
+  |        -------- required by a bound in this function
+...
+  |     args: impl ScheduleArgs<'de, Args = A>,
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `schedule`
+  = note: this error originates in the attribute macro `spacetimedb` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Test: Deserialize<'_>` is not satisfied
+ --> tests/ui/reducers.rs:5:1
+  |
+5 | #[spacetimedb(reducer)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^ the trait `Deserialize<'_>` is not implemented for `Test`, which is required by `(Test,): ScheduleArgs<'_>`
+  |
+  = help: the following other types implement trait `Deserialize<'de>`:
+            bool
+            i8
+            i16
+            i32
+            i64
+            i128
+            u8
+            u16
+          and $N others
+  = note: required for `(Test,)` to implement `spacetimedb::rt::Args<'_>`
+  = note: required for `(Test,)` to implement `ScheduleArgs<'_>`
+note: required by a bound in `spacetimedb::rt::schedule`
+ --> src/rt.rs
+  |
+  | pub fn schedule<'de, R: ReducerInfo, A: Args<'de>, T>(
+  |        -------- required by a bound in this function
+...
+  |     args: impl ScheduleArgs<'de, Args = A>,
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `schedule`
+  = note: this error originates in the attribute macro `spacetimedb` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `Test: Serialize` is not satisfied
+ --> tests/ui/reducers.rs:5:1
+  |
+5 | #[spacetimedb(reducer)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^ the trait `Serialize` is not implemented for `Test`, which is required by `(Test,): ScheduleArgs<'_>`
+  |
+  = help: the following other types implement trait `Serialize`:
+            bool
+            i8
+            i16
+            i32
+            i64
+            i128
+            u8
+            u16
+          and $N others
+  = note: required for `(Test,)` to implement `spacetimedb::rt::Args<'_>`
+  = note: required for `(Test,)` to implement `ScheduleArgs<'_>`
+note: required by a bound in `spacetimedb::rt::schedule`
+ --> src/rt.rs
+  |
+  | pub fn schedule<'de, R: ReducerInfo, A: Args<'de>, T>(
+  |        -------- required by a bound in this function
+...
+  |     args: impl ScheduleArgs<'de, Args = A>,
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `schedule`
+  = note: this error originates in the attribute macro `spacetimedb` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: invalid reducer signature
+ --> tests/ui/reducers.rs:9:4
+  |
+8 | #[spacetimedb(reducer)]
+  | ----------------------- required by a bound introduced by this call
+9 | fn bad_return_type() -> Test {
+  |    ^^^^^^^^^^^^^^^ this reducer signature is not valid; parameters and return type must implement `SpacetimeType`
+  |
+  = help: the trait `Reducer<'_, _, _>` is not implemented for fn item `fn() -> Test {bad_return_type}`
+  = note:
+  = note: reducer signatures must match the following pattern:
+  = note:     Fn([ReducerContext,] [T where T: SpacetimeType, ...]) [-> Result<(), impl Display>]
+  = note:
+note: required by a bound in `register_reducer`
+ --> src/rt.rs
+  |
+  | pub fn register_reducer<'a, A: Args<'a>, T, I: ReducerInfo>(_: impl Reducer<'a, A, T>) {
+  |                                                                     ^^^^^^^^^^^^^^^^^ required by this bound in `register_reducer`
+
+error[E0277]: the trait bound `Test: ReducerResult` is not satisfied
+ --> tests/ui/reducers.rs:9:25
+  |
+9 | fn bad_return_type() -> Test {
+  |                         ^^^^ the trait `ReducerResult` is not implemented for `Test`
+  |
+  = help: the following other types implement trait `ReducerResult`:
+            Result<(), E>
+            ()
+
+error[E0277]: invalid reducer signature
+ --> tests/ui/reducers.rs:9:4
+  |
+8 | #[spacetimedb(reducer)]
+  | ----------------------- required by a bound introduced by this call
+9 | fn bad_return_type() -> Test {
+  |    ^^^^^^^^^^^^^^^ this reducer signature is not valid; parameters and return type must implement `SpacetimeType`
+  |
+  = help: the trait `Reducer<'_, _, _>` is not implemented for fn item `fn() -> Test {bad_return_type}`
+  = note:
+  = note: reducer signatures must match the following pattern:
+  = note:     Fn([ReducerContext,] [T where T: SpacetimeType, ...]) [-> Result<(), impl Display>]
+  = note:
+note: required by a bound in `invoke_reducer`
+ --> src/rt.rs
+  |
+  | pub fn invoke_reducer<'a, A: Args<'a>, T>(
+  |        -------------- required by a bound in this function
+  |     reducer: impl Reducer<'a, A, T>,
+  |                   ^^^^^^^^^^^^^^^^^ required by this bound in `invoke_reducer`
+
+error[E0277]: invalid reducer signature
+ --> tests/ui/reducers.rs:9:4
+  |
+8 | #[spacetimedb(reducer)]
+  | ----------------------- required by a bound introduced by this call
+9 | fn bad_return_type() -> Test {
+  |    ^^^^^^^^^^^^^^^ this reducer signature is not valid; parameters and return type must implement `SpacetimeType`
+  |
+  = help: the trait `Reducer<'_, _, _>` is not implemented for fn item `fn() -> Test {bad_return_type}`
+  = note:
+  = note: reducer signatures must match the following pattern:
+  = note:     Fn([ReducerContext,] [T where T: SpacetimeType, ...]) [-> Result<(), impl Display>]
+  = note:
+note: required by a bound in `spacetimedb::rt::schedule`
+ --> src/rt.rs
+  |
+  | pub fn schedule<'de, R: ReducerInfo, A: Args<'de>, T>(
+  |        -------- required by a bound in this function
+  |     time: Timestamp,
+  |     _: impl Reducer<'de, A, T>,
+  |             ^^^^^^^^^^^^^^^^^^ required by this bound in `schedule`
+
+error[E0277]: invalid reducer signature
+  --> tests/ui/reducers.rs:14:4
+   |
+13 | #[spacetimedb(reducer)]
+   | ----------------------- required by a bound introduced by this call
+14 | fn bad_type_ctx(_ctx: ReducerContext, _a: Test) {}
+   |    ^^^^^^^^^^^^ this reducer signature is not valid; parameters and return type must implement `SpacetimeType`
+   |
+   = help: the trait `Reducer<'_, _, _>` is not implemented for fn item `fn(spacetimedb::ReducerContext, Test) {bad_type_ctx}`
+   = note:
+   = note: reducer signatures must match the following pattern:
+   = note:     Fn([ReducerContext,] [T where T: SpacetimeType, ...]) [-> Result<(), impl Display>]
+   = note:
+note: required by a bound in `register_reducer`
+  --> src/rt.rs
+   |
+   | pub fn register_reducer<'a, A: Args<'a>, T, I: ReducerInfo>(_: impl Reducer<'a, A, T>) {
+   |                                                                     ^^^^^^^^^^^^^^^^^ required by this bound in `register_reducer`
+
+error[E0277]: the reducer argument `Test` does not implement `SpacetimeType`
+  --> tests/ui/reducers.rs:14:43
+   |
+14 | fn bad_type_ctx(_ctx: ReducerContext, _a: Test) {}
+   |                                           ^^^^ the trait `SpacetimeType` is not implemented for `Test`, which is required by `Test: ReducerArg`
+   |
+   = help: the trait `ReducerArg` is implemented for `spacetimedb::ReducerContext`
+   = note: required for `Test` to implement `ReducerArg`
+
+error[E0277]: invalid reducer signature
+  --> tests/ui/reducers.rs:14:4
+   |
+13 | #[spacetimedb(reducer)]
+   | ----------------------- required by a bound introduced by this call
+14 | fn bad_type_ctx(_ctx: ReducerContext, _a: Test) {}
+   |    ^^^^^^^^^^^^ this reducer signature is not valid; parameters and return type must implement `SpacetimeType`
+   |
+   = help: the trait `Reducer<'_, _, _>` is not implemented for fn item `fn(spacetimedb::ReducerContext, Test) {bad_type_ctx}`
+   = note:
+   = note: reducer signatures must match the following pattern:
+   = note:     Fn([ReducerContext,] [T where T: SpacetimeType, ...]) [-> Result<(), impl Display>]
+   = note:
+note: required by a bound in `invoke_reducer`
+  --> src/rt.rs
+   |
+   | pub fn invoke_reducer<'a, A: Args<'a>, T>(
+   |        -------------- required by a bound in this function
+   |     reducer: impl Reducer<'a, A, T>,
+   |                   ^^^^^^^^^^^^^^^^^ required by this bound in `invoke_reducer`
+
+error[E0277]: invalid reducer signature
+  --> tests/ui/reducers.rs:14:4
+   |
+13 | #[spacetimedb(reducer)]
+   | ----------------------- required by a bound introduced by this call
+14 | fn bad_type_ctx(_ctx: ReducerContext, _a: Test) {}
+   |    ^^^^^^^^^^^^ this reducer signature is not valid; parameters and return type must implement `SpacetimeType`
+   |
+   = help: the trait `Reducer<'_, _, _>` is not implemented for fn item `fn(spacetimedb::ReducerContext, Test) {bad_type_ctx}`
+   = note:
+   = note: reducer signatures must match the following pattern:
+   = note:     Fn([ReducerContext,] [T where T: SpacetimeType, ...]) [-> Result<(), impl Display>]
+   = note:
+note: required by a bound in `spacetimedb::rt::schedule`
+  --> src/rt.rs
+   |
+   | pub fn schedule<'de, R: ReducerInfo, A: Args<'de>, T>(
+   |        -------- required by a bound in this function
+   |     time: Timestamp,
+   |     _: impl Reducer<'de, A, T>,
+   |             ^^^^^^^^^^^^^^^^^^ required by this bound in `schedule`
+
+error[E0277]: the trait bound `(spacetimedb::ReducerContext, Test): ScheduleArgs<'_>` is not satisfied
+  --> tests/ui/reducers.rs:13:1
+   |
+13 | #[spacetimedb(reducer)]
+   | ^^^^^^^^^^^^^^^^^^^^^^^ the trait `ScheduleArgs<'_>` is not implemented for `(spacetimedb::ReducerContext, Test)`
+   |
+   = help: the following other types implement trait `ScheduleArgs<'de>`:
+             (spacetimedb::ReducerContext,)
+             (spacetimedb::ReducerContext, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, AB, AC, AD, AE, AF)
+             (spacetimedb::ReducerContext, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, AB, AC, AD, AE, AF)
+             (spacetimedb::ReducerContext, T, U, V, W, X, Y, Z, AA, AB, AC, AD, AE, AF)
+             (spacetimedb::ReducerContext, X, Y, Z, AA, AB, AC, AD, AE, AF)
+             (spacetimedb::ReducerContext, R, S, T, U, V, W, X, Y, Z, AA, AB, AC, AD, AE, AF)
+             (spacetimedb::ReducerContext, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, AB, AC, AD, AE, AF)
+             (spacetimedb::ReducerContext, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA, AB, AC, AD, AE, AF)
+           and $N others
+note: required by a bound in `spacetimedb::rt::schedule`
+  --> src/rt.rs
+   |
+   | pub fn schedule<'de, R: ReducerInfo, A: Args<'de>, T>(
+   |        -------- required by a bound in this function
+...
+   |     args: impl ScheduleArgs<'de, Args = A>,
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `schedule`
+   = note: this error originates in the attribute macro `spacetimedb` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: invalid reducer signature
+  --> tests/ui/reducers.rs:17:4
+   |
+16 | #[spacetimedb(reducer)]
+   | ----------------------- required by a bound introduced by this call
+17 | fn bad_return_type_ctx(_ctx: ReducerContext) -> Test {
+   |    ^^^^^^^^^^^^^^^^^^^ this reducer signature is not valid; parameters and return type must implement `SpacetimeType`
+   |
+   = help: the trait `Reducer<'_, _, _>` is not implemented for fn item `fn(spacetimedb::ReducerContext) -> Test {bad_return_type_ctx}`
+   = note:
+   = note: reducer signatures must match the following pattern:
+   = note:     Fn([ReducerContext,] [T where T: SpacetimeType, ...]) [-> Result<(), impl Display>]
+   = note:
+note: required by a bound in `register_reducer`
+  --> src/rt.rs
+   |
+   | pub fn register_reducer<'a, A: Args<'a>, T, I: ReducerInfo>(_: impl Reducer<'a, A, T>) {
+   |                                                                     ^^^^^^^^^^^^^^^^^ required by this bound in `register_reducer`
+
+error[E0277]: the trait bound `Test: ReducerResult` is not satisfied
+  --> tests/ui/reducers.rs:17:49
+   |
+17 | fn bad_return_type_ctx(_ctx: ReducerContext) -> Test {
+   |                                                 ^^^^ the trait `ReducerResult` is not implemented for `Test`
+   |
+   = help: the following other types implement trait `ReducerResult`:
+             Result<(), E>
+             ()
+
+error[E0277]: invalid reducer signature
+  --> tests/ui/reducers.rs:17:4
+   |
+16 | #[spacetimedb(reducer)]
+   | ----------------------- required by a bound introduced by this call
+17 | fn bad_return_type_ctx(_ctx: ReducerContext) -> Test {
+   |    ^^^^^^^^^^^^^^^^^^^ this reducer signature is not valid; parameters and return type must implement `SpacetimeType`
+   |
+   = help: the trait `Reducer<'_, _, _>` is not implemented for fn item `fn(spacetimedb::ReducerContext) -> Test {bad_return_type_ctx}`
+   = note:
+   = note: reducer signatures must match the following pattern:
+   = note:     Fn([ReducerContext,] [T where T: SpacetimeType, ...]) [-> Result<(), impl Display>]
+   = note:
+note: required by a bound in `invoke_reducer`
+  --> src/rt.rs
+   |
+   | pub fn invoke_reducer<'a, A: Args<'a>, T>(
+   |        -------------- required by a bound in this function
+   |     reducer: impl Reducer<'a, A, T>,
+   |                   ^^^^^^^^^^^^^^^^^ required by this bound in `invoke_reducer`
+
+error[E0277]: invalid reducer signature
+  --> tests/ui/reducers.rs:17:4
+   |
+16 | #[spacetimedb(reducer)]
+   | ----------------------- required by a bound introduced by this call
+17 | fn bad_return_type_ctx(_ctx: ReducerContext) -> Test {
+   |    ^^^^^^^^^^^^^^^^^^^ this reducer signature is not valid; parameters and return type must implement `SpacetimeType`
+   |
+   = help: the trait `Reducer<'_, _, _>` is not implemented for fn item `fn(spacetimedb::ReducerContext) -> Test {bad_return_type_ctx}`
+   = note:
+   = note: reducer signatures must match the following pattern:
+   = note:     Fn([ReducerContext,] [T where T: SpacetimeType, ...]) [-> Result<(), impl Display>]
+   = note:
+note: required by a bound in `spacetimedb::rt::schedule`
+  --> src/rt.rs
+   |
+   | pub fn schedule<'de, R: ReducerInfo, A: Args<'de>, T>(
+   |        -------- required by a bound in this function
+   |     time: Timestamp,
+   |     _: impl Reducer<'de, A, T>,
+   |             ^^^^^^^^^^^^^^^^^^ required by this bound in `schedule`

@@ -180,6 +180,8 @@ impl Typespace {
 
 /// A trait for types that can be represented as an `AlgebraicType`
 /// provided a typing context `typespace`.
+// TODO: we might want to have a note about what to do if you're trying to use a type from another crate in your table.
+#[diagnostic::on_unimplemented(note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition")]
 pub trait SpacetimeType {
     /// Returns an `AlgebraicType` representing the type for `Self` in SATS
     /// and in the typing context in `typespace`.

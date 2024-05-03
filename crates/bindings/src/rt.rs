@@ -106,6 +106,14 @@ fn cvt_result(res: Result<(), Box<str>>) -> Buffer {
 /// A trait for types representing the *execution logic* of a reducer.
 ///
 /// The type parameter `T` is used for determining whether there is a context argument.
+#[diagnostic::on_unimplemented(
+    message = "invalid reducer signature",
+    label = "this reducer signature is not valid; parameters and return type must implement `SpacetimeType`",
+    note = "",
+    note = "reducer signatures must match the following pattern:",
+    note = "    Fn([ReducerContext,] [T where T: SpacetimeType, ...]) [-> Result<(), impl Display>]",
+    note = ""
+)]
 pub trait Reducer<'de, A: Args<'de>, T> {
     fn invoke(&self, ctx: ReducerContext, args: A) -> Result<(), Box<str>>;
 }
@@ -179,15 +187,17 @@ impl<E: fmt::Debug> ReducerResult for Result<(), E> {
 }
 
 /// A trait of types that can be an argument of a reducer.
-pub trait ReducerArg<'de> {}
-impl<'de, T: Deserialize<'de>> ReducerArg<'de> for T {}
-impl ReducerArg<'_> for ReducerContext {}
-/// Assert that `T: ReducerArg`.
-pub fn assert_reducer_arg<'de, T: ReducerArg<'de>>() {}
-/// Assert that `T: ReducerResult`.
-pub fn assert_reducer_ret<T: ReducerResult>() {}
-/// Assert that `T: TableType`.
-pub const fn assert_table<T: TableType>() {}
+#[diagnostic::on_unimplemented(message = "the reducer argument `{Self}` does not implement `SpacetimeType`")]
+pub trait ReducerArg {
+    // a little hack used in the macro to make error messages nicer. it generates <T as ReducerArg>::_ITEM
+    #[doc(hidden)]
+    const _ITEM: () = ();
+}
+impl<T: SpacetimeType> ReducerArg for T {}
+impl ReducerArg for ReducerContext {}
+
+// the macro generates <T as SpacetimeType>::make_type::<DummyTypespace>
+pub const fn assert_spacetimetype<T: SpacetimeType>() {}
 
 /// Used in the last type parameter of `Reducer` to indicate that the
 /// context argument *should* be passed to the reducer logic.
@@ -339,7 +349,11 @@ pub fn schedule_in(duration: Duration) -> Timestamp {
 /// Schedule reducer `R` to be executed async at `time`stamp with arguments `args`.
 ///
 /// Returns a token for the schedule that can be used to cancel the schedule.
-pub fn schedule<'de, R: ReducerInfo>(time: Timestamp, args: impl ScheduleArgs<'de>) -> ScheduleToken<R> {
+pub fn schedule<'de, R: ReducerInfo, A: Args<'de>, T>(
+    time: Timestamp,
+    _: impl Reducer<'de, A, T>,
+    args: impl ScheduleArgs<'de, Args = A>,
+) -> ScheduleToken<R> {
     // bsatn serialize the arguments into a vector.
     let arg_bytes = bsatn::to_vec(&SerDeArgs(args.into_args())).unwrap();
 
