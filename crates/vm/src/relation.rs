@@ -1,7 +1,6 @@
 use core::hash::{Hash, Hasher};
 use spacetimedb_sats::bsatn::ser::BsatnError;
 use spacetimedb_sats::db::auth::StAccess;
-use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{ColExpr, ColExprRef, FieldName, Header, Relation, RowCount};
 use spacetimedb_sats::{bsatn, impl_serialize, AlgebraicValue};
@@ -116,21 +115,15 @@ impl<'a> RelValue<'a> {
         }
     }
 
-    pub fn get(&'a self, col: ColExprRef<'a>) -> Result<Cow<'a, AlgebraicValue>, RelationError> {
+    pub fn get(&'a self, col: ColExprRef<'a>) -> Cow<'a, AlgebraicValue> {
         match col {
-            ColExprRef::Col(col) => self
-                .read_column(col.idx())
-                .ok_or_else(|| RelationError::FieldNotFoundAtPos(col)),
-            ColExprRef::Value(x) => Ok(Cow::Borrowed(x)),
+            ColExprRef::Col(col) => self.read_column(col.idx()).unwrap(),
+            ColExprRef::Value(x) => Cow::Borrowed(x),
         }
     }
 
-    pub fn project(&self, cols: &[ColExprRef<'_>]) -> Result<ProductValue, RelationError> {
-        let mut elements = Vec::with_capacity(cols.len());
-        for col in cols {
-            elements.push(self.get(*col)?.into_owned());
-        }
-        Ok(elements.into())
+    pub fn project(&self, cols: &[ColExprRef<'_>]) -> ProductValue {
+        cols.iter().map(|col| self.get(*col).into_owned()).collect()
     }
 
     /// Reads or takes the column at `col`.
@@ -144,18 +137,13 @@ impl<'a> RelValue<'a> {
         }
     }
 
-    pub fn project_owned(mut self, cols: &[ColExpr]) -> Result<ProductValue, RelationError> {
-        let mut elements = Vec::with_capacity(cols.len());
-        for col in cols {
-            let val = match col {
-                ColExpr::Col(col) => self
-                    .read_or_take_column(col.idx())
-                    .ok_or_else(|| RelationError::FieldNotFoundAtPos(*col))?,
+    pub fn project_owned(mut self, cols: &[ColExpr]) -> ProductValue {
+        cols.iter()
+            .map(|col| match col {
+                ColExpr::Col(col) => self.read_or_take_column(col.idx()).unwrap(),
                 ColExpr::Value(x) => x.clone(),
-            };
-            elements.push(val);
-        }
-        Ok(elements.into())
+            })
+            .collect()
     }
 
     /// BSATN-encode the row referred to by `self` into `buf`,
