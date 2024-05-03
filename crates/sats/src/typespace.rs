@@ -231,6 +231,9 @@ pub trait GroundSpacetimeType {
 
 /// A trait for Rust types that can be represented as an [`AlgebraicType`]
 /// provided a typing context `typespace`.
+// TODO: we might want to have a note about what to do if you're trying to use a type from another crate in your table.
+// keep this note in sync with the ones on spacetimedb::rt::{ReducerArg, TableColumn}
+#[diagnostic::on_unimplemented(note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition")]
 pub trait SpacetimeType {
     /// Returns an `AlgebraicType` representing the type for `Self` in SATS
     /// and in the typing context in `typespace`.
@@ -327,6 +330,7 @@ impl_primitives! {
 impl_st!([](), AlgebraicType::unit());
 impl_st!([] str, AlgebraicType::String);
 impl_st!([T] [T], ts => AlgebraicType::array(T::make_type(ts)));
+impl_st!([T: ?Sized] &T, ts => T::make_type(ts));
 impl_st!([T: ?Sized] Box<T>, ts => T::make_type(ts));
 impl_st!([T: ?Sized] Rc<T>, ts => T::make_type(ts));
 impl_st!([T: ?Sized] Arc<T>, ts => T::make_type(ts));

@@ -240,6 +240,7 @@ tracing-core = "0.1.31"
 tracing-flame = "0.2.0"
 tracing-log = "0.1.3"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+trybuild = "1"
 typed-arena = "2.0"
 unicode-normalization = "0.1.23"
 unicode-ident = "1.0.12"
