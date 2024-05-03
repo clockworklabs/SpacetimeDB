@@ -230,6 +230,17 @@ impl AlgebraicValue {
     /// This function is partial
     /// as type inference is not possible for `AlgebraicValue` in the case of sums.
     /// Thus the method only answers for the decidable subset.
+    ///
+    /// # A note on sums
+    ///
+    /// The type of a sum value must be a sum type and *not* a product type.
+    /// Suppose `x.tag` is for the variant `VarName(VarType)`.
+    /// Then `VarType` is *not* the same type as `{ VarName(VarType) | r }`
+    /// where `r` represents a polymorphic variants component.
+    ///
+    /// To assign this a correct type we either have to store the type with the value
+    /// r alternatively, we must have polymorphic variants (see row polymorphism)
+    /// *and* derive the correct variant name.
     pub fn type_of(&self) -> Option<AlgebraicType> {
         match self {
             Self::Sum(_) => None,

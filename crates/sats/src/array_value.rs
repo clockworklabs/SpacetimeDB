@@ -56,7 +56,7 @@ impl ArrayValue {
     pub(crate) fn type_of(&self) -> Option<ArrayType> {
         let elem_ty = Box::new(match self {
             Self::Sum(_) => None,
-            Self::Product(v) => Self::first_type_of(v, AlgebraicValue::type_of_product),
+            Self::Product(v) => AlgebraicValue::type_of_product(v.first()?),
             Self::Bool(_) => Some(AlgebraicType::Bool),
             Self::I8(_) => Some(AlgebraicType::I8),
             Self::U8(_) => Some(AlgebraicType::U8),
@@ -71,25 +71,10 @@ impl ArrayValue {
             Self::F32(_) => Some(AlgebraicType::F32),
             Self::F64(_) => Some(AlgebraicType::F64),
             Self::String(_) => Some(AlgebraicType::String),
-            Self::Array(v) => Self::first_type_of(v, |a| a.type_of().map(Into::into)),
-            Self::Map(v) => Self::first_type_of(v, AlgebraicValue::type_of_map),
+            Self::Array(v) => Some(v.first()?.type_of()?.into()),
+            Self::Map(v) => AlgebraicValue::type_of_map(v.first()?),
         }?);
         Some(ArrayType { elem_ty })
-    }
-
-    /// Helper for `type_of` above.
-    /// Infers the `AlgebraicType` from the first element by running `then` on it.
-    ///
-    /// The result of `first_type_of(&[])` is an empty sum type ("never"),
-    /// that is, a type that has no values.
-    /// This leads to e.g., an empty array of products having the type "never".
-    /// This is the most conservative choice
-    /// and has the consequence that no values can be added to such an array.
-    fn first_type_of<T>(arr: &[T], then: impl FnOnce(&T) -> Option<AlgebraicType>) -> Option<AlgebraicType> {
-        match arr.first() {
-            None => Some(AlgebraicType::never()),
-            Some(first) => then(first),
-        }
     }
 
     /// Returns the length of the array.
