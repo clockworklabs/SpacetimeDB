@@ -1,14 +1,14 @@
 use crate::config::ReadConfigOption;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
-use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_primitives::{ColList, ConstraintKind, Constraints};
+use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
+use spacetimedb_primitives::{ColId, ColList, ConstraintKind, Constraints};
 use spacetimedb_sats::db::def::{ColumnDef, ConstraintDef, TableDef, TableSchema};
 use spacetimedb_sats::db::error::RelationError;
-use spacetimedb_sats::relation::{FieldExpr, FieldName};
+use spacetimedb_sats::relation::{ColExpr, FieldName};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_vm::errors::ErrorVm;
-use spacetimedb_vm::expr::{ColumnOp, DbType, Expr};
+use spacetimedb_vm::expr::{DbType, Expr, FieldExpr, FieldOp};
 use spacetimedb_vm::operator::{OpCmp, OpLogic, OpQuery};
 use spacetimedb_vm::ops::parse::{parse, parse_simple_enum};
 use sqlparser::ast::{
@@ -103,12 +103,12 @@ pub enum Column {
 /// The list of expressions for `SELECT expr1, expr2...` determining what data to extract.
 #[derive(Debug, Clone)]
 pub struct Selection {
-    pub(crate) clause: ColumnOp,
+    pub(crate) clause: FieldOp,
 }
 
 impl Selection {
-    pub fn with_cmp(op: OpQuery, lhs: ColumnOp, rhs: ColumnOp) -> Self {
-        let cmp = ColumnOp::new(op, lhs, rhs);
+    pub fn with_cmp(op: OpQuery, lhs: FieldOp, rhs: FieldOp) -> Self {
+        let cmp = FieldOp::new(op, lhs, rhs);
         Selection { clause: cmp }
     }
 }
@@ -257,17 +257,17 @@ pub fn find_field<'a>(
 pub enum SqlAst {
     Select {
         from: From,
-        project: Vec<Column>,
+        project: Box<[Column]>,
         selection: Option<Selection>,
     },
     Insert {
         table: Arc<TableSchema>,
-        columns: Vec<FieldName>,
-        values: Vec<Vec<FieldExpr>>,
+        columns: Box<[ColId]>,
+        values: Box<[Box<[ColExpr]>]>,
     },
     Update {
         table: Arc<TableSchema>,
-        assignments: HashMap<FieldName, FieldExpr>,
+        assignments: IntMap<ColId, ColExpr>,
         selection: Option<Selection>,
     },
     Delete {
@@ -275,7 +275,7 @@ pub enum SqlAst {
         selection: Option<Selection>,
     },
     CreateTable {
-        table: TableDef,
+        table: Box<TableDef>,
     },
     Drop {
         name: String,
@@ -350,8 +350,8 @@ fn compile_expr_value<'a>(
     tables: impl Clone + Iterator<Item = &'a TableSchema>,
     field: Option<&'a AlgebraicType>,
     of: SqlExpr,
-) -> Result<ColumnOp, PlanError> {
-    Ok(ColumnOp::Field(match of {
+) -> Result<FieldOp, PlanError> {
+    Ok(FieldOp::Field(match of {
         SqlExpr::Identifier(name) => FieldExpr::Name(find_field(tables, &name.value)?.0),
         SqlExpr::CompoundIdentifier(ident) => {
             let col_name = compound_ident(&ident);
@@ -373,7 +373,7 @@ fn compile_expr_value<'a>(
         SqlExpr::BinaryOp { left, op, right } => {
             let (op, lhs, rhs) = compile_bin_op(tables, op, left, right)?;
 
-            return Ok(ColumnOp::new(op, lhs, rhs));
+            return Ok(FieldOp::new(op, lhs, rhs));
         }
         SqlExpr::Nested(x) => {
             return compile_expr_value(tables, field, *x);
@@ -388,7 +388,7 @@ fn compile_expr_value<'a>(
 
 fn compile_expr_field(table: &From, field: Option<&AlgebraicType>, of: SqlExpr) -> Result<FieldExpr, PlanError> {
     match compile_expr_value(table.iter_tables(), field, of)? {
-        ColumnOp::Field(field) => Ok(field),
+        FieldOp::Field(field) => Ok(field),
         x => Err(PlanError::Unsupported {
             feature: format!("Complex expression {x} on insert..."),
         }),
@@ -422,7 +422,7 @@ fn compile_bin_op<'a>(
     op: BinaryOperator,
     lhs: Box<sqlparser::ast::Expr>,
     rhs: Box<sqlparser::ast::Expr>,
-) -> Result<(OpQuery, ColumnOp, ColumnOp), PlanError> {
+) -> Result<(OpQuery, FieldOp, FieldOp), PlanError> {
     let op: OpQuery = match op {
         BinaryOperator::Gt => OpCmp::Gt.into(),
         BinaryOperator::Lt => OpCmp::Lt.into(),
@@ -532,8 +532,8 @@ fn compile_from<T: TableSchemaView>(db: &RelationalDB, tx: &T, from: &[TableWith
                         let tables = base.iter_tables().chain([&*join]);
                         let expr = compile_expr_value(tables, None, x.clone())?;
                         match expr {
-                            ColumnOp::Field(_) => {}
-                            ColumnOp::Cmp { op, lhs, rhs } => {
+                            FieldOp::Field(_) => {}
+                            FieldOp::Cmp { op, lhs, rhs } => {
                                 let op = match op {
                                     OpQuery::Cmp(op) => op,
                                     OpQuery::Logic(op) => {
@@ -543,7 +543,7 @@ fn compile_from<T: TableSchemaView>(db: &RelationalDB, tx: &T, from: &[TableWith
                                     }
                                 };
                                 let (lhs, rhs) = match (*lhs, *rhs) {
-                                    (ColumnOp::Field(FieldExpr::Name(lhs)), ColumnOp::Field(FieldExpr::Name(rhs))) => {
+                                    (FieldOp::Field(FieldExpr::Name(lhs)), FieldOp::Field(FieldExpr::Name(rhs))) => {
                                         (lhs, rhs)
                                     }
                                     (lhs, rhs) => {
@@ -597,7 +597,7 @@ fn compile_select_item(from: &From, select_item: SelectItem) -> Result<Column, P
             sqlparser::ast::Expr::Value(_) => {
                 let value = compile_expr_value(from.iter_tables(), None, expr)?;
                 match value {
-                    ColumnOp::Field(value) => match value {
+                    FieldOp::Field(value) => match value {
                         FieldExpr::Name(_) => Err(PlanError::Unsupported {
                             feature: "Should not be an identifier in Expr::Value".to_string(),
                         }),
@@ -626,11 +626,13 @@ fn compile_select_item(from: &From, select_item: SelectItem) -> Result<Column, P
 /// Compiles the `SELECT ...` clause
 fn compile_select<T: TableSchemaView>(db: &RelationalDB, tx: &T, select: Select) -> Result<SqlAst, PlanError> {
     let from = compile_from(db, tx, &select.from)?;
+
     // SELECT ...
     let mut project = Vec::with_capacity(select.projection.len());
     for select_item in select.projection {
         project.push(compile_select_item(&from, select_item)?);
     }
+    let project = project.into();
 
     let selection = compile_where(&from, select.selection)?;
 
@@ -711,21 +713,21 @@ fn compile_insert<T: TableSchemaView>(
         .map(|x| {
             table
                 .find_field(&format!("{}.{}", &table.root.table_name, x))
-                .map(|(f, _)| f)
+                .map(|(f, _)| f.col)
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Box<[_]>, _>>()?;
 
     let mut values = Vec::with_capacity(data.rows.len());
-
     for x in &data.rows {
         let mut row = Vec::with_capacity(x.len());
         for (pos, v) in x.iter().enumerate() {
             let field_ty = table.root.get_column(pos).map(|col| &col.col_type);
-            row.push(compile_expr_field(&table, field_ty, v.clone())?);
+            row.push(compile_expr_field(&table, field_ty, v.clone())?.strip_table());
         }
-
-        values.push(row);
+        values.push(row.into());
     }
+    let values = values.into();
+
     Ok(SqlAst::Insert {
         table: table.root,
         columns,
@@ -744,19 +746,19 @@ fn compile_update<T: TableSchemaView>(
     let table = From::new(tx.find_table(db, table)?);
     let selection = compile_where(&table, selection)?;
 
-    let mut x = HashMap::with_capacity(assignments.len());
-
+    let mut assigns = IntMap::with_capacity(assignments.len());
     for col in assignments {
         let name: String = col.id.iter().map(|x| x.to_string()).collect();
         let (field_name, field_ty) = table.find_field(&name)?;
+        let col_id = field_name.col;
 
-        let value = compile_expr_field(&table, Some(field_ty), col.value)?;
-        x.insert(field_name, value);
+        let value = compile_expr_field(&table, Some(field_ty), col.value)?.strip_table();
+        assigns.insert(col_id, value);
     }
 
     Ok(SqlAst::Update {
         table: table.root,
-        assignments: x,
+        assignments: assigns,
         selection,
     })
 }
@@ -916,7 +918,7 @@ fn compile_create_table(table: Table, cols: Vec<SqlColumnDef>) -> Result<SqlAst,
         });
     }
 
-    let table = TableDef::new(table.name, columns).with_constraints(constraints);
+    let table = Box::new(TableDef::new(table.name, columns).with_constraints(constraints));
 
     Ok(SqlAst::CreateTable { table })
 }

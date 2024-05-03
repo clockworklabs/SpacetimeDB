@@ -8,13 +8,13 @@ use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
 use crate::execution_context::ExecutionContext;
-use core::ops::RangeBounds;
+use core::ops::{Bound, RangeBounds};
 use itertools::Itertools;
-use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::TableDef;
-use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header, RowCount};
+use spacetimedb_sats::relation::{ColExpr, DbTable, Header, Relation, RowCount};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::{build_project, build_select, join_inner, IterRows};
@@ -23,7 +23,6 @@ use spacetimedb_vm::iterators::RelIter;
 use spacetimedb_vm::program::{ProgramVm, Sources};
 use spacetimedb_vm::rel_ops::{EmptyRelOps, RelOps};
 use spacetimedb_vm::relation::{MemTable, RelValue};
-use std::ops::Bound;
 use std::sync::Arc;
 
 pub enum TxMode<'a> {
@@ -174,21 +173,30 @@ pub fn build_query<'a>(
                 index_select,
                 index_col,
                 return_index_rows,
-            }) => Box::new(IndexSemiJoin {
-                ctx,
-                db,
-                tx,
-                probe_side: build_query(ctx, db, tx, probe_side, sources)?,
-                probe_col: *probe_col,
-                index_header: index_side.head(),
-                index_select,
-                // The compiler guarantees that the index side is a db table,
-                // and therefore this unwrap is always safe.
-                index_table: index_side.table_id().unwrap(),
-                index_col: *index_col,
-                index_iter: None,
-                return_index_rows: *return_index_rows,
-            }),
+            }) => {
+                let probe_side = build_query(ctx, db, tx, probe_side, sources)?;
+                let header = if *return_index_rows {
+                    index_side.head()
+                } else {
+                    probe_side.head()
+                }
+                .clone();
+                Box::new(IndexSemiJoin {
+                    header,
+                    ctx,
+                    db,
+                    tx,
+                    probe_side,
+                    probe_col: *probe_col,
+                    index_select,
+                    // The compiler guarantees that the index side is a db table,
+                    // and therefore this unwrap is always safe.
+                    index_table: index_side.table_id().unwrap(),
+                    index_col: *index_col,
+                    index_iter: None,
+                    return_index_rows: *return_index_rows,
+                })
+            }
             Query::Select(cmp) => build_select(result_or_base(sources, &mut result)?, cmp),
             Query::Project(proj) => build_project(result_or_base(sources, &mut result)?, proj),
             Query::JoinInner(join) => join_inner(
@@ -266,13 +274,13 @@ fn iter_by_col_range<'a>(
 
 /// An index join operator that returns matching rows from the index side.
 pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
+    /// The header for the operation.
+    pub header: Arc<Header>,
     /// An iterator for the probe side.
     /// The values returned will be used to probe the index.
     pub probe_side: Rhs,
     /// The column whose value will be used to probe the index.
     pub probe_col: ColId,
-    /// The header for the index side of the join.
-    pub index_header: &'c Arc<Header>,
     /// An optional predicate to evaluate over the matching rows of the index.
     pub index_select: &'c Option<ColumnOp>,
     /// The table id on which the index is defined.
@@ -295,7 +303,7 @@ pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
 impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, '_, Rhs> {
     fn filter(&self, index_row: &RelValue<'_>) -> Result<bool, ErrorVm> {
         Ok(if let Some(op) = &self.index_select {
-            op.compare(index_row, self.index_header)?
+            op.compare(index_row)?
         } else {
             true
         })
@@ -313,11 +321,7 @@ impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, '_, Rhs> {
 
 impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
     fn head(&self) -> &Arc<Header> {
-        if self.return_index_rows {
-            self.index_header
-        } else {
-            self.probe_side.head()
-        }
+        &self.header
     }
 
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
@@ -423,7 +427,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
     fn _execute_update<const N: usize>(
         &mut self,
         delete: &QueryExpr,
-        mut assigns: HashMap<FieldName, FieldExpr>,
+        mut assigns: IntMap<ColId, ColExpr>,
         sources: Sources<'_, N>,
     ) -> Result<Code, ErrorVm> {
         let result = self._eval_query(delete, sources)?;
@@ -441,7 +445,11 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         // Replace the columns in the matched rows with the assigned
         // values. No typechecking is performed here, nor that all
         // assignments are consumed.
-        let exprs: Vec<Option<FieldExpr>> = table.head.fields.iter().map(|col| assigns.remove(&col.field)).collect();
+        let exprs: Vec<Option<ColExpr>> = (0..table.head().fields.len())
+            .map(ColId::from)
+            .map(|c| assigns.remove(&c))
+            .collect();
+
         let insert_rows = deleted
             .data
             .into_iter()
@@ -450,7 +458,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
                     .into_iter()
                     .zip(&exprs)
                     .map(|(val, expr)| {
-                        if let Some(FieldExpr::Value(assigned)) = expr {
+                        if let Some(ColExpr::Value(assigned)) = expr {
                             assigned.clone()
                         } else {
                             val
@@ -534,7 +542,7 @@ impl ProgramVm for DbProgram<'_, '_> {
             CrudExpr::Insert { table, rows } => self._execute_insert(&table, rows),
             CrudExpr::Update { delete, assignments } => self._execute_update(&delete, assignments, sources),
             CrudExpr::Delete { query } => self._delete_query(&query, sources),
-            CrudExpr::CreateTable { table } => self._create_table(table),
+            CrudExpr::CreateTable { table } => self._create_table(*table),
             CrudExpr::Drop { name, kind, .. } => self._drop(&name, kind),
             CrudExpr::SetVar { name, value } => self._set_config(name, value),
             CrudExpr::ReadVar { name } => self._read_config(name),

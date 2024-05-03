@@ -204,8 +204,7 @@ mod tests {
 
         // For filtering out the hidden field `OP_TYPE_FIELD_NAME`
         let fields = &[0, 1].map(|c| FieldName::new(schema.table_id, c.into()).into());
-
-        let q = q.with_project(fields, None).unwrap();
+        let q = q.with_project(fields.into(), None).unwrap();
 
         Ok((schema, table, data, q))
     }
@@ -220,9 +219,8 @@ mod tests {
 
         let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
 
-        let fields = &[0, 1].map(|c| FieldName::new(schema.table_id, c.into()).into());
-
-        let q = q.with_project(fields, None).unwrap();
+        let fields = [0, 1].map(|c| FieldName::new(schema.table_id, c.into()).into());
+        let q = q.with_project(fields.into(), None).unwrap();
 
         Ok((schema, table, data, q))
     }
