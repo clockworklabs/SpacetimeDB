@@ -5,6 +5,7 @@ on:
     tags:
       - '**'
     branches:
+      - drogus/fix-macos-builds
       - master
       - release/*
 
