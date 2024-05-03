@@ -41,14 +41,12 @@ pub fn build_query<'a, const N: usize>(
 }
 
 pub fn build_select<'a>(base: impl RelOps<'a> + 'a, cmp: &'a ColumnOp) -> Box<IterRows<'a>> {
-    let header = base.head().clone();
-    Box::new(base.select(move |row| cmp.compare(row, &header)))
+    Box::new(base.select(move |row| cmp.compare(row)))
 }
 
 pub fn build_project<'a>(base: impl RelOps<'a> + 'a, proj: &'a ProjectExpr) -> Box<IterRows<'a>> {
-    let header_before = base.head().clone();
-    Box::new(base.project(&proj.header_after, &proj.fields, move |cols, row| {
-        Ok(RelValue::Projection(row.project_owned(cols, &header_before)?))
+    Box::new(base.project(&proj.header_after, &proj.cols, move |cols, row| {
+        Ok(RelValue::Projection(row.project_owned(cols)?))
     }))
 }
 
@@ -268,7 +266,7 @@ pub mod tests {
 
         let source = QueryExpr::new(source_expr);
         let field = *table.get_field_pos(0).unwrap();
-        let q = source.clone().with_project(&[field.into()], None).unwrap();
+        let q = source.clone().with_project([field.into()].into(), None).unwrap();
         let head = q.head().clone();
 
         let result = run_ast(p, q.into(), sources);
@@ -281,7 +279,7 @@ pub mod tests {
         let source = QueryExpr::new(source_expr);
         let field = FieldName::new(table.head.table_id, 1.into());
         assert!(matches!(
-            source.with_project(&[field.into()], None).unwrap_err(),
+            source.with_project([field.into()].into(), None).unwrap_err(),
             RelationError::FieldNotFound(h, f) if h == *head && f == field,
         ));
     }
@@ -517,7 +515,7 @@ pub mod tests {
             .with_select_cmp(OpCmp::LtEq, loc_field(location_x), scalar(32.0f32))
             .with_select_cmp(OpCmp::Gt, loc_field(location_z), scalar(0.0f32))
             .with_select_cmp(OpCmp::LtEq, loc_field(location_z), scalar(32.0f32))
-            .with_project(&inv.map(inv_expr), Some(inv_table_id))
+            .with_project(inv.map(inv_expr).into(), Some(inv_table_id))
             .unwrap();
 
         let result = run_query(p, q.into(), sources);
