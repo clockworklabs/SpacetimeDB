@@ -836,7 +836,7 @@ impl Config {
 
     pub fn load() -> Self {
         let home_path = Self::system_config_path();
-        let home_lock = Lockfile::for_config(&home_path).unwrap();
+        let home_lock = Lockfile::for_path(&home_path).unwrap();
         let home = if home_path.exists() {
             Self::load_from_file(&home_path)
                 .inspect_err(|e| eprintln!("config file {home_path:?} is invalid: {e:#?}"))
