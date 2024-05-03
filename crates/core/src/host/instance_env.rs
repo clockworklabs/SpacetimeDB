@@ -375,7 +375,7 @@ impl InstanceEnv {
 
         // write all rows and flush at row boundaries.
         let mut chunked_writer = ChunkedWriter::default();
-        while let Some(row) = query.next()? {
+        while let Some(row) = query.next() {
             chunked_writer.write_rel_value_to_scratch(&row).unwrap();
             chunked_writer.flush();
         }

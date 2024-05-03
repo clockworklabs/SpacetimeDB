@@ -34,7 +34,7 @@ impl ProgramVm for Program {
                 let result = build_query(result, &query.query, sources)?;
 
                 let head = result.head().clone();
-                let rows: Vec<_> = result.collect_vec(|row| row.into_product_value())?;
+                let rows: Vec<_> = result.collect_vec(|row| row.into_product_value());
 
                 Ok(Code::Table(MemTable::new(head, query.source.table_access(), rows)))
             }

@@ -42,7 +42,6 @@ use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::relation::DbTable;
-use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryExpr, SourceExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
@@ -126,8 +125,6 @@ impl AsRef<QueryExpr> for SupportedQuery {
     }
 }
 
-type ResRV<'a> = Result<RelValue<'a>, ErrorVm>;
-
 /// Evaluates `query` and returns all the updates.
 fn eval_updates<'a>(
     ctx: &'a ExecutionContext,
@@ -135,9 +132,9 @@ fn eval_updates<'a>(
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
     mut sources: impl SourceProvider<'a>,
-) -> Result<impl 'a + Iterator<Item = ResRV<'a>>, DBError> {
+) -> Result<impl 'a + Iterator<Item = RelValue<'a>>, DBError> {
     let mut query = build_query(ctx, db, tx, query, &mut sources)?;
-    Ok(iter::from_fn(move || query.next().transpose()))
+    Ok(iter::from_fn(move || query.next()))
 }
 
 /// A [`query::Supported::Semijoin`] compiled for incremental evaluations.
@@ -269,7 +266,7 @@ impl IncrementalJoin {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
-    ) -> Result<impl Iterator<Item = ResRV<'a>>, DBError> {
+    ) -> Result<impl Iterator<Item = RelValue<'a>>, DBError> {
         eval_updates(ctx, db, tx, self.plan_for_delta_lhs(), Some(lhs.map(RelValue::ProjRef)))
     }
 
@@ -280,7 +277,7 @@ impl IncrementalJoin {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         rhs: impl 'a + Iterator<Item = &'a ProductValue>,
-    ) -> Result<impl Iterator<Item = ResRV<'a>>, DBError> {
+    ) -> Result<impl Iterator<Item = RelValue<'a>>, DBError> {
         eval_updates(ctx, db, tx, self.plan_for_delta_rhs(), Some(rhs.map(RelValue::ProjRef)))
     }
 
@@ -292,7 +289,7 @@ impl IncrementalJoin {
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
         rhs: impl 'a + Iterator<Item = &'a ProductValue>,
-    ) -> Result<impl Iterator<Item = ResRV<'a>>, DBError> {
+    ) -> Result<impl Iterator<Item = RelValue<'a>>, DBError> {
         let is = Either::Left(lhs.map(RelValue::ProjRef));
         let ps = Either::Right(rhs.map(RelValue::ProjRef));
         let sources: SourceSet<_, 2> = if self.return_index_rows { [is, ps] } else { [ps, is] }.into();
@@ -400,29 +397,23 @@ impl IncrementalJoin {
         // Compute the incremental join
         // =====================================================================
 
-        fn collect_set<T: Hash + Eq, I: Iterator<Item = Result<T, ErrorVm>>>(
+        fn collect_set<T: Hash + Eq, I: Iterator<Item = T>>(
             produce_if: bool,
             producer: impl FnOnce() -> Result<I, DBError>,
         ) -> Result<HashSet<T>, DBError> {
             Ok(if produce_if {
-                let iter = producer()?;
-                let mut set = HashSet::new();
-                for x in iter {
-                    set.insert(x?);
-                }
-                set
+                producer()?.collect()
             } else {
                 HashSet::new()
             })
         }
 
-        fn make_iter<T, I: Iterator<Item = Result<T, ErrorVm>>>(
+        fn make_iter<T, I: Iterator<Item = T>>(
             produce_if: bool,
             producer: impl FnOnce() -> Result<I, DBError>,
-        ) -> Result<impl Iterator<Item = Result<T, ErrorVm>>, DBError> {
+        ) -> Result<impl Iterator<Item = T>, DBError> {
             Ok(if produce_if {
-                let iter = producer()?;
-                Either::Left(iter)
+                Either::Left(producer()?)
             } else {
                 Either::Right(iter::empty())
             })
@@ -463,15 +454,15 @@ impl IncrementalJoin {
 
         // A- x B(s) = A- x B(t) \ A- x B+
         for row in join_3 {
-            join_2.remove(&row?);
+            join_2.remove(&row);
         }
         // A(s) x B+ = A(t) x B+ \ A+ x B+
         for row in join_7 {
-            join_5.remove(&row?);
+            join_5.remove(&row);
         }
         // A(s) x B- = A(t) x B- \ A+ x B-
         for row in join_8 {
-            join_6.remove(&row?);
+            join_6.remove(&row);
         }
 
         join_5.retain(|row| !join_6.remove(row));
@@ -480,14 +471,14 @@ impl IncrementalJoin {
         let mut deletes = Vec::new();
         deletes.extend(join_2);
         for row in join_4 {
-            deletes.push(row?);
+            deletes.push(row);
         }
         deletes.extend(join_6);
 
         // Collect inserts:
         let mut inserts = Vec::new();
         for row in join_1 {
-            inserts.push(row?);
+            inserts.push(row);
         }
         inserts.extend(join_5);
 

@@ -1,4 +1,3 @@
-use crate::errors::ErrorVm;
 use crate::rel_ops::RelOps;
 use crate::relation::RelValue;
 use spacetimedb_sats::relation::{Header, RowCount};
@@ -28,7 +27,7 @@ impl<'a, I: Iterator<Item = RelValue<'a>>> RelOps<'a> for RelIter<I> {
         self.row_count
     }
 
-    fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm> {
-        Ok(self.iter.next())
+    fn next(&mut self) -> Option<RelValue<'a>> {
+        self.iter.next()
     }
 }
