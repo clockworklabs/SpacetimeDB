@@ -26,7 +26,7 @@ jobs:
         run: |
           cargo build --release -p spacetimedb-cli --target=x86_64-apple-darwin
           mkdir build
-          dd if=target/release/spacetime of=build/spacetime conv=noerror,sync  
+          dd if=target/x86_64-apple-darwin/release/spacetime of=build/spacetime conv=noerror,sync  
           cd build && tar -czf spacetime.darwin-amd64.tar.gz spacetime
           rm spacetime
 
