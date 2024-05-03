@@ -1333,7 +1333,6 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
                 });
             });
         }
-        writeln!(output);
     });
 
     let mut result = vec![vec![("ReducerEvent.cs".to_string(), output.into_inner())]];
