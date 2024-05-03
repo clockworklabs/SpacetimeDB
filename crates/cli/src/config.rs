@@ -109,6 +109,7 @@ pub struct RawConfig {
 pub struct Config {
     proj: RawConfig,
     home: RawConfig,
+    save_path: Option<PathBuf>,
 }
 
 const HOME_CONFIG_DIR: &str = ".spacetime";
@@ -790,34 +791,14 @@ impl Config {
             .find(|path| path.exists())
     }
 
-    fn load_raw(config_dir: PathBuf, is_project: bool) -> RawConfig {
-        // If a config file overload has been specified, use that instead
-        if !is_project {
-            if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
-                return Self::load_from_file(config_path.as_ref())
-                    .inspect_err(|e| eprintln!("SPACETIME_CONFIG_FILE does not point to a valid config file: {e:#}"))
-                    .unwrap_or_default();
-            }
+    fn system_config_path() -> PathBuf {
+        if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
+            config_path.into()
+        } else {
+            let mut config_path = dirs::home_dir().unwrap();
+            config_path.push(HOME_CONFIG_DIR);
+            Self::find_config_path(&config_path).unwrap_or_else(|| config_path.join(CONFIG_FILENAME))
         }
-        if !config_dir.exists() {
-            fs::create_dir_all(&config_dir).unwrap();
-        }
-
-        let Some(config_path) = Self::find_config_path(&config_dir) else {
-            return if is_project {
-                // Return an empty config without creating a file.
-                RawConfig::default()
-            } else {
-                // Return a default config with http://127.0.0.1:3000 as the default server.
-                // Do not (yet) create a file.
-                // The config file will be created later by `Config::save` if necessary.
-                RawConfig::new_with_localhost()
-            };
-        };
-
-        Self::load_from_file(&config_path)
-            .inspect_err(|e| eprintln!("config file is invalid: {e:#}"))
-            .unwrap_or_default()
     }
 
     fn load_from_file(config_path: &Path) -> anyhow::Result<RawConfig> {
@@ -825,51 +806,66 @@ impl Config {
         Ok(toml::from_str(&text)?)
     }
 
-    pub fn load() -> Self {
-        let home_dir = dirs::home_dir().unwrap();
-        let home_config = Self::load_raw(home_dir.join(HOME_CONFIG_DIR), false);
+    fn load_or_default(config_path: &Path) -> RawConfig {
+        Self::load_from_file(config_path)
+            .inspect_err(|e| eprintln!("config file {config_path:?} is invalid: {e:#}"))
+            .unwrap_or_default()
+    }
 
+    fn load_proj_config() -> RawConfig {
         // TODO(cloutiertyler): For now we're checking for a spacetime.toml file
         // in the current directory. Eventually this should really be that we
         // search parent directories above the current directory to find
         // spacetime.toml files like a .gitignore file
         let cur_dir = std::env::current_dir().expect("No current working directory!");
-        let cur_config = Self::load_raw(cur_dir, true);
-
-        Self {
-            home: home_config,
-            proj: cur_config,
+        if let Some(config_path) = Self::find_config_path(&cur_dir) {
+            Self::load_or_default(&config_path)
+        } else {
+            Default::default()
         }
     }
 
+    pub fn load() -> Self {
+        let home_path = Self::system_config_path();
+        let home = if home_path.exists() {
+            Self::load_or_default(&home_path)
+        } else {
+            RawConfig::new_with_localhost()
+        };
+
+        let proj = Self::load_proj_config();
+
+        Self {
+            home,
+            proj,
+            save_path: Some(home_path),
+        }
+    }
+
+    #[doc(hidden)]
+    /// Used in tests; not backed by a file.
     pub fn new_with_localhost() -> Self {
         Self {
             home: RawConfig::new_with_localhost(),
             proj: RawConfig::default(),
+            save_path: None,
         }
     }
 
     pub fn save(&self) {
-        let config_var = std::env::var_os("SPACETIME_CONFIG_FILE");
-        let config_var_exists = config_var.is_some();
-        let config_path = if let Some(config_path) = config_var {
-            PathBuf::from(config_path)
-        } else {
-            let home_dir = dirs::home_dir().unwrap();
-            let config_dir = home_dir.join(HOME_CONFIG_DIR);
-            if !config_dir.exists() {
-                fs::create_dir_all(&config_dir).unwrap();
-            }
-
-            Self::find_config_path(&config_dir).unwrap_or_else(|| config_dir.join(CONFIG_FILENAME))
+        let Some(save_path) = &self.save_path else {
+            eprintln!("Not saving config file due to save_path: None");
+            return;
         };
+        let parent = save_path.parent().unwrap();
+        if parent != Path::new("") {
+            std::fs::create_dir_all(parent).unwrap();
+        }
 
         let config = toml::to_string_pretty(&self.home).unwrap();
 
-        if let Err(e) = std::fs::write(config_path, config) {
-            if !config_var_exists {
-                eprintln!("could not save config file: {e}")
-            }
+        if let Err(e) = std::fs::write(save_path, config) {
+            eprintln!("could not save config file: {e}")
         }
     }
 
