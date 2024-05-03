@@ -41,12 +41,12 @@ pub fn build_query<'a, const N: usize>(
 }
 
 pub fn build_select<'a>(base: impl RelOps<'a> + 'a, cmp: &'a ColumnOp) -> Box<IterRows<'a>> {
-    Box::new(base.select(move |row| cmp.compare(row)))
+    Box::new(base.select(move |row| Ok(cmp.compare(row))))
 }
 
 pub fn build_project<'a>(base: impl RelOps<'a> + 'a, proj: &'a ProjectExpr) -> Box<IterRows<'a>> {
     Box::new(base.project(&proj.header_after, &proj.cols, move |cols, row| {
-        Ok(RelValue::Projection(row.project_owned(cols)?))
+        Ok(RelValue::Projection(row.project_owned(cols)))
     }))
 }
 

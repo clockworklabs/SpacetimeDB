@@ -1,4 +1,4 @@
-use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
+use crate::errors::{ErrorKind, ErrorLang};
 use crate::operator::{OpCmp, OpLogic, OpQuery};
 use crate::relation::{MemTable, RelValue};
 use arrayvec::ArrayVec;
@@ -215,59 +215,51 @@ impl ColumnOp {
         ColumnOp::and_cmp(cmp, cols, value)
     }
 
-    fn reduce(&self, row: &RelValue<'_>, value: &Self) -> Result<AlgebraicValue, ErrorLang> {
+    fn reduce(&self, row: &RelValue<'_>, value: &Self) -> AlgebraicValue {
         match value {
-            Self::Col(field) => Ok(row.get(field.borrowed())?.into_owned()),
-            Self::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs)?.into()),
+            Self::Col(field) => row.get(field.borrowed()).into_owned(),
+            Self::Cmp { op, lhs, rhs } => self.compare_bin_op(row, *op, lhs, rhs).into(),
         }
     }
 
-    fn reduce_bool(&self, row: &RelValue<'_>, value: &Self) -> Result<bool, ErrorLang> {
+    fn reduce_bool(&self, row: &RelValue<'_>, value: &Self) -> bool {
         match value {
-            Self::Col(field) => {
-                let field = row.get(field.borrowed())?;
-
-                match field.as_bool() {
-                    Some(b) => Ok(*b),
-                    None => Err(ErrorType::FieldBool(field.into_owned()).into()),
-                }
-            }
-            Self::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs)?),
+            Self::Col(field) => *row.get(field.borrowed()).as_bool().unwrap(),
+            Self::Cmp { op, lhs, rhs } => self.compare_bin_op(row, *op, lhs, rhs),
         }
     }
 
-    fn compare_bin_op(&self, row: &RelValue<'_>, op: OpQuery, lhs: &Self, rhs: &Self) -> Result<bool, ErrorVm> {
+    fn compare_bin_op(&self, row: &RelValue<'_>, op: OpQuery, lhs: &Self, rhs: &Self) -> bool {
         match op {
             OpQuery::Cmp(op) => {
-                let lhs = self.reduce(row, lhs)?;
-                let rhs = self.reduce(row, rhs)?;
-
-                Ok(match op {
+                let lhs = self.reduce(row, lhs);
+                let rhs = self.reduce(row, rhs);
+                match op {
                     OpCmp::Eq => lhs == rhs,
                     OpCmp::NotEq => lhs != rhs,
                     OpCmp::Lt => lhs < rhs,
                     OpCmp::LtEq => lhs <= rhs,
                     OpCmp::Gt => lhs > rhs,
                     OpCmp::GtEq => lhs >= rhs,
-                })
+                }
             }
             OpQuery::Logic(op) => {
-                let lhs = self.reduce_bool(row, lhs)?;
-                let rhs = self.reduce_bool(row, rhs)?;
+                let lhs = self.reduce_bool(row, lhs);
+                let rhs = self.reduce_bool(row, rhs);
 
-                Ok(match op {
+                match op {
                     OpLogic::And => lhs && rhs,
                     OpLogic::Or => lhs || rhs,
-                })
+                }
             }
         }
     }
 
-    pub fn compare(&self, row: &RelValue<'_>) -> Result<bool, ErrorVm> {
+    pub fn compare(&self, row: &RelValue<'_>) -> bool {
         match self {
             Self::Col(field) => {
-                let lhs = row.get(field.borrowed())?;
-                Ok(*lhs.as_bool().unwrap())
+                let lhs = row.get(field.borrowed());
+                *lhs.as_bool().unwrap()
             }
             Self::Cmp { op, lhs, rhs } => self.compare_bin_op(row, *op, lhs, rhs),
         }
