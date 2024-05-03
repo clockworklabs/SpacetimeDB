@@ -291,12 +291,8 @@ pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
 }
 
 impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, '_, Rhs> {
-    fn filter(&self, index_row: &RelValue<'_>) -> Result<bool, ErrorVm> {
-        Ok(if let Some(op) = &self.index_select {
-            op.compare(index_row)?
-        } else {
-            true
-        })
+    fn filter(&self, index_row: &RelValue<'_>) -> bool {
+        self.index_select.as_ref().map_or(true, |op| op.compare(index_row))
     }
 
     fn map(&self, index_row: RelValue<'a>, probe_row: Option<RelValue<'a>>) -> RelValue<'a> {
@@ -319,7 +315,7 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
         if self.return_index_rows {
             while let Some(value) = self.index_iter.as_mut().and_then(|iter| iter.next()) {
                 let value = RelValue::Row(value);
-                if self.filter(&value)? {
+                if self.filter(&value) {
                     return Ok(Some(self.map(value, None)));
                 }
             }
@@ -336,7 +332,7 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
                 };
                 while let Some(value) = index_iter.next() {
                     let value = RelValue::Row(value);
-                    if self.filter(&value)? {
+                    if self.filter(&value) {
                         self.index_iter = Some(index_iter);
                         return Ok(Some(self.map(value, Some(row))));
                     }
