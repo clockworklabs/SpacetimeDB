@@ -522,45 +522,53 @@ where
         ))?;
     let instance_id = database_instance.id;
 
-    let json = worker_ctx
-        .host_controller()
-        .using_database(
-            database,
-            instance_id,
-            move |db| -> axum::response::Result<_, (StatusCode, String)> {
-                tracing::info!(sql = body);
-                let results = sql::execute::run(db, &body, auth).map_err(|e| {
-                    log::warn!("{}", e);
-                    if let Some(auth_err) = e.get_auth_error() {
-                        (StatusCode::UNAUTHORIZED, auth_err.to_string())
-                    } else {
-                        (StatusCode::BAD_REQUEST, e.to_string())
-                    }
-                })?;
+    let host = worker_ctx.host_controller();
+    let module_host = match host.get_module_host(instance_id) {
+        Ok(module_host) => module_host,
+        Err(_) => {
+            let dbic = worker_ctx
+                .load_module_host_context(database, instance_id)
+                .await
+                .map_err(log_and_500)?;
+            host.spawn_module_host(dbic).await.map_err(log_and_500)?
+        }
+    };
+    let json = host.using_database(
+        database,
+        instance_id,
+        move |db| -> axum::response::Result<_, (StatusCode, String)> {
+            tracing::info!(sql = body);
+            let results = sql::execute::run(db, &body, auth).map_err(|e| {
+                log::warn!("{}", e);
+                if let Some(auth_err) = e.get_auth_error() {
+                    (StatusCode::UNAUTHORIZED, auth_err.to_string())
+                } else {
+                    (StatusCode::BAD_REQUEST, e.to_string())
+                }
+            })?;
 
-                let json = db.with_read_only(&ctx_sql(db), |tx| {
-                    results
-                        .into_iter()
-                        .map(|result| {
-                            let rows = result.data;
-                            let schema = result
-                                .head
-                                .fields
-                                .iter()
-                                .map(|x| {
-                                    let ty = x.algebraic_type.clone();
-                                    let name = translate_col(tx, x.field);
-                                    ProductTypeElement::new(ty, name)
-                                })
-                                .collect();
-                            StmtResultJson { schema, rows }
-                        })
-                        .collect::<Vec<_>>()
-                });
+            let json = db.with_read_only(&ctx_sql(db), |tx| {
+                results
+                    .into_iter()
+                    .map(|result| {
+                        let rows = result.data;
+                        let schema = result
+                            .head
+                            .fields
+                            .iter()
+                            .map(|x| {
+                                let ty = x.algebraic_type.clone();
+                                let name = translate_col(tx, x.field);
+                                ProductTypeElement::new(ty, name)
+                            })
+                            .collect();
+                        StmtResultJson { schema, rows }
+                    })
+                    .collect::<Vec<_>>()
+            });
 
-                Ok(json)
-            },
-        )
+            Ok(json)
+        })
         .await
         .map_err(log_and_500)??;
 

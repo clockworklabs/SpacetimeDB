@@ -133,7 +133,8 @@ mod tests {
         let q = Expr::Crud(Box::new(CrudExpr::Query(query.clone())));
 
         let mut result = Vec::with_capacity(1);
-        collect_result(&mut result, run_ast(p, q, sources).into())?;
+        let mut updates = Vec::new();
+        collect_result(&mut result, &mut updates, run_ast(p, q, sources).into())?;
         Ok(result)
     }
 

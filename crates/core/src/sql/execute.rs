@@ -1,8 +1,16 @@
+use std::sync::Arc;
+use std::time::Duration;
+
 use super::compiler::compile_sql;
 use crate::db::datastore::locking_tx_datastore::state_view::StateView;
+use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
+use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
+use crate::host::{ArgsTuple, Timestamp};
+use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{DbProgram, TxMode};
 use itertools::Either;
@@ -21,17 +29,27 @@ pub struct StmtResult {
 // TODO(cloutiertyler): we could do this the swift parsing way in which
 // we always generate a plan, but it may contain errors
 
-pub(crate) fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBError> {
+pub(crate) fn collect_result(result: &mut Vec<MemTable>, updates: &mut Vec<DatabaseTableUpdate>, r: CodeResult) -> Result<(), DBError> {
     match r {
         CodeResult::Value(_) => {}
         CodeResult::Table(x) => result.push(x),
         CodeResult::Block(lines) => {
             for x in lines {
-                collect_result(result, x)?;
+                collect_result(result, updates, x)?;
             }
         }
         CodeResult::Halt(err) => return Err(DBError::VmUser(err)),
-        CodeResult::Pass => {}
+        CodeResult::Pass(x) => match x {
+            None => {},
+            Some(update) => {
+                updates.push(DatabaseTableUpdate {
+                    table_name: update.table_name,
+                    table_id: update.table_id,
+                    inserts: update.inserts.into(),
+                    deletes: update.deletes.into()
+                });
+            }
+        }
     }
 
     Ok(())
@@ -133,6 +151,7 @@ pub(crate) mod tests {
     use crate::vm::tests::create_table_with_rows;
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::relation::ColExpr;
+    use spacetimedb_lib::Identity;
     use spacetimedb_primitives::{col_list, ColId};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::relation::Header;
@@ -141,7 +160,8 @@ pub(crate) mod tests {
 
     /// Short-cut for simplify test execution
     pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
-        run(db, sql_text, AuthCtx::for_testing())
+        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
+        run(db, sql_text, AuthCtx::for_testing(), &subs)
     }
 
     fn create_data(total_rows: u64) -> ResultTest<(TestDB, MemTable)> {

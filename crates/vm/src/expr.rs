@@ -2061,13 +2061,22 @@ impl AuthAccess for CrudExpr {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct Update {
+    pub affected_rows: u32,
+    pub table_id: TableId,
+    pub table_name: Box<str>,
+    pub inserts: Vec<ProductValue>,
+    pub deletes: Vec<ProductValue>,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Code {
     Value(AlgebraicValue),
     Table(MemTable),
     Halt(ErrorLang),
     Block(Vec<Code>),
     Crud(CrudExpr),
-    Pass,
+    Pass(Option<Update>),
 }
 
 impl fmt::Display for Code {
@@ -2088,7 +2097,7 @@ pub enum CodeResult {
     Table(MemTable),
     Block(Vec<CodeResult>),
     Halt(ErrorLang),
-    Pass,
+    Pass(Option<Update>),
 }
 
 impl From<Code> for CodeResult {
@@ -2099,12 +2108,12 @@ impl From<Code> for CodeResult {
             Code::Halt(x) => Self::Halt(x),
             Code::Block(x) => {
                 if x.is_empty() {
-                    Self::Pass
+                    Self::Pass(None)
                 } else {
                     Self::Block(x.into_iter().map(CodeResult::from).collect())
                 }
             }
-            Code::Pass => Self::Pass,
+            Code::Pass(x) => Self::Pass(x),
             x => Self::Halt(ErrorLang::new(
                 ErrorKind::Compiler,
                 Some(&format!("Invalid result: {x}")),

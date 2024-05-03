@@ -102,13 +102,16 @@ impl<'a> SlowQueryLogger<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
 
-    use crate::execution_context::ExecutionContext;
+    use crate::{execution_context::ExecutionContext, subscription::module_subscription_actor::ModuleSubscriptions};
     use crate::sql::compiler::compile_sql;
     use crate::sql::execute::execute_sql;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::identity::AuthCtx;
+    use spacetimedb_lib::Identity;
 
     use crate::config::ReadConfigOption;
     use crate::db::relational_db::tests_utils::TestDB;
@@ -119,7 +122,8 @@ mod tests {
     fn run_query(db: &RelationalDB, sql: String) -> ResultTest<MemTable> {
         let tx = db.begin_tx();
         let q = compile_sql(db, &tx, &sql)?;
-        Ok(execute_sql(db, &sql, q, AuthCtx::for_testing())?.pop().unwrap())
+        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
+        Ok(execute_sql(db, &sql, q, AuthCtx::for_testing(), &subs)?.pop().unwrap())
     }
 
     fn run_query_write(db: &RelationalDB, sql: String) -> ResultTest<()> {
@@ -127,7 +131,8 @@ mod tests {
         let q = compile_sql(db, &tx, &sql)?;
         drop(tx);
 
-        execute_sql(db, &sql, q, AuthCtx::for_testing())?;
+        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
+        execute_sql(db, &sql, q, AuthCtx::for_testing(), &subs)?;
 
         Ok(())
     }
@@ -155,7 +160,8 @@ mod tests {
 
         let slow = SlowQueryLogger::query(&ctx, sql);
 
-        let result = execute_sql(&db, sql, q, AuthCtx::for_testing())?;
+        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
+        let result = execute_sql(&db, sql, q, AuthCtx::for_testing(), &subs)?;
         assert_eq!(result[0].data[0], product![1, 2]);
         assert!(slow.log().is_some());
 
