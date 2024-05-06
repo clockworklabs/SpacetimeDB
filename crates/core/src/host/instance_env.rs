@@ -363,7 +363,7 @@ impl InstanceEnv {
 
         // TODO(Centril): consider caching from `filter: &[u8] -> query: QueryExpr`.
         let query = QueryExpr::new(schema.as_ref())
-            .with_select(filter_to_column_op(table_id, filter))
+            .with_select(filter_to_column_op(table_id, filter))?
             .optimize(&|table_id, table_name| stdb.row_count(table_id, table_name));
 
         // TODO(Centril): Conditionally dump the `query` to a file and compare against integration test.

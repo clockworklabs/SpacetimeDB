@@ -6,7 +6,7 @@ use core::slice::from_ref;
 use derive_more::From;
 use smallvec::{smallvec, SmallVec};
 use spacetimedb_data_structures::map::{HashSet, IntMap};
-use spacetimedb_lib::Identity;
+use spacetimedb_lib::{AlgebraicType, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
@@ -1536,15 +1536,13 @@ impl QueryExpr {
         }
     }
 
-    pub fn with_select<O>(mut self, op: O) -> Self
+    pub fn with_select<O>(mut self, op: O) -> Result<Self, RelationError>
     where
         O: Into<FieldOp>,
     {
         let op = op.into();
         let Some(query) = self.query.pop() else {
-            let op = op.names_to_cols(self.head()).unwrap();
-            self.query.push(Query::Select(op));
-            return self;
+            return self.add_base_select(op);
         };
 
         match (query, op) {
@@ -1565,45 +1563,127 @@ impl QueryExpr {
                 // Field is from lhs, so push onto join's left arg
                 if self.head().column_pos(field).is_some() =>
                     {
-                        self = self.with_select(FieldOp::cmp(field, cmp, value));
+                        // No typing restrictions on `field cmp value`,
+                        // and there are no binary operators to recurse into.
+                        self = self.with_select(FieldOp::cmp(field, cmp, value))?;
                         self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs, inner }));
-                        self
+                        Ok(self)
                     }
                 (FieldOp::Field(FieldExpr::Name(field)), FieldOp::Field(FieldExpr::Value(value)))
                 // Field is from rhs, so push onto join's right arg
                 if rhs.head().column_pos(field).is_some() =>
                     {
+                        // No typing restrictions on `field cmp value`,
+                        // and there are no binary operators to recurse into.
+                        let rhs = rhs.with_select(FieldOp::cmp(field, cmp, value))?;
                         self.query.push(Query::JoinInner(JoinExpr {
-                            rhs: rhs.with_select(FieldOp::cmp(field, cmp, value)),
+                            rhs,
                             col_lhs,
                             col_rhs,
                             inner,
                         }));
-                        self
+                        Ok(self)
                     }
                 (field, value) => {
                     self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs, inner, }));
+
+                    // As we have `field op value` we need not demand `bool`,
+                    // but we must still recuse into each side.
+                    self.check_field_op_logics(&field)?;
+                    self.check_field_op_logics(&value)?;
+                    // Convert to `ColumnOp`.
                     let col = field.names_to_cols(self.head()).unwrap();
                     let value = value.names_to_cols(self.head()).unwrap();
+                    // Add `col op value` filter to query.
                     self.query.push(Query::Select(ColumnOp::new(OpQuery::Cmp(cmp), col, value)));
-                    self
+                    Ok(self)
                 }
             },
-            (Query::Select(filter), op) => {
-                let op = op.names_to_cols(self.head()).unwrap();
-                self.query.push(Query::Select(ColumnOp::and(filter, op)));
-                self
+            // We have a previous filter `lhs`, so join with `rhs` forming `lhs AND rhs`.
+            (Query::Select(lhs), rhs) => {
+                // Type check `rhs`, demanding `bool`.
+                self.check_field_op(&rhs)?;
+                // Convert to `ColumnOp`.
+                let rhs = rhs.names_to_cols(self.head()).unwrap();
+                // Add `lhs AND op` to query.
+                self.query.push(Query::Select(ColumnOp::and(lhs, rhs)));
+                Ok(self)
             }
+            // No previous filter, so add a base one.
             (query, op) => {
                 self.query.push(query);
-                let op = op.names_to_cols(self.head()).unwrap();
-                self.query.push(Query::Select(op));
-                self
+                self.add_base_select(op)
             }
         }
     }
 
-    pub fn with_select_cmp<LHS, RHS, O>(self, op: O, lhs: LHS, rhs: RHS) -> Self
+    /// Add a base `Select` query that filters according to `op`.
+    /// The `op` is checked to produce a `bool` value.
+    fn add_base_select(mut self, op: FieldOp) -> Result<Self, RelationError> {
+        // Type check the filter, demanding `bool`.
+        self.check_field_op(&op)?;
+        // Convert to `ColumnOp`.
+        let op = op.names_to_cols(self.head()).unwrap();
+        // Add the filter.
+        self.query.push(Query::Select(op));
+        Ok(self)
+    }
+
+    /// Type checks a `FieldOp` with respect to `self`,
+    /// ensuring that query evaluation cannot get stuck or panic due to `reduce_bool`.
+    fn check_field_op(&self, op: &FieldOp) -> Result<(), RelationError> {
+        use OpQuery::*;
+        match op {
+            // `lhs` and `rhs` must both be typed at `bool`.
+            FieldOp::Cmp { op: Logic(_), lhs, rhs } => {
+                self.check_field_op(lhs)?;
+                self.check_field_op(rhs)?;
+                Ok(())
+            }
+            // `lhs` and `rhs` have no typing restrictions.
+            // The result of `lhs op rhs` will always be a `bool`
+            // either by `Eq` or `Ord` on `AlgebraicValue` (see `ColumnOp::compare_bin_op`).
+            // However, we still have to recurse into `lhs` and `rhs`
+            // in case we have e.g., `a == (b == c)`.
+            FieldOp::Cmp { op: Cmp(_), lhs, rhs } => {
+                self.check_field_op_logics(lhs)?;
+                self.check_field_op_logics(rhs)?;
+                Ok(())
+            }
+            FieldOp::Field(FieldExpr::Value(AlgebraicValue::Bool(_))) => Ok(()),
+            FieldOp::Field(FieldExpr::Value(v)) => Err(RelationError::NotBoolValue { val: v.clone() }),
+            FieldOp::Field(FieldExpr::Name(field)) => {
+                let field = *field;
+                let head = self.head();
+                let col_id = head.column_pos_or_err(field)?;
+                let col_ty = &head.fields[col_id.idx()].algebraic_type;
+                match col_ty {
+                    &AlgebraicType::Bool => Ok(()),
+                    ty => Err(RelationError::NotBoolType { field, ty: ty.clone() }),
+                }
+            }
+        }
+    }
+
+    /// Traverses `op`, checking any logical operators for bool-typed operands.
+    fn check_field_op_logics(&self, op: &FieldOp) -> Result<(), RelationError> {
+        use OpQuery::*;
+        match op {
+            FieldOp::Field(_) => Ok(()),
+            FieldOp::Cmp { op: Cmp(_), lhs, rhs } => {
+                self.check_field_op_logics(lhs)?;
+                self.check_field_op_logics(rhs)?;
+                Ok(())
+            }
+            FieldOp::Cmp { op: Logic(_), lhs, rhs } => {
+                self.check_field_op(lhs)?;
+                self.check_field_op(rhs)?;
+                Ok(())
+            }
+        }
+    }
+
+    pub fn with_select_cmp<LHS, RHS, O>(self, op: O, lhs: LHS, rhs: RHS) -> Result<Self, RelationError>
     where
         LHS: Into<FieldExpr>,
         RHS: Into<FieldExpr>,
@@ -1842,44 +1922,42 @@ impl QueryExpr {
                 }
 
                 match op {
-                    IndexColumnOp::Index(idx) => match idx {
-                        // Found sargable equality condition for one of the table schemas.
-                        IndexArgument::Eq { columns, value } => {
-                            // `unwrap`  here is infallible because `is_sargable(schema, op)` implies `schema.is_db_table`
-                            // for any `op`.
-                            q = q.with_index_eq(schema.get_db_table().unwrap().clone(), columns.clone(), value);
-                        }
-                        // Found sargable range condition for one of the table schemas.
-                        IndexArgument::LowerBound {
-                            columns,
-                            value,
-                            inclusive,
-                        } => {
-                            // `unwrap`  here is infallible because `is_sargable(schema, op)` implies `schema.is_db_table`
-                            // for any `op`.
-                            q = q.with_index_lower_bound(
-                                schema.get_db_table().unwrap().clone(),
-                                columns.clone(),
+                    // A sargable condition for on one of the table schemas,
+                    // either an equality or range condition.
+                    IndexColumnOp::Index(idx) => {
+                        let table = schema
+                            .get_db_table()
+                            .expect("find_sargable_ops(schema, op) implies `schema.is_db_table()`")
+                            .clone();
+
+                        q = match idx {
+                            IndexArgument::Eq { columns, value } => q.with_index_eq(table, columns.clone(), value),
+                            IndexArgument::LowerBound {
+                                columns,
                                 value,
                                 inclusive,
-                            );
-                        }
-                        // Found sargable range condition for one of the table schemas.
-                        IndexArgument::UpperBound {
-                            columns,
-                            value,
-                            inclusive,
-                        } => {
-                            q = q.with_index_upper_bound(
-                                schema.get_db_table().unwrap().clone(),
-                                columns.clone(),
+                            } => q.with_index_lower_bound(table, columns.clone(), value, inclusive),
+                            IndexArgument::UpperBound {
+                                columns,
                                 value,
                                 inclusive,
-                            );
-                        }
-                    },
+                            } => q.with_index_upper_bound(table, columns.clone(), value, inclusive),
+                        };
+                    }
                     // Filter condition cannot be answered using an index.
-                    IndexColumnOp::Scan(scan) => q.query.push(Query::Select(scan.clone())),
+                    IndexColumnOp::Scan(rhs) => {
+                        let rhs = rhs.clone();
+                        let op = match q.query.pop() {
+                            // Merge condition into any pre-existing `Select`.
+                            Some(Query::Select(lhs)) => ColumnOp::and(lhs, rhs),
+                            None => rhs,
+                            Some(other) => {
+                                q.query.push(other);
+                                rhs
+                            }
+                        };
+                        q.query.push(Query::Select(op));
+                    }
                 }
             }
         }
@@ -2646,14 +2724,14 @@ mod tests {
             TableId(0),
             TableDef::new(
                 "lhs".into(),
-                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String]).into(),
+                ProductType::from([AlgebraicType::I32, AlgebraicType::String]).into(),
             ),
         );
         let rhs = TableSchema::from_def(
             TableId(1),
             TableDef::new(
                 "rhs".into(),
-                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64]).into(),
+                ProductType::from([AlgebraicType::I32, AlgebraicType::I64]).into(),
             ),
         );
 

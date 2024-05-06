@@ -247,7 +247,9 @@ pub mod tests {
         let mut sources = SourceSet::<_, 1>::empty();
         let source_expr = sources.add_mem_table(input);
 
-        let q = QueryExpr::new(source_expr).with_select_cmp(OpCmp::Eq, field, scalar(1u64));
+        let q = QueryExpr::new(source_expr)
+            .with_select_cmp(OpCmp::Eq, field, scalar(1u64))
+            .unwrap();
 
         let head = q.head().clone();
 
@@ -272,15 +274,21 @@ pub mod tests {
         let result = run_ast(p, q.into(), sources);
         let row = product![1u64];
         assert_eq!(result, Code::Table(MemTable::from_iter(head.clone(), [row])), "Project");
+    }
+
+    #[test]
+    fn test_project_out_of_bounds() {
+        let table = mem_table_one_u64(0.into());
 
         let mut sources = SourceSet::<_, 1>::empty();
         let source_expr = sources.add_mem_table(table.clone());
 
         let source = QueryExpr::new(source_expr);
+        // This field is out of bounds of `table`'s header, so `run_ast` will panic.
         let field = FieldName::new(table.head.table_id, 1.into());
         assert!(matches!(
             source.with_project([field.into()].into(), None).unwrap_err(),
-            RelationError::FieldNotFound(h, f) if h == *head && f == field,
+            RelationError::FieldNotFound(_, f) if f == field,
         ));
     }
 
@@ -356,7 +364,9 @@ pub mod tests {
         let mut sources = SourceSet::<_, 1>::empty();
         let source_expr = sources.add_mem_table(input.clone());
 
-        let q = QueryExpr::new(source_expr.clone()).with_select_cmp(OpLogic::And, scalar(true), scalar(true));
+        let q = QueryExpr::new(source_expr.clone())
+            .with_select_cmp(OpLogic::And, scalar(true), scalar(true))
+            .unwrap();
 
         let result = run_query(p, q.into(), sources);
 
@@ -365,7 +375,9 @@ pub mod tests {
         let mut sources = SourceSet::<_, 1>::empty();
         let source_expr = sources.add_mem_table(input);
 
-        let q = QueryExpr::new(source_expr).with_select_cmp(OpLogic::Or, scalar(true), scalar(false));
+        let q = QueryExpr::new(source_expr)
+            .with_select_cmp(OpLogic::Or, scalar(true), scalar(false))
+            .unwrap();
 
         let result = run_query(p, q.into(), sources);
 
@@ -470,9 +482,13 @@ pub mod tests {
         let q = QueryExpr::new(player_source_expr)
             .with_join_inner(location_source_expr, player_entity_id, location_entity_id, true)
             .with_select_cmp(OpCmp::Gt, loc_field(location_x), scalar(0.0f32))
+            .unwrap()
             .with_select_cmp(OpCmp::LtEq, loc_field(location_x), scalar(32.0f32))
+            .unwrap()
             .with_select_cmp(OpCmp::Gt, loc_field(location_z), scalar(0.0f32))
-            .with_select_cmp(OpCmp::LtEq, loc_field(location_z), scalar(32.0f32));
+            .unwrap()
+            .with_select_cmp(OpCmp::LtEq, loc_field(location_z), scalar(32.0f32))
+            .unwrap();
 
         let result = run_query(p, q.into(), sources);
 
@@ -512,9 +528,13 @@ pub mod tests {
                 true,
             )
             .with_select_cmp(OpCmp::Gt, loc_field(location_x), scalar(0.0f32))
+            .unwrap()
             .with_select_cmp(OpCmp::LtEq, loc_field(location_x), scalar(32.0f32))
+            .unwrap()
             .with_select_cmp(OpCmp::Gt, loc_field(location_z), scalar(0.0f32))
+            .unwrap()
             .with_select_cmp(OpCmp::LtEq, loc_field(location_z), scalar(32.0f32))
+            .unwrap()
             .with_project(inv.map(inv_expr).into(), Some(inv_table_id))
             .unwrap();
 

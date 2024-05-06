@@ -1,6 +1,7 @@
 use crate::db::def::IndexType;
 use crate::product_value::InvalidFieldError;
 use crate::relation::{FieldName, Header};
+use crate::satn::Satn as _;
 use crate::{buffer, AlgebraicType, AlgebraicValue};
 use derive_more::Display;
 use spacetimedb_primitives::{ColId, ColList, TableId};
@@ -88,10 +89,12 @@ pub enum RelationError {
     FieldNotFound(Header, FieldName),
     #[error("Field `{0}` fail to infer the type: {1}")]
     TypeInference(FieldName, TypeError),
+    #[error("Field with value `{}` was not a `bool`", val.to_satn())]
+    NotBoolValue { val: AlgebraicValue },
+    #[error("Field `{field}` was expected to be `bool` but is `{}`", ty.to_satn())]
+    NotBoolType { field: FieldName, ty: AlgebraicType },
     #[error("Field declaration only support `table.field` or `field`. It gets instead `{0}`")]
     FieldPathInvalid(String),
-    #[error("Field not found at position {0}")]
-    FieldNotFoundAtPos(ColId),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Display)]

@@ -320,6 +320,8 @@ pub enum NodesError {
     SystemName(Box<str>),
     #[error("internal db error: {0}")]
     Internal(#[source] Box<DBError>),
+    #[error(transparent)]
+    BadQuery(#[from] RelationError),
     #[error("invalid index type: {0}")]
     BadIndexType(u8),
 }
