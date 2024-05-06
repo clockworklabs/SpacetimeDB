@@ -657,7 +657,8 @@ pub(crate) mod tests {
             OpCmp::Eq,
             FieldName::new(ST_TABLES_ID, StTableFields::TableName.into()),
             scalar(ST_TABLES_NAME),
-        );
+        )
+        .unwrap();
         let st_table_row = StTableRow {
             table_id: ST_TABLES_ID,
             table_name: ST_TABLES_NAME.into(),
@@ -681,11 +682,13 @@ pub(crate) mod tests {
                 FieldName::new(ST_COLUMNS_ID, StColumnFields::TableId.into()),
                 scalar(ST_COLUMNS_ID),
             )
+            .unwrap()
             .with_select_cmp(
                 OpCmp::Eq,
                 FieldName::new(ST_COLUMNS_ID, StColumnFields::ColPos.into()),
                 scalar(StColumnFields::TableId as u32),
-            );
+            )
+            .unwrap();
         let st_column_row = StColumnRow {
             table_id: ST_COLUMNS_ID,
             col_pos: StColumnFields::TableId.col_id(),
@@ -714,7 +717,7 @@ pub(crate) mod tests {
             OpCmp::Eq,
             FieldName::new(ST_INDEXES_ID, StIndexFields::IndexName.into()),
             scalar("idx_1"),
-        );
+        ).unwrap();
         let st_index_row = StIndexRow {
             index_id,
             index_name: "idx_1".into(),
@@ -738,7 +741,8 @@ pub(crate) mod tests {
             OpCmp::Eq,
             FieldName::new(ST_SEQUENCES_ID, StSequenceFields::TableId.into()),
             scalar(ST_SEQUENCES_ID),
-        );
+        )
+        .unwrap();
         let st_sequence_row = StSequenceRow {
             sequence_id: 3.into(),
             sequence_name: "seq_st_sequence_sequence_id_primary_key_auto".into(),
