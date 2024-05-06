@@ -115,6 +115,10 @@ impl<'a> RelValue<'a> {
         }
     }
 
+    /// Returns a column either at the index specified in `col`,
+    /// or the column is the value that `col` holds.
+    ///
+    /// Panics if, for `ColExprRef::Col(col)`, the `col` is out of bounds of `self`.
     pub fn get(&'a self, col: ColExprRef<'a>) -> Cow<'a, AlgebraicValue> {
         match col {
             ColExprRef::Col(col) => self.read_column(col.idx()).unwrap(),
@@ -122,13 +126,11 @@ impl<'a> RelValue<'a> {
         }
     }
 
-    pub fn project(&self, cols: &[ColExprRef<'_>]) -> ProductValue {
-        cols.iter().map(|col| self.get(*col).into_owned()).collect()
-    }
-
     /// Reads or takes the column at `col`.
     /// Calling this method consumes the column at `col` for a `RelValue::Projection`,
     /// so it should not be called again for the same input.
+    ///
+    /// Panics if `col` is out of bounds of `self`.
     pub fn read_or_take_column(&mut self, col: usize) -> Option<AlgebraicValue> {
         match self {
             Self::Row(row_ref) => AlgebraicValue::read_column(*row_ref, col).ok(),
@@ -137,6 +139,10 @@ impl<'a> RelValue<'a> {
         }
     }
 
+    /// Turns `cols` into a product
+    /// where a value in `cols` is taken directly from it and indices are taken from `self`.
+    ///
+    /// Panics on an index that is out of bounds of `self`.
     pub fn project_owned(mut self, cols: &[ColExpr]) -> ProductValue {
         cols.iter()
             .map(|col| match col {

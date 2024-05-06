@@ -48,11 +48,11 @@ fn expr_for_projection(table: &From, of: Expr) -> Result<FieldExpr, PlanError> {
 }
 
 /// Compiles a `WHERE ...` clause
-fn compile_where(mut q: QueryExpr, filter: Selection) -> QueryExpr {
+fn compile_where(mut q: QueryExpr, filter: Selection) -> Result<QueryExpr, PlanError> {
     for op in filter.clause.flatten_ands() {
-        q = q.with_select(op);
+        q = q.with_select(op)?;
     }
-    q
+    Ok(q)
 }
 
 /// Compiles a `SELECT ...` clause
@@ -118,7 +118,7 @@ fn compile_select(table: From, project: Box<[Column]>, selection: Option<Selecti
     }
 
     if let Some(filter) = selection {
-        q = compile_where(q, filter);
+        q = compile_where(q, filter)?;
     }
     // It is important to project at the end.
     // This is so joins and filters see fields that are not projected.
@@ -173,14 +173,14 @@ fn compile_insert(table: &TableSchema, cols: &[ColId], values: Box<[Box<[ColExpr
 }
 
 /// Compiles a `DELETE ...` clause
-fn compile_delete(table: Arc<TableSchema>, selection: Option<Selection>) -> CrudExpr {
+fn compile_delete(table: Arc<TableSchema>, selection: Option<Selection>) -> Result<CrudExpr, PlanError> {
     let query = QueryExpr::new(&*table);
     let query = if let Some(filter) = selection {
-        compile_where(query, filter)
+        compile_where(query, filter)?
     } else {
         query
     };
-    CrudExpr::Delete { query }
+    Ok(CrudExpr::Delete { query })
 }
 
 /// Compiles a `UPDATE ...` clause
@@ -188,15 +188,15 @@ fn compile_update(
     table: Arc<TableSchema>,
     assignments: IntMap<ColId, ColExpr>,
     selection: Option<Selection>,
-) -> CrudExpr {
+) -> Result<CrudExpr, PlanError> {
     let query = QueryExpr::new(&*table);
     let delete = if let Some(filter) = selection {
-        compile_where(query, filter)
+        compile_where(query, filter)?
     } else {
         query
     };
 
-    CrudExpr::Update { delete, assignments }
+    Ok(CrudExpr::Update { delete, assignments })
 }
 
 /// Compiles a `CREATE TABLE ...` clause
@@ -226,8 +226,8 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
             table,
             assignments,
             selection,
-        } => compile_update(table, assignments, selection),
-        SqlAst::Delete { table, selection } => compile_delete(table, selection),
+        } => compile_update(table, assignments, selection)?,
+        SqlAst::Delete { table, selection } => compile_delete(table, selection)?,
         SqlAst::CreateTable { table } => compile_create_table(table),
         SqlAst::Drop {
             name,
@@ -661,7 +661,6 @@ mod tests {
         let ColumnOp::Col(ColExpr::Col(col)) = **lhs else {
             panic!("unexpected left hand side {:#?}", **lhs);
         };
-
         assert_eq!(col, 0.into());
 
         let ColumnOp::Col(ColExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
@@ -745,7 +744,6 @@ mod tests {
         let ColumnOp::Col(ColExpr::Col(col)) = **lhs else {
             panic!("unexpected left hand side {:#?}", **lhs);
         };
-
         assert_eq!(col, 1.into());
 
         let ColumnOp::Col(ColExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
@@ -904,7 +902,6 @@ mod tests {
         let ColumnOp::Col(ColExpr::Col(col)) = **field else {
             panic!("unexpected left hand side {:#?}", field);
         };
-
         assert_eq!(col, 2.into());
 
         let ColumnOp::Col(ColExpr::Value(AlgebraicValue::U64(3))) = **value else {
@@ -991,7 +988,6 @@ mod tests {
         let ColumnOp::Col(ColExpr::Col(col)) = **field else {
             panic!("unexpected left hand side {:#?}", field);
         };
-
         assert_eq!(col, 2.into());
 
         let ColumnOp::Col(ColExpr::Value(AlgebraicValue::U64(3))) = **value else {
