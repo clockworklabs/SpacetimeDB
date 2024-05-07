@@ -11,7 +11,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
-use spacetimedb_sats::db::error::AuthError;
+use spacetimedb_sats::db::error::{AuthError, RelationError};
 use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header, Relation, RowCount};
 use spacetimedb_sats::ProductValue;
 use std::cmp::Reverse;
@@ -651,7 +651,7 @@ impl IndexJoin {
             let rhs = self.probe_side;
 
             let source = self.index_side;
-            let inner_join = Query::JoinInner(JoinExpr::new(rhs, col_lhs, col_rhs, true));
+            let inner_join = Query::JoinInner(JoinExpr::new(rhs, col_lhs, col_rhs, None));
             let query = if let Some(predicate) = self.index_select {
                 vec![predicate.into(), inner_join]
             } else {
@@ -667,7 +667,7 @@ impl IndexJoin {
             }
 
             let source = self.probe_side.source;
-            let inner_join = Query::JoinInner(JoinExpr::new(rhs, col_lhs, col_rhs, true));
+            let inner_join = Query::JoinInner(JoinExpr::new(rhs, col_lhs, col_rhs, None));
             let query = vec![inner_join];
             QueryExpr { source, query }
         }
@@ -679,20 +679,20 @@ pub struct JoinExpr {
     pub rhs: QueryExpr,
     pub col_lhs: ColId,
     pub col_rhs: ColId,
-    /// If true, this is a left semi-join, returning rows only from the source table,
+    /// If None, this is a left semi-join, returning rows only from the source table,
     /// using the `rhs` as a filter.
     ///
-    /// If false, this is an inner join, returning the concatenation of the matching rows.
-    pub semi: bool,
+    /// If Some(_), this is an inner join, returning the concatenation of the matching rows.
+    pub inner: Option<Arc<Header>>,
 }
 
 impl JoinExpr {
-    pub fn new(rhs: QueryExpr, col_lhs: ColId, col_rhs: ColId, semi: bool) -> Self {
+    pub fn new(rhs: QueryExpr, col_lhs: ColId, col_rhs: ColId, inner: Option<Arc<Header>>) -> Self {
         Self {
             rhs,
             col_lhs,
             col_rhs,
-            semi,
+            inner,
         }
     }
 }
@@ -779,6 +779,16 @@ impl IndexScan {
     }
 }
 
+/// A projection operation in a query.
+#[derive(Debug, Clone, Eq, PartialEq, From, Hash)]
+pub struct ProjectExpr {
+    pub fields: Vec<FieldExpr>,
+    // The table id for a qualified wildcard project, if any.
+    // If present, further optimizations are possible.
+    pub wildcard_table: Option<TableId>,
+    pub header_after: Arc<Header>,
+}
+
 // An individual operation in a query.
 #[derive(Debug, Clone, Eq, PartialEq, From, Hash)]
 pub enum Query {
@@ -792,9 +802,7 @@ pub enum Query {
     // If it could it would have already been transformed into an IndexScan.
     Select(ColumnOp),
     // Projects a set of columns.
-    // The second argument is the table id for a qualified wildcard project.
-    // If present, further optimizations are possible.
-    Project(Vec<FieldExpr>, Option<TableId>),
+    Project(ProjectExpr),
     // A join of two relations (base or intermediate) based on equality.
     // Equivalent to a Nested Loop Join.
     // Its operands my use indexes but the join itself does not.
@@ -1172,11 +1180,33 @@ impl QueryExpr {
         self.query.iter().try_for_each(|q| q.walk_sources(on_source))
     }
 
+    /// Returns the last [`Header`] of this query.
+    ///
+    /// Starts the scan from the back to the front,
+    /// looking for query operations that change the `Header`.
+    /// These are `JoinInner` and `Project`.
+    /// If there are no operations that alter the `Header`,
+    /// this falls back to the origin `self.source.head()`.
+    pub fn head(&self) -> &Arc<Header> {
+        self.query
+            .iter()
+            .rev()
+            .find_map(|op| match op {
+                Query::Select(_) => None,
+                Query::IndexScan(scan) => Some(scan.table.head()),
+                Query::IndexJoin(join) if join.return_index_rows => Some(join.index_side.head()),
+                Query::IndexJoin(join) => Some(join.probe_side.head()),
+                Query::Project(proj) => Some(&proj.header_after),
+                Query::JoinInner(join) => join.inner.as_ref(),
+            })
+            .unwrap_or_else(|| self.source.head())
+    }
+
     /// Does this query read from a given table?
     pub fn reads_from_table(&self, id: &TableId) -> bool {
         self.source.table_id() == Some(*id)
             || self.query.iter().any(|q| match q {
-                Query::Select(_) | Query::Project(_, _) => false,
+                Query::Select(_) | Query::Project(..) => false,
                 Query::IndexScan(scan) => scan.table.table_id == *id,
                 Query::JoinInner(join) => join.rhs.reads_from_table(id),
                 Query::IndexJoin(join) => {
@@ -1216,13 +1246,13 @@ impl QueryExpr {
                 rhs,
                 col_lhs,
                 col_rhs,
-                semi,
+                inner: semi,
             }) => {
                 self.query.push(Query::JoinInner(JoinExpr {
                     rhs: rhs.with_index_eq(table, columns, value),
                     col_lhs,
                     col_rhs,
-                    semi,
+                    inner: semi,
                 }));
                 self
             }
@@ -1277,13 +1307,13 @@ impl QueryExpr {
                 rhs,
                 col_lhs,
                 col_rhs,
-                semi,
+                inner: semi,
             }) => {
                 self.query.push(Query::JoinInner(JoinExpr {
                     rhs: rhs.with_index_lower_bound(table, columns, value, inclusive),
                     col_lhs,
                     col_rhs,
-                    semi,
+                    inner: semi,
                 }));
                 self
             }
@@ -1379,13 +1409,13 @@ impl QueryExpr {
                 rhs,
                 col_lhs,
                 col_rhs,
-                semi,
+                inner: semi,
             }) => {
                 self.query.push(Query::JoinInner(JoinExpr {
                     rhs: rhs.with_index_upper_bound(table, columns, value, inclusive),
                     col_lhs,
                     col_rhs,
-                    semi,
+                    inner: semi,
                 }));
                 self
             }
@@ -1458,7 +1488,7 @@ impl QueryExpr {
                     rhs,
                     col_lhs,
                     col_rhs,
-                    semi,
+                    inner: semi,
                 }),
                 ColumnOp::Cmp {
                     op: OpQuery::Cmp(cmp),
@@ -1468,26 +1498,26 @@ impl QueryExpr {
             ) => match (*field, *value) {
                 (ColumnOp::Field(FieldExpr::Name(field)), ColumnOp::Field(FieldExpr::Value(value)))
                 // Field is from lhs, so push onto join's left arg
-                if self.source.head().column_pos(field).is_some() =>
+                if self.head().column_pos(field).is_some() =>
                     {
                         self = self.with_select(ColumnOp::cmp(field, cmp, value));
-                        self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs, semi}));
+                        self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs, inner: semi}));
                         self
                     }
                 (ColumnOp::Field(FieldExpr::Name(field)), ColumnOp::Field(FieldExpr::Value(value)))
                 // Field is from rhs, so push onto join's right arg
-                if rhs.source.head().column_pos(field).is_some() =>
+                if rhs.head().column_pos(field).is_some() =>
                     {
                         self.query.push(Query::JoinInner(JoinExpr {
                             rhs: rhs.with_select(ColumnOp::cmp(field, cmp, value)),
                             col_lhs,
                             col_rhs,
-                            semi,
+                            inner: semi,
                         }));
                         self
                     }
                 (field, value) => {
-                    self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs, semi, }));
+                    self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs, inner: semi, }));
                     self.query.push(Query::Select(ColumnOp::new(OpQuery::Cmp(cmp), field, value)));
                     self
                 }
@@ -1517,19 +1547,34 @@ impl QueryExpr {
     // Appends a project operation to the query operator pipeline.
     // The `wildcard_table_id` represents a projection of the form `table.*`.
     // This is used to determine if an inner join can be rewritten as an index join.
-    pub fn with_project(self, cols: &[FieldExpr], wildcard_table_id: Option<TableId>) -> Self {
-        let mut x = self;
+    pub fn with_project(mut self, cols: &[FieldExpr], wildcard_table: Option<TableId>) -> Result<Self, RelationError> {
         if !cols.is_empty() {
-            x.query.push(Query::Project(cols.into(), wildcard_table_id));
+            let header_after = Arc::new(self.head().project(cols)?);
+            self.query.push(Query::Project(ProjectExpr {
+                fields: cols.into(),
+                wildcard_table,
+                header_after,
+            }));
         }
-        x
+        Ok(self)
     }
 
-    pub fn with_join_inner(self, with: impl Into<QueryExpr>, lhs: ColId, rhs: ColId, semi: bool) -> Self {
-        let mut x = self;
-        x.query
-            .push(Query::JoinInner(JoinExpr::new(with.into(), lhs, rhs, semi)));
-        x
+    pub fn with_join_inner_raw(
+        mut self,
+        q_rhs: QueryExpr,
+        c_lhs: ColId,
+        c_rhs: ColId,
+        inner: Option<Arc<Header>>,
+    ) -> Self {
+        self.query
+            .push(Query::JoinInner(JoinExpr::new(q_rhs, c_lhs, c_rhs, inner)));
+        self
+    }
+
+    pub fn with_join_inner(self, q_rhs: impl Into<QueryExpr>, c_lhs: ColId, c_rhs: ColId, semi: bool) -> Self {
+        let q_rhs = q_rhs.into();
+        let inner = (!semi).then(|| Arc::new(self.head().extend(q_rhs.head())));
+        self.with_join_inner_raw(q_rhs, c_lhs, c_rhs, inner)
     }
 
     fn bound(value: AlgebraicValue, inclusive: bool) -> Bound<AlgebraicValue> {
@@ -1588,13 +1633,7 @@ impl QueryExpr {
             // No first (0th) expr to be the join; bail.
             return QueryExpr { source, query: vec![] };
         };
-        let Query::JoinInner(JoinExpr {
-            rhs,
-            col_lhs,
-            col_rhs,
-            semi: false,
-        }) = join_candidate
-        else {
+        let Query::JoinInner(join) = join_candidate else {
             // First (0th) expr is not an inner join. Bail.
             return QueryExpr {
                 source,
@@ -1606,57 +1645,28 @@ impl QueryExpr {
             // No second (1st) expr to be the project. Bail.
             return QueryExpr {
                 source,
-                query: vec![Query::JoinInner(JoinExpr {
-                    rhs,
-                    col_lhs,
-                    col_rhs,
-                    semi: false,
-                })],
-            };
-        };
-        let Query::Project(cols, Some(wildcard_table_id)) = project_candidate else {
-            // Second (1st) expr is not a wildcard projection. Bail.
-            return QueryExpr {
-                source,
-                query: itertools::chain![
-                    Some(Query::JoinInner(JoinExpr {
-                        rhs,
-                        col_lhs,
-                        col_rhs,
-                        semi: false
-                    })),
-                    Some(project_candidate),
-                    exprs
-                ]
-                .collect(),
+                query: vec![Query::JoinInner(join)],
             };
         };
 
-        if wildcard_table_id != source_table_id {
+        let Query::Project(proj) = project_candidate else {
+            // Second (1st) expr is not a wildcard projection. Bail.
+            return QueryExpr {
+                source,
+                query: itertools::chain![Some(Query::JoinInner(join)), Some(project_candidate), exprs].collect(),
+            };
+        };
+
+        if proj.wildcard_table != Some(source_table_id) {
             // Projection is selecting the RHS table. Bail.
             return QueryExpr {
                 source,
-                query: itertools::chain![
-                    Some(Query::JoinInner(JoinExpr {
-                        rhs,
-                        col_lhs,
-                        col_rhs,
-                        semi: false
-                    })),
-                    Some(Query::Project(cols, Some(wildcard_table_id))),
-                    exprs
-                ]
-                .collect(),
+                query: itertools::chain![Some(Query::JoinInner(join)), Some(Query::Project(proj)), exprs].collect(),
             };
         };
 
         // All conditions met; return a semijoin.
-        let semijoin = JoinExpr {
-            rhs,
-            col_lhs,
-            col_rhs,
-            semi: true,
-        };
+        let semijoin = JoinExpr { inner: None, ..join };
 
         QueryExpr {
             source,
@@ -1691,7 +1701,7 @@ impl QueryExpr {
                 rhs: probe_side,
                 col_lhs: index_col,
                 col_rhs: probe_col,
-                semi: true,
+                inner: None,
             }) => {
                 if !probe_side.query.is_empty() {
                     // An applicable join must have an index defined on the correct field.
@@ -1712,7 +1722,7 @@ impl QueryExpr {
                     rhs: probe_side,
                     col_lhs: index_col,
                     col_rhs: probe_col,
-                    semi: true,
+                    inner: None,
                 });
                 QueryExpr {
                     source,
@@ -1811,7 +1821,7 @@ impl QueryExpr {
                     q = Self::optimize_select(q, op, from_ref(&self.source));
                 }
                 Query::JoinInner(join) => {
-                    q = q.with_join_inner(join.rhs.optimize(row_count), join.col_lhs, join.col_rhs, join.semi);
+                    q = q.with_join_inner_raw(join.rhs.optimize(row_count), join.col_lhs, join.col_rhs, join.inner);
                 }
                 _ => q.query.push(query),
             };
@@ -1865,7 +1875,8 @@ impl fmt::Display for Query {
             Query::Select(q) => {
                 write!(f, "select {q}")
             }
-            Query::Project(q, _) => {
+            Query::Project(proj) => {
+                let q = &proj.fields;
                 write!(f, "project")?;
                 if !q.is_empty() {
                     write!(f, " ")?;
@@ -2047,7 +2058,7 @@ mod tests {
                 col_rhs: 1.into(),
                 rhs: mem_table.into(),
                 col_lhs: 1.into(),
-                semi: false,
+                inner: None,
             }),
         ]
     }
@@ -2142,7 +2153,7 @@ mod tests {
                 query: vec![index_select.into()]
             }
         );
-        assert!(join.semi);
+        assert_eq!(join.inner, None);
     }
 
     fn setup_best_index() -> (Header, [FieldName; 5], [AlgebraicValue; 5]) {
@@ -2476,7 +2487,8 @@ mod tests {
             .with_project(
                 &[0, 1].map(|c| FieldExpr::Name(FieldName::new(lhs.table_id, c.into()))),
                 Some(TableId(0)),
-            );
+            )
+            .unwrap();
         let q = q.optimize(&|_, _| 0);
 
         assert_eq!(q.source, lhs_source, "Optimized query should read from lhs");
@@ -2487,8 +2499,8 @@ mod tests {
             "Optimized query should have a single member, a semijoin"
         );
         match &q.query[0] {
-            Query::JoinInner(JoinExpr { rhs, semi, .. }) => {
-                assert!(semi, "Optimized query should be a semijoin");
+            Query::JoinInner(JoinExpr { rhs, inner: semi, .. }) => {
+                assert_eq!(semi, &None, "Optimized query should be a semijoin");
                 assert_eq!(rhs.source, rhs_source, "Optimized query should filter with rhs");
                 assert!(
                     rhs.query.is_empty(),
@@ -2551,7 +2563,8 @@ mod tests {
             .with_project(
                 &[0, 1].map(|c| FieldExpr::Name(FieldName::new(rhs.table_id, c.into()))),
                 Some(TableId(1)),
-            );
+            )
+            .unwrap();
         let optimized = q.clone().optimize(&|_, _| 0);
         assert_eq!(q, optimized);
     }

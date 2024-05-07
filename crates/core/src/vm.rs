@@ -195,20 +195,16 @@ pub fn build_query<'a>(
                 let iter = result.select(move |row| cmp.compare(row, &header));
                 Box::new(iter)
             }
-            Query::Project(cols, _) => {
+            Query::Project(proj) => {
                 let result = result
                     .take()
                     .map(Ok)
                     .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
-                if cols.is_empty() {
-                    result
-                } else {
-                    let header = result.head().clone();
-                    let iter = result.project(cols, move |cols, row| {
-                        Ok(RelValue::Projection(row.project_owned(cols, &header)?))
-                    })?;
-                    Box::new(iter)
-                }
+                let header_before = result.head().clone();
+                let iter = result.project(&proj.header_after, &proj.fields, move |cols, row| {
+                    Ok(RelValue::Projection(row.project_owned(cols, &header_before)?))
+                });
+                Box::new(iter)
             }
             Query::JoinInner(join) => {
                 let lhs = result
