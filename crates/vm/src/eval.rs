@@ -1,5 +1,5 @@
 use crate::errors::ErrorVm;
-use crate::expr::{Code, JoinExpr, SourceExpr, SourceSet};
+use crate::expr::{Code, ColumnOp, JoinExpr, ProjectExpr, SourceExpr, SourceSet};
 use crate::expr::{Expr, Query};
 use crate::iterators::RelIter;
 use crate::program::{ProgramVm, Sources};
@@ -28,45 +28,43 @@ pub fn build_query<'a, const N: usize>(
             Query::IndexJoin(_) => {
                 panic!("index joins unsupported on memory tables")
             }
-            Query::Select(cmp) => {
-                let header = result.head().clone();
-                let iter = result.select(move |row| cmp.compare(row, &header));
-                Box::new(iter)
-            }
-            Query::Project(proj) => {
-                let header_before = result.head().clone();
-                let iter = result.project(&proj.header_after, &proj.fields, move |cols, row| {
-                    Ok(RelValue::Projection(row.project_owned(cols, &header_before)?))
-                });
-                Box::new(iter)
-            }
+            Query::Select(cmp) => build_select(result, cmp),
+            Query::Project(proj) => build_project(result, proj),
             Query::JoinInner(q) => {
                 let rhs = build_source_expr_query(sources, &q.rhs.source);
                 let rhs = build_query(rhs, &q.rhs.query, sources)?;
-                join_inner(result, rhs, q)?
+                join_inner(result, rhs, q)
             }
         };
     }
     Ok(result)
 }
 
-pub fn join_inner<'a>(
-    lhs: impl RelOps<'a> + 'a,
-    rhs: impl RelOps<'a> + 'a,
-    q: &'a JoinExpr,
-) -> Result<Box<IterRows<'a>>, ErrorVm> {
+pub fn build_select<'a>(base: impl RelOps<'a> + 'a, cmp: &'a ColumnOp) -> Box<IterRows<'a>> {
+    let header = base.head().clone();
+    Box::new(base.select(move |row| cmp.compare(row, &header)))
+}
+
+pub fn build_project<'a>(base: impl RelOps<'a> + 'a, proj: &'a ProjectExpr) -> Box<IterRows<'a>> {
+    let header_before = base.head().clone();
+    Box::new(base.project(&proj.header_after, &proj.fields, move |cols, row| {
+        Ok(RelValue::Projection(row.project_owned(cols, &header_before)?))
+    }))
+}
+
+pub fn join_inner<'a>(lhs: impl RelOps<'a> + 'a, rhs: impl RelOps<'a> + 'a, q: &'a JoinExpr) -> Box<IterRows<'a>> {
     let col_lhs = q.col_lhs.idx();
     let col_rhs = q.col_rhs.idx();
     let key_lhs = move |row: &RelValue<'_>| row.read_column(col_lhs).unwrap().into_owned();
     let key_rhs = move |row: &RelValue<'_>| row.read_column(col_rhs).unwrap().into_owned();
     let pred = move |l: &RelValue<'_>, r: &RelValue<'_>| l.read_column(col_lhs) == r.read_column(col_rhs);
 
-    Ok(if let Some(head) = q.inner.as_ref().cloned() {
-        Box::new(lhs.join_inner(rhs, head, key_lhs, key_rhs, pred, move |l, r| l.extend(r))?)
+    if let Some(head) = q.inner.as_ref().cloned() {
+        Box::new(lhs.join_inner(rhs, head, key_lhs, key_rhs, pred, move |l, r| l.extend(r)))
     } else {
         let head = lhs.head().clone();
-        Box::new(lhs.join_inner(rhs, head, key_lhs, key_rhs, pred, move |l, _| l)?)
-    })
+        Box::new(lhs.join_inner(rhs, head, key_lhs, key_rhs, pred, move |l, _| l))
+    }
 }
 
 pub(crate) fn build_source_expr_query<'a, const N: usize>(
