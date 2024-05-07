@@ -14,22 +14,6 @@ pub trait RelOps<'a> {
     /// Advances the `iterator` and returns the next [RelValue].
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm>;
 
-    /// Applies a function over the elements of the iterator, producing a single final value.
-    ///
-    /// This is used as the "base" of many methods on `FallibleIterator`.
-    #[inline]
-    fn try_fold<B, E, F>(&mut self, mut init: B, mut f: F) -> Result<B, E>
-    where
-        Self: Sized,
-        E: From<ErrorVm>,
-        F: FnMut(B, RelValue<'_>) -> Result<B, ErrorVm>,
-    {
-        while let Some(v) = self.next()? {
-            init = f(init, v)?;
-        }
-        Ok(init)
-    }
-
     /// Creates an `Iterator` which uses a closure to determine if a [RelValueRef] should be yielded.
     ///
     /// Given a [RelValueRef] the closure must return true or false.
