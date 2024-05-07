@@ -43,7 +43,7 @@ use spacetimedb_primitives::TableId;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::relation::DbTable;
 use spacetimedb_vm::errors::ErrorVm;
-use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryExpr, SourceProvider, SourceSet};
+use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryExpr, SourceExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::hash::Hash;
@@ -504,16 +504,15 @@ fn with_delta_table(
 ) -> (IndexJoin, SourceSet<Vec<ProductValue>, 2>) {
     let mut sources = SourceSet::empty();
 
+    let mut add_mem_table =
+        |side: SourceExpr, data| sources.add_mem_table(MemTable::new(side.head().clone(), side.table_access(), data));
+
     if let Some(index_side) = index_side {
-        let head = join.index_side.head().clone();
-        let table_access = join.index_side.table_access();
-        join.index_side = sources.add_mem_table(MemTable::new(head, table_access, index_side));
+        join.index_side = add_mem_table(join.index_side, index_side);
     }
 
     if let Some(probe_side) = probe_side {
-        let head = join.probe_side.source.head().clone();
-        let table_access = join.probe_side.source.table_access();
-        join.probe_side.source = sources.add_mem_table(MemTable::new(head, table_access, probe_side));
+        join.probe_side.source = add_mem_table(join.probe_side.source, probe_side);
     }
 
     (join, sources)
@@ -855,6 +854,7 @@ mod tests {
 
         assert!(virtual_plan.source.is_mem_table());
         assert_eq!(virtual_plan.source.head(), expr.source.head());
+        assert_eq!(virtual_plan.head(), expr.head());
         assert_eq!(virtual_plan.query.len(), 1);
         let incr_join = &virtual_plan.query[0];
         let Query::JoinInner(ref incr_join) = incr_join else {
@@ -862,6 +862,7 @@ mod tests {
         };
         assert!(incr_join.rhs.source.is_mem_table());
         assert_ne!(incr_join.rhs.source.head(), expr.source.head());
-        assert!(incr_join.semi);
+        assert_ne!(incr_join.rhs.head(), expr.head());
+        assert_eq!(incr_join.inner, None);
     }
 }
