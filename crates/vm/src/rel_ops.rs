@@ -69,7 +69,7 @@ pub trait RelOps<'a> {
         key_rhs: KeyRhs,
         predicate: Pred,
         project: Proj,
-    ) -> Result<JoinInner<'a, Self, Rhs, KeyLhs, KeyRhs, Pred, Proj>, ErrorVm>
+    ) -> JoinInner<'a, Self, Rhs, KeyLhs, KeyRhs, Pred, Proj>
     where
         Self: Sized,
         Pred: FnMut(&RelValue<'a>, &RelValue<'a>) -> bool,
@@ -78,7 +78,7 @@ pub trait RelOps<'a> {
         KeyRhs: FnMut(&RelValue<'a>) -> AlgebraicValue,
         Rhs: RelOps<'a>,
     {
-        Ok(JoinInner::new(head, self, with, key_lhs, key_rhs, predicate, project))
+        JoinInner::new(head, self, with, key_lhs, key_rhs, predicate, project)
     }
 
     /// Collect all the rows in this relation into a `Vec<T>` given a function `RelValue<'a> -> T`.
