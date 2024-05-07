@@ -31,10 +31,10 @@ fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
     let footprint = AlgebraicType::sum(["A", "B", "C", "D"].map(|n| (n, AlgebraicType::unit())));
     let schema = &[
         ("entity_id", AlgebraicType::U64),
-        ("type", footprint),
         ("owner_entity_id", AlgebraicType::U64),
+        ("type", footprint),
     ];
-    let indexes = &[(0.into(), "entity_id"), (2.into(), "owner_entity_id")];
+    let indexes = &[(0.into(), "entity_id"), (1.into(), "owner_entity_id")];
     db.create_table_for_test("footprint", schema, indexes)
 }
 
@@ -60,7 +60,7 @@ fn eval(c: &mut Criterion) {
             for entity_id in 0u64..1_000_000 {
                 let owner = entity_id % 1_000;
                 let footprint = AlgebraicValue::sum(entity_id as u8 % 4, AlgebraicValue::unit());
-                let row = product!(entity_id, footprint, owner);
+                let row = product!(entity_id, owner, footprint);
                 let _ = raw.db.insert(tx, lhs, row)?;
             }
             Ok(())
@@ -92,7 +92,7 @@ fn eval(c: &mut Criterion) {
     let footprint = AlgebraicValue::sum(1, AlgebraicValue::unit());
     let owner = 6u64;
 
-    let new_lhs_row = product!(entity_id, footprint, owner);
+    let new_lhs_row = product!(entity_id, owner, footprint);
     let new_rhs_row = product!(entity_id, chunk_index, x, z, dimension);
 
     let ins_lhs = insert_op(lhs, "footprint", new_lhs_row);
