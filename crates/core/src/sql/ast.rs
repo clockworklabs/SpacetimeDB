@@ -131,20 +131,21 @@ pub enum Join {
 #[derive(Debug)]
 pub struct From {
     pub root: Arc<TableSchema>,
-    pub join: Option<Vec<Join>>,
+    pub joins: Vec<Join>,
 }
 
 impl From {
     pub fn new(root: Arc<TableSchema>) -> Self {
-        Self { root, join: None }
+        Self {
+            root,
+            joins: Vec::new(),
+        }
     }
 
-    pub fn with_inner_join(self, rhs: Arc<TableSchema>, on: OnExpr) -> Self {
-        let mut x = self;
-
+    pub fn with_inner_join(mut self, rhs: Arc<TableSchema>, on: OnExpr) -> Self {
         // Check if the field are inverted:
         // FROM t1 JOIN t2 ON t2.id = t1.id
-        let on = if on.rhs.table() == x.root.table_id && x.root.get_column_by_field(on.rhs).is_some() {
+        let on = if on.rhs.table() == self.root.table_id && self.root.get_column_by_field(on.rhs).is_some() {
             OnExpr {
                 op: on.op.reverse(),
                 lhs: on.rhs,
@@ -153,22 +154,16 @@ impl From {
         } else {
             on
         };
-        if let Some(joins) = &mut x.join {
-            joins.push(Join::Inner { rhs, on })
-        } else {
-            x.join = Some(vec![Join::Inner { rhs, on }])
-        }
 
-        x
+        self.joins.push(Join::Inner { rhs, on });
+        self
     }
 
     /// Returns all the tables, including the ones inside the joins
     pub fn iter_tables(&self) -> impl Clone + Iterator<Item = &TableSchema> {
-        [&*self.root].into_iter().chain(
-            self.join
-                .iter()
-                .flat_map(|x| x.iter().map(|Join::Inner { rhs, .. }| &**rhs)),
-        )
+        [&*self.root]
+            .into_iter()
+            .chain(self.joins.iter().map(|Join::Inner { rhs, .. }| &**rhs))
     }
 
     /// Returns all the table names as a `Vec<String>`, including the ones inside the joins.
