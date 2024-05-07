@@ -94,8 +94,8 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
     for join in table.joins {
         match join {
             Join::Inner { rhs, on } => {
+                let col_lhs = q.head().column_pos_or_err(on.lhs)?;
                 let rhs_source_expr: SourceExpr = rhs.deref().into();
-                let col_lhs = q.source.head().column_pos_or_err(on.lhs)?;
                 let col_rhs = rhs_source_expr.head().column_pos_or_err(on.rhs)?;
 
                 match on.op {
@@ -124,7 +124,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
     // It is also important to identify a wildcard project of the form `table.*`.
     // This implies a potential semijoin and additional optimization opportunities.
     let qualified_wildcard = (qualified_wildcards.len() == 1).then(|| qualified_wildcards[0]);
-    q = q.with_project(&col_ids, qualified_wildcard);
+    q = q.with_project(&col_ids, qualified_wildcard)?;
 
     Ok(q)
 }
@@ -585,7 +585,7 @@ mod tests {
         let exp = compile_sql(&db, &tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
-            source: SourceExpr::DbTable(DbTable { table_id, .. }),
+            source: source_lhs,
             query,
             ..
         }) = exp
@@ -593,7 +593,7 @@ mod tests {
             panic!("unexpected expression: {:#?}", exp);
         };
 
-        assert_eq!(table_id, lhs_id);
+        assert_eq!(source_lhs.table_id().unwrap(), lhs_id);
         assert_eq!(query.len(), 2);
 
         // First operation in the pipeline should be an index scan
@@ -603,22 +603,19 @@ mod tests {
 
         // Followed by a join with the rhs table
         let Query::JoinInner(JoinExpr {
-            rhs:
-                QueryExpr {
-                    source: SourceExpr::DbTable(DbTable { table_id, .. }),
-                    ..
-                },
+            ref rhs,
             col_lhs,
             col_rhs,
-            semi: false,
+            inner: Some(ref inner_header),
         }) = query[1]
         else {
             panic!("unexpected operator {:#?}", query[1]);
         };
 
-        assert_eq!(table_id, rhs_id);
+        assert_eq!(rhs.source.table_id().unwrap(), rhs_id);
         assert_eq!(col_lhs, 1.into());
         assert_eq!(col_rhs, 0.into());
+        assert_eq!(&**inner_header, &source_lhs.head().extend(rhs.source.head()));
         Ok(())
     }
 
@@ -640,14 +637,14 @@ mod tests {
         let exp = compile_sql(&db, &tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
-            source: SourceExpr::DbTable(DbTable { table_id, .. }),
+            source: source_lhs,
             query,
             ..
         }) = exp
         else {
             panic!("unexpected expression: {:#?}", exp);
         };
-        assert_eq!(table_id, lhs_id);
+        assert_eq!(source_lhs.table_id().unwrap(), lhs_id);
         assert_eq!(query.len(), 2);
 
         // The first operation in the pipeline should be a selection
@@ -673,23 +670,20 @@ mod tests {
 
         // The join should follow the selection
         let Query::JoinInner(JoinExpr {
-            rhs:
-                QueryExpr {
-                    source: SourceExpr::DbTable(DbTable { table_id, .. }),
-                    query: ref rhs,
-                },
+            ref rhs,
             col_lhs,
             col_rhs,
-            semi: false,
+            inner: Some(ref inner_header),
         }) = query[1]
         else {
             panic!("unexpected operator {:#?}", query[1]);
         };
 
-        assert_eq!(table_id, rhs_id);
+        assert_eq!(rhs.source.table_id().unwrap(), rhs_id);
         assert_eq!(col_lhs, 1.into());
         assert_eq!(col_rhs, 0.into());
-        assert!(rhs.is_empty());
+        assert_eq!(&**inner_header, &source_lhs.head().extend(rhs.source.head()));
+        assert!(rhs.query.is_empty());
         Ok(())
     }
 
@@ -711,7 +705,7 @@ mod tests {
         let exp = compile_sql(&db, &tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
-            source: SourceExpr::DbTable(DbTable { table_id, .. }),
+            source: source_lhs,
             query,
             ..
         }) = exp
@@ -719,36 +713,33 @@ mod tests {
             panic!("unexpected expression: {:#?}", exp);
         };
 
-        assert_eq!(table_id, lhs_id);
+        assert_eq!(source_lhs.table_id().unwrap(), lhs_id);
         assert_eq!(query.len(), 1);
 
         // First and only operation in the pipeline should be a join
         let Query::JoinInner(JoinExpr {
-            rhs:
-                QueryExpr {
-                    source: SourceExpr::DbTable(DbTable { table_id, .. }),
-                    query: ref rhs,
-                },
+            ref rhs,
             col_lhs,
             col_rhs,
-            semi: false,
+            inner: Some(ref inner_header),
         }) = query[0]
         else {
             panic!("unexpected operator {:#?}", query[0]);
         };
 
-        assert_eq!(table_id, rhs_id);
+        assert_eq!(rhs.source.table_id().unwrap(), rhs_id);
         assert_eq!(col_lhs, 1.into());
         assert_eq!(col_rhs, 0.into());
+        assert_eq!(&**inner_header, &source_lhs.head().extend(rhs.source.head()));
 
         // The selection should be pushed onto the rhs of the join
         let Query::Select(ColumnOp::Cmp {
             op: OpQuery::Cmp(OpCmp::Eq),
             ref lhs,
             ref rhs,
-        }) = rhs[0]
+        }) = rhs.query[0]
         else {
-            panic!("unexpected operator {:#?}", rhs[0]);
+            panic!("unexpected operator {:#?}", rhs.query[0]);
         };
 
         let ColumnOp::Field(FieldExpr::Name(FieldName { table, col })) = **lhs else {
@@ -785,7 +776,7 @@ mod tests {
         let exp = compile_sql(&db, &tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
-            source: SourceExpr::DbTable(DbTable { table_id, .. }),
+            source: source_lhs,
             query,
             ..
         }) = exp
@@ -793,7 +784,7 @@ mod tests {
             panic!("unexpected result from compilation: {:?}", exp);
         };
 
-        assert_eq!(table_id, lhs_id);
+        assert_eq!(source_lhs.table_id().unwrap(), lhs_id);
         assert_eq!(query.len(), 2);
 
         // First operation in the pipeline should be an index scan
@@ -803,27 +794,29 @@ mod tests {
 
         // Followed by a join
         let Query::JoinInner(JoinExpr {
-            rhs:
-                QueryExpr {
-                    source: SourceExpr::DbTable(DbTable { table_id, .. }),
-                    query: ref rhs,
-                },
+            ref rhs,
             col_lhs,
             col_rhs,
-            semi: false,
+            inner: Some(ref inner_header),
         }) = query[1]
         else {
             panic!("unexpected operator {:#?}", query[1]);
         };
 
-        assert_eq!(table_id, rhs_id);
+        assert_eq!(rhs.source.table_id().unwrap(), rhs_id);
         assert_eq!(col_lhs, 1.into());
         assert_eq!(col_rhs, 0.into());
+        assert_eq!(&**inner_header, &source_lhs.head().extend(rhs.source.head()));
 
-        assert_eq!(1, rhs.len());
+        assert_eq!(1, rhs.query.len());
 
         // The right side of the join should be an index scan
-        let table_id = assert_index_scan(&rhs[0], 1, Bound::Unbounded, Bound::Excluded(AlgebraicValue::U64(4)));
+        let table_id = assert_index_scan(
+            &rhs.query[0],
+            1,
+            Bound::Unbounded,
+            Bound::Excluded(AlgebraicValue::U64(4)),
+        );
 
         assert_eq!(table_id, rhs_id);
         Ok(())
