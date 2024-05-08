@@ -284,10 +284,10 @@ impl<'a> Iterator for Iter<'a> {
                         //
                         // As a result, in MVCC, this branch will need to check if the `row_ref`
                         // also exists in the `tx_state.insert_tables` and ensure it is yielded only once.
-                        if !self
+                        if self
                             .tx_state
-                            .map(|tx_state| tx_state.is_deleted(table_id, row_ref.pointer()))
-                            .unwrap_or(false)
+                            .filter(|tx_state| tx_state.is_deleted(table_id, row_ref.pointer()))
+                            .is_none()
                         {
                             // There either are no state changes for the current tx (`None`),
                             // or there are, but `row_id` specifically has not been changed.
