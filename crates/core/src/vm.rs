@@ -6,11 +6,11 @@ use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::execution_context::ExecutionContext;
 use core::ops::RangeBounds;
 use itertools::Itertools;
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::RowCount;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::TableDef;
-use spacetimedb_sats::relation::{DbTable, FieldExpr, Header};
+use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header, RowCount};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::{join_inner, IterRows};
@@ -412,6 +412,51 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         Ok(Code::Pass)
     }
 
+    fn _execute_update<const N: usize>(
+        &mut self,
+        delete: &QueryExpr,
+        mut assigns: HashMap<FieldName, FieldExpr>,
+        sources: Sources<'_, N>,
+    ) -> Result<Code, ErrorVm> {
+        let result = self._eval_query(delete, sources)?;
+        let Code::Table(deleted) = result else {
+            return Ok(result);
+        };
+
+        let table = delete
+            .source
+            .get_db_table()
+            .expect("source for Update should be a DbTable");
+
+        self._execute_delete(table.table_id, deleted.data.clone());
+
+        // Replace the columns in the matched rows with the assigned
+        // values. No typechecking is performed here, nor that all
+        // assignments are consumed.
+        let exprs: Vec<Option<FieldExpr>> = table.head.fields.iter().map(|col| assigns.remove(&col.field)).collect();
+        let insert_rows = deleted
+            .data
+            .into_iter()
+            .map(|row| {
+                let elements = row
+                    .into_iter()
+                    .zip(&exprs)
+                    .map(|(val, expr)| {
+                        if let Some(FieldExpr::Value(assigned)) = expr {
+                            assigned.clone()
+                        } else {
+                            val
+                        }
+                    })
+                    .collect();
+
+                ProductValue { elements }
+            })
+            .collect_vec();
+
+        self._execute_insert(table, insert_rows)
+    }
+
     fn _execute_delete(&mut self, table: TableId, rows: Vec<ProductValue>) -> u32 {
         self.db.delete_by_rel(self.tx.unwrap_mut(), table, rows)
     }
@@ -487,53 +532,7 @@ impl ProgramVm for DbProgram<'_, '_> {
         match query {
             CrudExpr::Query(query) => self._eval_query(&query, sources),
             CrudExpr::Insert { table, rows } => self._execute_insert(&table, rows),
-            CrudExpr::Update {
-                delete,
-                mut assignments,
-            } => {
-                let result = self._eval_query(&delete, sources)?;
-                let Code::Table(deleted) = result else {
-                    return Ok(result);
-                };
-
-                let table = delete
-                    .source
-                    .get_db_table()
-                    .expect("source for Update should be a DbTable");
-
-                self._execute_delete(table.table_id, deleted.data.clone());
-
-                // Replace the columns in the matched rows with the assigned
-                // values. No typechecking is performed here, nor that all
-                // assignments are consumed.
-                let exprs: Vec<Option<FieldExpr>> = table
-                    .head
-                    .fields
-                    .iter()
-                    .map(|col| assignments.remove(&col.field))
-                    .collect();
-                let insert_rows = deleted
-                    .data
-                    .into_iter()
-                    .map(|row| {
-                        let elements = row
-                            .into_iter()
-                            .zip(&exprs)
-                            .map(|(val, expr)| {
-                                if let Some(FieldExpr::Value(assigned)) = expr {
-                                    assigned.clone()
-                                } else {
-                                    val
-                                }
-                            })
-                            .collect();
-
-                        ProductValue { elements }
-                    })
-                    .collect_vec();
-
-                self._execute_insert(table, insert_rows)
-            }
+            CrudExpr::Update { delete, assignments } => self._execute_update(&delete, assignments, sources),
             CrudExpr::Delete { query } => self._delete_query(&query, sources),
             CrudExpr::CreateTable { table } => self._create_table(table),
             CrudExpr::Drop { name, kind, .. } => self._drop(&name, kind),
