@@ -10,7 +10,7 @@ namespace SpacetimeDB
     {
         private byte[] bytes;
 
-        public static int SIZE = 32;
+        public const int SIZE = 32;
 
         public byte[] Bytes => bytes;
 
@@ -48,32 +48,15 @@ namespace SpacetimeDB
             };
         }
 
-        public bool Equals(Identity other)
-        {
-            return bytes.SequenceEqual(other.bytes);
-        }
+        public bool Equals(Identity other) => ByteArrayComparer.Instance.Equals(bytes, other.bytes);
 
-        public override bool Equals(object o)
-        {
-            return o is Identity other && Equals(other);
-        }
+        public override bool Equals(object o) => o is Identity other && Equals(other);
 
         public static bool operator ==(Identity a, Identity b) => a.Equals(b);
         public static bool operator !=(Identity a, Identity b) => !a.Equals(b);
 
-        public override int GetHashCode()
-        {
-            if (bytes == null)
-            {
-                throw new InvalidOperationException("Cannot hash on null bytes.");
-            }
+        public override int GetHashCode() => ByteArrayComparer.Instance.GetHashCode(bytes);
 
-            return BitConverter.ToInt32(bytes, 0);
-        }
-
-        public override string ToString()
-        {
-            return string.Concat(bytes.Select(b => b.ToString("x2")));
-        }
+        public override string ToString() => ByteArrayComparer.ToHexString(bytes);
     }
 }

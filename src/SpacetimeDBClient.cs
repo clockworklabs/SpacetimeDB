@@ -286,7 +286,7 @@ namespace SpacetimeDB
                 {
                     if (!subscriptionInserts.TryGetValue(tableName, out var hashSet))
                     {
-                        hashSet = new HashSet<byte[]>(capacity:tableSize, comparer: new ClientCache.TableCache.ByteArrayComparer());
+                        hashSet = new HashSet<byte[]>(capacity:tableSize, comparer: new ByteArrayComparer());
                         subscriptionInserts[tableName] = hashSet;
                     }
 
