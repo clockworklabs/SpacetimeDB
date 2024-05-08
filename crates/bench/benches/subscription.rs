@@ -104,7 +104,7 @@ fn eval(c: &mut Criterion) {
             let query = compile_read_only_query(&raw.db, &tx, sql).unwrap();
             let query: ExecutionSet = query.into();
             let ctx = &ExecutionContext::subscribe(raw.db.address(), SlowQueryConfig::default());
-            b.iter(|| drop(black_box(query.eval(ctx, Protocol::Binary, &raw.db, &tx).unwrap())))
+            b.iter(|| drop(black_box(query.eval(ctx, Protocol::Binary, &raw.db, &tx))))
         });
     };
 
@@ -140,10 +140,7 @@ fn eval(c: &mut Criterion) {
         let query = ExecutionSet::from_iter(query_lhs.into_iter().chain(query_rhs));
         let tx = &tx.into();
 
-        b.iter(|| {
-            let out = query.eval_incr(ctx_incr, &raw.db, tx, &update).unwrap();
-            black_box(out);
-        })
+        b.iter(|| drop(black_box(query.eval_incr(ctx_incr, &raw.db, tx, &update))))
     });
 
     // To profile this benchmark for 30s
@@ -161,10 +158,7 @@ fn eval(c: &mut Criterion) {
         let query: ExecutionSet = query.into();
         let tx = &tx.into();
 
-        b.iter(|| {
-            let out = query.eval_incr(ctx_incr, &raw.db, tx, &update).unwrap();
-            black_box(out);
-        })
+        b.iter(|| drop(black_box(query.eval_incr(ctx_incr, &raw.db, tx, &update))));
     });
 
     // To profile this benchmark for 30s

@@ -1,4 +1,3 @@
-pub mod cursor;
 pub mod datastore;
 pub mod db_metrics;
 pub mod relational_db;

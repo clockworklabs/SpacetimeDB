@@ -1,7 +1,7 @@
 use crate::rel_ops::RelOps;
 use crate::relation::RelValue;
 
-/// Turns an iterator over `ProductValue`s into a `RelOps`.
+/// Turns an iterator over [`RelValue<'_>`]s into a `RelOps`.
 #[derive(Debug)]
 pub struct RelIter<I> {
     pub iter: I,

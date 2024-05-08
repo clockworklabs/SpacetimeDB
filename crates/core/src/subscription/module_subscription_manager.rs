@@ -146,15 +146,8 @@ impl SubscriptionManager {
                 .par_iter()
                 .filter_map(|(&hash, tables)| {
                     let unit = self.queries.get(hash)?;
-                    match unit.eval_incr(&ctx, db, tx, &unit.sql, tables.iter().copied()) {
-                        Ok(None) => None,
-                        Ok(Some(table)) => Some((hash, table)),
-                        Err(err) => {
-                            // TODO: log an id for the subscription somehow as well
-                            tracing::error!(err = &err as &dyn std::error::Error, "subscription eval_incr failed");
-                            None
-                        }
-                    }
+                    unit.eval_incr(&ctx, db, tx, &unit.sql, tables.iter().copied())
+                        .map(|table| (hash, table))
                 })
                 // If N clients are subscribed to a query,
                 // we copy the DatabaseTableUpdate N times,
