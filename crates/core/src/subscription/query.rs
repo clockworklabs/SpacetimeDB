@@ -278,7 +278,7 @@ mod tests {
         let ctx = &ExecutionContext::incremental_update(db.address(), SlowQueryConfig::default());
         let tx = &tx.into();
         let update = update.tables.iter().collect::<Vec<_>>();
-        let result = s.eval_incr(ctx, db, tx, &update)?;
+        let result = s.eval_incr(ctx, db, tx, &update);
         assert_eq!(
             result.tables.len(),
             total_tables,
@@ -305,7 +305,7 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval(ctx, Protocol::Binary, db, tx)?.tables.unwrap_left();
+        let result = s.eval(ctx, Protocol::Binary, db, tx).tables.unwrap_left();
         assert_eq!(
             result.len(),
             total_tables,
@@ -369,7 +369,7 @@ mod tests {
         let ctx = &ExecutionContext::incremental_update(db.address(), SlowQueryConfig::default());
         let tx = (&tx).into();
         let update = update.tables.iter().collect::<Vec<_>>();
-        let result = query.eval_incr(ctx, &db, &tx, &update)?;
+        let result = query.eval_incr(ctx, &db, &tx, &update);
 
         assert_eq!(result.tables.len(), 1);
 
@@ -726,7 +726,7 @@ mod tests {
         db.with_read_only(ctx, |tx| {
             let tx = (&*tx).into();
             let update = update.tables.iter().collect::<Vec<_>>();
-            let result = query.eval_incr(ctx, db, &tx, &update)?;
+            let result = query.eval_incr(ctx, db, &tx, &update);
             let tables = result
                 .tables
                 .into_iter()
