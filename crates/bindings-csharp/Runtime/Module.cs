@@ -188,7 +188,7 @@ public static class ReducerKind
 public interface IReducer
 {
     SpacetimeDB.Module.ReducerDef MakeReducerDef();
-    void Invoke(System.IO.BinaryReader reader, Runtime.DbEventArgs args);
+    void Invoke(System.IO.BinaryReader reader, Runtime.ReducerContext args);
 }
 
 public static class FFI

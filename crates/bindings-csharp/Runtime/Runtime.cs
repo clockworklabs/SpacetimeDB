@@ -207,13 +207,13 @@ public static class Runtime
         public static SpacetimeDB.SATS.TypeInfo<Address> GetSatsTypeInfo() => satsTypeInfo;
     }
 
-    public class DbEventArgs : EventArgs
+    public class ReducerContext
     {
         public readonly Identity Sender;
         public readonly DateTimeOffset Time;
         public readonly Address? Address;
 
-        public DbEventArgs(byte[] senderIdentity, byte[] senderAddress, ulong timestamp_us)
+        public ReducerContext(byte[] senderIdentity, byte[] senderAddress, ulong timestamp_us)
         {
             Sender = new Identity(senderIdentity);
             var addr = new Address(senderAddress);
