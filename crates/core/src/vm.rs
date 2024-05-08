@@ -472,44 +472,36 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
     }
 
     fn _create_table(&mut self, table: TableDef) -> Result<Code, ErrorVm> {
-        match self.tx {
-            TxMode::MutTx(tx) => {
-                self.db.create_table(tx, table)?;
-                Ok(Code::Pass)
-            }
-            TxMode::Tx(_) => unreachable!("mutable operation is invalid with read tx"),
-        }
+        self.db.create_table(self.tx.unwrap_mut(), table)?;
+        Ok(Code::Pass)
     }
 
     fn _drop(&mut self, name: &str, kind: DbType) -> Result<Code, ErrorVm> {
-        match self.tx {
-            TxMode::MutTx(tx) => {
-                match kind {
-                    DbType::Table => {
-                        if let Some(id) = self.db.table_id_from_name_mut(tx, name)? {
-                            self.db.drop_table(self.ctx, tx, id)?;
-                        }
-                    }
-                    DbType::Index => {
-                        if let Some(id) = self.db.index_id_from_name(tx, name)? {
-                            self.db.drop_index(tx, id)?;
-                        }
-                    }
-                    DbType::Sequence => {
-                        if let Some(id) = self.db.sequence_id_from_name(tx, name)? {
-                            self.db.drop_sequence(tx, id)?;
-                        }
-                    }
-                    DbType::Constraint => {
-                        if let Some(id) = self.db.constraint_id_from_name(tx, name)? {
-                            self.db.drop_constraint(tx, id)?;
-                        }
-                    }
+        let tx = self.tx.unwrap_mut();
+
+        match kind {
+            DbType::Table => {
+                if let Some(id) = self.db.table_id_from_name_mut(tx, name)? {
+                    self.db.drop_table(self.ctx, tx, id)?;
                 }
-                Ok(Code::Pass)
             }
-            TxMode::Tx(_) => unreachable!("mutable operation is invalid with read tx"),
+            DbType::Index => {
+                if let Some(id) = self.db.index_id_from_name(tx, name)? {
+                    self.db.drop_index(tx, id)?;
+                }
+            }
+            DbType::Sequence => {
+                if let Some(id) = self.db.sequence_id_from_name(tx, name)? {
+                    self.db.drop_sequence(tx, id)?;
+                }
+            }
+            DbType::Constraint => {
+                if let Some(id) = self.db.constraint_id_from_name(tx, name)? {
+                    self.db.drop_constraint(tx, id)?;
+                }
+            }
         }
+        Ok(Code::Pass)
     }
 
     fn _set_config(&mut self, name: String, value: AlgebraicValue) -> Result<Code, ErrorVm> {
