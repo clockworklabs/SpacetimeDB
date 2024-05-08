@@ -14,6 +14,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::TableDef;
 use spacetimedb_sats::relation::{ColExpr, DbTable};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_table::static_assert_size;
 use spacetimedb_table::table::RowRef;
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::{build_project, build_select, join_inner, IterRows};
@@ -168,20 +169,37 @@ pub fn build_query<'a>(
                 index_select,
                 index_col,
                 return_index_rows,
-            }) => Box::new(IndexSemiJoin {
-                ctx,
-                db,
-                tx,
-                probe_side: build_query(ctx, db, tx, probe_side, sources),
-                probe_col: *probe_col,
-                index_select,
+            }) => {
+                let probe_side = build_query(ctx, db, tx, probe_side, sources);
                 // The compiler guarantees that the index side is a db table,
                 // and therefore this unwrap is always safe.
-                index_table: index_side.table_id().unwrap(),
-                index_col: *index_col,
-                index_iter: None,
-                return_index_rows: *return_index_rows,
-            }),
+                let index_table = index_side.table_id().unwrap();
+
+                if *return_index_rows {
+                    Box::new(IndexSemiJoinLeft {
+                        ctx,
+                        db,
+                        tx,
+                        probe_side,
+                        probe_col: *probe_col,
+                        index_select,
+                        index_table,
+                        index_col: *index_col,
+                        index_iter: None,
+                    }) as Box<IterRows<'_>>
+                } else {
+                    Box::new(IndexSemiJoinRight {
+                        ctx,
+                        db,
+                        tx,
+                        probe_side,
+                        probe_col: *probe_col,
+                        index_select,
+                        index_table,
+                        index_col: *index_col,
+                    })
+                }
+            }
             Query::Select(cmp) => build_select(result_or_base(sources, &mut result), cmp),
             Query::Project(proj) => build_project(result_or_base(sources, &mut result), proj),
             Query::JoinInner(join) => join_inner(
@@ -254,7 +272,7 @@ fn build_iter<'a>(iter: impl 'a + Iterator<Item = RelValue<'a>>) -> Box<IterRows
 const TABLE_ID_EXPECTED_VALID: &str = "all `table_id`s in compiled query should be valid";
 
 /// An index join operator that returns matching rows from the index side.
-pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
+pub struct IndexSemiJoinLeft<'a, 'c, Rhs: RelOps<'a>> {
     /// An iterator for the probe side.
     /// The values returned will be used to probe the index.
     pub probe_side: Rhs,
@@ -266,8 +284,6 @@ pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
     pub index_table: TableId,
     /// The column id for which the index is defined.
     pub index_col: ColId,
-    /// Is this a left or right semijoin?
-    pub return_index_rows: bool,
     /// An iterator for the index side.
     /// A new iterator will be instantiated for each row on the probe side.
     pub index_iter: Option<IterByColRange<'a, AlgebraicValue>>,
@@ -279,37 +295,92 @@ pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
     ctx: &'a ExecutionContext,
 }
 
-impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, '_, Rhs> {
+static_assert_size!(IndexSemiJoinLeft<Box<IterRows<'static>>>, 312);
+
+impl<'a, Rhs: RelOps<'a>> IndexSemiJoinLeft<'a, '_, Rhs> {
     fn filter(&self, index_row: &RelValue<'_>) -> bool {
         self.index_select.as_ref().map_or(true, |op| op.compare(index_row))
     }
 }
 
-impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
+impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoinLeft<'a, '_, Rhs> {
     fn next(&mut self) -> Option<RelValue<'a>> {
         // Return a value from the current index iterator, if not exhausted.
-        if self.return_index_rows {
-            while let Some(index_row) = self.index_iter.as_mut().and_then(|iter| iter.next()).map(RelValue::Row) {
-                if self.filter(&index_row) {
-                    return Some(index_row);
-                }
+        while let Some(index_row) = self.index_iter.as_mut().and_then(|iter| iter.next()).map(RelValue::Row) {
+            if self.filter(&index_row) {
+                return Some(index_row);
             }
         }
 
         // Otherwise probe the index with a row from the probe side.
         let table_id = self.index_table;
-        let col_id = self.index_col;
+        let index_col = self.index_col;
+        let probe_col = self.probe_col.idx();
         while let Some(mut row) = self.probe_side.next() {
-            if let Some(value) = row.read_or_take_column(self.probe_col.idx()) {
+            if let Some(value) = row.read_or_take_column(probe_col) {
                 let index_iter = match self.tx {
-                    TxMode::MutTx(tx) => self.db.iter_by_col_range_mut(self.ctx, tx, table_id, col_id, value),
-                    TxMode::Tx(tx) => self.db.iter_by_col_range(self.ctx, tx, table_id, col_id, value),
+                    TxMode::MutTx(tx) => self.db.iter_by_col_range_mut(self.ctx, tx, table_id, index_col, value),
+                    TxMode::Tx(tx) => self.db.iter_by_col_range(self.ctx, tx, table_id, index_col, value),
                 };
                 let mut index_iter = index_iter.expect(TABLE_ID_EXPECTED_VALID);
                 while let Some(index_row) = index_iter.next().map(RelValue::Row) {
                     if self.filter(&index_row) {
                         self.index_iter = Some(index_iter);
-                        return Some(if self.return_index_rows { index_row } else { row });
+                        return Some(index_row);
+                    }
+                }
+            }
+        }
+        None
+    }
+}
+
+/// An index join operator that returns matching rows from the index side.
+pub struct IndexSemiJoinRight<'a, 'c, Rhs: RelOps<'a>> {
+    /// An iterator for the probe side.
+    /// The values returned will be used to probe the index.
+    pub probe_side: Rhs,
+    /// The column whose value will be used to probe the index.
+    pub probe_col: ColId,
+    /// An optional predicate to evaluate over the matching rows of the index.
+    pub index_select: &'c Option<ColumnOp>,
+    /// The table id on which the index is defined.
+    pub index_table: TableId,
+    /// The column id for which the index is defined.
+    pub index_col: ColId,
+    /// A reference to the database.
+    pub db: &'a RelationalDB,
+    /// A reference to the current transaction.
+    pub tx: &'a TxMode<'a>,
+    /// The execution context for the current transaction.
+    ctx: &'a ExecutionContext,
+}
+
+static_assert_size!(IndexSemiJoinRight<Box<IterRows<'static>>>, 64);
+
+impl<'a, Rhs: RelOps<'a>> IndexSemiJoinRight<'a, '_, Rhs> {
+    fn filter(&self, index_row: &RelValue<'_>) -> bool {
+        self.index_select.as_ref().map_or(true, |op| op.compare(index_row))
+    }
+}
+
+impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoinRight<'a, '_, Rhs> {
+    fn next(&mut self) -> Option<RelValue<'a>> {
+        // Otherwise probe the index with a row from the probe side.
+        let table_id = self.index_table;
+        let index_col = self.index_col;
+        let probe_col = self.probe_col.idx();
+        while let Some(row) = self.probe_side.next() {
+            if let Some(value) = row.read_column(probe_col) {
+                let value = &*value;
+                let index_iter = match self.tx {
+                    TxMode::MutTx(tx) => self.db.iter_by_col_range_mut(self.ctx, tx, table_id, index_col, value),
+                    TxMode::Tx(tx) => self.db.iter_by_col_range(self.ctx, tx, table_id, index_col, value),
+                };
+                let mut index_iter = index_iter.expect(TABLE_ID_EXPECTED_VALID);
+                while let Some(index_row) = index_iter.next().map(RelValue::Row) {
+                    if self.filter(&index_row) {
+                        return Some(row);
                     }
                 }
             }
