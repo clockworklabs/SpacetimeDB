@@ -12,49 +12,6 @@ namespace SpacetimeDB
     {
         public class TableCache
         {
-            public class ByteArrayComparer : IEqualityComparer<byte[]>
-            {
-                public bool Equals(byte[] left, byte[] right)
-                {
-                    if (ReferenceEquals(left, right))
-                    {
-                        return true;
-                    }
-
-                    if (left == null || right == null || left.Length != right.Length)
-                    {
-                        return false;
-                    }
-
-                    return EqualsUnvectorized(left, right);
-
-                }
-
-                [MethodImpl(MethodImplOptions.AggressiveInlining)]
-                private bool EqualsUnvectorized(byte[] left, byte[] right)
-                {
-                    for (int i = 0; i < left.Length; i++)
-                    {
-                        if (left[i] != right[i])
-                        {
-                            return false;
-                        }
-                    }
-
-                    return true;
-                }
-
-                public int GetHashCode(byte[] obj)
-                {
-                    int hash = 17;
-                    foreach (byte b in obj)
-                    {
-                        hash = hash * 31 + b;
-                    }
-                    return hash;
-                }
-            }
-
             private readonly string name;
             private readonly Type clientTableType;
             private readonly AlgebraicType rowSchema;
