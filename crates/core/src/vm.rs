@@ -283,25 +283,15 @@ impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, '_, Rhs> {
     fn filter(&self, index_row: &RelValue<'_>) -> bool {
         self.index_select.as_ref().map_or(true, |op| op.compare(index_row))
     }
-
-    fn map(&self, index_row: RelValue<'a>, probe_row: Option<RelValue<'a>>) -> RelValue<'a> {
-        if let Some(value) = probe_row {
-            if !self.return_index_rows {
-                return value;
-            }
-        }
-        index_row
-    }
 }
 
 impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
     fn next(&mut self) -> Option<RelValue<'a>> {
         // Return a value from the current index iterator, if not exhausted.
         if self.return_index_rows {
-            while let Some(value) = self.index_iter.as_mut().and_then(|iter| iter.next()) {
-                let value = RelValue::Row(value);
-                if self.filter(&value) {
-                    return Some(self.map(value, None));
+            while let Some(index_row) = self.index_iter.as_mut().and_then(|iter| iter.next()).map(RelValue::Row) {
+                if self.filter(&index_row) {
+                    return Some(index_row);
                 }
             }
         }
@@ -315,12 +305,11 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
                     TxMode::MutTx(tx) => self.db.iter_by_col_range_mut(self.ctx, tx, table_id, col_id, value),
                     TxMode::Tx(tx) => self.db.iter_by_col_range(self.ctx, tx, table_id, col_id, value),
                 };
-                let mut index_iter = index_iter.expect("any table id passed should have been validated");
-                while let Some(value) = index_iter.next() {
-                    let value = RelValue::Row(value);
-                    if self.filter(&value) {
+                let mut index_iter = index_iter.expect(TABLE_ID_EXPECTED_VALID);
+                while let Some(index_row) = index_iter.next().map(RelValue::Row) {
+                    if self.filter(&index_row) {
                         self.index_iter = Some(index_iter);
-                        return Some(self.map(value, Some(row)));
+                        return Some(if self.return_index_rows { index_row } else { row });
                     }
                 }
             }
