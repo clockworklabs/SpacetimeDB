@@ -371,7 +371,7 @@ impl InstanceEnv {
 
         let tx: TxMode = tx.into();
         // SQL queries can never reference `MemTable`s, so pass in an empty set.
-        let mut query = build_query(ctx, stdb, &tx, &query, &mut NoInMemUsed)?;
+        let mut query = build_query(ctx, stdb, &tx, &query, &mut NoInMemUsed);
 
         // write all rows and flush at row boundaries.
         let query_iter = std::iter::from_fn(|| query.next());

@@ -1,8 +1,6 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 
 use crate::config::DatabaseConfig;
-use crate::db::cursor::{IndexCursor, TableCursor};
-use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::datastore::locking_tx_datastore::IterByColRange;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
@@ -16,6 +14,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::TableDef;
 use spacetimedb_sats::relation::{ColExpr, DbTable};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_table::table::RowRef;
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::{build_project, build_select, join_inner, IterRows};
 use spacetimedb_vm::expr::*;
@@ -77,7 +76,7 @@ pub fn build_query<'a>(
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
     sources: &mut impl SourceProvider<'a>,
-) -> Result<Box<IterRows<'a>>, ErrorVm> {
+) -> Box<IterRows<'a>> {
     let db_table = query.source.is_db_table();
 
     // We're incrementally building a query iterator by applying each operation in the `query.query`.
@@ -99,7 +98,6 @@ pub fn build_query<'a>(
     let result_or_base = |sources: &mut _, result: &mut Option<_>| {
         result
             .take()
-            .map(Ok)
             .unwrap_or_else(|| get_table(ctx, db, tx, &query.source, sources))
     };
 
@@ -115,11 +113,11 @@ pub fn build_query<'a>(
                     Box::new(EmptyRelOps) as Box<IterRows<'a>>
                 } else {
                     let bounds = (bounds.start_bound(), bounds.end_bound());
-                    iter_by_col_range(ctx, db, tx, table, columns.clone(), bounds)?
+                    iter_by_col_range(ctx, db, tx, table, columns.clone(), bounds)
                 }
             }
             Query::IndexScan(index_scan) => {
-                let result = result_or_base(sources, &mut result)?;
+                let result = result_or_base(sources, &mut result);
                 let cols = &index_scan.columns;
                 let bounds = &index_scan.bounds;
 
@@ -162,9 +160,7 @@ pub fn build_query<'a>(
                     }))
                 }
             }
-            Query::IndexJoin(_) if result.is_some() => {
-                return Err(anyhow::anyhow!("Invalid query: `IndexJoin` must be the first operator").into())
-            }
+            Query::IndexJoin(_) if result.is_some() => panic!("Invalid query: `IndexJoin` must be the first operator"),
             Query::IndexJoin(IndexJoin {
                 probe_side,
                 probe_col,
@@ -176,7 +172,7 @@ pub fn build_query<'a>(
                 ctx,
                 db,
                 tx,
-                probe_side: build_query(ctx, db, tx, probe_side, sources)?,
+                probe_side: build_query(ctx, db, tx, probe_side, sources),
                 probe_col: *probe_col,
                 index_select,
                 // The compiler guarantees that the index side is a db table,
@@ -186,11 +182,11 @@ pub fn build_query<'a>(
                 index_iter: None,
                 return_index_rows: *return_index_rows,
             }),
-            Query::Select(cmp) => build_select(result_or_base(sources, &mut result)?, cmp),
-            Query::Project(proj) => build_project(result_or_base(sources, &mut result)?, proj),
+            Query::Select(cmp) => build_select(result_or_base(sources, &mut result), cmp),
+            Query::Project(proj) => build_project(result_or_base(sources, &mut result), proj),
             Query::JoinInner(join) => join_inner(
-                result_or_base(sources, &mut result)?,
-                build_query(ctx, db, tx, &join.rhs, sources)?,
+                result_or_base(sources, &mut result),
+                build_query(ctx, db, tx, &join.rhs, sources),
                 join,
             ),
         })
@@ -215,25 +211,22 @@ fn get_table<'a>(
     tx: &'a TxMode,
     query: &'a SourceExpr,
     sources: &mut impl SourceProvider<'a>,
-) -> Result<Box<IterRows<'a>>, ErrorVm> {
-    Ok(match query {
-        SourceExpr::InMemory { source_id, .. } => in_mem_to_rel_ops(sources, *source_id),
-        SourceExpr::DbTable(db_table) => {
-            let iter = match tx {
-                TxMode::MutTx(tx) => stdb.iter_mut(ctx, tx, db_table.table_id)?,
-                TxMode::Tx(tx) => stdb.iter(ctx, tx, db_table.table_id)?,
-            };
-            Box::new(TableCursor::new(db_table, iter)?) as Box<IterRows<'_>>
-        }
-    })
-}
-
-// Extracts an in-memory table with `source_id` from `sources` and builds a query for the table.
-fn in_mem_to_rel_ops<'a>(sources: &mut impl SourceProvider<'a>, source_id: SourceId) -> Box<IterRows<'a>> {
-    let source = sources.take_source(source_id).unwrap_or_else(|| {
-        panic!("Query plan specifies in-mem table for {source_id:?}, but found a `DbTable` or nothing")
-    });
-    Box::new(RelIter::new(source)) as Box<IterRows<'a>>
+) -> Box<IterRows<'a>> {
+    match query {
+        // Extracts an in-memory table with `source_id` from `sources` and builds a query for the table.
+        SourceExpr::InMemory { source_id, .. } => build_iter(
+            sources
+                .take_source(*source_id)
+                .unwrap_or_else(|| {
+                    panic!("Query plan specifies in-mem table for {source_id:?}, but found a `DbTable` or nothing")
+                })
+                .into_iter(),
+        ),
+        SourceExpr::DbTable(db_table) => build_iter_from_db(match tx {
+            TxMode::MutTx(tx) => stdb.iter_mut(ctx, tx, db_table.table_id),
+            TxMode::Tx(tx) => stdb.iter(ctx, tx, db_table.table_id),
+        }),
+    }
 }
 
 fn iter_by_col_range<'a>(
@@ -243,13 +236,22 @@ fn iter_by_col_range<'a>(
     table: &'a DbTable,
     columns: ColList,
     range: impl RangeBounds<AlgebraicValue> + 'a,
-) -> Result<Box<dyn RelOps<'a> + 'a>, ErrorVm> {
-    let iter = match tx {
-        TxMode::MutTx(tx) => db.iter_by_col_range_mut(ctx, tx, table.table_id, columns, range)?,
-        TxMode::Tx(tx) => db.iter_by_col_range(ctx, tx, table.table_id, columns, range)?,
-    };
-    Ok(Box::new(IndexCursor::new(table, iter)?) as Box<IterRows<'_>>)
+) -> Box<IterRows<'a>> {
+    build_iter_from_db(match tx {
+        TxMode::MutTx(tx) => db.iter_by_col_range_mut(ctx, tx, table.table_id, columns, range),
+        TxMode::Tx(tx) => db.iter_by_col_range(ctx, tx, table.table_id, columns, range),
+    })
 }
+
+fn build_iter_from_db<'a>(iter: Result<impl 'a + Iterator<Item = RowRef<'a>>, DBError>) -> Box<IterRows<'a>> {
+    build_iter(iter.expect(TABLE_ID_EXPECTED_VALID).map(RelValue::Row))
+}
+
+fn build_iter<'a>(iter: impl 'a + Iterator<Item = RelValue<'a>>) -> Box<IterRows<'a>> {
+    Box::new(RelIter::new(iter)) as Box<IterRows<'_>>
+}
+
+const TABLE_ID_EXPECTED_VALID: &str = "all `table_id`s in compiled query should be valid";
 
 /// An index join operator that returns matching rows from the index side.
 pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
@@ -340,8 +342,8 @@ pub struct DbProgram<'db, 'tx> {
 /// reject the request if the estimated cardinality exceeds the limit.
 pub fn check_row_limit<QuerySet>(
     queries: &QuerySet,
-    tx: &TxId,
-    row_est: impl Fn(&QuerySet, &TxId) -> u64,
+    tx: &Tx,
+    row_est: impl Fn(&QuerySet, &Tx) -> u64,
     auth: &AuthCtx,
     config: &DatabaseConfig,
 ) -> Result<(), DBError> {
@@ -380,7 +382,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         let head = query.head().clone();
         let rows = build_query(self.ctx, self.db, self.tx, query, &mut |id| {
             sources.take(id).map(|mt| mt.into_iter().map(RelValue::Projection))
-        })?
+        })
         .collect_vec(|row| row.into_product_value());
 
         Ok(Code::Table(MemTable::new(head, table_access, rows)))
@@ -517,18 +519,6 @@ impl ProgramVm for DbProgram<'_, '_> {
             CrudExpr::SetVar { name, value } => self._set_config(name, value),
             CrudExpr::ReadVar { name } => self._read_config(name),
         }
-    }
-}
-
-impl<'a> RelOps<'a> for TableCursor<'a> {
-    fn next(&mut self) -> Option<RelValue<'a>> {
-        self.iter.next().map(RelValue::Row)
-    }
-}
-
-impl<'a, R: RangeBounds<AlgebraicValue>> RelOps<'a> for IndexCursor<'a, R> {
-    fn next(&mut self) -> Option<RelValue<'a>> {
-        self.iter.next().map(RelValue::Row)
     }
 }
 
