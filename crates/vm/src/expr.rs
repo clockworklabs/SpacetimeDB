@@ -2006,18 +2006,6 @@ impl AuthAccess for SourceExpr {
     }
 }
 
-impl AuthAccess for Table {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-        if owner == caller || self.table_access() == StAccess::Public {
-            return Ok(());
-        }
-
-        Err(AuthError::TablePrivate {
-            named: self.table_name().to_string(),
-        })
-    }
-}
-
 impl AuthAccess for QueryExpr {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
         if owner == caller {

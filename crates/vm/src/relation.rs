@@ -1,7 +1,7 @@
 use core::hash::{Hash, Hasher};
 use derive_more::From;
 use spacetimedb_sats::bsatn::ser::BsatnError;
-use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldExprRef, FieldName, Header, Relation, RowCount};
@@ -235,55 +235,6 @@ impl Relation for MemTable {
 pub enum Table {
     MemTable(MemTable),
     DbTable(DbTable),
-}
-
-impl Hash for Table {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        // IMPORTANT: Required for hashing query plans.
-        // In general a query plan will only contain static data.
-        // However, currently it is possible to inline a virtual table.
-        // Such plans though are hybrids and should not be hashed,
-        // Since they contain raw data values.
-        // Therefore we explicitly disallow it here.
-        match self {
-            Table::DbTable(t) => {
-                t.hash(state);
-            }
-            Table::MemTable(_) => {
-                panic!("Cannot hash a virtual table");
-            }
-        }
-    }
-}
-
-impl Table {
-    pub fn table_name(&self) -> &str {
-        match self {
-            Self::MemTable(x) => &x.head.table_name,
-            Self::DbTable(x) => &x.head.table_name,
-        }
-    }
-
-    pub fn table_type(&self) -> StTableType {
-        match self {
-            Self::MemTable(_) => StTableType::User,
-            Self::DbTable(x) => x.table_type,
-        }
-    }
-
-    pub fn table_access(&self) -> StAccess {
-        match self {
-            Self::MemTable(x) => x.table_access,
-            Self::DbTable(x) => x.table_access,
-        }
-    }
-
-    pub fn get_db_table(&self) -> Option<&DbTable> {
-        match self {
-            Self::DbTable(t) => Some(t),
-            _ => None,
-        }
-    }
 }
 
 impl Relation for Table {
