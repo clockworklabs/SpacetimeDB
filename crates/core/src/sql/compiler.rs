@@ -147,7 +147,7 @@ fn compile_columns(table: &TableSchema, field_names: Vec<FieldName>) -> DbTable 
 
 /// Compiles a `INSERT ...` clause
 fn compile_insert(table: &TableSchema, columns: Vec<FieldName>, values: Vec<Vec<FieldExpr>>) -> CrudExpr {
-    let source_expr = SourceExpr::DbTable(compile_columns(table, columns));
+    let table = compile_columns(table, columns);
 
     let mut rows = Vec::with_capacity(values.len());
     for x in values {
@@ -165,10 +165,7 @@ fn compile_insert(table: &TableSchema, columns: Vec<FieldName>, values: Vec<Vec<
         rows.push(row.into())
     }
 
-    CrudExpr::Insert {
-        source: source_expr,
-        rows,
-    }
+    CrudExpr::Insert { table, rows }
 }
 
 /// Compiles a `DELETE ...` clause
@@ -188,8 +185,7 @@ fn compile_update(
     assignments: HashMap<FieldName, FieldExpr>,
     selection: Option<Selection>,
 ) -> CrudExpr {
-    let table = From::new(table);
-    let query = QueryExpr::new(&*table.root);
+    let query = QueryExpr::new(&*table);
     let delete = if let Some(filter) = selection {
         compile_where(query, filter)
     } else {

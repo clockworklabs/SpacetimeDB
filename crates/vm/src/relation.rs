@@ -1,10 +1,9 @@
 use core::hash::{Hash, Hasher};
-use derive_more::From;
 use spacetimedb_sats::bsatn::ser::BsatnError;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::product_value::ProductValue;
-use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldExprRef, FieldName, Header, Relation, RowCount};
+use spacetimedb_sats::relation::{FieldExpr, FieldExprRef, FieldName, Header, Relation, RowCount};
 use spacetimedb_sats::{bsatn, impl_serialize, AlgebraicValue};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
@@ -228,27 +227,5 @@ impl Relation for MemTable {
 
     fn row_count(&self) -> RowCount {
         RowCount::exact(self.data.len())
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, From)]
-pub enum Table {
-    MemTable(MemTable),
-    DbTable(DbTable),
-}
-
-impl Relation for Table {
-    fn head(&self) -> &Arc<Header> {
-        match self {
-            Table::MemTable(x) => x.head(),
-            Table::DbTable(x) => x.head(),
-        }
-    }
-
-    fn row_count(&self) -> RowCount {
-        match self {
-            Table::MemTable(x) => x.row_count(),
-            Table::DbTable(x) => x.row_count(),
-        }
     }
 }
