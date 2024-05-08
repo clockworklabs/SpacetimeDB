@@ -224,34 +224,10 @@ impl fmt::Display for Header {
     }
 }
 
-/// An estimate for the range of rows in the [Relation]
-#[derive(Debug, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
-pub struct RowCount {
-    pub min: usize,
-    pub max: Option<usize>,
-}
-
-impl RowCount {
-    pub fn exact(rows: usize) -> Self {
-        Self {
-            min: rows,
-            max: Some(rows),
-        }
-    }
-
-    pub fn unknown() -> Self {
-        Self { min: 0, max: None }
-    }
-}
-
 /// A [Relation] is anything that could be represented as a [Header] of `[ColumnName:ColumnType]` that
 /// generates rows/tuples of [AlgebraicValue] that exactly match that [Header].
 pub trait Relation {
     fn head(&self) -> &Arc<Header>;
-    /// Specify the size in rows of the [Relation].
-    ///
-    /// Warning: It should at least be precise in the lower-bound estimate.
-    fn row_count(&self) -> RowCount;
 }
 
 /// A stored table from [RelationalDB]
@@ -277,10 +253,6 @@ impl DbTable {
 impl Relation for DbTable {
     fn head(&self) -> &Arc<Header> {
         &self.head
-    }
-
-    fn row_count(&self) -> RowCount {
-        RowCount::unknown()
     }
 }
 

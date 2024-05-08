@@ -31,10 +31,9 @@ impl ProgramVm for Program {
         match query {
             CrudExpr::Query(query) => {
                 let result = build_source_expr_query(sources, &query.source);
-                let result = build_query(result, &query.query, sources)?;
+                let rows = build_query(result, &query.query, sources)?.collect_vec(|row| row.into_product_value());
 
-                let head = result.head().clone();
-                let rows: Vec<_> = result.collect_vec(|row| row.into_product_value());
+                let head = query.head().clone();
 
                 Ok(Code::Table(MemTable::new(head, query.source.table_access(), rows)))
             }
