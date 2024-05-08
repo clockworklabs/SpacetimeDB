@@ -62,8 +62,6 @@ unsafe trait Row {
         row_type_visitor(&Self::row_type().into())
     }
 
-    fn from_product(prod: ProductValue) -> Self;
-
     fn to_product(self) -> ProductValue;
 }
 
@@ -76,26 +74,12 @@ unsafe trait FixedLenRow: Row + Sized {
         as_bytes(self)
     }
 
-    unsafe fn from_bytes(bytes: &Bytes) -> &Self {
-        let ptr = bytes.as_ptr();
-        debug_assert_eq!(ptr as usize % mem::align_of::<Self>(), 0);
-        debug_assert_eq!(bytes.len(), mem::size_of::<Self>());
-        unsafe { &*ptr.cast::<Self>() }
-    }
-
     fn from_u64(u: u64) -> Self;
 }
 
 unsafe impl Row for u64 {
     fn row_type() -> ProductType {
         [AlgebraicType::U64].into()
-    }
-
-    fn from_product(prod: ProductValue) -> Self {
-        match prod.elements[..] {
-            [AlgebraicValue::U64(n)] => n,
-            _ => panic!("Invalid product value for u64"),
-        }
     }
 
     fn to_product(self) -> ProductValue {
@@ -119,17 +103,6 @@ unsafe impl Row for U32x8 {
         [AlgebraicType::U32; 8].into()
     }
 
-    fn from_product(prod: ProductValue) -> Self {
-        match prod.elements[..] {
-            [AlgebraicValue::U32(n0), AlgebraicValue::U32(n1), AlgebraicValue::U32(n2), AlgebraicValue::U32(n3), AlgebraicValue::U32(n4), AlgebraicValue::U32(n5), AlgebraicValue::U32(n6), AlgebraicValue::U32(n7)] => {
-                U32x8 {
-                    vals: [n0, n1, n2, n3, n4, n5, n6, n7],
-                }
-            }
-            _ => panic!("Invalid product value for U32x8"),
-        }
-    }
-
     fn to_product(self) -> ProductValue {
         self.vals.map(AlgebraicValue::U32).into()
     }
@@ -151,15 +124,6 @@ unsafe impl Row for U32x64 {
         [AlgebraicType::U32; 64].into()
     }
 
-    fn from_product(prod: ProductValue) -> Self {
-        let vals: Vec<u32> = prod
-            .into_iter()
-            .map(|val| *val.as_u32().expect("Invalid product value for U32x64"))
-            .collect();
-        let vals: [u32; 64] = vals.try_into().expect("Invalid product value for U32x64");
-        U32x64 { vals }
-    }
-
     fn to_product(self) -> ProductValue {
         self.vals.map(AlgebraicValue::U32).into()
     }
@@ -174,14 +138,6 @@ unsafe impl FixedLenRow for U32x64 {
 unsafe impl Row for Box<str> {
     fn row_type() -> ProductType {
         [AlgebraicType::String].into()
-    }
-
-    fn from_product(prod: ProductValue) -> Self {
-        prod.into_iter()
-            .next()
-            .expect("Invalid ProductValue for String: not enough elements")
-            .into_string()
-            .expect("Invalid ProductValue for String: not a string")
     }
 
     fn to_product(self) -> ProductValue {

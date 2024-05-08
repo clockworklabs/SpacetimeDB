@@ -1538,7 +1538,7 @@ mod tests {
         assert_ne!(hash_of(a), hash_of(b));
     }
 
-    fn ord_properties<T: Ord>(a: &T, b: &T, a_deref: &T::Target, b_deref: &T::Target)
+    fn ord_properties<T>(a: &T, b: &T, a_deref: &T::Target, b_deref: &T::Target)
     where
         T: Ord + Debug + Deref + PartialOrd<<T as Deref>::Target>,
     {

@@ -8,7 +8,6 @@ pub trait SimpleTestTable: TableType {
     type Contents: Clone + Send + Sync + PartialEq + std::fmt::Debug + 'static;
 
     fn as_contents(&self) -> &Self::Contents;
-    fn from_contents(contents: Self::Contents) -> Self;
 
     fn is_insert_reducer_event(event: &Self::ReducerEvent) -> bool;
 
@@ -27,12 +26,6 @@ macro_rules! impl_simple_test_table {
 
             fn as_contents(&self) -> &Self::Contents {
                 &self.$field_name
-            }
-
-            fn from_contents(contents: Self::Contents) -> Self {
-                Self {
-                    $field_name: contents,
-                }
             }
 
             fn is_insert_reducer_event(event: &Self::ReducerEvent) -> bool {

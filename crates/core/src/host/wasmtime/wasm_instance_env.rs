@@ -129,7 +129,7 @@ impl WasmInstanceEnv {
     /// Signal to this `WasmInstanceEnv` that a reducer call is beginning.
     pub fn start_reducer(&mut self, name: &str) {
         self.reducer_start = Instant::now();
-        self.reducer_name = name.to_owned();
+        name.clone_into(&mut self.reducer_name);
     }
 
     /// Signal to this `WasmInstanceEnv` that a reducer call is over.
