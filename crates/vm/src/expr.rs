@@ -1846,36 +1846,25 @@ impl QueryExpr {
         let join = query.query.pop().unwrap();
 
         match join {
-            Query::JoinInner(JoinExpr {
-                rhs: probe_side,
-                col_lhs: index_col,
-                col_rhs: probe_col,
-                inner: None,
-            }) => {
-                if !probe_side.query.is_empty() {
+            Query::JoinInner(join @ JoinExpr { inner: None, .. }) => {
+                if !join.rhs.query.is_empty() {
                     // An applicable join must have an index defined on the correct field.
-                    if source.head().has_constraint(index_col, Constraints::indexed()) {
+                    if source.head().has_constraint(join.col_lhs, Constraints::indexed()) {
                         let index_join = IndexJoin {
-                            probe_side,
-                            probe_col,
+                            probe_side: join.rhs,
+                            probe_col: join.col_rhs,
                             index_side: source.clone(),
                             index_select: None,
-                            index_col,
+                            index_col: join.col_lhs,
                             return_index_rows: true,
                         };
                         let query = [Query::IndexJoin(index_join)].into();
                         return QueryExpr { source, query };
                     }
                 }
-                let join = Query::JoinInner(JoinExpr {
-                    rhs: probe_side,
-                    col_lhs: index_col,
-                    col_rhs: probe_col,
-                    inner: None,
-                });
                 QueryExpr {
                     source,
-                    query: vec![join],
+                    query: vec![Query::JoinInner(join)],
                 }
             }
             first => QueryExpr {
