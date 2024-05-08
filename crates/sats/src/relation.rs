@@ -224,12 +224,6 @@ impl fmt::Display for Header {
     }
 }
 
-/// A [Relation] is anything that could be represented as a [Header] of `[ColumnName:ColumnType]` that
-/// generates rows/tuples of [AlgebraicValue] that exactly match that [Header].
-pub trait Relation {
-    fn head(&self) -> &Arc<Header>;
-}
-
 /// A stored table from [RelationalDB]
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct DbTable {
@@ -247,12 +241,6 @@ impl DbTable {
             table_type,
             table_access,
         }
-    }
-}
-
-impl Relation for DbTable {
-    fn head(&self) -> &Arc<Header> {
-        &self.head
     }
 }
 
