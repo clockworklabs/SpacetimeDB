@@ -12,7 +12,7 @@ use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::db::error::{AuthError, RelationError};
-use spacetimedb_sats::relation::{ColExpr, DbTable, FieldName, Header, Relation};
+use spacetimedb_sats::relation::{ColExpr, DbTable, FieldName, Header};
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::ProductValue;
 use std::cmp::Reverse;
@@ -576,12 +576,6 @@ impl SourceExpr {
         } else {
             None
         }
-    }
-}
-
-impl Relation for SourceExpr {
-    fn head(&self) -> &Arc<Header> {
-        self.head()
     }
 }
 
@@ -1246,7 +1240,7 @@ impl QueryExpr {
             .rev()
             .find_map(|op| match op {
                 Query::Select(_) => None,
-                Query::IndexScan(scan) => Some(scan.table.head()),
+                Query::IndexScan(scan) => Some(&scan.table.head),
                 Query::IndexJoin(join) if join.return_index_rows => Some(join.index_side.head()),
                 Query::IndexJoin(join) => Some(join.probe_side.head()),
                 Query::Project(proj) => Some(&proj.header_after),
