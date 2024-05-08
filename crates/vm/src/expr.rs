@@ -11,7 +11,7 @@ use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::db::error::{AuthError, RelationError};
-use spacetimedb_sats::relation::{ColExpr, DbTable, FieldName, Header, Relation, RowCount};
+use spacetimedb_sats::relation::{ColExpr, DbTable, FieldName, Header, Relation};
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::ProductValue;
 use std::cmp::Reverse;
@@ -474,9 +474,8 @@ impl<const N: usize> SourceSet<Vec<ProductValue>, N> {
     /// Insert a [`MemTable`] into this `SourceSet` so it can be used in a query plan,
     /// and return a [`SourceExpr`] which can be embedded in that plan.
     pub fn add_mem_table(&mut self, table: MemTable) -> SourceExpr {
-        let len = table.data.len();
         let id = self.add(table.data);
-        SourceExpr::from_mem_table(table.head, table.table_access, len, id)
+        SourceExpr::from_mem_table(table.head, table.table_access, id)
     }
 }
 
@@ -496,7 +495,6 @@ pub enum SourceExpr {
         header: Arc<Header>,
         table_type: StTableType,
         table_access: StAccess,
-        row_count: RowCount,
     },
     /// A plan for a database table. Because [`DbTable`] is small and efficiently cloneable,
     /// no indirection into a [`SourceSet`] is required.
@@ -549,13 +547,12 @@ impl SourceExpr {
         matches!(self, SourceExpr::DbTable(_))
     }
 
-    pub fn from_mem_table(header: Arc<Header>, table_access: StAccess, row_count: usize, id: SourceId) -> Self {
+    pub fn from_mem_table(header: Arc<Header>, table_access: StAccess, id: SourceId) -> Self {
         SourceExpr::InMemory {
             source_id: id,
             header,
             table_type: StTableType::User,
             table_access,
-            row_count: RowCount::exact(row_count),
         }
     }
 
@@ -584,13 +581,6 @@ impl SourceExpr {
 impl Relation for SourceExpr {
     fn head(&self) -> &Arc<Header> {
         self.head()
-    }
-
-    fn row_count(&self) -> RowCount {
-        match self {
-            SourceExpr::InMemory { row_count, .. } => *row_count,
-            SourceExpr::DbTable(_) => RowCount::unknown(),
-        }
     }
 }
 
@@ -2229,7 +2219,6 @@ mod tests {
                     fields: vec![],
                     constraints: Default::default(),
                 }),
-                row_count: RowCount::unknown(),
                 table_type: StTableType::User,
                 table_access: StAccess::Private,
             },
@@ -2324,7 +2313,6 @@ mod tests {
         SourceExpr::InMemory {
             source_id: SourceId(0),
             header: Arc::new(head),
-            row_count: RowCount::unknown(),
             table_access,
             table_type: StTableType::User,
         }

@@ -5,7 +5,6 @@ use crate::iterators::RelIter;
 use crate::program::{ProgramVm, Sources};
 use crate::rel_ops::RelOps;
 use crate::relation::RelValue;
-use spacetimedb_sats::relation::Relation;
 use spacetimedb_sats::ProductValue;
 
 pub type IterRows<'a> = dyn RelOps<'a> + 'a;
@@ -45,7 +44,7 @@ pub fn build_select<'a>(base: impl RelOps<'a> + 'a, cmp: &'a ColumnOp) -> Box<It
 }
 
 pub fn build_project<'a>(base: impl RelOps<'a> + 'a, proj: &'a ProjectExpr) -> Box<IterRows<'a>> {
-    Box::new(base.project(&proj.header_after, &proj.cols, move |cols, row| {
+    Box::new(base.project(&proj.cols, move |cols, row| {
         RelValue::Projection(row.project_owned(cols))
     }))
 }
@@ -57,11 +56,10 @@ pub fn join_inner<'a>(lhs: impl RelOps<'a> + 'a, rhs: impl RelOps<'a> + 'a, q: &
     let key_rhs = move |row: &RelValue<'_>| row.read_column(col_rhs).unwrap().into_owned();
     let pred = move |l: &RelValue<'_>, r: &RelValue<'_>| l.read_column(col_lhs) == r.read_column(col_rhs);
 
-    if let Some(head) = q.inner.as_ref().cloned() {
-        Box::new(lhs.join_inner(rhs, head, key_lhs, key_rhs, pred, move |l, r| l.extend(r)))
+    if q.inner.is_some() {
+        Box::new(lhs.join_inner(rhs, key_lhs, key_rhs, pred, move |l, r| l.extend(r)))
     } else {
-        let head = lhs.head().clone();
-        Box::new(lhs.join_inner(rhs, head, key_lhs, key_rhs, pred, move |l, _| l))
+        Box::new(lhs.join_inner(rhs, key_lhs, key_rhs, pred, move |l, _| l))
     }
 }
 
@@ -70,12 +68,10 @@ pub(crate) fn build_source_expr_query<'a, const N: usize>(
     source: &SourceExpr,
 ) -> Box<IterRows<'a>> {
     let source_id = source.source_id().unwrap_or_else(|| todo!("How pass the db iter?"));
-    let head = source.head().clone();
-    let rc = source.row_count();
     let table = sources.take(source_id).unwrap_or_else(|| {
         panic!("Query plan specifies in-mem table for {source_id:?}, but found a `DbTable` or nothing")
     });
-    Box::new(RelIter::new(head, rc, table.into_iter().map(RelValue::Projection)))
+    Box::new(RelIter::new(table.into_iter().map(RelValue::Projection)))
 }
 
 /// Execute the code
@@ -298,7 +294,7 @@ pub mod tests {
         let table_id = 0.into();
         let table = mem_table_one_u64(table_id);
         let col: ColId = 0.into();
-        let field = table.head().fields[col.idx()].clone();
+        let field = table.head.fields[col.idx()].clone();
 
         let mut sources = SourceSet::<_, 2>::empty();
         let source_expr = sources.add_mem_table(table.clone());
@@ -459,11 +455,11 @@ pub mod tests {
         // See table above.
         let data = create_game_data();
         let inv @ [inv_inventory_id, _] = [0, 1].map(|c| c.into());
-        let inv_head = data.inv.head().clone();
+        let inv_head = data.inv.head.clone();
         let inv_expr = |col: ColId| inv_head.fields[col.idx()].field.into();
         let [location_entity_id, location_x, location_z] = [0, 1, 2].map(|c| c.into());
         let [player_entity_id, player_inventory_id] = [0, 1].map(|c| c.into());
-        let loc_head = data.location.head().clone();
+        let loc_head = data.location.head.clone();
         let loc_field = |col: ColId| loc_head.fields[col.idx()].field;
         let inv_table_id = data.inv.head.table_id;
         let player_table_id = data.player.head.table_id;

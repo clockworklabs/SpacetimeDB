@@ -10,7 +10,7 @@ use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::TableDef;
-use spacetimedb_sats::relation::{ColExpr, DbTable, Header, Relation, RowCount};
+use spacetimedb_sats::relation::{ColExpr, DbTable};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::{build_project, build_select, join_inner, IterRows};
@@ -19,7 +19,6 @@ use spacetimedb_vm::iterators::RelIter;
 use spacetimedb_vm::program::{ProgramVm, Sources};
 use spacetimedb_vm::rel_ops::{EmptyRelOps, RelOps};
 use spacetimedb_vm::relation::{MemTable, RelValue};
-use std::sync::Arc;
 
 pub enum TxMode<'a> {
     MutTx(&'a mut MutTx),
@@ -103,7 +102,7 @@ pub fn build_query<'a>(
                     // return an empty iterator.
                     // This avoids a panic in `BTreeMap`'s `NodeRef::search_tree_for_bifurcation`,
                     // which is very unhappy about unsatisfiable bounds.
-                    Box::new(EmptyRelOps::new(table.head.clone())) as Box<IterRows<'a>>
+                    Box::new(EmptyRelOps) as Box<IterRows<'a>>
                 } else {
                     let bounds = (bounds.start_bound(), bounds.end_bound());
                     iter_by_col_range(ctx, db, tx, table, columns.clone(), bounds)?
@@ -125,7 +124,7 @@ pub fn build_query<'a>(
                     // The current behavior is a hack
                     // because this patch was written (2024-04-01 pgoldman) a short time before the BitCraft alpha,
                     // and a more invasive change was infeasible.
-                    Box::new(EmptyRelOps::new(index_scan.table.head.clone())) as Box<IterRows<'a>>
+                    Box::new(EmptyRelOps) as Box<IterRows<'a>>
                 } else if cols.is_singleton() {
                     // For singleton constraints, we compare the column directly against `bounds`.
                     let head = cols.head().idx();
@@ -163,30 +162,20 @@ pub fn build_query<'a>(
                 index_select,
                 index_col,
                 return_index_rows,
-            }) => {
-                let probe_side = build_query(ctx, db, tx, probe_side, sources)?;
-                let header = if *return_index_rows {
-                    index_side.head()
-                } else {
-                    probe_side.head()
-                }
-                .clone();
-                Box::new(IndexSemiJoin {
-                    header,
-                    ctx,
-                    db,
-                    tx,
-                    probe_side,
-                    probe_col: *probe_col,
-                    index_select,
-                    // The compiler guarantees that the index side is a db table,
-                    // and therefore this unwrap is always safe.
-                    index_table: index_side.table_id().unwrap(),
-                    index_col: *index_col,
-                    index_iter: None,
-                    return_index_rows: *return_index_rows,
-                })
-            }
+            }) => Box::new(IndexSemiJoin {
+                ctx,
+                db,
+                tx,
+                probe_side: build_query(ctx, db, tx, probe_side, sources)?,
+                probe_col: *probe_col,
+                index_select,
+                // The compiler guarantees that the index side is a db table,
+                // and therefore this unwrap is always safe.
+                index_table: index_side.table_id().unwrap(),
+                index_col: *index_col,
+                index_iter: None,
+                return_index_rows: *return_index_rows,
+            }),
             Query::Select(cmp) => build_select(result_or_base(sources, &mut result)?, cmp),
             Query::Project(proj) => build_project(result_or_base(sources, &mut result)?, proj),
             Query::JoinInner(join) => join_inner(
@@ -214,37 +203,27 @@ fn get_table<'a>(
     ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
     tx: &'a TxMode,
-    query: &SourceExpr,
+    query: &'a SourceExpr,
     sources: &mut impl SourceProvider<'a>,
 ) -> Result<Box<IterRows<'a>>, ErrorVm> {
     Ok(match query {
-        SourceExpr::InMemory {
-            source_id,
-            header,
-            row_count,
-            ..
-        } => in_mem_to_rel_ops(sources, *source_id, header.clone(), *row_count),
-        SourceExpr::DbTable(x) => {
+        SourceExpr::InMemory { source_id, .. } => in_mem_to_rel_ops(sources, *source_id),
+        SourceExpr::DbTable(db_table) => {
             let iter = match tx {
-                TxMode::MutTx(tx) => stdb.iter_mut(ctx, tx, x.table_id)?,
-                TxMode::Tx(tx) => stdb.iter(ctx, tx, x.table_id)?,
+                TxMode::MutTx(tx) => stdb.iter_mut(ctx, tx, db_table.table_id)?,
+                TxMode::Tx(tx) => stdb.iter(ctx, tx, db_table.table_id)?,
             };
-            Box::new(TableCursor::new(x.clone(), iter)?) as Box<IterRows<'_>>
+            Box::new(TableCursor::new(db_table, iter)?) as Box<IterRows<'_>>
         }
     })
 }
 
 // Extracts an in-memory table with `source_id` from `sources` and builds a query for the table.
-fn in_mem_to_rel_ops<'a>(
-    sources: &mut impl SourceProvider<'a>,
-    source_id: SourceId,
-    head: Arc<Header>,
-    rc: RowCount,
-) -> Box<IterRows<'a>> {
+fn in_mem_to_rel_ops<'a>(sources: &mut impl SourceProvider<'a>, source_id: SourceId) -> Box<IterRows<'a>> {
     let source = sources.take_source(source_id).unwrap_or_else(|| {
         panic!("Query plan specifies in-mem table for {source_id:?}, but found a `DbTable` or nothing")
     });
-    Box::new(RelIter::new(head, rc, source)) as Box<IterRows<'a>>
+    Box::new(RelIter::new(source)) as Box<IterRows<'a>>
 }
 
 fn iter_by_col_range<'a>(
@@ -264,8 +243,6 @@ fn iter_by_col_range<'a>(
 
 /// An index join operator that returns matching rows from the index side.
 pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
-    /// The header for the operation.
-    pub header: Arc<Header>,
     /// An iterator for the probe side.
     /// The values returned will be used to probe the index.
     pub probe_side: Rhs,
@@ -306,10 +283,6 @@ impl<'a, Rhs: RelOps<'a>> IndexSemiJoin<'a, '_, Rhs> {
 }
 
 impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
-    fn head(&self) -> &Arc<Header> {
-        &self.header
-    }
-
     fn next(&mut self) -> Option<RelValue<'a>> {
         // Return a value from the current index iterator, if not exhausted.
         if self.return_index_rows {
@@ -362,11 +335,11 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         let table_access = query.source.table_access();
         tracing::trace!(table = query.source.table_name());
 
-        let result = build_query(self.ctx, self.db, self.tx, query, &mut |id| {
+        let head = query.head().clone();
+        let rows = build_query(self.ctx, self.db, self.tx, query, &mut |id| {
             sources.take(id).map(|mt| mt.into_iter().map(RelValue::Projection))
-        })?;
-        let head = result.head().clone();
-        let rows = result.collect_vec(|row| row.into_product_value());
+        })?
+        .collect_vec(|row| row.into_product_value());
 
         Ok(Code::Table(MemTable::new(head, table_access, rows)))
     }
@@ -400,7 +373,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         // Replace the columns in the matched rows with the assigned
         // values. No typechecking is performed here, nor that all
         // assignments are consumed.
-        let exprs: Vec<Option<ColExpr>> = (0..table.head().fields.len())
+        let exprs: Vec<Option<ColExpr>> = (0..table.head.fields.len())
             .map(ColId::from)
             .map(|c| assigns.remove(&c))
             .collect();
@@ -506,20 +479,12 @@ impl ProgramVm for DbProgram<'_, '_> {
 }
 
 impl<'a> RelOps<'a> for TableCursor<'a> {
-    fn head(&self) -> &Arc<Header> {
-        &self.table.head
-    }
-
     fn next(&mut self) -> Option<RelValue<'a>> {
         self.iter.next().map(RelValue::Row)
     }
 }
 
 impl<'a, R: RangeBounds<AlgebraicValue>> RelOps<'a> for IndexCursor<'a, R> {
-    fn head(&self) -> &Arc<Header> {
-        &self.table.head
-    }
-
     fn next(&mut self) -> Option<RelValue<'a>> {
         self.iter.next().map(RelValue::Row)
     }
@@ -538,11 +503,12 @@ pub(crate) mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableSchema};
-    use spacetimedb_sats::relation::FieldName;
+    use spacetimedb_sats::relation::{FieldName, Header};
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
     use spacetimedb_vm::eval::run_ast;
     use spacetimedb_vm::eval::test_helpers::{mem_table, mem_table_one_u64, scalar};
     use spacetimedb_vm::operator::OpCmp;
+    use std::sync::Arc;
 
     pub(crate) fn create_table_with_rows(
         db: &RelationalDB,
