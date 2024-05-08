@@ -112,18 +112,7 @@ impl ExecutionUnit {
             source.is_db_table(),
             "The plan passed to `compile_select_eval_incr` must read from `DbTable`s, but found in-mem table"
         );
-        // NOTE: The `eval_incr_plan` will reference a `SourceExpr::InMemory`
-        // with `row_count: RowCount::exact(0)`.
-        // This is inaccurate; while we cannot predict the exact number of rows,
-        // we know that it will never be 0,
-        // as we wouldn't have a [`DatabaseTableUpdate`] with no changes.
-        //
-        // Our current query planner doesn't use the `row_count` in any meaningful way,
-        // so this is fine.
-        // Some day down the line, when we have a real query planner,
-        // we may need to provide a row count estimation that is, if not accurate,
-        // at least less specifically inaccurate.
-        let source = SourceExpr::from_mem_table(source.head().clone(), source.table_access(), 0, SourceId(0));
+        let source = SourceExpr::from_mem_table(source.head().clone(), source.table_access(), SourceId(0));
         let query = expr.query.clone();
         QueryExpr { source, query }
     }

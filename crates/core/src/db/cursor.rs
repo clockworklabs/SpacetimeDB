@@ -8,12 +8,12 @@ use super::datastore::locking_tx_datastore::{Iter, IterByColRange};
 
 /// Common wrapper for relational iterators that work like cursors.
 pub struct TableCursor<'a> {
-    pub table: DbTable,
+    pub table: &'a DbTable,
     pub iter: Iter<'a>,
 }
 
 impl<'a> TableCursor<'a> {
-    pub fn new(table: DbTable, iter: Iter<'a>) -> Result<Self, DBError> {
+    pub fn new(table: &'a DbTable, iter: Iter<'a>) -> Result<Self, DBError> {
         Ok(Self { table, iter })
     }
 }

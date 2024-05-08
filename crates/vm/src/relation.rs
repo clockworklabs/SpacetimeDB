@@ -2,7 +2,7 @@ use core::hash::{Hash, Hasher};
 use spacetimedb_sats::bsatn::ser::BsatnError;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::product_value::ProductValue;
-use spacetimedb_sats::relation::{ColExpr, ColExprRef, FieldName, Header, Relation, RowCount};
+use spacetimedb_sats::relation::{ColExpr, ColExprRef, FieldName, Header, Relation};
 use spacetimedb_sats::{bsatn, impl_serialize, AlgebraicValue};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
@@ -13,7 +13,7 @@ use std::sync::Arc;
 /// a reference to an inserted row,
 /// or an ephemeral row constructed during query execution.
 ///
-/// A `RelValue` is the type generated/consumed by a [Relation] operator.
+/// A `RelValue` is the type generated/consumed by queries.
 #[derive(Debug, Clone)]
 pub enum RelValue<'a> {
     /// A reference to a row in a table.
@@ -207,9 +207,5 @@ impl MemTable {
 impl Relation for MemTable {
     fn head(&self) -> &Arc<Header> {
         &self.head
-    }
-
-    fn row_count(&self) -> RowCount {
-        RowCount::exact(self.data.len())
     }
 }
