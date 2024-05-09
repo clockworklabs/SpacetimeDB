@@ -48,7 +48,7 @@ def build_template_target():
 
         BuildModule.setUpClass()
         env = { **os.environ, "CARGO_TARGET_DIR": str(TEMPLATE_TARGET_DIR) }
-        spacetime("build", BuildModule.project_path, env=env, capture_stderr=False)
+        spacetime("build", "--project-path", BuildModule.project_path, env=env, capture_stderr=False)
         BuildModule.tearDownClass()
         BuildModule.doClassCleanups()
 
@@ -99,7 +99,7 @@ def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=
             output.args[0] = "spacetime"
         output.check_returncode()
     return output if full_output else output.stdout
-    
+
 
 def spacetime(*args, **kwargs):
     return run_cmd(SPACETIME_BIN, *args, cmd_name="spacetime", **kwargs)
@@ -139,14 +139,14 @@ class Smoketest(unittest.TestCase):
     def _check_published(self):
         if not hasattr(self, "address"):
             raise Exception("Cannot use this function without publishing a module")
-    
+
     def call(self, reducer, *args):
         self._check_published()
         self.spacetime("call", "--", self.address, reducer, *map(json.dumps, args))
-    
+
     def logs(self, n):
         return [log["message"] for log in self.log_records(n)]
-        
+
     def log_records(self, n):
         self._check_published()
         logs = self.spacetime("logs", "--json", "--", self.address, str(n))
@@ -162,7 +162,7 @@ class Smoketest(unittest.TestCase):
         )
         self.resolved_address = re.search(r"address: ([0-9a-fA-F]+)", publish_output)[1]
         self.address = domain if domain is not None else self.resolved_address
-    
+
     @classmethod
     def reset_config(cls):
         shutil.copy(STDB_CONFIG, cls.config_path)
@@ -170,17 +170,17 @@ class Smoketest(unittest.TestCase):
     def fingerprint(self):
         # Fetch the server's fingerprint; required for `identity list`.
         self.spacetime("server", "fingerprint", "-s", "localhost", "-f")
-    
+
     def new_identity(self, *, email, default=False):
         output = self.spacetime("identity", "new", "--no-email" if email is None else f"--email={email}")
         identity = extract_field(output, "IDENTITY")
         if default:
             self.spacetime("identity", "set-default", identity)
         return identity
-    
+
     def token(self, identity):
         return self.spacetime("identity", "token", identity).strip()
-    
+
     def import_identity(self, identity, token, *, default=False):
         self.spacetime("identity", "import", identity, token)
         if default:
@@ -191,8 +191,8 @@ class Smoketest(unittest.TestCase):
         open(cls.project_path / "src/lib.rs", "w").write(module_code)
 
     # testcase initialization
-    
-    
+
+
     @classmethod
     def setUpClass(cls):
         cls.project_path = Path(cls.enterClassContext(tempfile.TemporaryDirectory()))
@@ -208,7 +208,7 @@ class Smoketest(unittest.TestCase):
         if cls.AUTOPUBLISH:
             print(f"Compiling module for {cls.__qualname__}...", file=sys.__stderr__)
             cls.publish_module(cls, capture_stderr=False)
-    
+
     def tearDown(self):
         # if this single test method published a database, clean it up now
         if "address" in self.__dict__:
@@ -230,7 +230,7 @@ class Smoketest(unittest.TestCase):
     # def setUp(self):
     #     if self.AUTOPUBLISH:
     #         self.spacetime("publish", "-S", "--project-path", self.project_path)
-    
+
     if sys.version_info < (3, 11):
         # polyfill; python 3.11 defines this classmethod on TestCase
         @classmethod
