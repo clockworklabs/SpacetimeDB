@@ -20,6 +20,6 @@ extern "C" {
     def test_detect_wasm_bindgen(self):
         """Ensure that spacetime build properly catches wasm_bindgen imports"""
 
-        output = self.spacetime("build", self.project_path, full_output=True, check=False)
+        output = self.spacetime("build", "--project-path", self.project_path, full_output=True, check=False)
         self.assertTrue(output.returncode)
         self.assertIn("wasm-bindgen detected", output.stderr)
