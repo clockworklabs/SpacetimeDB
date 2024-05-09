@@ -286,7 +286,7 @@ namespace SpacetimeDB
                 {
                     if (!subscriptionInserts.TryGetValue(tableName, out var hashSet))
                     {
-                        hashSet = new HashSet<byte[]>(capacity:tableSize, comparer: new ByteArrayComparer());
+                        hashSet = new HashSet<byte[]>(capacity: tableSize, comparer: new ByteArrayComparer());
                         subscriptionInserts[tableName] = hashSet;
                     }
 
@@ -606,315 +606,296 @@ namespace SpacetimeDB
             });
         }
 
+        private void OnMessageProcessCompleteUpdate(Message message, List<DbOp> dbOps)
+        {
+            // First trigger OnBeforeDelete
+            foreach (var update in dbOps)
+            {
+                if (update.op == TableOp.Delete)
+                {
+                    try
+                    {
+                        update.table.BeforeDeleteCallback?.Invoke(update.oldValue,
+                            message.TransactionUpdate?.Event);
+                    }
+                    catch (Exception e)
+                    {
+                        Logger.LogException(e);
+                    }
+                }
+            }
+
+            void InternalDeleteCallback(DbOp op)
+            {
+                if (op.oldValue != null)
+                {
+                    op.table.InternalValueDeletedCallback(op.oldValue);
+                }
+                else
+                {
+                    Logger.LogError("Delete issued, but no value was present!");
+                }
+            }
+
+            void InternalInsertCallback(DbOp op)
+            {
+                if (op.newValue != null)
+                {
+                    op.table.InternalValueInsertedCallback(op.newValue);
+                }
+                else
+                {
+                    Logger.LogError("Insert issued, but no value was present!");
+                }
+            }
+
+            // Apply all of the state
+            for (var i = 0; i < dbOps.Count; i++)
+            {
+                // TODO: Reimplement updates when we add support for primary keys
+                var update = dbOps[i];
+                switch (update.op)
+                {
+                    case TableOp.Delete:
+                        if (dbOps[i].table.DeleteEntry(update.deletedBytes))
+                        {
+                            InternalDeleteCallback(update);
+                        }
+                        else
+                        {
+                            var op = dbOps[i];
+                            op.op = TableOp.NoChange;
+                            dbOps[i] = op;
+                        }
+                        break;
+                    case TableOp.Insert:
+                        if (dbOps[i].table.InsertEntry(update.insertedBytes, update.rowValue))
+                        {
+                            InternalInsertCallback(update);
+                        }
+                        else
+                        {
+                            var op = dbOps[i];
+                            op.op = TableOp.NoChange;
+                            dbOps[i] = op;
+                        }
+                        break;
+                    case TableOp.Update:
+                        if (dbOps[i].table.DeleteEntry(update.deletedBytes))
+                        {
+                            InternalDeleteCallback(update);
+                        }
+                        else
+                        {
+                            var op = dbOps[i];
+                            op.op = TableOp.NoChange;
+                            dbOps[i] = op;
+                        }
+
+                        if (dbOps[i].table.InsertEntry(update.insertedBytes, update.rowValue))
+                        {
+                            InternalInsertCallback(update);
+                        }
+                        else
+                        {
+                            var op = dbOps[i];
+                            op.op = TableOp.NoChange;
+                            dbOps[i] = op;
+                        }
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException();
+                }
+            }
+
+            // Send out events
+            var updateCount = dbOps.Count;
+            for (var i = 0; i < updateCount; i++)
+            {
+                var tableName = dbOps[i].table.ClientTableType.Name;
+                var tableOp = dbOps[i].op;
+                var oldValue = dbOps[i].oldValue;
+                var newValue = dbOps[i].newValue;
+
+                switch (tableOp)
+                {
+                    case TableOp.Insert:
+                        if (oldValue == null && newValue != null)
+                        {
+                            try
+                            {
+                                if (dbOps[i].table.InsertCallback != null)
+                                {
+                                    dbOps[i].table.InsertCallback.Invoke(newValue,
+                                        message.TransactionUpdate?.Event);
+                                }
+                            }
+                            catch (Exception e)
+                            {
+                                Logger.LogException(e);
+                            }
+
+                            try
+                            {
+                                if (dbOps[i].table.RowUpdatedCallback != null)
+                                {
+                                    dbOps[i].table.RowUpdatedCallback
+                                        .Invoke(tableOp, null, newValue, message.TransactionUpdate?.Event);
+                                }
+                            }
+                            catch (Exception e)
+                            {
+                                Logger.LogException(e);
+                            }
+                        }
+                        else
+                        {
+                            Logger.LogError("Failed to send callback: invalid insert!");
+                        }
+
+                        break;
+                    case TableOp.Delete:
+                        {
+                            if (oldValue != null && newValue == null)
+                            {
+                                if (dbOps[i].table.DeleteCallback != null)
+                                {
+                                    try
+                                    {
+                                        dbOps[i].table.DeleteCallback.Invoke(oldValue,
+                                            message.TransactionUpdate?.Event);
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        Logger.LogException(e);
+                                    }
+                                }
+
+                                if (dbOps[i].table.RowUpdatedCallback != null)
+                                {
+                                    try
+                                    {
+                                        dbOps[i].table.RowUpdatedCallback
+                                            .Invoke(tableOp, oldValue, null, message.TransactionUpdate?.Event);
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        Logger.LogException(e);
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                Logger.LogError("Failed to send callback: invalid delete");
+                            }
+
+                            break;
+                        }
+                    case TableOp.Update:
+                        {
+                            if (oldValue != null && newValue != null)
+                            {
+                                try
+                                {
+                                    if (dbOps[i].table.UpdateCallback != null)
+                                    {
+                                        dbOps[i].table.UpdateCallback.Invoke(oldValue, newValue,
+                                            message.TransactionUpdate?.Event);
+                                    }
+                                }
+                                catch (Exception e)
+                                {
+                                    Logger.LogException(e);
+                                }
+
+                                try
+                                {
+                                    if (dbOps[i].table.RowUpdatedCallback != null)
+                                    {
+                                        dbOps[i].table.RowUpdatedCallback
+                                            .Invoke(tableOp, oldValue, newValue, message.TransactionUpdate?.Event);
+                                    }
+                                }
+                                catch (Exception e)
+                                {
+                                    Logger.LogException(e);
+                                }
+                            }
+                            else
+                            {
+                                Logger.LogError("Failed to send callback: invalid update");
+                            }
+
+                            break;
+                        }
+                    case TableOp.NoChange:
+                        // noop
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException();
+                }
+
+                if (tableOp != TableOp.NoChange)
+                {
+                    onRowUpdate?.Invoke(tableName, tableOp, oldValue, newValue,
+                        message.Event?.FunctionCall.CallInfo);
+                }
+            }
+        }
+
         private void OnMessageProcessComplete(Message message, List<DbOp> dbOps)
         {
             switch (message.TypeCase)
             {
                 case Message.TypeOneofCase.SubscriptionUpdate:
                     onBeforeSubscriptionApplied?.Invoke();
+                    OnMessageProcessCompleteUpdate(message, dbOps);
+                    try
+                    {
+                        onSubscriptionApplied?.Invoke();
+                    }
+                    catch (Exception e)
+                    {
+                        Logger.LogException(e);
+                    }
                     break;
-            }
-
-            switch (message.TypeCase)
-            {
-                case Message.TypeOneofCase.SubscriptionUpdate:
                 case Message.TypeOneofCase.TransactionUpdate:
-                    // First trigger OnBeforeDelete
-                    foreach (var update in dbOps)
+                    OnMessageProcessCompleteUpdate(message, dbOps);
+                    try
                     {
-                        if (update.op == TableOp.Delete)
+                        onEvent?.Invoke(message.TransactionUpdate.Event);
+                    }
+                    catch (Exception e)
+                    {
+                        Logger.LogException(e);
+                    }
+
+                    bool reducerFound = false;
+                    var functionName = message.TransactionUpdate.Event.FunctionCall.Reducer;
+                    if (reducerEventCache.TryGetValue(functionName, out var value))
+                    {
+                        try
                         {
-                            try
-                            {
-                                update.table.BeforeDeleteCallback?.Invoke(update.oldValue,
-                                    message.TransactionUpdate?.Event);
-                            }
-                            catch (Exception e)
-                            {
-                                Logger.LogException(e);
-                            }
+                            reducerFound = value.Invoke(message.TransactionUpdate.Event);
+                        }
+                        catch (Exception e)
+                        {
+                            Logger.LogException(e);
                         }
                     }
 
-                    void InternalDeleteCallback(DbOp op)
+                    if (!reducerFound && message.TransactionUpdate.Event.Status ==
+                        ClientApi.Event.Types.Status.Failed)
                     {
-                        if (op.oldValue != null)
+                        try
                         {
-                            op.table.InternalValueDeletedCallback(op.oldValue);
+                            onUnhandledReducerError?.Invoke(message.TransactionUpdate.Event.FunctionCall
+                                .CallInfo);
                         }
-                        else
+                        catch (Exception e)
                         {
-                            Logger.LogError("Delete issued, but no value was present!");
+                            Logger.LogException(e);
                         }
-                    }
-
-                    void InternalInsertCallback(DbOp op)
-                    {
-                        if (op.newValue != null)
-                        {
-                            op.table.InternalValueInsertedCallback(op.newValue);
-                        }
-                        else
-                        {
-                            Logger.LogError("Insert issued, but no value was present!");
-                        }
-                    }
-
-                    // Apply all of the state
-                    for (var i = 0; i < dbOps.Count; i++)
-                    {
-                        // TODO: Reimplement updates when we add support for primary keys
-                        var update = dbOps[i];
-                        switch (update.op)
-                        {
-                            case TableOp.Delete:
-                                if (dbOps[i].table.DeleteEntry(update.deletedBytes))
-                                {
-                                    InternalDeleteCallback(update);
-                                }
-                                else
-                                {
-                                    var op = dbOps[i];
-                                    op.op = TableOp.NoChange;
-                                    dbOps[i] = op;
-                                }
-                                break;
-                            case TableOp.Insert:
-                                if (dbOps[i].table.InsertEntry(update.insertedBytes, update.rowValue))
-                                {
-                                    InternalInsertCallback(update);
-                                }
-                                else
-                                {
-                                    var op = dbOps[i];
-                                    op.op = TableOp.NoChange;
-                                    dbOps[i] = op;
-                                }
-                                break;
-                            case TableOp.Update:
-                                if (dbOps[i].table.DeleteEntry(update.deletedBytes))
-                                {
-                                    InternalDeleteCallback(update);
-                                }
-                                else
-                                {
-                                    var op = dbOps[i];
-                                    op.op = TableOp.NoChange;
-                                    dbOps[i] = op;
-                                }
-
-                                if (dbOps[i].table.InsertEntry(update.insertedBytes, update.rowValue))
-                                {
-                                    InternalInsertCallback(update);
-                                }
-                                else
-                                {
-                                    var op = dbOps[i];
-                                    op.op = TableOp.NoChange;
-                                    dbOps[i] = op;
-                                }
-                                break;
-                            default:
-                                throw new ArgumentOutOfRangeException();
-                        }
-                    }
-
-                    // Send out events
-                    var updateCount = dbOps.Count;
-                    for (var i = 0; i < updateCount; i++)
-                    {
-                        var tableName = dbOps[i].table.ClientTableType.Name;
-                        var tableOp = dbOps[i].op;
-                        var oldValue = dbOps[i].oldValue;
-                        var newValue = dbOps[i].newValue;
-
-                        switch (tableOp)
-                        {
-                            case TableOp.Insert:
-                                if (oldValue == null && newValue != null)
-                                {
-                                    try
-                                    {
-                                        if (dbOps[i].table.InsertCallback != null)
-                                        {
-                                            dbOps[i].table.InsertCallback.Invoke(newValue,
-                                                message.TransactionUpdate?.Event);
-                                        }
-                                    }
-                                    catch (Exception e)
-                                    {
-                                        Logger.LogException(e);
-                                    }
-
-                                    try
-                                    {
-                                        if (dbOps[i].table.RowUpdatedCallback != null)
-                                        {
-                                            dbOps[i].table.RowUpdatedCallback
-                                                .Invoke(tableOp, null, newValue, message.TransactionUpdate?.Event);
-                                        }
-                                    }
-                                    catch (Exception e)
-                                    {
-                                        Logger.LogException(e);
-                                    }
-                                }
-                                else
-                                {
-                                    Logger.LogError("Failed to send callback: invalid insert!");
-                                }
-
-                                break;
-                            case TableOp.Delete:
-                                {
-                                    if (oldValue != null && newValue == null)
-                                    {
-                                        if (dbOps[i].table.DeleteCallback != null)
-                                        {
-                                            try
-                                            {
-                                                dbOps[i].table.DeleteCallback.Invoke(oldValue,
-                                                    message.TransactionUpdate?.Event);
-                                            }
-                                            catch (Exception e)
-                                            {
-                                                Logger.LogException(e);
-                                            }
-                                        }
-
-                                        if (dbOps[i].table.RowUpdatedCallback != null)
-                                        {
-                                            try
-                                            {
-                                                dbOps[i].table.RowUpdatedCallback
-                                                    .Invoke(tableOp, oldValue, null, message.TransactionUpdate?.Event);
-                                            }
-                                            catch (Exception e)
-                                            {
-                                                Logger.LogException(e);
-                                            }
-                                        }
-                                    }
-                                    else
-                                    {
-                                        Logger.LogError("Failed to send callback: invalid delete");
-                                    }
-
-                                    break;
-                                }
-                            case TableOp.Update:
-                                {
-                                    if (oldValue != null && newValue != null)
-                                    {
-                                        try
-                                        {
-                                            if (dbOps[i].table.UpdateCallback != null)
-                                            {
-                                                dbOps[i].table.UpdateCallback.Invoke(oldValue, newValue,
-                                                    message.TransactionUpdate?.Event);
-                                            }
-                                        }
-                                        catch (Exception e)
-                                        {
-                                            Logger.LogException(e);
-                                        }
-
-                                        try
-                                        {
-                                            if (dbOps[i].table.RowUpdatedCallback != null)
-                                            {
-                                                dbOps[i].table.RowUpdatedCallback
-                                                    .Invoke(tableOp, oldValue, newValue, message.TransactionUpdate?.Event);
-                                            }
-                                        }
-                                        catch (Exception e)
-                                        {
-                                            Logger.LogException(e);
-                                        }
-                                    }
-                                    else
-                                    {
-                                        Logger.LogError("Failed to send callback: invalid update");
-                                    }
-
-                                    break;
-                                }
-                            case TableOp.NoChange:
-                                // noop
-                                break;
-                            default:
-                                throw new ArgumentOutOfRangeException();
-                        }
-
-                        if (tableOp != TableOp.NoChange)
-                        {
-                            onRowUpdate?.Invoke(tableName, tableOp, oldValue, newValue,
-                                message.Event?.FunctionCall.CallInfo);
-                        }
-                    }
-
-                    switch (message.TypeCase)
-                    {
-                        case Message.TypeOneofCase.SubscriptionUpdate:
-                            try
-                            {
-                                onSubscriptionApplied?.Invoke();
-                            }
-                            catch (Exception e)
-                            {
-                                Logger.LogException(e);
-                            }
-
-                            break;
-                        case Message.TypeOneofCase.TransactionUpdate:
-                            try
-                            {
-                                onEvent?.Invoke(message.TransactionUpdate.Event);
-                            }
-                            catch (Exception e)
-                            {
-                                Logger.LogException(e);
-                            }
-
-                            bool reducerFound = false;
-                            var functionName = message.TransactionUpdate.Event.FunctionCall.Reducer;
-                            if (reducerEventCache.TryGetValue(functionName, out var value))
-                            {
-                                try
-                                {
-                                    reducerFound = value.Invoke(message.TransactionUpdate.Event);
-                                }
-                                catch (Exception e)
-                                {
-                                    Logger.LogException(e);
-                                }
-                            }
-
-                            if (!reducerFound && message.TransactionUpdate.Event.Status ==
-                                ClientApi.Event.Types.Status.Failed)
-                            {
-                                try
-                                {
-                                    onUnhandledReducerError?.Invoke(message.TransactionUpdate.Event.FunctionCall
-                                        .CallInfo);
-                                }
-                                catch (Exception e)
-                                {
-                                    Logger.LogException(e);
-                                }
-                            }
-
-                            break;
-                        case Message.TypeOneofCase.None:
-                            break;
-                        case Message.TypeOneofCase.FunctionCall:
-                            break;
-                        case Message.TypeOneofCase.Event:
-                            break;
-                        case Message.TypeOneofCase.IdentityToken:
-                            break;
-                        default:
-                            throw new ArgumentOutOfRangeException();
                     }
 
                     break;
