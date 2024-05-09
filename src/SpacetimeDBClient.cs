@@ -48,7 +48,6 @@ namespace SpacetimeDB
             public byte[] deletedBytes;
             public byte[] insertedBytes;
             public AlgebraicValue rowValue;
-            public AlgebraicValue primaryKeyValue;
         }
 
         public delegate void RowUpdate(string tableName, TableOp op, object oldValue, object newValue,
@@ -340,7 +339,6 @@ namespace SpacetimeDB
                                     op = TableOp.Insert,
                                     newValue = obj,
                                     oldValue = null,
-                                    primaryKeyValue = null,
                                     rowValue = deserializedRow,
                                 };
 
@@ -399,7 +397,6 @@ namespace SpacetimeDB
                                         : TableOp.Insert,
                                     newValue = row.Op == TableRowOperation.Types.OperationType.Delete ? null : obj,
                                     oldValue = row.Op == TableRowOperation.Types.OperationType.Delete ? obj : null,
-                                    primaryKeyValue = primaryKeyValue,
                                     rowValue = deserializedRow,
                                 };
 
@@ -433,7 +430,6 @@ namespace SpacetimeDB
                                             oldValue = deleteOp.oldValue,
                                             deletedBytes = deleteOp.deletedBytes,
                                             insertedBytes = insertOp.insertedBytes,
-                                            primaryKeyValue = insertOp.primaryKeyValue,
                                             rowValue = insertOp.rowValue,
                                         };
                                     }
@@ -547,8 +543,7 @@ namespace SpacetimeDB
                                     newValue = null,
                                     oldValue = table.entries[rowBytes].Item2,
                                     deletedBytes = rowBytes,
-                                    insertedBytes = null,
-                                    primaryKeyValue = null
+                                    insertedBytes = null
                                 });
                             }
                         }
