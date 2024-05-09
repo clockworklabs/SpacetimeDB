@@ -8,6 +8,8 @@ pub fn cli() -> clap::Command {
         .about("Builds a spacetime module.")
         .arg(
             Arg::new("project_path")
+                .long("project-path")
+                .short('p')
                 .value_parser(clap::value_parser!(PathBuf))
                 .default_value(".")
                 .help("The system path (absolute or relative) to the project you would like to build")
