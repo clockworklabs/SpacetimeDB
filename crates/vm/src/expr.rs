@@ -1,6 +1,6 @@
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::operator::{OpCmp, OpLogic, OpQuery};
-use crate::relation::{MemTable, RelValue, Table};
+use crate::relation::{MemTable, RelValue};
 use arrayvec::ArrayVec;
 use derive_more::From;
 use smallvec::{smallvec, SmallVec};
@@ -415,28 +415,6 @@ impl<const N: usize> SourceSet<Vec<ProductValue>, N> {
         let id = self.add(table.data);
         SourceExpr::from_mem_table(table.head, table.table_access, len, id)
     }
-
-    /// Resolve `source` to a `Table` for use in query execution.
-    ///
-    /// If the `source` is a [`SourceExpr::DbTable`], this simply clones the [`DbTable`] and returns it.
-    /// ([`DbTable::clone`] is inexpensive.)
-    /// In this case, `self` is not modified.
-    ///
-    /// If the `source` is a [`SourceExpr::MemTable`], this behaves like [`Self::take_mem_table`].
-    /// Subsequent calls to `take_table` or `take_mem_table` with the same `source` will fail.
-    pub fn take_table(&mut self, source: &SourceExpr) -> Option<Table> {
-        match source {
-            SourceExpr::DbTable(db_table) => Some(Table::DbTable(db_table.clone())),
-            SourceExpr::InMemory {
-                source_id,
-                header,
-                table_access,
-                ..
-            } => self
-                .take(*source_id)
-                .map(|data| MemTable::new(header.clone(), *table_access, data).into()),
-        }
-    }
 }
 
 /// A reference to a table within a query plan,
@@ -749,7 +727,7 @@ pub enum Crud {
 pub enum CrudExpr {
     Query(QueryExpr),
     Insert {
-        source: SourceExpr,
+        table: DbTable,
         rows: Vec<ProductValue>,
     },
     Update {
@@ -1994,18 +1972,6 @@ impl AuthAccess for SourceExpr {
     }
 }
 
-impl AuthAccess for Table {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-        if owner == caller || self.table_access() == StAccess::Public {
-            return Ok(());
-        }
-
-        Err(AuthError::TablePrivate {
-            named: self.table_name().to_string(),
-        })
-    }
-}
-
 impl AuthAccess for QueryExpr {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
         if owner == caller {
@@ -2529,11 +2495,8 @@ mod tests {
 
     #[test]
     fn test_auth_crud_code_insert() {
-        for table in tables() {
-            let crud = CrudExpr::Insert {
-                source: table,
-                rows: vec![],
-            };
+        for table in tables().into_iter().filter_map(|s| s.get_db_table().cloned()) {
+            let crud = CrudExpr::Insert { table, rows: vec![] };
             assert_owner_required(crud);
         }
     }

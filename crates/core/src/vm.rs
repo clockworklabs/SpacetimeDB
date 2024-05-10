@@ -6,11 +6,11 @@ use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::execution_context::ExecutionContext;
 use core::ops::RangeBounds;
 use itertools::Itertools;
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::relation::RowCount;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::TableDef;
-use spacetimedb_sats::relation::{DbTable, FieldExpr, Header, Relation};
+use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header, RowCount};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::eval::{join_inner, IterRows};
@@ -18,13 +18,23 @@ use spacetimedb_vm::expr::*;
 use spacetimedb_vm::iterators::RelIter;
 use spacetimedb_vm::program::{ProgramVm, Sources};
 use spacetimedb_vm::rel_ops::{EmptyRelOps, RelOps};
-use spacetimedb_vm::relation::{MemTable, RelValue, Table};
+use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::ops::Bound;
 use std::sync::Arc;
 
 pub enum TxMode<'a> {
     MutTx(&'a mut MutTx),
     Tx(&'a Tx),
+}
+
+impl<'a> TxMode<'a> {
+    /// Unwraps `self`, ensuring we are in a mutable tx.
+    fn unwrap_mut(&mut self) -> &mut MutTx {
+        match self {
+            Self::MutTx(tx) => tx,
+            Self::Tx(_) => unreachable!("mutable operation is invalid with read tx"),
+        }
+    }
 }
 
 impl<'a> From<&'a mut MutTx> for TxMode<'a> {
@@ -394,87 +404,104 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         Ok(Code::Table(MemTable::new(head, table_access, rows)))
     }
 
-    fn _execute_insert(&mut self, table: &Table, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
-        match self.tx {
-            TxMode::MutTx(tx) => match table {
-                // TODO: How do we deal with mutating values?
-                Table::MemTable(_) => Err(ErrorVm::Other(anyhow::anyhow!("How deal with mutating values?"))),
-                Table::DbTable(x) => {
-                    for row in rows {
-                        self.db.insert(tx, x.table_id, row)?;
-                    }
-                    Ok(Code::Pass)
-                }
-            },
-            TxMode::Tx(_) => unreachable!("mutable operation is invalid with read tx"),
+    fn _execute_insert(&mut self, table: &DbTable, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
+        let tx = self.tx.unwrap_mut();
+        for row in rows {
+            self.db.insert(tx, table.table_id, row)?;
         }
+        Ok(Code::Pass)
     }
 
-    fn _execute_delete(&mut self, table: &Table, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
-        match self.tx {
-            TxMode::MutTx(tx) => match table {
-                // TODO: How do we deal with mutating values?
-                Table::MemTable(_) => Err(ErrorVm::Other(anyhow::anyhow!("How deal with mutating values?"))),
-                Table::DbTable(t) => {
-                    let count = self.db.delete_by_rel(tx, t.table_id, rows);
-                    Ok(Code::Value(count.into()))
-                }
-            },
-            TxMode::Tx(_) => unreachable!("mutable operation is invalid with read tx"),
-        }
+    fn _execute_update<const N: usize>(
+        &mut self,
+        delete: &QueryExpr,
+        mut assigns: HashMap<FieldName, FieldExpr>,
+        sources: Sources<'_, N>,
+    ) -> Result<Code, ErrorVm> {
+        let result = self._eval_query(delete, sources)?;
+        let Code::Table(deleted) = result else {
+            return Ok(result);
+        };
+
+        let table = delete
+            .source
+            .get_db_table()
+            .expect("source for Update should be a DbTable");
+
+        self._execute_delete(table.table_id, deleted.data.clone());
+
+        // Replace the columns in the matched rows with the assigned
+        // values. No typechecking is performed here, nor that all
+        // assignments are consumed.
+        let exprs: Vec<Option<FieldExpr>> = table.head.fields.iter().map(|col| assigns.remove(&col.field)).collect();
+        let insert_rows = deleted
+            .data
+            .into_iter()
+            .map(|row| {
+                let elements = row
+                    .into_iter()
+                    .zip(&exprs)
+                    .map(|(val, expr)| {
+                        if let Some(FieldExpr::Value(assigned)) = expr {
+                            assigned.clone()
+                        } else {
+                            val
+                        }
+                    })
+                    .collect();
+
+                ProductValue { elements }
+            })
+            .collect_vec();
+
+        self._execute_insert(table, insert_rows)
+    }
+
+    fn _execute_delete(&mut self, table: TableId, rows: Vec<ProductValue>) -> u32 {
+        self.db.delete_by_rel(self.tx.unwrap_mut(), table, rows)
     }
 
     fn _delete_query<const N: usize>(&mut self, query: &QueryExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
-        let table = sources
-            .take_table(&query.source)
-            .expect("Cannot delete from a `MemTable`");
-        let result = self._eval_query(query, sources)?;
-
-        match result {
-            Code::Table(result) => self._execute_delete(&table, result.data),
-            _ => Ok(result),
+        match self._eval_query(query, sources)? {
+            Code::Table(result) => Ok(Code::Value(
+                self._execute_delete(query.source.table_id().unwrap(), result.data)
+                    .into(),
+            )),
+            r => Ok(r),
         }
     }
 
     fn _create_table(&mut self, table: TableDef) -> Result<Code, ErrorVm> {
-        match self.tx {
-            TxMode::MutTx(tx) => {
-                self.db.create_table(tx, table)?;
-                Ok(Code::Pass)
-            }
-            TxMode::Tx(_) => unreachable!("mutable operation is invalid with read tx"),
-        }
+        self.db.create_table(self.tx.unwrap_mut(), table)?;
+        Ok(Code::Pass)
     }
 
     fn _drop(&mut self, name: &str, kind: DbType) -> Result<Code, ErrorVm> {
-        match self.tx {
-            TxMode::MutTx(tx) => {
-                match kind {
-                    DbType::Table => {
-                        if let Some(id) = self.db.table_id_from_name_mut(tx, name)? {
-                            self.db.drop_table(self.ctx, tx, id)?;
-                        }
-                    }
-                    DbType::Index => {
-                        if let Some(id) = self.db.index_id_from_name(tx, name)? {
-                            self.db.drop_index(tx, id)?;
-                        }
-                    }
-                    DbType::Sequence => {
-                        if let Some(id) = self.db.sequence_id_from_name(tx, name)? {
-                            self.db.drop_sequence(tx, id)?;
-                        }
-                    }
-                    DbType::Constraint => {
-                        if let Some(id) = self.db.constraint_id_from_name(tx, name)? {
-                            self.db.drop_constraint(tx, id)?;
-                        }
-                    }
+        let tx = self.tx.unwrap_mut();
+
+        match kind {
+            DbType::Table => {
+                if let Some(id) = self.db.table_id_from_name_mut(tx, name)? {
+                    self.db.drop_table(self.ctx, tx, id)?;
                 }
-                Ok(Code::Pass)
             }
-            TxMode::Tx(_) => unreachable!("mutable operation is invalid with read tx"),
+            DbType::Index => {
+                if let Some(id) = self.db.index_id_from_name(tx, name)? {
+                    self.db.drop_index(tx, id)?;
+                }
+            }
+            DbType::Sequence => {
+                if let Some(id) = self.db.sequence_id_from_name(tx, name)? {
+                    self.db.drop_sequence(tx, id)?;
+                }
+            }
+            DbType::Constraint => {
+                if let Some(id) = self.db.constraint_id_from_name(tx, name)? {
+                    self.db.drop_constraint(tx, id)?;
+                }
+            }
         }
+        Ok(Code::Pass)
     }
 
     fn _set_config(&mut self, name: String, value: AlgebraicValue) -> Result<Code, ErrorVm> {
@@ -496,53 +523,8 @@ impl ProgramVm for DbProgram<'_, '_> {
 
         match query {
             CrudExpr::Query(query) => self._eval_query(&query, sources),
-            CrudExpr::Insert { source, rows } => {
-                let src = sources.take_table(&source).unwrap();
-                self._execute_insert(&src, rows)
-            }
-            CrudExpr::Update {
-                delete,
-                mut assignments,
-            } => {
-                let result = self._eval_query(&delete, sources)?;
-
-                let Code::Table(deleted) = result else {
-                    return Ok(result);
-                };
-                let table = sources.take_table(&delete.source).unwrap();
-                self._execute_delete(&table, deleted.data.clone())?;
-
-                // Replace the columns in the matched rows with the assigned
-                // values. No typechecking is performed here, nor that all
-                // assignments are consumed.
-                let exprs: Vec<Option<FieldExpr>> = table
-                    .head()
-                    .fields
-                    .iter()
-                    .map(|col| assignments.remove(&col.field))
-                    .collect();
-                let insert_rows = deleted
-                    .data
-                    .into_iter()
-                    .map(|row| {
-                        let elements = row
-                            .into_iter()
-                            .zip(&exprs)
-                            .map(|(val, expr)| {
-                                if let Some(FieldExpr::Value(assigned)) = expr {
-                                    assigned.clone()
-                                } else {
-                                    val
-                                }
-                            })
-                            .collect();
-
-                        ProductValue { elements }
-                    })
-                    .collect_vec();
-
-                self._execute_insert(&table, insert_rows)
-            }
+            CrudExpr::Insert { table, rows } => self._execute_insert(&table, rows),
+            CrudExpr::Update { delete, assignments } => self._execute_update(&delete, assignments, sources),
             CrudExpr::Delete { query } => self._delete_query(&query, sources),
             CrudExpr::CreateTable { table } => self._create_table(table),
             CrudExpr::Drop { name, kind, .. } => self._drop(&name, kind),
