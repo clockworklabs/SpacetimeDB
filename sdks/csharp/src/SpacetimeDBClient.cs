@@ -50,9 +50,6 @@ namespace SpacetimeDB
             public AlgebraicValue rowValue;
         }
 
-        public delegate void RowUpdate(string tableName, TableOp op, object oldValue, object newValue,
-            SpacetimeDB.ReducerEventBase dbEvent);
-
         /// <summary>
         /// Called when a connection is established to a spacetimedb instance.
         /// </summary>
@@ -72,11 +69,6 @@ namespace SpacetimeDB
         /// Called when a connection that was established has disconnected.
         /// </summary>
         public event Action<WebSocketCloseStatus?, WebSocketError?> onDisconnect;
-
-        /// <summary>
-        /// Invoked on each row update to each table.
-        /// </summary>
-        public event RowUpdate onRowUpdate;
 
         /// <summary>
         /// Invoked when a subscription is about to start being processed. This is called even before OnBeforeDelete.
@@ -712,131 +704,85 @@ namespace SpacetimeDB
                 var oldValue = dbOps[i].oldValue;
                 var newValue = dbOps[i].newValue;
 
-                switch (tableOp)
-                {
-                    case TableOp.Insert:
-                        if (oldValue == null && newValue != null)
+                        switch (tableOp)
                         {
-                            try
-                            {
-                                if (dbOps[i].table.InsertCallback != null)
-                                {
-                                    dbOps[i].table.InsertCallback.Invoke(newValue,
-                                        message.TransactionUpdate?.Event);
-                                }
-                            }
-                            catch (Exception e)
-                            {
-                                Logger.LogException(e);
-                            }
-
-                            try
-                            {
-                                if (dbOps[i].table.RowUpdatedCallback != null)
-                                {
-                                    dbOps[i].table.RowUpdatedCallback
-                                        .Invoke(tableOp, null, newValue, message.TransactionUpdate?.Event);
-                                }
-                            }
-                            catch (Exception e)
-                            {
-                                Logger.LogException(e);
-                            }
-                        }
-                        else
-                        {
-                            Logger.LogError("Failed to send callback: invalid insert!");
-                        }
-
-                        break;
-                    case TableOp.Delete:
-                        {
-                            if (oldValue != null && newValue == null)
-                            {
-                                if (dbOps[i].table.DeleteCallback != null)
+                            case TableOp.Insert:
+                                if (oldValue == null && newValue != null)
                                 {
                                     try
                                     {
-                                        dbOps[i].table.DeleteCallback.Invoke(oldValue,
-                                            message.TransactionUpdate?.Event);
+                                        if (dbOps[i].table.InsertCallback != null)
+                                        {
+                                            dbOps[i].table.InsertCallback.Invoke(newValue,
+                                                message.TransactionUpdate?.Event);
+                                        }
                                     }
                                     catch (Exception e)
                                     {
                                         Logger.LogException(e);
                                     }
                                 }
-
-                                if (dbOps[i].table.RowUpdatedCallback != null)
+                                else
                                 {
-                                    try
-                                    {
-                                        dbOps[i].table.RowUpdatedCallback
-                                            .Invoke(tableOp, oldValue, null, message.TransactionUpdate?.Event);
-                                    }
-                                    catch (Exception e)
-                                    {
-                                        Logger.LogException(e);
-                                    }
+                                    Logger.LogError("Failed to send callback: invalid insert!");
                                 }
-                            }
-                            else
-                            {
-                                Logger.LogError("Failed to send callback: invalid delete");
-                            }
 
-                            break;
+                                break;
+                            case TableOp.Delete:
+                                {
+                                    if (oldValue != null && newValue == null)
+                                    {
+                                        if (dbOps[i].table.DeleteCallback != null)
+                                        {
+                                            try
+                                            {
+                                                dbOps[i].table.DeleteCallback.Invoke(oldValue,
+                                                    message.TransactionUpdate?.Event);
+                                            }
+                                            catch (Exception e)
+                                            {
+                                                Logger.LogException(e);
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Logger.LogError("Failed to send callback: invalid delete");
+                                    }
+
+                                    break;
+                                }
+                            case TableOp.Update:
+                                {
+                                    if (oldValue != null && newValue != null)
+                                    {
+                                        try
+                                        {
+                                            if (dbOps[i].table.UpdateCallback != null)
+                                            {
+                                                dbOps[i].table.UpdateCallback.Invoke(oldValue, newValue,
+                                                    message.TransactionUpdate?.Event);
+                                            }
+                                        }
+                                        catch (Exception e)
+                                        {
+                                            Logger.LogException(e);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Logger.LogError("Failed to send callback: invalid update");
+                                    }
+
+                                    break;
+                                }
+                            case TableOp.NoChange:
+                                // noop
+                                break;
+                            default:
+                                throw new ArgumentOutOfRangeException();
                         }
-                    case TableOp.Update:
-                        {
-                            if (oldValue != null && newValue != null)
-                            {
-                                try
-                                {
-                                    if (dbOps[i].table.UpdateCallback != null)
-                                    {
-                                        dbOps[i].table.UpdateCallback.Invoke(oldValue, newValue,
-                                            message.TransactionUpdate?.Event);
-                                    }
-                                }
-                                catch (Exception e)
-                                {
-                                    Logger.LogException(e);
-                                }
-
-                                try
-                                {
-                                    if (dbOps[i].table.RowUpdatedCallback != null)
-                                    {
-                                        dbOps[i].table.RowUpdatedCallback
-                                            .Invoke(tableOp, oldValue, newValue, message.TransactionUpdate?.Event);
-                                    }
-                                }
-                                catch (Exception e)
-                                {
-                                    Logger.LogException(e);
-                                }
-                            }
-                            else
-                            {
-                                Logger.LogError("Failed to send callback: invalid update");
-                            }
-
-                            break;
-                        }
-                    case TableOp.NoChange:
-                        // noop
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
-
-                if (tableOp != TableOp.NoChange)
-                {
-                    onRowUpdate?.Invoke(tableName, tableOp, oldValue, newValue,
-                        message.Event?.FunctionCall.CallInfo);
-                }
-            }
-        }
+                    }
 
         private void OnMessageProcessComplete(Message message, List<DbOp> dbOps)
         {
