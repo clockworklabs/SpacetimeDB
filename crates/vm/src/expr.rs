@@ -246,21 +246,9 @@ impl From<FieldName> for ColumnOp {
     }
 }
 
-impl From<FieldName> for Box<ColumnOp> {
-    fn from(value: FieldName) -> Self {
-        Box::new(ColumnOp::Field(value.into()))
-    }
-}
-
 impl From<AlgebraicValue> for ColumnOp {
     fn from(value: AlgebraicValue) -> Self {
         ColumnOp::Field(value.into())
-    }
-}
-
-impl From<AlgebraicValue> for Box<ColumnOp> {
-    fn from(value: AlgebraicValue) -> Self {
-        Box::new(ColumnOp::Field(value.into()))
     }
 }
 
