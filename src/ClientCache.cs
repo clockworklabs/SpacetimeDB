@@ -33,8 +33,6 @@ namespace SpacetimeDB
             public Action<object, ClientApi.Event> BeforeDeleteCallback;
             public Action<object, ClientApi.Event> DeleteCallback;
             public Action<object, object, ClientApi.Event> UpdateCallback;
-            // TODO: Consider renaming this one, this kind of implies that its a callback for the Update operation
-            public Action<SpacetimeDBClient.TableOp, object, object, ClientApi.Event> RowUpdatedCallback;
             public Func<AlgebraicType, AlgebraicValue, AlgebraicValue, bool> ComparePrimaryKeyFunc;
             public Func<AlgebraicValue, AlgebraicValue> GetPrimaryKeyValueFunc;
             public Func<AlgebraicType, AlgebraicType> GetPrimaryKeyTypeFunc;
@@ -62,8 +60,6 @@ namespace SpacetimeDB
                 BeforeDeleteCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnBeforeDeleteEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));
                 DeleteCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnDeleteEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));
                 UpdateCallback = (Action<object, object, ClientApi.Event>)clientTableType.GetMethod("OnUpdateEvent")?.CreateDelegate(typeof(Action<object, object, ClientApi.Event>));
-                RowUpdatedCallback = (Action<SpacetimeDBClient.TableOp, object, object, ClientApi.Event>)clientTableType.GetMethod("OnRowUpdateEvent")
-                    ?.CreateDelegate(typeof(Action<SpacetimeDBClient.TableOp, object, object, ClientApi.Event>));
                 ComparePrimaryKeyFunc = (Func<AlgebraicType, AlgebraicValue, AlgebraicValue, bool>)clientTableType.GetMethod("ComparePrimaryKey", BindingFlags.Static | BindingFlags.Public)
                     ?.CreateDelegate(typeof(Func<AlgebraicType, AlgebraicValue, AlgebraicValue, bool>));
                 GetPrimaryKeyValueFunc = (Func<AlgebraicValue, AlgebraicValue>)clientTableType.GetMethod("GetPrimaryKeyValue", BindingFlags.Static | BindingFlags.Public)

@@ -84,7 +84,6 @@ You can register for row update events on a table. To do this, you need to regis
 - `OnUpdate`: Called when a row is updated in the table.
 - `OnBeforeDelete`: Called before a row is deleted from the table.
 - `OnDelete`: Called when a row is deleted from the table.
-- `OnRowUpdate`: Called when a row is inserted, updated, or deleted from the table.
 
 Example:
 
@@ -95,7 +94,6 @@ PlayerComponent.OnInsert += PlayerComponent_OnInsert;
 PlayerComponent.OnUpdate += PlayerComponent_OnUpdate;
 PlayerComponent.OnDelete += PlayerComponent_OnDelete;
 PlayerComponent.OnBeforeDelete += PlayerComponent_OnBeforeDelete;
-PlayerComponent.OnRowUpdate += PlayerComponent_OnRowUpdate;
 ```
 
 You can register for reducer call updates as well.
@@ -131,5 +129,3 @@ using SpacetimeDB.Types;
 
 Reducer.MovePlayer(new StdbVector2(0.0f, 0.0f), new StdbVector2(1.0f, 1.0f));
 ```
-
-
