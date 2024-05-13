@@ -235,11 +235,15 @@ pub mod tests {
         }
     }
 
+    fn get_field_pos(table: &MemTable, pos: usize) -> FieldName {
+        *table.head.fields.get(pos).map(|x| &x.field).unwrap()
+    }
+
     #[test]
     fn test_select() {
         let p = &mut Program;
         let input = mem_table_one_u64(0.into());
-        let field = *input.get_field_pos(0).unwrap();
+        let field = get_field_pos(&input, 0);
         let mut sources = SourceSet::<_, 1>::empty();
         let source_expr = sources.add_mem_table(input);
 
@@ -263,7 +267,7 @@ pub mod tests {
         let source_expr = sources.add_mem_table(table.clone());
 
         let source = QueryExpr::new(source_expr);
-        let field = *table.get_field_pos(0).unwrap();
+        let field = get_field_pos(&table, 0);
         let q = source.clone().with_project([field.into()].into(), None).unwrap();
         let head = q.head().clone();
 
