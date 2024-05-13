@@ -169,7 +169,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     if clear_database {
         if force {
-            eprintln!("Skipping confirmation due to --force.");
+            println!("Skipping confirmation due to --force.");
         } else {
             // Note: `name_or_address` should be set, because it is `required` in the CLI arg config.
             println!(
@@ -191,7 +191,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         query_params.push(("clear", "true"));
     }
 
-    eprintln!("Publishing module...");
+    println!("Publishing module...");
 
     let mut builder = reqwest::Client::new().post(Url::parse_with_params(
         format!("{}/database/publish", database_host).as_str(),
