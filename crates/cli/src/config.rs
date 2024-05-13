@@ -105,6 +105,24 @@ pub struct RawConfig {
     server_configs: Vec<ServerConfig>,
 }
 
+fn create_parent_dir(file: &Path) -> anyhow::Result<()> {
+    let parent = file
+        .parent()
+        .with_context(|| format!("Cannot find the parent directory of path {file:?}"))?;
+
+    // If the `file` path is a relative path with no directory component,
+    // `parent` will be the empty path.
+    // In this case, do not attempt to create a directory.
+    if parent != Path::new("") {
+        // If the `file` path has a directory component,
+        // do `create_dir_all` to ensure it exists.
+        // If `parent` already exists as a directory, this is a no-op.
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create directory structure {parent:?} to contain {file:?}"))?;
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 /// A file used as an exclusive lock on access to another file.
 ///
@@ -123,19 +141,11 @@ impl Lockfile {
     /// Acquire an exclusive lock on the configuration file `config_path`.
     ///
     /// `config_path` should be the full name of the SpacetimeDB configuration file.
-    fn for_config(config_path: impl AsRef<Path>) -> anyhow::Result<Self> {
+    fn for_config(config_path: &Path) -> anyhow::Result<Self> {
         // Ensure the directory exists before attempting to create the lockfile.
-        let parent = config_path.as_ref().parent().unwrap();
-        if parent != Path::new("") {
-            std::fs::create_dir_all(parent).with_context(|| {
-                format!(
-                    "Unable to create directory {parent:?} to build lockfile for {:?}",
-                    config_path.as_ref(),
-                )
-            })?;
-        }
+        create_parent_dir(config_path)?;
 
-        let mut path = config_path.as_ref().to_path_buf();
+        let mut path = config_path.to_path_buf();
         path.set_extension("lock");
         // Open with `create_new`, which fails if the file already exists.
         std::fs::File::create_new(&path).with_context(|| {
@@ -933,10 +943,8 @@ impl Config {
             return;
         };
 
-        let parent = home_path.parent().unwrap();
-        if parent != Path::new("") {
-            std::fs::create_dir_all(parent).unwrap();
-        }
+        // If the `home_path` is in a directory, ensure it exists.
+        create_parent_dir(home_path).unwrap();
 
         let config = toml::to_string_pretty(&self.home).unwrap();
 
