@@ -13,6 +13,7 @@ jobs:
     steps:
       - id: not_based_on_master
         if: |
+          github.event_name == 'pull_request' &&
           github.event.pull_request.base.ref != 'master'
         run: |
           echo "This PR is not based on master. Please wait until the base PR merges."
