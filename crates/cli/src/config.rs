@@ -653,6 +653,20 @@ Fetch the server's fingerprint with:
 }
 
 impl Config {
+    /// Release the system configuration `Lockfile` contained in `self`, if it exists,
+    /// allowing other processes to access the configuration.
+    ///
+    /// This is equivalent to dropping `self`, but more explicit in purpose.
+    pub fn release_lock(self) {
+        // Just drop `self`, cleaning up its lockfile.
+        //
+        // If we had CLI subcommands which wanted to read a `Config` but never `Config::save` it,
+        // we could have this message take `&mut self` and set the `home_lock` to `None`.
+        // This seems unlikely to be useful,
+        // as many accesses to the `Config` will implicitly mutate and `save`,
+        // e.g. by creating a new identity if none exists.
+    }
+
     pub fn default_server_name(&self) -> Option<&str> {
         self.proj
             .default_server

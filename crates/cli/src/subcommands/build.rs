@@ -32,7 +32,7 @@ pub fn cli() -> clap::Command {
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     // Release the lockfile on the config, since we don't need it.
-    drop(config);
+    config.release_lock();
 
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let skip_clippy = args.get_flag("skip_clippy");

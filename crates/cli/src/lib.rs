@@ -61,7 +61,7 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
         #[cfg(feature = "standalone")]
         "start" => {
             // Release the lockfile on the config, since we don't need it.
-            drop(config);
+            config.release_lock();
             start::exec(args).await
         }
         "upgrade" => upgrade::exec(config, args).await,

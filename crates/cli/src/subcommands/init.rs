@@ -114,7 +114,7 @@ fn check_for_git() -> bool {
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     // Release the lockfile on the config, since we don't need it.
-    drop(config);
+    config.release_lock();
 
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
     let project_lang = *args.get_one::<ModuleLanguage>("lang").unwrap();

@@ -39,7 +39,7 @@ async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Result
 
 async fn exec_clear(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     // Release the lockfile on the config, since we don't need it.
-    drop(config);
+    config.release_lock();
 
     let force = args.get_flag("force");
     if std::env::var_os("STDB_PATH").map(PathBuf::from).is_none() {

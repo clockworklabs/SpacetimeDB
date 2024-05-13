@@ -123,7 +123,7 @@ async fn download_with_progress(client: &reqwest::Client, url: &str, temp_path: 
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     // Release the lockfile on the config, since we don't need it.
-    drop(config);
+    config.release_lock();
 
     let version = args.get_one::<String>("version");
     let current_exe_path = env::current_exe()?;
