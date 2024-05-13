@@ -8,99 +8,6 @@ using System.Threading.Tasks;
 
 namespace SpacetimeDB
 {
-    internal abstract class MainThreadDispatch
-    {
-        public abstract void Execute();
-    }
-
-    class OnConnectMessage : MainThreadDispatch
-    {
-        private WebSocketOpenEventHandler receiver;
-
-        public OnConnectMessage(WebSocketOpenEventHandler receiver)
-        {
-            this.receiver = receiver;
-        }
-
-        public override void Execute()
-        {
-            receiver.Invoke();
-        }
-    }
-
-    class OnDisconnectMessage : MainThreadDispatch
-    {
-        private WebSocketCloseEventHandler receiver;
-        private WebSocketError? error;
-        private WebSocketCloseStatus? status;
-
-        public OnDisconnectMessage(WebSocketCloseEventHandler receiver, WebSocketCloseStatus? status,
-            WebSocketError? error)
-        {
-            this.receiver = receiver;
-            this.error = error;
-            this.status = status;
-        }
-
-        public override void Execute()
-        {
-            receiver.Invoke(status, error);
-        }
-    }
-
-    class OnConnectErrorMessage : MainThreadDispatch
-    {
-        private WebSocketConnectErrorEventHandler receiver;
-        private WebSocketError? error;
-        private string? errorMsg;
-
-        public OnConnectErrorMessage(WebSocketConnectErrorEventHandler receiver, WebSocketError? error, string? errorMsg)
-        {
-            this.receiver = receiver;
-            this.error = error;
-            this.errorMsg = errorMsg;
-        }
-
-        public override void Execute()
-        {
-            receiver.Invoke(error, errorMsg);
-        }
-    }
-
-    class OnSendErrorMessage : MainThreadDispatch
-    {
-        private WebSocketSendErrorEventHandler receiver;
-        private Exception e;
-
-        public OnSendErrorMessage(WebSocketSendErrorEventHandler receiver, Exception e)
-        {
-            this.receiver = receiver;
-            this.e = e;
-        }
-
-        public override void Execute()
-        {
-            receiver.Invoke(e);
-        }
-    }
-
-    class OnMessage : MainThreadDispatch
-    {
-        private WebSocketMessageEventHandler receiver;
-        private byte[] message;
-
-        public OnMessage(WebSocketMessageEventHandler receiver, byte[] message)
-        {
-            this.receiver = receiver;
-            this.message = message;
-        }
-
-        public override void Execute()
-        {
-            receiver.Invoke(message);
-        }
-    }
-
     public delegate void WebSocketOpenEventHandler();
 
     public delegate void WebSocketMessageEventHandler(byte[] message);
@@ -124,7 +31,7 @@ namespace SpacetimeDB
         // Connection parameters
         private readonly ConnectOptions _options;
         private readonly byte[] _receiveBuffer = new byte[MAXMessageSize];
-        private readonly ConcurrentQueue<MainThreadDispatch> dispatchQueue = new();
+        private readonly ConcurrentQueue<Action> dispatchQueue = new();
 
         protected ClientWebSocket Ws = new();
 
@@ -161,24 +68,22 @@ namespace SpacetimeDB
             try
             {
                 await Ws.ConnectAsync(url, source.Token);
-                if (OnConnect != null) dispatchQueue.Enqueue(new OnConnectMessage(OnConnect));
+                if (OnConnect != null) dispatchQueue.Enqueue(() => OnConnect());
             }
-            catch (WebSocketException ex)
+            catch (Exception ex)
             {
-                string message = ex.Message;
-                if (ex.WebSocketErrorCode == WebSocketError.NotAWebSocket)
-                {
-                    // not a websocket happens when there is no module published under the address specified
-                    message = $"{message} Did you forget to publish your module?";
-                }
                 Logger.LogException(ex);
-                if (OnConnectError != null) dispatchQueue.Enqueue(new OnConnectErrorMessage(OnConnectError, ex.WebSocketErrorCode, message));
-                return;
-            }
-            catch (Exception e)
-            {
-                Logger.LogException(e);
-                if (OnConnectError != null) dispatchQueue.Enqueue(new OnConnectErrorMessage(OnConnectError, null, e.Message));
+                if (OnConnectError != null)
+                {
+                    var message = ex.Message;
+                    var code = (ex as WebSocketException)?.WebSocketErrorCode;
+                    if (code == WebSocketError.NotAWebSocket)
+                    {
+                        // not a websocket happens when there is no module published under the address specified
+                        message += " Did you forget to publish your module?";
+                    }
+                    dispatchQueue.Enqueue(() => OnConnectError(code, message));
+                }
                 return;
             }
 
@@ -195,7 +100,7 @@ namespace SpacetimeDB
                             await Ws.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty,
                             CancellationToken.None);
                         }
-                        if (OnClose != null) dispatchQueue.Enqueue(new OnDisconnectMessage(OnClose, receiveResult.CloseStatus, null));
+                        if (OnClose != null) dispatchQueue.Enqueue(() => OnClose(receiveResult.CloseStatus, null));
                         return;
                     }
 
@@ -208,7 +113,7 @@ namespace SpacetimeDB
                             var closeMessage = $"Maximum message size: {MAXMessageSize} bytes.";
                             await Ws.CloseAsync(WebSocketCloseStatus.MessageTooBig, closeMessage,
                                 CancellationToken.None);
-                            if (OnClose != null) dispatchQueue.Enqueue(new OnDisconnectMessage(OnClose, WebSocketCloseStatus.MessageTooBig, null));
+                            if (OnClose != null) dispatchQueue.Enqueue(() => OnClose(WebSocketCloseStatus.MessageTooBig, null));
                             return;
                         }
 
@@ -218,11 +123,15 @@ namespace SpacetimeDB
                         count += receiveResult.Count;
                     }
 
-                    if (OnMessage != null) dispatchQueue.Enqueue(new OnMessage(OnMessage, _receiveBuffer.Take(count).ToArray()));
+                    if (OnMessage != null)
+                    {
+                        var message = _receiveBuffer.Take(count).ToArray();
+                        dispatchQueue.Enqueue(() => OnMessage(message));
+                    }
                 }
                 catch (WebSocketException ex)
                 {
-                    if (OnClose != null) dispatchQueue.Enqueue(new OnDisconnectMessage(OnClose, null, ex.WebSocketErrorCode));
+                    if (OnClose != null) dispatchQueue.Enqueue(() => OnClose(null, ex.WebSocketErrorCode));
                     return;
                 }
             }
@@ -278,7 +187,7 @@ namespace SpacetimeDB
             catch (Exception e)
             {
                 senderTask = null;
-                if (OnSendError != null) dispatchQueue.Enqueue(new OnSendErrorMessage(OnSendError, e));
+                if (OnSendError != null) dispatchQueue.Enqueue(() => OnSendError(e));
             }
         }
 
@@ -291,7 +200,7 @@ namespace SpacetimeDB
         {
             while (dispatchQueue.TryDequeue(out var result))
             {
-                result.Execute();
+                result();
             }
         }
     }
