@@ -2,7 +2,7 @@ use core::hash::{Hash, Hasher};
 use spacetimedb_sats::bsatn::ser::BsatnError;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::product_value::ProductValue;
-use spacetimedb_sats::relation::{ColExpr, ColExprRef, FieldName, Header};
+use spacetimedb_sats::relation::{ColExpr, ColExprRef, Header};
 use spacetimedb_sats::{bsatn, impl_serialize, AlgebraicValue};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
@@ -197,9 +197,5 @@ impl MemTable {
             data: data.into_iter().collect(),
             table_access: StAccess::Public,
         }
-    }
-
-    pub fn get_field_pos(&self, pos: usize) -> Option<&FieldName> {
-        self.head.fields.get(pos).map(|x| &x.field)
     }
 }
