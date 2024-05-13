@@ -7,12 +7,16 @@ static GLOBAL: MiMalloc = MiMalloc;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    // Compute matches before loading the config, because `Config` has an observable `drop` method
+    // (which deletes a lockfile),
+    // and Clap calls `exit` on parse failure rather than panicing, so destructors never run.
+    let matches = get_command().get_matches();
+    let (cmd, subcommand_args) = matches.subcommand().unwrap();
+
     let config = Config::load();
     // Save a default version to disk
     config.save();
 
-    let matches = get_command().get_matches();
-    let (cmd, subcommand_args) = matches.subcommand().unwrap();
     exec_subcommand(config, cmd, subcommand_args).await?;
 
     Ok(())

@@ -17,7 +17,10 @@ pub fn cli() -> clap::Command {
         )
 }
 
-pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    // Release the lockfile on the config, since we don't need it.
+    config.release_lock();
+
     if args.get_flag("cli") {
         println!("{}", CLI_VERSION);
         return Ok(());
