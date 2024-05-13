@@ -15,6 +15,7 @@ use spacetimedb::identity::Identity;
 
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
+/// Credentials for login for a spacetime identity, represented as a JWT.
 // Yes, this is using basic auth. See the below issues.
 // The current form is: Authorization: Basic base64("token:<token>")
 // FOOLS, the lot of them!
@@ -48,17 +49,21 @@ impl authorization::Credentials for SpacetimeCreds {
 }
 
 impl SpacetimeCreds {
+    /// The JWT token representing these credentials.
     pub fn token(&self) -> &str {
         &self.token
     }
+    /// Decode this token into auth claims.
     pub fn decode_token(&self, public_key: &DecodingKey) -> Result<SpacetimeIdentityClaims, JwtError> {
         decode_token(public_key, self.token()).map(|x| x.claims)
     }
+    /// Mint a new credentials JWT for an identity.
     pub fn encode_token(private_key: &EncodingKey, identity: Identity) -> Result<Self, JwtError> {
         let token = encode_token(private_key, identity)?;
         Ok(Self { token })
     }
 
+    /// Extract credentials from the headers or else query string of a request.
     fn from_request_parts(parts: &request::Parts) -> Result<Option<Self>, headers::Error> {
         let res = match parts.headers.typed_try_get::<headers::Authorization<Self>>() {
             Ok(Some(headers::Authorization(creds))) => return Ok(Some(creds)),
@@ -83,12 +88,14 @@ pub struct SpacetimeAuth {
 }
 
 impl SpacetimeAuth {
+    /// Allocate a new identity, and mint a new token for it.
     pub async fn alloc(ctx: &(impl NodeDelegate + ControlStateDelegate + ?Sized)) -> axum::response::Result<Self> {
         let identity = ctx.create_identity().await.map_err(log_and_500)?;
         let creds = SpacetimeCreds::encode_token(ctx.private_key(), identity).map_err(log_and_500)?;
         Ok(Self { creds, identity })
     }
 
+    /// Get the auth credentials as headers to be returned from an endpoint.
     pub fn into_headers(self) -> (TypedHeader<SpacetimeIdentity>, TypedHeader<SpacetimeIdentityToken>) {
         let Self { creds, identity } = self;
         (
