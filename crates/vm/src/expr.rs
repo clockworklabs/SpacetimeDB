@@ -1915,19 +1915,6 @@ impl From<QueryExpr> for Expr {
     }
 }
 
-impl fmt::Display for SourceExpr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SourceExpr::InMemory { header, source_id, .. } => {
-                write!(f, "SourceExpr({source_id:?} => virtual {header})")
-            }
-            SourceExpr::DbTable(x) => {
-                write!(f, "DbTable({})", x.table_id)
-            }
-        }
-    }
-}
-
 impl fmt::Display for Query {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -1983,16 +1970,6 @@ impl AuthAccess for QueryExpr {
         }
 
         Ok(())
-    }
-}
-
-impl Relation for QueryExpr {
-    fn head(&self) -> &Arc<Header> {
-        self.source.head()
-    }
-
-    fn row_count(&self) -> RowCount {
-        self.source.row_count()
     }
 }
 
