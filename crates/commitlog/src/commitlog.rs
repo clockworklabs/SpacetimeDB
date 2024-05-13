@@ -290,7 +290,7 @@ impl<R: Repo> Iterator for Segments<R> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let off = self.offs.next()?;
-        debug!("iter segment {off}");
+        trace!("iter segment {off}");
         Some(repo::open_segment_reader(&self.repo, self.max_log_format_version, off))
     }
 }

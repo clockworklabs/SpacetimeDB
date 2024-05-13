@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use log::debug;
+use log::trace;
 use tokio::{
     sync::watch,
     task::spawn_blocking,
@@ -106,7 +106,7 @@ impl<T> Commitlog<T> {
     /// been flushed to disk yet.
     pub fn sync(&self) -> io::Result<Option<u64>> {
         let inner = self.inner.read().unwrap();
-        debug!("sync commitlog");
+        trace!("sync commitlog");
         inner.sync()?;
 
         Ok(inner.max_committed_offset())
@@ -124,7 +124,7 @@ impl<T> Commitlog<T> {
     /// Repeatedly calling this method may return the same value.
     pub fn flush(&self) -> io::Result<Option<u64>> {
         let mut inner = self.inner.write().unwrap();
-        debug!("flush commitlog");
+        trace!("flush commitlog");
         inner.commit()?;
 
         Ok(inner.max_committed_offset())
@@ -136,7 +136,7 @@ impl<T> Commitlog<T> {
     /// without releasing the write lock in between.
     pub fn flush_and_sync(&self) -> io::Result<Option<u64>> {
         let mut inner = self.inner.write().unwrap();
-        debug!("flush and sync commitlog");
+        trace!("flush and sync commitlog");
         inner.commit()?;
         inner.sync()?;
 
