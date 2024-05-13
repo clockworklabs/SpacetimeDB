@@ -129,12 +129,16 @@ impl<T: Encode> Txdata<T> {
         }
     }
 
+    /// Decode `Self` from the given buffer.
     pub fn decode<'a, V, R>(visitor: &mut V, reader: &mut R) -> Result<Self, V::Error>
     where
         V: Visitor<Row = T>,
         R: BufReader<'a>,
     {
         let flags = Flags::from_bits_retain(reader.get_u8()?);
+
+        // If the flags indicate that the payload contains `Inputs`,
+        // try to decode and visit them.
         let inputs = flags
             .contains(Flags::HAVE_INPUTS)
             .then(|| Inputs::decode(reader))
@@ -143,6 +147,8 @@ impl<T: Encode> Txdata<T> {
             visitor.visit_inputs(inputs)?;
         }
 
+        // If the flags indicate that the payload contains `Outputs`,
+        // try to decode and visit them.
         let outputs = flags
             .contains(Flags::HAVE_OUTPUTS)
             .then(|| Outputs::decode(reader))
@@ -151,6 +157,8 @@ impl<T: Encode> Txdata<T> {
             visitor.visit_outputs(outputs)?;
         }
 
+        // If the flags indicate that the payload contains `Mutations`,
+        // try to decode them.
         let mutations = flags
             .contains(Flags::HAVE_MUTATIONS)
             .then(|| Mutations::decode(visitor, reader))
@@ -161,6 +169,41 @@ impl<T: Encode> Txdata<T> {
             outputs,
             mutations,
         })
+    }
+
+    /// Variant of [`Self::decode`] which doesn't allocate `Self`.
+    ///
+    /// Useful for folding traversals where the visitor state suffices.
+    /// Note that both [`Inputs`] and [`Outputs`] are still allocated to satisfy
+    /// the [`Visitor`] trait, but [`Mutations`] aren't.
+    pub fn consume<'a, V, R>(visitor: &mut V, reader: &mut R) -> Result<(), V::Error>
+    where
+        V: Visitor<Row = T>,
+        R: BufReader<'a>,
+    {
+        let flags = Flags::from_bits_retain(reader.get_u8()?);
+
+        // If the flags indicate that the payload contains `Inputs`,
+        // try to decode and visit them.
+        if flags.contains(Flags::HAVE_INPUTS) {
+            let inputs = Inputs::decode(reader)?;
+            visitor.visit_inputs(&inputs)?;
+        }
+
+        // If the flags indicate that the payload contains `Outputs`,
+        // try to decode and visit them.
+        if flags.contains(Flags::HAVE_OUTPUTS) {
+            let outputs = Outputs::decode(reader)?;
+            visitor.visit_outputs(&outputs)?;
+        }
+
+        // If the flags indicate that the payload contains `Mutations`,
+        // try to consume them (i.e. decode but don't allocate).
+        if flags.contains(Flags::HAVE_MUTATIONS) {
+            Mutations::consume(visitor, reader)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -285,6 +328,8 @@ impl<T: Encode> Mutations<T> {
         V: Visitor<Row = T>,
         R: BufReader<'a>,
     {
+        // Extract, visit and collect the 'insert' operations.
+        // The row data of a single 'insert' operation is extracted by the visitor.
         let n = decode_varint(reader)?;
         let mut inserts = Vec::with_capacity(n);
         for _ in 0..n {
@@ -301,6 +346,8 @@ impl<T: Encode> Mutations<T> {
             });
         }
 
+        // Extract, visit and collect the 'delete' operations.
+        // The row data of a single 'delete' operation is extracted by the visitor.
         let n = decode_varint(reader)?;
         let mut deletes = Vec::with_capacity(n);
         for _ in 0..n {
@@ -317,6 +364,8 @@ impl<T: Encode> Mutations<T> {
             });
         }
 
+        // Extract, visit and collect the 'truncate' operations.
+        // 'truncate' operations don't have row data.
         let n = decode_varint(reader)?;
         let mut truncates = Vec::with_capacity(n);
         for _ in 0..n {
@@ -330,6 +379,46 @@ impl<T: Encode> Mutations<T> {
             deletes: deletes.into(),
             truncates: truncates.into(),
         })
+    }
+
+    /// Variant of [`Self::decode`] which does not allocate `Self`.
+    ///
+    /// Useful for folding traversals where the visitor state suffices.
+    pub fn consume<'a, V, R>(visitor: &mut V, reader: &mut R) -> Result<(), V::Error>
+    where
+        V: Visitor<Row = T>,
+        R: BufReader<'a>,
+    {
+        // Extract and visit the 'insert' operations.
+        // Any row data returned by the visitor is discarded.
+        let n = decode_varint(reader)?;
+        for _ in 0..n {
+            let table_id = reader.get_u32().map(TableId)?;
+            let m = decode_varint(reader)?;
+            for _ in 0..m {
+                visitor.visit_insert(table_id, reader)?;
+            }
+        }
+
+        // Extract and visit the 'delete' operations.
+        // Any row data returned by the visitor is discarded.
+        let n = decode_varint(reader)?;
+        for _ in 0..n {
+            let table_id = reader.get_u32().map(TableId)?;
+            let m = decode_varint(reader)?;
+            for _ in 0..m {
+                visitor.visit_delete(table_id, reader)?;
+            }
+        }
+
+        // Extract and visit the 'truncate' operations.
+        let n = decode_varint(reader)?;
+        for _ in 0..n {
+            let table_id = reader.get_u32().map(TableId)?;
+            visitor.visit_truncate(table_id)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -388,6 +477,38 @@ where
     V::Row: Encode,
     R: BufReader<'a>,
 {
+    process_record(visitor, version, tx_offset, reader, Txdata::decode)
+}
+
+/// Variant of [`decode_record_fn`] which expects, but doesn't allocate
+/// [`Txdata`] records.
+pub fn consume_record_fn<'a, V, R>(
+    visitor: &mut V,
+    version: u8,
+    tx_offset: u64,
+    reader: &mut R,
+) -> Result<(), DecoderError<V::Error>>
+where
+    V: Visitor,
+    V::Row: Encode,
+    R: BufReader<'a>,
+{
+    process_record(visitor, version, tx_offset, reader, Txdata::consume)
+}
+
+fn process_record<'a, V, R, F, T>(
+    visitor: &mut V,
+    version: u8,
+    tx_offset: u64,
+    reader: &mut R,
+    decode_txdata: F,
+) -> Result<T, DecoderError<V::Error>>
+where
+    V: Visitor,
+    V::Row: Encode,
+    R: BufReader<'a>,
+    F: FnOnce(&mut V, &mut R) -> Result<T, V::Error>,
+{
     if version > Txdata::<V::Row>::VERSION {
         return Err(DecoderError::UnsupportedVersion {
             supported: Txdata::<V::Row>::VERSION,
@@ -395,7 +516,7 @@ where
         });
     }
     visitor.visit_tx_start(tx_offset).map_err(DecoderError::Visitor)?;
-    let record = Txdata::decode(visitor, reader).map_err(DecoderError::Visitor)?;
+    let record = decode_txdata(visitor, reader).map_err(DecoderError::Visitor)?;
     visitor.visit_tx_end().map_err(DecoderError::Visitor)?;
 
     Ok(record)
