@@ -8,12 +8,10 @@ using System.Net.WebSockets;
 using System.Reflection;
 using System.Text;
 using System.Threading;
-using System.Threading.Channels;
 using System.Threading.Tasks;
 using ClientApi;
 using Newtonsoft.Json;
 using SpacetimeDB.SATS;
-using Channel = System.Threading.Channels.Channel;
 using Thread = System.Threading.Thread;
 
 namespace SpacetimeDB
@@ -101,14 +99,11 @@ namespace SpacetimeDB
         private bool connectionClosed;
         public static ClientCache clientDB;
 
-        public static Dictionary<string, Func<ClientApi.Event, bool>> reducerEventCache =
-            new Dictionary<string, Func<ClientApi.Event, bool>>();
+        private static Dictionary<string, Func<ClientApi.Event, bool>> reducerEventCache = new();
 
-        public static Dictionary<string, Action<ClientApi.Event>> deserializeEventCache =
-            new Dictionary<string, Action<ClientApi.Event>>();
+        private static Dictionary<string, Action<ClientApi.Event>> deserializeEventCache = new();
 
-        private static Dictionary<Guid, Channel<OneOffQueryResponse>> waitingOneOffQueries =
-            new Dictionary<Guid, Channel<OneOffQueryResponse>>();
+        private static Dictionary<Guid, TaskCompletionSource<OneOffQueryResponse>> waitingOneOffQueries = new();
 
         private bool isClosing;
         private Thread networkMessageProcessThread;
@@ -459,16 +454,15 @@ namespace SpacetimeDB
                     case ClientApi.Message.TypeOneofCase.OneOffQueryResponse:
                         /// This case does NOT produce a list of DBOps, because it should not modify the client cache state!
                         var resp = message.OneOffQueryResponse;
-                        Guid messageId = new Guid(resp.MessageId.Span);
+                        var messageId = new Guid(resp.MessageId.Span);
 
-                        if (!waitingOneOffQueries.ContainsKey(messageId))
+                        if (!waitingOneOffQueries.Remove(messageId, out var resultSource))
                         {
                             Logger.LogError("Response to unknown one-off-query: " + messageId);
                             break;
                         }
 
-                        waitingOneOffQueries[messageId].Writer.TryWrite(resp);
-                        waitingOneOffQueries.Remove(messageId);
+                        resultSource.SetResult(resp);
                         break;
                 }
 
@@ -897,10 +891,10 @@ namespace SpacetimeDB
         /// Usage: SpacetimeDBClient.instance.OneOffQuery<Message>("WHERE sender = \"bob\"");
         public async Task<T[]> OneOffQuery<T>(string query) where T : IDatabaseTable
         {
-            Guid messageId = Guid.NewGuid();
-            Type type = typeof(T);
-            Channel<OneOffQueryResponse> resultChannel = Channel.CreateBounded<OneOffQueryResponse>(1);
-            waitingOneOffQueries[messageId] = resultChannel;
+            var messageId = Guid.NewGuid();
+            var type = typeof(T);
+            var resultSource = new TaskCompletionSource<OneOffQueryResponse>();
+            waitingOneOffQueries[messageId] = resultSource;
 
             // unsanitized here, but writes will be prevented serverside.
             // the best they can do is send multiple selects, which will just result in them getting no data back.
@@ -913,7 +907,7 @@ namespace SpacetimeDB
             webSocket.Send(Encoding.UTF8.GetBytes(serializedQuery));
 
             // Suspend for an arbitrary amount of time
-            var result = await resultChannel.Reader.ReadAsync();
+            var result = await resultSource.Task;
 
             T[] LogAndThrow(string error)
             {
