@@ -29,7 +29,7 @@ pub fn cli() -> clap::Command {
                 .long("clear-database")
                 .short('c')
                 .action(SetTrue)
-                .requires("name_or_address")
+                .requires("name|address")
                 .help("When publishing to an existing address, first DESTROY all data associated with the module"),
         )
         .arg(
