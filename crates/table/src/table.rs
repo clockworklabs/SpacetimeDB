@@ -718,17 +718,27 @@ impl<'a> RowRef<'a> {
     /// and may therefore be faster than calling [`bsatn::to_vec`].
     pub fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
         if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
-            let mut vec = vec![0; static_bsatn_layout.bsatn_length as usize];
+            // Create an uninitialized buffer `buf` of the correct length.
+            let bsatn_len = static_bsatn_layout.bsatn_length as usize;
+            let mut buf = Vec::with_capacity(bsatn_len);
+            let sink = buf.spare_capacity_mut();
+
+            // Find the row referred to by `self`.
             let (page, offset) = self.page_and_offset();
             let row = page.get_row_data(offset, self.table.row_layout.size());
-            // Safety:
+
+            // (1) Write the row into the slice using a series of `memcpy`s.
+            // SAFETY:
             // - Existence of a `RowRef` treated as proof
             //   of row's validity and type information's correctness.
-            // - `vec` constructed with exactly correct length above.
+            // - `vec` was constructed with exactly the correct length above.
             unsafe {
-                static_bsatn_layout.serialize_row_into(&mut vec, row);
+                static_bsatn_layout.serialize_row_into(sink, row);
             }
-            Ok(vec)
+
+            // SAFETY: In (1), we initialized `0..len`.
+            unsafe { buf.set_len(bsatn_len) }
+            Ok(buf)
         } else {
             bsatn::to_vec(self)
         }
@@ -741,25 +751,29 @@ impl<'a> RowRef<'a> {
     /// and may therefore be faster than calling [`bsatn::to_writer`].
     pub fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
         if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
-            // Get an initially-zeroed slice within `buf` of the correct length.
+            // Get an uninitialized slice within `buf` of the correct length.
             let start = buf.len();
             let len = static_bsatn_layout.bsatn_length as usize;
             buf.reserve(len);
-            buf.extend(std::iter::repeat(0).take(len));
-            let buf = &mut buf[start..start + len];
+            let sink = &mut buf.spare_capacity_mut()[..len];
 
             // Find the row referred to by `self`.
             let (page, offset) = self.page_and_offset();
             let row = page.get_row_data(offset, self.table.row_layout.size());
 
-            // Write the row into the slice using a series of `memcpy`s.
-            // Safety:
+            // (1) Write the row into the slice using a series of `memcpy`s.
+            // SAFETY:
             // - Existence of a `RowRef` treated as proof
             //   of row's validity and type information's correctness.
-            // - `buf` constructed with exactly correct length above.
+            // - `sink` was constructed with exactly the correct length above.
             unsafe {
-                static_bsatn_layout.serialize_row_into(buf, row);
+                static_bsatn_layout.serialize_row_into(sink, row);
             }
+
+            // SAFETY: In (1), we initialized `start .. start + len`
+            // and we had initialized up to `start` before,
+            // so now we have initialized up to `start + len`.
+            unsafe { buf.set_len(start + len) }
 
             Ok(())
         } else {

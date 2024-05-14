@@ -20,14 +20,16 @@
 //! one of 20 bytes to copy the leading `(u64, u64, u32)`, which contains no padding,
 //! and then one of 8 bytes to copy the trailing `u64`, skipping over 4 bytes of padding in between.
 
-use crate::{
-    indexes::Bytes,
+use super::{
+    indexes::{Byte, Bytes},
     layout::{
         AlgebraicTypeLayout, HasLayout, PrimitiveType, ProductTypeElementLayout, ProductTypeLayout, RowTypeLayout,
         SumTypeLayout, SumTypeVariantLayout,
     },
     util::range_move,
 };
+use core::mem::MaybeUninit;
+use core::ptr;
 
 /// A precomputed BSATN layout for a type whose encoded length is a known constant,
 /// enabling fast BFLATN -> BSATN conversion.
@@ -55,11 +57,7 @@ impl StaticBsatnLayout {
     ///   for which `self` was computed.
     ///   As a consequence of this, for every `field` in `self.fields`,
     ///   `row[field.bflatn_offset .. field.bflatn_offset + length]` will be initialized.
-    // TODO(perf): We could take `buf: &mut Bytes` to avoid needing to zero the buffer before calling.
-    // This method will always fully inialize `buf[0..self.bsatn_length]`.
-    // Some complexity here as `RowRef::to_bsatn_extend` must maintain panic-safety,
-    // so it must do `Vec::reserve`, followed by `serialize_row_into`, and only then `Vec::set_len`.
-    pub unsafe fn serialize_row_into(&self, buf: &mut [u8], row: &Bytes) {
+    pub unsafe fn serialize_row_into(&self, buf: &mut [MaybeUninit<Byte>], row: &Bytes) {
         debug_assert!(buf.len() >= self.bsatn_length as usize);
         for field in &self.fields[..] {
             // SAFETY: forward caller requirements.
@@ -101,19 +99,28 @@ struct MemcpyField {
 }
 
 impl MemcpyField {
-    /// Copies the bytes at `row[self.bflatn_offset ..  self.bflatn_offset + self.length]`
+    /// Copies the bytes at `row[self.bflatn_offset .. self.bflatn_offset + self.length]`
     /// into `buf[self.bsatn_offset + self.length]`.
     ///
     /// # Safety
     ///
-    /// - `buf` must be at least `self.bsatn_offset + self.length` long.
-    /// - `row` must be at least `self.bflatn_offset + self.length` long.
-    unsafe fn copy(&self, buf: &mut [u8], row: &Bytes) {
+    /// - `buf` must be exactly `self.bsatn_offset + self.length` long.
+    /// - `row` must be exactly `self.bflatn_offset + self.length` long.
+    unsafe fn copy(&self, buf: &mut [MaybeUninit<Byte>], row: &Bytes) {
+        let len = self.length as usize;
         // SAFETY: forward caller requirement #1.
-        let to = unsafe { buf.get_unchecked_mut(range_move(0..self.length as usize, self.bsatn_offset as usize)) };
+        let to = unsafe { buf.get_unchecked_mut(range_move(0..len, self.bsatn_offset as usize)) };
+        let dst = to.as_mut_ptr().cast();
         // SAFETY: forward caller requirement #2.
-        let from = unsafe { row.get_unchecked(range_move(0..self.length as usize, self.bflatn_offset as usize)) };
-        to.copy_from_slice(from);
+        let from = unsafe { row.get_unchecked(range_move(0..len, self.bflatn_offset as usize)) };
+        let src = from.as_ptr();
+
+        // SAFETY:
+        // 1. `src` is valid for reads for `len` bytes as it came from `from`, a shared slice.
+        // 2. `dst` is valid for writes for `len` bytes as it came from `to`, an exclusive slice.
+        // 3. Alignment for `u8` is trivially satisfied for any pointer.
+        // 4. As `from` and `to` are shared and exclusive slices, they cannot overlap.
+        unsafe { ptr::copy_nonoverlapping(src, dst, len) }
     }
 
     fn is_empty(&self) -> bool {
@@ -487,10 +494,13 @@ mod test {
             let (page, offset) = row_ref.page_and_offset();
             let bytes = page.get_row_data(offset, size);
 
-            let mut fast_path = vec![0u8; bsatn_layout.bsatn_length as usize];
+            let len = bsatn_layout.bsatn_length as usize;
+            let mut fast_path = Vec::with_capacity(len);
+            let buf = fast_path.spare_capacity_mut();
             unsafe {
-                bsatn_layout.serialize_row_into(&mut fast_path, bytes);
+                bsatn_layout.serialize_row_into(buf, bytes);
             }
+            unsafe { fast_path.set_len(len); }
 
             assert_eq!(slow_path, fast_path);
         }
