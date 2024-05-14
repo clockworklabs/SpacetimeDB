@@ -4,7 +4,8 @@ use crate::relation::{MemTable, RelValue};
 use arrayvec::ArrayVec;
 use core::slice::from_ref;
 use derive_more::From;
-use smallvec::{smallvec, SmallVec};
+use itertools::Itertools;
+use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashSet, IntMap};
 use spacetimedb_lib::{AlgebraicType, Identity};
 use spacetimedb_primitives::*;
@@ -15,6 +16,7 @@ use spacetimedb_sats::db::error::{AuthError, RelationError};
 use spacetimedb_sats::relation::{ColExpr, DbTable, FieldName, Header};
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::ProductValue;
+use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
@@ -90,7 +92,7 @@ impl FieldOp {
 
     pub fn names_to_cols(self, head: &Header) -> Result<ColumnOp, RelationError> {
         match self {
-            Self::Field(field) => field.name_to_col(head).map(ColumnOp::Col),
+            Self::Field(field) => field.name_to_col(head).map(ColumnOp::from),
             Self::Cmp { op, lhs, rhs } => {
                 let lhs = lhs.names_to_cols(head)?;
                 let rhs = rhs.names_to_cols(head)?;
@@ -141,54 +143,110 @@ impl fmt::Display for FieldOp {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
 pub enum ColumnOp {
+    /// The value is the the column at `to_index(col)` in the row, i.e., `row.read_column(to_index(col))`.
     #[from]
-    Col(ColExpr),
+    Col(ColId),
+    /// The value is the embedded value.
+    #[from]
+    Val(AlgebraicValue),
+    /// The value is `eval_cmp(cmp, row.read_column(to_index(lhs)), rhs)`.
+    /// This is an optimized version of `Cmp`, avoiding one depth of nesting.
+    ColCmpVal {
+        lhs: ColId,
+        cmp: OpCmp,
+        rhs: AlgebraicValue,
+    },
+    /// The value is `eval_cmp(cmp, eval(row, lhs), eval(row, rhs))`.
     Cmp {
-        op: OpQuery,
         lhs: Box<ColumnOp>,
+        cmp: OpCmp,
         rhs: Box<ColumnOp>,
     },
+    /// Let `conds = eval(row, operands_i)`.
+    /// For `op = OpLogic::And`, the value is `all(conds)`.
+    /// For `op = OpLogic::Or`, the value is `any(conds)`.
+    Log { op: OpLogic, operands: Box<[ColumnOp]> },
 }
-
-type ColumnOpRefFlat<'a> = SmallVec<[&'a ColumnOp; 1]>;
 
 impl ColumnOp {
     pub fn new(op: OpQuery, lhs: Self, rhs: Self) -> Self {
-        Self::Cmp {
-            op,
-            lhs: Box::new(lhs),
-            rhs: Box::new(rhs),
+        match op {
+            OpQuery::Cmp(cmp) => match (lhs, rhs) {
+                (ColumnOp::Col(lhs), ColumnOp::Val(rhs)) => Self::cmp(lhs, cmp, rhs),
+                (lhs, rhs) => Self::Cmp {
+                    lhs: Box::new(lhs),
+                    cmp,
+                    rhs: Box::new(rhs),
+                },
+            },
+            OpQuery::Logic(op) => Self::Log {
+                op,
+                operands: [lhs, rhs].into(),
+            },
         }
     }
 
-    pub fn cmp(col: impl Into<ColId>, op: OpCmp, value: impl Into<AlgebraicValue>) -> Self {
-        Self::new(
-            OpQuery::Cmp(op),
-            Self::Col(ColExpr::Col(col.into())),
-            Self::Col(ColExpr::Value(value.into())),
-        )
+    pub fn cmp(col: impl Into<ColId>, cmp: OpCmp, val: impl Into<AlgebraicValue>) -> Self {
+        let lhs = col.into();
+        let rhs = val.into();
+        Self::ColCmpVal { lhs, cmp, rhs }
     }
 
     /// Returns a new op where `lhs` and `rhs` are logically AND-ed together.
     fn and(lhs: Self, rhs: Self) -> Self {
-        Self::new(OpQuery::Logic(OpLogic::And), lhs, rhs)
+        let ands = |operands| {
+            let op = OpLogic::And;
+            Self::Log { op, operands }
+        };
+
+        match (lhs, rhs) {
+            // Merge a pair of ⋀ into a single ⋀.
+            (
+                Self::Log {
+                    op: OpLogic::And,
+                    operands: lhs,
+                },
+                Self::Log {
+                    op: OpLogic::And,
+                    operands: rhs,
+                },
+            ) => {
+                let mut operands = Vec::from(lhs);
+                operands.append(&mut Vec::from(rhs));
+                ands(operands.into())
+            }
+            // Merge ⋀ with a single operand.
+            (
+                Self::Log {
+                    op: OpLogic::And,
+                    operands: lhs,
+                },
+                rhs,
+            ) => {
+                let mut operands = Vec::from(lhs);
+                operands.push(rhs);
+                ands(operands.into())
+            }
+            // And together lhs and rhs.
+            (lhs, rhs) => ands([lhs, rhs].into()),
+        }
     }
 
     /// Returns an op where `col_i op value_i` are all `AND`ed together.
     fn and_cmp(op: OpCmp, cols: &ColList, value: AlgebraicValue) -> Self {
-        let eq = |(col, value): (ColId, _)| Self::cmp(col, op, value);
+        let cmp = |(col, value): (ColId, _)| Self::cmp(col, op, value);
 
         // For singleton constraints, the `value` must be used directly.
         if cols.is_singleton() {
-            return eq((cols.head(), value));
+            return cmp((cols.head(), value));
         }
 
         // Otherwise, pair column ids and product fields together.
-        cols.iter()
-            .zip(value.into_product().unwrap())
-            .map(eq)
-            .reduce(Self::and)
-            .unwrap()
+        let operands = cols.iter().zip(value.into_product().unwrap()).map(cmp).collect();
+        Self::Log {
+            op: OpLogic::And,
+            operands,
+        }
     }
 
     /// Returns an op where `cols` must be within bounds.
@@ -215,104 +273,98 @@ impl ColumnOp {
         ColumnOp::and_cmp(cmp, cols, value)
     }
 
-    fn reduce(&self, row: &RelValue<'_>, value: &Self) -> AlgebraicValue {
-        match value {
-            Self::Col(field) => row.get(field.borrowed()).into_owned(),
-            Self::Cmp { op, lhs, rhs } => self.compare_bin_op(row, *op, lhs, rhs).into(),
-        }
-    }
-
-    fn reduce_bool(&self, row: &RelValue<'_>, value: &Self) -> bool {
-        match value {
-            Self::Col(field) => *row.get(field.borrowed()).as_bool().unwrap(),
-            Self::Cmp { op, lhs, rhs } => self.compare_bin_op(row, *op, lhs, rhs),
-        }
-    }
-
-    fn compare_bin_op(&self, row: &RelValue<'_>, op: OpQuery, lhs: &Self, rhs: &Self) -> bool {
-        match op {
-            OpQuery::Cmp(op) => {
-                let lhs = self.reduce(row, lhs);
-                let rhs = self.reduce(row, rhs);
-                match op {
-                    OpCmp::Eq => lhs == rhs,
-                    OpCmp::NotEq => lhs != rhs,
-                    OpCmp::Lt => lhs < rhs,
-                    OpCmp::LtEq => lhs <= rhs,
-                    OpCmp::Gt => lhs > rhs,
-                    OpCmp::GtEq => lhs >= rhs,
-                }
-            }
-            OpQuery::Logic(op) => {
-                let lhs = self.reduce_bool(row, lhs);
-                let rhs = self.reduce_bool(row, rhs);
-
-                match op {
-                    OpLogic::And => lhs && rhs,
-                    OpLogic::Or => lhs || rhs,
-                }
-            }
-        }
-    }
-
-    pub fn compare(&self, row: &RelValue<'_>) -> bool {
+    /// Converts `self` to the lhs `ColId` and the `OpCmp` if this is a comparison.
+    fn as_col_cmp(&self) -> Option<(ColId, OpCmp)> {
         match self {
-            Self::Col(field) => {
-                let lhs = row.get(field.borrowed());
-                *lhs.as_bool().unwrap()
-            }
-            Self::Cmp { op, lhs, rhs } => self.compare_bin_op(row, *op, lhs, rhs),
+            Self::ColCmpVal { lhs, cmp, rhs: _ } => Some((*lhs, *cmp)),
+            Self::Cmp { lhs, cmp, rhs: _ } => match &**lhs {
+                ColumnOp::Col(col) => Some((*col, *cmp)),
+                _ => None,
+            },
+            _ => None,
         }
     }
 
-    /// Flattens a nested conjunction of AND expressions.
-    ///
-    /// For example, `a = 1 AND b = 2 AND c = 3` becomes `[a = 1, b = 2, c = 3]`.
-    ///
-    /// This helps with splitting the kinds of `queries`,
-    /// that *could* be answered by a `index`,
-    /// from the ones that need to be executed with a `scan`.
-    pub fn flatten_ands_ref(&self) -> ColumnOpRefFlat<'_> {
-        fn fill_vec<'a>(buf: &mut ColumnOpRefFlat<'a>, op: &'a ColumnOp) {
-            match op {
-                ColumnOp::Cmp {
-                    op: OpQuery::Logic(OpLogic::And),
-                    lhs,
-                    rhs,
-                } => {
-                    fill_vec(buf, lhs);
-                    fill_vec(buf, rhs);
-                }
-                op => buf.push(op),
-            }
+    /// Evaluate `self` where `ColId`s are translated to values by indexing into `row`.
+    fn eval<'a>(&'a self, row: &'a RelValue<'_>) -> Cow<'a, AlgebraicValue> {
+        let into = |b| Cow::Owned(AlgebraicValue::Bool(b));
+
+        match self {
+            Self::Col(col) => row.read_column(col.idx()).unwrap(),
+            Self::Val(val) => Cow::Borrowed(val),
+            Self::ColCmpVal { lhs, cmp, rhs } => into(Self::eval_cmp_col_val(row, *cmp, *lhs, rhs)),
+            Self::Cmp { lhs, cmp, rhs } => into(Self::eval_cmp(row, *cmp, lhs, rhs)),
+            Self::Log { op, operands } => into(Self::eval_log(row, *op, operands)),
         }
-        let mut buf = SmallVec::new();
-        fill_vec(&mut buf, self);
-        buf
+    }
+
+    /// Evaluate `self` to a `bool` where `ColId`s are translated to values by indexing into `row`.
+    pub fn eval_bool(&self, row: &RelValue<'_>) -> bool {
+        match self {
+            Self::Col(col) => *row.read_column(col.idx()).unwrap().as_bool().unwrap(),
+            Self::Val(val) => *val.as_bool().unwrap(),
+            Self::ColCmpVal { lhs, cmp, rhs } => Self::eval_cmp_col_val(row, *cmp, *lhs, rhs),
+            Self::Cmp { lhs, cmp, rhs } => Self::eval_cmp(row, *cmp, lhs, rhs),
+            Self::Log { op, operands } => Self::eval_log(row, *op, operands),
+        }
+    }
+
+    /// Evaluates `lhs cmp rhs` according to `Ord for AlgebraicValue`.
+    fn eval_op_cmp(cmp: OpCmp, lhs: &AlgebraicValue, rhs: &AlgebraicValue) -> bool {
+        match cmp {
+            OpCmp::Eq => lhs == rhs,
+            OpCmp::NotEq => lhs != rhs,
+            OpCmp::Lt => lhs < rhs,
+            OpCmp::LtEq => lhs <= rhs,
+            OpCmp::Gt => lhs > rhs,
+            OpCmp::GtEq => lhs >= rhs,
+        }
+    }
+
+    /// Evaluates `lhs` to an [`AlgebraicValue`] and runs the comparison `lhs_av op rhs`.
+    fn eval_cmp_col_val(row: &RelValue<'_>, cmp: OpCmp, lhs: ColId, rhs: &AlgebraicValue) -> bool {
+        let lhs = row.read_column(lhs.idx()).unwrap();
+        Self::eval_op_cmp(cmp, &lhs, rhs)
+    }
+
+    /// Evaluates `lhs` and `rhs` to [`AlgebraicValue`]s
+    /// and then runs the comparison `cmp` on them,
+    /// returning the final `bool` result.
+    fn eval_cmp(row: &RelValue<'_>, cmp: OpCmp, lhs: &Self, rhs: &Self) -> bool {
+        let lhs = lhs.eval(row);
+        let rhs = rhs.eval(row);
+        Self::eval_op_cmp(cmp, &lhs, &rhs)
+    }
+
+    /// Evaluates if
+    /// - `op = OpLogic::And` the conjunctions (`⋀`) of `opers`
+    /// - `op = OpLogic::Or` the disjunctions (`⋁`) of `opers`
+    fn eval_log(row: &RelValue<'_>, op: OpLogic, opers: &[ColumnOp]) -> bool {
+        match op {
+            OpLogic::And => opers.iter().all(|o| o.eval_bool(row)),
+            OpLogic::Or => opers.iter().any(|o| o.eval_bool(row)),
+        }
     }
 }
 
 impl fmt::Display for ColumnOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ColumnOp::Col(x) => {
-                write!(f, "{}", x)
-            }
-            ColumnOp::Cmp { op, lhs, rhs } => {
-                write!(f, "{} {} {}", lhs, op, rhs)
-            }
+            Self::Col(col) => write!(f, "{col}"),
+            Self::Val(val) => write!(f, "{}", val.to_satn()),
+            Self::ColCmpVal { lhs, cmp, rhs } => write!(f, "{lhs} {cmp} {}", rhs.to_satn()),
+            Self::Cmp { cmp, lhs, rhs } => write!(f, "{lhs} {cmp} {rhs}"),
+            Self::Log { op, operands } => write!(f, "{}", operands.iter().format((*op).into())),
         }
     }
 }
 
-impl From<ColId> for ColumnOp {
-    fn from(value: ColId) -> Self {
-        ColumnOp::Col(value.into())
-    }
-}
-impl From<AlgebraicValue> for ColumnOp {
-    fn from(value: AlgebraicValue) -> Self {
-        Self::Col(value.into())
+impl From<ColExpr> for ColumnOp {
+    fn from(ce: ColExpr) -> Self {
+        match ce {
+            ColExpr::Col(c) => c.into(),
+            ColExpr::Value(v) => v.into(),
+        }
     }
 }
 
@@ -637,7 +689,7 @@ impl IndexJoin {
             .probe_side
             .query
             .iter()
-            .all(|op| matches!(op, Query::Select(_)) || matches!(op, Query::IndexScan(_)))
+            .all(|op| matches!(op, Query::Select(_) | Query::IndexScan(_)))
         {
             return self;
         }
@@ -949,7 +1001,7 @@ impl<'a> ColValue<'a> {
 type IndexColumnOpSink<'a> = SmallVec<[IndexColumnOp<'a>; 1]>;
 type ColsIndexed = HashSet<(ColId, OpCmp)>;
 
-/// Pick the best indices that can serve the constraints in `cols`
+/// Pick the best indices that can serve the constraints in `op`
 /// where the indices are taken from `header`.
 ///
 /// This function is designed to handle complex scenarios when selecting the optimal index for a query.
@@ -1000,7 +1052,7 @@ type ColsIndexed = HashSet<(ColId, OpCmp)>;
 fn select_best_index<'a>(
     cols_indexed: &mut ColsIndexed,
     header: &'a Header,
-    ops: &[&'a ColumnOp],
+    op: &'a ColumnOp,
 ) -> IndexColumnOpSink<'a> {
     // Collect and sort indices by their lengths, with longest first.
     // We do this so that multi-col indices are used first, as they are more efficient.
@@ -1019,7 +1071,7 @@ fn select_best_index<'a>(
     // This gives us `log(N)` seek + deletion.
     // TODO(Centril): Consider https://docs.rs/small-map/0.1.3/small_map/enum.SmallMap.html
     let mut col_map = BTreeMap::<_, SmallVec<[_; 1]>>::new();
-    extract_cols(ops, &mut col_map, &mut found);
+    extract_cols(op, &mut col_map, &mut found);
 
     // Go through each index,
     // consuming all column constraints that can be served by an index.
@@ -1102,32 +1154,12 @@ fn pop_multimap<K: Ord, V, const N: usize>(map: &mut BTreeMap<K, SmallVec<[V; N]
     val
 }
 
-/// Extracts `name = val` when `lhs` is a col and `rhs` is a value.
-fn ext_field_val<'a>(lhs: &'a ColumnOp, rhs: &'a ColumnOp) -> Option<(ColId, &'a AlgebraicValue)> {
-    if let (ColumnOp::Col(ColExpr::Col(col)), ColumnOp::Col(ColExpr::Value(val))) = (lhs, rhs) {
-        return Some((*col, val));
-    }
-    None
-}
-
-/// Extracts `name = val` when `op` is `name = val`.
-fn ext_cmp_field_val(op: &ColumnOp) -> Option<(OpCmp, ColId, &AlgebraicValue)> {
-    match op {
-        ColumnOp::Cmp {
-            op: OpQuery::Cmp(op),
-            lhs,
-            rhs,
-        } => ext_field_val(lhs, rhs).map(|(id, v)| (*op, id, v)),
-        _ => None,
-    }
-}
-
 /// Extracts a list of `col = val` constraints that *could* be answered by an index
 /// and populates those into `col_map`.
 /// The [`ColumnOp`]s that don't fit `col = val`
 /// are made into [`IndexColumnOp::Scan`]s immediately which are added to `found`.
 fn extract_cols<'a>(
-    ops: &[&'a ColumnOp],
+    op: &'a ColumnOp,
     col_map: &mut BTreeMap<(ColId, OpCmp), SmallVec<[ColValue<'a>; 1]>>,
     found: &mut IndexColumnOpSink<'a>,
 ) {
@@ -1136,60 +1168,25 @@ fn extract_cols<'a>(
         col_map.entry((col, op)).or_default().push(fv);
     };
 
-    for op in ops {
-        match op {
-            ColumnOp::Cmp {
-                op: OpQuery::Cmp(cmp),
-                lhs,
-                rhs,
-            } => {
-                if let Some((field_col, val)) = ext_field_val(lhs, rhs) {
-                    // `lhs` must be a field that exists and `rhs` must be a value.
-                    add_field(op, *cmp, field_col, val);
-                    continue;
-                }
+    match op {
+        ColumnOp::Cmp { cmp, lhs, rhs } => {
+            if let (ColumnOp::Col(col), ColumnOp::Val(val)) = (&**lhs, &**rhs) {
+                // `lhs` must be a field that exists and `rhs` must be a value.
+                add_field(op, *cmp, *col, val);
             }
-            ColumnOp::Cmp {
-                op: OpQuery::Logic(OpLogic::And),
-                lhs,
-                rhs,
-            } => {
-                if let Some((op_lhs, col_lhs, val_lhs)) = ext_cmp_field_val(lhs) {
-                    if let Some((op_rhs, col_rhs, val_rhs)) = ext_cmp_field_val(rhs) {
-                        // Both lhs and rhs columns must exist.
-                        add_field(op, op_lhs, col_lhs, val_lhs);
-                        add_field(op, op_rhs, col_rhs, val_rhs);
-                        continue;
-                    }
-                }
-            }
-            ColumnOp::Cmp {
-                op: OpQuery::Logic(OpLogic::Or),
-                ..
-            }
-            | ColumnOp::Col(_) => {}
         }
-
-        found.push(IndexColumnOp::Scan(op));
-    }
-}
-
-/// Sargable stands for Search ARGument ABLE.
-/// A sargable predicate is one that can be answered using an index.
-fn find_sargable_ops<'a>(
-    fields_indexed: &mut ColsIndexed,
-    header: &'a Header,
-    op: &'a ColumnOp,
-) -> SmallVec<[IndexColumnOp<'a>; 1]> {
-    let mut ops_flat = op.flatten_ands_ref();
-    if ops_flat.len() == 1 {
-        match ops_flat.swap_remove(0) {
-            // Special case; fast path for a single field.
-            op @ ColumnOp::Col(_) => smallvec![IndexColumnOp::Scan(op)],
-            op => select_best_index(fields_indexed, header, &[op]),
+        ColumnOp::ColCmpVal { lhs, cmp, rhs } => add_field(op, *cmp, *lhs, rhs),
+        ColumnOp::Log {
+            op: OpLogic::And,
+            operands,
+        } => {
+            for oper in operands.iter() {
+                extract_cols(oper, col_map, found);
+            }
         }
-    } else {
-        select_best_index(fields_indexed, header, &ops_flat)
+        ColumnOp::Log { op: OpLogic::Or, .. } | ColumnOp::Col(_) | ColumnOp::Val(_) => {
+            found.push(IndexColumnOp::Scan(op));
+        }
     }
 }
 
@@ -1880,17 +1877,12 @@ impl QueryExpr {
         // Find the first sargable condition and short-circuit.
         let mut fields_found = HashSet::new();
         for schema in tables {
-            for op in find_sargable_ops(&mut fields_found, schema.head(), &op) {
-                match &op {
-                    IndexColumnOp::Index(_) | IndexColumnOp::Scan(ColumnOp::Col(_)) => {}
+            for op in select_best_index(&mut fields_found, schema.head(), &op) {
+                if let IndexColumnOp::Scan(op) = &op {
                     // Remove a duplicated/redundant operation on the same `field` and `op`
-                    // like `[ScanOrIndex::Index(a = 1), ScanOrIndex::Index(a = 1), ScanOrIndex::Scan(a = 1)]`
-                    IndexColumnOp::Scan(ColumnOp::Cmp { op, lhs, rhs: _ }) => {
-                        if let (ColumnOp::Col(ColExpr::Col(col)), OpQuery::Cmp(cmp)) = (&**lhs, op) {
-                            if !fields_found.insert((*col, *cmp)) {
-                                continue;
-                            }
-                        }
+                    // like `[Index(a = 1), Index(a = 1), Scan(a = 1)]`
+                    if op.as_col_cmp().is_some_and(|cc| !fields_found.insert(cc)) {
+                        continue;
                     }
                 }
 
@@ -2316,18 +2308,8 @@ mod tests {
         (head1, col_ids, vals)
     }
 
-    fn make_field_value<'a>(
-        arena: &'a Arena<ColumnOp>,
-        (cmp, col, value): (OpCmp, ColId, &'a AlgebraicValue),
-    ) -> ColValue<'a> {
-        let from_expr = |expr| Box::new(ColumnOp::Col(expr));
-        let op = ColumnOp::Cmp {
-            op: OpQuery::Cmp(cmp),
-            lhs: from_expr(ColExpr::Col(col)),
-            rhs: from_expr(ColExpr::Value(value.clone())),
-        };
-        let parent = arena.alloc(op);
-        ColValue::new(parent, col, cmp, value)
+    fn make_field_value((cmp, col, value): (OpCmp, ColId, &AlgebraicValue)) -> ColumnOp {
+        ColumnOp::cmp(col, cmp, value.clone())
     }
 
     fn scan_eq<'a>(arena: &'a Arena<ColumnOp>, col: ColId, val: &'a AlgebraicValue) -> IndexColumnOp<'a> {
@@ -2335,7 +2317,7 @@ mod tests {
     }
 
     fn scan<'a>(arena: &'a Arena<ColumnOp>, cmp: OpCmp, col: ColId, val: &'a AlgebraicValue) -> IndexColumnOp<'a> {
-        IndexColumnOp::Scan(make_field_value(arena, (cmp, col, val)).parent)
+        IndexColumnOp::Scan(arena.alloc(make_field_value((cmp, col, val))))
     }
 
     #[test]
@@ -2349,9 +2331,10 @@ mod tests {
             let fields = fields
                 .iter()
                 .copied()
-                .map(|(col, val): (ColId, _)| make_field_value(&arena, (OpCmp::Eq, col, val)).parent)
-                .collect::<Vec<_>>();
-            select_best_index(&mut <_>::default(), &head1, &fields)
+                .map(|(col, val): (ColId, _)| make_field_value((OpCmp::Eq, col, val)))
+                .reduce(ColumnOp::and)
+                .unwrap();
+            select_best_index(&mut <_>::default(), &head1, arena.alloc(fields))
         };
 
         let col_list_arena = Arena::new();
@@ -2442,11 +2425,8 @@ mod tests {
         let [val_a, val_b, val_c, val_d, _] = vals;
 
         let select_best_index = |cols: &[_]| {
-            let fields = cols
-                .iter()
-                .map(|x| make_field_value(&arena, *x).parent)
-                .collect::<Vec<_>>();
-            select_best_index(&mut <_>::default(), &head1, &fields)
+            let fields = cols.iter().map(|x| make_field_value(*x)).reduce(ColumnOp::and).unwrap();
+            select_best_index(&mut <_>::default(), &head1, arena.alloc(fields))
         };
 
         let col_list_arena = Arena::new();
