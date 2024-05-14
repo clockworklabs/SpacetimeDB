@@ -90,28 +90,28 @@ public partial struct TableDef(string tableName, ColumnDefWithAttrs[] columns)
 }
 
 [SpacetimeDB.Type]
-public partial struct TableDesc(TableDef schema, AlgebraicTypeRef data)
+public partial struct TableDesc(TableDef schema, AlgebraicType.Ref typeRef)
 {
     TableDef Schema = schema;
-    AlgebraicTypeRef Data = data;
+    int TypeRef = typeRef.Ref_;
 }
 
 [SpacetimeDB.Type]
-public partial struct ReducerDef(string name, params ProductTypeElement[] args)
+public partial struct ReducerDef(string name, params AggregateElement[] args)
 {
     string Name = name;
-    ProductTypeElement[] Args = args;
+    AggregateElement[] Args = args;
 }
 
 [SpacetimeDB.Type]
-partial struct TypeAlias
+partial struct TypeAlias(string name, AlgebraicType.Ref typeRef)
 {
-    internal string Name;
-    internal AlgebraicTypeRef Type;
+    string Name = name;
+    int TypeRef = typeRef.Ref_;
 }
 
 [SpacetimeDB.Type]
-partial struct MiscModuleExport : SpacetimeDB.TaggedEnum<(TypeAlias TypeAlias, Unit _Reserved)> { }
+partial record MiscModuleExport : SpacetimeDB.TaggedEnum<(TypeAlias TypeAlias, Unit _Reserved)>;
 
 [SpacetimeDB.Type]
 public partial struct ModuleDef
@@ -123,12 +123,12 @@ public partial struct ModuleDef
 
     public ModuleDef() { }
 
-    public AlgebraicTypeRef AllocTypeRef()
+    public AlgebraicType.Ref AllocTypeRef()
     {
         var index = Types.Count;
-        var typeRef = new AlgebraicTypeRef(index);
-        // uninhabited type, to be replaced by a real type
-        Types.Add(new SumType());
+        var typeRef = new AlgebraicType.Ref(index);
+        // to be replaced by a real type
+        Types.Add(AlgebraicType.Uninhabited);
         return typeRef;
     }
 
@@ -139,16 +139,13 @@ public partial struct ModuleDef
             ? $"{type.Name.Remove(type.Name.IndexOf('`'))}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
             : type.Name;
 
-    public void SetTypeRef<T>(AlgebraicTypeRef typeRef, AlgebraicType type, bool anonymous = false)
+    public void SetTypeRef<T>(AlgebraicType.Ref typeRef, AlgebraicType type, bool anonymous = false)
     {
-        Types[typeRef.TypeRef] = type;
+        Types[typeRef.Ref_] = type;
         if (!anonymous)
         {
             MiscExports.Add(
-                new MiscModuleExport
-                {
-                    TypeAlias = new TypeAlias { Name = GetFriendlyName(typeof(T)), Type = typeRef }
-                }
+                new MiscModuleExport.TypeAlias(new TypeAlias(GetFriendlyName(typeof(T)), typeRef))
             );
         }
     }
@@ -188,7 +185,7 @@ public static class ReducerKind
 public interface IReducer
 {
     SpacetimeDB.Module.ReducerDef MakeReducerDef();
-    void Invoke(System.IO.BinaryReader reader, Runtime.DbEventArgs args);
+    void Invoke(System.IO.BinaryReader reader, Runtime.ReducerContext args);
 }
 
 public static class FFI
@@ -204,10 +201,10 @@ public static class FFI
 
     public static void RegisterTable(TableDesc table) => module.Add(table);
 
-    public static AlgebraicTypeRef AllocTypeRef() => module.AllocTypeRef();
+    public static AlgebraicType.Ref AllocTypeRef() => module.AllocTypeRef();
 
     public static void SetTypeRef<T>(
-        AlgebraicTypeRef typeRef,
+        AlgebraicType.Ref typeRef,
         AlgebraicType type,
         bool anonymous = false
     ) => module.SetTypeRef<T>(typeRef, type, anonymous);

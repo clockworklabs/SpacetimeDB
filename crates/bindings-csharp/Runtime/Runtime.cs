@@ -4,6 +4,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using SpacetimeDB.SATS;
 using static System.Text.Encoding;
 
 public static class Runtime
@@ -154,10 +155,14 @@ public static class Runtime
         private static SpacetimeDB.SATS.TypeInfo<Identity> satsTypeInfo =
             new(
                 // We need to set type info to inlined identity type as `generate` CLI currently can't recognise type references for built-ins.
-                new SpacetimeDB.SATS.ProductType
-                {
-                    { "__identity_bytes", SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.AlgebraicType }
-                },
+                new SpacetimeDB.SATS.AlgebraicType.Product(
+                    [
+                        new(
+                            "__identity_bytes",
+                            SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.AlgebraicType
+                        )
+                    ]
+                ),
                 reader => new(SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.Read(reader)),
                 (writer, value) =>
                     SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.Write(writer, value.bytes)
@@ -188,10 +193,14 @@ public static class Runtime
         private static SpacetimeDB.SATS.TypeInfo<Address> satsTypeInfo =
             new(
                 // We need to set type info to inlined address type as `generate` CLI currently can't recognise type references for built-ins.
-                new SpacetimeDB.SATS.ProductType
-                {
-                    { "__address_bytes", SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.AlgebraicType }
-                },
+                new SpacetimeDB.SATS.AlgebraicType.Product(
+                    [
+                        new(
+                            "__address_bytes",
+                            SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.AlgebraicType
+                        )
+                    ]
+                ),
                 // Concern: We use this "packed" representation (as Bytes)
                 //          in the caller_id field of reducer arguments,
                 //          but in table rows,
@@ -207,13 +216,13 @@ public static class Runtime
         public static SpacetimeDB.SATS.TypeInfo<Address> GetSatsTypeInfo() => satsTypeInfo;
     }
 
-    public class DbEventArgs : EventArgs
+    public class ReducerContext
     {
         public readonly Identity Sender;
         public readonly DateTimeOffset Time;
         public readonly Address? Address;
 
-        public DbEventArgs(byte[] senderIdentity, byte[] senderAddress, ulong timestamp_us)
+        public ReducerContext(byte[] senderIdentity, byte[] senderAddress, ulong timestamp_us)
         {
             Sender = new Identity(senderIdentity);
             var addr = new Address(senderAddress);

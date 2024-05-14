@@ -56,7 +56,7 @@ static class Utils
         )
         {
             // if we're here, then this is a nullable reference type like `string?`.
-            return $"SpacetimeDB.SATS.SumType.MakeRefOption({GetTypeInfo(type.WithNullableAnnotation(NullableAnnotation.None))})";
+            return $"SpacetimeDB.SATS.AlgebraicType.MakeRefOption({GetTypeInfo(type.WithNullableAnnotation(NullableAnnotation.None))})";
         }
         return type switch
         {
@@ -97,7 +97,7 @@ static class Utils
                             "System.Collections.Generic.List<T>" => "SpacetimeDB.SATS.BuiltinType.MakeList",
                             "System.Collections.Generic.Dictionary<TKey, TValue>" => "SpacetimeDB.SATS.BuiltinType.MakeMap",
                             // If we're here, then this is nullable value type like `int?`.
-                            "System.Nullable<T>" => $"SpacetimeDB.SATS.SumType.MakeValueOption",
+                            "System.Nullable<T>" => $"SpacetimeDB.SATS.AlgebraicType.MakeValueOption",
                             var name when name.StartsWith("System.") => throw new InvalidOperationException(
                                 $"Unsupported system type {name}"
                             ),

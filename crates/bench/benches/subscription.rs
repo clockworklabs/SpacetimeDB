@@ -9,7 +9,6 @@ use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb::util::slow::SlowQueryConfig;
 use spacetimedb_bench::database::BenchDatabase as _;
 use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
-use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_testing::modules::start_runtime;
@@ -32,10 +31,10 @@ fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
     let footprint = AlgebraicType::sum(["A", "B", "C", "D"].map(|n| (n, AlgebraicType::unit())));
     let schema = &[
         ("entity_id", AlgebraicType::U64),
-        ("type", footprint),
         ("owner_entity_id", AlgebraicType::U64),
+        ("type", footprint),
     ];
-    let indexes = &[(0.into(), "entity_id"), (2.into(), "owner_entity_id")];
+    let indexes = &[(0.into(), "entity_id"), (1.into(), "owner_entity_id")];
     db.create_table_for_test("footprint", schema, indexes)
 }
 
@@ -50,7 +49,7 @@ fn insert_op(table_id: TableId, table_name: &str, row: ProductValue) -> Database
 
 fn eval(c: &mut Criterion) {
     let rt = start_runtime();
-    rt.block_on(async {
+    rt.block_on(async move {
         let raw = SpacetimeRaw::build(false, false).unwrap();
 
         let lhs = create_table_footprint(&raw.db).unwrap();
@@ -63,7 +62,7 @@ fn eval(c: &mut Criterion) {
                 for entity_id in 0u64..1_000_000 {
                     let owner = entity_id % 1_000;
                     let footprint = AlgebraicValue::sum(entity_id as u8 % 4, AlgebraicValue::unit());
-                    let row = product!(entity_id, footprint, owner);
+                    let row = product!(entity_id, owner, footprint);
                     let _ = raw.db.insert(tx, lhs, row)?;
                 }
                 Ok(())
@@ -95,22 +94,17 @@ fn eval(c: &mut Criterion) {
         let footprint = AlgebraicValue::sum(1, AlgebraicValue::unit());
         let owner = 6u64;
 
-    let ins_lhs = insert_op(lhs, "footprint", new_lhs_row);
-    let ins_rhs = insert_op(rhs, "location", new_rhs_row);
-    let update = [&ins_lhs, &ins_rhs];
+        let new_lhs_row = product!(entity_id, owner, footprint);
+        let new_rhs_row = product!(entity_id, chunk_index, x, z, dimension);
 
-        let update = DatabaseUpdate {
-            tables: vec![
-                insert_op(lhs, "footprint", new_lhs_row),
-                insert_op(rhs, "location", new_rhs_row),
-            ],
-        };
+        let ins_lhs = insert_op(lhs, "footprint", new_lhs_row);
+        let ins_rhs = insert_op(rhs, "location", new_rhs_row);
+        let update = [&ins_lhs, &ins_rhs];
 
         let bench_eval = |c: &mut Criterion, name, sql| {
             c.bench_function(name, |b| {
-                let auth = AuthCtx::for_testing();
                 let tx = raw.db.begin_tx();
-                let query = compile_read_only_query(&raw.db, &tx, &auth, sql).unwrap();
+                let query = compile_read_only_query(&raw.db, &tx, sql).unwrap();
                 let query: ExecutionSet = query.into();
                 let ctx = &ExecutionContext::subscribe(raw.db.address(), SlowQueryConfig::default());
                 b.iter(|| drop(black_box(query.eval(ctx, Protocol::Binary, &raw.db, &tx).unwrap())))
@@ -128,10 +122,10 @@ fn eval(c: &mut Criterion) {
         // Note, this should use an index join so as not to read the entire lhs table.
         let name = format!(
             r#"
-            select footprint.*
-            from footprint join location on footprint.entity_id = location.entity_id
-            where location.chunk_index = {chunk_index}
-            "#
+        select footprint.*
+        from footprint join location on footprint.entity_id = location.entity_id
+        where location.chunk_index = {chunk_index}
+        "#
         );
         bench_eval(c, "full-join", &name);
 
@@ -143,10 +137,9 @@ fn eval(c: &mut Criterion) {
             // A passthru executed independently of the database.
             let select_lhs = "select * from footprint";
             let select_rhs = "select * from location";
-            let auth = AuthCtx::for_testing();
             let tx = &raw.db.begin_tx();
-            let query_lhs = compile_read_only_query(&raw.db, tx, &auth, select_lhs).unwrap();
-            let query_rhs = compile_read_only_query(&raw.db, tx, &auth, select_rhs).unwrap();
+            let query_lhs = compile_read_only_query(&raw.db, tx, select_lhs).unwrap();
+            let query_rhs = compile_read_only_query(&raw.db, tx, select_rhs).unwrap();
             let query = ExecutionSet::from_iter(query_lhs.into_iter().chain(query_rhs));
             let tx = &tx.into();
 
@@ -162,13 +155,12 @@ fn eval(c: &mut Criterion) {
             // Not a passthru - requires reading of database state.
             let join = format!(
                 "\
-                select footprint.* \
-                from footprint join location on footprint.entity_id = location.entity_id \
-                where location.chunk_index = {chunk_index}"
+            select footprint.* \
+            from footprint join location on footprint.entity_id = location.entity_id \
+            where location.chunk_index = {chunk_index}"
             );
-            let auth = AuthCtx::for_testing();
             let tx = &raw.db.begin_tx();
-            let query = compile_read_only_query(&raw.db, tx, &auth, &join).unwrap();
+            let query = compile_read_only_query(&raw.db, tx, &join).unwrap();
             let query: ExecutionSet = query.into();
             let tx = &tx.into();
 
@@ -186,7 +178,7 @@ fn eval(c: &mut Criterion) {
             "query-indexes-multi",
             "select * from location WHERE x = 0 AND z = 10000 AND dimension = 0",
         );
-    })
+    });
 }
 
 criterion_group!(benches, eval);

@@ -91,29 +91,27 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
     let source_expr: SourceExpr = table.root.deref().into();
     let mut q = QueryExpr::new(source_expr);
 
-    if let Some(ref joins) = table.join {
-        for join in joins {
-            match join {
-                Join::Inner { rhs, on } => {
-                    let rhs_source_expr: SourceExpr = rhs.deref().into();
-                    match on.op {
-                        OpCmp::Eq => {}
-                        x => unreachable!("Unsupported operator `{x}` for joins"),
-                    }
-                    // Always construct inner joins, never semijoins.
-                    // The query optimizer can rewrite certain inner joins into semijoins later in the pipeline.
-                    // The full pipeline for a query like `SELECT lhs.* FROM lhs JOIN rhs ON lhs.a = rhs.a` is:
-                    // - We produce `[JoinInner(semi: false), Project]`.
-                    // - Optimizer rewrites to `[JoinInner(semi: true)]`.
-                    // - Optimizer rewrites to `[IndexJoin]`.
-                    // For incremental queries, this all happens on the original query with `DbTable` sources.
-                    // Then, the query is "incrementalized" by replacing the sources with `MemTable`s,
-                    // and the `IndexJoin` is rewritten back into a `JoinInner(semi: true)`.
-                    q = q.with_join_inner(rhs_source_expr, on.lhs, on.rhs, false);
+    for join in table.joins {
+        match join {
+            Join::Inner { rhs, on } => {
+                let rhs_source_expr: SourceExpr = rhs.deref().into();
+                match on.op {
+                    OpCmp::Eq => {}
+                    x => unreachable!("Unsupported operator `{x}` for joins"),
                 }
+                // Always construct inner joins, never semijoins.
+                // The query optimizer can rewrite certain inner joins into semijoins later in the pipeline.
+                // The full pipeline for a query like `SELECT lhs.* FROM lhs JOIN rhs ON lhs.a = rhs.a` is:
+                // - We produce `[JoinInner(semi: false), Project]`.
+                // - Optimizer rewrites to `[JoinInner(semi: true)]`.
+                // - Optimizer rewrites to `[IndexJoin]`.
+                // For incremental queries, this all happens on the original query with `DbTable` sources.
+                // Then, the query is "incrementalized" by replacing the sources with `MemTable`s,
+                // and the `IndexJoin` is rewritten back into a `JoinInner(semi: true)`.
+                q = q.with_join_inner(rhs_source_expr, on.lhs, on.rhs, false);
             }
         }
-    };
+    }
 
     if let Some(filter) = selection {
         q = compile_where(q, filter);
@@ -149,7 +147,7 @@ fn compile_columns(table: &TableSchema, field_names: Vec<FieldName>) -> DbTable 
 
 /// Compiles a `INSERT ...` clause
 fn compile_insert(table: &TableSchema, columns: Vec<FieldName>, values: Vec<Vec<FieldExpr>>) -> CrudExpr {
-    let source_expr = SourceExpr::DbTable(compile_columns(table, columns));
+    let table = compile_columns(table, columns);
 
     let mut rows = Vec::with_capacity(values.len());
     for x in values {
@@ -167,10 +165,7 @@ fn compile_insert(table: &TableSchema, columns: Vec<FieldName>, values: Vec<Vec<
         rows.push(row.into())
     }
 
-    CrudExpr::Insert {
-        source: source_expr,
-        rows,
-    }
+    CrudExpr::Insert { table, rows }
 }
 
 /// Compiles a `DELETE ...` clause
@@ -190,8 +185,7 @@ fn compile_update(
     assignments: HashMap<FieldName, FieldExpr>,
     selection: Option<Selection>,
 ) -> CrudExpr {
-    let table = From::new(table);
-    let query = QueryExpr::new(&*table.root);
+    let query = QueryExpr::new(&*table);
     let delete = if let Some(filter) = selection {
         compile_where(query, filter)
     } else {

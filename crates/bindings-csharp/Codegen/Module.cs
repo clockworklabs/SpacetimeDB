@@ -128,7 +128,7 @@ public class Module : IIncrementalGenerator
                                         )
                                     "))} }}
                                 ),
-                                {t.Name}.GetSatsTypeInfo().AlgebraicType.TypeRef
+                                (SpacetimeDB.SATS.AlgebraicType.Ref){t.Name}.GetSatsTypeInfo().AlgebraicType
                             );
 
                             public static IEnumerable<{t.Name}> Query(System.Linq.Expressions.Expression<Func<{t.Name}, bool>> filter) =>
@@ -222,7 +222,8 @@ public class Module : IIncrementalGenerator
                             (
                                 p.Name,
                                 p.Type,
-                                IsDbEvent: p.Type.ToString() == "SpacetimeDB.Runtime.DbEventArgs"
+                                IsContextArg: p.Type.ToString()
+                                    == "SpacetimeDB.Runtime.ReducerContext"
                             )
                         )
                         .ToArray(),
@@ -238,17 +239,17 @@ public class Module : IIncrementalGenerator
                         r.Name,
                         Class: $@"
                             class {r.Name}: IReducer {{
-                                {string.Join("\n", r.Args.Where(a => !a.IsDbEvent).Select(a => $"SpacetimeDB.SATS.TypeInfo<{a.Type}> {a.Name} = {GetTypeInfo(a.Type)};"))}
+                                {string.Join("\n", r.Args.Where(a => !a.IsContextArg).Select(a => $"SpacetimeDB.SATS.TypeInfo<{a.Type}> {a.Name} = {GetTypeInfo(a.Type)};"))}
 
                                 SpacetimeDB.Module.ReducerDef IReducer.MakeReducerDef() {{
                                     return new (
                                         ""{r.ExportName}""
-                                        {string.Join("", r.Args.Where(a => !a.IsDbEvent).Select(a => $",\nnew SpacetimeDB.SATS.ProductTypeElement(nameof({a.Name}), {a.Name}.AlgebraicType)"))}
+                                        {string.Join("", r.Args.Where(a => !a.IsContextArg).Select(a => $",\nnew SpacetimeDB.SATS.AggregateElement(nameof({a.Name}), {a.Name}.AlgebraicType)"))}
                                     );
                                 }}
 
-                                void IReducer.Invoke(BinaryReader reader, SpacetimeDB.Runtime.DbEventArgs dbEvent) {{
-                                    {r.FullName}({string.Join(", ", r.Args.Select(a => a.IsDbEvent ? "dbEvent" : $"{a.Name}.Read(reader)"))});
+                                void IReducer.Invoke(BinaryReader reader, SpacetimeDB.Runtime.ReducerContext ctx) {{
+                                    {r.FullName}({string.Join(", ", r.Args.Select(a => a.IsContextArg ? "ctx" : $"{a.Name}.Read(reader)"))});
                                 }}
                             }}
                         "
@@ -327,10 +328,10 @@ public class Module : IIncrementalGenerator
                         r.FullName,
                         r.Scope.GenerateExtensions(
                             $@"
-                            public static SpacetimeDB.Runtime.ScheduleToken Schedule{r.Name}(DateTimeOffset time{string.Join("", r.Args.Where(a => !a.IsDbEvent).Select(a => $", {a.Type} {a.Name}"))}) {{
+                            public static SpacetimeDB.Runtime.ScheduleToken Schedule{r.Name}(DateTimeOffset time{string.Join("", r.Args.Where(a => !a.IsContextArg).Select(a => $", {a.Type} {a.Name}"))}) {{
                                 using var stream = new MemoryStream();
                                 using var writer = new BinaryWriter(stream);
-                                {string.Join("\n", r.Args.Where(a => !a.IsDbEvent).Select(a => $"{GetTypeInfo(a.Type)}.Write(writer, {a.Name});"))}
+                                {string.Join("\n", r.Args.Where(a => !a.IsContextArg).Select(a => $"{GetTypeInfo(a.Type)}.Write(writer, {a.Name});"))}
                                 return new(nameof({r.Name}), stream.ToArray(), time);
                             }}
                         "

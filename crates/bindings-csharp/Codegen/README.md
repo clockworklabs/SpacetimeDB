@@ -12,14 +12,12 @@ This project contains Roslyn [incremental source generators](https://github.com/
 
   ```csharp
   [SpacetimeDB.Type]
-  partial struct Option<T> : SpacetimeDB.TaggedEnum<(T Some, Unit None)> { }
+  partial record Option<T> : SpacetimeDB.TaggedEnum<(T Some, Unit None)>;
   ```
 
-  will generate properties `bool IsSome`, `bool IsNone`, `T Some`, and `Unit None` for the `Option<T>` type.
-
-  The `Some` and `None` accessors will throw an exception if the type is not in the corresponding state, so you must use `Is*` checks if you don't know which variant is currently active.
-
-  All of those properties are stored in a compact `byte` + `object` pair representation.
+  will generate inherited records `Option.Some(T Some_)` and `Option.None(Unit None_)`. It allows
+  you to use tagged enums in C# in a similar way to Rust enums by leveraging C# pattern-matching
+  on any instance of `Option<T>`.
 
 - `[SpacetimeDB.Table]` - generates code to register this table in the `FFI` upon startup so that they can be enumerated by the `__describe_module__` FFI API. It implies `[SpacetimeDB.Type]`, so you must not specify both attributes on the same struct.
 

@@ -7,8 +7,6 @@ use test_counter::TestCounter;
 pub trait PkTestTable: TableWithPrimaryKey {
     fn as_value(&self) -> i32;
 
-    fn from_key_value(k: Self::PrimaryKey, v: i32) -> Self;
-
     fn is_insert_reducer_event(event: &Self::ReducerEvent) -> bool;
     fn is_update_reducer_event(event: &Self::ReducerEvent) -> bool;
     fn is_delete_reducer_event(event: &Self::ReducerEvent) -> bool;
@@ -138,13 +136,6 @@ macro_rules! impl_pk_test_table {
         impl PkTestTable for $table {
             fn as_value(&self) -> i32 {
                 self.data
-            }
-
-            fn from_key_value(key: Self::PrimaryKey, value: i32) -> Self {
-                Self {
-                    $field_name: key,
-                    data: value,
-                }
             }
 
             fn is_insert_reducer_event(event: &Self::ReducerEvent) -> bool {

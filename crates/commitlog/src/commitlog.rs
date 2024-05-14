@@ -342,7 +342,7 @@ where
         let records = &mut commit.records.as_slice();
         for n in 0..commit.n {
             let tx_offset = commit.min_tx_offset + n as u64;
-            de.decode_record(version, tx_offset, records)?;
+            de.consume_record(version, tx_offset, records)?;
         }
     }
 

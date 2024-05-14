@@ -8,6 +8,8 @@ pub fn cli() -> clap::Command {
         .about("Builds a spacetime module.")
         .arg(
             Arg::new("project_path")
+                .long("project-path")
+                .short('p')
                 .value_parser(clap::value_parser!(PathBuf))
                 .default_value(".")
                 .help("The system path (absolute or relative) to the project you would like to build")
@@ -30,7 +32,10 @@ pub fn cli() -> clap::Command {
         )
 }
 
-pub async fn exec(_: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    // Release the lockfile on the config, since we don't need it.
+    config.release_lock();
+
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let skip_clippy = args.get_flag("skip_clippy");
     let build_debug = args.get_flag("debug");

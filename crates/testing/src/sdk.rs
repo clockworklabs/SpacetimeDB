@@ -201,7 +201,7 @@ fn generate_bindings(language: &str, wasm_file: &str, client_project: &str, gene
             "--wasm-file",
             wasm_file,
             "--out-dir",
-            &generate_dir,
+            generate_dir,
         ]);
     })
 }
