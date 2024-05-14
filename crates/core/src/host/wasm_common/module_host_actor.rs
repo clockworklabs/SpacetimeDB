@@ -27,6 +27,7 @@ use crate::module_host_context::ModuleCreationContext;
 use crate::sql;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::const_unwrap;
+use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
 use spacetimedb_sats::db::def::TableDef;
 
@@ -535,6 +536,11 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         };
 
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable));
+        let _guard = WORKER_METRICS
+            .reducer_plus_query_duration
+            .with_label_values(&address, op.name)
+            .with_timer(tx.timer);
+
         let mut tx_slot = self.instance.instance_env().tx.clone();
 
         let reducer_span = tracing::trace_span!(

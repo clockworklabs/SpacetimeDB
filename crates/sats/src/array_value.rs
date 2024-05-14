@@ -53,40 +53,28 @@ impl crate::Value for ArrayValue {
 
 impl ArrayValue {
     /// Determines (infers / synthesises) the type of the value.
-    pub(crate) fn type_of(&self) -> ArrayType {
+    pub(crate) fn type_of(&self) -> Option<ArrayType> {
         let elem_ty = Box::new(match self {
-            Self::Sum(v) => Self::first_type_of(v, AlgebraicValue::type_of_sum),
-            Self::Product(v) => Self::first_type_of(v, AlgebraicValue::type_of_product),
-            Self::Bool(_) => AlgebraicType::Bool,
-            Self::I8(_) => AlgebraicType::I8,
-            Self::U8(_) => AlgebraicType::U8,
-            Self::I16(_) => AlgebraicType::I16,
-            Self::U16(_) => AlgebraicType::U16,
-            Self::I32(_) => AlgebraicType::I32,
-            Self::U32(_) => AlgebraicType::U32,
-            Self::I64(_) => AlgebraicType::I64,
-            Self::U64(_) => AlgebraicType::U64,
-            Self::I128(_) => AlgebraicType::I128,
-            Self::U128(_) => AlgebraicType::U128,
-            Self::F32(_) => AlgebraicType::F32,
-            Self::F64(_) => AlgebraicType::F64,
-            Self::String(_) => AlgebraicType::String,
-            Self::Array(v) => Self::first_type_of(v, |a| a.type_of().into()),
-            Self::Map(v) => Self::first_type_of(v, AlgebraicValue::type_of_map),
-        });
-        ArrayType { elem_ty }
-    }
-
-    /// Helper for `type_of` above.
-    /// Infers the `AlgebraicType` from the first element by running `then` on it.
-    ///
-    /// The result of `first_type_of(&[])` is an empty sum type ("never"),
-    /// that is, a type that has no values.
-    /// This leads to e.g., an empty array of products having the type "never".
-    /// This is the most conservative choice
-    /// and has the consequence that no values can be added to such an array.
-    fn first_type_of<T>(arr: &[T], then: impl FnOnce(&T) -> AlgebraicType) -> AlgebraicType {
-        arr.first().map(then).unwrap_or_else(AlgebraicType::never)
+            Self::Sum(_) => None,
+            Self::Product(v) => AlgebraicValue::type_of_product(v.first()?),
+            Self::Bool(_) => Some(AlgebraicType::Bool),
+            Self::I8(_) => Some(AlgebraicType::I8),
+            Self::U8(_) => Some(AlgebraicType::U8),
+            Self::I16(_) => Some(AlgebraicType::I16),
+            Self::U16(_) => Some(AlgebraicType::U16),
+            Self::I32(_) => Some(AlgebraicType::I32),
+            Self::U32(_) => Some(AlgebraicType::U32),
+            Self::I64(_) => Some(AlgebraicType::I64),
+            Self::U64(_) => Some(AlgebraicType::U64),
+            Self::I128(_) => Some(AlgebraicType::I128),
+            Self::U128(_) => Some(AlgebraicType::U128),
+            Self::F32(_) => Some(AlgebraicType::F32),
+            Self::F64(_) => Some(AlgebraicType::F64),
+            Self::String(_) => Some(AlgebraicType::String),
+            Self::Array(v) => Some(v.first()?.type_of()?.into()),
+            Self::Map(v) => AlgebraicValue::type_of_map(v.first()?),
+        }?);
+        Some(ArrayType { elem_ty })
     }
 
     /// Returns the length of the array.

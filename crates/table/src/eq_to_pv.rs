@@ -109,8 +109,7 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_>, ty: &AlgebraicTypeLayout, rhs: &Algebrai
     match (ty, rhs) {
         (AlgebraicTypeLayout::Sum(ty), AlgebraicValue::Sum(rhs)) => {
             // Read the tag of the sum value of `lhs`.
-            // SAFETY: `ctx.lhs.bytes[curr_offset..]` hold a sum value at `ty`.
-            let (tag_lhs, data_ty) = unsafe { read_tag(ctx.lhs.bytes, ty, ctx.curr_offset) };
+            let (tag_lhs, data_ty) = read_tag(ctx.lhs.bytes, ty, ctx.curr_offset);
 
             // The tags must match!
             if tag_lhs != rhs.tag {
@@ -230,7 +229,7 @@ mod tests {
     use spacetimedb_sats::proptest::generate_typed_row;
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(2048))]
+        #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]
         #[test]
         fn pv_row_ref_eq((ty, val) in generate_typed_row()) {
             // Turn `val` into a `RowRef`.

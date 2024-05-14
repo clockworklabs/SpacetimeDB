@@ -28,7 +28,6 @@ use crate::{
     },
     util::range_move,
 };
-use spacetimedb_sats::algebraic_value::ser::slice_assume_init_ref;
 
 /// A precomputed BSATN layout for a type whose encoded length is a known constant,
 /// enabling fast BFLATN -> BSATN conversion.
@@ -109,14 +108,11 @@ impl MemcpyField {
     ///
     /// - `buf` must be at least `self.bsatn_offset + self.length` long.
     /// - `row` must be at least `self.bflatn_offset + self.length` long.
-    /// - `row[self.bflatn_offset .. self.bflatn_offset + length]` must all be initialized.
     unsafe fn copy(&self, buf: &mut [u8], row: &Bytes) {
         // SAFETY: forward caller requirement #1.
         let to = unsafe { buf.get_unchecked_mut(range_move(0..self.length as usize, self.bsatn_offset as usize)) };
         // SAFETY: forward caller requirement #2.
         let from = unsafe { row.get_unchecked(range_move(0..self.length as usize, self.bflatn_offset as usize)) };
-        // SAFETY: forward caller requirement #3.
-        let from = unsafe { slice_assume_init_ref(from) };
         to.copy_from_slice(from);
     }
 

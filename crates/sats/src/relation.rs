@@ -1,8 +1,8 @@
 use crate::algebraic_value::AlgebraicValue;
 use crate::db::auth::{StAccess, StTableType};
-use crate::db::error::RelationError;
+use crate::db::error::{RelationError, TypeError};
 use crate::satn::Satn;
-use crate::{algebraic_type, AlgebraicType, Typespace, WithTypespace};
+use crate::{algebraic_type, AlgebraicType};
 use core::fmt;
 use core::hash::Hash;
 use derive_more::From;
@@ -61,14 +61,8 @@ impl fmt::Display for FieldName {
 impl fmt::Display for FieldExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FieldExpr::Name(x) => {
-                write!(f, "{x}")
-            }
-            FieldExpr::Value(x) => {
-                let ty = x.type_of();
-                let ts = Typespace::new(vec![]);
-                write!(f, "{}", WithTypespace::new(&ts, &ty).with_value(x).to_satn())
-            }
+            FieldExpr::Name(x) => write!(f, "{x}"),
+            FieldExpr::Value(x) => write!(f, "{}", x.to_satn()),
         }
     }
 }
@@ -179,8 +173,10 @@ impl Header {
                     p.push(self.fields[pos.idx()].clone());
                 }
                 FieldExpr::Value(col) => {
-                    let ty = col.type_of();
                     let field = FieldName::new(self.table_id, pos.into());
+                    let ty = col.type_of().ok_or_else(|| {
+                        RelationError::TypeInference(field, TypeError::CannotInferType { value: col })
+                    })?;
                     p.push(Column::new(field, ty));
                 }
             }

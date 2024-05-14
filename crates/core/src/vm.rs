@@ -10,10 +10,10 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::RowCount;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::TableDef;
-use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldExprRef, Header, Relation};
+use spacetimedb_sats::relation::{DbTable, FieldExpr, Header, Relation};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::errors::ErrorVm;
-use spacetimedb_vm::eval::IterRows;
+use spacetimedb_vm::eval::{join_inner, IterRows};
 use spacetimedb_vm::expr::*;
 use spacetimedb_vm::iterators::RelIter;
 use spacetimedb_vm::program::{ProgramVm, Sources};
@@ -201,12 +201,12 @@ pub fn build_query<'a>(
                 }
             }
             Query::JoinInner(join) => {
-                let result = result
+                let lhs = result
                     .take()
                     .map(Ok)
                     .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
-                let iter = join_inner(ctx, stdb, tx, result, join, sources)?;
-                Box::new(iter)
+                let rhs = build_query(ctx, stdb, tx, &join.rhs, sources)?;
+                join_inner(lhs, rhs, join)?
             }
         })
     }
@@ -214,53 +214,6 @@ pub fn build_query<'a>(
     result
         .map(Ok)
         .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))
-}
-
-fn join_inner<'a>(
-    ctx: &'a ExecutionContext,
-    db: &'a RelationalDB,
-    tx: &'a TxMode<'a>,
-    lhs: impl RelOps<'a> + 'a,
-    rhs: &'a JoinExpr,
-    sources: &mut impl SourceProvider<'a>,
-) -> Result<impl RelOps<'a> + 'a, ErrorVm> {
-    let semi = rhs.semi;
-
-    let col_lhs = FieldExprRef::Name(rhs.col_lhs);
-    let col_rhs = FieldExprRef::Name(rhs.col_rhs);
-    let key_lhs = [col_lhs];
-    let key_rhs = [col_rhs];
-
-    let rhs = build_query(ctx, db, tx, &rhs.rhs, sources)?;
-    let key_lhs_header = lhs.head().clone();
-    let key_rhs_header = rhs.head().clone();
-    let col_lhs_header = lhs.head().clone();
-    let col_rhs_header = rhs.head().clone();
-
-    let header = if semi {
-        col_lhs_header.clone()
-    } else {
-        Arc::new(col_lhs_header.extend(&col_rhs_header))
-    };
-
-    lhs.join_inner(
-        rhs,
-        header,
-        move |row| Ok(row.project(&key_lhs, &key_lhs_header)?),
-        move |row| Ok(row.project(&key_rhs, &key_rhs_header)?),
-        move |l, r| {
-            let l = l.get(col_lhs, &col_lhs_header)?;
-            let r = r.get(col_rhs, &col_rhs_header)?;
-            Ok(l == r)
-        },
-        move |l, r| {
-            if semi {
-                l
-            } else {
-                l.extend(r)
-            }
-        },
-    )
 }
 
 /// Resolve `query` to a table iterator,
@@ -678,12 +631,27 @@ pub(crate) mod tests {
         Ok((schema, row))
     }
 
+    fn run_query<const N: usize>(
+        db: &RelationalDB,
+        q: QueryExpr,
+        sources: SourceSet<Vec<ProductValue>, N>,
+    ) -> MemTable {
+        let ctx = ExecutionContext::default();
+        db.with_read_only(&ctx, |tx| {
+            let mut tx_mode = (&*tx).into();
+            let p = &mut DbProgram::new(&ctx, db, &mut tx_mode, AuthCtx::for_testing());
+            match run_ast(p, q.into(), sources) {
+                Code::Table(x) => x,
+                x => panic!("invalid result {x}"),
+            }
+        })
+    }
+
     #[test]
     fn test_db_query_inner_join() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
 
-        let ctx = ExecutionContext::default();
-        let (schema, _) = stdb.with_auto_commit(&ctx, |tx| create_inv_table(&stdb, tx))?;
+        let (schema, _) = stdb.with_auto_commit(&ExecutionContext::default(), |tx| create_inv_table(&stdb, tx))?;
         let table_id = schema.table_id;
 
         let data = mem_table_one_u64(u32::MAX.into());
@@ -692,15 +660,7 @@ pub(crate) mod tests {
         let rhs_source_expr = sources.add_mem_table(data);
         let q =
             QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, FieldName::new(table_id, 0.into()), rhs, false);
-
-        let result = stdb.with_read_only(&ctx, |tx| {
-            let mut tx_mode = (&*tx).into();
-            let p = &mut DbProgram::new(&ctx, &stdb, &mut tx_mode, AuthCtx::for_testing());
-            match run_ast(p, q.into(), sources) {
-                Code::Table(x) => x,
-                x => panic!("invalid result {x}"),
-            }
-        });
+        let result = run_query(&stdb, q, sources);
 
         // The expected result.
         let inv = ProductType::from([AlgebraicType::U64, AlgebraicType::String, AlgebraicType::U64]);
@@ -724,18 +684,9 @@ pub(crate) mod tests {
         let rhs = *data.get_field_pos(0).unwrap();
         let mut sources = SourceSet::<_, 1>::empty();
         let rhs_source_expr = sources.add_mem_table(data);
-
         let q =
             QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, FieldName::new(table_id, 0.into()), rhs, true);
-
-        let result = stdb.with_read_only(&ctx, |tx| {
-            let mut tx_mode = (&*tx).into();
-            let p = &mut DbProgram::new(&ctx, &stdb, &mut tx_mode, AuthCtx::for_testing());
-            match run_ast(p, q.into(), sources) {
-                Code::Table(x) => x,
-                x => panic!("invalid result {x}"),
-            }
-        });
+        let result = run_query(&stdb, q, sources);
 
         // The expected result.
         let input = mem_table(schema.table_id, schema.get_row_type().clone(), vec![row]);
@@ -745,16 +696,9 @@ pub(crate) mod tests {
     }
 
     fn check_catalog(db: &RelationalDB, name: &str, row: ProductValue, q: QueryExpr, schema: &TableSchema) {
-        let ctx = ExecutionContext::default();
-        let result = db.with_read_only(&ctx, |tx| {
-            let tx_mode = &mut (&*tx).into();
-            let p = &mut DbProgram::new(&ctx, db, tx_mode, AuthCtx::for_testing());
-            run_ast(p, q.into(), [].into())
-        });
-
-        // The expected result.
+        let result = run_query(db, q, [].into());
         let input = MemTable::from_iter(Header::from(schema).into(), [row]);
-        assert_eq!(result, Code::Table(input), "{}", name);
+        assert_eq!(result, input, "{}", name);
     }
 
     #[test]

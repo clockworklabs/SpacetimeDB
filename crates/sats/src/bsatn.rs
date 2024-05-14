@@ -91,3 +91,35 @@ codec_funcs!(crate::SumTypeVariant);
 codec_funcs!(val: crate::AlgebraicValue);
 codec_funcs!(val: crate::ProductValue);
 codec_funcs!(val: crate::SumValue);
+
+#[cfg(test)]
+mod tests {
+    use super::to_vec;
+    use crate::proptest::generate_typed_value;
+    use crate::{meta_type::MetaType, AlgebraicType, AlgebraicValue};
+    use proptest::prelude::*;
+    use proptest::proptest;
+
+    #[test]
+    fn type_to_binary_equivalent() {
+        check_type(&AlgebraicType::meta_type());
+    }
+
+    #[track_caller]
+    fn check_type(ty: &AlgebraicType) {
+        let mut through_value = Vec::new();
+        ty.as_value().encode(&mut through_value);
+        let mut direct = Vec::new();
+        ty.encode(&mut direct);
+        assert_eq!(direct, through_value);
+    }
+
+    proptest! {
+        #[test]
+        fn bsatn_enc_de_roundtrips((ty, val) in generate_typed_value()) {
+            let bytes = to_vec(&val).unwrap();
+            let val_decoded = AlgebraicValue::decode(&ty, &mut &bytes[..]).unwrap();
+            prop_assert_eq!(val, val_decoded);
+        }
+    }
+}

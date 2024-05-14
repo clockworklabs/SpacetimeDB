@@ -1333,35 +1333,6 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
                 });
             });
         }
-        writeln!(output);
-        writeln!(output, "public object[] GetArgsAsObjectArray()");
-        indented_block(output, |output| {
-            writeln!(output, "switch (Reducer)");
-            indented_block(output, |output| {
-                for reducer in &reducers {
-                    let reducer_name = reducer.name.deref().to_case(Case::Pascal);
-                    writeln!(output, "case ReducerType.{reducer_name}:");
-                    indented_block(output, |output| {
-                        writeln!(output, "var args = {reducer_name}Args;");
-                        writeln!(output, "return new object[] {{");
-                        {
-                            indent_scope!(output);
-                            for (i, arg) in reducer.args.iter().enumerate() {
-                                let arg_name = arg
-                                    .name
-                                    .clone()
-                                    .unwrap_or_else(|| format!("arg_{i}").into())
-                                    .deref()
-                                    .to_case(Case::Pascal);
-                                writeln!(output, "args.{arg_name},");
-                            }
-                        }
-                        writeln!(output, "}};");
-                    });
-                }
-                writeln!(output, "default: throw new System.Exception($\"Unhandled reducer case: {{Reducer}}. Please run SpacetimeDB code generator\");");
-            });
-        });
     });
 
     let mut result = vec![vec![("ReducerEvent.cs".to_string(), output.into_inner())]];

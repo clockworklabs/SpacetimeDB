@@ -693,64 +693,6 @@ namespace SpacetimeDB
 				return (TestArgsStruct)Args;
 			}
 		}
-
-		public object[] GetArgsAsObjectArray()
-		{
-			switch (Reducer)
-			{
-				case ReducerType.AddPlayer:
-				{
-					var args = AddPlayerArgs;
-					return new object[] {
-						args.Name,
-					};
-				}
-				case ReducerType.AddPrivate:
-				{
-					var args = AddPrivateArgs;
-					return new object[] {
-						args.Name,
-					};
-				}
-				case ReducerType.DeletePlayer:
-				{
-					var args = DeletePlayerArgs;
-					return new object[] {
-						args.Id,
-					};
-				}
-				case ReducerType.DeletePlayersByName:
-				{
-					var args = DeletePlayersByNameArgs;
-					return new object[] {
-						args.Name,
-					};
-				}
-				case ReducerType.QueryPrivate:
-				{
-					var args = QueryPrivateArgs;
-					return new object[] {
-					};
-				}
-				case ReducerType.RepeatingTest:
-				{
-					var args = RepeatingTestArgs;
-					return new object[] {
-						args.PrevTime,
-					};
-				}
-				case ReducerType.Test:
-				{
-					var args = TestArgs;
-					return new object[] {
-						args.Arg,
-						args.Arg2,
-						args.Arg3,
-					};
-				}
-				default: throw new System.Exception($"Unhandled reducer case: {Reducer}. Please run SpacetimeDB code generator");
-			}
-		}
 	}
 }
 '''

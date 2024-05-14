@@ -70,6 +70,11 @@ metrics_group!(
         #[help = "The total time it takes for request to complete"]
         #[labels(txn_type: WorkloadType, database_address: Address, reducer_symbol: str)]
         pub request_round_trip: HistogramVec,
+
+        #[name = spacetime_reducer_plus_query_duration_sec]
+        #[help = "The time spent executing a reducer (in seconds), plus the time spent evaluating its subscription queries"]
+        #[labels(db: Address, reducer: str)]
+        pub reducer_plus_query_duration: HistogramVec,
     }
 );
 
