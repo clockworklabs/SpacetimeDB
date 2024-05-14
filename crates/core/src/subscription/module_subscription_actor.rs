@@ -58,12 +58,29 @@ impl ModuleSubscriptions {
 
         let guard = self.subscriptions.read();
 
-        for sql in subscription.query_strings {
-            let hash = QueryHash::from_string(&sql);
+        for sql in subscription
+            .query_strings
+            .iter()
+            .map(|sql| super::query::WHITESPACE.replace_all(sql, " "))
+        {
+            let sql = sql.trim();
+            if sql == super::query::SUBSCRIBE_TO_ALL_QUERY {
+                queries.extend(
+                    super::subscription::get_all(&self.relational_db, &tx, &auth)?
+                        .into_iter()
+                        .map(|query| {
+                            let hash = QueryHash::from_string(&query.sql);
+                            ExecutionUnit::new(query, hash).map(Arc::new)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                );
+                continue;
+            }
+            let hash = QueryHash::from_string(sql);
             if let Some(unit) = guard.query(&hash) {
                 queries.push(unit);
             } else {
-                let mut compiled = compile_read_only_query(&self.relational_db, &tx, &auth, &sql)?;
+                let mut compiled = compile_read_only_query(&self.relational_db, &tx, sql)?;
                 if compiled.len() > 1 {
                     return Result::Err(
                         SubscriptionError::Unsupported(String::from("Multiple statements in subscription query"))
