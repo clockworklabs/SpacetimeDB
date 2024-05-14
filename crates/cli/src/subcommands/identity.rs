@@ -447,6 +447,13 @@ async fn exec_import(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
 
     //optional
     let nickname = args.get_one::<String>("name").cloned();
+    if let Some(x) = nickname.as_deref() {
+        config.can_set_name(x)?;
+    }
+
+    if config.identity_exists(&identity) {
+        return Err(anyhow::anyhow!("Identity \"{}\" already exists in config", identity));
+    };
 
     config.identity_configs_mut().push(IdentityConfig {
         identity,
@@ -578,6 +585,7 @@ async fn exec_token(config: Config, args: &ArgMatches) -> Result<(), anyhow::Err
 async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let new_name = args.get_one::<String>("name").unwrap();
     let identity = args.get_one::<String>("identity").unwrap();
+    config.can_set_name(new_name.as_str())?;
     let ic = config
         .get_identity_config_mut(identity)
         .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {identity}"))?;
