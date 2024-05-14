@@ -129,9 +129,9 @@ class Smoketest(unittest.TestCase):
     def publish_module(self, domain=None, *, clear=True, capture_stderr=True):
         publish_output = self.spacetime(
             "publish",
-            *[domain] if domain is not None else [],
             "--project-path", self.project_path,
-            *(["-c"] if clear else []),
+            *[domain] if domain is not None else [],
+            *["-c"] if clear and domain is not None else [],
             capture_stderr=capture_stderr,
         )
         self.resolved_address = re.search(r"address: ([0-9a-fA-F]+)", publish_output)[1]
