@@ -1,6 +1,6 @@
 SPACETIMEDB BUSINESS SOURCE LICENSE AGREEMENT
 
-Business Source License 1.1
+Business Source License 1.2
 
 Parameters
 
