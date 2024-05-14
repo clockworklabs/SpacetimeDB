@@ -15,17 +15,17 @@
  */
 #if !UNITY_5_3_OR_NEWER
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 
 namespace SpacetimeDB
 {
     public static class AuthToken
     {
-        private static string? settingsPath = null;
-        private static string? token = null;
+        private static string? settingsPath;
+        private static string? token;
+
+        private const string PREFIX = "auth_token=";
 
         /// <summary>
         /// Initializes the AuthToken class. This must be called before any other methods.
@@ -36,10 +36,7 @@ namespace SpacetimeDB
         /// </summary>
         public static void Init(string configFolder = ".spacetime_csharp_sdk", string configFile = "settings.ini", string? configRoot = null)
         {
-            if (configRoot == null)
-            {
-                configRoot = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            }
+            configRoot ??= Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
             if (Environment.GetCommandLineArgs().Any(arg => arg == "--client"))
             {
@@ -52,14 +49,10 @@ namespace SpacetimeDB
 
             if (File.Exists(settingsPath))
             {
-                foreach (string line in File.ReadAllLines(settingsPath))
-                {
-                    if (line.StartsWith("auth_token="))
-                    {
-                        token = line.Substring("auth_token=".Length);
-                        break;
-                    }
-                }
+                token =
+                    File.ReadLines(settingsPath)
+                    .FirstOrDefault(line => line.StartsWith(PREFIX))
+                    ?[PREFIX.Length..];
             }
         }
 
@@ -85,29 +78,23 @@ namespace SpacetimeDB
         /// </summary>
         public static void SaveToken(string token)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
-            if (File.Exists(settingsPath))
+            if (settingsPath == null)
             {
-                List<string> lines = File.ReadAllLines(settingsPath).ToList();
-                bool found = false;
-                for (int i = 0; i < lines.Count; i++)
-                {
-                    if (lines[i].StartsWith("auth_token="))
-                    {
-                        lines[i] = "auth_token=" + token;
-                        found = true;
-                    }
-                }
-                if (!found)
-                {
-                    lines.Add("auth_token=" + token);
-                }
-                File.WriteAllLines(settingsPath, lines);
+                throw new Exception("Token not initialized. Call AuthToken.Init() first.");
+            }
+            Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
+            var newAuthLine = PREFIX + token;
+            var lines = File.Exists(settingsPath) ? File.ReadAllLines(settingsPath).ToList() : new();
+            var i = lines.FindIndex(line => line.StartsWith(PREFIX));
+            if (i >= 0)
+            {
+                lines[i] = newAuthLine;
             }
             else
             {
-                File.WriteAllText(settingsPath, "auth_token=" + token);
+                lines.Add(newAuthLine);
             }
+            File.WriteAllLines(settingsPath, lines);
         }
     }
 }
