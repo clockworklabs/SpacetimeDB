@@ -6,6 +6,7 @@ use reqwest::{StatusCode, Url};
 use spacetimedb_client_api_messages::name::PublishOp;
 use spacetimedb_client_api_messages::name::{is_address, parse_domain_name, PublishResult};
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 
 use crate::config::Config;
@@ -24,12 +25,12 @@ pub fn cli() -> clap::Command {
                 .help("The type of host that should be for hosting this module"),
         )
         .arg(
-            // TODO(jdetter): Rename this to --delete-tables (clear doesn't really implies the tables are being dropped)
             Arg::new("clear_database")
                 .long("clear-database")
                 .short('c')
                 .action(SetTrue)
-                .help("When publishing a new module to an existing address, also delete all tables associated with the database"),
+                .requires("name|address")
+                .help("When publishing to an existing address, first DESTROY all data associated with the module"),
         )
         .arg(
             Arg::new("project_path")
@@ -95,6 +96,12 @@ pub fn cli() -> clap::Command {
                 .short('s')
                 .help("The nickname, domain name or URL of the server to host the database."),
         )
+        .arg(
+            Arg::new("force")
+                .long("force")
+                .action(SetTrue)
+                .help("DANGEROUS - Proceed with all actions without waiting for user confirmation")
+        )
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
@@ -105,6 +112,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
     let host_type = args.get_one::<String>("host_type").unwrap();
     let clear_database = args.get_flag("clear_database");
+    let force = args.get_flag("force");
     let trace_log = args.get_flag("trace_log");
     let anon_identity = args.get_flag("anon_identity");
     let skip_clippy = args.get_flag("skip_clippy");
@@ -132,10 +140,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         ));
     }
 
-    if clear_database {
-        query_params.push(("clear", "true"));
-    }
-
     if trace_log {
         query_params.push(("trace_log", "true"));
     }
@@ -157,7 +161,31 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         database_host
     );
 
-    eprintln!("Publishing module...");
+    if clear_database {
+        if force {
+            println!("Skipping confirmation due to --force.");
+        } else {
+            // Note: `name_or_address` should be set, because it is `required` in the CLI arg config.
+            println!(
+                "This will DESTROY the current {} module, and ALL corresponding data.",
+                name_or_address.unwrap()
+            );
+            print!(
+                "Are you sure you want to proceed? (y/N) [deleting {}] ",
+                name_or_address.unwrap()
+            );
+            std::io::stdout().flush()?;
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if input.trim().to_lowercase() != "y" && input.trim().to_lowercase() != "yes" {
+                println!("Aborting");
+                return Ok(());
+            }
+        }
+        query_params.push(("clear", "true"));
+    }
+
+    println!("Publishing module...");
 
     let mut builder = reqwest::Client::new().post(Url::parse_with_params(
         format!("{}/database/publish", database_host).as_str(),
