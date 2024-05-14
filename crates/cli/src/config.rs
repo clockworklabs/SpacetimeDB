@@ -978,6 +978,14 @@ Import an existing identity with:
         })
     }
 
+    pub fn name_exists(&self, name: &str) -> bool {
+        self.get_identity_config_by_name(name).is_some()
+    }
+
+    pub fn identity_exists(&self, identity: &Identity) -> bool {
+        self.get_identity_config_by_identity(identity).is_some()
+    }
+
     pub fn can_set_name(&self, new_nickname: &str) -> Result<(), anyhow::Error> {
         if self.name_exists(new_nickname) {
             return Err(anyhow::anyhow!("An identity with that name already exists."));
@@ -986,14 +994,6 @@ Import an existing identity with:
             return Err(anyhow::anyhow!("An identity name cannot be an identity."));
         }
         Ok(())
-    }
-
-    pub fn name_exists(&self, name: &str) -> bool {
-        self.get_identity_config_by_name(name).is_some()
-    }
-
-    pub fn identity_exists(&self, identity: &Identity) -> bool {
-        self.get_identity_config_by_identity(identity).is_some()
     }
 
     pub fn get_identity_config_by_name(&self, name: &str) -> Option<&IdentityConfig> {
