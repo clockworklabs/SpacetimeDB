@@ -18,14 +18,6 @@ namespace SpacetimeDB
 {
     public class SpacetimeDBClient
     {
-        public enum TableOp
-        {
-            Insert,
-            Delete,
-            Update,
-            NoChange,
-        }
-
         public class ReducerCallRequest
         {
             public string fn;
@@ -37,14 +29,23 @@ namespace SpacetimeDB
             public string subscriptionQuery;
         }
 
-        public struct DbOp
+        struct DbValue
+        {
+            public object value;
+            public byte[] bytes;
+
+            public DbValue(object value, byte[] bytes)
+            {
+                this.value = value;
+                this.bytes = bytes;
+            }
+        }
+
+        struct DbOp
         {
             public ClientCache.TableCache table;
-            public TableOp op;
-            public object newValue;
-            public object oldValue;
-            public byte[] deletedBytes;
-            public byte[] insertedBytes;
+            public DbValue? delete;
+            public DbValue? insert;
             public AlgebraicValue rowValue;
         }
 
@@ -321,11 +322,7 @@ namespace SpacetimeDB
                                 var op = new DbOp
                                 {
                                     table = table,
-                                    deletedBytes = null,
-                                    insertedBytes = rowBytes,
-                                    op = TableOp.Insert,
-                                    newValue = obj,
-                                    oldValue = null,
+                                    insert = new(obj, rowBytes),
                                     rowValue = deserializedRow,
                                 };
 
@@ -375,24 +372,26 @@ namespace SpacetimeDB
                                 var op = new DbOp
                                 {
                                     table = table,
-                                    deletedBytes =
-                                        row.Op == TableRowOperation.Types.OperationType.Delete ? rowBytes : null,
-                                    insertedBytes =
-                                        row.Op == TableRowOperation.Types.OperationType.Delete ? null : rowBytes,
-                                    op = row.Op == TableRowOperation.Types.OperationType.Delete
-                                        ? TableOp.Delete
-                                        : TableOp.Insert,
-                                    newValue = row.Op == TableRowOperation.Types.OperationType.Delete ? null : obj,
-                                    oldValue = row.Op == TableRowOperation.Types.OperationType.Delete ? obj : null,
                                     rowValue = deserializedRow,
                                 };
+
+                                var dbValue = new DbValue(obj, rowBytes);
+
+                                if (row.Op == TableRowOperation.Types.OperationType.Insert)
+                                {
+                                    op.insert = dbValue;
+                                }
+                                else
+                                {
+                                    op.delete = dbValue;
+                                }
 
                                 if (primaryKeyType != null)
                                 {
                                     var primaryKeyLookup = GetPrimaryKeyLookup(tableName, primaryKeyType);
-                                    if (primaryKeyLookup.TryGetValue(primaryKeyValue, out var value))
+                                    if (primaryKeyLookup.TryGetValue(primaryKeyValue, out var oldOp))
                                     {
-                                        if (value.op == op.op || value.op == TableOp.Update)
+                                        if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null))
                                         {
                                             Logger.LogWarning($"Update with the same primary key was " +
                                                               $"applied multiple times! tableName={tableName}");
@@ -400,30 +399,17 @@ namespace SpacetimeDB
                                             // SpacetimeDB side.
                                             continue;
                                         }
+                                        var (insertOp, deleteOp) = op.insert is not null ? (op, oldOp) : (oldOp, op);
 
-                                        var insertOp = op;
-                                        var deleteOp = value;
-                                        if (op.op == TableOp.Delete)
-                                        {
-                                            insertOp = value;
-                                            deleteOp = op;
-                                        }
-
-                                        primaryKeyLookup[primaryKeyValue] = new DbOp
+                                        op = new DbOp
                                         {
                                             table = insertOp.table,
-                                            op = TableOp.Update,
-                                            newValue = insertOp.newValue,
-                                            oldValue = deleteOp.oldValue,
-                                            deletedBytes = deleteOp.deletedBytes,
-                                            insertedBytes = insertOp.insertedBytes,
+                                            delete = deleteOp.delete,
+                                            insert = insertOp.insert,
                                             rowValue = insertOp.rowValue,
                                         };
                                     }
-                                    else
-                                    {
-                                        primaryKeyLookup[primaryKeyValue] = op;
-                                    }
+                                    primaryKeyLookup[primaryKeyValue] = op;
                                 }
                                 else
                                 {
@@ -511,27 +497,20 @@ namespace SpacetimeDB
                 {
                     foreach (var table in clientDB.GetTables())
                     {
-                        foreach (var rowBytes in table.entries.Keys)
+                        if (!preProcessedMessage.inserts.TryGetValue(table.Name, out var hashSet))
                         {
-                            if (!preProcessedMessage.inserts.TryGetValue(table.Name, out var hashSet))
-                            {
-                                continue;
-                            }
+                            continue;
+                        }
 
-                            if (!hashSet.Contains(rowBytes))
+                        foreach (var (rowBytes, oldValue) in table.entries.Where(kv => !hashSet.Contains(kv.Key)))
+                        {
+                            dbOps.Add(new DbOp
                             {
+                                table = table,
                                 // This is a row that we had before, but we do not have it now.
                                 // This must have been a delete.
-                                dbOps.Add(new DbOp
-                                {
-                                    table = table,
-                                    op = TableOp.Delete,
-                                    newValue = null,
-                                    oldValue = table.entries[rowBytes].Item2,
-                                    deletedBytes = rowBytes,
-                                    insertedBytes = null
-                                });
-                            }
+                                delete = new(oldValue.Item2, rowBytes),
+                            });
                         }
                     }
                 }
@@ -589,15 +568,16 @@ namespace SpacetimeDB
 
         private void OnMessageProcessCompleteUpdate(Message message, List<DbOp> dbOps)
         {
+            var transactionEvent = message.TransactionUpdate?.Event!;
+
             // First trigger OnBeforeDelete
             foreach (var update in dbOps)
             {
-                if (update.op == TableOp.Delete)
+                if (update.delete is { value: var oldValue })
                 {
                     try
                     {
-                        update.table.BeforeDeleteCallback?.Invoke(update.oldValue,
-                            message.TransactionUpdate?.Event);
+                        update.table.BeforeDeleteCallback?.Invoke(oldValue, transactionEvent);
                     }
                     catch (Exception e)
                     {
@@ -606,175 +586,62 @@ namespace SpacetimeDB
                 }
             }
 
-            void InternalDeleteCallback(DbOp op)
-            {
-                if (op.oldValue != null)
-                {
-                    op.table.InternalValueDeletedCallback(op.oldValue);
-                }
-                else
-                {
-                    Logger.LogError("Delete issued, but no value was present!");
-                }
-            }
-
-            void InternalInsertCallback(DbOp op)
-            {
-                if (op.newValue != null)
-                {
-                    op.table.InternalValueInsertedCallback(op.newValue);
-                }
-                else
-                {
-                    Logger.LogError("Insert issued, but no value was present!");
-                }
-            }
-
             // Apply all of the state
             for (var i = 0; i < dbOps.Count; i++)
             {
                 // TODO: Reimplement updates when we add support for primary keys
                 var update = dbOps[i];
-                switch (update.op)
-                {
-                    case TableOp.Delete:
-                        if (dbOps[i].table.DeleteEntry(update.deletedBytes))
-                        {
-                            InternalDeleteCallback(update);
-                        }
-                        else
-                        {
-                            var op = dbOps[i];
-                            op.op = TableOp.NoChange;
-                            dbOps[i] = op;
-                        }
-                        break;
-                    case TableOp.Insert:
-                        if (dbOps[i].table.InsertEntry(update.insertedBytes, update.rowValue))
-                        {
-                            InternalInsertCallback(update);
-                        }
-                        else
-                        {
-                            var op = dbOps[i];
-                            op.op = TableOp.NoChange;
-                            dbOps[i] = op;
-                        }
-                        break;
-                    case TableOp.Update:
-                        if (dbOps[i].table.DeleteEntry(update.deletedBytes))
-                        {
-                            InternalDeleteCallback(update);
-                        }
-                        else
-                        {
-                            var op = dbOps[i];
-                            op.op = TableOp.NoChange;
-                            dbOps[i] = op;
-                        }
 
-                        if (dbOps[i].table.InsertEntry(update.insertedBytes, update.rowValue))
-                        {
-                            InternalInsertCallback(update);
-                        }
-                        else
-                        {
-                            var op = dbOps[i];
-                            op.op = TableOp.NoChange;
-                            dbOps[i] = op;
-                        }
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
+                if (update.delete is {} delete)
+                {
+                    if (update.table.DeleteEntry(delete.bytes))
+                    {
+                        update.table.InternalValueDeletedCallback(delete.value);
+                    }
+                    else
+                    {
+                        update.delete = null;
+                        dbOps[i] = update;
+                    }
+                }
+
+                if (update.insert is {} insert)
+                {
+                    if (update.table.InsertEntry(insert.bytes, update.rowValue))
+                    {
+                        update.table.InternalValueInsertedCallback(insert.value);
+                    }
+                    else
+                    {
+                        update.insert = null;
+                        dbOps[i] = update;
+                    }
                 }
             }
 
             // Send out events
-            var updateCount = dbOps.Count;
-            for (var i = 0; i < updateCount; i++)
+            foreach (var dbOp in dbOps)
             {
-                var tableName = dbOps[i].table.ClientTableType.Name;
-                var tableOp = dbOps[i].op;
-                var oldValue = dbOps[i].oldValue;
-                var newValue = dbOps[i].newValue;
-
-                switch (tableOp)
+                try
                 {
-                    case TableOp.Insert:
-                        if (oldValue == null && newValue != null)
-                        {
-                            try
-                            {
-                                if (dbOps[i].table.InsertCallback != null)
-                                {
-                                    dbOps[i].table.InsertCallback.Invoke(newValue,
-                                        message.TransactionUpdate?.Event);
-                                }
-                            }
-                            catch (Exception e)
-                            {
-                                Logger.LogException(e);
-                            }
-                        }
-                        else
-                        {
-                            Logger.LogError("Failed to send callback: invalid insert!");
-                        }
-
-                        break;
-                    case TableOp.Delete:
-                        {
-                            if (oldValue != null && newValue == null)
-                            {
-                                if (dbOps[i].table.DeleteCallback != null)
-                                {
-                                    try
-                                    {
-                                        dbOps[i].table.DeleteCallback.Invoke(oldValue,
-                                            message.TransactionUpdate?.Event);
-                                    }
-                                    catch (Exception e)
-                                    {
-                                        Logger.LogException(e);
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                Logger.LogError("Failed to send callback: invalid delete");
-                            }
-
+                    switch (dbOp)
+                    {
+                        case { insert: { value: var newValue }, delete: { value: var oldValue } }:
+                            dbOp.table.UpdateCallback?.Invoke(oldValue, newValue, transactionEvent);
                             break;
-                        }
-                    case TableOp.Update:
-                        {
-                            if (oldValue != null && newValue != null)
-                            {
-                                try
-                                {
-                                    if (dbOps[i].table.UpdateCallback != null)
-                                    {
-                                        dbOps[i].table.UpdateCallback.Invoke(oldValue, newValue,
-                                            message.TransactionUpdate?.Event);
-                                    }
-                                }
-                                catch (Exception e)
-                                {
-                                    Logger.LogException(e);
-                                }
-                            }
-                            else
-                            {
-                                Logger.LogError("Failed to send callback: invalid update");
-                            }
 
+                        case { insert: { value: var newValue } }:
+                            dbOp.table.InsertCallback?.Invoke(newValue, transactionEvent);
                             break;
-                        }
-                    case TableOp.NoChange:
-                        // noop
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
+
+                        case { delete: { value: var oldValue } }:
+                            dbOp.table.DeleteCallback?.Invoke(oldValue, transactionEvent);
+                            break;
+                    }
+                }
+                catch (Exception e)
+                {
+                    Logger.LogException(e);
                 }
             }
         }
