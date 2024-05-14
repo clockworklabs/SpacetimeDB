@@ -1,14 +1,12 @@
-use super::subscription::get_all;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::sql::compiler::compile_sql;
 use crate::subscription::subscription::SupportedQuery;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_vm::expr::{self, Crud, CrudExpr, DbType, QueryExpr};
 
-static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
+pub(crate) static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
 
 // TODO: It's semantically wrong to `SUBSCRIBE_TO_ALL_QUERY`
@@ -24,7 +22,6 @@ pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
 pub fn compile_read_only_query(
     relational_db: &RelationalDB,
     tx: &Tx,
-    auth: &AuthCtx,
     input: &str,
 ) -> Result<Vec<SupportedQuery>, DBError> {
     let input = input.trim();
@@ -34,9 +31,6 @@ pub fn compile_read_only_query(
 
     // Remove redundant whitespace, and in particular newlines, for debug info.
     let input = WHITESPACE.replace_all(input, " ");
-    if input == SUBSCRIBE_TO_ALL_QUERY {
-        return get_all(relational_db, tx, auth);
-    }
 
     let compiled = compile_sql(relational_db, tx, &input)?;
     let mut queries = Vec::with_capacity(compiled.len());
@@ -104,13 +98,14 @@ mod tests {
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate};
     use crate::sql::execute::collect_result;
     use crate::sql::execute::tests::run_for_testing;
-    use crate::subscription::subscription::ExecutionSet;
+    use crate::subscription::subscription::{get_all, ExecutionSet};
     use crate::util::slow::SlowQueryConfig;
     use crate::vm::tests::create_table_with_rows;
     use crate::vm::DbProgram;
     use itertools::Itertools;
     use spacetimedb_lib::bsatn::to_vec;
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::Identity;
     use spacetimedb_primitives::{ColId, TableId};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
@@ -520,7 +515,7 @@ mod tests {
             AND MobileEntityState.location_z < 192000";
 
         let tx = db.begin_tx();
-        let qset = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), sql_query)?;
+        let qset = compile_read_only_query(&db, &tx, sql_query)?;
 
         for q in qset {
             let result = run_query(
@@ -549,7 +544,7 @@ mod tests {
         let row_1 = product!(1u64, "health");
         let row_2 = product!(2u64, "jhon doe");
         let tx = db.begin_tx();
-        let s = compile_read_only_query(&db, &tx, &AuthCtx::for_testing(), SUBSCRIBE_TO_ALL_QUERY)?.into();
+        let s = get_all(&db, &tx, &AuthCtx::for_testing())?.into();
         let ctx = ExecutionContext::subscribe(db.address(), SlowQueryConfig::default());
         check_query_eval(&ctx, &db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
 
@@ -597,7 +592,6 @@ mod tests {
         db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx();
-        let auth = AuthCtx::for_testing();
 
         // All single table queries are supported
         let scans = [
@@ -609,14 +603,14 @@ mod tests {
             "SELECT * FROM lhs WHERE id > 5",
         ];
         for scan in scans {
-            let expr = compile_read_only_query(&db, &tx, &auth, scan)?.pop().unwrap();
+            let expr = compile_read_only_query(&db, &tx, scan)?.pop().unwrap();
             assert_eq!(expr.kind(), Supported::Select, "{scan}\n{expr:#?}");
         }
 
         // Only index semijoins are supported
         let joins = ["SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE rhs.y < 10"];
         for join in joins {
-            let expr = compile_read_only_query(&db, &tx, &auth, join)?.pop().unwrap();
+            let expr = compile_read_only_query(&db, &tx, join)?.pop().unwrap();
             assert_eq!(expr.kind(), Supported::Semijoin, "{join}\n{expr:#?}");
         }
 
@@ -627,7 +621,7 @@ mod tests {
             "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
         ];
         for join in joins {
-            match compile_read_only_query(&db, &tx, &auth, join) {
+            match compile_read_only_query(&db, &tx, join) {
                 Err(DBError::Subscription(SubscriptionError::Unsupported(_))) => (),
                 x => panic!("Unexpected: {x:?}"),
             }
