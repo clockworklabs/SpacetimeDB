@@ -4,7 +4,7 @@ use crate::{
 };
 use std::io::Write;
 
-use crate::util::{is_hex_identity, print_identity_config};
+use crate::util::print_identity_config;
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use email_address::EmailAddress;
@@ -388,15 +388,8 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let alias = args.get_one::<String>("name");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let default = *args.get_one::<bool>("default").unwrap();
-
-    if let Some(alias) = alias {
-        if config.name_exists(alias) {
-            return Err(anyhow::anyhow!("An identity with that name already exists."));
-        }
-
-        if is_hex_identity(alias.as_str()) {
-            return Err(anyhow::anyhow!("An identity name cannot be an identity."));
-        }
+    if let Some(x) = alias {
+        config.can_set_name(x)?;
     }
 
     let email = args.get_one::<String>("email");
@@ -584,10 +577,10 @@ async fn exec_token(config: Config, args: &ArgMatches) -> Result<(), anyhow::Err
 /// Executes the `identity set-default` command which sets the default identity.
 async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let new_name = args.get_one::<String>("name").unwrap();
-    let identity_or_name = args.get_one::<String>("identity").unwrap();
+    let identity = args.get_one::<String>("identity").unwrap();
     let ic = config
-        .get_identity_config_mut(identity_or_name)
-        .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {identity_or_name}"))?;
+        .get_identity_config_mut(identity)
+        .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {identity}"))?;
     ic.nickname = Some(new_name.to_owned());
     println!("Updated identity:");
     print_identity_config(ic);
