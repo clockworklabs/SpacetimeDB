@@ -250,7 +250,6 @@ mod tests {
     use crate::sql::execute::tests::run_for_testing;
     use crate::vm::tests::create_table_with_rows;
     use spacetimedb_lib::error::{ResultTest, TestError};
-    use spacetimedb_lib::operator::OpQuery;
     use spacetimedb_lib::{Address, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType};
@@ -648,23 +647,14 @@ mod tests {
         assert_eq!(source_lhs.table_id().unwrap(), lhs_id);
         assert_eq!(query.len(), 2);
 
-        // The first operation in the pipeline should be a selection
-        let Query::Select(ColumnOp::Cmp {
-            op: OpQuery::Cmp(OpCmp::Eq),
-            ref lhs,
-            ref rhs,
+        // The first operation in the pipeline should be a selection with `col#0 = 3`
+        let Query::Select(ColumnOp::ColCmpVal {
+            cmp: OpCmp::Eq,
+            lhs: ColId(0),
+            rhs: AlgebraicValue::U64(3),
         }) = query[0]
         else {
             panic!("unexpected operator {:#?}", query[0]);
-        };
-
-        let ColumnOp::Col(ColExpr::Col(col)) = **lhs else {
-            panic!("unexpected left hand side {:#?}", **lhs);
-        };
-        assert_eq!(col, 0.into());
-
-        let ColumnOp::Col(ColExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
-            panic!("unexpected right hand side {:#?}", **rhs);
         };
 
         // The join should follow the selection
@@ -732,22 +722,13 @@ mod tests {
         assert_eq!(&**inner_header, &source_lhs.head().extend(rhs.source.head()));
 
         // The selection should be pushed onto the rhs of the join
-        let Query::Select(ColumnOp::Cmp {
-            op: OpQuery::Cmp(OpCmp::Eq),
-            ref lhs,
-            ref rhs,
+        let Query::Select(ColumnOp::ColCmpVal {
+            cmp: OpCmp::Eq,
+            lhs: ColId(1),
+            rhs: AlgebraicValue::U64(3),
         }) = rhs.query[0]
         else {
             panic!("unexpected operator {:#?}", rhs.query[0]);
-        };
-
-        let ColumnOp::Col(ColExpr::Col(col)) = **lhs else {
-            panic!("unexpected left hand side {:#?}", **lhs);
-        };
-        assert_eq!(col, 1.into());
-
-        let ColumnOp::Col(ColExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
-            panic!("unexpected right hand side {:#?}", **rhs);
         };
         Ok(())
     }
@@ -890,22 +871,13 @@ mod tests {
         assert_eq!(table_id, rhs_id);
 
         // Followed by a selection
-        let Query::Select(ColumnOp::Cmp {
-            op: OpQuery::Cmp(OpCmp::Eq),
-            lhs: ref field,
-            rhs: ref value,
+        let Query::Select(ColumnOp::ColCmpVal {
+            cmp: OpCmp::Eq,
+            lhs: ColId(2),
+            rhs: AlgebraicValue::U64(3),
         }) = rhs[1]
         else {
             panic!("unexpected operator {:#?}", rhs[0]);
-        };
-
-        let ColumnOp::Col(ColExpr::Col(col)) = **field else {
-            panic!("unexpected left hand side {:#?}", field);
-        };
-        assert_eq!(col, 2.into());
-
-        let ColumnOp::Col(ColExpr::Value(AlgebraicValue::U64(3))) = **value else {
-            panic!("unexpected right hand side {:#?}", value);
         };
         Ok(())
     }
@@ -976,22 +948,13 @@ mod tests {
         assert_eq!(table_id, rhs_id);
 
         // Followed by a selection
-        let Query::Select(ColumnOp::Cmp {
-            op: OpQuery::Cmp(OpCmp::Eq),
-            lhs: ref field,
-            rhs: ref value,
+        let Query::Select(ColumnOp::ColCmpVal {
+            cmp: OpCmp::Eq,
+            lhs: ColId(2),
+            rhs: AlgebraicValue::U64(3),
         }) = rhs[1]
         else {
             panic!("unexpected operator {:#?}", rhs[0]);
-        };
-
-        let ColumnOp::Col(ColExpr::Col(col)) = **field else {
-            panic!("unexpected left hand side {:#?}", field);
-        };
-        assert_eq!(col, 2.into());
-
-        let ColumnOp::Col(ColExpr::Value(AlgebraicValue::U64(3))) = **value else {
-            panic!("unexpected right hand side {:#?}", value);
         };
         Ok(())
     }
