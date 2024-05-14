@@ -291,7 +291,7 @@ static_assert_size!(IndexSemiJoinLeft<Box<IterRows<'static>>>, 312);
 
 impl<'a, Rhs: RelOps<'a>> IndexSemiJoinLeft<'a, '_, Rhs> {
     fn filter(&self, index_row: &RelValue<'_>) -> bool {
-        self.index_select.as_ref().map_or(true, |op| op.compare(index_row))
+        self.index_select.as_ref().map_or(true, |op| op.eval_bool(index_row))
     }
 }
 
@@ -327,7 +327,7 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoinLeft<'a, '_, Rhs> {
     }
 }
 
-/// An index join operator that returns matching rows from the index side.
+/// An index join operator that returns matching rows from the probe side.
 pub struct IndexSemiJoinRight<'a, 'c, Rhs: RelOps<'a>> {
     /// An iterator for the probe side.
     /// The values returned will be used to probe the index.
@@ -352,7 +352,7 @@ static_assert_size!(IndexSemiJoinRight<Box<IterRows<'static>>>, 64);
 
 impl<'a, Rhs: RelOps<'a>> IndexSemiJoinRight<'a, '_, Rhs> {
     fn filter(&self, index_row: &RelValue<'_>) -> bool {
-        self.index_select.as_ref().map_or(true, |op| op.compare(index_row))
+        self.index_select.as_ref().map_or(true, |op| op.eval_bool(index_row))
     }
 }
 
