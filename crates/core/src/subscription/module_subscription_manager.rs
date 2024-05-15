@@ -249,6 +249,7 @@ impl SubscriptionManager {
                     },
                 );
             drop(span);
+
             let _span = tracing::info_span!("eval_send").entered();
 
             if let Some((_, client)) = event
