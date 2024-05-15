@@ -151,7 +151,7 @@ impl ModuleSubscriptions {
         &self,
         client: Option<&ClientConnectionSender>,
         subscriptions: &SubscriptionManager,
-        event: Arc<ModuleEvent>,
+        event: &Arc<ModuleEvent>,
     ) {
         match event.status {
             EventStatus::Committed(_) => {
@@ -160,7 +160,7 @@ impl ModuleSubscriptions {
             EventStatus::Failed(_) => {
                 if let Some(client) = client {
                     let message = TransactionUpdateMessage::<DatabaseUpdate> {
-                        event,
+                        event: event.clone(),
                         database_update: <_>::default(),
                     };
                     let _ = client.send_message(message);
@@ -177,7 +177,7 @@ impl ModuleSubscriptions {
         &self,
         client: Option<&ClientConnectionSender>,
         subscriptions: &SubscriptionManager,
-        event: Arc<ModuleEvent>,
+        event: &Arc<ModuleEvent>,
     ) {
         tokio::runtime::Handle::current().block_on(self.broadcast_event(client, subscriptions, event))
     }
@@ -188,7 +188,7 @@ impl ModuleSubscriptions {
     /// once all updates have been successfully added to the subscribers' send queues (i.e. after
     /// it resolves, it's guaranteed that if you call `subscriber.send(x)` the client will receive
     /// x after they receive this subscription update).
-    fn broadcast_commit_event(&self, subscriptions: &SubscriptionManager, event: Arc<ModuleEvent>) {
+    fn broadcast_commit_event(&self, subscriptions: &SubscriptionManager, event: &Arc<ModuleEvent>) {
         subscriptions.eval_updates(&self.relational_db, event)
     }
 }

@@ -535,25 +535,31 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             arg_bytes: args.get_bsatn().clone(),
         };
 
-        let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable));
-        let _guard = WORKER_METRICS
-            .reducer_plus_query_duration
-            .with_label_values(&address, op.name)
-            .with_timer(tx.timer);
+        let function_call = ModuleFunctionCall {
+            reducer: reducer_name.to_owned(),
+            args,
+        };
 
-        let mut tx_slot = self.instance.instance_env().tx.clone();
-
+        let ctx = ExecutionContext::reducer(address, ReducerContext::from(op.clone()));
         let reducer_span = tracing::trace_span!(
             "run_reducer",
             timings.total_duration = tracing::field::Empty,
             energy.budget = budget.get(),
             energy.used = tracing::field::Empty,
-        )
-        .entered();
-        let ctx = ExecutionContext::reducer(address, ReducerContext::from(op.clone()));
-        // run the call_reducer call in rayon. it's important that we don't acquire a lock inside a rayon task,
+        );
+        let mut tx_slot = self.instance.instance_env().tx.clone();
+        let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable));
+        let metrics_reducer_query_dur_on_drop = WORKER_METRICS
+            .reducer_plus_query_duration
+            .with_label_values(&address, op.name)
+            .with_timer(tx.timer);
+
+        let reducer_span = reducer_span.entered();
+        // Run the call_reducer call in rayon.
+        // It's important that we don't acquire a lock inside a rayon task,
         // as that can lead to deadlock.
         let (ctx, tx, result) = rayon::scope(|_| tx_slot.set(ctx, tx, || self.instance.call_reducer(op, budget)));
+        let reducer_span = reducer_span.exit();
 
         let ExecuteResult {
             energy,
@@ -561,23 +567,29 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             call_result,
         } = result;
 
-        self.energy_monitor
-            .record_reducer(&energy_fingerprint, energy.used, timings.total_duration);
+        // Defer the reducer energy recording until the end.
+        // We need this to happen but we also don't want to hold `tx` while doing it.
+        // Also defer some other tracing / metrics.
+        let em = &self.energy_monitor;
+        scopeguard::defer!({
+            em.record_reducer(&energy_fingerprint, energy.used, timings.total_duration);
 
-        reducer_span
-            .record("timings.total_duration", tracing::field::debug(timings.total_duration))
-            .record("energy.used", tracing::field::debug(energy.used));
+            let reducer_span = reducer_span.entered();
+            reducer_span
+                .record("timings.total_duration", tracing::field::debug(timings.total_duration))
+                .record("energy.used", tracing::field::debug(energy.used));
 
-        const FRAME_LEN_60FPS: Duration = const_unwrap(Duration::from_secs(1).checked_div(60));
-        if timings.total_duration > FRAME_LEN_60FPS {
-            // If we can't get your reducer done in a single frame we should debug it.
-            tracing::debug!(
-                message = "Long running reducer finished executing",
-                reducer_name,
-                ?timings.total_duration,
-            );
-        }
-        reducer_span.exit();
+            const FRAME_LEN_60FPS: Duration = const_unwrap(Duration::from_secs(1).checked_div(60));
+            if timings.total_duration > FRAME_LEN_60FPS {
+                // If we can't get your reducer done in a single frame we should debug it.
+                tracing::debug!(
+                    message = "Long running reducer finished executing",
+                    reducer_name,
+                    ?timings.total_duration,
+                );
+            }
+            reducer_span.exit();
+        });
 
         // Take a lock on our subscriptions now. Otherwise, we could have a race condition where we commit
         // the tx, someone adds a subscription and receives this tx as an initial update, and then receives the
@@ -621,23 +633,22 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
         let outcome = ReducerOutcome::from(&status);
 
-        let event = ModuleEvent {
+        let event = Arc::new(ModuleEvent {
             timestamp,
             caller_identity,
             caller_address: caller_address_opt,
-            function_call: ModuleFunctionCall {
-                reducer: reducer_name.to_owned(),
-                args,
-            },
+            function_call,
             status,
             energy_quanta_used: energy.used,
             host_execution_duration: timings.total_duration,
             request_id,
             timer,
-        };
+        });
         self.info
             .subscriptions
-            .blocking_broadcast_event(client.as_deref(), &subscriptions, Arc::new(event));
+            .blocking_broadcast_event(client.as_deref(), &subscriptions, &event);
+        drop(subscriptions);
+        drop(metrics_reducer_query_dur_on_drop);
 
         ReducerCallResult {
             outcome,

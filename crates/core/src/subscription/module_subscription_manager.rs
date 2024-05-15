@@ -116,7 +116,7 @@ impl SubscriptionManager {
     /// evaluates only the necessary queries for those delta tables,
     /// and then sends the results to each client.
     #[tracing::instrument(skip_all)]
-    pub fn eval_updates(&self, db: &RelationalDB, event: Arc<ModuleEvent>) {
+    pub fn eval_updates(&self, db: &RelationalDB, event: &Arc<ModuleEvent>) {
         let tables = &event.status.database_update().unwrap().tables;
         let slow = db.read_config().slow_query;
         let tx = scopeguard::guard(db.begin_tx(), |tx| {
