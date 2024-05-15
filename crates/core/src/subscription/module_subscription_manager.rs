@@ -257,39 +257,31 @@ impl SubscriptionManager {
                 .zip(sender_client)
                 .filter(|(addr, _)| !eval.contains_key(&(event.caller_identity, *addr)))
             {
-                // if the caller is not subscribed to any queries send a transaction update
-                // with an empty subscription update
-                let message = TransactionUpdateMessage::<DatabaseUpdate> {
-                    event: event.clone(),
-                    database_update: <_>::default(),
-                };
-
-                send_to_client(client, message);
+                // Caller is not subscribed to any queries,
+                // but send a transaction update with an empty subscription update.
+                send_to_client(client, &event, SubscriptionUpdate::<DatabaseUpdate>::default());
             }
 
             eval.into_iter().for_each(|(id, tables)| {
-                let client = self.client(id);
                 let database_update = SubscriptionUpdate {
                     database_update: ProtocolDatabaseUpdate { tables },
                     request_id: event.request_id,
                     timer: event.timer,
                 };
-                let message = TransactionUpdateMessage {
-                    event: event.clone(),
-                    database_update,
-                };
-
-                send_to_client(client.as_ref(), message);
+                send_to_client(self.client(id).as_ref(), &event, database_update);
             });
         })
     }
 }
 
-fn send_to_client<T>(client: &ClientConnectionSender, message: TransactionUpdateMessage<T>)
+fn send_to_client<T>(client: &ClientConnectionSender, event: &Arc<ModuleEvent>, database_update: SubscriptionUpdate<T>)
 where
-    SerializableMessage: std::convert::From<TransactionUpdateMessage<T>>,
+    SerializableMessage: From<TransactionUpdateMessage<T>>,
 {
-    if let Err(e) = client.send_message(message) {
+    if let Err(e) = client.send_message(TransactionUpdateMessage {
+        event: event.clone(),
+        database_update,
+    }) {
         tracing::warn!(%client.id, "failed to send update message to client: {e}")
     }
 }
