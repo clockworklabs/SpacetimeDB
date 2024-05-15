@@ -20,10 +20,10 @@ pub struct ClientActorId {
 
 impl ClientActorId {
     #[cfg(test)]
-    pub fn for_test(identity: Identity) -> Self {
+    pub fn for_test(identity: Option<Identity>, address: Option<Address>) -> Self {
         ClientActorId {
-            identity,
-            address: Address::ZERO,
+            identity: identity.unwrap_or(Identity::from_byte_array(rand::random())),
+            address: address.unwrap_or(Address::from_arr(&rand::random())),
             name: ClientName(0),
         }
     }
