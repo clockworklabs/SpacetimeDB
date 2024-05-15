@@ -1,22 +1,37 @@
 use crate::errors::ErrorVm;
 use crate::expr::{Code, ColumnOp, Expr, JoinExpr, ProjectExpr, SourceSet};
 use crate::program::{ProgramVm, Sources};
-use crate::rel_ops::RelOps;
+use crate::rel_ops::{ApplyMut, Project, RelOps, Select};
 use crate::relation::RelValue;
+use spacetimedb_sats::relation::ColExpr;
 use spacetimedb_sats::ProductValue;
 
 pub type IterRows<'a> = dyn RelOps<'a> + 'a;
 
-pub fn build_select<'a>(base: impl RelOps<'a> + 'a, cmp: &'a ColumnOp) -> Box<IterRows<'a>> {
-    Box::new(base.select(move |row| cmp.eval_bool(row)))
+pub struct COEvalBool<'a>(&'a ColumnOp);
+impl<'a, 'b> ApplyMut<&'b RelValue<'a>> for COEvalBool<'a> {
+    type Ret = bool;
+    fn apply_mut(&mut self, row: &'b RelValue<'a>) -> bool {
+        self.0.eval_bool(row)
+    }
+}
+pub fn build_select<'a, I: RelOps<'a> + 'a>(base: I, cmp: &'a ColumnOp) -> Select<I, COEvalBool<'a>> {
+    base.select(COEvalBool(cmp))
 }
 
-pub fn build_project<'a>(base: impl RelOps<'a> + 'a, proj: &'a ProjectExpr) -> Box<IterRows<'a>> {
-    Box::new(base.project(&proj.cols, move |cols, row| {
-        RelValue::Projection(row.project_owned(cols))
-    }))
+pub struct ProjectOwned<'a>(&'a [ColExpr]);
+impl<'a> ApplyMut<RelValue<'a>> for ProjectOwned<'a> {
+    type Ret = RelValue<'a>;
+    fn apply_mut(&mut self, row: RelValue<'a>) -> RelValue<'a> {
+        RelValue::Projection(row.project_owned(self.0))
+    }
 }
 
+pub fn build_project<'a, I: RelOps<'a> + 'a>(base: I, proj: &'a ProjectExpr) -> Project<I, ProjectOwned<'a>> {
+    base.project(ProjectOwned(&proj.cols))
+}
+
+/*
 pub fn join_inner<'a>(lhs: impl RelOps<'a> + 'a, rhs: impl RelOps<'a> + 'a, q: &'a JoinExpr) -> Box<IterRows<'a>> {
     let col_lhs = q.col_lhs.idx();
     let col_rhs = q.col_rhs.idx();
@@ -30,6 +45,7 @@ pub fn join_inner<'a>(lhs: impl RelOps<'a> + 'a, rhs: impl RelOps<'a> + 'a, q: &
         Box::new(lhs.join_inner(rhs, key_lhs, key_rhs, pred, move |l, _| l))
     }
 }
+*/
 
 /// Execute the code
 pub fn eval<const N: usize, P: ProgramVm>(p: &mut P, code: Code, sources: Sources<'_, N>) -> Code {

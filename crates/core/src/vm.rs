@@ -1,6 +1,6 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 
-use crate::db::datastore::locking_tx_datastore::IterByColRange;
+use crate::db::datastore::locking_tx_datastore::{Iter, IterByColRange};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
@@ -15,11 +15,11 @@ use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_table::static_assert_size;
 use spacetimedb_table::table::RowRef;
 use spacetimedb_vm::errors::ErrorVm;
-use spacetimedb_vm::eval::{build_project, build_select, join_inner, IterRows};
+use spacetimedb_vm::eval::{build_project, build_select, COEvalBool, IterRows, ProjectOwned};
 use spacetimedb_vm::expr::*;
-use spacetimedb_vm::iterators::RelIter;
+use spacetimedb_vm::iterators::{RelIter, RowRefIter};
 use spacetimedb_vm::program::{ProgramVm, Sources};
-use spacetimedb_vm::rel_ops::{EmptyRelOps, RelOps};
+use spacetimedb_vm::rel_ops::{ApplyMut, EmptyRelOps, JoinInner, Project, RelOps, Select};
 use spacetimedb_vm::relation::{MemTable, RelValue};
 
 pub enum TxMode<'a> {
@@ -61,15 +61,88 @@ fn bound_is_satisfiable(lower: &Bound<AlgebraicValue>, upper: &Bound<AlgebraicVa
     }
 }
 
+type AVBounds<'a> = (Bound<&'a AlgebraicValue>, Bound<&'a AlgebraicValue>);
+
+struct ColInBound<'a> {
+    head: ColId,
+    bounds: &'a (Bound<AlgebraicValue>, Bound<AlgebraicValue>),
+}
+
+impl<'a, 'b> ApplyMut<&'b RelValue<'a>> for ColInBound<'a> {
+    type Ret = bool;
+    fn apply_mut(&mut self, row: &'b RelValue<'a>) -> Self::Ret {
+        self.bounds.contains(&*row.read_column(self.head.idx()).unwrap())
+    }
+}
+
+struct ColsInBounds<'a> {
+    cols: &'a ColList,
+    start: Bound<&'a [AlgebraicValue]>,
+    end: Bound<&'a [AlgebraicValue]>,
+}
+
+impl<'a, 'b> ApplyMut<&'b RelValue<'a>> for ColsInBounds<'a> {
+    type Ret = bool;
+    fn apply_mut(&mut self, row: &'b RelValue<'a>) -> Self::Ret {
+        // Go through each column position,
+        // project to a `Bound<AV>` for the position,
+        // and compare against the column in the row.
+        // All columns must match to include the row,
+        // which is essentially the same as a big `AND` of `ColumnOp`s.
+        self.cols.iter().enumerate().all(|(idx, col)| {
+            let start_bound = self.start.map(|pv| &pv[idx]);
+            let end_bound = self.end.map(|pv| &pv[idx]);
+            let read_col = row.read_column(col.idx()).unwrap();
+            (start_bound, end_bound).contains(&*read_col)
+        })
+    }
+}
+
+pub enum BuiltQuery<'a, I> {
+    Empty(EmptyRelOps),
+    SourceProvider(RelIter<I>),
+    Iter(Box<RowRefIter<Iter<'a>>>),
+    IterByColRange(Box<RowRefIter<IterByColRange<'a, AVBounds<'a>>>>),
+    SelectBoundCol(Box<Select<BuiltQuery<'a, I>, ColInBound<'a>>>),
+    SelectBoundsCols(Box<Select<BuiltQuery<'a, I>, ColsInBounds<'a>>>),
+    SelectColumnOp(Box<Select<BuiltQuery<'a, I>, COEvalBool<'a>>>),
+    IndexSemiJoinLeft(Box<IndexSemiJoinLeft<'a, 'a, BuiltQuery<'a, I>>>),
+    IndexSemiJoinRight(Box<IndexSemiJoinRight<'a, 'a, BuiltQuery<'a, I>>>),
+    Project(Box<Project<BuiltQuery<'a, I>, ProjectOwned<'a>>>),
+    JoinLeft(Box<JoinInner<'a, BuiltQuery<'a, I>, BuiltQuery<'a, I>, KeyProj, KeyProj, EqPred, ProjLeft>>),
+    JoinExtend(Box<JoinInner<'a, BuiltQuery<'a, I>, BuiltQuery<'a, I>, KeyProj, KeyProj, EqPred, ProjExtend>>),
+}
+
+impl<'a, I: Iterator<Item = RelValue<'a>>> RelOps<'a> for BuiltQuery<'a, I> {
+    fn next(&mut self) -> Option<RelValue<'a>> {
+        match self {
+            Self::Empty(i) => i.next(),
+            Self::SourceProvider(i) => i.next(),
+            Self::Iter(i) => i.next(),
+            Self::IterByColRange(i) => i.next(),
+            Self::SelectBoundCol(i) => i.next(),
+            Self::SelectBoundsCols(i) => i.next(),
+            Self::SelectColumnOp(i) => i.next(),
+            Self::IndexSemiJoinLeft(i) => i.next(),
+            Self::IndexSemiJoinRight(i) => i.next(),
+            Self::Project(i) => i.next(),
+            Self::JoinLeft(i) => i.next(),
+            Self::JoinExtend(i) => i.next(),
+        }
+    }
+}
+
+static_assert_size!(BuiltQuery<'static, EmptyRelOps>, 16);
+
 //TODO: This is partially duplicated from the `vm` crate to avoid borrow checker issues
 //and pull all that crate in core. Will be revisited after trait refactor
-pub fn build_query<'a>(
+pub fn build_query<'a, S: SourceProvider<'a>>(
     ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
-    sources: &mut impl SourceProvider<'a>,
-) -> Box<IterRows<'a>> {
+    sources: &mut S,
+) -> BuiltQuery<'a, <S::Source as IntoIterator>::IntoIter> {
     let db_table = query.source.is_db_table();
 
     // We're incrementally building a query iterator by applying each operation in the `query.query`.
@@ -103,10 +176,17 @@ pub fn build_query<'a>(
                     // return an empty iterator.
                     // This avoids a panic in `BTreeMap`'s `NodeRef::search_tree_for_bifurcation`,
                     // which is very unhappy about unsatisfiable bounds.
-                    Box::new(EmptyRelOps) as Box<IterRows<'a>>
+                    BuiltQuery::Empty(EmptyRelOps)
                 } else {
                     let bounds = (bounds.start_bound(), bounds.end_bound());
-                    iter_by_col_range(ctx, db, tx, table, columns.clone(), bounds)
+                    BuiltQuery::IterByColRange(Box::new(RowRefIter::new(iter_by_col_range(
+                        ctx,
+                        db,
+                        tx,
+                        table,
+                        columns.clone(),
+                        bounds,
+                    ))))
                 }
             }
             Query::IndexScan(index_scan) => {
@@ -125,32 +205,19 @@ pub fn build_query<'a>(
                     // The current behavior is a hack
                     // because this patch was written (2024-04-01 pgoldman) a short time before the BitCraft alpha,
                     // and a more invasive change was infeasible.
-                    Box::new(EmptyRelOps) as Box<IterRows<'a>>
+                    BuiltQuery::Empty(EmptyRelOps)
                 } else if cols.is_singleton() {
                     // For singleton constraints, we compare the column directly against `bounds`.
-                    let head = cols.head().idx();
-                    let iter = result.select(move |row| bounds.contains(&*row.read_column(head).unwrap()));
-                    Box::new(iter) as Box<IterRows<'a>>
+                    let head = cols.head();
+                    BuiltQuery::SelectBoundCol(Box::new(result.select(ColInBound { bounds, head })))
                 } else {
                     // For multi-col constraints, these are stored as bounds of product values,
                     // so we need to project these into single-col bounds and compare against the column.
                     // Project start/end `Bound<AV>`s to `Bound<Vec<AV>>`s.
-                    let start_bound = bounds.0.as_ref().map(|av| &av.as_product().unwrap().elements);
-                    let end_bound = bounds.1.as_ref().map(|av| &av.as_product().unwrap().elements);
+                    let start = bounds.0.as_ref().map(|av| &*av.as_product().unwrap().elements);
+                    let end = bounds.1.as_ref().map(|av| &*av.as_product().unwrap().elements);
                     // Construct the query:
-                    Box::new(result.select(move |row| {
-                        // Go through each column position,
-                        // project to a `Bound<AV>` for the position,
-                        // and compare against the column in the row.
-                        // All columns must match to include the row,
-                        // which is essentially the same as a big `AND` of `ColumnOp`s.
-                        cols.iter().enumerate().all(|(idx, col)| {
-                            let start_bound = start_bound.map(|pv| &pv[idx]);
-                            let end_bound = end_bound.map(|pv| &pv[idx]);
-                            let read_col = row.read_column(col.idx()).unwrap();
-                            (start_bound, end_bound).contains(&*read_col)
-                        })
-                    }))
+                    BuiltQuery::SelectBoundsCols(Box::new(result.select(ColsInBounds { cols, start, end })))
                 }
             }
             Query::IndexJoin(_) if result.is_some() => panic!("Invalid query: `IndexJoin` must be the first operator"),
@@ -168,7 +235,7 @@ pub fn build_query<'a>(
                 let index_table = index_side.table_id().unwrap();
 
                 if *return_index_rows {
-                    Box::new(IndexSemiJoinLeft {
+                    BuiltQuery::IndexSemiJoinLeft(Box::new(IndexSemiJoinLeft {
                         ctx,
                         db,
                         tx,
@@ -178,9 +245,9 @@ pub fn build_query<'a>(
                         index_table,
                         index_col: *index_col,
                         index_iter: None,
-                    }) as Box<IterRows<'_>>
+                    }))
                 } else {
-                    Box::new(IndexSemiJoinRight {
+                    BuiltQuery::IndexSemiJoinRight(Box::new(IndexSemiJoinRight {
                         ctx,
                         db,
                         tx,
@@ -189,11 +256,15 @@ pub fn build_query<'a>(
                         index_select,
                         index_table,
                         index_col: *index_col,
-                    })
+                    }))
                 }
             }
-            Query::Select(cmp) => build_select(result_or_base(sources, &mut result), cmp),
-            Query::Project(proj) => build_project(result_or_base(sources, &mut result), proj),
+            Query::Select(cmp) => {
+                BuiltQuery::SelectColumnOp(Box::new(build_select(result_or_base(sources, &mut result), cmp)))
+            }
+            Query::Project(proj) => {
+                BuiltQuery::Project(Box::new(build_project(result_or_base(sources, &mut result), proj)))
+            }
             Query::JoinInner(join) => join_inner(
                 result_or_base(sources, &mut result),
                 build_query(ctx, db, tx, &join.rhs, sources),
@@ -203,6 +274,52 @@ pub fn build_query<'a>(
     }
 
     result_or_base(sources, &mut result)
+}
+
+struct KeyProj(ColId);
+struct EqPred(ColId, ColId);
+struct ProjLeft;
+struct ProjExtend;
+
+impl<'a, 'b> ApplyMut<&'b RelValue<'a>> for KeyProj {
+    type Ret = AlgebraicValue;
+    fn apply_mut(&mut self, row: &'b RelValue<'a>) -> Self::Ret {
+        row.read_column(self.0.idx()).unwrap().into_owned()
+    }
+}
+impl<'a, 'b> ApplyMut<(&'b RelValue<'a>, &'b RelValue<'a>)> for EqPred {
+    type Ret = bool;
+    fn apply_mut(&mut self, (l, r): (&'b RelValue<'a>, &'b RelValue<'a>)) -> Self::Ret {
+        l.read_column(self.0.idx()) == r.read_column(self.1.idx())
+    }
+}
+impl<'a> ApplyMut<(RelValue<'a>, RelValue<'a>)> for ProjLeft {
+    type Ret = RelValue<'a>;
+    fn apply_mut(&mut self, (l, _): (RelValue<'a>, RelValue<'a>)) -> Self::Ret {
+        l
+    }
+}
+impl<'a> ApplyMut<(RelValue<'a>, RelValue<'a>)> for ProjExtend {
+    type Ret = RelValue<'a>;
+    fn apply_mut(&mut self, (l, r): (RelValue<'a>, RelValue<'a>)) -> Self::Ret {
+        l.extend(r)
+    }
+}
+
+pub fn join_inner<'a, I: Iterator<Item = RelValue<'a>>>(
+    lhs: BuiltQuery<'a, I>,
+    rhs: BuiltQuery<'a, I>,
+    q: &'a JoinExpr,
+) -> BuiltQuery<'a, I> {
+    let key_lhs = KeyProj(q.col_lhs);
+    let key_rhs = KeyProj(q.col_rhs);
+    let pred = EqPred(q.col_lhs, q.col_rhs);
+
+    if q.inner.is_some() {
+        BuiltQuery::JoinExtend(Box::new(lhs.join_inner(rhs, key_lhs, key_rhs, pred, ProjExtend)))
+    } else {
+        BuiltQuery::JoinLeft(Box::new(lhs.join_inner(rhs, key_lhs, key_rhs, pred, ProjLeft)))
+    }
 }
 
 /// Resolve `query` to a table iterator,
@@ -215,44 +332,46 @@ pub fn build_query<'a>(
 /// whereas `sources` could a [`SourceSet`].
 ///
 /// On the other hand, if the `query` is a `SourceExpr::DbTable`, `sources` is unused.
-fn get_table<'a>(
+fn get_table<'a, S: SourceProvider<'a>>(
     ctx: &'a ExecutionContext,
     stdb: &'a RelationalDB,
     tx: &'a TxMode,
     query: &'a SourceExpr,
-    sources: &mut impl SourceProvider<'a>,
-) -> Box<IterRows<'a>> {
+    sources: &mut S,
+) -> BuiltQuery<'a, <S::Source as IntoIterator>::IntoIter> {
     match query {
         // Extracts an in-memory table with `source_id` from `sources` and builds a query for the table.
-        SourceExpr::InMemory { source_id, .. } => build_iter(
-            sources
-                .take_source(*source_id)
-                .unwrap_or_else(|| {
-                    panic!("Query plan specifies in-mem table for {source_id:?}, but found a `DbTable` or nothing")
-                })
-                .into_iter(),
-        ),
-        SourceExpr::DbTable(db_table) => build_iter_from_db(match tx {
-            TxMode::MutTx(tx) => stdb.iter_mut(ctx, tx, db_table.table_id),
-            TxMode::Tx(tx) => stdb.iter(ctx, tx, db_table.table_id),
-        }),
+        SourceExpr::InMemory { source_id, .. } => {
+            BuiltQuery::SourceProvider(RelIter::new(sources.take_source(*source_id).unwrap_or_else(|| {
+                panic!("Query plan specifies in-mem table for {source_id:?}, but found a `DbTable` or nothing")
+            })))
+        }
+        SourceExpr::DbTable(db_table) => BuiltQuery::Iter(Box::new(RowRefIter::new(
+            match tx {
+                TxMode::MutTx(tx) => stdb.iter_mut(ctx, tx, db_table.table_id),
+                TxMode::Tx(tx) => stdb.iter(ctx, tx, db_table.table_id),
+            }
+            .expect(TABLE_ID_EXPECTED_VALID),
+        ))),
     }
 }
 
-fn iter_by_col_range<'a>(
+fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue> + 'a>(
     ctx: &'a ExecutionContext,
     db: &'a RelationalDB,
     tx: &'a TxMode,
     table: &'a DbTable,
     columns: ColList,
-    range: impl RangeBounds<AlgebraicValue> + 'a,
-) -> Box<IterRows<'a>> {
-    build_iter_from_db(match tx {
+    range: R,
+) -> IterByColRange<'a, R> {
+    match tx {
         TxMode::MutTx(tx) => db.iter_by_col_range_mut(ctx, tx, table.table_id, columns, range),
         TxMode::Tx(tx) => db.iter_by_col_range(ctx, tx, table.table_id, columns, range),
-    })
+    }
+    .expect(TABLE_ID_EXPECTED_VALID)
 }
 
+/*
 fn build_iter_from_db<'a>(iter: Result<impl 'a + Iterator<Item = RowRef<'a>>, DBError>) -> Box<IterRows<'a>> {
     build_iter(iter.expect(TABLE_ID_EXPECTED_VALID).map(RelValue::Row))
 }
@@ -260,11 +379,12 @@ fn build_iter_from_db<'a>(iter: Result<impl 'a + Iterator<Item = RowRef<'a>>, DB
 fn build_iter<'a>(iter: impl 'a + Iterator<Item = RelValue<'a>>) -> Box<IterRows<'a>> {
     Box::new(RelIter::new(iter)) as Box<IterRows<'_>>
 }
+*/
 
 const TABLE_ID_EXPECTED_VALID: &str = "all `table_id`s in compiled query should be valid";
 
 /// An index join operator that returns matching rows from the index side.
-pub struct IndexSemiJoinLeft<'a, 'c, Rhs: RelOps<'a>> {
+pub struct IndexSemiJoinLeft<'a, 'c, Rhs> {
     /// An iterator for the probe side.
     /// The values returned will be used to probe the index.
     pub probe_side: Rhs,
@@ -328,7 +448,7 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoinLeft<'a, '_, Rhs> {
 }
 
 /// An index join operator that returns matching rows from the probe side.
-pub struct IndexSemiJoinRight<'a, 'c, Rhs: RelOps<'a>> {
+pub struct IndexSemiJoinRight<'a, 'c, Rhs> {
     /// An iterator for the probe side.
     /// The values returned will be used to probe the index.
     pub probe_side: Rhs,

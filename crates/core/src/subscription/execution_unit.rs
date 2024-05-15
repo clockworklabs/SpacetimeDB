@@ -9,7 +9,7 @@ use crate::host::module_host::{
 };
 use crate::json::client_api::TableUpdateJson;
 use crate::util::slow::SlowQueryLogger;
-use crate::vm::{build_query, TxMode};
+use crate::vm::{build_query, BuiltQuery, TxMode};
 use spacetimedb_client_api_messages::client_api::TableUpdate;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::TableId;
@@ -265,20 +265,6 @@ impl ExecutionUnit {
         })
     }
 
-    fn eval_query_expr_against_memtable<'a>(
-        ctx: &'a ExecutionContext,
-        db: &'a RelationalDB,
-        tx: &'a TxMode,
-        mem_table: &'a [ProductValue],
-        eval_incr_plan: &'a QueryExpr,
-    ) -> Box<IterRows<'a>> {
-        // Provide the updates from `table`.
-        let sources = &mut Some(mem_table.iter().map(RelValue::ProjRef));
-        // Evaluate the saved plan against the new updates,
-        // returning an iterator over the selected rows.
-        build_query(ctx, db, tx, eval_incr_plan, sources)
-    }
-
     fn eval_incr_query_expr<'a>(
         ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
@@ -300,11 +286,19 @@ impl ExecutionUnit {
             // without forgetting which are inserts and which are deletes.
             // Previously, we used to add such a column `"__op_type: AlgebraicType::U8"`.
             if !table.inserts.is_empty() {
-                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.inserts, eval_incr_plan);
+                // Provide the updates from `table`.
+                let sources = &mut Some(table.inserts.iter().map(RelValue::ProjRef));
+                // Evaluate the saved plan against the new updates,
+                // returning an iterator over the selected rows.
+                let query = build_query(ctx, db, tx, eval_incr_plan, sources);
                 Self::collect_rows(&mut inserts, query);
             }
             if !table.deletes.is_empty() {
-                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.deletes, eval_incr_plan);
+                // Provide the updates from `table`.
+                let sources = &mut Some(table.deletes.iter().map(RelValue::ProjRef));
+                // Evaluate the saved plan against the new updates,
+                // returning an iterator over the selected rows.
+                let query = build_query(ctx, db, tx, eval_incr_plan, sources);
                 Self::collect_rows(&mut deletes, query);
             }
         }
@@ -312,7 +306,7 @@ impl ExecutionUnit {
     }
 
     /// Collect the results of `query` into a vec `sink`.
-    fn collect_rows<'a>(sink: &mut Vec<RelValue<'a>>, mut query: Box<IterRows<'a>>) {
+    fn collect_rows<'a>(sink: &mut Vec<RelValue<'a>>, mut query: impl RelOps<'a>) {
         while let Some(row) = query.next() {
             sink.push(row);
         }

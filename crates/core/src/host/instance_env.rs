@@ -2,6 +2,7 @@ use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
 use spacetimedb_sats::bsatn::ser::BsatnError;
 use spacetimedb_table::table::{RowRef, UniqueConstraintViolation};
+use spacetimedb_vm::rel_ops::RelOps as _;
 use spacetimedb_vm::relation::RelValue;
 use std::ops::DerefMut;
 use std::sync::Arc;

@@ -1,7 +1,11 @@
 use crate::relation::RelValue;
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_sats::relation::ColExpr;
 use spacetimedb_sats::AlgebraicValue;
+
+pub trait ApplyMut<Args> {
+    type Ret;
+    fn apply_mut(&mut self, args: Args) -> Self::Ret;
+}
 
 /// A trait for dealing with fallible iterators for the database.
 pub trait RelOps<'a> {
@@ -19,7 +23,7 @@ pub trait RelOps<'a> {
     #[inline]
     fn select<P>(self, predicate: P) -> Select<Self, P>
     where
-        P: FnMut(&RelValue<'_>) -> bool,
+        P: for<'b> ApplyMut<&'b RelValue<'a>, Ret = bool>,
         Self: Sized,
     {
         Select::new(self, predicate)
@@ -29,18 +33,16 @@ pub trait RelOps<'a> {
     ///
     /// Given a [RelValue] the closure must return a subset of the current one.
     ///
-    /// The [Header] is pre-checked that all the fields exist and return a error if any field is not found.
-    ///
     /// Note:
     ///
     /// It is the equivalent of a `SELECT` clause on SQL.
     #[inline]
-    fn project<'b, P>(self, cols: &'b [ColExpr], extractor: P) -> Project<'b, Self, P>
+    fn project<P>(self, extractor: P) -> Project<Self, P>
     where
-        P: for<'c> FnMut(&[ColExpr], RelValue<'c>) -> RelValue<'c>,
+        P: for<'c> ApplyMut<RelValue<'a>, Ret = RelValue<'a>>,
         Self: Sized,
     {
-        Project::new(self, cols, extractor)
+        Project::new(self, extractor)
     }
 
     /// Intersection between the left and the right, both (non-sorted) `iterators`.
@@ -64,10 +66,10 @@ pub trait RelOps<'a> {
     ) -> JoinInner<'a, Self, Rhs, KeyLhs, KeyRhs, Pred, Proj>
     where
         Self: Sized,
-        Pred: FnMut(&RelValue<'a>, &RelValue<'a>) -> bool,
-        Proj: FnMut(RelValue<'a>, RelValue<'a>) -> RelValue<'a>,
-        KeyLhs: FnMut(&RelValue<'a>) -> AlgebraicValue,
-        KeyRhs: FnMut(&RelValue<'a>) -> AlgebraicValue,
+        Pred: for<'b> ApplyMut<(&'b RelValue<'a>, &'b RelValue<'a>), Ret = bool>,
+        Proj: ApplyMut<(RelValue<'a>, RelValue<'a>), Ret = RelValue<'a>>,
+        KeyLhs: for<'b> ApplyMut<&'b RelValue<'a>, Ret = AlgebraicValue>,
+        KeyRhs: for<'b> ApplyMut<&'b RelValue<'a>, Ret = AlgebraicValue>,
         Rhs: RelOps<'a>,
     {
         JoinInner::new(self, with, key_lhs, key_rhs, predicate, project)
@@ -120,12 +122,12 @@ impl<I, P> Select<I, P> {
 impl<'a, I, P> RelOps<'a> for Select<I, P>
 where
     I: RelOps<'a>,
-    P: FnMut(&RelValue<'a>) -> bool,
+    P: for<'b> ApplyMut<&'b RelValue<'a>, Ret = bool>,
 {
     fn next(&mut self) -> Option<RelValue<'a>> {
         let filter = &mut self.predicate;
         while let Some(v) = self.iter.next() {
-            if filter(&v) {
+            if filter.apply_mut(&v) {
                 return Some(v);
             }
         }
@@ -134,25 +136,24 @@ where
 }
 
 #[derive(Clone, Debug)]
-pub struct Project<'a, I, P> {
-    pub(crate) cols: &'a [ColExpr],
+pub struct Project<I, P> {
     pub(crate) iter: I,
     pub(crate) extractor: P,
 }
 
-impl<'a, I, P> Project<'a, I, P> {
-    pub fn new(iter: I, cols: &'a [ColExpr], extractor: P) -> Project<'a, I, P> {
-        Project { iter, cols, extractor }
+impl<I, P> Project<I, P> {
+    pub fn new(iter: I, extractor: P) -> Project<I, P> {
+        Project { iter, extractor }
     }
 }
 
-impl<'a, I, P> RelOps<'a> for Project<'_, I, P>
+impl<'a, I, P> RelOps<'a> for Project<I, P>
 where
     I: RelOps<'a>,
-    P: FnMut(&[ColExpr], RelValue<'a>) -> RelValue<'a>,
+    P: ApplyMut<RelValue<'a>, Ret = RelValue<'a>>,
 {
     fn next(&mut self) -> Option<RelValue<'a>> {
-        self.iter.next().map(|v| (self.extractor)(self.cols, v))
+        self.iter.next().map(|v| self.extractor.apply_mut(v))
     }
 }
 
@@ -189,17 +190,17 @@ impl<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> RelOps<'a> for JoinInner<'a, Lhs,
 where
     Lhs: RelOps<'a>,
     Rhs: RelOps<'a>,
-    KeyLhs: FnMut(&RelValue<'a>) -> AlgebraicValue,
-    KeyRhs: FnMut(&RelValue<'a>) -> AlgebraicValue,
-    Pred: FnMut(&RelValue<'a>, &RelValue<'a>) -> bool,
-    Proj: FnMut(RelValue<'a>, RelValue<'a>) -> RelValue<'a>,
+    Pred: for<'b> ApplyMut<(&'b RelValue<'a>, &'b RelValue<'a>), Ret = bool>,
+    Proj: ApplyMut<(RelValue<'a>, RelValue<'a>), Ret = RelValue<'a>>,
+    KeyLhs: for<'b> ApplyMut<&'b RelValue<'a>, Ret = AlgebraicValue>,
+    KeyRhs: for<'b> ApplyMut<&'b RelValue<'a>, Ret = AlgebraicValue>,
 {
     fn next(&mut self) -> Option<RelValue<'a>> {
         // Consume `Rhs`, building a map `KeyRhs => Rhs`.
         if !self.filled_rhs {
             self.map = HashMap::new();
             while let Some(row_rhs) = self.rhs.next() {
-                let key_rhs = (self.key_rhs)(&row_rhs);
+                let key_rhs = self.key_rhs.apply_mut(&row_rhs);
                 self.map.entry(key_rhs).or_default().push(row_rhs);
             }
             self.filled_rhs = true;
@@ -211,14 +212,14 @@ where
                 Some(left) => left,
                 None => self.left.insert(self.lhs.next()?),
             };
-            let k = (self.key_lhs)(lhs);
+            let k = self.key_lhs.apply_mut(lhs);
 
             // If we can relate `KeyLhs` and `KeyRhs`, we have candidate.
             // If that candidate still has rhs elements, test against the predicate and yield.
             if let Some(rvv) = self.map.get_mut(&k) {
                 if let Some(rhs) = rvv.pop() {
-                    if (self.predicate)(lhs, &rhs) {
-                        return Some((self.projection)(lhs.clone(), rhs));
+                    if self.predicate.apply_mut((lhs, &rhs)) {
+                        return Some(self.projection.apply_mut((lhs.clone(), rhs)));
                     }
                 }
             }
