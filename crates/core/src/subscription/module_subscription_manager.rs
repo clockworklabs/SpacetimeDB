@@ -1,5 +1,5 @@
 use super::execution_unit::{ExecutionUnit, QueryHash};
-use crate::client::messages::{SubscriptionUpdate, TransactionUpdateMessage};
+use crate::client::messages::{SerializableMessage, SubscriptionUpdate, TransactionUpdateMessage};
 use crate::client::{ClientConnectionSender, Protocol};
 use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
@@ -249,24 +249,21 @@ impl SubscriptionManager {
                     },
                 );
             drop(span);
+            let _span = tracing::info_span!("eval_send").entered();
 
             if let Some((_, client)) = event
                 .caller_address
                 .zip(sender_client)
-                .filter(|(addr, _)|| !eval.contains_key(&(event.caller_identity, addr))
+                .filter(|(addr, _)| !eval.contains_key(&(event.caller_identity, *addr)))
             {
-                        // if the caller is not subscribed to any queries send a transaction update
-                        // with an empty subscription update
-                        let message = TransactionUpdateMessage::<DatabaseUpdate> {
-                            event: event.clone(),
-                            database_update: <_>::default(),
-                        };
+                // if the caller is not subscribed to any queries send a transaction update
+                // with an empty subscription update
+                let message = TransactionUpdateMessage::<DatabaseUpdate> {
+                    event: event.clone(),
+                    database_update: <_>::default(),
+                };
 
-                        if let Err(e) = client.send_message(message) {
-                            tracing::warn!(%client.id, "failed to send update message to client: {e}")
-                        }
-                    }
-                }
+                send_to_client(client, message);
             }
 
             eval.into_iter().for_each(|(id, tables)| {
@@ -280,11 +277,19 @@ impl SubscriptionManager {
                     event: event.clone(),
                     database_update,
                 };
-                if let Err(e) = client.send_message(message) {
-                    tracing::warn!(%client.id, "failed to send update message to client: {e}")
-                }
+
+                send_to_client(client.as_ref(), message);
             });
         })
+    }
+}
+
+fn send_to_client<T>(client: &ClientConnectionSender, message: TransactionUpdateMessage<T>)
+where
+    SerializableMessage: std::convert::From<TransactionUpdateMessage<T>>,
+{
+    if let Err(e) = client.send_message(message) {
+        tracing::warn!(%client.id, "failed to send update message to client: {e}")
     }
 }
 
