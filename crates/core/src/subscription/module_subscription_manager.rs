@@ -250,9 +250,11 @@ impl SubscriptionManager {
                 );
             drop(span);
 
-            if let Some(address) = event.caller_address {
-                if !eval.contains_key(&(event.caller_identity, address)) {
-                    if let Some(client) = sender_client {
+            if let Some((_, client)) = event
+                .caller_address
+                .zip(sender_client)
+                .filter(|(addr, _)|| !eval.contains_key(&(event.caller_identity, addr))
+            {
                         // if the caller is not subscribed to any queries send a transaction update
                         // with an empty subscription update
                         let message = TransactionUpdateMessage::<DatabaseUpdate> {
