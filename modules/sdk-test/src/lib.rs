@@ -552,3 +552,6 @@ define_tables! {
     b VecU8,
     ;
 }
+
+#[spacetimedb(reducer)]
+fn no_op_succeeds() {}

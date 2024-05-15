@@ -131,6 +131,11 @@ macro_rules! declare_tests_with_suffix {
                     .build()
                     .run();
             }
+
+            #[test]
+            fn caller_always_notified() {
+                make_test("caller_always_notified").run();
+            }
         }
     };
 }
