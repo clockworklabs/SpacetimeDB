@@ -549,7 +549,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         );
         let mut tx_slot = self.instance.instance_env().tx.clone();
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable));
-        let _guard = WORKER_METRICS
+        let metrics_reducer_query_dur_on_drop = WORKER_METRICS
             .reducer_plus_query_duration
             .with_label_values(&address, op.name)
             .with_timer(tx.timer);
@@ -648,6 +648,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .subscriptions
             .blocking_broadcast_event(client.as_deref(), &subscriptions, &event);
         drop(subscriptions);
+        drop(metrics_reducer_query_dur_on_drop);
 
         ReducerCallResult {
             outcome,
