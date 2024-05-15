@@ -2062,7 +2062,6 @@ impl AuthAccess for CrudExpr {
 
 #[derive(Debug, PartialEq)]
 pub struct Update {
-    pub affected_rows: u32,
     pub table_id: TableId,
     pub table_name: Box<str>,
     pub inserts: Vec<ProductValue>,

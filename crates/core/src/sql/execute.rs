@@ -191,6 +191,11 @@ pub(crate) mod tests {
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use spacetimedb_vm::eval::test_helpers::{create_game_data, mem_table, mem_table_without_table_name};
 
+    pub(crate) fn execute_for_testing(db: &RelationalDB, sql_text: &str, q: Vec<CrudExpr>) -> Result<Vec<MemTable>, DBError> {
+        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
+        execute_sql(db, sql_text, q, AuthCtx::for_testing(), Some(&subs))
+    }
+
     /// Short-cut for simplify test execution
     pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
         let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);

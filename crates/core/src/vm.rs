@@ -450,14 +450,13 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
 
     fn _execute_insert(&mut self, table: &DbTable, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
         let tx = self.tx.unwrap_mut();
-        let inserts = rows.clone();
+        let inserts = rows.clone(); // TODO code shouldn't be hot, let's remove later
         for row in rows {
             self.db.insert(tx, table.table_id, row)?;
         }
         Ok(Code::Pass(Some(Update {
-            affected_rows: inserts.len() as u32,
-            table_id: table.table_id,
-            table_name: table.head.table_name.clone(),
+            table_id: table.get_db_table().unwrap().table_id,
+            table_name: table.table_name().into(),
             inserts,
             deletes: Vec::default()
         })))
@@ -523,7 +522,6 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         let count = self.db.delete_by_rel(self.tx.unwrap_mut(), table.table_id, rows);
 
         Ok(Code::Pass(Some(Update {
-            affected_rows: count.into(),
             table_id: table.table_id,
             table_name: table.head.table_name.clone(),
             inserts: Vec::default(),
@@ -573,7 +571,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
 
     fn _set_config(&mut self, name: String, value: AlgebraicValue) -> Result<Code, ErrorVm> {
         self.db.set_config(&name, value)?;
-        Ok(Code::Pass(None)) // TODO can subscriptions watch config values?
+        Ok(Code::Pass(None))
     }
 
     fn _read_config(&self, name: String) -> Result<Code, ErrorVm> {
