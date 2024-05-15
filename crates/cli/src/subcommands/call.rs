@@ -49,6 +49,14 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("If this flag is present, the call will be executed with no identity provided"),
         )
+        .arg(
+            Arg::new("subscribe")
+                .long("subscribe")
+                .long_flag_alias("follow")
+                .short('f')
+                .action(ArgAction::SetTrue)
+                .help("If this flag is present, the call will be executed with no identity provided"),
+        )
         .after_help("Run `spacetime help call` for more detailed information.\n")
 }
 
