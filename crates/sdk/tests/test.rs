@@ -137,6 +137,7 @@ macro_rules! declare_tests_with_suffix {
                 make_test("caller_always_notified").run();
             }
 
+            #[test]
             fn subscribe_all_select_star() {
                 make_test("subscribe_all_select_star").run();
             }
