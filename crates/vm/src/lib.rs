@@ -26,7 +26,6 @@
 
 pub use spacetimedb_lib::operator;
 
-pub mod dsl;
 pub mod errors;
 pub mod eval;
 pub mod expr;

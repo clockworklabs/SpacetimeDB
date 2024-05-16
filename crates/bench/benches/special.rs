@@ -97,7 +97,13 @@ fn serialize_benchmarks<T: BenchTable + RandomTable>(c: &mut Criterion) {
     let ptrs = data_pv
         .elements
         .iter()
-        .map(|row| table.insert(&mut blob_store, row.as_product().unwrap()).unwrap().1)
+        .map(|row| {
+            table
+                .insert(&mut blob_store, row.as_product().unwrap())
+                .unwrap()
+                .1
+                .pointer()
+        })
         .collect::<Vec<_>>();
     let refs = ptrs
         .into_iter()

@@ -11,8 +11,8 @@ use super::{
     },
     page::{GranuleOffsetIter, Page, VarView},
     pages::Pages,
-    util::{maybe_uninit_write_slice, range_move},
-    var_len::{visit_var_len_assume_init, VarLenGranule, VarLenMembers, VarLenRef},
+    util::range_move,
+    var_len::{VarLenGranule, VarLenMembers, VarLenRef},
 };
 use spacetimedb_sats::{bsatn::to_writer, buffer::BufWriter, AlgebraicType, AlgebraicValue, ProductValue, SumValue};
 use thiserror::Error;
@@ -151,12 +151,12 @@ impl BflatnSerializedRowBuffer<'_> {
         //    and `fixed_buf.len()` matches exactly the size of the row type.
         // - `fixed_buf`'s `VarLenRef`s are initialized up to `last_allocated_var_len_index`.
         // - `visitor` is proper for the row type.
-        let visitor_iter = unsafe { visit_var_len_assume_init(visitor, self.fixed_buf) };
+        let visitor_iter = unsafe { visitor.visit_var_len(self.fixed_buf) };
         for vlr in visitor_iter.take(self.last_allocated_var_len_index) {
             // SAFETY: The `vlr` came from the allocation in `write_var_len_obj`
             // which wrote it to the fixed part using `write_var_len_ref`.
             // Thus, it points to a valid `VarLenGranule`.
-            unsafe { self.var_view.free_object_ignore_blob(vlr) };
+            unsafe { self.var_view.free_object_ignore_blob(*vlr) };
         }
     }
 
@@ -165,7 +165,8 @@ impl BflatnSerializedRowBuffer<'_> {
         for (vlr, value) in self.large_blob_insertions {
             // SAFETY: `vlr` was given to us by `alloc_for_slice`
             // so it is properly aligned for a `VarLenGranule` and in bounds of the page.
-            // However, as it was added to `self.large_blob_insertion`, it is also uninit.
+            // However, as it was added to `self.large_blob_insertions`,
+            // we have not yet written the hash to that granule.
             unsafe {
                 self.var_view.write_large_blob_hash_to_granule(blob_store, &value, vlr);
             }
@@ -250,7 +251,8 @@ impl BflatnSerializedRowBuffer<'_> {
         // so we need to check that our `ProductValue` has the same number of elements
         // as our `ProductTypeLayout` to be sure it's typed correctly.
         // Otherwise, if the value is too long, we'll discard its fields (whatever),
-        // or if it's too long, we'll leave some fields in the page uninit (very bad).
+        // or if it's too long, we'll leave some fields in the page "uninit"
+        // (actually valid-unconstrained) (very bad).
         if ty.elements.len() != val.elements.len() {
             return Err(Error::WrongType(
                 ty.algebraic_type(),
@@ -302,7 +304,9 @@ impl BflatnSerializedRowBuffer<'_> {
         } else {
             // Write directly to the page.
             // SAFETY: `vlr.first_granule` points to a granule
-            // even though the granule's data is uninit as of yet.
+            // even though the granule's data is not initialized as of yet.
+            // Note that the granule stores valid-unconstrained bytes (i.e. they are not uninit),
+            // but they may be leftovers from a previous allocation.
             let iter = unsafe { self.var_view.granule_offset_iter(vlr.first_granule) };
             let mut writer = GranuleBufWriter { buf: None, iter };
             to_writer(&mut writer, val).unwrap();
@@ -347,7 +351,7 @@ impl BflatnSerializedRowBuffer<'_> {
 
                     // Write to the granule.
                     for (to, byte) in write_to.iter_mut().zip(extend_with) {
-                        to.write(*byte);
+                        *to = *byte;
                     }
 
                     slice = rest;
@@ -377,7 +381,7 @@ impl BflatnSerializedRowBuffer<'_> {
     /// Write `bytes: &[u8; N]` starting at the current offset
     /// and advance the offset by `N`.
     fn write_bytes<const N: usize>(&mut self, bytes: &[u8; N]) {
-        maybe_uninit_write_slice(&mut self.fixed_buf[range_move(0..N, self.curr_offset)], bytes);
+        self.fixed_buf[range_move(0..N, self.curr_offset)].copy_from_slice(bytes);
         self.curr_offset += N;
     }
 
@@ -450,15 +454,15 @@ impl BflatnSerializedRowBuffer<'_> {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::proptest_sats::generate_typed_row;
     use crate::{
         bflatn_from::serialize_row_from_page, blob_store::HashMapBlobStore, row_type_visitor::row_type_visitor,
     };
     use proptest::{prelude::*, prop_assert_eq, proptest};
     use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
+    use spacetimedb_sats::proptest::generate_typed_row;
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(2048))]
+        #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]
         #[test]
         fn av_serde_round_trip_through_page((ty, val) in generate_typed_row()) {
             let ty: RowTypeLayout = ty.into();

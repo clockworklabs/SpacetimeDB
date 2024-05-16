@@ -1,6 +1,9 @@
+use second_stack::uninit_slice;
+
 use crate::ser::{self, ForwardNamedToSeqProduct, Serialize};
 use crate::{AlgebraicType, AlgebraicValue, ArrayValue, MapValue, F32, F64};
 use core::convert::Infallible;
+use core::mem::MaybeUninit;
 use core::ptr;
 use std::alloc::{self, Layout};
 
@@ -96,10 +99,12 @@ impl ser::Serializer for ValueSerializer {
         chunks: I,
     ) -> Result<Self::Ok, Self::Error> {
         // SAFETY: Caller promised `total_bsatn_len == chunks.map(|c| c.len()).sum() <= isize::MAX`.
-        let bsatn = unsafe { concat_byte_chunks(total_bsatn_len, chunks) };
-
-        // SAFETY: Caller promised `AlgebraicValue::decode(ty, &mut bytes).is_ok()`.
-        unsafe { self.serialize_bsatn(ty, &bsatn) }
+        unsafe {
+            concat_byte_chunks_buf(total_bsatn_len, chunks, |bsatn| {
+                // SAFETY: Caller promised `AlgebraicValue::decode(ty, &mut bytes).is_ok()`.
+                ValueSerializer.serialize_bsatn(ty, bsatn)
+            })
+        }
     }
 
     unsafe fn serialize_str_in_chunks<'a, I: Iterator<Item = &'a [u8]>>(
@@ -136,23 +141,12 @@ unsafe fn concat_byte_chunks<'a>(total_len: usize, chunks: impl Iterator<Item = 
         alloc::handle_alloc_error(layout);
     }
 
-    // Copy over each `chunk`, moving `dst` by `chunk.len()` time.
-    let mut dst = ptr;
-    for chunk in chunks {
-        let len = chunk.len();
-        // SAFETY:
-        // - `chunk` is valid for reads for `len` bytes.
-        // - `dst` is valid for writes as we own it
-        //    and as (1) caller promised that all `chunk`s will fit in `total_len`,
-        //    this entails that `dst..dst + len` is always in bounds of the allocation.
-        // - `chunk` and `dst` are trivially properly aligned (`align_of::<u8>() == 1`).
-        // - The allocation `ptr` points to is new so derived pointers cannot overlap with `chunk`.
-        unsafe {
-            ptr::copy_nonoverlapping(chunk.as_ptr(), dst, len);
-        }
-        // SAFETY: Same as (1).
-        dst = unsafe { dst.add(len) };
-    }
+    // Copy over each `chunk`.
+    // SAFETY:
+    // 1. `ptr` is valid for writes as we own it
+    //    caller promised that all `chunk`s will fit in `total_len`.
+    // 2. `ptr` points to a new allocation so it cannot overlap with any in `chunks`.
+    unsafe { write_byte_chunks(ptr, chunks) };
 
     // Convert allocation to a `Vec<u8>`.
     // SAFETY:
@@ -163,6 +157,72 @@ unsafe fn concat_byte_chunks<'a>(total_len: usize, chunks: impl Iterator<Item = 
     // - `total_len` values were initialized at type `u8`
     //    as we know `total_len == chunks.map(|c| c.len()).sum()`.
     unsafe { Vec::from_raw_parts(ptr, total_len, total_len) }
+}
+
+/// Returns the concatenation of `chunks` that must be of `total_len` as a `Vec<u8>`.
+///
+/// # Safety
+///
+/// - `total_len == chunks.map(|c| c.len()).sum() <= isize::MAX`
+pub unsafe fn concat_byte_chunks_buf<'a, R>(
+    total_len: usize,
+    chunks: impl Iterator<Item = &'a [u8]>,
+    run: impl FnOnce(&[u8]) -> R,
+) -> R {
+    uninit_slice(total_len, |buf: &mut [MaybeUninit<u8>]| {
+        let dst = buf.as_mut_ptr().cast();
+        debug_assert_eq!(total_len, buf.len());
+        // SAFETY:
+        // 1. `buf.len() == total_len`
+        // 2. `buf` cannot overlap with anything yielded by `var_iter`.
+        unsafe { write_byte_chunks(dst, chunks) }
+        // SAFETY: Every byte of `buf` was initialized in the previous call
+        // as we know that `total_len == var_iter.map(|c| c.len()).sum()`.
+        let bytes = unsafe { slice_assume_init_ref(buf) };
+        run(bytes)
+    })
+}
+
+/// Copies over each `chunk` in `chunks` to `dst`, writing `total_len` bytes to `dst`.
+///
+/// # Safety
+///
+/// Let `total_len == chunks.map(|c| c.len()).sum()`.
+/// 1. `dst` must be valid for writes for `total_len` bytes.
+/// 2. `dst..(dst + total_len)` does not overlap with any slice yielded by `chunks`.
+unsafe fn write_byte_chunks<'a>(mut dst: *mut u8, chunks: impl Iterator<Item = &'a [u8]>) {
+    // Copy over each `chunk`, moving `dst` by `chunk.len()` time.
+    for chunk in chunks {
+        let len = chunk.len();
+        // SAFETY:
+        // - By line above, `chunk` is valid for reads for `len` bytes.
+        // - By (1) `dst` is valid for writes as promised by caller
+        //   and that all `chunk`s will fit in `total_len`.
+        //   This entails that `dst..dst + len` is always in bounds of the allocation.
+        // - `chunk` and `dst` are trivially properly aligned (`align_of::<u8>() == 1`).
+        // - By (2) derived pointers of `dst` cannot overlap with `chunk`.
+        unsafe {
+            ptr::copy_nonoverlapping(chunk.as_ptr(), dst, len);
+        }
+        // SAFETY: Same as (1).
+        dst = unsafe { dst.add(len) };
+    }
+}
+
+/// Convert a `[MaybeUninit<T>]` into a `[T]` by asserting all elements are initialized.
+///
+/// Identitcal copy of the source of `MaybeUninit::slice_assume_init_ref`, but that's not stabilized.
+/// https://doc.rust-lang.org/std/mem/union.MaybeUninit.html#method.slice_assume_init_ref
+///
+/// # Safety
+///
+/// All elements of `slice` must be initialized.
+pub const unsafe fn slice_assume_init_ref<T>(slice: &[MaybeUninit<T>]) -> &[T] {
+    // SAFETY: casting `slice` to a `*const [T]` is safe since the caller guarantees that
+    // `slice` is initialized, and `MaybeUninit` is guaranteed to have the same layout as `T`.
+    // The pointer obtained is valid since it refers to memory owned by `slice` which is a
+    // reference and thus guaranteed to be valid for reads.
+    unsafe { &*(slice as *const [MaybeUninit<T>] as *const [T]) }
 }
 
 /// Continuation for serializing an array.

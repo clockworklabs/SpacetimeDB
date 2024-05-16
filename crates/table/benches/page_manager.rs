@@ -1,5 +1,5 @@
 use core::iter;
-use core::mem::{self, MaybeUninit};
+use core::mem;
 use core::time::Duration;
 use criterion::measurement::{Measurement, WallTime};
 use criterion::{
@@ -12,7 +12,8 @@ use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_table::blob_store::NullBlobStore;
 use spacetimedb_table::btree_index::BTreeIndex;
-use spacetimedb_table::indexes::{PageOffset, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE};
+use spacetimedb_table::indexes::Byte;
+use spacetimedb_table::indexes::{Bytes, PageOffset, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE};
 use spacetimedb_table::layout::{row_size_for_bytes, row_size_for_type};
 use spacetimedb_table::pages::Pages;
 use spacetimedb_table::row_type_visitor::{row_type_visitor, VarLenVisitorProgram};
@@ -45,8 +46,11 @@ fn iter_time_with<P, B, X>(
     })
 }
 
-fn as_bytes<T>(t: &T) -> &[MaybeUninit<u8>] {
-    let ptr = (t as *const T).cast::<MaybeUninit<u8>>();
+// Strictly this would be unsafe,
+// since it causes UB when applied to types that contain padding/`poison`,
+// but it's a benchmark so who cares.
+fn as_bytes<T>(t: &T) -> &Bytes {
+    let ptr = (t as *const T).cast::<Byte>();
     unsafe { std::slice::from_raw_parts(ptr, mem::size_of::<T>()) }
 }
 
@@ -58,22 +62,16 @@ unsafe trait Row {
         row_type_visitor(&Self::row_type().into())
     }
 
-    fn from_product(prod: ProductValue) -> Self;
-
     fn to_product(self) -> ProductValue;
 }
 
 #[allow(clippy::missing_safety_doc)] // It's a benchmark, clippy. Who cares.
+/// Apply only to types which:
+/// - Contain no padding bytes.
+/// - Contain no members which are stored BFLATN as var-len.
 unsafe trait FixedLenRow: Row + Sized {
-    fn as_bytes(&self) -> &[MaybeUninit<u8>] {
+    fn as_bytes(&self) -> &Bytes {
         as_bytes(self)
-    }
-
-    unsafe fn from_bytes(bytes: &[MaybeUninit<u8>]) -> &Self {
-        let ptr = bytes.as_ptr();
-        debug_assert_eq!(ptr as usize % mem::align_of::<Self>(), 0);
-        debug_assert_eq!(bytes.len(), mem::size_of::<Self>());
-        unsafe { &*ptr.cast::<Self>() }
     }
 
     fn from_u64(u: u64) -> Self;
@@ -82,13 +80,6 @@ unsafe trait FixedLenRow: Row + Sized {
 unsafe impl Row for u64 {
     fn row_type() -> ProductType {
         [AlgebraicType::U64].into()
-    }
-
-    fn from_product(prod: ProductValue) -> Self {
-        match prod.elements[..] {
-            [AlgebraicValue::U64(n)] => n,
-            _ => panic!("Invalid product value for u64"),
-        }
     }
 
     fn to_product(self) -> ProductValue {
@@ -112,17 +103,6 @@ unsafe impl Row for U32x8 {
         [AlgebraicType::U32; 8].into()
     }
 
-    fn from_product(prod: ProductValue) -> Self {
-        match prod.elements[..] {
-            [AlgebraicValue::U32(n0), AlgebraicValue::U32(n1), AlgebraicValue::U32(n2), AlgebraicValue::U32(n3), AlgebraicValue::U32(n4), AlgebraicValue::U32(n5), AlgebraicValue::U32(n6), AlgebraicValue::U32(n7)] => {
-                U32x8 {
-                    vals: [n0, n1, n2, n3, n4, n5, n6, n7],
-                }
-            }
-            _ => panic!("Invalid product value for U32x8"),
-        }
-    }
-
     fn to_product(self) -> ProductValue {
         self.vals.map(AlgebraicValue::U32).into()
     }
@@ -144,15 +124,6 @@ unsafe impl Row for U32x64 {
         [AlgebraicType::U32; 64].into()
     }
 
-    fn from_product(prod: ProductValue) -> Self {
-        let vals: Vec<u32> = prod
-            .into_iter()
-            .map(|val| *val.as_u32().expect("Invalid product value for U32x64"))
-            .collect();
-        let vals: [u32; 64] = vals.try_into().expect("Invalid product value for U32x64");
-        U32x64 { vals }
-    }
-
     fn to_product(self) -> ProductValue {
         self.vals.map(AlgebraicValue::U32).into()
     }
@@ -167,14 +138,6 @@ unsafe impl FixedLenRow for U32x64 {
 unsafe impl Row for Box<str> {
     fn row_type() -> ProductType {
         [AlgebraicType::String].into()
-    }
-
-    fn from_product(prod: ProductValue) -> Self {
-        prod.into_iter()
-            .next()
-            .expect("Invalid ProductValue for String: not enough elements")
-            .into_string()
-            .expect("Invalid ProductValue for String: not a string")
     }
 
     fn to_product(self) -> ProductValue {
@@ -234,6 +197,7 @@ fn insert_one_page_fixed_len(c: &mut Criterion) {
         ));
         group.bench_function(name, |b| {
             let mut pages = Pages::default();
+            // `0xa5` is the alternating bit pattern, which makes incorrect accesses obvious.
             insert_one_page_worth_fixed_len(&mut pages, visitor, &R::from_u64(0xa5a5a5a5_a5a5a5a5));
             let pre = |_, pages: &mut Pages| pages.clear();
             iter_time_with(b, &mut pages, pre, |_, _, pages| {
@@ -524,16 +488,19 @@ fn use_type_throughput<T>(group: &mut BenchmarkGroup<'_, impl Measurement>) {
 
 fn table_insert_one_row(c: &mut Criterion) {
     fn bench_insert_row<R: Row>(group: Group<'_, '_>, val: R, name: &str) {
-        let mut table = make_table_for_row_type::<R>(name);
+        let table = make_table_for_row_type::<R>(name);
         let val = black_box(val.to_product());
 
         // Insert before benching to alloc and fault in a page.
-        let ptr = table.insert(&mut NullBlobStore, &val).unwrap().1;
-        let pre = |_, table: &mut Table| {
-            table.delete(&mut NullBlobStore, ptr).unwrap();
+        let mut ctx = (table, NullBlobStore);
+        let ptr = ctx.0.insert(&mut ctx.1, &val).unwrap().1.pointer();
+        let pre = |_, (table, bs): &mut (Table, NullBlobStore)| {
+            table.delete(bs, ptr, |_| ()).unwrap();
         };
         group.bench_function(name, |b| {
-            iter_time_with(b, &mut table, pre, |_, _, table| table.insert(&mut NullBlobStore, &val));
+            iter_time_with(b, &mut ctx, pre, |_, _, (table, bs)| {
+                table.insert(bs, &val).map(|r| r.1.pointer())
+            });
         });
     }
 
@@ -571,16 +538,15 @@ fn table_insert_one_row(c: &mut Criterion) {
 
 fn table_delete_one_row(c: &mut Criterion) {
     fn bench_delete_row<R: Row>(group: Group<'_, '_>, val: R, name: &str) {
-        let mut table = make_table_for_row_type::<R>(name);
+        let table = make_table_for_row_type::<R>(name);
         let val = val.to_product();
 
         // Insert before benching to alloc and fault in a page.
-        let insert = |_, table: &mut Table| table.insert(&mut NullBlobStore, &val).unwrap().1;
+        let mut ctx = (table, NullBlobStore);
+        let insert = |_: u64, (table, bs): &mut (Table, NullBlobStore)| table.insert(bs, &val).unwrap().1.pointer();
 
         group.bench_function(name, |b| {
-            iter_time_with(b, &mut table, insert, |ptr, _, table| {
-                table.delete(&mut NullBlobStore, ptr)
-            });
+            iter_time_with(b, &mut ctx, insert, |row, _, (table, bs)| table.delete(bs, row, |_| ()));
         });
     }
 
@@ -621,16 +587,10 @@ fn table_extract_one_row(c: &mut Criterion) {
         let mut table = make_table_for_row_type::<R>(name);
         let val = val.to_product();
 
-        let ptr = table.insert(&mut NullBlobStore, &val).unwrap().1;
+        let mut blob_store = NullBlobStore;
+        let row = black_box(table.insert(&mut blob_store, &val).unwrap().1);
         group.bench_function(name, |b| {
-            b.iter_with_large_drop(|| {
-                black_box(
-                    black_box(&table)
-                        .get_row_ref(&NullBlobStore, black_box(ptr))
-                        .unwrap()
-                        .to_product_value(),
-                )
-            });
+            b.iter_with_large_drop(|| black_box(row.to_product_value()));
         });
     }
 
@@ -760,7 +720,7 @@ fn insert_num_same<R: IndexedRow>(
             if let Some(slot) = row.elements.get_mut(1) {
                 *slot = n.into();
             }
-            tbl.insert(&mut NullBlobStore, &row).map(|(_, ptr)| ptr).ok()
+            tbl.insert(&mut NullBlobStore, &row).map(|(_, row)| row.pointer()).ok()
         })
         .last()
         .flatten()
@@ -777,7 +737,7 @@ fn clear_all_same<R: IndexedRow>(tbl: &mut Table, val_same: u64) {
         .map(|r| r.pointer())
         .collect::<Vec<_>>();
     for ptr in ptrs {
-        tbl.delete(&mut NullBlobStore, ptr).unwrap();
+        tbl.delete(&mut NullBlobStore, ptr, |_| ()).unwrap();
     }
 }
 
@@ -815,18 +775,21 @@ fn index_insert(c: &mut Criterion) {
         same_ratio: f64,
     ) {
         let make_row_move = &mut make_row;
-        let (mut tbl, num_same, _) = make_table_with_same_ratio::<R>(make_row_move, num_rows, same_ratio);
+        let (tbl, num_same, _) = make_table_with_same_ratio::<R>(make_row_move, num_rows, same_ratio);
+        let mut ctx = (tbl, NullBlobStore);
 
         group.bench_with_input(
             bench_id_for_index(name, num_rows, same_ratio, num_same),
             &num_rows,
             |b, &num_rows| {
-                let pre = |_, tbl: &mut Table| {
+                let pre = |_, (tbl, _): &mut (Table, NullBlobStore)| {
                     clear_all_same::<R>(tbl, num_rows);
                     insert_num_same(tbl, || make_row(num_rows), num_same - 1);
                     make_row(num_rows).to_product()
                 };
-                iter_time_with(b, &mut tbl, pre, |row, _, tbl| tbl.insert(&mut NullBlobStore, &row));
+                iter_time_with(b, &mut ctx, pre, |row, _, (tbl, bs)| {
+                    tbl.insert(bs, &row).map(|r| r.1.pointer())
+                });
             },
         );
     }
@@ -940,7 +903,9 @@ fn index_delete(c: &mut Criterion) {
                     clear_all_same::<R>(tbl, num_rows);
                     insert_num_same(tbl, || make_row(num_rows), num_same).unwrap()
                 };
-                iter_time_with(b, &mut tbl, pre, |ptr, _, tbl| tbl.delete(&mut NullBlobStore, ptr));
+                iter_time_with(b, &mut tbl, pre, |ptr, _, tbl| {
+                    tbl.delete(&mut NullBlobStore, ptr, |_| ())
+                });
             },
         );
     }

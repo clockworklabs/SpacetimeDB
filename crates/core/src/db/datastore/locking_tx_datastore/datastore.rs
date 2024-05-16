@@ -25,6 +25,7 @@ use crate::{
 };
 use anyhow::{anyhow, Context};
 use parking_lot::{Mutex, RwLock};
+use spacetimedb_commitlog::payload::{txdata, Txdata};
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductValue};
@@ -563,9 +564,21 @@ pub struct Replay<F> {
     progress: RefCell<F>,
 }
 
+impl<F> Replay<F> {
+    fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<F>) -> T) -> T {
+        let mut committed_state = self.committed_state.write_arc();
+        let mut visitor = ReplayVisitor {
+            database_address: &self.database_address,
+            committed_state: &mut committed_state,
+            progress: &mut *self.progress.borrow_mut(),
+        };
+        f(&mut visitor)
+    }
+}
+
 impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for Replay<F> {
-    type Record = spacetimedb_commitlog::payload::Txdata<ProductValue>;
-    type Error = spacetimedb_commitlog::payload::txdata::DecoderError<ReplayError>;
+    type Record = Txdata<ProductValue>;
+    type Error = txdata::DecoderError<ReplayError>;
 
     fn decode_record<'a, R: BufReader<'a>>(
         &self,
@@ -573,13 +586,16 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for Replay<F> {
         tx_offset: u64,
         reader: &mut R,
     ) -> std::result::Result<Self::Record, Self::Error> {
-        let mut committed_state = self.committed_state.write_arc();
-        let mut visitor = ReplayVisitor {
-            database_address: &self.database_address,
-            committed_state: &mut committed_state,
-            progress: &mut *self.progress.borrow_mut(),
-        };
-        spacetimedb_commitlog::payload::txdata::decode_record_fn(&mut visitor, version, tx_offset, reader)
+        self.using_visitor(|visitor| txdata::decode_record_fn(visitor, version, tx_offset, reader))
+    }
+
+    fn consume_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        self.using_visitor(|visitor| txdata::consume_record_fn(visitor, version, tx_offset, reader))
     }
 }
 
@@ -627,6 +643,10 @@ struct ReplayVisitor<'a, F> {
 
 impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, F> {
     type Error = ReplayError;
+    // NOTE: Technically, this could be `()` if and when we can extract the
+    // row data without going through `ProductValue` (PV).
+    // To accomodate auxiliary traversals (e.g. for analytics), we may want to
+    // provide a separate visitor yielding PVs.
     type Row = ProductValue;
 
     fn visit_insert<'a, R: BufReader<'a>>(

@@ -1,13 +1,9 @@
 use crate::errors::ErrorVm;
 use crate::relation::RelValue;
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_sats::product_value::ProductValue;
 use spacetimedb_sats::relation::{FieldExpr, Header, RowCount};
+use spacetimedb_sats::AlgebraicValue;
 use std::sync::Arc;
-
-pub(crate) trait ResultExt<T> {
-    fn unpack_fold(self) -> Result<T, ErrorVm>;
-}
 
 /// A trait for dealing with fallible iterators for the database.
 pub trait RelOps<'a> {
@@ -17,22 +13,6 @@ pub trait RelOps<'a> {
     }
     /// Advances the `iterator` and returns the next [RelValue].
     fn next(&mut self) -> Result<Option<RelValue<'a>>, ErrorVm>;
-
-    /// Applies a function over the elements of the iterator, producing a single final value.
-    ///
-    /// This is used as the "base" of many methods on `FallibleIterator`.
-    #[inline]
-    fn try_fold<B, E, F>(&mut self, mut init: B, mut f: F) -> Result<B, E>
-    where
-        Self: Sized,
-        E: From<ErrorVm>,
-        F: FnMut(B, RelValue<'_>) -> Result<B, ErrorVm>,
-    {
-        while let Some(v) = self.next()? {
-            init = f(init, v)?;
-        }
-        Ok(init)
-    }
 
     /// Creates an `Iterator` which uses a closure to determine if a [RelValueRef] should be yielded.
     ///
@@ -93,10 +73,10 @@ pub trait RelOps<'a> {
     ) -> Result<JoinInner<'a, Self, Rhs, KeyLhs, KeyRhs, Pred, Proj>, ErrorVm>
     where
         Self: Sized,
-        Pred: FnMut(&RelValue<'a>, &RelValue<'a>) -> Result<bool, ErrorVm>,
+        Pred: FnMut(&RelValue<'a>, &RelValue<'a>) -> bool,
         Proj: FnMut(RelValue<'a>, RelValue<'a>) -> RelValue<'a>,
-        KeyLhs: FnMut(&RelValue<'a>) -> Result<ProductValue, ErrorVm>,
-        KeyRhs: FnMut(&RelValue<'a>) -> Result<ProductValue, ErrorVm>,
+        KeyLhs: FnMut(&RelValue<'a>) -> AlgebraicValue,
+        KeyRhs: FnMut(&RelValue<'a>) -> AlgebraicValue,
         Rhs: RelOps<'a>,
     {
         Ok(JoinInner::new(head, self, with, key_lhs, key_rhs, predicate, project))
@@ -242,7 +222,7 @@ pub struct JoinInner<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> {
     pub(crate) key_rhs: KeyRhs,
     pub(crate) predicate: Pred,
     pub(crate) projection: Proj,
-    map: HashMap<ProductValue, Vec<RelValue<'a>>>,
+    map: HashMap<AlgebraicValue, Vec<RelValue<'a>>>,
     filled_rhs: bool,
     left: Option<RelValue<'a>>,
 }
@@ -276,10 +256,9 @@ impl<'a, Lhs, Rhs, KeyLhs, KeyRhs, Pred, Proj> RelOps<'a> for JoinInner<'a, Lhs,
 where
     Lhs: RelOps<'a>,
     Rhs: RelOps<'a>,
-    // TODO(Centril): consider using keys that aren't `ProductValue`s.
-    KeyLhs: FnMut(&RelValue<'a>) -> Result<ProductValue, ErrorVm>,
-    KeyRhs: FnMut(&RelValue<'a>) -> Result<ProductValue, ErrorVm>,
-    Pred: FnMut(&RelValue<'a>, &RelValue<'a>) -> Result<bool, ErrorVm>,
+    KeyLhs: FnMut(&RelValue<'a>) -> AlgebraicValue,
+    KeyRhs: FnMut(&RelValue<'a>) -> AlgebraicValue,
+    Pred: FnMut(&RelValue<'a>, &RelValue<'a>) -> bool,
     Proj: FnMut(RelValue<'a>, RelValue<'a>) -> RelValue<'a>,
 {
     fn head(&self) -> &Arc<Header> {
@@ -291,7 +270,7 @@ where
         if !self.filled_rhs {
             self.map = HashMap::with_capacity(self.rhs.row_count().min);
             while let Some(row_rhs) = self.rhs.next()? {
-                let key_rhs = (self.key_rhs)(&row_rhs)?;
+                let key_rhs = (self.key_rhs)(&row_rhs);
                 self.map.entry(key_rhs).or_default().push(row_rhs);
             }
             self.filled_rhs = true;
@@ -299,25 +278,21 @@ where
 
         loop {
             // Consume a row in `Lhs` and project to `KeyLhs`.
-            let lhs = if let Some(left) = &self.left {
-                left.clone()
-            } else {
-                match self.lhs.next()? {
+            let lhs = match &self.left {
+                Some(left) => left,
+                None => match self.lhs.next()? {
+                    Some(x) => self.left.insert(x),
                     None => return Ok(None),
-                    Some(x) => {
-                        self.left = Some(x.clone());
-                        x
-                    }
-                }
+                },
             };
-            let k = (self.key_lhs)(&lhs)?;
+            let k = (self.key_lhs)(lhs);
 
             // If we can relate `KeyLhs` and `KeyRhs`, we have candidate.
             // If that candidate still has rhs elements, test against the predicate and yield.
             if let Some(rvv) = self.map.get_mut(&k) {
                 if let Some(rhs) = rvv.pop() {
-                    if (self.predicate)(&lhs, &rhs)? {
-                        return Ok(Some((self.projection)(lhs, rhs)));
+                    if (self.predicate)(lhs, &rhs) {
+                        return Ok(Some((self.projection)(lhs.clone(), rhs)));
                     }
                 }
             }

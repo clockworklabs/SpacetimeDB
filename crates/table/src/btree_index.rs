@@ -130,16 +130,17 @@ impl TypedIndex {
     /// this will behave oddly; it may return an error,
     /// or may insert a nonsense value into the index.
     /// Note, however, that it will not invoke undefined behavior.
-    fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
+    fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<(), InvalidFieldError> {
         fn insert_at_type<T: Ord + ReadColumn>(
             this: &mut MultiMap<T, RowPointer>,
             cols: &ColList,
             row_ref: RowRef<'_>,
-        ) -> Result<bool, InvalidFieldError> {
+        ) -> Result<(), InvalidFieldError> {
             debug_assert!(cols.is_singleton());
             let col_pos = cols.head();
             let key = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-            Ok(this.insert(key, row_ref.pointer()))
+            this.insert(key, row_ref.pointer());
+            Ok(())
         }
         match self {
             TypedIndex::Bool(this) => insert_at_type(this, cols, row_ref),
@@ -157,7 +158,8 @@ impl TypedIndex {
 
             TypedIndex::AlgebraicValue(this) => {
                 let key = row_ref.project_not_empty(cols)?;
-                Ok(this.insert(key, row_ref.pointer()))
+                this.insert(key, row_ref.pointer());
+                Ok(())
             }
         }
     }
@@ -378,7 +380,7 @@ impl BTreeIndex {
     /// This index will extract the necessary values from `row` based on `self.cols`.
     ///
     /// Return false if `ptr` was already indexed prior to this call.
-    pub fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
+    pub fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<(), InvalidFieldError> {
         self.idx.insert(cols, row_ref)
     }
 
@@ -419,12 +421,11 @@ impl BTreeIndex {
         &mut self,
         cols: &ColList,
         rows: impl IntoIterator<Item = RowRef<'table>>,
-    ) -> Result<bool, InvalidFieldError> {
-        let mut all_inserted = true;
+    ) -> Result<(), InvalidFieldError> {
         for row_ref in rows {
-            all_inserted &= self.insert(cols, row_ref)?;
+            self.insert(cols, row_ref)?;
         }
-        Ok(all_inserted)
+        Ok(())
     }
 
     /// Deletes all entries from the index, leaving it empty.
@@ -440,12 +441,7 @@ impl BTreeIndex {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        blob_store::HashMapBlobStore,
-        indexes::SquashedOffset,
-        proptest_sats::{generate_product_value, generate_row_type},
-        table::Table,
-    };
+    use crate::{blob_store::HashMapBlobStore, indexes::SquashedOffset, table::Table};
     use core::ops::Bound::*;
     use proptest::prelude::*;
     use proptest::{collection::vec, test_runner::TestCaseResult};
@@ -453,7 +449,9 @@ mod test {
     use spacetimedb_primitives::ColListBuilder;
     use spacetimedb_sats::{
         db::def::{TableDef, TableSchema},
-        product, AlgebraicType, ProductType, ProductValue,
+        product,
+        proptest::{generate_product_value, generate_row_type},
+        AlgebraicType, ProductType, ProductValue,
     };
 
     fn gen_cols(ty_len: usize) -> impl Strategy<Value = ColList> {
@@ -498,8 +496,7 @@ mod test {
             let mut index = new_index(&ty, &cols, is_unique);
             let mut table = table(ty);
             let mut blob_store = HashMapBlobStore::default();
-            let ptr = table.insert(&mut blob_store, &pv).unwrap().1;
-            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+            let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
             prop_assert_eq!(index.delete(&cols, row_ref).unwrap(), false);
             prop_assert!(index.idx.is_empty());
         }
@@ -509,20 +506,15 @@ mod test {
             let mut index = new_index(&ty, &cols, is_unique);
             let mut table = table(ty);
             let mut blob_store = HashMapBlobStore::default();
-            let ptr = table.insert(&mut blob_store, &pv).unwrap().1;
-            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+            let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
 
             prop_assert_eq!(index.idx.len(), 0);
             prop_assert_eq!(index.contains_any(&value), false);
 
-            prop_assert_eq!(index.insert(&cols, row_ref).unwrap(), true);
+            index.insert(&cols, row_ref).unwrap();
             prop_assert_eq!(index.idx.len(), 1);
             prop_assert_eq!(index.contains_any(&value), true);
-
-            // Try inserting again, it should fail.
-            prop_assert_eq!(index.insert(&cols, row_ref).unwrap(), false);
-            prop_assert_eq!(index.idx.len(), 1);
 
             prop_assert_eq!(index.delete(&cols, row_ref).unwrap(), true);
             prop_assert_eq!(index.idx.len(), 0);
@@ -534,8 +526,7 @@ mod test {
             let mut index = new_index(&ty, &cols, true);
             let mut table = table(ty);
             let mut blob_store = HashMapBlobStore::default();
-            let ptr = table.insert(&mut blob_store, &pv).unwrap().1;
-            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+            let row_ref = table.insert(&mut blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
 
             // Nothing in the index yet.
@@ -547,14 +538,14 @@ mod test {
             );
 
             // Insert.
-            prop_assert_eq!(index.insert(&cols, row_ref).unwrap(), true);
+            index.insert(&cols, row_ref).unwrap();
 
             // Inserting again would be a problem.
             prop_assert_eq!(index.idx.len(), 1);
             prop_assert_eq!(violates_unique_constraint(&index, &cols, &pv), true);
             prop_assert_eq!(
                 index.get_rows_that_violate_unique_constraint(&value).unwrap().collect::<Vec<_>>(),
-                [ptr]
+                [row_ref.pointer()]
             );
         }
 
@@ -577,10 +568,9 @@ mod test {
             // Insert `prev`, `needle`, and `next`.
             for x in range.clone() {
                 let row = product![x];
-                let ptr = table.insert(&mut blob_store, &row).unwrap().1;
-                val_to_ptr.insert(x, ptr);
-                let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
-                prop_assert_eq!(index.insert(&cols, row_ref).unwrap(), true);
+                let row_ref = table.insert(&mut blob_store, &row).unwrap().1;
+                val_to_ptr.insert(x, row_ref.pointer());
+                index.insert(&cols, row_ref).unwrap();
             }
 
             fn test_seek(index: &BTreeIndex, val_to_ptr: &HashMap<u64, RowPointer>, range: impl RangeBounds<AlgebraicValue>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {

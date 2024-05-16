@@ -1,1 +1,4 @@
 /crates/core/src/db/datastore/traits.rs @cloutiertyler
+/rust-toolchain.toml @jdetter @cloutiertyler
+/.github/CODEOWNERS @cloutiertyler
+LICENSE.txt @cloutiertyler

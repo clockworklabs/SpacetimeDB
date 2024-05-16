@@ -1,12 +1,12 @@
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
+use core::ops::Deref;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::relation::{self, DbTable, FieldExpr, FieldName, Header};
-use spacetimedb_vm::dsl::{db_table, db_table_raw, query};
-use spacetimedb_vm::expr::{ColumnOp, CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
+use spacetimedb_vm::expr::{CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
 use std::sync::Arc;
 
@@ -40,50 +40,18 @@ pub fn compile_sql<T: TableSchemaView>(db: &RelationalDB, tx: &T, sql_text: &str
 
 fn expr_for_projection(table: &From, of: Expr) -> Result<FieldExpr, PlanError> {
     match of {
-        Expr::Ident(x) => {
-            let f = table.find_field(&x)?;
-
-            Ok(FieldExpr::Name(f.into()))
-        }
+        Expr::Ident(x) => table.find_field(&x).map(|(f, _)| FieldExpr::Name(f)),
         Expr::Value(x) => Ok(FieldExpr::Value(x)),
         x => unreachable!("Wrong expression in SQL query {:?}", x),
     }
 }
 
-fn check_field(table: &From, field: &FieldExpr) -> Result<(), PlanError> {
-    if let FieldExpr::Name(field) = field {
-        table.find_field(&field.to_string())?;
-    }
-    Ok(())
-}
-
-fn check_field_column(table: &From, field: &ColumnOp) -> Result<(), PlanError> {
-    if let ColumnOp::Field(field) = field {
-        check_field(table, field)?;
-    }
-    Ok(())
-}
-
-/// Verify the `fields` inside the `expr` are valid
-fn check_cmp_expr(table: &From, expr: &ColumnOp) -> Result<(), PlanError> {
-    match expr {
-        ColumnOp::Field(field) => check_field(table, field)?,
-        ColumnOp::Cmp { op: _, lhs, rhs } => {
-            check_field_column(table, lhs)?;
-            check_field_column(table, rhs)?;
-        }
-    }
-
-    Ok(())
-}
-
 /// Compiles a `WHERE ...` clause
-fn compile_where(mut q: QueryExpr, table: &From, filter: Selection) -> Result<QueryExpr, PlanError> {
-    check_cmp_expr(table, &filter.clause)?;
+fn compile_where(mut q: QueryExpr, filter: Selection) -> QueryExpr {
     for op in filter.clause.flatten_ands() {
         q = q.with_select(op);
     }
-    Ok(q)
+    q
 }
 
 /// Compiles a `SELECT ...` clause
@@ -102,7 +70,7 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
             Column::QualifiedWildcard { table: name } => {
                 if let Some(t) = table.iter_tables().find(|x| *x.table_name == name) {
                     for c in t.columns().iter() {
-                        col_ids.push(FieldName::named(&t.table_name, &c.col_name).into());
+                        col_ids.push(FieldName::new(t.table_id, c.col_pos).into());
                     }
                     qualified_wildcards.push(t.table_id);
                 } else {
@@ -120,81 +88,66 @@ fn compile_select(table: From, project: Vec<Column>, selection: Option<Selection
         });
     }
 
-    let source_expr = SourceExpr::DbTable(db_table_raw(
-        &*table.root,
-        table.root.table_id,
-        table.root.table_type,
-        table.root.table_access,
-    ));
+    let source_expr: SourceExpr = table.root.deref().into();
+    let mut q = QueryExpr::new(source_expr);
 
-    let mut q = query(source_expr);
-
-    if let Some(ref joins) = table.join {
-        for join in joins {
-            match join {
-                Join::Inner { rhs, on } => {
-                    let rhs_source_expr = SourceExpr::DbTable(db_table(&**rhs, rhs.table_id));
-                    match on.op {
-                        OpCmp::Eq => {}
-                        x => unreachable!("Unsupported operator `{x}` for joins"),
-                    }
-                    // Always construct inner joins, never semijoins.
-                    // The query optimizer can rewrite certain inner joins into semijoins later in the pipeline.
-                    // The full pipeline for a query like `SELECT lhs.* FROM lhs JOIN rhs ON lhs.a = rhs.a` is:
-                    // - We produce `[JoinInner(semi: false), Project]`.
-                    // - Optimizer rewrites to `[JoinInner(semi: true)]`.
-                    // - Optimizer rewrites to `[IndexJoin]`.
-                    // For incremental queries, this all happens on the original query with `DbTable` sources.
-                    // Then, the query is "incrementalized" by replacing the sources with `MemTable`s,
-                    // and the `IndexJoin` is rewritten back into a `JoinInner(semi: true)`.
-                    q = q.with_join_inner(rhs_source_expr, on.lhs.clone(), on.rhs.clone(), false);
+    for join in table.joins {
+        match join {
+            Join::Inner { rhs, on } => {
+                let rhs_source_expr: SourceExpr = rhs.deref().into();
+                match on.op {
+                    OpCmp::Eq => {}
+                    x => unreachable!("Unsupported operator `{x}` for joins"),
                 }
+                // Always construct inner joins, never semijoins.
+                // The query optimizer can rewrite certain inner joins into semijoins later in the pipeline.
+                // The full pipeline for a query like `SELECT lhs.* FROM lhs JOIN rhs ON lhs.a = rhs.a` is:
+                // - We produce `[JoinInner(semi: false), Project]`.
+                // - Optimizer rewrites to `[JoinInner(semi: true)]`.
+                // - Optimizer rewrites to `[IndexJoin]`.
+                // For incremental queries, this all happens on the original query with `DbTable` sources.
+                // Then, the query is "incrementalized" by replacing the sources with `MemTable`s,
+                // and the `IndexJoin` is rewritten back into a `JoinInner(semi: true)`.
+                q = q.with_join_inner(rhs_source_expr, on.lhs, on.rhs, false);
             }
         }
-    };
+    }
 
     if let Some(filter) = selection {
-        q = compile_where(q, &table, filter)?;
+        q = compile_where(q, filter);
     }
     // It is important to project at the end.
     // This is so joins and filters see fields that are not projected.
     // It is also important to identify a wildcard project of the form `table.*`.
     // This implies a potential semijoin and additional optimization opportunities.
-    let qualified_wildcard = if qualified_wildcards.len() == 1 {
-        Some(qualified_wildcards[0])
-    } else {
-        None
-    };
+    let qualified_wildcard = (qualified_wildcards.len() == 1).then(|| qualified_wildcards[0]);
     q = q.with_project(&col_ids, qualified_wildcard);
 
     Ok(q)
 }
 
 /// Builds the schema description [DbTable] from the [TableSchema] and their list of columns
-fn compile_columns(table: &TableSchema, columns: Vec<FieldName>) -> DbTable {
-    let mut new = Vec::with_capacity(columns.len());
+fn compile_columns(table: &TableSchema, field_names: Vec<FieldName>) -> DbTable {
+    let mut columns = Vec::with_capacity(field_names.len());
+    let cols = field_names
+        .into_iter()
+        .filter_map(|col| table.get_column_by_field(col))
+        .map(|col| relation::Column::new(FieldName::new(table.table_id, col.col_pos), col.col_type.clone()));
+    columns.extend(cols);
 
-    for col in columns.into_iter() {
-        if let Some(x) = table.get_column_by_field(&col) {
-            let field = FieldName::named(&table.table_name, &x.col_name);
-            new.push(relation::Column::new(field, x.col_type.clone(), x.col_pos));
-        }
-    }
-    DbTable::new(
-        Arc::new(Header::new(table.table_name.clone(), new, table.get_constraints())),
+    let header = Arc::new(Header::new(
         table.table_id,
-        table.table_type,
-        table.table_access,
-    )
+        table.table_name.clone(),
+        columns,
+        table.get_constraints(),
+    ));
+
+    DbTable::new(header, table.table_id, table.table_type, table.table_access)
 }
 
 /// Compiles a `INSERT ...` clause
-fn compile_insert(
-    table: &TableSchema,
-    columns: Vec<FieldName>,
-    values: Vec<Vec<FieldExpr>>,
-) -> Result<CrudExpr, PlanError> {
-    let source_expr = SourceExpr::DbTable(compile_columns(table, columns));
+fn compile_insert(table: &TableSchema, columns: Vec<FieldName>, values: Vec<Vec<FieldExpr>>) -> CrudExpr {
+    let table = compile_columns(table, columns);
 
     let mut rows = Vec::with_capacity(values.len());
     for x in values {
@@ -212,21 +165,18 @@ fn compile_insert(
         rows.push(row.into())
     }
 
-    Ok(CrudExpr::Insert {
-        source: source_expr,
-        rows,
-    })
+    CrudExpr::Insert { table, rows }
 }
 
 /// Compiles a `DELETE ...` clause
-fn compile_delete(table: Arc<TableSchema>, selection: Option<Selection>) -> Result<CrudExpr, PlanError> {
+fn compile_delete(table: Arc<TableSchema>, selection: Option<Selection>) -> CrudExpr {
+    let query = QueryExpr::new(&*table);
     let query = if let Some(filter) = selection {
-        let query = QueryExpr::new(&*table);
-        compile_where(query, &From::new(table), filter)?
+        compile_where(query, filter)
     } else {
-        QueryExpr::new(&*table)
+        query
     };
-    Ok(CrudExpr::Delete { query })
+    CrudExpr::Delete { query }
 }
 
 /// Compiles a `UPDATE ...` clause
@@ -234,30 +184,29 @@ fn compile_update(
     table: Arc<TableSchema>,
     assignments: HashMap<FieldName, FieldExpr>,
     selection: Option<Selection>,
-) -> Result<CrudExpr, PlanError> {
-    let table = From::new(table);
-    let delete = if let Some(filter) = selection.clone() {
-        let query = QueryExpr::new(&*table.root);
-        compile_where(query, &table, filter)?
+) -> CrudExpr {
+    let query = QueryExpr::new(&*table);
+    let delete = if let Some(filter) = selection {
+        compile_where(query, filter)
     } else {
-        QueryExpr::new(&*table.root)
+        query
     };
 
-    Ok(CrudExpr::Update { delete, assignments })
+    CrudExpr::Update { delete, assignments }
 }
 
 /// Compiles a `CREATE TABLE ...` clause
-fn compile_create_table(table: TableDef) -> Result<CrudExpr, PlanError> {
-    Ok(CrudExpr::CreateTable { table })
+fn compile_create_table(table: TableDef) -> CrudExpr {
+    CrudExpr::CreateTable { table }
 }
 
 /// Compiles a `DROP ...` clause
-fn compile_drop(name: String, kind: DbType, table_access: StAccess) -> Result<CrudExpr, PlanError> {
-    Ok(CrudExpr::Drop {
+fn compile_drop(name: String, kind: DbType, table_access: StAccess) -> CrudExpr {
+    CrudExpr::Drop {
         name,
         kind,
         table_access,
-    })
+    }
 }
 
 /// Compiles a `SQL` clause
@@ -268,19 +217,19 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
             project,
             selection,
         } => CrudExpr::Query(compile_select(from, project, selection)?),
-        SqlAst::Insert { table, columns, values } => compile_insert(&table, columns, values)?,
+        SqlAst::Insert { table, columns, values } => compile_insert(&table, columns, values),
         SqlAst::Update {
             table,
             assignments,
             selection,
-        } => compile_update(table, assignments, selection)?,
-        SqlAst::Delete { table, selection } => compile_delete(table, selection)?,
-        SqlAst::CreateTable { table } => compile_create_table(table)?,
+        } => compile_update(table, assignments, selection),
+        SqlAst::Delete { table, selection } => compile_delete(table, selection),
+        SqlAst::CreateTable { table } => compile_create_table(table),
         SqlAst::Drop {
             name,
             kind,
             table_access,
-        } => compile_drop(name, kind, table_access)?,
+        } => compile_drop(name, kind, table_access),
         SqlAst::SetVar { name, value } => CrudExpr::SetVar { name, value },
         SqlAst::ReadVar { name } => CrudExpr::ReadVar { name },
     };
@@ -294,15 +243,14 @@ mod tests {
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::execution_context::ExecutionContext;
-    use crate::sql::execute::{execute_sql, run};
+    use crate::sql::execute::tests::run_for_testing;
     use crate::vm::tests::create_table_with_rows;
     use spacetimedb_lib::error::{ResultTest, TestError};
-    use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::operator::OpQuery;
     use spacetimedb_lib::{Address, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType};
-    use spacetimedb_vm::expr::{IndexJoin, IndexScan, JoinExpr, Query};
+    use spacetimedb_vm::expr::{ColumnOp, IndexJoin, IndexScan, JoinExpr, Query};
     use std::convert::From;
     use std::ops::Bound;
 
@@ -424,7 +372,7 @@ mod tests {
             Identity::__dummy().to_hex().as_str(),
             Address::__DUMMY.to_hex().as_str(),
         );
-        run(&db, sql, AuthCtx::for_testing())?;
+        run_for_testing(&db, sql)?;
 
         let tx = db.begin_tx();
         // Compile query, check for both hex formats and it to be case-insensitive...
@@ -435,7 +383,7 @@ mod tests {
             Address::__DUMMY.to_hex().as_str(),
         );
 
-        let rows = run(&db, sql, AuthCtx::for_testing())?;
+        let rows = run_for_testing(&db, sql)?;
 
         let CrudExpr::Query(QueryExpr {
             source: _,
@@ -657,16 +605,14 @@ mod tests {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
                     ..
                 },
-            col_lhs:
-                FieldName::Name {
-                    table: ref lhs_table,
-                    field: ref lhs_field,
-                },
-            col_rhs:
-                FieldName::Name {
-                    table: ref rhs_table,
-                    field: ref rhs_field,
-                },
+            col_lhs: FieldName {
+                table: lhs_table,
+                col: lhs_field,
+            },
+            col_rhs: FieldName {
+                table: rhs_table,
+                col: rhs_field,
+            },
             semi: false,
         }) = query[1]
         else {
@@ -674,10 +620,10 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(&**lhs_field, "b");
-        assert_eq!(&**rhs_field, "b");
-        assert_eq!(&**lhs_table, "lhs");
-        assert_eq!(&**rhs_table, "rhs");
+        assert_eq!(lhs_field, 1.into());
+        assert_eq!(rhs_field, 0.into());
+        assert_eq!(lhs_table, lhs_id);
+        assert_eq!(rhs_table, rhs_id);
         Ok(())
     }
 
@@ -719,12 +665,12 @@ mod tests {
             panic!("unexpected operator {:#?}", query[0]);
         };
 
-        let ColumnOp::Field(FieldExpr::Name(FieldName::Name { ref table, ref field })) = **lhs else {
+        let ColumnOp::Field(FieldExpr::Name(FieldName { table, col })) = **lhs else {
             panic!("unexpected left hand side {:#?}", **lhs);
         };
 
-        assert_eq!(&**table, "lhs");
-        assert_eq!(&**field, "a");
+        assert_eq!(table, lhs_id);
+        assert_eq!(col, 0.into());
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
             panic!("unexpected right hand side {:#?}", **rhs);
@@ -737,16 +683,14 @@ mod tests {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
                     query: ref rhs,
                 },
-            col_lhs:
-                FieldName::Name {
-                    table: ref lhs_table,
-                    field: ref lhs_field,
-                },
-            col_rhs:
-                FieldName::Name {
-                    table: ref rhs_table,
-                    field: ref rhs_field,
-                },
+            col_lhs: FieldName {
+                table: lhs_table,
+                col: lhs_field,
+            },
+            col_rhs: FieldName {
+                table: rhs_table,
+                col: rhs_field,
+            },
             semi: false,
         }) = query[1]
         else {
@@ -754,10 +698,10 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(&**lhs_field, "b");
-        assert_eq!(&**rhs_field, "b");
-        assert_eq!(&**lhs_table, "lhs");
-        assert_eq!(&**rhs_table, "rhs");
+        assert_eq!(lhs_field, 1.into());
+        assert_eq!(rhs_field, 0.into());
+        assert_eq!(lhs_table, lhs_id);
+        assert_eq!(rhs_table, rhs_id);
         assert!(rhs.is_empty());
         Ok(())
     }
@@ -798,16 +742,14 @@ mod tests {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
                     query: ref rhs,
                 },
-            col_lhs:
-                FieldName::Name {
-                    table: ref lhs_table,
-                    field: ref lhs_field,
-                },
-            col_rhs:
-                FieldName::Name {
-                    table: ref rhs_table,
-                    field: ref rhs_field,
-                },
+            col_lhs: FieldName {
+                table: lhs_table,
+                col: lhs_field,
+            },
+            col_rhs: FieldName {
+                table: rhs_table,
+                col: rhs_field,
+            },
             semi: false,
         }) = query[0]
         else {
@@ -815,10 +757,10 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(&**lhs_field, "b");
-        assert_eq!(&**rhs_field, "b");
-        assert_eq!(&**lhs_table, "lhs");
-        assert_eq!(&**rhs_table, "rhs");
+        assert_eq!(lhs_field, 1.into());
+        assert_eq!(rhs_field, 0.into());
+        assert_eq!(lhs_table, lhs_id);
+        assert_eq!(rhs_table, rhs_id);
 
         // The selection should be pushed onto the rhs of the join
         let Query::Select(ColumnOp::Cmp {
@@ -830,12 +772,12 @@ mod tests {
             panic!("unexpected operator {:#?}", rhs[0]);
         };
 
-        let ColumnOp::Field(FieldExpr::Name(FieldName::Name { ref table, ref field })) = **lhs else {
+        let ColumnOp::Field(FieldExpr::Name(FieldName { table, col })) = **lhs else {
             panic!("unexpected left hand side {:#?}", **lhs);
         };
 
-        assert_eq!(&**table, "rhs");
-        assert_eq!(&**field, "c");
+        assert_eq!(table, rhs_id);
+        assert_eq!(col, 1.into());
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **rhs else {
             panic!("unexpected right hand side {:#?}", **rhs);
@@ -887,16 +829,14 @@ mod tests {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
                     query: ref rhs,
                 },
-            col_lhs:
-                FieldName::Name {
-                    table: ref lhs_table,
-                    field: ref lhs_field,
-                },
-            col_rhs:
-                FieldName::Name {
-                    table: ref rhs_table,
-                    field: ref rhs_field,
-                },
+            col_lhs: FieldName {
+                table: lhs_table,
+                col: lhs_field,
+            },
+            col_rhs: FieldName {
+                table: rhs_table,
+                col: rhs_field,
+            },
             semi: false,
         }) = query[1]
         else {
@@ -904,10 +844,10 @@ mod tests {
         };
 
         assert_eq!(table_id, rhs_id);
-        assert_eq!(&**lhs_field, "b");
-        assert_eq!(&**rhs_field, "b");
-        assert_eq!(&**lhs_table, "lhs");
-        assert_eq!(&**rhs_table, "rhs");
+        assert_eq!(lhs_field, 1.into());
+        assert_eq!(rhs_field, 0.into());
+        assert_eq!(lhs_table, lhs_id);
+        assert_eq!(rhs_table, rhs_id);
 
         assert_eq!(1, rhs.len());
 
@@ -960,11 +900,10 @@ mod tests {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
                     query: rhs,
                 },
-            probe_field:
-                FieldName::Name {
-                    table: probe_table,
-                    field: probe_field,
-                },
+            probe_field: FieldName {
+                table: probe_table,
+                col: probe_field,
+            },
             index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
@@ -978,8 +917,8 @@ mod tests {
         assert_eq!(*table_id, rhs_id);
         assert_eq!(*index_table, lhs_id);
         assert_eq!(index_col, &1.into());
-        assert_eq!(&**probe_field, "b");
-        assert_eq!(&**probe_table, "rhs");
+        assert_eq!(*probe_field, 0.into());
+        assert_eq!(*probe_table, rhs_id);
 
         assert_eq!(2, rhs.len());
 
@@ -1003,12 +942,12 @@ mod tests {
             panic!("unexpected operator {:#?}", rhs[0]);
         };
 
-        let ColumnOp::Field(FieldExpr::Name(FieldName::Name { ref table, ref field })) = **field else {
+        let ColumnOp::Field(FieldExpr::Name(FieldName { table, col })) = **field else {
             panic!("unexpected left hand side {:#?}", field);
         };
 
-        assert_eq!(&**table, "rhs");
-        assert_eq!(&**field, "d");
+        assert_eq!(table, rhs_id);
+        assert_eq!(col, 2.into());
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **value else {
             panic!("unexpected right hand side {:#?}", value);
@@ -1058,11 +997,10 @@ mod tests {
                     source: SourceExpr::DbTable(DbTable { table_id, .. }),
                     query: rhs,
                 },
-            probe_field:
-                FieldName::Name {
-                    table: probe_table,
-                    field: probe_field,
-                },
+            probe_field: FieldName {
+                table: probe_table,
+                col: probe_field,
+            },
             index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
@@ -1076,8 +1014,8 @@ mod tests {
         assert_eq!(*table_id, rhs_id);
         assert_eq!(*index_table, lhs_id);
         assert_eq!(index_col, &1.into());
-        assert_eq!(&**probe_field, "b");
-        assert_eq!(&**probe_table, "rhs");
+        assert_eq!(*probe_field, 0.into());
+        assert_eq!(*probe_table, rhs_id);
 
         assert_eq!(2, rhs.len());
 
@@ -1096,12 +1034,12 @@ mod tests {
             panic!("unexpected operator {:#?}", rhs[0]);
         };
 
-        let ColumnOp::Field(FieldExpr::Name(FieldName::Name { ref table, ref field })) = **field else {
+        let ColumnOp::Field(FieldExpr::Name(FieldName { table, col })) = **field else {
             panic!("unexpected left hand side {:#?}", field);
         };
 
-        assert_eq!(&**table, "rhs");
-        assert_eq!(&**field, "d");
+        assert_eq!(table, rhs_id);
+        assert_eq!(col, 2.into());
 
         let ColumnOp::Field(FieldExpr::Value(AlgebraicValue::U64(3))) = **value else {
             panic!("unexpected right hand side {:#?}", value);
@@ -1142,7 +1080,7 @@ mod tests {
                 ..
             }) => {
                 assert_eq!(field, "b");
-                assert_eq!(found, vec![FieldName::named("lhs", "b"), FieldName::named("rhs", "b")]);
+                assert_eq!(found, ["lhs.b", "rhs.b"]);
             }
             _ => {
                 panic!("Unexpected")
@@ -1162,13 +1100,19 @@ mod tests {
         create_table_with_rows(&db, &mut tx, "enum", head.clone(), &rows)?;
         db.commit_tx(&ExecutionContext::default(), tx)?;
 
-        let tx = db.begin_tx();
         // Should work with any qualified field
         let sql = "select * from enum where a = 'Player'";
-        let q = compile_sql(&db, &tx, sql);
-        assert!(q.is_ok());
-        let result = execute_sql(&db, sql, q.unwrap(), AuthCtx::for_testing())?;
+        let result = run_for_testing(&db, sql)?;
         assert_eq!(result[0].data, vec![product![AlgebraicValue::enum_simple(0)]]);
+        Ok(())
+    }
+
+    #[test]
+    fn compile_join_with_diff_col_names() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+        db.create_table_for_test("A", &[("x", AlgebraicType::U64)], &[])?;
+        db.create_table_for_test("B", &[("y", AlgebraicType::U64)], &[])?;
+        assert!(compile_sql(&db, &db.begin_tx(), "select * from B join A on B.y = A.x").is_ok());
         Ok(())
     }
 }

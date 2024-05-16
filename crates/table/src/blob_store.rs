@@ -51,7 +51,7 @@ pub struct NoSuchBlobError;
 ///
 /// These blob objects are referred to by their [`BlobHash`],
 /// which is currently defined through BLAKE3 on the bytes of the blob object.
-pub trait BlobStore {
+pub trait BlobStore: Sync {
     /// Mark the `hash` as used.
     ///
     /// This is a more efficient way of doing:

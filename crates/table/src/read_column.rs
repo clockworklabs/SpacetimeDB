@@ -8,7 +8,6 @@ use crate::{
     indexes::{PageOffset, Size},
     layout::{AlgebraicTypeLayout, PrimitiveType, ProductTypeElementLayout, VarLenType},
     table::RowRef,
-    util::slice_assume_init_ref,
 };
 use spacetimedb_sats::{
     algebraic_value::{ser::ValueSerializer, Packed},
@@ -186,7 +185,8 @@ unsafe impl ReadColumn for bool {
         let data: *const bool = data.as_ptr().cast();
         // SAFETY: We trust that the `row_ref` refers to a valid, initialized row,
         // and that the `offset_in_bytes` refers to a column of type `Bool` within that row.
-        // A valid row can never have an uninitialized column or a column of an invalid value,
+        // A valid row can never have a column of an invalid value,
+        // and no byte in `Page.row_data` is ever uninit,
         // so `data` must be initialized as either 0 or 1.
         unsafe { *data }
     }
@@ -209,11 +209,6 @@ macro_rules! impl_read_column_number {
                 let col_offset = offset + PageOffset(layout.offset);
 
                 let data = page.get_row_data(col_offset, Size(mem::size_of::<Self>() as u16));
-                // SAFETY: We trust that the `row_ref` refers to a valid, initialized row,
-                // and that the `offset_in_bytes` refers to a column of type `Self` within that row.
-                // A valid row can never have an uninitialized column,
-                // so `data` must be initialized.
-                let data = unsafe { slice_assume_init_ref(data) };
                 let data: Result<[u8; mem::size_of::<Self>()], _> = data.try_into();
                 // SAFETY: `<[u8; N] as TryFrom<&[u8]>` succeeds if and only if the slice's length is `N`.
                 // We used `mem::size_of::<Self>()` as both the length of the slice and the array,
@@ -343,13 +338,12 @@ impl_read_column_via_from! {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        blob_store::HashMapBlobStore, indexes::SquashedOffset, proptest_sats::generate_typed_row, table::Table,
-    };
+    use crate::{blob_store::HashMapBlobStore, indexes::SquashedOffset, table::Table};
     use proptest::{prelude::*, prop_assert_eq, proptest, test_runner::TestCaseResult};
     use spacetimedb_sats::{
         db::def::{TableDef, TableSchema},
         product,
+        proptest::generate_typed_row,
     };
 
     fn table(ty: ProductType) -> Table {
@@ -359,7 +353,7 @@ mod test {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(2048))]
+        #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]
 
         #[test]
         /// Test that `AlgebraicValue::read_column` returns expected values.
@@ -371,9 +365,7 @@ mod test {
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty);
 
-            let (_, ptr) = table.insert(&mut blob_store, &val).unwrap();
-
-            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+            let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
 
             for (idx, orig_col_value) in val.into_iter().enumerate() {
                 let read_col_value = row_ref.read_col::<AlgebraicValue>(idx).unwrap();
@@ -389,9 +381,7 @@ mod test {
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
 
-            let (_, ptr) = table.insert(&mut blob_store, &val).unwrap();
-
-            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+            let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
 
             for (idx, col_ty) in ty.elements.iter().enumerate() {
                 assert_wrong_type_error::<u8>(row_ref, idx, &col_ty.algebraic_type, AlgebraicType::U8)?;
@@ -419,9 +409,7 @@ mod test {
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
 
-            let (_, ptr) = table.insert(&mut blob_store, &val).unwrap();
-
-            let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+            let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
 
             let oob = ty.elements.len();
 
@@ -479,8 +467,7 @@ mod test {
                 let mut table = table(ProductType::from_iter([$algebraic_type]));
 
                 let val: $rust_type = $val;
-                let (_, ptr) = table.insert(&mut blob_store, &product![val.clone()]).unwrap();
-                let row_ref = table.get_row_ref(&blob_store, ptr).unwrap();
+                let (_, row_ref) = table.insert(&mut blob_store, &product![val.clone()]).unwrap();
 
                 assert_eq!(val, row_ref.read_col::<$rust_type>(0).unwrap());
             }

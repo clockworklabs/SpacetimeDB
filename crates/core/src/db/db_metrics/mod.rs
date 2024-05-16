@@ -1,5 +1,4 @@
 use crate::execution_context::WorkloadType;
-use crate::host::AbiCall;
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_data_structures::map::HashMap;
@@ -11,11 +10,6 @@ use std::sync::Mutex;
 metrics_group!(
     #[non_exhaustive]
     pub struct DbMetrics {
-        #[name = spacetime_rdb_drop_table_time]
-        #[help = "The time spent dropping a table"]
-        #[labels(table_id: u32)]
-        pub rdb_drop_table_time: HistogramVec,
-
         #[name = spacetime_num_table_rows]
         #[help = "The number of rows in a table"]
         #[labels(db: Address, table_id: u32, table_name: str)]
@@ -71,14 +65,6 @@ metrics_group!(
         #[help = "The cpu time of the longest running transaction (in seconds)"]
         #[labels(txn_type: WorkloadType, db: Address, reducer: str)]
         pub rdb_txn_cpu_time_sec_max: GaugeVec,
-
-        #[name = spacetime_wasm_abi_call_duration_sec]
-        #[help = "The total duration of a spacetime wasm abi call (in seconds); includes row serialization and copying into wasm memory"]
-        #[labels(db: Address, reducer: str, call: AbiCall)]
-        #[buckets(
-            1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
-        )]
-        pub wasm_abi_call_duration_sec: HistogramVec,
 
         #[name = spacetime_message_log_size_bytes]
         #[help = "For a given database, the number of bytes occupied by its message log"]

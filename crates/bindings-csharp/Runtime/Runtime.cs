@@ -4,6 +4,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using SpacetimeDB.SATS;
 using static System.Text.Encoding;
 
 public static class Runtime
@@ -26,7 +27,7 @@ public static class Runtime
     private class BufferIter : IEnumerator<byte[]>, IDisposable
     {
         private RawBindings.BufferIter handle;
-        public byte[] Current { get; private set; } = new byte[0];
+        public byte[] Current { get; private set; } = [];
 
         object IEnumerator.Current => Current;
 
@@ -82,16 +83,11 @@ public static class Runtime
         }
     }
 
-    public class RawTableIter : IEnumerable<byte[]>
+    public class RawTableIter(RawBindings.TableId tableId, byte[]? filterBytes = null)
+        : IEnumerable<byte[]>
     {
-        private readonly RawBindings.TableId tableId;
-        private readonly byte[]? filterBytes;
-
-        public RawTableIter(RawBindings.TableId tableId, byte[]? filterBytes = null)
-        {
-            this.tableId = tableId;
-            this.filterBytes = filterBytes;
-        }
+        private readonly RawBindings.TableId tableId = tableId;
+        private readonly byte[]? filterBytes = filterBytes;
 
         public IEnumerator<byte[]> GetEnumerator()
         {
@@ -138,11 +134,9 @@ public static class Runtime
         );
     }
 
-    public struct Identity : IEquatable<Identity>
+    public struct Identity(byte[] bytes) : IEquatable<Identity>
     {
-        private readonly byte[] bytes;
-
-        public Identity(byte[] bytes) => this.bytes = bytes;
+        private readonly byte[] bytes = bytes;
 
         public bool Equals(Identity other) =>
             StructuralComparisons.StructuralEqualityComparer.Equals(bytes, other.bytes);
@@ -161,10 +155,14 @@ public static class Runtime
         private static SpacetimeDB.SATS.TypeInfo<Identity> satsTypeInfo =
             new(
                 // We need to set type info to inlined identity type as `generate` CLI currently can't recognise type references for built-ins.
-                new SpacetimeDB.SATS.ProductType
-                {
-                    { "__identity_bytes", SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.AlgebraicType }
-                },
+                new SpacetimeDB.SATS.AlgebraicType.Product(
+                    [
+                        new(
+                            "__identity_bytes",
+                            SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.AlgebraicType
+                        )
+                    ]
+                ),
                 reader => new(SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.Read(reader)),
                 (writer, value) =>
                     SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.Write(writer, value.bytes)
@@ -173,12 +171,9 @@ public static class Runtime
         public static SpacetimeDB.SATS.TypeInfo<Identity> GetSatsTypeInfo() => satsTypeInfo;
     }
 
-    public struct Address : IEquatable<Address>
+    public struct Address(byte[] bytes) : IEquatable<Address>
     {
-        private readonly byte[] bytes;
-
-        public Address(byte[] bytes) => this.bytes = bytes;
-
+        private readonly byte[] bytes = bytes;
         public static readonly Address Zero = new(new byte[16]);
 
         public bool Equals(Address other) =>
@@ -198,10 +193,14 @@ public static class Runtime
         private static SpacetimeDB.SATS.TypeInfo<Address> satsTypeInfo =
             new(
                 // We need to set type info to inlined address type as `generate` CLI currently can't recognise type references for built-ins.
-                new SpacetimeDB.SATS.ProductType
-                {
-                    { "__address_bytes", SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.AlgebraicType }
-                },
+                new SpacetimeDB.SATS.AlgebraicType.Product(
+                    [
+                        new(
+                            "__address_bytes",
+                            SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.AlgebraicType
+                        )
+                    ]
+                ),
                 // Concern: We use this "packed" representation (as Bytes)
                 //          in the caller_id field of reducer arguments,
                 //          but in table rows,
@@ -217,13 +216,13 @@ public static class Runtime
         public static SpacetimeDB.SATS.TypeInfo<Address> GetSatsTypeInfo() => satsTypeInfo;
     }
 
-    public class DbEventArgs : EventArgs
+    public class ReducerContext
     {
         public readonly Identity Sender;
         public readonly DateTimeOffset Time;
         public readonly Address? Address;
 
-        public DbEventArgs(byte[] senderIdentity, byte[] senderAddress, ulong timestamp_us)
+        public ReducerContext(byte[] senderIdentity, byte[] senderAddress, ulong timestamp_us)
         {
             Sender = new Identity(senderIdentity);
             var addr = new Address(senderAddress);

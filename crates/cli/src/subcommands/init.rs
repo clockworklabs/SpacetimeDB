@@ -36,7 +36,7 @@ fn check_for_cargo() -> bool {
             if find_executable("cargo.exe").is_some() {
                 return true;
             }
-            println!("{}", "Warning: You have created a rust project, but you are missing cargo. Visit the rust-lang official website for the latest instructions on install cargo on Windows:\n\n\tYou have created a rust project, but you are missing cargo.\n".yellow());
+            println!("{}", "Warning: You have created a rust project, but you are missing `cargo`. Visit https://www.rust-lang.org/tools/install for installation instructions:\n\n\tYou have created a rust project, but you are missing cargo.\n".yellow());
         }
         unsupported_os => {
             println!("{}", format!("This OS may be unsupported: {}", unsupported_os).yellow());
@@ -112,7 +112,10 @@ fn check_for_git() -> bool {
     false
 }
 
-pub async fn exec(_: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    // Release the lockfile on the config, since we don't need it.
+    config.release_lock();
+
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
     let project_lang = *args.get_one::<ModuleLanguage>("lang").unwrap();
 

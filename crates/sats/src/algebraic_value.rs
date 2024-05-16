@@ -22,7 +22,7 @@ pub type F64 = decorum::Total<f64>;
 /// These are only values and not expressions.
 /// That is, they are canonical and cannot be simplified further by some evaluation.
 /// So forms like `42 + 24` are not represented in an `AlgebraicValue`.
-#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, From)]
+#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, From)]
 pub enum AlgebraicValue {
     /// A structural sum value.
     ///
@@ -210,61 +210,57 @@ impl AlgebraicValue {
         Self::Map(Box::new(map))
     }
 
-    /// Returns the [`AlgebraicType`] of the sum value `x`.
-    pub(crate) fn type_of_sum(x: &SumValue) -> AlgebraicType {
-        // TODO(centril, #104): This is unsound!
-        //
-        //   The type of a sum value must be a sum type and *not* a product type.
-        //   Suppose `x.tag` is for the variant `VarName(VarType)`.
-        //   Then `VarType` is *not* the same type as `{ VarName(VarType) | r }`
-        //   where `r` represents a polymorphic variants compontent.
-        //
-        //   To assign this a correct type we either have to store the type with the value
-        //   or alternatively, we must have polymorphic variants (see row polymorphism)
-        //   *and* derive the correct variant name.
-        AlgebraicType::product([x.value.type_of()])
-    }
-
     /// Returns the [`AlgebraicType`] of the product value `x`.
-    pub(crate) fn type_of_product(x: &ProductValue) -> AlgebraicType {
-        AlgebraicType::product(x.elements.iter().map(|x| x.type_of().into()).collect::<Box<[_]>>())
+    pub(crate) fn type_of_product(x: &ProductValue) -> Option<AlgebraicType> {
+        let mut elems = Vec::with_capacity(x.elements.len());
+        for elem in &*x.elements {
+            elems.push(elem.type_of()?.into());
+        }
+        Some(AlgebraicType::product(elems.into_boxed_slice()))
     }
 
     /// Returns the [`AlgebraicType`] of the map with key type `k` and value type `v`.
-    pub(crate) fn type_of_map(val: &MapValue) -> AlgebraicType {
-        AlgebraicType::product(if let Some((k, v)) = val.first_key_value() {
-            [k.type_of(), v.type_of()]
-        } else {
-            // TODO(centril): What is the motivation for this?
-            //   I think this requires a soundness argument.
-            //   I could see that it is OK with the argument that this is an empty map
-            //   under the requirement that we cannot insert elements into the map.
-            [AlgebraicType::never(), AlgebraicType::never()]
-        })
+    pub(crate) fn type_of_map(val: &MapValue) -> Option<AlgebraicType> {
+        let (k, v) = val.first_key_value().and_then(|(k, v)| k.type_of().zip(v.type_of()))?;
+        Some(AlgebraicType::product([k, v]))
     }
 
     /// Infer the [`AlgebraicType`] of an [`AlgebraicValue`].
-    pub fn type_of(&self) -> AlgebraicType {
-        // TODO: What are the types of empty arrays/maps/sums?
+    ///
+    /// This function is partial
+    /// as type inference is not possible for `AlgebraicValue` in the case of sums.
+    /// Thus the method only answers for the decidable subset.
+    ///
+    /// # A note on sums
+    ///
+    /// The type of a sum value must be a sum type and *not* a product type.
+    /// Suppose `x.tag` is for the variant `VarName(VarType)`.
+    /// Then `VarType` is *not* the same type as `{ VarName(VarType) | r }`
+    /// where `r` represents a polymorphic variants component.
+    ///
+    /// To assign this a correct type we either have to store the type with the value
+    /// r alternatively, we must have polymorphic variants (see row polymorphism)
+    /// *and* derive the correct variant name.
+    pub fn type_of(&self) -> Option<AlgebraicType> {
         match self {
-            Self::Sum(x) => Self::type_of_sum(x),
+            Self::Sum(_) => None,
             Self::Product(x) => Self::type_of_product(x),
-            Self::Array(x) => x.type_of().into(),
+            Self::Array(x) => x.type_of().map(Into::into),
             Self::Map(x) => Self::type_of_map(x),
-            Self::Bool(_) => AlgebraicType::Bool,
-            Self::I8(_) => AlgebraicType::I8,
-            Self::U8(_) => AlgebraicType::U8,
-            Self::I16(_) => AlgebraicType::I16,
-            Self::U16(_) => AlgebraicType::U16,
-            Self::I32(_) => AlgebraicType::I32,
-            Self::U32(_) => AlgebraicType::U32,
-            Self::I64(_) => AlgebraicType::I64,
-            Self::U64(_) => AlgebraicType::U64,
-            Self::I128(_) => AlgebraicType::I128,
-            Self::U128(_) => AlgebraicType::U128,
-            Self::F32(_) => AlgebraicType::F32,
-            Self::F64(_) => AlgebraicType::F64,
-            Self::String(_) => AlgebraicType::String,
+            Self::Bool(_) => Some(AlgebraicType::Bool),
+            Self::I8(_) => Some(AlgebraicType::I8),
+            Self::U8(_) => Some(AlgebraicType::U8),
+            Self::I16(_) => Some(AlgebraicType::I16),
+            Self::U16(_) => Some(AlgebraicType::U16),
+            Self::I32(_) => Some(AlgebraicType::I32),
+            Self::U32(_) => Some(AlgebraicType::U32),
+            Self::I64(_) => Some(AlgebraicType::I64),
+            Self::U64(_) => Some(AlgebraicType::U64),
+            Self::I128(_) => Some(AlgebraicType::I128),
+            Self::U128(_) => Some(AlgebraicType::U128),
+            Self::F32(_) => Some(AlgebraicType::F32),
+            Self::F64(_) => Some(AlgebraicType::F64),
+            Self::String(_) => Some(AlgebraicType::String),
         }
     }
 

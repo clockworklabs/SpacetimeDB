@@ -548,10 +548,6 @@ impl RelationalDB {
     }
 
     pub fn drop_table(&self, ctx: &ExecutionContext, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
-        let _guard = DB_METRICS
-            .rdb_drop_table_time
-            .with_label_values(&table_id.0)
-            .start_timer();
         let table_name = self
             .table_name_from_id_mut(ctx, tx, table_id)?
             .map(|name| name.to_string())
@@ -809,21 +805,19 @@ impl RelationalDB {
     }
 
     /// Set a runtime configurations setting of the database
-    pub fn set_config(&self, key: &str, value: AlgebraicValue) -> Result<(), ErrorVm> {
+    pub(crate) fn set_config(&self, key: &str, value: AlgebraicValue) -> Result<(), ErrorVm> {
         self.config.write().set_config(key, value)
     }
     /// Read the runtime configurations settings of the database
-    pub fn read_config(&self) -> DatabaseConfig {
+    pub(crate) fn read_config(&self) -> DatabaseConfig {
         *self.config.read()
     }
 }
 
 #[cfg(any(test, feature = "test"))]
 pub mod tests_utils {
-    use std::fs::create_dir_all;
-    use std::ops::Deref;
-
     use super::*;
+    use core::ops::Deref;
     use tempfile::TempDir;
 
     /// A [`RelationalDB`] in a temporary directory.
@@ -1352,7 +1346,6 @@ mod tests {
 
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
-        dbg!("reopen...");
         let stdb = stdb.reopen()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);

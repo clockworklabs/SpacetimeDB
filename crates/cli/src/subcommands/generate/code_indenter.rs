@@ -79,6 +79,14 @@ impl<W: fmt::Write> fmt::Write for CodeIndenter<W> {
         Ok(())
     }
 }
+impl CodeIndenter<String> {
+    // This method allows `write!` and `writeln!` to be used directly on `CodeIndenter`.
+    // It does the same thing as using it via the `fmt::Write` trait but in a non-fallible manner.
+    // This is only allowed on `String` because it's the only type that can't fail to write.
+    pub fn write_fmt(&mut self, args: fmt::Arguments) {
+        fmt::Write::write_fmt(self, args).unwrap()
+    }
+}
 pub struct IndentScope<'a, W: fmt::Write> {
     fmt: &'a mut CodeIndenter<W>,
 }

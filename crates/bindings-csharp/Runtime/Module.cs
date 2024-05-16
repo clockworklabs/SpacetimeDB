@@ -2,194 +2,133 @@ namespace SpacetimeDB.Module;
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using SpacetimeDB.SATS;
 
 [SpacetimeDB.Type]
-public partial struct IndexDef
+public partial struct IndexDef(
+    string name,
+    Runtime.IndexType type,
+    bool isUnique,
+    RawBindings.ColId[] columnIds
+)
 {
-    string IndexName;
-    bool IsUnique;
-    Runtime.IndexType Type;
-    uint[] ColumnIds;
-
-    public IndexDef(
-        string name,
-        Runtime.IndexType type,
-        bool isUnique,
-        RawBindings.ColId[] columnIds
-    )
-    {
-        IndexName = name;
-        IsUnique = isUnique;
-        Type = type;
-        ColumnIds = columnIds.Select(id => (uint)id).ToArray();
-    }
+    string IndexName = name;
+    bool IsUnique = isUnique;
+    Runtime.IndexType Type = type;
+    uint[] ColumnIds = columnIds.Select(id => (uint)id).ToArray();
 }
 
 [SpacetimeDB.Type]
-public partial struct ColumnDef
+public partial struct ColumnDef(string name, AlgebraicType type)
 {
-    internal string ColName;
-    AlgebraicType ColType;
-
-    public ColumnDef(string name, AlgebraicType type)
-    {
-        ColName = name;
-        ColType = type;
-    }
+    internal string ColName = name;
+    AlgebraicType ColType = type;
 }
 
 [SpacetimeDB.Type]
-public partial struct ConstraintDef
+public partial struct ConstraintDef(string name, ColumnAttrs kind, uint[] columnIds)
 {
-    string ConstraintName;
+    string ConstraintName = name;
 
     // bitflags should be serialized as bytes rather than sum types
-    byte Kind;
-    uint[] ColumnIds;
-
-    public ConstraintDef(string name, ColumnAttrs kind, uint[] columnIds)
-    {
-        ConstraintName = name;
-        Kind = (byte)kind;
-        ColumnIds = columnIds;
-    }
+    byte Kind = (byte)kind;
+    uint[] ColumnIds = columnIds;
 }
 
 [SpacetimeDB.Type]
-public partial struct SequenceDef
+public partial struct SequenceDef(
+    string sequenceName,
+    uint colPos,
+    Int128? increment = null,
+    Int128? start = null,
+    Int128? min_value = null,
+    Int128? max_value = null,
+    Int128? allocated = null
+)
 {
-    string SequenceName;
-    uint ColPos;
-    Int128 increment;
-    Int128? start;
-    Int128? min_value;
-    Int128? max_value;
-    Int128 allocated;
-
-    public SequenceDef(
-        string sequenceName,
-        uint colPos,
-        Int128? increment = null,
-        Int128? start = null,
-        Int128? min_value = null,
-        Int128? max_value = null,
-        Int128? allocated = null
-    )
-    {
-        SequenceName = sequenceName;
-        ColPos = colPos;
-        this.increment = increment ?? 1;
-        this.start = start;
-        this.min_value = min_value;
-        this.max_value = max_value;
-        this.allocated = allocated ?? 4_096;
-    }
+    string SequenceName = sequenceName;
+    uint ColPos = colPos;
+    Int128 increment = increment ?? 1;
+    Int128? start = start;
+    Int128? min_value = min_value;
+    Int128? max_value = max_value;
+    Int128 allocated = allocated ?? 4_096;
 }
 
 // Not part of the database schema, just used by the codegen to group column definitions with their attributes.
-public struct ColumnDefWithAttrs
+public struct ColumnDefWithAttrs(ColumnDef columnDef, ColumnAttrs attrs)
 {
-    public ColumnDef ColumnDef;
-    public ColumnAttrs Attrs;
-
-    public ColumnDefWithAttrs(ColumnDef columnDef, ColumnAttrs attrs)
-    {
-        ColumnDef = columnDef;
-        Attrs = attrs;
-    }
+    public ColumnDef ColumnDef = columnDef;
+    public ColumnAttrs Attrs = attrs;
 }
 
 [SpacetimeDB.Type]
-public partial struct TableDef
+public partial struct TableDef(string tableName, ColumnDefWithAttrs[] columns)
 {
-    string TableName;
-    ColumnDef[] Columns;
-    IndexDef[] Indices = Array.Empty<IndexDef>();
-    ConstraintDef[] Constraints;
-    SequenceDef[] Sequences = Array.Empty<SequenceDef>();
+    string TableName = tableName;
+    ColumnDef[] Columns = columns.Select(col => col.ColumnDef).ToArray();
+    IndexDef[] Indices = [];
+    ConstraintDef[] Constraints = columns
+        // Important: the position must be stored here, before filtering.
+        .Select((col, pos) => (col, pos))
+        .Where(pair => pair.col.Attrs != ColumnAttrs.UnSet)
+        .Select(pair => new ConstraintDef(
+            $"ct_{tableName}_{pair.col.ColumnDef.ColName}_{pair.col.Attrs}",
+            pair.col.Attrs,
+            [(uint)pair.pos]
+        ))
+        .ToArray();
+    SequenceDef[] Sequences = [];
 
     // "system" | "user"
-    string TableType;
+    string TableType = "user";
 
     // "public" | "private"
-    string TableAccess;
-
-    public TableDef(string tableName, ColumnDefWithAttrs[] columns)
-    {
-        TableName = tableName;
-        Columns = columns.Select(col => col.ColumnDef).ToArray();
-        Constraints = columns
-            // Important: the position must be stored here, before filtering.
-            .Select((col, pos) => (col, pos))
-            .Where(pair => pair.col.Attrs != ColumnAttrs.UnSet)
-            .Select(pair => new ConstraintDef(
-                $"ct_{tableName}_{pair.col.ColumnDef.ColName}_{pair.col.Attrs}",
-                pair.col.Attrs,
-                new[] { (uint)pair.pos }
-            ))
-            .ToArray();
-        TableType = "user";
-        TableAccess = tableName.StartsWith('_') ? "private" : "public";
-    }
+    string TableAccess = tableName.StartsWith('_') ? "private" : "public";
 }
 
 [SpacetimeDB.Type]
-public partial struct TableDesc
+public partial struct TableDesc(TableDef schema, AlgebraicType.Ref typeRef)
 {
-    TableDef Schema;
-    AlgebraicTypeRef Data;
-
-    public TableDesc(TableDef schema, AlgebraicTypeRef data)
-    {
-        Schema = schema;
-        Data = data;
-    }
+    TableDef Schema = schema;
+    int TypeRef = typeRef.Ref_;
 }
 
 [SpacetimeDB.Type]
-public partial struct ReducerDef
+public partial struct ReducerDef(string name, params AggregateElement[] args)
 {
-    string Name;
-    ProductTypeElement[] Args;
-
-    public ReducerDef(string name, params ProductTypeElement[] args)
-    {
-        Name = name;
-        Args = args;
-    }
+    string Name = name;
+    AggregateElement[] Args = args;
 }
 
 [SpacetimeDB.Type]
-partial struct TypeAlias
+partial struct TypeAlias(string name, AlgebraicType.Ref typeRef)
 {
-    internal string Name;
-    internal AlgebraicTypeRef Type;
+    string Name = name;
+    int TypeRef = typeRef.Ref_;
 }
 
 [SpacetimeDB.Type]
-partial struct MiscModuleExport : SpacetimeDB.TaggedEnum<(TypeAlias TypeAlias, Unit _Reserved)> { }
+partial record MiscModuleExport : SpacetimeDB.TaggedEnum<(TypeAlias TypeAlias, Unit _Reserved)>;
 
 [SpacetimeDB.Type]
 public partial struct ModuleDef
 {
-    List<AlgebraicType> Types = new();
-    List<TableDesc> Tables = new();
-    List<ReducerDef> Reducers = new();
-    List<MiscModuleExport> MiscExports = new();
+    List<AlgebraicType> Types = [];
+    List<TableDesc> Tables = [];
+    List<ReducerDef> Reducers = [];
+    List<MiscModuleExport> MiscExports = [];
 
     public ModuleDef() { }
 
-    public AlgebraicTypeRef AllocTypeRef()
+    public AlgebraicType.Ref AllocTypeRef()
     {
         var index = Types.Count;
-        var typeRef = new AlgebraicTypeRef(index);
-        // uninhabited type, to be replaced by a real type
-        Types.Add(new SumType());
+        var typeRef = new AlgebraicType.Ref(index);
+        // to be replaced by a real type
+        Types.Add(AlgebraicType.Uninhabited);
         return typeRef;
     }
 
@@ -200,16 +139,13 @@ public partial struct ModuleDef
             ? $"{type.Name.Remove(type.Name.IndexOf('`'))}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
             : type.Name;
 
-    public void SetTypeRef<T>(AlgebraicTypeRef typeRef, AlgebraicType type, bool anonymous = false)
+    public void SetTypeRef<T>(AlgebraicType.Ref typeRef, AlgebraicType type, bool anonymous = false)
     {
-        Types[typeRef.TypeRef] = type;
+        Types[typeRef.Ref_] = type;
         if (!anonymous)
         {
             MiscExports.Add(
-                new MiscModuleExport
-                {
-                    TypeAlias = new TypeAlias { Name = GetFriendlyName(typeof(T)), Type = typeRef }
-                }
+                new MiscModuleExport.TypeAlias(new TypeAlias(GetFriendlyName(typeof(T)), typeRef))
             );
         }
     }
@@ -249,12 +185,12 @@ public static class ReducerKind
 public interface IReducer
 {
     SpacetimeDB.Module.ReducerDef MakeReducerDef();
-    void Invoke(System.IO.BinaryReader reader, Runtime.DbEventArgs args);
+    void Invoke(System.IO.BinaryReader reader, Runtime.ReducerContext args);
 }
 
 public static class FFI
 {
-    private static List<IReducer> reducers = new();
+    private static List<IReducer> reducers = [];
     private static ModuleDef module = new();
 
     public static void RegisterReducer(IReducer reducer)
@@ -265,10 +201,10 @@ public static class FFI
 
     public static void RegisterTable(TableDesc table) => module.Add(table);
 
-    public static AlgebraicTypeRef AllocTypeRef() => module.AllocTypeRef();
+    public static AlgebraicType.Ref AllocTypeRef() => module.AllocTypeRef();
 
     public static void SetTypeRef<T>(
-        AlgebraicTypeRef typeRef,
+        AlgebraicType.Ref typeRef,
         AlgebraicType type,
         bool anonymous = false
     ) => module.SetTypeRef<T>(typeRef, type, anonymous);

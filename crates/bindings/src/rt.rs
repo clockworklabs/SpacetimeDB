@@ -21,8 +21,6 @@ use spacetimedb_primitives::*;
 
 /// The `sender` invokes `reducer` at `timestamp` and provides it with the given `args`.
 ///
-/// The `epilogue` is executed after `reducer` has finished.
-///
 /// Returns an invalid buffer on success
 /// and otherwise the error is written into the fresh one returned.
 pub fn invoke_reducer<'a, A: Args<'a>, T>(
@@ -31,7 +29,6 @@ pub fn invoke_reducer<'a, A: Args<'a>, T>(
     client_address: Buffer,
     timestamp: u64,
     args: &'a [u8],
-    epilogue: impl FnOnce(Result<(), &str>),
 ) -> Buffer {
     let ctx = assemble_context(sender, timestamp, client_address);
 
@@ -39,12 +36,7 @@ pub fn invoke_reducer<'a, A: Args<'a>, T>(
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
     // Run the reducer with the timestamp set.
-    let res = with_timestamp_set(ctx.timestamp, || {
-        let res: Result<(), Box<str>> = reducer.invoke(ctx, args);
-        // Then run the epilogue.
-        epilogue(res.as_ref().copied().map_err(|e| &**e));
-        res
-    });
+    let res = with_timestamp_set(ctx.timestamp, || reducer.invoke(ctx, args));
 
     // Any error is pushed into a `Buffer`.
     cvt_result(res)

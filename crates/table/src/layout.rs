@@ -620,10 +620,10 @@ pub fn bsatn_len(val: &AlgebraicValue) -> usize {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::proptest_sats::generate_algebraic_type;
-    use itertools::Itertools;
+    use itertools::Itertools as _;
     use proptest::collection::vec;
     use proptest::prelude::*;
+    use spacetimedb_sats::proptest::generate_algebraic_type;
 
     #[test]
     fn align_to_expected() {

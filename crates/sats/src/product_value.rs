@@ -7,7 +7,7 @@ use spacetimedb_primitives::{ColId, ColList};
 /// "elements" / "fields" / "factors" of other `AlgebraicValue`s.
 ///
 /// The type of a product value is a [product type](`ProductType`).
-#[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Ord, PartialOrd, PartialEq, Eq, Default)]
 pub struct ProductValue {
     /// The values that make up this product value.
     pub elements: Box<[AlgebraicValue]>,

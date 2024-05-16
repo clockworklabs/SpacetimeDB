@@ -33,6 +33,12 @@ impl From<Vec<u8>> for AnyBytes {
     }
 }
 
+impl From<Box<[u8]>> for AnyBytes {
+    fn from(b: Box<[u8]>) -> Self {
+        Self::Bytes(b.into())
+    }
+}
+
 impl AsRef<[u8]> for AnyBytes {
     fn as_ref(&self) -> &[u8] {
         self

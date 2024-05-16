@@ -75,6 +75,7 @@ impl ClientConnectionSender {
             mpsc::error::TrySendError::Full(_) => {
                 // we've hit CLIENT_CHANNEL_CAPACITY messages backed up in
                 // the channel, so forcibly kick the client
+                tracing::warn!(identity = %self.id.identity, address = %self.id.address, "client channel capacity exceeded");
                 self.abort_handle.abort();
                 self.cancelled.store(true, Relaxed);
                 ClientSendError::Cancelled
@@ -123,7 +124,8 @@ impl DataMessage {
 
 // if a client racks up this many messages in the queue without ACK'ing
 // anything, we boot 'em.
-const CLIENT_CHANNEL_CAPACITY: usize = 8192;
+const CLIENT_CHANNEL_CAPACITY: usize = 16 * KB;
+const KB: usize = 1024;
 
 impl ClientConnection {
     /// Returns an error if ModuleHost closed

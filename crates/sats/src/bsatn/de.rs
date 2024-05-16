@@ -1,6 +1,5 @@
 use crate::buffer::{BufReader, DecodeError};
-
-use crate::de::{self, SeqProductAccess, SumAccess, VariantAccess};
+use crate::de::{self, Deserializer as _, SeqProductAccess, SumAccess, VariantAccess};
 
 /// Deserializer from the BSATN data format.
 pub struct Deserializer<'a, R> {
@@ -16,8 +15,24 @@ impl<'a, 'de, R: BufReader<'de>> Deserializer<'a, R> {
 
     /// Reborrows the deserializer.
     #[inline]
-    fn reborrow(&mut self) -> Deserializer<'_, R> {
+    pub(crate) fn reborrow(&mut self) -> Deserializer<'_, R> {
         Deserializer { reader: self.reader }
+    }
+
+    /// Reads a length as a `u32` then converted to `usize`.
+    pub(crate) fn deserialize_len(self) -> Result<usize, DecodeError> {
+        Ok(self.deserialize_u32()? as usize)
+    }
+
+    /// Reads a slice of `len` elements.
+    pub(crate) fn get_slice(&mut self, len: usize) -> Result<&'de [u8], DecodeError> {
+        self.reader.get_slice(len)
+    }
+
+    /// Reads a byte slice from the `reader`.
+    fn deserialize_bytes_inner(mut self) -> Result<&'de [u8], DecodeError> {
+        let len = self.reborrow().deserialize_len()?;
+        self.get_slice(len)
     }
 }
 
@@ -29,17 +44,6 @@ impl de::Error for DecodeError {
     fn unknown_variant_tag<'de, T: de::SumVisitor<'de>>(_tag: u8, _expected: &T) -> Self {
         DecodeError::InvalidTag
     }
-}
-
-/// Read a length as a `u32` then converted to `usize`.
-fn get_len<'de>(reader: &mut impl BufReader<'de>) -> Result<usize, DecodeError> {
-    Ok(reader.get_u32()? as usize)
-}
-
-/// Read a byte slice from the `reader`.
-fn read_bytes<'a, 'de: 'a>(reader: &'a mut impl BufReader<'de>) -> Result<&'de [u8], DecodeError> {
-    let len = get_len(reader)?;
-    reader.get_slice(len)
 }
 
 impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
@@ -94,22 +98,22 @@ impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
     }
 
     fn deserialize_str<V: de::SliceVisitor<'de, str>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        let slice = read_bytes(self.reader)?;
+        let slice = self.deserialize_bytes_inner()?;
         let slice = core::str::from_utf8(slice)?;
         visitor.visit_borrowed(slice)
     }
 
     fn deserialize_bytes<V: de::SliceVisitor<'de, [u8]>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        let slice = read_bytes(self.reader)?;
+        let slice = self.deserialize_bytes_inner()?;
         visitor.visit_borrowed(slice)
     }
 
     fn deserialize_array_seed<V: de::ArrayVisitor<'de, T::Output>, T: de::DeserializeSeed<'de> + Clone>(
-        self,
+        mut self,
         visitor: V,
         seed: T,
     ) -> Result<V::Output, Self::Error> {
-        let len = get_len(self.reader)?;
+        let len = self.reborrow().deserialize_len()?;
         let seeds = itertools::repeat_n(seed, len);
         visitor.visit(ArrayAccess { de: self, seeds })
     }
@@ -119,12 +123,12 @@ impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
         K: de::DeserializeSeed<'de> + Clone,
         V: de::DeserializeSeed<'de> + Clone,
     >(
-        self,
+        mut self,
         visitor: Vi,
         kseed: K,
         vseed: V,
     ) -> Result<Vi::Output, Self::Error> {
-        let len = get_len(self.reader)?;
+        let len = self.reborrow().deserialize_len()?;
         let seeds = itertools::repeat_n((kseed, vseed), len);
         visitor.visit(MapAccess { de: self, seeds })
     }

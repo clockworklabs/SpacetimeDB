@@ -19,6 +19,7 @@ use serde_json::{json, Value};
 use spacetimedb::address::Address;
 use spacetimedb::auth::identity::encode_token;
 use spacetimedb::database_logger::DatabaseLogger;
+use spacetimedb::error::DatabaseError;
 use spacetimedb::host::DescribedEntityType;
 use spacetimedb::host::EntityDef;
 use spacetimedb::host::ReducerArgs;
@@ -28,14 +29,15 @@ use spacetimedb::host::UpdateDatabaseSuccess;
 use spacetimedb::identity::Identity;
 use spacetimedb::json::client_api::StmtResultJson;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance};
-use spacetimedb::sql::execute::execute;
+use spacetimedb::sql;
+use spacetimedb::sql::execute::{ctx_sql, translate_col};
 use spacetimedb_client_api_messages::name::{self, DnsLookupResponse, DomainName, PublishOp, PublishResult};
 use spacetimedb_client_api_messages::recovery::{RecoveryCode, RecoveryCodeResponse};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::sats::WithTypespace;
-use std::convert::From;
+use spacetimedb_lib::ProductTypeElement;
 
 pub(crate) struct DomainParsingRejection;
 
@@ -558,12 +560,16 @@ where
         }
     };
 
-    let results = match execute(
-        worker_ctx.database_instance_context_controller(),
-        instance_id,
-        body,
-        auth,
-    ) {
+    let dbicc = worker_ctx.database_instance_context_controller();
+
+    tracing::info!(sql = body);
+    let Some((dbic, _)) = dbicc.get(instance_id) else {
+        let err = format!("{}", DatabaseError::NotFound(instance_id));
+        return Err((StatusCode::BAD_REQUEST, err).into());
+    };
+
+    let stdb = &dbic.relational_db;
+    let results = match sql::execute::run(stdb, &body, auth) {
         Ok(results) => results,
         Err(err) => {
             log::warn!("{}", err);
@@ -577,13 +583,25 @@ where
         }
     };
 
-    let json = results
-        .into_iter()
-        .map(|result| StmtResultJson {
-            schema: result.head.ty(),
-            rows: result.data,
-        })
-        .collect::<Vec<_>>();
+    let json = stdb.with_read_only(&ctx_sql(stdb), |tx| {
+        results
+            .into_iter()
+            .map(|result| {
+                let rows = result.data;
+                let schema = result
+                    .head
+                    .fields
+                    .iter()
+                    .map(|x| {
+                        let ty = x.algebraic_type.clone();
+                        let name = translate_col(tx, x.field);
+                        ProductTypeElement::new(ty, name)
+                    })
+                    .collect();
+                StmtResultJson { schema, rows }
+            })
+            .collect::<Vec<_>>()
+    });
 
     Ok((StatusCode::OK, axum::Json(json)))
 }

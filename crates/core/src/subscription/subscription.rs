@@ -29,9 +29,7 @@ use crate::client::Protocol;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{
-    DatabaseTableUpdate, DatabaseUpdate, DatabaseUpdateCow, ProtocolDatabaseUpdate, UpdatesCow,
-};
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdateRelValue, ProtocolDatabaseUpdate, UpdatesRelValue};
 use crate::json::client_api::TableUpdateJson;
 use crate::vm::{build_query, TxMode};
 use anyhow::Context;
@@ -48,7 +46,6 @@ use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
-use std::borrow::Cow;
 use std::hash::Hash;
 use std::iter;
 use std::ops::Deref;
@@ -129,7 +126,7 @@ impl AsRef<QueryExpr> for SupportedQuery {
     }
 }
 
-type ResCowPV<'a> = Result<Cow<'a, ProductValue>, ErrorVm>;
+type ResRV<'a> = Result<RelValue<'a>, ErrorVm>;
 
 /// Evaluates `query` and returns all the updates.
 fn eval_updates<'a>(
@@ -138,14 +135,9 @@ fn eval_updates<'a>(
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
     mut sources: impl SourceProvider<'a>,
-) -> Result<impl 'a + Iterator<Item = ResCowPV<'a>>, DBError> {
+) -> Result<impl 'a + Iterator<Item = ResRV<'a>>, DBError> {
     let mut query = build_query(ctx, db, tx, query, &mut sources)?;
-    Ok(iter::from_fn(move || {
-        query
-            .next()
-            .map(|x| x.map(|rv| rv.into_product_value_cow()))
-            .transpose()
-    }))
+    Ok(iter::from_fn(move || query.next().transpose()))
 }
 
 /// A [`query::Supported::Semijoin`] compiled for incremental evaluations.
@@ -277,7 +269,7 @@ impl IncrementalJoin {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
-    ) -> Result<impl Iterator<Item = ResCowPV<'a>>, DBError> {
+    ) -> Result<impl Iterator<Item = ResRV<'a>>, DBError> {
         eval_updates(ctx, db, tx, self.plan_for_delta_lhs(), Some(lhs.map(RelValue::ProjRef)))
     }
 
@@ -288,7 +280,7 @@ impl IncrementalJoin {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         rhs: impl 'a + Iterator<Item = &'a ProductValue>,
-    ) -> Result<impl Iterator<Item = ResCowPV<'a>>, DBError> {
+    ) -> Result<impl Iterator<Item = ResRV<'a>>, DBError> {
         eval_updates(ctx, db, tx, self.plan_for_delta_rhs(), Some(rhs.map(RelValue::ProjRef)))
     }
 
@@ -300,7 +292,7 @@ impl IncrementalJoin {
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
         rhs: impl 'a + Iterator<Item = &'a ProductValue>,
-    ) -> Result<impl Iterator<Item = ResCowPV<'a>>, DBError> {
+    ) -> Result<impl Iterator<Item = ResRV<'a>>, DBError> {
         let is = Either::Left(lhs.map(RelValue::ProjRef));
         let ps = Either::Right(rhs.map(RelValue::ProjRef));
         let sources: SourceSet<_, 2> = if self.return_index_rows { [is, ps] } else { [ps, is] }.into();
@@ -365,7 +357,7 @@ impl IncrementalJoin {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         updates: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
-    ) -> Result<UpdatesCow<'a>, DBError> {
+    ) -> Result<UpdatesRelValue<'a>, DBError> {
         // Find any updates to the tables mentioned by `self` and group them into [`JoinSide`]s.
         //
         // The supplied updates are assumed to be the full set of updates from a single transaction.
@@ -499,7 +491,7 @@ impl IncrementalJoin {
         }
         inserts.extend(join_5);
 
-        Ok(UpdatesCow { deletes, inserts })
+        Ok(UpdatesRelValue { deletes, inserts })
     }
 }
 
@@ -574,15 +566,15 @@ impl ExecutionSet {
         ctx: &'a ExecutionContext,
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
-        database_update: &'a DatabaseUpdate,
-    ) -> Result<DatabaseUpdateCow<'_>, DBError> {
+        database_update: &'a [&'a DatabaseTableUpdate],
+    ) -> Result<DatabaseUpdateRelValue<'a>, DBError> {
         let mut tables = Vec::new();
         for unit in &self.exec_units {
-            if let Some(table) = unit.eval_incr(ctx, db, tx, &unit.sql, database_update.tables.iter())? {
+            if let Some(table) = unit.eval_incr(ctx, db, tx, &unit.sql, database_update.iter().copied())? {
                 tables.push(table);
             }
         }
-        Ok(DatabaseUpdateCow { tables })
+        Ok(DatabaseUpdateRelValue { tables })
     }
 }
 
@@ -661,7 +653,7 @@ mod tests {
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[(1.into(), "b")];
-        let _ = db.create_table_for_test("lhs", schema, indexes)?;
+        let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
         let schema = &[
@@ -711,11 +703,10 @@ mod tests {
                     source: SourceExpr::InMemory { .. },
                     query: ref lhs,
                 },
-            probe_field:
-                FieldName::Name {
-                    table: ref probe_table,
-                    field: ref probe_field,
-                },
+            probe_field: FieldName {
+                table: probe_table,
+                col: probe_field,
+            },
             index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
@@ -732,8 +723,8 @@ mod tests {
         // Assert that original index and probe tables have been swapped.
         assert_eq!(index_table, rhs_id);
         assert_eq!(index_col, 0.into());
-        assert_eq!(&**probe_field, "b");
-        assert_eq!(&**probe_table, "lhs");
+        assert_eq!(probe_field, 1.into());
+        assert_eq!(probe_table, lhs_id);
         Ok(())
     }
 
@@ -755,7 +746,7 @@ mod tests {
             ("d", AlgebraicType::U64),
         ];
         let indexes = &[(0.into(), "b"), (1.into(), "c")];
-        let _ = db.create_table_for_test("rhs", schema, indexes)?;
+        let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx();
         // Should generate an index join since there is an index on `lhs.b`.
@@ -798,11 +789,10 @@ mod tests {
                     source: SourceExpr::InMemory { .. },
                     query: ref rhs,
                 },
-            probe_field:
-                FieldName::Name {
-                    table: ref probe_table,
-                    field: ref probe_field,
-                },
+            probe_field: FieldName {
+                table: probe_table,
+                col: probe_field,
+            },
             index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
@@ -819,8 +809,8 @@ mod tests {
         // Assert that original index and probe tables have not been swapped.
         assert_eq!(index_table, lhs_id);
         assert_eq!(index_col, 1.into());
-        assert_eq!(&**probe_field, "b");
-        assert_eq!(&**probe_table, "rhs");
+        assert_eq!(probe_field, 0.into());
+        assert_eq!(probe_table, rhs_id);
         Ok(())
     }
 

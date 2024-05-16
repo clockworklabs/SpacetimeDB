@@ -1,3 +1,5 @@
+#![warn(clippy::uninlined_format_args)]
+
 use std::fs;
 use std::io::Write;
 use std::ops::Deref;
@@ -11,6 +13,8 @@ use spacetimedb_lib::sats::{AlgebraicType, Typespace};
 use spacetimedb_lib::MODULE_ABI_MAJOR_VERSION;
 use spacetimedb_lib::{bsatn, MiscModuleExport, ModuleDef, ReducerDef, TableDesc, TypeAlias};
 use wasmtime::{AsContext, Caller};
+
+use crate::Config;
 
 mod code_indenter;
 pub mod csharp;
@@ -96,7 +100,10 @@ pub fn cli() -> clap::Command {
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
-pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
+pub fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
+    // Release the lockfile on the config, since we don't need it.
+    config.release_lock();
+
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let wasm_file = args.get_one::<PathBuf>("wasm_file").cloned();
     let out_dir = args.get_one::<PathBuf>("out_dir").unwrap();

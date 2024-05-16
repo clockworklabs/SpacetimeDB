@@ -93,6 +93,8 @@ fn main() {
         "reconnect_same_address" => exec_reconnect_same_address(),
 
         "caller_always_notified" => exec_caller_always_notified(),
+      
+        "subscribe_all_select_star" => exec_subscribe_all_select_star(),
 
         _ => panic!("Unknown test: {}", test),
     }
@@ -1406,6 +1408,41 @@ fn exec_caller_always_notified() {
         });
         no_op_succeeds();
     });
+
+/// Duplicates the test `insert_primitive`, but using the `SELECT * FROM *` sugar
+/// rather than an explicit query set.
+fn exec_subscribe_all_select_star() {
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    {
+        let test_counter = test_counter.clone();
+        once_on_subscription_applied(move || {
+            insert_one::<OneU8>(&test_counter, 0);
+            insert_one::<OneU16>(&test_counter, 0);
+            insert_one::<OneU32>(&test_counter, 0);
+            insert_one::<OneU64>(&test_counter, 0);
+            insert_one::<OneU128>(&test_counter, 0);
+
+            insert_one::<OneI8>(&test_counter, 0);
+            insert_one::<OneI16>(&test_counter, 0);
+            insert_one::<OneI32>(&test_counter, 0);
+            insert_one::<OneI64>(&test_counter, 0);
+            insert_one::<OneI128>(&test_counter, 0);
+
+            insert_one::<OneBool>(&test_counter, false);
+
+            insert_one::<OneF32>(&test_counter, 0.0);
+            insert_one::<OneF64>(&test_counter, 0.0);
+
+            insert_one::<OneString>(&test_counter, "".to_string());
+
+            sub_applied_nothing_result(assert_all_tables_empty());
+        });
+    }
+
+    once_on_connect(move |_, _| sub_result(subscribe(&["SELECT * FROM *"])));
 
     conn_result(connect(LOCALHOST, &name, None));
 

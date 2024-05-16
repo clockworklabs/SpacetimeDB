@@ -29,11 +29,13 @@ itertools.workspace = true
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
 sha3.workspace = true
+second-stack.workspace = true
 serde = { workspace = true, optional = true }
 smallvec.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+ahash.workspace = true
 bytes.workspace = true
 rand.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.

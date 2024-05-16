@@ -10,25 +10,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum TypeError {
-    #[error("Arrays must be homogeneous. It expects to be `{{expect.to_satns()}}` but `{{value.to_satns()}}` is of type `{{found.to_satns()}}`")]
-    Array {
-        expect: AlgebraicType,
-        found: AlgebraicType,
-        value: AlgebraicValue,
-    },
-    #[error("Arrays must define a type for the elements")]
-    ArrayEmpty,
-    #[error("Maps must be homogeneous. It expects to be `{{key_expect.to_satns()}}:{{value_expect.to_satns()}}` but `{{key.to_satns()}}::{{value.to_satns()}}` is of type `{{key_found.to_satns()}}:{{value_found.to_satns()}}`")]
-    Map {
-        key_expect: AlgebraicType,
-        value_expect: AlgebraicType,
-        key_found: AlgebraicType,
-        value_found: AlgebraicType,
-        key: AlgebraicValue,
-        value: AlgebraicValue,
-    },
-    #[error("Maps must define a type for both key & value")]
-    MapEmpty,
+    #[error("The type of `{{value.to_satns()}}` cannot be inferred")]
+    CannotInferType { value: AlgebraicValue },
 }
 
 #[derive(Error, Debug, Clone)]

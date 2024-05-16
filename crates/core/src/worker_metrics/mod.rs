@@ -1,11 +1,9 @@
 use crate::execution_context::WorkloadType;
 use crate::hash::Hash;
 use once_cell::sync::Lazy;
-use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
-use spacetimedb_data_structures::map::HashMap;
+use prometheus::{HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_metrics::metrics_group;
-use std::sync::Mutex;
 
 metrics_group!(
     pub struct WorkerMetrics {
@@ -34,49 +32,24 @@ metrics_group!(
         #[labels(identity: Identity)]
         pub websocket_sent_msg_size: HistogramVec,
 
-        #[name = spacetime_worker_transactions]
-        #[help = "Number of reducer calls."]
-        #[labels(database_address: Address, reducer_symbol: str)]
-        pub reducer_count: IntCounterVec,
-
-        #[name = spacetime_worker_module_tx_compute_time]
-        #[help = "The time it takes to compute and commit after reducer execution."]
-        #[labels(database_address: Address, reducer_symbol: str)]
-        pub reducer_compute_time: HistogramVec,
-
-        #[name = spacetime_worker_tx_size]
-        #[help = "The size of committed bytes in the message log after reducer execution."]
-        #[labels(database_address: Address, reducer_symbol: str)]
-        pub reducer_write_size: HistogramVec,
-
         #[name = spacetime_worker_instance_operation_queue_length]
         #[help = "Length of the wait queue for access to a module instance."]
         #[labels(database_address: Address)]
         pub instance_queue_length: IntGaugeVec,
 
-        #[name = spacetime_worker_instance_operation_queue_length_max]
-        #[help = "Max length of the wait queue for access to a module instance."]
-        #[labels(database_address: Address)]
-        pub instance_queue_length_max: IntGaugeVec,
-
         #[name = spacetime_worker_instance_operation_queue_length_histogram]
         #[help = "Length of the wait queue for access to a module instance."]
         #[labels(database_address: Address)]
-        #[buckets(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 25, 50)]
+        #[buckets(0, 10, 25, 50, 75, 100, 150, 200, 250, 300, 350, 400, 450, 500, 1000)]
         pub instance_queue_length_histogram: HistogramVec,
 
-        #[name = spacetime_scheduled_reducer_delay_sec]
-        #[help = "The amount of time (in seconds) a reducer has been delayed past its scheduled execution time"]
+        #[name = spacetime_reducer_wait_time_sec]
+        #[help = "The amount of time (in seconds) a reducer spends in the queue waiting to run"]
         #[labels(db: Address, reducer: str)]
         #[buckets(
             1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
         )]
-        pub scheduled_reducer_delay_sec: HistogramVec,
-
-        #[name = spacetime_scheduled_reducer_delay_sec_max]
-        #[help = "The maximum duration (in seconds) a reducer has been delayed"]
-        #[labels(db: Address, reducer: str)]
-        pub scheduled_reducer_delay_sec_max: GaugeVec,
+        pub reducer_wait_time: HistogramVec,
 
         #[name = spacetime_worker_wasm_instance_errors_cumulative]
         #[help = "The number of fatal WASM instance errors, such as reducer panics."]
@@ -97,20 +70,12 @@ metrics_group!(
         #[help = "The total time it takes for request to complete"]
         #[labels(txn_type: WorkloadType, database_address: Address, reducer_symbol: str)]
         pub request_round_trip: HistogramVec,
+
+        #[name = spacetime_reducer_plus_query_duration_sec]
+        #[help = "The time spent executing a reducer (in seconds), plus the time spent evaluating its subscription queries"]
+        #[labels(db: Address, reducer: str)]
+        pub reducer_plus_query_duration: HistogramVec,
     }
 );
 
-type ReducerLabel = (Address, String);
-
-pub static MAX_QUEUE_LEN: Lazy<Mutex<HashMap<Address, i64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
-pub static MAX_REDUCER_DELAY: Lazy<Mutex<HashMap<ReducerLabel, f64>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 pub static WORKER_METRICS: Lazy<WorkerMetrics> = Lazy::new(WorkerMetrics::new);
-
-pub fn reset_counters() {
-    // Reset max queue length
-    WORKER_METRICS.instance_queue_length_max.0.reset();
-    MAX_QUEUE_LEN.lock().unwrap().clear();
-    // Reset max reducer wait time
-    WORKER_METRICS.scheduled_reducer_delay_sec_max.0.reset();
-    MAX_REDUCER_DELAY.lock().unwrap().clear();
-}

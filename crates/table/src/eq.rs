@@ -8,7 +8,7 @@ use super::{
     layout::{align_to, AlgebraicTypeLayout, HasLayout, ProductTypeLayout, RowTypeLayout},
     page::Page,
     row_hash::read_from_bytes,
-    util::{range_move, slice_assume_init_ref},
+    util::range_move,
     var_len::VarLenRef,
 };
 
@@ -31,15 +31,11 @@ pub unsafe fn eq_row_in_page(
     fixed_offset_b: PageOffset,
     ty: &RowTypeLayout,
 ) -> bool {
-    // Context for a row at `offset` in `page`.
-    let bytes_page = |page, offset| BytesPage {
-        page,
-        bytes: page.get_row_data(offset, ty.size()),
-    };
     // Context for the whole comparison.
     let mut ctx = EqCtx {
-        a: bytes_page(page_a, fixed_offset_a),
-        b: bytes_page(page_b, fixed_offset_b),
+        // Contexts for rows `a` and `b`.
+        a: BytesPage::new(page_a, fixed_offset_a, ty),
+        b: BytesPage::new(page_b, fixed_offset_b, ty),
         curr_offset: 0,
     };
     // Test for equality!
@@ -55,11 +51,19 @@ pub unsafe fn eq_row_in_page(
 
 /// A view into the fixed part of a row combined with the page it belongs to.
 #[derive(Clone, Copy)]
-struct BytesPage<'page> {
+pub(crate) struct BytesPage<'page> {
     /// The `Bytes` of the fixed part of a row in `page`.
-    bytes: &'page Bytes,
+    pub(crate) bytes: &'page Bytes,
     /// The `Page` which has the fixed part `bytes` and associated var-len objects.
-    page: &'page Page,
+    pub(crate) page: &'page Page,
+}
+
+impl<'page> BytesPage<'page> {
+    /// Returns a view into the bytes of the row at `offset` in `page` typed at `ty`.
+    pub(crate) fn new(page: &'page Page, offset: PageOffset, ty: &RowTypeLayout) -> Self {
+        let bytes = page.get_row_data(offset, ty.size());
+        Self { page, bytes }
+    }
 }
 
 /// Comparison context used in the functions below.
@@ -112,13 +116,11 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
         ty
     );
 
-    let res = match ty {
+    match ty {
         AlgebraicTypeLayout::Sum(ty) => {
             // Read the tags of the sum values.
-            // SAFETY: `ctx.a.bytes[curr_offset..]` hold a sum value at `ty`.
-            let (tag_a, data_ty) = unsafe { read_tag(ctx.a.bytes, ty, ctx.curr_offset) };
-            // SAFETY: `ctx.b.bytes[curr_offset..]` hold a sum value at `ty`.
-            let (tag_b, _) = unsafe { read_tag(ctx.b.bytes, ty, ctx.curr_offset) };
+            let (tag_a, data_ty) = read_tag(ctx.a.bytes, ty, ctx.curr_offset);
+            let (tag_b, _) = read_tag(ctx.b.bytes, ty, ctx.curr_offset);
 
             // The tags must match!
             if tag_a != tag_b {
@@ -153,11 +155,7 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
         | &AlgebraicTypeLayout::I128
         | &AlgebraicTypeLayout::U128
         | &AlgebraicTypeLayout::F32
-        | &AlgebraicTypeLayout::F64 => {
-            // SAFETY: `value_a/b` are valid,
-            // so `&ctx.a/b.bytes[range_move(0..ty.size(), *ctx.curr_offset)]` contains init bytes.
-            unsafe { eq_byte_array(ctx, ty.size()) }
-        }
+        | &AlgebraicTypeLayout::F64 => eq_byte_array(ctx, ty.size()),
 
         // The var-len cases.
         &AlgebraicTypeLayout::String | AlgebraicTypeLayout::VarLen(_) => {
@@ -168,8 +166,7 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
             // to either be `NULL` or point to a valid granule in `page_a/page_b`.
             unsafe { eq_vlo(ctx) }
         }
-    };
-    res
+    }
 }
 
 /// Equates the bytes of two var-len objects
@@ -205,15 +202,9 @@ unsafe fn eq_vlo(ctx: &mut EqCtx<'_, '_>) -> bool {
 
 /// Equates the byte arrays `data_a/data_b = ctx.a/b.bytes[range_move(0..len, ctx.curr_offset)]`
 /// and advances the offset.
-///
-/// SAFETY: `data_a/b` must both be initialized as valid `&[u8]`s.
-unsafe fn eq_byte_array(ctx: &mut EqCtx<'_, '_>, len: usize) -> bool {
+fn eq_byte_array(ctx: &mut EqCtx<'_, '_>, len: usize) -> bool {
     let data_a = &ctx.a.bytes[range_move(0..len, ctx.curr_offset)];
     let data_b = &ctx.b.bytes[range_move(0..len, ctx.curr_offset)];
     ctx.curr_offset += len;
-    // SAFETY: Caller promised that `data_a` was initialized.
-    let data_a = unsafe { slice_assume_init_ref(data_a) };
-    // SAFETY: Caller promised that `data_b` was initialized.
-    let data_b = unsafe { slice_assume_init_ref(data_b) };
     data_a == data_b
 }
