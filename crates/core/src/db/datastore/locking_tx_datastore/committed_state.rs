@@ -12,7 +12,8 @@ use crate::{
                 st_columns_schema, st_constraints_schema, st_indexes_schema, st_module_schema, st_sequences_schema,
                 st_table_schema, system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableFields,
                 StTableRow, SystemTable, ST_COLUMNS_ID, ST_COLUMNS_NAME, ST_CONSTRAINTS_ID, ST_CONSTRAINTS_NAME,
-                ST_INDEXES_ID, ST_INDEXES_NAME, ST_MODULE_ID, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID,
+                ST_INDEXES_ID, ST_INDEXES_NAME, ST_MODULE_ID, ST_RESERVED_SEQUENCE_RANGE, ST_SEQUENCES_ID,
+                ST_SEQUENCES_NAME, ST_TABLES_ID,
             },
             traits::TxData,
         },
@@ -23,7 +24,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use itertools::Itertools;
-use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
+use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::{
     db::{
@@ -102,8 +103,6 @@ fn ignore_duplicate_insert_error<T>(res: std::result::Result<T, InsertError>) ->
 
 impl CommittedState {
     pub fn bootstrap_system_tables(&mut self, database_address: Address) -> Result<()> {
-        let mut sequences_start: IntMap<TableId, i128> = IntMap::with_capacity(10);
-
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
         let with_label_values = |table_id: TableId, table_name: &str| {
@@ -130,8 +129,6 @@ impl CommittedState {
             // Insert the meta-row into the in-memory ST_TABLES.
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_tables.insert(blob_store, &row))?;
-
-            *sequences_start.entry(ST_TABLES_ID).or_default() += 1;
         }
 
         // Insert the columns into `st_columns`
@@ -176,8 +173,6 @@ impl CommittedState {
             ignore_duplicate_insert_error(st_constraints.insert(blob_store, &row))?;
             // Increment row count for st_constraints.
             with_label_values(ST_CONSTRAINTS_ID, ST_CONSTRAINTS_NAME).inc();
-
-            *sequences_start.entry(ST_CONSTRAINTS_ID).or_default() += 1;
         }
 
         // Insert the indexes into `st_indexes`
@@ -203,8 +198,6 @@ impl CommittedState {
             ignore_duplicate_insert_error(st_indexes.insert(blob_store, &row))?;
             // Increment row count for st_indexes.
             with_label_values(ST_INDEXES_ID, ST_INDEXES_NAME).inc();
-
-            *sequences_start.entry(ST_INDEXES_ID).or_default() += 1;
         }
 
         // We don't add the row here but with `MutProgrammable::set_program_hash`, but we need to register the table
@@ -217,19 +210,20 @@ impl CommittedState {
         // We create sequences last to get right the starting number
         // so, we don't sort here
         for (i, col) in system_tables().into_iter().flat_map(|x| x.sequences).enumerate() {
-            //Is required to advance the start position before insert the row
-            *sequences_start.entry(ST_SEQUENCES_ID).or_default() += 1;
-
             let row = StSequenceRow {
                 sequence_id: i.into(),
                 sequence_name: col.sequence_name,
                 table_id: col.table_id,
                 col_pos: col.col_pos,
                 increment: col.increment,
-                start: *sequences_start.get(&col.table_id).unwrap_or(&col.start),
                 min_value: col.min_value,
                 max_value: col.max_value,
-                allocated: col.allocated,
+                // All sequences for system tables start from the reserved
+                // range + 1.
+                // Logically, we thus have used up the default pre-allocation
+                // and must initialize the sequence with twice the amount.
+                start: ST_RESERVED_SEQUENCE_RANGE as i128 + 1,
+                allocated: (ST_RESERVED_SEQUENCE_RANGE * 2) as i128,
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_SEQUENCES.

@@ -771,7 +771,7 @@ mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{
         system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_COLUMNS_ID,
-        ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID,
+        ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_RESERVED_SEQUENCE_RANGE, ST_SEQUENCES_ID,
     };
     use crate::db::datastore::traits::{IsolationLevel, MutTx};
     use crate::db::datastore::Result;
@@ -785,6 +785,10 @@ mod tests {
     };
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_table::table::UniqueConstraintViolation;
+
+    /// For the first user-created table, sequences in the system tables start
+    /// from this value.
+    const FIRST_NON_SYSTEM_ID: u32 = ST_RESERVED_SEQUENCE_RANGE + 1;
 
     /// Utility to query the system tables and return their concrete table row
     pub struct SystemTableQuery<'a> {
@@ -882,7 +886,11 @@ mod tests {
     }
 
     fn map_array<A, B: From<A>, const N: usize>(a: [A; N]) -> Vec<B> {
-        a.map(Into::into).into()
+        map_array_fn(a, Into::into)
+    }
+
+    fn map_array_fn<A, B, F: Fn(A) -> B, const N: usize>(a: [A; N], f: F) -> Vec<B> {
+        a.map(f).into()
     }
 
     struct IndexRow<'a> {
@@ -1049,10 +1057,11 @@ mod tests {
 
     #[rustfmt::skip]
     fn basic_table_schema_cols() -> [ColRow<'static>; 3] {
+        let table = FIRST_NON_SYSTEM_ID;
         [
-            ColRow { table: 6, pos: 0, name: "id", ty: AlgebraicType::U32 },
-            ColRow { table: 6, pos: 1, name: "name", ty: AlgebraicType::String },
-            ColRow { table: 6, pos: 2, name: "age", ty: AlgebraicType::U32 },
+            ColRow { table, pos: 0, name: "id", ty: AlgebraicType::U32 },
+            ColRow { table, pos: 1, name: "name", ty: AlgebraicType::String },
+            ColRow { table, pos: 2, name: "age", ty: AlgebraicType::U32 },
         ]
     }
 
@@ -1077,20 +1086,23 @@ mod tests {
 
     #[rustfmt::skip]
     fn basic_table_schema_created(table_id: TableId) -> TableSchema {
+        let table: u32 = table_id.into();
+        let seq_start = FIRST_NON_SYSTEM_ID;
+
         TableSchema::new(
             table_id,
             "Foo".into(),
             map_array(basic_table_schema_cols()),
              map_array([
-                IdxSchema { id: 6, table: 6, col: 0, name: "id_idx", unique: true },
-                IdxSchema { id: 7, table: 6, col: 1, name: "name_idx", unique: true },
+                IdxSchema { id: seq_start,     table, col: 0, name: "id_idx", unique: true },
+                IdxSchema { id: seq_start + 1, table, col: 1, name: "name_idx", unique: true },
             ]),
             map_array([
-                ConstraintRow { constraint_id: 6, table_id: 6, columns: col(0), constraints: Constraints::unique(), constraint_name: "ct_Foo_id_idx_unique" },
-                ConstraintRow { constraint_id: 7, table_id: 6, columns: col(1), constraints: Constraints::unique(), constraint_name: "ct_Foo_name_idx_unique" }
+                ConstraintRow { constraint_id: seq_start,     table_id: table, columns: col(0), constraints: Constraints::unique(), constraint_name: "ct_Foo_id_idx_unique" },
+                ConstraintRow { constraint_id: seq_start + 1, table_id: table, columns: col(1), constraints: Constraints::unique(), constraint_name: "ct_Foo_name_idx_unique" }
             ]),
              map_array([
-                SequenceRow { id: 4, table: 6, col_pos: 0, name: "seq_Foo_id", start: 1 }
+                SequenceRow { id: seq_start, table, col_pos: 0, name: "seq_Foo_id", start: 1 }
             ]),
             StTableType::User,
             StAccess::Public,
@@ -1196,13 +1208,20 @@ mod tests {
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
         ]));
+        let start = FIRST_NON_SYSTEM_ID as i128;
         #[rustfmt::skip]
-        assert_eq!(query.scan_st_sequences()?, map_array([
-            SequenceRow { id: 0, table: 0, col_pos: 0, name: "seq_st_table_table_id_primary_key_auto",  start: 6 },
-            SequenceRow { id: 3, table: 2, col_pos: 0, name: "seq_st_sequence_sequence_id_primary_key_auto", start: 4 },
-            SequenceRow { id: 1, table: 3, col_pos: 0, name: "seq_st_indexes_index_id_primary_key_auto",  start: 6 },
-            SequenceRow { id: 2, table: 4, col_pos: 0, name: "seq_st_constraints_constraint_id_primary_key_auto", start: 6 },
-        ]));
+        assert_eq!(query.scan_st_sequences()?, map_array_fn(
+            [
+                SequenceRow { id: 0, table: 0, col_pos: 0, name: "seq_st_table_table_id_primary_key_auto", start },
+                SequenceRow { id: 3, table: 2, col_pos: 0, name: "seq_st_sequence_sequence_id_primary_key_auto", start },
+                SequenceRow { id: 1, table: 3, col_pos: 0, name: "seq_st_indexes_index_id_primary_key_auto", start },
+                SequenceRow { id: 2, table: 4, col_pos: 0, name: "seq_st_constraints_constraint_id_primary_key_auto", start },
+            ],
+            |row| StSequenceRow {
+                allocated: ST_RESERVED_SEQUENCE_RANGE as i128 * 2,
+                ..StSequenceRow::from(row)
+            }
+        ));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_constraints()?, map_array([
             ConstraintRow { constraint_id: 0, table_id: 0, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_table_table_id_primary_key_auto" },
@@ -1279,7 +1298,7 @@ mod tests {
         let table_rows = query.scan_st_tables_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
         assert_eq!(table_rows, map_array([
-            TableRow { id: 6, name: "Foo", ty: StTableType::User, access: StAccess::Public }
+            TableRow { id: FIRST_NON_SYSTEM_ID, name: "Foo", ty: StTableType::User, access: StAccess::Public }
         ]));
         let column_rows = query.scan_st_columns_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
@@ -1298,7 +1317,7 @@ mod tests {
         let table_rows = query.scan_st_tables_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
         assert_eq!(table_rows, map_array([
-            TableRow { id: 6, name: "Foo", ty: StTableType::User, access: StAccess::Public }
+            TableRow { id: FIRST_NON_SYSTEM_ID, name: "Foo", ty: StTableType::User, access: StAccess::Public }
         ]));
         let column_rows = query.scan_st_columns_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
@@ -1354,8 +1373,10 @@ mod tests {
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
 
+        let mut dropped_indexes = 0;
         for index in &*schema.indexes {
             datastore.drop_index_mut_tx(&mut tx, index.index_id)?;
+            dropped_indexes += 1;
         }
         assert!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
@@ -1376,8 +1397,8 @@ mod tests {
         )?;
 
         let expected_indexes = [IdxSchema {
-            id: 8,
-            table: 6,
+            id: ST_RESERVED_SEQUENCE_RANGE + dropped_indexes + 1,
+            table: FIRST_NON_SYSTEM_ID,
             col: 0,
             name: "id_idx",
             unique: true,
@@ -1579,6 +1600,7 @@ mod tests {
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
+        let seq_start = FIRST_NON_SYSTEM_ID;
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
         assert_eq!(index_rows, [
@@ -1588,9 +1610,9 @@ mod tests {
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 6, table: 6, col: col(0), name: "id_idx", unique: true },
-            IndexRow { id: 7, table: 6, col: col(1), name: "name_idx", unique: true },
-            IndexRow { id: 8, table: 6, col: col(2), name: "age_idx", unique: true },
+            IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },
+            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx", unique: true },
+            IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "age_idx", unique: true },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
@@ -1622,6 +1644,7 @@ mod tests {
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
+        let seq_start = FIRST_NON_SYSTEM_ID;
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
         assert_eq!(index_rows, [
@@ -1631,9 +1654,9 @@ mod tests {
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 6, table: 6, col: col(0), name: "id_idx", unique: true },
-            IndexRow { id: 7, table: 6, col: col(1), name: "name_idx", unique: true },
-            IndexRow { id: 8, table: 6, col: col(2), name: "age_idx", unique: true },
+            IndexRow { id: seq_start    , table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },
+            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx", unique: true },
+            IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "age_idx", unique: true },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
@@ -1665,6 +1688,7 @@ mod tests {
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
+        let seq_start = FIRST_NON_SYSTEM_ID;
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
         assert_eq!(index_rows, [
@@ -1674,8 +1698,8 @@ mod tests {
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 6, table: 6, col: col(0), name: "id_idx", unique: true },
-            IndexRow { id: 7, table: 6, col: col(1), name: "name_idx", unique: true },
+            IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },
+            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx", unique: true },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
