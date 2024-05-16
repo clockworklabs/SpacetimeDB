@@ -93,7 +93,7 @@ fn main() {
         "reconnect_same_address" => exec_reconnect_same_address(),
 
         "caller_always_notified" => exec_caller_always_notified(),
-      
+
         "subscribe_all_select_star" => exec_subscribe_all_select_star(),
 
         _ => panic!("Unknown test: {}", test),
@@ -1408,6 +1408,7 @@ fn exec_caller_always_notified() {
         });
         no_op_succeeds();
     });
+}
 
 /// Duplicates the test `insert_primitive`, but using the `SELECT * FROM *` sugar
 /// rather than an explicit query set.
