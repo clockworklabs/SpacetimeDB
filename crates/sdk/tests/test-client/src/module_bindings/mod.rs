@@ -135,6 +135,7 @@ pub mod insert_vec_u_64_reducer;
 pub mod insert_vec_u_8_reducer;
 pub mod insert_vec_unit_struct_reducer;
 pub mod large_table;
+pub mod no_op_succeeds_reducer;
 pub mod one_address;
 pub mod one_bool;
 pub mod one_byte_struct;
@@ -354,6 +355,7 @@ pub use insert_vec_u_64_reducer::*;
 pub use insert_vec_u_8_reducer::*;
 pub use insert_vec_unit_struct_reducer::*;
 pub use large_table::*;
+pub use no_op_succeeds_reducer::*;
 pub use one_address::*;
 pub use one_bool::*;
 pub use one_byte_struct::*;
@@ -571,6 +573,7 @@ pub enum ReducerEvent {
     InsertVecU64(insert_vec_u_64_reducer::InsertVecU64Args),
     InsertVecU8(insert_vec_u_8_reducer::InsertVecU8Args),
     InsertVecUnitStruct(insert_vec_unit_struct_reducer::InsertVecUnitStructArgs),
+    NoOpSucceeds(no_op_succeeds_reducer::NoOpSucceedsArgs),
     UpdatePkAddress(update_pk_address_reducer::UpdatePkAddressArgs),
     UpdatePkBool(update_pk_bool_reducer::UpdatePkBoolArgs),
     UpdatePkI128(update_pk_i_128_reducer::UpdatePkI128Args),
@@ -972,6 +975,7 @@ match &function_call.reducer[..] {
 			"insert_vec_u64" => _reducer_callbacks.handle_event_of_type::<insert_vec_u_64_reducer::InsertVecU64Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecU64),
 			"insert_vec_u8" => _reducer_callbacks.handle_event_of_type::<insert_vec_u_8_reducer::InsertVecU8Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecU8),
 			"insert_vec_unit_struct" => _reducer_callbacks.handle_event_of_type::<insert_vec_unit_struct_reducer::InsertVecUnitStructArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecUnitStruct),
+			"no_op_succeeds" => _reducer_callbacks.handle_event_of_type::<no_op_succeeds_reducer::NoOpSucceedsArgs, ReducerEvent>(event, _state, ReducerEvent::NoOpSucceeds),
 			"update_pk_address" => _reducer_callbacks.handle_event_of_type::<update_pk_address_reducer::UpdatePkAddressArgs, ReducerEvent>(event, _state, ReducerEvent::UpdatePkAddress),
 			"update_pk_bool" => _reducer_callbacks.handle_event_of_type::<update_pk_bool_reducer::UpdatePkBoolArgs, ReducerEvent>(event, _state, ReducerEvent::UpdatePkBool),
 			"update_pk_i128" => _reducer_callbacks.handle_event_of_type::<update_pk_i_128_reducer::UpdatePkI128Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkI128),

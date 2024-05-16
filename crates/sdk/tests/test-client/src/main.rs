@@ -92,6 +92,8 @@ fn main() {
 
         "reconnect_same_address" => exec_reconnect_same_address(),
 
+        "caller_always_notified" => exec_caller_always_notified(),
+
         "subscribe_all_select_star" => exec_subscribe_all_select_star(),
 
         _ => panic!("Unknown test: {}", test),
@@ -1388,6 +1390,24 @@ fn exec_reconnect_same_address() {
     test_counter.wait_for_all();
 }
 
+fn exec_caller_always_notified() {
+    let test_counter = TestCounter::new();
+
+    let no_op_result = test_counter.add_test("notified_of_no_op_reducer");
+
+    once_on_connect(move |_, _| {
+        once_on_no_op_succeeds(move |_, _, status| {
+            no_op_result(match status {
+                Status::Committed => Ok(()),
+                els => Err(anyhow::anyhow!(
+                    "Unexpected status from no_op_succeeds reducer: {els:?}"
+                )),
+            });
+        });
+        no_op_succeeds();
+    });
+}
+
 /// Duplicates the test `insert_primitive`, but using the `SELECT * FROM *` sugar
 /// rather than an explicit query set.
 fn exec_subscribe_all_select_star() {
@@ -1395,7 +1415,6 @@ fn exec_subscribe_all_select_star() {
     let name = db_name_or_panic();
 
     let conn_result = test_counter.add_test("connect");
-
     let sub_result = test_counter.add_test("subscribe");
 
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");

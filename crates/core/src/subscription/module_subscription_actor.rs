@@ -155,7 +155,7 @@ impl ModuleSubscriptions {
     ) {
         match event.status {
             EventStatus::Committed(_) => {
-                tokio::task::block_in_place(|| self.broadcast_commit_event(subscriptions, event))
+                tokio::task::block_in_place(|| self.broadcast_commit_event(subscriptions, event, client))
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = client {
@@ -188,8 +188,13 @@ impl ModuleSubscriptions {
     /// once all updates have been successfully added to the subscribers' send queues (i.e. after
     /// it resolves, it's guaranteed that if you call `subscriber.send(x)` the client will receive
     /// x after they receive this subscription update).
-    fn broadcast_commit_event(&self, subscriptions: &SubscriptionManager, event: Arc<ModuleEvent>) {
-        subscriptions.eval_updates(&self.relational_db, event)
+    fn broadcast_commit_event(
+        &self,
+        subscriptions: &SubscriptionManager,
+        event: Arc<ModuleEvent>,
+        sender_client: Option<&ClientConnectionSender>,
+    ) {
+        subscriptions.eval_updates(&self.relational_db, event, sender_client)
     }
 }
 
