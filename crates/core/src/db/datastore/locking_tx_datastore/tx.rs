@@ -60,6 +60,7 @@ impl StateView for TxId {
 
 impl TxId {
     pub(crate) fn release(self, ctx: &ExecutionContext) {
+        log::trace!("RELEASE TX");
         record_metrics(ctx, self.timer, self.lock_wait_time, true);
     }
 }
