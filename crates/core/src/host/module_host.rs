@@ -17,7 +17,7 @@ use crate::util::notify_once::NotifyOnce;
 use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
 use derive_more::{From, Into};
-use futures::{Future, FutureExt};
+use futures::{Future, FutureExt, TryFutureExt};
 use indexmap::IndexMap;
 use itertools::{Either, Itertools};
 use spacetimedb_client_api_messages::client_api::table_row_operation::OperationType;
@@ -31,6 +31,7 @@ use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::fmt;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
+use tokio::task::spawn_blocking;
 
 #[derive(Debug, Clone, From, Into)]
 pub struct ProtocolDatabaseUpdate {
@@ -683,36 +684,41 @@ impl ModuleHost {
             reducer_name,
             ReducerArgs::Nullary,
         )
-        .await
-        .map(drop)
-        .or_else(|e| match e {
-            // If the module doesn't define connected or disconnected, commit
-            // an empty transaction to ensure we always have those events
-            // paired in the commitlog.
-            //
-            // This is necessary to be able to disconnect clients after a server
-            // crash.
-            ReducerCallError::NoSuchReducer => {
-                let db = &self.inner.dbic().relational_db;
-                db.with_auto_commit(
-                    &ExecutionContext::reducer(
-                        db.address(),
-                        ReducerContext {
-                            name: reducer_name.to_owned(),
-                            caller_identity,
-                            caller_address,
-                            timestamp: Timestamp::now(),
-                            arg_bsatn: Bytes::new(),
-                        },
-                    ),
-                    |_| anyhow::Ok(()),
-                )
-                .ok();
+        .map_ok(drop)
+        .or_else(|e| async move {
+            match e {
+                // If the module doesn't define connected or disconnected, commit
+                // an empty transaction to ensure we always have those events
+                // paired in the commitlog.
+                //
+                // This is necessary to be able to disconnect clients after a server
+                // crash.
+                ReducerCallError::NoSuchReducer => {
+                    log::trace!("Reducer `{}` not defined, committing empty transaction", reducer_name);
+                    let db = self.inner.dbic().relational_db.clone();
+                    let _ = spawn_blocking(move || {
+                        db.with_auto_commit(
+                            &ExecutionContext::reducer(
+                                db.address(),
+                                ReducerContext {
+                                    name: reducer_name.to_owned(),
+                                    caller_identity,
+                                    caller_address,
+                                    timestamp: Timestamp::now(),
+                                    arg_bsatn: Bytes::new(),
+                                },
+                            ),
+                            |_| anyhow::Ok(()),
+                        )
+                    })
+                    .await;
 
-                Ok(())
+                    Ok(())
+                }
+                e => Err(e),
             }
-            e => Err(e),
         })
+        .await
     }
 
     async fn call_reducer_inner(
