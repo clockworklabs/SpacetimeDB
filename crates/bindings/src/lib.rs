@@ -244,7 +244,7 @@ fn table_iter<T: TableType>(table_id: TableId, filter: Option<spacetimedb_lib::f
     Ok(RawTableIter::new(iter, deserializer).into())
 }
 
-/// A trait for deserializing mulitple items out of a single `BufReader`.
+/// A trait for deserializing multiple items out of a single `BufReader`.
 ///
 /// Each `BufReader` holds a number of concatenated serialized objects.
 trait BufferDeserialize {
