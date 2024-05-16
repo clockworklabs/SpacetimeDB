@@ -1392,9 +1392,7 @@ fn exec_reconnect_same_address() {
 
 fn exec_caller_always_notified() {
     let test_counter = TestCounter::new();
-    let name = db_name_or_panic();
 
-    let conn_result = test_counter.add_test("connect");
     let no_op_result = test_counter.add_test("notified_of_no_op_reducer");
 
     once_on_connect(move |_, _| {
@@ -1413,6 +1411,10 @@ fn exec_caller_always_notified() {
 /// Duplicates the test `insert_primitive`, but using the `SELECT * FROM *` sugar
 /// rather than an explicit query set.
 fn exec_subscribe_all_select_star() {
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
     let sub_result = test_counter.add_test("subscribe");
 
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
