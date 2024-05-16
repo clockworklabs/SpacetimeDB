@@ -659,6 +659,7 @@ impl ModuleHost {
             .await;
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn call_identity_connected_disconnected(
         &self,
         caller_identity: Identity,
