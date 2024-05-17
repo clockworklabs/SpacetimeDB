@@ -250,7 +250,3 @@ tracing-tracy = { version = "0.10.4", features = [
 # Vendor the openssl we rely on, rather than depend on a
 # potentially very old system version.
 openssl = { version = "0.10", features = ["vendored"] }
-
-# Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
-# if we link bzip, we get multiple defs
-rocksdb = { version = "0.21.0", default-features = false, features = ["lz4"] }
