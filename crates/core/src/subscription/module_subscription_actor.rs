@@ -4,7 +4,7 @@ use super::query::compile_read_only_query;
 use super::subscription::ExecutionSet;
 use crate::client::messages::{SubscriptionUpdate, SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
-use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
@@ -20,7 +20,9 @@ type Subscriptions = Arc<RwLock<SubscriptionManager>>;
 #[derive(Debug)]
 pub struct ModuleSubscriptions {
     relational_db: Arc<RelationalDB>,
-    pub subscriptions: Subscriptions,
+    /// If taking a lock (tx) on the db at the same time, ALWAYS lock the db first.
+    /// You will deadlock otherwise.
+    subscriptions: Subscriptions,
     owner_identity: Identity,
 }
 
@@ -142,25 +144,35 @@ impl ModuleSubscriptions {
             .set(subscriptions.num_queries() as i64);
     }
 
-    /// Broadcast a ModuleEvent to all interested subscribers.
-    ///
-    /// It's recommended to take a read lock on `subscriptions` field *before* you commit
-    /// the transaction that will give you the event you pass here, to prevent a race condition
-    /// where a just-added subscriber receives the same update twice.
-    pub async fn broadcast_event(
+    /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
+    pub fn commit_and_broadcast_event(
         &self,
         client: Option<&ClientConnectionSender>,
-        subscriptions: &SubscriptionManager,
-        event: Arc<ModuleEvent>,
-    ) {
-        match event.status {
-            EventStatus::Committed(_) => {
-                tokio::task::block_in_place(|| self.broadcast_commit_event(subscriptions, event, client))
+        mut event: ModuleEvent,
+        ctx: &ExecutionContext,
+        tx: MutTx,
+    ) -> Result<Result<Arc<ModuleEvent>, WriteSkew>, DBError> {
+        let subscriptions = self.subscriptions.read();
+        let stdb = &self.relational_db;
+
+        let read_tx = match &mut event.status {
+            EventStatus::Committed(db_update) => {
+                let Some((tx_data, read_tx)) = stdb.commit_tx_downgrade(ctx, tx)? else {
+                    return Ok(Err(WriteSkew));
+                };
+                *db_update = DatabaseUpdate::from_writes(&tx_data);
+                read_tx
             }
+            EventStatus::Failed(_) | EventStatus::OutOfEnergy => stdb.rollback_mut_tx_downgrade(ctx, tx),
+        };
+        let event = Arc::new(event);
+
+        match &event.status {
+            EventStatus::Committed(_) => subscriptions.eval_updates(stdb, &read_tx, event.clone(), client),
             EventStatus::Failed(_) => {
                 if let Some(client) = client {
                     let message = TransactionUpdateMessage::<DatabaseUpdate> {
-                        event,
+                        event: event.clone(),
                         database_update: <_>::default(),
                     };
                     let _ = client.send_message(message);
@@ -170,33 +182,12 @@ impl ModuleSubscriptions {
             }
             EventStatus::OutOfEnergy => {} // ?
         }
-    }
 
-    /// A blocking version of [`broadcast_event`][Self::broadcast_event].
-    pub fn blocking_broadcast_event(
-        &self,
-        client: Option<&ClientConnectionSender>,
-        subscriptions: &SubscriptionManager,
-        event: Arc<ModuleEvent>,
-    ) {
-        tokio::runtime::Handle::current().block_on(self.broadcast_event(client, subscriptions, event))
-    }
-
-    /// Broadcast the commit event to all interested subscribers.
-    ///
-    /// This function is blocking, even though it returns a future. The returned future resolves
-    /// once all updates have been successfully added to the subscribers' send queues (i.e. after
-    /// it resolves, it's guaranteed that if you call `subscriber.send(x)` the client will receive
-    /// x after they receive this subscription update).
-    fn broadcast_commit_event(
-        &self,
-        subscriptions: &SubscriptionManager,
-        event: Arc<ModuleEvent>,
-        sender_client: Option<&ClientConnectionSender>,
-    ) {
-        subscriptions.eval_updates(&self.relational_db, event, sender_client)
+        Ok(Ok(event))
     }
 }
+
+pub struct WriteSkew;
 
 #[cfg(test)]
 mod tests {
