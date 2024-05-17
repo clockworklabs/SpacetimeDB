@@ -11,7 +11,6 @@ use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_table::blob_store::NullBlobStore;
-use spacetimedb_table::btree_index::BTreeIndex;
 use spacetimedb_table::indexes::Byte;
 use spacetimedb_table::indexes::{Bytes, PageOffset, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE};
 use spacetimedb_table::layout::{row_size_for_bytes, row_size_for_type};
@@ -693,7 +692,7 @@ fn make_table_with_indexes<R: IndexedRow>() -> Table {
     let mut tbl = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
 
     let cols = R::indexed_columns();
-    let idx = BTreeIndex::new(IndexId(0), &R::row_type().into(), &cols, false).unwrap();
+    let idx = tbl.new_index(IndexId(0), &cols, false).unwrap();
     tbl.insert_index(&NullBlobStore, cols, idx);
 
     tbl

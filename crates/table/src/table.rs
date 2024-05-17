@@ -20,7 +20,7 @@ use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
 use core::{fmt, ptr};
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_primitives::{ColId, ColList};
+use spacetimedb_primitives::{ColId, ColList, IndexId};
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
     bsatn::{self, ser::BsatnError},
@@ -54,12 +54,6 @@ pub struct Table {
     squashed_offset: SquashedOffset,
     /// Store number of rows present in table.
     pub row_count: u64,
-}
-
-impl Table {
-    pub fn row_layout(&self) -> &RowTypeLayout {
-        &self.inner.row_layout
-    }
 }
 
 /// The part of a `Table` concerned only with storing rows.
@@ -517,8 +511,15 @@ impl Table {
         self.schema = schema;
     }
 
+    /// Returns a new [`BTreeIndex`] for `table`.
+    pub fn new_index(&self, id: IndexId, cols: &ColList, is_unique: bool) -> Result<BTreeIndex, InvalidFieldError> {
+        BTreeIndex::new(id, self.row_layout(), cols, is_unique)
+    }
+
     /// Inserts a new `index` into the table.
+    ///
     /// The index will be populated using the rows of the table.
+    /// Panics if `cols` has some column that is out of bounds of the table's row layout.
     pub fn insert_index(&mut self, blob_store: &dyn BlobStore, cols: ColList, mut index: BTreeIndex) {
         index.build_from_rows(&cols, self.scan_rows(blob_store)).unwrap();
         self.indexes.insert(cols, index);
@@ -570,11 +571,8 @@ impl Table {
         for (cols, index) in self.indexes.iter() {
             // `new` is known to be empty (we just constructed it!),
             // so no need for an actual blob store here.
-            new.insert_index(
-                &NullBlobStore,
-                cols.clone(),
-                BTreeIndex::new(index.index_id, &self.inner.row_layout, cols, index.is_unique).unwrap(),
-            );
+            let index = new.new_index(index.index_id, cols, index.is_unique).unwrap();
+            new.insert_index(&NullBlobStore, cols.clone(), index);
         }
         new
     }
@@ -1003,6 +1001,11 @@ impl Table {
         self.inner.row_layout.size()
     }
 
+    /// Returns the layout for a row in the table.
+    fn row_layout(&self) -> &RowTypeLayout {
+        &self.inner.row_layout
+    }
+
     /// Returns the pages storing the physical rows of this table.
     fn pages(&self) -> &Pages {
         &self.inner.pages
@@ -1056,7 +1059,7 @@ pub(crate) mod test {
         let mut table = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
         let cols = ColList::new(0.into());
 
-        let index = BTreeIndex::new(index_schema.index_id, &table.inner.row_layout, &cols, true).unwrap();
+        let index = table.new_index(index_schema.index_id, &cols, true).unwrap();
         table.insert_index(&NullBlobStore, cols, index);
 
         // Reserve a page so that we can check the hash.
