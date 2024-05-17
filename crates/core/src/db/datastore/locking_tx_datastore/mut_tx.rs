@@ -987,13 +987,11 @@ impl StateView for MutTxId {
         // TODO(bikeshedding, docs): should this also check if the schema is in the system tables,
         // but the table hasn't been constructed yet?
         // If not, document why.
-        if let Some(table) = self.tx_state.insert_tables.get(table_id) {
-            Some(&table.schema.table_name)
-        } else if let Some(table) = self.committed_state_write_lock.tables.get(table_id) {
-            Some(&table.schema.table_name)
-        } else {
-            None
-        }
+        self.tx_state
+            .insert_tables
+            .get(table_id)
+            .or_else(|| self.committed_state_write_lock.tables.get(table_id))
+            .map(|table| &*table.schema.table_name)
     }
 
     fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
