@@ -4,9 +4,8 @@ use super::{
 use crate::{
     address::Address,
     db::datastore::system_tables::{
-        StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StSequenceFields,
-        StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMNS_ID, ST_CONSTRAINTS_ID, ST_INDEXES_ID,
-        ST_SEQUENCES_ID, ST_TABLES_ID,
+        StColumnRow, StColumns, StConstraintRow, StConstraints, StIndexRow, StIndexes, StSequence, StSequenceRow,
+        StTable, StTableRow,
     },
     error::TableError,
     execution_context::ExecutionContext,
@@ -27,16 +26,19 @@ pub(crate) trait StateView {
     fn table_id_from_name(&self, table_name: &str, database_address: Address) -> Result<Option<TableId>> {
         let ctx = ExecutionContext::internal(database_address);
         let name = &<Box<str>>::from(table_name).into();
-        let row = self
-            .iter_by_col_eq(&ctx, ST_TABLES_ID, StTableFields::TableName, name)?
-            .next();
-        Ok(row.map(|row| row.read_col(StTableFields::TableId).unwrap()))
+        let row = self.iter_by_col_eq(&ctx, StTable::ID, StTable::TableName, name)?.next();
+        Ok(row.map(|row| row.read_col(StTable::TableId).unwrap()))
     }
 
     fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Iter<'a>>;
 
     fn table_name(&self, table_id: TableId) -> Option<&str> {
         self.get_schema(table_id).map(|s| &*s.table_name)
+    }
+
+    fn table_name_or_err(&self, table_id: TableId) -> Result<&str> {
+        self.table_name(table_id)
+            .ok_or_else(|| TableError::TableIdNotFound(table_id).into())
     }
 
     /// Returns an iterator,
@@ -65,9 +67,9 @@ pub(crate) trait StateView {
         // Look up the table_name for the table in question.
         let value_eq = &table_id.into();
         let row = self
-            .iter_by_col_eq(ctx, ST_TABLES_ID, StTableFields::TableId, value_eq)?
+            .iter_by_col_eq(ctx, StTable::ID, StTable::TableId, value_eq)?
             .next()
-            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
+            .ok_or_else(|| TableError::TableIdNotFound(table_id))?;
         let row = StTableRow::try_from(row)?;
         let table_name = row.table_name;
         let table_id: TableId = row.table_id;
@@ -76,7 +78,7 @@ pub(crate) trait StateView {
 
         // Look up the columns for the table in question.
         let mut columns = self
-            .iter_by_col_eq(ctx, ST_COLUMNS_ID, StColumnFields::TableId, value_eq)?
+            .iter_by_col_eq(ctx, StColumns::ID, StColumns::TableId, value_eq)?
             .map(|row| {
                 let row = StColumnRow::try_from(row)?;
                 Ok(ColumnSchema {
@@ -91,7 +93,7 @@ pub(crate) trait StateView {
 
         // Look up the constraints for the table in question.
         let constraints = self
-            .iter_by_col_eq(ctx, ST_CONSTRAINTS_ID, StConstraintFields::TableId, value_eq)?
+            .iter_by_col_eq(ctx, StConstraints::ID, StConstraints::TableId, value_eq)?
             .map(|row| {
                 let row = StConstraintRow::try_from(row)?;
                 Ok(ConstraintSchema {
@@ -106,7 +108,7 @@ pub(crate) trait StateView {
 
         // Look up the sequences for the table in question.
         let sequences = self
-            .iter_by_col_eq(ctx, ST_SEQUENCES_ID, StSequenceFields::TableId, value_eq)?
+            .iter_by_col_eq(ctx, StSequence::ID, StSequence::TableId, value_eq)?
             .map(|row| {
                 let row = StSequenceRow::try_from(row)?;
                 Ok(SequenceSchema {
@@ -125,7 +127,7 @@ pub(crate) trait StateView {
 
         // Look up the indexes for the table in question.
         let indexes = self
-            .iter_by_col_eq(ctx, ST_INDEXES_ID, StIndexFields::TableId, value_eq)?
+            .iter_by_col_eq(ctx, StIndexes::ID, StIndexes::TableId, value_eq)?
             .map(|row| {
                 let row = StIndexRow::try_from(row)?;
                 Ok(IndexSchema {
@@ -169,7 +171,7 @@ pub(crate) trait StateView {
 pub struct Iter<'a> {
     ctx: &'a ExecutionContext,
     table_id: TableId,
-    tx_state: Option<&'a TxState>,
+    pub(crate) tx_state: Option<&'a TxState>,
     committed_state: &'a CommittedState,
     table_name: &'a str,
     stage: ScanStage<'a>,

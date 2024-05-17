@@ -10,9 +10,7 @@ use crate::{
     address::Address,
     db::{
         datastore::{
-            system_tables::{
-                Epoch, StModuleFields, StModuleRow, StTableFields, ST_MODULE_ID, ST_TABLES_ID, WASM_MODULE,
-            },
+            system_tables::{Epoch, StModule, StModuleRow, StTable, WASM_MODULE},
             traits::{
                 DataRow, IsolationLevel, MutProgrammable, MutTx, MutTxDatastore, Programmable, RowTypeForTable, Tx,
                 TxData, TxDatastore,
@@ -134,7 +132,7 @@ impl DataRow for Locking {
     type RowRef<'a> = RowRef<'a>;
 
     fn read_table_id(&self, row_ref: Self::RowRef<'_>) -> Result<TableId> {
-        Ok(row_ref.read_col(StTableFields::TableId)?)
+        Ok(row_ref.read_col(StTable::TableId)?)
     }
 }
 
@@ -206,9 +204,9 @@ impl TxDatastore for Locking {
     }
 
     fn get_all_tables_tx(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Vec<Arc<TableSchema>>> {
-        self.iter_tx(ctx, tx, ST_TABLES_ID)?
+        self.iter_tx(ctx, tx, StTable::ID)?
             .map(|row_ref| {
-                let table_id = row_ref.read_col(StTableFields::TableId)?;
+                let table_id = row_ref.read_col(StTable::TableId)?;
                 self.schema_for_table_tx(tx, table_id)
             })
             .collect()
@@ -517,7 +515,7 @@ impl Locking {
 
 impl Programmable for Locking {
     fn program_hash(&self, tx: &TxId) -> Result<Option<spacetimedb_sats::hash::Hash>> {
-        tx.iter(&ExecutionContext::internal(self.database_address), ST_MODULE_ID)?
+        tx.iter(&ExecutionContext::internal(self.database_address), StModule::ID)?
             .next()
             .map(|row| StModuleRow::try_from(row).map(|st| st.program_hash))
             .transpose()
@@ -529,9 +527,9 @@ impl MutProgrammable for Locking {
 
     fn set_program_hash(&self, tx: &mut MutTxId, fence: Self::FencingToken, hash: Hash) -> Result<()> {
         let ctx = ExecutionContext::internal(self.database_address);
-        let mut iter = tx.iter(&ctx, ST_MODULE_ID)?;
+        let mut iter = tx.iter(&ctx, StModule::ID)?;
         if let Some(row_ref) = iter.next() {
-            let epoch = row_ref.read_col::<u128>(StModuleFields::Epoch)?;
+            let epoch = row_ref.read_col::<u128>(StModule::Epoch)?;
             if fence <= epoch {
                 return Err(anyhow!("stale fencing token: {}, storage is at epoch: {}", fence, epoch).into());
             }
@@ -542,9 +540,9 @@ impl MutProgrammable for Locking {
             // Hence if we don't explicitly drop here,
             // there will be another immutable borrow of self after the two mutable borrows below.
 
-            tx.delete(ST_MODULE_ID, row_ref.pointer())?;
+            tx.delete(StModule::ID, row_ref.pointer())?;
             tx.insert(
-                ST_MODULE_ID,
+                StModule::ID,
                 &mut ProductValue::from(&StModuleRow {
                     program_hash: hash,
                     kind: WASM_MODULE,
@@ -561,7 +559,7 @@ impl MutProgrammable for Locking {
         // there will be another immutable borrow of self after the mutable borrow of the insert.
 
         tx.insert(
-            ST_MODULE_ID,
+            StModule::ID,
             &mut ProductValue::from(&StModuleRow {
                 program_hash: hash,
                 kind: WASM_MODULE,
@@ -823,8 +821,8 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
 mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{
-        system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_COLUMNS_ID,
-        ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_RESERVED_SEQUENCE_RANGE, ST_SEQUENCES_ID,
+        system_tables, StColumnRow, StColumns, StConstraintRow, StConstraints, StIndexRow, StIndexes, StSequence,
+        StSequenceRow, StTableRow, ST_RESERVED_SEQUENCE_RANGE,
     };
     use crate::db::datastore::traits::{IsolationLevel, MutTx};
     use crate::db::datastore::Result;
@@ -858,7 +856,7 @@ mod tests {
         pub fn scan_st_tables(&self) -> Result<Vec<StTableRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, ST_TABLES_ID)?
+                .iter(self.ctx, StTable::ID)?
                 .map(|row| StTableRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
@@ -871,7 +869,7 @@ mod tests {
         ) -> Result<Vec<StTableRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter_by_col_eq(self.ctx, ST_TABLES_ID, cols.into(), value)?
+                .iter_by_col_eq(self.ctx, StTable::ID, cols.into(), value)?
                 .map(|row| StTableRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
@@ -880,7 +878,7 @@ mod tests {
         pub fn scan_st_columns(&self) -> Result<Vec<StColumnRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, ST_COLUMNS_ID)?
+                .iter(self.ctx, StColumns::ID)?
                 .map(|row| StColumnRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
@@ -893,7 +891,7 @@ mod tests {
         ) -> Result<Vec<StColumnRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter_by_col_eq(self.ctx, ST_COLUMNS_ID, cols.into(), value)?
+                .iter_by_col_eq(self.ctx, StColumns::ID, cols.into(), value)?
                 .map(|row| StColumnRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
@@ -902,7 +900,7 @@ mod tests {
         pub fn scan_st_constraints(&self) -> Result<Vec<StConstraintRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, ST_CONSTRAINTS_ID)?
+                .iter(self.ctx, StConstraints::ID)?
                 .map(|row| StConstraintRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.constraint_id)
                 .collect::<Vec<_>>())
@@ -911,7 +909,7 @@ mod tests {
         pub fn scan_st_sequences(&self) -> Result<Vec<StSequenceRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, ST_SEQUENCES_ID)?
+                .iter(self.ctx, StSequence::ID)?
                 .map(|row| StSequenceRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.sequence_id))
                 .collect::<Vec<_>>())
@@ -920,7 +918,7 @@ mod tests {
         pub fn scan_st_indexes(&self) -> Result<Vec<StIndexRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, ST_INDEXES_ID)?
+                .iter(self.ctx, StIndexes::ID)?
                 .map(|row| StIndexRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.index_id)
                 .collect::<Vec<_>>())

@@ -1,16 +1,15 @@
-use core::ops::Deref;
-use std::borrow::Cow;
-use std::collections::BTreeMap;
-use std::{ops::RangeBounds, sync::Arc};
-
 use super::Result;
-use crate::db::datastore::system_tables::ST_TABLES_ID;
+use crate::db::datastore::system_tables::StTable;
 use crate::execution_context::ExecutionContext;
+use core::ops::Deref;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
+use std::borrow::Cow;
+use std::collections::BTreeMap;
+use std::{ops::RangeBounds, sync::Arc};
 
 /// The `IsolationLevel` enum specifies the degree to which a transaction is
 /// isolated from concurrently running transactions. The higher the isolation
@@ -341,7 +340,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     ) -> Result<Option<Cow<'a, str>>>;
     fn get_all_tables_mut_tx(&self, ctx: &ExecutionContext, tx: &Self::MutTx) -> super::Result<Vec<Arc<TableSchema>>> {
         let mut tables = Vec::new();
-        let table_rows = self.iter_mut_tx(ctx, tx, ST_TABLES_ID)?.collect::<Vec<_>>();
+        let table_rows = self.iter_mut_tx(ctx, tx, StTable::ID)?.collect::<Vec<_>>();
         for row in table_rows {
             let table_id = self.read_table_id(row)?;
             tables.push(self.schema_for_table_mut_tx(tx, table_id)?);

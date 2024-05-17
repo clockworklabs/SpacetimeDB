@@ -10,7 +10,6 @@ use spacetimedb_table::table::{self, UniqueConstraintViolation};
 use thiserror::Error;
 
 use crate::client::ClientActorId;
-use crate::db::datastore::system_tables::SystemTable;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::*;
@@ -30,10 +29,16 @@ pub enum TableError {
     Exist(String),
     #[error("Table with name `{0}` not found.")]
     NotFound(String),
-    #[error("Table with ID `{1}` not found in `{0}`.")]
-    IdNotFound(SystemTable, u32),
-    #[error("Table with ID `{0}` not found in `TxState`.")]
-    IdNotFoundState(TableId),
+    #[error("Table with ID `{0}` not found.")]
+    TableIdNotFound(TableId),
+    #[error("Table with ID `{0}` not found in transaction state.")]
+    TableIdNotFoundState(TableId),
+    #[error("Constraint with ID `{0}` not found.")]
+    ConstraintIdNotFound(ConstraintId),
+    #[error("Sequence with ID `{0}` not found.")]
+    SequenceIdNotFound(SequenceId),
+    #[error("Index with ID `{0}` not found.")]
+    IndexIdNotFound(IndexId),
     #[error("Column `{0}.{1}` is missing a name")]
     ColumnWithoutName(String, ColId),
     #[error("schema_for_table: Table has invalid schema: {0} Err: {1}")]
@@ -44,8 +49,8 @@ pub enum TableError {
     RowDecodeError(DecodeError),
     #[error("Column with name `{0}` already exists")]
     DuplicateColumnName(String),
-    #[error("Column `{0}` not found")]
-    ColumnNotFound(ColId),
+    #[error("Column `{1}` not found in table `{0}`")]
+    ColumnNotFound(TableId, ColId),
     #[error(
         "DecodeError for field `{0}.{1}`, expect `{2}` but found `{3}`",
         table,
@@ -329,8 +334,8 @@ impl From<DBError> for NodesError {
         match e {
             DBError::Table(TableError::Exist(name)) => Self::AlreadyExists(name),
             DBError::Table(TableError::System(name)) => Self::SystemName(name),
-            DBError::Table(TableError::IdNotFound(_, _) | TableError::NotFound(_)) => Self::TableNotFound,
-            DBError::Table(TableError::ColumnNotFound(_)) => Self::BadColumn,
+            DBError::Table(TableError::TableIdNotFound(_) | TableError::NotFound(_)) => Self::TableNotFound,
+            DBError::Table(TableError::ColumnNotFound(_, _)) => Self::BadColumn,
             _ => Self::Internal(Box::new(e)),
         }
     }

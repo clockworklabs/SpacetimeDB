@@ -90,7 +90,7 @@ pub fn translate_col(tx: &TxId, field: FieldName) -> Option<Box<str>> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::db::datastore::system_tables::{ST_TABLES_ID, ST_TABLES_NAME};
+    use crate::db::datastore::system_tables::StTable;
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::vm::tests::create_table_with_rows;
     use spacetimedb_lib::error::{ResultTest, TestError};
@@ -215,18 +215,18 @@ pub(crate) mod tests {
         let (db, _) = create_data(1)?;
 
         let tx = db.begin_tx();
-        let schema = db.schema_for_table(&tx, ST_TABLES_ID).unwrap();
+        let schema = db.schema_for_table(&tx, StTable::ID).unwrap();
         db.release_tx(&ExecutionContext::internal(db.address()), tx);
         let result = run_for_testing(
             &db,
-            &format!("SELECT * FROM {} WHERE table_id = {}", ST_TABLES_NAME, ST_TABLES_ID),
+            &format!("SELECT * FROM {} WHERE table_id = {}", StTable::NAME, StTable::ID),
         )?;
 
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
         let row = product![
-            ST_TABLES_ID,
-            ST_TABLES_NAME,
+            StTable::ID,
+            StTable::NAME,
             StTableType::System.as_str(),
             StAccess::Public.as_str(),
         ];

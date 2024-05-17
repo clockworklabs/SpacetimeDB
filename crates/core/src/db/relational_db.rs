@@ -288,7 +288,7 @@ impl RelationalDB {
         let check_bounds = |schema: &ProductType| -> Result<_, DBError> {
             let col_idx = col_id.idx();
             if col_idx >= schema.elements.len() {
-                return Err(TableError::ColumnNotFound(col_id).into());
+                return Err(TableError::ColumnNotFound(table_id, col_id).into());
             }
             Ok(col_idx)
         };
@@ -681,7 +681,7 @@ impl RelationalDB {
         self.inner.constraint_id_from_name(tx, constraint_name)
     }
 
-    /// Adds the [index::BTreeIndex] into the [ST_INDEXES_NAME] table
+    /// Adds the [index::BTreeIndex] into the [StIndexes::NAME] table
     ///
     /// Returns the `index_id`
     ///
@@ -1069,8 +1069,8 @@ mod tests {
 
     use super::*;
     use crate::db::datastore::system_tables::{
-        system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINTS_ID, ST_INDEXES_ID,
-        ST_SEQUENCES_ID, ST_TABLES_ID,
+        system_tables, StConstraintRow, StConstraints, StIndexRow, StIndexes, StSequence, StSequenceRow, StTable,
+        StTableRow,
     };
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::error::IndexError;
@@ -1541,21 +1541,21 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         let indexes = stdb
-            .iter_mut(&ctx, &tx, ST_INDEXES_ID)?
+            .iter_mut(&ctx, &tx, StIndexes::ID)?
             .map(|x| StIndexRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 4, "Wrong number of indexes");
 
         let sequences = stdb
-            .iter_mut(&ctx, &tx, ST_SEQUENCES_ID)?
+            .iter_mut(&ctx, &tx, StSequence::ID)?
             .map(|x| StSequenceRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(sequences.len(), 1, "Wrong number of sequences");
 
         let constraints = stdb
-            .iter_mut(&ctx, &tx, ST_CONSTRAINTS_ID)?
+            .iter_mut(&ctx, &tx, StConstraints::ID)?
             .map(|x| StConstraintRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
@@ -1564,21 +1564,21 @@ mod tests {
         stdb.drop_table(&ctx, &mut tx, table_id)?;
 
         let indexes = stdb
-            .iter_mut(&ctx, &tx, ST_INDEXES_ID)?
+            .iter_mut(&ctx, &tx, StIndexes::ID)?
             .map(|x| StIndexRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 0, "Wrong number of indexes DROP");
 
         let sequences = stdb
-            .iter_mut(&ctx, &tx, ST_SEQUENCES_ID)?
+            .iter_mut(&ctx, &tx, StSequence::ID)?
             .map(|x| StSequenceRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(sequences.len(), 0, "Wrong number of sequences DROP");
 
         let constraints = stdb
-            .iter_mut(&ctx, &tx, ST_CONSTRAINTS_ID)?
+            .iter_mut(&ctx, &tx, StConstraints::ID)?
             .map(|x| StConstraintRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
@@ -1599,9 +1599,9 @@ mod tests {
         let table_name = stdb.table_name_from_id_mut(&ctx, &tx, table_id)?;
 
         assert_eq!(Some("YourTable"), table_name.as_ref().map(Cow::as_ref));
-        // Also make sure we've removed the old ST_TABLES_ID row
+        // Also make sure we've removed the old StTable::ID row
         let mut n = 0;
-        for row in stdb.iter_mut(&ctx, &tx, ST_TABLES_ID)? {
+        for row in stdb.iter_mut(&ctx, &tx, StTable::ID)? {
             let table = StTableRow::try_from(row)?;
             if table.table_id == table_id {
                 n += 1;
