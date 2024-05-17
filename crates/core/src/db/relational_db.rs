@@ -1377,6 +1377,23 @@ mod tests {
     }
 
     #[test]
+    fn test_row_count() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let schema = my_table(AlgebraicType::I64);
+        let table_id = stdb.create_table(&mut tx, schema)?;
+        stdb.insert(&mut tx, table_id, product![1i64])?;
+        stdb.insert(&mut tx, table_id, product![2i64])?;
+        stdb.commit_tx(&ExecutionContext::default(), tx)?;
+
+        let stdb = stdb.reopen()?;
+        let tx = stdb.begin_tx();
+        assert_eq!(tx.get_row_count(table_id).unwrap(), 2);
+        Ok(())
+    }
+
+    #[test]
     fn test_unique() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
 

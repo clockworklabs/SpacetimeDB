@@ -52,6 +52,8 @@ pub struct Table {
     /// depending on whether this is a tx scratchpad table
     /// or a committed table.
     squashed_offset: SquashedOffset,
+    /// Store number of rows present in table.
+    pub row_count: u64,
 }
 
 impl Table {
@@ -111,7 +113,7 @@ impl TableInner {
     }
 }
 
-static_assert_size!(Table, 240);
+static_assert_size!(Table, 248);
 
 /// Various error that can happen on table insertion.
 #[derive(Error, Debug)]
@@ -241,6 +243,7 @@ impl Table {
             };
             return Err(InsertError::Duplicate(existing_row));
         }
+        self.row_count += 1;
 
         // If the optimistic insertion was correct,
         // i.e. this is not a set-semantic duplicate,
@@ -387,6 +390,7 @@ impl Table {
         // Remove the set semantic association.
         let _remove_result = self.pointer_map.remove(row.row_hash(), ptr);
         debug_assert!(_remove_result);
+        self.row_count -= 1;
 
         // Delete the physical row.
         // SAFETY: `ptr` points to a valid row in this table as `self.is_row_present(row)` holds.
@@ -984,6 +988,7 @@ impl Table {
             indexes: HashMap::with_capacity(indexes_capacity),
             pointer_map: PointerMap::default(),
             squashed_offset,
+            row_count: 0,
         }
     }
 
@@ -1152,6 +1157,7 @@ pub(crate) mod test {
             prop_assert_eq!(table.inner.pages.len(), 1);
             prop_assert_eq!(table.inner.pages[PageIndex(0)].num_rows(), 1);
             prop_assert_eq!(&table.scan_rows(&blob_store).map(|r| r.pointer()).collect::<Vec<_>>(), &[ptr]);
+            prop_assert_eq!(table.row_count, 1);
 
             table.delete(&mut blob_store, ptr, |_| ());
 
@@ -1159,6 +1165,7 @@ pub(crate) mod test {
 
             prop_assert_eq!(table.inner.pages.len(), 1);
             prop_assert_eq!(table.inner.pages[PageIndex(0)].num_rows(), 0);
+            prop_assert_eq!(table.row_count, 0);
 
             prop_assert!(&table.scan_rows(&blob_store).next().is_none());
         }
@@ -1173,11 +1180,13 @@ pub(crate) mod test {
             let ptr = row.pointer();
             prop_assert_eq!(table.inner.pages.len(), 1);
             prop_assert_eq!(table.pointer_map.pointers_for(hash), &[ptr]);
+            prop_assert_eq!(table.row_count, 1);
             prop_assert_eq!(&table.scan_rows(&blob_store).map(|r| r.pointer()).collect::<Vec<_>>(), &[ptr]);
 
             let blob_uses = blob_store.usage_counter();
 
             prop_assert!(table.insert(&mut blob_store, &val).is_err());
+            prop_assert_eq!(table.row_count, 1);
             prop_assert_eq!(table.inner.pages.len(), 1);
             prop_assert_eq!(table.pointer_map.pointers_for(hash), &[ptr]);
 
