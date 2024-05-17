@@ -58,6 +58,7 @@ pub enum SystemTable {
     st_indexes,
     st_constraints,
 }
+
 pub(crate) fn system_tables() -> [TableSchema; 6] {
     [
         st_table_schema(),
@@ -70,6 +71,14 @@ pub(crate) fn system_tables() -> [TableSchema; 6] {
         st_sequences_schema(),
     ]
 }
+
+// The following are indices into the array returned by [`system_tables`].
+pub(crate) const ST_TABLES_IDX: usize = 0;
+pub(crate) const ST_COLUMNS_IDX: usize = 1;
+pub(crate) const ST_INDEXES_IDX: usize = 2;
+pub(crate) const ST_CONSTRAINTS_IDX: usize = 3;
+pub(crate) const ST_MODULE_IDX: usize = 4;
+pub(crate) const ST_SEQUENCES_IDX: usize = 5;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -174,7 +183,7 @@ st_fields_enum!(enum StModuleFields {
 /// | table_id | table_name  | table_type | table_access |
 /// |----------|-------------|----------- |------------- |
 /// | 4        | "customers" | "user"     | "public"     |
-pub fn st_table_schema() -> TableSchema {
+fn st_table_schema() -> TableSchema {
     TableDef::new(
         ST_TABLES_NAME.into(),
         vec![
@@ -195,7 +204,7 @@ pub fn st_table_schema() -> TableSchema {
 /// | table_id | col_id | col_name | col_type            |
 /// |----------|---------|----------|--------------------|
 /// | 1        | 0       | "id"     | AlgebraicType::U32 |
-pub fn st_columns_schema() -> TableSchema {
+fn st_columns_schema() -> TableSchema {
     TableDef::new(
         ST_COLUMNS_NAME.into(),
         vec![
@@ -219,7 +228,7 @@ pub fn st_columns_schema() -> TableSchema {
 /// | index_id | table_id | index_name  | columns | is_unique | index_type |
 /// |----------|----------|-------------|---------|-----------|------------|
 /// | 1        |          | "ix_sample" | [1]     | false     | "btree"    |
-pub fn st_indexes_schema() -> TableSchema {
+fn st_indexes_schema() -> TableSchema {
     TableDef::new(
         ST_INDEXES_NAME.into(),
         vec![
@@ -242,7 +251,7 @@ pub fn st_indexes_schema() -> TableSchema {
 /// | sequence_id | sequence_name     | increment | start | min_value | max_value | table_id | col_pos| allocated |
 /// |-------------|-------------------|-----------|-------|-----------|-----------|----------|--------|-----------|
 /// | 1           | "seq_customer_id" | 1         | 100   | 10        | 1200      | 1        | 1      | 200       |
-pub(crate) fn st_sequences_schema() -> TableSchema {
+fn st_sequences_schema() -> TableSchema {
     TableDef::new(
         ST_SEQUENCES_NAME.into(),
         vec![
@@ -268,7 +277,7 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
 /// | constraint_id | constraint_name      | constraints | table_id | columns |
 /// |---------------|-------------------- -|-------------|-------|------------|
 /// | 1             | "unique_customer_id" | 1           | 100   | [1, 4]     |
-pub(crate) fn st_constraints_schema() -> TableSchema {
+fn st_constraints_schema() -> TableSchema {
     TableDef::new(
         ST_CONSTRAINTS_NAME.into(),
         vec![
@@ -299,7 +308,7 @@ pub(crate) fn st_constraints_schema() -> TableSchema {
 /// | program_hash        | kind     | epoch |
 /// |---------------------|----------|-------|
 /// | [250, 207, 5, ...]  | 0        | 42    |
-pub(crate) fn st_module_schema() -> TableSchema {
+fn st_module_schema() -> TableSchema {
     TableDef::new(
         ST_MODULE_NAME.into(),
         vec![
