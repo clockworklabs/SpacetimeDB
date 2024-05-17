@@ -1033,6 +1033,7 @@ impl Table {
 pub(crate) mod test {
     use super::*;
     use crate::blob_store::HashMapBlobStore;
+    use crate::page::tests::hash_unmodified_save_get;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
     use spacetimedb_sats::bsatn::to_vec;
@@ -1073,10 +1074,18 @@ pub(crate) mod test {
         let index = BTreeIndex::new(index_schema.index_id, &table.inner.row_layout, &cols, true, index_name).unwrap();
         table.insert_index(&NullBlobStore, cols, index);
 
+        // Reserve a page so that we can check the hash.
+        let pi = table.inner.pages.reserve_empty_page(table.row_size()).unwrap();
+        let hash_pre_ins = hash_unmodified_save_get(&mut table.inner.pages[pi]);
+
         // Insert the row (0, 0).
         table
             .insert(&mut NullBlobStore, &product![0i32, 0i32])
             .expect("Initial insert failed");
+
+        // Inserting cleared the hash.
+        let hash_post_ins = hash_unmodified_save_get(&mut table.inner.pages[pi]);
+        assert_ne!(hash_pre_ins, hash_post_ins);
 
         // Try to insert the row (0, 1), and assert that we get the expected error.
         match table.insert(&mut NullBlobStore, &product![0i32, 1i32]) {
@@ -1094,6 +1103,9 @@ pub(crate) mod test {
             }
             Err(e) => panic!("Expected UniqueConstraintViolation but found {:?}", e),
         }
+
+        // Second insert did not clear the hash as we had a constraint violation.
+        assert_eq!(hash_post_ins, *table.inner.pages[pi].unmodified_hash().unwrap());
     }
 
     fn insert_retrieve_body(ty: impl Into<ProductType>, val: impl Into<ProductValue>) -> TestCaseResult {
@@ -1153,13 +1165,17 @@ pub(crate) mod test {
             let ptr = row.pointer();
             prop_assert_eq!(table.pointer_map.pointers_for(hash), &[ptr]);
 
-
             prop_assert_eq!(table.inner.pages.len(), 1);
             prop_assert_eq!(table.inner.pages[PageIndex(0)].num_rows(), 1);
             prop_assert_eq!(&table.scan_rows(&blob_store).map(|r| r.pointer()).collect::<Vec<_>>(), &[ptr]);
             prop_assert_eq!(table.row_count, 1);
 
+            let hash_pre_del = hash_unmodified_save_get(&mut table.inner.pages[ptr.page_index()]);
+
             table.delete(&mut blob_store, ptr, |_| ());
+
+            let hash_post_del = hash_unmodified_save_get(&mut table.inner.pages[ptr.page_index()]);
+            assert_ne!(hash_pre_del, hash_post_del);
 
             prop_assert_eq!(table.pointer_map.pointers_for(hash), &[]);
 
@@ -1185,7 +1201,14 @@ pub(crate) mod test {
 
             let blob_uses = blob_store.usage_counter();
 
+            let hash_pre_ins = hash_unmodified_save_get(&mut table.inner.pages[ptr.page_index()]);
+
             prop_assert!(table.insert(&mut blob_store, &val).is_err());
+
+            // Hash was cleared and is different despite failure to insert.
+            let hash_post_ins = hash_unmodified_save_get(&mut table.inner.pages[ptr.page_index()]);
+            assert_ne!(hash_pre_ins, hash_post_ins);
+
             prop_assert_eq!(table.row_count, 1);
             prop_assert_eq!(table.inner.pages.len(), 1);
             prop_assert_eq!(table.pointer_map.pointers_for(hash), &[ptr]);

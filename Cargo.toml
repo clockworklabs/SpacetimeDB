@@ -112,6 +112,7 @@ bitflags = "2.3.3"
 blake3 = "1.5.1"
 brotli = "3.5"
 byte-unit = "4.0.18"
+bytemuck = { version = "1.16", features = ["derive", "must_cast"] }
 bytes = "1.2.1"
 bytestring = { version = "1.2.0", features = ["serde"] }
 cargo_metadata = "0.17.0"
