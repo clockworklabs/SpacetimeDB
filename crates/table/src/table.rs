@@ -1157,6 +1157,7 @@ pub(crate) mod test {
             prop_assert_eq!(table.inner.pages.len(), 1);
             prop_assert_eq!(table.inner.pages[PageIndex(0)].num_rows(), 1);
             prop_assert_eq!(&table.scan_rows(&blob_store).map(|r| r.pointer()).collect::<Vec<_>>(), &[ptr]);
+            prop_assert_eq!(table.row_count, 1);
 
             table.delete(&mut blob_store, ptr, |_| ());
 
@@ -1164,6 +1165,7 @@ pub(crate) mod test {
 
             prop_assert_eq!(table.inner.pages.len(), 1);
             prop_assert_eq!(table.inner.pages[PageIndex(0)].num_rows(), 0);
+            prop_assert_eq!(table.row_count, 0);
 
             prop_assert!(&table.scan_rows(&blob_store).next().is_none());
         }
@@ -1178,11 +1180,13 @@ pub(crate) mod test {
             let ptr = row.pointer();
             prop_assert_eq!(table.inner.pages.len(), 1);
             prop_assert_eq!(table.pointer_map.pointers_for(hash), &[ptr]);
+            prop_assert_eq!(table.row_count, 1);
             prop_assert_eq!(&table.scan_rows(&blob_store).map(|r| r.pointer()).collect::<Vec<_>>(), &[ptr]);
 
             let blob_uses = blob_store.usage_counter();
 
             prop_assert!(table.insert(&mut blob_store, &val).is_err());
+            prop_assert_eq!(table.row_count, 1);
             prop_assert_eq!(table.inner.pages.len(), 1);
             prop_assert_eq!(table.pointer_map.pointers_for(hash), &[ptr]);
 
