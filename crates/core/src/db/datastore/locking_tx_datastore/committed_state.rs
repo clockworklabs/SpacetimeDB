@@ -307,7 +307,6 @@ impl CommittedState {
                 table.row_layout(),
                 &index_row.columns,
                 index_row.is_unique,
-                index_row.index_name,
             )?;
             index.build_from_rows(&index_row.columns, table.scan_rows(blob_store))?;
             table.indexes.insert(index_row.columns, index);

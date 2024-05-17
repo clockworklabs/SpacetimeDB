@@ -325,11 +325,9 @@ pub struct BTreeIndex {
     pub(crate) is_unique: bool,
     /// The actual index, specialized for the appropriate key type.
     idx: TypedIndex,
-    /// The index name, used for reporting unique constraint violations.
-    pub(crate) name: Box<str>,
 }
 
-static_assert_size!(BTreeIndex, 56);
+static_assert_size!(BTreeIndex, 40);
 
 impl BTreeIndex {
     /// Returns a new possibly unique index, with `index_id` for a set of columns.
@@ -338,7 +336,6 @@ impl BTreeIndex {
         row_type: &RowTypeLayout,
         indexed_columns: &ColList,
         is_unique: bool,
-        name: impl Into<Box<str>>,
     ) -> Result<Self, InvalidFieldError> {
         // If the index is on a single column of a primitive type,
         // use a homogeneous map with a native key type.
@@ -372,7 +369,6 @@ impl BTreeIndex {
             index_id,
             is_unique,
             idx: typed_index,
-            name: name.into(),
         })
     }
 
@@ -471,7 +467,7 @@ mod test {
 
     fn new_index(row_type: &ProductType, cols: &ColList, is_unique: bool) -> BTreeIndex {
         let row_layout: RowTypeLayout = row_type.clone().into();
-        BTreeIndex::new(0.into(), &row_layout, cols, is_unique, "test_index").unwrap()
+        BTreeIndex::new(0.into(), &row_layout, cols, is_unique).unwrap()
     }
 
     fn table(ty: ProductType) -> Table {
