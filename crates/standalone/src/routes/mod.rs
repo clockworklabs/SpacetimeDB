@@ -17,7 +17,7 @@ where
             database::control_routes(ctx.clone()).merge(database::worker_routes(ctx.clone())),
         )
         .nest("/identity", identity::router(ctx.clone()))
-        .nest("/energy", energy::router(ctx.clone()))
+        .nest("/energy", energy::router())
         .nest("/prometheus", prometheus::router())
         .nest("/metrics", metrics::router());
 

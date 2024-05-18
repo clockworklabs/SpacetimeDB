@@ -5,17 +5,19 @@ use jsonwebtoken::{decode, encode, Header, TokenData, Validation};
 pub use jsonwebtoken::{DecodingKey, EncodingKey};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::time::Duration;
 use std::time::SystemTime;
-use std::time::{Duration, UNIX_EPOCH};
 
 #[serde_with::serde_as]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SpacetimeIdentityClaims {
     #[serde(rename = "hex_identity")]
     pub identity: Identity,
+    /// The unix timestamp the token was issued at
     #[serde_as(as = "serde_with::TimestampSeconds")]
     pub iat: SystemTime,
-    pub exp: Option<u64>,
+    #[serde_as(as = "Option<serde_with::TimestampSeconds>")]
+    pub exp: Option<SystemTime>,
 }
 
 /// Encode a JWT token using a private_key and an identity. Expiry is set in absolute seconds,
@@ -27,21 +29,17 @@ pub fn encode_token(private_key: &EncodingKey, identity: Identity) -> Result<Str
 pub fn encode_token_with_expiry(
     private_key: &EncodingKey,
     identity: Identity,
-    expiry: Option<u64>,
+    expiry: Option<Duration>,
 ) -> Result<String, JwtError> {
     let header = Header::new(jsonwebtoken::Algorithm::ES256);
 
-    let expiry = expiry.map(|seconds| {
-        let mut timer = SystemTime::now();
-        timer += Duration::from_secs(seconds);
-        // SAFETY: duration_since will panic if an argument is later than the time
-        // used for the duration calculation. In case of UNIX_EPOCH it can't be the case
-        timer.duration_since(UNIX_EPOCH).unwrap().as_secs()
-    });
+    let now = SystemTime::now();
+
+    let expiry = expiry.map(|dur| now + dur);
 
     let claims = SpacetimeIdentityClaims {
         identity,
-        iat: SystemTime::now(),
+        iat: now,
         exp: expiry,
     };
     encode(&header, &claims, private_key)

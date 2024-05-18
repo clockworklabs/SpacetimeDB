@@ -1,6 +1,6 @@
 use super::identity::IdentityForUrl;
 use crate::auth::{
-    auth_middleware, SpacetimeAuth, SpacetimeAuthHeader, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros,
+    anon_auth_middleware, SpacetimeAuth, SpacetimeAuthHeader, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros,
     SpacetimeIdentity, SpacetimeIdentityToken,
 };
 use crate::routes::subscribe::generate_random_address;
@@ -930,7 +930,7 @@ where
         .route("/confirm_recovery_code", get(confirm_recovery_code::<S>))
         .route("/publish", post(publish::<S>).layer(DefaultBodyLimit::disable()))
         .route("/delete/:address", post(delete_database::<S>))
-        .route_layer(axum::middleware::from_fn_with_state(ctx, auth_middleware::<S>))
+        .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
 }
 
 pub fn worker_routes<S>(ctx: S) -> axum::Router<S>
@@ -949,5 +949,5 @@ where
         .route("/info/:name_or_address", get(info::<S>))
         .route("/logs/:name_or_address", get(logs::<S>))
         .route("/sql/:name_or_address", post(sql::<S>))
-        .route_layer(axum::middleware::from_fn_with_state(ctx, auth_middleware::<S>))
+        .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
 }

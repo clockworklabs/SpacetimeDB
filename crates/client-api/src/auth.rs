@@ -251,7 +251,7 @@ impl headers::Header for SpacetimeExecutionDurationMicros {
     }
 }
 
-pub async fn auth_middleware<S: ControlStateDelegate + NodeDelegate>(
+pub async fn anon_auth_middleware<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
     auth: SpacetimeAuthHeader,
     mut req: Request,
