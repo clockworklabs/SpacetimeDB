@@ -976,27 +976,15 @@ fn autogen_csharp_access_funcs_for_struct(
                         writeln!(output);
                         writeln!(output, "if (ByteArrayCompare(compareValue, value))");
                         indented_block(output, |output| {
-                            if is_unique {
-                                writeln!(output, "return ({struct_name_pascal_case})entry.Item2;");
-                            } else {
-                                writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;");
-                            }
+                            writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;");
                         });
                     } else {
                         writeln!(output, "if (compareValue == value)");
                         indented_block(output, |output| {
-                            if is_unique {
-                                writeln!(output, "return ({struct_name_pascal_case})entry.Item2;");
-                            } else {
-                                writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;");
-                            }
+                            writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;");
                         });
                     }
                 });
-
-                if is_unique {
-                    writeln!(output, "return null;");
-                }
             }
         });
         writeln!(output);
