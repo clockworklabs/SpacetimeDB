@@ -125,7 +125,7 @@ impl SubscriptionManager {
         let tables = &event.status.database_update().unwrap().tables;
         let slow = db.read_config().slow_query;
         let tx = scopeguard::guard(db.begin_tx(), |tx| {
-            tx.release(&ExecutionContext::incremental_update(db.address(), slow));
+            db.release_tx(&ExecutionContext::incremental_update(db.address(), slow), tx);
         });
 
         // Put the main work on a rayon compute thread.
