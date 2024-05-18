@@ -1,7 +1,7 @@
 use super::execution_unit::{ExecutionUnit, QueryHash};
 use crate::client::messages::{SubscriptionUpdate, TransactionUpdateMessage};
 use crate::client::{ClientConnectionSender, Protocol};
-use crate::db::relational_db::RelationalDB;
+use crate::db::relational_db::{RelationalDB, Tx};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, ProtocolDatabaseUpdate};
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
@@ -12,7 +12,6 @@ use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate
 use spacetimedb_data_structures::map::{Entry, HashMap, HashSet, IntMap};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
-use std::ops::Deref;
 use std::sync::Arc;
 
 /// Clients are uniquely identified by their Identity and Address.
@@ -116,12 +115,9 @@ impl SubscriptionManager {
     /// evaluates only the necessary queries for those delta tables,
     /// and then sends the results to each client.
     #[tracing::instrument(skip_all)]
-    pub fn eval_updates(&self, db: &RelationalDB, event: Arc<ModuleEvent>) {
+    pub fn eval_updates(&self, db: &RelationalDB, tx: &Tx, event: Arc<ModuleEvent>) {
         let tables = &event.status.database_update().unwrap().tables;
         let slow = db.read_config().slow_query;
-        let tx = scopeguard::guard(db.begin_tx(), |tx| {
-            tx.release(&ExecutionContext::incremental_update(db.address(), slow));
-        });
 
         // Put the main work on a rayon compute thread.
         rayon::scope(|_| {
@@ -139,7 +135,7 @@ impl SubscriptionManager {
 
             let span = tracing::info_span!("eval_incr").entered();
             let ctx = ExecutionContext::incremental_update(db.address(), slow);
-            let tx = &tx.deref().into();
+            let tx = &tx.into();
             let eval = units
                 .into_par_iter()
                 .filter_map(|(hash, tables)| self.queries.get(hash).map(|unit| (hash, tables, unit)))

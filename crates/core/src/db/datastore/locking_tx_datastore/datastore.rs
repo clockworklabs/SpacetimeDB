@@ -485,6 +485,33 @@ impl MutTx for Locking {
     }
 }
 
+impl Locking {
+    pub fn rollback_mut_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTxId) -> TxId {
+        let lock_wait_time = tx.lock_wait_time;
+        let timer = tx.timer;
+        // TODO(cloutiertyler): We should probably track the tx.rollback() time separately.
+        let tx = tx.rollback_downgrade();
+
+        // Record metrics for the transaction at the very end right before we drop
+        // the MutTx and release the lock.
+        record_metrics(ctx, timer, lock_wait_time, false);
+
+        tx
+    }
+
+    pub fn commit_mut_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTxId) -> Result<Option<(TxData, TxId)>> {
+        let lock_wait_time = tx.lock_wait_time;
+        let timer = tx.timer;
+        // TODO(cloutiertyler): We should probably track the tx.commit() time separately.
+        let res = tx.commit_downgrade(ctx);
+
+        // Record metrics for the transaction at the very end right before we drop
+        // the MutTx and release the lock.
+        record_metrics(ctx, timer, lock_wait_time, true);
+        Ok(Some(res))
+    }
+}
+
 impl Programmable for Locking {
     fn program_hash(&self, tx: &TxId) -> Result<Option<spacetimedb_sats::hash::Hash>> {
         tx.iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
