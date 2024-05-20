@@ -562,7 +562,7 @@ impl Table {
     pub fn clone_structure(&self, squashed_offset: SquashedOffset) -> Self {
         let schema = self.schema.clone();
         let layout = self.row_layout().clone();
-        let sbl = self.inner.static_bsatn_layout.clone();
+        let sbl = self.static_bsatn_layout().cloned();
         let visitor = self.visitor_prog.clone();
         let mut new =
             Table::new_with_indexes_capacity(schema, layout, sbl, visitor, squashed_offset, self.indexes.len());
@@ -729,26 +729,12 @@ impl<'a> RowRef<'a> {
     /// and may therefore be faster than calling [`bsatn::to_vec`].
     pub fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
         if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
-            // Create an uninitialized buffer `buf` of the correct length.
-            let bsatn_len = static_bsatn_layout.bsatn_length as usize;
-            let mut buf = Vec::with_capacity(bsatn_len);
-            let sink = buf.spare_capacity_mut();
-
-            // Find the row referred to by `self`.
+            // Use fast path, by first fetching the row data and then using the static layout.
             let row = self.get_row_data();
-
-            // (1) Write the row into the slice using a series of `memcpy`s.
             // SAFETY:
             // - Existence of a `RowRef` treated as proof
             //   of row's validity and type information's correctness.
-            // - `vec` was constructed with exactly the correct length above.
-            unsafe {
-                static_bsatn_layout.serialize_row_into(sink, row);
-            }
-
-            // SAFETY: In (1), we initialized `0..len`.
-            unsafe { buf.set_len(bsatn_len) }
-            Ok(buf)
+            Ok(unsafe { static_bsatn_layout.serialize_row_into_vec(row) })
         } else {
             bsatn::to_vec(self)
         }
@@ -761,29 +747,14 @@ impl<'a> RowRef<'a> {
     /// and may therefore be faster than calling [`bsatn::to_writer`].
     pub fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
         if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
-            // Get an uninitialized slice within `buf` of the correct length.
-            let start = buf.len();
-            let len = static_bsatn_layout.bsatn_length as usize;
-            buf.reserve(len);
-            let sink = &mut buf.spare_capacity_mut()[..len];
-
-            // Find the row referred to by `self`.
+            // Use fast path, by first fetching the row data and then using the static layout.
             let row = self.get_row_data();
-
-            // (1) Write the row into the slice using a series of `memcpy`s.
             // SAFETY:
             // - Existence of a `RowRef` treated as proof
             //   of row's validity and type information's correctness.
-            // - `sink` was constructed with exactly the correct length above.
             unsafe {
-                static_bsatn_layout.serialize_row_into(sink, row);
+                static_bsatn_layout.serialize_row_extend(buf, row);
             }
-
-            // SAFETY: In (1), we initialized `start .. start + len`
-            // and we had initialized up to `start` before,
-            // so now we have initialized up to `start + len`.
-            unsafe { buf.set_len(start + len) }
-
             Ok(())
         } else {
             // Use the slower, but more general, `bsatn_from` serializer to write the row.
@@ -1029,6 +1000,11 @@ impl Table {
     /// Returns the pages storing the physical rows of this table.
     fn pages(&self) -> &Pages {
         &self.inner.pages
+    }
+
+    /// Returns the [`StaticBsatnLayout`] for this table,
+    pub(crate) fn static_bsatn_layout(&self) -> Option<&StaticBsatnLayout> {
+        self.inner.static_bsatn_layout.as_ref()
     }
 }
 
