@@ -46,7 +46,7 @@ jobs:
           sudo chmod 777 /stdb
 
       - name: Run cargo test
-        run: cargo test --all --features odb_rocksdb,odb_sled
+        run: cargo test --all
 
   lints:
     name: Lints
@@ -62,7 +62,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run cargo clippy
-        run: cargo clippy --all --tests --benches --features odb_rocksdb,odb_sled -- -D warnings
+        run: cargo clippy --all --tests --benches -- -D warnings
 
   wasm_bindings:
     name: Build and test wasm bindings
