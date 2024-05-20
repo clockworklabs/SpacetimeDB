@@ -3,6 +3,7 @@ use super::{
     datastore::Result,
     sequence::{Sequence, SequencesState},
     state_view::{IndexSeekIterMutTxId, Iter, IterByColRange, ScanIterByColRange, StateView},
+    tx::TxId,
     tx_state::TxState,
     SharedMutexGuard, SharedWriteGuard,
 };
@@ -683,8 +684,32 @@ impl MutTxId {
         committed_state_write_lock.merge(tx_state, ctx)
     }
 
+    pub fn commit_downgrade(self, ctx: &ExecutionContext) -> (TxData, TxId) {
+        let Self {
+            mut committed_state_write_lock,
+            tx_state,
+            ..
+        } = self;
+        let tx_data = committed_state_write_lock.merge(tx_state, ctx);
+        let tx = TxId {
+            committed_state_shared_lock: SharedWriteGuard::downgrade(committed_state_write_lock),
+            lock_wait_time: Duration::ZERO,
+            timer: Instant::now(),
+        };
+        (tx_data, tx)
+    }
+
     pub fn rollback(self) {
         // TODO: Check that no sequences exceed their allocation after the rollback.
+    }
+
+    pub fn rollback_downgrade(self) -> TxId {
+        // TODO: Check that no sequences exceed their allocation after the rollback.
+        TxId {
+            committed_state_shared_lock: SharedWriteGuard::downgrade(self.committed_state_write_lock),
+            lock_wait_time: Duration::ZERO,
+            timer: Instant::now(),
+        }
     }
 }
 

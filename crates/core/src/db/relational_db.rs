@@ -299,6 +299,12 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
+    pub fn rollback_mut_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTx) -> Tx {
+        log::trace!("ROLLBACK MUT TX");
+        self.inner.rollback_mut_tx_downgrade(ctx, tx)
+    }
+
+    #[tracing::instrument(skip_all)]
     pub fn release_tx(&self, ctx: &ExecutionContext, tx: Tx) {
         log::trace!("ROLLBACK TX");
         self.inner.release_tx(ctx, tx)
@@ -306,11 +312,6 @@ impl RelationalDB {
 
     #[tracing::instrument(skip_all)]
     pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTx) -> Result<Option<TxData>, DBError> {
-        use commitlog::payload::{
-            txdata::{Mutations, Ops},
-            Txdata,
-        };
-
         log::trace!("COMMIT MUT TX");
 
         let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? else {
@@ -318,61 +319,85 @@ impl RelationalDB {
         };
 
         if let Some(durability) = &self.durability {
-            let inserts: Box<_> = tx_data
-                .inserts()
-                .map(|(table_id, rowdata)| Ops {
-                    table_id: *table_id,
-                    rowdata: rowdata.clone(),
-                })
-                .collect();
-            let deletes: Box<_> = tx_data
-                .deletes()
-                .map(|(table_id, rowdata)| Ops {
-                    table_id: *table_id,
-                    rowdata: rowdata.clone(),
-                })
-                .collect();
-
-            // Avoid appending transactions to the commitlog which don't modify
-            // any tables.
-            //
-            // An exception ar connect / disconnect calls, which we always want
-            // paired in the log, so as to be able to disconnect clients
-            // automatically after a server crash. See:
-            // [`crate::host::ModuleHost::call_identity_connected_disconnected`]
-            //
-            // Note that this may change in the future: some analytics and/or
-            // timetravel queries may benefit from seeing all inputs, even if
-            // the database state did not change.
-            let is_noop = || inserts.is_empty() && deletes.is_empty();
-            let is_connect_disconnect = |ctx: &ReducerContext| {
-                matches!(
-                    ctx.name.strip_prefix("__identity_"),
-                    Some("connected__" | "disconnected__")
-                )
-            };
-            let inputs = ctx
-                .reducer_context()
-                .and_then(|rcx| (!is_noop() || is_connect_disconnect(rcx)).then(|| rcx.into()));
-
-            let txdata = Txdata {
-                inputs,
-                outputs: None,
-                mutations: Some(Mutations {
-                    inserts,
-                    deletes,
-                    truncates: [].into(),
-                }),
-            };
-
-            if !txdata.is_empty() {
-                log::trace!("append {txdata:?}");
-                // TODO: Should measure queuing time + actual write
-                durability.append_tx(txdata);
-            }
+            Self::do_durability(&**durability, ctx, &tx_data)
         }
 
         Ok(Some(tx_data))
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub fn commit_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTx) -> Result<Option<(TxData, Tx)>, DBError> {
+        log::trace!("COMMIT MUT TX");
+
+        let Some((tx_data, tx)) = self.inner.commit_mut_tx_downgrade(ctx, tx)? else {
+            return Ok(None);
+        };
+
+        if let Some(durability) = &self.durability {
+            Self::do_durability(&**durability, ctx, &tx_data)
+        }
+
+        Ok(Some((tx_data, tx)))
+    }
+
+    fn do_durability(durability: &dyn Durability<TxData = Txdata>, ctx: &ExecutionContext, tx_data: &TxData) {
+        use commitlog::payload::{
+            txdata::{Mutations, Ops},
+            Txdata,
+        };
+
+        let inserts: Box<_> = tx_data
+            .inserts()
+            .map(|(table_id, rowdata)| Ops {
+                table_id: *table_id,
+                rowdata: rowdata.clone(),
+            })
+            .collect();
+        let deletes: Box<_> = tx_data
+            .deletes()
+            .map(|(table_id, rowdata)| Ops {
+                table_id: *table_id,
+                rowdata: rowdata.clone(),
+            })
+            .collect();
+
+        // Avoid appending transactions to the commitlog which don't modify
+        // any tables.
+        //
+        // An exception ar connect / disconnect calls, which we always want
+        // paired in the log, so as to be able to disconnect clients
+        // automatically after a server crash. See:
+        // [`crate::host::ModuleHost::call_identity_connected_disconnected`]
+        //
+        // Note that this may change in the future: some analytics and/or
+        // timetravel queries may benefit from seeing all inputs, even if
+        // the database state did not change.
+        let is_noop = || inserts.is_empty() && deletes.is_empty();
+        let is_connect_disconnect = |ctx: &ReducerContext| {
+            matches!(
+                ctx.name.strip_prefix("__identity_"),
+                Some("connected__" | "disconnected__")
+            )
+        };
+        let inputs = ctx
+            .reducer_context()
+            .and_then(|rcx| (!is_noop() || is_connect_disconnect(rcx)).then(|| rcx.into()));
+
+        let txdata = Txdata {
+            inputs,
+            outputs: None,
+            mutations: Some(Mutations {
+                inserts,
+                deletes,
+                truncates: [].into(),
+            }),
+        };
+
+        if !txdata.is_empty() {
+            log::trace!("append {txdata:?}");
+            // TODO: Should measure queuing time + actual write
+            durability.append_tx(txdata);
+        }
     }
 
     /// Run a fallible function in a transaction.

@@ -25,7 +25,7 @@ use crate::identity::Identity;
 use crate::messages::control_db::Database;
 use crate::module_host_context::ModuleCreationContext;
 use crate::sql;
-use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
 use crate::util::const_unwrap;
 use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
@@ -579,14 +579,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         }
         reducer_span.exit();
 
-        // Take a lock on our subscriptions now. Otherwise, we could have a race condition where we commit
-        // the tx, someone adds a subscription and receives this tx as an initial update, and then receives the
-        // update again when we broadcast_event.
-        let subscriptions = self.info.subscriptions.subscriptions.read();
         let status = match call_result {
             Err(err) => {
-                stdb.rollback_mut_tx(&ctx, tx);
-
                 T::log_traceback("reducer", reducer_name, &err);
 
                 WORKER_METRICS
@@ -604,22 +598,14 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 }
             }
             Ok(Err(errmsg)) => {
-                stdb.rollback_mut_tx(&ctx, tx);
-
                 log::info!("reducer returned error: {errmsg}");
 
                 EventStatus::Failed(errmsg.into())
             }
-            Ok(Ok(())) => {
-                if let Some(tx_data) = stdb.commit_tx(&ctx, tx).unwrap() {
-                    EventStatus::Committed(DatabaseUpdate::from_writes(&tx_data))
-                } else {
-                    todo!("Write skew, you need to implement retries my man, T-dawg.");
-                }
-            }
+            // we haven't actually comitted yet - `commit_and_broadcast_event` will commit
+            // for us and replace this with the actual database update.
+            Ok(Ok(())) => EventStatus::Committed(DatabaseUpdate::default()),
         };
-
-        let outcome = ReducerOutcome::from(&status);
 
         let event = ModuleEvent {
             timestamp,
@@ -635,12 +621,18 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             request_id,
             timer,
         };
-        self.info
+        let event = match self
+            .info
             .subscriptions
-            .blocking_broadcast_event(client.as_deref(), &subscriptions, Arc::new(event));
+            .commit_and_broadcast_event(client.as_deref(), event, &ctx, tx)
+            .unwrap()
+        {
+            Ok(ev) => ev,
+            Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
+        };
 
         ReducerCallResult {
-            outcome,
+            outcome: ReducerOutcome::from(&event.status),
             energy_used: energy.used,
             execution_duration: timings.total_duration,
         }
