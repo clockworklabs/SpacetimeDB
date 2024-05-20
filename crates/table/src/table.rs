@@ -60,9 +60,6 @@ impl Table {
     pub fn row_layout(&self) -> &RowTypeLayout {
         &self.inner.row_layout
     }
-    pub fn pages(&self) -> &Pages {
-        &self.inner.pages
-    }
 }
 
 /// The part of a `Table` concerned only with storing rows.
@@ -644,7 +641,6 @@ impl<'a> RowRef<'a> {
     /// This is a potentially expensive operation,
     /// as it must walk the table's `ProductTypeLayout`
     /// and heap-allocate various substructures of the `ProductValue`.
-    #[doc(alias = "read_row")]
     pub fn to_product_value(&self) -> ProductValue {
         let res = self
             .serialize(ValueSerializer)
@@ -691,16 +687,27 @@ impl<'a> RowRef<'a> {
         self.pointer
     }
 
+    /// Returns the blob store that any [`crate::blob_store::BlobHash`]es within the row refer to.
     pub(crate) fn blob_store(&self) -> &dyn BlobStore {
         self.blob_store
     }
 
+    /// Return the layout of the row.
+    ///
+    /// All rows within the same table will have the same layout.
     pub fn row_layout(&self) -> &RowTypeLayout {
         &self.table.row_layout
     }
 
+    /// Returns the page the row is in and the offset of the row within that page.
     pub fn page_and_offset(&self) -> (&Page, PageOffset) {
         self.table.page_and_offset(self.pointer())
+    }
+
+    /// Returns the bytes for the fixed portion of this row.
+    pub(crate) fn get_row_data(&self) -> &Bytes {
+        let (page, offset) = self.page_and_offset();
+        page.get_row_data(offset, self.table.row_layout.size())
     }
 
     /// Returns the row hash for `ptr`.
@@ -728,8 +735,7 @@ impl<'a> RowRef<'a> {
             let sink = buf.spare_capacity_mut();
 
             // Find the row referred to by `self`.
-            let (page, offset) = self.page_and_offset();
-            let row = page.get_row_data(offset, self.table.row_layout.size());
+            let row = self.get_row_data();
 
             // (1) Write the row into the slice using a series of `memcpy`s.
             // SAFETY:
@@ -762,8 +768,7 @@ impl<'a> RowRef<'a> {
             let sink = &mut buf.spare_capacity_mut()[..len];
 
             // Find the row referred to by `self`.
-            let (page, offset) = self.page_and_offset();
-            let row = page.get_row_data(offset, self.table.row_layout.size());
+            let row = self.get_row_data();
 
             // (1) Write the row into the slice using a series of `memcpy`s.
             // SAFETY:
@@ -1021,11 +1026,9 @@ impl Table {
         self.inner.row_layout.size()
     }
 
-    /// Returns the fixed-len portion of the row at `ptr`.
-    #[allow(unused)]
-    fn get_fixed_row(&self, ptr: RowPointer) -> &Bytes {
-        let (page, offset) = self.inner.page_and_offset(ptr);
-        page.get_row_data(offset, self.row_size())
+    /// Returns the pages storing the physical rows of this table.
+    fn pages(&self) -> &Pages {
+        &self.inner.pages
     }
 }
 

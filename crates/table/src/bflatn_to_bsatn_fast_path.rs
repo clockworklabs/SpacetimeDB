@@ -486,13 +486,11 @@ mod test {
                 return Err(TestCaseError::reject("Var-length type"));
             };
 
-            let size = table.row_layout().size();
             let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
 
             let slow_path = bsatn::to_vec(&row_ref).unwrap();
 
-            let (page, offset) = row_ref.page_and_offset();
-            let bytes = page.get_row_data(offset, size);
+            let bytes = row_ref.get_row_data();
 
             let len = bsatn_layout.bsatn_length as usize;
             let mut fast_path = Vec::with_capacity(len);
