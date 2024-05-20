@@ -151,14 +151,16 @@ impl ModuleSubscriptions {
         mut event: ModuleEvent,
         ctx: &ExecutionContext,
         tx: MutTx,
-    ) -> Result<Result<Arc<ModuleEvent>, WriteSkew>, DBError> {
+    ) -> Result<Result<Arc<ModuleEvent>, WriteConflict>, DBError> {
+        // Take a read lock on `subscriptions` before committing tx
+        // else it can result in subscriber receiving duplicate updates.
         let subscriptions = self.subscriptions.read();
         let stdb = &self.relational_db;
 
         let read_tx = match &mut event.status {
             EventStatus::Committed(db_update) => {
                 let Some((tx_data, read_tx)) = stdb.commit_tx_downgrade(ctx, tx)? else {
-                    return Ok(Err(WriteSkew));
+                    return Ok(Err(WriteConflict));
                 };
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
                 read_tx
@@ -187,7 +189,7 @@ impl ModuleSubscriptions {
     }
 }
 
-pub struct WriteSkew;
+pub struct WriteConflict;
 
 #[cfg(test)]
 mod tests {

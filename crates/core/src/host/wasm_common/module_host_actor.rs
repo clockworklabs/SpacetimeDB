@@ -25,7 +25,7 @@ use crate::identity::Identity;
 use crate::messages::control_db::Database;
 use crate::module_host_context::ModuleCreationContext;
 use crate::sql;
-use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteSkew};
+use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
 use crate::util::const_unwrap;
 use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
@@ -602,6 +602,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
                 EventStatus::Failed(errmsg.into())
             }
+            // we haven't actually comitted yet - `commit_and_broadcast_event` will commit
+            // for us and replace this with the actual database update.
             Ok(Ok(())) => EventStatus::Committed(DatabaseUpdate::default()),
         };
 
@@ -626,7 +628,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .unwrap()
         {
             Ok(ev) => ev,
-            Err(WriteSkew) => todo!("Write skew, you need to implement retries my man, T-dawg."),
+            Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
         };
 
         ReducerCallResult {
