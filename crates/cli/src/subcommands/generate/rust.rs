@@ -470,7 +470,19 @@ fn print_table_filter_methods(ctx: &GenCtx, out: &mut Indenter, table_type_name:
         |out| {
             for field in table.columns() {
                 let field_name = field.col_name.deref().to_case(Case::Snake);
-                // TODO: ensure that fields are PartialEq
+                match &field.col_type {
+                    AlgebraicType::Product(prod) => {
+                        if !prod.is_special() {
+                            continue;
+                        }
+                    }
+                    AlgebraicType::Ref(_)
+                    | AlgebraicType::Sum(_)
+                    | AlgebraicType::Builtin(BuiltinType::Array(_) | BuiltinType::Map(_)) => {
+                        continue;
+                    }
+                    AlgebraicType::Builtin(_) => {}
+                }
                 writeln!(out, "{ALLOW_UNUSED}");
                 write!(out, "pub fn filter_by_{field_name}({field_name}: ");
                 // TODO: the filter methods should take the target value by
@@ -482,27 +494,31 @@ fn print_table_filter_methods(ctx: &GenCtx, out: &mut Indenter, table_type_name:
                 write!(out, ") -> ");
                 let ct = constraints[&ColList::new(field.col_pos)];
 
-                if ct.has_unique() {
-                    write!(out, "Option<Self>");
-                } else {
-                    write!(out, "TableIter<Self>");
-                }
+                write!(out, "TableIter<Self>");
                 out.delimited_block(
                     " {",
                     |out| {
                         writeln!(
                             out,
-                            "Self::{}(|row| row.{} == {})",
                             // TODO: for primary keys, we should be able to do better than
                             //       `find` or `filter`. We should be able to look up
                             //       directly in the `TableCache`.
-                            if ct.has_unique() { "find" } else { "filter" },
-                            field_name,
-                            field_name,
+                            "Self::filter(|row| row.{field_name} == {field_name})",
                         )
                     },
                     "}\n",
                 );
+                if ct.has_unique() {
+                    writeln!(out, "{ALLOW_UNUSED}");
+                    write!(out, "pub fn find_by_{field_name}(");
+                    write_type_ctx(ctx, out, &field.col_type);
+                    write!(out, ") -> Option<Self> ");
+                    out.delimited_block(
+                        "{",
+                        |out| writeln!(out, "Self::find(|row| row.{field_name} == {field_name})"),
+                        "}\n",
+                    );
+                }
             }
         },
         "}\n",
