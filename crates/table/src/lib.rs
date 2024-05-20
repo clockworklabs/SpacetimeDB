@@ -8,11 +8,11 @@
 
 pub mod bflatn_from;
 pub mod bflatn_to;
-pub mod bflatn_to_bsatn_fast_path;
+mod bflatn_to_bsatn_fast_path;
 pub mod blob_store;
-pub mod btree_index;
+mod btree_index;
 pub mod eq;
-pub mod eq_to_pv;
+mod eq_to_pv;
 mod fixed_bit_set;
 pub mod indexes;
 pub mod layout;

@@ -36,7 +36,6 @@ use spacetimedb_sats::{
     AlgebraicValue, ProductType, ProductValue,
 };
 use spacetimedb_table::{
-    btree_index::BTreeIndex,
     indexes::{RowPointer, SquashedOffset},
     table::{InsertError, RowRef, Table},
 };
@@ -325,7 +324,7 @@ impl MutTxId {
             self.tx_state.get_table_and_blob_store(table_id).unwrap()
         };
 
-        let mut insert_index = BTreeIndex::new(index.index_id, table.row_layout(), &index.columns, index.is_unique)?;
+        let mut insert_index = table.new_index(index.index_id, &index.columns, index.is_unique)?;
         insert_index.build_from_rows(&index.columns, table.scan_rows(blob_store))?;
 
         // NOTE: Also add all the rows in the already committed table to the index.

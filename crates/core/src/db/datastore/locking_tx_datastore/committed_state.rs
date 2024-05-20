@@ -34,7 +34,6 @@ use spacetimedb_sats::{
 };
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
-    btree_index::BTreeIndex,
     indexes::{RowPointer, SquashedOffset},
     table::{IndexScanIter, InsertError, RowRef, Table},
 };
@@ -302,14 +301,8 @@ impl CommittedState {
             let Some((table, blob_store)) = self.get_table_and_blob_store(index_row.table_id) else {
                 panic!("Cannot create index for table which doesn't exist in committed state");
             };
-            let mut index = BTreeIndex::new(
-                index_row.index_id,
-                table.row_layout(),
-                &index_row.columns,
-                index_row.is_unique,
-            )?;
-            index.build_from_rows(&index_row.columns, table.scan_rows(blob_store))?;
-            table.indexes.insert(index_row.columns, index);
+            let index = table.new_index(index_row.index_id, &index_row.columns, index_row.is_unique)?;
+            table.insert_index(blob_store, index_row.columns, index);
         }
         Ok(())
     }
