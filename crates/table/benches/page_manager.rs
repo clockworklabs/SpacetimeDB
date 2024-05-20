@@ -693,7 +693,7 @@ fn make_table_with_indexes<R: IndexedRow>() -> Table {
     let mut tbl = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
 
     let cols = R::indexed_columns();
-    let idx = BTreeIndex::new(IndexId(0), &R::row_type().into(), &cols, false, "idx").unwrap();
+    let idx = BTreeIndex::new(IndexId(0), &R::row_type().into(), &cols, false).unwrap();
     tbl.insert_index(&NullBlobStore, cols, idx);
 
     tbl

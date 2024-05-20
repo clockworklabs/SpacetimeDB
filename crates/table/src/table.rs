@@ -573,14 +573,7 @@ impl Table {
             new.insert_index(
                 &NullBlobStore,
                 cols.clone(),
-                BTreeIndex::new(
-                    index.index_id,
-                    &self.inner.row_layout,
-                    cols,
-                    index.is_unique,
-                    index.name.clone(),
-                )
-                .unwrap(),
+                BTreeIndex::new(index.index_id, &self.inner.row_layout, cols, index.is_unique).unwrap(),
             );
         }
         new
@@ -912,7 +905,7 @@ impl IndexScanIter<'_> {
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
 pub struct UniqueConstraintViolation {
-    pub constraint_name: String,
+    pub constraint_name: Box<str>,
     pub table_name: Box<str>,
     pub cols: Vec<Box<str>>,
     pub value: AlgebraicValue,
@@ -930,14 +923,27 @@ impl Table {
     ) -> UniqueConstraintViolation {
         let schema = self.get_schema();
 
+        // Fetch the table name.
+        let table_name = schema.table_name.clone();
+
+        // Fetch the names of the columns used in the index.
         let cols = cols
             .iter()
             .map(|x| schema.columns()[x.idx()].col_name.clone())
             .collect();
 
+        // Fetch the name of the index.
+        let constraint_name = schema
+            .indexes
+            .iter()
+            .find(|i| i.index_id == index.index_id)
+            .unwrap()
+            .index_name
+            .clone();
+
         UniqueConstraintViolation {
-            constraint_name: index.name.clone().into(),
-            table_name: schema.table_name.clone(),
+            constraint_name,
+            table_name,
             cols,
             value,
         }
@@ -1049,7 +1055,7 @@ pub(crate) mod test {
         let mut table = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
         let cols = ColList::new(0.into());
 
-        let index = BTreeIndex::new(index_schema.index_id, &table.inner.row_layout, &cols, true, index_name).unwrap();
+        let index = BTreeIndex::new(index_schema.index_id, &table.inner.row_layout, &cols, true).unwrap();
         table.insert_index(&NullBlobStore, cols, index);
 
         // Insert the row (0, 0).
@@ -1066,7 +1072,7 @@ pub(crate) mod test {
                 cols,
                 value,
             })) => {
-                assert_eq!(constraint_name, index_name);
+                assert_eq!(&*constraint_name, index_name);
                 assert_eq!(&*table_name, "UniqueIndexed");
                 assert_eq!(cols.iter().map(|c| c.to_string()).collect::<Vec<_>>(), &["unique_col"]);
                 assert_eq!(value, AlgebraicValue::I32(0));
