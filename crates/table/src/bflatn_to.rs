@@ -455,7 +455,8 @@ impl BflatnSerializedRowBuffer<'_> {
 pub mod test {
     use super::*;
     use crate::{
-        bflatn_from::serialize_row_from_page, blob_store::HashMapBlobStore, row_type_visitor::row_type_visitor,
+        bflatn_from::serialize_row_from_page, blob_store::HashMapBlobStore, page::tests::hash_unmodified_save_get,
+        row_type_visitor::row_type_visitor,
     };
     use proptest::{prelude::*, prop_assert_eq, proptest};
     use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
@@ -470,12 +471,18 @@ pub mod test {
             let visitor = row_type_visitor(&ty);
             let blob_store = &mut HashMapBlobStore::default();
 
+            let hash_pre_ins = hash_unmodified_save_get(&mut page);
+
             let offset = unsafe { write_row_to_page(&mut page, blob_store, &visitor, &ty, &val).unwrap() };
+
+            let hash_pre_ser = hash_unmodified_save_get(&mut page);
+            assert_ne!(hash_pre_ins, hash_pre_ser);
 
             let read_val = unsafe { serialize_row_from_page(ValueSerializer, &page, blob_store, offset, &ty) }
                 .unwrap().into_product().unwrap();
 
             prop_assert_eq!(val, read_val);
+            assert_eq!(hash_pre_ser, *page.unmodified_hash().unwrap());
         }
     }
 }
