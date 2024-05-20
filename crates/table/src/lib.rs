@@ -12,6 +12,8 @@ pub mod bflatn_to_bsatn_fast_path;
 pub mod blob_store;
 pub mod btree_index;
 pub mod eq;
+pub mod eq_to_pv;
+mod fixed_bit_set;
 pub mod indexes;
 pub mod layout;
 pub mod page;
@@ -22,9 +24,6 @@ pub mod row_hash;
 pub mod row_type_visitor;
 pub mod table;
 pub mod var_len;
-
-#[cfg(test)]
-mod proptest_sats;
 
 #[doc(hidden)] // Used in tests and benchmarks.
 pub mod util;

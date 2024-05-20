@@ -14,8 +14,9 @@ static class Utils
     {
         return symbol.ToDisplayString(
             SymbolDisplayFormat
-                .FullyQualifiedFormat
-                .WithMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType)
+                .FullyQualifiedFormat.WithMemberOptions(
+                    SymbolDisplayMemberOptions.IncludeContainingType
+                )
                 .WithGenericsOptions(SymbolDisplayGenericsOptions.IncludeTypeParameters)
                 .WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)
         );
@@ -55,7 +56,7 @@ static class Utils
         )
         {
             // if we're here, then this is a nullable reference type like `string?`.
-            return $"SpacetimeDB.SATS.SumType.MakeRefOption({GetTypeInfo(type.WithNullableAnnotation(NullableAnnotation.None))})";
+            return $"SpacetimeDB.SATS.AlgebraicType.MakeRefOption({GetTypeInfo(type.WithNullableAnnotation(NullableAnnotation.None))})";
         }
         return type switch
         {
@@ -85,24 +86,23 @@ static class Utils
                             // we don't currently do anything special whether or not it exists but might in the future
                             // so this requirement is mostly for future-proofing
                             && type.GetAttributes()
-                                .Any(
-                                    a =>
-                                        a.AttributeClass?.ToDisplayString()
-                                        == "SpacetimeDB.TypeAttribute"
+                                .Any(a =>
+                                    a.AttributeClass?.ToDisplayString()
+                                    == "SpacetimeDB.TypeAttribute"
                                 )
                         => $"SpacetimeDB.SATS.BuiltinType.MakeEnum<{type}>()",
                     SpecialType.None
                         => $"{type.OriginalDefinition.ToString() switch
-                    {
-                        "System.Collections.Generic.List<T>" => "SpacetimeDB.SATS.BuiltinType.MakeList",
-                        "System.Collections.Generic.Dictionary<TKey, TValue>" => "SpacetimeDB.SATS.BuiltinType.MakeMap",
-                        // If we're here, then this is nullable value type like `int?`.
-                        "System.Nullable<T>" => $"SpacetimeDB.SATS.SumType.MakeValueOption",
-                        var name when name.StartsWith("System.") => throw new InvalidOperationException(
-                            $"Unsupported system type {name}"
-                        ),
-                        _ => $"{type}.GetSatsTypeInfo",
-                    }}({string.Join(", ", namedType.TypeArguments.Select(GetTypeInfo))})",
+                        {
+                            "System.Collections.Generic.List<T>" => "SpacetimeDB.SATS.BuiltinType.MakeList",
+                            "System.Collections.Generic.Dictionary<TKey, TValue>" => "SpacetimeDB.SATS.BuiltinType.MakeMap",
+                            // If we're here, then this is nullable value type like `int?`.
+                            "System.Nullable<T>" => $"SpacetimeDB.SATS.AlgebraicType.MakeValueOption",
+                            var name when name.StartsWith("System.") => throw new InvalidOperationException(
+                                $"Unsupported system type {name}"
+                            ),
+                            _ => $"{type}.GetSatsTypeInfo",
+                        }}({string.Join(", ", namedType.TypeArguments.Select(GetTypeInfo))})",
                     _
                         => throw new InvalidOperationException(
                             $"Unsupported special type {type.SpecialType} ({type})"
@@ -120,16 +120,10 @@ static class Utils
     // Borrowed & modified code for generating in-place extensions for partial structs/classes/etc. Source:
     // https://andrewlock.net/creating-a-source-generator-part-5-finding-a-type-declarations-namespace-and-type-hierarchy/
 
-    public class Scope
+    public class Scope(TypeDeclarationSyntax type)
     {
-        private string nameSpace;
-        private ParentClass? parentClasses;
-
-        public Scope(TypeDeclarationSyntax type)
-        {
-            nameSpace = GetNamespace(type);
-            parentClasses = GetParentClasses(type);
-        }
+        private string nameSpace = GetNamespace(type);
+        private ParentClass? parentClasses = GetParentClasses(type);
 
         // determine the namespace the class/enum/struct is declared in, if any
         static string GetNamespace(BaseTypeDeclarationSyntax syntax)
@@ -178,20 +172,17 @@ static class Utils
             return nameSpace;
         }
 
-        public class ParentClass
+        public class ParentClass(
+            string keyword,
+            string name,
+            string constraints,
+            Scope.ParentClass? child
+        )
         {
-            public ParentClass(string keyword, string name, string constraints, ParentClass? child)
-            {
-                Keyword = keyword;
-                Name = name;
-                Constraints = constraints;
-                Child = child;
-            }
-
-            public ParentClass? Child { get; }
-            public string Keyword { get; }
-            public string Name { get; }
-            public string Constraints { get; }
+            public readonly ParentClass? Child = child;
+            public readonly string Keyword = keyword;
+            public readonly string Name = name;
+            public readonly string Constraints = constraints;
         }
 
         static ParentClass? GetParentClasses(TypeDeclarationSyntax typeSyntax)

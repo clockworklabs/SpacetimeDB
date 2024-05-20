@@ -19,7 +19,7 @@ pub struct u32_u64_str {
     // column 1
     age: u64,
     // column 2
-    name: String,
+    name: Box<str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -82,7 +82,7 @@ impl BenchTable for u32_u64_str {
         sats::product![self.id, self.age, self.name,]
     }
 
-    type SqliteParams = (u32, u64, String);
+    type SqliteParams = (u32, u64, Box<str>);
     fn into_sqlite_params(self) -> Self::SqliteParams {
         (self.id, self.age, self.name)
     }
@@ -192,7 +192,7 @@ pub trait RandomTable {
 
 impl RandomTable for u32_u64_str {
     fn gen(id: u32, rng: &mut XorShiftLite, buckets: u64) -> Self {
-        let name = nth_name(rng.gen() % buckets);
+        let name = nth_name(rng.gen() % buckets).into();
         let age = rng.gen() % buckets;
         u32_u64_str { id, name, age }
     }

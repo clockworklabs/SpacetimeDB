@@ -29,7 +29,7 @@ fn custom_module_benchmarks(c: &mut Criterion) {
     };
     let module = runtime.block_on(async { BENCHMARKS_MODULE.load_module(config, None).await });
 
-    let args = sats::product!["0".repeat(65536)];
+    let args = sats::product!["0".repeat(65536).into_boxed_str()];
     c.bench_function("special/stdb_module/large_arguments/64KiB", |b| {
         b.iter_batched(
             || args.clone(),
@@ -66,12 +66,10 @@ fn serialize_benchmarks<T: BenchTable + RandomTable>(c: &mut Criterion) {
         );
     });
     // this measures serialization from a ProductValue, not directly (as in, from generated code in the Rust SDK.)
-    let data_pv = ProductValue {
-        elements: data
-            .into_iter()
-            .map(|row| spacetimedb_lib::AlgebraicValue::Product(row.into_product_value()))
-            .collect::<Vec<_>>(),
-    };
+    let data_pv = data
+        .into_iter()
+        .map(|row| spacetimedb_lib::AlgebraicValue::Product(row.into_product_value()))
+        .collect::<ProductValue>();
 
     group.bench_function(&format!("{name}/bsatn/count={count}"), |b| {
         b.iter_batched_ref(
@@ -89,7 +87,9 @@ fn serialize_benchmarks<T: BenchTable + RandomTable>(c: &mut Criterion) {
     });
 
     let mut table = spacetimedb_table::table::Table::new(
-        TableDef::from_product(name, T::product_type().clone()).into_schema(TableId(0)),
+        TableDef::from_product(name, T::product_type().clone())
+            .into_schema(TableId(0))
+            .into(),
         spacetimedb_table::indexes::SquashedOffset::COMMITTED_STATE,
     );
     let mut blob_store = spacetimedb_table::blob_store::HashMapBlobStore::default();
@@ -97,7 +97,13 @@ fn serialize_benchmarks<T: BenchTable + RandomTable>(c: &mut Criterion) {
     let ptrs = data_pv
         .elements
         .iter()
-        .map(|row| table.insert(&mut blob_store, row.as_product().unwrap()).unwrap().1)
+        .map(|row| {
+            table
+                .insert(&mut blob_store, row.as_product().unwrap())
+                .unwrap()
+                .1
+                .pointer()
+        })
         .collect::<Vec<_>>();
     let refs = ptrs
         .into_iter()

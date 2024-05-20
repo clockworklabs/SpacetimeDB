@@ -1,10 +1,12 @@
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
 use crate::client::{ClientActorId, ClientConnectionSender};
+use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::LogLevel;
 use crate::db::datastore::traits::TxData;
 use crate::db::update::UpdateDatabaseError;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
+use crate::execution_context::{ExecutionContext, ReducerContext};
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
@@ -13,6 +15,7 @@ use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::util::notify_once::NotifyOnce;
 use crate::worker_metrics::WORKER_METRICS;
+use bytes::Bytes;
 use derive_more::{From, Into};
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
@@ -24,8 +27,7 @@ use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::{Address, ReducerDef, TableDesc};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
-use spacetimedb_vm::relation::MemTable;
-use std::borrow::Cow;
+use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::fmt;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
@@ -72,7 +74,7 @@ impl DatabaseUpdate {
         let mut map: IntMap<TableId, DatabaseTableUpdate> = IntMap::new();
         let new_update = |table_id, table_name: &str| DatabaseTableUpdate {
             table_id,
-            table_name: table_name.to_string(),
+            table_name: table_name.into(),
             inserts: [].into(),
             deletes: [].into(),
         };
@@ -107,7 +109,7 @@ impl From<DatabaseUpdate> for Vec<TableUpdateJson> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseTableUpdate {
     pub table_id: TableId,
-    pub table_name: String,
+    pub table_name: Box<str>,
     // Note: `Arc<[ProductValue]>` allows to cheaply
     // use the values from `TxData` without cloning the
     // contained `ProductValue`s.
@@ -117,12 +119,18 @@ pub struct DatabaseTableUpdate {
 
 impl From<DatabaseTableUpdate> for TableUpdate {
     fn from(table: DatabaseTableUpdate) -> Self {
-        let deletes = table.deletes.iter().map(TableOpRef::delete);
-        let inserts = table.inserts.iter().map(TableOpRef::insert);
-        let table_row_operations = deletes.chain(inserts).map(|x| x.into()).collect();
+        let deletes = table
+            .deletes
+            .iter()
+            .map(|r| product_to_table_row_op_binary(r, OpType::Delete));
+        let inserts = table
+            .inserts
+            .iter()
+            .map(|r| product_to_table_row_op_binary(r, OpType::Insert));
+        let table_row_operations = deletes.chain(inserts).collect();
         Self {
             table_id: table.table_id.into(),
-            table_name: table.table_name,
+            table_name: table.table_name.into(),
             table_row_operations,
         }
     }
@@ -130,8 +138,14 @@ impl From<DatabaseTableUpdate> for TableUpdate {
 
 impl From<DatabaseTableUpdate> for TableUpdateJson {
     fn from(table: DatabaseTableUpdate) -> Self {
-        let deletes = table.deletes.iter().map(TableOpRef::delete);
-        let inserts = table.inserts.iter().map(TableOpRef::insert);
+        let deletes = table
+            .deletes
+            .iter()
+            .map(|r| product_to_table_row_op_json(r.clone(), OpType::Delete));
+        let inserts = table
+            .inserts
+            .iter()
+            .map(|r| product_to_table_row_op_json(r.clone(), OpType::Insert));
         let table_row_operations = deletes.chain(inserts).map_into().collect();
         Self {
             table_id: table.table_id.into(),
@@ -142,35 +156,63 @@ impl From<DatabaseTableUpdate> for TableUpdateJson {
 }
 
 #[derive(Debug)]
-pub struct DatabaseUpdateCow<'a> {
-    pub tables: Vec<DatabaseTableUpdateCow<'a>>,
+pub struct DatabaseUpdateRelValue<'a> {
+    pub tables: Vec<DatabaseTableUpdateRelValue<'a>>,
 }
 
 #[derive(PartialEq, Debug)]
-pub struct DatabaseTableUpdateCow<'a> {
+pub struct DatabaseTableUpdateRelValue<'a> {
     pub table_id: TableId,
-    pub table_name: String,
-    pub updates: UpdatesCow<'a>,
+    pub table_name: Box<str>,
+    pub updates: UpdatesRelValue<'a>,
 }
 
 #[derive(Default, PartialEq, Debug)]
-pub struct UpdatesCow<'a> {
-    pub deletes: Vec<Cow<'a, ProductValue>>,
-    pub inserts: Vec<Cow<'a, ProductValue>>,
+pub struct UpdatesRelValue<'a> {
+    pub deletes: Vec<RelValue<'a>>,
+    pub inserts: Vec<RelValue<'a>>,
 }
 
-impl UpdatesCow<'_> {
+impl UpdatesRelValue<'_> {
     /// Returns whether there are any updates.
     pub fn has_updates(&self) -> bool {
         !(self.deletes.is_empty() && self.inserts.is_empty())
     }
 
     /// Returns a combined iterator over both deletes and inserts.
-    pub fn iter(&self) -> impl Iterator<Item = TableOpRef<'_>> {
+    fn iter(&self) -> impl Iterator<Item = (OpType, &RelValue<'_>)> {
         self.deletes
             .iter()
-            .map(|row| TableOpRef::delete(row))
-            .chain(self.inserts.iter().map(|row| TableOpRef::insert(row)))
+            .map(|row| (OpType::Delete, row))
+            .chain(self.inserts.iter().map(|row| (OpType::Insert, row)))
+    }
+}
+
+impl From<&UpdatesRelValue<'_>> for Vec<TableRowOperation> {
+    fn from(updates: &UpdatesRelValue<'_>) -> Self {
+        let mut scratch = Vec::new();
+        updates
+            .iter()
+            .map(|(op, row)| rel_value_to_table_row_op_binary(&mut scratch, row, op))
+            .collect()
+    }
+}
+
+impl From<&UpdatesRelValue<'_>> for Vec<TableRowOperationJson> {
+    fn from(updates: &UpdatesRelValue<'_>) -> Self {
+        updates
+            .iter()
+            .map(|(op, row)| rel_value_to_table_row_op_json(row.clone(), op))
+            .collect()
+    }
+}
+
+impl From<&UpdatesRelValue<'_>> for Vec<ProductValue> {
+    fn from(updates: &UpdatesRelValue<'_>) -> Self {
+        updates
+            .iter()
+            .map(|(_, row)| row.clone().into_product_value())
+            .collect()
     }
 }
 
@@ -181,112 +223,63 @@ pub enum OpType {
     Insert = 1,
 }
 
-impl TryFrom<u8> for OpType {
-    type Error = ();
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::Delete),
-            1 => Ok(Self::Insert),
-            _ => Err(()),
+impl OpType {
+    /// Converts the type to its JSON representation.
+    fn as_json_str(self) -> &'static str {
+        match self {
+            Self::Delete => "delete",
+            Self::Insert => "insert",
         }
-    }
-}
-
-pub struct TableOpRef<'a> {
-    pub op_type: OpType,
-    pub row: &'a ProductValue,
-}
-
-impl<'a> TableOpRef<'a> {
-    #[inline]
-    pub fn new(op_type: OpType, row: &'a ProductValue) -> Self {
-        Self { op_type, row }
-    }
-
-    #[inline]
-    pub fn insert(row: &'a ProductValue) -> Self {
-        Self::new(OpType::Insert, row)
-    }
-
-    #[inline]
-    pub fn delete(row: &'a ProductValue) -> Self {
-        Self::new(OpType::Delete, row)
     }
 }
 
 impl From<OpType> for OperationType {
-    fn from(op: OpType) -> Self {
-        match op {
-            OpType::Delete => OperationType::Delete,
-            OpType::Insert => OperationType::Insert,
+    fn from(op_ty: OpType) -> Self {
+        match op_ty {
+            OpType::Delete => Self::Delete,
+            OpType::Insert => Self::Insert,
         }
     }
 }
 
-impl From<TableOpRef<'_>> for TableRowOperation {
-    fn from(top: TableOpRef<'_>) -> Self {
-        let row = to_vec(top.row).unwrap();
-        let op: OperationType = top.op_type.into();
-        Self { op: op.into(), row }
+impl From<OpType> for i32 {
+    fn from(op_ty: OpType) -> Self {
+        OperationType::from(op_ty) as i32
     }
 }
 
-impl From<TableOpRef<'_>> for TableRowOperationJson {
-    fn from(top: TableOpRef<'_>) -> Self {
-        TableOp::from(top).into()
-    }
+/// Annotate `row` with `op` as a `TableRowOperationJson`.
+pub(crate) fn rel_value_to_table_row_op_json(row: RelValue<'_>, op: OpType) -> TableRowOperationJson {
+    product_to_table_row_op_json(row.into_product_value(), op)
 }
 
-impl From<TableOpRef<'_>> for TableOp {
-    fn from(top: TableOpRef<'_>) -> Self {
-        let row = top.row.clone();
-        let op_type = top.op_type;
-        Self { op_type, row }
-    }
+/// Annotate `row` BSATN-encoded with `op` as a `TableRowOperation`.
+pub(crate) fn rel_value_to_table_row_op_binary(
+    scratch: &mut Vec<u8>,
+    row: &RelValue<'_>,
+    op: OpType,
+) -> TableRowOperation {
+    let op = op.into();
+
+    row.to_bsatn_extend(scratch).unwrap();
+    let row = scratch.clone();
+    scratch.clear();
+
+    TableRowOperation { op, row }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TableOp {
-    pub op_type: OpType,
-    pub row: ProductValue,
+/// Annotate `row` BSATN-encoded with `op` as a `TableRowOperation`.
+fn product_to_table_row_op_binary(row: &ProductValue, op: OpType) -> TableRowOperation {
+    let op = op.into();
+    let row = to_vec(&row).unwrap();
+    TableRowOperation { op, row }
 }
 
-impl TableOp {
-    #[inline]
-    pub fn new(op_type: OpType, row: ProductValue) -> Self {
-        Self { op_type, row }
-    }
-
-    #[inline]
-    pub fn insert(row: ProductValue) -> Self {
-        Self::new(OpType::Insert, row)
-    }
-
-    #[inline]
-    pub fn delete(row: ProductValue) -> Self {
-        Self::new(OpType::Delete, row)
-    }
-}
-
-impl From<&TableOp> for TableRowOperation {
-    #[inline]
-    fn from(TableOp { op_type, row }: &TableOp) -> Self {
-        TableOpRef { row, op_type: *op_type }.into()
-    }
-}
-
-impl From<TableOp> for TableRowOperationJson {
-    fn from(top: TableOp) -> Self {
-        let row = top.row.elements;
-        let op = if top.op_type == OpType::Insert {
-            "insert"
-        } else {
-            "delete"
-        }
-        .into();
-        Self { op, row }
-    }
+/// Annotate `row` with `op` as a `TableRowOperationJson`.
+fn product_to_table_row_op_json(row: ProductValue, op: OpType) -> TableRowOperationJson {
+    let op = op.as_json_str().into();
+    let row = row.elements.into();
+    TableRowOperationJson { op, row }
 }
 
 #[derive(Debug, Clone)]
@@ -331,12 +324,12 @@ pub struct ModuleInfo {
     pub module_hash: Hash,
     pub typespace: Typespace,
     pub reducers: ReducersMap,
-    pub catalog: HashMap<String, EntityDef>,
+    pub catalog: HashMap<Box<str>, EntityDef>,
     pub log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
     pub subscriptions: ModuleSubscriptions,
 }
 
-pub struct ReducersMap(pub IndexMap<String, ReducerDef>);
+pub struct ReducersMap(pub IndexMap<Box<str>, ReducerDef>);
 
 impl fmt::Debug for ReducersMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -367,6 +360,7 @@ pub trait Module: Send + Sync + 'static {
     fn initial_instances(&mut self) -> Self::InitialInstances<'_>;
     fn info(&self) -> Arc<ModuleInfo>;
     fn create_instance(&self) -> Self::Instance;
+    fn dbic(&self) -> &DatabaseInstanceContext;
     fn inject_logs(&self, log_level: LogLevel, message: &str);
     fn close(self);
     fn one_off_query(
@@ -374,7 +368,7 @@ pub trait Module: Send + Sync + 'static {
         caller_identity: Identity,
         query: String,
     ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError>;
-    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
+    fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error>;
     #[cfg(feature = "tracelogging")]
     fn get_trace(&self) -> Option<bytes::Bytes>;
     #[cfg(feature = "tracelogging")]
@@ -461,13 +455,14 @@ impl fmt::Debug for ModuleHost {
 #[async_trait::async_trait]
 trait DynModuleHost: Send + Sync + 'static {
     async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
+    fn dbic(&self) -> &DatabaseInstanceContext;
     fn inject_logs(&self, log_level: LogLevel, message: &str);
     fn one_off_query(
         &self,
         caller_identity: Identity,
         query: String,
     ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError>;
-    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error>;
+    fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error>;
     fn start(&self);
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
@@ -506,16 +501,6 @@ async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> 
 #[async_trait::async_trait]
 impl<T: Module> DynModuleHost for HostControllerActor<T> {
     async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule> {
-        // In the event of a PoolClosed error,
-        // we need to reset the queue length metrics.
-        fn no_such_module(db: &Address) -> NoSuchModule {
-            WORKER_METRICS.instance_queue_length.with_label_values(db).set(0);
-            WORKER_METRICS
-                .instance_queue_length_histogram
-                .with_label_values(db)
-                .observe(0 as f64);
-            NoSuchModule
-        }
         self.start.notified().await;
         // in the future we should do something like in the else branch here -- add more instances based on load.
         // we need to do write-skew retries first - right now there's only ever once instance per module.
@@ -523,7 +508,7 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
             self.instance_pool
                 .request_with_context(db)
                 .await
-                .map_err(|_| no_such_module(&db))?
+                .map_err(|_| NoSuchModule)?
         } else {
             const GET_INSTANCE_TIMEOUT: Duration = Duration::from_millis(500);
             select_first(
@@ -531,12 +516,16 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
                 tokio::time::sleep(GET_INSTANCE_TIMEOUT).map(|()| self.spinup_new_instance()),
             )
             .await
-            .map_err(|_| no_such_module(&db))?
+            .map_err(|_| NoSuchModule)?
         };
         Ok(Box::new(AutoReplacingModuleInstance {
             inst,
             module: self.module.clone(),
         }))
+    }
+
+    fn dbic(&self) -> &DatabaseInstanceContext {
+        self.module.dbic()
     }
 
     fn inject_logs(&self, log_level: LogLevel, message: &str) {
@@ -551,7 +540,7 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
         self.module.one_off_query(caller_identity, query)
     }
 
-    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
+    fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
         self.module.clear_table(table_name)
     }
 
@@ -638,12 +627,19 @@ impl ModuleHost {
         &self.info.subscriptions
     }
 
-    async fn call<F, R>(&self, _reducer_name: &str, f: F) -> Result<R, NoSuchModule>
+    async fn call<F, R>(&self, reducer: &str, f: F) -> Result<R, NoSuchModule>
     where
         F: FnOnce(&mut dyn ModuleInstance) -> R + Send + 'static,
         R: Send + 'static,
     {
-        let mut inst = self.inner.get_instance(self.info.address).await?;
+        let mut inst = {
+            // Record the time spent waiting in the queue
+            let _guard = WORKER_METRICS
+                .reducer_wait_time
+                .with_label_values(&self.info.address, reducer)
+                .start_timer();
+            self.inner.get_instance(self.info.address).await?
+        };
 
         let result = tokio::task::spawn_blocking(move || f(&mut *inst))
             .await
@@ -669,25 +665,53 @@ impl ModuleHost {
         caller_address: Address,
         connected: bool,
     ) -> Result<(), ReducerCallError> {
-        match self
-            .call_reducer_inner(
-                caller_identity,
-                Some(caller_address),
-                None,
-                None,
-                None,
-                if connected {
-                    "__identity_connected__"
-                } else {
-                    "__identity_disconnected__"
-                },
-                ReducerArgs::Nullary,
-            )
-            .await
-        {
-            Ok(_) | Err(ReducerCallError::NoSuchReducer) => Ok(()),
-            Err(e) => Err(e),
-        }
+        // TODO: DUNDER consts are in wasm_common, so seems weird to use them
+        // here. But maybe there should be dunders for this?
+        let reducer_name = if connected {
+            "__identity_connected__"
+        } else {
+            "__identity_disconnected__"
+        };
+
+        self.call_reducer_inner(
+            caller_identity,
+            Some(caller_address),
+            None,
+            None,
+            None,
+            reducer_name,
+            ReducerArgs::Nullary,
+        )
+        .await
+        .map(drop)
+        .or_else(|e| match e {
+            // If the module doesn't define connected or disconnected, commit
+            // an empty transaction to ensure we always have those events
+            // paired in the commitlog.
+            //
+            // This is necessary to be able to disconnect clients after a server
+            // crash.
+            ReducerCallError::NoSuchReducer => {
+                let db = &self.inner.dbic().relational_db;
+                db.with_auto_commit(
+                    &ExecutionContext::reducer(
+                        db.address(),
+                        ReducerContext {
+                            name: reducer_name.to_owned(),
+                            caller_identity,
+                            caller_address,
+                            timestamp: Timestamp::now(),
+                            arg_bsatn: Bytes::new(),
+                        },
+                    ),
+                    |_| anyhow::Ok(()),
+                )
+                .ok();
+
+                Ok(())
+            }
+            e => Err(e),
+        })
     }
 
     async fn call_reducer_inner(
@@ -735,6 +759,9 @@ impl ModuleHost {
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
+        if reducer_name.starts_with("__") && reducer_name.ends_with("__") {
+            return Err(ReducerCallError::NoSuchReducer);
+        }
         let res = self
             .call_reducer_inner(
                 caller_identity,
@@ -818,7 +845,7 @@ impl ModuleHost {
     /// FIXME(jgilles): this is a temporary workaround for deleting not currently being supported
     /// for tables without primary keys. It is only used in the benchmarks.
     /// Note: this doesn't drop the table, it just clears it!
-    pub async fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
+    pub async fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
         self.inner.clear_table(table_name)?;
         Ok(())
     }

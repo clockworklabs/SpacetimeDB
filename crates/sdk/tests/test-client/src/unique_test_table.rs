@@ -10,8 +10,6 @@ pub trait UniqueTestTable: TableType {
     fn as_key(&self) -> &Self::Key;
     fn as_value(&self) -> i32;
 
-    fn from_key_value(k: Self::Key, v: i32) -> Self;
-
     fn is_insert_reducer_event(event: &Self::ReducerEvent) -> bool;
     fn is_delete_reducer_event(event: &Self::ReducerEvent) -> bool;
 
@@ -97,13 +95,6 @@ macro_rules! impl_unique_test_table {
             }
             fn as_value(&self) -> i32 {
                 self.data
-            }
-
-            fn from_key_value(key: Self::Key, value: i32) -> Self {
-                Self {
-                    $field_name: key,
-                    data: value,
-                }
             }
 
             fn is_insert_reducer_event(event: &Self::ReducerEvent) -> bool {

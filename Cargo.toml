@@ -78,7 +78,7 @@ debug = true
 version = "0.9.1"
 edition = "2021"
 # update rust-toolchain.toml too!
-rust-version = "1.77.0"
+rust-version = "1.78.0"
 
 [workspace.dependencies]
 spacetimedb = { path = "crates/bindings", version = "0.9.1" }
@@ -109,8 +109,7 @@ axum-extra = { version = "0.9", features = ["typed-header"] }
 backtrace = "0.3.66"
 base64 = "0.21.2"
 bitflags = "2.3.3"
-bit-vec = "0.6"
-blake3 = "1.5"
+blake3 = "1.5.1"
 brotli = "3.5"
 byte-unit = "4.0.18"
 bytes = "1.2.1"
@@ -187,6 +186,7 @@ rustc-hash = "1.1.0"
 rustyline = { version = "12.0.0", features = [] }
 scoped-tls = "1.0.1"
 scopeguard = "1.1.0"
+second-stack = "0.3"
 sendgrid = "0.21"
 serde = "1.0.136"
 serde_json = { version = "1.0.87", features = ["raw_value"] }

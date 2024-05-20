@@ -30,8 +30,8 @@ use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, Id
 use spacetimedb::module_host_context::ModuleHostContext;
 use spacetimedb::object_db::ObjectDb;
 use spacetimedb::sendgrid_controller::SendGridController;
+use spacetimedb::stdb_path;
 use spacetimedb::worker_metrics::WORKER_METRICS;
-use spacetimedb::{stdb_path, worker_metrics};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_client_api_messages::recovery::RecoveryCode;
 use std::fs::File;
@@ -160,7 +160,6 @@ impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         defer_on_success! {
             db_metrics::reset_counters();
-            worker_metrics::reset_counters();
         }
         // Note, we update certain metrics such as disk usage on demand.
         self.db_inst_ctx_controller.update_metrics();

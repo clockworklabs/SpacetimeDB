@@ -73,6 +73,20 @@ pub trait History {
         D: Decoder<Record = Self::TxData>,
         D::Error: From<error::Traversal>,
         Self::TxData: 'a;
+
+    /// Get the maximum transaction offset contained in this history.
+    ///
+    /// Similar to [`std::iter::Iterator::size_hint`], this is considered an
+    /// estimation: the upper bound may not be known, or it may change after
+    /// this method was called because more data was added to the log.
+    ///
+    /// Callers should thus only rely on it for informational purposes.
+    ///
+    /// The default implementation returns `None`, which is correct for any
+    /// history implementation.
+    fn max_tx_offset(&self) -> Option<TxOffset> {
+        None
+    }
 }
 
 impl<T: History> History for Arc<T> {
@@ -97,5 +111,9 @@ impl<T: History> History for Arc<T> {
         Self::TxData: 'a,
     {
         (**self).transactions_from(offset, decoder)
+    }
+
+    fn max_tx_offset(&self) -> Option<TxOffset> {
+        (**self).max_tx_offset()
     }
 }

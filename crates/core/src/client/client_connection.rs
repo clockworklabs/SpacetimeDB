@@ -40,20 +40,27 @@ pub enum ClientSendError {
 }
 
 impl ClientConnectionSender {
-    pub fn dummy(id: ClientActorId, protocol: Protocol) -> Self {
-        let (sendtx, _) = mpsc::channel(1);
+    pub fn dummy_with_channel(id: ClientActorId, protocol: Protocol) -> (Self, mpsc::Receiver<SerializableMessage>) {
+        let (sendtx, rx) = mpsc::channel(1);
         // just make something up, it doesn't need to be attached to a real task
         let abort_handle = match tokio::runtime::Handle::try_current() {
             Ok(h) => h.spawn(async {}).abort_handle(),
             Err(_) => tokio::runtime::Runtime::new().unwrap().spawn(async {}).abort_handle(),
         };
-        Self {
-            id,
-            protocol,
-            sendtx,
-            abort_handle,
-            cancelled: AtomicBool::new(false),
-        }
+        (
+            Self {
+                id,
+                protocol,
+                sendtx,
+                abort_handle,
+                cancelled: AtomicBool::new(false),
+            },
+            rx,
+        )
+    }
+
+    pub fn dummy(id: ClientActorId, protocol: Protocol) -> Self {
+        Self::dummy_with_channel(id, protocol).0
     }
 
     pub fn send_message(&self, message: impl Into<SerializableMessage>) -> Result<(), ClientSendError> {
@@ -68,6 +75,7 @@ impl ClientConnectionSender {
             mpsc::error::TrySendError::Full(_) => {
                 // we've hit CLIENT_CHANNEL_CAPACITY messages backed up in
                 // the channel, so forcibly kick the client
+                tracing::warn!(identity = %self.id.identity, address = %self.id.address, "client channel capacity exceeded");
                 self.abort_handle.abort();
                 self.cancelled.store(true, Relaxed);
                 ClientSendError::Cancelled
@@ -116,7 +124,8 @@ impl DataMessage {
 
 // if a client racks up this many messages in the queue without ACK'ing
 // anything, we boot 'em.
-const CLIENT_CHANNEL_CAPACITY: usize = 8192;
+const CLIENT_CHANNEL_CAPACITY: usize = 16 * KB;
+const KB: usize = 1024;
 
 impl ClientConnection {
     /// Returns an error if ModuleHost closed

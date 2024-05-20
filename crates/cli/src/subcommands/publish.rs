@@ -6,6 +6,7 @@ use reqwest::{StatusCode, Url};
 use spacetimedb_client_api_messages::name::PublishOp;
 use spacetimedb_client_api_messages::name::{is_address, parse_domain_name, PublishResult};
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 
 use crate::config::Config;
@@ -24,12 +25,12 @@ pub fn cli() -> clap::Command {
                 .help("The type of host that should be for hosting this module"),
         )
         .arg(
-            // TODO(jdetter): Rename this to --delete-tables (clear doesn't really implies the tables are being dropped)
             Arg::new("clear_database")
                 .long("clear-database")
                 .short('c')
                 .action(SetTrue)
-                .help("When publishing a new module to an existing address, also delete all tables associated with the database"),
+                .requires("name|address")
+                .help("When publishing to an existing address, first DESTROY all data associated with the module"),
         )
         .arg(
             Arg::new("project_path")
@@ -95,6 +96,12 @@ pub fn cli() -> clap::Command {
                 .short('s')
                 .help("The nickname, domain name or URL of the server to host the database."),
         )
+        .arg(
+            Arg::new("force")
+                .long("force")
+                .action(SetTrue)
+                .help("DANGEROUS - Proceed with all actions without waiting for user confirmation")
+        )
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
@@ -105,12 +112,21 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
     let host_type = args.get_one::<String>("host_type").unwrap();
     let clear_database = args.get_flag("clear_database");
+    let force = args.get_flag("force");
     let trace_log = args.get_flag("trace_log");
     let anon_identity = args.get_flag("anon_identity");
     let skip_clippy = args.get_flag("skip_clippy");
     let build_debug = args.get_flag("debug");
     let wasm_file = args.get_one::<PathBuf>("wasm_file");
     let database_host = config.get_host_url(server)?;
+
+    // If the user didn't specify an identity and we didn't specify an anonymous identity, then
+    // we want to use the default identity
+    // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
+    //  easily create a new identity with an email
+    let (auth_header, identity) = get_auth_header(&mut config, anon_identity, identity, server)
+        .await?
+        .unzip();
 
     let mut query_params = Vec::<(&str, &str)>::new();
     query_params.push(("host_type", host_type.as_str()));
@@ -130,10 +146,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             "Project path does not exist: {}",
             path_to_project.display()
         ));
-    }
-
-    if clear_database {
-        query_params.push(("clear", "true"));
     }
 
     if trace_log {
@@ -157,21 +169,36 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         database_host
     );
 
-    eprintln!("Publishing module...");
+    if clear_database {
+        if force {
+            println!("Skipping confirmation due to --force.");
+        } else {
+            // Note: `name_or_address` should be set, because it is `required` in the CLI arg config.
+            println!(
+                "This will DESTROY the current {} module, and ALL corresponding data.",
+                name_or_address.unwrap()
+            );
+            print!(
+                "Are you sure you want to proceed? (y/N) [deleting {}] ",
+                name_or_address.unwrap()
+            );
+            std::io::stdout().flush()?;
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if input.trim().to_lowercase() != "y" && input.trim().to_lowercase() != "yes" {
+                println!("Aborting");
+                return Ok(());
+            }
+        }
+        query_params.push(("clear", "true"));
+    }
+
+    println!("Publishing module...");
 
     let mut builder = reqwest::Client::new().post(Url::parse_with_params(
         format!("{}/database/publish", database_host).as_str(),
         query_params,
     )?);
-
-    // If the user didn't specify an identity and we didn't specify an anonymous identity, then
-    // we want to use the default identity
-    // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
-    //  easily create a new identity with an email
-
-    let (auth_header, identity) = get_auth_header(&mut config, anon_identity, identity, server)
-        .await?
-        .unzip();
 
     builder = add_auth_header_opt(builder, &auth_header);
 

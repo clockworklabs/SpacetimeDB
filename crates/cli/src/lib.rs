@@ -52,15 +52,19 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
         "logs" => logs::exec(config, args).await,
         "sql" => sql::exec(config, args).await,
         "dns" => dns::exec(config, args).await,
-        "generate" => generate::exec(args),
+        "generate" => generate::exec(config, args),
         "list" => list::exec(config, args).await,
         "local" => local::exec(config, args).await,
         "init" => init::exec(config, args).await,
         "build" => build::exec(config, args).await,
         "server" => server::exec(config, args).await,
         #[cfg(feature = "standalone")]
-        "start" => start::exec(args).await,
-        "upgrade" => upgrade::exec(args).await,
+        "start" => {
+            // Release the lockfile on the config, since we don't need it.
+            config.release_lock();
+            start::exec(args).await
+        }
+        "upgrade" => upgrade::exec(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }
 }

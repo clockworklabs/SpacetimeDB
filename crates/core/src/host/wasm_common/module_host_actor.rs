@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, Address, ModuleDef, TableDesc};
+use spacetimedb_lib::{bsatn, Address, ModuleDef, ModuleValidationError, TableDesc};
 use spacetimedb_vm::expr::CrudExpr;
 
 use super::instrumentation::CallTimes;
@@ -14,7 +14,7 @@ use crate::database_logger::{LogLevel, Record, SystemLogger};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::traits::IsolationLevel;
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
-use crate::execution_context::ExecutionContext;
+use crate::execution_context::{self, ExecutionContext, ReducerContext};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
     CallReducerParams, DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
@@ -25,8 +25,9 @@ use crate::identity::Identity;
 use crate::messages::control_db::Database;
 use crate::module_host_context::ModuleCreationContext;
 use crate::sql;
-use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
 use crate::util::const_unwrap;
+use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
 use spacetimedb_sats::db::def::TableDef;
 
@@ -90,6 +91,8 @@ pub(crate) struct WasmModuleHostActor<T: WasmModule> {
 pub enum InitializationError {
     #[error(transparent)]
     Validation(#[from] ValidationError),
+    #[error(transparent)]
+    ModuleValidation(#[from] ModuleValidationError),
     #[error("setup function returned an error: {0}")]
     Setup(Box<str>),
     #[error("wasm trap while calling {func:?}")]
@@ -153,7 +156,8 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         )?;
 
         let desc = instance.extract_descriptions()?;
-        let desc = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
+        let desc: ModuleDef = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
+        desc.validate_reducers()?;
         let ModuleDef {
             mut typespace,
             mut tables,
@@ -173,7 +177,10 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             tables
                 .into_iter()
                 .map(|x| (x.schema.table_name.clone(), EntityDef::Table(x))),
-            reducers.iter().map(|x| (x.name.clone(), EntityDef::Reducer(x.clone()))),
+            reducers
+                .iter()
+                .filter(|r| !(r.name.starts_with("__") && r.name.ends_with("__")))
+                .map(|x| (x.name.clone(), EntityDef::Reducer(x.clone()))),
         )
         .collect();
         let reducers = ReducersMap(reducers.into_iter().map(|x| (x.name.clone(), x)).collect());
@@ -241,6 +248,10 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         self.make_from_instance(instance)
     }
 
+    fn dbic(&self) -> &DatabaseInstanceContext {
+        &self.database_instance_context
+    }
+
     fn inject_logs(&self, log_level: LogLevel, message: &str) {
         self.database_instance_context.logger.write(
             log_level,
@@ -268,7 +279,8 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         let db = &self.database_instance_context.relational_db;
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
         log::debug!("One-off query: {query}");
-        let ctx = &ExecutionContext::sql(db.address());
+        // Don't need the `slow query` logger on compilation
+        let ctx = &ExecutionContext::sql(db.address(), db.read_config().slow_query);
         let compiled: Vec<_> = db.with_read_only(ctx, |tx| {
             let ast = sql::compiler::compile_sql(db, tx, &query)?;
             ast.into_iter()
@@ -282,10 +294,10 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
                 .collect::<Result<_, _>>()
         })?;
 
-        sql::execute::execute_sql(db, compiled, auth)
+        sql::execute::execute_sql(db, &query, compiled, auth)
     }
 
-    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
+    fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
         let db = &*self.database_instance_context.relational_db;
         db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
             let tables = db.get_all_tables_mut(tx)?;
@@ -293,7 +305,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
             // so we can assume there's only one table to clear.
             if let Some(table_id) = tables
                 .iter()
-                .find_map(|t| (t.table_name == table_name).then_some(t.table_id))
+                .find_map(|t| (&*t.table_name == table_name).then_some(t.table_id))
             {
                 db.clear_table(tx, table_id)?;
             }
@@ -498,10 +510,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let stdb = &*dbic.relational_db.clone();
         let address = dbic.address;
         let reducer_name = &*self.info.reducers[reducer_id].name;
-        WORKER_METRICS
-            .reducer_count
-            .with_label_values(&address, reducer_name)
-            .inc();
 
         let _outer_span = tracing::trace_span!("call_reducer",
             reducer_name,
@@ -528,6 +536,11 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         };
 
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable));
+        let _guard = WORKER_METRICS
+            .reducer_plus_query_duration
+            .with_label_values(&address, op.name)
+            .with_timer(tx.timer);
+
         let mut tx_slot = self.instance.instance_env().tx.clone();
 
         let reducer_span = tracing::trace_span!(
@@ -537,7 +550,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             energy.used = tracing::field::Empty,
         )
         .entered();
-        let ctx = ExecutionContext::reducer(address, reducer_name.to_owned());
+        let ctx = ExecutionContext::reducer(address, ReducerContext::from(op.clone()));
         // run the call_reducer call in rayon. it's important that we don't acquire a lock inside a rayon task,
         // as that can lead to deadlock.
         let (ctx, tx, result) = rayon::scope(|_| tx_slot.set(ctx, tx, || self.instance.call_reducer(op, budget)));
@@ -566,19 +579,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         }
         reducer_span.exit();
 
-        WORKER_METRICS
-            .reducer_compute_time
-            .with_label_values(&address, reducer_name)
-            .observe(timings.total_duration.as_secs_f64());
-
-        // Take a lock on our subscriptions now. Otherwise, we could have a race condition where we commit
-        // the tx, someone adds a subscription and receives this tx as an initial update, and then receives the
-        // update again when we broadcast_event.
-        let subscriptions = self.info.subscriptions.subscriptions.read();
         let status = match call_result {
             Err(err) => {
-                stdb.rollback_mut_tx(&ctx, tx);
-
                 T::log_traceback("reducer", reducer_name, &err);
 
                 WORKER_METRICS
@@ -596,22 +598,14 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 }
             }
             Ok(Err(errmsg)) => {
-                stdb.rollback_mut_tx(&ctx, tx);
-
                 log::info!("reducer returned error: {errmsg}");
 
                 EventStatus::Failed(errmsg.into())
             }
-            Ok(Ok(())) => {
-                if let Some(tx_data) = stdb.commit_tx(&ctx, tx).unwrap() {
-                    EventStatus::Committed(DatabaseUpdate::from_writes(&tx_data))
-                } else {
-                    todo!("Write skew, you need to implement retries my man, T-dawg.");
-                }
-            }
+            // we haven't actually comitted yet - `commit_and_broadcast_event` will commit
+            // for us and replace this with the actual database update.
+            Ok(Ok(())) => EventStatus::Committed(DatabaseUpdate::default()),
         };
-
-        let outcome = ReducerOutcome::from(&status);
 
         let event = ModuleEvent {
             timestamp,
@@ -627,12 +621,18 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             request_id,
             timer,
         };
-        self.info
+        let event = match self
+            .info
             .subscriptions
-            .blocking_broadcast_event(client.as_deref(), &subscriptions, Arc::new(event));
+            .commit_and_broadcast_event(client.as_deref(), event, &ctx, tx)
+            .unwrap()
+        {
+            Ok(ev) => ev,
+            Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
+        };
 
         ReducerCallResult {
-            outcome,
+            outcome: ReducerOutcome::from(&event.status),
             energy_used: energy.used,
             execution_duration: timings.total_duration,
         }
@@ -644,12 +644,35 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 }
 
-#[derive(Debug)]
+/// Describes a reducer call in a cheaply shareable way.
+#[derive(Clone, Debug)]
 pub struct ReducerOp<'a> {
     pub id: ReducerId,
     pub name: &'a str,
     pub caller_identity: &'a Identity,
     pub caller_address: &'a Address,
     pub timestamp: Timestamp,
+    /// The BSATN-serialized arguments passed to the reducer.
     pub arg_bytes: Bytes,
+}
+
+impl From<ReducerOp<'_>> for execution_context::ReducerContext {
+    fn from(
+        ReducerOp {
+            id: _,
+            name,
+            caller_identity,
+            caller_address,
+            timestamp,
+            arg_bytes,
+        }: ReducerOp<'_>,
+    ) -> Self {
+        Self {
+            name: name.to_owned(),
+            caller_identity: *caller_identity,
+            caller_address: *caller_address,
+            timestamp,
+            arg_bsatn: arg_bytes.clone(),
+        }
+    }
 }

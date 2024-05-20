@@ -1,18 +1,17 @@
 use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::operator::{OpCmp, OpLogic, OpQuery};
-use crate::relation::{MemTable, RelValue, Table};
+use crate::relation::{MemTable, RelValue};
 use arrayvec::ArrayVec;
 use derive_more::From;
 use smallvec::{smallvec, SmallVec};
 use spacetimedb_data_structures::map::{HashMap, HashSet};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
-use spacetimedb_sats::algebraic_type::AlgebraicType;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::db::error::AuthError;
-use spacetimedb_sats::relation::{Column, DbTable, FieldExpr, FieldName, Header, Relation, RowCount};
+use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header, Relation, RowCount};
 use spacetimedb_sats::ProductValue;
 use std::cmp::Reverse;
 use std::collections::btree_map::Entry;
@@ -65,7 +64,7 @@ impl ColumnOp {
     /// Returns an op where `col_i op value_i` are all `AND`ed together.
     fn and_cmp(op: OpCmp, head: &Header, cols: &ColList, value: AlgebraicValue) -> Self {
         let eq = |(col, value): (ColId, _)| {
-            let field = head.fields[col.idx()].field.clone();
+            let field = head.fields[col.idx()].field;
             Self::cmp(field, op, value)
         };
 
@@ -76,7 +75,7 @@ impl ColumnOp {
 
         // Otherwise, pair column ids and product fields together.
         cols.iter()
-            .zip(value.into_product().unwrap().elements)
+            .zip(value.into_product().unwrap())
             .map(eq)
             .reduce(Self::and)
             .unwrap()
@@ -247,21 +246,9 @@ impl From<FieldName> for ColumnOp {
     }
 }
 
-impl From<FieldName> for Box<ColumnOp> {
-    fn from(value: FieldName) -> Self {
-        Box::new(ColumnOp::Field(value.into()))
-    }
-}
-
 impl From<AlgebraicValue> for ColumnOp {
     fn from(value: AlgebraicValue) -> Self {
         ColumnOp::Field(value.into())
-    }
-}
-
-impl From<AlgebraicValue> for Box<ColumnOp> {
-    fn from(value: AlgebraicValue) -> Self {
-        Box::new(ColumnOp::Field(value.into()))
     }
 }
 
@@ -428,28 +415,6 @@ impl<const N: usize> SourceSet<Vec<ProductValue>, N> {
         let id = self.add(table.data);
         SourceExpr::from_mem_table(table.head, table.table_access, len, id)
     }
-
-    /// Resolve `source` to a `Table` for use in query execution.
-    ///
-    /// If the `source` is a [`SourceExpr::DbTable`], this simply clones the [`DbTable`] and returns it.
-    /// ([`DbTable::clone`] is inexpensive.)
-    /// In this case, `self` is not modified.
-    ///
-    /// If the `source` is a [`SourceExpr::MemTable`], this behaves like [`Self::take_mem_table`].
-    /// Subsequent calls to `take_table` or `take_mem_table` with the same `source` will fail.
-    pub fn take_table(&mut self, source: &SourceExpr) -> Option<Table> {
-        match source {
-            SourceExpr::DbTable(db_table) => Some(Table::DbTable(db_table.clone())),
-            SourceExpr::InMemory {
-                source_id,
-                header,
-                table_access,
-                ..
-            } => self
-                .take(*source_id)
-                .map(|data| MemTable::new(header.clone(), *table_access, data).into()),
-        }
-    }
 }
 
 /// A reference to a table within a query plan,
@@ -568,12 +533,7 @@ impl Relation for SourceExpr {
 
 impl From<&TableSchema> for SourceExpr {
     fn from(value: &TableSchema) -> Self {
-        SourceExpr::DbTable(DbTable::new(
-            Arc::new(value.into()),
-            value.table_id,
-            value.table_type,
-            value.table_access,
-        ))
+        SourceExpr::DbTable(value.into())
     }
 }
 
@@ -620,7 +580,7 @@ impl IndexJoin {
             .probe_side
             .source
             .head()
-            .has_constraint(&self.probe_field, Constraints::indexed())
+            .has_constraint(self.probe_field, Constraints::indexed())
         {
             return self;
         }
@@ -636,7 +596,7 @@ impl IndexJoin {
         // The compiler ensures the following unwrap is safe.
         // The existence of this column has already been verified,
         // during construction of the index join.
-        let probe_column = self.probe_side.source.head().column(&self.probe_field).unwrap().col_id;
+        let probe_column = self.probe_side.source.head().column_pos(self.probe_field).unwrap();
         match self.index_side.get_db_table() {
             // If the size of the indexed table is sufficiently large,
             // do not reorder.
@@ -648,15 +608,7 @@ impl IndexJoin {
             // If this is a sufficiently small physical table, we should reorder.
             _ => {
                 // For the same reason the compiler also ensures this unwrap is safe.
-                let index_field = self
-                    .index_side
-                    .head()
-                    .fields
-                    .iter()
-                    .find(|col| col.col_id == self.index_col)
-                    .unwrap()
-                    .field
-                    .clone();
+                let index_field = self.index_side.head().fields[self.index_col.idx()].field;
                 // Merge all selections from the original probe side into a single predicate.
                 // This includes an index scan if present.
                 let predicate = self
@@ -699,9 +651,10 @@ impl IndexJoin {
     // In particular when there are updates to both the left and right tables.
     // In other words, when an index join has two delta tables.
     pub fn to_inner_join(self) -> QueryExpr {
+        let col_idx = self.index_side.head().fields[self.index_col.idx()].field;
+
         if self.return_index_rows {
-            let col_lhs = self.index_side.head().fields[self.index_col.idx()].field.clone();
-            let col_rhs = self.probe_field;
+            let (col_lhs, col_rhs) = (col_idx, self.probe_field);
             let rhs = self.probe_side;
 
             let source = self.index_side;
@@ -713,8 +666,7 @@ impl IndexJoin {
             };
             QueryExpr { source, query }
         } else {
-            let col_rhs = self.index_side.head().fields[self.index_col.idx()].field.clone();
-            let col_lhs = self.probe_field;
+            let (col_lhs, col_rhs) = (self.probe_field, col_idx);
             let mut rhs: QueryExpr = self.index_side.into();
 
             if let Some(predicate) = self.index_select {
@@ -768,13 +720,14 @@ pub enum Crud {
     Delete,
     Create(DbType),
     Drop(DbType),
+    Config,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum CrudExpr {
     Query(QueryExpr),
     Insert {
-        source: SourceExpr,
+        table: DbTable,
         rows: Vec<ProductValue>,
     },
     Update {
@@ -792,6 +745,13 @@ pub enum CrudExpr {
         kind: DbType,
         table_access: StAccess,
     },
+    SetVar {
+        name: String,
+        value: AlgebraicValue,
+    },
+    ReadVar {
+        name: String,
+    },
 }
 
 impl CrudExpr {
@@ -803,7 +763,9 @@ impl CrudExpr {
     }
 
     pub fn is_reads<'a>(exprs: impl IntoIterator<Item = &'a CrudExpr>) -> bool {
-        exprs.into_iter().all(|expr| matches!(expr, CrudExpr::Query(_)))
+        exprs
+            .into_iter()
+            .all(|expr| matches!(expr, CrudExpr::Query(_) | CrudExpr::ReadVar { .. }))
     }
 }
 
@@ -876,30 +838,6 @@ enum IndexColumnOp<'a> {
     Scan(&'a ColumnOp),
 }
 
-/// Extracts `name = val` when `lhs` is a field that exists and `rhs` is a value.
-fn ext_field_val<'a>(
-    header: &'a Header,
-    lhs: &'a ColumnOp,
-    rhs: &'a ColumnOp,
-) -> Option<(&'a Column, &'a AlgebraicValue)> {
-    if let (ColumnOp::Field(FieldExpr::Name(name)), ColumnOp::Field(FieldExpr::Value(val))) = (lhs, rhs) {
-        return header.column(name).map(|c| (c, val));
-    }
-    None
-}
-
-/// Extracts `name = val` when `op` is `name = val` and `name` exists.
-fn ext_cmp_field_val<'a>(header: &'a Header, op: &'a ColumnOp) -> Option<(&'a OpCmp, &'a Column, &'a AlgebraicValue)> {
-    match op {
-        ColumnOp::Cmp {
-            op: OpQuery::Cmp(op),
-            lhs,
-            rhs,
-        } => ext_field_val(header, lhs, rhs).map(|(f, v)| (op, f, v)),
-        _ => None,
-    }
-}
-
 fn make_index_arg(cmp: OpCmp, columns: &ColList, value: AlgebraicValue) -> IndexColumnOp<'_> {
     let arg = match cmp {
         OpCmp::Eq => IndexArgument::Eq { columns, value },
@@ -936,12 +874,12 @@ fn make_index_arg(cmp: OpCmp, columns: &ColList, value: AlgebraicValue) -> Index
 struct FieldValue<'a> {
     parent: &'a ColumnOp,
     cmp: OpCmp,
-    field: &'a Column,
+    field: FieldName,
     value: &'a AlgebraicValue,
 }
 
 impl<'a> FieldValue<'a> {
-    pub fn new(parent: &'a ColumnOp, cmp: OpCmp, field: &'a Column, value: &'a AlgebraicValue) -> Self {
+    pub fn new(parent: &'a ColumnOp, cmp: OpCmp, field: FieldName, value: &'a AlgebraicValue) -> Self {
         Self {
             parent,
             cmp,
@@ -952,7 +890,7 @@ impl<'a> FieldValue<'a> {
 }
 
 type IndexColumnOpSink<'a> = SmallVec<[IndexColumnOp<'a>; 1]>;
-type FieldsIndexed<'a> = HashSet<(&'a FieldName, OpCmp)>;
+type FieldsIndexed = HashSet<(FieldName, OpCmp)>;
 
 /// Pick the best indices that can serve the constraints in `fields`
 /// where the indices are taken from `header`.
@@ -1010,7 +948,7 @@ type FieldsIndexed<'a> = HashSet<(&'a FieldName, OpCmp)>;
 /// whereas `age = 18 AND height > 180` might.
 /// TODO: Revisit this to see if we want to restrict this or use statistics.
 fn select_best_index<'a>(
-    fields_indexed: &mut FieldsIndexed<'a>,
+    fields_indexed: &mut FieldsIndexed,
     header: &'a Header,
     ops: &[&'a ColumnOp],
 ) -> IndexColumnOpSink<'a> {
@@ -1053,7 +991,7 @@ fn select_best_index<'a>(
             for FieldValue { cmp, value, field, .. } in fields_map.remove(&(col_list.head(), cmp)).into_iter().flatten()
             {
                 found.push(make_index_arg(cmp, col_list, value.clone()));
-                fields_indexed.insert((&field.field, cmp));
+                fields_indexed.insert((field, cmp));
             }
         } else if col_list
             .iter()
@@ -1080,7 +1018,7 @@ fn select_best_index<'a>(
 
                 // Add the field value to the product value.
                 elems.push(field.value.clone());
-                fields_indexed.insert((&field.field.field, cmp));
+                fields_indexed.insert((field.field, cmp));
             }
             let value = AlgebraicValue::product(elems);
             found.push(make_index_arg(cmp, col_list, value));
@@ -1098,6 +1036,33 @@ fn select_best_index<'a>(
     found
 }
 
+/// Extracts `name = val` when `lhs` is a field that exists and `rhs` is a value.
+fn ext_field_val<'a>(
+    header: &'a Header,
+    lhs: &'a ColumnOp,
+    rhs: &'a ColumnOp,
+) -> Option<(ColId, FieldName, &'a AlgebraicValue)> {
+    if let (ColumnOp::Field(FieldExpr::Name(name)), ColumnOp::Field(FieldExpr::Value(val))) = (lhs, rhs) {
+        return header.field_name(*name).map(|(id, col)| (id, col, val));
+    }
+    None
+}
+
+/// Extracts `name = val` when `op` is `name = val` and `name` exists.
+fn ext_cmp_field_val<'a>(
+    header: &'a Header,
+    op: &'a ColumnOp,
+) -> Option<(&'a OpCmp, ColId, FieldName, &'a AlgebraicValue)> {
+    match op {
+        ColumnOp::Cmp {
+            op: OpQuery::Cmp(op),
+            lhs,
+            rhs,
+        } => ext_field_val(header, lhs, rhs).map(|(id, f, v)| (op, id, f, v)),
+        _ => None,
+    }
+}
+
 /// Extracts a list of `field = val` constraints that *could* be answered by an index
 /// and populates those into `fields_map`.
 /// The [`ColumnOp`]s that don't fit `field = val`
@@ -1108,9 +1073,9 @@ fn extract_fields<'a>(
     fields_map: &mut BTreeMap<(ColId, OpCmp), SmallVec<[FieldValue<'a>; 1]>>,
     found: &mut IndexColumnOpSink<'a>,
 ) {
-    let mut add_field = |parent, op, field, val| {
+    let mut add_field = |parent, op, field_col, field, val| {
         let fv = FieldValue::new(parent, op, field, val);
-        fields_map.entry((fv.field.col_id, op)).or_default().push(fv);
+        fields_map.entry((field_col, op)).or_default().push(fv);
     };
 
     for op in ops {
@@ -1120,9 +1085,9 @@ fn extract_fields<'a>(
                 lhs,
                 rhs,
             } => {
-                if let Some((field, val)) = ext_field_val(header, lhs, rhs) {
+                if let Some((field_col, field, val)) = ext_field_val(header, lhs, rhs) {
                     // `lhs` must be a field that exists and `rhs` must be a value.
-                    add_field(op, *cmp, field, val);
+                    add_field(op, *cmp, field_col, field, val);
                     continue;
                 }
             }
@@ -1131,11 +1096,11 @@ fn extract_fields<'a>(
                 lhs,
                 rhs,
             } => {
-                if let Some((op_lhs, col_lhs, val_lhs)) = ext_cmp_field_val(header, lhs) {
-                    if let Some((op_rhs, col_rhs, val_rhs)) = ext_cmp_field_val(header, rhs) {
+                if let Some((op_lhs, col_lhs_id, col_lhs, val_lhs)) = ext_cmp_field_val(header, lhs) {
+                    if let Some((op_rhs, col_rhs_id, col_rhs, val_rhs)) = ext_cmp_field_val(header, rhs) {
                         // Both lhs and rhs columns must exist.
-                        add_field(op, *op_lhs, col_lhs, val_lhs);
-                        add_field(op, *op_rhs, col_rhs, val_rhs);
+                        add_field(op, *op_lhs, col_lhs_id, col_lhs, val_lhs);
+                        add_field(op, *op_rhs, col_rhs_id, col_rhs, val_rhs);
                         continue;
                     }
                 }
@@ -1154,7 +1119,7 @@ fn extract_fields<'a>(
 /// Sargable stands for Search ARGument ABLE.
 /// A sargable predicate is one that can be answered using an index.
 fn find_sargable_ops<'a>(
-    fields_indexed: &mut FieldsIndexed<'a>,
+    fields_indexed: &mut FieldsIndexed,
     header: &'a Header,
     op: &'a ColumnOp,
 ) -> SmallVec<[IndexColumnOp<'a>; 1]> {
@@ -1522,7 +1487,7 @@ impl QueryExpr {
             ) => match (*field, *value) {
                 (ColumnOp::Field(FieldExpr::Name(field)), ColumnOp::Field(FieldExpr::Value(value)))
                 // Field is from lhs, so push onto join's left arg
-                if self.source.head().column(&field).is_some() =>
+                if self.source.head().column_pos(field).is_some() =>
                     {
                         self = self.with_select(ColumnOp::cmp(field, cmp, value));
                         self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs, semi}));
@@ -1530,7 +1495,7 @@ impl QueryExpr {
                     }
                 (ColumnOp::Field(FieldExpr::Name(field)), ColumnOp::Field(FieldExpr::Value(value)))
                 // Field is from rhs, so push onto join's right arg
-                if rhs.source.head().column(&field).is_some() =>
+                if rhs.source.head().column_pos(field).is_some() =>
                     {
                         self.query.push(Query::JoinInner(JoinExpr {
                             rhs: rhs.with_select(ColumnOp::cmp(field, cmp, value)),
@@ -1749,20 +1714,18 @@ impl QueryExpr {
             }) => {
                 if !probe_side.query.is_empty() {
                     // An applicable join must have an index defined on the correct field.
-                    if let Some(col) = source.head().column(&index_field) {
-                        if source.head().has_constraint(&index_field, Constraints::indexed()) {
+                    if let Some(index_col) = source.head().column_pos(index_field) {
+                        if source.head().has_constraint(index_field, Constraints::indexed()) {
                             let index_join = IndexJoin {
                                 probe_side,
                                 probe_field,
                                 index_side: source.clone(),
                                 index_select: None,
-                                index_col: col.col_id,
+                                index_col,
                                 return_index_rows: true,
                             };
-                            return QueryExpr {
-                                source,
-                                query: vec![Query::IndexJoin(index_join)],
-                            };
+                            let query = [Query::IndexJoin(index_join)].into();
+                            return QueryExpr { source, query };
                         }
                     }
                 }
@@ -1797,10 +1760,8 @@ impl QueryExpr {
                     // like `[ScanOrIndex::Index(a = 1), ScanOrIndex::Index(a = 1), ScanOrIndex::Scan(a = 1)]`
                     IndexColumnOp::Scan(ColumnOp::Cmp { op, lhs, rhs: _ }) => {
                         if let (ColumnOp::Field(FieldExpr::Name(col)), OpQuery::Cmp(cmp)) = (&**lhs, op) {
-                            if fields_found.contains(&(col, *cmp)) {
+                            if !fields_found.insert((*col, *cmp)) {
                                 continue;
-                            } else {
-                                fields_found.insert((col, *cmp));
                             }
                         }
                     }
@@ -1864,7 +1825,7 @@ impl QueryExpr {
             .flat_map(|x| x.into_iter())
             .collect();
 
-        if self.query.len() == 1 && matches!(self.query[0], Query::IndexJoin(_)) {
+        if matches!(&*self.query, [Query::IndexJoin(_)]) {
             if let Some(Query::IndexJoin(join)) = self.query.pop() {
                 q.query.push(Query::IndexJoin(join.reorder(row_count)));
                 return q;
@@ -1886,7 +1847,7 @@ impl QueryExpr {
         // Make sure to `try_semi_join` before `try_index_join`, as the latter depends on the former.
         let q = q.try_semi_join();
         let q = q.try_index_join();
-        if q.query.len() == 1 && matches!(q.query[0], Query::IndexJoin(_)) {
+        if matches!(&*q.query, [Query::IndexJoin(_)]) {
             return q.optimize(row_count);
         }
         q
@@ -1954,20 +1915,6 @@ impl From<QueryExpr> for Expr {
     }
 }
 
-impl fmt::Display for SourceExpr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SourceExpr::InMemory { header, source_id, .. } => {
-                let ty = AlgebraicType::Product(header.ty());
-                write!(f, "SourceExpr({source_id:?} => virtual {ty:?})")
-            }
-            SourceExpr::DbTable(x) => {
-                write!(f, "DbTable({})", x.table_id)
-            }
-        }
-    }
-}
-
 impl fmt::Display for Query {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -2012,18 +1959,6 @@ impl AuthAccess for SourceExpr {
     }
 }
 
-impl AuthAccess for Table {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-        if owner == caller || self.table_access() == StAccess::Public {
-            return Ok(());
-        }
-
-        Err(AuthError::TablePrivate {
-            named: self.table_name().to_string(),
-        })
-    }
-}
-
 impl AuthAccess for QueryExpr {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
         if owner == caller {
@@ -2035,16 +1970,6 @@ impl AuthAccess for QueryExpr {
         }
 
         Ok(())
-    }
-}
-
-impl Relation for QueryExpr {
-    fn head(&self) -> &Arc<Header> {
-        self.source.head()
-    }
-
-    fn row_count(&self) -> RowCount {
-        self.source.row_count()
     }
 }
 
@@ -2118,10 +2043,9 @@ impl From<Code> for CodeResult {
 
 #[cfg(test)]
 mod tests {
-    use crate::dsl::db_table;
-
     use super::*;
-    use spacetimedb_sats::{product, ProductType};
+    use spacetimedb_sats::relation::Column;
+    use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use typed_arena::Arena;
 
     const ALICE: Identity = Identity::from_byte_array([1; 32]);
@@ -2135,6 +2059,7 @@ mod tests {
             SourceExpr::InMemory {
                 source_id: SourceId(0),
                 header: Arc::new(Header {
+                    table_id: 42.into(),
                     table_name: "foo".into(),
                     fields: vec![],
                     constraints: Default::default(),
@@ -2145,6 +2070,7 @@ mod tests {
             },
             SourceExpr::DbTable(DbTable {
                 head: Arc::new(Header {
+                    table_id: 42.into(),
                     table_name: "foo".into(),
                     fields: vec![],
                     constraints: vec![(ColId(42).into(), Constraints::indexed())],
@@ -2168,17 +2094,15 @@ mod tests {
             }),
             Query::IndexJoin(IndexJoin {
                 probe_side: mem_table.clone().into(),
-                probe_field: FieldName::Name {
-                    table: "foo".into(),
-                    field: "bar".into(),
-                },
+                probe_field: FieldName::new(mem_table.head().table_id, 0.into()),
                 index_side: SourceExpr::DbTable(DbTable {
                     head: Arc::new(Header {
-                        table_name: "bar".into(),
+                        table_id: db_table.head().table_id,
+                        table_name: db_table.table_name().into(),
                         fields: vec![],
                         constraints: Default::default(),
                     }),
-                    table_id: 42.into(),
+                    table_id: db_table.head().table_id,
                     table_type: StTableType::User,
                     table_access: StAccess::Public,
                 }),
@@ -2187,15 +2111,9 @@ mod tests {
                 return_index_rows: true,
             }),
             Query::JoinInner(JoinExpr {
+                col_rhs: FieldName::new(mem_table.head().table_id, 1.into()),
                 rhs: mem_table.into(),
-                col_rhs: FieldName::Name {
-                    table: "foo".into(),
-                    field: "id".into(),
-                },
-                col_lhs: FieldName::Name {
-                    table: "bar".into(),
-                    field: "id".into(),
-                },
+                col_lhs: FieldName::new(db_table.head().table_id, 1.into()),
                 semi: false,
             }),
         ]
@@ -2222,20 +2140,20 @@ mod tests {
         assert!(matches!(auth.check_auth(ALICE, BOB), Err(AuthError::OwnerRequired)));
     }
 
-    fn mem_table(name: &str, fields: &[(&str, AlgebraicType, bool)]) -> SourceExpr {
+    fn mem_table(id: TableId, name: &str, fields: &[(u32, AlgebraicType, bool)]) -> SourceExpr {
         let table_access = StAccess::Public;
         let head = Header::new(
+            id,
             name.into(),
             fields
                 .iter()
-                .enumerate()
-                .map(|(i, (field, ty, _))| Column::new(FieldName::named(name, field), ty.clone(), i.into()))
+                .map(|(col, ty, _)| Column::new(FieldName::new(id, (*col).into()), ty.clone()))
                 .collect(),
             fields
                 .iter()
                 .enumerate()
                 .filter(|(_, (_, _, indexed))| *indexed)
-                .map(|(i, _)| (ColId(i as u32).into(), Constraints::indexed()))
+                .map(|(i, _)| (ColId::from(i).into(), Constraints::indexed()))
                 .collect(),
         );
         SourceExpr::InMemory {
@@ -2250,19 +2168,19 @@ mod tests {
     #[test]
     fn test_index_to_inner_join() {
         let index_side = mem_table(
+            0.into(),
             "index",
-            &[("a", AlgebraicType::U8, false), ("b", AlgebraicType::U8, true)],
+            &[(0, AlgebraicType::U8, false), (1, AlgebraicType::U8, true)],
         );
         let probe_side = mem_table(
+            1.into(),
             "probe",
-            &[("c", AlgebraicType::U8, false), ("b", AlgebraicType::U8, true)],
+            &[(0, AlgebraicType::U8, false), (1, AlgebraicType::U8, true)],
         );
 
-        let probe_field = probe_side.head().fields[1].field.clone();
-        let select_field = FieldName::Name {
-            table: "index".into(),
-            field: "a".into(),
-        };
+        let index_field = index_side.head().fields[1].field;
+        let probe_field = probe_side.head().fields[1].field;
+        let select_field = FieldName::new(index_side.head().table_id, 0.into());
         let index_select = ColumnOp::cmp(select_field, OpCmp::Eq, 0u8);
         let join = IndexJoin {
             probe_side: probe_side.clone().into(),
@@ -2282,8 +2200,8 @@ mod tests {
             panic!("expected an inner join, but got {:#?}", expr.query[0]);
         };
 
-        assert_eq!(join.col_lhs, FieldName::named("probe", "b"));
-        assert_eq!(join.col_rhs, FieldName::named("index", "b"));
+        assert_eq!(join.col_lhs, probe_field);
+        assert_eq!(join.col_rhs, index_field);
         assert_eq!(
             join.rhs,
             QueryExpr {
@@ -2294,18 +2212,19 @@ mod tests {
         assert!(join.semi);
     }
 
-    fn setup_best_index() -> (Header, [Column; 5], [AlgebraicValue; 5]) {
-        let mut pos = 0;
-        let fields = ["a", "b", "c", "d", "e"].map(|x| {
-            let c = Column::new(FieldName::named("t1", x), AlgebraicType::I8, pos.into());
-            pos += 1;
-            c
-        });
+    fn setup_best_index() -> (Header, [FieldName; 5], [AlgebraicValue; 5]) {
+        let table_id = 0.into();
 
-        let [a, b, c, d] = [0, 1, 2, 3].map(ColId);
+        let vals = [1, 2, 3, 4, 5].map(AlgebraicValue::U64);
+        let col_ids = [0, 1, 2, 3, 4].map(ColId);
+        let [a, b, c, d, _] = col_ids;
+        let fields = col_ids.map(|c| FieldName::new(table_id, c));
+        let cols = fields.map(|f| Column::new(f, AlgebraicType::I8));
+
         let head1 = Header::new(
+            table_id,
             "t1".into(),
-            fields.to_vec(),
+            cols.to_vec(),
             vec![
                 //Index a
                 (a.into(), Constraints::primary_key()),
@@ -2318,31 +2237,34 @@ mod tests {
             ],
         );
 
-        let vals = [1, 2, 3, 4, 5].map(AlgebraicValue::U64);
-
         (head1, fields, vals)
     }
 
     fn make_field_value<'a>(
         arena: &'a Arena<ColumnOp>,
-        (cmp, col, value): (OpCmp, &'a Column, &'a AlgebraicValue),
+        (cmp, field, value): (OpCmp, FieldName, &'a AlgebraicValue),
     ) -> FieldValue<'a> {
         let from_expr = |expr| Box::new(ColumnOp::Field(expr));
         let op = ColumnOp::Cmp {
             op: OpQuery::Cmp(cmp),
-            lhs: from_expr(FieldExpr::Name(col.field.clone())),
+            lhs: from_expr(FieldExpr::Name(field)),
             rhs: from_expr(FieldExpr::Value(value.clone())),
         };
         let parent = arena.alloc(op);
-        FieldValue::new(parent, cmp, col, value)
+        FieldValue::new(parent, cmp, field, value)
     }
 
-    fn scan_eq<'a>(arena: &'a Arena<ColumnOp>, col: &'a Column, val: &'a AlgebraicValue) -> IndexColumnOp<'a> {
-        scan(arena, OpCmp::Eq, col, val)
+    fn scan_eq<'a>(arena: &'a Arena<ColumnOp>, field: FieldName, val: &'a AlgebraicValue) -> IndexColumnOp<'a> {
+        scan(arena, OpCmp::Eq, field, val)
     }
 
-    fn scan<'a>(arena: &'a Arena<ColumnOp>, cmp: OpCmp, col: &'a Column, val: &'a AlgebraicValue) -> IndexColumnOp<'a> {
-        IndexColumnOp::Scan(make_field_value(arena, (cmp, col, val)).parent)
+    fn scan<'a>(
+        arena: &'a Arena<ColumnOp>,
+        cmp: OpCmp,
+        field: FieldName,
+        val: &'a AlgebraicValue,
+    ) -> IndexColumnOp<'a> {
+        IndexColumnOp::Scan(make_field_value(arena, (cmp, field, val)).parent)
     }
 
     #[test]
@@ -2356,7 +2278,7 @@ mod tests {
             let fields = fields
                 .iter()
                 .copied()
-                .map(|(col, val)| make_field_value(&arena, (OpCmp::Eq, col, val)).parent)
+                .map(|(col, val): (FieldName, _)| make_field_value(&arena, (OpCmp::Eq, col, val)).parent)
                 .collect::<Vec<_>>();
             select_best_index(&mut <_>::default(), &head1, &fields)
         };
@@ -2366,34 +2288,34 @@ mod tests {
 
         // Check for simple scan
         assert_eq!(
-            select_best_index(&[(&col_d, &val_e)]),
-            [scan_eq(&arena, &col_d, &val_e)].into(),
+            select_best_index(&[(col_d, &val_e)]),
+            [scan_eq(&arena, col_d, &val_e)].into(),
         );
 
         assert_eq!(
-            select_best_index(&[(&col_a, &val_a)]),
-            [idx_eq(col_a.col_id.into(), val_a.clone())].into(),
+            select_best_index(&[(col_a, &val_a)]),
+            [idx_eq(col_a.col.into(), val_a.clone())].into(),
         );
 
         assert_eq!(
-            select_best_index(&[(&col_b, &val_b)]),
-            [idx_eq(col_b.col_id.into(), val_b.clone())].into(),
+            select_best_index(&[(col_b, &val_b)]),
+            [idx_eq(col_b.col.into(), val_b.clone())].into(),
         );
 
         // Check for permutation
         assert_eq!(
-            select_best_index(&[(&col_b, &val_b), (&col_c, &val_c)]),
+            select_best_index(&[(col_b, &val_b), (col_c, &val_c)]),
             [idx_eq(
-                col_list![col_b.col_id, col_c.col_id],
+                col_list![col_b.col, col_c.col],
                 product![val_b.clone(), val_c.clone()].into()
             )]
             .into(),
         );
 
         assert_eq!(
-            select_best_index(&[(&col_c, &val_c), (&col_b, &val_b)]),
+            select_best_index(&[(col_c, &val_c), (col_b, &val_b)]),
             [idx_eq(
-                col_list![col_b.col_id, col_c.col_id],
+                col_list![col_b.col, col_c.col],
                 product![val_b.clone(), val_c.clone()].into()
             )]
             .into(),
@@ -2401,18 +2323,18 @@ mod tests {
 
         // Check for permutation
         assert_eq!(
-            select_best_index(&[(&col_a, &val_a), (&col_b, &val_b), (&col_c, &val_c), (&col_d, &val_d)]),
+            select_best_index(&[(col_a, &val_a), (col_b, &val_b), (col_c, &val_c), (col_d, &val_d)]),
             [idx_eq(
-                col_list![col_a.col_id, col_b.col_id, col_c.col_id, col_d.col_id],
+                col_list![col_a.col, col_b.col, col_c.col, col_d.col],
                 product![val_a.clone(), val_b.clone(), val_c.clone(), val_d.clone()].into(),
             )]
             .into(),
         );
 
         assert_eq!(
-            select_best_index(&[(&col_b, &val_b), (&col_a, &val_a), (&col_d, &val_d), (&col_c, &val_c)]),
+            select_best_index(&[(col_b, &val_b), (col_a, &val_a), (col_d, &val_d), (col_c, &val_c)]),
             [idx_eq(
-                col_list![col_a.col_id, col_b.col_id, col_c.col_id, col_d.col_id],
+                col_list![col_a.col, col_b.col, col_c.col, col_d.col],
                 product![val_a.clone(), val_b.clone(), val_c.clone(), val_d.clone()].into(),
             )]
             .into()
@@ -2420,24 +2342,24 @@ mod tests {
 
         // Check mix scan + index
         assert_eq!(
-            select_best_index(&[(&col_b, &val_b), (&col_a, &val_a), (&col_e, &val_e), (&col_d, &val_d)]),
+            select_best_index(&[(col_b, &val_b), (col_a, &val_a), (col_e, &val_e), (col_d, &val_d)]),
             [
-                idx_eq(col_a.col_id.into(), val_a.clone()),
-                idx_eq(col_b.col_id.into(), val_b.clone()),
-                scan_eq(&arena, &col_d, &val_d),
-                scan_eq(&arena, &col_e, &val_e),
+                idx_eq(col_a.col.into(), val_a.clone()),
+                idx_eq(col_b.col.into(), val_b.clone()),
+                scan_eq(&arena, col_d, &val_d),
+                scan_eq(&arena, col_e, &val_e),
             ]
             .into()
         );
 
         assert_eq!(
-            select_best_index(&[(&col_b, &val_b), (&col_c, &val_c), (&col_d, &val_d)]),
+            select_best_index(&[(col_b, &val_b), (col_c, &val_c), (col_d, &val_d)]),
             [
                 idx_eq(
-                    col_list![col_b.col_id, col_c.col_id],
+                    col_list![col_b.col, col_c.col],
                     product![val_b.clone(), val_c.clone()].into(),
                 ),
-                scan_eq(&arena, &col_d, &val_d),
+                scan_eq(&arena, col_d, &val_d),
             ]
             .into()
         );
@@ -2460,56 +2382,47 @@ mod tests {
         };
 
         let col_list_arena = Arena::new();
-        let idx = |cmp, cols: &[&Column], val: &AlgebraicValue| {
-            let columns = cols
-                .iter()
-                .map(|c| c.col_id)
-                .collect::<ColListBuilder>()
-                .build()
-                .unwrap();
+        let idx = |cmp, cols: &[FieldName], val: &AlgebraicValue| {
+            let columns = cols.iter().map(|c| c.col).collect::<ColListBuilder>().build().unwrap();
             let columns = col_list_arena.alloc(columns);
             make_index_arg(cmp, columns, val.clone())
         };
 
         // Same field indexed
         assert_eq!(
-            select_best_index(&[(OpCmp::Gt, &col_a, &val_a), (OpCmp::Lt, &col_a, &val_b)]),
-            [idx(OpCmp::Lt, &[&col_a], &val_b), idx(OpCmp::Gt, &[&col_a], &val_a)].into()
+            select_best_index(&[(OpCmp::Gt, col_a, &val_a), (OpCmp::Lt, col_a, &val_b)]),
+            [idx(OpCmp::Lt, &[col_a], &val_b), idx(OpCmp::Gt, &[col_a], &val_a)].into()
         );
 
         // Same field scan
         assert_eq!(
-            select_best_index(&[(OpCmp::Gt, &col_d, &val_d), (OpCmp::Lt, &col_d, &val_b)]),
+            select_best_index(&[(OpCmp::Gt, col_d, &val_d), (OpCmp::Lt, col_d, &val_b)]),
             [
-                scan(&arena, OpCmp::Lt, &col_d, &val_b),
-                scan(&arena, OpCmp::Gt, &col_d, &val_d)
+                scan(&arena, OpCmp::Lt, col_d, &val_b),
+                scan(&arena, OpCmp::Gt, col_d, &val_d)
             ]
             .into()
         );
         // One indexed other scan
         assert_eq!(
-            select_best_index(&[(OpCmp::Gt, &col_b, &val_b), (OpCmp::Lt, &col_c, &val_c)]),
-            [
-                idx(OpCmp::Gt, &[&col_b], &val_b),
-                scan(&arena, OpCmp::Lt, &col_c, &val_c)
-            ]
-            .into()
+            select_best_index(&[(OpCmp::Gt, col_b, &val_b), (OpCmp::Lt, col_c, &val_c)]),
+            [idx(OpCmp::Gt, &[col_b], &val_b), scan(&arena, OpCmp::Lt, col_c, &val_c)].into()
         );
 
         // 1 multi-indexed 1 index
         assert_eq!(
             select_best_index(&[
-                (OpCmp::Eq, &col_b, &val_b),
-                (OpCmp::GtEq, &col_a, &val_a),
-                (OpCmp::Eq, &col_c, &val_c),
+                (OpCmp::Eq, col_b, &val_b),
+                (OpCmp::GtEq, col_a, &val_a),
+                (OpCmp::Eq, col_c, &val_c),
             ]),
             [
                 idx(
                     OpCmp::Eq,
-                    &[&col_b, &col_c],
+                    &[col_b, col_c],
                     &product![val_b.clone(), val_c.clone()].into(),
                 ),
-                idx(OpCmp::GtEq, &[&col_a], &val_a),
+                idx(OpCmp::GtEq, &[col_a], &val_a),
             ]
             .into()
         );
@@ -2517,14 +2430,14 @@ mod tests {
         // 1 indexed 2 scan
         assert_eq!(
             select_best_index(&[
-                (OpCmp::Gt, &col_b, &val_b),
-                (OpCmp::Eq, &col_a, &val_a),
-                (OpCmp::Lt, &col_c, &val_c),
+                (OpCmp::Gt, col_b, &val_b),
+                (OpCmp::Eq, col_a, &val_a),
+                (OpCmp::Lt, col_c, &val_c),
             ]),
             [
-                idx(OpCmp::Eq, &[&col_a], &val_a),
-                idx(OpCmp::Gt, &[&col_b], &val_b),
-                scan(&arena, OpCmp::Lt, &col_c, &val_c),
+                idx(OpCmp::Eq, &[col_a], &val_a),
+                idx(OpCmp::Gt, &[col_b], &val_b),
+                scan(&arena, OpCmp::Lt, col_c, &val_c),
             ]
             .into()
         );
@@ -2559,11 +2472,8 @@ mod tests {
 
     #[test]
     fn test_auth_crud_code_insert() {
-        for table in tables() {
-            let crud = CrudExpr::Insert {
-                source: table,
-                rows: vec![],
-            };
+        for table in tables().into_iter().filter_map(|s| s.get_db_table().cloned()) {
+            let crud = CrudExpr::Insert { table, rows: vec![] };
             assert_owner_required(crud);
         }
     }
@@ -2625,33 +2535,18 @@ mod tests {
             ),
         );
 
-        let lhs_source = SourceExpr::DbTable(db_table(&lhs, TableId(0)));
-        let rhs_source = SourceExpr::DbTable(db_table(&rhs, TableId(0)));
+        let lhs_source = SourceExpr::from(&lhs);
+        let rhs_source = SourceExpr::from(&rhs);
 
         let q = QueryExpr::new(lhs_source.clone())
             .with_join_inner(
                 rhs_source.clone(),
-                FieldName::Pos {
-                    table: "lhs".into(),
-                    field: 0,
-                },
-                FieldName::Pos {
-                    table: "rhs".into(),
-                    field: 0,
-                },
+                FieldName::new(lhs.table_id, 0.into()),
+                FieldName::new(rhs.table_id, 0.into()),
                 false,
             )
             .with_project(
-                &[
-                    FieldExpr::Name(FieldName::Pos {
-                        table: "lhs".into(),
-                        field: 0,
-                    }),
-                    FieldExpr::Name(FieldName::Pos {
-                        table: "lhs".into(),
-                        field: 1,
-                    }),
-                ],
+                &[0, 1].map(|c| FieldExpr::Name(FieldName::new(lhs.table_id, c.into()))),
                 Some(TableId(0)),
             );
         let q = q.optimize(&|_, _| 0);
@@ -2694,19 +2589,13 @@ mod tests {
             ),
         );
 
-        let lhs_source = SourceExpr::DbTable(db_table(&lhs, TableId(0)));
-        let rhs_source = SourceExpr::DbTable(db_table(&rhs, TableId(0)));
+        let lhs_source = SourceExpr::from(&lhs);
+        let rhs_source = SourceExpr::from(&rhs);
 
         let q = QueryExpr::new(lhs_source.clone()).with_join_inner(
             rhs_source.clone(),
-            FieldName::Pos {
-                table: "lhs".into(),
-                field: 0,
-            },
-            FieldName::Pos {
-                table: "rhs".into(),
-                field: 0,
-            },
+            FieldName::new(lhs.table_id, 0.into()),
+            FieldName::new(rhs.table_id, 0.into()),
             false,
         );
         let optimized = q.clone().optimize(&|_, _| 0);
@@ -2731,33 +2620,18 @@ mod tests {
             ),
         );
 
-        let lhs_source = SourceExpr::DbTable(db_table(&lhs, TableId(0)));
-        let rhs_source = SourceExpr::DbTable(db_table(&rhs, TableId(0)));
+        let lhs_source = SourceExpr::from(&lhs);
+        let rhs_source = SourceExpr::from(&rhs);
 
         let q = QueryExpr::new(lhs_source.clone())
             .with_join_inner(
                 rhs_source.clone(),
-                FieldName::Pos {
-                    table: "lhs".into(),
-                    field: 0,
-                },
-                FieldName::Pos {
-                    table: "rhs".into(),
-                    field: 0,
-                },
+                FieldName::new(lhs.table_id, 0.into()),
+                FieldName::new(rhs.table_id, 0.into()),
                 false,
             )
             .with_project(
-                &[
-                    FieldExpr::Name(FieldName::Pos {
-                        table: "rhs".into(),
-                        field: 0,
-                    }),
-                    FieldExpr::Name(FieldName::Pos {
-                        table: "rhs".into(),
-                        field: 1,
-                    }),
-                ],
+                &[0, 1].map(|c| FieldExpr::Name(FieldName::new(rhs.table_id, c.into()))),
                 Some(TableId(1)),
             );
         let optimized = q.clone().optimize(&|_, _| 0);

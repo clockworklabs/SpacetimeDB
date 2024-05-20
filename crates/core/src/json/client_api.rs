@@ -63,7 +63,7 @@ pub struct FunctionCallJson {
 #[derive(Debug, Clone, Serialize)]
 pub struct TableUpdateJson {
     pub table_id: u32,
-    pub table_name: String,
+    pub table_name: Box<str>,
     pub table_row_operations: Vec<TableRowOperationJson>,
 }
 

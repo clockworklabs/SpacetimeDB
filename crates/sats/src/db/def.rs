@@ -1,7 +1,7 @@
 use crate::db::auth::{StAccess, StTableType};
 use crate::db::error::{DefType, SchemaError};
 use crate::product_value::InvalidFieldError;
-use crate::relation::{Column, DbTable, FieldName, FieldOnly, Header, TableField};
+use crate::relation::{Column, DbTable, FieldName, Header};
 use crate::{de, impl_deserialize, impl_serialize, ser};
 use crate::{AlgebraicType, ProductType, ProductTypeElement};
 use derive_more::Display;
@@ -22,7 +22,7 @@ impl_serialize!([] Constraints, (self, ser) => ser.serialize_u8(self.bits()));
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SequenceSchema {
     pub sequence_id: SequenceId,
-    pub sequence_name: String,
+    pub sequence_name: Box<str>,
     pub table_id: TableId,
     /// The position of the column associated with this sequence.
     pub col_pos: ColId,
@@ -49,13 +49,13 @@ impl SequenceSchema {
     /// let sequence_def = SequenceDef::for_column("my_table".into(), "my_sequence".into(), 1.into());
     /// let schema = SequenceSchema::from_def(42.into(), sequence_def);
     ///
-    /// assert_eq!(schema.sequence_name, "seq_my_table_my_sequence");
+    /// assert_eq!(&*schema.sequence_name, "seq_my_table_my_sequence");
     /// assert_eq!(schema.table_id, 42.into());
     /// ```
     pub fn from_def(table_id: TableId, sequence: SequenceDef) -> Self {
         Self {
             sequence_id: SequenceId(0), // Will be replaced later when created
-            sequence_name: sequence.sequence_name.trim().to_string(),
+            sequence_name: sequence.sequence_name.trim().into(),
             table_id,
             col_pos: sequence.col_pos,
             increment: sequence.increment,
@@ -71,7 +71,7 @@ impl SequenceSchema {
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
 #[sats(crate = crate)]
 pub struct SequenceDef {
-    pub sequence_name: String,
+    pub sequence_name: Box<str>,
     /// The position of the column associated with this sequence.
     pub col_pos: ColId,
     pub increment: i128,
@@ -96,14 +96,14 @@ impl SequenceDef {
     /// use spacetimedb_sats::db::def::*;
     ///
     /// let sequence_def = SequenceDef::for_column("my_table", "my_sequence", 1.into());
-    /// assert_eq!(sequence_def.sequence_name, "seq_my_table_my_sequence");
+    /// assert_eq!(&*sequence_def.sequence_name, "seq_my_table_my_sequence");
     /// ```
     pub fn for_column(table: &str, column_or_name: &str, col_pos: ColId) -> Self {
         //removes the auto-generated suffix...
         let seq_name = column_or_name.trim_start_matches(&format!("ct_{}_", table));
 
         SequenceDef {
-            sequence_name: format!("seq_{}_{}", table, seq_name),
+            sequence_name: format!("seq_{}_{}", table, seq_name).into(),
             col_pos,
             increment: 1,
             start: None,
@@ -134,7 +134,7 @@ pub struct IndexSchema {
     pub index_id: IndexId,
     pub table_id: TableId,
     pub index_type: IndexType,
-    pub index_name: String,
+    pub index_name: Box<str>,
     pub is_unique: bool,
     pub columns: ColList,
 }
@@ -146,7 +146,7 @@ impl IndexSchema {
             index_id: IndexId(0), // Set to 0 as it may be assigned later.
             table_id,
             index_type: index.index_type,
-            index_name: index.index_name.trim().to_string(),
+            index_name: index.index_name.trim().into(),
             is_unique: index.is_unique,
             columns: index.columns,
         }
@@ -181,7 +181,7 @@ impl TryFrom<u8> for IndexType {
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
 #[sats(crate = crate)]
 pub struct IndexDef {
-    pub index_name: String,
+    pub index_name: Box<str>,
     pub is_unique: bool,
     pub index_type: IndexType,
     /// List of column positions that compose the index.
@@ -198,7 +198,7 @@ impl IndexDef {
     /// * `index_name`: The name of the index.
     /// * `columns`: List of column positions that compose the index.
     /// * `is_unique`: Indicates whether the index enforces uniqueness.
-    pub fn btree(index_name: String, columns: impl Into<ColList>, is_unique: bool) -> Self {
+    pub fn btree(index_name: Box<str>, columns: impl Into<ColList>, is_unique: bool) -> Self {
         Self {
             columns: columns.into(),
             index_name,
@@ -218,7 +218,7 @@ impl IndexDef {
     /// use spacetimedb_sats::db::def::*;
     ///
     /// let index_def = IndexDef::for_column("my_table", "test", ColList::new(1u32.into()), true);
-    /// assert_eq!(index_def.index_name, "idx_my_table_test_unique");
+    /// assert_eq!(&*index_def.index_name, "idx_my_table_test_unique");
     /// ```
     pub fn for_column(table: &str, index_or_name: &str, columns: impl Into<ColList>, is_unique: bool) -> Self {
         let unique = if is_unique { "unique" } else { "non_unique" };
@@ -228,11 +228,12 @@ impl IndexDef {
 
         // Constructs the index name using a predefined format.
         // No duplicate the `kind_name` that was added by an constraint
-        if name.ends_with(&unique) {
-            Self::btree(format!("idx_{table}_{name}"), columns, is_unique)
+        let name = if name.ends_with(&unique) {
+            format!("idx_{table}_{name}")
         } else {
-            Self::btree(format!("idx_{table}_{name}_{unique}"), columns, is_unique)
-        }
+            format!("idx_{table}_{name}_{unique}")
+        };
+        Self::btree(name.into(), columns, is_unique)
     }
 }
 
@@ -253,7 +254,7 @@ pub struct ColumnSchema {
     pub table_id: TableId,
     /// Position of the column within the table.
     pub col_pos: ColId,
-    pub col_name: String,
+    pub col_name: Box<str>,
     pub col_type: AlgebraicType,
 }
 
@@ -291,12 +292,6 @@ pub struct FieldDef<'a> {
     pub table_name: &'a str,
 }
 
-impl From<FieldDef<'_>> for FieldName {
-    fn from(value: FieldDef) -> Self {
-        FieldName::named(value.table_name, &value.column.col_name)
-    }
-}
-
 impl From<FieldDef<'_>> for ProductTypeElement {
     fn from(value: FieldDef) -> Self {
         ProductTypeElement::new(value.column.col_type.clone(), Some(value.column.col_name.clone()))
@@ -307,21 +302,20 @@ impl From<FieldDef<'_>> for ProductTypeElement {
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
 #[sats(crate = crate)]
 pub struct ColumnDef {
-    pub col_name: String,
+    pub col_name: Box<str>,
     pub col_type: AlgebraicType,
 }
 
 impl From<ProductType> for Vec<ColumnDef> {
     fn from(value: ProductType) -> Self {
-        value
-            .elements
+        Vec::from(value.elements)
             .into_iter()
             .enumerate()
             .map(|(pos, col)| {
                 let col_name = if let Some(name) = col.name {
                     name
                 } else {
-                    format!("col_{pos}")
+                    format!("col_{pos}").into()
                 };
 
                 ColumnDef {
@@ -367,7 +361,7 @@ impl From<ColumnSchema> for ColumnDef {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConstraintSchema {
     pub constraint_id: ConstraintId,
-    pub constraint_name: String,
+    pub constraint_name: Box<str>,
     pub constraints: Constraints,
     pub table_id: TableId,
     pub columns: ColList,
@@ -383,7 +377,7 @@ impl ConstraintSchema {
     pub fn from_def(table_id: TableId, constraint: ConstraintDef) -> Self {
         ConstraintSchema {
             constraint_id: ConstraintId(0), // Set to 0 as it may be assigned later.
-            constraint_name: constraint.constraint_name.trim().to_string(),
+            constraint_name: constraint.constraint_name.trim().into(),
             constraints: constraint.constraints,
             table_id,
             columns: constraint.columns,
@@ -395,7 +389,7 @@ impl ConstraintSchema {
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
 #[sats(crate = crate)]
 pub struct ConstraintDef {
-    pub constraint_name: String,
+    pub constraint_name: Box<str>,
     pub constraints: Constraints,
     /// List of column positions associated with the constraint.
     pub columns: ColList,
@@ -409,7 +403,7 @@ impl ConstraintDef {
     /// * `constraint_name`: The name of the constraint.
     /// * `constraints`: The constraints.
     /// * `columns`: List of column positions associated with the constraint.
-    pub fn new(constraint_name: String, constraints: Constraints, columns: impl Into<ColList>) -> Self {
+    pub fn new(constraint_name: Box<str>, constraints: Constraints, columns: impl Into<ColList>) -> Self {
         Self {
             constraint_name,
             constraints,
@@ -435,7 +429,7 @@ impl ConstraintDef {
     /// use spacetimedb_sats::db::def::*;
     ///
     /// let constraint_def = ConstraintDef::for_column("my_table", "test", Constraints::identity(), ColList::new(1u32.into()));
-    /// assert_eq!(constraint_def.constraint_name, "ct_my_table_test_identity");
+    /// assert_eq!(&*constraint_def.constraint_name, "ct_my_table_test_identity");
     /// ```
     pub fn for_column(
         table: &str,
@@ -449,9 +443,9 @@ impl ConstraintDef {
         let kind_name = format!("{:?}", constraints.kind()).to_lowercase();
         // No duplicate the `kind_name` that was added by an index
         if name.ends_with(&kind_name) {
-            Self::new(format!("ct_{table}_{name}"), constraints, columns)
+            Self::new(format!("ct_{table}_{name}").into(), constraints, columns)
         } else {
-            Self::new(format!("ct_{table}_{name}_{kind_name}"), constraints, columns)
+            Self::new(format!("ct_{table}_{name}_{kind_name}").into(), constraints, columns)
         }
     }
 }
@@ -473,7 +467,7 @@ impl From<ConstraintSchema> for ConstraintDef {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableSchema {
     pub table_id: TableId,
-    pub table_name: String,
+    pub table_name: Box<str>,
     columns: Vec<ColumnSchema>,
     pub indexes: Vec<IndexSchema>,
     pub constraints: Vec<ConstraintSchema>,
@@ -488,7 +482,7 @@ impl TableSchema {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         table_id: TableId,
-        table_name: String,
+        table_name: Box<str>,
         columns: Vec<ColumnSchema>,
         indexes: Vec<IndexSchema>,
         constraints: Vec<ConstraintSchema>,
@@ -585,16 +579,11 @@ impl TableSchema {
 
     /// Check if the specified `field` exists in this [TableSchema].
     ///
-    /// This function can handle both named and positional fields.
-    ///
     /// # Warning
     ///
-    /// This function ignores the `table_name` when searching for a column.
-    pub fn get_column_by_field(&self, field: &FieldName) -> Option<&ColumnSchema> {
-        match field.field() {
-            FieldOnly::Name(x) => self.get_column_by_name(x),
-            FieldOnly::Pos(x) => self.get_column(x),
-        }
+    /// This function ignores the `table_id` when searching for a column.
+    pub fn get_column_by_field(&self, field: FieldName) -> Option<&ColumnSchema> {
+        self.get_column(field.col.idx())
     }
 
     pub fn get_columns(&self, columns: &ColList) -> Vec<(ColId, Option<&ColumnSchema>)> {
@@ -610,23 +599,7 @@ impl TableSchema {
     ///
     /// Warning: It ignores the `table_name`
     pub fn get_column_by_name(&self, col_name: &str) -> Option<&ColumnSchema> {
-        self.columns.iter().find(|x| x.col_name == col_name)
-    }
-
-    /// Check if there is an index for this [FieldName]
-    ///
-    /// Warning: It ignores the `table_name`
-    pub fn get_index_by_field(&self, field: &FieldName) -> Option<&IndexSchema> {
-        let ColumnSchema { col_pos, .. } = self.get_column_by_field(field)?;
-        self.indexes.iter().find(|IndexSchema { columns, .. }| {
-            let mut cols = columns.iter();
-            cols.next() == Some(*col_pos) && cols.next().is_none()
-        })
-    }
-
-    /// Turn a [TableField] that could be an unqualified field `id` into `table.id`
-    pub fn normalize_field(&self, or_use: &TableField) -> FieldName {
-        FieldName::named(or_use.table.unwrap_or(&self.table_name), or_use.field)
+        self.columns.iter().find(|x| &*x.col_name == col_name)
     }
 
     /// Project the fields from the supplied `indexes`.
@@ -673,7 +646,7 @@ impl TableSchema {
         //testing.
         TableSchema::new(
             table_id,
-            schema.table_name.trim().to_string(),
+            schema.table_name.trim().into(),
             schema
                 .columns
                 .into_iter()
@@ -760,7 +733,7 @@ impl TableSchema {
                                 if let Some(col) = schema {
                                     col.col_name.clone()
                                 } else {
-                                    format!("col_{col}")
+                                    format!("col_{col}").into()
                                 }
                             })
                             .collect(),
@@ -953,17 +926,10 @@ impl From<&TableSchema> for Header {
         let fields = value
             .columns
             .iter()
-            .enumerate()
-            .map(|(pos, x)| {
-                Column::new(
-                    FieldName::named(&value.table_name, &x.col_name),
-                    x.col_type.clone(),
-                    ColId(pos as u32),
-                )
-            })
+            .map(|x| Column::new(FieldName::new(value.table_id, x.col_pos), x.col_type.clone()))
             .collect();
 
-        Header::new(value.table_name.clone(), fields, constraints)
+        Header::new(value.table_id, value.table_name.clone(), fields, constraints)
     }
 }
 
@@ -974,7 +940,7 @@ impl From<&TableSchema> for Header {
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
 #[sats(crate = crate)]
 pub struct TableDef {
-    pub table_name: String,
+    pub table_name: Box<str>,
     pub columns: Vec<ColumnDef>,
     pub indexes: Vec<IndexDef>,
     pub constraints: Vec<ConstraintDef>,
@@ -991,7 +957,7 @@ impl TableDef {
     /// - `table_name`: The name of the table.
     /// - `columns`: A `vec` of `ColumnDef` instances representing the columns of the table.
     ///
-    pub fn new(table_name: String, columns: Vec<ColumnDef>) -> Self {
+    pub fn new(table_name: Box<str>, columns: Vec<ColumnDef>) -> Self {
         Self {
             table_name,
             columns,
@@ -1033,7 +999,7 @@ impl TableDef {
         let mut column_name = Vec::with_capacity(columns.len() as usize);
         for col_pos in columns.iter() {
             if let Some(col) = self.get_column(col_pos.idx()) {
-                column_name.push(col.col_name.as_str())
+                column_name.push(&*col.col_name)
             }
         }
 
@@ -1099,11 +1065,11 @@ impl TableDef {
     pub fn from_product(table_name: &str, row: ProductType) -> Self {
         Self::new(
             table_name.into(),
-            row.elements
+            Vec::from(row.elements)
                 .into_iter()
                 .enumerate()
                 .map(|(col_pos, e)| ColumnDef {
-                    col_name: e.name.unwrap_or_else(|| format!("col_{col_pos}")),
+                    col_name: e.name.unwrap_or_else(|| format!("col_{col_pos}").into()),
                     col_type: e.algebraic_type,
                 })
                 .collect::<Vec<_>>(),
@@ -1196,12 +1162,9 @@ impl TableDef {
 
     /// Check if the `name` of the [FieldName] exist on this [TableDef]
     ///
-    /// Warning: It ignores the `table_name`
-    pub fn get_column_by_field(&self, field: &FieldName) -> Option<&ColumnDef> {
-        match field.field() {
-            FieldOnly::Name(x) => self.get_column_by_name(x),
-            FieldOnly::Pos(x) => self.get_column(x),
-        }
+    /// Warning: It ignores the `table_id`
+    pub fn get_column_by_field(&self, field: FieldName) -> Option<&ColumnDef> {
+        self.get_column(field.col.idx())
     }
 
     pub fn get_column(&self, pos: usize) -> Option<&ColumnDef> {
@@ -1212,7 +1175,7 @@ impl TableDef {
     ///
     /// Warning: It ignores the `table_name`
     pub fn get_column_by_name(&self, col_name: &str) -> Option<&ColumnDef> {
-        self.columns.iter().find(|x| x.col_name == col_name)
+        self.columns.iter().find(|x| &*x.col_name == col_name)
     }
 }
 
@@ -1397,7 +1360,7 @@ mod tests {
 
         // Empty names
         let mut t_name = t.clone();
-        t_name.table_name.clear();
+        t_name.table_name = "".into();
         assert_eq!(
             t_name.into_schema(TableId(0)).validated(),
             Err(vec![SchemaError::EmptyTableName { table_id: TableId(0) }])
@@ -1408,7 +1371,7 @@ mod tests {
         assert_eq!(
             t_col.into_schema(TableId(0)).validated(),
             Err(vec![SchemaError::EmptyName {
-                table: "test".to_string(),
+                table: "test".into(),
                 ty: DefType::Column,
                 id: 5
             },])
@@ -1420,7 +1383,7 @@ mod tests {
         assert_eq!(
             t_ct.into_schema(TableId(0)).validated(),
             Err(vec![SchemaError::EmptyName {
-                table: "test".to_string(),
+                table: "test".into(),
                 ty: DefType::Constraint,
                 id: 0,
             },])
@@ -1504,37 +1467,37 @@ mod tests {
             errs,
             vec![
                 SchemaError::ColumnsNotFound {
-                    name: "seq_test_".to_string(),
+                    name: "seq_test_".into(),
                     table: "test".into(),
                     columns: vec![ColId(1001)],
                     ty: DefType::Sequence,
                 },
                 SchemaError::ColumnsNotFound {
-                    name: "ct_test__unique".to_string(),
+                    name: "ct_test__unique".into(),
                     table: "test".into(),
                     columns: vec![ColId(1002)],
                     ty: DefType::Constraint,
                 },
                 SchemaError::ColumnsNotFound {
-                    name: "idx_test__unique".to_string(),
+                    name: "idx_test__unique".into(),
                     table: "test".into(),
                     columns: vec![ColId(1002)],
                     ty: DefType::Index,
                 },
                 SchemaError::ColumnsNotFound {
-                    name: "ct_test__non_unique_indexed".to_string(),
+                    name: "ct_test__non_unique_indexed".into(),
                     table: "test".into(),
                     columns: vec![ColId(1003)],
                     ty: DefType::Constraint,
                 },
                 SchemaError::ColumnsNotFound {
-                    name: "idx_test__non_unique".to_string(),
+                    name: "idx_test__non_unique".into(),
                     table: "test".into(),
                     columns: vec![ColId(1003)],
                     ty: DefType::Index,
                 },
                 SchemaError::ColumnsNotFound {
-                    name: "seq_test_".to_string(),
+                    name: "seq_test_".into(),
                     table: "test".into(),
                     columns: vec![ColId(1004)],
                     ty: DefType::Sequence,
@@ -1563,7 +1526,7 @@ mod tests {
     #[test]
     fn test_validate_btree() {
         let t = table_def().with_indexes(vec![IndexDef {
-            index_name: "bad".to_string(),
+            index_name: "bad".into(),
             is_unique: false,
             index_type: IndexType::Hash,
             columns: ColList::new(0.into()),
@@ -1573,7 +1536,7 @@ mod tests {
             t.into_schema(TableId(0)).validated(),
             Err(vec![SchemaError::OnlyBtree {
                 table: "test".into(),
-                index: "bad".to_string(),
+                index: "bad".into(),
                 index_type: IndexType::Hash,
             }])
         );

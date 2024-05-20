@@ -1,5 +1,8 @@
+#![warn(clippy::uninlined_format_args)]
+
 use std::fs;
 use std::io::Write;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
 use clap::Arg;
@@ -10,6 +13,8 @@ use spacetimedb_lib::sats::{AlgebraicType, Typespace};
 use spacetimedb_lib::MODULE_ABI_MAJOR_VERSION;
 use spacetimedb_lib::{bsatn, MiscModuleExport, ModuleDef, ReducerDef, TableDesc, TypeAlias};
 use wasmtime::{AsContext, Caller};
+
+use crate::Config;
 
 mod code_indenter;
 pub mod csharp;
@@ -95,7 +100,10 @@ pub fn cli() -> clap::Command {
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
-pub fn exec(args: &clap::ArgMatches) -> anyhow::Result<()> {
+pub fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
+    // Release the lockfile on the config, since we don't need it.
+    config.release_lock();
+
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let wasm_file = args.get_one::<PathBuf>("wasm_file").cloned();
     let out_dir = args.get_one::<PathBuf>("out_dir").unwrap();
@@ -249,13 +257,13 @@ pub fn extract_from_moduledef(module: ModuleDef) -> (GenCtx, impl Iterator<Item 
 
     let mut names = vec![None; typespace.types.len()];
     let name_info = itertools::chain!(
-        tables.iter().map(|t| (t.data, &t.schema.table_name)),
+        tables.iter().map(|t| (t.data, &*t.schema.table_name)),
         misc_exports
             .iter()
-            .map(|MiscModuleExport::TypeAlias(a)| (a.ty, &a.name)),
+            .map(|MiscModuleExport::TypeAlias(a)| (a.ty, &*a.name)),
     );
     for (typeref, name) in name_info {
-        names[typeref.idx()] = Some(name.clone())
+        names[typeref.idx()] = Some(name.into())
     }
     let ctx = GenCtx { typespace, names };
     let iter = itertools::chain!(
@@ -316,7 +324,7 @@ impl GenItem {
         match self {
             GenItem::Table(table) => {
                 let code = python::autogen_python_table(ctx, table);
-                let name = table.schema.table_name.to_case(Case::Snake);
+                let name = table.schema.table_name.deref().to_case(Case::Snake);
                 Some((name + ".py", code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
@@ -335,7 +343,7 @@ impl GenItem {
             },
             GenItem::Reducer(reducer) => {
                 let code = python::autogen_python_reducer(ctx, reducer);
-                let name = reducer.name.to_case(Case::Snake);
+                let name = reducer.name.deref().to_case(Case::Snake);
                 Some((name + "_reducer.py", code))
             }
         }
@@ -345,7 +353,7 @@ impl GenItem {
         match self {
             GenItem::Table(table) => {
                 let code = typescript::autogen_typescript_table(ctx, table);
-                let name = table.schema.table_name.to_case(Case::Snake);
+                let name = table.schema.table_name.deref().to_case(Case::Snake);
                 Some((name + ".ts", code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
@@ -364,7 +372,7 @@ impl GenItem {
             },
             GenItem::Reducer(reducer) => {
                 let code = typescript::autogen_typescript_reducer(ctx, reducer);
-                let name = reducer.name.to_case(Case::Snake);
+                let name = reducer.name.deref().to_case(Case::Snake);
                 Some((name + "_reducer.ts", code))
             }
         }
@@ -374,7 +382,7 @@ impl GenItem {
         match self {
             GenItem::Table(table) => {
                 let code = csharp::autogen_csharp_table(ctx, table, namespace);
-                Some((table.schema.table_name.clone() + ".cs", code))
+                Some((table.schema.table_name.to_string() + ".cs", code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
                 AlgebraicType::Sum(sum) => {
@@ -391,7 +399,7 @@ impl GenItem {
             },
             GenItem::Reducer(reducer) => {
                 let code = csharp::autogen_csharp_reducer(ctx, reducer, namespace);
-                let pascalcase = reducer.name.to_case(Case::Pascal);
+                let pascalcase = reducer.name.deref().to_case(Case::Pascal);
                 Some((pascalcase + "Reducer.cs", code))
             }
         }

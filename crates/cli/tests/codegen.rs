@@ -1,19 +1,19 @@
+use spacetimedb_cli::generate;
 use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
 use std::path::Path;
+use std::sync::OnceLock;
+
+fn compiled_module() -> &'static Path {
+    static COMPILED_MODULE: OnceLock<CompiledModule> = OnceLock::new();
+    COMPILED_MODULE
+        .get_or_init(|| CompiledModule::compile("rust-wasm-test", CompilationMode::Debug))
+        .path()
+}
 
 #[test]
 fn test_codegen_output() {
-    let path = Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../target/wasm32-unknown-unknown/release/rust_wasm_test.wasm"
-    ));
-    if !path.exists() {
-        eprintln!("rust_wasm_test isn't built, skipping");
-        return;
-    }
-    use spacetimedb_cli::generate;
-    println!("{}", path.to_str().unwrap());
-    let outfiles: HashMap<_, _> = generate::generate(path, generate::Language::Csharp, "SpacetimeDB")
+    let outfiles: HashMap<_, _> = generate::generate(compiled_module(), generate::Language::Csharp, "SpacetimeDB")
         .unwrap()
         .into_iter()
         .collect();
@@ -24,17 +24,7 @@ fn test_codegen_output() {
 
 #[test]
 fn test_typescript_codegen_output() {
-    let path = Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../target/wasm32-unknown-unknown/release/rust_wasm_test.wasm"
-    ));
-    if !path.exists() {
-        eprintln!("rust_wasm_test isn't built, skipping");
-        return;
-    }
-    use spacetimedb_cli::generate;
-    println!("{}", path.to_str().unwrap());
-    let outfiles: HashMap<_, _> = generate::generate(path, generate::Language::TypeScript, "SpacetimeDB")
+    let outfiles: HashMap<_, _> = generate::generate(compiled_module(), generate::Language::TypeScript, "SpacetimeDB")
         .unwrap()
         .into_iter()
         .collect();

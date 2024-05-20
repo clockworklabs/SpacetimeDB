@@ -12,7 +12,7 @@ static partial class Module
     }
 
     [SpacetimeDB.Type]
-    public partial struct EnumWithPayload
+    public partial record EnumWithPayload
         : SpacetimeDB.TaggedEnum<(
             byte U8,
             ushort U16,
@@ -34,7 +34,7 @@ static partial class Module
             List<int> Ints,
             List<string> Strings,
             List<SimpleEnum> SimpleEnums
-        )> { }
+        )>;
 
     [SpacetimeDB.Type]
     public partial struct UnitStruct { }
@@ -1372,37 +1372,37 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_one_identity(DbEventArgs ctx)
+    public static void insert_caller_one_identity(ReducerContext ctx)
     {
         new OneIdentity { i = ctx.Sender }.Insert();
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_vec_identity(DbEventArgs ctx)
+    public static void insert_caller_vec_identity(ReducerContext ctx)
     {
         new VecIdentity { i = new List<Identity> { ctx.Sender } }.Insert();
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_unique_identity(DbEventArgs ctx, int data)
+    public static void insert_caller_unique_identity(ReducerContext ctx, int data)
     {
         new UniqueIdentity { i = ctx.Sender, data = data }.Insert();
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_pk_identity(DbEventArgs ctx, int data)
+    public static void insert_caller_pk_identity(ReducerContext ctx, int data)
     {
         new PkIdentity { i = ctx.Sender, data = data }.Insert();
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_one_address(DbEventArgs ctx)
+    public static void insert_caller_one_address(ReducerContext ctx)
     {
         new OneAddress { a = (Address)ctx.Address!, }.Insert();
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_vec_address(DbEventArgs ctx)
+    public static void insert_caller_vec_address(ReducerContext ctx)
     {
         // VecAddress::insert(VecAddress {
         //     < a[_]>::into_vec(
@@ -1413,13 +1413,13 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_unique_address(DbEventArgs ctx, int data)
+    public static void insert_caller_unique_address(ReducerContext ctx, int data)
     {
         new UniqueAddress { a = (Address)ctx.Address!, data = data }.Insert();
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_pk_address(DbEventArgs ctx, int data)
+    public static void insert_caller_pk_address(ReducerContext ctx, int data)
     {
         new PkAddress { a = (Address)ctx.Address!, data = data }.Insert();
     }
@@ -1510,4 +1510,7 @@ static partial class Module
     {
         new TableHoldsTable { a = a, b = b }.Insert();
     }
+
+    [SpacetimeDB.Reducer]
+    public static void no_op_succeeds() {}
 }

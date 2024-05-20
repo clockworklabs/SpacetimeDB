@@ -1,15 +1,17 @@
 use super::compiler::compile_sql;
-use crate::database_instance_context_controller::DatabaseInstanceContextController;
+use crate::db::datastore::locking_tx_datastore::state_view::StateView;
+use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::RelationalDB;
-use crate::error::{DBError, DatabaseError};
+use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
+use crate::util::slow::SlowQueryLogger;
 use crate::vm::{DbProgram, TxMode};
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::relation::FieldName;
 use spacetimedb_lib::{ProductType, ProductValue};
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use spacetimedb_vm::relation::MemTable;
-use tracing::info;
 
 pub struct StmtResult {
     pub schema: ProductType,
@@ -18,21 +20,6 @@ pub struct StmtResult {
 
 // TODO(cloutiertyler): we could do this the swift parsing way in which
 // we always generate a plan, but it may contain errors
-
-/// Run a `SQL` query/statement in the specified `database_instance_id`.
-pub fn execute(
-    db_inst_ctx_controller: &DatabaseInstanceContextController,
-    database_instance_id: u64,
-    sql_text: String,
-    auth: AuthCtx,
-) -> Result<Vec<MemTable>, DBError> {
-    info!(sql = sql_text);
-    if let Some((database_instance_context, _)) = db_inst_ctx_controller.get(database_instance_id) {
-        run(&database_instance_context.relational_db, &sql_text, auth)
-    } else {
-        Err(DatabaseError::NotFound(database_instance_id).into())
-    }
-}
 
 pub(crate) fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBError> {
     match r {
@@ -50,71 +37,88 @@ pub(crate) fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Resul
     Ok(())
 }
 
+pub fn ctx_sql(db: &RelationalDB) -> ExecutionContext {
+    ExecutionContext::sql(db.address(), db.read_config().slow_query)
+}
+
 /// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
 ///
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
-pub fn execute_sql(db: &RelationalDB, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
-    let total = ast.len();
-    let ctx = ExecutionContext::sql(db.address());
-    let mut result = Vec::with_capacity(total);
-    let sources = [].into();
-    match CrudExpr::is_reads(&ast) {
-        false => db.with_auto_commit(&ctx, |mut_tx| {
-            let mut tx: TxMode = mut_tx.into();
-            let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
-            let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
-            // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
-            collect_result(&mut result, run_ast(p, q, sources).into())
-        }),
-        true => db.with_read_only(&ctx, |tx| {
-            let mut tx = TxMode::Tx(tx);
-            let q = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
-            let p = &mut DbProgram::new(&ctx, db, &mut tx, auth);
-            // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
-            collect_result(&mut result, run_ast(p, q, sources).into())
-        }),
+///
+/// Also, in case the execution takes more than x, log it as `slow query`
+pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
+    fn execute(p: &mut DbProgram<'_, '_>, ast: Vec<CrudExpr>) -> Result<Vec<MemTable>, DBError> {
+        let mut result = Vec::with_capacity(ast.len());
+        let query = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
+        // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
+        collect_result(&mut result, run_ast(p, query, [].into()).into())?;
+        Ok(result)
+    }
+
+    let ctx = ctx_sql(db);
+    let slow_logger = SlowQueryLogger::query(&ctx, sql);
+    let result = if CrudExpr::is_reads(&ast) {
+        db.with_read_only(&ctx, |tx| {
+            execute(&mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth), ast)
+        })
+    } else {
+        db.with_auto_commit(&ctx, |mut_tx| {
+            execute(&mut DbProgram::new(&ctx, db, &mut mut_tx.into(), auth), ast)
+        })
     }?;
+    slow_logger.log();
 
     Ok(result)
 }
 
 /// Run the `SQL` string using the `auth` credentials
 pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
-    let ctx = &ExecutionContext::sql(db.address());
-    let ast = db.with_read_only(ctx, |tx| compile_sql(db, tx, sql_text))?;
-    execute_sql(db, ast, auth)
+    let ast = db.with_read_only(&ctx_sql(db), |tx| compile_sql(db, tx, sql_text))?;
+    execute_sql(db, sql_text, ast, auth)
+}
+
+/// Translates a `FieldName` to the field's name.
+pub fn translate_col(tx: &TxId, field: FieldName) -> Option<Box<str>> {
+    Some(
+        tx.get_schema(&field.table)?
+            .get_column(field.col.idx())?
+            .col_name
+            .clone(),
+    )
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{ST_TABLES_ID, ST_TABLES_NAME};
-    use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::vm::tests::create_table_with_rows;
-    use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_primitives::{col_list, ColId};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::relation::Header;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
-    use spacetimedb_vm::dsl::{mem_table, scalar};
-    use spacetimedb_vm::eval::test_data::create_game_data;
+    use spacetimedb_vm::eval::test_helpers::{create_game_data, mem_table, mem_table_without_table_name};
 
     /// Short-cut for simplify test execution
-    fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
+    pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
         run(db, sql_text, AuthCtx::for_testing())
     }
 
     fn create_data(total_rows: u64) -> ResultTest<(TestDB, MemTable)> {
         let stdb = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let rows: Vec<_> = (1..=total_rows)
+            .map(|i| product!(i, format!("health{i}").into_boxed_str()))
+            .collect();
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
-        let rows: Vec<_> = (1..=total_rows).map(|i| product!(i, format!("health{i}"))).collect();
-        create_table_with_rows(&stdb, &mut tx, "inventory", head.clone(), &rows)?;
-        stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
-        Ok((stdb, mem_table(head, rows)))
+        let schema = stdb.with_auto_commit(&ExecutionContext::default(), |tx| {
+            create_table_with_rows(&stdb, tx, "inventory", head.clone(), &rows)
+        })?;
+        let header = Header::from(&*schema).into();
+
+        Ok((stdb, MemTable::new(header, schema.table_access, rows)))
     }
 
     #[test]
@@ -127,8 +131,8 @@ pub(crate) mod tests {
         let result = result.first().unwrap().clone();
 
         assert_eq!(
-            result.as_without_table_name(),
-            input.as_without_table_name(),
+            mem_table_without_table_name(&result),
+            mem_table_without_table_name(&input),
             "Inventory"
         );
         Ok(())
@@ -143,8 +147,8 @@ pub(crate) mod tests {
         let result = result.first().unwrap().clone();
 
         assert_eq!(
-            result.as_without_table_name(),
-            input.as_without_table_name(),
+            mem_table_without_table_name(&result),
+            mem_table_without_table_name(&input),
             "Inventory"
         );
 
@@ -157,11 +161,11 @@ pub(crate) mod tests {
 
         let head = ProductType::from([("inventory_id", AlgebraicType::U64)]);
         let row = product!(1u64);
-        let input = mem_table(head, vec![row]);
+        let input = mem_table(input.head.table_id, head, vec![row]);
 
         assert_eq!(
-            result.as_without_table_name(),
-            input.as_without_table_name(),
+            mem_table_without_table_name(&result),
+            mem_table_without_table_name(&input),
             "Inventory"
         );
 
@@ -170,7 +174,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_select_scalar() -> ResultTest<()> {
-        let (db, _) = create_data(1)?;
+        let (db, input) = create_data(1)?;
 
         let result = run_for_testing(&db, "SELECT 1 FROM inventory")?;
 
@@ -178,9 +182,13 @@ pub(crate) mod tests {
         let result = result.first().unwrap().clone();
         let schema = ProductType::from([AlgebraicType::I32]);
         let row = product!(1);
-        let input = mem_table(schema, vec![row]);
+        let input = mem_table(input.head.table_id, schema, vec![row]);
 
-        assert_eq!(result.as_without_table_name(), input.as_without_table_name(), "Scalar");
+        assert_eq!(
+            mem_table_without_table_name(&result),
+            mem_table_without_table_name(&input),
+            "Scalar"
+        );
         Ok(())
     }
 
@@ -192,8 +200,12 @@ pub(crate) mod tests {
 
         assert_eq!(result.len(), 2, "Not return results");
 
-        for x in result {
-            assert_eq!(x.as_without_table_name(), input.as_without_table_name(), "Inventory");
+        for result in result {
+            assert_eq!(
+                mem_table_without_table_name(&result),
+                mem_table_without_table_name(&input),
+                "Inventory"
+            );
         }
         Ok(())
     }
@@ -203,7 +215,7 @@ pub(crate) mod tests {
         let (db, _) = create_data(1)?;
 
         let tx = db.begin_tx();
-        let schema = db.schema_for_table(&tx, ST_TABLES_ID).unwrap().into_owned();
+        let schema = db.schema_for_table(&tx, ST_TABLES_ID).unwrap();
         db.release_tx(&ExecutionContext::internal(db.address()), tx);
         let result = run_for_testing(
             &db,
@@ -212,17 +224,17 @@ pub(crate) mod tests {
 
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
-        let row = product!(
-            scalar(ST_TABLES_ID),
-            scalar(ST_TABLES_NAME),
-            scalar(StTableType::System.as_str()),
-            scalar(StAccess::Public.as_str()),
-        );
-        let input = mem_table(Header::from(&schema), vec![row]);
+        let row = product![
+            ST_TABLES_ID,
+            ST_TABLES_NAME,
+            StTableType::System.as_str(),
+            StAccess::Public.as_str(),
+        ];
+        let input = MemTable::new(Header::from(&*schema).into(), schema.table_access, vec![row]);
 
         assert_eq!(
-            result.as_without_table_name(),
-            input.as_without_table_name(),
+            mem_table_without_table_name(&result),
+            mem_table_without_table_name(&input),
             "st_table"
         );
         Ok(())
@@ -236,16 +248,16 @@ pub(crate) mod tests {
 
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
-        //The expected result
-        let col = table.head.find_by_name("inventory_id").unwrap();
-        let inv = table.head.project(&[col.field.clone()]).unwrap();
+        // The expected result.
+        let col = table.head.fields[0].field;
+        let inv = table.head.project(&[col]).unwrap();
 
-        let row = product!(scalar(1u64));
-        let input = mem_table(inv, vec![row]);
+        let row = product![1u64];
+        let input = MemTable::new(inv.into(), table.table_access, vec![row]);
 
         assert_eq!(
-            result.as_without_table_name(),
-            input.as_without_table_name(),
+            mem_table_without_table_name(&result),
+            mem_table_without_table_name(&input),
             "Inventory"
         );
         Ok(())
@@ -260,16 +272,16 @@ pub(crate) mod tests {
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
 
-        //The expected result
-        let col = table.head.find_by_name("inventory_id").unwrap();
-        let inv = table.head.project(&[col.field.clone()]).unwrap();
+        // The expected result.
+        let col = table.head.fields[0].field;
+        let inv = table.head.project(&[col]).unwrap();
 
-        let row = product!(scalar(1u64));
-        let input = mem_table(inv, vec![row]);
+        let row = product![1u64];
+        let input = MemTable::new(inv.into(), table.table_access, vec![row]);
 
         assert_eq!(
-            result.as_without_table_name(),
-            input.as_without_table_name(),
+            mem_table_without_table_name(&result),
+            mem_table_without_table_name(&input),
             "Inventory"
         );
         Ok(())
@@ -288,14 +300,14 @@ pub(crate) mod tests {
         let mut result = result.first().unwrap().clone();
         result.data.sort();
         //The expected result
-        let col = table.head.find_by_name("inventory_id").unwrap();
-        let inv = table.head.project(&[col.field.clone()]).unwrap();
+        let col = table.head.fields[0].field;
+        let inv = table.head.project(&[col]).unwrap();
 
-        let input = mem_table(inv, vec![product!(scalar(1u64)), product!(scalar(2u64))]);
+        let input = MemTable::new(inv.into(), table.table_access, vec![product![1u64], product![2u64]]);
 
         assert_eq!(
-            result.as_without_table_name(),
-            input.as_without_table_name(),
+            mem_table_without_table_name(&result),
+            mem_table_without_table_name(&input),
             "Inventory"
         );
         Ok(())
@@ -313,15 +325,15 @@ pub(crate) mod tests {
         assert_eq!(result.len(), 1, "Not return results");
         let mut result = result.first().unwrap().clone();
         result.data.sort();
-        //The expected result
-        let col = table.head.find_by_name("inventory_id").unwrap();
-        let inv = table.head.project(&[col.field.clone()]).unwrap();
+        // The expected result.
+        let col = table.head.fields[0].field;
+        let inv = table.head.project(&[col]).unwrap();
 
-        let input = mem_table(inv, vec![product!(scalar(1u64)), product!(scalar(2u64))]);
+        let input = MemTable::new(inv.into(), table.table_access, vec![product![1u64], product![2u64]]);
 
         assert_eq!(
-            result.as_without_table_name(),
-            input.as_without_table_name(),
+            mem_table_without_table_name(&result),
+            mem_table_without_table_name(&input),
             "Inventory"
         );
         Ok(())
@@ -333,29 +345,12 @@ pub(crate) mod tests {
 
         let db = TestDB::durable()?;
 
-        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-        create_table_with_rows(
-            &db,
-            &mut tx,
-            "Inventory",
-            data.inv.head.to_product_type(),
-            &data.inv.data,
-        )?;
-        create_table_with_rows(
-            &db,
-            &mut tx,
-            "Player",
-            data.player.head.to_product_type(),
-            &data.player.data,
-        )?;
-        create_table_with_rows(
-            &db,
-            &mut tx,
-            "Location",
-            data.location.head.to_product_type(),
-            &data.location.data,
-        )?;
-        db.commit_tx(&ExecutionContext::default(), tx)?;
+        let (p_schema, inv_schema) = db.with_auto_commit::<_, _, TestError>(&ExecutionContext::default(), |tx| {
+            let i = create_table_with_rows(&db, tx, "Inventory", data.inv_ty, &data.inv.data)?;
+            let p = create_table_with_rows(&db, tx, "Player", data.player_ty, &data.player.data)?;
+            create_table_with_rows(&db, tx, "Location", data.location_ty, &data.location.data)?;
+            Ok((p, i))
+        })?;
 
         let result = &run_for_testing(
             &db,
@@ -368,13 +363,12 @@ pub(crate) mod tests {
         WHERE x > 0 AND x <= 32 AND z > 0 AND z <= 32",
         )?[0];
 
-        let head = ProductType::from([("entity_id", AlgebraicType::U64), ("inventory_id", AlgebraicType::U64)]);
         let row1 = product!(100u64, 1u64);
-        let input = mem_table(head, [row1]);
+        let input = MemTable::new(Header::from(&*p_schema).into(), p_schema.table_access, [row1].into());
 
         assert_eq!(
-            input.as_without_table_name(),
-            result.as_without_table_name(),
+            mem_table_without_table_name(result),
+            mem_table_without_table_name(&input),
             "Player JOIN Location"
         );
 
@@ -391,13 +385,16 @@ pub(crate) mod tests {
         WHERE x > 0 AND x <= 32 AND z > 0 AND z <= 32",
         )?[0];
 
-        let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row1 = product!(1u64, "health");
-        let input = mem_table(head, [row1]);
+        let input = MemTable::new(
+            Header::from(&*inv_schema).into(),
+            inv_schema.table_access,
+            [row1].into(),
+        );
 
         assert_eq!(
-            input.as_without_table_name(),
-            result.as_without_table_name(),
+            mem_table_without_table_name(result),
+            mem_table_without_table_name(&input),
             "Inventory JOIN Player JOIN Location"
         );
         Ok(())
@@ -416,14 +413,13 @@ pub(crate) mod tests {
         assert_eq!(result.len(), 1, "Not return results");
         let mut result = result.first().unwrap().clone();
 
-        let row = product!(scalar(2u64), scalar("test"));
-        input.data.push(row);
+        input.data.push(product![2u64, "test"]);
         input.data.sort();
         result.data.sort();
 
         assert_eq!(
-            result.as_without_table_name(),
-            input.as_without_table_name(),
+            mem_table_without_table_name(&result),
+            mem_table_without_table_name(&input),
             "Inventory"
         );
 
@@ -477,15 +473,14 @@ pub(crate) mod tests {
         let result = run_for_testing(&db, "SELECT * FROM inventory WHERE inventory_id = 2")?;
 
         let result = result.first().unwrap().clone();
-        let row = product!(scalar(2u64), scalar("c2"));
 
         let mut change = input;
         change.data.clear();
-        change.data.push(row);
+        change.data.push(product![2u64, "c2"]);
 
         assert_eq!(
-            change.as_without_table_name(),
-            result.as_without_table_name(),
+            mem_table_without_table_name(&change),
+            mem_table_without_table_name(&result),
             "Update Inventory 2"
         );
 
@@ -507,6 +502,13 @@ pub(crate) mod tests {
         Ok(())
     }
 
+    fn cols_no_table_ids(head: &Header) -> Vec<(ColId, &AlgebraicType)> {
+        head.fields
+            .iter()
+            .map(|x| (x.field.col, &x.algebraic_type))
+            .collect::<Vec<_>>()
+    }
+
     #[test]
     fn test_create_table() -> ResultTest<()> {
         let (db, _) = create_data(1)?;
@@ -517,13 +519,11 @@ pub(crate) mod tests {
             "INSERT INTO inventory2 (inventory_id, name) VALUES (1, 'health1') ",
         )?;
 
-        let a = run_for_testing(&db, "SELECT * FROM inventory")?;
-        let a = a.first().unwrap().clone();
+        let a = run_for_testing(&db, "SELECT * FROM inventory")?.swap_remove(0);
+        let b = run_for_testing(&db, "SELECT * FROM inventory2")?.swap_remove(0);
 
-        let b = run_for_testing(&db, "SELECT * FROM inventory2")?;
-        let b = b.first().unwrap().clone();
-
-        assert_eq!(a.as_without_table_name(), b.as_without_table_name(), "Inventory");
+        assert_eq!(a.data, b.data);
+        assert_eq!(cols_no_table_ids(&a.head), cols_no_table_ids(&b.head));
 
         Ok(())
     }
@@ -628,9 +628,9 @@ pub(crate) mod tests {
 
         let result = run_for_testing(
             &db,
-            "insert into inventory (id, name) values (1, 'Kiley');
-insert into inventory (id, name) values (2, 'Terza');
-insert into inventory (id, name) values (3, 'Alvie');
+            "insert into inventory (inventory_id, name) values (1, 'Kiley');
+insert into inventory (inventory_id, name) values (2, 'Terza');
+insert into inventory (inventory_id, name) values (3, 'Alvie');
 SELECT * FROM inventory",
         )?;
 

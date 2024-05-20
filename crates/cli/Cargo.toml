@@ -62,6 +62,7 @@ wasmtime.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+spacetimedb-testing = { path = "../testing" }
 
 [features]
 standalone = ["spacetimedb-standalone"]

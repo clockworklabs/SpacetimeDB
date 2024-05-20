@@ -54,7 +54,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
     type Error = ValueDeserializeError;
 
     fn deserialize_product<V: de::ProductVisitor<'de>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        let vals = map_err(self.val.into_product())?.elements.into_iter();
+        let vals = map_err(self.val.into_product())?.into_iter();
         visitor.visit_seq_product(ProductAccess { vals })
     }
 
@@ -84,7 +84,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
     }
 
     fn deserialize_u128(self) -> Result<u128, Self::Error> {
-        map_err(self.val.into_u128())
+        map_err(self.val.into_u128().map(|x| x.0))
     }
 
     fn deserialize_i8(self) -> Result<i8, Self::Error> {
@@ -104,7 +104,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
     }
 
     fn deserialize_i128(self) -> Result<i128, Self::Error> {
-        map_err(self.val.into_i128())
+        map_err(self.val.into_i128().map(|x| x.0))
     }
 
     fn deserialize_f32(self) -> Result<f32, Self::Error> {
@@ -116,11 +116,11 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
     }
 
     fn deserialize_str<V: de::SliceVisitor<'de, str>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        visitor.visit_owned(map_err(self.val.into_string())?)
+        visitor.visit_owned(map_err(self.val.into_string().map(Into::into))?)
     }
 
     fn deserialize_bytes<V: de::SliceVisitor<'de, [u8]>>(self, visitor: V) -> Result<V::Output, Self::Error> {
-        visitor.visit_owned(map_err(self.val.into_bytes())?)
+        visitor.visit_owned(map_err(self.val.into_bytes().map(Vec::from))?)
     }
 
     fn deserialize_array_seed<V: de::ArrayVisitor<'de, T::Output>, T: de::DeserializeSeed<'de> + Clone>(
@@ -281,7 +281,7 @@ impl<'de> de::Deserializer<'de> for &'de ValueDeserializer {
         ok_or(self.val.as_u64().copied())
     }
     fn deserialize_u128(self) -> Result<u128, Self::Error> {
-        ok_or(self.val.as_u128().copied())
+        ok_or(self.val.as_u128().copied().map(|x| x.0))
     }
     fn deserialize_i8(self) -> Result<i8, Self::Error> {
         ok_or(self.val.as_i8().copied())
@@ -296,7 +296,7 @@ impl<'de> de::Deserializer<'de> for &'de ValueDeserializer {
         ok_or(self.val.as_i64().copied())
     }
     fn deserialize_i128(self) -> Result<i128, Self::Error> {
-        ok_or(self.val.as_i128().copied())
+        ok_or(self.val.as_i128().copied().map(|x| x.0))
     }
     fn deserialize_f32(self) -> Result<f32, Self::Error> {
         ok_or(self.val.as_f32().copied().map(f32::from))

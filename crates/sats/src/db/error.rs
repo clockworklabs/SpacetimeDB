@@ -10,25 +10,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum TypeError {
-    #[error("Arrays must be homogeneous. It expects to be `{{expect.to_satns()}}` but `{{value.to_satns()}}` is of type `{{found.to_satns()}}`")]
-    Array {
-        expect: AlgebraicType,
-        found: AlgebraicType,
-        value: AlgebraicValue,
-    },
-    #[error("Arrays must define a type for the elements")]
-    ArrayEmpty,
-    #[error("Maps must be homogeneous. It expects to be `{{key_expect.to_satns()}}:{{value_expect.to_satns()}}` but `{{key.to_satns()}}::{{value.to_satns()}}` is of type `{{key_found.to_satns()}}:{{value_found.to_satns()}}`")]
-    Map {
-        key_expect: AlgebraicType,
-        value_expect: AlgebraicType,
-        key_found: AlgebraicType,
-        value_found: AlgebraicType,
-        key: AlgebraicValue,
-        value: AlgebraicValue,
-    },
-    #[error("Maps must define a type for both key & value")]
-    MapEmpty,
+    #[error("The type of `{{value.to_satns()}}` cannot be inferred")]
+    CannotInferType { value: AlgebraicValue },
 }
 
 #[derive(Error, Debug, Clone)]
@@ -122,30 +105,30 @@ pub enum DefType {
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum SchemaError {
     #[error("Multiple primary columns defined for table: {table} columns: {pks:?}")]
-    MultiplePrimaryKeys { table: String, pks: Vec<String> },
+    MultiplePrimaryKeys { table: Box<str>, pks: Vec<String> },
     #[error("table id `{table_id}` should have name")]
     EmptyTableName { table_id: TableId },
     #[error("{ty} {name} columns `{columns:?}` not found  in table `{table}`")]
     ColumnsNotFound {
-        name: String,
-        table: String,
+        name: Box<str>,
+        table: Box<str>,
         columns: Vec<ColId>,
         ty: DefType,
     },
     #[error("table `{table}` {ty} should have name. {ty} id: {id}")]
-    EmptyName { table: String, ty: DefType, id: u32 },
+    EmptyName { table: Box<str>, ty: DefType, id: u32 },
     #[error("table `{table}` have `Constraints::unset()` for columns: {columns:?}")]
     ConstraintUnset {
-        table: String,
-        name: String,
+        table: Box<str>,
+        name: Box<str>,
         columns: ColList,
     },
     #[error("Attempt to define a column with more than 1 auto_inc sequence: Table: `{table}`, Field: `{field}`")]
-    OneAutoInc { table: String, field: String },
+    OneAutoInc { table: Box<str>, field: Box<str> },
     #[error("Only Btree Indexes are supported: Table: `{table}`, Index: `{index}` is a `{index_type}`")]
     OnlyBtree {
-        table: String,
-        index: String,
+        table: Box<str>,
+        index: Box<str>,
         index_type: IndexType,
     },
 }

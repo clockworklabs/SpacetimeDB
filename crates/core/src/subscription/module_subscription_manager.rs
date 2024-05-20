@@ -1,20 +1,23 @@
 use super::execution_unit::{ExecutionUnit, QueryHash};
-use crate::client::messages::{SubscriptionUpdate, TransactionUpdateMessage};
+use crate::client::messages::{SerializableMessage, SubscriptionUpdate, TransactionUpdateMessage};
 use crate::client::{ClientConnectionSender, Protocol};
-use crate::db::relational_db::RelationalDB;
+use crate::db::relational_db::{RelationalDB, Tx};
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent, ProtocolDatabaseUpdate};
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, ModuleEvent, ProtocolDatabaseUpdate};
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
-use itertools::{Either, Itertools as _};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use smallvec::SmallVec;
+use arrayvec::ArrayVec;
+use itertools::Either;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate};
 use spacetimedb_data_structures::map::{Entry, HashMap, HashSet, IntMap};
-use spacetimedb_lib::Identity;
+use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
-use std::ops::Deref;
 use std::sync::Arc;
 
+/// Clients are uniquely identified by their Identity and Address.
+/// Identity is insufficient because different Addresses can use the same Identity.
+/// TODO: Determine if Address is sufficient for uniquely identifying a client.
+type Id = (Identity, Address);
 type Query = Arc<ExecutionUnit>;
 type Client = Arc<ClientConnectionSender>;
 
@@ -26,17 +29,17 @@ type Client = Arc<ClientConnectionSender>;
 #[derive(Debug, Default)]
 pub struct SubscriptionManager {
     // Subscriber identities and their client connections.
-    clients: HashMap<Identity, Client>,
+    clients: HashMap<Id, Client>,
     // Queries for which there is at least one subscriber.
     queries: HashMap<QueryHash, Query>,
     // The subscribers for each query.
-    subscribers: HashMap<QueryHash, HashSet<Identity>>,
+    subscribers: HashMap<QueryHash, HashSet<Id>>,
     // Inverted index from tables to queries that read from them.
     tables: IntMap<TableId, HashSet<QueryHash>>,
 }
 
 impl SubscriptionManager {
-    pub fn client(&self, id: &Identity) -> Client {
+    pub fn client(&self, id: &Id) -> Client {
         self.clients[id].clone()
     }
 
@@ -54,7 +57,7 @@ impl SubscriptionManager {
     }
 
     #[cfg(test)]
-    fn contains_subscription(&self, subscriber: &Identity, query: &QueryHash) -> bool {
+    fn contains_subscription(&self, subscriber: &Id, query: &QueryHash) -> bool {
         self.subscribers.get(query).is_some_and(|ids| ids.contains(subscriber))
     }
 
@@ -68,7 +71,7 @@ impl SubscriptionManager {
     /// its table ids added to the inverted index.
     #[tracing::instrument(skip_all)]
     pub fn add_subscription(&mut self, client: Client, queries: impl IntoIterator<Item = Query>) {
-        let id = client.id.identity;
+        let id = (client.id.identity, client.id.address);
         self.clients.insert(id, client);
         for unit in queries {
             let hash = unit.hash();
@@ -83,7 +86,7 @@ impl SubscriptionManager {
     /// If a query no longer has any subscribers,
     /// it is removed from the index along with its table ids.
     #[tracing::instrument(skip_all)]
-    pub fn remove_subscription(&mut self, client: &Identity) {
+    pub fn remove_subscription(&mut self, client: &Id) {
         // Remove `hash` from the set of queries for `table_id`.
         // When the table has no queries, cleanup the map entry altogether.
         let mut remove_table_query = |table_id: TableId, hash: &QueryHash| {
@@ -112,35 +115,38 @@ impl SubscriptionManager {
     /// evaluates only the necessary queries for those delta tables,
     /// and then sends the results to each client.
     #[tracing::instrument(skip_all)]
-    pub fn eval_updates(&self, db: &RelationalDB, event: Arc<ModuleEvent>) {
+    pub fn eval_updates(
+        &self,
+        db: &RelationalDB,
+        tx: &Tx,
+        event: Arc<ModuleEvent>,
+        sender_client: Option<&ClientConnectionSender>,
+    ) {
         let tables = &event.status.database_update().unwrap().tables;
-
-        let tx = scopeguard::guard(db.begin_tx(), |tx| {
-            tx.release(&ExecutionContext::incremental_update(db.address()));
-        });
+        let slow = db.read_config().slow_query;
 
         // Put the main work on a rayon compute thread.
         rayon::scope(|_| {
             // Collect the delta tables for each query.
             // For selects this is just a single table.
             // For joins it's two tables.
-            let mut units: HashMap<_, SmallVec<[_; 2]>> = HashMap::new();
+            let mut units: HashMap<_, ArrayVec<_, 2>> = HashMap::new();
             for table @ DatabaseTableUpdate { table_id, .. } in tables {
                 if let Some(hashes) = self.tables.get(table_id) {
                     for hash in hashes {
-                        units.entry(hash).or_insert_with(SmallVec::new).push(table);
+                        units.entry(hash).or_insert_with(ArrayVec::new).push(table);
                     }
                 }
             }
 
             let span = tracing::info_span!("eval_incr").entered();
-            let ctx = ExecutionContext::incremental_update(db.address());
-            let tx = &tx.deref().into();
+            let ctx = ExecutionContext::incremental_update(db.address(), slow);
+            let tx = &tx.into();
             let eval = units
-                .into_par_iter()
-                .filter_map(|(hash, tables)| self.queries.get(hash).map(|unit| (hash, tables, unit)))
-                .filter_map(|(hash, tables, unit)| {
-                    match unit.eval_incr(&ctx, db, tx, tables.into_iter()) {
+                .par_iter()
+                .filter_map(|(&hash, tables)| {
+                    let unit = self.queries.get(hash)?;
+                    match unit.eval_incr(&ctx, db, tx, &unit.sql, tables.iter().copied()) {
                         Ok(None) => None,
                         Ok(Some(table)) => Some((hash, table)),
                         Err(err) => {
@@ -166,16 +172,12 @@ impl SubscriptionManager {
                     let mut ops_json: Option<Vec<TableRowOperationJson>> = None;
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
                         let ops = match self.clients[id].protocol {
-                            Protocol::Binary => Either::Left(
-                                ops_bin
-                                    .get_or_insert_with(|| delta.updates.iter().map_into().collect())
-                                    .clone(),
-                            ),
-                            Protocol::Text => Either::Right(
-                                ops_json
-                                    .get_or_insert_with(|| delta.updates.iter().map_into().collect())
-                                    .clone(),
-                            ),
+                            Protocol::Binary => {
+                                Either::Left(ops_bin.get_or_insert_with(|| (&delta.updates).into()).clone())
+                            }
+                            Protocol::Text => {
+                                Either::Right(ops_json.get_or_insert_with(|| (&delta.updates).into()).clone())
+                            }
                         };
                         (id, table_id, table_name.clone(), ops)
                     })
@@ -188,7 +190,7 @@ impl SubscriptionManager {
                 // so we'll have either `TableUpdate` (`Protocol::Binary`)
                 // or `TableUpdateJson` (`Protocol::Text`).
                 .fold(
-                    HashMap::<(&Identity, TableId), Either<TableUpdate, TableUpdateJson>>::new(),
+                    HashMap::<(&Id, TableId), Either<TableUpdate, TableUpdateJson>>::new(),
                     |mut tables, (id, table_id, table_name, ops)| {
                         match tables.entry((id, table_id)) {
                             Entry::Occupied(mut entry) => match ops {
@@ -202,7 +204,7 @@ impl SubscriptionManager {
                             Entry::Vacant(entry) => drop(entry.insert(match ops {
                                 Either::Left(ops) => Either::Left(TableUpdate {
                                     table_id: table_id.into(),
-                                    table_name,
+                                    table_name: table_name.into(),
                                     table_row_operations: ops,
                                 }),
                                 Either::Right(ops) => Either::Right(TableUpdateJson {
@@ -220,7 +222,7 @@ impl SubscriptionManager {
                 // So before sending the updates to each client,
                 // we must stitch together the `TableUpdate*`s into an aggregated list.
                 .fold(
-                    HashMap::<&Identity, Either<Vec<TableUpdate>, Vec<TableUpdateJson>>>::new(),
+                    HashMap::<&Id, Either<Vec<TableUpdate>, Vec<TableUpdateJson>>>::new(),
                     |mut updates, ((id, _), update)| {
                         let entry = updates.entry(id);
                         match update {
@@ -242,37 +244,58 @@ impl SubscriptionManager {
             drop(span);
 
             let _span = tracing::info_span!("eval_send").entered();
+
+            if let Some((_, client)) = event
+                .caller_address
+                .zip(sender_client)
+                .filter(|(addr, _)| !eval.contains_key(&(event.caller_identity, *addr)))
+            {
+                // Caller is not subscribed to any queries,
+                // but send a transaction update with an empty subscription update.
+                send_to_client(client, &event, SubscriptionUpdate::<DatabaseUpdate>::default());
+            }
+
             eval.into_iter().for_each(|(id, tables)| {
-                let client = self.client(id);
                 let database_update = SubscriptionUpdate {
                     database_update: ProtocolDatabaseUpdate { tables },
                     request_id: event.request_id,
                     timer: event.timer,
                 };
-                let message = TransactionUpdateMessage {
-                    event: event.clone(),
-                    database_update,
-                };
-                if let Err(e) = client.send_message(message) {
-                    tracing::warn!(%client.id, "failed to send update message to client: {e}")
-                }
+                send_to_client(self.client(id).as_ref(), &event, database_update);
             });
         })
     }
 }
 
+fn send_to_client<T>(client: &ClientConnectionSender, event: &Arc<ModuleEvent>, database_update: SubscriptionUpdate<T>)
+where
+    SerializableMessage: From<TransactionUpdateMessage<T>>,
+{
+    if let Err(e) = client.send_message(TransactionUpdateMessage {
+        event: event.clone(),
+        database_update,
+    }) {
+        tracing::warn!(%client.id, "failed to send update message to client: {e}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{sync::Arc, time::Duration};
 
-    use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
+    use spacetimedb_lib::{error::ResultTest, Address, AlgebraicType, Identity};
     use spacetimedb_primitives::TableId;
     use spacetimedb_vm::expr::CrudExpr;
 
     use crate::{
-        client::{ClientActorId, ClientConnectionSender, Protocol},
+        client::{ClientActorId, ClientConnectionSender, ClientName, Protocol},
         db::relational_db::{tests_utils::TestDB, RelationalDB},
+        energy::EnergyQuanta,
         execution_context::ExecutionContext,
+        host::{
+            module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall},
+            ArgsTuple, Timestamp,
+        },
         sql::compiler::compile_sql,
         subscription::{
             execution_unit::{ExecutionUnit, QueryHash},
@@ -300,6 +323,21 @@ mod tests {
         })
     }
 
+    fn id(address: u128) -> (Identity, Address) {
+        (Identity::ZERO, Address::from_u128(address))
+    }
+
+    fn client(address: u128) -> ClientConnectionSender {
+        ClientConnectionSender::dummy(
+            ClientActorId {
+                identity: Identity::ZERO,
+                address: Address::from_u128(address),
+                name: ClientName(0),
+            },
+            Protocol::Binary,
+        )
+    }
+
     #[test]
     fn test_subscribe() -> ResultTest<()> {
         let db = TestDB::durable()?;
@@ -309,9 +347,8 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let id = Identity::ZERO;
-        let client = ClientActorId::for_test(id);
-        let client = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let id = id(0);
+        let client = Arc::new(client(0));
 
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client, [plan]);
@@ -332,9 +369,8 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let id = Identity::ZERO;
-        let client = ClientActorId::for_test(id);
-        let client = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let id = id(0);
+        let client = Arc::new(client(0));
 
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client, [plan]);
@@ -356,9 +392,8 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let id = Identity::ZERO;
-        let client = ClientActorId::for_test(id);
-        let client = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let id = id(0);
+        let client = Arc::new(client(0));
 
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client.clone(), [plan.clone()]);
@@ -386,13 +421,11 @@ mod tests {
         let plan = compile_plan(&db, sql)?;
         let hash = plan.hash();
 
-        let id0 = Identity::ZERO;
-        let client0 = ClientActorId::for_test(id0);
-        let client0 = Arc::new(ClientConnectionSender::dummy(client0, Protocol::Binary));
+        let id0 = id(0);
+        let client0 = Arc::new(client(0));
 
-        let id1 = Identity::from_byte_array([1; 32]);
-        let client1 = ClientActorId::for_test(id1);
-        let client1 = Arc::new(ClientConnectionSender::dummy(client1, Protocol::Binary));
+        let id1 = id(1);
+        let client1 = Arc::new(client(1));
 
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client0, [plan.clone()]);
@@ -433,13 +466,11 @@ mod tests {
         let hash_select0 = plan_select0.hash();
         let hash_select1 = plan_select1.hash();
 
-        let id0 = Identity::ZERO;
-        let client0 = ClientActorId::for_test(id0);
-        let client0 = Arc::new(ClientConnectionSender::dummy(client0, Protocol::Binary));
+        let id0 = id(0);
+        let client0 = Arc::new(client(0));
 
-        let id1 = Identity::from_byte_array([1; 32]);
-        let client1 = ClientActorId::for_test(id1);
-        let client1 = Arc::new(ClientConnectionSender::dummy(client1, Protocol::Binary));
+        let id1 = id(1);
+        let client1 = Arc::new(client(1));
 
         let mut subscriptions = SubscriptionManager::default();
         subscriptions.add_subscription(client0, [plan_scan.clone(), plan_select0.clone()]);
@@ -480,6 +511,51 @@ mod tests {
 
         assert!(!subscriptions.query_reads_from_table(&hash_scan, &s));
         assert!(!subscriptions.query_reads_from_table(&hash_select1, &t));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_caller_transaction_update_without_subscription() -> ResultTest<()> {
+        // test if a transaction update is sent to the reducer caller even if
+        // the caller haven't subscribed to any updates
+        let db = TestDB::durable()?;
+
+        let id0 = Identity::ZERO;
+        let client0 = ClientActorId::for_test(id0);
+        let (client0, mut rx) = ClientConnectionSender::dummy_with_channel(client0, Protocol::Binary);
+
+        let subscriptions = SubscriptionManager::default();
+
+        let event = Arc::new(ModuleEvent {
+            timestamp: Timestamp::now(),
+            caller_identity: id0,
+            caller_address: Some(client0.id.address),
+            function_call: ModuleFunctionCall {
+                reducer: "DummyReducer".into(),
+                args: ArgsTuple::nullary(),
+            },
+            status: EventStatus::Committed(DatabaseUpdate::default()),
+            energy_quanta_used: EnergyQuanta::ZERO,
+            host_execution_duration: Duration::default(),
+            request_id: None,
+            timer: None,
+        });
+
+        let ctx = ExecutionContext::incremental_update(db.address(), db.read_config().slow_query);
+        db.with_read_only(&ctx, |tx| subscriptions.eval_updates(&db, tx, event, Some(&client0)));
+
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+            .block_on(async move {
+                tokio::time::timeout(Duration::from_millis(20), async move {
+                    rx.recv().await.expect("Expected at least one message");
+                })
+                .await
+                .expect("Timed out waiting for a message to the client");
+            });
 
         Ok(())
     }

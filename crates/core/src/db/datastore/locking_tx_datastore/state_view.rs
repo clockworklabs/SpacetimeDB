@@ -17,16 +17,16 @@ use spacetimedb_sats::{
     AlgebraicValue,
 };
 use spacetimedb_table::table::{IndexScanIter, RowRef, TableScanIter};
-use std::{borrow::Cow, ops::RangeBounds};
+use std::{ops::RangeBounds, sync::Arc};
 
 // StateView trait, is designed to define the behavior of viewing internal datastore states.
 // Currently, it applies to: CommittedState, MutTxId, and TxId.
 pub(crate) trait StateView {
-    fn get_schema(&self, table_id: &TableId) -> Option<&TableSchema>;
+    fn get_schema(&self, table_id: &TableId) -> Option<&Arc<TableSchema>>;
 
     fn table_id_from_name(&self, table_name: &str, database_address: Address) -> Result<Option<TableId>> {
         let ctx = ExecutionContext::internal(database_address);
-        let name = &table_name.to_owned().into();
+        let name = &<Box<str>>::from(table_name).into();
         let row = self
             .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableName, name)?
             .next();
@@ -68,7 +68,7 @@ pub(crate) trait StateView {
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
         let row = StTableRow::try_from(row)?;
-        let table_name: String = row.table_name;
+        let table_name = row.table_name;
         let table_id: TableId = row.table_id;
         let table_type = row.table_type;
         let table_access = row.table_access;
@@ -155,12 +155,12 @@ pub(crate) trait StateView {
     /// If the schema is not found in the cache, the method calls [Self::schema_for_table_raw].
     ///
     /// Note: The responsibility of populating the cache is left to the caller.
-    fn schema_for_table(&self, ctx: &ExecutionContext, table_id: TableId) -> Result<Cow<'_, TableSchema>> {
+    fn schema_for_table(&self, ctx: &ExecutionContext, table_id: TableId) -> Result<Arc<TableSchema>> {
         if let Some(schema) = self.get_schema(&table_id) {
-            return Ok(Cow::Borrowed(schema));
+            return Ok(schema.clone());
         }
 
-        self.schema_for_table_raw(ctx, table_id).map(Cow::Owned)
+        self.schema_for_table_raw(ctx, table_id).map(Arc::new)
     }
 }
 
@@ -326,7 +326,7 @@ pub struct IndexSeekIterMutTxId<'a> {
 //         let get_table_name = || {
 //             self.committed_state
 //                 .get_schema(&self.table_id)
-//                 .map(|table| table.table_name.as_str())
+//                 .map(|table| &*table.table_name)
 //                 .unwrap_or_default()
 //                 .to_string()
 //         };

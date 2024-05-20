@@ -224,13 +224,11 @@ impl<R: Repo, T: Encode> Generic<R, T> {
         R: 'a,
         T: 'a,
     {
-        self.commits_from(offset)
-            .with_log_format_version()
-            .map(|x| x.map_err(Into::into))
-            .map_ok(move |(version, commit)| commit.into_transactions(version, deserializer))
-            .flatten_ok()
-            .flatten_ok()
-            .skip_while(move |x| x.as_ref().map(|tx| tx.offset < offset).unwrap_or(false))
+        transactions_from_internal(
+            self.commits_from(offset).with_log_format_version(),
+            offset,
+            deserializer,
+        )
     }
 
     pub fn fold_transactions_from<D>(&self, offset: u64, decoder: D) -> Result<(), D::Error>
@@ -238,33 +236,7 @@ impl<R: Repo, T: Encode> Generic<R, T> {
         D: Decoder,
         D::Error: From<error::Traversal>,
     {
-        let mut iter = self.commits_from(offset).with_log_format_version();
-        while let Some(commit) = iter.next() {
-            let (version, commit) = match commit {
-                Ok(version_and_commit) => version_and_commit,
-                Err(e) => {
-                    // Ignore it if the very last commit in the log is broken.
-                    // The next `append` will fix the log, but the `decoder`
-                    // has no way to tell whether we're at the end or not.
-                    // This is unlike the consumer of an iterator, which can
-                    // perform below check itself.
-                    if iter.next().is_none() {
-                        return Ok(());
-                    }
-
-                    return Err(e.into());
-                }
-            };
-            trace!("commit {} n={} version={}", commit.min_tx_offset, commit.n, version);
-
-            let records = &mut commit.records.as_slice();
-            for n in 0..commit.n {
-                let tx_offset = commit.min_tx_offset + n as u64;
-                decoder.decode_record(version, tx_offset, records)?;
-            }
-        }
-
-        Ok(())
+        fold_transactions_internal(self.commits_from(offset).with_log_format_version(), decoder)
     }
 }
 
@@ -277,6 +249,104 @@ impl<R: Repo, T> Drop for Generic<R, T> {
             warn!("Failed to fsync on drop: {e}");
         }
     }
+}
+
+pub fn commits_from<R: Repo>(repo: R, max_log_format_version: u8, offset: u64) -> io::Result<Commits<R>> {
+    let mut offsets = repo.existing_offsets()?;
+    if let Some(pos) = offsets.iter().rposition(|&off| off <= offset) {
+        offsets = offsets.split_off(pos);
+    }
+    let last_offset = offsets.first().cloned().unwrap_or(offset);
+    let segments = Segments {
+        offs: offsets.into_iter(),
+        repo,
+        max_log_format_version,
+    };
+    Ok(Commits {
+        inner: None,
+        segments,
+        last_offset,
+        last_error: None,
+    })
+}
+
+pub fn transactions_from<'a, R, D, T>(
+    repo: R,
+    max_log_format_version: u8,
+    offset: u64,
+    de: &'a D,
+) -> io::Result<impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a>
+where
+    R: Repo + 'a,
+    D: Decoder<Record = T>,
+    D::Error: From<error::Traversal>,
+    T: 'a,
+{
+    commits_from(repo, max_log_format_version, offset)
+        .map(|commits| transactions_from_internal(commits.with_log_format_version(), offset, de))
+}
+
+pub fn fold_transactions_from<R, D>(repo: R, max_log_format_version: u8, offset: u64, de: D) -> Result<(), D::Error>
+where
+    R: Repo,
+    D: Decoder,
+    D::Error: From<error::Traversal> + From<io::Error>,
+{
+    let commits = commits_from(repo, max_log_format_version, offset)?;
+    fold_transactions_internal(commits.with_log_format_version(), de)
+}
+
+fn transactions_from_internal<'a, R, D, T>(
+    commits: CommitsWithVersion<R>,
+    offset: u64,
+    de: &'a D,
+) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a
+where
+    R: Repo + 'a,
+    D: Decoder<Record = T>,
+    D::Error: From<error::Traversal>,
+    T: 'a,
+{
+    commits
+        .map(|x| x.map_err(Into::into))
+        .map_ok(move |(version, commit)| commit.into_transactions(version, de))
+        .flatten_ok()
+        .flatten_ok()
+        .skip_while(move |x| x.as_ref().map(|tx| tx.offset < offset).unwrap_or(false))
+}
+
+fn fold_transactions_internal<R, D>(mut commits: CommitsWithVersion<R>, de: D) -> Result<(), D::Error>
+where
+    R: Repo,
+    D: Decoder,
+    D::Error: From<error::Traversal>,
+{
+    while let Some(commit) = commits.next() {
+        let (version, commit) = match commit {
+            Ok(version_and_commit) => version_and_commit,
+            Err(e) => {
+                // Ignore it if the very last commit in the log is broken.
+                // The next `append` will fix the log, but the `decoder`
+                // has no way to tell whether we're at the end or not.
+                // This is unlike the consumer of an iterator, which can
+                // perform below check itself.
+                if commits.next().is_none() {
+                    return Ok(());
+                }
+
+                return Err(e.into());
+            }
+        };
+        trace!("commit {} n={} version={}", commit.min_tx_offset, commit.n, version);
+
+        let records = &mut commit.records.as_slice();
+        for n in 0..commit.n {
+            let tx_offset = commit.min_tx_offset + n as u64;
+            de.consume_record(version, tx_offset, records)?;
+        }
+    }
+
+    Ok(())
 }
 
 pub struct Segments<R> {
@@ -309,7 +379,7 @@ impl<R: Repo> Commits<R> {
 
     /// Turn `self` into an iterator which pairs the log format version of the
     /// current segment with the [`Commit`].
-    pub fn with_log_format_version(self) -> impl Iterator<Item = Result<(u8, Commit), error::Traversal>> {
+    pub fn with_log_format_version(self) -> CommitsWithVersion<R> {
         CommitsWithVersion { inner: self }
     }
 }
@@ -377,7 +447,7 @@ impl<R: Repo> Iterator for Commits<R> {
     }
 }
 
-struct CommitsWithVersion<R: Repo> {
+pub struct CommitsWithVersion<R: Repo> {
     inner: Commits<R>,
 }
 

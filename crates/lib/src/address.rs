@@ -124,7 +124,7 @@ impl From<u128> for Address {
 impl From<Address> for AlgebraicValue {
     fn from(value: Address) -> Self {
         AlgebraicValue::Product(ProductValue::from(AlgebraicValue::Bytes(
-            value.__address_bytes.to_vec(),
+            value.__address_bytes.to_vec().into(),
         )))
     }
 }

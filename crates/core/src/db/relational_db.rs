@@ -1,5 +1,5 @@
 use super::datastore::traits::{
-    IsolationLevel, MutProgrammable, MutTx as _, MutTxDatastore, Programmable, Tx as _, TxDatastore,
+    IsolationLevel, MutProgrammable, MutTx as _, MutTxDatastore, Programmable, RowTypeForTable, Tx as _, TxDatastore,
 };
 use super::datastore::{
     locking_tx_datastore::{
@@ -10,11 +10,14 @@ use super::datastore::{
 };
 use super::relational_operators::Relation;
 use crate::address::Address;
+use crate::config::DatabaseConfig;
 use crate::db::db_metrics::DB_METRICS;
 use crate::error::{DBError, DatabaseError, TableError};
-use crate::execution_context::ExecutionContext;
+use crate::execution_context::{ExecutionContext, ReducerContext};
 use crate::hash::Hash;
+use crate::util::slow::SlowQueryConfig;
 use fs2::FileExt;
+use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
 use spacetimedb_durability::{self as durability, Durability};
 use spacetimedb_primitives::*;
@@ -22,6 +25,7 @@ use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_table::indexes::RowPointer;
+use spacetimedb_vm::errors::ErrorVm;
 use std::borrow::Cow;
 use std::fs::{create_dir_all, File};
 use std::io;
@@ -59,6 +63,7 @@ pub struct RelationalDB {
 
     // Release file lock last when dropping.
     _lock: Arc<File>,
+    config: Arc<RwLock<DatabaseConfig>>,
 }
 
 impl std::fmt::Debug for RelationalDB {
@@ -136,6 +141,9 @@ impl RelationalDB {
             disk_size_fn,
 
             _lock: Arc::new(lock),
+            config: Arc::new(RwLock::new(DatabaseConfig::with_slow_query(
+                SlowQueryConfig::with_defaults(),
+            ))),
         })
     }
 
@@ -150,14 +158,41 @@ impl RelationalDB {
     where
         T: durability::History<TxData = Txdata>,
     {
-        log::debug!("DATABASE: applying transaction history...");
-        // TODO: Output progress
+        log::info!("[{}] DATABASE: applying transaction history...", self.address);
+
+        // TODO: Revisit once we actually replay history suffixes, ie. starting
+        // from an offset larger than the history's min offset.
+        // TODO: We may want to require that a `tokio::runtime::Handle` is
+        // always supplied when constructing a `RelationalDB`. This would allow
+        // to spawn a timer task here which just prints the progress periodically
+        // in case the history is finite but very long.
+        let max_tx_offset = history.max_tx_offset();
+        let mut last_logged_percentage = 0;
+        let progress = |tx_offset: u64| {
+            if let Some(max_tx_offset) = max_tx_offset {
+                let percentage = f64::floor((tx_offset as f64 / max_tx_offset as f64) * 100.0) as i32;
+                if percentage > last_logged_percentage && percentage % 10 == 0 {
+                    log::info!(
+                        "[{}] Loaded {}% ({}/{})",
+                        self.address,
+                        percentage,
+                        tx_offset,
+                        max_tx_offset
+                    );
+                    last_logged_percentage = percentage;
+                }
+            // Print _something_ even if we don't know what's still ahead.
+            } else if tx_offset % 10_000 == 0 {
+                log::info!("[{}] Loading transaction {}", self.address, tx_offset);
+            }
+        };
+
         history
-            .fold_transactions_from(0, self.inner.replay())
+            .fold_transactions_from(0, self.inner.replay(progress))
             .map_err(anyhow::Error::from)?;
-        log::debug!("DATABASE: applied transaction history");
+        log::info!("[{}] DATABASE: applied transaction history", self.address);
         self.inner.rebuild_state_after_replay()?;
-        log::debug!("DATABASE: rebuilt state after replay");
+        log::info!("[{}] DATABASE: rebuilt state after replay", self.address);
 
         Ok(self)
     }
@@ -191,15 +226,11 @@ impl RelationalDB {
         row.encode(bytes);
     }
 
-    pub fn schema_for_table_mut<'tx>(
-        &self,
-        tx: &'tx MutTx,
-        table_id: TableId,
-    ) -> Result<Cow<'tx, TableSchema>, DBError> {
+    pub fn schema_for_table_mut(&self, tx: &MutTx, table_id: TableId) -> Result<Arc<TableSchema>, DBError> {
         self.inner.schema_for_table_mut_tx(tx, table_id)
     }
 
-    pub fn schema_for_table<'tx>(&self, tx: &'tx Tx, table_id: TableId) -> Result<Cow<'tx, TableSchema>, DBError> {
+    pub fn schema_for_table(&self, tx: &Tx, table_id: TableId) -> Result<Arc<TableSchema>, DBError> {
         self.inner.schema_for_table_tx(tx, table_id)
     }
 
@@ -207,26 +238,27 @@ impl RelationalDB {
         &self,
         tx: &'tx MutTx,
         table_id: TableId,
-    ) -> Result<Cow<'tx, ProductType>, DBError> {
+    ) -> Result<RowTypeForTable<'tx>, DBError> {
         self.inner.row_type_for_table_mut_tx(tx, table_id)
     }
 
-    pub fn get_all_tables_mut<'tx>(&self, tx: &'tx MutTx) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
+    pub fn get_all_tables_mut(&self, tx: &MutTx) -> Result<Vec<Arc<TableSchema>>, DBError> {
         self.inner
             .get_all_tables_mut_tx(&ExecutionContext::internal(self.address), tx)
     }
 
-    pub fn get_all_tables<'tx>(&self, tx: &'tx Tx) -> Result<Vec<Cow<'tx, TableSchema>>, DBError> {
+    pub fn get_all_tables(&self, tx: &Tx) -> Result<Vec<Arc<TableSchema>>, DBError> {
         self.inner
             .get_all_tables_tx(&ExecutionContext::internal(self.address), tx)
     }
 
-    pub fn schema_for_column<'tx>(
+    pub fn decode_column(
         &self,
-        tx: &'tx MutTx,
+        tx: &MutTx,
         table_id: TableId,
         col_id: ColId,
-    ) -> Result<Cow<'tx, AlgebraicType>, DBError> {
+        bytes: &[u8],
+    ) -> Result<AlgebraicValue, DBError> {
         // We need to do a manual bounds check here
         // since we want to do `swap_remove` to get an owned value
         // in the case of `Cow::Owned` and avoid a `clone`.
@@ -237,27 +269,10 @@ impl RelationalDB {
             }
             Ok(col_idx)
         };
-        Ok(match self.row_schema_for_table(tx, table_id)? {
-            Cow::Borrowed(schema) => {
-                let col_idx = check_bounds(schema)?;
-                Cow::Borrowed(&schema.elements[col_idx].algebraic_type)
-            }
-            Cow::Owned(mut schema) => {
-                let col_idx = check_bounds(&schema)?;
-                Cow::Owned(schema.elements.swap_remove(col_idx).algebraic_type)
-            }
-        })
-    }
-
-    pub fn decode_column(
-        &self,
-        tx: &MutTx,
-        table_id: TableId,
-        col_id: ColId,
-        bytes: &[u8],
-    ) -> Result<AlgebraicValue, DBError> {
-        let schema = self.schema_for_column(tx, table_id, col_id)?;
-        Ok(AlgebraicValue::decode(&schema, &mut &*bytes)?)
+        let row_ty = &*self.row_schema_for_table(tx, table_id)?;
+        let col_idx = check_bounds(row_ty)?;
+        let col_ty = &row_ty.elements[col_idx].algebraic_type;
+        Ok(AlgebraicValue::decode(col_ty, &mut &*bytes)?)
     }
 
     /// Begin a transaction.
@@ -284,6 +299,12 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
+    pub fn rollback_mut_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTx) -> Tx {
+        log::trace!("ROLLBACK MUT TX");
+        self.inner.rollback_mut_tx_downgrade(ctx, tx)
+    }
+
+    #[tracing::instrument(skip_all)]
     pub fn release_tx(&self, ctx: &ExecutionContext, tx: Tx) {
         log::trace!("ROLLBACK TX");
         self.inner.release_tx(ctx, tx)
@@ -291,11 +312,6 @@ impl RelationalDB {
 
     #[tracing::instrument(skip_all)]
     pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTx) -> Result<Option<TxData>, DBError> {
-        use commitlog::payload::{
-            txdata::{Mutations, Ops},
-            Txdata,
-        };
-
         log::trace!("COMMIT MUT TX");
 
         let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? else {
@@ -303,36 +319,85 @@ impl RelationalDB {
         };
 
         if let Some(durability) = &self.durability {
-            let inserts = tx_data
-                .inserts()
-                .map(|(table_id, rowdata)| Ops {
-                    table_id: *table_id,
-                    rowdata: rowdata.clone(),
-                })
-                .collect();
-            let deletes = tx_data
-                .deletes()
-                .map(|(table_id, rowdata)| Ops {
-                    table_id: *table_id,
-                    rowdata: rowdata.clone(),
-                })
-                .collect();
+            Self::do_durability(&**durability, ctx, &tx_data)
+        }
 
-            let txdata = Txdata {
-                inputs: None,
-                outputs: None,
-                mutations: Some(Mutations {
-                    inserts,
-                    deletes,
-                    truncates: Box::new([]),
-                }),
-            };
+        Ok(Some(tx_data))
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub fn commit_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTx) -> Result<Option<(TxData, Tx)>, DBError> {
+        log::trace!("COMMIT MUT TX");
+
+        let Some((tx_data, tx)) = self.inner.commit_mut_tx_downgrade(ctx, tx)? else {
+            return Ok(None);
+        };
+
+        if let Some(durability) = &self.durability {
+            Self::do_durability(&**durability, ctx, &tx_data)
+        }
+
+        Ok(Some((tx_data, tx)))
+    }
+
+    fn do_durability(durability: &dyn Durability<TxData = Txdata>, ctx: &ExecutionContext, tx_data: &TxData) {
+        use commitlog::payload::{
+            txdata::{Mutations, Ops},
+            Txdata,
+        };
+
+        let inserts: Box<_> = tx_data
+            .inserts()
+            .map(|(table_id, rowdata)| Ops {
+                table_id: *table_id,
+                rowdata: rowdata.clone(),
+            })
+            .collect();
+        let deletes: Box<_> = tx_data
+            .deletes()
+            .map(|(table_id, rowdata)| Ops {
+                table_id: *table_id,
+                rowdata: rowdata.clone(),
+            })
+            .collect();
+
+        // Avoid appending transactions to the commitlog which don't modify
+        // any tables.
+        //
+        // An exception ar connect / disconnect calls, which we always want
+        // paired in the log, so as to be able to disconnect clients
+        // automatically after a server crash. See:
+        // [`crate::host::ModuleHost::call_identity_connected_disconnected`]
+        //
+        // Note that this may change in the future: some analytics and/or
+        // timetravel queries may benefit from seeing all inputs, even if
+        // the database state did not change.
+        let is_noop = || inserts.is_empty() && deletes.is_empty();
+        let is_connect_disconnect = |ctx: &ReducerContext| {
+            matches!(
+                ctx.name.strip_prefix("__identity_"),
+                Some("connected__" | "disconnected__")
+            )
+        };
+        let inputs = ctx
+            .reducer_context()
+            .and_then(|rcx| (!is_noop() || is_connect_disconnect(rcx)).then(|| rcx.into()));
+
+        let txdata = Txdata {
+            inputs,
+            outputs: None,
+            mutations: Some(Mutations {
+                inserts,
+                deletes,
+                truncates: [].into(),
+            }),
+        };
+
+        if !txdata.is_empty() {
             log::trace!("append {txdata:?}");
             // TODO: Should measure queuing time + actual write
             durability.append_tx(txdata);
         }
-
-        Ok(Some(tx_data))
     }
 
     /// Run a fallible function in a transaction.
@@ -508,10 +573,6 @@ impl RelationalDB {
     }
 
     pub fn drop_table(&self, ctx: &ExecutionContext, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
-        let _guard = DB_METRICS
-            .rdb_drop_table_time
-            .with_label_values(&table_id.0)
-            .start_timer();
         let table_name = self
             .table_name_from_id_mut(ctx, tx, table_id)?
             .map(|name| name.to_string())
@@ -767,14 +828,21 @@ impl RelationalDB {
     pub(crate) fn set_program_hash(&self, tx: &mut MutTx, fence: u128, hash: Hash) -> Result<(), DBError> {
         self.inner.set_program_hash(tx, fence, hash)
     }
+
+    /// Set a runtime configurations setting of the database
+    pub(crate) fn set_config(&self, key: &str, value: AlgebraicValue) -> Result<(), ErrorVm> {
+        self.config.write().set_config(key, value)
+    }
+    /// Read the runtime configurations settings of the database
+    pub(crate) fn read_config(&self) -> DatabaseConfig {
+        *self.config.read()
+    }
 }
 
 #[cfg(any(test, feature = "test"))]
 pub mod tests_utils {
-    use std::fs::create_dir_all;
-    use std::ops::Deref;
-
     use super::*;
+    use core::ops::Deref;
     use tempfile::TempDir;
 
     /// A [`RelationalDB`] in a temporary directory.
@@ -968,14 +1036,27 @@ pub mod tests_utils {
 mod tests {
     #![allow(clippy::disallowed_macros)]
 
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
     use super::*;
     use crate::db::datastore::system_tables::{
-        StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID,
-        ST_TABLES_ID,
+        system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINTS_ID, ST_INDEXES_ID,
+        ST_SEQUENCES_ID, ST_TABLES_ID,
     };
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::error::IndexError;
+    use crate::execution_context::ReducerContext;
+    use crate::host::Timestamp;
+    use anyhow::bail;
+    use bytes::Bytes;
+    use commitlog::payload::txdata;
+    use commitlog::Commitlog;
+    use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_lib::error::ResultTest;
+    use spacetimedb_lib::Identity;
+    use spacetimedb_sats::bsatn;
+    use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::db::def::{ColumnDef, ConstraintDef};
     use spacetimedb_sats::product;
     use spacetimedb_table::read_column::ReadColumn;
@@ -983,7 +1064,7 @@ mod tests {
 
     fn column(name: &str, ty: AlgebraicType) -> ColumnDef {
         ColumnDef {
-            col_name: name.to_string(),
+            col_name: name.into(),
             col_type: ty,
         }
     }
@@ -1011,7 +1092,7 @@ mod tests {
         TableDef::new(
             "MyTable".into(),
             vec![ColumnDef {
-                col_name: "my_col".to_string(),
+                col_name: "my_col".into(),
                 col_type,
             }],
         )
@@ -1070,7 +1151,7 @@ mod tests {
         stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
         let table_id = stdb.table_id_from_name_mut(&tx, "MyTable")?.unwrap();
         let schema = stdb.schema_for_table_mut(&tx, table_id)?;
-        let col = schema.columns().iter().find(|x| x.col_name == "my_col").unwrap();
+        let col = schema.columns().iter().find(|x| &*x.col_name == "my_col").unwrap();
         assert_eq!(col.col_pos, 0.into());
         Ok(())
     }
@@ -1264,7 +1345,7 @@ mod tests {
     }
 
     fn table_indexed(is_unique: bool) -> TableDef {
-        my_table(AlgebraicType::I64).with_indexes(vec![IndexDef::btree("MyTable_my_col_idx".to_string(), 0, is_unique)])
+        my_table(AlgebraicType::I64).with_indexes(vec![IndexDef::btree("MyTable_my_col_idx".into(), 0, is_unique)])
     }
 
     #[test]
@@ -1290,7 +1371,6 @@ mod tests {
 
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
-        dbg!("reopen...");
         let stdb = stdb.reopen()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
@@ -1318,6 +1398,23 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![1i64])?;
 
         assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_row_count() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let schema = my_table(AlgebraicType::I64);
+        let table_id = stdb.create_table(&mut tx, schema)?;
+        stdb.insert(&mut tx, table_id, product![1i64])?;
+        stdb.insert(&mut tx, table_id, product![2i64])?;
+        stdb.commit_tx(&ExecutionContext::default(), tx)?;
+
+        let stdb = stdb.reopen()?;
+        let tx = stdb.begin_tx();
+        assert_eq!(tx.get_row_count(table_id).unwrap(), 2);
         Ok(())
     }
 
@@ -1390,7 +1487,7 @@ mod tests {
             "MyTable".into(),
             ["col1", "col2", "col3", "col4"]
                 .map(|c| ColumnDef {
-                    col_name: c.to_string(),
+                    col_name: c.into(),
                     col_type: AlgebraicType::I64,
                 })
                 .into(),
@@ -1584,5 +1681,213 @@ mod tests {
         );
 
         stdb.rollback_mut_tx(&ctx, delete_insert_tx);
+    }
+
+    #[test]
+    fn test_tx_inputs_are_in_the_commitlog() {
+        let _ = env_logger::builder()
+            .filter_level(log::LevelFilter::Trace)
+            .format_timestamp(None)
+            .is_test(true)
+            .try_init();
+
+        let stdb = TestDB::durable().expect("failed to create TestDB");
+
+        let timestamp = Timestamp::now();
+        let ctx = ExecutionContext::reducer(
+            stdb.address(),
+            ReducerContext {
+                name: "abstract_concrete_proxy_factory_impl".into(),
+                caller_identity: Identity::__dummy(),
+                caller_address: Address::__DUMMY,
+                timestamp,
+                arg_bsatn: Bytes::new(),
+            },
+        );
+
+        let row_ty = ProductType::from([("le_boeuf", AlgebraicType::I32)]);
+        let schema = TableDef::from_product("test_table", row_ty.clone());
+
+        // Create an empty transaction
+        {
+            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+            stdb.commit_tx(&ctx, tx).expect("failed to commit empty transaction");
+        }
+
+        // Create an empty transaction pretending to be an
+        // `__identity_connected__` call.
+        {
+            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+            stdb.commit_tx(
+                &ExecutionContext::reducer(
+                    stdb.address(),
+                    ReducerContext {
+                        name: "__identity_connected__".into(),
+                        caller_identity: Identity::__dummy(),
+                        caller_address: Address::__DUMMY,
+                        timestamp,
+                        arg_bsatn: Bytes::new(),
+                    },
+                ),
+                tx,
+            )
+            .expect("failed to commit empty __identity_connected__ transaction");
+        }
+
+        // Create a non-empty transaction including reducer info
+        let table_id = {
+            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+            let table_id = stdb.create_table(&mut tx, schema).expect("failed to create table");
+            stdb.insert(&mut tx, table_id, product!(AlgebraicValue::I32(0)))
+                .expect("failed to insert row");
+            stdb.commit_tx(&ctx, tx).expect("failed to commit tx");
+
+            table_id
+        };
+
+        // Create a non-empty transaction without reducer info, as it would be
+        // created by a mutable SQL transaction
+        {
+            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+            stdb.insert(&mut tx, table_id, product!(AlgebraicValue::I32(-42)))
+                .expect("failed to insert row");
+            stdb.commit_tx(&ExecutionContext::sql(stdb.address(), Default::default()), tx)
+                .expect("failed to commit tx");
+        }
+
+        // `txdata::Visitor` which only collects `txdata::Inputs`.
+        struct Inputs {
+            // The inputs collected during traversal of the log.
+            inputs: Vec<txdata::Inputs>,
+            // The number of transactions seen during traversal of the log.
+            num_txs: usize,
+            // System tables, needed to be able to consume transaction records.
+            sys: IntMap<TableId, ProductType>,
+            // The table created above, needed to be able to consume transaction
+            // records.
+            row_ty: ProductType,
+        }
+
+        impl txdata::Visitor for Inputs {
+            type Row = ();
+            type Error = anyhow::Error;
+
+            fn visit_insert<'a, R: BufReader<'a>>(
+                &mut self,
+                table_id: TableId,
+                reader: &mut R,
+            ) -> Result<Self::Row, Self::Error> {
+                let ty = self.sys.get(&table_id).unwrap_or(&self.row_ty);
+                let row = ProductValue::decode(ty, reader)?;
+                log::debug!("insert: {table_id} {row:?}");
+                Ok(())
+            }
+
+            fn visit_delete<'a, R: BufReader<'a>>(
+                &mut self,
+                table_id: TableId,
+                _reader: &mut R,
+            ) -> Result<Self::Row, Self::Error> {
+                bail!("unexpected delete for table: {table_id}")
+            }
+
+            fn visit_inputs(&mut self, inputs: &txdata::Inputs) -> Result<(), Self::Error> {
+                log::debug!("visit_inputs: {inputs:?}");
+                self.inputs.push(inputs.clone());
+                Ok(())
+            }
+
+            fn visit_tx_start(&mut self, offset: u64) -> Result<(), Self::Error> {
+                log::debug!("tx start: {offset}");
+                self.num_txs += 1;
+                Ok(())
+            }
+
+            fn visit_tx_end(&mut self) -> Result<(), Self::Error> {
+                log::debug!("tx end");
+                Ok(())
+            }
+        }
+
+        struct Decoder(Rc<RefCell<Inputs>>);
+
+        impl spacetimedb_commitlog::Decoder for Decoder {
+            type Record = txdata::Txdata<()>;
+            type Error = txdata::DecoderError<anyhow::Error>;
+
+            #[inline]
+            fn decode_record<'a, R: BufReader<'a>>(
+                &self,
+                version: u8,
+                tx_offset: u64,
+                reader: &mut R,
+            ) -> Result<Self::Record, Self::Error> {
+                txdata::decode_record_fn(&mut *self.0.borrow_mut(), version, tx_offset, reader)
+            }
+        }
+
+        let (db, durablity, rt, dir) = stdb.into_parts();
+        // Free reference to durability.
+        drop(db);
+        // Ensure everything is flushed to disk.
+        rt.expect("Durable TestDB must have a runtime")
+            .block_on(
+                Arc::into_inner(durablity.expect("Durable TestDB must have a durability"))
+                    .expect("failed to unwrap Arc")
+                    .close(),
+            )
+            .expect("failed to close local durabilility");
+
+        // Re-open commitlog and collect inputs.
+        let inputs = Rc::new(RefCell::new(Inputs {
+            inputs: Vec::new(),
+            num_txs: 0,
+            sys: system_tables()
+                .into_iter()
+                .map(|schema| (schema.table_id, schema.into_row_type()))
+                .collect(),
+            row_ty,
+        }));
+        {
+            let clog =
+                Commitlog::<()>::open(dir.path().join("clog"), Default::default()).expect("failed to open commitlog");
+            let decoder = Decoder(Rc::clone(&inputs));
+            clog.fold_transactions(decoder).unwrap();
+        }
+        // Just a safeguard so we don't drop the temp dir before this point.
+        drop(dir);
+
+        let inputs = Rc::into_inner(inputs).unwrap().into_inner();
+        log::debug!("collected inputs: {:?}", inputs.inputs);
+
+        // We should've seen three transactions --
+        // the empty one should've been ignored/
+        assert_eq!(inputs.num_txs, 3);
+        // Two of the transactions should yield inputs.
+        assert_eq!(inputs.inputs.len(), 2);
+
+        // Also assert that we got what we put in.
+        for (i, input) in inputs.inputs.into_iter().enumerate() {
+            let reducer_name = input.reducer_name.as_str();
+            if i == 0 {
+                assert_eq!(reducer_name, "__identity_connected__");
+            } else {
+                assert_eq!(reducer_name, "abstract_concrete_proxy_factory_impl");
+            }
+            let mut args = input.reducer_args.as_ref();
+            let identity: Identity =
+                bsatn::from_reader(&mut args).expect("failed to decode caller identity from reducer args");
+            let address: Address =
+                bsatn::from_reader(&mut args).expect("failed to decode caller address from reducer args");
+            let timestamp1: Timestamp =
+                bsatn::from_reader(&mut args).expect("failed to decode timestamp from reducer args");
+            assert!(
+                args.is_empty(),
+                "expected args to be exhausted because nullary args were given"
+            );
+            assert_eq!(identity, Identity::ZERO);
+            assert_eq!(address, Address::ZERO);
+            assert_eq!(timestamp1, timestamp);
+        }
     }
 }

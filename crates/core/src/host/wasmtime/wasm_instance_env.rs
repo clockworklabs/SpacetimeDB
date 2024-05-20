@@ -4,7 +4,6 @@ use std::ops::DerefMut;
 use std::time::Instant;
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
-use crate::db::db_metrics::DB_METRICS;
 use crate::execution_context::ExecutionContext;
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::timestamp::Timestamp;
@@ -130,7 +129,7 @@ impl WasmInstanceEnv {
     /// Signal to this `WasmInstanceEnv` that a reducer call is beginning.
     pub fn start_reducer(&mut self, name: &str) {
         self.reducer_start = Instant::now();
-        self.reducer_name = name.to_owned();
+        name.clone_into(&mut self.reducer_name);
     }
 
     /// Signal to this `WasmInstanceEnv` that a reducer call is over.
@@ -156,18 +155,6 @@ impl WasmInstanceEnv {
     /// Returns an execution context for a reducer call.
     fn reducer_context(&self) -> Result<impl DerefMut<Target = ExecutionContext> + '_, WasmError> {
         self.instance_env().get_ctx().map_err(|err| WasmError::Db(err.into()))
-    }
-
-    // TODO: make this part of cvt(), maybe?
-    /// Gather the appropriate metadata and log a wasm_abi_call_duration_ns with the given AbiCall & duration
-    #[allow(unused)]
-    fn start_abi_call_timer(&self, call: AbiCall) -> prometheus::HistogramTimer {
-        let db = self.instance_env().dbic.address;
-
-        DB_METRICS
-            .wasm_abi_call_duration_sec
-            .with_label_values(&db, &self.reducer_name, &call)
-            .start_timer()
     }
 
     /// Call the function `f` with the name `func`.
@@ -380,10 +367,6 @@ impl WasmInstanceEnv {
     ///   according to the `ProductType` that the table's schema specifies.
     #[tracing::instrument(skip_all)]
     pub fn insert(caller: Caller<'_, Self>, table_id: u32, row: WasmPtr<u8>, row_len: u32) -> RtResult<u32> {
-        // TODO: Instead of writing this metric on every insert call,
-        // we should aggregate and write at the end of the transaction.
-        // let _guard = caller.data().start_abi_call_timer(AbiCall::Insert);
-
         Self::cvt(caller, AbiCall::Insert, |caller| {
             let (mem, env) = Self::mem_env(caller);
 
@@ -425,10 +408,6 @@ impl WasmInstanceEnv {
         value_len: u32,
         out: WasmPtr<u32>,
     ) -> RtResult<u32> {
-        // TODO: Instead of writing this metric on every insert call,
-        // we should aggregate and write at the end of the transaction.
-        // let _guard = caller.data().start_abi_call_timer(AbiCall::DeleteByColEq);
-
         Self::cvt_ret(caller, AbiCall::DeleteByColEq, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
             let ctx = env.reducer_context()?;
@@ -528,7 +507,7 @@ impl WasmInstanceEnv {
         Self::cvt(caller, AbiCall::CreateIndex, |caller| {
             let (mem, env) = Self::mem_env(caller);
             // Read the index name from WASM memory.
-            let index_name = mem.deref_str(index_name, index_name_len)?.to_owned();
+            let index_name = mem.deref_str(index_name, index_name_len)?.into();
 
             // Read the column ids on which to create an index from WASM memory.
             // This may be one column or an index on several columns.
@@ -565,10 +544,6 @@ impl WasmInstanceEnv {
         val_len: u32,
         out: WasmPtr<BufferIdx>,
     ) -> RtResult<u32> {
-        // TODO: Instead of writing this metric on every insert call,
-        // we should aggregate and write at the end of the transaction.
-        // let _guard = caller.data().start_abi_call_timer(AbiCall::IterByColEq);
-
         Self::cvt_ret(caller, AbiCall::IterByColEq, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
             // Read the test value from WASM memory.
@@ -599,10 +574,6 @@ impl WasmInstanceEnv {
     /// - a table with the provided `table_id` doesn't exist
     // #[tracing::instrument(skip_all)]
     pub fn iter_start(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> RtResult<u32> {
-        // TODO: Instead of writing this metric on every insert call,
-        // we should aggregate and write at the end of the transaction.
-        // let _guard = caller.data().start_abi_call_timer(AbiCall::IterStart);
-
         Self::cvt_ret(caller, AbiCall::IterStart, out, |caller| {
             let env = caller.data_mut();
             // Retrieve the execution context for the current reducer.
@@ -636,10 +607,6 @@ impl WasmInstanceEnv {
         filter_len: u32,
         out: WasmPtr<BufferIterIdx>,
     ) -> RtResult<u32> {
-        // TODO: Instead of writing this metric on every insert call,
-        // we should aggregate and write at the end of the transaction.
-        // let _guard = caller.data().start_abi_call_timer(AbiCall::IterStartFiltered);
-
         Self::cvt_ret(caller, AbiCall::IterStartFiltered, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
             // Retrieve the execution context for the current reducer.

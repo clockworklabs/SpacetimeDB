@@ -110,8 +110,7 @@ unsafe fn serialize_sum<S: Serializer>(
     ty: &SumTypeLayout,
 ) -> Result<S::Ok, S::Error> {
     // Read the tag of the sum value.
-    // SAFETY: `bytes[curr_offset..]` hold a sum value at `ty`.
-    let (tag, data_ty) = unsafe { read_tag(bytes, ty, curr_offset.get()) };
+    let (tag, data_ty) = read_tag(bytes, ty, curr_offset.get());
 
     // Serialize the variant data value.
     let data_offset = &Cell::new(curr_offset.get() + ty.offset_of_variant_data(tag));
@@ -133,20 +132,9 @@ unsafe fn serialize_sum<S: Serializer>(
 }
 
 /// Reads the tag of the sum value and selects the data variant type.
-///
-/// # Safety
-///
-/// `bytes[curr_offset..]` has a sum value typed at `ty`.
-pub unsafe fn read_tag<'ty>(
-    bytes: &Bytes,
-    ty: &'ty SumTypeLayout,
-    curr_offset: usize,
-) -> (u8, &'ty AlgebraicTypeLayout) {
+pub fn read_tag<'ty>(bytes: &Bytes, ty: &'ty SumTypeLayout, curr_offset: usize) -> (u8, &'ty AlgebraicTypeLayout) {
     let tag_offset = ty.offset_of_tag();
     let tag = bytes[curr_offset + tag_offset];
-    // SAFETY: Caller promised that `bytes[curr_offset..]` has a sum value typed at `ty`.
-    // We can therefore assume that `curr_offset + tag_offset` refers to a valid `u8`.
-    let tag = unsafe { tag.assume_init() };
 
     // Extract the variant data type depending on the tag.
     let data_ty = &ty.variants[tag as usize].ty;
@@ -305,7 +293,7 @@ unsafe fn serialize_bsatn<S: Serializer>(
     let vlr = unsafe { read_from_bytes::<VarLenRef>(bytes, curr_offset) };
 
     if vlr.is_large_blob() {
-        // SAFETY: As `vlr` a blob, `vlr.first_granule` always points to a valid granule.
+        // SAFETY: As `vlr` is a blob, `vlr.first_granule` always points to a valid granule.
         let blob = unsafe { vlr_blob_bytes(page, blob_store, vlr) };
         // SAFETY: The BSATN in `blob` is encoded from an `AlgebraicValue`.
         unsafe { ser.serialize_bsatn(ty, blob) }

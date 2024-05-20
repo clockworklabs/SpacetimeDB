@@ -126,7 +126,7 @@ impl ResolveRefs for SumType {
             .variants
             .iter()
             .map(|v| this.with(v)._resolve_refs(state))
-            .collect::<Option<Vec<_>>>()?;
+            .collect::<Option<_>>()?;
         Some(Self { variants })
     }
 }

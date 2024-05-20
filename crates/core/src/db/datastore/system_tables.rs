@@ -76,7 +76,7 @@ macro_rules! st_fields_enum {
             }
 
             #[inline]
-            pub fn col_name(self) -> String {
+            pub fn col_name(self) -> Box<str> {
                 self.name().into()
             }
 
@@ -312,12 +312,12 @@ pub struct StTableRow<Name: AsRef<str>> {
     pub(crate) table_access: StAccess,
 }
 
-impl TryFrom<RowRef<'_>> for StTableRow<String> {
+impl TryFrom<RowRef<'_>> for StTableRow<Box<str>> {
     type Error = DBError;
     // TODO(cloutiertyler): Noa, can we just decorate `StTableRow` with Deserialize or something instead?
-    fn try_from(row: RowRef<'_>) -> Result<StTableRow<String>, DBError> {
+    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
         let table_type = row
-            .read_col::<String>(StTableFields::TableType)?
+            .read_col::<Box<str>>(StTableFields::TableType)?
             .deref()
             .try_into()
             .map_err(|x: &str| TableError::DecodeField {
@@ -328,7 +328,7 @@ impl TryFrom<RowRef<'_>> for StTableRow<String> {
             })?;
 
         let table_access = row
-            .read_col::<String>(StTableFields::TablesAccess)?
+            .read_col::<Box<str>>(StTableFields::TablesAccess)?
             .deref()
             .try_into()
             .map_err(|x: &str| TableError::DecodeField {
@@ -347,13 +347,13 @@ impl TryFrom<RowRef<'_>> for StTableRow<String> {
     }
 }
 
-impl From<StTableRow<String>> for ProductValue {
-    fn from(x: StTableRow<String>) -> Self {
+impl From<StTableRow<Box<str>>> for ProductValue {
+    fn from(x: StTableRow<Box<str>>) -> Self {
         product![
             x.table_id,
             x.table_name,
-            x.table_type.as_str().to_owned(),
-            x.table_access.as_str().to_owned()
+            <Box<str>>::from(x.table_type.as_str()),
+            <Box<str>>::from(x.table_access.as_str()),
         ]
     }
 }
@@ -366,9 +366,9 @@ pub struct StColumnRow<Name: AsRef<str>> {
     pub(crate) col_type: AlgebraicType,
 }
 
-impl TryFrom<RowRef<'_>> for StColumnRow<String> {
+impl TryFrom<RowRef<'_>> for StColumnRow<Box<str>> {
     type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<StColumnRow<String>, DBError> {
+    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
         let table_id = row.read_col(StColumnFields::TableId)?;
         let bytes = row.read_col::<AlgebraicValue>(StColumnFields::ColType)?;
         let bytes = bytes.as_bytes().unwrap_or_default();
@@ -384,16 +384,16 @@ impl TryFrom<RowRef<'_>> for StColumnRow<String> {
     }
 }
 
-impl From<StColumnRow<String>> for ProductValue {
-    fn from(x: StColumnRow<String>) -> Self {
+impl From<StColumnRow<Box<str>>> for ProductValue {
+    fn from(x: StColumnRow<Box<str>>) -> Self {
         let mut bytes = Vec::new();
         x.col_type.encode(&mut bytes);
-        product![x.table_id, x.col_pos, x.col_name, AlgebraicValue::Bytes(bytes)]
+        product![x.table_id, x.col_pos, x.col_name, AlgebraicValue::Bytes(bytes.into())]
     }
 }
 
-impl From<StColumnRow<String>> for ColumnSchema {
-    fn from(column: StColumnRow<String>) -> Self {
+impl From<StColumnRow<Box<str>>> for ColumnSchema {
+    fn from(column: StColumnRow<Box<str>>) -> Self {
         Self {
             table_id: column.table_id,
             col_pos: column.col_pos,
@@ -428,9 +428,9 @@ fn to_cols(row: RowRef<'_>, col_pos: impl Into<ColId>, col_name: &'static str) -
     }
 }
 
-impl TryFrom<RowRef<'_>> for StIndexRow<String> {
+impl TryFrom<RowRef<'_>> for StIndexRow<Box<str>> {
     type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<StIndexRow<String>, DBError> {
+    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
         let index_type = row.read_col::<u8>(StIndexFields::IndexType)?;
         let index_type = IndexType::try_from(index_type).map_err(|_| InvalidFieldError {
             col_pos: StIndexFields::IndexType.col_id(),
@@ -447,8 +447,8 @@ impl TryFrom<RowRef<'_>> for StIndexRow<String> {
     }
 }
 
-impl From<StIndexRow<String>> for ProductValue {
-    fn from(x: StIndexRow<String>) -> Self {
+impl From<StIndexRow<Box<str>>> for ProductValue {
+    fn from(x: StIndexRow<Box<str>>) -> Self {
         product![
             x.index_id,
             x.table_id,
@@ -460,8 +460,8 @@ impl From<StIndexRow<String>> for ProductValue {
     }
 }
 
-impl From<StIndexRow<String>> for IndexSchema {
-    fn from(x: StIndexRow<String>) -> Self {
+impl From<StIndexRow<Box<str>>> for IndexSchema {
+    fn from(x: StIndexRow<Box<str>>) -> Self {
         Self {
             index_id: x.index_id,
             table_id: x.table_id,
@@ -486,9 +486,9 @@ pub struct StSequenceRow<Name: AsRef<str>> {
     pub(crate) allocated: i128,
 }
 
-impl TryFrom<RowRef<'_>> for StSequenceRow<String> {
+impl TryFrom<RowRef<'_>> for StSequenceRow<Box<str>> {
     type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<StSequenceRow<String>, DBError> {
+    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
         Ok(StSequenceRow {
             sequence_id: row.read_col(StSequenceFields::SequenceId)?,
             sequence_name: row.read_col(StSequenceFields::SequenceName)?,
@@ -503,8 +503,8 @@ impl TryFrom<RowRef<'_>> for StSequenceRow<String> {
     }
 }
 
-impl From<StSequenceRow<String>> for ProductValue {
-    fn from(x: StSequenceRow<String>) -> Self {
+impl From<StSequenceRow<Box<str>>> for ProductValue {
+    fn from(x: StSequenceRow<Box<str>>) -> Self {
         product![
             x.sequence_id,
             x.sequence_name,
@@ -519,8 +519,8 @@ impl From<StSequenceRow<String>> for ProductValue {
     }
 }
 
-impl From<StSequenceRow<String>> for SequenceSchema {
-    fn from(sequence: StSequenceRow<String>) -> Self {
+impl From<StSequenceRow<Box<str>>> for SequenceSchema {
+    fn from(sequence: StSequenceRow<Box<str>>) -> Self {
         Self {
             sequence_id: sequence.sequence_id,
             sequence_name: sequence.sequence_name,
@@ -544,9 +544,9 @@ pub struct StConstraintRow<Name: AsRef<str>> {
     pub(crate) columns: ColList,
 }
 
-impl TryFrom<RowRef<'_>> for StConstraintRow<String> {
+impl TryFrom<RowRef<'_>> for StConstraintRow<Box<str>> {
     type Error = DBError;
-    fn try_from(row: RowRef<'_>) -> Result<StConstraintRow<String>, DBError> {
+    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
         let constraints = row.read_col::<u8>(StConstraintFields::Constraints)?;
         let constraints = Constraints::try_from(constraints).expect("Fail to decode Constraints");
         let columns = to_cols(row, StConstraintFields::Columns, StConstraintFields::Columns.name())?;
@@ -560,8 +560,8 @@ impl TryFrom<RowRef<'_>> for StConstraintRow<String> {
     }
 }
 
-impl From<StConstraintRow<String>> for ProductValue {
-    fn from(x: StConstraintRow<String>) -> Self {
+impl From<StConstraintRow<Box<str>>> for ProductValue {
+    fn from(x: StConstraintRow<Box<str>>) -> Self {
         product![
             x.constraint_id,
             x.constraint_name,
@@ -572,8 +572,8 @@ impl From<StConstraintRow<String>> for ProductValue {
     }
 }
 
-impl From<StConstraintRow<String>> for ConstraintSchema {
-    fn from(x: StConstraintRow<String>) -> Self {
+impl From<StConstraintRow<Box<str>>> for ConstraintSchema {
+    fn from(x: StConstraintRow<Box<str>>) -> Self {
         Self {
             constraint_id: x.constraint_id,
             constraint_name: x.constraint_name,
@@ -648,10 +648,6 @@ impl From<&StModuleRow> for ProductValue {
             epoch: Epoch(epoch),
         }: &StModuleRow,
     ) -> Self {
-        product![
-            AlgebraicValue::Bytes(program_hash.as_slice().to_owned()),
-            AlgebraicValue::U8(*kind),
-            AlgebraicValue::U128(*epoch),
-        ]
+        product![AlgebraicValue::Bytes(program_hash.as_slice().into()), *kind, *epoch,]
     }
 }

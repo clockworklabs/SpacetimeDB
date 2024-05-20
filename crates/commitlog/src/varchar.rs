@@ -3,7 +3,7 @@ use std::ops::Deref;
 /// An owned string with a max length of `N`, like the venerable VARCHAR.
 ///
 /// The length is in bytes, not characters.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[repr(transparent)]
 pub struct Varchar<const N: usize> {
     // TODO: Depending on `core` usage, we may want a SSO string type, a pointer

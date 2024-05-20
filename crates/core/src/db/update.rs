@@ -11,14 +11,14 @@ use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_primitives::ConstraintKind;
 use spacetimedb_sats::db::def::{ConstraintSchema, IndexSchema, SequenceSchema, TableDef, TableSchema};
 use spacetimedb_sats::hash::Hash;
-use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(thiserror::Error, Debug)]
 pub enum UpdateDatabaseError {
     #[error("incompatible schema changes for: {tables:?}. See database log for details.")]
-    IncompatibleSchema { tables: Vec<String> },
+    IncompatibleSchema { tables: Vec<Box<str>> },
     #[error(transparent)]
     Database(#[from] DBError),
 }
@@ -100,7 +100,7 @@ impl fmt::Display for TaintReason {
 /// A table with name `table_name` marked tainted for reason [`TaintReason`].
 #[derive(Debug, PartialEq)]
 pub struct Tainted {
-    pub table_name: String,
+    pub table_name: Box<str>,
     pub reason: TaintReason,
 }
 
@@ -111,7 +111,7 @@ pub enum SchemaUpdates {
     /// The schema can be updates.
     Updates {
         /// Tables to create.
-        new_tables: HashMap<String, TableDef>,
+        new_tables: HashMap<Box<str>, TableDef>,
     },
 }
 
@@ -129,13 +129,13 @@ pub enum SchemaUpdates {
 /// If no tables become tainted, the database may safely be updated using the
 /// information in [`SchemaUpdates::Updates`].
 pub fn schema_updates(
-    existing_tables: Vec<Cow<'_, TableSchema>>,
+    existing_tables: impl IntoIterator<Item = Arc<TableSchema>>,
     proposed_tables: Vec<TableDef>,
 ) -> anyhow::Result<SchemaUpdates> {
     let mut new_tables = HashMap::new();
     let mut tainted_tables = Vec::new();
 
-    let mut known_tables: BTreeMap<String, Cow<TableSchema>> = existing_tables
+    let mut known_tables: BTreeMap<Box<str>, Arc<TableSchema>> = existing_tables
         .into_iter()
         .map(|schema| (schema.table_name.clone(), schema))
         .collect();
@@ -151,50 +151,50 @@ pub fn schema_updates(
             // Also, there is no guarantee that the constituents of the schema
             // are sorted. They will be, however, when converting the proposed
             // `TableDef` into `TableSchema` (via `from_def`).
-            let known_schema = known_schema.into_owned();
             let columns = known_schema
                 .columns()
                 .iter()
                 .cloned()
                 .sorted_by_key(|x| x.col_pos)
                 .collect();
-            let known_schema = {
-                TableSchema::new(
-                    known_schema.table_id,
-                    known_schema.table_name,
-                    columns,
-                    known_schema
-                        .indexes
-                        .into_iter()
-                        .map(|x| IndexSchema {
-                            index_id: 0.into(),
-                            ..x
-                        })
-                        .sorted_by_key(|x| x.columns.clone())
-                        .collect(),
-                    known_schema
-                        .constraints
-                        .into_iter()
-                        .map(|x| ConstraintSchema {
-                            constraint_id: 0.into(),
-                            ..x
-                        })
-                        .filter(|x| x.constraints.kind() != ConstraintKind::UNSET)
-                        .sorted_by_key(|x| x.columns.clone())
-                        .collect(),
-                    known_schema
-                        .sequences
-                        .into_iter()
-                        .map(|x| SequenceSchema {
-                            sequence_id: 0.into(),
-                            ..x
-                        })
-                        .sorted_by_key(|x| x.col_pos)
-                        .collect(),
-                    known_schema.table_type,
-                    known_schema.table_access,
-                )
-            };
+            let known_schema = TableSchema::new(
+                known_schema.table_id,
+                known_schema.table_name.clone(),
+                columns,
+                known_schema
+                    .indexes
+                    .iter()
+                    .cloned()
+                    .map(|x| IndexSchema {
+                        index_id: 0.into(),
+                        ..x
+                    })
+                    .sorted_by_key(|x| x.columns.clone())
+                    .collect(),
+                known_schema
+                    .constraints
+                    .iter()
+                    .cloned()
+                    .map(|x| ConstraintSchema {
+                        constraint_id: 0.into(),
+                        ..x
+                    })
+                    .filter(|x| x.constraints.kind() != ConstraintKind::UNSET)
+                    .sorted_by_key(|x| x.columns.clone())
+                    .collect(),
+                known_schema
+                    .sequences
+                    .iter()
+                    .cloned()
+                    .map(|x| SequenceSchema {
+                        sequence_id: 0.into(),
+                        ..x
+                    })
+                    .sorted_by_key(|x| x.col_pos)
+                    .collect(),
+                known_schema.table_type,
+                known_schema.table_access,
+            );
             let proposed_schema = TableSchema::from_def(known_schema.table_id, proposed_schema_def);
 
             if proposed_schema != known_schema {
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn test_updates_new_table() -> anyhow::Result<()> {
-        let current = vec![Cow::Owned(TableSchema::new(
+        let current = [Arc::new(TableSchema::new(
             TableId(42),
             "Person".into(),
             vec![ColumnSchema {
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn test_updates_schema_mismatch() {
-        let current: Vec<Cow<TableSchema>> = vec![Cow::Owned(
+        let current = [Arc::new(
             TableDef::new(
                 "Person".into(),
                 vec![ColumnDef {
@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn test_updates_orphaned_table() {
-        let current = vec![Cow::Owned(
+        let current = [Arc::new(
             TableDef::new(
                 "Person".into(),
                 vec![ColumnDef {
@@ -343,7 +343,7 @@ mod tests {
 
     #[test]
     fn test_updates_add_index() {
-        let current: Vec<Cow<TableSchema>> = vec![Cow::Owned(
+        let current = [Arc::new(
             TableDef::new(
                 "Person".into(),
                 vec![ColumnDef {
@@ -367,7 +367,7 @@ mod tests {
 
     #[test]
     fn test_updates_drop_index() {
-        let current: Vec<Cow<TableSchema>> = vec![Cow::Owned(TableSchema::new(
+        let current = [Arc::new(TableSchema::new(
             TableId(42),
             "Person".into(),
             vec![ColumnSchema {
@@ -402,7 +402,7 @@ mod tests {
 
     #[test]
     fn test_updates_add_constraint() {
-        let current: Vec<Cow<TableSchema>> = vec![Cow::Owned(
+        let current = [Arc::new(
             TableDef::new(
                 "Person".into(),
                 vec![ColumnDef {
@@ -426,7 +426,7 @@ mod tests {
 
     #[test]
     fn test_updates_drop_constraint() {
-        let current: Vec<Cow<TableSchema>> = vec![Cow::Owned(
+        let current = [Arc::new(
             TableDef::new(
                 "Person".into(),
                 vec![ColumnDef {
@@ -476,7 +476,7 @@ mod tests {
                         t.table_name,
                         t.reason
                     );
-                    actual_tainted_tables.push(t.table_name);
+                    actual_tainted_tables.push(t.table_name.to_string());
                 }
                 assert_eq!(&actual_tainted_tables, tainted_tables);
             }

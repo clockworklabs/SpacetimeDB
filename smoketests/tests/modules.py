@@ -147,9 +147,10 @@ fn init() {
     spacetimedb::schedule!("100ms", my_repeating_reducer(Timestamp::now()));
 }
 
-#[spacetimedb(reducer, repeat = 100ms)]
+#[spacetimedb(reducer)]
 pub fn my_repeating_reducer(prev: Timestamp) {
     println!("Invoked: ts={:?}, delta={:?}", Timestamp::now(), prev.elapsed());
+    spacetimedb::schedule!("100ms", my_repeating_reducer(Timestamp::now()));
 }
 """
     def test_upload_module_2(self):

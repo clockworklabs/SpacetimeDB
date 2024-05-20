@@ -14,7 +14,8 @@ use crate::{
                 Epoch, StModuleFields, StModuleRow, StTableFields, ST_MODULE_ID, ST_TABLES_ID, WASM_MODULE,
             },
             traits::{
-                DataRow, IsolationLevel, MutProgrammable, MutTx, MutTxDatastore, Programmable, Tx, TxData, TxDatastore,
+                DataRow, IsolationLevel, MutProgrammable, MutTx, MutTxDatastore, Programmable, RowTypeForTable, Tx,
+                TxData, TxDatastore,
             },
         },
         db_metrics::{DB_METRICS, MAX_TX_CPU_TIME},
@@ -24,14 +25,15 @@ use crate::{
 };
 use anyhow::{anyhow, Context};
 use parking_lot::{Mutex, RwLock};
+use spacetimedb_commitlog::payload::{txdata, Txdata};
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
-use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductValue};
 use spacetimedb_table::{indexes::RowPointer, table::RowRef};
-use std::ops::RangeBounds;
 use std::sync::Arc;
 use std::time::Instant;
 use std::{borrow::Cow, time::Duration};
+use std::{cell::RefCell, ops::RangeBounds};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, DBError>;
@@ -110,45 +112,17 @@ impl Locking {
         Ok(())
     }
 
-    /// n.b. (Tyler) We actually **do not** want to check constraints at replay
-    /// time because not only is it a pain, but actually **subtly wrong** the
-    /// way we have it implemented. It's wrong because the actual constraints of
-    /// the database may change as different transactions are added to the
-    /// schema and you would actually have to change your indexes and
-    /// constraints as you replayed the log. This we are not currently doing
-    /// (we're building all the non-bootstrapped indexes at the end after
-    /// replaying), and thus aren't implementing constraint checking correctly
-    /// as it stands.
+    /// Obtain a [`spacetimedb_commitlog::Decoder`] suitable for replaying a
+    /// [`spacetimedb_durability::History`] onto the currently committed state.
     ///
-    /// However, the above is all rendered moot anyway because we don't need to
-    /// check constraints while replaying if we just assume that they were all
-    /// checked prior to the transaction committing in the first place.
-    ///
-    /// Note also that operation/mutation ordering **does not** matter for
-    /// operations inside a transaction of the message log assuming we only ever
-    /// insert **OR** delete a unique row in one transaction. If we ever insert
-    /// **AND** delete then order **does** matter. The issue caused by checking
-    /// constraints for each operation while replaying does not imply that order
-    /// matters. Ordering of operations would **only** matter if you wanted to
-    /// view the state of the database as of a partially applied transaction. We
-    /// never actually want to do this, because after a transaction has been
-    /// committed, it is assumed that all operations happen instantaneously and
-    /// atomically at the timestamp of the transaction. The only time that we
-    /// actually want to view the state of a database while a transaction is
-    /// partially applied is while the transaction is running **before** it
-    /// commits. Thus, we only care about operation ordering while the
-    /// transaction is running, but we do not care about it at all in the
-    /// context of the commit log.
-    ///
-    /// Not caring about the order in the log, however, requires that we **do
-    /// not** check index constraints during replay of transaction operatoins.
-    /// We **could** check them in between transactions if we wanted to update
-    /// the indexes and constraints as they changed during replay, but that is
-    /// unnecessary.
-    pub fn replay(&self) -> Replay {
+    /// The provided closure will be called for each transaction found in the
+    /// history, the parameter is the transaction's offset. The closure is called
+    /// _before_ the transaction is applied to the database state.
+    pub fn replay<F: FnMut(u64)>(&self, progress: F) -> Replay<F> {
         Replay {
             database_address: self.database_address,
             committed_state: self.committed_state.clone(),
+            progress: RefCell::new(progress),
         }
     }
 }
@@ -225,11 +199,11 @@ impl TxDatastore for Locking {
         Ok(tx.table_exists(&table_id).map(Cow::Borrowed))
     }
 
-    fn schema_for_table_tx<'tx>(&self, tx: &'tx Self::Tx, table_id: TableId) -> Result<Cow<'tx, TableSchema>> {
+    fn schema_for_table_tx(&self, tx: &Self::Tx, table_id: TableId) -> Result<Arc<TableSchema>> {
         tx.schema_for_table(&ExecutionContext::internal(self.database_address), table_id)
     }
 
-    fn get_all_tables_tx<'tx>(&self, ctx: &ExecutionContext, tx: &'tx Self::Tx) -> Result<Vec<Cow<'tx, TableSchema>>> {
+    fn get_all_tables_tx(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Vec<Arc<TableSchema>>> {
         self.iter_tx(ctx, tx, ST_TABLES_ID)?
             .map(|row_ref| {
                 let table_id = row_ref.read_col(StTableFields::TableId)?;
@@ -257,7 +231,7 @@ impl MutTxDatastore for Locking {
     /// reflect the schema of the table.q
     ///
     /// This function is known to be called quite frequently.
-    fn row_type_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<Cow<'tx, ProductType>> {
+    fn row_type_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<RowTypeForTable<'tx>> {
         tx.row_type_for_table(table_id, self.database_address)
     }
 
@@ -265,7 +239,7 @@ impl MutTxDatastore for Locking {
     /// expensive than `row_type_for_table_mut_tx`.  Prefer
     /// `row_type_for_table_mut_tx` if you only need to access the `ProductType`
     /// of the table.
-    fn schema_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<Cow<'tx, TableSchema>> {
+    fn schema_for_table_mut_tx(&self, tx: &Self::MutTx, table_id: TableId) -> Result<Arc<TableSchema>> {
         tx.schema_for_table(&ExecutionContext::internal(self.database_address), table_id)
     }
 
@@ -289,7 +263,8 @@ impl MutTxDatastore for Locking {
         tx: &'a Self::MutTx,
         table_id: TableId,
     ) -> Result<Option<Cow<'a, str>>> {
-        tx.table_name_from_id(ctx, table_id).map(|opt| opt.map(Cow::Owned))
+        tx.table_name_from_id(ctx, table_id)
+            .map(|opt| opt.map(|s| Cow::Owned(s.into())))
     }
 
     fn create_index_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, index: IndexDef) -> Result<IndexId> {
@@ -511,6 +486,33 @@ impl MutTx for Locking {
     }
 }
 
+impl Locking {
+    pub fn rollback_mut_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTxId) -> TxId {
+        let lock_wait_time = tx.lock_wait_time;
+        let timer = tx.timer;
+        // TODO(cloutiertyler): We should probably track the tx.rollback() time separately.
+        let tx = tx.rollback_downgrade();
+
+        // Record metrics for the transaction at the very end right before we drop
+        // the MutTx and release the lock.
+        record_metrics(ctx, timer, lock_wait_time, false);
+
+        tx
+    }
+
+    pub fn commit_mut_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTxId) -> Result<Option<(TxData, TxId)>> {
+        let lock_wait_time = tx.lock_wait_time;
+        let timer = tx.timer;
+        // TODO(cloutiertyler): We should probably track the tx.commit() time separately.
+        let res = tx.commit_downgrade(ctx);
+
+        // Record metrics for the transaction at the very end right before we drop
+        // the MutTx and release the lock.
+        record_metrics(ctx, timer, lock_wait_time, true);
+        Ok(Some(res))
+    }
+}
+
 impl Programmable for Locking {
     fn program_hash(&self, tx: &TxId) -> Result<Option<spacetimedb_sats::hash::Hash>> {
         tx.iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
@@ -571,6 +573,8 @@ impl MutProgrammable for Locking {
 
 #[derive(Debug, Error)]
 pub enum ReplayError {
+    #[error("Expected tx offset {expected}, encountered {encountered}")]
+    InvalidOffset { expected: u64, encountered: u64 },
     #[error(transparent)]
     Decode(#[from] bsatn::DecodeError),
     #[error(transparent)]
@@ -581,14 +585,27 @@ pub enum ReplayError {
 
 /// A [`spacetimedb_commitlog::Decoder`] suitable for replaying a transaction
 /// history into the database state.
-pub struct Replay {
+pub struct Replay<F> {
     database_address: Address,
     committed_state: Arc<RwLock<CommittedState>>,
+    progress: RefCell<F>,
 }
 
-impl spacetimedb_commitlog::Decoder for Replay {
-    type Record = spacetimedb_commitlog::payload::Txdata<ProductValue>;
-    type Error = spacetimedb_commitlog::payload::txdata::DecoderError<ReplayError>;
+impl<F> Replay<F> {
+    fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<F>) -> T) -> T {
+        let mut committed_state = self.committed_state.write_arc();
+        let mut visitor = ReplayVisitor {
+            database_address: &self.database_address,
+            committed_state: &mut committed_state,
+            progress: &mut *self.progress.borrow_mut(),
+        };
+        f(&mut visitor)
+    }
+}
+
+impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for Replay<F> {
+    type Record = Txdata<ProductValue>;
+    type Error = txdata::DecoderError<ReplayError>;
 
     fn decode_record<'a, R: BufReader<'a>>(
         &self,
@@ -596,22 +613,67 @@ impl spacetimedb_commitlog::Decoder for Replay {
         tx_offset: u64,
         reader: &mut R,
     ) -> std::result::Result<Self::Record, Self::Error> {
-        let mut committed_state = self.committed_state.write_arc();
-        let mut visitor = ReplayVisitor {
-            database_address: &self.database_address,
-            committed_state: &mut committed_state,
-        };
-        spacetimedb_commitlog::payload::txdata::decode_record_fn(&mut visitor, version, tx_offset, reader)
+        self.using_visitor(|visitor| txdata::decode_record_fn(visitor, version, tx_offset, reader))
+    }
+
+    fn consume_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        self.using_visitor(|visitor| txdata::consume_record_fn(visitor, version, tx_offset, reader))
     }
 }
 
-struct ReplayVisitor<'a> {
+// n.b. (Tyler) We actually **do not** want to check constraints at replay
+// time because not only is it a pain, but actually **subtly wrong** the
+// way we have it implemented. It's wrong because the actual constraints of
+// the database may change as different transactions are added to the
+// schema and you would actually have to change your indexes and
+// constraints as you replayed the log. This we are not currently doing
+// (we're building all the non-bootstrapped indexes at the end after
+// replaying), and thus aren't implementing constraint checking correctly
+// as it stands.
+//
+// However, the above is all rendered moot anyway because we don't need to
+// check constraints while replaying if we just assume that they were all
+// checked prior to the transaction committing in the first place.
+//
+// Note also that operation/mutation ordering **does not** matter for
+// operations inside a transaction of the message log assuming we only ever
+// insert **OR** delete a unique row in one transaction. If we ever insert
+// **AND** delete then order **does** matter. The issue caused by checking
+// constraints for each operation while replaying does not imply that order
+// matters. Ordering of operations would **only** matter if you wanted to
+// view the state of the database as of a partially applied transaction. We
+// never actually want to do this, because after a transaction has been
+// committed, it is assumed that all operations happen instantaneously and
+// atomically at the timestamp of the transaction. The only time that we
+// actually want to view the state of a database while a transaction is
+// partially applied is while the transaction is running **before** it
+// commits. Thus, we only care about operation ordering while the
+// transaction is running, but we do not care about it at all in the
+// context of the commit log.
+//
+// Not caring about the order in the log, however, requires that we **do
+// not** check index constraints during replay of transaction operatoins.
+// We **could** check them in between transactions if we wanted to update
+// the indexes and constraints as they changed during replay, but that is
+// unnecessary.
+
+struct ReplayVisitor<'a, F> {
     database_address: &'a Address,
     committed_state: &'a mut CommittedState,
+    progress: &'a mut F,
 }
 
-impl spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_> {
+impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, F> {
     type Error = ReplayError;
+    // NOTE: Technically, this could be `()` if and when we can extract the
+    // row data without going through `ProductValue` (PV).
+    // To accomodate auxiliary traversals (e.g. for analytics), we may want to
+    // provide a separate visitor yielding PVs.
     type Row = ProductValue;
 
     fn visit_insert<'a, R: BufReader<'a>>(
@@ -621,8 +683,7 @@ impl spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_> {
     ) -> std::result::Result<Self::Row, Self::Error> {
         let schema = self
             .committed_state
-            .schema_for_table(&ExecutionContext::default(), table_id)?
-            .into_owned();
+            .schema_for_table(&ExecutionContext::default(), table_id)?;
         let row = ProductValue::decode(schema.get_row_type(), reader)?;
 
         self.committed_state
@@ -678,7 +739,22 @@ impl spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_> {
     }
 
     fn visit_tx_start(&mut self, offset: u64) -> std::result::Result<(), Self::Error> {
-        debug_assert!(offset == self.committed_state.next_tx_offset);
+        // The first transaction in a history must have the same offset as the
+        // committed state.
+        //
+        // (Technically, the history should guarantee that all subsequent
+        // transaction offsets are contiguous, but we don't currently have a
+        // good way to only check the first transaction.)
+        //
+        // Note that this is not a panic, because the starting offset can be
+        // chosen at runtime.
+        if offset != self.committed_state.next_tx_offset {
+            return Err(ReplayError::InvalidOffset {
+                expected: self.committed_state.next_tx_offset,
+                encountered: offset,
+            });
+        }
+        (self.progress)(offset);
 
         Ok(())
     }
@@ -721,7 +797,7 @@ mod tests {
     }
 
     impl SystemTableQuery<'_> {
-        pub fn scan_st_tables(&self) -> Result<Vec<StTableRow<String>>> {
+        pub fn scan_st_tables(&self) -> Result<Vec<StTableRow<Box<str>>>> {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_TABLES_ID)?
@@ -734,7 +810,7 @@ mod tests {
             &self,
             cols: impl Into<ColList>,
             value: &AlgebraicValue,
-        ) -> Result<Vec<StTableRow<String>>> {
+        ) -> Result<Vec<StTableRow<Box<str>>>> {
             Ok(self
                 .db
                 .iter_by_col_eq(self.ctx, &ST_TABLES_ID, cols.into(), value)?
@@ -743,7 +819,7 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_columns(&self) -> Result<Vec<StColumnRow<String>>> {
+        pub fn scan_st_columns(&self) -> Result<Vec<StColumnRow<Box<str>>>> {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_COLUMNS_ID)?
@@ -756,7 +832,7 @@ mod tests {
             &self,
             cols: impl Into<ColList>,
             value: &AlgebraicValue,
-        ) -> Result<Vec<StColumnRow<String>>> {
+        ) -> Result<Vec<StColumnRow<Box<str>>>> {
             Ok(self
                 .db
                 .iter_by_col_eq(self.ctx, &ST_COLUMNS_ID, cols.into(), value)?
@@ -765,7 +841,7 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_constraints(&self) -> Result<Vec<StConstraintRow<String>>> {
+        pub fn scan_st_constraints(&self) -> Result<Vec<StConstraintRow<Box<str>>>> {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_CONSTRAINTS_ID)?
@@ -774,7 +850,7 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_sequences(&self) -> Result<Vec<StSequenceRow<String>>> {
+        pub fn scan_st_sequences(&self) -> Result<Vec<StSequenceRow<Box<str>>>> {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_SEQUENCES_ID)?
@@ -783,7 +859,7 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_indexes(&self) -> Result<Vec<StIndexRow<String>>> {
+        pub fn scan_st_indexes(&self) -> Result<Vec<StIndexRow<Box<str>>>> {
             Ok(self
                 .db
                 .iter(self.ctx, &ST_INDEXES_ID)?
@@ -816,7 +892,7 @@ mod tests {
         name: &'a str,
         unique: bool,
     }
-    impl From<IndexRow<'_>> for StIndexRow<String> {
+    impl From<IndexRow<'_>> for StIndexRow<Box<str>> {
         fn from(value: IndexRow<'_>) -> Self {
             Self {
                 index_id: value.id.into(),
@@ -835,7 +911,7 @@ mod tests {
         ty: StTableType,
         access: StAccess,
     }
-    impl From<TableRow<'_>> for StTableRow<String> {
+    impl From<TableRow<'_>> for StTableRow<Box<str>> {
         fn from(value: TableRow<'_>) -> Self {
             Self {
                 table_id: value.id.into(),
@@ -852,7 +928,7 @@ mod tests {
         name: &'a str,
         ty: AlgebraicType,
     }
-    impl From<ColRow<'_>> for StColumnRow<String> {
+    impl From<ColRow<'_>> for StColumnRow<Box<str>> {
         fn from(value: ColRow<'_>) -> Self {
             Self {
                 table_id: value.table.into(),
@@ -867,7 +943,7 @@ mod tests {
             Self {
                 table_id: value.table.into(),
                 col_pos: value.pos.into(),
-                col_name: value.name.to_string(),
+                col_name: value.name.into(),
                 col_type: value.ty,
             }
         }
@@ -875,7 +951,7 @@ mod tests {
     impl From<ColRow<'_>> for ColumnDef {
         fn from(value: ColRow<'_>) -> Self {
             Self {
-                col_name: value.name.to_string(),
+                col_name: value.name.into(),
                 col_type: value.ty,
             }
         }
@@ -888,11 +964,11 @@ mod tests {
         col_pos: u32,
         start: i128,
     }
-    impl From<SequenceRow<'_>> for StSequenceRow<String> {
+    impl From<SequenceRow<'_>> for StSequenceRow<Box<str>> {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
-                sequence_name: value.name.to_string(),
+                sequence_name: value.name.into(),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
                 increment: 1,
@@ -908,7 +984,7 @@ mod tests {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
-                sequence_name: value.name.to_string(),
+                sequence_name: value.name.into(),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
                 increment: 1,
@@ -933,7 +1009,7 @@ mod tests {
                 index_id: value.id.into(),
                 table_id: value.table.into(),
                 columns: ColId(value.col).into(),
-                index_name: value.name.to_string(),
+                index_name: value.name.into(),
                 is_unique: value.unique,
                 index_type: IndexType::BTree,
             }
@@ -947,7 +1023,7 @@ mod tests {
         table_id: u32,
         columns: ColList,
     }
-    impl From<ConstraintRow<'_>> for StConstraintRow<String> {
+    impl From<ConstraintRow<'_>> for StConstraintRow<Box<str>> {
         fn from(value: ConstraintRow<'_>) -> Self {
             Self {
                 constraint_id: value.constraint_id.into(),
@@ -1276,7 +1352,7 @@ mod tests {
         datastore.commit_mut_tx_for_test(tx)?;
 
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
-        let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?.into_owned();
+        let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
 
         for index in &*schema.indexes {
             datastore.drop_index_mut_tx(&mut tx, index.index_id)?;

@@ -20,8 +20,8 @@ use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::{ColId, ColListBuilder, TableId};
 use spacetimedb_sats::db::def::{IndexDef, IndexType};
 use spacetimedb_sats::relation::{FieldExpr, FieldName};
-use spacetimedb_sats::{ProductType, Typespace};
-use spacetimedb_vm::expr::{ColumnOp, NoInMemUsed};
+use spacetimedb_sats::Typespace;
+use spacetimedb_vm::expr::{ColumnOp, NoInMemUsed, QueryExpr};
 
 #[derive(Clone)]
 pub struct InstanceEnv {
@@ -225,7 +225,7 @@ impl InstanceEnv {
     #[tracing::instrument(skip_all)]
     pub fn create_index(
         &self,
-        index_name: String,
+        index_name: Box<str>,
         table_id: TableId,
         index_type: u8,
         col_ids: Vec<u8>,
@@ -320,28 +320,26 @@ impl InstanceEnv {
     ) -> Result<Vec<Box<[u8]>>, NodesError> {
         use spacetimedb_lib::filter;
 
-        fn filter_to_column_op(table_name: &str, filter: filter::Expr) -> ColumnOp {
+        fn filter_to_column_op(table_id: TableId, filter: filter::Expr) -> ColumnOp {
             match filter {
                 filter::Expr::Cmp(filter::Cmp {
                     op,
                     args: CmpArgs { lhs_field, rhs },
                 }) => ColumnOp::Cmp {
                     op: OpQuery::Cmp(op),
-                    lhs: Box::new(ColumnOp::Field(FieldExpr::Name(FieldName::positional(
-                        table_name,
-                        lhs_field as usize,
+                    lhs: Box::new(ColumnOp::Field(FieldExpr::Name(FieldName::new(
+                        table_id,
+                        lhs_field.into(),
                     )))),
                     rhs: Box::new(ColumnOp::Field(match rhs {
-                        filter::Rhs::Field(rhs_field) => {
-                            FieldExpr::Name(FieldName::positional(table_name, rhs_field as usize))
-                        }
+                        filter::Rhs::Field(rhs_field) => FieldExpr::Name(FieldName::new(table_id, rhs_field.into())),
                         filter::Rhs::Value(rhs_value) => FieldExpr::Value(rhs_value),
                     })),
                 },
                 filter::Expr::Logic(filter::Logic { lhs, op, rhs }) => ColumnOp::Cmp {
                     op: OpQuery::Logic(op),
-                    lhs: Box::new(filter_to_column_op(table_name, *lhs)),
-                    rhs: Box::new(filter_to_column_op(table_name, *rhs)),
+                    lhs: Box::new(filter_to_column_op(table_id, *lhs)),
+                    rhs: Box::new(filter_to_column_op(table_id, *rhs)),
                 },
                 filter::Expr::Unary(_) => todo!("unary operations are not yet supported"),
             }
@@ -351,7 +349,7 @@ impl InstanceEnv {
         let tx = &mut *self.tx.get()?;
 
         let schema = stdb.schema_for_table_mut(tx, table_id)?;
-        let row_type = ProductType::from(&*schema);
+        let row_type = schema.get_row_type();
 
         let filter = filter::Expr::from_bytes(
             // TODO: looks like module typespace is currently not hooked up to instances;
@@ -364,8 +362,8 @@ impl InstanceEnv {
         .map_err(NodesError::DecodeFilter)?;
 
         // TODO(Centril): consider caching from `filter: &[u8] -> query: QueryExpr`.
-        let query = spacetimedb_vm::dsl::query(schema.as_ref())
-            .with_select(filter_to_column_op(&schema.table_name, filter))
+        let query = QueryExpr::new(schema.as_ref())
+            .with_select(filter_to_column_op(table_id, filter))
             .optimize(&|table_id, table_name| stdb.row_count(table_id, table_name));
 
         // TODO(Centril): Conditionally dump the `query` to a file and compare against integration test.

@@ -1,19 +1,14 @@
-use crate::{AlgebraicType, AlgebraicValue, ArrayType, BuiltinType, MapType, ProductType, ProductValue};
+use crate::{AlgebraicType, AlgebraicValue, ArrayType, BuiltinType, MapType, MapValue, ProductType, ProductValue};
 use spacetimedb_primitives::{ColId, ConstraintId, IndexId, SequenceId, TableId};
 
 impl crate::Value for AlgebraicValue {
     type Type = AlgebraicType;
 }
 
-impl From<Vec<AlgebraicValue>> for ProductValue {
-    fn from(elements: Vec<AlgebraicValue>) -> Self {
+impl<X: Into<Box<[AlgebraicValue]>>> From<X> for ProductValue {
+    fn from(elements: X) -> Self {
+        let elements = elements.into();
         ProductValue { elements }
-    }
-}
-
-impl<const N: usize> From<[AlgebraicValue; N]> for ProductValue {
-    fn from(fields: [AlgebraicValue; N]) -> Self {
-        Vec::from(fields).into()
     }
 }
 
@@ -38,6 +33,12 @@ impl From<ArrayType> for AlgebraicType {
 impl From<MapType> for AlgebraicType {
     fn from(x: MapType) -> Self {
         BuiltinType::Map(Box::new(x)).into()
+    }
+}
+
+impl From<MapValue> for AlgebraicValue {
+    fn from(x: MapValue) -> Self {
+        Box::new(x).into()
     }
 }
 

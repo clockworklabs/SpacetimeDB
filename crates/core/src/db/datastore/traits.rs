@@ -1,3 +1,4 @@
+use core::ops::Deref;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::{ops::RangeBounds, sync::Arc};
@@ -225,6 +226,26 @@ impl TxData {
     }
 }
 
+/// The result of [`MutTxDatastore::row_type_for_table_mut_tx`] and friends.
+/// This is a smart pointer returning a `&ProductType`.
+pub enum RowTypeForTable<'a> {
+    /// A reference can be stored to the type.
+    Ref(&'a ProductType),
+    /// The type is within the schema.
+    Arc(Arc<TableSchema>),
+}
+
+impl Deref for RowTypeForTable<'_> {
+    type Target = ProductType;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Ref(x) => x,
+            Self::Arc(x) => x.get_row_type(),
+        }
+    }
+}
+
 pub trait Data: Into<ProductValue> {
     fn view(&self) -> Cow<'_, ProductValue>;
 }
@@ -296,12 +317,8 @@ pub trait TxDatastore: DataRow + Tx {
     fn table_id_exists_tx(&self, tx: &Self::Tx, table_id: &TableId) -> bool;
     fn table_id_from_name_tx(&self, tx: &Self::Tx, table_name: &str) -> Result<Option<TableId>>;
     fn table_name_from_id_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Option<Cow<'a, str>>>;
-    fn schema_for_table_tx<'tx>(&self, tx: &'tx Self::Tx, table_id: TableId) -> super::Result<Cow<'tx, TableSchema>>;
-    fn get_all_tables_tx<'tx>(
-        &self,
-        ctx: &ExecutionContext,
-        tx: &'tx Self::Tx,
-    ) -> super::Result<Vec<Cow<'tx, TableSchema>>>;
+    fn schema_for_table_tx(&self, tx: &Self::Tx, table_id: TableId) -> super::Result<Arc<TableSchema>>;
+    fn get_all_tables_tx(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> super::Result<Vec<Arc<TableSchema>>>;
 }
 
 pub trait MutTxDatastore: TxDatastore + MutTx {
@@ -310,8 +327,8 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     // In these methods, we use `'tx` because the return type must borrow data
     // from `Inner` in the `Locking` implementation,
     // and `Inner` lives in `tx: &MutTxId`.
-    fn row_type_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<Cow<'tx, ProductType>>;
-    fn schema_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<Cow<'tx, TableSchema>>;
+    fn row_type_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<RowTypeForTable<'tx>>;
+    fn schema_for_table_mut_tx(&self, tx: &Self::MutTx, table_id: TableId) -> Result<Arc<TableSchema>>;
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId) -> Result<()>;
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, new_name: &str) -> Result<()>;
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTx, table_name: &str) -> Result<Option<TableId>>;
@@ -322,11 +339,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         tx: &'a Self::MutTx,
         table_id: TableId,
     ) -> Result<Option<Cow<'a, str>>>;
-    fn get_all_tables_mut_tx<'tx>(
-        &self,
-        ctx: &ExecutionContext,
-        tx: &'tx Self::MutTx,
-    ) -> super::Result<Vec<Cow<'tx, TableSchema>>> {
+    fn get_all_tables_mut_tx(&self, ctx: &ExecutionContext, tx: &Self::MutTx) -> super::Result<Vec<Arc<TableSchema>>> {
         let mut tables = Vec::new();
         let table_rows = self.iter_mut_tx(ctx, tx, ST_TABLES_ID)?.collect::<Vec<_>>();
         for row in table_rows {
@@ -438,7 +451,7 @@ pub trait MutProgrammable: MutTxDatastore {
 mod tests {
     use spacetimedb_primitives::{col_list, ColId, Constraints};
     use spacetimedb_sats::db::def::ConstraintDef;
-    use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType, ProductTypeElement, Typespace};
+    use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType, Typespace};
 
     use super::{ColumnDef, IndexDef, TableDef};
 
@@ -471,16 +484,7 @@ mod tests {
             schema: expected_schema.clone(),
             data: AlgebraicTypeRef(0),
         };
-        let row_type = ProductType::new(vec![
-            ProductTypeElement {
-                name: Some("id".into()),
-                algebraic_type: AlgebraicType::U32,
-            },
-            ProductTypeElement {
-                name: Some("name".into()),
-                algebraic_type: AlgebraicType::String,
-            },
-        ]);
+        let row_type = ProductType::from([("id", AlgebraicType::U32), ("name", AlgebraicType::String)]);
 
         let mut datastore_schema = spacetimedb_lib::TableDesc::into_table_def(
             Typespace::new(vec![row_type.into()]).with_type(&lib_table_def),

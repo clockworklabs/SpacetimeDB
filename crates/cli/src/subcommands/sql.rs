@@ -133,7 +133,7 @@ fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<tabled::
             .elements
             .iter()
             .enumerate()
-            .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}"))),
+            .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}").into())),
     );
 
     let ty = Typespace::EMPTY.with_type(schema);

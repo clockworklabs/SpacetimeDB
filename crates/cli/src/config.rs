@@ -1,4 +1,4 @@
-use crate::util::{contains_protocol, host_or_url_to_host_and_protocol};
+use crate::util::{contains_protocol, host_or_url_to_host_and_protocol, is_hex_identity};
 use anyhow::Context;
 use jsonwebtoken::DecodingKey;
 use serde::{Deserialize, Serialize};
@@ -105,14 +105,82 @@ pub struct RawConfig {
     server_configs: Vec<ServerConfig>,
 }
 
-const DEFAULT_HOST: &str = "127.0.0.1:3000";
-const DEFAULT_PROTOCOL: &str = "http";
-const DEFAULT_HOST_NICKNAME: &str = "local";
+fn create_parent_dir(file: &Path) -> anyhow::Result<()> {
+    let parent = file
+        .parent()
+        .with_context(|| format!("Cannot find the parent directory of path {file:?}"))?;
 
-#[derive(Clone)]
+    // If the `file` path is a relative path with no directory component,
+    // `parent` will be the empty path.
+    // In this case, do not attempt to create a directory.
+    if parent != Path::new("") {
+        // If the `file` path has a directory component,
+        // do `create_dir_all` to ensure it exists.
+        // If `parent` already exists as a directory, this is a no-op.
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create directory structure {parent:?} to contain {file:?}"))?;
+    }
+    Ok(())
+}
+
+#[derive(Debug)]
+/// A file used as an exclusive lock on access to another file.
+///
+/// Constructing a `Lockfile` creates the `path` with [`std::fs::File::create_new`],
+/// a.k.a. `O_EXCL`, erroring if the file already exists.
+///
+/// Dropping a `Lockfile` deletes the `path`, releasing the lock.
+///
+/// Used to guarantee exclusive access to the system config file,
+/// in order to prevent racy concurrent modifications.
+struct Lockfile {
+    path: PathBuf,
+}
+
+impl Lockfile {
+    /// Acquire an exclusive lock on the configuration file `config_path`.
+    ///
+    /// `config_path` should be the full name of the SpacetimeDB configuration file.
+    fn for_config(config_path: &Path) -> anyhow::Result<Self> {
+        // Ensure the directory exists before attempting to create the lockfile.
+        create_parent_dir(config_path)?;
+
+        let mut path = config_path.to_path_buf();
+        path.set_extension("lock");
+        // Open with `create_new`, which fails if the file already exists.
+        std::fs::File::create_new(&path).with_context(|| {
+            "Unable to acquire lock on config file {config_path:?}: failed to create lockfile {path:?}"
+        })?;
+
+        Ok(Lockfile { path })
+    }
+}
+
+impl Drop for Lockfile {
+    fn drop(&mut self) {
+        std::fs::remove_file(&self.path)
+            .with_context(|| format!("Unable to remove lockfile {:?}", self.path))
+            .unwrap();
+    }
+}
+
 pub struct Config {
     proj: RawConfig,
     home: RawConfig,
+
+    /// The path from which we loaded the system config `home`,
+    /// and a [`Lockfile`] which guarantees us exclusive access to it.
+    ///
+    /// The lockfile is created before reading or creating the home config,
+    /// and closed upon dropping the config.
+    /// This allows us to mutate the config via [`Config::save`] without worrying about other processes.
+    ///
+    /// None only in tests, which are allowed to concurrently mutate configurations as much as they want,
+    /// since they use a hardcoded configuration rather than loading from a file.
+    ///
+    /// Note that it's not necessary to lock or remember the path of the project config,
+    /// since we never write to that file.
+    home_file: Option<(PathBuf, Lockfile)>,
 }
 
 const HOME_CONFIG_DIR: &str = ".spacetime";
@@ -140,25 +208,24 @@ fn hanging_default_server_context(server: &str) -> String {
 
 impl RawConfig {
     fn new_with_localhost() -> Self {
+        let local = ServerConfig {
+            default_identity: None,
+            host: "127.0.0.1:3000".to_string(),
+            protocol: "http".to_string(),
+            nickname: Some("local".to_string()),
+            ecdsa_public_key: None,
+        };
+        let testnet = ServerConfig {
+            default_identity: None,
+            host: "testnet.spacetimedb.com".to_string(),
+            protocol: "https".to_string(),
+            nickname: Some("testnet".to_string()),
+            ecdsa_public_key: None,
+        };
         RawConfig {
-            default_server: Some(DEFAULT_HOST_NICKNAME.to_string()),
+            default_server: testnet.nickname.clone(),
             identity_configs: Vec::new(),
-            server_configs: vec![
-                ServerConfig {
-                    default_identity: None,
-                    host: DEFAULT_HOST.to_string(),
-                    protocol: DEFAULT_PROTOCOL.to_string(),
-                    nickname: Some(DEFAULT_HOST_NICKNAME.to_string()),
-                    ecdsa_public_key: None,
-                },
-                ServerConfig {
-                    default_identity: None,
-                    host: "testnet.spacetimedb.com".to_string(),
-                    protocol: "https".to_string(),
-                    nickname: Some("testnet".to_string()),
-                    ecdsa_public_key: None,
-                },
-            ],
+            server_configs: vec![local, testnet],
         }
     }
 
@@ -586,6 +653,20 @@ Fetch the server's fingerprint with:
 }
 
 impl Config {
+    /// Release the system configuration `Lockfile` contained in `self`, if it exists,
+    /// allowing other processes to access the configuration.
+    ///
+    /// This is equivalent to dropping `self`, but more explicit in purpose.
+    pub fn release_lock(self) {
+        // Just drop `self`, cleaning up its lockfile.
+        //
+        // If we had CLI subcommands which wanted to read a `Config` but never `Config::save` it,
+        // we could have this message take `&mut self` and set the `home_lock` to `None`.
+        // This seems unlikely to be useful,
+        // as many accesses to the `Config` will implicitly mutate and `save`,
+        // e.g. by creating a new identity if none exists.
+    }
+
     pub fn default_server_name(&self) -> Option<&str> {
         self.proj
             .default_server
@@ -795,34 +876,14 @@ impl Config {
             .find(|path| path.exists())
     }
 
-    fn load_raw(config_dir: PathBuf, is_project: bool) -> RawConfig {
-        // If a config file overload has been specified, use that instead
-        if !is_project {
-            if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
-                return Self::load_from_file(config_path.as_ref())
-                    .inspect_err(|e| eprintln!("SPACETIME_CONFIG_FILE does not point to a valid config file: {e:#}"))
-                    .unwrap_or_default();
-            }
+    fn system_config_path() -> PathBuf {
+        if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
+            config_path.into()
+        } else {
+            let mut config_path = dirs::home_dir().unwrap();
+            config_path.push(HOME_CONFIG_DIR);
+            Self::find_config_path(&config_path).unwrap_or_else(|| config_path.join(CONFIG_FILENAME))
         }
-        if !config_dir.exists() {
-            fs::create_dir_all(&config_dir).unwrap();
-        }
-
-        let Some(config_path) = Self::find_config_path(&config_dir) else {
-            return if is_project {
-                // Return an empty config without creating a file.
-                RawConfig::default()
-            } else {
-                // Return a default config with http://127.0.0.1:3000 as the default server.
-                // Do not (yet) create a file.
-                // The config file will be created later by `Config::save` if necessary.
-                RawConfig::new_with_localhost()
-            };
-        };
-
-        Self::load_from_file(&config_path)
-            .inspect_err(|e| eprintln!("config file is invalid: {e:#}"))
-            .unwrap_or_default()
     }
 
     fn load_from_file(config_path: &Path) -> anyhow::Result<RawConfig> {
@@ -830,51 +891,79 @@ impl Config {
         Ok(toml::from_str(&text)?)
     }
 
-    pub fn load() -> Self {
-        let home_dir = dirs::home_dir().unwrap();
-        let home_config = Self::load_raw(home_dir.join(HOME_CONFIG_DIR), false);
-
+    fn load_proj_config() -> RawConfig {
         // TODO(cloutiertyler): For now we're checking for a spacetime.toml file
         // in the current directory. Eventually this should really be that we
         // search parent directories above the current directory to find
         // spacetime.toml files like a .gitignore file
         let cur_dir = std::env::current_dir().expect("No current working directory!");
-        let cur_config = Self::load_raw(cur_dir, true);
-
-        Self {
-            home: home_config,
-            proj: cur_config,
+        if let Some(config_path) = Self::find_config_path(&cur_dir) {
+            Self::load_from_file(&config_path)
+                .inspect_err(|e| eprintln!("config file {config_path:?} is invalid: {e:#}"))
+                .unwrap_or_default()
+        } else {
+            Default::default()
         }
     }
 
+    pub fn load() -> Self {
+        let home_path = Self::system_config_path();
+        let home_lock = Lockfile::for_config(&home_path).unwrap();
+        let home = if home_path.exists() {
+            Self::load_from_file(&home_path)
+                .inspect_err(|e| eprintln!("config file {home_path:?} is invalid: {e:#?}"))
+                .unwrap_or_default()
+        } else {
+            RawConfig::new_with_localhost()
+        };
+
+        let proj = Self::load_proj_config();
+
+        Self {
+            home,
+            proj,
+
+            home_file: Some((home_path, home_lock)),
+        }
+    }
+
+    #[doc(hidden)]
+    /// Used in tests; not backed by a file.
     pub fn new_with_localhost() -> Self {
         Self {
             home: RawConfig::new_with_localhost(),
             proj: RawConfig::default(),
+
+            home_file: None,
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn clone_for_test(&self) -> Self {
+        assert!(
+            self.home_file.is_none(),
+            "Cannot clone_for_test a Config derived from file {:?}",
+            self.home_file,
+        );
+        Config {
+            home: self.home.clone(),
+            proj: self.proj.clone(),
+            home_file: None,
         }
     }
 
     pub fn save(&self) {
-        let config_var = std::env::var_os("SPACETIME_CONFIG_FILE");
-        let config_var_exists = config_var.is_some();
-        let config_path = if let Some(config_path) = config_var {
-            PathBuf::from(config_path)
-        } else {
-            let home_dir = dirs::home_dir().unwrap();
-            let config_dir = home_dir.join(HOME_CONFIG_DIR);
-            if !config_dir.exists() {
-                fs::create_dir_all(&config_dir).unwrap();
-            }
-
-            Self::find_config_path(&config_dir).unwrap_or_else(|| config_dir.join(CONFIG_FILENAME))
+        let Some((home_path, _)) = &self.home_file else {
+            return;
         };
+
+        // If the `home_path` is in a directory, ensure it exists.
+        create_parent_dir(home_path).unwrap();
 
         let config = toml::to_string_pretty(&self.home).unwrap();
 
-        if let Err(e) = std::fs::write(config_path, config) {
-            if !config_var_exists {
-                eprintln!("could not save config file: {e}")
-            }
+        if let Err(e) = std::fs::write(home_path, config) {
+            eprintln!("could not save config file: {e}")
         }
     }
 
@@ -889,13 +978,22 @@ Import an existing identity with:
         })
     }
 
-    pub fn name_exists(&self, nickname: &str) -> bool {
-        for name in self.identity_configs().iter().map(|c| &c.nickname) {
-            if name.as_ref() == Some(&nickname.to_string()) {
-                return true;
-            }
+    pub fn name_exists(&self, name: &str) -> bool {
+        self.get_identity_config_by_name(name).is_some()
+    }
+
+    pub fn identity_exists(&self, identity: &Identity) -> bool {
+        self.get_identity_config_by_identity(identity).is_some()
+    }
+
+    pub fn can_set_name(&self, new_nickname: &str) -> Result<(), anyhow::Error> {
+        if self.name_exists(new_nickname) {
+            return Err(anyhow::anyhow!("An identity with that name already exists."));
         }
-        false
+        if is_hex_identity(new_nickname) {
+            return Err(anyhow::anyhow!("An identity name cannot be an identity."));
+        }
+        Ok(())
     }
 
     pub fn get_identity_config_by_name(&self, name: &str) -> Option<&IdentityConfig> {

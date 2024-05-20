@@ -63,6 +63,23 @@ pub trait Decoder {
         tx_offset: u64,
         reader: &mut R,
     ) -> Result<Self::Record, Self::Error>;
+
+    /// Variant of [`Self::decode_record`] which discards the decoded
+    /// [`Self::Record`].
+    ///
+    /// Useful for folds which don't need to yield or collect record values.
+    ///
+    /// The default implementation just drops the record returned from
+    /// [`Self::decode_record`]. Implementations may want to override this, such
+    /// that the record is not allocated in the first place.
+    fn consume_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> Result<(), Self::Error> {
+        self.decode_record(version, tx_offset, reader).map(drop)
+    }
 }
 
 impl<const N: usize> Encode for [u8; N] {

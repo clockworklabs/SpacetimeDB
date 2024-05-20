@@ -1,16 +1,13 @@
-use derive_more::From;
+use core::hash::{Hash, Hasher};
 use spacetimedb_sats::bsatn::ser::BsatnError;
-use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::product_value::ProductValue;
-use spacetimedb_sats::relation::{
-    DbTable, FieldExpr, FieldExprRef, FieldName, Header, HeaderOnlyField, Relation, RowCount,
-};
+use spacetimedb_sats::relation::{FieldExpr, FieldExprRef, FieldName, Header, Relation, RowCount};
 use spacetimedb_sats::{bsatn, impl_serialize, AlgebraicValue};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 /// RelValue represents either a reference to a row in a table,
@@ -20,9 +17,43 @@ use std::sync::Arc;
 /// A `RelValue` is the type generated/consumed by a [Relation] operator.
 #[derive(Debug, Clone)]
 pub enum RelValue<'a> {
+    /// A reference to a row in a table.
     Row(RowRef<'a>),
+    /// An ephemeral row made during query execution.
     Projection(ProductValue),
+    /// A row coming directly from a collected update.
+    ///
+    /// This is really a row in a table, and not an actual projection.
+    /// However, for (lifetime) reasons, we cannot (yet) keep it as a `RowRef<'_>`
+    /// and must convert that into a `ProductValue`.
     ProjRef(&'a ProductValue),
+}
+
+impl Eq for RelValue<'_> {}
+
+impl PartialEq for RelValue<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Projection(x), Self::Projection(y)) => x == y,
+            (Self::ProjRef(x), Self::ProjRef(y)) => x == y,
+            (Self::Row(x), Self::Row(y)) => x == y,
+            (Self::Projection(x), Self::ProjRef(y)) | (Self::ProjRef(y), Self::Projection(x)) => x == *y,
+            (Self::Row(x), Self::Projection(y)) | (Self::Projection(y), Self::Row(x)) => x == y,
+            (Self::Row(x), Self::ProjRef(y)) | (Self::ProjRef(y), Self::Row(x)) => x == *y,
+        }
+    }
+}
+
+impl Hash for RelValue<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            // `x.hash(state)` and `x.to_product_value().hash(state)`
+            // have the same effect on `state`.
+            Self::Row(x) => x.hash(state),
+            Self::Projection(x) => x.hash(state),
+            Self::ProjRef(x) => x.hash(state),
+        }
+    }
 }
 
 impl_serialize!(['a] RelValue<'a>, (self, ser) => match self {
@@ -67,11 +98,11 @@ impl<'a> RelValue<'a> {
 
     /// Extends `self` with the columns in `other`.
     ///
-    /// This will always cause `RowRef<'_>`s to be read out into
+    /// This will always cause `RowRef<'_>`s to be read out into [`ProductValue`]s.
     pub fn extend(self, other: RelValue<'a>) -> RelValue<'a> {
-        let mut x = self.into_product_value();
-        x.elements.extend(other.into_product_value().elements);
-        RelValue::Projection(x)
+        let mut x: Vec<_> = self.into_product_value().elements.into();
+        x.extend(other.into_product_value());
+        RelValue::Projection(x.into())
     }
 
     /// Read the column at index `col`.
@@ -94,7 +125,7 @@ impl<'a> RelValue<'a> {
             FieldExprRef::Name(col) => {
                 let pos = header.column_pos_or_err(col)?.idx();
                 self.read_column(pos)
-                    .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col.clone()))?
+                    .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col))?
             }
             FieldExprRef::Value(x) => Cow::Borrowed(x),
         };
@@ -126,9 +157,9 @@ impl<'a> RelValue<'a> {
         for col in cols {
             let val = match col {
                 FieldExpr::Name(col) => {
-                    let pos = header.column_pos_or_err(col)?.idx();
+                    let pos = header.column_pos_or_err(*col)?.idx();
                     self.read_or_take_column(pos)
-                        .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col.clone()))?
+                        .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, *col))?
                 }
                 FieldExpr::Value(x) => x.clone(),
             };
@@ -149,13 +180,6 @@ impl<'a> RelValue<'a> {
             RelValue::ProjRef(row) => bsatn::to_writer(buf, row),
         }
     }
-}
-
-/// An in-memory table
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
-pub struct MemTableWithoutTableName<'a> {
-    pub head: HeaderOnlyField<'a>,
-    pub data: &'a [ProductValue],
 }
 
 /// An in-memory table
@@ -183,33 +207,16 @@ impl MemTable {
         }
     }
 
-    /// For testing purposes only this provides a single-col header / product value.
-    pub fn from_value(of: AlgebraicValue) -> Self {
-        let head = Header::for_mem_table(of.type_of().into());
-        Self::new(Arc::new(head), StAccess::Public, [of.into()].into())
-    }
-
-    pub fn from_iter(head: Arc<Header>, data: impl Iterator<Item = ProductValue>) -> Self {
+    pub fn from_iter(head: Arc<Header>, data: impl IntoIterator<Item = ProductValue>) -> Self {
         Self {
             head,
-            data: data.collect(),
+            data: data.into_iter().collect(),
             table_access: StAccess::Public,
-        }
-    }
-
-    pub fn as_without_table_name(&self) -> MemTableWithoutTableName {
-        MemTableWithoutTableName {
-            head: self.head.as_without_table_name(),
-            data: &self.data,
         }
     }
 
     pub fn get_field_pos(&self, pos: usize) -> Option<&FieldName> {
         self.head.fields.get(pos).map(|x| &x.field)
-    }
-
-    pub fn get_field_named(&self, name: &str) -> Option<&FieldName> {
-        self.head.find_by_name(name).map(|x| &x.field)
     }
 }
 
@@ -220,76 +227,5 @@ impl Relation for MemTable {
 
     fn row_count(&self) -> RowCount {
         RowCount::exact(self.data.len())
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, From)]
-pub enum Table {
-    MemTable(MemTable),
-    DbTable(DbTable),
-}
-
-impl Hash for Table {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        // IMPORTANT: Required for hashing query plans.
-        // In general a query plan will only contain static data.
-        // However, currently it is possible to inline a virtual table.
-        // Such plans though are hybrids and should not be hashed,
-        // Since they contain raw data values.
-        // Therefore we explicitly disallow it here.
-        match self {
-            Table::DbTable(t) => {
-                t.hash(state);
-            }
-            Table::MemTable(_) => {
-                panic!("Cannot hash a virtual table");
-            }
-        }
-    }
-}
-
-impl Table {
-    pub fn table_name(&self) -> &str {
-        match self {
-            Self::MemTable(x) => &x.head.table_name,
-            Self::DbTable(x) => &x.head.table_name,
-        }
-    }
-
-    pub fn table_type(&self) -> StTableType {
-        match self {
-            Self::MemTable(_) => StTableType::User,
-            Self::DbTable(x) => x.table_type,
-        }
-    }
-
-    pub fn table_access(&self) -> StAccess {
-        match self {
-            Self::MemTable(x) => x.table_access,
-            Self::DbTable(x) => x.table_access,
-        }
-    }
-
-    pub fn get_db_table(&self) -> Option<&DbTable> {
-        match self {
-            Self::DbTable(t) => Some(t),
-            _ => None,
-        }
-    }
-}
-
-impl Relation for Table {
-    fn head(&self) -> &Arc<Header> {
-        match self {
-            Table::MemTable(x) => x.head(),
-            Table::DbTable(x) => x.head(),
-        }
-    }
-
-    fn row_count(&self) -> RowCount {
-        match self {
-            Table::MemTable(x) => x.row_count(),
-            Table::DbTable(x) => x.row_count(),
-        }
     }
 }
