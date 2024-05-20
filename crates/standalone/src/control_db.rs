@@ -27,9 +27,9 @@ pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("collection not found")]
+    #[error("collection not found: {0}")]
     CollectionNotFound(sled::Error),
-    #[error("database error")]
+    #[error("database error: {0}")]
     Database(sled::Error),
     #[error("record with the name {0} already exists")]
     RecordAlreadyExists(DomainName),
