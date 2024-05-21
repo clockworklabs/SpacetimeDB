@@ -9,7 +9,7 @@ on:
   issue_comment:
     types: [created]
 
-name: Benchmarks
+name: Bot test
 
 env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
