@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import logging
 
 # miscellaneous file paths
 TEST_DIR = Path(__file__).parent
@@ -24,14 +25,27 @@ TEMPLATE_LIB_RS = open(STDB_DIR / "crates/cli/src/subcommands/project/rust/lib._
 TEMPLATE_CARGO_TOML = open(STDB_DIR / "crates/cli/src/subcommands/project/rust/Cargo._toml").read()
 bindings_path = (STDB_DIR / "crates/bindings").absolute()
 escaped_bindings_path = str(bindings_path).replace('\\', '\\\\\\\\') # double escape for re.sub + toml
-print(f"bindings path: {bindings_path}, escaped: {escaped_bindings_path}")
 TEMPLATE_CARGO_TOML = (re.compile(r"^spacetimedb\s*=.*$", re.M) \
     .sub(f'spacetimedb = {{ path = "{escaped_bindings_path}" }}', TEMPLATE_CARGO_TOML))
 
 # this is set to true when the --docker flag is passed to the cli
 HAVE_DOCKER = False
 
+# we need to late-bind the output stream to allow unittests to capture stdout/stderr.
+class CapturableHandler(logging.StreamHandler):
 
+    @property
+    def stream(self):
+        return sys.stderr
+
+    @stream.setter
+    def stream(self, value):
+        pass
+
+handler = CapturableHandler()
+handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+logging.getLogger().addHandler(handler)
+logging.getLogger().setLevel(logging.DEBUG)
 
 def requires_dotnet(item):
     if HAVE_DOTNET:
@@ -41,7 +55,7 @@ def requires_dotnet(item):
 
 def build_template_target():
     if not TEMPLATE_TARGET_DIR.exists():
-        print("Building base compilation artifacts")
+        logging.info("Building base compilation artifacts")
         class BuildModule(Smoketest):
             AUTOPUBLISH = False
 
@@ -82,7 +96,17 @@ def extract_field(cmd_output, field_name):
     field, = extract_fields(cmd_output, field_name)
     return field
 
-def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=None, **kwargs):
+def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=None, log=True, **kwargs):
+    if log:
+        cmd = args[0] if cmd_name is None else cmd_name
+
+        logging.debug(f"$ {cmd} {' '.join(str(arg) for arg in args[1:])}")
+
+    needs_close = False
+    if not capture_stderr:
+        logging.debug(f"--- stderr ---")
+        needs_close = True
+
     output = subprocess.run(
         list(args),
         encoding="utf8",
@@ -90,12 +114,20 @@ def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=
         stderr=subprocess.PIPE if capture_stderr else None,
         **kwargs
     )
-    if capture_stderr:
-        sys.stderr.write(output.stderr)
+    if log:
+        if capture_stderr and output.stderr.strip() != "":
+            logging.debug(f"--- stderr ---\n{output.stderr.strip()}")
+            needs_close = True
+        if output.stdout.strip() != "":
+            logging.debug(f"--- stdout ---\n{output.stdout.strip()}")
+            needs_close = True
+        if needs_close:
+            logging.debug("--------------\n")
+
         sys.stderr.flush()
     if check:
         if cmd_name is not None:
-            output.args[0] = "spacetime"
+            output.args[0] = cmd_name
         output.check_returncode()
     return output if full_output else output.stdout
 
@@ -106,10 +138,9 @@ def spacetime(*args, **kwargs):
 
 def _check_for_dotnet() -> bool:
     try:
-        version = run_cmd("dotnet", "--version")
-        print("dotnet version:", version)
+        version = run_cmd("dotnet", "--version", log=False).strip()
         if int(version.split(".")[0]) < 8:
-            print("not high enough, skipping dotnet smoketests")
+            logging.info(f"dotnet version {version} not high enough (< 8.0), skipping dotnet smoketests")
             return False
     except Exception as e:
         raise e
@@ -191,7 +222,6 @@ class Smoketest(unittest.TestCase):
 
     # testcase initialization
 
-
     @classmethod
     def setUpClass(cls):
         cls.project_path = Path(cls.enterClassContext(tempfile.TemporaryDirectory()))
@@ -205,8 +235,8 @@ class Smoketest(unittest.TestCase):
             shutil.copytree(TEMPLATE_TARGET_DIR, cls.project_path / "target")
 
         if cls.AUTOPUBLISH:
-            print(f"Compiling module for {cls.__qualname__}...", file=sys.__stderr__)
-            cls.publish_module(cls, capture_stderr=False)
+            logging.info(f"Compiling module for {cls.__qualname__}...")
+            cls.publish_module(cls, capture_stderr=True) # capture stderr because otherwise it clutters the top-level test logs for some reason.
 
     def tearDown(self):
         # if this single test method published a database, clean it up now
@@ -225,10 +255,6 @@ class Smoketest(unittest.TestCase):
                 cls.spacetime("delete", cls.address, capture_stderr=False)
             except Exception:
                 pass
-
-    # def setUp(self):
-    #     if self.AUTOPUBLISH:
-    #         self.spacetime("publish", "-S", "--project-path", self.project_path)
 
     if sys.version_info < (3, 11):
         # polyfill; python 3.11 defines this classmethod on TestCase

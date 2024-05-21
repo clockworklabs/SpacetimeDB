@@ -1,5 +1,6 @@
 from .. import Smoketest
 import sys
+import logging
 
 
 class AddTablePseudomigration(Smoketest):
@@ -32,10 +33,12 @@ pub struct Book {
     isbn: String,
 }
  
+#[spacetimedb(reducer)]
 pub fn add_book(isbn: String) {
     Book::insert(Book { isbn });
 }
 
+#[spacetimedb(reducer)]
 pub fn print_books(prefix: String) {
     for book in Book::iter() {
         println!("{}: {}", prefix, book.isbn);
@@ -44,10 +47,10 @@ pub fn print_books(prefix: String) {
 """
     )
 
-    def test_upload_module_1(self):
-        """This tests uploading a basic module and calling some functions and checking logs afterwards."""
+    def test_add_table_pseudomigration(self):
+        """This tests uploading a module with a schema change that should not require clearing the database."""
 
-        print("Initial publish complete", file=sys.stderr)
+        logging.info("Initial publish complete")
         # initial module code is already published by test framework
 
         self.call("add_person", "Robert")
@@ -59,15 +62,15 @@ pub fn print_books(prefix: String) {
         self.assertIn("BEFORE: Julie", logs)
         self.assertIn("BEFORE: Robert", logs)
 
-        print(
+        logging.info(
             "Initial operations complete, updating module without clear",
-            file=sys.stderr,
         )
 
         self.write_module_code(self.MODULE_CODE_UPDATED)
-        self.publish_module(clear=False)
+        self.publish_module(self.address, clear=False)
 
-        print("Updated", file=sys.stderr)
+        logging.info("Updated")
+        self.logs(100)
 
         self.call("add_person", "Husserl")
         self.call("add_book", "1234567890")
@@ -75,8 +78,64 @@ pub fn print_books(prefix: String) {
         self.call("print_books", "AFTER_BOOK")
 
         logs = self.logs(100)
-        self.assertIn("AFTER_PERSON: Samantha!", logs)
-        self.assertIn("AFTER_PERSON: Julie!", logs)
-        self.assertIn("AFTER_PERSON: Robert!", logs)
-        self.assertIn("AFTER_PERSON: Husserl!", logs)
+        self.assertIn("AFTER_PERSON: Samantha", logs)
+        self.assertIn("AFTER_PERSON: Julie", logs)
+        self.assertIn("AFTER_PERSON: Robert", logs)
+        self.assertIn("AFTER_PERSON: Husserl", logs)
         self.assertIn("AFTER_BOOK: 1234567890", logs)
+
+
+class RejectTableChanges(Smoketest):
+    MODULE_CODE = """
+use spacetimedb::{println, spacetimedb};
+
+#[spacetimedb(table)]
+pub struct Person {
+    name: String,
+}
+
+#[spacetimedb(reducer)]
+pub fn add_person(name: String) {
+    Person::insert(Person { name });
+}
+
+#[spacetimedb(reducer)]
+pub fn print_persons(prefix: String) {
+    for person in Person::iter() {
+        println!("{}: {}", prefix, person.name);
+    }
+}
+"""
+
+    MODULE_CODE_UPDATED = """
+use spacetimedb::{println, spacetimedb};
+
+#[spacetimedb(table)]
+pub struct Person {
+    name: String,
+    age: u128,
+}
+
+#[spacetimedb(reducer)]
+pub fn add_person(name: String) {
+    Person::insert(Person { name });
+}
+
+#[spacetimedb(reducer)]
+pub fn print_persons(prefix: String) {
+    for person in Person::iter() {
+        println!("{}: {}", prefix, person.name);
+    }
+}
+"""
+
+    def test_reject_schema_changes(self):
+        """This tests that a module with invalid schema changes cannot be published without -c or a migration."""
+
+        logging.info("Initial publish complete")
+
+        with self.assertRaises(Exception):
+            self.write_module_code(self.MODULE_CODE_UPDATED)
+            self.publish_module(self.address, clear=False)
+
+        logging.info("Rejected as expected.")
