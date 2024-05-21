@@ -352,25 +352,36 @@ namespace SpacetimeDB
 
 		public static System.Collections.Generic.IEnumerable<PkMultiIdentity> Iter()
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("PkMultiIdentity"))
-			{
-				yield return (PkMultiIdentity)entry.Item2;
-			}
+			return SpacetimeDBClient.clientDB.GetObjects("PkMultiIdentity").Cast<PkMultiIdentity>();
+		}
+		public static System.Collections.Generic.IEnumerable<PkMultiIdentity> Query(Func<T, bool> filter)
+		{
+			return Iter().Where(filter);
 		}
 		public static int Count()
 		{
 			return SpacetimeDBClient.clientDB.Count("PkMultiIdentity");
 		}
-		public static PkMultiIdentity FilterById(uint value)
+		public static PkMultiIdentity FindById(uint value)
 		{
 			Id_Index.TryGetValue(value, out var r);
 			return r;
 		}
 
-		public static PkMultiIdentity FilterByOther(uint value)
+		public static System.Collections.Generic.IEnumerable<PkMultiIdentity> FilterById(uint value)
+		{
+			return Enumerable.Single(FindById(value));
+		}
+
+		public static PkMultiIdentity FindByOther(uint value)
 		{
 			Other_Index.TryGetValue(value, out var r);
 			return r;
+		}
+
+		public static System.Collections.Generic.IEnumerable<PkMultiIdentity> FilterByOther(uint value)
+		{
+			return Enumerable.Single(FindByOther(value));
 		}
 
 		public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue v1, SpacetimeDB.SATS.AlgebraicValue v2)
@@ -470,10 +481,11 @@ namespace SpacetimeDB
 
 		public static System.Collections.Generic.IEnumerable<Point> Iter()
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("Point"))
-			{
-				yield return (Point)entry.Item2;
-			}
+			return SpacetimeDBClient.clientDB.GetObjects("Point").Cast<Point>();
+		}
+		public static System.Collections.Generic.IEnumerable<Point> Query(Func<T, bool> filter)
+		{
+			return Iter().Where(filter);
 		}
 		public static int Count()
 		{
@@ -481,28 +493,12 @@ namespace SpacetimeDB
 		}
 		public static System.Collections.Generic.IEnumerable<Point> FilterByX(long value)
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("Point"))
-			{
-				var productValue = entry.Item1.AsProductValue();
-				var compareValue = (long)productValue.elements[0].AsI64();
-				if (compareValue == value)
-				{
-					yield return (Point)entry.Item2;
-				}
-			}
+			return Query(x => x.X == value);
 		}
 
 		public static System.Collections.Generic.IEnumerable<Point> FilterByY(long value)
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("Point"))
-			{
-				var productValue = entry.Item1.AsProductValue();
-				var compareValue = (long)productValue.elements[1].AsI64();
-				if (compareValue == value)
-				{
-					yield return (Point)entry.Item2;
-				}
-			}
+			return Query(x => x.Y == value);
 		}
 
 		public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue _v1, SpacetimeDB.SATS.AlgebraicValue _v2)
@@ -817,10 +813,11 @@ namespace SpacetimeDB
 
 		public static System.Collections.Generic.IEnumerable<TestA> Iter()
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("TestA"))
-			{
-				yield return (TestA)entry.Item2;
-			}
+			return SpacetimeDBClient.clientDB.GetObjects("TestA").Cast<TestA>();
+		}
+		public static System.Collections.Generic.IEnumerable<TestA> Query(Func<T, bool> filter)
+		{
+			return Iter().Where(filter);
 		}
 		public static int Count()
 		{
@@ -828,41 +825,17 @@ namespace SpacetimeDB
 		}
 		public static System.Collections.Generic.IEnumerable<TestA> FilterByX(uint value)
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("TestA"))
-			{
-				var productValue = entry.Item1.AsProductValue();
-				var compareValue = (uint)productValue.elements[0].AsU32();
-				if (compareValue == value)
-				{
-					yield return (TestA)entry.Item2;
-				}
-			}
+			return Query(x => x.X == value);
 		}
 
 		public static System.Collections.Generic.IEnumerable<TestA> FilterByY(uint value)
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("TestA"))
-			{
-				var productValue = entry.Item1.AsProductValue();
-				var compareValue = (uint)productValue.elements[1].AsU32();
-				if (compareValue == value)
-				{
-					yield return (TestA)entry.Item2;
-				}
-			}
+			return Query(x => x.Y == value);
 		}
 
 		public static System.Collections.Generic.IEnumerable<TestA> FilterByZ(string value)
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("TestA"))
-			{
-				var productValue = entry.Item1.AsProductValue();
-				var compareValue = (string)productValue.elements[2].AsString();
-				if (compareValue == value)
-				{
-					yield return (TestA)entry.Item2;
-				}
-			}
+			return Query(x => x.Z == value);
 		}
 
 		public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue _v1, SpacetimeDB.SATS.AlgebraicValue _v2)
@@ -982,10 +955,11 @@ namespace SpacetimeDB
 
 		public static System.Collections.Generic.IEnumerable<TestD> Iter()
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("TestD"))
-			{
-				yield return (TestD)entry.Item2;
-			}
+			return SpacetimeDBClient.clientDB.GetObjects("TestD").Cast<TestD>();
+		}
+		public static System.Collections.Generic.IEnumerable<TestD> Query(Func<T, bool> filter)
+		{
+			return Iter().Where(filter);
 		}
 		public static int Count()
 		{
@@ -1072,32 +1046,30 @@ namespace SpacetimeDB
 
 		public static System.Collections.Generic.IEnumerable<TestE> Iter()
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("TestE"))
-			{
-				yield return (TestE)entry.Item2;
-			}
+			return SpacetimeDBClient.clientDB.GetObjects("TestE").Cast<TestE>();
+		}
+		public static System.Collections.Generic.IEnumerable<TestE> Query(Func<T, bool> filter)
+		{
+			return Iter().Where(filter);
 		}
 		public static int Count()
 		{
 			return SpacetimeDBClient.clientDB.Count("TestE");
 		}
-		public static TestE FilterById(ulong value)
+		public static TestE FindById(ulong value)
 		{
 			Id_Index.TryGetValue(value, out var r);
 			return r;
 		}
 
+		public static System.Collections.Generic.IEnumerable<TestE> FilterById(ulong value)
+		{
+			return Enumerable.Single(FindById(value));
+		}
+
 		public static System.Collections.Generic.IEnumerable<TestE> FilterByName(string value)
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("TestE"))
-			{
-				var productValue = entry.Item1.AsProductValue();
-				var compareValue = (string)productValue.elements[1].AsString();
-				if (compareValue == value)
-				{
-					yield return (TestE)entry.Item2;
-				}
-			}
+			return Query(x => x.Name == value);
 		}
 
 		public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue v1, SpacetimeDB.SATS.AlgebraicValue v2)
@@ -1263,10 +1235,11 @@ namespace SpacetimeDB
 
 		public static System.Collections.Generic.IEnumerable<_Private> Iter()
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("_Private"))
-			{
-				yield return (_Private)entry.Item2;
-			}
+			return SpacetimeDBClient.clientDB.GetObjects("_Private").Cast<_Private>();
+		}
+		public static System.Collections.Generic.IEnumerable<_Private> Query(Func<T, bool> filter)
+		{
+			return Iter().Where(filter);
 		}
 		public static int Count()
 		{
@@ -1274,15 +1247,7 @@ namespace SpacetimeDB
 		}
 		public static System.Collections.Generic.IEnumerable<_Private> FilterByName(string value)
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("_Private"))
-			{
-				var productValue = entry.Item1.AsProductValue();
-				var compareValue = (string)productValue.elements[0].AsString();
-				if (compareValue == value)
-				{
-					yield return (_Private)entry.Item2;
-				}
-			}
+			return Query(x => x.Name == value);
 		}
 
 		public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue _v1, SpacetimeDB.SATS.AlgebraicValue _v2)
