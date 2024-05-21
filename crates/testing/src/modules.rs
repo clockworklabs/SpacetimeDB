@@ -176,7 +176,11 @@ impl CompiledModule {
             name: env.client_actor_index().next_client_name(),
         };
 
-        let module = env.host_controller().get_module_host(instance.id).unwrap();
+        let module = env
+            .host_controller()
+            .get_module_host(instance.id)
+            .await
+            .expect("host should be running");
 
         // TODO: it might be neat to add some functionality to module handle to make
         // it easier to interact with the database. For example it could include

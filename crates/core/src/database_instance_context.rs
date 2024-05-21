@@ -84,8 +84,8 @@ impl Deref for DatabaseInstanceContext {
 
 #[derive(Copy, Clone, Default)]
 pub struct TotalDiskUsage {
-    durability: Option<u64>,
-    logs: Option<u64>,
+    pub durability: Option<u64>,
+    pub logs: Option<u64>,
 }
 
 impl TotalDiskUsage {

@@ -10,6 +10,7 @@ use crate::execution_context::{ExecutionContext, ReducerContext};
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
+use crate::messages::control_db::Database;
 use crate::protobuf::client_api::{TableRowOperation, TableUpdate};
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
@@ -441,6 +442,8 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
 pub struct ModuleHost {
     info: Arc<ModuleInfo>,
     inner: Arc<dyn DynModuleHost>,
+    /// Called whenever a reducer call on this host panics.
+    on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
 }
 
 impl fmt::Debug for ModuleHost {
@@ -560,11 +563,12 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
 pub struct WeakModuleHost {
     info: Arc<ModuleInfo>,
     inner: Weak<dyn DynModuleHost>,
+    on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
 }
 
 pub type UpdateDatabaseResult = Result<UpdateDatabaseSuccess, UpdateDatabaseError>;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct UpdateDatabaseSuccess {
     /// Outcome of calling the module's __update__ reducer, `None` if none is
     /// defined.
@@ -601,7 +605,7 @@ pub enum InitDatabaseError {
 }
 
 impl ModuleHost {
-    pub fn new(mut module: impl Module) -> Self {
+    pub fn new(mut module: impl Module, on_panic: impl Fn() + Send + Sync + 'static) -> Self {
         let info = module.info();
         let instance_pool = LendingPool::new();
         instance_pool.add_multiple(module.initial_instances()).unwrap();
@@ -610,7 +614,8 @@ impl ModuleHost {
             instance_pool,
             start: NotifyOnce::new(),
         });
-        ModuleHost { info, inner }
+        let on_panic = Arc::new(on_panic);
+        ModuleHost { info, inner, on_panic }
     }
 
     pub fn start(&self) {
@@ -643,7 +648,11 @@ impl ModuleHost {
 
         let result = tokio::task::spawn_blocking(move || f(&mut *inst))
             .await
-            .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
+            .unwrap_or_else(|e| {
+                log::warn!("reducer `{reducer}` panicked");
+                (self.on_panic)();
+                std::panic::resume_unwind(e.into_panic())
+            });
         Ok(result)
     }
 
@@ -854,16 +863,27 @@ impl ModuleHost {
         WeakModuleHost {
             info: self.info.clone(),
             inner: Arc::downgrade(&self.inner),
+            on_panic: Arc::downgrade(&self.on_panic),
         }
+    }
+
+    pub fn database_info(&self) -> &Database {
+        &self.dbic().database
+    }
+
+    pub(crate) fn dbic(&self) -> &DatabaseInstanceContext {
+        self.inner.dbic()
     }
 }
 
 impl WeakModuleHost {
     pub fn upgrade(&self) -> Option<ModuleHost> {
         let inner = self.inner.upgrade()?;
+        let on_panic = self.on_panic.upgrade()?;
         Some(ModuleHost {
             info: self.info.clone(),
             inner,
+            on_panic,
         })
     }
 }

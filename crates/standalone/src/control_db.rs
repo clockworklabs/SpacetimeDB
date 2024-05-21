@@ -457,15 +457,6 @@ impl ControlDb {
         Ok(id)
     }
 
-    pub fn update_database_instance(&self, database_instance: DatabaseInstance) -> Result<()> {
-        let tree = self.db.open_tree("database_instance")?;
-
-        let buf = bsatn::to_vec(&database_instance).unwrap();
-
-        tree.insert(database_instance.id.to_be_bytes(), buf)?;
-        Ok(())
-    }
-
     pub fn delete_database_instance(&self, id: u64) -> Result<()> {
         let tree = self.db.open_tree("database_instance")?;
         tree.remove(id.to_be_bytes())?;

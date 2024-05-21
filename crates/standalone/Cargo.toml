@@ -27,6 +27,7 @@ async-trait.workspace = true
 axum.workspace = true
 clap = { workspace = true, features = ["derive", "string"] }
 dirs.workspace = true
+futures.workspace = true
 hostname.workspace = true
 http.workspace = true
 log.workspace = true
