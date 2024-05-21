@@ -32,7 +32,11 @@ impl TableWithPrimaryKey for PkString {
 
 impl PkString {
     #[allow(unused)]
-    pub fn filter_by_s(s: String) -> Option<Self> {
+    pub fn filter_by_s(s: String) -> TableIter<Self> {
+        Self::filter(|row| row.s == s)
+    }
+    #[allow(unused)]
+    pub fn find_by_s(s: String) -> Option<Self> {
         Self::find(|row| row.s == s)
     }
     #[allow(unused)]

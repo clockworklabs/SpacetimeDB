@@ -22,9 +22,4 @@ impl TableType for VecI8 {
     type ReducerEvent = super::ReducerEvent;
 }
 
-impl VecI8 {
-    #[allow(unused)]
-    pub fn filter_by_n(n: Vec<i8>) -> TableIter<Self> {
-        Self::filter(|row| row.n == n)
-    }
-}
+impl VecI8 {}

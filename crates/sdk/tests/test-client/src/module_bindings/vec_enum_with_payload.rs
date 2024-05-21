@@ -23,9 +23,4 @@ impl TableType for VecEnumWithPayload {
     type ReducerEvent = super::ReducerEvent;
 }
 
-impl VecEnumWithPayload {
-    #[allow(unused)]
-    pub fn filter_by_e(e: Vec<EnumWithPayload>) -> TableIter<Self> {
-        Self::filter(|row| row.e == e)
-    }
-}
+impl VecEnumWithPayload {}

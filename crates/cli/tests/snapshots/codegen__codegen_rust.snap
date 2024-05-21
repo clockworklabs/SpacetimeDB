@@ -836,9 +836,9 @@ impl TestE {
 	spacetimedb_lib,
 	anyhow::{Result, anyhow},
 };
-use super::test_a::TestA;
-use super::test_b::TestB;
 use super::namespace.test_c::Namespace.testC;
+use super::test_b::TestB;
+use super::test_a::TestA;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct TestArgs {

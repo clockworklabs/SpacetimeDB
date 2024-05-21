@@ -22,9 +22,4 @@ impl TableType for VecIdentity {
     type ReducerEvent = super::ReducerEvent;
 }
 
-impl VecIdentity {
-    #[allow(unused)]
-    pub fn filter_by_i(i: Vec<Identity>) -> TableIter<Self> {
-        Self::filter(|row| row.i == i)
-    }
-}
+impl VecIdentity {}
