@@ -903,10 +903,7 @@ fn autogen_csharp_access_funcs_for_struct(
         );
         indented_block(output, |output| {
             if is_unique {
-                writeln!(
-                    output,
-                    "return Enumerable.Single(FindBy{csharp_field_name_pascal}(value));"
-                );
+                writeln!(output, "return new[] {{ FindBy{csharp_field_name_pascal}(value) }};");
             } else {
                 writeln!(output, "return Query(x => x.{csharp_field_name_pascal} == value);");
             }
