@@ -223,6 +223,11 @@ impl AlgebraicType {
             | AlgebraicType::U128)
     }
 
+    /// Returns whether this type is a primitive (integer, boolean or string).
+    pub fn is_primitive(&self) -> bool {
+        self.is_integer() || matches!(*self, AlgebraicType::Bool | AlgebraicType::String)
+    }
+
     /// Returns a sum type with the given `sum`.
     pub fn sum<S: Into<SumType>>(sum: S) -> Self {
         AlgebraicType::Sum(sum.into())

@@ -640,9 +640,9 @@ fn autogen_csharp_product_table_common(
                     ""
                 };
                 writeln!(
-                        output,
-                        "private static Dictionary<{type_name}, {name}> {field_name}_Index = new Dictionary<{type_name}, {name}>(16{comparer});"
-                    );
+                    output,
+                    "private static Dictionary<{type_name}, {name}> {field_name}_Index = new Dictionary<{type_name}, {name}>(16{comparer});"
+                );
             }
             writeln!(output);
             // OnInsert method for updating indexes
@@ -839,12 +839,17 @@ fn autogen_csharp_access_funcs_for_struct(
     indented_block(output, |output| {
         writeln!(
             output,
-            "foreach(var entry in SpacetimeDBClient.clientDB.GetEntries(\"{table_name}\"))",
+            "return SpacetimeDBClient.clientDB.GetObjects(\"{table_name}\").Cast<{struct_name_pascal_case}>();",
         );
-        indented_block(output, |output| {
-            // TODO: best way to handle this?
-            writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;");
-        });
+    });
+
+    // Simple alias for Iter().Where(...) for API parity with C# server-side modules.
+    writeln!(
+        output,
+        "public static System.Collections.Generic.IEnumerable<{struct_name_pascal_case}> Query(Func<T, bool> filter)"
+    );
+    indented_block(output, |output| {
+        writeln!(output, "return Iter().Where(filter);",);
     });
 
     writeln!(output, "public static int Count()");
@@ -863,128 +868,50 @@ fn autogen_csharp_access_funcs_for_struct(
         let field_type = &field.algebraic_type;
         let csharp_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
 
-        let (field_type, csharp_field_type, is_option) = match field_type {
+        let csharp_field_type = match field_type {
             AlgebraicType::Product(product) => {
                 if product.is_identity() {
-                    ("Identity".into(), "SpacetimeDB.Identity".into(), false)
+                    "SpacetimeDB.Identity"
                 } else if product.is_address() {
-                    ("Address".into(), "SpacetimeDB.Address".into(), false)
-                } else {
-                    // TODO: We don't allow filtering on tuples right now,
-                    //       it's possible we may consider it for the future.
-                    continue;
-                }
-            }
-            AlgebraicType::Sum(sum) => {
-                if let Some(Builtin(b)) = sum.as_option() {
-                    match maybe_primitive(b) {
-                        MaybePrimitive::Primitive(ty) => (format!("{b:?}"), format!("{ty}?"), true),
-                        _ => {
-                            continue;
-                        }
-                    }
+                    "SpacetimeDB.Address"
                 } else {
                     continue;
                 }
             }
-            AlgebraicType::Ref(_) => {
-                // TODO: We don't allow filtering on enums or tuples right now;
-                //       it's possible we may consider it for the future.
-                continue;
-            }
+            AlgebraicType::Sum(_) | AlgebraicType::Ref(_) => continue,
             AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-                MaybePrimitive::Primitive(ty) => (format!("{b:?}"), ty.into(), false),
-                MaybePrimitive::Array(ArrayType { elem_ty }) => {
-                    if let Some(BuiltinType::U8) = elem_ty.as_builtin() {
-                        // Do allow filtering for byte arrays
-                        ("Bytes".into(), "byte[]".into(), false)
-                    } else {
-                        // TODO: We don't allow filtering based on an array type, but we might want other functionality here in the future.
-                        continue;
-                    }
-                }
-                MaybePrimitive::Map(_) => {
-                    // TODO: It would be nice to be able to say, give me all entries where this vec contains this value, which we can do.
-                    continue;
-                }
+                MaybePrimitive::Primitive(ty) => ty,
+                _ => continue,
             },
         };
 
-        let filter_return_type = fmt_fn(|f| {
-            if is_unique {
-                f.write_str(struct_name_pascal_case)
-            } else {
-                write!(f, "System.Collections.Generic.IEnumerable<{struct_name_pascal_case}>")
-            }
-        });
-
-        writeln!(
-            output,
-            "public static {filter_return_type} FilterBy{csharp_field_name_pascal}({csharp_field_type} value)"
-        );
-
-        indented_block(output, |output| {
-            if is_unique {
+        if is_unique {
+            writeln!(
+                output,
+                "public static {struct_name_pascal_case} FindBy{csharp_field_name_pascal}({csharp_field_type} value)"
+            );
+            indented_block(output, |output| {
                 writeln!(
                     output,
                     "{csharp_field_name_pascal}_Index.TryGetValue(value, out var r);"
                 );
                 writeln!(output, "return r;");
-            } else {
+            });
+            writeln!(output);
+        }
+
+        writeln!(
+            output,
+            "public static System.Collections.Generic.IEnumerable<{struct_name_pascal_case}> FilterBy{csharp_field_name_pascal}({csharp_field_type} value)"
+        );
+        indented_block(output, |output| {
+            if is_unique {
                 writeln!(
                     output,
-                    "foreach(var entry in SpacetimeDBClient.clientDB.GetEntries(\"{table_name}\"))"
+                    "return Enumerable.Single(FindBy{csharp_field_name_pascal}(value));"
                 );
-                indented_block(output, |output| {
-                    writeln!(output, "var productValue = entry.Item1.AsProductValue();");
-                    if field_type == "Identity" {
-                        writeln!(
-                            output,
-                            "var compareValue = Identity.From(productValue.elements[{col_i}].AsProductValue().elements[0].AsBytes());"
-                        );
-                    } else if is_option {
-                        writeln!(
-                            output,
-                            "var compareValue = ({csharp_field_type})(productValue.elements[{col_i}].AsSumValue().tag == 1 ? null : productValue.elements[{col_i}].AsSumValue().value.As{field_type}());"
-                        );
-                    } else if field_type == "Address" {
-                        writeln!(
-                            output,
-                            "var compareValue = (Address)Address.From(productValue.elements[{col_i}].AsProductValue().elements[0].AsBytes());"
-                        );
-                    } else {
-                        writeln!(
-                            output,
-                            "var compareValue = ({csharp_field_type})productValue.elements[{col_i}].As{field_type}();"
-                        );
-                    }
-                    if csharp_field_type == "byte[]" {
-                        writeln!(
-                            output,
-                            "static bool ByteArrayCompare(byte[] a1, byte[] a2)
-    {{
-        if (a1.Length != a2.Length)
-            return false;
-
-        for (int i=0; i<a1.Length; i++)
-            if (a1[i]!=a2[i])
-                return false;
-
-        return true;
-    }}"
-                        );
-                        writeln!(output);
-                        writeln!(output, "if (ByteArrayCompare(compareValue, value))");
-                        indented_block(output, |output| {
-                            writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;");
-                        });
-                    } else {
-                        writeln!(output, "if (compareValue == value)");
-                        indented_block(output, |output| {
-                            writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;");
-                        });
-                    }
-                });
+            } else {
+                writeln!(output, "return Query(x => x.{csharp_field_name_pascal} == value);");
             }
         });
         writeln!(output);
