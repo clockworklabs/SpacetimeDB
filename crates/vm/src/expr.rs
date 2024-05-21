@@ -2,6 +2,7 @@ use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::operator::{OpCmp, OpLogic, OpQuery};
 use crate::relation::{MemTable, RelValue};
 use arrayvec::ArrayVec;
+use core::ops::RangeBounds;
 use derive_more::From;
 use smallvec::{smallvec, SmallVec};
 use spacetimedb_data_structures::map::{HashMap, HashSet};
@@ -255,7 +256,11 @@ impl From<AlgebraicValue> for ColumnOp {
 impl From<Query> for Option<ColumnOp> {
     fn from(value: Query) -> Self {
         match value {
-            Query::IndexScan(op) => Some(ColumnOp::from_op_col_bounds(&op.table.head, &op.columns, op.bounds)),
+            Query::IndexScan(op) => Some(ColumnOp::from_op_col_bounds(
+                &op.table.head,
+                &op.columns,
+                op.bounds.into(),
+            )),
             Query::Select(op) => Some(op),
             _ => None,
         }
@@ -770,10 +775,129 @@ impl CrudExpr {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct IndexBounds {
+    start: Bound<AlgebraicValue>,
+    end: Bound<AlgebraicValue>,
+}
+
+impl IndexBounds {
+    fn new(start: Bound<AlgebraicValue>, end: Bound<AlgebraicValue>) -> Self {
+        Self { start, end }
+    }
+
+    fn point(at: AlgebraicValue) -> Self {
+        Self::new(Bound::Included(at.clone()), Bound::Included(at))
+    }
+
+    pub fn is_satisfiable(&self) -> bool {
+        match (&self.start, &self.end) {
+            (Bound::Excluded(lower), Bound::Excluded(upper)) if lower >= upper => false,
+            (Bound::Included(lower), Bound::Excluded(upper)) | (Bound::Excluded(lower), Bound::Included(upper))
+                if lower > upper =>
+            {
+                false
+            }
+            _ => true,
+        }
+    }
+}
+
+impl RangeBounds<AlgebraicValue> for IndexBounds {
+    fn start_bound(&self) -> Bound<&AlgebraicValue> {
+        self.start.as_ref()
+    }
+    fn end_bound(&self) -> Bound<&AlgebraicValue> {
+        self.end.as_ref()
+    }
+}
+
+impl From<IndexBounds> for (Bound<AlgebraicValue>, Bound<AlgebraicValue>) {
+    fn from(bounds: IndexBounds) -> Self {
+        (bounds.start, bounds.end)
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct IndexScan {
     pub table: DbTable,
     pub columns: ColList,
-    pub bounds: (Bound<AlgebraicValue>, Bound<AlgebraicValue>),
+    pub bounds: IndexBounds,
+}
+
+fn bound(value: AlgebraicValue, inclusive: bool) -> Bound<AlgebraicValue> {
+    if inclusive {
+        Bound::Included(value)
+    } else {
+        Bound::Excluded(value)
+    }
+}
+
+impl IndexScan {
+    /*
+    fn initial_lower(table: DbTable, columns: ColList, value: AlgebraicValue, inclusive: bool) -> Self {
+        let bounds = IndexBounds::new(bound(value, inclusive), Bound::Unbounded);
+        Self { table, columns, bounds }
+    }
+    */
+
+    /*
+    // Queries like `WHERE x < 5 AND x > 5` never return any rows and are likely mistakes.
+    // Detect such queries and log a warning.
+    // Compute this condition early, then compute the resulting query and log it.
+    // TODO: We should not emit an `IndexScan` in this case.
+    // Further design work is necessary to decide whether this should be an error at query compile time,
+    // or whether we should emit a query plan which explicitly says that it will return 0 rows.
+    // The current behavior is a hack
+    // because this patch was written (2024-04-01 pgoldman) a short time before the BitCraft alpha,
+    // and a more invasive change was infeasible.
+    let is_never = !inclusive && value == upper;
+    if is_never {
+        log::warn!("Query will select no rows due to equal excluded bounds: {self:?}")
+    }
+    */
+
+    /// Merge with `bounds`, or return an error if it cannot be added.
+    fn merge_with_bounds(self, table: DbTable, columns: ColList, bounds: IndexBounds) -> Result<Self, (Self, Self)> {
+        if self.table.table_id != table.table_id || self.columns != columns {
+            let other = Self { table, columns, bounds };
+            return Err((self, other));
+        }
+        let (s_lower, s_upper) = self.bounds.into();
+        let (o_lower, o_upper) = bounds.into();
+
+        use AlgebraicValue::Product;
+        use Bound::*;
+        // For the lower bound, we want to pick `s_lower.max(o_lower)` as that is most restrictive.
+        let lower = match (s_lower, o_lower) {
+            (Included(Product(mut s)), Included(Product(o))) if !columns.is_singleton() => {
+                for (s, o) in s.elements.iter_mut().zip(o) {
+                    *s = s.take().max(o);
+                }
+                Included(Product(s))
+            }
+            (Excluded(Product(mut s)), Excluded(Product(o))) if !columns.is_singleton() => {
+                for (s, o) in s.elements.iter_mut().zip(o) {
+                    *s = s.take().max(o);
+                }
+                Excluded(Product(s))
+            }
+
+            // Pick the highest lower bound.
+            (Included(s), Included(o)) => Included(s.max(o)),
+            (Excluded(s), Excluded(o)) => Excluded(s.max(o)),
+
+            // We have `Included <= Excluded`.
+            // Pick the most restrictive one, i.e., `Excluded`.
+            (Included(i), Excluded(e)) | (Excluded(e), Included(i)) if i <= e => Excluded(e),
+            (Included(i), Excluded(_)) | (Excluded(_), Included(i)) => Included(i),
+            // We only have one lower bound so use that one.
+            (l, Unbounded) | (Unbounded, l) => l,
+        };
+        let upper = todo!();
+
+        let bounds = IndexBounds::new(lower, upper);
+        Ok(Self { table, columns, bounds })
+    }
 }
 
 // An individual operation in a query.
@@ -812,29 +936,9 @@ impl Query {
     }
 }
 
-// IndexArgument represents an equality or range predicate that can be answered
-// using an index.
-#[derive(Debug, PartialEq, Clone)]
-enum IndexArgument<'a> {
-    Eq {
-        columns: &'a ColList,
-        value: AlgebraicValue,
-    },
-    LowerBound {
-        columns: &'a ColList,
-        value: AlgebraicValue,
-        inclusive: bool,
-    },
-    UpperBound {
-        columns: &'a ColList,
-        value: AlgebraicValue,
-        inclusive: bool,
-    },
-}
-
 #[derive(Debug, PartialEq, Clone)]
 enum IndexColumnOp<'a> {
-    Index(IndexArgument<'a>),
+    Index(&'a ColList, IndexBounds),
     Scan(&'a ColumnOp),
 }
 
@@ -971,16 +1075,13 @@ fn select_best_index<'a>(
     let mut fields_map = BTreeMap::<_, SmallVec<[_; 1]>>::new();
     extract_fields(ops, header, &mut fields_map, &mut found);
 
-    // Go through each operator and index,
+    // Go through each index,
     // consuming all field constraints that can be served by an index.
     //
     // NOTE: We do not consider `OpCmp::NotEq` at the moment
     // since those are typically not answered using an index.
-    for (col_list, cmp) in [OpCmp::Eq, OpCmp::Lt, OpCmp::LtEq, OpCmp::Gt, OpCmp::GtEq]
-        .into_iter()
-        .flat_map(|cmp| indices.iter().map(move |cl| (*cl, cmp)))
-    {
-        // (1) No fields left? We're done.
+    for col_list in indices {
+        // No fields left? We're done.
         if fields_map.is_empty() {
             break;
         }
@@ -988,40 +1089,53 @@ fn select_best_index<'a>(
         if col_list.is_singleton() {
             // For a single column index,
             // we want to avoid the `ProductValue` indirection of below.
-            for FieldValue { cmp, value, field, .. } in fields_map.remove(&(col_list.head(), cmp)).into_iter().flatten()
-            {
-                found.push(make_index_arg(cmp, col_list, value.clone()));
-                fields_indexed.insert((field, cmp));
-            }
-        } else if col_list
-            .iter()
-            // (2) Ensure that every col has a field.
-            .all(|col| fields_map.get(&(col, cmp)).filter(|fs| !fs.is_empty()).is_some())
-        {
-            // We've ensured `col_list ⊆ columns_of(field_map(cmp))`.
-            // Construct the value to compare against.
-            let mut elems = Vec::with_capacity(col_list.len() as usize);
-            for col in col_list.iter() {
-                // Retrieve the field for this (col, cmp) key.
-                // Remove the map entry if the list is empty now.
-                let Entry::Occupied(mut entry) = fields_map.entry((col, cmp)) else {
-                    // We ensured in (2) that the map is occupied for `(col, cmp)`.
-                    unreachable!()
-                };
-                let fields = entry.get_mut();
-                // We ensured in (2) that `fields` is non-empty.
-                let field = fields.pop().unwrap();
-                if fields.is_empty() {
-                    // Remove the entry so that (1) works.
-                    entry.remove();
+            for cmp in [OpCmp::Eq, OpCmp::Lt, OpCmp::LtEq, OpCmp::Gt, OpCmp::GtEq] {
+                let col = col_list.head();
+                for FieldValue { cmp, value, field, .. } in fields_map.remove(&(col, cmp)).into_iter().flatten() {
+                    found.push(make_index_arg(cmp, col_list, value.clone()));
+                    fields_indexed.insert((field, cmp));
                 }
-
-                // Add the field value to the product value.
-                elems.push(field.value.clone());
-                fields_indexed.insert((field.field, cmp));
             }
-            let value = AlgebraicValue::product(elems);
-            found.push(make_index_arg(cmp, col_list, value));
+        } else {
+            // We have a multi column index.
+
+            // First try to fit constraints `c_0 = v_0, ..., c_{n-1} = v_{n-1}, c_n op_n c_n`
+            // to an index scan where only the last column (`c_n`) can freely pick an operator (`op_n`)
+            // and where the initial columns in the index must use `=` as the operator.
+
+            // Compute the minimum number of `=` constraints that every column in the index has.
+            let mut min_init_cols_num_eq = skip_last(col_list.iter())
+                .map(|col| fields_map.get(&(col, OpCmp::Eq)).map_or(0, |fs| fs.len()))
+                .min()
+                .unwrap_or_default();
+
+            // For the last column, allow any operator save for `NotEq`.
+            let last = col_list.last();
+            for cmp in [OpCmp::Eq, OpCmp::Lt, OpCmp::LtEq, OpCmp::Gt, OpCmp::GtEq] {
+                while min_init_cols_num_eq > 0 {
+                    // We have at least one `=` for each initial column,
+                    // so confirm that we have a constraint for the last column.
+                    let Some(field) = pop_multimap(&mut fields_map, (last, cmp)) else {
+                        break;
+                    };
+                    // We've ensured `col_list ⊆ columns_of(field_map(cmp))`.
+                    // Construct the value to compare against.
+                    let mut elems = Vec::with_capacity(col_list.len() as usize);
+                    for field in skip_last(col_list.iter())
+                        // Cannot panic as `min_init_cols_num_eq > 0`.
+                        .map(|col| pop_multimap(&mut fields_map, (col, OpCmp::Eq)).unwrap())
+                        .chain([field])
+                    {
+                        fields_indexed.insert((field.field, cmp));
+                        // Add the field value to the product value.
+                        elems.push(field.value.clone());
+                    }
+                    // Construct the index scan.
+                    let value = AlgebraicValue::product(elems);
+                    found.push(make_index_arg(cmp, col_list, value));
+                    min_init_cols_num_eq -= 1;
+                }
+            }
         }
     }
 
@@ -1034,6 +1148,23 @@ fn select_best_index<'a>(
     );
 
     found
+}
+
+fn skip_last<T>(iter: impl Iterator<Item = T>) -> impl Iterator<Item = T> {
+    let mut iter = iter.peekable();
+    iter::from_fn(move || iter.next().filter(|_| iter.peek().is_some()))
+}
+
+fn pop_multimap<K: Ord, V, const N: usize>(map: &mut BTreeMap<K, SmallVec<[V; N]>>, key: K) -> Option<V> {
+    let Entry::Occupied(mut entry) = map.entry(key) else {
+        return None;
+    };
+    let fields = entry.get_mut();
+    let val = fields.pop();
+    if fields.is_empty() {
+        entry.remove();
+    }
+    val
 }
 
 /// Extracts `name = val` when `lhs` is a field that exists and `rhs` is a value.
@@ -1208,11 +1339,9 @@ impl QueryExpr {
     // Otherwise generate a select.
     // TODO: Replace these methods with a proper query optimization pass.
     pub fn with_index_eq(mut self, table: DbTable, columns: ColList, value: AlgebraicValue) -> Self {
-        let point = |v: AlgebraicValue| (Bound::Included(v.clone()), Bound::Included(v));
-
         // if this is the first operator in the list, generate index scan
         let Some(query) = self.query.pop() else {
-            let bounds = point(value);
+            let bounds = IndexBounds::point(value);
             self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
             return self;
         };
@@ -1273,7 +1402,7 @@ impl QueryExpr {
     ) -> Self {
         // if this is the first operator in the list, generate an index scan
         let Some(query) = self.query.pop() else {
-            let bounds = (Self::bound(value, inclusive), Bound::Unbounded);
+            let bounds = IndexBounds::new(Self::bound(value, inclusive), Bound::Unbounded);
             self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
             return self;
         };
@@ -1309,17 +1438,25 @@ impl QueryExpr {
             // merge with a preceding upper bounded index scan (inclusive)
             Query::IndexScan(IndexScan {
                 columns: lhs_col_id,
-                bounds: (Bound::Unbounded, Bound::Included(upper)),
+                bounds:
+                    IndexBounds {
+                        start: Bound::Unbounded,
+                        end: Bound::Included(upper),
+                    },
                 ..
             }) if columns == lhs_col_id => {
-                let bounds = (Self::bound(value, inclusive), Bound::Included(upper));
+                let bounds = IndexBounds::new(Self::bound(value, inclusive), Bound::Included(upper));
                 self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
                 self
             }
             // merge with a preceding upper bounded index scan (exclusive)
             Query::IndexScan(IndexScan {
                 columns: lhs_col_id,
-                bounds: (Bound::Unbounded, Bound::Excluded(upper)),
+                bounds:
+                    IndexBounds {
+                        start: Bound::Unbounded,
+                        end: Bound::Excluded(upper),
+                    },
                 ..
             }) if columns == lhs_col_id => {
                 // Queries like `WHERE x < 5 AND x > 5` never return any rows and are likely mistakes.
@@ -1333,7 +1470,7 @@ impl QueryExpr {
                 // and a more invasive change was infeasible.
                 let is_never = !inclusive && value == upper;
 
-                let bounds = (Self::bound(value, inclusive), Bound::Excluded(upper));
+                let bounds = IndexBounds::new(Self::bound(value, inclusive), Bound::Excluded(upper));
                 self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
 
                 if is_never {
@@ -1375,7 +1512,7 @@ impl QueryExpr {
             self.query.push(Query::IndexScan(IndexScan {
                 table,
                 columns,
-                bounds: (Bound::Unbounded, Self::bound(value, inclusive)),
+                bounds: IndexBounds::new(Bound::Unbounded, Self::bound(value, inclusive)),
             }));
             return self;
         };
@@ -1411,17 +1548,25 @@ impl QueryExpr {
             // merge with a preceding lower bounded index scan (inclusive)
             Query::IndexScan(IndexScan {
                 columns: lhs_col_id,
-                bounds: (Bound::Included(lower), Bound::Unbounded),
+                bounds:
+                    IndexBounds {
+                        start: Bound::Included(lower),
+                        end: Bound::Unbounded,
+                    },
                 ..
             }) if columns == lhs_col_id => {
-                let bounds = (Bound::Included(lower), Self::bound(value, inclusive));
+                let bounds = IndexBounds::new(Bound::Included(lower), Self::bound(value, inclusive));
                 self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
                 self
             }
             // merge with a preceding lower bounded index scan (exclusive)
             Query::IndexScan(IndexScan {
                 columns: lhs_col_id,
-                bounds: (Bound::Excluded(lower), Bound::Unbounded),
+                bounds:
+                    IndexBounds {
+                        start: Bound::Excluded(lower),
+                        end: Bound::Unbounded,
+                    },
                 ..
             }) if columns == lhs_col_id => {
                 // Queries like `WHERE x < 5 AND x > 5` never return any rows and are likely mistakes.
@@ -1435,7 +1580,7 @@ impl QueryExpr {
                 // and a more invasive change was infeasible.
                 let is_never = !inclusive && value == lower;
 
-                let bounds = (Bound::Excluded(lower), Self::bound(value, inclusive));
+                let bounds = IndexBounds::new(Bound::Excluded(lower), Self::bound(value, inclusive));
                 self.query.push(Query::IndexScan(IndexScan { table, columns, bounds }));
 
                 if is_never {
@@ -2090,7 +2235,7 @@ mod tests {
             Query::IndexScan(IndexScan {
                 table: db_table.get_db_table().unwrap().clone(),
                 columns: ColList::new(42.into()),
-                bounds: (Bound::Included(22.into()), Bound::Unbounded),
+                bounds: IndexBounds::new(Bound::Included(22.into()), Bound::Unbounded),
             }),
             Query::IndexJoin(IndexJoin {
                 probe_side: mem_table.clone().into(),
@@ -2226,13 +2371,13 @@ mod tests {
             "t1".into(),
             cols.to_vec(),
             vec![
-                //Index a
+                // Index a
                 (a.into(), Constraints::primary_key()),
-                //Index b
+                // Index b
                 (b.into(), Constraints::indexed()),
-                //Index b + c
+                // Index b + c
                 (col_list![b, c], Constraints::unique()),
-                //Index a + b + c + d
+                // Index a + b + c + d
                 (col_list![a, b, c, d], Constraints::indexed()),
             ],
         );
@@ -2388,13 +2533,13 @@ mod tests {
             make_index_arg(cmp, columns, val.clone())
         };
 
-        // Same field indexed
+        // `a > va AND a < vb` => `[index(a), index(a)]`
         assert_eq!(
             select_best_index(&[(OpCmp::Gt, col_a, &val_a), (OpCmp::Lt, col_a, &val_b)]),
             [idx(OpCmp::Lt, &[col_a], &val_b), idx(OpCmp::Gt, &[col_a], &val_a)].into()
         );
 
-        // Same field scan
+        // `d > vd AND d < vb` => `[scan(d), scan(d)]`
         assert_eq!(
             select_best_index(&[(OpCmp::Gt, col_d, &val_d), (OpCmp::Lt, col_d, &val_b)]),
             [
@@ -2403,14 +2548,16 @@ mod tests {
             ]
             .into()
         );
-        // One indexed other scan
+
+        // `b > vb AND c < vc` => `[index(b), scan(c)]`.
         assert_eq!(
             select_best_index(&[(OpCmp::Gt, col_b, &val_b), (OpCmp::Lt, col_c, &val_c)]),
             [idx(OpCmp::Gt, &[col_b], &val_b), scan(&arena, OpCmp::Lt, col_c, &val_c)].into()
         );
 
-        // 1 multi-indexed 1 index
+        // `b = vb AND a >= va AND c = vc` => `[index(b, c), index(a)]`
         assert_eq!(
+            //
             select_best_index(&[
                 (OpCmp::Eq, col_b, &val_b),
                 (OpCmp::GtEq, col_a, &val_a),
@@ -2427,7 +2574,7 @@ mod tests {
             .into()
         );
 
-        // 1 indexed 2 scan
+        // `b > vb AND a = va AND c = vc` => `[index(a), index(b), scan(c)]`
         assert_eq!(
             select_best_index(&[
                 (OpCmp::Gt, col_b, &val_b),
@@ -2439,6 +2586,22 @@ mod tests {
                 idx(OpCmp::Gt, &[col_b], &val_b),
                 scan(&arena, OpCmp::Lt, col_c, &val_c),
             ]
+            .into()
+        );
+
+        // `a = va AND b = vb AND c = vc AND d > vd` => `[index(a, b, c, d)]`
+        assert_eq!(
+            select_best_index(&[
+                (OpCmp::Eq, col_a, &val_a),
+                (OpCmp::Eq, col_b, &val_b),
+                (OpCmp::Eq, col_c, &val_c),
+                (OpCmp::Gt, col_d, &val_d),
+            ]),
+            [idx(
+                OpCmp::Gt,
+                &[col_a, col_b, col_c, col_d],
+                &product![val_a.clone(), val_b.clone(), val_c.clone(), val_d.clone()].into()
+            )]
             .into()
         );
     }

@@ -19,7 +19,6 @@ use spacetimedb_vm::iterators::RelIter;
 use spacetimedb_vm::program::{ProgramVm, Sources};
 use spacetimedb_vm::rel_ops::{EmptyRelOps, RelOps};
 use spacetimedb_vm::relation::{MemTable, RelValue};
-use std::ops::Bound;
 use std::sync::Arc;
 
 pub enum TxMode<'a> {
@@ -46,18 +45,6 @@ impl<'a> From<&'a mut MutTx> for TxMode<'a> {
 impl<'a> From<&'a Tx> for TxMode<'a> {
     fn from(tx: &'a Tx) -> Self {
         TxMode::Tx(tx)
-    }
-}
-
-fn bound_is_satisfiable(lower: &Bound<AlgebraicValue>, upper: &Bound<AlgebraicValue>) -> bool {
-    match (lower, upper) {
-        (Bound::Excluded(lower), Bound::Excluded(upper)) if lower >= upper => false,
-        (Bound::Included(lower), Bound::Excluded(upper)) | (Bound::Excluded(lower), Bound::Included(upper))
-            if lower > upper =>
-        {
-            false
-        }
-        _ => true,
     }
 }
 
@@ -91,7 +78,7 @@ pub fn build_query<'a>(
     for op in &query.query {
         result = Some(match op {
             Query::IndexScan(IndexScan { table, columns, bounds }) if db_table => {
-                if !bound_is_satisfiable(&bounds.0, &bounds.1) {
+                if !bounds.is_satisfiable() {
                     // If the bound is impossible to satisfy
                     // because the lower bound is greater than the upper bound, or both bounds are excluded and equal,
                     // return an empty iterator.
@@ -112,7 +99,7 @@ pub fn build_query<'a>(
                 let cols = &index_scan.columns;
                 let bounds = &index_scan.bounds;
 
-                if !bound_is_satisfiable(&bounds.0, &bounds.1) {
+                if !bounds.is_satisfiable() {
                     // If the bound is impossible to satisfy
                     // because the lower bound is greater than the upper bound, or both bounds are excluded and equal,
                     // return an empty iterator.
@@ -133,8 +120,8 @@ pub fn build_query<'a>(
                     // For multi-col constraints, these are stored as bounds of product values,
                     // so we need to project these into single-col bounds and compare against the column.
                     // Project start/end `Bound<AV>`s to `Bound<Vec<AV>>`s.
-                    let start_bound = bounds.0.as_ref().map(|av| &av.as_product().unwrap().elements);
-                    let end_bound = bounds.1.as_ref().map(|av| &av.as_product().unwrap().elements);
+                    let start_bound = bounds.start_bound().map(|av| &*av.as_product().unwrap().elements);
+                    let end_bound = bounds.end_bound().map(|av| &*av.as_product().unwrap().elements);
                     // Construct the query:
                     let iter = result.select(move |row| {
                         // Go through each column position,

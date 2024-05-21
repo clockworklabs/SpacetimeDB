@@ -245,14 +245,14 @@ mod tests {
     use crate::execution_context::ExecutionContext;
     use crate::sql::execute::tests::run_for_testing;
     use crate::vm::tests::create_table_with_rows;
+    use core::convert::From;
+    use core::ops::{Bound, RangeBounds as _};
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::operator::OpQuery;
     use spacetimedb_lib::{Address, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType};
     use spacetimedb_vm::expr::{ColumnOp, IndexJoin, IndexScan, JoinExpr, Query};
-    use std::convert::From;
-    use std::ops::Bound;
 
     fn assert_index_scan(
         op: &Query,
@@ -262,8 +262,8 @@ mod tests {
     ) -> TableId {
         if let Query::IndexScan(IndexScan { table, columns, bounds }) = op {
             assert_eq!(columns, &cols.into(), "Columns don't match");
-            assert_eq!(bounds.0, low_bound, "Lower bound don't match");
-            assert_eq!(bounds.1, up_bound, "Upper bound don't match");
+            assert_eq!(bounds.start_bound(), low_bound.as_ref(), "Lower bound don't match");
+            assert_eq!(bounds.end_bound(), up_bound.as_ref(), "Upper bound don't match");
             table.table_id
         } else {
             panic!("Expected IndexScan, got {op}");
