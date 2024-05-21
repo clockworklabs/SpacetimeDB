@@ -834,6 +834,15 @@ fn serialize_page(c: &mut Criterion) {
     });
 }
 
-criterion_group!(snapshot, hash_page, serialize_page);
+fn deserialize_page(c: &mut Criterion) {
+    c.bench_function("deserialize_page", |b| {
+        let mut page = Page::new(row_size_for_type::<u64>());
+        fill_with_fixed_len::<u64>(&mut page, 0xa5a5a5a5_a5a5a5a5, &u64::var_len_visitor());
+        let page_bsatn = bsatn::to_vec(&page).unwrap();
+        b.iter_with_large_drop(|| bsatn::from_slice::<'_, Page>(black_box(&page_bsatn)));
+    });
+}
+
+criterion_group!(snapshot, hash_page, serialize_page, deserialize_page);
 
 criterion_main!(insert, iter, copy_filter_into, bflatn, snapshot);
