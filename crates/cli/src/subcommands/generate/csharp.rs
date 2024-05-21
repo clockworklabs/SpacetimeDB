@@ -832,10 +832,7 @@ fn autogen_csharp_access_funcs_for_struct(
 ) -> bool {
     let primary_col_idx = schema.pk();
 
-    writeln!(
-        output,
-        "public static System.Collections.Generic.IEnumerable<{struct_name_pascal_case}> Iter()"
-    );
+    writeln!(output, "public static IEnumerable<{struct_name_pascal_case}> Iter()");
     indented_block(output, |output| {
         writeln!(
             output,
@@ -846,7 +843,7 @@ fn autogen_csharp_access_funcs_for_struct(
     // Simple alias for Iter().Where(...) for API parity with C# server-side modules.
     writeln!(
         output,
-        "public static System.Collections.Generic.IEnumerable<{struct_name_pascal_case}> Query(Func<T, bool> filter)"
+        "public static IEnumerable<{struct_name_pascal_case}> Query(Func<{struct_name_pascal_case}, bool> filter)"
     );
     indented_block(output, |output| {
         writeln!(output, "return Iter().Where(filter);",);
@@ -902,7 +899,7 @@ fn autogen_csharp_access_funcs_for_struct(
 
         writeln!(
             output,
-            "public static System.Collections.Generic.IEnumerable<{struct_name_pascal_case}> FilterBy{csharp_field_name_pascal}({csharp_field_type} value)"
+            "public static IEnumerable<{struct_name_pascal_case}> FilterBy{csharp_field_name_pascal}({csharp_field_type} value)"
         );
         indented_block(output, |output| {
             if is_unique {
