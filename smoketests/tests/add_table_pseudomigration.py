@@ -118,7 +118,7 @@ pub struct Person {
 
 #[spacetimedb(reducer)]
 pub fn add_person(name: String) {
-    Person::insert(Person { name });
+    Person::insert(Person { name, age: 70 });
 }
 
 #[spacetimedb(reducer)]
@@ -132,7 +132,7 @@ pub fn print_persons(prefix: String) {
     def test_reject_schema_changes(self):
         """This tests that a module with invalid schema changes cannot be published without -c or a migration."""
 
-        logging.info("Initial publish complete")
+        logging.info("Initial publish complete, trying to do an invalid update.")
 
         with self.assertRaises(Exception):
             self.write_module_code(self.MODULE_CODE_UPDATED)
