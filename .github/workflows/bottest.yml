@@ -81,6 +81,7 @@ jobs:
 
       - name: Run bot test script
         run: |
+          RESULTS_NAME="pr-$PR_NUMBER-$GITHUB_SHA"
           echo "We're on a bots runner, so expecting to find the BitCraftBots repo set up in the expected location"
           echo "Let's hope the bots runner is up to date!!!"
           SPACETIME_BIN="$PWD/target/release/spacetime"
@@ -102,6 +103,7 @@ jobs:
 
       - name: Post comment
         run: |
+          RESULTS_NAME="pr-$PR_NUMBER-$GITHUB_SHA"
           BODY="<details><summary>Bot test results</summary>
 
           Test results are stored on DO Spaces [here](https://cloud.digitalocean.com/spaces/spacetimedb-ci-benchmarks?path=bottests%2F). You'll need to log in
