@@ -8,6 +8,7 @@ use core::fmt;
 use core::ops::{AddAssign, Div, Mul, Range, SubAssign};
 use derive_more::{Add, Sub};
 use spacetimedb_data_structures::map::ValidAsIdentityHash;
+use spacetimedb_sats::{impl_deserialize, impl_serialize};
 
 /// A byte is a `u8`.
 ///
@@ -69,6 +70,10 @@ impl RowHash {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Add, Sub)]
 pub struct Size(pub u16);
 
+// We need to be able to serialize and deserialize `Size` because they appear in the `PageHeader`.
+impl_serialize!([] Size, (self, ser) => self.0.serialize(ser));
+impl_deserialize!([] Size, de => u16::deserialize(de).map(Size));
+
 impl Size {
     /// Returns the size for use in `usize` computations.
     #[inline]
@@ -94,6 +99,10 @@ impl Mul<usize> for Size {
 pub struct PageOffset(
     #[cfg_attr(any(test, feature = "proptest"), proptest(strategy = "0..PageOffset::PAGE_END.0"))] pub u16,
 );
+
+// We need to ser/de `PageOffset`s because they appear within the `PageHeader`.
+impl_serialize!([] PageOffset, (self, ser) => self.0.serialize(ser));
+impl_deserialize!([] PageOffset, de => u16::deserialize(de).map(PageOffset));
 
 static_assert_size!(PageOffset, 2);
 

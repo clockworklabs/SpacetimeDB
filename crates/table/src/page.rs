@@ -41,6 +41,7 @@ use super::{
 };
 use crate::{fixed_bit_set::IterSet, static_assert_size};
 use core::{mem, ops::ControlFlow, ptr};
+use spacetimedb_lib::{de::Deserialize, ser::Serialize};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -54,7 +55,7 @@ pub enum Error {
 /// A cons-cell in a freelist either
 /// for an unused fixed-len cell or a variable-length granule.
 #[repr(C)] // Required for a stable ABI.
-#[derive(Clone, Copy, Debug, bytemuck::NoUninit)]
+#[derive(Clone, Copy, Debug, bytemuck::NoUninit, Serialize, Deserialize)]
 struct FreeCellRef {
     /// The address of the next free cell in a freelist.
     ///
@@ -125,6 +126,7 @@ impl FreeCellRef {
 
 /// All the fixed size header information.
 #[repr(C)] // Required for a stable ABI.
+#[derive(Serialize, Deserialize)] // So we can dump and restore pages during snapshotting.
 struct FixedHeader {
     /// A pointer to the head of the freelist which stores
     /// all the unused (freed) fixed row cells.
@@ -224,7 +226,7 @@ impl FixedHeader {
 
 /// All the var-len header information.
 #[repr(C)] // Required for a stable ABI.
-#[derive(bytemuck::NoUninit, Clone, Copy)]
+#[derive(bytemuck::NoUninit, Clone, Copy, Serialize, Deserialize)]
 struct VarHeader {
     /// A pointer to the head of the freelist which stores
     /// all the unused (freed) var-len granules.
@@ -277,6 +279,7 @@ impl VarHeader {
 /// as the whole [`Page`] is `Box`ed.
 #[repr(C)] // Required for a stable ABI.
 #[repr(align(64))] // Alignment must be same as `VarLenGranule::SIZE`.
+#[derive(Serialize, Deserialize)]
 struct PageHeader {
     /// The header data relating to the fixed component of a row.
     fixed: FixedHeader,
@@ -360,6 +363,7 @@ const _VLG_ALIGN_MULTIPLE_OF_FCR: () = assert!(mem::align_of::<VarLenGranule>() 
 // ^-- Must have align at least that of `VarLenGranule`,
 // so that `row_data[PageOffset::PAGE_END - VarLenGranule::SIZE]` is an aligned pointer to `VarLenGranule`.
 // TODO(bikeshedding): consider raising the alignment. We may want this to be OS page (4096) aligned.
+#[derive(Serialize, Deserialize)]
 pub struct Page {
     /// The header containing metadata on how to interpret and modify the `row_data`.
     header: PageHeader,
@@ -1740,6 +1744,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::{blob_store::NullBlobStore, layout::row_size_for_type, var_len::AlignedVarLenOffsets};
     use proptest::{collection::vec, prelude::*};
+    use spacetimedb_lib::bsatn;
 
     fn u64_row_size() -> Size {
         let fixed_row_size = row_size_for_type::<u64>();
@@ -1867,6 +1872,52 @@ pub(crate) mod tests {
 
         // Hash is unchanged.
         assert_eq!(page.header.unmodified_hash, Some(hash_pre_iter));
+    }
+
+    #[test]
+    fn ser_de_round_trip_u64() {
+        let mut page = Page::new(u64_row_size());
+
+        // First the hash is not saved, so compute it.
+        let hash_pre_ins = hash_unmodified_save_get(&mut page);
+
+        // Insert the strings.
+        let last_val = insert_while(&mut page, 0, u64_row_size(), 0, insert_u64_drop);
+
+        // Hash was cleared by inserting and is different now.
+        let hash = hash_unmodified_save_get(&mut page);
+        assert_ne!(hash_pre_ins, hash);
+
+        // BSATN-serialize the page, then read it back.
+        let page_bsatn = bsatn::to_vec(&page).unwrap();
+        let page_de: Page = bsatn::from_slice(&page_bsatn).unwrap();
+
+        // The round-tripped page should still have the hash stored.
+        assert_eq!(hash, page_de.unmodified_hash().cloned().unwrap());
+
+        // Hashing the round-tripped page again should return the same hash.
+        let hash_again = page_de.content_hash();
+        assert_eq!(hash, hash_again);
+
+        // The two pages should contain exactly the same set of rows.
+        let mut orig_iter = page.iter_fixed_len(u64_row_size());
+        let mut de_iter = page_de.iter_fixed_len(u64_row_size());
+
+        // For each row in the two pages,
+        for ((orig_row_idx, de_row_idx), expected_val) in (&mut orig_iter).zip(&mut de_iter).zip(0..last_val) {
+            // The rows should be at the same index.
+            assert_eq!(orig_row_idx, de_row_idx);
+
+            // The rows should contain the same values.
+            let orig_row_val = read_u64(&page, orig_row_idx);
+            let de_row_val = read_u64(&page_de, de_row_idx);
+            assert_eq!(orig_row_val, expected_val);
+            assert_eq!(de_row_val, expected_val);
+        }
+
+        // The iterators should both be complete.
+        assert!(orig_iter.next().is_none());
+        assert!(de_iter.next().is_none());
     }
 
     #[test]
@@ -2262,5 +2313,56 @@ pub(crate) mod tests {
 
         // Reading did not alter the hash.
         assert_eq!(hash_pre_iter, page.header.unmodified_hash.unwrap());
+    }
+
+    #[test]
+    fn ser_de_round_trip_var_len_str() {
+        let mut page = Page::new(STR_ROW_SIZE);
+
+        // First the hash is not saved, so compute it.
+        let hash_pre_ins = hash_unmodified_save_get(&mut page);
+
+        // Insert the strings.
+        let last_val = insert_while(&mut page, 0, STR_ROW_SIZE, 1, |page, val| {
+            insert_str(page, &val.to_le_bytes());
+        });
+
+        // Hash was cleared by inserting and is different now.
+        let hash = hash_unmodified_save_get(&mut page);
+        assert_ne!(hash_pre_ins, hash);
+
+        // BSATN-serialize the page, then read it back.
+        let page_bsatn = bsatn::to_vec(&page).unwrap();
+        let page_de: Page = bsatn::from_slice(&page_bsatn).unwrap();
+
+        // The round-tripped page should still have the hash stored.
+        assert_eq!(hash, page_de.unmodified_hash().cloned().unwrap());
+
+        // Hashing the round-tripped page again should return the same hash.
+        let hash_again = page_de.content_hash();
+        assert_eq!(hash, hash_again);
+
+        // The two pages should contain exactly the same set of rows.
+        let mut orig_iter = page.iter_fixed_len(STR_ROW_SIZE);
+        let mut de_iter = page_de.iter_fixed_len(STR_ROW_SIZE);
+
+        // For each row in the two pages,
+        for ((orig_row_idx, de_row_idx), expected_val) in (&mut orig_iter).zip(&mut de_iter).zip(0..last_val) {
+            // The rows should be at the same index.
+            assert_eq!(orig_row_idx, de_row_idx);
+
+            // The rows should point to the same var-len granule.
+            let orig_vlr = read_str_ref(&page, orig_row_idx);
+            let de_vlr = read_str_ref(&page_de, de_row_idx);
+            assert_eq!(orig_vlr, de_vlr);
+
+            // The referred var-len granules should contain the same string.
+            check_u64_in_str(&page, orig_row_idx, expected_val);
+            check_u64_in_str(&page_de, de_row_idx, expected_val);
+        }
+
+        // The iterators should both be complete.
+        assert!(orig_iter.next().is_none());
+        assert!(de_iter.next().is_none());
     }
 }

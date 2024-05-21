@@ -31,7 +31,8 @@ blake3_pure = ["blake3/pure"]
 [dependencies]
 spacetimedb-data-structures.workspace = true
 spacetimedb-primitives.workspace = true
-spacetimedb-sats.workspace = true
+spacetimedb-sats = { workspace = true, features = ["blake3"] }
+spacetimedb-lib.workspace = true
 
 ahash.workspace = true
 blake3.workspace = true

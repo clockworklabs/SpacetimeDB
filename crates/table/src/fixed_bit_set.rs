@@ -52,6 +52,9 @@ impl BitBlock for DefaultBitBlock {
 /// The internals of `FixedBitSet`.
 /// Separated from the higher level APIs to contain the safety boundary.
 mod internal_unsafe {
+    use spacetimedb_lib::{de::Deserialize, ser::Serialize};
+    use spacetimedb_sats::{impl_deserialize, impl_serialize};
+
     use super::{BitBlock, DefaultBitBlock};
     use crate::{static_assert_align, static_assert_size};
     use core::{
@@ -76,7 +79,7 @@ mod internal_unsafe {
     /// The set can store at most `u16::MAX` number of bits.
     #[repr(C, packed)]
     pub struct FixedBitSet<B = DefaultBitBlock> {
-        /// The size of the heap allocation in number of elements.
+        /// The size of the heap allocation in number of elements `B`.
         len: Len,
         /// A pointer to a heap allocation of `[B]` of `self.len`.
         ptr: NonNull<B>,
@@ -84,6 +87,13 @@ mod internal_unsafe {
 
     static_assert_align!(FixedBitSet, 1);
     static_assert_size!(FixedBitSet, mem::size_of::<usize>() + mem::size_of::<Len>());
+
+    // We need to be able to serialize and deserialize `FixedBitSet` because they appear in the `PageHeader`.
+    impl_serialize!([B: BitBlock + Serialize] FixedBitSet<B>, (self, ser) => self.storage().serialize(ser));
+    impl_deserialize!([B: BitBlock + Deserialize<'de>] FixedBitSet<B>, de => {
+        let storage = Box::<[B]>::deserialize(de)?;
+        Ok(Self::from_boxed_slice(storage))
+    });
 
     // SAFETY: `FixedBitSet` owns its data.
     unsafe impl<B> Send for FixedBitSet<B> {}
@@ -104,6 +114,12 @@ mod internal_unsafe {
     }
 
     impl<B: BitBlock> FixedBitSet<B> {
+        fn from_boxed_slice(storage: Box<[B]>) -> Self {
+            let len = storage.len() as Len;
+            let ptr = NonNull::from(Box::leak(storage)).cast();
+            Self { ptr, len }
+        }
+
         /// Allocates a new bit set capable of holding `bits` number of bits.
         pub fn new(bits: usize) -> Self {
             // Compute the number of blocks needed.
@@ -111,13 +127,11 @@ mod internal_unsafe {
             // SAFETY: required for the soundness of `Drop` as
             // `dealloc` must receive the same layout as it was `alloc`ated with.
             assert!(nblocks <= Len::MAX as usize);
-            let len = nblocks as Len;
 
             // Allocate the blocks and extract the pointer to the heap region.
             let blocks: Box<[B]> = vec![B::ZERO; nblocks].into_boxed_slice();
-            let ptr = NonNull::from(Box::leak(blocks)).cast();
 
-            Self { ptr, len }
+            Self::from_boxed_slice(blocks)
         }
     }
 
