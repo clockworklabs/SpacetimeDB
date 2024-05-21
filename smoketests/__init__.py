@@ -23,9 +23,8 @@ STDB_CONFIG = TEST_DIR / "config.toml"
 TEMPLATE_LIB_RS = open(STDB_DIR / "crates/cli/src/subcommands/project/rust/lib._rs").read()
 TEMPLATE_CARGO_TOML = open(STDB_DIR / "crates/cli/src/subcommands/project/rust/Cargo._toml").read()
 bindings_path = (STDB_DIR / "crates/bindings").absolute()
-escaped_bindings_path = re.escape(
-    str(bindings_path).replace('\\', '\\\\')
-)
+escaped_bindings_path = str(bindings_path).replace('\\', '\\\\\\\\') # double escape for re.sub + toml
+print(f"bindings path: {bindings_path}, escaped: {escaped_bindings_path}")
 TEMPLATE_CARGO_TOML = (re.compile(r"^spacetimedb\s*=.*$", re.M) \
     .sub(f'spacetimedb = {{ path = "{escaped_bindings_path}" }}', TEMPLATE_CARGO_TOML))
 
