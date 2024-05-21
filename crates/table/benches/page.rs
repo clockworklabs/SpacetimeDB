@@ -6,6 +6,7 @@ use criterion::{black_box, criterion_group, criterion_main, Bencher, BenchmarkId
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
+use spacetimedb_lib::bsatn;
 use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ArrayValue, ProductType, ProductValue};
 use spacetimedb_table::bflatn_from::serialize_row_from_page;
@@ -808,4 +809,31 @@ criterion_group!(
     hash_in_page,
 );
 
-criterion_main!(insert, iter, copy_filter_into, bflatn);
+fn hash_page(c: &mut Criterion) {
+    c.bench_function("content_hash", |b| {
+        let mut page = Page::new(row_size_for_type::<u64>());
+        fill_with_fixed_len::<u64>(&mut page, 0xa5a5a5a5_a5a5a5a5, &u64::var_len_visitor());
+
+        b.iter(|| black_box(&page).content_hash());
+    });
+}
+
+fn serialize_page(c: &mut Criterion) {
+    c.bench_function("serialize_page", |b| {
+        let mut page = Page::new(row_size_for_type::<u64>());
+        fill_with_fixed_len::<u64>(&mut page, 0xa5a5a5a5_a5a5a5a5, &u64::var_len_visitor());
+
+        let mut buf = Vec::new();
+
+        b.iter(|| {
+            buf.clear();
+            let _res = black_box(bsatn::to_writer(&mut buf, black_box(&page)));
+            debug_assert!(_res.is_ok());
+            black_box(&buf);
+        })
+    });
+}
+
+criterion_group!(snapshot, hash_page, serialize_page);
+
+criterion_main!(insert, iter, copy_filter_into, bflatn, snapshot);
