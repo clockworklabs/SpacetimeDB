@@ -911,61 +911,12 @@ fn autogen_csharp_access_funcs_for_struct(
         writeln!(output);
     }
 
-    if let Some(primary_col_index) = primary_col_idx {
+    if let Some(primary_col_index) = schema.pk() {
         writeln!(
             output,
-            "public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue v1, SpacetimeDB.SATS.AlgebraicValue v2)"
+            "private static object GetPrimaryKeyValue(object row) => (({struct_name_pascal_case})row).{col_name_pascal_case};",
+            col_name_pascal_case = primary_col_index.col_name.replace("r#", "").to_case(Case::Pascal)
         );
-        indented_block(output, |output| {
-            writeln!(
-                output,
-                "var primaryColumnValue1 = v1.AsProductValue().elements[{}];",
-                primary_col_index.col_pos
-            );
-            writeln!(
-                output,
-                "var primaryColumnValue2 = v2.AsProductValue().elements[{}];",
-                primary_col_index.col_pos
-            );
-            writeln!(
-                output,
-                "return SpacetimeDB.SATS.AlgebraicValue.Compare(t.product.elements[0].algebraicType, primaryColumnValue1, primaryColumnValue2);"
-            );
-        });
-        writeln!(output);
-
-        writeln!(
-            output,
-            "public static SpacetimeDB.SATS.AlgebraicValue GetPrimaryKeyValue(SpacetimeDB.SATS.AlgebraicValue v)"
-        );
-        indented_block(output, |output| {
-            writeln!(
-                output,
-                "return v.AsProductValue().elements[{}];",
-                primary_col_index.col_pos
-            );
-        });
-        writeln!(output);
-
-        writeln!(
-            output,
-            "public static SpacetimeDB.SATS.AlgebraicType GetPrimaryKeyType(SpacetimeDB.SATS.AlgebraicType t)"
-        );
-        indented_block(output, |output| {
-            writeln!(
-                output,
-                "return t.product.elements[{}].algebraicType;",
-                primary_col_index.col_pos
-            );
-        });
-    } else {
-        writeln!(
-            output,
-            "public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue _v1, SpacetimeDB.SATS.AlgebraicValue _v2)"
-        );
-        indented_block(output, |output| {
-            writeln!(output, "return false;");
-        });
     }
 
     primary_col_idx.is_some()
