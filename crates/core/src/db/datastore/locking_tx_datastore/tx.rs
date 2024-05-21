@@ -64,4 +64,11 @@ impl TxId {
             .get_table(table_id)
             .map(|table| table.row_count)
     }
+
+    /// The Number of Distinct Values (NDV) for a column or list of columns.
+    pub fn ndv(&self, table_id: TableId, cols: &ColList) -> Option<u64> {
+        self.committed_state_shared_lock
+            .get_table(table_id)
+            .and_then(|t| t.indexes.get(cols).map(|index| index.num_keys() as u64))
+    }
 }

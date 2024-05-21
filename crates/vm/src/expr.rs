@@ -776,6 +776,15 @@ pub struct IndexScan {
     pub bounds: (Bound<AlgebraicValue>, Bound<AlgebraicValue>),
 }
 
+impl IndexScan {
+    pub fn is_range(&self) -> bool {
+        match &self.bounds {
+            (Bound::Included(lower), Bound::Included(upper)) => lower != upper,
+            _ => true,
+        }
+    }
+}
+
 // An individual operation in a query.
 #[derive(Debug, Clone, Eq, PartialEq, From, Hash)]
 pub enum Query {
