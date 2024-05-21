@@ -5,7 +5,7 @@ on:
         description: 'Pull Request Number'
         required: false
         default: ''
-
+  pull_request:
   issue_comment:
     types: [created]
 
