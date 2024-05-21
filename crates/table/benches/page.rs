@@ -839,7 +839,7 @@ fn deserialize_page(c: &mut Criterion) {
         let mut page = Page::new(row_size_for_type::<u64>());
         fill_with_fixed_len::<u64>(&mut page, 0xa5a5a5a5_a5a5a5a5, &u64::var_len_visitor());
         let page_bsatn = bsatn::to_vec(&page).unwrap();
-        b.iter_with_large_drop(|| bsatn::from_slice::<'_, Page>(black_box(&page_bsatn)));
+        b.iter_with_large_drop(|| bsatn::from_slice::<'_, Box<Page>>(black_box(&page_bsatn)));
     });
 }
 
