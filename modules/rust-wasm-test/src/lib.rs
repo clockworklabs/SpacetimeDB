@@ -1,6 +1,7 @@
 #![allow(clippy::disallowed_names)]
+use spacetimedb::sats::db::auth::StAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
-use spacetimedb::{query, spacetimedb, Deserialize, ReducerContext, SpacetimeType, Timestamp};
+use spacetimedb::{query, spacetimedb, Deserialize, ReducerContext, SpacetimeType, TableType, Timestamp};
 
 #[spacetimedb(table)]
 #[spacetimedb(index(btree, name = "foo", x))]
@@ -23,7 +24,7 @@ pub enum TestC {
     Bar,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb(table, public)]
 pub struct TestD {
     test_c: Option<TestC>,
 }
@@ -37,17 +38,26 @@ pub struct TestE {
     name: String,
 }
 
-#[spacetimedb(table)]
-pub struct _Private {
+// All tables are private by default.
+const _: () = assert!(matches!(TestE::TABLE_ACCESS, StAccess::Private));
+
+#[spacetimedb(table, public)]
+pub struct Public {
     name: String,
 }
 
-#[spacetimedb(table)]
+// This table was specified as public.
+const _: () = assert!(matches!(Public::TABLE_ACCESS, StAccess::Public));
+
+#[spacetimedb(table, private)]
 #[spacetimedb(index(btree, name = "multi_column_index", x, y))]
 pub struct Point {
     x: i64,
     y: i64,
 }
+
+// It is redundant, but we can explicitly specify a table as private.
+const _: () = assert!(matches!(Point::TABLE_ACCESS, StAccess::Private));
 
 // Test we can compile multiple constraints
 #[spacetimedb(table)]
@@ -196,14 +206,14 @@ impl Foo<'_> {
 }
 
 #[spacetimedb(reducer)]
-pub fn add_private(name: String) {
-    _Private::insert(_Private { name });
+pub fn add_public(name: String) {
+    Public::insert(Public { name });
 }
 
 #[spacetimedb(reducer)]
-pub fn query_private() {
-    for person in _Private::iter() {
-        log::info!("Private, {}!", person.name);
+pub fn query_public() {
+    for person in Public::iter() {
+        log::info!("Public, {}!", person.name);
     }
-    log::info!("Private, World!");
+    log::info!("Public, World!");
 }

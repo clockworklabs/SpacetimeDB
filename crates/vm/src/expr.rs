@@ -744,7 +744,6 @@ pub enum CrudExpr {
     Drop {
         name: String,
         kind: DbType,
-        table_access: StAccess,
     },
     SetVar {
         name: String,
@@ -2455,7 +2454,6 @@ mod tests {
         let crud = CrudExpr::Drop {
             name: "etcpasswd".into(),
             kind: DbType::Table,
-            table_access: StAccess::Public,
         };
         assert_owner_required(crud);
     }

@@ -13,6 +13,7 @@ mod timestamp;
 use crate::sats::db::attr::ColumnAttribute;
 use crate::sats::db::def::IndexType;
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
+use spacetimedb_lib::sats::db::auth::StAccess;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, impl_st};
 use spacetimedb_lib::{bsatn, ProductType, ProductValue};
 use std::cell::RefCell;
@@ -326,6 +327,7 @@ pub struct IndexDesc<'a> {
 /// Additionally, the type knows its own table name, its column attributes, and indices.
 pub trait TableType: SpacetimeType + DeserializeOwned + Serialize {
     const TABLE_NAME: &'static str;
+    const TABLE_ACCESS: StAccess;
     const COLUMN_ATTRS: &'static [ColumnAttribute];
     const INDEXES: &'static [IndexDesc<'static>];
     type InsertResult: sealed::InsertResult<T = Self>;

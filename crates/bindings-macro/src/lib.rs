@@ -42,6 +42,9 @@ mod sym {
     /// Matches `primarykey`.
     pub const PRIMARYKEY: Symbol = Symbol("primarykey");
 
+    /// Matches `public`.
+    pub const PUBLIC: Symbol = Symbol("public");
+
     /// Matches `sats`.
     pub const SATS: Symbol = Symbol("sats");
 
@@ -75,7 +78,7 @@ mod sym {
 /// The macro takes this `input`, which defines what the attribute does,
 /// and it is structured roughly like so:
 /// ```ignore
-/// input = table | init | connect | disconnect | migrate
+/// input = table [, private | public] | init | connect | disconnect | migrate
 ///       | reducer
 ///       | index(btree | hash [, name = string] [, field_name:ident]*)
 /// ```
@@ -100,7 +103,7 @@ pub fn spacetimedb(macro_args: proc_macro::TokenStream, item: proc_macro::TokenS
 /// On `item`, route the macro `input` to the various interpretations.
 fn route_input(input: MacroInput, item: TokenStream) -> syn::Result<TokenStream> {
     match input {
-        MacroInput::Table => spacetimedb_table(item),
+        MacroInput::Table(public) => spacetimedb_table(item, public),
         MacroInput::Init => spacetimedb_init(item),
         MacroInput::Reducer(Some(span)) => Err(syn::Error::new(span, "`repeat` support has been removed")),
         MacroInput::Reducer(None) => spacetimedb_reducer(item),
@@ -123,7 +126,7 @@ fn duration_totokens(dur: Duration) -> TokenStream {
 
 /// Defines the input space of the `spacetimedb` macro.
 enum MacroInput {
-    Table,
+    Table(Option<Span>),
     Init,
     Reducer(Option<Span>),
     Connect,
@@ -173,7 +176,19 @@ fn check_duplicate_meta<T>(x: &Option<T>, meta: &syn::meta::ParseNestedMeta<'_>)
 impl syn::parse::Parse for MacroInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         Ok(match_tok!(match input {
-            kw::table => Self::Table,
+            kw::table => {
+                let mut public = None;
+                // Eat an optional comma, and then if anything follows,
+                // it has to be `private` or `public`.
+                if input.parse::<Option<Token![,]>>()?.is_some() {
+                    let start = input.span();
+                    match_tok!(match input {
+                        kw::public => public = Some(start),
+                        kw::private => {}
+                    })
+                }
+                Self::Table(public)
+            }
             kw::init => Self::Init,
             kw::reducer => {
                 // Eat an optional comma, and then if anything follows,
@@ -258,6 +273,8 @@ mod kw {
     syn::custom_keyword!(btree);
     syn::custom_keyword!(hash);
     syn::custom_keyword!(name);
+    syn::custom_keyword!(private);
+    syn::custom_keyword!(public);
     syn::custom_keyword!(repeat);
     syn::custom_keyword!(update);
 }
@@ -417,9 +434,12 @@ struct Column<'a> {
     attr: ColumnAttribute,
 }
 
-fn spacetimedb_table(item: TokenStream) -> syn::Result<TokenStream> {
+fn spacetimedb_table(item: TokenStream, public: Option<Span>) -> syn::Result<TokenStream> {
+    let public = public.map(|span| quote_spanned!(span => #[sats(public)]));
+
     Ok(quote! {
         #[derive(spacetimedb::TableType)]
+        #public
         #item
     })
 }
@@ -681,6 +701,12 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         }
     };
 
+    let table_access = if let Some(span) = sats_ty.public {
+        quote_spanned!(span=> spacetimedb::sats::db::auth::StAccess::Public)
+    } else {
+        quote!(spacetimedb::sats::db::auth::StAccess::Private)
+    };
+
     let deserialize_impl = derive_deserialize(&sats_ty);
     let serialize_impl = derive_serialize(&sats_ty);
     let schema_impl = derive_satstype(&sats_ty, false);
@@ -696,6 +722,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     let tabletype_impl = quote! {
         impl spacetimedb::TableType for #original_struct_ident {
             const TABLE_NAME: &'static str = #table_name;
+            const TABLE_ACCESS: spacetimedb::sats::db::auth::StAccess = #table_access;
             const COLUMN_ATTRS: &'static [spacetimedb::sats::db::attr::ColumnAttribute] = &[
                 #(spacetimedb::sats::db::attr::ColumnAttribute::#column_attrs),*
             ];
@@ -853,7 +880,7 @@ fn parse_duration(input: ParseStream) -> syn::Result<Duration> {
 pub fn deserialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     module::sats_type_from_derive(&input, quote!(spacetimedb_lib))
-        .map(|ty| derive_deserialize(&ty))
+        .map(|ty| module::ensure_no_public(&ty, derive_deserialize(&ty)))
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
@@ -862,7 +889,7 @@ pub fn deserialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 pub fn serialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     module::sats_type_from_derive(&input, quote!(spacetimedb_lib))
-        .map(|ty| derive_serialize(&ty))
+        .map(|ty| module::ensure_no_public(&ty, derive_serialize(&ty)))
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
@@ -894,6 +921,7 @@ pub fn schema_type(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 }
             };
         };
+        let emission = module::ensure_no_public(&ty, emission);
 
         if std::env::var("PROC_MACRO_DEBUG").is_ok() {
             {

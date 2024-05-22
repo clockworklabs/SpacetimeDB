@@ -3,10 +3,9 @@ use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
 use core::ops::Deref;
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::relation::{self, DbTable, FieldExpr, FieldName, Header};
-use spacetimedb_vm::expr::{CrudExpr, DbType, Expr, QueryExpr, SourceExpr};
+use spacetimedb_vm::expr::{CrudExpr, Expr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
 use std::sync::Arc;
 
@@ -200,15 +199,6 @@ fn compile_create_table(table: TableDef) -> CrudExpr {
     CrudExpr::CreateTable { table }
 }
 
-/// Compiles a `DROP ...` clause
-fn compile_drop(name: String, kind: DbType, table_access: StAccess) -> CrudExpr {
-    CrudExpr::Drop {
-        name,
-        kind,
-        table_access,
-    }
-}
-
 /// Compiles a `SQL` clause
 fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, PlanError> {
     let q = match statement {
@@ -225,11 +215,7 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
         } => compile_update(table, assignments, selection),
         SqlAst::Delete { table, selection } => compile_delete(table, selection),
         SqlAst::CreateTable { table } => compile_create_table(table),
-        SqlAst::Drop {
-            name,
-            kind,
-            table_access,
-        } => compile_drop(name, kind, table_access),
+        SqlAst::Drop { name, kind } => CrudExpr::Drop { name, kind },
         SqlAst::SetVar { name, value } => CrudExpr::SetVar { name, value },
         SqlAst::ReadVar { name } => CrudExpr::ReadVar { name },
     };

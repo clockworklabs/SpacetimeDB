@@ -16,6 +16,7 @@ pub(crate) struct SatsType<'a> {
     pub krate: TokenStream,
     pub original_attrs: &'a [syn::Attribute],
     pub data: SatsTypeData<'a>,
+    pub public: Option<Span>,
 }
 
 pub(crate) enum SatsTypeData<'a> {
@@ -84,6 +85,7 @@ pub(crate) fn extract_sats_type<'a>(
 ) -> syn::Result<SatsType<'a>> {
     let mut name = None;
     let mut krate = None;
+    let mut public = None;
     for attr in attrs {
         if attr.path() != sym::SATS {
             continue;
@@ -99,6 +101,12 @@ pub(crate) fn extract_sats_type<'a>(
                 let value = meta.value()?;
                 let v = value.parse::<LitStr>()?;
                 name = Some(v.value());
+            } else if meta.path == sym::PUBLIC {
+                check_duplicate_meta(&public, &meta)?;
+                if !meta.input.is_empty() {
+                    return Err(meta.error("public modifier must be empty"));
+                }
+                public = Some(meta.path.span());
             } else {
                 return Err(meta.error("unknown sats attribute"));
             }
@@ -115,7 +123,16 @@ pub(crate) fn extract_sats_type<'a>(
         krate,
         original_attrs: attrs,
         data,
+        public,
     })
+}
+
+/// Ensures that the `public` modifier
+pub(crate) fn ensure_no_public(ty: &SatsType<'_>, mut ts: TokenStream) -> TokenStream {
+    if let Some(span) = ty.public {
+        ts.extend(syn::Error::new(span, "the `public` specifier is not allowed in this context").into_compile_error());
+    }
+    ts
 }
 
 pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenStream {
