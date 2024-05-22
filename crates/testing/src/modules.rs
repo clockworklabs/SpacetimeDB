@@ -181,6 +181,7 @@ impl CompiledModule {
             .get_module_host(instance.id)
             .await
             .expect("host should be running");
+        let (_, module_rx) = tokio::sync::watch::channel(module);
 
         // TODO: it might be neat to add some functionality to module handle to make
         // it easier to interact with the database. For example it could include
@@ -188,7 +189,7 @@ impl CompiledModule {
         // for stuff like "get logs" or "get message log"
         ModuleHandle {
             _env: env,
-            client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module),
+            client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module_rx),
             db_address,
         }
     }

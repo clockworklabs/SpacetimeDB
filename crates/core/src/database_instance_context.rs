@@ -3,6 +3,7 @@ use crate::db::relational_db::RelationalDB;
 use crate::db::{Config, Storage};
 use crate::error::DBError;
 use crate::messages::control_db::Database;
+use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use std::io;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -15,6 +16,7 @@ pub struct DatabaseInstanceContext {
     pub database: Database,
     pub database_instance_id: u64,
     pub logger: Arc<DatabaseLogger>,
+    pub subscriptions: ModuleSubscriptions,
     pub relational_db: Arc<RelationalDB>,
 }
 
@@ -31,16 +33,18 @@ impl DatabaseInstanceContext {
         db_path.push("database");
 
         let log_path = DatabaseLogger::filepath(&database.address, instance_id);
-        let relational_db = match config.storage {
+        let relational_db = Arc::new(match config.storage {
             Storage::Memory => RelationalDB::open(db_path, database.address, None)?,
             Storage::Disk => RelationalDB::local(db_path, rt, database.address)?,
-        };
+        });
+        let subscriptions = ModuleSubscriptions::new(relational_db.clone(), database.identity);
 
         Ok(Self {
             database,
             database_instance_id: instance_id,
             logger: Arc::new(DatabaseLogger::open(log_path)),
-            relational_db: Arc::new(relational_db),
+            subscriptions,
+            relational_db,
         })
     }
 

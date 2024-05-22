@@ -14,7 +14,6 @@ use crate::messages::control_db::Database;
 use crate::protobuf::client_api::{TableRowOperation, TableUpdate};
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
-use crate::util::notify_once::NotifyOnce;
 use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
 use derive_more::{From, Into};
@@ -466,7 +465,6 @@ trait DynModuleHost: Send + Sync + 'static {
         query: String,
     ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError>;
     fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error>;
-    fn start(&self);
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
 }
@@ -474,7 +472,6 @@ trait DynModuleHost: Send + Sync + 'static {
 struct HostControllerActor<T: Module> {
     module: Arc<T>,
     instance_pool: LendingPool<T::Instance>,
-    start: NotifyOnce,
 }
 
 impl<T: Module> HostControllerActor<T> {
@@ -504,7 +501,6 @@ async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> 
 #[async_trait::async_trait]
 impl<T: Module> DynModuleHost for HostControllerActor<T> {
     async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule> {
-        self.start.notified().await;
         // in the future we should do something like in the else branch here -- add more instances based on load.
         // we need to do write-skew retries first - right now there's only ever once instance per module.
         let inst = if true {
@@ -545,10 +541,6 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
 
     fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
         self.module.clear_table(table_name)
-    }
-
-    fn start(&self) {
-        self.start.notify();
     }
 
     fn exit(&self) -> Closed<'_> {
@@ -612,14 +604,9 @@ impl ModuleHost {
         let inner = Arc::new(HostControllerActor {
             module: Arc::new(module),
             instance_pool,
-            start: NotifyOnce::new(),
         });
         let on_panic = Arc::new(on_panic);
         ModuleHost { info, inner, on_panic }
-    }
-
-    pub fn start(&self) {
-        self.inner.start()
     }
 
     #[inline]

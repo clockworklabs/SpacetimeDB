@@ -734,7 +734,6 @@ impl Host {
         )
         .await?;
 
-        module_host.start();
         scheduler_starter.start(&module_host)?;
         let metrics_task = tokio::spawn(disk_monitor(dbic.clone(), energy_monitor.clone())).abort_handle();
 
@@ -783,7 +782,6 @@ impl Host {
             on_panic,
         )
         .await?;
-        module.start();
 
         let update_result = update_module(fence, dbic.address, program_hash, &dbic.relational_db, &module).await?;
         debug!("update result: {update_result:?}");

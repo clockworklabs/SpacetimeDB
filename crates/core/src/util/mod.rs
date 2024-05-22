@@ -6,12 +6,9 @@ use tokio::sync::oneshot;
 
 pub mod prometheus_handle;
 
-mod future_queue;
 pub mod lending_pool;
 pub mod notify_once;
 pub mod slow;
-
-pub use future_queue::{future_queue, FutureQueue};
 
 pub(crate) fn string_from_utf8_lossy_owned(v: Vec<u8>) -> String {
     match String::from_utf8_lossy(&v) {
