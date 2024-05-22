@@ -171,7 +171,7 @@ pub(crate) trait StateView {
 pub struct Iter<'a> {
     ctx: &'a ExecutionContext,
     table_id: TableId,
-    pub(crate) tx_state: Option<&'a TxState>,
+    tx_state: Option<&'a TxState>,
     committed_state: &'a CommittedState,
     table_name: &'a str,
     stage: ScanStage<'a>,

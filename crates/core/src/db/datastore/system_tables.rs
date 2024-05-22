@@ -42,6 +42,16 @@ pub(crate) fn system_tables() -> [TableSchema; 7] {
     ]
 }
 
+macro_rules! count {
+    () => { 0 };
+    ($odd:tt $($a:tt $b:tt)*) => {
+        (count!($($a)*) << 1) | 1
+    };
+    ($($a:tt $even:tt)*) => {
+        (count!($($a)*) << 1)
+    };
+}
+
 macro_rules! system_table {
     ($(#[$attr:meta])* $ty_name:ident
         [id = $id:expr, idx = $idx:expr, name = $tname:expr],
@@ -53,6 +63,17 @@ macro_rules! system_table {
         pub enum $ty_name {
             $($var = $discr,)*
         }
+
+        // Statically assert that every column id is in fact in order and contiguous.
+        // Once `${index()}` lands we can use that instead and then the ids don't need to be passed in.
+        const _: () = {
+            let arr = [$($discr),*];
+            let mut i = 0;
+            while i < count!($($discr)*) {
+                assert!(arr[i] == i);
+                i += 1;
+            }
+        };
 
         impl $ty_name {
             /// The static ID of the system table.
