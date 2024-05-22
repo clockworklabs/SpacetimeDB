@@ -483,6 +483,8 @@ impl ColumnAttr {
     }
 }
 
+/// Heuristically determine if the path `p` is one of Rust's primitive integer types.
+/// This is an approximation, as the user could do `use String as u8`.
 fn is_integer_type(p: &Path) -> bool {
     p.get_ident().map_or(false, |i| {
         matches!(
