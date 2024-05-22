@@ -634,15 +634,10 @@ fn autogen_csharp_product_table_common(
                     continue;
                 }
                 let type_name = ty_fmt(ctx, &col.col_type, namespace);
-                let comparer = if format!("{type_name}") == "byte[]" {
-                    ", new SpacetimeDB.ByteArrayComparer()"
-                } else {
-                    ""
-                };
                 writeln!(
-                        output,
-                        "private static Dictionary<{type_name}, {name}> {field_name}_Index = new Dictionary<{type_name}, {name}>(16{comparer});"
-                    );
+                    output,
+                    "private static Dictionary<{type_name}, {name}> {field_name}_Index = new(16);"
+                );
             }
             writeln!(output);
             // OnInsert method for updating indexes
@@ -832,25 +827,30 @@ fn autogen_csharp_access_funcs_for_struct(
 ) -> bool {
     let primary_col_idx = schema.pk();
 
-    writeln!(
-        output,
-        "public static System.Collections.Generic.IEnumerable<{struct_name_pascal_case}> Iter()"
-    );
+    writeln!(output, "public static IEnumerable<{struct_name_pascal_case}> Iter()");
     indented_block(output, |output| {
         writeln!(
             output,
-            "foreach(var entry in SpacetimeDBClient.clientDB.GetEntries(\"{table_name}\"))",
+            "return SpacetimeDBClient.clientDB.GetObjects(\"{table_name}\").Cast<{struct_name_pascal_case}>();",
         );
-        indented_block(output, |output| {
-            // TODO: best way to handle this?
-            writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;");
-        });
     });
+    writeln!(output);
+
+    // Simple alias for Iter().Where(...) for API parity with C# server-side modules.
+    writeln!(
+        output,
+        "public static IEnumerable<{struct_name_pascal_case}> Query(Func<{struct_name_pascal_case}, bool> filter)"
+    );
+    indented_block(output, |output| {
+        writeln!(output, "return Iter().Where(filter);",);
+    });
+    writeln!(output);
 
     writeln!(output, "public static int Count()");
     indented_block(output, |output| {
         writeln!(output, "return SpacetimeDBClient.clientDB.Count(\"{table_name}\");");
     });
+    writeln!(output);
 
     let constraints = schema.column_constraints();
     for col in schema.columns() {
@@ -863,188 +863,58 @@ fn autogen_csharp_access_funcs_for_struct(
         let field_type = &field.algebraic_type;
         let csharp_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
 
-        let (field_type, csharp_field_type, is_option) = match field_type {
+        let csharp_field_type = match field_type {
             AlgebraicType::Product(product) => {
                 if product.is_identity() {
-                    ("Identity".into(), "SpacetimeDB.Identity".into(), false)
+                    "SpacetimeDB.Identity"
                 } else if product.is_address() {
-                    ("Address".into(), "SpacetimeDB.Address".into(), false)
-                } else {
-                    // TODO: We don't allow filtering on tuples right now,
-                    //       it's possible we may consider it for the future.
-                    continue;
-                }
-            }
-            AlgebraicType::Sum(sum) => {
-                if let Some(Builtin(b)) = sum.as_option() {
-                    match maybe_primitive(b) {
-                        MaybePrimitive::Primitive(ty) => (format!("{b:?}"), format!("{ty}?"), true),
-                        _ => {
-                            continue;
-                        }
-                    }
+                    "SpacetimeDB.Address"
                 } else {
                     continue;
                 }
             }
-            AlgebraicType::Ref(_) => {
-                // TODO: We don't allow filtering on enums or tuples right now;
-                //       it's possible we may consider it for the future.
-                continue;
-            }
+            AlgebraicType::Sum(_) | AlgebraicType::Ref(_) => continue,
             AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-                MaybePrimitive::Primitive(ty) => (format!("{b:?}"), ty.into(), false),
-                MaybePrimitive::Array(ArrayType { elem_ty }) => {
-                    if let Some(BuiltinType::U8) = elem_ty.as_builtin() {
-                        // Do allow filtering for byte arrays
-                        ("Bytes".into(), "byte[]".into(), false)
-                    } else {
-                        // TODO: We don't allow filtering based on an array type, but we might want other functionality here in the future.
-                        continue;
-                    }
-                }
-                MaybePrimitive::Map(_) => {
-                    // TODO: It would be nice to be able to say, give me all entries where this vec contains this value, which we can do.
-                    continue;
-                }
+                MaybePrimitive::Primitive(ty) => ty,
+                _ => continue,
             },
         };
 
-        let filter_return_type = fmt_fn(|f| {
-            if is_unique {
-                f.write_str(struct_name_pascal_case)
-            } else {
-                write!(f, "System.Collections.Generic.IEnumerable<{struct_name_pascal_case}>")
-            }
-        });
-
-        writeln!(
-            output,
-            "public static {filter_return_type} FilterBy{csharp_field_name_pascal}({csharp_field_type} value)"
-        );
-
-        indented_block(output, |output| {
-            if is_unique {
+        if is_unique {
+            writeln!(
+                output,
+                "public static {struct_name_pascal_case} FindBy{csharp_field_name_pascal}({csharp_field_type} value)"
+            );
+            indented_block(output, |output| {
                 writeln!(
                     output,
                     "{csharp_field_name_pascal}_Index.TryGetValue(value, out var r);"
                 );
                 writeln!(output, "return r;");
+            });
+            writeln!(output);
+        }
+
+        writeln!(
+            output,
+            "public static IEnumerable<{struct_name_pascal_case}> FilterBy{csharp_field_name_pascal}({csharp_field_type} value)"
+        );
+        indented_block(output, |output| {
+            if is_unique {
+                writeln!(output, "return new[] {{ FindBy{csharp_field_name_pascal}(value) }};");
             } else {
-                writeln!(
-                    output,
-                    "foreach(var entry in SpacetimeDBClient.clientDB.GetEntries(\"{table_name}\"))"
-                );
-                indented_block(output, |output| {
-                    writeln!(output, "var productValue = entry.Item1.AsProductValue();");
-                    if field_type == "Identity" {
-                        writeln!(
-                            output,
-                            "var compareValue = Identity.From(productValue.elements[{col_i}].AsProductValue().elements[0].AsBytes());"
-                        );
-                    } else if is_option {
-                        writeln!(
-                            output,
-                            "var compareValue = ({csharp_field_type})(productValue.elements[{col_i}].AsSumValue().tag == 1 ? null : productValue.elements[{col_i}].AsSumValue().value.As{field_type}());"
-                        );
-                    } else if field_type == "Address" {
-                        writeln!(
-                            output,
-                            "var compareValue = (Address)Address.From(productValue.elements[{col_i}].AsProductValue().elements[0].AsBytes());"
-                        );
-                    } else {
-                        writeln!(
-                            output,
-                            "var compareValue = ({csharp_field_type})productValue.elements[{col_i}].As{field_type}();"
-                        );
-                    }
-                    if csharp_field_type == "byte[]" {
-                        writeln!(
-                            output,
-                            "static bool ByteArrayCompare(byte[] a1, byte[] a2)
-    {{
-        if (a1.Length != a2.Length)
-            return false;
-
-        for (int i=0; i<a1.Length; i++)
-            if (a1[i]!=a2[i])
-                return false;
-
-        return true;
-    }}"
-                        );
-                        writeln!(output);
-                        writeln!(output, "if (ByteArrayCompare(compareValue, value))");
-                        indented_block(output, |output| {
-                            writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;");
-                        });
-                    } else {
-                        writeln!(output, "if (compareValue == value)");
-                        indented_block(output, |output| {
-                            writeln!(output, "yield return ({struct_name_pascal_case})entry.Item2;");
-                        });
-                    }
-                });
+                writeln!(output, "return Query(x => x.{csharp_field_name_pascal} == value);");
             }
         });
         writeln!(output);
     }
 
-    if let Some(primary_col_index) = primary_col_idx {
+    if let Some(primary_col_index) = schema.pk() {
         writeln!(
             output,
-            "public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue v1, SpacetimeDB.SATS.AlgebraicValue v2)"
+            "private static object GetPrimaryKeyValue(object row) => (({struct_name_pascal_case})row).{col_name_pascal_case};",
+            col_name_pascal_case = primary_col_index.col_name.replace("r#", "").to_case(Case::Pascal)
         );
-        indented_block(output, |output| {
-            writeln!(
-                output,
-                "var primaryColumnValue1 = v1.AsProductValue().elements[{}];",
-                primary_col_index.col_pos
-            );
-            writeln!(
-                output,
-                "var primaryColumnValue2 = v2.AsProductValue().elements[{}];",
-                primary_col_index.col_pos
-            );
-            writeln!(
-                output,
-                "return SpacetimeDB.SATS.AlgebraicValue.Compare(t.product.elements[0].algebraicType, primaryColumnValue1, primaryColumnValue2);"
-            );
-        });
-        writeln!(output);
-
-        writeln!(
-            output,
-            "public static SpacetimeDB.SATS.AlgebraicValue GetPrimaryKeyValue(SpacetimeDB.SATS.AlgebraicValue v)"
-        );
-        indented_block(output, |output| {
-            writeln!(
-                output,
-                "return v.AsProductValue().elements[{}];",
-                primary_col_index.col_pos
-            );
-        });
-        writeln!(output);
-
-        writeln!(
-            output,
-            "public static SpacetimeDB.SATS.AlgebraicType GetPrimaryKeyType(SpacetimeDB.SATS.AlgebraicType t)"
-        );
-        indented_block(output, |output| {
-            writeln!(
-                output,
-                "return t.product.elements[{}].algebraicType;",
-                primary_col_index.col_pos
-            );
-        });
-    } else {
-        writeln!(
-            output,
-            "public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue _v1, SpacetimeDB.SATS.AlgebraicValue _v2)"
-        );
-        indented_block(output, |output| {
-            writeln!(output, "return false;");
-        });
     }
 
     primary_col_idx.is_some()
