@@ -560,8 +560,8 @@ pub(crate) mod tests {
     use crate::db::datastore::system_tables::{
         st_columns_schema, st_indexes_schema, st_sequences_schema, st_table_schema, StColumnFields, StColumnRow,
         StIndexFields, StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, ST_COLUMNS_ID,
-        ST_COLUMNS_NAME, ST_INDEXES_ID, ST_INDEXES_NAME, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID,
-        ST_TABLES_NAME,
+        ST_COLUMNS_NAME, ST_INDEXES_ID, ST_INDEXES_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_SEQUENCES_ID,
+        ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_NAME,
     };
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::execution_context::ExecutionContext;
@@ -780,10 +780,10 @@ pub(crate) mod tests {
             table_id: 2.into(),
             col_pos: 0.into(),
             increment: 1,
-            start: 4,
+            start: ST_RESERVED_SEQUENCE_RANGE as i128 + 1,
             min_value: 1,
             max_value: i128::MAX,
-            allocated: 4096,
+            allocated: ST_RESERVED_SEQUENCE_RANGE as i128 * 2,
         }
         .into();
         check_catalog(&db, ST_SEQUENCES_NAME, st_sequence_row, q, &schema);

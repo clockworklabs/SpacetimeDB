@@ -33,6 +33,21 @@ pub(crate) const ST_INDEXES_NAME: &str = "st_indexes";
 pub(crate) const ST_CONSTRAINTS_NAME: &str = "st_constraints";
 pub(crate) const ST_MODULE_NAME: &str = "st_module";
 
+/// Reserved range of sequence values used for system tables.
+///
+/// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE + 1`.
+///
+/// The range applies to all sequences allocated by system tables, i.e. table-,
+/// sequence-, index-, and constraint-ids.
+/// > Note that column-ids are positional indices and not based on a sequence.
+///
+/// These ids can be referred to statically even for system tables introduced
+/// after a database was created, so as long as the range is not exceeded.
+///
+/// However unlikely it may seem, it is advisable to check for overflow in the
+/// test suite when adding sequences to system tables.
+pub(crate) const ST_RESERVED_SEQUENCE_RANGE: u32 = 4096;
+
 // This help to keep the correct order when bootstrapping
 #[allow(non_camel_case_types)]
 #[derive(Debug, Display)]
@@ -649,5 +664,42 @@ impl From<&StModuleRow> for ProductValue {
         }: &StModuleRow,
     ) -> Self {
         product![AlgebraicValue::Bytes(program_hash.as_slice().into()), *kind, *epoch,]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sequences_within_reserved_range() {
+        let mut num_tables = 0;
+        let mut num_indexes = 0;
+        let mut num_constraints = 0;
+        let mut num_sequences = 0;
+
+        for table in system_tables() {
+            num_tables += 1;
+            num_indexes += table.indexes.len();
+            num_constraints += table.constraints.len();
+            num_sequences += table.sequences.len();
+        }
+
+        assert!(
+            num_tables <= ST_RESERVED_SEQUENCE_RANGE,
+            "number of system tables exceeds reserved sequence range"
+        );
+        assert!(
+            num_indexes <= ST_RESERVED_SEQUENCE_RANGE as usize,
+            "number of system indexes exceeds reserved sequence range"
+        );
+        assert!(
+            num_constraints <= ST_RESERVED_SEQUENCE_RANGE as usize,
+            "number of system constraints exceeds reserved sequence range"
+        );
+        assert!(
+            num_sequences <= ST_RESERVED_SEQUENCE_RANGE as usize,
+            "number of system sequences exceeds reserved sequence range"
+        );
     }
 }
