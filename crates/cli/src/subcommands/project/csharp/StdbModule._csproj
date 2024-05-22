@@ -8,8 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.Codegen" Version="0.8.*" />
-    <PackageReference Include="SpacetimeDB.Runtime" Version="0.8.*" />
+    <PackageReference Include="SpacetimeDB.Codegen" Version="0.9.*" />
+    <PackageReference Include="SpacetimeDB.Runtime" Version="0.9.*" />
   </ItemGroup>
 
 </Project>
