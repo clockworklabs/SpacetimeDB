@@ -2,10 +2,12 @@ pub mod abi;
 pub mod instrumentation;
 pub mod module_host_actor;
 
+use std::num::NonZeroU16;
 use std::time::Instant;
 
 use super::AbiCall;
 use crate::error::{DBError, IndexError, NodesError};
+use spacetimedb_primitives::errno;
 use spacetimedb_sats::typespace::TypeRefError;
 use spacetimedb_table::table::UniqueConstraintViolation;
 
@@ -321,36 +323,18 @@ impl TimingSpan {
 decl_index!(TimingSpanIdx => TimingSpan);
 pub(super) type TimingSpanSet = ResourceSlab<TimingSpanIdx>;
 
-pub mod errnos {
-    //! NOTE! This is copied from the bindings-sys crate.
-    //! The include! macro does not work when publishing to crates.io
-    //! TODO(noa): Figure out a way to do this without include!
-
-    /// Error code for "No such table".
-    pub const NO_SUCH_TABLE: u16 = 1;
-
-    /// Error code for value/range not being found in a table.
-    pub const LOOKUP_NOT_FOUND: u16 = 2;
-
-    /// Error code for when a unique constraint is violated.
-    pub const UNIQUE_ALREADY_EXISTS: u16 = 3;
-
-    /// The provided buffer is not large enough to store the data.
-    pub const BUFFER_TOO_SMALL: u16 = 4;
-}
-
-pub fn err_to_errno(err: &NodesError) -> Option<u16> {
+pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
     match err {
-        NodesError::TableNotFound => Some(errnos::NO_SUCH_TABLE),
-        NodesError::ColumnValueNotFound | NodesError::RangeNotFound => Some(errnos::LOOKUP_NOT_FOUND),
-        NodesError::AlreadyExists(_) => Some(errnos::UNIQUE_ALREADY_EXISTS),
+        NodesError::TableNotFound => Some(errno::NO_SUCH_TABLE),
+        NodesError::ColumnValueNotFound | NodesError::RangeNotFound => Some(errno::LOOKUP_NOT_FOUND),
+        NodesError::AlreadyExists(_) => Some(errno::UNIQUE_ALREADY_EXISTS),
         NodesError::Internal(internal) => match **internal {
             DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                 constraint_name: _,
                 table_name: _,
                 cols: _,
                 value: _,
-            })) => Some(errnos::UNIQUE_ALREADY_EXISTS),
+            })) => Some(errno::UNIQUE_ALREADY_EXISTS),
             _ => None,
         },
         _ => None,

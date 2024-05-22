@@ -7,14 +7,15 @@ use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace,
 use crate::execution_context::ExecutionContext;
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::timestamp::Timestamp;
+use crate::host::wasm_common::instrumentation;
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
 use crate::host::wasm_common::{
     err_to_errno, instrumentation::CallTimes, AbiRuntimeError, BufferIdx, Buffers, RowIterIdx, RowIters, TimingSpan,
     TimingSpanIdx, TimingSpanSet,
 };
-use crate::host::wasm_common::{errnos, instrumentation};
 use crate::host::AbiCall;
 use anyhow::{anyhow, Context};
+use spacetimedb_primitives::errno;
 use wasmtime::{AsContext, Caller, StoreContextMut};
 
 use crate::host::instance_env::InstanceEnv;
@@ -188,12 +189,15 @@ impl WasmInstanceEnv {
         Err(match err {
             WasmError::Db(err) => match err_to_errno(&err) {
                 Some(errno) => {
-                    log::debug!("abi call to {func} returned a normal error: {err:#}");
-                    return Ok(errno.into());
+                    log::debug!(
+                        "abi call to {func} returned an errno: {errno} ({})",
+                        errno::strerror(errno).unwrap_or("<unknown>")
+                    );
+                    return Ok(errno.get().into());
                 }
                 None => anyhow::Error::from(AbiRuntimeError { func, err }),
             },
-            WasmError::BufferTooSmall => return Ok(errnos::BUFFER_TOO_SMALL.into()),
+            WasmError::BufferTooSmall => return Ok(errno::BUFFER_TOO_SMALL.get().into()),
             WasmError::Wasm(err) => err,
         })
     }

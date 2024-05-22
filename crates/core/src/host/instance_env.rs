@@ -43,14 +43,10 @@ struct ChunkedWriter {
 }
 
 impl ChunkedWriter {
-    // For now, just send buffers over a certain fixed size.
-    // This is kept in sync with `DEFAULT_BUFFER_CAPACITY` in `crates/bindings/src/lib.rs`
-    const ITER_CHUNK_SIZE: usize = 0x20_000;
-
     /// Flushes the data collected in the scratch space if it's larger than our
     /// chunking threshold.
     pub fn flush(&mut self) {
-        if self.scratch_space.len() > Self::ITER_CHUNK_SIZE {
+        if self.scratch_space.len() > spacetimedb_primitives::ROW_ITER_CHUNK_SIZE {
             // We intentionally clone here so that our scratch space is not
             // recreated with zero capacity (via `Vec::new`), but instead can
             // be `.clear()`ed in-place and reused.

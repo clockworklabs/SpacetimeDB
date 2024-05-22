@@ -251,7 +251,9 @@ pub struct TableIter<T: TableType> {
     _marker: PhantomData<T>,
 }
 
-const DEFAULT_BUFFER_CAPACITY: usize = 0x20_000;
+// This should guarantee in most cases that we don't have to reallocate an iterator
+// buffer, unless there's a single row that serializes to >1 MiB.
+const DEFAULT_BUFFER_CAPACITY: usize = spacetimedb_primitives::ROW_ITER_CHUNK_SIZE * 2;
 
 thread_local! {
     /// A global pool of buffers used for iteration.

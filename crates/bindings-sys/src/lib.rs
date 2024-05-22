@@ -3,9 +3,6 @@
 
 extern crate alloc;
 
-#[macro_use]
-mod errno;
-
 use core::fmt;
 use core::mem::MaybeUninit;
 use core::num::NonZeroU16;
@@ -13,7 +10,7 @@ use std::ptr;
 
 use alloc::boxed::Box;
 
-use spacetimedb_primitives::{ColId, TableId};
+use spacetimedb_primitives::{errno, errnos, ColId, TableId};
 
 /// Provides a raw set of sys calls which abstractions can be built atop of.
 pub mod raw {
@@ -330,17 +327,21 @@ pub mod raw {
     /// A handle into a buffer of bytes in the host environment.
     ///
     /// Used for transporting bytes host <-> WASM linear memory.
-    pub type Buffer = u32;
+    #[derive(PartialEq, Eq, Copy, Clone)]
+    #[repr(transparent)]
+    pub struct Buffer(u32);
 
     /// An invalid buffer handle.
     ///
     /// Could happen if too many buffers exist, making the key overflow a `u32`.
     /// `INVALID_BUFFER` is also used for parts of the protocol
     /// that are "morally" sending a `None`s in `Option<Box<[u8]>>`s.
-    pub const INVALID_BUFFER: Buffer = u32::MAX;
+    pub const INVALID_BUFFER: Buffer = Buffer(u32::MAX);
 
     /// Represents table iterators.
-    pub type RowIter = u32;
+    #[derive(PartialEq, Eq, Copy, Clone)]
+    #[repr(transparent)]
+    pub struct RowIter(u32);
 
     #[cfg(any())]
     mod module_exports {
@@ -378,18 +379,9 @@ pub struct Errno(NonZeroU16);
 impl std::error::Error for Errno {}
 
 macro_rules! def_errno {
-    ($($name:ident => $desc:literal,)*) => {
+    ($($err_name:ident($errno:literal, $errmsg:literal),)*) => {
         impl Errno {
-            // SAFETY: We've checked that `errnos!` contains no `0` values.
-            $(#[doc = $desc] pub const $name: Errno = Errno(unsafe { NonZeroU16::new_unchecked(errno::$name) });)*
-        }
-
-        /// Returns a string representation of the error.
-        const fn strerror(err: Errno) -> Option<&'static str> {
-            match err {
-                $(Errno::$name => Some($desc),)*
-                _ => None,
-            }
+            $(#[doc = $errmsg] pub const $err_name: Errno = Errno(errno::$err_name);)*
         }
     };
 }
@@ -398,7 +390,7 @@ errnos!(def_errno);
 impl Errno {
     /// Returns a description of the errno value, if any.
     pub const fn message(self) -> Option<&'static str> {
-        strerror(self)
+        errno::strerror(self.0)
     }
 
     /// Converts the given `code` to an error number in `Errno`'s representation.
