@@ -245,26 +245,34 @@ export class PkMultiIdentity extends DatabaseTable
 		return new this(__id, __other);
 	}
 
-	public static filterById(value: number): PkMultiIdentity | null
+	public static *filterById(value: number): IterableIterator<PkMultiIdentity>
 	{
-		for(let instance of this.db.getTable("PkMultiIdentity").getInstances())
+		for (let instance of this.db.getTable("PkMultiIdentity").getInstances())
 		{
 			if (instance.id === value) {
-				return instance;
+				yield instance;
 			}
 		}
-		return null;
 	}
 
-	public static filterByOther(value: number): PkMultiIdentity | null
+	public static findById(value: number): PkMultiIdentity | undefined
 	{
-		for(let instance of this.db.getTable("PkMultiIdentity").getInstances())
+		return this.filterById(value).next().value;
+	}
+
+	public static *filterByOther(value: number): IterableIterator<PkMultiIdentity>
+	{
+		for (let instance of this.db.getTable("PkMultiIdentity").getInstances())
 		{
 			if (instance.other === value) {
-				return instance;
+				yield instance;
 			}
 		}
-		return null;
+	}
+
+	public static findByOther(value: number): PkMultiIdentity | undefined
+	{
+		return this.filterByOther(value).next().value;
 	}
 
 
@@ -314,28 +322,24 @@ export class Point extends DatabaseTable
 		return new this(__x, __y);
 	}
 
-	public static filterByX(value: BigInt): Point[]
+	public static *filterByX(value: BigInt): IterableIterator<Point>
 	{
-		let result: Point[] = [];
-		for(let instance of this.db.getTable("Point").getInstances())
+		for (let instance of this.db.getTable("Point").getInstances())
 		{
 			if (instance.x === value) {
-				result.push(instance);
+				yield instance;
 			}
 		}
-		return result;
 	}
 
-	public static filterByY(value: BigInt): Point[]
+	public static *filterByY(value: BigInt): IterableIterator<Point>
 	{
-		let result: Point[] = [];
-		for(let instance of this.db.getTable("Point").getInstances())
+		for (let instance of this.db.getTable("Point").getInstances())
 		{
 			if (instance.y === value) {
-				result.push(instance);
+				yield instance;
 			}
 		}
-		return result;
 	}
 
 
@@ -381,16 +385,14 @@ export class Private extends DatabaseTable
 		return new this(__name);
 	}
 
-	public static filterByName(value: string): Private[]
+	public static *filterByName(value: string): IterableIterator<Private>
 	{
-		let result: Private[] = [];
-		for(let instance of this.db.getTable("_Private").getInstances())
+		for (let instance of this.db.getTable("_Private").getInstances())
 		{
 			if (instance.name === value) {
-				result.push(instance);
+				yield instance;
 			}
 		}
-		return result;
 	}
 
 
@@ -519,40 +521,34 @@ export class TestA extends DatabaseTable
 		return new this(__x, __y, __z);
 	}
 
-	public static filterByX(value: number): TestA[]
+	public static *filterByX(value: number): IterableIterator<TestA>
 	{
-		let result: TestA[] = [];
-		for(let instance of this.db.getTable("TestA").getInstances())
+		for (let instance of this.db.getTable("TestA").getInstances())
 		{
 			if (instance.x === value) {
-				result.push(instance);
+				yield instance;
 			}
 		}
-		return result;
 	}
 
-	public static filterByY(value: number): TestA[]
+	public static *filterByY(value: number): IterableIterator<TestA>
 	{
-		let result: TestA[] = [];
-		for(let instance of this.db.getTable("TestA").getInstances())
+		for (let instance of this.db.getTable("TestA").getInstances())
 		{
 			if (instance.y === value) {
-				result.push(instance);
+				yield instance;
 			}
 		}
-		return result;
 	}
 
-	public static filterByZ(value: string): TestA[]
+	public static *filterByZ(value: string): IterableIterator<TestA>
 	{
-		let result: TestA[] = [];
-		for(let instance of this.db.getTable("TestA").getInstances())
+		for (let instance of this.db.getTable("TestA").getInstances())
 		{
 			if (instance.z === value) {
-				result.push(instance);
+				yield instance;
 			}
 		}
-		return result;
 	}
 
 
@@ -697,27 +693,29 @@ export class TestE extends DatabaseTable
 		return new this(__id, __name);
 	}
 
-	public static filterById(value: BigInt): TestE | null
+	public static *filterById(value: BigInt): IterableIterator<TestE>
 	{
-		for(let instance of this.db.getTable("TestE").getInstances())
+		for (let instance of this.db.getTable("TestE").getInstances())
 		{
 			if (instance.id === value) {
-				return instance;
+				yield instance;
 			}
 		}
-		return null;
 	}
 
-	public static filterByName(value: string): TestE[]
+	public static findById(value: BigInt): TestE | undefined
 	{
-		let result: TestE[] = [];
-		for(let instance of this.db.getTable("TestE").getInstances())
+		return this.filterById(value).next().value;
+	}
+
+	public static *filterByName(value: string): IterableIterator<TestE>
+	{
+		for (let instance of this.db.getTable("TestE").getInstances())
 		{
 			if (instance.name === value) {
-				result.push(instance);
+				yield instance;
 			}
 		}
-		return result;
 	}
 
 
