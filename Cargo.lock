@@ -4386,6 +4386,7 @@ dependencies = [
  "is-terminal",
  "itertools 0.12.0",
  "jsonwebtoken",
+ "memchr",
  "mimalloc",
  "regex",
  "reqwest",

@@ -62,8 +62,6 @@ def main():
     print("Compiling spacetime cli...")
     check_call(["cargo", "build"], cwd=TEST_DIR.parent)
 
-    os.environ["SPACETIME_SKIP_CLIPPY"] = "1"
-
     build_template_target()
 
     if args.docker:

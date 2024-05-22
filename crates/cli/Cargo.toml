@@ -41,6 +41,7 @@ is-terminal.workspace = true
 itertools.workspace = true
 indicatif.workspace = true
 jsonwebtoken.workspace = true
+memchr.workspace = true
 mimalloc.workspace = true
 regex.workspace = true
 reqwest.workspace = true

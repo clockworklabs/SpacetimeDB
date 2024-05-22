@@ -68,16 +68,6 @@ pub fn cli() -> clap::Command {
                 .help("The language to generate"),
         )
         .arg(
-            Arg::new("skip_clippy")
-                .long("skip_clippy")
-                .short('s')
-                .short('S')
-                .action(SetTrue)
-                .env("SPACETIME_SKIP_CLIPPY")
-                .value_parser(clap::builder::FalseyValueParser::new())
-                .help("Skips running clippy on the module before generating (intended to speed up local iteration, not recommended for CI)"),
-        )
-        .arg(
             Arg::new("delete_files")
                 .long("delete-files")
                 .action(SetTrue)
@@ -109,7 +99,6 @@ pub fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
     let out_dir = args.get_one::<PathBuf>("out_dir").unwrap();
     let lang = *args.get_one::<Language>("lang").unwrap();
     let namespace = args.get_one::<String>("namespace").unwrap();
-    let skip_clippy = args.get_flag("skip_clippy");
     let build_debug = args.get_flag("debug");
     let delete_files = args.get_flag("delete_files");
     let force = args.get_flag("force");
@@ -122,7 +111,7 @@ pub fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
         println!("Skipping build. Instead we are inspecting {}", path.display());
         path.clone()
     } else {
-        crate::tasks::build(project_path, skip_clippy, build_debug)?
+        crate::tasks::build(project_path, build_debug)?
     };
 
     fs::create_dir_all(out_dir)?;

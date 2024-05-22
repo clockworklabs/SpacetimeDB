@@ -229,7 +229,7 @@ class Smoketest(unittest.TestCase):
 
     # def setUp(self):
     #     if self.AUTOPUBLISH:
-    #         self.spacetime("publish", "-S", "--project-path", self.project_path)
+    #         self.spacetime("publish", "--project-path", self.project_path)
 
     if sys.version_info < (3, 11):
         # polyfill; python 3.11 defines this classmethod on TestCase

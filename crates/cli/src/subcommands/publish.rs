@@ -71,15 +71,6 @@ pub fn cli() -> clap::Command {
                 .help("Instruct SpacetimeDB to allocate a new identity to own this database"),
         )
         .arg(
-            Arg::new("skip_clippy")
-                .long("skip_clippy")
-                .short('S')
-                .action(SetTrue)
-                .env("SPACETIME_SKIP_CLIPPY")
-                .value_parser(clap::builder::FalseyValueParser::new())
-                .help("Skips running clippy on the module before publishing (intended to speed up local iteration, not recommended for CI)"),
-        )
-        .arg(
             Arg::new("debug")
                 .long("debug")
                 .short('d')
@@ -115,7 +106,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let force = args.get_flag("force");
     let trace_log = args.get_flag("trace_log");
     let anon_identity = args.get_flag("anon_identity");
-    let skip_clippy = args.get_flag("skip_clippy");
     let build_debug = args.get_flag("debug");
     let wasm_file = args.get_one::<PathBuf>("wasm_file");
     let database_host = config.get_host_url(server)?;
@@ -160,7 +150,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         println!("Skipping build. Instead we are publishing {}", path.display());
         path.clone()
     } else {
-        crate::tasks::build(path_to_project, skip_clippy, build_debug)?
+        crate::tasks::build(path_to_project, build_debug)?
     };
     let program_bytes = fs::read(path_to_wasm)?;
     println!(
