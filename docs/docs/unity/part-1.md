@@ -8,7 +8,7 @@ Need help with the tutorial? [Join our Discord server](https://discord.gg/spacet
 
 This project is separated into two sub-projects;
 
-1. Server (module) code 
+1. Server (module) code
 2. Client code
 
 First, we'll create a project root directory (you can choose the name):
@@ -107,7 +107,7 @@ spacetime start
 ```
 
 💡 Standalone mode will run in the foreground.
-💡 Below examples Rust language, [but you may also use C#](../modules/c-sharp/index.md). 
+💡 Below examples Rust language, [but you may also use C#](../modules/c-sharp).
 
 ### The Entity Component Systems (ECS)
 
@@ -118,5 +118,6 @@ We chose ECS for this example project because it promotes scalability, modularit
 ### Create the Server Module
 
 From here, the tutorial continues with your favorite server module language of choice:
-   - [Rust](part-2a-rust.md)
-   - [C#](part-2b-csharp.md)
+
+- [Rust](part-2a-rust)
+- [C#](part-2b-csharp)

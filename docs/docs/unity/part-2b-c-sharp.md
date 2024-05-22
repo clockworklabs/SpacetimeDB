@@ -2,7 +2,7 @@
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
-This progressive tutorial is continued from the [Part 1 Tutorial](/docs/unity/part-1.md)
+This progressive tutorial is continued from the [Part 1 Tutorial](/docs/unity/part-1)
 
 ## Create a Server Module
 
@@ -91,7 +91,7 @@ public partial class PlayerComponent
    // An EntityId that matches an EntityId in the `EntityComponent` table.
    [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
    public ulong EntityId;
-   
+
    // The user's identity, which is unique to each player
    [SpacetimeDB.Column(ColumnAttrs.Unique)]
    public Identity Identity;
@@ -136,7 +136,7 @@ public static void CreatePlayer(DbEventArgs dbEvent, string username)
        Log("Error: Failed to create a unique PlayerComponent", LogLevel.Error);
        Throw;
    }
-  
+
    // The PlayerComponent uses the same entity_id and stores the identity of
    // the owner, username, and whether or not they are logged in.
    try
@@ -207,12 +207,14 @@ We use the `Connect` and `Disconnect` reducers to update the logged in state of 
 public static void ClientConnected(DbEventArgs dbEvent) =>
    UpdatePlayerLoginState(dbEvent, loggedIn:true);
 ```
+
 ```csharp
 /// Called when the client disconnects, we update the logged_in state to false
 [SpacetimeDB.Reducer(ReducerKind.Disconnect)]
 public static void ClientDisonnected(DbEventArgs dbEvent) =>
    UpdatePlayerLoginState(dbEvent, loggedIn:false);
 ```
+
 ```csharp
 /// This helper function gets the PlayerComponent, sets the LoggedIn
 /// variable and updates the PlayerComponent table row.
@@ -257,7 +259,7 @@ private static void UpdatePlayerPosition(
    {
        throw new ArgumentException($"Player Entity '{playerEntityId}' not found");
    }
-   
+
    entity.Position = position;
    entity.Direction = direction;
    entity.Moving = moving;
@@ -286,7 +288,7 @@ spacetime publish -c unity-tutorial
 
 The client project has a chat window, but so far, all it's used for is the message of the day. We are going to add the ability for players to send chat messages to each other.
 
-First lets add a new `ChatMessage` table to the SpacetimeDB module. Add the following code to ``lib.cs``.
+First lets add a new `ChatMessage` table to the SpacetimeDB module. Add the following code to `lib.cs`.
 
 **Append to the bottom of server/src/lib.cs:**
 
@@ -296,10 +298,10 @@ public partial class ChatMessage
 {
    // The primary key for this table will be auto-incremented
    [SpacetimeDB.Column(ColumnAttrs.PrimaryKeyAuto)]
-  
+
    // The entity id of the player that sent the message
    public ulong SenderId;
-  
+
    // Message contents
    public string? Text;
 }
@@ -341,4 +343,4 @@ Now that we added chat support, let's publish the latest module version to Space
 spacetime publish -c unity-tutorial
 ```
 
-From here, the [next tutorial](/docs/unity/part-3.md) continues with a Client (Unity) focus.
+From here, the [next tutorial](/docs/unity/part-3) continues with a Client (Unity) focus.

@@ -2,7 +2,7 @@
 
 In this guide we'll show you how to get up and running with a simple SpacetimeDB app with a client written in C#.
 
-We'll implement a command-line client for the module created in our [Rust](../../modules/rust/quickstart.md) or [C# Module](../../modules/c-sharp/quickstart.md) Quickstart guides. Ensure you followed one of these guides before continuing.
+We'll implement a command-line client for the module created in our [Rust](../../modules/rust/quickstart) or [C# Module](../../modules/c-sharp/quickstart) Quickstart guides. Ensure you followed one of these guides before continuing.
 
 ## Project structure
 
@@ -184,10 +184,10 @@ void User_OnUpdate(User oldValue, User newValue, ReducerEvent dbEvent)
     {
         Console.WriteLine($"{UserNameOrIdentity(oldValue)} renamed to {newValue.Name}");
     }
-    
+
     if (oldValue.Online == newValue.Online)
         return;
-        
+
     if (newValue.Online)
     {
         Console.WriteLine($"{UserNameOrIdentity(newValue)} connected.");
@@ -257,10 +257,10 @@ We'll test both that our identity matches the sender and that the status is `Fai
 ```csharp
 void Reducer_OnSetNameEvent(ReducerEvent reducerEvent, string name)
 {
-    bool localIdentityFailedToChangeName = 
-        reducerEvent.Identity == local_identity && 
+    bool localIdentityFailedToChangeName =
+        reducerEvent.Identity == local_identity &&
         reducerEvent.Status == ClientApi.Event.Types.Status.Failed;
-        
+
     if (localIdentityFailedToChangeName)
     {
         Console.Write($"Failed to change name to {name}");
@@ -275,8 +275,8 @@ We handle warnings on rejected messages the same way as rejected names, though t
 ```csharp
 void Reducer_OnSendMessageEvent(ReducerEvent reducerEvent, string text)
 {
-    bool localIdentityFailedToSendMessage = 
-        reducerEvent.Identity == local_identity && 
+    bool localIdentityFailedToSendMessage =
+        reducerEvent.Identity == local_identity &&
         reducerEvent.Status == ClientApi.Event.Types.Status.Failed;
 
     if (localIdentityFailedToSendMessage)
@@ -293,9 +293,9 @@ Once we are connected, we can send our subscription to the SpacetimeDB module. S
 ```csharp
 void OnConnect()
 {
-    SpacetimeDBClient.instance.Subscribe(new List<string> 
-    { 
-        "SELECT * FROM User", "SELECT * FROM Message" 
+    SpacetimeDBClient.instance.Subscribe(new List<string>
+    {
+        "SELECT * FROM User", "SELECT * FROM Message"
     });
 }
 ```
@@ -349,7 +349,7 @@ Since the input loop will be blocking, we'll run our processing code in a separa
 ```csharp
 const string HOST = "http://localhost:3000";
 const string DBNAME = "module";
- 
+
 void ProcessThread()
 {
     SpacetimeDBClient.instance.Connect(AuthToken.Token, HOST, DBNAME);

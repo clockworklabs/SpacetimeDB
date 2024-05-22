@@ -10,11 +10,11 @@ First, create a new client project, and add the following to your `tsconfig.json
 
 ```json
 {
-  "compilerOptions": {
-    //You can use any target higher than this one
-    //https://www.typescriptlang.org/tsconfig#target
-    "target": "es2015"
-  }
+	"compilerOptions": {
+		//You can use any target higher than this one
+		//https://www.typescriptlang.org/tsconfig#target
+		"target": "es2015"
+	}
 }
 ```
 
@@ -77,11 +77,11 @@ quickstart-chat
 Import the `module_bindings` in your client's _main_ file:
 
 ```typescript
-import { SpacetimeDBClient, Identity } from "@clockworklabs/spacetimedb-sdk";
+import { SpacetimeDBClient, Identity } from '@clockworklabs/spacetimedb-sdk';
 
-import Person from "./module_bindings/person";
-import AddReducer from "./module_bindings/add_reducer";
-import SayHelloReducer from "./module_bindings/say_hello_reducer";
+import Person from './module_bindings/person';
+import AddReducer from './module_bindings/add_reducer';
+import SayHelloReducer from './module_bindings/say_hello_reducer';
 console.log(Person, AddReducer, SayHelloReducer);
 ```
 
@@ -92,7 +92,7 @@ console.log(Person, AddReducer, SayHelloReducer);
 ### Classes
 
 | Class                                           | Description                                                                  |
-|-------------------------------------------------|------------------------------------------------------------------------------|
+| ----------------------------------------------- | ---------------------------------------------------------------------------- |
 | [`SpacetimeDBClient`](#class-spacetimedbclient) | The database client connection to a SpacetimeDB server.                      |
 | [`Identity`](#class-identity)                   | The user's public identity.                                                  |
 | [`Address`](#class-address)                     | An opaque identifier for differentiating connections by the same `Identity`. |
@@ -142,17 +142,12 @@ new SpacetimeDBClient(host: string, name_or_address: string, auth_token?: string
 #### Example
 
 ```ts
-const host = "ws://localhost:3000";
-const name_or_address = "database_name";
+const host = 'ws://localhost:3000';
+const name_or_address = 'database_name';
 const auth_token = undefined;
-const protocol = "binary";
+const protocol = 'binary';
 
-var spacetimeDBClient = new SpacetimeDBClient(
-  host,
-  name_or_address,
-  auth_token,
-  protocol
-);
+var spacetimeDBClient = new SpacetimeDBClient(host, name_or_address, auth_token, protocol);
 ```
 
 ## Class methods
@@ -167,9 +162,9 @@ registerReducers(...reducerClasses: ReducerClass[])
 
 #### Parameters
 
-| Name               | Type           | Description                                                                                                                                 |
-| :----------------- | :-------       | :------------------------------------------------------------------------------------------------------------------------------------------ |
-| `reducerClasses`   | `ReducerClass` | A list of classes to register                                                                                                               |
+| Name             | Type           | Description                   |
+| :--------------- | :------------- | :---------------------------- |
+| `reducerClasses` | `ReducerClass` | A list of classes to register |
 
 #### Example
 
@@ -192,9 +187,9 @@ registerTables(...reducerClasses: TableClass[])
 
 #### Parameters
 
-| Name               | Type           | Description                                                                                                                                 |
-| :----------------- | :-------       | :------------------------------------------------------------------------------------------------------------------------------------------ |
-| `tableClasses`     | `TableClass`   | A list of classes to register                                                                                                               |
+| Name           | Type         | Description                   |
+| :------------- | :----------- | :---------------------------- |
+| `tableClasses` | `TableClass` | A list of classes to register |
 
 #### Example
 
@@ -239,10 +234,10 @@ token: string | undefined
 
 #### Parameters
 
-| Name          | Type                                                   | Description                     |
-| :------------ | :----------------------------------------------------- | :------------------------------ |
-| `reducerName` | `string`                                               | The name of the reducer to call |
-| `serializer`  | [`Serializer`](../interfaces/serializer.Serializer.md) | -                               |
+| Name          | Type         | Description                     |
+| :------------ | :----------- | :------------------------------ |
+| `reducerName` | `string`     | The name of the reducer to call |
+| `serializer`  | `Serializer` | -                               |
 
 ---
 
@@ -269,15 +264,11 @@ connect(host: string?, name_or_address: string?, auth_token: string?): Promise<v
 #### Example
 
 ```ts
-const host = "ws://localhost:3000";
-const name_or_address = "database_name";
+const host = 'ws://localhost:3000';
+const name_or_address = 'database_name';
 const auth_token = undefined;
 
-var spacetimeDBClient = new SpacetimeDBClient(
-  host,
-  name_or_address,
-  auth_token
-);
+var spacetimeDBClient = new SpacetimeDBClient(host, name_or_address, auth_token);
 // Connect with the initial parameters
 spacetimeDBClient.connect();
 //Set the `auth_token`
@@ -297,10 +288,7 @@ disconnect(): void
 #### Example
 
 ```ts
-var spacetimeDBClient = new SpacetimeDBClient(
-  "ws://localhost:3000",
-  "database_name"
-);
+var spacetimeDBClient = new SpacetimeDBClient('ws://localhost:3000', 'database_name');
 
 spacetimeDBClient.disconnect();
 ```
@@ -328,7 +316,7 @@ subscribe(queryOrQueries: string | string[]): void
 #### Example
 
 ```ts
-spacetimeDBClient.subscribe(["SELECT * FROM User", "SELECT * FROM Message"]);
+spacetimeDBClient.subscribe(['SELECT * FROM User', 'SELECT * FROM Message']);
 ```
 
 ## Events
@@ -348,17 +336,17 @@ The credentials passed to the callback can be saved and used to authenticate the
 #### Parameters
 
 | Name       | Type                                                                                                             |
-|:-----------|:-----------------------------------------------------------------------------------------------------------------|
+| :--------- | :--------------------------------------------------------------------------------------------------------------- |
 | `callback` | (`token`: `string`, `identity`: [`Identity`](#class-identity), `address`: [`Address`](#class-address)) => `void` |
 
 #### Example
 
 ```ts
 spacetimeDBClient.onConnect((token, identity, address) => {
- console.log("Connected to SpacetimeDB");
- console.log("Token", token);
- console.log("Identity", identity);
- console.log("Address", address);
+	console.log('Connected to SpacetimeDB');
+	console.log('Token', token);
+	console.log('Identity', identity);
+	console.log('Address', address);
 });
 ```
 
@@ -382,7 +370,7 @@ onError(callback: (...args: any[]) => void): void
 
 ```ts
 spacetimeDBClient.onError((...args: any[]) => {
-  console.error("ERROR", args);
+	console.error('ERROR', args);
 });
 ```
 
@@ -475,13 +463,13 @@ An opaque identifier for a client connection to a database, intended to differen
 
 Defined in [spacetimedb-sdk.address](https://github.com/clockworklabs/spacetimedb-typescript-sdk/blob/main/src/address.ts):
 
-| Constructors                                    | Description                                  |
-| ----------------------------------------------- | -------------------------------------------- |
+| Constructors                                  | Description                                 |
+| --------------------------------------------- | ------------------------------------------- |
 | [`Address.constructor`](#address-constructor) | Creates a new `Address`.                    |
-| Methods                                         |                                              |
-| [`Address.isEqual`](#address-isequal)         | Compare two identities for equality.         |
+| Methods                                       |                                             |
+| [`Address.isEqual`](#address-isequal)         | Compare two identities for equality.        |
 | [`Address.toHexString`](#address-tohexstring) | Print the address as a hexadecimal string.  |
-| Static methods                                  |                                              |
+| Static methods                                |                                             |
 | [`Address.fromString`](#address-fromstring)   | Parse an Address from a hexadecimal string. |
 
 ## Constructors
@@ -510,15 +498,15 @@ isEqual(other: Address): boolean
 
 #### Parameters
 
-| Name    | Type                          |
-| :------ | :---------------------------- |
+| Name    | Type                        |
+| :------ | :-------------------------- |
 | `other` | [`Address`](#class-address) |
 
 #### Returns
 
 `boolean`
 
-___
+---
 
 ### `Address` toHexString
 
@@ -532,7 +520,7 @@ toHexString(): string
 
 `string`
 
-___
+---
 
 ### `Address` fromString
 
@@ -607,17 +595,14 @@ Return all the subscribed rows in the table.
 #### Example
 
 ```ts
-var spacetimeDBClient = new SpacetimeDBClient(
-  "ws://localhost:3000",
-  "database_name"
-);
+var spacetimeDBClient = new SpacetimeDBClient('ws://localhost:3000', 'database_name');
 
 spacetimeDBClient.onConnect((token, identity, address) => {
-  spacetimeDBClient.subscribe(["SELECT * FROM Person"]);
+	spacetimeDBClient.subscribe(['SELECT * FROM Person']);
 
-  setTimeout(() => {
-    console.log(Person.all()); // Prints all the `Person` rows in the database.
-  }, 5000);
+	setTimeout(() => {
+		console.log(Person.all()); // Prints all the `Person` rows in the database.
+	}, 5000);
 });
 ```
 
@@ -638,17 +623,14 @@ Return the number of subscribed rows in the table, or 0 if there is no active co
 #### Example
 
 ```ts
-var spacetimeDBClient = new SpacetimeDBClient(
-  "ws://localhost:3000",
-  "database_name"
-);
+var spacetimeDBClient = new SpacetimeDBClient('ws://localhost:3000', 'database_name');
 
 spacetimeDBClient.onConnect((token, identity, address) => {
-  spacetimeDBClient.subscribe(["SELECT * FROM Person"]);
+	spacetimeDBClient.subscribe(['SELECT * FROM Person']);
 
-  setTimeout(() => {
-    console.log(Person.count());
-  }, 5000);
+	setTimeout(() => {
+		console.log(Person.count());
+	}, 5000);
 });
 ```
 
@@ -677,17 +659,14 @@ These methods are named `filterBy{COLUMN}`, where `{COLUMN}` is the column name 
 #### Example
 
 ```ts
-var spacetimeDBClient = new SpacetimeDBClient(
-  "ws://localhost:3000",
-  "database_name"
-);
+var spacetimeDBClient = new SpacetimeDBClient('ws://localhost:3000', 'database_name');
 
 spacetimeDBClient.onConnect((token, identity, address) => {
-  spacetimeDBClient.subscribe(["SELECT * FROM Person"]);
+	spacetimeDBClient.subscribe(['SELECT * FROM Person']);
 
-  setTimeout(() => {
-    console.log(Person.filterByName("John")); // prints all the `Person` rows named John.
-  }, 5000);
+	setTimeout(() => {
+		console.log(Person.filterByName('John')); // prints all the `Person` rows named John.
+	}, 5000);
 });
 ```
 
@@ -746,20 +725,17 @@ Register an `onInsert` callback for when a subscribed row is newly inserted into
 #### Example
 
 ```ts
-var spacetimeDBClient = new SpacetimeDBClient(
-  "ws://localhost:3000",
-  "database_name"
-);
+var spacetimeDBClient = new SpacetimeDBClient('ws://localhost:3000', 'database_name');
 spacetimeDBClient.onConnect((token, identity, address) => {
-  spacetimeDBClient.subscribe(["SELECT * FROM Person"]);
+	spacetimeDBClient.subscribe(['SELECT * FROM Person']);
 });
 
 Person.onInsert((person, reducerEvent) => {
-  if (reducerEvent) {
-    console.log("New person inserted by reducer", reducerEvent, person);
-  } else {
-    console.log("New person received during subscription update", person);
-  }
+	if (reducerEvent) {
+		console.log('New person inserted by reducer', reducerEvent, person);
+	} else {
+		console.log('New person received during subscription update', person);
+	}
 });
 ```
 
@@ -800,16 +776,13 @@ Register an `onUpdate` callback to run when an existing row is modified by prima
 #### Example
 
 ```ts
-var spacetimeDBClient = new SpacetimeDBClient(
-  "ws://localhost:3000",
-  "database_name"
-);
+var spacetimeDBClient = new SpacetimeDBClient('ws://localhost:3000', 'database_name');
 spacetimeDBClient.onConnect((token, identity, address) => {
-  spacetimeDBClient.subscribe(["SELECT * FROM Person"]);
+	spacetimeDBClient.subscribe(['SELECT * FROM Person']);
 });
 
 Person.onUpdate((oldPerson, newPerson, reducerEvent) => {
-  console.log("Person updated by reducer", reducerEvent, oldPerson, newPerson);
+	console.log('Person updated by reducer', reducerEvent, oldPerson, newPerson);
 });
 ```
 
@@ -848,23 +821,17 @@ Register an `onDelete` callback for when a subscribed row is removed from the da
 #### Example
 
 ```ts
-var spacetimeDBClient = new SpacetimeDBClient(
-  "ws://localhost:3000",
-  "database_name"
-);
+var spacetimeDBClient = new SpacetimeDBClient('ws://localhost:3000', 'database_name');
 spacetimeDBClient.onConnect((token, identity, address) => {
-  spacetimeDBClient.subscribe(["SELECT * FROM Person"]);
+	spacetimeDBClient.subscribe(['SELECT * FROM Person']);
 });
 
 Person.onDelete((person, reducerEvent) => {
-  if (reducerEvent) {
-    console.log("Person deleted by reducer", reducerEvent, person);
-  } else {
-    console.log(
-      "Person no longer subscribed during subscription update",
-      person
-    );
-  }
+	if (reducerEvent) {
+		console.log('Person deleted by reducer', reducerEvent, person);
+	} else {
+		console.log('Person no longer subscribed during subscription update', person);
+	}
 });
 ```
 
@@ -929,14 +896,14 @@ Clients will only be notified of reducer runs if either of two criteria is met:
 
 #### Parameters
 
-| Name       | Type                                                        |
-| :--------- | :---------------------------------------------------------- |
+| Name       | Type                                                           |
+| :--------- | :------------------------------------------------------------- |
 | `callback` | `(reducerEvent: ReducerEvent, ...reducerArgs: any[]) => void)` |
 
 #### Example
 
 ```ts
 SayHelloReducer.on((reducerEvent, ...reducerArgs) => {
-  console.log("SayHelloReducer called", reducerEvent, reducerArgs);
+	console.log('SayHelloReducer called', reducerEvent, reducerArgs);
 });
 ```

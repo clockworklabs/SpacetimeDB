@@ -2,9 +2,10 @@
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
-This progressive tutorial is continued from one of the Part 2 tutorials: 
-- [Rust Server Module](/docs/unity/part-2a-rust.md)
-- [C# Server Module](/docs/unity/part-2b-c-sharp.md)
+This progressive tutorial is continued from one of the Part 2 tutorials:
+
+- [Rust Server Module](/docs/unity/part-2a-rust)
+- [C# Server Module](/docs/unity/part-2b-c-sharp)
 
 ## Updating our Unity Project Client to use SpacetimeDB
 
@@ -161,7 +162,7 @@ Then we're doing a modification to the `ButtonPressed()` function:
 
 ```csharp
 public void ButtonPressed()
-{         
+{
     CameraController.RemoveDisabler(GetHashCode());
     _panel.SetActive(false);
 
@@ -205,11 +206,11 @@ public class RemotePlayer : MonoBehaviour
             string inputUsername = UsernameElement.Text;
             Debug.Log($"PlayerComponent not found - Creating a new player ({inputUsername})");
             Reducer.CreatePlayer(inputUsername);
-            
+
             // Try again, optimistically assuming success for simplicity
             PlayerComponent? playerComp = PlayerComponent.FilterByEntityId(EntityId).FirstOrDefault();
         }
-        
+
         Username = playerComp.Username;
 
         // Get the last location for this player and set the initial position
@@ -268,16 +269,16 @@ private void PlayerComponent_OnInsert(PlayerComponent obj, ReducerEvent callInfo
     {
         // Spawn the player object and attach the RemotePlayer component
         var remotePlayer = Instantiate(PlayerPrefab);
-        
+
         // Lookup and apply the position for this new player
         var entity = EntityComponent.FilterByEntityId(obj.EntityId);
         var position = new Vector3(entity.Position.X, entity.Position.Y, entity.Position.Z);
         remotePlayer.transform.position = position;
-        
+
         var movementController = remotePlayer.GetComponent<PlayerMovementController>();
         movementController.RemoteTargetPosition = position;
         movementController.RemoteTargetRotation = entity.Direction;
-        
+
         remotePlayer.AddComponent<RemotePlayer>().EntityId = obj.EntityId;
     }
 }
@@ -309,7 +310,7 @@ private void FixedUpdate()
 
    lastUpdateTime = Time.time;
    var p = PlayerMovementController.Local.GetModelPosition();
-   
+
    Reducer.UpdatePlayerPosition(new StdbVector3
       {
          X = p.x,
@@ -338,6 +339,7 @@ When you hit the `Build` button, it will kick off a build of the game which will
 So far we have not handled the `logged_in` variable of the `PlayerComponent`. This means that remote players will not despawn on your screen when they disconnect. To fix this we need to handle the `OnUpdate` event for the `PlayerComponent` table in addition to `OnInsert`. We are going to use a common function that handles any time the `PlayerComponent` changes.
 
 **Append to the bottom of Start() function in TutorialGameManager.cs**
+
 ```csharp
 PlayerComponent.OnUpdate += PlayerComponent_OnUpdate;
 ```
@@ -347,6 +349,7 @@ We are going to add a check to determine if the player is logged for remote play
 Next we'll be updating some of the code in `PlayerComponent_OnInsert`. For simplicity, just replace the entire function.
 
 **REPLACE PlayerComponent_OnInsert in TutorialGameManager.cs**
+
 ```csharp
 private void PlayerComponent_OnUpdate(PlayerComponent oldValue, PlayerComponent newValue, ReducerEvent dbEvent)
 {
@@ -377,16 +380,16 @@ private void OnPlayerComponentChanged(PlayerComponent obj)
             {
                 // Spawn the player object and attach the RemotePlayer component
                 var remotePlayer = Instantiate(PlayerPrefab);
-                
+
                 // Lookup and apply the position for this new player
                 var entity = EntityComponent.FilterByEntityId(obj.EntityId);
                 var position = new Vector3(entity.Position.X, entity.Position.Y, entity.Position.Z);
                 remotePlayer.transform.position = position;
-                
+
                 var movementController = remotePlayer.GetComponent<PlayerMovementController>();
                 movementController.RemoteTargetPosition = position;
                 movementController.RemoteTargetRotation = entity.Direction;
-                
+
                 remotePlayer.AddComponent<RemotePlayer>().EntityId = obj.EntityId;
             }
         }
@@ -406,6 +409,7 @@ Now you when you play the game you should see remote players disappear when they
 Before updating the client, let's generate the client files and update publish our module.
 
 **Execute commands in the server/ directory**
+
 ```bash
 spacetime generate --out-dir ../client/Assets/module_bindings --lang=csharp
 spacetime publish -c unity-tutorial
@@ -414,6 +418,7 @@ spacetime publish -c unity-tutorial
 On the client, let's add code to send the message when the chat button or enter is pressed. Update the `OnChatButtonPress` function in `UIChatController.cs`.
 
 **Append to the top of UIChatController.cs:**
+
 ```csharp
 using SpacetimeDB.Types;
 ```
@@ -431,6 +436,7 @@ public void OnChatButtonPress()
 Now we need to add a reducer to handle inserting new chat messages. First register for the ChatMessage reducer in the `Start()` function using the auto-generated function:
 
 **Append to the bottom of the Start() function in TutorialGameManager.cs:**
+
 ```csharp
 Reducer.OnSendChatMessageEvent += OnSendChatMessageEvent;
 ```
@@ -438,6 +444,7 @@ Reducer.OnSendChatMessageEvent += OnSendChatMessageEvent;
 Now we write the `OnSendChatMessageEvent` function. We can find the `PlayerComponent` for the player who sent the message using the `Identity` of the sender. Then we get the `Username` and prepend it to the message before sending it to the chat window.
 
 **Append after the Start() function in TutorialGameManager.cs**
+
 ```csharp
 private void OnSendChatMessageEvent(ReducerEvent dbEvent, string message)
 {
@@ -455,7 +462,7 @@ Now when you run the game you should be able to send chat messages to other play
 
 This concludes the SpacetimeDB basic multiplayer tutorial, where we learned how to create a multiplayer game. In the next Unity tutorial, we will add resource nodes to the game and learn about _scheduled_ reducers:
 
-From here, the tutorial continues with more-advanced topics: The [next tutorial](/docs/unity/part-4.md) introduces Resources & Scheduling.
+From here, the tutorial continues with more-advanced topics: The [next tutorial](/docs/unity/part-4) introduces Resources & Scheduling.
 
 ---
 

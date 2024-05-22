@@ -9,15 +9,17 @@ We'll give you some CLI commands to execute. If you are using Windows, we recomm
 Tested with UnityEngine `2022.3.20f1 LTS` (and may also work on newer versions).
 
 ## Unity Tutorial - Basic Multiplayer
+
 Get started with the core client-server setup. For part 2, you may choose your server module preference of [Rust](/docs/modules/rust) or [C#](/docs/modules/c-sharp):
 
-- [Part 1 - Setup](/docs/unity/part-1.md)
-- [Part 2a - Server (Rust)](/docs/unity/part-2a-rust.md)
-- [Part 2b - Server (C#)](/docs/unity/part-2b-csharp.md)
-- [Part 3 - Client](/docs/unity/part-3.md)
+- [Part 1 - Setup](/docs/unity/part-1)
+- [Part 2a - Server (Rust)](/docs/unity/part-2a-rust)
+- [Part 2b - Server (C#)](/docs/unity/part-2b-csharp)
+- [Part 3 - Client](/docs/unity/part-3)
 
 ## Unity Tutorial - Advanced
+
 By this point, you should already have a basic understanding of SpacetimeDB client, server and CLI:
 
-- [Part 4 - Resources & Scheduling](/docs/unity/part-4.md)
-- [Part 5 - BitCraft Mini](/docs/unity/part-5.md)
+- [Part 4 - Resources & Scheduling](/docs/unity/part-4)
+- [Part 5 - BitCraft Mini](/docs/unity/part-5)
