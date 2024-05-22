@@ -7,4 +7,5 @@ edition.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
-spacetimedb = { path = "../../crates/bindings" , features = ["getrandom"]}
+rand = "0.8"
+spacetimedb = { path = "../../crates/bindings" }

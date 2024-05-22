@@ -61,7 +61,7 @@ pub(crate) fn build_rust(project_path: &Path, skip_clippy: bool, build_debug: bo
     let artifact = artifact.context("no artifact found?")?;
     let artifact = artifact.filenames.into_iter().next().context("no wasm?")?;
 
-    check_for_wasm_bindgen(artifact.as_ref())?;
+    check_for_issues(artifact.as_ref())?;
 
     Ok(artifact.into())
 }
@@ -76,7 +76,7 @@ disallowed-macros = [
 ]
 "#;
 
-fn check_for_wasm_bindgen(artifact: &Path) -> anyhow::Result<()> {
+fn check_for_issues(artifact: &Path) -> anyhow::Result<()> {
     // if this fails for some reason, just let it fail elsewhere
     let Ok(file) = fs::File::open(artifact) else {
         return Ok(());
@@ -97,6 +97,19 @@ fn check_for_wasm_bindgen(artifact: &Path) -> anyhow::Result<()> {
              to disable it."
         )
     }
+    if has_getrandom(&module) {
+        anyhow::bail!(
+            "getrandom usage detected.\n\
+             \n\
+             It seems like either you or a crate in your dependency tree is depending on\n\
+             the `getrandom` crate for random number generation. getrandom is the default\n\
+             randomness source for the `rand` crate, and is used when you call\n\
+             `rand::random()` or `rand::thread_rng()`. If this is you, you should instead\n\
+             use `spacetimedb::random()` or `spacetimedb::rng()`. If this is a crate in your\n\
+             tree, you should try to see if the crate provides a way to pass in a custom\n\
+             `Rng` type, and pass it the rng returned from `spacetimedb::rng()`."
+        )
+    }
     Ok(())
 }
 
@@ -110,11 +123,16 @@ fn has_wasm_bindgen(module: &wasmbin::Module) -> bool {
     module
         .find_std_section::<wasmbin::sections::payload::Import>()
         .and_then(|imports| imports.try_contents().ok())
-        .map(|imports| imports.iter().any(check_import))
-        .unwrap_or(false)
+        .is_some_and(|imports| imports.iter().any(check_import))
         || module
             .find_std_section::<wasmbin::sections::payload::Export>()
             .and_then(|exports| exports.try_contents().ok())
-            .map(|exports| exports.iter().any(check_export))
-            .unwrap_or(false)
+            .is_some_and(|exports| exports.iter().any(check_export))
+}
+
+fn has_getrandom(module: &wasmbin::Module) -> bool {
+    module
+        .find_std_section::<wasmbin::sections::payload::Import>()
+        .and_then(|imports| imports.try_contents().ok())
+        .is_some_and(|imports| imports.iter().any(|import| import.path.name == "__getrandom_custom"))
 }

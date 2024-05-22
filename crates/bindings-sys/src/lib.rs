@@ -773,22 +773,3 @@ impl Drop for BufferIter {
         cvt(unsafe { raw::_iter_drop(self.handle()) }).unwrap();
     }
 }
-
-// TODO: eventually there should be a way to set a consistent random seed for a module
-#[cfg(feature = "getrandom")]
-fn fake_random(buf: &mut [u8]) -> Result<(), getrandom::Error> {
-    #[allow(clippy::needless_range_loop)]
-    for i in 0..buf.len() {
-        let start = match i % 4 {
-            0 => 0x64,
-            1 => 0xe9,
-            2 => 0x48,
-            _ => 0xb5,
-        };
-        buf[i] = (start ^ i) as u8;
-    }
-
-    Result::Ok(())
-}
-#[cfg(feature = "getrandom")]
-getrandom::register_custom_getrandom!(fake_random);
