@@ -13,14 +13,15 @@
 
 use blake3::hash;
 use spacetimedb_data_structures::map::{Entry, HashMap};
+use spacetimedb_lib::{de::Deserialize, ser::Serialize};
 
 /// The content address of a blob-stored object.
-#[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Debug)]
+#[derive(Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Debug, Serialize, Deserialize)]
 pub struct BlobHash {
     /// The hash of the blob-stored object.
     ///
     /// Uses BLAKE3 which fits in 32 bytes.
-    pub data: [u8; Self::SIZE],
+    pub data: [u8; BlobHash::SIZE],
 }
 
 impl BlobHash {
@@ -46,6 +47,14 @@ impl TryFrom<&[u8]> for BlobHash {
 /// An error that signifies that a [`BlobHash`] wasn't associated with a large blob object.
 #[derive(Debug)]
 pub struct NoSuchBlobError;
+
+/// Iterator returned by [`BlobStore::iter_blobs`].
+///
+/// Each element is a tuple `(hash, uses, data)`,
+/// where `hash` is a blob's content-addressed [`BlobHash`],
+/// `uses` is the number of references to that blob,
+/// and `data` is the data itself.
+pub type BlobsIter<'a> = Box<dyn Iterator<Item = (&'a BlobHash, usize, &'a [u8])> + 'a>;
 
 /// The interface that tables use to talk to the blob store engine for large var-len objects.
 ///
@@ -76,6 +85,14 @@ pub trait BlobStore: Sync {
     /// this might not actually free the data,
     /// but rather just decrement a reference count.
     fn free_blob(&mut self, hash: &BlobHash) -> Result<(), NoSuchBlobError>;
+
+    /// Iterate over all blobs present in the blob store.
+    ///
+    /// Each element is a tuple `(hash, uses, data)`,
+    /// where `hash` is a blob's content-addressed [`BlobHash`],
+    /// `uses` is the number of references to that blob,
+    /// and `data` is the data itself.
+    fn iter_blobs(&self) -> BlobsIter<'_>;
 }
 
 /// A blob store that panics on all operations.
@@ -96,6 +113,10 @@ impl BlobStore for NullBlobStore {
     }
 
     fn free_blob(&mut self, _hash: &BlobHash) -> Result<(), NoSuchBlobError> {
+        unimplemented!("NullBlobStore doesn't do anything")
+    }
+
+    fn iter_blobs(&self) -> BlobsIter<'_> {
         unimplemented!("NullBlobStore doesn't do anything")
     }
 }
@@ -146,6 +167,10 @@ impl BlobStore for HashMapBlobStore {
             Entry::Occupied(mut entry) => entry.get_mut().uses -= 1,
         }
         Ok(())
+    }
+
+    fn iter_blobs(&self) -> BlobsIter<'_> {
+        Box::new(self.map.iter().map(|(hash, obj)| (hash, obj.uses, &obj.blob[..])))
     }
 }
 

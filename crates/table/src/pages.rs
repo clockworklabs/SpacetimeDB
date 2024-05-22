@@ -5,6 +5,7 @@ use super::indexes::{Bytes, PageIndex, PageOffset, RowPointer, Size};
 use super::page::Page;
 use super::var_len::VarLenMembers;
 use core::ops::{ControlFlow, Deref, Index, IndexMut};
+use std::ops::DerefMut;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -333,5 +334,11 @@ impl Deref for Pages {
 
     fn deref(&self) -> &Self::Target {
         &self.pages
+    }
+}
+
+impl DerefMut for Pages {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.pages
     }
 }

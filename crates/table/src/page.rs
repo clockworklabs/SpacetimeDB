@@ -1672,9 +1672,10 @@ impl Page {
     }
 
     /// Computes the content hash of this page and saves it to [`PageHeader::unmodified_hash`].
-    pub fn save_content_hash(&mut self) {
+    pub fn save_content_hash(&mut self) -> blake3::Hash {
         let hash = self.content_hash();
         self.header.unmodified_hash = Some(hash);
+        hash
     }
 
     /// Returns the stored unmodified hash, if any.

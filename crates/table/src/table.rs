@@ -1011,6 +1011,14 @@ impl Table {
         &self.inner.pages
     }
 
+    /// Returns the pages storing the physical rows of this table.
+    ///
+    /// Exposed so snapshotting can visit each page, compute and store their hashes,
+    /// and write their data to disk.
+    pub fn pages_mut(&mut self) -> &mut Pages {
+        &mut self.inner.pages
+    }
+
     /// Returns the [`StaticBsatnLayout`] for this table,
     pub(crate) fn static_bsatn_layout(&self) -> Option<&StaticBsatnLayout> {
         self.inner.static_bsatn_layout.as_ref()
