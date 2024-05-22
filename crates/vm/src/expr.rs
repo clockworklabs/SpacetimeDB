@@ -777,10 +777,11 @@ pub struct IndexScan {
 }
 
 impl IndexScan {
-    pub fn is_range(&self) -> bool {
+    /// Returns whether this is a point range.
+    pub fn is_point(&self) -> bool {
         match &self.bounds {
-            (Bound::Included(lower), Bound::Included(upper)) => lower != upper,
-            _ => true,
+            (Bound::Included(lower), Bound::Included(upper)) => lower == upper,
+            _ => false,
         }
     }
 }
