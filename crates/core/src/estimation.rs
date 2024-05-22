@@ -1,5 +1,4 @@
 use crate::db::relational_db::Tx;
-use spacetimedb_lib::relation::DbTable;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr};
 
@@ -10,60 +9,56 @@ pub fn num_rows(tx: &Tx, expr: &QueryExpr) -> u64 {
 
 /// The estimated number of rows that a query sub-plan will return.
 fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
-    ops.last().map_or_else(
-        || match src {
-            SourceExpr::DbTable(DbTable { table_id, .. }) => tx.get_row_count(*table_id).unwrap_or(0),
-            _ => 0,
-        },
-        |op| {
-            let input = &ops[0..ops.len() - 1];
-            match op {
-                Query::Project(_, _) => {
-                    // We assume projections select 100% of their input rows.
-                    row_est(tx, src, input)
-                }
-                Query::Select(_) => {
-                    // How selective is an arbitrary predicate?
-                    // If it is not sargable,
-                    // meaning it cannot be satisfied using an index,
-                    // we assume the worst-case scenario,
-                    // that it will select all of its input rows.
-                    // That is we set the selectivity = 1.
-                    row_est(tx, src, input)
-                }
-                Query::IndexScan(scan) if scan.is_range() => {
-                    // We do the same for sargable range conditions.
-                    row_est(tx, src, input)
-                }
-                Query::IndexScan(scan) => {
-                    // How selective is an index lookup?
-                    // We assume a uniform distribution of keys,
-                    // which implies a selectivity = 1 / NDV,
-                    // where NDV stands for Number of Distinct Values.
-                    index_row_est(tx, scan.table.table_id, &scan.columns)
-                }
-                Query::IndexJoin(join) => {
-                    // How selective is an index join?
-                    // We have an estimate for the number of probe side rows,
-                    // We have an estimate for the number of rows each index probe will return.
-                    // Multiplying both estimates together will give us our expectation.
-                    let table_id = if join.return_index_rows {
-                        src.table_id().unwrap()
-                    } else {
-                        join.probe_side.source.table_id().unwrap()
-                    };
-                    row_est(tx, &join.probe_side.source, &join.probe_side.query)
-                        * index_row_est(tx, table_id, &join.index_col.into())
-                }
-                Query::JoinInner(join) => {
-                    // Since inner join is our most expensive operation,
-                    // we maximally overestimate its output cardinality,
-                    // as though each row from the left joins with each row from the right.
-                    row_est(tx, src, input) * row_est(tx, &join.rhs.source, &join.rhs.query)
-                }
+    match ops {
+        // The base case is the table row count.
+        [] => src.table_id().and_then(|id| tx.get_row_count(id)).unwrap_or(0),
+        // Walk in reverse from the end (`op`) to the beginning.
+        [input @ .., op] => match op {
+            Query::Project(_, _) => {
+                // We assume projections select 100% of their input rows.
+                row_est(tx, src, input)
+            }
+            Query::Select(_) => {
+                // How selective is an arbitrary predicate?
+                // If it is not sargable,
+                // meaning it cannot be satisfied using an index,
+                // we assume the worst-case scenario,
+                // that it will select all of its input rows.
+                // That is we set the selectivity = 1.
+                row_est(tx, src, input)
+            }
+            Query::IndexScan(scan) if scan.is_range() => {
+                // We do the same for sargable range conditions.
+                row_est(tx, src, input)
+            }
+            Query::IndexScan(scan) => {
+                // How selective is an index lookup?
+                // We assume a uniform distribution of keys,
+                // which implies a selectivity = 1 / NDV,
+                // where NDV stands for Number of Distinct Values.
+                index_row_est(tx, scan.table.table_id, &scan.columns)
+            }
+            Query::IndexJoin(join) => {
+                // How selective is an index join?
+                // We have an estimate for the number of probe side rows,
+                // We have an estimate for the number of rows each index probe will return.
+                // Multiplying both estimates together will give us our expectation.
+                let table_id = if join.return_index_rows {
+                    src.table_id().unwrap()
+                } else {
+                    join.probe_side.source.table_id().unwrap()
+                };
+                row_est(tx, &join.probe_side.source, &join.probe_side.query)
+                    * index_row_est(tx, table_id, &join.index_col.into())
+            }
+            Query::JoinInner(join) => {
+                // Since inner join is our most expensive operation,
+                // we maximally overestimate its output cardinality,
+                // as though each row from the left joins with each row from the right.
+                row_est(tx, src, input) * row_est(tx, &join.rhs.source, &join.rhs.query)
             }
         },
-    )
+    }
 }
 
 /// The estimated number of rows that an index probe will return.
