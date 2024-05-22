@@ -26,7 +26,7 @@ fn validate_name(name: String) -> Result<String, String> {
 #[spacetimedb(reducer)]
 pub fn set_name(ctx: ReducerContext, name: String) -> Result<(), String> {
     let name = validate_name(name)?;
-    if let Some(user) = User::filter_by_identity(&ctx.sender) {
+    if let Some(user) = User::find_by_identity(&ctx.sender) {
         User::update_by_identity(
             &ctx.sender,
             User {
@@ -68,7 +68,7 @@ pub fn init() {}
 
 #[spacetimedb(connect)]
 pub fn identity_connected(ctx: ReducerContext) {
-    if let Some(user) = User::filter_by_identity(&ctx.sender) {
+    if let Some(user) = User::find_by_identity(&ctx.sender) {
         // If this is a returning user, i.e. we already have a `User` with this `Identity`,
         // set `online: true`, but leave `name` and `identity` unchanged.
         User::update_by_identity(&ctx.sender, User { online: true, ..user });
@@ -86,7 +86,7 @@ pub fn identity_connected(ctx: ReducerContext) {
 
 #[spacetimedb(disconnect)]
 pub fn identity_disconnected(ctx: ReducerContext) {
-    if let Some(user) = User::filter_by_identity(&ctx.sender) {
+    if let Some(user) = User::find_by_identity(&ctx.sender) {
         User::update_by_identity(&ctx.sender, User { online: false, ..user });
     } else {
         // This branch should be unreachable,
