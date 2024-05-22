@@ -23,9 +23,4 @@ impl TableType for OneSimpleEnum {
     type ReducerEvent = super::ReducerEvent;
 }
 
-impl OneSimpleEnum {
-    #[allow(unused)]
-    pub fn filter_by_e(e: SimpleEnum) -> TableIter<Self> {
-        Self::filter(|row| row.e == e)
-    }
-}
+impl OneSimpleEnum {}

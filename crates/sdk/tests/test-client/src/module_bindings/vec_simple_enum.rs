@@ -23,9 +23,4 @@ impl TableType for VecSimpleEnum {
     type ReducerEvent = super::ReducerEvent;
 }
 
-impl VecSimpleEnum {
-    #[allow(unused)]
-    pub fn filter_by_e(e: Vec<SimpleEnum>) -> TableIter<Self> {
-        Self::filter(|row| row.e == e)
-    }
-}
+impl VecSimpleEnum {}

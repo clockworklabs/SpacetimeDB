@@ -32,7 +32,11 @@ impl TableWithPrimaryKey for PkBool {
 
 impl PkBool {
     #[allow(unused)]
-    pub fn filter_by_b(b: bool) -> Option<Self> {
+    pub fn filter_by_b(b: bool) -> TableIter<Self> {
+        Self::filter(|row| row.b == b)
+    }
+    #[allow(unused)]
+    pub fn find_by_b(b: bool) -> Option<Self> {
         Self::find(|row| row.b == b)
     }
     #[allow(unused)]
