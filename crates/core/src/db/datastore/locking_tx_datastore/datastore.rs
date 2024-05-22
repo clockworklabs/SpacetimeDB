@@ -162,7 +162,7 @@ impl TxDatastore for Locking {
     type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRange<'a, R> where Self: 'a;
 
     fn iter_tx<'a>(&'a self, ctx: &'a ExecutionContext, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::Iter<'a>> {
-        tx.iter(ctx, &table_id)
+        tx.iter(ctx, table_id)
     }
 
     fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
@@ -173,7 +173,7 @@ impl TxDatastore for Locking {
         cols: impl Into<ColList>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>> {
-        tx.iter_by_col_range(ctx, &table_id, cols.into(), range)
+        tx.iter_by_col_range(ctx, table_id, cols.into(), range)
     }
 
     fn iter_by_col_eq_tx<'a, 'r>(
@@ -184,11 +184,11 @@ impl TxDatastore for Locking {
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>> {
-        tx.iter_by_col_eq(ctx, &table_id, cols, value)
+        tx.iter_by_col_eq(ctx, table_id, cols, value)
     }
 
     fn table_id_exists_tx(&self, tx: &Self::Tx, table_id: &TableId) -> bool {
-        tx.table_exists(table_id).is_some()
+        tx.table_name(*table_id).is_some()
     }
 
     fn table_id_from_name_tx(&self, tx: &Self::Tx, table_name: &str) -> Result<Option<TableId>> {
@@ -196,7 +196,7 @@ impl TxDatastore for Locking {
     }
 
     fn table_name_from_id_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Option<Cow<'a, str>>> {
-        Ok(tx.table_exists(&table_id).map(Cow::Borrowed))
+        Ok(tx.table_name(table_id).map(Cow::Borrowed))
     }
 
     fn schema_for_table_tx(&self, tx: &Self::Tx, table_id: TableId) -> Result<Arc<TableSchema>> {
@@ -309,7 +309,7 @@ impl MutTxDatastore for Locking {
         tx: &'a Self::MutTx,
         table_id: TableId,
     ) -> Result<Self::Iter<'a>> {
-        tx.iter(ctx, &table_id)
+        tx.iter(ctx, table_id)
     }
 
     fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
@@ -320,7 +320,7 @@ impl MutTxDatastore for Locking {
         cols: impl Into<ColList>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>> {
-        tx.iter_by_col_range(ctx, &table_id, cols.into(), range)
+        tx.iter_by_col_range(ctx, table_id, cols.into(), range)
     }
 
     fn iter_by_col_eq_mut_tx<'a, 'r>(
@@ -331,7 +331,7 @@ impl MutTxDatastore for Locking {
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>> {
-        tx.iter_by_col_eq(ctx, &table_id, cols.into(), value)
+        tx.iter_by_col_eq(ctx, table_id, cols.into(), value)
     }
 
     fn get_mut_tx<'a>(
@@ -387,7 +387,7 @@ impl MutTxDatastore for Locking {
     }
 
     fn table_id_exists_mut_tx(&self, tx: &Self::MutTx, table_id: &TableId) -> bool {
-        tx.table_exists(table_id).is_some()
+        tx.table_name(*table_id).is_some()
     }
 }
 
@@ -515,7 +515,7 @@ impl Locking {
 
 impl Programmable for Locking {
     fn program_hash(&self, tx: &TxId) -> Result<Option<spacetimedb_sats::hash::Hash>> {
-        tx.iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
+        tx.iter(&ExecutionContext::internal(self.database_address), ST_MODULE_ID)?
             .next()
             .map(|row| StModuleRow::try_from(row).map(|st| st.program_hash))
             .transpose()
@@ -527,7 +527,7 @@ impl MutProgrammable for Locking {
 
     fn set_program_hash(&self, tx: &mut MutTxId, fence: Self::FencingToken, hash: Hash) -> Result<()> {
         let ctx = ExecutionContext::internal(self.database_address);
-        let mut iter = tx.iter(&ctx, &ST_MODULE_ID)?;
+        let mut iter = tx.iter(&ctx, ST_MODULE_ID)?;
         if let Some(row_ref) = iter.next() {
             let epoch = row_ref.read_col::<u128>(StModuleFields::Epoch)?;
             if fence <= epoch {
@@ -804,7 +804,7 @@ mod tests {
         pub fn scan_st_tables(&self) -> Result<Vec<StTableRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, &ST_TABLES_ID)?
+                .iter(self.ctx, ST_TABLES_ID)?
                 .map(|row| StTableRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
@@ -817,7 +817,7 @@ mod tests {
         ) -> Result<Vec<StTableRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter_by_col_eq(self.ctx, &ST_TABLES_ID, cols.into(), value)?
+                .iter_by_col_eq(self.ctx, ST_TABLES_ID, cols.into(), value)?
                 .map(|row| StTableRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
@@ -826,7 +826,7 @@ mod tests {
         pub fn scan_st_columns(&self) -> Result<Vec<StColumnRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, &ST_COLUMNS_ID)?
+                .iter(self.ctx, ST_COLUMNS_ID)?
                 .map(|row| StColumnRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
@@ -839,7 +839,7 @@ mod tests {
         ) -> Result<Vec<StColumnRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter_by_col_eq(self.ctx, &ST_COLUMNS_ID, cols.into(), value)?
+                .iter_by_col_eq(self.ctx, ST_COLUMNS_ID, cols.into(), value)?
                 .map(|row| StColumnRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
@@ -848,7 +848,7 @@ mod tests {
         pub fn scan_st_constraints(&self) -> Result<Vec<StConstraintRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, &ST_CONSTRAINTS_ID)?
+                .iter(self.ctx, ST_CONSTRAINTS_ID)?
                 .map(|row| StConstraintRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.constraint_id)
                 .collect::<Vec<_>>())
@@ -857,7 +857,7 @@ mod tests {
         pub fn scan_st_sequences(&self) -> Result<Vec<StSequenceRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, &ST_SEQUENCES_ID)?
+                .iter(self.ctx, ST_SEQUENCES_ID)?
                 .map(|row| StSequenceRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.sequence_id))
                 .collect::<Vec<_>>())
@@ -866,7 +866,7 @@ mod tests {
         pub fn scan_st_indexes(&self) -> Result<Vec<StIndexRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, &ST_INDEXES_ID)?
+                .iter(self.ctx, ST_INDEXES_ID)?
                 .map(|row| StIndexRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.index_id)
                 .collect::<Vec<_>>())
@@ -1139,7 +1139,7 @@ mod tests {
     }
 
     fn all_rows_tx(tx: &TxId, table_id: TableId) -> Vec<ProductValue> {
-        tx.iter(&ExecutionContext::default(), &table_id)
+        tx.iter(&ExecutionContext::default(), table_id)
             .unwrap()
             .map(|r| r.to_product_value().clone())
             .collect()

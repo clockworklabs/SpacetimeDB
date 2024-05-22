@@ -80,7 +80,7 @@ pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTa
 /// Translates a `FieldName` to the field's name.
 pub fn translate_col(tx: &TxId, field: FieldName) -> Option<Box<str>> {
     Some(
-        tx.get_schema(&field.table)?
+        tx.get_schema(field.table)?
             .get_column(field.col.idx())?
             .col_name
             .clone(),
