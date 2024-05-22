@@ -21,8 +21,8 @@ use std::time::Duration;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::{
-    parse_quote, BinOp, Expr, ExprBinary, ExprLit, ExprUnary, FnArg, Ident, ItemFn, ItemStruct, Member, Token, Type,
-    UnOp,
+    parse_quote, BinOp, Expr, ExprBinary, ExprLit, ExprUnary, FnArg, Ident, ItemFn, ItemStruct, Member, Path, Token,
+    Type, TypePath, UnOp,
 };
 
 mod sym {
@@ -483,6 +483,17 @@ impl ColumnAttr {
     }
 }
 
+/// Heuristically determine if the path `p` is one of Rust's primitive integer types.
+/// This is an approximation, as the user could do `use String as u8`.
+fn is_integer_type(p: &Path) -> bool {
+    p.get_ident().map_or(false, |i| {
+        matches!(
+            i.to_string().as_str(),
+            "u8" | "i8" | "u16" | "i16" | "u32" | "i32" | "u64" | "i64" | "u128" | "i128"
+        )
+    })
+}
+
 fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream> {
     let sats_ty = module::sats_type_from_derive(&item, quote!(spacetimedb::spacetimedb_lib))?;
 
@@ -528,19 +539,10 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
             col_attr |= extra_col_attr;
         }
 
-        if col_attr.contains(ColumnAttribute::AUTO_INC) {
-            let valid_for_autoinc = if let syn::Type::Path(p) = field.ty {
-                // TODO: this is janky as heck
-                matches!(
-                    &*p.path.segments.last().unwrap().ident.to_string(),
-                    "u8" | "i8" | "u16" | "i16" | "u32" | "i32" | "u64" | "i64" | "u128" | "i128"
-                )
-            } else {
-                false
-            };
-            if !valid_for_autoinc {
-                return Err(syn::Error::new(field.ident.unwrap().span(), "An `autoinc` or `identity` column must be one of the integer types: u8, i8, u16, i16, u32, i32, u64, i64, u128, i128"));
-            }
+        if col_attr.contains(ColumnAttribute::AUTO_INC)
+            && !matches!(field.ty, syn::Type::Path(p) if is_integer_type(&p.path))
+        {
+            return Err(syn::Error::new(field.ident.unwrap().span(), "An `autoinc` or `identity` column must be one of the integer types: u8, i8, u16, i16, u32, i32, u64, i64, u128, i128"));
         }
 
         let column = Column {
@@ -629,17 +631,21 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         let filter_func_ident = format_ident!("filter_by_{}", column_ident);
         let delete_func_ident = format_ident!("delete_by_{}", column_ident);
 
-        let skip = if let syn::Type::Path(p) = column_type {
+        let is_filterable = if let syn::Type::Path(TypePath { path, .. }) = column_type {
             // TODO: this is janky as heck
-            !matches!(
-                &*p.path.segments.last().unwrap().ident.to_string(),
-                "u8" | "i8" | "u16" | "i16" | "u32" | "i32" | "u64" | "i64" | "Hash" | "Identity" | "String" | "bool"
-            )
+            is_integer_type(path)
+                || path.is_ident("String")
+                || path.is_ident("bool")
+                // For these we use the last element of the path because they can be more commonly namespaced.
+                || matches!(
+                    &*path.segments.last().unwrap().ident.to_string(),
+                    "Address" | "Identity"
+                )
         } else {
-            true
+            false
         };
 
-        if skip {
+        if !is_filterable {
             return None;
         }
 
