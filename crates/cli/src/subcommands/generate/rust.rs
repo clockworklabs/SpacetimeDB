@@ -510,7 +510,7 @@ fn print_table_filter_methods(ctx: &GenCtx, out: &mut Indenter, table_type_name:
                 );
                 if ct.has_unique() {
                     writeln!(out, "{ALLOW_UNUSED}");
-                    write!(out, "pub fn find_by_{field_name}(");
+                    write!(out, "pub fn find_by_{field_name}({field_name}: ");
                     write_type_ctx(ctx, out, &field.col_type);
                     write!(out, ") -> Option<Self> ");
                     out.delimited_block(
