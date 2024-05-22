@@ -1,7 +1,7 @@
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem};
 use convert_case::{Case, Casing};
-use spacetimedb_data_structures::map::HashSet;
+use std::collections::BTreeSet;
 use spacetimedb_lib::sats::db::def::TableSchema;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
@@ -15,7 +15,7 @@ use std::ops::Deref;
 type Indenter = CodeIndenter<String>;
 
 /// Pairs of (module_name, TypeName).
-type Imports = HashSet<(String, String)>;
+type Imports = BTreeSet<(String, String)>;
 
 enum MaybePrimitive<'a> {
     Primitive(&'a str),
@@ -1122,7 +1122,7 @@ fn gen_and_print_imports<Roots, SearchFn>(
 ) where
     SearchFn: FnOnce(&GenCtx, &mut Imports, Roots),
 {
-    let mut imports = HashSet::new();
+    let mut imports = BTreeSet::new();
     search_fn(ctx, &mut imports, roots);
 
     print_imports(out, imports, this_file);
