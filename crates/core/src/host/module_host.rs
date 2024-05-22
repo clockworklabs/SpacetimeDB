@@ -370,6 +370,12 @@ pub trait Module: Send + Sync + 'static {
         query: String,
     ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError>;
     fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error>;
+    fn record_identity_connected_disconnected(
+        &self,
+        caller_identity: Identity,
+        caller_address: Address,
+        connected: bool,
+    ) -> Result<(), DBError>;
     #[cfg(feature = "tracelogging")]
     fn get_trace(&self) -> Option<bytes::Bytes>;
     #[cfg(feature = "tracelogging")]
@@ -468,6 +474,12 @@ trait DynModuleHost: Send + Sync + 'static {
     fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error>;
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
+    fn record_identity_connected_disconnected(
+        &self,
+        caller_identity: Identity,
+        caller_address: Address,
+        connected: bool,
+    ) -> Result<(), DBError>;
 }
 
 struct HostControllerActor<T: Module> {
@@ -550,6 +562,16 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
 
     fn exited(&self) -> Closed<'_> {
         self.instance_pool.closed()
+    }
+
+    fn record_identity_connected_disconnected(
+        &self,
+        caller_identity: Identity,
+        caller_address: Address,
+        connected: bool,
+    ) -> Result<(), DBError> {
+        self.module
+            .record_identity_connected_disconnected(caller_identity, caller_address, connected)
     }
 }
 
@@ -662,6 +684,10 @@ impl ModuleHost {
         caller_address: Address,
         connected: bool,
     ) -> Result<(), ReducerCallError> {
+        self.inner
+            .record_identity_connected_disconnected(caller_identity, caller_address, connected);
+        // TODO: DUNDER consts are in wasm_common, so seems weird to use them
+        // here. But maybe there should be dunders for this?
         let reducer_name = if connected {
             CLIENT_CONNECTED_DUNDER
         } else {

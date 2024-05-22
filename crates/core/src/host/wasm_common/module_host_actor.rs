@@ -308,6 +308,15 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
             Ok(())
         })
     }
+
+    fn record_identity_connected_disconnected(
+        &self,
+        caller_identity: Identity,
+        caller_address: Address,
+        connected: bool,
+    ) -> Result<(), DBError> {
+        Ok(())
+    }
 }
 
 pub struct WasmModuleInstance<T: WasmInstance> {
