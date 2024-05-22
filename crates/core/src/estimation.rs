@@ -64,7 +64,7 @@ fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
 /// The estimated number of rows that an index probe will return.
 /// Note this method is not applicable to range scans.
 fn index_row_est(tx: &Tx, table_id: TableId, cols: &ColList) -> u64 {
-    tx.ndv(table_id, cols)
+    tx.num_distinct_values(table_id, cols)
         .map_or(0, |ndv| tx.get_row_count(table_id).unwrap_or(0) / ndv)
 }
 
