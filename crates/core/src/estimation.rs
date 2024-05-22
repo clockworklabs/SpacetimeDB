@@ -76,235 +76,122 @@ fn index_row_est(tx: &Tx, table_id: TableId, cols: &ColList) -> u64 {
 #[cfg(test)]
 mod tests {
     use crate::{
-        db::relational_db::tests_utils::TestDB, error::DBError, estimation::num_rows,
-        execution_context::ExecutionContext, sql::compiler::compile_sql,
+        db::relational_db::{tests_utils::TestDB, RelationalDB},
+        error::DBError,
+        estimation::num_rows,
+        execution_context::ExecutionContext,
+        sql::compiler::compile_sql,
     };
     use spacetimedb_lib::AlgebraicType;
     use spacetimedb_sats::product;
     use spacetimedb_vm::expr::CrudExpr;
 
-    #[test]
+    fn in_mem_db() -> TestDB {
+        TestDB::in_memory().expect("failed to make test db")
+    }
+
+    fn num_rows_for(db: &RelationalDB, sql: &str) -> u64 {
+        let tx = db.begin_tx();
+        match &*compile_sql(db, &tx, sql).expect("Failed to compile sql") {
+            [CrudExpr::Query(expr)] => num_rows(&tx, expr),
+            exprs => panic!("unexpected result from compilation: {:#?}", exprs),
+        }
+    }
+
+    const NUM_T_ROWS: u64 = 10;
+    const NDV_T: u64 = 5;
+    const NUM_S_ROWS: u64 = 2;
+    const NDV_S: u64 = 2;
+
+    fn create_table_t(db: &RelationalDB, indexed: bool) {
+        let indexes = &[(0.into(), "a")];
+        let indexes = if indexed { indexes } else { &[] as &[_] };
+        let table_id = db
+            .create_table_for_test("T", &["a", "b"].map(|n| (n, AlgebraicType::U64)), indexes)
+            .expect("Failed to create table");
+
+        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
+            for i in 0..NUM_T_ROWS {
+                db.insert(tx, table_id, product![i % NDV_T, i])
+                    .expect("failed to insert into table");
+            }
+            Ok(())
+        })
+        .expect("failed to insert into table");
+    }
+
+    fn create_table_s(db: &RelationalDB, indexed: bool) {
+        let indexes = &[(0.into(), "a"), (1.into(), "c")];
+        let indexes = if indexed { indexes } else { &[] as &[_] };
+        let rhs = db
+            .create_table_for_test("S", &["a", "c"].map(|n| (n, AlgebraicType::U64)), indexes)
+            .expect("Failed to create table");
+
+        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
+            for i in 0..NUM_S_ROWS {
+                db.insert(tx, rhs, product![i, i]).expect("failed to insert into table");
+            }
+            Ok(())
+        })
+        .expect("failed to insert into table");
+    }
+
     /// Cardinality estimation for an index lookup depends only on
     /// (1) the total number of rows,
     /// (2) the number of distinct values.
+    #[test]
     fn cardinality_estimation_index_lookup() {
-        let db = TestDB::in_memory().expect("failed to make test db");
-
-        let table_id = db
-            .create_table_for_test(
-                "T",
-                &[("a", AlgebraicType::U8), ("b", AlgebraicType::U8)],
-                &[(0.into(), "a")],
-            )
-            .expect("Failed to create table");
-
-        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
-            for i in 0u8..10 {
-                db.insert(tx, table_id, product!(i % 5, i))
-                    .expect("failed to insert into table");
-            }
-            Ok(())
-        })
-        .expect("failed to insert into table");
-
-        let tx = db.begin_tx();
-        let sql = "select * from T where a = 0";
-        let exp = compile_sql(&db, &tx, sql).expect("Failed to compile sql").remove(0);
-
-        let CrudExpr::Query(expr) = exp else {
-            panic!("unexpected result from compilation: {:#?}", exp);
-        };
-
-        assert_eq!(2, num_rows(&tx, &expr));
+        let db = in_mem_db();
+        create_table_t(&db, true);
+        assert_eq!(NUM_T_ROWS / NDV_T, num_rows_for(&db, "select * from T where a = 0"));
     }
 
-    #[test]
     /// We estimate an index range to return all input rows.
+    #[test]
     fn cardinality_estimation_index_range() {
-        let db = TestDB::in_memory().expect("failed to make test db");
-
-        let table_id = db
-            .create_table_for_test(
-                "T",
-                &[("a", AlgebraicType::U8), ("b", AlgebraicType::U8)],
-                &[(0.into(), "a")],
-            )
-            .expect("Failed to create table");
-
-        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
-            for i in 0u8..10 {
-                db.insert(tx, table_id, product!(i % 5, i))
-                    .expect("failed to insert into table");
-            }
-            Ok(())
-        })
-        .expect("failed to insert into table");
-
-        let tx = db.begin_tx();
-        let sql = "select * from T where a > 0 and a < 2";
-        let exp = compile_sql(&db, &tx, sql).expect("Failed to compile sql").remove(0);
-
-        let CrudExpr::Query(expr) = exp else {
-            panic!("unexpected result from compilation: {:#?}", exp);
-        };
-
-        assert_eq!(10, num_rows(&tx, &expr));
+        let db = in_mem_db();
+        create_table_t(&db, true);
+        assert_eq!(NUM_T_ROWS, num_rows_for(&db, "select * from T where a > 0 and a < 2"));
     }
 
-    #[test]
     /// We estimate a selection on a non-indexed column to return all input rows.
+    #[test]
     fn select_cardinality_estimation() {
-        let db = TestDB::in_memory().expect("failed to make test db");
-
-        let table_id = db
-            .create_table_for_test(
-                "T",
-                &[("a", AlgebraicType::U8), ("b", AlgebraicType::U8)],
-                &[(0.into(), "a")],
-            )
-            .expect("Failed to create table");
-
-        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
-            for i in 0u8..10 {
-                db.insert(tx, table_id, product!(i % 5, i))
-                    .expect("failed to insert into table");
-            }
-            Ok(())
-        })
-        .expect("failed to insert into table");
-
-        let tx = db.begin_tx();
-        let sql = "select * from T where b = 0";
-        let exp = compile_sql(&db, &tx, sql).expect("Failed to compile sql").remove(0);
-
-        let CrudExpr::Query(expr) = exp else {
-            panic!("unexpected result from compilation: {:#?}", exp);
-        };
-
-        assert_eq!(10, num_rows(&tx, &expr));
+        let db = in_mem_db();
+        create_table_t(&db, true);
+        assert_eq!(NUM_T_ROWS, num_rows_for(&db, "select * from T where b = 0"));
     }
 
-    #[test]
     /// We estimate a projection to return all input rows.
+    #[test]
     fn project_cardinality_estimation() {
-        let db = TestDB::in_memory().expect("failed to make test db");
-
-        let table_id = db
-            .create_table_for_test(
-                "T",
-                &[("a", AlgebraicType::U8), ("b", AlgebraicType::U8)],
-                &[(0.into(), "a")],
-            )
-            .expect("Failed to create table");
-
-        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
-            for i in 0u8..10 {
-                db.insert(tx, table_id, product!(i % 5, i))
-                    .expect("failed to insert into table");
-            }
-            Ok(())
-        })
-        .expect("failed to insert into table");
-
-        let tx = db.begin_tx();
-        let sql = "select a from T";
-        let exp = compile_sql(&db, &tx, sql).expect("Failed to compile sql").remove(0);
-
-        let CrudExpr::Query(expr) = exp else {
-            panic!("unexpected result from compilation: {:#?}", exp);
-        };
-
-        assert_eq!(10, num_rows(&tx, &expr));
+        let db = in_mem_db();
+        create_table_t(&db, true);
+        assert_eq!(NUM_T_ROWS, num_rows_for(&db, "select a from T"));
     }
 
-    #[test]
     /// We estimate an inner join to return the product of its input sizes.
+    #[test]
     fn cardinality_estimation_inner_join() {
-        let db = TestDB::in_memory().expect("failed to make test db");
-
-        let lhs = db
-            .create_table_for_test("T", &[("a", AlgebraicType::U8), ("b", AlgebraicType::U8)], &[])
-            .expect("Failed to create table");
-
-        let rhs = db
-            .create_table_for_test("S", &[("a", AlgebraicType::U8), ("c", AlgebraicType::U8)], &[])
-            .expect("Failed to create table");
-
-        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
-            for i in 0u8..10 {
-                db.insert(tx, lhs, product!(i % 5, i))
-                    .expect("failed to insert into table");
-            }
-            Ok(())
-        })
-        .expect("failed to insert into table");
-
-        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
-            for i in 0u8..2 {
-                db.insert(tx, rhs, product!(i, i)).expect("failed to insert into table");
-            }
-            Ok(())
-        })
-        .expect("failed to insert into table");
-
-        let tx = db.begin_tx();
-        let sql = "select T.* from T join S on T.a = S.a where S.c = 0";
-        let exp = compile_sql(&db, &tx, sql).expect("Failed to compile sql").remove(0);
-
-        let CrudExpr::Query(expr) = exp else {
-            panic!("unexpected result from compilation: {:#?}", exp);
-        };
-
-        assert_eq!(20, num_rows(&tx, &expr));
+        let db = in_mem_db();
+        create_table_t(&db, false);
+        create_table_s(&db, false);
+        assert_eq!(
+            NUM_T_ROWS * NUM_S_ROWS, // => 20
+            num_rows_for(&db, "select T.* from T join S on T.a = S.a where S.c = 0")
+        );
     }
 
-    #[test]
     /// An index join estimates its output cardinality in the same way.
     /// As the product of its estimated input cardinalities.
+    #[test]
     fn cardinality_estimation_index_join() {
-        let db = TestDB::in_memory().expect("failed to make test db");
-
-        let lhs = db
-            .create_table_for_test(
-                "T",
-                &[("a", AlgebraicType::U8), ("b", AlgebraicType::U8)],
-                &[(0.into(), "a")],
-            )
-            .expect("Failed to create table");
-
-        let rhs = db
-            .create_table_for_test(
-                "S",
-                &[("a", AlgebraicType::U8), ("c", AlgebraicType::U8)],
-                &[(0.into(), "a"), (1.into(), "c")],
-            )
-            .expect("Failed to create table");
-
-        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
-            for i in 0u8..10 {
-                db.insert(tx, lhs, product!(i % 5, i))
-                    .expect("failed to insert into table");
-            }
-            Ok(())
-        })
-        .expect("failed to insert into table");
-
-        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<(), DBError> {
-            for i in 0u8..2 {
-                db.insert(tx, rhs, product!(i, i)).expect("failed to insert into table");
-            }
-            Ok(())
-        })
-        .expect("failed to insert into table");
-
-        let tx = db.begin_tx();
-        let sql = "select T.* from T join S on T.a = S.a where S.c = 0";
-        let exp = compile_sql(&db, &tx, sql).expect("Failed to compile sql").remove(0);
-
-        let CrudExpr::Query(expr) = exp else {
-            panic!("unexpected result from compilation: {:#?}", exp);
-        };
-
-        assert_eq!(2, num_rows(&tx, &expr));
+        let db = in_mem_db();
+        create_table_t(&db, true);
+        create_table_s(&db, true);
+        assert_eq!(
+            NUM_T_ROWS / NDV_T * NUM_S_ROWS / NDV_S, // => 2
+            num_rows_for(&db, "select T.* from T join S on T.a = S.a where S.c = 0")
+        );
     }
 }
