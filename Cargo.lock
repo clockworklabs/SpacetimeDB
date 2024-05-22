@@ -4398,6 +4398,7 @@ dependencies = [
  "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-data-structures",
+ "spacetimedb-fs-utils",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-standalone",
@@ -4606,6 +4607,13 @@ dependencies = [
  "spacetimedb-sats",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "spacetimedb-fs-utils"
+version = "0.9.0"
+dependencies = [
+ "anyhow",
 ]
 
 [[package]]

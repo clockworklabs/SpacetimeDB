@@ -1,0 +1,10 @@
+[package]
+name = "spacetimedb-fs-utils"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "LICENSE"
+description = "Assorted utilities for filesystem operations used in SpacetimeDB"
+
+[dependencies]
+anyhow.workspace = true
