@@ -23,7 +23,7 @@ if [ $DRY_RUN != 1 ] ; then
 fi
 
 BASEDIR=$(pwd)
-declare -a CRATES=("metrics" "primitives" "bindings-macro" "bindings-sys" "sats" "lib" "bindings" "vm" "client-api-messages" "core" "client-api" "standalone" "cli" "sdk")
+declare -a CRATES=("metrics" "data-structures" "primitives" "bindings-macro" "bindings-sys" "sats" "lib" "bindings" "table" "vm" "client-api-messages" "commitlog" "durability" "core" "client-api" "standalone" "cli" "sdk")
 
 for crate in "${CRATES[@]}" ; do
 	if [ ! -d "${BASEDIR}/crates/${crate}" ] ; then
@@ -37,7 +37,7 @@ for crate in "${CRATES[@]}" ; do
 	if [ $DRY_RUN == 1 ] ; then
 		cargo publish --dry-run
 	else
-		cargo publish
+		cargo publish --allow-dirty
 	fi
 done
 
