@@ -1,0 +1,1 @@
+../../quickstart-chat/module_bindings/mod.rs
