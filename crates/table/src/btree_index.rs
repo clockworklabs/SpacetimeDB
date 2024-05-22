@@ -318,19 +318,19 @@ impl TypedIndex {
 
     fn num_keys(&self) -> usize {
         match self {
-            TypedIndex::Bool(ref this) => this.num_keys(),
-            TypedIndex::U8(ref this) => this.num_keys(),
-            TypedIndex::I8(ref this) => this.num_keys(),
-            TypedIndex::U16(ref this) => this.num_keys(),
-            TypedIndex::I16(ref this) => this.num_keys(),
-            TypedIndex::U32(ref this) => this.num_keys(),
-            TypedIndex::I32(ref this) => this.num_keys(),
-            TypedIndex::U64(ref this) => this.num_keys(),
-            TypedIndex::I64(ref this) => this.num_keys(),
-            TypedIndex::U128(ref this) => this.num_keys(),
-            TypedIndex::I128(ref this) => this.num_keys(),
-            TypedIndex::String(ref this) => this.num_keys(),
-            TypedIndex::AlgebraicValue(ref this) => this.num_keys(),
+            TypedIndex::Bool(this) => this.num_keys(),
+            TypedIndex::U8(this) => this.num_keys(),
+            TypedIndex::I8(this) => this.num_keys(),
+            TypedIndex::U16(this) => this.num_keys(),
+            TypedIndex::I16(this) => this.num_keys(),
+            TypedIndex::U32(this) => this.num_keys(),
+            TypedIndex::I32(this) => this.num_keys(),
+            TypedIndex::U64(this) => this.num_keys(),
+            TypedIndex::I64(this) => this.num_keys(),
+            TypedIndex::U128(this) => this.num_keys(),
+            TypedIndex::I128(this) => this.num_keys(),
+            TypedIndex::String(this) => this.num_keys(),
+            TypedIndex::AlgebraicValue(this) => this.num_keys(),
         }
     }
 }
