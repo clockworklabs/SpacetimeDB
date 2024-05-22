@@ -1,7 +1,6 @@
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem};
 use convert_case::{Case, Casing};
-use std::collections::BTreeSet;
 use spacetimedb_lib::sats::db::def::TableSchema;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
@@ -9,6 +8,7 @@ use spacetimedb_lib::sats::{
 };
 use spacetimedb_lib::{ReducerDef, TableDesc};
 use spacetimedb_primitives::ColList;
+use std::collections::BTreeSet;
 use std::fmt::{self, Write};
 use std::ops::Deref;
 
