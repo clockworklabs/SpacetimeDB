@@ -684,7 +684,8 @@ impl ModuleHost {
         caller_address: Address,
         connected: bool,
     ) -> Result<(), ReducerCallError> {
-        self.inner
+        let _ = self
+            .inner
             .record_identity_connected_disconnected(caller_identity, caller_address, connected);
         // TODO: DUNDER consts are in wasm_common, so seems weird to use them
         // here. But maybe there should be dunders for this?

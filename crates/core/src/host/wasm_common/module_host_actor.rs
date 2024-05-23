@@ -12,6 +12,7 @@ use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record, SystemLogger};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::system_tables::{StClientsRow, ST_CLIENTS_ID};
 use crate::db::datastore::traits::IsolationLevel;
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use crate::execution_context::{self, ExecutionContext, ReducerContext};
@@ -315,7 +316,19 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         caller_address: Address,
         connected: bool,
     ) -> Result<(), DBError> {
-        Ok(())
+        let db = &*self.database_instance_context.relational_db;
+        let row = &StClientsRow {
+            identity: caller_identity,
+            address: caller_address,
+        };
+        db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
+            if connected {
+                db.insert(tx, ST_CLIENTS_ID, row.into()).unwrap();
+            } else {
+                db.delete_by_rel(tx, ST_CLIENTS_ID, [row.into()]);
+            }
+            Ok(())
+        })
     }
 }
 

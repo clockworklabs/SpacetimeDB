@@ -1,5 +1,6 @@
 use crate::error::{DBError, TableError};
 use core::fmt;
+use spacetimedb_lib::{bsatn, Address, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::*;
@@ -26,12 +27,16 @@ pub(crate) const ST_CONSTRAINTS_ID: TableId = TableId(4);
 /// the database
 pub(crate) const ST_MODULE_ID: TableId = TableId(5);
 
+/// The static ID of the table that defines connected clients
+pub(crate) const ST_CLIENTS_ID: TableId = TableId(6);
+
 pub(crate) const ST_TABLES_NAME: &str = "st_table";
 pub(crate) const ST_COLUMNS_NAME: &str = "st_columns";
 pub(crate) const ST_SEQUENCES_NAME: &str = "st_sequence";
 pub(crate) const ST_INDEXES_NAME: &str = "st_indexes";
 pub(crate) const ST_CONSTRAINTS_NAME: &str = "st_constraints";
 pub(crate) const ST_MODULE_NAME: &str = "st_module";
+pub(crate) const ST_CLIENTS_NAME: &str = "st_clients";
 
 /// Reserved range of sequence values used for system tables.
 ///
@@ -58,14 +63,14 @@ pub enum SystemTable {
     st_indexes,
     st_constraints,
 }
-
-pub(crate) fn system_tables() -> [TableSchema; 6] {
+pub(crate) fn system_tables() -> [TableSchema; 7] {
     [
         st_table_schema(),
         st_columns_schema(),
         st_indexes_schema(),
         st_constraints_schema(),
         st_module_schema(),
+        st_clients_schema(),
         // Is important this is always last, so the starting sequence for each
         // system table is correct.
         st_sequences_schema(),
@@ -78,7 +83,8 @@ pub(crate) const ST_COLUMNS_IDX: usize = 1;
 pub(crate) const ST_INDEXES_IDX: usize = 2;
 pub(crate) const ST_CONSTRAINTS_IDX: usize = 3;
 pub(crate) const ST_MODULE_IDX: usize = 4;
-pub(crate) const ST_SEQUENCES_IDX: usize = 5;
+pub(crate) const ST_SEQUENCES_IDX: usize = 6;
+pub(crate) const ST_CLIENT_IDX: usize = 5;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -176,6 +182,11 @@ st_fields_enum!(enum StModuleFields {
     "program_hash", ProgramHash = 0,
     "kind", Kind = 1,
     "epoch", Epoch = 2,
+});
+// WARNING: For a stable schema, don't change the field names and discriminants.
+st_fields_enum!(enum StClientsFields {
+    "identity", Identity = 0,
+    "address", Address = 1,
 });
 
 /// System Table [ST_TABLES_NAME]
@@ -322,6 +333,24 @@ fn st_module_schema() -> TableSchema {
     )
     .with_type(StTableType::System)
     .into_schema(ST_MODULE_ID)
+}
+
+/// System table [ST_CLIENTS_NAME]
+///
+// identity                                                                                | address
+// -----------------------------------------------------------------------------------------+--------------------------------------------------------
+//  (__identity_bytes = 0x7452047061ea2502003412941d85a42f89b0702588b823ab55fc4f12e9ea8363) | (__address_bytes = 0x6bdea3ab517f5857dc9b1b5fe99e1b14)
+fn st_clients_schema() -> TableSchema {
+    TableDef::new(
+        ST_CLIENTS_NAME.into(),
+        vec![
+            ColumnDef::sys(StClientsFields::Identity.name(), Identity::get_type()),
+            ColumnDef::sys(StClientsFields::Address.name(), Address::get_type()),
+        ],
+    )
+    .with_type(StTableType::System)
+    .with_column_index(col_list![StClientsFields::Identity, StClientsFields::Address], true)
+    .into_schema(ST_CLIENTS_ID)
 }
 
 pub(crate) fn table_name_is_system(table_name: &str) -> bool {
@@ -673,6 +702,36 @@ impl From<&StModuleRow> for ProductValue {
         }: &StModuleRow,
     ) -> Self {
         product![AlgebraicValue::Bytes(program_hash.as_slice().into()), *kind, *epoch,]
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StClientsRow {
+    pub(crate) identity: Identity,
+    pub(crate) address: Address,
+}
+
+impl TryFrom<RowRef<'_>> for StClientsRow {
+    type Error = DBError;
+
+    fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
+        Ok(Self {
+            identity: row.read_col::<AlgebraicValue>(StClientsFields::Identity).map(|value| {
+                // TODO fix this
+                let a = spacetimedb_sats::satn::Satn::to_satn(&value);
+                bsatn::from_slice(a.as_bytes()).unwrap()
+            })?,
+            address: row.read_col::<AlgebraicValue>(StClientsFields::Address).map(|value| {
+                let a = spacetimedb_sats::satn::Satn::to_satn(&value);
+                bsatn::from_slice(a.as_bytes()).unwrap()
+            })?,
+        })
+    }
+}
+
+impl From<&StClientsRow> for ProductValue {
+    fn from(x: &StClientsRow) -> Self {
+        product![x.identity, x.address]
     }
 }
 
