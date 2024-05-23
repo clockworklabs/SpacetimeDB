@@ -315,6 +315,24 @@ impl TypedIndex {
             TypedIndex::AlgebraicValue(ref this) => this.len(),
         }
     }
+
+    fn num_keys(&self) -> usize {
+        match self {
+            TypedIndex::Bool(this) => this.num_keys(),
+            TypedIndex::U8(this) => this.num_keys(),
+            TypedIndex::I8(this) => this.num_keys(),
+            TypedIndex::U16(this) => this.num_keys(),
+            TypedIndex::I16(this) => this.num_keys(),
+            TypedIndex::U32(this) => this.num_keys(),
+            TypedIndex::I32(this) => this.num_keys(),
+            TypedIndex::U64(this) => this.num_keys(),
+            TypedIndex::I64(this) => this.num_keys(),
+            TypedIndex::U128(this) => this.num_keys(),
+            TypedIndex::I128(this) => this.num_keys(),
+            TypedIndex::String(this) => this.num_keys(),
+            TypedIndex::AlgebraicValue(this) => this.num_keys(),
+        }
+    }
 }
 
 /// A B-Tree based index on a set of [`ColId`]s of a table.
@@ -431,6 +449,11 @@ impl BTreeIndex {
     /// rather than constructing a new `BTreeIndex`.
     pub fn clear(&mut self) {
         self.idx.clear();
+    }
+
+    /// The number of unique keys in this index.
+    pub fn num_keys(&self) -> usize {
+        self.idx.num_keys()
     }
 }
 

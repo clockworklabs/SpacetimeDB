@@ -51,6 +51,11 @@ impl<K: Ord, V: Ord> MultiMap<K, V> {
         }
     }
 
+    /// Returns the number of unique keys in the multimap.
+    pub fn num_keys(&self) -> usize {
+        self.map.len()
+    }
+
     /// Returns the total number of entries in the multimap.
     #[allow(unused)] // No use for this currently.
     pub fn len(&self) -> usize {
