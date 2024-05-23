@@ -23,6 +23,10 @@ pub const SETUP_DUNDER: &str = "__setup__";
 pub const INIT_DUNDER: &str = "__init__";
 /// the reducer with this name is invoked when updating the database
 pub const UPDATE_DUNDER: &str = "__update__";
+/// The reducer with this name is invoked when a client connects.
+pub const CLIENT_CONNECTED_DUNDER: &str = "__identity_connected__";
+/// The reducer with this name is invoked when a client disconnects.
+pub const CLIENT_DISCONNECTED_DUNDER: &str = "__identity_disconnected__";
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[allow(unused)]

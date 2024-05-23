@@ -1,5 +1,5 @@
 use super::database_logger::DatabaseLogger;
-use crate::db::relational_db::RelationalDB;
+use crate::db::relational_db::{ConnectedClients, RelationalDB};
 use crate::db::{Config, Storage};
 use crate::error::DBError;
 use crate::messages::control_db::Database;
@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 pub type Result<T> = anyhow::Result<T>;
 
+/// A "live" database.
 #[derive(Clone)]
 pub struct DatabaseInstanceContext {
     pub database: Database,
@@ -21,31 +22,47 @@ pub struct DatabaseInstanceContext {
 }
 
 impl DatabaseInstanceContext {
+    /// Construct a [`DatabaseInstanceContext`] from a [`Database`] and
+    /// additional configuration.
+    ///
+    /// Alongside `Self`, the set of clients who were connected as of the most
+    /// recent transaction is returned as a [`ConnectedClients`]. If the value
+    /// `Some`, the set is non-empty. `__disconnect__` should be called for
+    /// each entry.
     pub fn from_database(
         config: Config,
         database: Database,
         instance_id: u64,
         root_db_path: PathBuf,
         rt: tokio::runtime::Handle,
-    ) -> Result<Self> {
+    ) -> Result<(Self, Option<ConnectedClients>)> {
         let mut db_path = root_db_path;
         db_path.extend([&*database.address.to_hex(), &*instance_id.to_string()]);
         db_path.push("database");
 
         let log_path = DatabaseLogger::filepath(&database.address, instance_id);
-        let relational_db = Arc::new(match config.storage {
-            Storage::Memory => RelationalDB::open(db_path, database.address, None)?,
-            Storage::Disk => RelationalDB::local(db_path, rt, database.address)?,
-        });
+        let (relational_db, dangling_connections) = match config.storage {
+            Storage::Memory => {
+                let db = RelationalDB::open(db_path, database.address, None)?;
+                (Arc::new(db), None)
+            }
+            Storage::Disk => {
+                let (db, connected_clients) = RelationalDB::local(db_path, rt, database.address)?;
+                let connected_clients = (!connected_clients.is_empty()).then_some(connected_clients);
+                (Arc::new(db), connected_clients)
+            }
+        };
         let subscriptions = ModuleSubscriptions::new(relational_db.clone(), database.identity);
 
-        Ok(Self {
+        let dbic = Self {
             database,
             database_instance_id: instance_id,
             logger: Arc::new(DatabaseLogger::open(log_path)),
             subscriptions,
             relational_db,
-        })
+        };
+
+        Ok((dbic, dangling_connections))
     }
 
     pub fn scheduler_db_path(&self, root_db_path: PathBuf) -> PathBuf {
