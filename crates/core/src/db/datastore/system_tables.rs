@@ -83,9 +83,8 @@ pub(crate) const ST_COLUMNS_IDX: usize = 1;
 pub(crate) const ST_INDEXES_IDX: usize = 2;
 pub(crate) const ST_CONSTRAINTS_IDX: usize = 3;
 pub(crate) const ST_MODULE_IDX: usize = 4;
-pub(crate) const ST_SEQUENCES_IDX: usize = 6;
 pub(crate) const ST_CLIENT_IDX: usize = 5;
-
+pub(crate) const ST_SEQUENCES_IDX: usize = 6;
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
         #[derive(Copy, Clone, Debug)]
@@ -718,12 +717,12 @@ impl TryFrom<RowRef<'_>> for StClientsRow {
         Ok(Self {
             identity: row.read_col::<AlgebraicValue>(StClientsFields::Identity).map(|value| {
                 // TODO fix this
-                let a = spacetimedb_sats::satn::Satn::to_satn(&value);
-                bsatn::from_slice(a.as_bytes()).unwrap()
+                let a =  bsatn::to_vec(&row).unwrap();
+                bsatn::from_slice(&a).unwrap()
             })?,
             address: row.read_col::<AlgebraicValue>(StClientsFields::Address).map(|value| {
-                let a = spacetimedb_sats::satn::Satn::to_satn(&value);
-                bsatn::from_slice(a.as_bytes()).unwrap()
+                let a = bsatn::to_vec(&row).unwrap();
+                bsatn::from_slice(&a).unwrap()
             })?,
         })
     }

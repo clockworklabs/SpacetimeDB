@@ -323,7 +323,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         };
         db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
             if connected {
-                db.insert(tx, ST_CLIENTS_ID, row.into()).unwrap();
+                db.insert(tx, ST_CLIENTS_ID, row.into())?;
             } else {
                 db.delete_by_rel(tx, ST_CLIENTS_ID, [row.into()]);
             }
