@@ -310,7 +310,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         })
     }
 
-    fn record_identity_connected_disconnected(
+    fn update_st_clients(
         &self,
         caller_identity: Identity,
         caller_address: Address,

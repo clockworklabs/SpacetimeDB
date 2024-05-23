@@ -18,6 +18,7 @@ use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
 use derive_more::{From, Into};
+use futures::future::err;
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
 use itertools::{Either, Itertools};
@@ -370,7 +371,7 @@ pub trait Module: Send + Sync + 'static {
         query: String,
     ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError>;
     fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error>;
-    fn record_identity_connected_disconnected(
+    fn update_st_clients(
         &self,
         caller_identity: Identity,
         caller_address: Address,
@@ -474,7 +475,7 @@ trait DynModuleHost: Send + Sync + 'static {
     fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error>;
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
-    fn record_identity_connected_disconnected(
+    fn update_st_clients(
         &self,
         caller_identity: Identity,
         caller_address: Address,
@@ -564,14 +565,14 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
         self.instance_pool.closed()
     }
 
-    fn record_identity_connected_disconnected(
+    fn update_st_clients(
         &self,
         caller_identity: Identity,
         caller_address: Address,
         connected: bool,
     ) -> Result<(), DBError> {
         self.module
-            .record_identity_connected_disconnected(caller_identity, caller_address, connected)
+            .update_st_clients(caller_identity, caller_address, connected)
     }
 }
 
@@ -684,56 +685,75 @@ impl ModuleHost {
         caller_address: Address,
         connected: bool,
     ) -> Result<(), ReducerCallError> {
-        let _ = self
-            .inner
-            .record_identity_connected_disconnected(caller_identity, caller_address, connected);
-        // TODO: DUNDER consts are in wasm_common, so seems weird to use them
-        // here. But maybe there should be dunders for this?
         let reducer_name = if connected {
             CLIENT_CONNECTED_DUNDER
         } else {
             CLIENT_DISCONNECTED_DUNDER
         };
 
-        self.call_reducer_inner(
-            caller_identity,
-            Some(caller_address),
-            None,
-            None,
-            None,
-            reducer_name,
-            ReducerArgs::Nullary,
-        )
-        .await
-        .map(drop)
-        .or_else(|e| match e {
-            // If the module doesn't define connected or disconnected, commit
-            // an empty transaction to ensure we always have those events
-            // paired in the commitlog.
-            //
-            // This is necessary to be able to disconnect clients after a server
-            // crash.
-            ReducerCallError::NoSuchReducer => {
-                let db = &self.inner.dbic().relational_db;
-                db.with_auto_commit(
-                    &ExecutionContext::reducer(
-                        db.address(),
-                        ReducerContext {
-                            name: reducer_name.to_owned(),
-                            caller_identity,
-                            caller_address,
-                            timestamp: Timestamp::now(),
-                            arg_bsatn: Bytes::new(),
-                        },
-                    ),
-                    |_| anyhow::Ok(()),
-                )
-                .ok();
+        let result = self
+            .call_reducer_inner(
+                caller_identity,
+                Some(caller_address),
+                None,
+                None,
+                None,
+                reducer_name,
+                ReducerArgs::Nullary,
+            )
+            .await
+            .map(drop)
+            .or_else(|e| match e {
+                // If the module doesn't define connected or disconnected, commit
+                // an empty transaction to ensure we always have those events
+                // paired in the commitlog.
+                //
+                // This is necessary to be able to disconnect clients after a server
+                // crash.
+                ReducerCallError::NoSuchReducer => {
+                    let db = &self.inner.dbic().relational_db;
+                    db.with_auto_commit(
+                        &ExecutionContext::reducer(
+                            db.address(),
+                            ReducerContext {
+                                name: reducer_name.to_owned(),
+                                caller_identity,
+                                caller_address,
+                                timestamp: Timestamp::now(),
+                                arg_bsatn: Bytes::new(),
+                            },
+                        ),
+                        |_| anyhow::Ok(()),
+                    )
+                    .ok();
 
-                Ok(())
-            }
-            e => Err(e),
-        })
+                    Ok(())
+                }
+                e => Err(e),
+            });
+
+        // If `__identity_connected__` fails, do not add the caller to `st_clients`.
+        //However, we want to ensure deletion even if `__identity_disconnected__` fails.
+        //This leads to a problem where updating `st_clients` needs to happen in a separate transaction, which compromises atomicity.
+
+        // Ignoring the result should be safe because `update_st_clients` only involves SpacetimeDB logic and system tables.
+        //A failure in the transaction should be considered a SpacetimeDB bug.
+        //Populating an error could lead to mismatched connect/disconnect event pairs.
+        if !(connected && result.is_err()) {
+            let _ = self
+                .inner
+                .update_st_clients(caller_identity, caller_address, connected)
+                .map_err(|e| {
+                    log::error!(
+                        "Update to St_clients table failed with params: Identity {}, address{}, connected {}",
+                        caller_address,
+                        caller_identity,
+                        connected
+                    );
+                    e
+                });
+        }
+        result
     }
 
     async fn call_reducer_inner(
