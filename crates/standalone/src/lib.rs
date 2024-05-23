@@ -56,7 +56,7 @@ impl StandaloneEnv {
             config,
             ProgramStorage::external({
                 let object_db = object_db.clone();
-                move |hash| object_db.get_object(hash).map(|obj| obj.map(Into::into))
+                move |hash| std::future::ready(object_db.get_object(&hash).map(|obj| obj.map(Into::into)))
             }),
             energy_monitor,
         );
