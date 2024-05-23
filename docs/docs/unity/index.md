@@ -14,7 +14,7 @@ Get started with the core client-server setup. For part 2, you may choose your s
 
 - [Part 1 - Setup](/docs/unity/part-1)
 - [Part 2a - Server (Rust)](/docs/unity/part-2a-rust)
-- [Part 2b - Server (C#)](/docs/unity/part-2b-csharp)
+- [Part 2b - Server (C#)](/docs/unity/part-2b-c-sharp)
 - [Part 3 - Client](/docs/unity/part-3)
 
 ## Unity Tutorial - Advanced
