@@ -17,20 +17,28 @@ pub struct Lockfile {
 }
 
 impl Lockfile {
-    /// Acquire an exclusive lock on the configuration file `config_path`.
+    /// Acquire an exclusive lock on the file `file_path`.
     ///
-    /// `config_path` should be the full name of the SpacetimeDB configuration file.
+    /// `file_path` should be the full path of the file to which to acquire exclusive access.
     pub fn for_file(file_path: &Path) -> anyhow::Result<Self> {
         // Ensure the directory exists before attempting to create the lockfile.
         create_parent_dir(file_path)?;
 
-        let mut path = file_path.to_path_buf();
-        path.set_extension("lock");
+        let path = Self::lock_path(file_path);
+
         // Open with `create_new`, which fails if the file already exists.
         std::fs::File::create_new(&path)
             .with_context(|| "Unable to acquire lock on file {file_path:?}: failed to create lockfile {path:?}")?;
 
         Ok(Lockfile { path })
+    }
+
+    /// Returns the path of a lockfile for the file `file_path`,
+    /// without actually acquiring the lock.
+    pub fn lock_path(file_path: &Path) -> PathBuf {
+        let mut path = file_path.to_path_buf();
+        path.set_extension("lock");
+        path
     }
 }
 

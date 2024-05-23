@@ -3,13 +3,14 @@ use spacetimedb_fs_utils::lockfile::Lockfile;
 use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize, Address};
 use spacetimedb_primitives::TableId;
 use spacetimedb_table::{
-    blob_store::{BlobHash, BlobStore},
+    blob_store::{BlobHash, BlobStore, HashMapBlobStore},
     page::Page,
     table::Table,
 };
 use std::{
+    collections::BTreeMap,
     fs::OpenOptions,
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -169,6 +170,98 @@ impl Snapshot {
         }
         Ok(())
     }
+
+    /// Read a [`Snapshot`] from the file at `path`, verify its hash, and return it.
+    ///
+    /// Fails if:
+    /// - `path` does not refer to a readable file.
+    /// - The file at `path` is corrupted,
+    ///   as detected by comparing the hash of its bytes to a hash recorded in the file.
+    fn read_from_file(path: &Path) -> anyhow::Result<Self> {
+        let mut snapshot_file = o_rdonly().open(&path)?;
+
+        let mut hash = [0; blake3::OUT_LEN];
+        snapshot_file.read_exact(&mut hash)?;
+        let hash = blake3::Hash::from_bytes(hash);
+        let mut snapshot_bsatn = vec![];
+        snapshot_file.read_to_end(&mut snapshot_bsatn)?;
+        let computed_hash = blake3::hash(&snapshot_bsatn);
+
+        if hash != computed_hash {
+            anyhow::bail!("Computed hash of snapshot file {path:?} does not match recorded hash: computed {computed_hash:?} but expected {hash:?}");
+        }
+
+        Ok(bsatn::from_slice::<Snapshot>(&snapshot_bsatn)?)
+    }
+
+    /// Construct a [`HashMapBlobStore`] containing all the blobs referenced in `self`,
+    /// reading their data from files in the `object_repo`.
+    ///
+    /// Fails if any of the object files is missing or corrupted,
+    /// as detected by comparing the hash of its bytes to the hash recorded in `self`.
+    fn reconstruct_blob_store(&self, object_repo: &DirTrie) -> anyhow::Result<HashMapBlobStore> {
+        let mut blob_store = HashMapBlobStore::default();
+
+        for BlobEntry { hash, uses } in &self.blobs {
+            let mut file = object_repo.open_entry(&hash.data, &o_rdonly())?;
+            let mut buf = Vec::with_capacity(file.metadata()?.len() as usize);
+            file.read_to_end(&mut buf)?;
+            let computed_hash = BlobHash::hash_from_bytes(&buf);
+            if *hash != computed_hash {
+                anyhow::bail!("Computed hash of large blob does not match recorded hash: computed {computed_hash:?} but expected {hash:?}");
+            }
+
+            blob_store.insert_with_uses(hash, *uses as usize, buf.into_boxed_slice());
+        }
+
+        Ok(blob_store)
+    }
+
+    /// Read all the pages referenced by `pages` from the `object_repo`.
+    ///
+    /// Fails if any of the pages files is missing or corrupted,
+    /// as detected by comparing the hash of its bytes to the hash listed in `pages`.
+    fn reconstruct_one_table_pages(object_repo: &DirTrie, pages: &[blake3::Hash]) -> anyhow::Result<Vec<Box<Page>>> {
+        pages.iter().map(|hash| {
+            let mut file = object_repo.open_entry(&hash.as_bytes(), &o_rdonly())?;
+            // TODO: avoid allocating a `Vec` here.
+            let mut buf = Vec::with_capacity(file.metadata()?.len() as usize);
+            file.read_to_end(&mut buf)?;
+            let page = bsatn::from_slice::<Box<Page>>(&buf)?;
+
+            let computed_hash = page.content_hash();
+
+            if *hash != computed_hash {
+                anyhow::bail!("Computed hash of page does not match recorded hash: computed {computed_hash:?} but expected {hash:?}");
+            }
+
+            Ok::<Box<Page>, anyhow::Error>(page)
+        }).collect()
+    }
+
+    fn reconstruct_one_table(
+        object_repo: &DirTrie,
+        TableEntry { table_id, pages }: &TableEntry,
+    ) -> anyhow::Result<(TableId, Vec<Box<Page>>)> {
+        Ok((*table_id, Self::reconstruct_one_table_pages(object_repo, pages)?))
+    }
+
+    /// Reconstruct all the table data from `self`,
+    /// reading pages from files in the `object_repo`.
+    ///
+    /// This method cannot construct [`Table`] objects
+    /// because doing so requires knowledge of the system tables' schemas
+    /// to compute the schemas of the user-defined tables.o
+    ///
+    /// Fails if any object file referenced in `self` (as a page or large blob)
+    /// is missing or corrupted,
+    /// as detected by comparing the hash of its bytes to the hash recorded in `self`.
+    fn reconstruct_tables(&self, object_repo: &DirTrie) -> anyhow::Result<BTreeMap<TableId, Vec<Box<Page>>>> {
+        self.tables
+            .iter()
+            .map(|tbl| Self::reconstruct_one_table(object_repo, tbl))
+            .collect()
+    }
 }
 
 /// A repository of snapshots of a particular database instance.
@@ -189,6 +282,12 @@ pub struct SnapshotRepository {
 fn o_excl() -> OpenOptions {
     let mut options = OpenOptions::new();
     options.create_new(true).write(true);
+    options
+}
+
+fn o_rdonly() -> OpenOptions {
+    let mut options = OpenOptions::new();
+    options.read(true);
     options
 }
 
@@ -214,7 +313,7 @@ impl SnapshotRepository {
         std::fs::create_dir_all(&snapshot_dir)?;
 
         // Create a new `DirTrie` to hold all the content-addressed objects in the snapshot.
-        let object_repo = DirTrie::open(snapshot_dir.join("objects"))?;
+        let object_repo = Self::object_repo(&snapshot_dir)?;
 
         // Build the in-memory `Snapshot` object.
         let mut snapshot = self.empty_snapshot(tx_offset);
@@ -262,4 +361,96 @@ impl SnapshotRepository {
         let file_name = format!("{tx_offset:0>20}{SNAPSHOT_FILE_EXT}");
         snapshot_dir.join(file_name)
     }
+
+    fn object_repo(snapshot_dir: &Path) -> Result<DirTrie, std::io::Error> {
+        DirTrie::open(snapshot_dir.join("objects"))
+    }
+
+    /// Read a snapshot contained in self referring to `tx_offset`,
+    /// verify its hashes,
+    /// and parse it into an in-memory structure [`ReconstructedSnapshot`]
+    /// which can be used to build a `CommittedState`.
+    ///
+    /// This method cannot construct [`Table`] objects
+    /// because doing so requires knowledge of the system tables' schemas
+    /// to compute the schemas of the user-defined tables.
+    ///
+    /// Fails if:
+    /// - No snapshot exists in `self` for `tx_offset`.
+    /// - The snapshot is incomplete, as detected by its lockfile still existing.
+    /// - Any object file (page or large blob) referenced by the snapshot file
+    ///   is missing or corrupted,
+    ///   as detected by comparing the hash of its bytes to the hash recorded in the snapshot file.
+    /// - The snapshot file's magic number does not match [`MAGIC`].
+    /// - The snapshot file's version does not match [`CURRENT_SNAPSHOT_VERSION`].
+    ///
+    /// The following conditions are not detected or considered as errors:
+    /// - The snapshot file's database address or instance ID do not match those in `self`.
+    /// - The snapshot file's module ABI version does not match [`CURRENT_MODULE_ABI_VERSION`].
+    /// - The snapshot file's recorded transaction offset does not match `tx_offset`.
+    ///
+    /// This means that callers must inspect the returned [`ReconstructedSnapshot`]
+    /// and verify that they can handle its contained database address, instance ID, module ABI version and transaction offset.
+    pub fn read_snapshot(&self, tx_offset: TxOffset) -> anyhow::Result<ReconstructedSnapshot> {
+        let snapshot_dir = self.snapshot_dir_path(tx_offset);
+        let lockfile = Lockfile::lock_path(&snapshot_dir);
+        if lockfile.try_exists()? {
+            anyhow::bail!("Refusing to reconstruct snapshot {snapshot_dir:?}: lockfile {lockfile:?} exists");
+        }
+
+        let snapshot_file_path = Self::snapshot_file_path(tx_offset, &snapshot_dir);
+        let snapshot = Snapshot::read_from_file(&snapshot_file_path)?;
+
+        if snapshot.magic != MAGIC {
+            anyhow::bail!(
+                "Refusing to reconstruct snapshot {snapshot_dir:?}: magic number {:?} ({:?}) does not match expected {:?} ({MAGIC:?})",
+                String::from_utf8_lossy(&snapshot.magic),
+                snapshot.magic,
+                std::str::from_utf8(&MAGIC).unwrap(),
+            );
+        }
+
+        if snapshot.version != CURRENT_SNAPSHOT_VERSION {
+            anyhow::bail!(
+                "Refusing to reconstruct snapshot {snapshot_dir:?}: snapshot file version {} does not match supported version {CURRENT_SNAPSHOT_VERSION}",
+                snapshot.version,
+            );
+        }
+
+        let object_repo = Self::object_repo(&snapshot_dir)?;
+
+        let blob_store = snapshot.reconstruct_blob_store(&object_repo)?;
+
+        let tables = snapshot.reconstruct_tables(&object_repo)?;
+
+        Ok(ReconstructedSnapshot {
+            database_address: snapshot.database_address,
+            database_instance_id: snapshot.database_instance_id,
+            tx_offset: snapshot.tx_offset,
+            module_abi_versino: snapshot.module_abi_version,
+            blob_store,
+            tables,
+        })
+    }
+}
+
+pub struct ReconstructedSnapshot {
+    /// The address of the snapshotted database.
+    pub database_address: Address,
+    /// The instance ID of the snapshotted database.
+    pub database_instance_id: u64,
+    /// The transaction offset of the state this snapshot reflects.
+    pub tx_offset: TxOffset,
+    /// ABI version of the module from which this snapshot was created, as [MAJOR, MINOR].
+    pub module_abi_versino: [u16; 2],
+
+    /// The blob store of the snapshotted state.
+    pub blob_store: HashMapBlobStore,
+
+    /// All the tables from the snapshotted state, sans schema information and indexes.
+    ///
+    /// This includes the system tables,
+    /// so the schema of user-defined tables can be recovered
+    /// given knowledge of the schema of `st_table` and `st_column`.
+    pub tables: BTreeMap<TableId, Vec<Box<Page>>>,
 }

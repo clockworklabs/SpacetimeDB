@@ -29,7 +29,7 @@ impl BlobHash {
     pub const SIZE: usize = 32;
 
     /// Returns the blob hash for `bytes`.
-    fn hash_from_bytes(bytes: &[u8]) -> Self {
+    pub fn hash_from_bytes(bytes: &[u8]) -> Self {
         let data = hash(bytes).into();
         Self { data }
     }
@@ -76,6 +76,11 @@ pub trait BlobStore: Sync {
     /// which can be used in [`retrieve_blob`] to fetch it.
     fn insert_blob(&mut self, bytes: &[u8]) -> BlobHash;
 
+    /// Insert `hash` referring to `bytes` and mark its refcount as `uses`.
+    ///
+    /// Used when restoring from a snapshot.
+    fn insert_with_uses(&mut self, hash: &BlobHash, uses: usize, bytes: Box<[u8]>);
+
     /// Returns the bytes stored at the content address `hash`.
     fn retrieve_blob(&self, hash: &BlobHash) -> Result<&[u8], NoSuchBlobError>;
 
@@ -92,6 +97,8 @@ pub trait BlobStore: Sync {
     /// where `hash` is a blob's content-addressed [`BlobHash`],
     /// `uses` is the number of references to that blob,
     /// and `data` is the data itself.
+    ///
+    /// Used when capturing a snapshot.
     fn iter_blobs(&self) -> BlobsIter<'_>;
 }
 
@@ -108,6 +115,11 @@ impl BlobStore for NullBlobStore {
     fn insert_blob(&mut self, _bytes: &[u8]) -> BlobHash {
         unimplemented!("NullBlobStore doesn't do anything")
     }
+
+    fn insert_with_uses(&mut self, _hash: &BlobHash, _uses: usize, _bytes: Box<[u8]>) {
+        unimplemented!("NullBlobStore doesn't do anything")
+    }
+
     fn retrieve_blob(&self, _hash: &BlobHash) -> Result<&[u8], NoSuchBlobError> {
         unimplemented!("NullBlobStore doesn't do anything")
     }
@@ -154,6 +166,14 @@ impl BlobStore for HashMapBlobStore {
                 uses: 1,
             });
         hash
+    }
+
+    fn insert_with_uses(&mut self, hash: &BlobHash, uses: usize, bytes: Box<[u8]>) {
+        debug_assert_eq!(hash, &BlobHash::hash_from_bytes(&bytes));
+        self.map
+            .entry(*hash)
+            .and_modify(|v| v.uses += uses)
+            .or_insert_with(|| BlobObject { blob: bytes, uses });
     }
 
     fn retrieve_blob(&self, hash: &BlobHash) -> Result<&[u8], NoSuchBlobError> {
