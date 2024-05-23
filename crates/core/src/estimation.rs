@@ -39,13 +39,8 @@ fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
             // We have an estimate for the number of rows each index probe will return.
             // Multiplying both estimates together will give us our expectation.
             Query::IndexJoin(join) => {
-                let table_id = if join.return_index_rows {
-                    src.table_id().unwrap()
-                } else {
-                    join.probe_side.source.table_id().unwrap()
-                };
                 row_est(tx, &join.probe_side.source, &join.probe_side.query)
-                    * index_row_est(tx, table_id, &join.index_col.into())
+                    * index_row_est(tx, src.table_id().unwrap(), &join.index_col.into())
             }
             // Since inner join is our most expensive operation,
             // we maximally overestimate its output cardinality,
