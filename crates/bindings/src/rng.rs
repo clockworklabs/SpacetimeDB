@@ -1,7 +1,6 @@
 use std::cell::{OnceCell, UnsafeCell};
 use std::fmt;
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
 use rand::distributions::{Distribution, Standard};
 use rand::rngs::StdRng;
@@ -10,35 +9,15 @@ use rand::{RngCore, SeedableRng};
 use crate::Timestamp;
 
 scoped_tls::scoped_thread_local! {
-    static RNG: OnceCell<RngContext>
-}
-
-// this ensures that you can't stash an StdbRng somewhere and use it
-// at a later point, breaking atomic reproducibility of transactions.
-static RNG_GENERATION: AtomicU64 = AtomicU64::new(0);
-
-struct RngContext {
-    rng: StdCellRng,
-    generation: u64,
-}
-
-impl RngContext {
-    fn seed() -> Self {
-        Self {
-            rng: StdCellRng::new(StdRng::seed_from_u64(Timestamp::now().micros_since_epoch)),
-            generation: RNG_GENERATION.fetch_add(1, Relaxed),
-        }
-    }
-    fn get_rng(&self) -> StdbRng {
-        StdbRng {
-            generation: self.generation,
-            _marker: PhantomData,
-        }
-    }
+    static RNG: OnceCell<StdRngCell>
 }
 
 pub(crate) fn with_rng_set<R>(f: impl FnOnce() -> R) -> R {
     RNG.set(&OnceCell::new(), f)
+}
+
+fn seed_from_timestamp() -> StdRngCell {
+    StdRngCell::new(StdRng::seed_from_u64(Timestamp::now().micros_since_epoch))
 }
 
 /// Generates a random value.
@@ -70,48 +49,43 @@ pub fn rng() -> StdbRng {
     if !RNG.is_set() {
         panic!("cannot use `spacetimedb::rng()` outside of a reducer");
     }
-    RNG.with(|r| r.get_or_init(RngContext::seed).get_rng())
+    RNG.with(|r| {
+        r.get_or_init(seed_from_timestamp);
+    });
+    StdbRng { _marker: PhantomData }
 }
 
 /// A reference to the random number generator for this reducer call.
 ///
 /// An instance can be obtained via [`spacetimedb::rng()`][rng()]. Import
-/// [`rand::Rng`] to get access to useful methods
+/// [`rand::Rng`] in order to access many useful random algorithms.
 ///
-/// This handle
-/// can only be used in the context of this reducer call; it cannot be
-/// stashed in a global and used in a later reducer call, as that would break
-/// the atomicity of transactions.
+/// `StdbRng` uses the same PRNG as `rand`'s [`StdRng`]. Note, however, that
+/// because it is seeded from a publically-known timestamp, it is not
+/// cryptographically secure.
 ///
-/// `StdbRng` uses the same PRNG as `rand`'s [`StdRng`], however, because it
-/// is seeded from a timestamp, it is not cryptographically secure.
-///
-/// The type of reproducibility you're looking for be finer grained than
-/// "if it happens at the exact same time, you get the same result" -- if
-/// so, just seed an [`StdRng`] directly, or use another rng like those
+/// You may be looking for a level of reproducibility that's finer-grained
+/// than "if it happens at the exact same time, you get the same result" --
+/// if so, just seed an [`StdRng`] directly, or use another rng like those
 /// listed [here](https://rust-random.github.io/book/guide-rngs.html).
-/// Just note that you should never depend on state from outside of
-/// the current reducer call (by e.g. storing an rng in a global variable),
-/// as that can and will break things in the database.
+/// Just note that you must not store any state, including an rng, in a global
+/// variable or any other in-WASM side channel. Any and all state persisted
+/// across reducer calls _must_ be stored in the database.
+#[derive(Clone)]
 pub struct StdbRng {
-    // ensures atomicity of transactions - see comment on RNG_GENERATION
-    generation: u64,
     // !Send + !Sync
     _marker: PhantomData<*mut ()>,
 }
 
 impl StdbRng {
-    fn try_with<R>(&self, f: impl FnOnce(&StdCellRng) -> R) -> Result<R, RngError> {
+    fn try_with<R>(&self, f: impl FnOnce(&StdRngCell) -> R) -> Result<R, RngError> {
         if !RNG.is_set() {
             return Err(RngError);
         }
-        RNG.with(|r| {
-            let r = r.get().filter(|r| r.generation == self.generation).ok_or(RngError)?;
-            Ok(f(&r.rng))
-        })
+        Ok(RNG.with(|r| f(r.get_or_init(seed_from_timestamp))))
     }
 
-    fn with<R>(&self, f: impl FnOnce(&StdCellRng) -> R) -> R {
+    fn with<R>(&self, f: impl FnOnce(&StdRngCell) -> R) -> R {
         self.try_with(f).unwrap_or_else(
             #[cold]
             |e| panic!("{e}"),
@@ -143,7 +117,7 @@ struct RngError;
 
 impl fmt::Display for RngError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("rng from previous reducer still in use")
+        f.write_str("an StdbRng was stored and used outside the context of a reducer")
     }
 }
 
@@ -152,17 +126,18 @@ impl std::error::Error for RngError {}
 // Comments in the rand crate claim RefCell can have an overhead of up to 15%,
 // and so they use an UnsafeCell instead:
 // <https://docs.rs/rand/0.8.5/src/rand/rngs/thread.rs.html#20-32>
-struct StdCellRng {
+// This is safe as long as no method on `StdRngCell` is re-entrant.
+struct StdRngCell {
     rng: UnsafeCell<StdRng>,
 }
 
-impl StdCellRng {
+impl StdRngCell {
     fn new(rng: StdRng) -> Self {
         Self { rng: rng.into() }
     }
 }
 
-impl StdCellRng {
+impl StdRngCell {
     #[inline(always)]
     fn next_u32(&self) -> u32 {
         // SAFETY: We must make sure to stop using `rng` before anyone else
