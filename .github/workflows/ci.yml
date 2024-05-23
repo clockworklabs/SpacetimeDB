@@ -21,8 +21,11 @@ jobs:
       - name: Find Git ref
         run: |
           PR_NUMBER="${{ github.event.inputs.pr_number || github.event.issue.number || null }}"
-          PR_REF="$( gh pr view $PR_NUMBER --json headRefName --jq .headRefName )"
-          GIT_REF="${{ env.PR_REF || github.ref }}"
+          if test -z "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ git.ref }}"
+          fi
           echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
       - name: Checkout sources
         uses: actions/checkout@v4
@@ -48,8 +51,11 @@ jobs:
       - name: Find Git ref
         run: |
           PR_NUMBER="${{ github.event.inputs.pr_number || github.event.issue.number || null }}"
-          PR_REF="$( gh pr view $PR_NUMBER --json headRefName --jq .headRefName )"
-          GIT_REF="${{ env.PR_REF || github.ref }}"
+          if test -z "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ git.ref }}"
+          fi
           echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
 
       - name: Checkout sources
