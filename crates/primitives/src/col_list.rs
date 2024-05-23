@@ -167,6 +167,15 @@ impl ColList {
         unsafe { self.iter().next().unwrap_unchecked() }
     }
 
+    /// Returns the last of the list.
+    pub fn last(&self) -> ColId {
+        match self.as_inline() {
+            Ok(inline) => inline.last(),
+            // SAFETY: There's always at least one element in the list when this is called.
+            Err(heap) => unsafe { *heap.last().unwrap_unchecked() },
+        }
+    }
+
     /// Returns whether `needle` is contained in the list.
     ///
     /// This an be faster than using `list.iter().any(|c| c == needle)`.
@@ -178,7 +187,7 @@ impl ColList {
     }
 
     /// Returns an iterator over all the columns in this list.
-    pub fn iter(&self) -> impl '_ + Iterator<Item = ColId> {
+    pub fn iter(&self) -> impl '_ + Clone + Iterator<Item = ColId> {
         match self.as_inline() {
             Ok(inline) => Either::Left(inline.iter()),
             Err(heap) => Either::Right(heap.iter().copied()),
@@ -328,7 +337,7 @@ impl ColListInline {
     }
 
     /// Returns an iterator over the [`ColId`]s stored by this list.
-    fn iter(&self) -> impl '_ + Iterator<Item = ColId> {
+    fn iter(&self) -> impl '_ + Clone + Iterator<Item = ColId> {
         let mut value = self.undo_mark();
         iter::from_fn(move || {
             if value == 0 {
@@ -342,6 +351,11 @@ impl ColListInline {
                 Some(id)
             }
         })
+    }
+
+    /// Returns the last element of the list.
+    fn last(&self) -> ColId {
+        ColId(u64::BITS - 1 - self.undo_mark().leading_zeros())
     }
 
     /// Returns the length of the list.
@@ -537,6 +551,8 @@ mod tests {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]
+
         #[test]
         fn test_inline(cols in vec((0..ColList::FIRST_HEAP_COL as u32).prop_map_into(), 1..100)) {
             let [head, tail @ ..] = &*cols else { unreachable!() };
@@ -546,6 +562,7 @@ mod tests {
             prop_assert!(!list.is_empty());
             prop_assert_eq!(list.len(), 1);
             prop_assert_eq!(list.head(), *head);
+            prop_assert_eq!(list.last(), *head);
             prop_assert_eq!(list.iter().collect::<Vec<_>>(), [*head]);
 
             for col in tail {
@@ -555,6 +572,7 @@ mod tests {
                 prop_assert!(list.is_inline());
                 prop_assert!(!list.is_empty());
                 prop_assert_eq!(list.head(), new_head);
+                prop_assert_eq!(list.last(), list.iter().last().unwrap());
                 prop_assert!(contains(&list, col));
             }
 
@@ -581,8 +599,7 @@ mod tests {
                 prop_assert!(!list.is_empty());
                 prop_assert_eq!(list.len() as usize, idx + 2);
                 prop_assert_eq!(list.head(), head);
-
-
+                prop_assert_eq!(list.last(), *col);
                 prop_assert!(contains(&list, col));
             }
 

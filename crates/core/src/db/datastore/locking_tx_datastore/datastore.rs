@@ -26,6 +26,7 @@ use crate::{
 use anyhow::{anyhow, Context};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductValue};
@@ -33,7 +34,7 @@ use spacetimedb_table::{indexes::RowPointer, table::RowRef};
 use std::sync::Arc;
 use std::time::Instant;
 use std::{borrow::Cow, time::Duration};
-use std::{cell::RefCell, ops::RangeBounds};
+use std::{cell::RefCell, collections::HashSet, ops::RangeBounds};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, DBError>;
@@ -123,6 +124,7 @@ impl Locking {
             database_address: self.database_address,
             committed_state: self.committed_state.clone(),
             progress: RefCell::new(progress),
+            connected_clients: RefCell::new(HashSet::new()),
         }
     }
 }
@@ -162,7 +164,7 @@ impl TxDatastore for Locking {
     type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRange<'a, R> where Self: 'a;
 
     fn iter_tx<'a>(&'a self, ctx: &'a ExecutionContext, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::Iter<'a>> {
-        tx.iter(ctx, &table_id)
+        tx.iter(ctx, table_id)
     }
 
     fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
@@ -173,7 +175,7 @@ impl TxDatastore for Locking {
         cols: impl Into<ColList>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>> {
-        tx.iter_by_col_range(ctx, &table_id, cols.into(), range)
+        tx.iter_by_col_range(ctx, table_id, cols.into(), range)
     }
 
     fn iter_by_col_eq_tx<'a, 'r>(
@@ -184,11 +186,11 @@ impl TxDatastore for Locking {
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>> {
-        tx.iter_by_col_eq(ctx, &table_id, cols, value)
+        tx.iter_by_col_eq(ctx, table_id, cols, value)
     }
 
     fn table_id_exists_tx(&self, tx: &Self::Tx, table_id: &TableId) -> bool {
-        tx.table_exists(table_id).is_some()
+        tx.table_name(*table_id).is_some()
     }
 
     fn table_id_from_name_tx(&self, tx: &Self::Tx, table_name: &str) -> Result<Option<TableId>> {
@@ -196,7 +198,7 @@ impl TxDatastore for Locking {
     }
 
     fn table_name_from_id_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Option<Cow<'a, str>>> {
-        Ok(tx.table_exists(&table_id).map(Cow::Borrowed))
+        Ok(tx.table_name(table_id).map(Cow::Borrowed))
     }
 
     fn schema_for_table_tx(&self, tx: &Self::Tx, table_id: TableId) -> Result<Arc<TableSchema>> {
@@ -309,7 +311,7 @@ impl MutTxDatastore for Locking {
         tx: &'a Self::MutTx,
         table_id: TableId,
     ) -> Result<Self::Iter<'a>> {
-        tx.iter(ctx, &table_id)
+        tx.iter(ctx, table_id)
     }
 
     fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
@@ -320,7 +322,7 @@ impl MutTxDatastore for Locking {
         cols: impl Into<ColList>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>> {
-        tx.iter_by_col_range(ctx, &table_id, cols.into(), range)
+        tx.iter_by_col_range(ctx, table_id, cols.into(), range)
     }
 
     fn iter_by_col_eq_mut_tx<'a, 'r>(
@@ -331,7 +333,7 @@ impl MutTxDatastore for Locking {
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>> {
-        tx.iter_by_col_eq(ctx, &table_id, cols.into(), value)
+        tx.iter_by_col_eq(ctx, table_id, cols.into(), value)
     }
 
     fn get_mut_tx<'a>(
@@ -387,7 +389,7 @@ impl MutTxDatastore for Locking {
     }
 
     fn table_id_exists_mut_tx(&self, tx: &Self::MutTx, table_id: &TableId) -> bool {
-        tx.table_exists(table_id).is_some()
+        tx.table_name(*table_id).is_some()
     }
 }
 
@@ -515,7 +517,7 @@ impl Locking {
 
 impl Programmable for Locking {
     fn program_hash(&self, tx: &TxId) -> Result<Option<spacetimedb_sats::hash::Hash>> {
-        tx.iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
+        tx.iter(&ExecutionContext::internal(self.database_address), ST_MODULE_ID)?
             .next()
             .map(|row| StModuleRow::try_from(row).map(|st| st.program_hash))
             .transpose()
@@ -527,7 +529,7 @@ impl MutProgrammable for Locking {
 
     fn set_program_hash(&self, tx: &mut MutTxId, fence: Self::FencingToken, hash: Hash) -> Result<()> {
         let ctx = ExecutionContext::internal(self.database_address);
-        let mut iter = tx.iter(&ctx, &ST_MODULE_ID)?;
+        let mut iter = tx.iter(&ctx, ST_MODULE_ID)?;
         if let Some(row_ref) = iter.next() {
             let epoch = row_ref.read_col::<u128>(StModuleFields::Epoch)?;
             if fence <= epoch {
@@ -589,6 +591,17 @@ pub struct Replay<F> {
     database_address: Address,
     committed_state: Arc<RwLock<CommittedState>>,
     progress: RefCell<F>,
+    /// Tracks the connect / disconnect calls recorded in the transaction history.
+    ///
+    /// If non-empty after a replay, the remaining entries were not gracefully
+    /// disconnected. A disconnect call should be performed for each.
+    connected_clients: RefCell<HashSet<(Identity, Address)>>,
+}
+
+impl<F> Replay<F> {
+    pub fn into_connected_clients(self) -> HashSet<(Identity, Address)> {
+        self.connected_clients.into_inner()
+    }
 }
 
 impl<F> Replay<F> {
@@ -598,6 +611,7 @@ impl<F> Replay<F> {
             database_address: &self.database_address,
             committed_state: &mut committed_state,
             progress: &mut *self.progress.borrow_mut(),
+            connected_clients: &mut self.connected_clients.borrow_mut(),
         };
         f(&mut visitor)
     }
@@ -623,6 +637,21 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for Replay<F> {
         reader: &mut R,
     ) -> std::result::Result<(), Self::Error> {
         self.using_visitor(|visitor| txdata::consume_record_fn(visitor, version, tx_offset, reader))
+    }
+}
+
+impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for &mut Replay<F> {
+    type Record = txdata::Txdata<ProductValue>;
+    type Error = txdata::DecoderError<ReplayError>;
+
+    #[inline]
+    fn decode_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<Self::Record, Self::Error> {
+        spacetimedb_commitlog::Decoder::decode_record(&**self, version, tx_offset, reader)
     }
 }
 
@@ -666,6 +695,7 @@ struct ReplayVisitor<'a, F> {
     database_address: &'a Address,
     committed_state: &'a mut CommittedState,
     progress: &'a mut F,
+    connected_clients: &'a mut HashSet<(Identity, Address)>,
 }
 
 impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, F> {
@@ -759,8 +789,31 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
         Ok(())
     }
 
-    fn visit_tx_end(&mut self) -> std::prelude::v1::Result<(), Self::Error> {
+    fn visit_tx_end(&mut self) -> std::result::Result<(), Self::Error> {
         self.committed_state.next_tx_offset += 1;
+
+        Ok(())
+    }
+
+    fn visit_inputs(&mut self, inputs: &txdata::Inputs) -> std::result::Result<(), Self::Error> {
+        let decode_caller = || {
+            let buf = &mut inputs.reducer_args.as_ref();
+            let caller_identity: Identity = bsatn::from_reader(buf).context("Could not decode caller identity")?;
+            let caller_address: Address = bsatn::from_reader(buf).context("Could not decode caller address")?;
+            anyhow::Ok((caller_identity, caller_address))
+        };
+        if let Some(action) = inputs.reducer_name.strip_prefix("__identity_") {
+            let caller = decode_caller()?;
+            match action {
+                "connected__" => {
+                    self.connected_clients.insert(caller);
+                }
+                "disconnected__" => {
+                    self.connected_clients.remove(&caller);
+                }
+                _ => {}
+            }
+        }
 
         Ok(())
     }
@@ -771,7 +824,7 @@ mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{
         system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_COLUMNS_ID,
-        ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID,
+        ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_RESERVED_SEQUENCE_RANGE, ST_SEQUENCES_ID,
     };
     use crate::db::datastore::traits::{IsolationLevel, MutTx};
     use crate::db::datastore::Result;
@@ -785,6 +838,10 @@ mod tests {
     };
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_table::table::UniqueConstraintViolation;
+
+    /// For the first user-created table, sequences in the system tables start
+    /// from this value.
+    const FIRST_NON_SYSTEM_ID: u32 = ST_RESERVED_SEQUENCE_RANGE + 1;
 
     /// Utility to query the system tables and return their concrete table row
     pub struct SystemTableQuery<'a> {
@@ -800,7 +857,7 @@ mod tests {
         pub fn scan_st_tables(&self) -> Result<Vec<StTableRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, &ST_TABLES_ID)?
+                .iter(self.ctx, ST_TABLES_ID)?
                 .map(|row| StTableRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
@@ -813,7 +870,7 @@ mod tests {
         ) -> Result<Vec<StTableRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter_by_col_eq(self.ctx, &ST_TABLES_ID, cols.into(), value)?
+                .iter_by_col_eq(self.ctx, ST_TABLES_ID, cols.into(), value)?
                 .map(|row| StTableRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
@@ -822,7 +879,7 @@ mod tests {
         pub fn scan_st_columns(&self) -> Result<Vec<StColumnRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, &ST_COLUMNS_ID)?
+                .iter(self.ctx, ST_COLUMNS_ID)?
                 .map(|row| StColumnRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
@@ -835,7 +892,7 @@ mod tests {
         ) -> Result<Vec<StColumnRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter_by_col_eq(self.ctx, &ST_COLUMNS_ID, cols.into(), value)?
+                .iter_by_col_eq(self.ctx, ST_COLUMNS_ID, cols.into(), value)?
                 .map(|row| StColumnRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
@@ -844,7 +901,7 @@ mod tests {
         pub fn scan_st_constraints(&self) -> Result<Vec<StConstraintRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, &ST_CONSTRAINTS_ID)?
+                .iter(self.ctx, ST_CONSTRAINTS_ID)?
                 .map(|row| StConstraintRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.constraint_id)
                 .collect::<Vec<_>>())
@@ -853,7 +910,7 @@ mod tests {
         pub fn scan_st_sequences(&self) -> Result<Vec<StSequenceRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, &ST_SEQUENCES_ID)?
+                .iter(self.ctx, ST_SEQUENCES_ID)?
                 .map(|row| StSequenceRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.sequence_id))
                 .collect::<Vec<_>>())
@@ -862,7 +919,7 @@ mod tests {
         pub fn scan_st_indexes(&self) -> Result<Vec<StIndexRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, &ST_INDEXES_ID)?
+                .iter(self.ctx, ST_INDEXES_ID)?
                 .map(|row| StIndexRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.index_id)
                 .collect::<Vec<_>>())
@@ -882,7 +939,11 @@ mod tests {
     }
 
     fn map_array<A, B: From<A>, const N: usize>(a: [A; N]) -> Vec<B> {
-        a.map(Into::into).into()
+        map_array_fn(a, Into::into)
+    }
+
+    fn map_array_fn<A, B, F: Fn(A) -> B, const N: usize>(a: [A; N], f: F) -> Vec<B> {
+        a.map(f).into()
     }
 
     struct IndexRow<'a> {
@@ -1049,10 +1110,11 @@ mod tests {
 
     #[rustfmt::skip]
     fn basic_table_schema_cols() -> [ColRow<'static>; 3] {
+        let table = FIRST_NON_SYSTEM_ID;
         [
-            ColRow { table: 6, pos: 0, name: "id", ty: AlgebraicType::U32 },
-            ColRow { table: 6, pos: 1, name: "name", ty: AlgebraicType::String },
-            ColRow { table: 6, pos: 2, name: "age", ty: AlgebraicType::U32 },
+            ColRow { table, pos: 0, name: "id", ty: AlgebraicType::U32 },
+            ColRow { table, pos: 1, name: "name", ty: AlgebraicType::String },
+            ColRow { table, pos: 2, name: "age", ty: AlgebraicType::U32 },
         ]
     }
 
@@ -1077,20 +1139,23 @@ mod tests {
 
     #[rustfmt::skip]
     fn basic_table_schema_created(table_id: TableId) -> TableSchema {
+        let table: u32 = table_id.into();
+        let seq_start = FIRST_NON_SYSTEM_ID;
+
         TableSchema::new(
             table_id,
             "Foo".into(),
             map_array(basic_table_schema_cols()),
              map_array([
-                IdxSchema { id: 6, table: 6, col: 0, name: "id_idx", unique: true },
-                IdxSchema { id: 7, table: 6, col: 1, name: "name_idx", unique: true },
+                IdxSchema { id: seq_start,     table, col: 0, name: "id_idx", unique: true },
+                IdxSchema { id: seq_start + 1, table, col: 1, name: "name_idx", unique: true },
             ]),
             map_array([
-                ConstraintRow { constraint_id: 6, table_id: 6, columns: col(0), constraints: Constraints::unique(), constraint_name: "ct_Foo_id_idx_unique" },
-                ConstraintRow { constraint_id: 7, table_id: 6, columns: col(1), constraints: Constraints::unique(), constraint_name: "ct_Foo_name_idx_unique" }
+                ConstraintRow { constraint_id: seq_start,     table_id: table, columns: col(0), constraints: Constraints::unique(), constraint_name: "ct_Foo_id_idx_unique" },
+                ConstraintRow { constraint_id: seq_start + 1, table_id: table, columns: col(1), constraints: Constraints::unique(), constraint_name: "ct_Foo_name_idx_unique" }
             ]),
              map_array([
-                SequenceRow { id: 4, table: 6, col_pos: 0, name: "seq_Foo_id", start: 1 }
+                SequenceRow { id: seq_start, table, col_pos: 0, name: "seq_Foo_id", start: 1 }
             ]),
             StTableType::User,
             StAccess::Public,
@@ -1127,7 +1192,7 @@ mod tests {
     }
 
     fn all_rows_tx(tx: &TxId, table_id: TableId) -> Vec<ProductValue> {
-        tx.iter(&ExecutionContext::default(), &table_id)
+        tx.iter(&ExecutionContext::default(), table_id)
             .unwrap()
             .map(|r| r.to_product_value().clone())
             .collect()
@@ -1196,13 +1261,20 @@ mod tests {
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
         ]));
+        let start = FIRST_NON_SYSTEM_ID as i128;
         #[rustfmt::skip]
-        assert_eq!(query.scan_st_sequences()?, map_array([
-            SequenceRow { id: 0, table: 0, col_pos: 0, name: "seq_st_table_table_id_primary_key_auto",  start: 6 },
-            SequenceRow { id: 3, table: 2, col_pos: 0, name: "seq_st_sequence_sequence_id_primary_key_auto", start: 4 },
-            SequenceRow { id: 1, table: 3, col_pos: 0, name: "seq_st_indexes_index_id_primary_key_auto",  start: 6 },
-            SequenceRow { id: 2, table: 4, col_pos: 0, name: "seq_st_constraints_constraint_id_primary_key_auto", start: 6 },
-        ]));
+        assert_eq!(query.scan_st_sequences()?, map_array_fn(
+            [
+                SequenceRow { id: 0, table: 0, col_pos: 0, name: "seq_st_table_table_id_primary_key_auto", start },
+                SequenceRow { id: 3, table: 2, col_pos: 0, name: "seq_st_sequence_sequence_id_primary_key_auto", start },
+                SequenceRow { id: 1, table: 3, col_pos: 0, name: "seq_st_indexes_index_id_primary_key_auto", start },
+                SequenceRow { id: 2, table: 4, col_pos: 0, name: "seq_st_constraints_constraint_id_primary_key_auto", start },
+            ],
+            |row| StSequenceRow {
+                allocated: ST_RESERVED_SEQUENCE_RANGE as i128 * 2,
+                ..StSequenceRow::from(row)
+            }
+        ));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_constraints()?, map_array([
             ConstraintRow { constraint_id: 0, table_id: 0, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_table_table_id_primary_key_auto" },
@@ -1279,7 +1351,7 @@ mod tests {
         let table_rows = query.scan_st_tables_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
         assert_eq!(table_rows, map_array([
-            TableRow { id: 6, name: "Foo", ty: StTableType::User, access: StAccess::Public }
+            TableRow { id: FIRST_NON_SYSTEM_ID, name: "Foo", ty: StTableType::User, access: StAccess::Public }
         ]));
         let column_rows = query.scan_st_columns_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
@@ -1298,7 +1370,7 @@ mod tests {
         let table_rows = query.scan_st_tables_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
         assert_eq!(table_rows, map_array([
-            TableRow { id: 6, name: "Foo", ty: StTableType::User, access: StAccess::Public }
+            TableRow { id: FIRST_NON_SYSTEM_ID, name: "Foo", ty: StTableType::User, access: StAccess::Public }
         ]));
         let column_rows = query.scan_st_columns_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
@@ -1354,8 +1426,10 @@ mod tests {
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
 
+        let mut dropped_indexes = 0;
         for index in &*schema.indexes {
             datastore.drop_index_mut_tx(&mut tx, index.index_id)?;
+            dropped_indexes += 1;
         }
         assert!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
@@ -1376,8 +1450,8 @@ mod tests {
         )?;
 
         let expected_indexes = [IdxSchema {
-            id: 8,
-            table: 6,
+            id: ST_RESERVED_SEQUENCE_RANGE + dropped_indexes + 1,
+            table: FIRST_NON_SYSTEM_ID,
             col: 0,
             name: "id_idx",
             unique: true,
@@ -1579,6 +1653,7 @@ mod tests {
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
+        let seq_start = FIRST_NON_SYSTEM_ID;
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
         assert_eq!(index_rows, [
@@ -1588,9 +1663,9 @@ mod tests {
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 6, table: 6, col: col(0), name: "id_idx", unique: true },
-            IndexRow { id: 7, table: 6, col: col(1), name: "name_idx", unique: true },
-            IndexRow { id: 8, table: 6, col: col(2), name: "age_idx", unique: true },
+            IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },
+            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx", unique: true },
+            IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "age_idx", unique: true },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
@@ -1622,6 +1697,7 @@ mod tests {
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
+        let seq_start = FIRST_NON_SYSTEM_ID;
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
         assert_eq!(index_rows, [
@@ -1631,9 +1707,9 @@ mod tests {
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 6, table: 6, col: col(0), name: "id_idx", unique: true },
-            IndexRow { id: 7, table: 6, col: col(1), name: "name_idx", unique: true },
-            IndexRow { id: 8, table: 6, col: col(2), name: "age_idx", unique: true },
+            IndexRow { id: seq_start    , table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },
+            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx", unique: true },
+            IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "age_idx", unique: true },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
@@ -1665,6 +1741,7 @@ mod tests {
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
+        let seq_start = FIRST_NON_SYSTEM_ID;
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
         assert_eq!(index_rows, [
@@ -1674,8 +1751,8 @@ mod tests {
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 6, table: 6, col: col(0), name: "id_idx", unique: true },
-            IndexRow { id: 7, table: 6, col: col(1), name: "name_idx", unique: true },
+            IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },
+            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx", unique: true },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;

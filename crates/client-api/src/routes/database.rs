@@ -19,7 +19,6 @@ use serde_json::{json, Value};
 use spacetimedb::address::Address;
 use spacetimedb::auth::identity::encode_token;
 use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb::error::DatabaseError;
 use spacetimedb::host::DescribedEntityType;
 use spacetimedb::host::EntityDef;
 use spacetimedb::host::ReducerArgs;
@@ -89,17 +88,10 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         ))?;
     let instance_id = database_instance.id;
     let host = worker_ctx.host_controller();
-
-    let module = match host.get_module_host(instance_id) {
-        Ok(m) => m,
-        Err(_) => {
-            let dbic = worker_ctx
-                .load_module_host_context(database, instance_id)
-                .await
-                .map_err(log_and_500)?;
-            host.spawn_module_host(dbic).await.map_err(log_and_500)?
-        }
-    };
+    let module = host
+        .get_or_launch_module_host(database, instance_id)
+        .await
+        .map_err(log_and_500)?;
 
     // HTTP callers always need an address to provide to connect/disconnect,
     // so generate one if none was provided.
@@ -283,17 +275,11 @@ where
     let call_info = extract_db_call_info(&worker_ctx, auth, &address).await?;
 
     let instance_id = call_info.database_instance.id;
-    let host = worker_ctx.host_controller();
-    let module = match host.get_module_host(instance_id) {
-        Ok(m) => m,
-        Err(_) => {
-            let dbic = worker_ctx
-                .load_module_host_context(database, instance_id)
-                .await
-                .map_err(log_and_500)?;
-            host.spawn_module_host(dbic).await.map_err(log_and_500)?
-        }
-    };
+    let module = worker_ctx
+        .host_controller()
+        .get_or_launch_module_host(database, instance_id)
+        .await
+        .map_err(log_and_500)?;
 
     let entity_type = entity_type.as_str().parse().map_err(|()| {
         log::debug!("Request to describe unhandled entity type: {}", entity_type);
@@ -341,16 +327,10 @@ where
 
     let instance_id = call_info.database_instance.id;
     let host = worker_ctx.host_controller();
-    let module = match host.get_module_host(instance_id) {
-        Ok(m) => m,
-        Err(_) => {
-            let dbic = worker_ctx
-                .load_module_host_context(database, instance_id)
-                .await
-                .map_err(log_and_500)?;
-            host.spawn_module_host(dbic).await.map_err(log_and_500)?
-        }
-    };
+    let module = host
+        .get_or_launch_module_host(database, instance_id)
+        .await
+        .map_err(log_and_500)?;
     let catalog = module.catalog();
     let expand = expand.unwrap_or(false);
     let response_catalog: HashMap<_, _> = catalog
@@ -461,16 +441,10 @@ where
 
     let body = if follow {
         let host = worker_ctx.host_controller();
-        let module = match host.get_module_host(instance_id) {
-            Ok(m) => m,
-            Err(_) => {
-                let dbic = worker_ctx
-                    .load_module_host_context(database, instance_id)
-                    .await
-                    .map_err(log_and_500)?;
-                host.spawn_module_host(dbic).await.map_err(log_and_500)?
-            }
-        };
+        let module = host
+            .get_or_launch_module_host(database, instance_id)
+            .await
+            .map_err(log_and_500)?;
         let log_rx = module.subscribe_to_logs().map_err(log_and_500)?;
 
         let stream = tokio_stream::wrappers::BroadcastStream::new(log_rx).filter_map(move |x| {
@@ -548,60 +522,47 @@ where
         ))?;
     let instance_id = database_instance.id;
 
-    let host = worker_ctx.host_controller();
-    match host.get_module_host(instance_id) {
-        Ok(_) => {}
-        Err(_) => {
-            let dbic = worker_ctx
-                .load_module_host_context(database, instance_id)
-                .await
-                .map_err(log_and_500)?;
-            host.spawn_module_host(dbic).await.map_err(log_and_500)?;
-        }
-    };
+    let json = worker_ctx
+        .host_controller()
+        .using_database(
+            database,
+            instance_id,
+            move |db| -> axum::response::Result<_, (StatusCode, String)> {
+                tracing::info!(sql = body);
+                let results = sql::execute::run(db, &body, auth).map_err(|e| {
+                    log::warn!("{}", e);
+                    if let Some(auth_err) = e.get_auth_error() {
+                        (StatusCode::UNAUTHORIZED, auth_err.to_string())
+                    } else {
+                        (StatusCode::BAD_REQUEST, e.to_string())
+                    }
+                })?;
 
-    let dbicc = worker_ctx.database_instance_context_controller();
+                let json = db.with_read_only(&ctx_sql(db), |tx| {
+                    results
+                        .into_iter()
+                        .map(|result| {
+                            let rows = result.data;
+                            let schema = result
+                                .head
+                                .fields
+                                .iter()
+                                .map(|x| {
+                                    let ty = x.algebraic_type.clone();
+                                    let name = translate_col(tx, x.field);
+                                    ProductTypeElement::new(ty, name)
+                                })
+                                .collect();
+                            StmtResultJson { schema, rows }
+                        })
+                        .collect::<Vec<_>>()
+                });
 
-    tracing::info!(sql = body);
-    let Some((dbic, _)) = dbicc.get(instance_id) else {
-        let err = format!("{}", DatabaseError::NotFound(instance_id));
-        return Err((StatusCode::BAD_REQUEST, err).into());
-    };
-
-    let stdb = &dbic.relational_db;
-    let results = match sql::execute::run(stdb, &body, auth) {
-        Ok(results) => results,
-        Err(err) => {
-            log::warn!("{}", err);
-            return if let Some(auth_err) = err.get_auth_error() {
-                let err = format!("{auth_err}");
-                Err((StatusCode::UNAUTHORIZED, err).into())
-            } else {
-                let err = format!("{err}");
-                Err((StatusCode::BAD_REQUEST, err).into())
-            };
-        }
-    };
-
-    let json = stdb.with_read_only(&ctx_sql(stdb), |tx| {
-        results
-            .into_iter()
-            .map(|result| {
-                let rows = result.data;
-                let schema = result
-                    .head
-                    .fields
-                    .iter()
-                    .map(|x| {
-                        let ty = x.algebraic_type.clone();
-                        let name = translate_col(tx, x.field);
-                        ProductTypeElement::new(ty, name)
-                    })
-                    .collect();
-                StmtResultJson { schema, rows }
-            })
-            .collect::<Vec<_>>()
-    });
+                Ok(json)
+            },
+        )
+        .await
+        .map_err(log_and_500)??;
 
     Ok((StatusCode::OK, axum::Json(json)))
 }

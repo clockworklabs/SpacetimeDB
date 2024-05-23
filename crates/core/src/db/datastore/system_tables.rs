@@ -33,6 +33,21 @@ pub(crate) const ST_INDEXES_NAME: &str = "st_indexes";
 pub(crate) const ST_CONSTRAINTS_NAME: &str = "st_constraints";
 pub(crate) const ST_MODULE_NAME: &str = "st_module";
 
+/// Reserved range of sequence values used for system tables.
+///
+/// Ids for user-created tables will start at `ST_RESERVED_SEQUENCE_RANGE + 1`.
+///
+/// The range applies to all sequences allocated by system tables, i.e. table-,
+/// sequence-, index-, and constraint-ids.
+/// > Note that column-ids are positional indices and not based on a sequence.
+///
+/// These ids can be referred to statically even for system tables introduced
+/// after a database was created, so as long as the range is not exceeded.
+///
+/// However unlikely it may seem, it is advisable to check for overflow in the
+/// test suite when adding sequences to system tables.
+pub(crate) const ST_RESERVED_SEQUENCE_RANGE: u32 = 4096;
+
 // This help to keep the correct order when bootstrapping
 #[allow(non_camel_case_types)]
 #[derive(Debug, Display)]
@@ -43,6 +58,7 @@ pub enum SystemTable {
     st_indexes,
     st_constraints,
 }
+
 pub(crate) fn system_tables() -> [TableSchema; 6] {
     [
         st_table_schema(),
@@ -55,6 +71,14 @@ pub(crate) fn system_tables() -> [TableSchema; 6] {
         st_sequences_schema(),
     ]
 }
+
+// The following are indices into the array returned by [`system_tables`].
+pub(crate) const ST_TABLES_IDX: usize = 0;
+pub(crate) const ST_COLUMNS_IDX: usize = 1;
+pub(crate) const ST_INDEXES_IDX: usize = 2;
+pub(crate) const ST_CONSTRAINTS_IDX: usize = 3;
+pub(crate) const ST_MODULE_IDX: usize = 4;
+pub(crate) const ST_SEQUENCES_IDX: usize = 5;
 
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
@@ -159,7 +183,7 @@ st_fields_enum!(enum StModuleFields {
 /// | table_id | table_name  | table_type | table_access |
 /// |----------|-------------|----------- |------------- |
 /// | 4        | "customers" | "user"     | "public"     |
-pub fn st_table_schema() -> TableSchema {
+fn st_table_schema() -> TableSchema {
     TableDef::new(
         ST_TABLES_NAME.into(),
         vec![
@@ -180,7 +204,7 @@ pub fn st_table_schema() -> TableSchema {
 /// | table_id | col_id | col_name | col_type            |
 /// |----------|---------|----------|--------------------|
 /// | 1        | 0       | "id"     | AlgebraicType::U32 |
-pub fn st_columns_schema() -> TableSchema {
+fn st_columns_schema() -> TableSchema {
     TableDef::new(
         ST_COLUMNS_NAME.into(),
         vec![
@@ -204,7 +228,7 @@ pub fn st_columns_schema() -> TableSchema {
 /// | index_id | table_id | index_name  | columns | is_unique | index_type |
 /// |----------|----------|-------------|---------|-----------|------------|
 /// | 1        |          | "ix_sample" | [1]     | false     | "btree"    |
-pub fn st_indexes_schema() -> TableSchema {
+fn st_indexes_schema() -> TableSchema {
     TableDef::new(
         ST_INDEXES_NAME.into(),
         vec![
@@ -227,7 +251,7 @@ pub fn st_indexes_schema() -> TableSchema {
 /// | sequence_id | sequence_name     | increment | start | min_value | max_value | table_id | col_pos| allocated |
 /// |-------------|-------------------|-----------|-------|-----------|-----------|----------|--------|-----------|
 /// | 1           | "seq_customer_id" | 1         | 100   | 10        | 1200      | 1        | 1      | 200       |
-pub(crate) fn st_sequences_schema() -> TableSchema {
+fn st_sequences_schema() -> TableSchema {
     TableDef::new(
         ST_SEQUENCES_NAME.into(),
         vec![
@@ -253,7 +277,7 @@ pub(crate) fn st_sequences_schema() -> TableSchema {
 /// | constraint_id | constraint_name      | constraints | table_id | columns |
 /// |---------------|-------------------- -|-------------|-------|------------|
 /// | 1             | "unique_customer_id" | 1           | 100   | [1, 4]     |
-pub(crate) fn st_constraints_schema() -> TableSchema {
+fn st_constraints_schema() -> TableSchema {
     TableDef::new(
         ST_CONSTRAINTS_NAME.into(),
         vec![
@@ -284,7 +308,7 @@ pub(crate) fn st_constraints_schema() -> TableSchema {
 /// | program_hash        | kind     | epoch |
 /// |---------------------|----------|-------|
 /// | [250, 207, 5, ...]  | 0        | 42    |
-pub(crate) fn st_module_schema() -> TableSchema {
+fn st_module_schema() -> TableSchema {
     TableDef::new(
         ST_MODULE_NAME.into(),
         vec![
@@ -649,5 +673,42 @@ impl From<&StModuleRow> for ProductValue {
         }: &StModuleRow,
     ) -> Self {
         product![AlgebraicValue::Bytes(program_hash.as_slice().into()), *kind, *epoch,]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sequences_within_reserved_range() {
+        let mut num_tables = 0;
+        let mut num_indexes = 0;
+        let mut num_constraints = 0;
+        let mut num_sequences = 0;
+
+        for table in system_tables() {
+            num_tables += 1;
+            num_indexes += table.indexes.len();
+            num_constraints += table.constraints.len();
+            num_sequences += table.sequences.len();
+        }
+
+        assert!(
+            num_tables <= ST_RESERVED_SEQUENCE_RANGE,
+            "number of system tables exceeds reserved sequence range"
+        );
+        assert!(
+            num_indexes <= ST_RESERVED_SEQUENCE_RANGE as usize,
+            "number of system indexes exceeds reserved sequence range"
+        );
+        assert!(
+            num_constraints <= ST_RESERVED_SEQUENCE_RANGE as usize,
+            "number of system constraints exceeds reserved sequence range"
+        );
+        assert!(
+            num_sequences <= ST_RESERVED_SEQUENCE_RANGE as usize,
+            "number of system sequences exceeds reserved sequence range"
+        );
     }
 }
