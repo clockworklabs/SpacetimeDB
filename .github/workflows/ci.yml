@@ -24,7 +24,7 @@ jobs:
           if test -z "${PR_NUMBER}"; then
             GIT_REF="$( gh pr view $PR_NUMBER --json headRefName --jq .headRefName )"
           else
-            GIT_REF="${{ git.ref }}"
+            GIT_REF="${{ github.ref }}"
           fi
           echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
       - name: Checkout sources
@@ -54,7 +54,7 @@ jobs:
           if test -z "${PR_NUMBER}"; then
             GIT_REF="$( gh pr view $PR_NUMBER --json headRefName --jq .headRefName )"
           else
-            GIT_REF="${{ git.ref }}"
+            GIT_REF="${{ github.ref }}"
           fi
           echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
 
