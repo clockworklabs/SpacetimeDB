@@ -9,6 +9,7 @@ use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::protobuf::client_api::Subscribe;
+use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
 use spacetimedb_lib::identity::AuthCtx;
@@ -48,10 +49,8 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(), DBError> {
-        let ctx = ExecutionContext::subscribe(
-            self.relational_db.address(),
-            self.relational_db.read_config().slow_query,
-        );
+        let config = self.relational_db.read_config();
+        let ctx = ExecutionContext::subscribe(self.relational_db.address(), config.slow_query);
         let tx = scopeguard::guard(self.relational_db.begin_tx(), |tx| {
             self.relational_db.release_tx(&ctx, tx);
         });
@@ -97,9 +96,19 @@ impl ModuleSubscriptions {
         drop(guard);
 
         let execution_set: ExecutionSet = queries.into();
+
         execution_set
             .check_auth(auth.owner, auth.caller)
             .map_err(ErrorVm::Auth)?;
+
+        check_row_limit(
+            &execution_set,
+            &tx,
+            |execution_set, tx| execution_set.row_estimate(tx),
+            &auth,
+            &config,
+        )?;
+
         let database_update = execution_set.eval(&ctx, sender.protocol, &self.relational_db, &tx)?;
 
         WORKER_METRICS

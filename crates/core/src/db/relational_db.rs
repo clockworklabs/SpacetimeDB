@@ -157,11 +157,8 @@ impl RelationalDB {
             row_count_fn,
             disk_size_fn,
 
-            config: Arc::new(RwLock::new(DatabaseConfig::with_slow_query(
-                SlowQueryConfig::with_defaults(),
-            ))),
-
             _lock: Arc::new(lock),
+            config: Arc::new(RwLock::new(DatabaseConfig::new(SlowQueryConfig::with_defaults(), None))),
         })
     }
 
