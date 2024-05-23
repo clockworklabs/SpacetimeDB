@@ -20,7 +20,7 @@ jobs:
     steps:
       - name: Find Git ref
         run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || github.event.issue.number || null }}"
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
           if test -n "${PR_NUMBER}"; then
             GIT_REF="$( gh pr view $PR_NUMBER --json headRefName --jq .headRefName )"
           else
@@ -50,7 +50,7 @@ jobs:
     steps:
       - name: Find Git ref
         run: |
-          PR_NUMBER="${{ github.event.inputs.pr_number || github.event.issue.number || null }}"
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
           if test -n "${PR_NUMBER}"; then
             GIT_REF="$( gh pr view $PR_NUMBER --json headRefName --jq .headRefName )"
           else
