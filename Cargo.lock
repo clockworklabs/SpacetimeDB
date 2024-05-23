@@ -4154,6 +4154,7 @@ version = "0.9.3"
 dependencies = [
  "derive_more",
  "getrandom",
+ "insta",
  "log",
  "rand 0.8.5",
  "scoped-tls",
