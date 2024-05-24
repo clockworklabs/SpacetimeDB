@@ -659,6 +659,11 @@ impl ModuleHost {
             .await;
     }
 
+    /// Method is responsible for handling connect/disconnect events.
+    ///
+    /// It ensures pairing up those event in commitlogs
+    /// Though It can also create two entries `__identity_disconnect__`.
+    /// One is to actually run the reducer and another one to delete client from `st_clients`
     pub async fn call_identity_connected_disconnected(
         &self,
         caller_identity: Identity,
@@ -672,16 +677,18 @@ impl ModuleHost {
         };
 
         let db = &self.inner.dbic().relational_db;
-        let ctx = || ExecutionContext::reducer(
-            db.address(),
-            ReducerContext {
-                name: reducer_name.to_owned(),
-                caller_identity,
-                caller_address,
-                timestamp: Timestamp::now(),
-                arg_bsatn: Bytes::new(),
-            },
-        );
+        let ctx = || {
+            ExecutionContext::reducer(
+                db.address(),
+                ReducerContext {
+                    name: reducer_name.to_owned(),
+                    caller_identity,
+                    caller_address,
+                    timestamp: Timestamp::now(),
+                    arg_bsatn: Bytes::new(),
+                },
+            )
+        };
 
         let result = self
             .call_reducer_inner(
