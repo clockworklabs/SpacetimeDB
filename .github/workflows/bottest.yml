@@ -96,7 +96,7 @@ jobs:
         with:
           aws_key_id: ${{ secrets.AWS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
-          aws_bucket: "spacetimedb-ci-benchmarks"
+          aws_bucket: "spacetimedb-private-bottest-results"
           source_dir: bottest-results
           endpoint: https://nyc3.digitaloceanspaces.com
           destination_dir: bottests
@@ -106,7 +106,7 @@ jobs:
           RESULTS_NAME="pr-$PR_NUMBER-$GITHUB_SHA"
           BODY="<details><summary>Bot test results</summary>
 
-          Test results are stored on DO Spaces [here](https://cloud.digitalocean.com/spaces/spacetimedb-ci-benchmarks?path=bottests%2F). You'll need to log in
+          Test results are stored on DO Spaces [here](https://cloud.digitalocean.com/spaces/spacetimedb-private-bottest-results?path=bottests%2F). You'll need to log in
           (we keep these secret).
 
           The results of this test are named $RESULTS_NAME.zip.
