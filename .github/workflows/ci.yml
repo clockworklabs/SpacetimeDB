@@ -24,7 +24,7 @@ jobs:
         run: |
           PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
           if test -n "${PR_NUMBER}"; then
-            GIT_REF="$( gh pr view $PR_NUMBER --json headRefName --jq .headRefName )"
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
           else
             GIT_REF="${{ github.ref }}"
           fi
@@ -56,7 +56,7 @@ jobs:
         run: |
           PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
           if test -n "${PR_NUMBER}"; then
-            GIT_REF="$( gh pr view $PR_NUMBER --json headRefName --jq .headRefName )"
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
           else
             GIT_REF="${{ github.ref }}"
           fi
