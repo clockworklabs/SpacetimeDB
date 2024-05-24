@@ -1,5 +1,8 @@
 use anyhow::{anyhow, Context};
 use bytes::Bytes;
+use smallvec::SmallVec;
+use spacetimedb_primitives::col_list;
+use spacetimedb_sats::algebraic_value;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,7 +15,7 @@ use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record, SystemLogger};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::system_tables::{StClientsRow, ST_CLIENTS_ID};
+use crate::db::datastore::system_tables::{StClientsFields, StClientsRow, ST_CLIENTS_ID};
 use crate::db::datastore::traits::IsolationLevel;
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use crate::execution_context::{self, ExecutionContext, ReducerContext};
@@ -310,24 +313,27 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         })
     }
 
-    fn update_st_clients(
-        &self,
-        caller_identity: Identity,
-        caller_address: Address,
-        connected: bool,
-    ) -> Result<(), DBError> {
+    fn delete_st_clients(&self, caller_identity: Identity, caller_address: Address) -> Result<(), DBError> {
         let db = &*self.database_instance_context.relational_db;
+        let ctx = &ExecutionContext::internal(db.address());
         let row = &StClientsRow {
             identity: caller_identity,
             address: caller_address,
         };
-        db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
-            if connected {
-                db.insert(tx, ST_CLIENTS_ID, row.into())?;
-            } else {
-                db.delete_by_rel(tx, ST_CLIENTS_ID, [row.into()]);
-            }
-            Ok(())
+
+        db.with_auto_commit(ctx, |tx| {
+            let row = db
+                .iter_by_col_eq_mut(
+                    ctx,
+                    tx,
+                    ST_CLIENTS_ID,
+                    col_list![StClientsFields::Identity, StClientsFields::Address],
+                    &algebraic_value::AlgebraicValue::product(row),
+                )?
+                .map(|row_ref| row_ref.pointer())
+                .collect::<SmallVec<[_; 1]>>();
+            db.delete(tx, ST_CLIENTS_ID, row);
+            Ok::<(), DBError>(())
         })
     }
 }
@@ -571,7 +577,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let ctx = ExecutionContext::reducer(address, ReducerContext::from(op.clone()));
         // run the call_reducer call in rayon. it's important that we don't acquire a lock inside a rayon task,
         // as that can lead to deadlock.
-        let (ctx, tx, result) = rayon::scope(|_| tx_slot.set(ctx, tx, || self.instance.call_reducer(op, budget)));
+        let (ctx, mut tx, result) = rayon::scope(|_| tx_slot.set(ctx, tx, || self.instance.call_reducer(op, budget)));
 
         let ExecuteResult {
             energy,
@@ -622,7 +628,16 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             }
             // we haven't actually comitted yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
-            Ok(Ok(())) => EventStatus::Committed(DatabaseUpdate::default()),
+            Ok(Ok(())) => {
+                if reducer_name == CLIENT_CONNECTED_DUNDER {
+                    match self.insert_st_client(&mut tx, caller_identity, caller_address) {
+                        Ok(_) => EventStatus::Committed(DatabaseUpdate::default()),
+                        Err(err) => EventStatus::Failed(err.to_string()),
+                    }
+                } else {
+                    EventStatus::Committed(DatabaseUpdate::default())
+                }
+            }
         };
 
         let event = ModuleEvent {
@@ -659,6 +674,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     // Helpers - NOT API
     fn system_logger(&self) -> &SystemLogger {
         self.database_instance_context().logger.system_logger()
+    }
+
+    fn insert_st_client(&self, tx: &mut MutTxId, identity: Identity, address: Address) -> Result<(), DBError> {
+        let db = &*self.database_instance_context().relational_db;
+        let row = &StClientsRow { identity, address };
+
+        db.insert(tx, ST_CLIENTS_ID, row.into()).map(|_| ())
     }
 }
 

@@ -1,6 +1,6 @@
 use crate::error::{DBError, TableError};
 use core::fmt;
-use spacetimedb_lib::{bsatn, Address, Identity};
+use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::*;
@@ -708,24 +708,6 @@ impl From<&StModuleRow> for ProductValue {
 pub struct StClientsRow {
     pub(crate) identity: Identity,
     pub(crate) address: Address,
-}
-
-impl TryFrom<RowRef<'_>> for StClientsRow {
-    type Error = DBError;
-
-    fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
-        Ok(Self {
-            identity: row.read_col::<AlgebraicValue>(StClientsFields::Identity).map(|value| {
-                // TODO fix this
-                let a =  bsatn::to_vec(&row).unwrap();
-                bsatn::from_slice(&a).unwrap()
-            })?,
-            address: row.read_col::<AlgebraicValue>(StClientsFields::Address).map(|value| {
-                let a = bsatn::to_vec(&row).unwrap();
-                bsatn::from_slice(&a).unwrap()
-            })?,
-        })
-    }
 }
 
 impl From<&StClientsRow> for ProductValue {

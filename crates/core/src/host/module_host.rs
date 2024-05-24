@@ -18,7 +18,6 @@ use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
 use derive_more::{From, Into};
-use futures::future::err;
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
 use itertools::{Either, Itertools};
@@ -371,12 +370,7 @@ pub trait Module: Send + Sync + 'static {
         query: String,
     ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError>;
     fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error>;
-    fn update_st_clients(
-        &self,
-        caller_identity: Identity,
-        caller_address: Address,
-        connected: bool,
-    ) -> Result<(), DBError>;
+    fn delete_st_clients(&self, caller_identity: Identity, caller_address: Address) -> Result<(), DBError>;
     #[cfg(feature = "tracelogging")]
     fn get_trace(&self) -> Option<bytes::Bytes>;
     #[cfg(feature = "tracelogging")]
@@ -475,12 +469,7 @@ trait DynModuleHost: Send + Sync + 'static {
     fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error>;
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
-    fn update_st_clients(
-        &self,
-        caller_identity: Identity,
-        caller_address: Address,
-        connected: bool,
-    ) -> Result<(), DBError>;
+    fn delete_st_clients(&self, caller_identity: Identity, caller_address: Address) -> Result<(), DBError>;
 }
 
 struct HostControllerActor<T: Module> {
@@ -565,14 +554,8 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
         self.instance_pool.closed()
     }
 
-    fn update_st_clients(
-        &self,
-        caller_identity: Identity,
-        caller_address: Address,
-        connected: bool,
-    ) -> Result<(), DBError> {
-        self.module
-            .update_st_clients(caller_identity, caller_address, connected)
+    fn delete_st_clients(&self, caller_identity: Identity, caller_address: Address) -> Result<(), DBError> {
+        self.module.delete_st_clients(caller_identity, caller_address)
     }
 }
 
@@ -732,25 +715,14 @@ impl ModuleHost {
                 e => Err(e),
             });
 
-        // If `__identity_connected__` fails, do not add the caller to `st_clients`.
-        //However, we want to ensure deletion even if `__identity_disconnected__` fails.
-        //This leads to a problem where updating `st_clients` needs to happen in a separate transaction, which compromises atomicity.
-
-        // Ignoring the result should be safe because `update_st_clients` only involves SpacetimeDB logic and system tables.
-        //A failure in the transaction should be considered a SpacetimeDB bug.
-        //Populating an error could lead to mismatched connect/disconnect event pairs.
-        if !(connected && result.is_err()) {
+        // We only perform deletion from `st_clients` here as we want to ensure it even if `__identity_disconnected__` fails.
+        // insertion to `st_clients` is handled by `wasm_common::module_host_actor::WasmModuleInstance::call_reducer_with_tx` for transactionality reasons.
+        if !connected {
             let _ = self
                 .inner
-                .update_st_clients(caller_identity, caller_address, connected)
+                .delete_st_clients(caller_identity, caller_address)
                 .map_err(|e| {
-                    log::error!(
-                        "Update to St_clients table failed with params: Identity {}, address{}, connected {}",
-                        caller_address,
-                        caller_identity,
-                        connected
-                    );
-                    e
+                    log::error!("st_clients table update failed with params with error: {:?}", e);
                 });
         }
         result
