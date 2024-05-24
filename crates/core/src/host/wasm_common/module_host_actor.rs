@@ -12,6 +12,7 @@ use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record, SystemLogger};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::system_tables::{StClientsRow, ST_CLIENTS_ID};
 use crate::db::datastore::traits::IsolationLevel;
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use crate::execution_context::{self, ExecutionContext, ReducerContext};
@@ -549,7 +550,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let ctx = ExecutionContext::reducer(address, ReducerContext::from(op.clone()));
         // run the call_reducer call in rayon. it's important that we don't acquire a lock inside a rayon task,
         // as that can lead to deadlock.
-        let (ctx, tx, result) = rayon::scope(|_| tx_slot.set(ctx, tx, || self.instance.call_reducer(op, budget)));
+        let (ctx, mut tx, result) = rayon::scope(|_| tx_slot.set(ctx, tx, || self.instance.call_reducer(op, budget)));
 
         let ExecuteResult {
             energy,
@@ -600,7 +601,18 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             }
             // we haven't actually comitted yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
-            Ok(Ok(())) => EventStatus::Committed(DatabaseUpdate::default()),
+            Ok(Ok(())) => {
+                // Detecing a new client, and inserting it in `st_clients`
+                // Disconnect logic is written in module_host.rs, due to different transacationality requirements.
+                if reducer_name == CLIENT_CONNECTED_DUNDER {
+                    match self.insert_st_client(&mut tx, caller_identity, caller_address) {
+                        Ok(_) => EventStatus::Committed(DatabaseUpdate::default()),
+                        Err(err) => EventStatus::Failed(err.to_string()),
+                    }
+                } else {
+                    EventStatus::Committed(DatabaseUpdate::default())
+                }
+            }
         };
 
         let event = ModuleEvent {
@@ -637,6 +649,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     // Helpers - NOT API
     fn system_logger(&self) -> &SystemLogger {
         self.database_instance_context().logger.system_logger()
+    }
+
+    fn insert_st_client(&self, tx: &mut MutTxId, identity: Identity, address: Address) -> Result<(), DBError> {
+        let db = &*self.database_instance_context().relational_db;
+        let row = &StClientsRow { identity, address };
+
+        db.insert(tx, ST_CLIENTS_ID, row.into()).map(|_| ())
     }
 }
 
