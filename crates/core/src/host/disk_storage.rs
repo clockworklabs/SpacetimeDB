@@ -54,22 +54,18 @@ impl DiskStorage {
     pub async fn put(&self, value: &[u8]) -> io::Result<Hash> {
         let h = hash_bytes(value);
         let path = self.object_path(&h);
-        let tmp = path.with_extension("tmp");
         fs::create_dir_all(path.parent().expect("object path must have a parent")).await?;
 
-        match fs::File::options().write(true).create_new(true).open(&tmp).await {
-            Ok(mut f) => {
-                f.write_all(value).await?;
-                f.sync_data().await?;
-                drop(f);
-
-                fs::rename(tmp, path).await?;
-            }
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
-                log::debug!("concurrent DiskStorage::put()");
-            }
-            Err(e) => return Err(e),
+        // to ensure it doesn't conflict with a concurrent call to put() - suffix with nanosecond timestamp
+        let ts = std::time::UNIX_EPOCH.elapsed().unwrap().as_nanos();
+        let tmp = path.with_extension(format!("tmp{ts}"));
+        {
+            let mut f = fs::File::options().write(true).create_new(true).open(&tmp).await?;
+            f.write_all(value).await?;
+            f.sync_data().await?;
         }
+
+        fs::rename(tmp, path).await?;
 
         Ok(h)
     }
