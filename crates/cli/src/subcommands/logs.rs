@@ -98,7 +98,7 @@ struct LogsParams {
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let identity = args.get_one::<String>("identity");
-    let num_lines = args.get_one::<u32>("num_lines").copied();
+    let mut num_lines = args.get_one::<u32>("num_lines").copied();
     let database = args.get_one::<String>("database").unwrap();
     let follow = args.get_flag("follow");
     let json = args.get_flag("json");
@@ -107,7 +107,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let address = database_address(&config, database, server).await?;
 
-    // TODO: num_lines should default to like 10 if follow is specified?
+    if follow && num_lines.is_none() {
+        // We typically don't want logs from the very beginning if we're also following.
+        num_lines = Some(num_lines.unwrap_or(10));
+    }
     let query_parms = LogsParams { num_lines, follow };
 
     let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", config.get_host_url(server)?, address));
