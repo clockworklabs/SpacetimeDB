@@ -32,8 +32,8 @@ impl DatabaseInstanceContext {
 
         let log_path = DatabaseLogger::filepath(&database.address, instance_id);
         let relational_db = match config.storage {
-            Storage::Memory => RelationalDB::open(db_path, database.address, None)?,
-            Storage::Disk => RelationalDB::local(db_path, rt, database.address)?,
+            Storage::Memory => RelationalDB::open(db_path, database.address, None, None)?,
+            Storage::Disk => RelationalDB::local(db_path, rt, database.address, instance_id)?,
         };
 
         Ok(Self {

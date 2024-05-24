@@ -1,3 +1,4 @@
+use super::datastore::locking_tx_datastore::committed_state::CommittedState;
 use super::datastore::traits::{
     IsolationLevel, MutProgrammable, MutTx as _, MutTxDatastore, Programmable, RowTypeForTable, Tx as _, TxDatastore,
 };
@@ -24,6 +25,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_snapshot::SnapshotRepository;
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_vm::errors::ErrorVm;
 use std::borrow::Cow;
@@ -54,6 +56,7 @@ pub struct RelationalDB {
     // TODO(cloutiertyler): This should not be public
     pub(crate) inner: Locking,
     durability: Option<Arc<dyn Durability<TxData = Txdata>>>,
+    snapshots: Option<Arc<SnapshotRepository>>,
     address: Address,
 
     row_count_fn: RowCountFn,
@@ -72,6 +75,9 @@ impl std::fmt::Debug for RelationalDB {
     }
 }
 
+/// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
+const SNAPSHOT_FREQUENCY: u64 = 0x1000;
+
 impl RelationalDB {
     /// Open a database with local durability.
     ///
@@ -84,7 +90,12 @@ impl RelationalDB {
     ///
     /// The [`tokio::runtime::Handle`] is used to spawn background tasks which
     /// take care of flushing and syncing the log.
-    pub fn local(root: impl AsRef<Path>, rt: tokio::runtime::Handle, address: Address) -> Result<Self, DBError> {
+    pub fn local(
+        root: impl AsRef<Path>,
+        rt: tokio::runtime::Handle,
+        address: Address,
+        instance_id: u64,
+    ) -> Result<Self, DBError> {
         let log_dir = root.as_ref().join("clog");
         create_dir_all(&log_dir)?;
         let durability = durability::Local::open(
@@ -104,7 +115,11 @@ impl RelationalDB {
             move || durability.size_on_disk()
         });
 
-        Self::open(root, address, Some((durability.clone(), disk_size_fn)))?.apply(durability)
+        let snapshot_dir = root.as_ref().join("snapshots");
+        create_dir_all(&snapshot_dir)?;
+        let snapshots = SnapshotRepository::open(snapshot_dir, address, instance_id).map(Arc::new)?;
+
+        Self::open(root, address, Some((durability.clone(), disk_size_fn)), Some(snapshots))?.apply(durability)
     }
 
     /// Open a database with root directory `root` and the provided [`Durability`]
@@ -116,6 +131,7 @@ impl RelationalDB {
         root: impl AsRef<Path>,
         address: Address,
         durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
+        snapshots: Option<Arc<SnapshotRepository>>,
     ) -> Result<Self, DBError> {
         create_dir_all(&root)?;
 
@@ -135,6 +151,7 @@ impl RelationalDB {
         Ok(Self {
             inner,
             durability,
+            snapshots,
             address,
 
             row_count_fn,
@@ -311,8 +328,14 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTx) -> Result<Option<TxData>, DBError> {
+    pub fn commit_tx(&self, ctx: &ExecutionContext, mut tx: MutTx) -> Result<Option<TxData>, DBError> {
         log::trace!("COMMIT MUT TX");
+
+        // Snapshot before committing, as it requires write access to the committed state
+        // in order to update page dirty marks.
+        if let Some(snapshots) = &self.snapshots {
+            Self::maybe_do_snapshot(&**snapshots, ctx, &mut tx.committed_state_write_lock)
+        }
 
         let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? else {
             return Ok(None);
@@ -326,8 +349,14 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn commit_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTx) -> Result<Option<(TxData, Tx)>, DBError> {
+    pub fn commit_tx_downgrade(&self, ctx: &ExecutionContext, mut tx: MutTx) -> Result<Option<(TxData, Tx)>, DBError> {
         log::trace!("COMMIT MUT TX");
+
+        // Snapshot before downgrading, as it requires write access to the committed state
+        // in order to update page dirty marks.
+        if let Some(snapshots) = &self.snapshots {
+            Self::maybe_do_snapshot(&**snapshots, ctx, &mut tx.committed_state_write_lock)
+        }
 
         let Some((tx_data, tx)) = self.inner.commit_mut_tx_downgrade(ctx, tx)? else {
             return Ok(None);
@@ -397,6 +426,35 @@ impl RelationalDB {
             log::trace!("append {txdata:?}");
             // TODO: Should measure queuing time + actual write
             durability.append_tx(txdata);
+        }
+    }
+
+    fn maybe_do_snapshot(snapshots: &SnapshotRepository, ctx: &ExecutionContext, committed_state: &mut CommittedState) {
+        if committed_state.next_tx_offset % SNAPSHOT_FREQUENCY != 0 {
+            return;
+        }
+
+        log::info!(
+            "Capturing snapshot of database {:?} at TX offset {}",
+            ctx.database(),
+            committed_state.next_tx_offset
+        );
+
+        let start_time = std::time::Instant::now();
+
+        if let Err(e) = snapshots.create_snapshot(
+            committed_state.tables.values_mut(),
+            &committed_state.blob_store,
+            committed_state.next_tx_offset,
+        ) {
+            log::error!("Error capturing snapshot of database {:?}: {e:?}", ctx.database());
+        } else {
+            log::info!(
+                "Captured snapshot of database {:?} at TX offset {} in {:?}",
+                ctx.database(),
+                committed_state.next_tx_offset,
+                start_time.elapsed()
+            );
         }
     }
 
@@ -983,7 +1041,7 @@ pub mod tests_utils {
         }
 
         fn in_memory_internal(root: &Path) -> Result<RelationalDB, DBError> {
-            Ok(RelationalDB::open(root, Self::ADDRESS, None)?.with_row_count(Self::row_count_fn()))
+            Ok(RelationalDB::open(root, Self::ADDRESS, None, None)?.with_row_count(Self::row_count_fn()))
         }
 
         fn durable_internal(
@@ -1010,9 +1068,18 @@ pub mod tests_utils {
                 move || handle.size_on_disk()
             });
 
-            let rdb = RelationalDB::open(root, Self::ADDRESS, Some((handle.clone(), disk_size_fn)))?
-                .apply(handle.clone())?
-                .with_row_count(Self::row_count_fn());
+            let snapshot_dir = root.join("snapshots");
+            create_dir_all(&snapshot_dir)?;
+            let snapshots = SnapshotRepository::open(snapshot_dir, Self::ADDRESS, 0).map(Arc::new)?;
+
+            let rdb = RelationalDB::open(
+                root,
+                Self::ADDRESS,
+                Some((handle.clone(), disk_size_fn)),
+                Some(snapshots),
+            )?
+            .apply(handle.clone())?
+            .with_row_count(Self::row_count_fn());
 
             Ok((rdb, handle))
         }
@@ -1117,7 +1184,7 @@ mod tests {
         stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
-        match RelationalDB::local(stdb.path(), stdb.runtime().unwrap().clone(), Address::zero()) {
+        match RelationalDB::local(stdb.path(), stdb.runtime().unwrap().clone(), Address::zero(), 0) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
             }

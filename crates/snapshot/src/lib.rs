@@ -89,6 +89,7 @@ impl Snapshot {
         // TODO(deduplication): Accept a previous `DirTrie` and,
         // if it contains `hash`, hardlink rather than creating a new file.
         let mut file = object_repo.open_entry(&hash.data, &o_excl())?;
+        // TODO(perf): Async IO?
         file.write_all(blob)?;
         self.blobs.push(BlobEntry {
             hash: *hash,
@@ -132,6 +133,7 @@ impl Snapshot {
                 // if it contains `hash`, hardlink rather than creating a new file.
 
                 // TODO(perf): Write directly to file without intermediate vec.
+                // TODO(perf): Async IO?
                 let page_bsatn = bsatn::to_vec(page)?;
                 file.write_all(&page_bsatn)?;
             }
@@ -205,6 +207,7 @@ impl Snapshot {
         for BlobEntry { hash, uses } in &self.blobs {
             let mut file = object_repo.open_entry(&hash.data, &o_rdonly())?;
             let mut buf = Vec::with_capacity(file.metadata()?.len() as usize);
+            // TODO(perf): Async IO?
             file.read_to_end(&mut buf)?;
             let computed_hash = BlobHash::hash_from_bytes(&buf);
             if *hash != computed_hash {
@@ -226,6 +229,7 @@ impl Snapshot {
             let mut file = object_repo.open_entry(&hash.as_bytes(), &o_rdonly())?;
             // TODO: avoid allocating a `Vec` here.
             let mut buf = Vec::with_capacity(file.metadata()?.len() as usize);
+            // TODO(perf): Async IO?
             file.read_to_end(&mut buf)?;
             let page = bsatn::from_slice::<Box<Page>>(&buf)?;
 
@@ -430,6 +434,17 @@ impl SnapshotRepository {
             module_abi_versino: snapshot.module_abi_version,
             blob_store,
             tables,
+        })
+    }
+
+    pub fn open(root: PathBuf, database_address: Address, database_instance_id: u64) -> anyhow::Result<Self> {
+        if !root.is_dir() {
+            anyhow::bail!("Cannot open snapshot repository in non-directory {root:?}");
+        }
+        Ok(Self {
+            root,
+            database_address,
+            database_instance_id,
         })
     }
 }
