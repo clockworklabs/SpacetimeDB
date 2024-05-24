@@ -21,10 +21,9 @@ use spacetimedb::client::ClientActorIndex;
 use spacetimedb::db::db_metrics;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{HostController, ProgramStorage, UpdateDatabaseResult};
+use spacetimedb::host::{DiskStorage, HostController, ProgramStorage, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, IdentityEmail, Node};
-use spacetimedb::object_db::ObjectDb;
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::stdb_path;
 use spacetimedb::worker_metrics::WORKER_METRICS;
@@ -37,7 +36,7 @@ use std::sync::Arc;
 
 pub struct StandaloneEnv {
     control_db: ControlDb,
-    object_db: Arc<ObjectDb>,
+    program_store: Arc<DiskStorage>,
     host_controller: HostController,
     client_actor_index: ClientActorIndex,
     public_key: DecodingKey,
@@ -50,14 +49,12 @@ impl StandaloneEnv {
     pub async fn init(config: Config) -> anyhow::Result<Arc<Self>> {
         let control_db = ControlDb::new().context("failed to initialize control db")?;
         let energy_monitor = Arc::new(StandaloneEnergyMonitor::new(control_db.clone()));
-        let object_db = ObjectDb::init().map(Arc::new)?;
+        let program_store = Arc::new(DiskStorage::new(stdb_path("control_node/program_bytes")).await?);
+
         let host_controller = HostController::new(
             stdb_path("worker_node/database_instances").into(),
             config,
-            ProgramStorage::external({
-                let object_db = object_db.clone();
-                move |hash| object_db.get_object(hash).map(|obj| obj.map(Into::into))
-            }),
+            ProgramStorage::External(program_store.clone()),
             energy_monitor,
         );
         let client_actor_index = ClientActorIndex::new();
@@ -69,7 +66,7 @@ impl StandaloneEnv {
 
         Ok(Arc::new(Self {
             control_db,
-            object_db,
+            program_store,
             host_controller,
             client_actor_index,
             public_key,
@@ -275,10 +272,11 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         spec: spacetimedb_client_api::DatabaseDef,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
         let existing_db = self.control_db.get_database_by_address(&spec.address)?;
+
         match existing_db {
             // The database does not already exist, so we'll create it.
             None => {
-                let program_bytes_address = self.object_db.insert_object(spec.program_bytes)?;
+                let program_bytes_address = self.program_store.put(&spec.program_bytes).await?;
                 let mut database = Database {
                     id: 0,
                     address: spec.address,
@@ -312,7 +310,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     spec.address.to_abbreviated_hex()
                 );
 
-                let program_bytes_address = self.object_db.insert_object(spec.program_bytes)?;
+                let program_bytes_address = self.program_store.put(&spec.program_bytes).await?;
                 let database = Database {
                     num_replicas: spec.num_replicas,
                     program_bytes_address,

@@ -10,6 +10,7 @@ use crate::module_host_context::ModuleCreationContext;
 use crate::util::{spawn_rayon, AnyBytes};
 use crate::{db, host};
 use anyhow::{anyhow, bail, ensure, Context as _};
+use async_trait::async_trait;
 use log::{debug, info, trace, warn};
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -17,6 +18,7 @@ use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::Address;
 use spacetimedb_sats::hash::Hash;
 use std::fmt;
+use std::future::Future;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -46,8 +48,22 @@ type HostCell = Arc<AsyncRwLock<Option<Host>>>;
 /// The registry of all running hosts.
 type Hosts = Arc<Mutex<IntMap<u64, HostCell>>>;
 
-type ExternalStorage = dyn Fn(&Hash) -> anyhow::Result<Option<AnyBytes>> + Send + Sync + 'static;
-type SameDbStorage = dyn Fn(&RelationalDB, &Hash) -> anyhow::Result<Option<AnyBytes>> + Send + Sync + 'static;
+#[async_trait]
+pub trait ExternalStorage: Send + Sync + 'static {
+    async fn lookup(&self, program_hash: Hash) -> anyhow::Result<Option<AnyBytes>>;
+}
+#[async_trait]
+impl<F, Fut> ExternalStorage for F
+where
+    F: Fn(Hash) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = anyhow::Result<Option<AnyBytes>>> + Send,
+{
+    async fn lookup(&self, program_hash: Hash) -> anyhow::Result<Option<AnyBytes>> {
+        self(program_hash).await
+    }
+}
+
+type SameDbStorage = dyn Fn(&RelationalDB, Hash) -> anyhow::Result<Option<AnyBytes>> + Send + Sync + 'static;
 
 /// Source of the module binary.
 ///
@@ -55,7 +71,7 @@ type SameDbStorage = dyn Fn(&RelationalDB, &Hash) -> anyhow::Result<Option<AnyBy
 #[derive(Clone)]
 pub enum ProgramStorage {
     /// External storage, addressable by program hash.
-    External(Arc<ExternalStorage>),
+    External(Arc<dyn ExternalStorage>),
     /// Storage inside the [`RelationalDB`] itself, but with a retrieval
     /// function chosen by the user.
     SameDb(Arc<SameDbStorage>),
@@ -63,19 +79,25 @@ pub enum ProgramStorage {
 
 impl ProgramStorage {
     /// Construct a [`ProgramStorage::External`] from a lookup function.
-    pub fn external<F>(f: F) -> Self
-    where
-        F: Fn(&Hash) -> anyhow::Result<Option<AnyBytes>> + Send + Sync + 'static,
-    {
-        Self::External(Arc::new(f))
+    pub fn external(s: impl ExternalStorage) -> Self {
+        Self::External(Arc::new(s))
     }
 
     /// Construct a [`ProgramStorage::SameDb`] from a lookup function.
     pub fn same_db<F>(f: F) -> Self
     where
-        F: Fn(&RelationalDB, &Hash) -> anyhow::Result<Option<AnyBytes>> + Send + Sync + 'static,
+        F: Fn(&RelationalDB, Hash) -> anyhow::Result<Option<AnyBytes>> + Send + Sync + 'static,
     {
         Self::SameDb(Arc::new(f))
+    }
+
+    async fn load_program(&self, db: &RelationalDB, program_hash: Hash) -> anyhow::Result<AnyBytes> {
+        debug!("lookup program {}", program_hash);
+        match self {
+            ProgramStorage::External(external) => external.lookup(program_hash).await,
+            ProgramStorage::SameDb(f) => f(db, program_hash),
+        }?
+        .with_context(|| format!("program {} not found", program_hash))
     }
 }
 
@@ -633,15 +655,6 @@ async fn make_dbic(
     .await
 }
 
-fn load_program(db: &RelationalDB, storage: &ProgramStorage, hash: &Hash) -> anyhow::Result<AnyBytes> {
-    debug!("lookup program {}", hash);
-    match storage {
-        ProgramStorage::External(f) => f(hash),
-        ProgramStorage::SameDb(f) => f(db, hash),
-    }?
-    .with_context(|| format!("program {} not found", hash))
-}
-
 /// Update a module.
 ///
 /// If the `db` is not initialized yet (i.e. its program hash is `None`),
@@ -720,7 +733,7 @@ impl Host {
         let (dbic, connected_clients) = make_dbic(root_dir, config, database, instance_id).await?;
         let dbic = Arc::new(dbic);
 
-        let program_bytes = load_program(&dbic.relational_db, &program_storage, &program_hash)?;
+        let program_bytes = program_storage.load_program(&dbic.relational_db, program_hash).await?;
         let (scheduler, scheduler_starter) = Scheduler::open(dbic.scheduler_db_path(root_dir.to_path_buf()))?;
         let module_host = make_module_host(
             host_type,
@@ -782,9 +795,12 @@ impl Host {
         program_hash: Hash,
         on_panic: impl Fn() + Send + Sync + 'static,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        let dbic = self.dbic.clone();
+        let dbic = &self.dbic;
         let (scheduler, scheduler_starter) = self.scheduler.new_with_same_db();
-        let program_bytes = load_program(&dbic.relational_db, &self.program_storage, &program_hash)?;
+        let program_bytes = self
+            .program_storage
+            .load_program(&dbic.relational_db, program_hash)
+            .await?;
         let module = make_module_host(
             host_type,
             ModuleCreationContext {

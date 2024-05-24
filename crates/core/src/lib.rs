@@ -40,7 +40,6 @@ pub mod estimation;
 pub mod execution_context;
 pub mod host;
 pub mod module_host_context;
-pub mod object_db;
 pub mod sendgrid_controller;
 pub mod startup;
 pub mod subscription;
