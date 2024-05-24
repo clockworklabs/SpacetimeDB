@@ -18,10 +18,7 @@
 //! not obvious how to compute the minimal set of operations for the client to
 //! synchronize its state. In general, we conjecture that server-side
 //! materialized views are necessary. We find, however, that a particular kind
-//! of join query _can_ be evaluated incrementally without materialized views,
-//! as described in the following section:
-//!
-#![doc = include_str!("../../../../docs/incremental-joins.md")]
+//! of join query _can_ be evaluated incrementally without materialized views.
 
 use super::execution_unit::ExecutionUnit;
 use super::query;
