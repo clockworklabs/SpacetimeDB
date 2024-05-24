@@ -111,7 +111,7 @@ pub struct HostController {
     /// The directory to create database instances in.
     ///
     /// For example:
-    ///>
+    ///
     /// - `$STDB_PATH/worker_node/database_instances`
     /// - `$STDB_PATH/database_instances`
     root_dir: Arc<Path>,
