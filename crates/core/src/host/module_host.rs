@@ -672,7 +672,7 @@ impl ModuleHost {
         };
 
         let db = &self.inner.dbic().relational_db;
-        let ctx = &ExecutionContext::reducer(
+        let ctx = || ExecutionContext::reducer(
             db.address(),
             ReducerContext {
                 name: reducer_name.to_owned(),
@@ -703,7 +703,7 @@ impl ModuleHost {
                 // This is necessary to be able to disconnect clients after a server
                 // crash.
                 ReducerCallError::NoSuchReducer => db
-                    .with_auto_commit(ctx, |mut_tx| {
+                    .with_auto_commit(&ctx(), |mut_tx| {
                         if connected {
                             self.update_st_clients(mut_tx, caller_identity, caller_address, connected)
                         } else {
@@ -723,7 +723,7 @@ impl ModuleHost {
         // Deleting client from `st_clients`does not depend upon result of disconnect reducer hence done in a separate tx.
         if !connected {
             let _ = db
-                .with_auto_commit(ctx, |mut_tx| {
+                .with_auto_commit(&ctx(), |mut_tx| {
                     self.update_st_clients(mut_tx, caller_identity, caller_address, connected)
                 })
                 .map_err(|e| {
