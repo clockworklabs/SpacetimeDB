@@ -20,6 +20,7 @@ git clone ssh://git@github.com/<username>/spacetime-docs
 git add .
 git commit -m "A specific description of the changes I made and why"
 ```
+
 5. Push your changes to your fork as a branch
 
 ```bash
