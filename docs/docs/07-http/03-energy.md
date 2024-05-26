@@ -17,13 +17,13 @@ Get the energy balance of an identity.
 
 Accessible through the CLI as `spacetime energy status <identity>`.
 
-#### Parameters
+### Parameters
 
 | Name        | Value                   |
 | ----------- | ----------------------- |
 | `:identity` | The Spacetime identity. |
 
-#### Returns
+### Returns
 
 Returns JSON in the form:
 
@@ -45,25 +45,25 @@ Note that in the SpacetimeDB 0.6 Testnet, this endpoint always returns code 401,
 
 Accessible through the CLI as `spacetime energy set-balance <balance> <identity>`.
 
-#### Parameters
+### Parameters
 
 | Name        | Value                   |
 | ----------- | ----------------------- |
 | `:identity` | The Spacetime identity. |
 
-#### Query Parameters
+### Query Parameters
 
 | Name      | Value                                      |
 | --------- | ------------------------------------------ |
 | `balance` | A decimal integer; the new balance to set. |
 
-#### Required Headers
+### Required Headers
 
 | Name            | Value                                                           |
 | --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
-#### Returns
+### Returns
 
 Returns JSON in the form:
 
