@@ -6,13 +6,13 @@ Rather than a password, each Spacetime identity is associated with a private tok
 
 > Do not share your SpacetimeDB token with anyone, ever.
 
-### Generating identities and tokens
+## Generating identities and tokens
 
 Clients can request a new identity and token via [the `/identity POST` HTTP endpoint](/docs/http/identity#identity-post).
 
 Alternately, a new identity and token will be generated during an anonymous connection via the [WebSocket API](/docs/ws), and passed to the client as [an `IdentityToken` message](/docs/ws#identitytoken).
 
-### Encoding `Authorization` headers
+## Encoding `Authorization` headers
 
 Many SpacetimeDB HTTP endpoints either require or optionally accept a token in the `Authorization` header. SpacetimeDB authorization headers use `Basic` authorization with the username `token` and the token as the password. Because Spacetime tokens are not passwords, and SpacetimeDB Cloud uses TLS, usual security concerns about HTTP `Basic` authorization do not apply.
 
@@ -22,7 +22,7 @@ To construct an appropriate `Authorization` header value for a `token`:
 2. Base64-encode.
 3. Prepend the string `Basic `.
 
-#### Python
+### Python
 
 ```python
 def auth_header_value(token):
@@ -31,7 +31,7 @@ def auth_header_value(token):
     return f"Basic {base64_encoded}"
 ```
 
-#### Rust
+### Rust
 
 ```rust
 fn auth_header_value(token: &str) -> String {
@@ -41,7 +41,7 @@ fn auth_header_value(token: &str) -> String {
 }
 ```
 
-#### C#
+### C#
 
 ```csharp
 public string AuthHeaderValue(string token)
