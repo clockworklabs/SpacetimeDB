@@ -1,5 +1,6 @@
 ---
 title: SpacetimeDB Rust client SDK
+navTitle: Rust
 ---
 
 The SpacetimeDB client SDK for Rust contains all the tools you need to build native clients for SpacetimeDB modules using Rust.

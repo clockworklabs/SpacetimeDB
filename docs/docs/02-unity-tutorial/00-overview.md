@@ -1,5 +1,6 @@
 ---
-title: Overview
+title: Unity Tutorial Overview
+navTitle: Overview
 ---
 
 Need help with the tutorial or CLI commands? [Join our Discord server](https://discord.gg/spacetimedb)!

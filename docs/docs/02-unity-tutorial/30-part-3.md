@@ -1,5 +1,6 @@
 ---
-title: Part 3 - Client
+title: Unity Tutorial - Basic Multiplayer - Part 3 - Client
+navTitle: 3 - Client
 ---
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!

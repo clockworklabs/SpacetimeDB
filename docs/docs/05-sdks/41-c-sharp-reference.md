@@ -1,5 +1,6 @@
 ---
 title: SpacetimeDB C# client SDK
+navTitle: C#
 ---
 
 The SpacetimeDB client C# for Rust contains all the tools you need to build native clients for SpacetimeDB modules using C#.

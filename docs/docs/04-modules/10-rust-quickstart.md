@@ -1,5 +1,6 @@
 ---
 title: Rust Module Quickstart
+navTitle: Rust Quickstart
 ---
 
 In this tutorial, we'll implement a simple chat server as a SpacetimeDB module.

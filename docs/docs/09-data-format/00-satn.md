@@ -1,5 +1,6 @@
 ---
-title: SATN
+title: SATN JSON Format
+navTitle: SATN
 ---
 
 The Spacetime Algebraic Type Notation JSON format defines how Spacetime `AlgebraicType`s and `AlgebraicValue`s are encoded as JSON. Algebraic types and values are JSON-encoded for transport via the [HTTP Databases API](/docs/http/database) and the [WebSocket text protocol](/docs/ws#text-protocol).

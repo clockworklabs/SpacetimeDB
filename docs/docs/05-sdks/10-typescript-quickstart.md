@@ -1,5 +1,6 @@
 ---
 title: Typescript Client SDK Quick Start
+navTitle: Typescript Quickstart
 ---
 
 In this guide we'll show you how to get up and running with a simple SpacetimDB app with a client written in Typescript.

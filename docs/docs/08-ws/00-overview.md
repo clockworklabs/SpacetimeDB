@@ -1,5 +1,6 @@
 ---
 title: WebSocket API
+navTitle: WebSocket
 ---
 
 As an extension of the [HTTP API](/doc/http-api-reference), SpacetimeDB offers a WebSocket API. Clients can subscribe to a database via a WebSocket connection to receive streaming updates as the database changes, and send requests to invoke reducers. Messages received from the server over a WebSocket will follow the same total ordering of transactions as are committed to the database.

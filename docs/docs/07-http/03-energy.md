@@ -1,5 +1,6 @@
 ---
-title: `/energy`
+title: `/energy` HTTP API
+navTitle: `/energy`
 ---
 
 The HTTP endpoints in `/energy` allow clients to query identities' energy balances. Spacetime databases expend energy from their owners' balances while executing reducers.

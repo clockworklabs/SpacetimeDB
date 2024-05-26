@@ -1,6 +1,6 @@
 ---
-title: BSATN
-tagline: SATN Binary Format (BSATN)
+title: SATN Binary Format (BSATN)
+navTitle: BSATN
 ---
 
 The Spacetime Algebraic Type Notation binary (BSATN) format defines

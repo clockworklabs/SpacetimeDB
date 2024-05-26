@@ -1,5 +1,6 @@
 ---
 title: C# Module Quickstart
+navTitle: C# Module Quickstart
 ---
 
 In this tutorial, we'll implement a simple chat server as a SpacetimeDB module.

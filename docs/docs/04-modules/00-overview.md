@@ -1,5 +1,6 @@
 ---
 title: Server Module Overview
+navTitle: Overview
 ---
 
 Server modules are the core of a SpacetimeDB application. They define the structure of the database and the server-side logic that processes and handles client requests. These functions are called reducers and are transactional, meaning they ensure data consistency and integrity. Reducers can perform operations such as inserting, updating, and deleting data in the database.

@@ -1,5 +1,6 @@
 ---
-title: Part 2a - Server Module (Rust)
+title: Unity Tutorial - Basic Multiplayer - Part 2a - Server Module (Rust)
+navTitle: 2a - Server (Rust)
 ---
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!

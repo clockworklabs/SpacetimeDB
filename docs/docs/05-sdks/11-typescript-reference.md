@@ -1,5 +1,6 @@
 ---
 title: SpacetimeDB Typescript Client SDK
+navTitle: Typescript
 ---
 
 The SpacetimeDB client SDK for TypeScript contains all the tools you need to build clients for SpacetimeDB modules using Typescript, either in the browser or with NodeJS.

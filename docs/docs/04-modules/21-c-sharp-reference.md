@@ -1,5 +1,6 @@
 ---
 title: SpacetimeDB C# Modules
+navTitle: C# Reference
 ---
 
 You can use the [C# SpacetimeDB library](https://github.com/clockworklabs/SpacetimeDBLibCSharp) to write modules in C# which interact with the SpacetimeDB database.

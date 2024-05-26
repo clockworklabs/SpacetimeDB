@@ -1,5 +1,6 @@
 ---
 title: SpacetimeDB Rust Modules
+navTitle: Rust Modules
 ---
 
 Rust clients of SpacetimeDB use the [Rust SpacetimeDB module library][module library] to write modules which interact with the SpacetimeDB database.
