@@ -1,5 +1,5 @@
 ---
-title: Unity Tutorial - Basic Multiplayer - Part 1 - Setup
+title: Part 1 - Setup
 ---
 
 ![UnityTutorial-HeroImage](/images/unity-tutorial/UnityTutorial-HeroImage.JPG)

@@ -1,5 +1,5 @@
 ---
-title: Unity Tutorial - Basic Multiplayer - Part 2a - Server Module (C#)
+title: Part 2a - Server Module (C#)
 ---
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!

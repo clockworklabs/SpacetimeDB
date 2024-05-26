@@ -1,5 +1,5 @@
 ---
-title: Unity Tutorial - Advanced - Part 5 - BitCraft Mini
+title: Part 5 - BitCraft Mini
 ---
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
