@@ -1,4 +1,6 @@
-# Unity Tutorial - Advanced - Part 4 - Resources and Scheduling
+---
+title: Unity Tutorial - Advanced - Part 4 - Resources and Scheduling
+---
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 

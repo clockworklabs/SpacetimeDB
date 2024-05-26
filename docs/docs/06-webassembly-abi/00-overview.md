@@ -1,4 +1,6 @@
-# Module ABI Reference
+---
+title: Module ABI Reference
+---
 
 This document specifies the _low level details_ of module-host interactions (_"Module ABI"_). _**Most users**_ looking to interact with the host will want to use derived and higher level functionality like [`bindings`], `#[spacetimedb(table)]`, and `#[derive(SpacetimeType)]` rather than this low level ABI. For more on those, read the [Rust module quick start][module_quick_start] guide and the [Rust module reference][module_ref].
 
