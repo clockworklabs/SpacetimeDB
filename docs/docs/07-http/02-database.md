@@ -31,13 +31,13 @@ Look up a database's address by its name.
 
 Accessible through the CLI as `spacetime dns lookup <name>`.
 
-#### Parameters
+### Parameters
 
 | Name    | Value                     |
 | ------- | ------------------------- |
 | `:name` | The name of the database. |
 
-#### Returns
+### Returns
 
 If a database with that name exists, returns JSON in the form:
 
@@ -62,13 +62,13 @@ Look up a database's name by its address.
 
 Accessible through the CLI as `spacetime dns reverse-lookup <address>`.
 
-#### Parameters
+### Parameters
 
 | Name       | Value                        |
 | ---------- | ---------------------------- |
 | `:address` | The address of the database. |
 
-#### Returns
+### Returns
 
 Returns JSON in the form:
 
@@ -84,7 +84,7 @@ Set the name associated with a database.
 
 Accessible through the CLI as `spacetime dns set-name <domain> <address>`.
 
-#### Query Parameters
+### Query Parameters
 
 | Name           | Value                                                                     |
 | -------------- | ------------------------------------------------------------------------- |
@@ -92,13 +92,13 @@ Accessible through the CLI as `spacetime dns set-name <domain> <address>`.
 | `domain`       | The name to register.                                                     |
 | `register_tld` | A boolean; whether to register the name as a TLD. Should usually be true. |
 
-#### Required Headers
+### Required Headers
 
 | Name            | Value                                                           |
 | --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
-#### Returns
+### Returns
 
 If the name was successfully set, returns JSON in the form:
 
@@ -139,19 +139,19 @@ Register a new Spacetime top-level domain. A TLD is the part of a database name 
 
 Accessible through the CLI as `spacetime dns register-tld <tld>`.
 
-#### Query Parameters
+### Query Parameters
 
 | Name  | Value                                  |
 | ----- | -------------------------------------- |
 | `tld` | New top-level domain name to register. |
 
-#### Required Headers
+### Required Headers
 
 | Name            | Value                                                           |
 | --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
-#### Returns
+### Returns
 
 If the domain is successfully registered, returns JSON in the form:
 
@@ -183,7 +183,7 @@ Request a recovery code or link via email, in order to recover the token associa
 
 Accessible through the CLI as `spacetime identity recover <email> <identity>`.
 
-#### Query Parameters
+### Query Parameters
 
 | Name       | Value                                                                                                                                                                                                                                                                                 |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -197,7 +197,7 @@ Confirm a recovery code received via email following a [`/database/request_recov
 
 Accessible through the CLI as `spacetime identity recover <email> <identity>`.
 
-#### Query Parameters
+### Query Parameters
 
 | Name       | Value                                         |
 | ---------- | --------------------------------------------- |
@@ -220,7 +220,7 @@ Publish a database.
 
 Accessible through the CLI as `spacetime publish`.
 
-#### Query Parameters
+### Query Parameters
 
 | Name              | Value                                                                                            |
 | ----------------- | ------------------------------------------------------------------------------------------------ |
@@ -229,17 +229,17 @@ Accessible through the CLI as `spacetime publish`.
 | `name_or_address` | The name of the database to publish or update, or the address of an existing database to update. |
 | `register_tld`    | A boolean; whether to register the database's top-level domain.                                  |
 
-#### Required Headers
+### Required Headers
 
 | Name            | Value                                                           |
 | --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
-#### Data
+### Data
 
 A WebAssembly module in the [binary format](https://webassembly.github.io/spec/core/binary/index.html).
 
-#### Returns
+### Returns
 
 If the database was successfully published, returns JSON in the form:
 
@@ -275,13 +275,13 @@ Delete a database.
 
 Accessible through the CLI as `spacetime delete <address>`.
 
-#### Parameters
+### Parameters
 
 | Name       | Address                      |
 | ---------- | ---------------------------- |
 | `:address` | The address of the database. |
 
-#### Required Headers
+### Required Headers
 
 | Name            | Value                                                           |
 | --------------- | --------------------------------------------------------------- |
@@ -291,13 +291,13 @@ Accessible through the CLI as `spacetime delete <address>`.
 
 Begin a [WebSocket connection](/docs/ws) with a database.
 
-#### Parameters
+### Parameters
 
 | Name               | Value                        |
 | ------------------ | ---------------------------- |
 | `:name_or_address` | The address of the database. |
 
-#### Required Headers
+### Required Headers
 
 For more information about WebSocket headers, see [RFC 6455](https://datatracker.ietf.org/doc/html/rfc6455).
 
@@ -309,7 +309,7 @@ For more information about WebSocket headers, see [RFC 6455](https://datatracker
 | `Sec-WebSocket-Version`  | `13`                                                                                                 |
 | `Sec-WebSocket-Key`      | A 16-byte value, generated randomly by the client, encoded as Base64.                                |
 
-#### Optional Headers
+### Optional Headers
 
 | Name            | Value                                                           |
 | --------------- | --------------------------------------------------------------- |
@@ -319,20 +319,20 @@ For more information about WebSocket headers, see [RFC 6455](https://datatracker
 
 Invoke a reducer in a database.
 
-#### Parameters
+### Parameters
 
 | Name               | Value                                |
 | ------------------ | ------------------------------------ |
 | `:name_or_address` | The name or address of the database. |
 | `:reducer`         | The name of the reducer.             |
 
-#### Required Headers
+### Required Headers
 
 | Name            | Value                                                           |
 | --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
-#### Data
+### Data
 
 A JSON array of arguments to the reducer.
 
@@ -342,19 +342,19 @@ Get a schema for a database.
 
 Accessible through the CLI as `spacetime describe <name_or_address>`.
 
-#### Parameters
+### Parameters
 
 | Name               | Value                                |
 | ------------------ | ------------------------------------ |
 | `:name_or_address` | The name or address of the database. |
 
-#### Query Parameters
+### Query Parameters
 
 | Name     | Value                                                       |
 | -------- | ----------------------------------------------------------- |
 | `expand` | A boolean; whether to include full schemas for each entity. |
 
-#### Returns
+### Returns
 
 Returns a JSON object with two properties, `"entities"` and `"typespace"`. For example, on the default module generated by `spacetime init` with `expand=true`, returns:
 
@@ -460,7 +460,7 @@ Get a schema for a particular table or reducer in a database.
 
 Accessible through the CLI as `spacetime describe <name_or_address> <entity_type> <entity_name>`.
 
-#### Parameters
+### Parameters
 
 | Name               | Value                                                            |
 | ------------------ | ---------------------------------------------------------------- |
@@ -468,13 +468,13 @@ Accessible through the CLI as `spacetime describe <name_or_address> <entity_type
 | `:entity_type`     | `reducer` to describe a reducer, or `table` to describe a table. |
 | `:entity`          | The name of the reducer or table.                                |
 
-#### Query Parameters
+### Query Parameters
 
 | Name     | Value                                                         |
 | -------- | ------------------------------------------------------------- |
 | `expand` | A boolean; whether to include the full schema for the entity. |
 
-#### Returns
+### Returns
 
 Returns a single entity in the same format as in the `"entities"` returned by [the `/database/schema/:name_or_address GET` endpoint](#databaseschemaname_or_address-get):
 
@@ -496,13 +496,13 @@ Returns a single entity in the same format as in the `"entities"` returned by [t
 
 Get a database's address, owner identity, host type, number of replicas and a hash of its WASM module.
 
-#### Parameters
+### Parameters
 
 | Name               | Value                                |
 | ------------------ | ------------------------------------ |
 | `:name_or_address` | The name or address of the database. |
 
-#### Returns
+### Returns
 
 Returns JSON in the form:
 
@@ -530,26 +530,26 @@ Retrieve logs from a database.
 
 Accessible through the CLI as `spacetime logs <name_or_address>`.
 
-#### Parameters
+### Parameters
 
 | Name               | Value                                |
 | ------------------ | ------------------------------------ |
 | `:name_or_address` | The name or address of the database. |
 
-#### Query Parameters
+### Query Parameters
 
 | Name        | Value                                                           |
 | ----------- | --------------------------------------------------------------- |
 | `num_lines` | Number of most-recent log lines to retrieve.                    |
 | `follow`    | A boolean; whether to continue receiving new logs via a stream. |
 
-#### Required Headers
+### Required Headers
 
 | Name            | Value                                                           |
 | --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
-#### Returns
+### Returns
 
 Text, or streaming text if `follow` is supplied, containing log lines.
 
@@ -559,23 +559,23 @@ Run a SQL query against a database.
 
 Accessible through the CLI as `spacetime sql <name_or_address> <query>`.
 
-#### Parameters
+### Parameters
 
 | Name               | Value                                         |
 | ------------------ | --------------------------------------------- |
 | `:name_or_address` | The name or address of the database to query. |
 
-#### Required Headers
+### Required Headers
 
 | Name            | Value                                                           |
 | --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
-#### Data
+### Data
 
 SQL queries, separated by `;`.
 
-#### Returns
+### Returns
 
 Returns a JSON array of statement results, each of which takes the form:
 
