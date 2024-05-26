@@ -21,13 +21,13 @@ Look up Spacetime identities associated with an email.
 
 Accessible through the CLI as `spacetime identity find <email>`.
 
-#### Query Parameters
+### Query Parameters
 
 | Name    | Value                           |
 | ------- | ------------------------------- |
 | `email` | An email address to search for. |
 
-#### Returns
+### Returns
 
 Returns JSON in the form:
 
@@ -50,7 +50,7 @@ Create a new identity.
 
 Accessible through the CLI as `spacetime identity new`.
 
-#### Query Parameters
+### Query Parameters
 
 | Name    | Value                                                                                                                   |
 | ------- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -71,13 +71,13 @@ Returns JSON in the form:
 
 Generate a short-lived access token which can be used in untrusted contexts, e.g. embedded in URLs.
 
-#### Required Headers
+### Required Headers
 
 | Name            | Value                                                           |
 | --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
-#### Returns
+### Returns
 
 Returns JSON in the form:
 
@@ -95,19 +95,19 @@ Associate an email with a Spacetime identity.
 
 Accessible through the CLI as `spacetime identity set-email <identity> <email>`.
 
-#### Parameters
+### Parameters
 
 | Name        | Value                                     |
 | ----------- | ----------------------------------------- |
 | `:identity` | The identity to associate with the email. |
 
-#### Query Parameters
+### Query Parameters
 
 | Name    | Value             |
 | ------- | ----------------- |
 | `email` | An email address. |
 
-#### Required Headers
+### Required Headers
 
 | Name            | Value                                                           |
 | --------------- | --------------------------------------------------------------- |
@@ -117,13 +117,13 @@ Accessible through the CLI as `spacetime identity set-email <identity> <email>`.
 
 List all databases owned by an identity.
 
-#### Parameters
+### Parameters
 
 | Name        | Value                 |
 | ----------- | --------------------- |
 | `:identity` | A Spacetime identity. |
 
-#### Returns
+### Returns
 
 Returns JSON in the form:
 
@@ -139,19 +139,19 @@ The `addresses` value is an array of zero or more strings, each of which is the 
 
 Verify the validity of an identity/token pair.
 
-#### Parameters
+### Parameters
 
 | Name        | Value                   |
 | ----------- | ----------------------- |
 | `:identity` | The identity to verify. |
 
-#### Required Headers
+### Required Headers
 
 | Name            | Value                                                           |
 | --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
-#### Returns
+### Returns
 
 Returns no data.
 
