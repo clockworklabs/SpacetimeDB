@@ -53,7 +53,6 @@ impl ModuleSubscriptions {
         let tx = scopeguard::guard(self.relational_db.begin_tx(), |tx| {
             self.relational_db.release_tx(&ctx, tx);
         });
-        // check for backward comp.
         let request_id = subscription.request_id;
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
         let mut queries = vec![];

@@ -1179,19 +1179,6 @@ mod tests {
             .collect()
     }
 
-    //TODO(shub), begin_tx is not yet implemented for Tx, creating this utility for tests.
-    fn begin_tx(db: &Locking) -> TxId {
-        let timer = Instant::now();
-
-        let committed_state_shared_lock = db.committed_state.read_arc();
-        let lock_wait_time = timer.elapsed();
-        TxId {
-            committed_state_shared_lock,
-            lock_wait_time,
-            timer,
-        }
-    }
-
     fn all_rows_tx(tx: &TxId, table_id: TableId) -> Vec<ProductValue> {
         tx.iter(&ExecutionContext::default(), table_id)
             .unwrap()
@@ -1837,8 +1824,8 @@ mod tests {
         datastore.commit_mut_tx_for_test(tx)?;
 
         // create multiple read only tx, and use them together.
-        let read_tx_1 = begin_tx(&datastore);
-        let read_tx_2 = begin_tx(&datastore);
+        let read_tx_1 = datastore.begin_tx();
+        let read_tx_2 = datastore.begin_tx();
         let rows = &[row1, row2];
         assert_eq!(&all_rows_tx(&read_tx_2, table_id), rows);
         assert_eq!(&all_rows_tx(&read_tx_1, table_id), rows);
