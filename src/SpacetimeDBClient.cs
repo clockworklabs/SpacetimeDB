@@ -302,6 +302,19 @@ namespace SpacetimeDB
                             foreach (var row in update.TableRowOperations)
                             {
                                 var rowBytes = row.Row.ToByteArray();
+
+                                if (row.Op != TableRowOperation.Types.OperationType.Insert)
+                                {
+                                    Logger.LogWarning("Non-insert during a subscription update!");
+                                    continue;
+                                }
+
+                                if (!hashSet.Add(rowBytes))
+                                {
+                                    // Ignore duplicate inserts in the same subscription update.
+                                    continue;
+                                }
+
                                 stream.Position = 0;
                                 stream.Write(rowBytes, 0, rowBytes.Length);
                                 stream.Position = 0;
@@ -312,12 +325,6 @@ namespace SpacetimeDB
                                     throw new Exception("Failed to deserialize row");
                                 }
 
-                                if (row.Op != TableRowOperation.Types.OperationType.Insert)
-                                {
-                                    Logger.LogWarning("Non-insert during a subscription update!");
-                                    continue;
-                                }
-
                                 table.SetAndForgetDecodedValue(deserializedRow, out var obj);
                                 var op = new DbOp
                                 {
@@ -326,14 +333,7 @@ namespace SpacetimeDB
                                     rowValue = deserializedRow,
                                 };
 
-                                if (!hashSet.Add(rowBytes))
-                                {
-                                    Logger.LogError($"Multiple of the same insert in the same subscription update: table={table.ClientTableType.Name} rowBytes={rowBytes}");
-                                }
-                                else
-                                {
-                                    dbOps.Add(op);
-                                }
+                                dbOps.Add(op);
                             }
                         }
 
