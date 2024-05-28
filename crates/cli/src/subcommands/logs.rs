@@ -109,7 +109,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     if follow && num_lines.is_none() {
         // We typically don't want logs from the very beginning if we're also following.
-        num_lines = Some(num_lines.unwrap_or(10));
+        num_lines = Some(10);
     }
     let query_parms = LogsParams { num_lines, follow };
 
