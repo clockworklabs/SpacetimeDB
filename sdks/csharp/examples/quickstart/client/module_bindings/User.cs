@@ -2,8 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 using System;
-using System.Collections.Generic;
 using SpacetimeDB;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace SpacetimeDB.Types
 {
@@ -18,7 +19,7 @@ namespace SpacetimeDB.Types
 		[Newtonsoft.Json.JsonProperty("online")]
 		public bool Online;
 
-		private static Dictionary<SpacetimeDB.Identity, User> Identity_Index = new Dictionary<SpacetimeDB.Identity, User>(16);
+		private static Dictionary<SpacetimeDB.Identity, User> Identity_Index = new(16);
 
 		private static void InternalOnValueInserted(object insertedValue)
 		{
@@ -53,9 +54,7 @@ namespace SpacetimeDB.Types
 
 		public static explicit operator User(SpacetimeDB.SATS.AlgebraicValue value)
 		{
-			if (value == null) {
-				return null;
-			}
+			if (value == null) return null;
 			var productValue = value.AsProductValue();
 			return new User
 			{
@@ -65,63 +64,38 @@ namespace SpacetimeDB.Types
 			};
 		}
 
-		public static System.Collections.Generic.IEnumerable<User> Iter()
+		public static IEnumerable<User> Iter()
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("User"))
-			{
-				yield return (User)entry.Item2;
-			}
+			return SpacetimeDBClient.clientDB.GetObjects("User").Cast<User>();
 		}
+
+		public static IEnumerable<User> Query(Func<User, bool> filter)
+		{
+			return Iter().Where(filter);
+		}
+
 		public static int Count()
 		{
 			return SpacetimeDBClient.clientDB.Count("User");
 		}
-		public static User FilterByIdentity(SpacetimeDB.Identity value)
+
+		public static User FindByIdentity(SpacetimeDB.Identity value)
 		{
 			Identity_Index.TryGetValue(value, out var r);
 			return r;
 		}
 
-		public static System.Collections.Generic.IEnumerable<User> FilterByName(string? value)
+		public static IEnumerable<User> FilterByIdentity(SpacetimeDB.Identity value)
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("User"))
-			{
-				var productValue = entry.Item1.AsProductValue();
-				var compareValue = (string?)(productValue.elements[1].AsSumValue().tag == 1 ? null : productValue.elements[1].AsSumValue().value.AsString());
-				if (compareValue == value) {
-					yield return (User)entry.Item2;
-				}
-			}
+			return new[] { FindByIdentity(value) };
 		}
 
-		public static System.Collections.Generic.IEnumerable<User> FilterByOnline(bool value)
+		public static IEnumerable<User> FilterByOnline(bool value)
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("User"))
-			{
-				var productValue = entry.Item1.AsProductValue();
-				var compareValue = (bool)productValue.elements[2].AsBool();
-				if (compareValue == value) {
-					yield return (User)entry.Item2;
-				}
-			}
+			return Query(x => x.Online == value);
 		}
 
-		public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue v1, SpacetimeDB.SATS.AlgebraicValue v2)
-		{
-			var primaryColumnValue1 = v1.AsProductValue().elements[0];
-			var primaryColumnValue2 = v2.AsProductValue().elements[0];
-			return SpacetimeDB.SATS.AlgebraicValue.Compare(t.product.elements[0].algebraicType, primaryColumnValue1, primaryColumnValue2);
-		}
-
-		public static SpacetimeDB.SATS.AlgebraicValue GetPrimaryKeyValue(SpacetimeDB.SATS.AlgebraicValue v)
-		{
-			return v.AsProductValue().elements[0];
-		}
-
-		public static SpacetimeDB.SATS.AlgebraicType GetPrimaryKeyType(SpacetimeDB.SATS.AlgebraicType t)
-		{
-			return t.product.elements[0].algebraicType;
-		}
+		private static object GetPrimaryKeyValue(object row) => ((User)row).Identity;
 
 		public delegate void InsertEventHandler(User insertedValue, SpacetimeDB.Types.ReducerEvent dbEvent);
 		public delegate void UpdateEventHandler(User oldValue, User newValue, SpacetimeDB.Types.ReducerEvent dbEvent);

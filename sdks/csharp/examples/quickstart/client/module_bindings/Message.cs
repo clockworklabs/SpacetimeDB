@@ -2,8 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 using System;
-using System.Collections.Generic;
 using SpacetimeDB;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace SpacetimeDB.Types
 {
@@ -43,9 +44,7 @@ namespace SpacetimeDB.Types
 
 		public static explicit operator Message(SpacetimeDB.SATS.AlgebraicValue value)
 		{
-			if (value == null) {
-				return null;
-			}
+			if (value == null) return null;
 			var productValue = value.AsProductValue();
 			return new Message
 			{
@@ -55,57 +54,36 @@ namespace SpacetimeDB.Types
 			};
 		}
 
-		public static System.Collections.Generic.IEnumerable<Message> Iter()
+		public static IEnumerable<Message> Iter()
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("Message"))
-			{
-				yield return (Message)entry.Item2;
-			}
+			return SpacetimeDBClient.clientDB.GetObjects("Message").Cast<Message>();
 		}
+
+		public static IEnumerable<Message> Query(Func<Message, bool> filter)
+		{
+			return Iter().Where(filter);
+		}
+
 		public static int Count()
 		{
 			return SpacetimeDBClient.clientDB.Count("Message");
 		}
-		public static System.Collections.Generic.IEnumerable<Message> FilterBySender(SpacetimeDB.Identity value)
+
+		public static IEnumerable<Message> FilterBySender(SpacetimeDB.Identity value)
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("Message"))
-			{
-				var productValue = entry.Item1.AsProductValue();
-				var compareValue = Identity.From(productValue.elements[0].AsProductValue().elements[0].AsBytes());
-				if (compareValue == value) {
-					yield return (Message)entry.Item2;
-				}
-			}
+			return Query(x => x.Sender == value);
 		}
 
-		public static System.Collections.Generic.IEnumerable<Message> FilterBySent(ulong value)
+		public static IEnumerable<Message> FilterBySent(ulong value)
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("Message"))
-			{
-				var productValue = entry.Item1.AsProductValue();
-				var compareValue = (ulong)productValue.elements[1].AsU64();
-				if (compareValue == value) {
-					yield return (Message)entry.Item2;
-				}
-			}
+			return Query(x => x.Sent == value);
 		}
 
-		public static System.Collections.Generic.IEnumerable<Message> FilterByText(string value)
+		public static IEnumerable<Message> FilterByText(string value)
 		{
-			foreach(var entry in SpacetimeDBClient.clientDB.GetEntries("Message"))
-			{
-				var productValue = entry.Item1.AsProductValue();
-				var compareValue = (string)productValue.elements[2].AsString();
-				if (compareValue == value) {
-					yield return (Message)entry.Item2;
-				}
-			}
+			return Query(x => x.Text == value);
 		}
 
-		public static bool ComparePrimaryKey(SpacetimeDB.SATS.AlgebraicType t, SpacetimeDB.SATS.AlgebraicValue _v1, SpacetimeDB.SATS.AlgebraicValue _v2)
-		{
-			return false;
-		}
 
 		public delegate void InsertEventHandler(Message insertedValue, SpacetimeDB.Types.ReducerEvent dbEvent);
 		public delegate void DeleteEventHandler(Message deletedValue, SpacetimeDB.Types.ReducerEvent dbEvent);

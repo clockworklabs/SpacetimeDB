@@ -2,9 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 using System;
+using SpacetimeDB;
 using ClientApi;
 using Newtonsoft.Json.Linq;
-using SpacetimeDB;
 
 namespace SpacetimeDB.Types
 {
@@ -39,28 +39,6 @@ namespace SpacetimeDB.Types
 			{
 				if (Reducer != ReducerType.SetName) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), "SetName");
 				return (SetNameArgsStruct)Args;
-			}
-		}
-
-		public object[] GetArgsAsObjectArray()
-		{
-			switch (Reducer)
-			{
-				case ReducerType.SendMessage:
-				{
-					var args = SendMessageArgs;
-					return new object[] {
-						args.Text,
-					};
-				}
-				case ReducerType.SetName:
-				{
-					var args = SetNameArgs;
-					return new object[] {
-						args.Name,
-					};
-				}
-				default: throw new System.Exception($"Unhandled reducer case: {Reducer}. Please run SpacetimeDB code generator");
 			}
 		}
 	}

@@ -1,13 +1,17 @@
-﻿using SpacetimeDB;
-using SpacetimeDB.Types;
+﻿using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using SpacetimeDB;
+using SpacetimeDB.Types;
 
 // our local client SpacetimeDB identity
 Identity? local_identity = null;
-// declare a thread safe queue to store commands in format (command, args)
-ConcurrentQueue<(string,string)> input_queue = new ConcurrentQueue<(string, string)>();
+// declare a thread safe queue to store commands
+var input_queue = new ConcurrentQueue<(string Command, string Args)>();
 // declare a threadsafe cancel token to cancel the process loop
-CancellationTokenSource cancel_token = new CancellationTokenSource();
+var cancel_token = new CancellationTokenSource();
 
 void Main()
 {
@@ -41,11 +45,11 @@ void RegisterCallbacks()
     Reducer.OnSendMessageEvent += Reducer_OnSendMessageEvent;
 }
 
-string UserNameOrIdentity(User user) => user.Name ?? user.Identity.ToString()!.Substring(0, 8);
+string UserNameOrIdentity(User user) => user.Name ?? user.Identity.ToString()[..8];
 
 void User_OnInsert(User insertedValue, ReducerEvent? dbEvent)
 {
-    if(insertedValue.Online)
+    if (insertedValue.Online)
     {
         Console.WriteLine($"{UserNameOrIdentity(insertedValue)} is online");
     }
@@ -53,13 +57,13 @@ void User_OnInsert(User insertedValue, ReducerEvent? dbEvent)
 
 void User_OnUpdate(User oldValue, User newValue, ReducerEvent? dbEvent)
 {
-    if(oldValue.Name != newValue.Name)
+    if (oldValue.Name != newValue.Name)
     {
         Console.WriteLine($"{UserNameOrIdentity(oldValue)} renamed to {newValue.Name}");
     }
-    if(oldValue.Online != newValue.Online)
+    if (oldValue.Online != newValue.Online)
     {
-        if(newValue.Online)
+        if (newValue.Online)
         {
             Console.WriteLine($"{UserNameOrIdentity(newValue)} connected.");
         }
@@ -72,9 +76,9 @@ void User_OnUpdate(User oldValue, User newValue, ReducerEvent? dbEvent)
 
 void PrintMessage(Message message)
 {
-    var sender = User.FilterByIdentity(message.Sender);
+    var sender = User.FindByIdentity(message.Sender);
     var senderName = "unknown";
-    if(sender != null)
+    if (sender != null)
     {
         senderName = UserNameOrIdentity(sender);
     }
@@ -84,7 +88,7 @@ void PrintMessage(Message message)
 
 void Message_OnInsert(Message insertedValue, ReducerEvent? dbEvent)
 {
-    if(dbEvent != null)
+    if (dbEvent != null)
     {
         PrintMessage(insertedValue);
     }
@@ -92,7 +96,7 @@ void Message_OnInsert(Message insertedValue, ReducerEvent? dbEvent)
 
 void Reducer_OnSetNameEvent(ReducerEvent reducerEvent, string name)
 {
-    if(reducerEvent.Identity == local_identity && reducerEvent.Status == ClientApi.Event.Types.Status.Failed)
+    if (reducerEvent.Identity == local_identity && reducerEvent.Status == ClientApi.Event.Types.Status.Failed)
     {
         Console.Write($"Failed to change name to {name}");
     }
@@ -156,14 +160,14 @@ void InputLoop()
     while (true)
     {
         var input = Console.ReadLine();
-        if(input == null)
+        if (input == null)
         {
             break;
         }
 
-        if(input.StartsWith("/name "))
+        if (input.StartsWith("/name "))
         {
-            input_queue.Enqueue(("name", input.Substring(6)));
+            input_queue.Enqueue(("name", input[6..]));
             continue;
         }
         else
@@ -178,13 +182,13 @@ void ProcessCommands()
     // process input queue commands
     while (input_queue.TryDequeue(out var command))
     {
-        switch (command.Item1)
+        switch (command.Command)
         {
             case "message":
-                Reducer.SendMessage(command.Item2);
+                Reducer.SendMessage(command.Args);
                 break;
             case "name":
-                Reducer.SetName(command.Item2);
+                Reducer.SetName(command.Args);
                 break;
         }
     }
