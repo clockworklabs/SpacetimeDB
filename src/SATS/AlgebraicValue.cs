@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Collections.Generic;
 using System.IO;
 
@@ -476,33 +475,5 @@ namespace SpacetimeDB.SATS
                     throw new NotImplementedException();
             }
         }
-
-        public class AlgebraicValueComparer : IEqualityComparer<AlgebraicValue>
-        {
-            private AlgebraicType type;
-            public AlgebraicValueComparer(AlgebraicType type)
-            {
-                this.type = type;
-            }
-
-            public bool Equals(AlgebraicValue l, AlgebraicValue r)
-            {
-                return AlgebraicValue.Compare(type, l, r);
-            }
-
-            public int GetHashCode(AlgebraicValue value)
-            {
-                var stream = new MemoryStream();
-                var writer = new BinaryWriter(stream);
-                value.Serialize(type, writer);
-                var s = stream.ToArray();
-                if (s.Length >= 4)
-                {
-                    return BitConverter.ToInt32(s, 0);
-                }
-                return s.Sum(b => b);
-            }
-        }
-
     }
 }

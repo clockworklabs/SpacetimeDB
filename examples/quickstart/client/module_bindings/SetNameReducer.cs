@@ -2,9 +2,9 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 using System;
+using SpacetimeDB;
 using ClientApi;
 using Newtonsoft.Json.Linq;
-using SpacetimeDB;
 
 namespace SpacetimeDB.Types
 {

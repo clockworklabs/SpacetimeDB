@@ -3,8 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using SpacetimeDB.SATS;
-using System.Numerics;
-using System.Runtime.CompilerServices;
+using System.Linq;
 
 namespace SpacetimeDB
 {
@@ -12,7 +11,6 @@ namespace SpacetimeDB
     {
         public class TableCache
         {
-            private readonly string name;
             private readonly Type clientTableType;
             private readonly AlgebraicType rowSchema;
 
@@ -20,7 +18,7 @@ namespace SpacetimeDB
             private Func<AlgebraicValue, object> decoderFunc;
 
             // Maps from primary key to type value
-            public readonly Dictionary<byte[], (AlgebraicValue, object)> entries;
+            public readonly Dictionary<byte[], object> entries = new(ByteArrayComparer.Instance);
 
             public Type ClientTableType
             {
@@ -33,14 +31,7 @@ namespace SpacetimeDB
             public Action<object, ClientApi.Event> BeforeDeleteCallback;
             public Action<object, ClientApi.Event> DeleteCallback;
             public Action<object, object, ClientApi.Event> UpdateCallback;
-            public Func<AlgebraicType, AlgebraicValue, AlgebraicValue, bool> ComparePrimaryKeyFunc;
-            public Func<AlgebraicValue, AlgebraicValue> GetPrimaryKeyValueFunc;
-            public Func<AlgebraicType, AlgebraicType> GetPrimaryKeyTypeFunc;
-
-            public string Name
-            {
-                get => name;
-            }
+            public Func<object, object> GetPrimaryKeyValueFunc;
 
             public AlgebraicType RowSchema
             {
@@ -49,7 +40,6 @@ namespace SpacetimeDB
 
             public TableCache(Type clientTableType, AlgebraicType rowSchema, Func<AlgebraicValue, object> decoderFunc)
             {
-                name = clientTableType.Name;
                 this.clientTableType = clientTableType;
 
                 this.rowSchema = rowSchema;
@@ -60,13 +50,8 @@ namespace SpacetimeDB
                 BeforeDeleteCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnBeforeDeleteEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));
                 DeleteCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnDeleteEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));
                 UpdateCallback = (Action<object, object, ClientApi.Event>)clientTableType.GetMethod("OnUpdateEvent")?.CreateDelegate(typeof(Action<object, object, ClientApi.Event>));
-                ComparePrimaryKeyFunc = (Func<AlgebraicType, AlgebraicValue, AlgebraicValue, bool>)clientTableType.GetMethod("ComparePrimaryKey", BindingFlags.Static | BindingFlags.Public)
-                    ?.CreateDelegate(typeof(Func<AlgebraicType, AlgebraicValue, AlgebraicValue, bool>));
-                GetPrimaryKeyValueFunc = (Func<AlgebraicValue, AlgebraicValue>)clientTableType.GetMethod("GetPrimaryKeyValue", BindingFlags.Static | BindingFlags.Public)
-                    ?.CreateDelegate(typeof(Func<AlgebraicValue, AlgebraicValue>));
-                GetPrimaryKeyTypeFunc = (Func<AlgebraicType, AlgebraicType>)clientTableType.GetMethod("GetPrimaryKeyType", BindingFlags.Static | BindingFlags.Public)
-                    ?.CreateDelegate(typeof(Func<AlgebraicType, AlgebraicType>));
-                entries = new Dictionary<byte[], (AlgebraicValue, object)>(new ByteArrayComparer());
+                GetPrimaryKeyValueFunc = (Func<object, object>)clientTableType.GetMethod("GetPrimaryKeyValue", BindingFlags.NonPublic | BindingFlags.Static)
+                    ?.CreateDelegate(typeof(Func<object, object>));
             }
 
             /// <summary>
@@ -83,19 +68,9 @@ namespace SpacetimeDB
             /// Inserts the value into the table. There can be no existing value with the provided BSATN bytes.
             /// </summary>
             /// <param name="rowBytes">The BSATN encoded bytes of the row to retrieve.</param>
-            /// <param name="value">The parsed AlgebraicValue of the row encoded by the <paramref>rowBytes</paramref>.</param>
+            /// <param name="value">The parsed row encoded by the <paramref>rowBytes</paramref>.</param>
             /// <returns>True if the row was inserted, false if the row wasn't inserted because it was a duplicate.</returns>
-            public bool InsertEntry(byte[] rowBytes, AlgebraicValue value)
-            {
-                if (entries.ContainsKey(rowBytes))
-                {
-                    return false;
-                }
-
-                // Insert the row into our table
-                entries[rowBytes] = (value, decoderFunc(value));
-                return true;
-            }
+            public bool InsertEntry(byte[] rowBytes, object value) => entries.TryAdd(rowBytes, value);
 
             /// <summary>
             /// Deletes a value from the table.
@@ -104,9 +79,8 @@ namespace SpacetimeDB
             /// <returns>True if and only if the value was previously resident and has been deleted.</returns>
             public bool DeleteEntry(byte[] rowBytes)
             {
-                if (entries.TryGetValue(rowBytes, out var value))
+                if (entries.Remove(rowBytes))
                 {
-                    entries.Remove(rowBytes);
                     return true;
                 }
 
@@ -114,37 +88,9 @@ namespace SpacetimeDB
                 return false;
             }
 
-            /// <summary>
-            /// Gets a value from the table
-            /// </summary>
-            /// <param name="rowBytes">The BSATN encoded bytes of the row to retrieve.</param>
-            /// <param name="value">Output: the parsed domain type corresponding to the <paramref>rowBytes</paramref>, or <c>null</c> if the row was not present in the cache.</param>
-            /// <returns>True if and only if the value is resident and was stored in <paramref>value</paramref>.</returns>
-            public bool TryGetValue(byte[] rowBytes, out object value)
+            public object? GetPrimaryKeyValue(object row)
             {
-                if (entries.TryGetValue(rowBytes, out var v))
-                {
-                    value = v.Item2;
-                    return true;
-                }
-
-                value = null;
-                return false;
-            }
-
-            public bool ComparePrimaryKey(AlgebraicValue v1, AlgebraicValue v2)
-            {
-                return (bool)ComparePrimaryKeyFunc.Invoke(rowSchema, v1, v2);
-            }
-
-            public AlgebraicValue GetPrimaryKeyValue(AlgebraicValue row)
-            {
-                return GetPrimaryKeyValueFunc != null ? GetPrimaryKeyValueFunc.Invoke(row) : null;
-            }
-
-            public AlgebraicType GetPrimaryKeyType()
-            {
-                return GetPrimaryKeyTypeFunc != null ? GetPrimaryKeyTypeFunc.Invoke(rowSchema) : null;
+                return GetPrimaryKeyValueFunc?.Invoke(row);
             }
         }
 
@@ -165,33 +111,7 @@ namespace SpacetimeDB
             tables[name] = new TableCache(clientTableType, tableRowDef, decodeFunc);
         }
 
-        public IEnumerable<object> GetObjects(string name)
-        {
-            if (!tables.TryGetValue(name, out var table))
-            {
-                yield break;
-            }
-
-            foreach (var entry in table.entries)
-            {
-                yield return entry.Value.Item2;
-            }
-        }
-
-        public IEnumerable<(AlgebraicValue, object)> GetEntries(string name)
-        {
-            if (!tables.TryGetValue(name, out var table))
-            {
-                yield break;
-            }
-
-            foreach (var entry in table.entries)
-            {
-                yield return entry.Value;
-            }
-        }
-
-        public TableCache GetTable(string name)
+        public TableCache? GetTable(string name)
         {
             if (tables.TryGetValue(name, out var table))
             {
@@ -202,17 +122,12 @@ namespace SpacetimeDB
             return null;
         }
 
-        public int Count(string name)
+        public IEnumerable<object> GetObjects(string name)
         {
-            if (!tables.TryGetValue(name, out var table))
-            {
-                return 0;
-            }
-
-            return table.entries.Count;
+            return GetTable(name)?.entries.Values ?? Enumerable.Empty<object>();
         }
 
-        public IEnumerable<string> GetTableNames() => tables.Keys;
+        public int Count(string name) => GetTable(name)?.entries.Count ?? 0;
 
         public IEnumerable<TableCache> GetTables() => tables.Values;
     }
