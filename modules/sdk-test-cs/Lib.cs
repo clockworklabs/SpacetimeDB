@@ -1510,4 +1510,7 @@ static partial class Module
     {
         new TableHoldsTable { a = a, b = b }.Insert();
     }
+
+    [SpacetimeDB.Reducer]
+    public static void no_op_succeeds() {}
 }

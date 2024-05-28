@@ -2,10 +2,12 @@ pub mod abi;
 pub mod instrumentation;
 pub mod module_host_actor;
 
+use std::num::NonZeroU16;
 use std::time::Instant;
 
 use super::AbiCall;
 use crate::error::{DBError, IndexError, NodesError};
+use spacetimedb_primitives::errno;
 use spacetimedb_sats::typespace::TypeRefError;
 use spacetimedb_table::table::UniqueConstraintViolation;
 
@@ -21,6 +23,10 @@ pub const SETUP_DUNDER: &str = "__setup__";
 pub const INIT_DUNDER: &str = "__init__";
 /// the reducer with this name is invoked when updating the database
 pub const UPDATE_DUNDER: &str = "__update__";
+/// The reducer with this name is invoked when a client connects.
+pub const CLIENT_CONNECTED_DUNDER: &str = "__identity_connected__";
+/// The reducer with this name is invoked when a client disconnects.
+pub const CLIENT_DISCONNECTED_DUNDER: &str = "__identity_disconnected__";
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[allow(unused)]
@@ -246,6 +252,11 @@ macro_rules! decl_index {
             pub(super) fn to_le_bytes(self) -> [u8; 4] {
                 self.0.to_le_bytes()
             }
+            #[allow(unused)]
+            #[doc(hidden)]
+            pub(super) fn from_le_bytes(b: [u8; 4]) -> Self {
+                Self(u32::from_le_bytes(b))
+            }
         }
     };
 }
@@ -296,8 +307,8 @@ impl BufferIdx {
     }
 }
 
-decl_index!(BufferIterIdx => std::vec::IntoIter<Box<[u8]>>);
-pub(super) type BufferIters = ResourceSlab<BufferIterIdx>;
+decl_index!(RowIterIdx => std::vec::IntoIter<Box<[u8]>>);
+pub(super) type RowIters = ResourceSlab<RowIterIdx>;
 
 pub(super) struct TimingSpan {
     pub start: Instant,
@@ -316,48 +327,18 @@ impl TimingSpan {
 decl_index!(TimingSpanIdx => TimingSpan);
 pub(super) type TimingSpanSet = ResourceSlab<TimingSpanIdx>;
 
-pub mod errnos {
-    /// NOTE! This is copied from the bindings-sys crate.
-    /// The include! macro does not work when publishing to crates.io
-    /// TODO(noa): Figure out a way to do this without include!
-    ///
-    /// Error code for "No such table".
-    pub const NO_SUCH_TABLE: u16 = 1;
-
-    /// Error code for value/range not being found in a table.
-    pub const LOOKUP_NOT_FOUND: u16 = 2;
-
-    /// Error code for when a unique constraint is violated.
-    pub const UNIQUE_ALREADY_EXISTS: u16 = 3;
-
-    macro_rules! errnos {
-        ($mac:ident) => {
-            $mac! {
-                NO_SUCH_TABLE => "No such table",
-                LOOKUP_NOT_FOUND => "Value or range provided not found in table",
-                UNIQUE_ALREADY_EXISTS => "Value with given unique identifier already exists",
-            }
-        };
-    }
-
-    macro_rules! nothing {
-        ($($tt:tt)*) => {};
-    }
-    errnos!(nothing);
-}
-
-pub fn err_to_errno(err: &NodesError) -> Option<u16> {
+pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
     match err {
-        NodesError::TableNotFound => Some(errnos::NO_SUCH_TABLE),
-        NodesError::ColumnValueNotFound | NodesError::RangeNotFound => Some(errnos::LOOKUP_NOT_FOUND),
-        NodesError::AlreadyExists(_) => Some(errnos::UNIQUE_ALREADY_EXISTS),
+        NodesError::TableNotFound => Some(errno::NO_SUCH_TABLE),
+        NodesError::ColumnValueNotFound | NodesError::RangeNotFound => Some(errno::LOOKUP_NOT_FOUND),
+        NodesError::AlreadyExists(_) => Some(errno::UNIQUE_ALREADY_EXISTS),
         NodesError::Internal(internal) => match **internal {
             DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                 constraint_name: _,
                 table_name: _,
                 cols: _,
                 value: _,
-            })) => Some(errnos::UNIQUE_ALREADY_EXISTS),
+            })) => Some(errno::UNIQUE_ALREADY_EXISTS),
             _ => None,
         },
         _ => None,
@@ -371,3 +352,29 @@ pub struct AbiRuntimeError {
     #[source]
     pub err: NodesError,
 }
+
+macro_rules! abi_funcs {
+    ($mac:ident) => {
+        $mac! {
+            "spacetime_8.0"::buffer_alloc,
+            "spacetime_8.0"::buffer_consume,
+            "spacetime_8.0"::buffer_len,
+            "spacetime_8.0"::cancel_reducer,
+            "spacetime_8.0"::console_log,
+            "spacetime_8.0"::create_index,
+            "spacetime_8.0"::delete_by_col_eq,
+            "spacetime_8.0"::delete_by_rel,
+            "spacetime_8.0"::get_table_id,
+            "spacetime_8.0"::insert,
+            "spacetime_8.0"::iter_by_col_eq,
+            "spacetime_8.0"::iter_drop,
+            "spacetime_8.0"::iter_advance,
+            "spacetime_8.0"::iter_start,
+            "spacetime_8.0"::iter_start_filtered,
+            "spacetime_8.0"::schedule_reducer,
+            "spacetime_8.0"::span_end,
+            "spacetime_8.0"::span_start,
+        }
+    };
+}
+pub(crate) use abi_funcs;

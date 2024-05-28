@@ -558,10 +558,9 @@ impl<'a, R: RangeBounds<AlgebraicValue>> RelOps<'a> for IndexCursor<'a, R> {
 pub(crate) mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{
-        st_columns_schema, st_indexes_schema, st_sequences_schema, st_table_schema, StColumnFields, StColumnRow,
-        StIndexFields, StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, ST_COLUMNS_ID,
-        ST_COLUMNS_NAME, ST_INDEXES_ID, ST_INDEXES_NAME, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID,
-        ST_TABLES_NAME,
+        StColumnFields, StColumnRow, StIndexFields, StIndexRow, StSequenceFields, StSequenceRow, StTableFields,
+        StTableRow, ST_COLUMNS_ID, ST_COLUMNS_NAME, ST_INDEXES_ID, ST_INDEXES_NAME, ST_RESERVED_SEQUENCE_RANGE,
+        ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_NAME,
     };
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::execution_context::ExecutionContext;
@@ -686,9 +685,9 @@ pub(crate) mod tests {
     #[test]
     fn test_query_catalog_tables() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
-        let schema = st_table_schema();
+        let schema = &*stdb.schema_for_table(&stdb.begin_tx(), ST_TABLES_ID).unwrap();
 
-        let q = QueryExpr::new(&schema).with_select_cmp(
+        let q = QueryExpr::new(schema).with_select_cmp(
             OpCmp::Eq,
             FieldName::new(ST_TABLES_ID, StTableFields::TableName.into()),
             scalar(ST_TABLES_NAME),
@@ -700,7 +699,7 @@ pub(crate) mod tests {
             table_access: StAccess::Public,
         }
         .into();
-        check_catalog(&stdb, ST_TABLES_NAME, st_table_row, q, &schema);
+        check_catalog(&stdb, ST_TABLES_NAME, st_table_row, q, schema);
 
         Ok(())
     }
@@ -708,9 +707,9 @@ pub(crate) mod tests {
     #[test]
     fn test_query_catalog_columns() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
+        let schema = &*stdb.schema_for_table(&stdb.begin_tx(), ST_COLUMNS_ID).unwrap();
 
-        let schema = st_columns_schema();
-        let q = QueryExpr::new(&schema)
+        let q = QueryExpr::new(schema)
             .with_select_cmp(
                 OpCmp::Eq,
                 FieldName::new(ST_COLUMNS_ID, StColumnFields::TableId.into()),
@@ -728,7 +727,7 @@ pub(crate) mod tests {
             col_type: AlgebraicType::U32,
         }
         .into();
-        check_catalog(&stdb, ST_COLUMNS_NAME, st_column_row, q, &schema);
+        check_catalog(&stdb, ST_COLUMNS_NAME, st_column_row, q, schema);
 
         Ok(())
     }
@@ -744,8 +743,8 @@ pub(crate) mod tests {
         let index = IndexDef::btree("idx_1".into(), ColId(0), true);
         let index_id = db.with_auto_commit(&ctx, |tx| db.create_index(tx, table_id, index))?;
 
-        let indexes_schema = st_indexes_schema();
-        let q = QueryExpr::new(&indexes_schema).with_select_cmp(
+        let indexes_schema = &*db.schema_for_table(&db.begin_tx(), ST_INDEXES_ID).unwrap();
+        let q = QueryExpr::new(indexes_schema).with_select_cmp(
             OpCmp::Eq,
             FieldName::new(ST_INDEXES_ID, StIndexFields::IndexName.into()),
             scalar("idx_1"),
@@ -759,7 +758,7 @@ pub(crate) mod tests {
             index_type: IndexType::BTree,
         }
         .into();
-        check_catalog(&db, ST_INDEXES_NAME, st_index_row, q, &indexes_schema);
+        check_catalog(&db, ST_INDEXES_NAME, st_index_row, q, indexes_schema);
 
         Ok(())
     }
@@ -768,8 +767,8 @@ pub(crate) mod tests {
     fn test_query_catalog_sequences() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let schema = st_sequences_schema();
-        let q = QueryExpr::new(&schema).with_select_cmp(
+        let schema = &*db.schema_for_table(&db.begin_tx(), ST_SEQUENCES_ID).unwrap();
+        let q = QueryExpr::new(schema).with_select_cmp(
             OpCmp::Eq,
             FieldName::new(ST_SEQUENCES_ID, StSequenceFields::TableId.into()),
             scalar(ST_SEQUENCES_ID),
@@ -780,13 +779,13 @@ pub(crate) mod tests {
             table_id: 2.into(),
             col_pos: 0.into(),
             increment: 1,
-            start: 4,
+            start: ST_RESERVED_SEQUENCE_RANGE as i128 + 1,
             min_value: 1,
             max_value: i128::MAX,
-            allocated: 4096,
+            allocated: ST_RESERVED_SEQUENCE_RANGE as i128 * 2,
         }
         .into();
-        check_catalog(&db, ST_SEQUENCES_NAME, st_sequence_row, q, &schema);
+        check_catalog(&db, ST_SEQUENCES_NAME, st_sequence_row, q, schema);
 
         Ok(())
     }

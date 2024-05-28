@@ -112,6 +112,7 @@ bitflags = "2.3.3"
 blake3 = "1.5.1"
 brotli = "3.5"
 byte-unit = "4.0.18"
+bytemuck = { version = "1.16", features = ["derive", "must_cast"] }
 bytes = "1.2.1"
 bytestring = { version = "1.2.0", features = ["serde"] }
 cargo_metadata = "0.17.0"
@@ -212,7 +213,7 @@ tempdir = "0.3.7"
 tempfile = "3.8"
 termcolor = "1.2.0"
 thiserror = "1.0.37"
-tokio = { version = "1.34", features = ["full"] }
+tokio = { version = "1.37", features = ["full"] }
 tokio-postgres = { version = "0.7.8", features = ["with-chrono-0_4"] }
 tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
 tokio-util = { version = "0.7.4", features = ["time"] }
@@ -250,7 +251,3 @@ tracing-tracy = { version = "0.10.4", features = [
 # Vendor the openssl we rely on, rather than depend on a
 # potentially very old system version.
 openssl = { version = "0.10", features = ["vendored"] }
-
-# Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
-# if we link bzip, we get multiple defs
-rocksdb = { version = "0.21.0", default-features = false, features = ["lz4"] }

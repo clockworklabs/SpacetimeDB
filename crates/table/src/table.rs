@@ -20,7 +20,7 @@ use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
 use core::{fmt, ptr};
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_primitives::{ColId, ColList};
+use spacetimedb_primitives::{ColId, ColList, IndexId};
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
     bsatn::{self, ser::BsatnError},
@@ -52,15 +52,8 @@ pub struct Table {
     /// depending on whether this is a tx scratchpad table
     /// or a committed table.
     squashed_offset: SquashedOffset,
-}
-
-impl Table {
-    pub fn row_layout(&self) -> &RowTypeLayout {
-        &self.inner.row_layout
-    }
-    pub fn pages(&self) -> &Pages {
-        &self.inner.pages
-    }
+    /// Store number of rows present in table.
+    pub row_count: u64,
 }
 
 /// The part of a `Table` concerned only with storing rows.
@@ -111,7 +104,7 @@ impl TableInner {
     }
 }
 
-static_assert_size!(Table, 240);
+static_assert_size!(Table, 248);
 
 /// Various error that can happen on table insertion.
 #[derive(Error, Debug)]
@@ -241,6 +234,7 @@ impl Table {
             };
             return Err(InsertError::Duplicate(existing_row));
         }
+        self.row_count += 1;
 
         // If the optimistic insertion was correct,
         // i.e. this is not a set-semantic duplicate,
@@ -387,6 +381,7 @@ impl Table {
         // Remove the set semantic association.
         let _remove_result = self.pointer_map.remove(row.row_hash(), ptr);
         debug_assert!(_remove_result);
+        self.row_count -= 1;
 
         // Delete the physical row.
         // SAFETY: `ptr` points to a valid row in this table as `self.is_row_present(row)` holds.
@@ -516,8 +511,15 @@ impl Table {
         self.schema = schema;
     }
 
+    /// Returns a new [`BTreeIndex`] for `table`.
+    pub fn new_index(&self, id: IndexId, cols: &ColList, is_unique: bool) -> Result<BTreeIndex, InvalidFieldError> {
+        BTreeIndex::new(id, self.row_layout(), cols, is_unique)
+    }
+
     /// Inserts a new `index` into the table.
+    ///
     /// The index will be populated using the rows of the table.
+    /// Panics if `cols` has some column that is out of bounds of the table's row layout.
     pub fn insert_index(&mut self, blob_store: &dyn BlobStore, cols: ColList, mut index: BTreeIndex) {
         index.build_from_rows(&cols, self.scan_rows(blob_store)).unwrap();
         self.indexes.insert(cols, index);
@@ -561,7 +563,7 @@ impl Table {
     pub fn clone_structure(&self, squashed_offset: SquashedOffset) -> Self {
         let schema = self.schema.clone();
         let layout = self.row_layout().clone();
-        let sbl = self.inner.static_bsatn_layout.clone();
+        let sbl = self.static_bsatn_layout().cloned();
         let visitor = self.visitor_prog.clone();
         let mut new =
             Table::new_with_indexes_capacity(schema, layout, sbl, visitor, squashed_offset, self.indexes.len());
@@ -569,18 +571,8 @@ impl Table {
         for (cols, index) in self.indexes.iter() {
             // `new` is known to be empty (we just constructed it!),
             // so no need for an actual blob store here.
-            new.insert_index(
-                &NullBlobStore,
-                cols.clone(),
-                BTreeIndex::new(
-                    index.index_id,
-                    &self.inner.row_layout,
-                    cols,
-                    index.is_unique,
-                    index.name.clone(),
-                )
-                .unwrap(),
-            );
+            let index = new.new_index(index.index_id, cols, index.is_unique).unwrap();
+            new.insert_index(&NullBlobStore, cols.clone(), index);
         }
         new
     }
@@ -640,7 +632,6 @@ impl<'a> RowRef<'a> {
     /// This is a potentially expensive operation,
     /// as it must walk the table's `ProductTypeLayout`
     /// and heap-allocate various substructures of the `ProductValue`.
-    #[doc(alias = "read_row")]
     pub fn to_product_value(&self) -> ProductValue {
         let res = self
             .serialize(ValueSerializer)
@@ -687,16 +678,27 @@ impl<'a> RowRef<'a> {
         self.pointer
     }
 
+    /// Returns the blob store that any [`crate::blob_store::BlobHash`]es within the row refer to.
     pub(crate) fn blob_store(&self) -> &dyn BlobStore {
         self.blob_store
     }
 
+    /// Return the layout of the row.
+    ///
+    /// All rows within the same table will have the same layout.
     pub fn row_layout(&self) -> &RowTypeLayout {
         &self.table.row_layout
     }
 
+    /// Returns the page the row is in and the offset of the row within that page.
     pub fn page_and_offset(&self) -> (&Page, PageOffset) {
         self.table.page_and_offset(self.pointer())
+    }
+
+    /// Returns the bytes for the fixed portion of this row.
+    pub(crate) fn get_row_data(&self) -> &Bytes {
+        let (page, offset) = self.page_and_offset();
+        page.get_row_data(offset, self.table.row_layout.size())
     }
 
     /// Returns the row hash for `ptr`.
@@ -718,17 +720,12 @@ impl<'a> RowRef<'a> {
     /// and may therefore be faster than calling [`bsatn::to_vec`].
     pub fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
         if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
-            let mut vec = vec![0; static_bsatn_layout.bsatn_length as usize];
-            let (page, offset) = self.page_and_offset();
-            let row = page.get_row_data(offset, self.table.row_layout.size());
-            // Safety:
+            // Use fast path, by first fetching the row data and then using the static layout.
+            let row = self.get_row_data();
+            // SAFETY:
             // - Existence of a `RowRef` treated as proof
             //   of row's validity and type information's correctness.
-            // - `vec` constructed with exactly correct length above.
-            unsafe {
-                static_bsatn_layout.serialize_row_into(&mut vec, row);
-            }
-            Ok(vec)
+            Ok(unsafe { static_bsatn_layout.serialize_row_into_vec(row) })
         } else {
             bsatn::to_vec(self)
         }
@@ -741,26 +738,14 @@ impl<'a> RowRef<'a> {
     /// and may therefore be faster than calling [`bsatn::to_writer`].
     pub fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
         if let Some(static_bsatn_layout) = &self.table.static_bsatn_layout {
-            // Get an initially-zeroed slice within `buf` of the correct length.
-            let start = buf.len();
-            let len = static_bsatn_layout.bsatn_length as usize;
-            buf.reserve(len);
-            buf.extend(std::iter::repeat(0).take(len));
-            let buf = &mut buf[start..start + len];
-
-            // Find the row referred to by `self`.
-            let (page, offset) = self.page_and_offset();
-            let row = page.get_row_data(offset, self.table.row_layout.size());
-
-            // Write the row into the slice using a series of `memcpy`s.
-            // Safety:
+            // Use fast path, by first fetching the row data and then using the static layout.
+            let row = self.get_row_data();
+            // SAFETY:
             // - Existence of a `RowRef` treated as proof
             //   of row's validity and type information's correctness.
-            // - `buf` constructed with exactly correct length above.
             unsafe {
-                static_bsatn_layout.serialize_row_into(buf, row);
+                static_bsatn_layout.serialize_row_extend(buf, row);
             }
-
             Ok(())
         } else {
             // Use the slower, but more general, `bsatn_from` serializer to write the row.
@@ -918,7 +903,7 @@ impl IndexScanIter<'_> {
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
 pub struct UniqueConstraintViolation {
-    pub constraint_name: String,
+    pub constraint_name: Box<str>,
     pub table_name: Box<str>,
     pub cols: Vec<Box<str>>,
     pub value: AlgebraicValue,
@@ -936,14 +921,27 @@ impl Table {
     ) -> UniqueConstraintViolation {
         let schema = self.get_schema();
 
+        // Fetch the table name.
+        let table_name = schema.table_name.clone();
+
+        // Fetch the names of the columns used in the index.
         let cols = cols
             .iter()
             .map(|x| schema.columns()[x.idx()].col_name.clone())
             .collect();
 
+        // Fetch the name of the index.
+        let constraint_name = schema
+            .indexes
+            .iter()
+            .find(|i| i.index_id == index.index_id)
+            .unwrap()
+            .index_name
+            .clone();
+
         UniqueConstraintViolation {
-            constraint_name: index.name.clone().into(),
-            table_name: schema.table_name.clone(),
+            constraint_name,
+            table_name,
             cols,
             value,
         }
@@ -970,6 +968,7 @@ impl Table {
             indexes: HashMap::with_capacity(indexes_capacity),
             pointer_map: PointerMap::default(),
             squashed_offset,
+            row_count: 0,
         }
     }
 
@@ -1002,11 +1001,19 @@ impl Table {
         self.inner.row_layout.size()
     }
 
-    /// Returns the fixed-len portion of the row at `ptr`.
-    #[allow(unused)]
-    fn get_fixed_row(&self, ptr: RowPointer) -> &Bytes {
-        let (page, offset) = self.inner.page_and_offset(ptr);
-        page.get_row_data(offset, self.row_size())
+    /// Returns the layout for a row in the table.
+    fn row_layout(&self) -> &RowTypeLayout {
+        &self.inner.row_layout
+    }
+
+    /// Returns the pages storing the physical rows of this table.
+    fn pages(&self) -> &Pages {
+        &self.inner.pages
+    }
+
+    /// Returns the [`StaticBsatnLayout`] for this table,
+    pub(crate) fn static_bsatn_layout(&self) -> Option<&StaticBsatnLayout> {
+        self.inner.static_bsatn_layout.as_ref()
     }
 }
 
@@ -1014,6 +1021,7 @@ impl Table {
 pub(crate) mod test {
     use super::*;
     use crate::blob_store::HashMapBlobStore;
+    use crate::page::tests::hash_unmodified_save_get;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
     use spacetimedb_sats::bsatn::to_vec;
@@ -1051,13 +1059,21 @@ pub(crate) mod test {
         let mut table = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
         let cols = ColList::new(0.into());
 
-        let index = BTreeIndex::new(index_schema.index_id, &table.inner.row_layout, &cols, true, index_name).unwrap();
+        let index = table.new_index(index_schema.index_id, &cols, true).unwrap();
         table.insert_index(&NullBlobStore, cols, index);
+
+        // Reserve a page so that we can check the hash.
+        let pi = table.inner.pages.reserve_empty_page(table.row_size()).unwrap();
+        let hash_pre_ins = hash_unmodified_save_get(&mut table.inner.pages[pi]);
 
         // Insert the row (0, 0).
         table
             .insert(&mut NullBlobStore, &product![0i32, 0i32])
             .expect("Initial insert failed");
+
+        // Inserting cleared the hash.
+        let hash_post_ins = hash_unmodified_save_get(&mut table.inner.pages[pi]);
+        assert_ne!(hash_pre_ins, hash_post_ins);
 
         // Try to insert the row (0, 1), and assert that we get the expected error.
         match table.insert(&mut NullBlobStore, &product![0i32, 1i32]) {
@@ -1068,13 +1084,16 @@ pub(crate) mod test {
                 cols,
                 value,
             })) => {
-                assert_eq!(constraint_name, index_name);
+                assert_eq!(&*constraint_name, index_name);
                 assert_eq!(&*table_name, "UniqueIndexed");
                 assert_eq!(cols.iter().map(|c| c.to_string()).collect::<Vec<_>>(), &["unique_col"]);
                 assert_eq!(value, AlgebraicValue::I32(0));
             }
             Err(e) => panic!("Expected UniqueConstraintViolation but found {:?}", e),
         }
+
+        // Second insert did not clear the hash as we had a constraint violation.
+        assert_eq!(hash_post_ins, *table.inner.pages[pi].unmodified_hash().unwrap());
     }
 
     fn insert_retrieve_body(ty: impl Into<ProductType>, val: impl Into<ProductValue>) -> TestCaseResult {
@@ -1134,17 +1153,23 @@ pub(crate) mod test {
             let ptr = row.pointer();
             prop_assert_eq!(table.pointer_map.pointers_for(hash), &[ptr]);
 
-
             prop_assert_eq!(table.inner.pages.len(), 1);
             prop_assert_eq!(table.inner.pages[PageIndex(0)].num_rows(), 1);
             prop_assert_eq!(&table.scan_rows(&blob_store).map(|r| r.pointer()).collect::<Vec<_>>(), &[ptr]);
+            prop_assert_eq!(table.row_count, 1);
+
+            let hash_pre_del = hash_unmodified_save_get(&mut table.inner.pages[ptr.page_index()]);
 
             table.delete(&mut blob_store, ptr, |_| ());
+
+            let hash_post_del = hash_unmodified_save_get(&mut table.inner.pages[ptr.page_index()]);
+            assert_ne!(hash_pre_del, hash_post_del);
 
             prop_assert_eq!(table.pointer_map.pointers_for(hash), &[]);
 
             prop_assert_eq!(table.inner.pages.len(), 1);
             prop_assert_eq!(table.inner.pages[PageIndex(0)].num_rows(), 0);
+            prop_assert_eq!(table.row_count, 0);
 
             prop_assert!(&table.scan_rows(&blob_store).next().is_none());
         }
@@ -1159,11 +1184,20 @@ pub(crate) mod test {
             let ptr = row.pointer();
             prop_assert_eq!(table.inner.pages.len(), 1);
             prop_assert_eq!(table.pointer_map.pointers_for(hash), &[ptr]);
+            prop_assert_eq!(table.row_count, 1);
             prop_assert_eq!(&table.scan_rows(&blob_store).map(|r| r.pointer()).collect::<Vec<_>>(), &[ptr]);
 
             let blob_uses = blob_store.usage_counter();
 
+            let hash_pre_ins = hash_unmodified_save_get(&mut table.inner.pages[ptr.page_index()]);
+
             prop_assert!(table.insert(&mut blob_store, &val).is_err());
+
+            // Hash was cleared and is different despite failure to insert.
+            let hash_post_ins = hash_unmodified_save_get(&mut table.inner.pages[ptr.page_index()]);
+            assert_ne!(hash_pre_ins, hash_post_ins);
+
+            prop_assert_eq!(table.row_count, 1);
             prop_assert_eq!(table.inner.pages.len(), 1);
             prop_assert_eq!(table.pointer_map.pointers_for(hash), &[ptr]);
 

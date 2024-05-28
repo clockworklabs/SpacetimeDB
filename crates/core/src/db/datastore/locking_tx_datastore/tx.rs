@@ -21,16 +21,12 @@ pub struct TxId {
 }
 
 impl StateView for TxId {
-    fn get_schema(&self, table_id: &TableId) -> Option<&Arc<TableSchema>> {
+    fn get_schema(&self, table_id: TableId) -> Option<&Arc<TableSchema>> {
         self.committed_state_shared_lock.get_schema(table_id)
     }
 
-    fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> Result<Iter<'a>> {
+    fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Iter<'a>> {
         self.committed_state_shared_lock.iter(ctx, table_id)
-    }
-
-    fn table_exists(&self, table_id: &TableId) -> Option<&str> {
-        self.committed_state_shared_lock.table_exists(table_id)
     }
 
     /// Returns an iterator,
@@ -39,14 +35,14 @@ impl StateView for TxId {
     fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
-        table_id: &TableId,
+        table_id: TableId,
         cols: ColList,
         range: R,
     ) -> Result<IterByColRange<'a, R>> {
-        match self.committed_state_shared_lock.index_seek(*table_id, &cols, &range) {
+        match self.committed_state_shared_lock.index_seek(table_id, &cols, &range) {
             Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter::new(
                 ctx,
-                *table_id,
+                table_id,
                 None,
                 &self.committed_state_shared_lock,
                 committed_rows,
@@ -61,5 +57,19 @@ impl StateView for TxId {
 impl TxId {
     pub(crate) fn release(self, ctx: &ExecutionContext) {
         record_metrics(ctx, self.timer, self.lock_wait_time, true);
+    }
+
+    pub fn get_row_count(&self, table_id: TableId) -> Option<u64> {
+        self.committed_state_shared_lock
+            .get_table(table_id)
+            .map(|table| table.row_count)
+    }
+
+    /// The Number of Distinct Values (NDV) for a column or list of columns,
+    /// if there's an index available on `cols`.
+    pub fn num_distinct_values(&self, table_id: TableId, cols: &ColList) -> Option<u64> {
+        self.committed_state_shared_lock
+            .get_table(table_id)
+            .and_then(|t| t.indexes.get(cols).map(|index| index.num_keys() as u64))
     }
 }

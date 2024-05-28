@@ -35,6 +35,7 @@ spacetimedb-sats.workspace = true
 
 ahash.workspace = true
 blake3.workspace = true
+bytemuck.workspace = true
 decorum.workspace = true
 derive_more.workspace = true
 enum-as-inner.workspace = true

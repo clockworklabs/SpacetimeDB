@@ -22,21 +22,22 @@ use std::{ops::RangeBounds, sync::Arc};
 // StateView trait, is designed to define the behavior of viewing internal datastore states.
 // Currently, it applies to: CommittedState, MutTxId, and TxId.
 pub(crate) trait StateView {
-    fn get_schema(&self, table_id: &TableId) -> Option<&Arc<TableSchema>>;
+    fn get_schema(&self, table_id: TableId) -> Option<&Arc<TableSchema>>;
 
     fn table_id_from_name(&self, table_name: &str, database_address: Address) -> Result<Option<TableId>> {
         let ctx = ExecutionContext::internal(database_address);
         let name = &<Box<str>>::from(table_name).into();
         let row = self
-            .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableName, name)?
+            .iter_by_col_eq(&ctx, ST_TABLES_ID, StTableFields::TableName, name)?
             .next();
         Ok(row.map(|row| row.read_col(StTableFields::TableId).unwrap()))
     }
 
-    fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> Result<Iter<'a>>;
+    fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Iter<'a>>;
 
-    // TODO(noa): rename to table_name, and TableId doesn't need to be a reference
-    fn table_exists(&self, table_id: &TableId) -> Option<&str>;
+    fn table_name(&self, table_id: TableId) -> Option<&str> {
+        self.get_schema(table_id).map(|s| &*s.table_name)
+    }
 
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
@@ -44,7 +45,7 @@ pub(crate) trait StateView {
     fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
-        table_id: &TableId,
+        table_id: TableId,
         cols: ColList,
         range: R,
     ) -> Result<IterByColRange<'a, R>>;
@@ -52,7 +53,7 @@ pub(crate) trait StateView {
     fn iter_by_col_eq<'a, 'r>(
         &'a self,
         ctx: &'a ExecutionContext,
-        table_id: &TableId,
+        table_id: TableId,
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
     ) -> Result<IterByColEq<'a, 'r>> {
@@ -64,7 +65,7 @@ pub(crate) trait StateView {
         // Look up the table_name for the table in question.
         let value_eq = &table_id.into();
         let row = self
-            .iter_by_col_eq(ctx, &ST_TABLES_ID, StTableFields::TableId, value_eq)?
+            .iter_by_col_eq(ctx, ST_TABLES_ID, StTableFields::TableId, value_eq)?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
         let row = StTableRow::try_from(row)?;
@@ -75,7 +76,7 @@ pub(crate) trait StateView {
 
         // Look up the columns for the table in question.
         let mut columns = self
-            .iter_by_col_eq(ctx, &ST_COLUMNS_ID, StColumnFields::TableId, value_eq)?
+            .iter_by_col_eq(ctx, ST_COLUMNS_ID, StColumnFields::TableId, value_eq)?
             .map(|row| {
                 let row = StColumnRow::try_from(row)?;
                 Ok(ColumnSchema {
@@ -90,7 +91,7 @@ pub(crate) trait StateView {
 
         // Look up the constraints for the table in question.
         let constraints = self
-            .iter_by_col_eq(ctx, &ST_CONSTRAINTS_ID, StConstraintFields::TableId, value_eq)?
+            .iter_by_col_eq(ctx, ST_CONSTRAINTS_ID, StConstraintFields::TableId, value_eq)?
             .map(|row| {
                 let row = StConstraintRow::try_from(row)?;
                 Ok(ConstraintSchema {
@@ -105,7 +106,7 @@ pub(crate) trait StateView {
 
         // Look up the sequences for the table in question.
         let sequences = self
-            .iter_by_col_eq(ctx, &ST_SEQUENCES_ID, StSequenceFields::TableId, value_eq)?
+            .iter_by_col_eq(ctx, ST_SEQUENCES_ID, StSequenceFields::TableId, value_eq)?
             .map(|row| {
                 let row = StSequenceRow::try_from(row)?;
                 Ok(SequenceSchema {
@@ -124,7 +125,7 @@ pub(crate) trait StateView {
 
         // Look up the indexes for the table in question.
         let indexes = self
-            .iter_by_col_eq(ctx, &ST_INDEXES_ID, StIndexFields::TableId, value_eq)?
+            .iter_by_col_eq(ctx, ST_INDEXES_ID, StIndexFields::TableId, value_eq)?
             .map(|row| {
                 let row = StIndexRow::try_from(row)?;
                 Ok(IndexSchema {
@@ -156,7 +157,7 @@ pub(crate) trait StateView {
     ///
     /// Note: The responsibility of populating the cache is left to the caller.
     fn schema_for_table(&self, ctx: &ExecutionContext, table_id: TableId) -> Result<Arc<TableSchema>> {
-        if let Some(schema) = self.get_schema(&table_id) {
+        if let Some(schema) = self.get_schema(table_id) {
             return Ok(schema.clone());
         }
 
@@ -325,7 +326,7 @@ impl Drop for IndexSeekIterMutTxId<'_> {
         let mut metrics = self.ctx.metrics.write();
         let get_table_name = || {
             self.committed_state
-                .get_schema(&self.table_id)
+                .get_schema(self.table_id)
                 .map(|table| &*table.table_name)
                 .unwrap_or_default()
                 .to_string()

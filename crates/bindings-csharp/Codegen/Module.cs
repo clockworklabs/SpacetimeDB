@@ -132,7 +132,7 @@ public class Module : IIncrementalGenerator
                             );
 
                             public static IEnumerable<{t.Name}> Query(System.Linq.Expressions.Expression<Func<{t.Name}, bool>> filter) =>
-                                new SpacetimeDB.Runtime.RawTableIter(tableId.Value, SpacetimeDB.Filter.Filter.Compile<{t.Name}>(fieldTypeInfos.Value, filter))
+                                new SpacetimeDB.Runtime.RawTableIterFiltered(tableId.Value, SpacetimeDB.Filter.Filter.Compile<{t.Name}>(fieldTypeInfos.Value, filter))
                                 .SelectMany(GetSatsTypeInfo().ReadBytes);
 
                             public void Insert() {{
@@ -159,9 +159,8 @@ public class Module : IIncrementalGenerator
                             extensions +=
                                 $@"
                                     public static {t.Name}? FindBy{f.Name}({f.Type} {f.Name}) =>
-                                        GetSatsTypeInfo().ReadBytes(
-                                            SpacetimeDB.Runtime.IterByColEq(tableId.Value, {index}, {f.TypeInfo}.ToBytes({f.Name}))
-                                        )
+                                        new SpacetimeDB.Runtime.RawTableIterByColEq(tableId.Value, {index}, {f.TypeInfo}.ToBytes({f.Name}))
+                                        .SelectMany(GetSatsTypeInfo().ReadBytes)
                                         .Cast<{t.Name}?>()
                                         .SingleOrDefault();
 
@@ -176,9 +175,8 @@ public class Module : IIncrementalGenerator
                         extensions +=
                             $@"
                                 public static IEnumerable<{t.Name}> FilterBy{f.Name}({f.Type} {f.Name}) =>
-                                    GetSatsTypeInfo().ReadBytes(
-                                        SpacetimeDB.Runtime.IterByColEq(tableId.Value, {index}, {f.TypeInfo}.ToBytes({f.Name}))
-                                    );
+                                    new SpacetimeDB.Runtime.RawTableIterByColEq(tableId.Value, {index}, {f.TypeInfo}.ToBytes({f.Name}))
+                                    .SelectMany(GetSatsTypeInfo().ReadBytes);
                             ";
                     }
 

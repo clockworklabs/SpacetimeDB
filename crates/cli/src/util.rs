@@ -152,7 +152,7 @@ pub async fn select_identity_config(
         config
             .get_identity_config(identity_or_name)
             .cloned()
-            .ok_or_else(|| anyhow::anyhow!("No such identity credentials for identity: {}", identity_or_name))
+            .ok_or_else(|| anyhow::anyhow!("No identity credentials for identity \"{}\"", identity_or_name))
     } else {
         Ok(init_default(config, None, server).await?.identity_config)
     }

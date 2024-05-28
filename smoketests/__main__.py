@@ -3,7 +3,6 @@
 import subprocess
 import unittest
 import argparse
-from subprocess import check_call, check_output
 from tempfile import TemporaryDirectory
 from pathlib import Path
 import os
@@ -12,10 +11,10 @@ import fnmatch
 import json
 from . import TEST_DIR, STDB_DIR, STDB_CONFIG, build_template_target
 import smoketests
-
+import logging
 
 def check_docker():
-    docker_ps = check_output(["docker", "ps", "--format=json"])
+    docker_ps = smoketests.run_cmd("docker", "ps", "--format=json")
     docker_ps = (json.loads(line) for line in docker_ps.splitlines())
     for docker_container in docker_ps:
         if "node" in docker_container["Image"]:
@@ -59,8 +58,8 @@ def main():
     parser.add_argument("-x", dest="exclude", nargs="*", default=[])
     args = parser.parse_args()
 
-    print("Compiling spacetime cli...")
-    check_call(["cargo", "build"], cwd=TEST_DIR.parent)
+    logging.info("Compiling spacetime cli...")
+    smoketests.run_cmd("cargo", "build", cwd=TEST_DIR.parent, capture_stderr=False)
 
     os.environ["SPACETIME_SKIP_CLIPPY"] = "1"
 

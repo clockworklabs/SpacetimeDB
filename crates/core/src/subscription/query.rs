@@ -35,20 +35,20 @@ pub fn compile_read_only_query(
     let compiled = compile_sql(relational_db, tx, &input)?;
     let mut queries = Vec::with_capacity(compiled.len());
     for q in compiled {
-        match q {
-            CrudExpr::Query(x) => queries.push(x),
-            CrudExpr::Insert { .. } => {
-                return Err(SubscriptionError::SideEffect(Crud::Insert).into());
+        return Err(SubscriptionError::SideEffect(match q {
+            CrudExpr::Query(x) => {
+                queries.push(x);
+                continue;
             }
-            CrudExpr::Update { .. } => return Err(SubscriptionError::SideEffect(Crud::Update).into()),
-            CrudExpr::Delete { .. } => return Err(SubscriptionError::SideEffect(Crud::Delete).into()),
-            CrudExpr::CreateTable { .. } => {
-                return Err(SubscriptionError::SideEffect(Crud::Create(DbType::Table)).into())
-            }
-            CrudExpr::Drop { kind, .. } => return Err(SubscriptionError::SideEffect(Crud::Drop(kind)).into()),
-            CrudExpr::SetVar { .. } => return Err(SubscriptionError::SideEffect(Crud::Config).into()),
-            CrudExpr::ReadVar { .. } => return Err(SubscriptionError::SideEffect(Crud::Config).into()),
-        }
+            CrudExpr::Insert { .. } => Crud::Insert,
+            CrudExpr::Update { .. } => Crud::Update,
+            CrudExpr::Delete { .. } => Crud::Delete,
+            CrudExpr::CreateTable { .. } => Crud::Create(DbType::Table),
+            CrudExpr::Drop { kind, .. } => Crud::Drop(kind),
+            CrudExpr::SetVar { .. } => Crud::Config,
+            CrudExpr::ReadVar { .. } => Crud::Config,
+        })
+        .into());
     }
 
     if !queries.is_empty() {

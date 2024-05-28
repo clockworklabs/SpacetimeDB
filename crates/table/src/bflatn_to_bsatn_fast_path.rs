@@ -20,19 +20,21 @@
 //! one of 20 bytes to copy the leading `(u64, u64, u32)`, which contains no padding,
 //! and then one of 8 bytes to copy the trailing `u64`, skipping over 4 bytes of padding in between.
 
-use crate::{
-    indexes::Bytes,
+use super::{
+    indexes::{Byte, Bytes},
     layout::{
         AlgebraicTypeLayout, HasLayout, PrimitiveType, ProductTypeElementLayout, ProductTypeLayout, RowTypeLayout,
         SumTypeLayout, SumTypeVariantLayout,
     },
     util::range_move,
 };
+use core::mem::MaybeUninit;
+use core::ptr;
 
 /// A precomputed BSATN layout for a type whose encoded length is a known constant,
 /// enabling fast BFLATN -> BSATN conversion.
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub struct StaticBsatnLayout {
+pub(crate) struct StaticBsatnLayout {
     /// The length of the encoded BSATN representation of a row of this type,
     /// in bytes.
     ///
@@ -55,11 +57,7 @@ impl StaticBsatnLayout {
     ///   for which `self` was computed.
     ///   As a consequence of this, for every `field` in `self.fields`,
     ///   `row[field.bflatn_offset .. field.bflatn_offset + length]` will be initialized.
-    // TODO(perf): We could take `buf: &mut Bytes` to avoid needing to zero the buffer before calling.
-    // This method will always fully inialize `buf[0..self.bsatn_length]`.
-    // Some complexity here as `RowRef::to_bsatn_extend` must maintain panic-safety,
-    // so it must do `Vec::reserve`, followed by `serialize_row_into`, and only then `Vec::set_len`.
-    pub unsafe fn serialize_row_into(&self, buf: &mut [u8], row: &Bytes) {
+    unsafe fn serialize_row_into(&self, buf: &mut [MaybeUninit<Byte>], row: &Bytes) {
         debug_assert!(buf.len() >= self.bsatn_length as usize);
         for field in &self.fields[..] {
             // SAFETY: forward caller requirements.
@@ -67,12 +65,70 @@ impl StaticBsatnLayout {
         }
     }
 
+    /// Serialize `row` from BFLATN to BSATN into a `Vec<u8>`.
+    ///
+    /// # Safety
+    ///
+    /// - `row` must store a valid, initialized instance of the BFLATN row type
+    ///   for which `self` was computed.
+    ///   As a consequence of this, for every `field` in `self.fields`,
+    ///   `row[field.bflatn_offset .. field.bflatn_offset + length]` will be initialized.
+    pub(crate) unsafe fn serialize_row_into_vec(&self, row: &Bytes) -> Vec<u8> {
+        // Create an uninitialized buffer `buf` of the correct length.
+        let bsatn_len = self.bsatn_length as usize;
+        let mut buf = Vec::with_capacity(bsatn_len);
+        let sink = buf.spare_capacity_mut();
+
+        // (1) Write the row into the slice using a series of `memcpy`s.
+        // SAFETY:
+        // - Caller promised that `row` is valid for `self`.
+        // - `sink` was constructed with exactly the correct length above.
+        unsafe {
+            self.serialize_row_into(sink, row);
+        }
+
+        // SAFETY: In (1), we initialized `0..len`
+        // as `row` was valid for `self` per caller requirements.
+        unsafe { buf.set_len(bsatn_len) }
+        buf
+    }
+
+    /// Serialize `row` from BFLATN to BSATN, appending the BSATN to `buf`.
+    ///
+    /// # Safety
+    ///
+    /// - `row` must store a valid, initialized instance of the BFLATN row type
+    ///   for which `self` was computed.
+    ///   As a consequence of this, for every `field` in `self.fields`,
+    ///   `row[field.bflatn_offset .. field.bflatn_offset + length]` will be initialized.
+    pub(crate) unsafe fn serialize_row_extend(&self, buf: &mut Vec<u8>, row: &Bytes) {
+        // Get an uninitialized slice within `buf` of the correct length.
+        let start = buf.len();
+        let len = self.bsatn_length as usize;
+        buf.reserve(len);
+        let sink = &mut buf.spare_capacity_mut()[..len];
+
+        // (1) Write the row into the slice using a series of `memcpy`s.
+        // SAFETY:
+        // - Caller promised that `row` is valid for `self`.
+        // - `sink` was constructed with exactly the correct length above.
+        unsafe {
+            self.serialize_row_into(sink, row);
+        }
+
+        // SAFETY: In (1), we initialized `start .. start + len`
+        // as `row` was valid for `self` per caller requirements
+        // and we had initialized up to `start` before,
+        // so now we have initialized up to `start + len`.
+        unsafe { buf.set_len(start + len) }
+    }
+
     /// Construct a `StaticBsatnLayout` for converting BFLATN rows of `row_type` into BSATN.
     ///
     /// Returns `None` if `row_type` contains a column which does not have a constant length in BSATN,
     /// either a [`VarLenType`]
     /// or a [`SumTypeLayout`] whose variants do not have the same "live" unpadded length.
-    pub fn for_row_type(row_type: &RowTypeLayout) -> Option<Self> {
+    pub(crate) fn for_row_type(row_type: &RowTypeLayout) -> Option<Self> {
         let mut builder = LayoutBuilder::new_builder();
         builder.visit_product(row_type.product())?;
         Some(builder.build())
@@ -101,19 +157,28 @@ struct MemcpyField {
 }
 
 impl MemcpyField {
-    /// Copies the bytes at `row[self.bflatn_offset ..  self.bflatn_offset + self.length]`
+    /// Copies the bytes at `row[self.bflatn_offset .. self.bflatn_offset + self.length]`
     /// into `buf[self.bsatn_offset + self.length]`.
     ///
     /// # Safety
     ///
-    /// - `buf` must be at least `self.bsatn_offset + self.length` long.
-    /// - `row` must be at least `self.bflatn_offset + self.length` long.
-    unsafe fn copy(&self, buf: &mut [u8], row: &Bytes) {
+    /// - `buf` must be exactly `self.bsatn_offset + self.length` long.
+    /// - `row` must be exactly `self.bflatn_offset + self.length` long.
+    unsafe fn copy(&self, buf: &mut [MaybeUninit<Byte>], row: &Bytes) {
+        let len = self.length as usize;
         // SAFETY: forward caller requirement #1.
-        let to = unsafe { buf.get_unchecked_mut(range_move(0..self.length as usize, self.bsatn_offset as usize)) };
+        let to = unsafe { buf.get_unchecked_mut(range_move(0..len, self.bsatn_offset as usize)) };
+        let dst = to.as_mut_ptr().cast();
         // SAFETY: forward caller requirement #2.
-        let from = unsafe { row.get_unchecked(range_move(0..self.length as usize, self.bflatn_offset as usize)) };
-        to.copy_from_slice(from);
+        let from = unsafe { row.get_unchecked(range_move(0..len, self.bflatn_offset as usize)) };
+        let src = from.as_ptr();
+
+        // SAFETY:
+        // 1. `src` is valid for reads for `len` bytes as it came from `from`, a shared slice.
+        // 2. `dst` is valid for writes for `len` bytes as it came from `to`, an exclusive slice.
+        // 3. Alignment for `u8` is trivially satisfied for any pointer.
+        // 4. As `from` and `to` are shared and exclusive slices, they cannot overlap.
+        unsafe { ptr::copy_nonoverlapping(src, dst, len) }
     }
 
     fn is_empty(&self) -> bool {
@@ -473,26 +538,28 @@ mod test {
         fn known_bsatn_same_as_bflatn_from((ty, val) in generate_typed_row()) {
             let mut blob_store = HashMapBlobStore::default();
             let mut table = crate::table::test::table(ty);
-            let Some(bsatn_layout) = StaticBsatnLayout::for_row_type(table.row_layout()) else {
+            let Some(bsatn_layout) = table.static_bsatn_layout().cloned() else {
                 // `ty` has a var-len member or a sum with different payload lengths,
                 // so the fast path doesn't apply.
                 return Err(TestCaseError::reject("Var-length type"));
             };
 
-            let size = table.row_layout().size();
             let (_, row_ref) = table.insert(&mut blob_store, &val).unwrap();
+            let bytes = row_ref.get_row_data();
 
             let slow_path = bsatn::to_vec(&row_ref).unwrap();
 
-            let (page, offset) = row_ref.page_and_offset();
-            let bytes = page.get_row_data(offset, size);
+            let fast_path = unsafe {
+                bsatn_layout.serialize_row_into_vec(bytes)
+            };
 
-            let mut fast_path = vec![0u8; bsatn_layout.bsatn_length as usize];
+            let mut fast_path2 = Vec::new();
             unsafe {
-                bsatn_layout.serialize_row_into(&mut fast_path, bytes);
-            }
+                bsatn_layout.serialize_row_extend(&mut fast_path2, bytes)
+            };
 
             assert_eq!(slow_path, fast_path);
+            assert_eq!(slow_path, fast_path2);
         }
     }
 }

@@ -1106,4 +1106,13 @@ mod tests {
         assert_eq!(result[0].data, vec![product![AlgebraicValue::enum_simple(0)]]);
         Ok(())
     }
+
+    #[test]
+    fn compile_join_with_diff_col_names() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+        db.create_table_for_test("A", &[("x", AlgebraicType::U64)], &[])?;
+        db.create_table_for_test("B", &[("y", AlgebraicType::U64)], &[])?;
+        assert!(compile_sql(&db, &db.begin_tx(), "select * from B join A on B.y = A.x").is_ok());
+        Ok(())
+    }
 }
