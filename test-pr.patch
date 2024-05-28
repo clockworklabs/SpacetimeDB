@@ -1,0 +1,73 @@
+diff --git a/.github/workflows/bottest.yml b/.github/workflows/bottest.yml
+index be2a9a58..42153d4c 100644
+--- a/.github/workflows/bottest.yml
++++ b/.github/workflows/bottest.yml
+@@ -5,11 +5,11 @@ on:
+         description: 'Pull Request Number'
+         required: false
+         default: ''
+-
++  pull_request:
+   issue_comment:
+     types: [created]
+ 
+-name: Benchmarks
++name: Bot test
+ 
+ env:
+   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+@@ -19,6 +19,7 @@ jobs:
+   benchmark:
+     name: run 30-bot bot test
+     runs-on: bots-runner
++    permissions: write-all
+     # filter for a comment containing 'benchmarks please'
+     if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'bots please')) }}
+     env:
+@@ -75,8 +76,9 @@ jobs:
+           target: wasm32-unknown-unknown
+           override: true
+ 
+-      - name: Built the bots
++      - name: Build the bots
+         run: |
++          git apply .github/workflows/bottest_tracing_fix.patch
+           cargo build --release --bin spacetime
+ 
+       - name: Run bot test script
+@@ -85,9 +87,12 @@ jobs:
+           echo "We're on a bots runner, so expecting to find the BitCraftBots repo set up in the expected location"
+           echo "Let's hope the bots runner is up to date!!!"
+           SPACETIME_BIN="$PWD/target/release/spacetime"
+-          pushd ~/BitCraftBots
+-          python3 -m scripts.bottest "$SPACETIME_BIN"
+-          popd
++          cd ~/BitCraftBots
++          # using 'exec' allows the process to receive graceful termination signals (note: actions is bad)
++          exec python3 -m scripts.bottest "$SPACETIME_BIN"
++
++      - name: Archive results
++        run: |
+           mkdir -p bottest-results
+           cp ~/BitCraftBots/results.zip bottest-results/$RESULTS_NAME.zip
+ 
+diff --git a/.github/workflows/bottest_tracing_fix.patch b/.github/workflows/bottest_tracing_fix.patch
+new file mode 100644
+index 00000000..53f7fb62
+--- /dev/null
++++ b/.github/workflows/bottest_tracing_fix.patch
+@@ -0,0 +1,13 @@
++diff --git a/Cargo.toml b/Cargo.toml
++index e8ebdd8c..0c81392e 100644
++--- a/Cargo.toml
+++++ b/Cargo.toml
++@@ -219,7 +219,7 @@ tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
++ tokio-util = { version = "0.7.4", features = ["time"] }
++ toml = "0.8"
++ tower-http = { version = "0.5", features = ["cors"] }
++-tracing = { version = "0.1.37", features = ["release_max_level_off"] }
+++tracing = { version = "0.1.37" } #, features = ["release_max_level_off"] }
++ tracing-appender = "0.2.2"
++ tracing-core = "0.1.31"
++ tracing-flame = "0.2.0"
+\ No newline at end of file

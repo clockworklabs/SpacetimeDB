@@ -1,11 +1,14 @@
 on:
+  push:
+    branches:
+      - master
+      - jgilles/bottest3
   workflow_dispatch:
     inputs:
       pr_number:
         description: 'Pull Request Number'
         required: false
         default: ''
-  pull_request:
   issue_comment:
     types: [created]
 
