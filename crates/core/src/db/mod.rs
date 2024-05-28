@@ -5,8 +5,6 @@ pub mod relational_db;
 mod relational_operators;
 pub mod update;
 
-pub use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
-
 /// Whether SpacetimeDB is run in memory, or persists objects and
 /// a message log to disk.
 #[derive(Clone, Copy)]

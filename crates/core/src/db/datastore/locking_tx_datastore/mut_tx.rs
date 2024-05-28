@@ -7,7 +7,6 @@ use super::{
     tx_state::TxState,
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::db::datastore::traits::RowTypeForTable;
 use crate::db::{
     datastore::{
         system_tables::{
@@ -15,15 +14,16 @@ use crate::db::{
             StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMNS_ID,
             ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
         },
-        traits::TxData,
+        traits::{RowTypeForTable, TxData},
     },
     db_metrics::table_num_rows,
 };
 use crate::{
-    address::Address,
     error::{DBError, IndexError, SequenceError, TableError},
     execution_context::ExecutionContext,
 };
+use core::ops::RangeBounds;
+use spacetimedb_lib::address::Address;
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{
     db::{
@@ -40,7 +40,6 @@ use spacetimedb_table::{
     table::{InsertError, RowRef, Table},
 };
 use std::{
-    ops::RangeBounds,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -51,12 +50,10 @@ use std::{
 /// handling can lead to deadlocks. Therefore, it is strongly recommended to use
 /// `Locking::begin_mut_tx()` for instantiation to ensure safe acquisition of locks.
 pub struct MutTxId {
-    pub(crate) tx_state: TxState,
-    pub(crate) committed_state_write_lock: SharedWriteGuard<CommittedState>,
-    pub(crate) sequence_state_lock: SharedMutexGuard<SequencesState>,
-    #[allow(unused)]
-    pub(crate) lock_wait_time: Duration,
-    #[allow(unused)]
+    pub(super) tx_state: TxState,
+    pub(super) committed_state_write_lock: SharedWriteGuard<CommittedState>,
+    pub(super) sequence_state_lock: SharedMutexGuard<SequencesState>,
+    pub(super) lock_wait_time: Duration,
     pub(crate) timer: Instant,
 }
 
@@ -709,7 +706,7 @@ impl MutTxId {
 
 /// Either a row just inserted to a table or a row that already existed in some table.
 #[derive(Clone, Copy)]
-pub enum RowRefInsertion<'a> {
+pub(super) enum RowRefInsertion<'a> {
     /// The row was just inserted.
     Inserted(RowRef<'a>),
     /// The row already existed.
@@ -726,7 +723,7 @@ impl RowRefInsertion<'_> {
 }
 
 impl MutTxId {
-    pub fn insert(
+    pub(super) fn insert(
         &mut self,
         table_id: TableId,
         row: &mut ProductValue,
@@ -773,7 +770,7 @@ impl MutTxId {
         self.insert_row_internal(table_id, row)
     }
 
-    pub fn insert_row_internal(&mut self, table_id: TableId, row: &ProductValue) -> Result<RowRefInsertion<'_>> {
+    pub(super) fn insert_row_internal(&mut self, table_id: TableId, row: &ProductValue) -> Result<RowRefInsertion<'_>> {
         let commit_table = self.committed_state_write_lock.get_table(table_id);
 
         // Check for constraint violations as early as possible,
@@ -867,7 +864,7 @@ impl MutTxId {
         }
     }
 
-    pub fn delete(&mut self, table_id: TableId, row_pointer: RowPointer) -> Result<bool> {
+    pub(super) fn delete(&mut self, table_id: TableId, row_pointer: RowPointer) -> Result<bool> {
         match row_pointer.squashed_offset() {
             // For newly-inserted rows,
             // just delete them from the insert tables
@@ -890,7 +887,7 @@ impl MutTxId {
         }
     }
 
-    pub fn delete_by_row_value(&mut self, table_id: TableId, rel: &ProductValue) -> Result<bool> {
+    pub(super) fn delete_by_row_value(&mut self, table_id: TableId, rel: &ProductValue) -> Result<bool> {
         // Four cases here:
         // - Table exists in both tx_state and committed_state.
         //   - Temporary insert into tx_state.

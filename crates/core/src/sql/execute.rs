@@ -1,7 +1,6 @@
 use super::compiler::compile_sql;
 use crate::db::datastore::locking_tx_datastore::state_view::StateView;
-use crate::db::datastore::locking_tx_datastore::tx::TxId;
-use crate::db::relational_db::RelationalDB;
+use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::util::slow::SlowQueryLogger;
@@ -78,7 +77,7 @@ pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTa
 }
 
 /// Translates a `FieldName` to the field's name.
-pub fn translate_col(tx: &TxId, field: FieldName) -> Option<Box<str>> {
+pub fn translate_col(tx: &Tx, field: FieldName) -> Option<Box<str>> {
     Some(
         tx.get_schema(field.table)?
             .get_column(field.col.idx())?
