@@ -11,7 +11,8 @@ use crate::{
     db::{
         datastore::{
             system_tables::{
-                Epoch, StModuleFields, StModuleRow, StTableFields, ST_MODULE_ID, ST_TABLES_ID, WASM_MODULE,
+                system_table_schema, Epoch, StModuleFields, StModuleRow, StTableFields, ST_MODULE_ID, ST_TABLES_ID,
+                WASM_MODULE,
             },
             traits::{
                 DataRow, IsolationLevel, MutProgrammable, MutTx, MutTxDatastore, Programmable, RowTypeForTable, Tx,
@@ -29,6 +30,7 @@ use spacetimedb_commitlog::payload::{txdata, Txdata};
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductValue};
+use spacetimedb_snapshot::ReconstructedSnapshot;
 use spacetimedb_table::{indexes::RowPointer, table::RowRef};
 use std::sync::Arc;
 use std::time::Instant;
@@ -124,6 +126,42 @@ impl Locking {
             committed_state: self.committed_state.clone(),
             progress: RefCell::new(progress),
         }
+    }
+
+    pub fn restore_from_snapshot(snapshot: ReconstructedSnapshot) -> Result<Self> {
+        let ReconstructedSnapshot {
+            database_address,
+            tx_offset,
+            blob_store,
+            tables,
+            ..
+        } = snapshot;
+
+        let datastore = Self::new(database_address);
+        let mut commit_state = datastore.committed_state.write_arc();
+        commit_state.blob_store = blob_store;
+
+        let ctx = ExecutionContext::internal(datastore.database_address);
+
+        for (table_id, pages) in tables {
+            let schema = match system_table_schema(table_id) {
+                Some(schema) => Arc::new(schema),
+                None => commit_state.schema_for_table(&ctx, table_id)?,
+            };
+            let (table, _) = commit_state.get_table_and_blob_store_or_create(table_id, schema);
+            let fixed_row_size = table.row_size();
+            let page_store = table.pages_mut();
+            debug_assert!(page_store.is_empty());
+            // TODO(safety): justify safety of this operation.
+            // Relies on the fact that:
+            // - We trust that the snapshot was consistent when created.
+            // - We know the snapshot is uncorrupted because it passed hash verification.
+            page_store.set_contents(pages, fixed_row_size);
+        }
+
+        commit_state.next_tx_offset = tx_offset;
+
+        Ok(datastore)
     }
 }
 
@@ -600,6 +638,10 @@ impl<F> Replay<F> {
             progress: &mut *self.progress.borrow_mut(),
         };
         f(&mut visitor)
+    }
+
+    pub(crate) fn next_tx_offset(&self) -> u64 {
+        self.committed_state.read_arc().next_tx_offset
     }
 }
 

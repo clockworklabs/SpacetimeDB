@@ -236,7 +236,7 @@ impl<R: Repo, T: Encode> Generic<R, T> {
         D: Decoder,
         D::Error: From<error::Traversal>,
     {
-        fold_transactions_internal(self.commits_from(offset).with_log_format_version(), decoder)
+        fold_transactions_internal(self.commits_from(offset).with_log_format_version(), decoder, offset)
     }
 }
 
@@ -293,7 +293,7 @@ where
     D::Error: From<error::Traversal> + From<io::Error>,
 {
     let commits = commits_from(repo, max_log_format_version, offset)?;
-    fold_transactions_internal(commits.with_log_format_version(), de)
+    fold_transactions_internal(commits.with_log_format_version(), de, offset)
 }
 
 fn transactions_from_internal<'a, R, D, T>(
@@ -315,7 +315,7 @@ where
         .skip_while(move |x| x.as_ref().map(|tx| tx.offset < offset).unwrap_or(false))
 }
 
-fn fold_transactions_internal<R, D>(mut commits: CommitsWithVersion<R>, de: D) -> Result<(), D::Error>
+fn fold_transactions_internal<R, D>(mut commits: CommitsWithVersion<R>, de: D, from: u64) -> Result<(), D::Error>
 where
     R: Repo,
     D: Decoder,
@@ -339,10 +339,20 @@ where
         };
         trace!("commit {} n={} version={}", commit.min_tx_offset, commit.n, version);
 
+        let max_tx_offset = commit.min_tx_offset + commit.n as u64;
+        if max_tx_offset <= from {
+            continue;
+        }
+
         let records = &mut commit.records.as_slice();
         for n in 0..commit.n {
             let tx_offset = commit.min_tx_offset + n as u64;
-            de.consume_record(version, tx_offset, records)?;
+            if tx_offset <= from {
+                // TODO(perf): replace with `de.skip_record`, after implementing that.
+                de.decode_record(version, tx_offset, records)?;
+            } else {
+                de.consume_record(version, tx_offset, records)?;
+            }
         }
     }
 

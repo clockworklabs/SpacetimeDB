@@ -140,7 +140,7 @@ impl RelationalDB {
             .map_err(|e| DatabaseError::DatabasedOpened(root.as_ref().to_path_buf(), e.into()))?;
 
         let (durability, disk_size_fn) = durability.map(|(a, b)| (Some(a), Some(b))).unwrap_or_default();
-        let inner = Locking::bootstrap(address)?;
+        let inner = Self::restore_from_snapshot_or_bootstrap(address, snapshots.as_deref())?;
         let row_count_fn: RowCountFn = Arc::new(move |table_id, table_name| {
             DB_METRICS
                 .rdb_num_table_rows
@@ -162,6 +162,30 @@ impl RelationalDB {
                 SlowQueryConfig::with_defaults(),
             ))),
         })
+    }
+
+    fn restore_from_snapshot_or_bootstrap(
+        address: Address,
+        snapshots: Option<&SnapshotRepository>,
+    ) -> Result<Locking, DBError> {
+        if let Some(snapshots) = snapshots {
+            if let Some(tx_offset) = snapshots.latest_snapshot()? {
+                log::info!("[{address}] DATABASE: restoring snapshot of tx_offset {tx_offset}");
+                let snapshot = snapshots.read_snapshot(tx_offset)?;
+                if snapshot.database_address != address {
+                    // TODO: return a proper typed error
+                    return Err(anyhow::anyhow!(
+                        "Snapshot has incorrect database_address: expected {address} but found {}",
+                        snapshot.database_address,
+                    )
+                    .into());
+                }
+                return Locking::restore_from_snapshot(snapshot);
+            }
+            log::info!("[{address}] DATABASE: no snapshot on disk");
+        }
+
+        Locking::bootstrap(address)
     }
 
     /// Replay ("fold") the provided [`spacetimedb_durability::History`] onto
@@ -204,8 +228,11 @@ impl RelationalDB {
             }
         };
 
+        let replay = self.inner.replay(progress);
+        let start = replay.next_tx_offset();
+
         history
-            .fold_transactions_from(0, self.inner.replay(progress))
+            .fold_transactions_from(start, replay)
             .map_err(anyhow::Error::from)?;
         log::info!("[{}] DATABASE: applied transaction history", self.address);
         self.inner.rebuild_state_after_replay()?;

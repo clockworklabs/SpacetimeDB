@@ -997,7 +997,7 @@ impl Table {
     }
 
     /// Returns the row size for a row in the table.
-    fn row_size(&self) -> Size {
+    pub fn row_size(&self) -> Size {
         self.inner.row_layout.size()
     }
 

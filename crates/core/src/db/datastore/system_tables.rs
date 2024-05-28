@@ -300,6 +300,18 @@ pub(crate) fn st_module_schema() -> TableSchema {
     .into_schema(ST_MODULE_ID)
 }
 
+pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
+    match table_id {
+        ST_TABLES_ID => Some(st_table_schema()),
+        ST_COLUMNS_ID => Some(st_columns_schema()),
+        ST_SEQUENCES_ID => Some(st_sequences_schema()),
+        ST_INDEXES_ID => Some(st_indexes_schema()),
+        ST_CONSTRAINTS_ID => Some(st_constraints_schema()),
+        ST_MODULE_ID => Some(st_module_schema()),
+        _ => None,
+    }
+}
+
 pub(crate) fn table_name_is_system(table_name: &str) -> bool {
     table_name.starts_with("st_")
 }

@@ -9,6 +9,7 @@ use spacetimedb_table::{
 };
 use std::{
     collections::BTreeMap,
+    ffi::OsStr,
     fs::OpenOptions,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -31,10 +32,10 @@ pub const CURRENT_SNAPSHOT_VERSION: u8 = 0;
 pub const CURRENT_MODULE_ABI_VERSION: [u16; 2] = [7, 0];
 
 /// File extension of snapshot directories.
-pub const SNAPSHOT_DIR_EXT: &str = ".snapshot.stdb";
+pub const SNAPSHOT_DIR_EXT: &str = "snapshot_dir";
 
 /// File extension of snapshot files, which contain BSATN-encoded [`Snapshot`]s preceeded by [`blake3::Hash`]es.
-pub const SNAPSHOT_FILE_EXT: &str = ".snapshot.bsatn";
+pub const SNAPSHOT_FILE_EXT: &str = "snapshot_bsatn";
 
 #[derive(Serialize, Deserialize)]
 /// The hash and refcount of a single blob in the blob store.
@@ -357,12 +358,12 @@ impl SnapshotRepository {
     }
 
     fn snapshot_dir_path(&self, tx_offset: TxOffset) -> PathBuf {
-        let dir_name = format!("{tx_offset:0>20}{SNAPSHOT_DIR_EXT}");
+        let dir_name = format!("{tx_offset:0>20}.{SNAPSHOT_DIR_EXT}");
         self.root.join(dir_name)
     }
 
     fn snapshot_file_path(tx_offset: TxOffset, snapshot_dir: &Path) -> PathBuf {
-        let file_name = format!("{tx_offset:0>20}{SNAPSHOT_FILE_EXT}");
+        let file_name = format!("{tx_offset:0>20}.{SNAPSHOT_FILE_EXT}");
         snapshot_dir.join(file_name)
     }
 
@@ -431,7 +432,7 @@ impl SnapshotRepository {
             database_address: snapshot.database_address,
             database_instance_id: snapshot.database_instance_id,
             tx_offset: snapshot.tx_offset,
-            module_abi_versino: snapshot.module_abi_version,
+            module_abi_version: snapshot.module_abi_version,
             blob_store,
             tables,
         })
@@ -447,6 +448,30 @@ impl SnapshotRepository {
             database_instance_id,
         })
     }
+
+    /// Return the `TxOffset` of the highest-offset complete snapshot in the repository.
+    ///
+    /// Does not verify that the snapshot of the returned `TxOffset` is valid and uncorrupted,
+    /// so a subsequent [`Self::read_snapshot`] may fail.
+    pub fn latest_snapshot(&self) -> anyhow::Result<Option<TxOffset>> {
+        Ok(self
+            .root
+            // Item = Result<DirEntry>
+            .read_dir()?
+            // Item = DirEntry
+            .filter_map(Result::ok)
+            // Item = PathBuf
+            .map(|dirent| dirent.path())
+            // Ignore entries not shaped like snapshot directories.
+            .filter(|path| path.extension() == Some(OsStr::new(SNAPSHOT_DIR_EXT)))
+            // Ignore entries whose lockfile still exists.
+            .filter(|path| !Lockfile::lock_path(path).exists())
+            // Parse each entry's TxOffset from the file name; ignore unparseable.
+            // Item = TxOffset
+            .filter_map(|path| TxOffset::from_str_radix(path.file_stem()?.to_str()?, 10).ok())
+            // Select the largest TxOffset.
+            .max())
+    }
 }
 
 pub struct ReconstructedSnapshot {
@@ -457,7 +482,7 @@ pub struct ReconstructedSnapshot {
     /// The transaction offset of the state this snapshot reflects.
     pub tx_offset: TxOffset,
     /// ABI version of the module from which this snapshot was created, as [MAJOR, MINOR].
-    pub module_abi_versino: [u16; 2],
+    pub module_abi_version: [u16; 2],
 
     /// The blob store of the snapshotted state.
     pub blob_store: HashMapBlobStore,
