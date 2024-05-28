@@ -9,6 +9,7 @@ on:
   issue_comment:
     types: [created]
 
+
 name: Bot test
 
 env:
@@ -86,9 +87,11 @@ jobs:
           echo "We're on a bots runner, so expecting to find the BitCraftBots repo set up in the expected location"
           echo "Let's hope the bots runner is up to date!!!"
           SPACETIME_BIN="$PWD/target/release/spacetime"
-          pushd ~/BitCraftBots
-          python3 -m scripts.bottest "$SPACETIME_BIN"
-          popd
+          # using 'exec' allows the process to receive graceful termination signals (???)
+          exec python3 -m scripts.bottest "$SPACETIME_BIN"
+
+      - name: Archive results
+        run: |
           mkdir -p bottest-results
           cp ~/BitCraftBots/results.zip bottest-results/$RESULTS_NAME.zip
 
