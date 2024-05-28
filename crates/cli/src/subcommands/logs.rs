@@ -110,7 +110,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // TODO: num_lines should default to like 10 if follow is specified?
     let query_parms = LogsParams { num_lines, follow };
 
-    let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", config.get_host_url(server)?, address));
+    let host_url = config.get_host_url(server)?;
+    config.release_lock();
+
+    let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", host_url, address));
     let builder = add_auth_header_opt(builder, &auth_header);
     let mut res = builder.query(&query_parms).send().await?;
     let status = res.status();
