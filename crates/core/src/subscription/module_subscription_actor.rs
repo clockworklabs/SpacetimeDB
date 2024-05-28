@@ -13,6 +13,8 @@ use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
+use spacetimedb_vm::errors::ErrorVm;
+use spacetimedb_vm::expr::AuthAccess;
 use std::{sync::Arc, time::Instant};
 
 type Subscriptions = Arc<RwLock<SubscriptionManager>>;
@@ -95,6 +97,9 @@ impl ModuleSubscriptions {
         drop(guard);
 
         let execution_set: ExecutionSet = queries.into();
+        execution_set
+            .check_auth(auth.owner, auth.caller)
+            .map_err(ErrorVm::Auth)?;
         let database_update = execution_set.eval(&ctx, sender.protocol, &self.relational_db, &tx)?;
 
         WORKER_METRICS
@@ -192,19 +197,37 @@ pub struct WriteConflict;
 
 #[cfg(test)]
 mod tests {
-    use super::ModuleSubscriptions;
+    use super::{AssertTxFn, ModuleSubscriptions};
     use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
     use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::relational_db::RelationalDB;
+    use crate::error::DBError;
     use crate::execution_context::ExecutionContext;
     use spacetimedb_client_api_messages::client_api::Subscribe;
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
+    use spacetimedb_sats::db::auth::StAccess;
+    use spacetimedb_sats::db::error::AuthError;
     use spacetimedb_sats::product;
+    use spacetimedb_vm::errors::ErrorVm;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
     use tokio::sync::mpsc;
 
-    #[test]
+    fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
+        let owner = Identity::from_byte_array([1; 32]);
+        let client = ClientActorId::for_test(Identity::ZERO);
+        let sender = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let module_subscriptions = ModuleSubscriptions::new(db.clone(), owner);
+
+        let subscribe = Subscribe {
+            query_strings: [sql.into()].into(),
+            request_id: 0,
+        };
+        module_subscriptions.add_subscriber(sender, subscribe, Instant::now(), assert)
+    }
+
     /// Asserts that a subscription holds a tx handle for the entire length of its evaluation.
+    #[test]
     fn test_tx_subscription_ordering() -> ResultTest<()> {
         let test_db = TestDB::durable()?;
 
@@ -217,24 +240,14 @@ mod tests {
             db.insert(tx, table_id, product!(1_u8))
         })?;
 
-        let id = Identity::ZERO;
-        let client = ClientActorId::for_test(id);
-        let sender = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
-        let module_subscriptions = ModuleSubscriptions::new(db.clone(), id);
-
         let (send, mut recv) = mpsc::unbounded_channel();
 
-        // Subscribing to T should return a single row
+        // Subscribing to T should return a single row.
+        let db2 = db.clone();
         let query_handle = runtime.spawn_blocking(move || {
-            let db = module_subscriptions.relational_db.clone();
-            let query_strings = vec!["select * from T".into()];
-            module_subscriptions.add_subscriber(
-                sender,
-                Subscribe {
-                    query_strings,
-                    request_id: 0,
-                },
-                Instant::now(),
+            add_subscriber(
+                db.clone(),
+                "select * from T",
                 Some(Arc::new(move |tx: &_| {
                     // Wake up writer thread after starting the reader tx
                     let _ = send.send(());
@@ -252,8 +265,8 @@ mod tests {
         // Write a second row to T concurrently with the reader thread
         let write_handle = runtime.spawn(async move {
             let _ = recv.recv().await;
-            db.with_auto_commit(&ExecutionContext::default(), |tx| {
-                db.insert(tx, table_id, product!(2_u8))
+            db2.with_auto_commit(&ExecutionContext::default(), |tx| {
+                db2.insert(tx, table_id, product!(2_u8))
             })
         });
 
@@ -261,6 +274,43 @@ mod tests {
         runtime.block_on(query_handle)??;
 
         test_db.close()?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn subs_cannot_access_private_tables() -> ResultTest<()> {
+        let test_db = TestDB::durable()?;
+        let db = Arc::new(test_db.db.clone());
+
+        // Create a public table.
+        let indexes = &[(0.into(), "a")];
+        let cols = &[("a", AlgebraicType::U8)];
+        let _ = db.create_table_for_test("public", cols, indexes)?;
+
+        // Create a private table.
+        let _ = db.create_table_for_test_with_access("private", cols, indexes, StAccess::Private)?;
+
+        // We can subscribe to a public table.
+        let subscribe = |sql| add_subscriber(db.clone(), sql, None);
+        assert!(subscribe("SELECT * FROM public").is_ok());
+
+        // We cannot subscribe when a private table is mentioned,
+        // not even when in a join where the projection doesn't mention the table,
+        // as the mere fact of joining can leak information from the private table.
+        for sql in [
+            "SELECT * FROM private",
+            // Even if the query will return no rows, we still reject it.
+            "SELECT * FROM private WHERE 1 = 0",
+            "SELECT private.* FROM private",
+            "SELECT public.* FROM public JOIN private ON public.a = private.a WHERE private.a = 1",
+            "SELECT private.* FROM private JOIN public ON private.a = public.a WHERE public.a = 1",
+        ] {
+            assert!(matches!(
+                subscribe(sql).unwrap_err(),
+                DBError::Vm(ErrorVm::Auth(AuthError::TablePrivate { .. }))
+            ));
+        }
 
         Ok(())
     }

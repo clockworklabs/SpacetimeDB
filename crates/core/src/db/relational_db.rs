@@ -540,11 +540,12 @@ impl RelationalDB {
             .collect()
     }
 
-    pub fn create_table_for_test(
+    pub fn create_table_for_test_with_access(
         &self,
         name: &str,
         schema: &[(&str, AlgebraicType)],
         indexes: &[(ColId, &str)],
+        access: StAccess,
     ) -> Result<TableId, DBError> {
         let indexes = indexes
             .iter()
@@ -555,9 +556,18 @@ impl RelationalDB {
         let schema = TableDef::new(name.into(), Self::col_def_for_test(schema))
             .with_indexes(indexes)
             .with_type(StTableType::User)
-            .with_access(StAccess::Public);
+            .with_access(access);
 
         self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
+    }
+
+    pub fn create_table_for_test(
+        &self,
+        name: &str,
+        schema: &[(&str, AlgebraicType)],
+        indexes: &[(ColId, &str)],
+    ) -> Result<TableId, DBError> {
+        self.create_table_for_test_with_access(name, schema, indexes, StAccess::Public)
     }
 
     pub fn create_table_for_test_multi_column(
