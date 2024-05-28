@@ -901,7 +901,11 @@ fn autogen_csharp_access_funcs_for_struct(
         );
         indented_block(output, |output| {
             if is_unique {
-                writeln!(output, "return new[] {{ FindBy{csharp_field_name_pascal}(value) }};");
+                // Yield a single item iff `FindBy` returns a non-null record.
+                writeln!(output, "if (FindBy{csharp_field_name_pascal}(value) is {{}} found)");
+                indented_block(output, |output| {
+                    writeln!(output, "yield return found;");
+                });
             } else {
                 writeln!(output, "return Query(x => x.{csharp_field_name_pascal} == value);");
             }
