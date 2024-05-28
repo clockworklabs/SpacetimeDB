@@ -21,8 +21,8 @@ use std::time::Duration;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::{
-    parse_quote, BinOp, Expr, ExprBinary, ExprLit, ExprUnary, FnArg, Ident, ItemFn, ItemStruct, Member, Path, Token,
-    Type, TypePath, UnOp,
+    parse_quote, token, BinOp, Expr, ExprBinary, ExprLit, ExprUnary, FnArg, Ident, ItemFn, ItemStruct, Member, Path,
+    Token, Type, TypePath, UnOp,
 };
 
 mod sym {
@@ -178,11 +178,13 @@ impl syn::parse::Parse for MacroInput {
         Ok(match_tok!(match input {
             kw::table => {
                 let mut public = None;
-                // Eat an optional comma, and then if anything follows,
-                // it has to be `private` or `public`.
-                if input.parse::<Option<Token![,]>>()?.is_some() {
-                    let start = input.span();
-                    match_tok!(match input {
+                // Look for `(public)` or `(private)`.
+                if input.peek(token::Paren) {
+                    let in_parens;
+                    syn::parenthesized!(in_parens in input);
+                    let in_parens = &in_parens;
+                    let start = in_parens.span();
+                    match_tok!(match in_parens {
                         kw::public => public = Some(start),
                         kw::private => {}
                     })

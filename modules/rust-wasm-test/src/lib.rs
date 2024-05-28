@@ -24,7 +24,7 @@ pub enum TestC {
     Bar,
 }
 
-#[spacetimedb(table, public)]
+#[spacetimedb(table(public))]
 pub struct TestD {
     test_c: Option<TestC>,
 }
@@ -41,7 +41,7 @@ pub struct TestE {
 // All tables are private by default.
 const _: () = assert!(matches!(TestE::TABLE_ACCESS, StAccess::Private));
 
-#[spacetimedb(table, public)]
+#[spacetimedb(table(public))]
 pub struct Public {
     name: String,
 }
@@ -49,7 +49,7 @@ pub struct Public {
 // This table was specified as public.
 const _: () = assert!(matches!(Public::TABLE_ACCESS, StAccess::Public));
 
-#[spacetimedb(table, private)]
+#[spacetimedb(table(private))]
 #[spacetimedb(index(btree, name = "multi_column_index", x, y))]
 pub struct Point {
     x: i64,
