@@ -1,10 +1,9 @@
-use crate::address::Address;
-use crate::error::DBError;
+use core::str::FromStr;
+use spacetimedb_lib::address::Address;
 use std::fs::OpenOptions;
 use std::fs::{self, File};
-use std::io::{prelude::*, SeekFrom};
+use std::io::{self, prelude::*, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use tokio::sync::broadcast;
 
 pub struct DatabaseLogger {
@@ -147,7 +146,7 @@ impl DatabaseLogger {
     }
 
     #[tracing::instrument(name = "DatabaseLogger::size", skip(self), err)]
-    pub fn size(&self) -> Result<u64, DBError> {
+    pub fn size(&self) -> io::Result<u64> {
         Ok(self.file.metadata()?.len())
     }
 
@@ -215,18 +214,15 @@ pub struct SystemLogger {
 
 impl SystemLogger {
     pub fn info(&self, msg: &str) {
-        self.inner
-            .write(crate::database_logger::LogLevel::Info, &Self::record(msg), &())
+        self.inner.write(LogLevel::Info, &Self::record(msg), &())
     }
 
     pub fn warn(&self, msg: &str) {
-        self.inner
-            .write(crate::database_logger::LogLevel::Warn, &Self::record(msg), &())
+        self.inner.write(LogLevel::Warn, &Self::record(msg), &())
     }
 
     pub fn error(&self, msg: &str) {
-        self.inner
-            .write(crate::database_logger::LogLevel::Error, &Self::record(msg), &())
+        self.inner.write(LogLevel::Error, &Self::record(msg), &())
     }
 
     fn record(message: &str) -> Record {

@@ -15,9 +15,9 @@ use std::{
 };
 
 pub struct TxId {
-    pub(crate) committed_state_shared_lock: SharedReadGuard<CommittedState>,
-    pub(crate) lock_wait_time: Duration,
-    pub(crate) timer: Instant,
+    pub(super) committed_state_shared_lock: SharedReadGuard<CommittedState>,
+    pub(super) lock_wait_time: Duration,
+    pub(super) timer: Instant,
 }
 
 impl StateView for TxId {
@@ -55,11 +55,11 @@ impl StateView for TxId {
 }
 
 impl TxId {
-    pub(crate) fn release(self, ctx: &ExecutionContext) {
+    pub(super) fn release(self, ctx: &ExecutionContext) {
         record_metrics(ctx, self.timer, self.lock_wait_time, true);
     }
 
-    pub fn get_row_count(&self, table_id: TableId) -> Option<u64> {
+    pub(crate) fn get_row_count(&self, table_id: TableId) -> Option<u64> {
         self.committed_state_shared_lock
             .get_table(table_id)
             .map(|table| table.row_count)
@@ -67,7 +67,7 @@ impl TxId {
 
     /// The Number of Distinct Values (NDV) for a column or list of columns,
     /// if there's an index available on `cols`.
-    pub fn num_distinct_values(&self, table_id: TableId, cols: &ColList) -> Option<u64> {
+    pub(crate) fn num_distinct_values(&self, table_id: TableId, cols: &ColList) -> Option<u64> {
         self.committed_state_shared_lock
             .get_table(table_id)
             .and_then(|t| t.indexes.get(cols).map(|index| index.num_keys() as u64))

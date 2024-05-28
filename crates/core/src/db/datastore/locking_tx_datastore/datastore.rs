@@ -7,7 +7,6 @@ use super::{
     tx_state::TxState,
 };
 use crate::{
-    address::Address,
     db::{
         datastore::{
             system_tables::{
@@ -24,17 +23,16 @@ use crate::{
     execution_context::ExecutionContext,
 };
 use anyhow::{anyhow, Context};
+use core::{cell::RefCell, ops::RangeBounds};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
-use spacetimedb_lib::Identity;
+use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductValue};
 use spacetimedb_table::{indexes::RowPointer, table::RowRef};
-use std::sync::Arc;
-use std::time::Instant;
-use std::{borrow::Cow, time::Duration};
-use std::{cell::RefCell, collections::HashSet, ops::RangeBounds};
+use std::time::{Duration, Instant};
+use std::{borrow::Cow, collections::HashSet, sync::Arc};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, DBError>;
@@ -393,7 +391,7 @@ impl MutTxDatastore for Locking {
     }
 }
 
-pub(crate) fn record_metrics(ctx: &ExecutionContext, tx_timer: Instant, lock_wait_time: Duration, committed: bool) {
+pub(super) fn record_metrics(ctx: &ExecutionContext, tx_timer: Instant, lock_wait_time: Duration, committed: bool) {
     let workload = &ctx.workload();
     let db = &ctx.database();
     let reducer = ctx.reducer_name();

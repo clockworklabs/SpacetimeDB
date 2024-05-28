@@ -8,22 +8,22 @@ use super::datastore::{
     },
     traits::TxData,
 };
+use super::db_metrics::DB_METRICS;
 use super::relational_operators::Relation;
-use crate::address::Address;
 use crate::config::DatabaseConfig;
-use crate::db::db_metrics::DB_METRICS;
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::{ExecutionContext, ReducerContext};
-use crate::hash::Hash;
 use crate::util::slow::SlowQueryConfig;
 use fs2::FileExt;
 use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
 use spacetimedb_durability::{self as durability, Durability};
+use spacetimedb_lib::address::Address;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, TableSchema};
+use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_vm::errors::ErrorVm;
