@@ -1,4 +1,4 @@
-use spacetimedb::{spacetimedb, Identity, ReducerContext, Timestamp};
+use spacetimedb::{schedule, spacetimedb, Identity, ReducerContext, Timestamp};
 
 #[spacetimedb(table)]
 pub struct User {
@@ -60,6 +60,16 @@ pub fn send_message(ctx: ReducerContext, text: String) -> Result<(), String> {
         sent: ctx.timestamp,
     });
     Ok(())
+}
+
+#[spacetimedb(reducer)]
+pub fn send_message_loop(ctx: ReducerContext, i: u64) {
+    Message::insert(Message {
+        sender: ctx.sender,
+        text: format!("loop {i}"),
+        sent: ctx.timestamp,
+    });
+    schedule!("0ms", send_message_loop(_, i + 1));
 }
 
 #[spacetimedb(init)]

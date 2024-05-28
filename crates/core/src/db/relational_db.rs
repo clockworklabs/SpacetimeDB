@@ -119,7 +119,11 @@ impl RelationalDB {
         create_dir_all(&snapshot_dir)?;
         let snapshots = SnapshotRepository::open(snapshot_dir, address, instance_id).map(Arc::new)?;
 
-        Self::open(root, address, Some((durability.clone(), disk_size_fn)), Some(snapshots))?.apply(durability)
+        let start = std::time::Instant::now();
+        let res =
+            Self::open(root, address, Some((durability.clone(), disk_size_fn)), Some(snapshots))?.apply(durability);
+        log::info!("[{address}] DATABASE: opened local in {:?}", start.elapsed());
+        res
     }
 
     /// Open a database with root directory `root` and the provided [`Durability`]
@@ -171,7 +175,12 @@ impl RelationalDB {
         if let Some(snapshots) = snapshots {
             if let Some(tx_offset) = snapshots.latest_snapshot()? {
                 log::info!("[{address}] DATABASE: restoring snapshot of tx_offset {tx_offset}");
+                let start = std::time::Instant::now();
                 let snapshot = snapshots.read_snapshot(tx_offset)?;
+                log::info!(
+                    "[{address}] DATABASE: read snapshot of tx_offset {tx_offset} in {:?}",
+                    start.elapsed(),
+                );
                 if snapshot.database_address != address {
                     // TODO: return a proper typed error
                     return Err(anyhow::anyhow!(
@@ -180,7 +189,13 @@ impl RelationalDB {
                     )
                     .into());
                 }
-                return Locking::restore_from_snapshot(snapshot);
+                let start = std::time::Instant::now();
+                let res = Locking::restore_from_snapshot(snapshot);
+                log::info!(
+                    "[{address}] DATABASE: restored from snapshot of tx_offset {tx_offset} in {:?}",
+                    start.elapsed(),
+                );
+                return res;
             }
             log::info!("[{address}] DATABASE: no snapshot on disk");
         }
