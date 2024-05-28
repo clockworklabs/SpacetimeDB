@@ -21,6 +21,7 @@ jobs:
   benchmark:
     name: run 30-bot bot test
     runs-on: bots-runner
+    permissions: write-all
     # filter for a comment containing 'benchmarks please'
     if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'bots please')) }}
     env:
