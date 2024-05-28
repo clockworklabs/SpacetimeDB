@@ -86,6 +86,7 @@ jobs:
           echo "We're on a bots runner, so expecting to find the BitCraftBots repo set up in the expected location"
           echo "Let's hope the bots runner is up to date!!!"
           SPACETIME_BIN="$PWD/target/release/spacetime"
+          cd ~/BitCraftBots
           # using 'exec' allows the process to receive graceful termination signals (???)
           exec python3 -m scripts.bottest "$SPACETIME_BIN"
 
