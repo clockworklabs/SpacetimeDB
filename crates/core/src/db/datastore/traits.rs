@@ -7,6 +7,7 @@ use super::Result;
 use crate::db::datastore::system_tables::ST_TABLES_ID;
 use crate::execution_context::ExecutionContext;
 use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::hash::Hash;
@@ -300,6 +301,17 @@ pub trait MutTx {
     fn rollback_mut_tx_for_test(&self, tx: Self::MutTx);
 }
 
+/// Standard metadata associated with a database.
+#[derive(Debug)]
+pub struct Metadata {
+    /// The stable address of the database.
+    pub database_address: Address,
+    /// The identity of the database's owner .
+    pub owner_identity: Identity,
+    /// The hash of the binary module set for the database.
+    pub program_hash: Hash,
+}
+
 pub trait TxDatastore: DataRow + Tx {
     type Iter<'a>: Iterator<Item = Self::RowRef<'a>>
     where
@@ -338,6 +350,16 @@ pub trait TxDatastore: DataRow + Tx {
     fn table_name_from_id_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Option<Cow<'a, str>>>;
     fn schema_for_table_tx(&self, tx: &Self::Tx, table_id: TableId) -> super::Result<Arc<TableSchema>>;
     fn get_all_tables_tx(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> super::Result<Vec<Arc<TableSchema>>>;
+
+    /// Obtain the [`Metadata`] for this datastore.
+    ///
+    /// A `None` return value means that the datastore is not fully initialized yet.
+    fn metadata(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Metadata>>;
+
+    /// Obtain the raw bytes of the compiled module associated with this datastore.
+    ///
+    /// A `None` return value means that the datastore is not fully initialized yet.
+    fn program_bytes(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Box<[u8]>>>;
 }
 
 pub trait MutTxDatastore: TxDatastore + MutTx {
@@ -435,35 +457,11 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         table_id: TableId,
         row: ProductValue,
     ) -> Result<ProductValue>;
-}
 
-/// Describes a programmable [`TxDatastore`].
-///
-/// A programmable datastore is one which has a program of some kind associated
-/// with it.
-pub trait Programmable: TxDatastore {
-    /// Retrieve the [`Hash`] of the program currently associated with the
-    /// datastore.
+    /// Update the datastore with the supplied binary program.
     ///
-    /// A `None` result means that no program is currently associated, e.g.
-    /// because the datastore has not been fully initialized yet.
-    fn program_hash(&self, tx: &Self::Tx) -> Result<Option<Hash>>;
-}
-
-/// Describes a [`Programmable`] datastore which allows to update the program
-/// associated with it.
-pub trait MutProgrammable: MutTxDatastore {
-    /// A fencing token (usually a monotonic counter) which allows to order
-    /// `set_module_hash` with respect to a distributed locking service.
-    type FencingToken: Eq + Ord;
-
-    /// Update the [`Hash`] of the program currently associated with the
-    /// datastore.
-    ///
-    /// The operation runs within the transactional context `tx`. The fencing
-    /// token `fence` must be verified to be greater than in any previous
-    /// invocations of this method.
-    fn set_program_hash(&self, tx: &mut Self::MutTx, fence: Self::FencingToken, hash: Hash) -> Result<()>;
+    /// The `program_hash` is the precomputed hash over `program_bytes`.
+    fn update_program(&self, tx: &mut Self::MutTx, program_hash: Hash, program_bytes: Box<[u8]>) -> Result<()>;
 }
 
 #[cfg(test)]

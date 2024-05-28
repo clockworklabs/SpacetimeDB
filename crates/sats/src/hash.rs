@@ -57,6 +57,10 @@ impl Hash {
     pub fn from_hex(hex: impl AsRef<[u8]>) -> Result<Self, hex::FromHexError> {
         hex::FromHex::from_hex(hex)
     }
+
+    pub fn is_zero(&self) -> bool {
+        self == &Self::ZERO
+    }
 }
 
 pub fn hash_bytes(bytes: impl AsRef<[u8]>) -> Hash {

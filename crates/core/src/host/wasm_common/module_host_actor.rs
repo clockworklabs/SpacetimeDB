@@ -1,11 +1,13 @@
 use anyhow::Context;
 use bytes::Bytes;
+use once_cell::unsync::Lazy;
 use std::sync::Arc;
 use std::time::Duration;
 
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, Address, ModuleDef, ModuleValidationError, TableDesc};
+use spacetimedb_sats::hash::Hash;
 
 use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
@@ -333,8 +335,13 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         self.trapped
     }
 
-    #[tracing::instrument(skip(self, args), fields(db_id = self.instance.instance_env().dbic.id))]
-    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<Option<ReducerCallResult>> {
+    #[tracing::instrument(skip_all, fields(db_id = self.instance.instance_env().dbic.id))]
+    fn init_database(
+        &mut self,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> anyhow::Result<Option<ReducerCallResult>> {
+        log::debug!("init database");
         let timestamp = Timestamp::now();
         let stdb = &*self.database_instance_context().relational_db;
         let ctx = ExecutionContext::internal(stdb.address());
@@ -348,9 +355,9 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                     stdb.create_table(tx, schema)
                         .with_context(|| format!("failed to create table {table_name}"))?;
                 }
-                // Set the module hash. Morally, this should be done _after_ calling
-                // the `init` reducer, but that consumes our transaction context.
-                stdb.set_program_hash(tx, fence, self.info.module_hash)?;
+
+                stdb.update_program(tx, program_hash, program_bytes)?;
+
                 anyhow::Ok(())
             })
             .inspect_err(|e| log::error!("{e:?}"))?;
@@ -382,7 +389,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                         request_id: None,
                         timer: None,
                         reducer_id,
-                        args,
+                        args: ArgsTuple::nullary(),
                     },
                 ))
             }
@@ -394,22 +401,21 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     }
 
     #[tracing::instrument(skip_all)]
-    fn update_database(&mut self, fence: u128) -> Result<UpdateDatabaseResult, anyhow::Error> {
+    fn update_database(
+        &mut self,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         let timestamp = Timestamp::now();
 
         let proposed_tables = get_tabledefs(&self.info).collect::<anyhow::Result<Vec<_>>>()?;
 
         let stdb = &*self.database_instance_context().relational_db;
-        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let ctx = Lazy::new(|| ExecutionContext::internal(stdb.address()));
 
-        let res = crate::db::update::update_database(
-            stdb,
-            tx,
-            proposed_tables,
-            fence,
-            self.info.module_hash,
-            self.system_logger(),
-        )?;
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let (tx, _) = stdb.with_auto_rollback(&ctx, tx, |tx| stdb.update_program(tx, program_hash, program_bytes))?;
+        let res = crate::db::update::update_database(stdb, tx, proposed_tables, self.system_logger())?;
         let tx = match res {
             Ok(tx) => tx,
             Err(e) => return Ok(Err(e)),
@@ -417,7 +423,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
         let update_result = match self.info.reducers.lookup_id(UPDATE_DUNDER) {
             None => {
-                stdb.commit_tx(&ExecutionContext::internal(stdb.address()), tx)?;
+                stdb.commit_tx(&ctx, tx)?;
                 None
             }
 

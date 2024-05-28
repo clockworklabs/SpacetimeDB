@@ -21,7 +21,7 @@ use spacetimedb::client::ClientActorIndex;
 use spacetimedb::db::db_metrics;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{DiskStorage, HostController, ProgramStorage, UpdateDatabaseResult};
+use spacetimedb::host::{DiskStorage, HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, IdentityEmail, Node};
 use spacetimedb::sendgrid_controller::SendGridController;
@@ -54,7 +54,7 @@ impl StandaloneEnv {
         let host_controller = HostController::new(
             stdb_path("worker_node/database_instances").into(),
             config,
-            ProgramStorage::External(program_store.clone()),
+            program_store.clone(),
             energy_monitor,
         );
         let client_actor_index = ClientActorIndex::new();
@@ -324,10 +324,9 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     .control_db
                     .get_leader_database_instance_by_database(database_id)
                     .with_context(|| format!("Not found: leader instance for database `{}`", database_addr))?;
-                let lock = self.lock_database_instance_for_update(leader.id)?;
                 let update_result = self
                     .host_controller
-                    .update_module_host(lock.token() as u128, database.clone(), leader.id)
+                    .update_module_host(database.clone(), leader.id, spec.program_bytes.into())
                     .await?;
 
                 if update_result.is_ok() {
@@ -489,10 +488,10 @@ impl StandaloneEnv {
                         instance.database_id, instance.id
                     )
                 })?;
-            let lock = self.lock_database_instance_for_update(instance.id)?;
             self.host_controller
-                .init_module_host(lock.token() as u128, database, instance.id)
-                .await?;
+                .get_or_launch_module_host(database, instance.id)
+                .await
+                .map(drop)?
         }
 
         Ok(())
@@ -506,11 +505,6 @@ impl StandaloneEnv {
         self.host_controller.exit_module_host(instance_id).await?;
 
         Ok(())
-    }
-
-    fn lock_database_instance_for_update(&self, instance_id: u64) -> anyhow::Result<control_db::Lock> {
-        let key = format!("database_instance/{}", instance_id);
-        Ok(self.control_db.lock(key)?)
     }
 }
 

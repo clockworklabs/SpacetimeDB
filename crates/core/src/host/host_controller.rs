@@ -1,24 +1,30 @@
 use super::module_host::{EntityDef, EventStatus, ModuleHost, NoSuchModule, UpdateDatabaseResult};
-use super::{ReducerArgs, Scheduler};
+use super::scheduler::SchedulerStarter;
+use super::Scheduler;
 use crate::database_instance_context::DatabaseInstanceContext;
+use crate::database_logger::DatabaseLogger;
+use crate::db::datastore::traits::Metadata;
 use crate::db::db_metrics::DB_METRICS;
-use crate::db::relational_db::{ConnectedClients, RelationalDB};
+use crate::db::relational_db::RelationalDB;
 use crate::energy::{EnergyMonitor, EnergyQuanta};
-use crate::execution_context::ExecutionContext;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
-use crate::util::{spawn_rayon, AnyBytes};
+use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+use crate::util::spawn_rayon;
 use crate::{db, host};
 use anyhow::{anyhow, bail, ensure, Context as _};
 use async_trait::async_trait;
 use log::{debug, info, trace, warn};
 use parking_lot::Mutex;
 use serde::Serialize;
+use spacetimedb_commitlog as commitlog;
 use spacetimedb_data_structures::map::IntMap;
-use spacetimedb_lib::Address;
+use spacetimedb_durability as durability;
+use spacetimedb_lib::{hash_bytes, ProductValue};
 use spacetimedb_sats::hash::Hash;
 use std::fmt;
 use std::future::Future;
+use std::io;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -50,56 +56,20 @@ type Hosts = Arc<Mutex<IntMap<u64, HostCell>>>;
 
 #[async_trait]
 pub trait ExternalStorage: Send + Sync + 'static {
-    async fn lookup(&self, program_hash: Hash) -> anyhow::Result<Option<AnyBytes>>;
+    async fn lookup(&self, program_hash: Hash) -> anyhow::Result<Option<Box<[u8]>>>;
 }
 #[async_trait]
 impl<F, Fut> ExternalStorage for F
 where
     F: Fn(Hash) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = anyhow::Result<Option<AnyBytes>>> + Send,
+    Fut: Future<Output = anyhow::Result<Option<Box<[u8]>>>> + Send,
 {
-    async fn lookup(&self, program_hash: Hash) -> anyhow::Result<Option<AnyBytes>> {
+    async fn lookup(&self, program_hash: Hash) -> anyhow::Result<Option<Box<[u8]>>> {
         self(program_hash).await
     }
 }
 
-type SameDbStorage = dyn Fn(&RelationalDB, Hash) -> anyhow::Result<Option<AnyBytes>> + Send + Sync + 'static;
-
-/// Source of the module binary.
-///
-/// This is a temporary measure until modules are stored in their database itself.
-#[derive(Clone)]
-pub enum ProgramStorage {
-    /// External storage, addressable by program hash.
-    External(Arc<dyn ExternalStorage>),
-    /// Storage inside the [`RelationalDB`] itself, but with a retrieval
-    /// function chosen by the user.
-    SameDb(Arc<SameDbStorage>),
-}
-
-impl ProgramStorage {
-    /// Construct a [`ProgramStorage::External`] from a lookup function.
-    pub fn external(s: impl ExternalStorage) -> Self {
-        Self::External(Arc::new(s))
-    }
-
-    /// Construct a [`ProgramStorage::SameDb`] from a lookup function.
-    pub fn same_db<F>(f: F) -> Self
-    where
-        F: Fn(&RelationalDB, Hash) -> anyhow::Result<Option<AnyBytes>> + Send + Sync + 'static,
-    {
-        Self::SameDb(Arc::new(f))
-    }
-
-    async fn load_program(&self, db: &RelationalDB, program_hash: Hash) -> anyhow::Result<AnyBytes> {
-        debug!("lookup program {}", program_hash);
-        match self {
-            ProgramStorage::External(external) => external.lookup(program_hash).await,
-            ProgramStorage::SameDb(f) => f(db, program_hash),
-        }?
-        .with_context(|| format!("program {} not found", program_hash))
-    }
-}
+pub type ProgramStorage = Arc<dyn ExternalStorage>;
 
 /// A host controller manages the lifecycle of spacetime databases and their
 /// associated modules.
@@ -256,9 +226,6 @@ impl HostController {
     /// Instead of a [`ModuleHost`], this returns a [`watch::Receiver`] which
     /// gets notified each time the module is updated.
     ///
-    /// An error is returned if the host's program does not match the hash given
-    /// in [`Database`].
-    ///
     /// See also: [`Self::watch_module_host`]
     #[tracing::instrument(skip_all)]
     pub async fn watch_maybe_launch_module_host(
@@ -266,15 +233,11 @@ impl HostController {
         database: Database,
         instance_id: u64,
     ) -> anyhow::Result<watch::Receiver<ModuleHost>> {
-        let program_hash = database.program_bytes_address;
-
         // Try a read lock first.
         {
             let guard = self.acquire_read_lock(instance_id).await;
             if let Some(host) = &*guard {
                 trace!("cached host {}/{}", database.address, instance_id);
-                // The stored program must be equal to the one in `Database`.
-                guard_program_hash(host.db(), Some(program_hash))?;
                 return Ok(host.module.subscribe());
             }
         }
@@ -285,15 +248,11 @@ impl HostController {
         let mut guard = self.acquire_write_lock(instance_id).await;
         if let Some(host) = &*guard {
             trace!("cached host {}/{} (lock upgrade)", database.address, instance_id);
-            // The stored program must be equal to the one in `Database`.
-            guard_program_hash(host.db(), Some(program_hash))?;
             return Ok(host.module.subscribe());
         }
 
         trace!("launch host {}/{}", database.address, instance_id);
         let host = self.try_init_host(database, instance_id).await?;
-        // The stored program must be equal to the one in `Database`.
-        guard_program_hash(host.db(), Some(program_hash))?;
 
         let rx = host.module.subscribe();
         *guard = Some(host);
@@ -328,53 +287,8 @@ impl HostController {
         Ok(result)
     }
 
-    /// Initialize a [`ModuleHost`] and register it with this controller.
-    ///
-    /// Initialization entails creating the database schema and running the
-    /// `__init__` reducer of the module (if it is defined). The module host
-    /// will not be registered if an error occurs during this process.
-    ///
-    /// If the host was already initialized, the `__init__` reducer will not be
-    /// invoked, but the host will still become registered with the controller.
-    /// The return value in this case is `Ok(None)`.
-    ///
-    /// If initialization succeeded, but the module did not define `__init__`,
-    /// the return value will also be `Ok(None)`.
-    #[tracing::instrument(skip_all)]
-    pub async fn init_module_host(
-        &self,
-        fence: u128,
-        database: Database,
-        instance_id: u64,
-    ) -> anyhow::Result<Option<ReducerCallResult>> {
-        trace!("init module host {}/{}", database.address, instance_id);
-        let mut guard = self.acquire_write_lock(instance_id).await;
-        // Fast path: if we have a `Host` value, it must have been initialized
-        // before. A database cannot be initialized twice.
-        if guard.is_some() {
-            bail!("database instance {}/{} already exists", database.address, instance_id,);
-        }
-        let host = self.try_init_host(database, instance_id).await?;
-        // A database cannot be initialized twice: assert that the program hash
-        // is `None`.
-        if let Err(e) = guard_program_hash(host.db(), None) {
-            warn!("{e}");
-            *guard = Some(host);
-
-            return Ok(None);
-        }
-
-        let module = host.module.borrow().clone();
-        let call_result = module.init_database(fence, ReducerArgs::Nullary).await?;
-        if call_result.as_ref().map(ReducerCallResult::is_ok).unwrap_or(true) {
-            *guard = Some(host);
-        }
-
-        Ok(call_result)
-    }
-
-    /// Update the [`ModuleHost`] identified by `instance_id` to the program
-    /// (hash) given by `database`.
+    /// Update the [`ModuleHost`] identified by `instance_id` to the given
+    /// program.
     ///
     /// The host may not be running, in which case it is spawned.
     /// If the host was running, and the update fails, the previous version of
@@ -382,14 +296,17 @@ impl HostController {
     #[tracing::instrument(skip_all)]
     pub async fn update_module_host(
         &self,
-        fence: u128,
         database: Database,
         instance_id: u64,
+        program_bytes: Box<[u8]>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         trace!("update module host {}/{}", database.address, instance_id);
 
-        let db_addr = database.address;
         let program_hash = database.program_bytes_address;
+        ensure!(
+            hash_bytes(&program_bytes) == program_hash,
+            "supplied program does not match hash"
+        );
 
         let mut guard = self.acquire_write_lock(instance_id).await;
         let (update_result, maybe_updated_host) = match guard.take() {
@@ -397,7 +314,7 @@ impl HostController {
             None => {
                 let host = self.try_init_host(database, instance_id).await?;
                 let module = host.module.borrow().clone();
-                let update_result = update_module(fence, db_addr, program_hash, host.db(), &module).await?;
+                let update_result = update_module(host.db(), &module, (program_hash, program_bytes)).await?;
                 // If the update was not successul, drop the host.
                 // The `database` we gave it refers to a program hash which
                 // doesn't exist (because we just rejected it).
@@ -410,12 +327,25 @@ impl HostController {
             // Note that we always put back the host -- if the update failed, it
             // will keep running the previous version of the module.
             Some(mut host) => {
-                ensure!(
-                    host.dbic.address == db_addr,
-                    "cannot change database address when updating module host"
-                );
+                match host.dbic.relational_db.metadata()? {
+                    None => bail!("Host improperly initialized: no metadata"),
+                    Some(Metadata {
+                        database_address,
+                        owner_identity,
+                        ..
+                    }) => {
+                        ensure!(
+                            database_address == database.address,
+                            "cannot change database address when updating module host"
+                        );
+                        ensure!(
+                            owner_identity == database.identity,
+                            "cannot (yet) change owner identity when updating module host"
+                        );
+                    }
+                }
                 let update_result = host
-                    .update_module(fence, database.host_type, program_hash, self.unregister_fn(instance_id))
+                    .update_module(database.host_type, program_hash, self.unregister_fn(instance_id))
                     .await?;
 
                 (update_result, Some(host))
@@ -434,19 +364,16 @@ impl HostController {
         expected_hash: Option<Hash>,
         database: Database,
         instance_id: u64,
-        acquire_lease: G,
         post_boot: F,
     ) -> anyhow::Result<T>
     where
         F: FnOnce(&RelationalDB) -> anyhow::Result<T> + Send + 'static,
-        G: FnOnce(&RelationalDB) -> anyhow::Result<u128>,
         T: Send + 'static,
     {
         trace!("custom bootstrap {}/{}", database.address, instance_id);
 
         let db_addr = database.address;
         let program_hash = database.program_bytes_address;
-        let ctx = ExecutionContext::internal(db_addr);
 
         let mut guard = self.acquire_write_lock(instance_id).await;
         let host = match guard.take() {
@@ -455,8 +382,7 @@ impl HostController {
         };
         let module = host.module.clone();
 
-        let stored_program_hash = host.db().with_read_only(&ctx, |tx| host.db().program_hash(tx))?;
-        match (stored_program_hash, expected_hash) {
+        match (stored_program_hash(host.db())?, expected_hash) {
             (Some(stored_hash), _) if stored_hash == program_hash => {
                 info!("[{}] database up to date with program `{}`", db_addr, program_hash);
                 Ok(())
@@ -478,14 +404,8 @@ impl HostController {
 
             (None, None) => {
                 info!("[{}] initializing database with program `{}`", db_addr, program_hash);
-                let fence = acquire_lease(host.db())?;
-                let call_result = host.module.borrow().init_database(fence, ReducerArgs::Nullary).await?;
-                match call_result {
-                    None => Ok(()),
-                    Some(res) => Result::from(res).inspect(|_| {
-                        *guard = Some(host);
-                    }),
-                }
+                // TODO: nonsensical
+                Ok(())
             }
 
             (Some(stored_hash), Some(_)) => {
@@ -493,8 +413,12 @@ impl HostController {
                     "[{}] updating database from `{}` to `{}`",
                     db_addr, stored_hash, program_hash
                 );
-                let fence = acquire_lease(host.db())?;
-                let update_result = host.module.borrow().update_database(fence).await?;
+                let program_bytes = load_program(&self.program_storage, program_hash).await?;
+                let update_result = host
+                    .module
+                    .borrow()
+                    .update_database(program_hash, program_bytes.as_ref().into())
+                    .await?;
                 if update_result.is_ok() {
                     *guard = Some(host);
                 }
@@ -603,20 +527,26 @@ impl HostController {
 }
 
 fn stored_program_hash(db: &RelationalDB) -> anyhow::Result<Option<Hash>> {
-    db.with_read_only(&ExecutionContext::internal(db.address()), |tx| db.program_hash(tx))
-        .map_err(Into::into)
+    let meta = db.metadata()?;
+    Ok(meta.map(|meta| meta.program_hash))
 }
 
-fn guard_program_hash(db: &RelationalDB, expected: Option<Hash>) -> anyhow::Result<()> {
-    let stored = stored_program_hash(db)?;
-    ensure!(
-        stored == expected,
-        "stored program {:?} does not match expected {:?}",
-        stored,
-        expected
-    );
+async fn make_dbic(
+    database: Database,
+    instance_id: u64,
+    relational_db: Arc<RelationalDB>,
+) -> anyhow::Result<DatabaseInstanceContext> {
+    let log_path = DatabaseLogger::filepath(&database.address, instance_id);
+    let logger = tokio::task::block_in_place(|| Arc::new(DatabaseLogger::open(log_path)));
+    let subscriptions = ModuleSubscriptions::new(relational_db.clone(), database.identity);
 
-    Ok(())
+    Ok(DatabaseInstanceContext {
+        database,
+        database_instance_id: instance_id,
+        logger,
+        relational_db,
+        subscriptions,
+    })
 }
 
 async fn make_module_host(
@@ -638,21 +568,65 @@ async fn make_module_host(
     .await
 }
 
-async fn make_dbic(
-    root_dir: &Path,
-    config: db::Config,
-    database: Database,
-    instance_id: u64,
-) -> anyhow::Result<(DatabaseInstanceContext, Option<ConnectedClients>)> {
-    let root_dir = root_dir.to_path_buf();
+async fn make_local_durability(root_dir: &Path) -> io::Result<durability::Local<ProductValue>> {
+    let commitlog_dir = root_dir.join("clog");
+    tokio::fs::create_dir_all(&commitlog_dir).await?;
     let rt = tokio::runtime::Handle::current();
+    // TODO: Should this better be spawn_blocking?
     spawn_rayon(move || {
-        let start = Instant::now();
-        let dbic = DatabaseInstanceContext::from_database(config, database, instance_id, root_dir, rt)?;
-        trace!("dbic::from_database blocked for {:?}", start.elapsed());
-        Ok(dbic)
+        durability::Local::open(
+            commitlog_dir,
+            rt,
+            durability::local::Options {
+                commitlog: commitlog::Options {
+                    max_records_in_commit: 1.try_into().unwrap(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
     })
     .await
+}
+
+async fn load_program(storage: &ProgramStorage, hash: Hash) -> anyhow::Result<Box<[u8]>> {
+    debug!("lookup program {}", hash);
+    storage
+        .lookup(hash)
+        .await?
+        .with_context(|| format!("program {} not found", hash))
+}
+
+async fn launch_module(
+    root_dir: &Path,
+    database: Database,
+    instance_id: u64,
+    program_bytes: Box<[u8]>,
+    on_panic: impl Fn() + Send + Sync + 'static,
+    relational_db: Arc<RelationalDB>,
+    energy_monitor: Arc<dyn EnergyMonitor>,
+) -> anyhow::Result<(Arc<DatabaseInstanceContext>, ModuleHost, Scheduler, SchedulerStarter)> {
+    let program_hash = database.program_bytes_address;
+    let host_type = database.host_type;
+
+    let dbic = make_dbic(database, instance_id, relational_db).await.map(Arc::new)?;
+    let (scheduler, scheduler_starter) = Scheduler::open(dbic.scheduler_db_path(root_dir.to_path_buf()))?;
+    let module_host = make_module_host(
+        host_type,
+        ModuleCreationContext {
+            dbic: dbic.clone(),
+            scheduler: scheduler.clone(),
+            program_hash,
+            program_bytes: program_bytes.into(),
+            energy_monitor: energy_monitor.clone(),
+        },
+        on_panic,
+    )
+    .await?;
+
+    debug!("launch done");
+
+    Ok((dbic, module_host, scheduler, scheduler_starter))
 }
 
 /// Update a module.
@@ -665,14 +639,12 @@ async fn make_dbic(
 ///
 /// Otherwise, invoke `module.update_database` and return the result.
 async fn update_module(
-    fence: u128,
-    addr: Address,
-    program_hash: Hash,
     db: &RelationalDB,
     module: &ModuleHost,
+    (program_hash, program_bytes): (Hash, Box<[u8]>),
 ) -> anyhow::Result<UpdateDatabaseResult> {
-    let stored_program_hash = db.with_read_only(&ExecutionContext::internal(addr), |tx| db.program_hash(tx))?;
-    match stored_program_hash {
+    let addr = db.address();
+    match stored_program_hash(db)? {
         None => Err(anyhow!("database `{}` not yet initialized", addr)),
         Some(stored) if stored == program_hash => {
             info!("database `{}` up to date with program `{}`", addr, program_hash);
@@ -680,7 +652,7 @@ async fn update_module(
         }
         Some(stored) => {
             info!("updating `{}` from {} to {}", addr, stored, program_hash);
-            let update_result = module.update_database(fence).await?;
+            let update_result = module.update_database(program_hash, program_bytes).await?;
             Ok(update_result)
         }
     }
@@ -728,38 +700,78 @@ impl Host {
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
     ) -> anyhow::Result<Self> {
-        let host_type = database.host_type;
-        let program_hash = database.program_bytes_address;
-        let (dbic, connected_clients) = make_dbic(root_dir, config, database, instance_id).await?;
-        let dbic = Arc::new(dbic);
+        let mut db_path = root_dir.to_path_buf();
+        db_path.extend([&*database.address.to_hex(), &*instance_id.to_string()]);
+        db_path.push("database");
 
-        let program_bytes = program_storage.load_program(&dbic.relational_db, program_hash).await?;
-        let (scheduler, scheduler_starter) = Scheduler::open(dbic.scheduler_db_path(root_dir.to_path_buf()))?;
-        let module_host = make_module_host(
-            host_type,
-            ModuleCreationContext {
-                dbic: dbic.clone(),
-                scheduler: scheduler.clone(),
-                program_hash,
-                program_bytes,
-                energy_monitor: energy_monitor.clone(),
+        let durability = make_local_durability(&db_path).await.map(Arc::new)?;
+        let (db, connected_clients) = RelationalDB::open(
+            &db_path,
+            database.address,
+            database.identity,
+            durability.clone(),
+            match config.storage {
+                db::Storage::Memory => None,
+                db::Storage::Disk => {
+                    let disk_size_fn = Arc::new({
+                        let durability = durability.clone();
+                        move || durability.size_on_disk()
+                    });
+                    Some((durability, disk_size_fn))
+                }
             },
-            on_panic,
-        )
-        .await?;
-
-        if let Some(connected_clients) = connected_clients {
-            for (identity, address) in connected_clients {
-                module_host
-                    .call_identity_connected_disconnected(identity, address, false)
-                    .await
-                    .with_context(|| {
-                        format!(
-                            "Error calling disconnect for {} {} on {}",
-                            identity, address, dbic.address
-                        )
-                    })?;
+        )?;
+        let (dbic, module_host, scheduler, scheduler_starter) = match db.program_bytes()? {
+            // Launch module with program from existing database.
+            Some(program_bytes) if !program_bytes.is_empty() => {
+                launch_module(
+                    root_dir,
+                    database,
+                    instance_id,
+                    program_bytes,
+                    on_panic,
+                    Arc::new(db),
+                    energy_monitor.clone(),
+                )
+                .await?
             }
+
+            // Database is empty, load program from external storage and run
+            // initialization.
+            None | Some(_) => {
+                let program_hash = database.program_bytes_address;
+                let program_bytes = load_program(&program_storage, program_hash).await?;
+                let res = launch_module(
+                    root_dir,
+                    database,
+                    instance_id,
+                    program_bytes.clone(),
+                    on_panic,
+                    Arc::new(db),
+                    energy_monitor.clone(),
+                )
+                .await?;
+
+                let module_host = &res.1;
+                let call_result = module_host.init_database(program_hash, program_bytes).await?;
+                if let Some(call_result) = call_result {
+                    Result::from(call_result)?;
+                }
+
+                res
+            }
+        };
+
+        for (identity, address) in connected_clients {
+            module_host
+                .call_identity_connected_disconnected(identity, address, false)
+                .await
+                .with_context(|| {
+                    format!(
+                        "Error calling disconnect for {} {} on {}",
+                        identity, address, dbic.address
+                    )
+                })?;
         }
 
         scheduler_starter.start(&module_host)?;
@@ -790,23 +802,19 @@ impl Host {
     /// Either way, the [`UpdateDatabaseResult`] is returned.
     async fn update_module(
         &mut self,
-        fence: u128,
         host_type: HostType,
         program_hash: Hash,
         on_panic: impl Fn() + Send + Sync + 'static,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let dbic = &self.dbic;
         let (scheduler, scheduler_starter) = self.scheduler.new_with_same_db();
-        let program_bytes = self
-            .program_storage
-            .load_program(&dbic.relational_db, program_hash)
-            .await?;
+        let program_bytes = load_program(&self.program_storage, program_hash).await?;
         let module = make_module_host(
             host_type,
             ModuleCreationContext {
                 dbic: dbic.clone(),
                 scheduler: scheduler.clone(),
-                program_bytes,
+                program_bytes: program_bytes.clone().into(),
                 program_hash,
                 energy_monitor: self.energy_monitor.clone(),
             },
@@ -814,7 +822,7 @@ impl Host {
         )
         .await?;
 
-        let update_result = update_module(fence, dbic.address, program_hash, &dbic.relational_db, &module).await?;
+        let update_result = update_module(&dbic.relational_db, &module, (program_hash, program_bytes)).await?;
         debug!("update result: {update_result:?}");
         if update_result.is_ok() {
             scheduler_starter.start(&module)?;
