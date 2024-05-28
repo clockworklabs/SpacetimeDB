@@ -2,6 +2,7 @@ use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use crate::operator::{OpCmp, OpLogic, OpQuery};
 use crate::relation::{MemTable, RelValue};
 use arrayvec::ArrayVec;
+use core::slice::from_ref;
 use derive_more::From;
 use smallvec::{smallvec, SmallVec};
 use spacetimedb_data_structures::map::{HashMap, HashSet};
@@ -15,7 +16,7 @@ use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header, Relation
 use spacetimedb_sats::ProductValue;
 use std::cmp::Reverse;
 use std::collections::btree_map::Entry;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 use std::ops::Bound;
 use std::sync::Arc;
 use std::{fmt, iter, mem};
@@ -812,12 +813,12 @@ impl Query {
     /// Iterate over all [`SourceExpr`]s involved in the [`Query`].
     ///
     /// Sources are yielded from left to right. Duplicates are not filtered out.
-    pub fn sources(&self) -> QuerySources {
+    pub fn walk_sources<E>(&self, on_source: &mut impl FnMut(&SourceExpr) -> Result<(), E>) -> Result<(), E> {
         match self {
-            Self::Select(..) | Self::Project(..) => QuerySources::None,
-            Self::IndexScan(scan) => QuerySources::One(Some(SourceExpr::DbTable(scan.table.clone()))),
-            Self::IndexJoin(join) => QuerySources::Expr(join.probe_side.sources()),
-            Self::JoinInner(join) => QuerySources::Expr(join.rhs.sources()),
+            Self::Select(..) | Self::Project(..) => Ok(()),
+            Self::IndexScan(scan) => on_source(&SourceExpr::DbTable(scan.table.clone())),
+            Self::IndexJoin(join) => join.probe_side.walk_sources(on_source),
+            Self::JoinInner(join) => join.rhs.walk_sources(on_source),
         }
     }
 }
@@ -1163,26 +1164,6 @@ impl From<SourceExpr> for QueryExpr {
     }
 }
 
-/// Iterator created by the [`Query::sources`] method.
-#[must_use = "iterators are lazy and do nothing unless consumed"]
-pub enum QuerySources {
-    None,
-    One(Option<SourceExpr>),
-    Expr(QueryExprSources),
-}
-
-impl Iterator for QuerySources {
-    type Item = SourceExpr;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::None => None,
-            Self::One(src) => src.take(),
-            Self::Expr(expr) => expr.next(),
-        }
-    }
-}
-
 impl QueryExpr {
     pub fn new<T: Into<SourceExpr>>(source: T) -> Self {
         Self {
@@ -1194,11 +1175,9 @@ impl QueryExpr {
     /// Iterate over all [`SourceExpr`]s involved in the [`QueryExpr`].
     ///
     /// Sources are yielded from left to right. Duplicates are not filtered out.
-    pub fn sources(&self) -> QueryExprSources {
-        QueryExprSources {
-            head: Some(self.source.clone()),
-            tail: self.query.iter().map(Query::sources).collect(),
-        }
+    pub fn walk_sources<E>(&self, on_source: &mut impl FnMut(&SourceExpr) -> Result<(), E>) -> Result<(), E> {
+        on_source(&self.source)?;
+        self.query.iter().try_for_each(|q| q.walk_sources(on_source))
     }
 
     /// Does this query read from a given table?
@@ -1829,12 +1808,6 @@ impl QueryExpr {
             query: Vec::with_capacity(self.query.len()),
         };
 
-        let tables = self.sources();
-        let tables: Vec<_> = core::iter::once(QuerySources::One(tables.head))
-            .chain(tables.tail)
-            .flat_map(|x| x.into_iter())
-            .collect();
-
         if matches!(&*self.query, [Query::IndexJoin(_)]) {
             if let Some(Query::IndexJoin(join)) = self.query.pop() {
                 q.query.push(Query::IndexJoin(join.reorder(row_count)));
@@ -1845,7 +1818,7 @@ impl QueryExpr {
         for query in self.query {
             match query {
                 Query::Select(op) => {
-                    q = Self::optimize_select(q, op, &tables);
+                    q = Self::optimize_select(q, op, from_ref(&self.source));
                 }
                 Query::JoinInner(join) => {
                     q = q.with_join_inner(join.rhs.optimize(row_count), join.col_lhs, join.col_rhs, join.semi);
@@ -1864,48 +1837,13 @@ impl QueryExpr {
     }
 }
 
-/// Iterator created by the [`QueryExpr::sources`] method.
-#[must_use = "iterators are lazy and do nothing unless consumed"]
-pub struct QueryExprSources {
-    head: Option<SourceExpr>,
-    tail: VecDeque<QuerySources>,
-}
-
-impl Iterator for QueryExprSources {
-    type Item = SourceExpr;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.head.take().or_else(|| {
-            while let Some(cur) = self.tail.front_mut() {
-                match cur.next() {
-                    None => {
-                        self.tail.pop_front();
-                        continue;
-                    }
-                    Some(src) => return Some(src),
-                }
-            }
-
-            None
-        })
-    }
-}
-
 impl AuthAccess for Query {
     fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
         if owner == caller {
             return Ok(());
         }
 
-        for table in self.sources() {
-            if table.table_access() == StAccess::Private {
-                return Err(AuthError::TablePrivate {
-                    named: table.table_name().to_owned(),
-                });
-            }
-        }
-
-        Ok(())
+        self.walk_sources(&mut |s| s.check_auth(owner, caller))
     }
 }
 
@@ -1974,12 +1912,7 @@ impl AuthAccess for QueryExpr {
         if owner == caller {
             return Ok(());
         }
-        self.source.check_auth(owner, caller)?;
-        for q in &self.query {
-            q.check_auth(owner, caller)?;
-        }
-
-        Ok(())
+        self.walk_sources(&mut |s| s.check_auth(owner, caller))
     }
 }
 
