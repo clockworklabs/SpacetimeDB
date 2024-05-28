@@ -570,7 +570,7 @@ fn autogen_csharp_product_table_common(
     schema: Option<TableSchema>,
     namespace: &str,
 ) -> String {
-    let mut output = CsharpAutogen::new(namespace, &["System.Collections.Generic"]);
+    let mut output = CsharpAutogen::new(namespace, &["System.Collections.Generic", "System.Linq"]);
 
     writeln!(
         output,
