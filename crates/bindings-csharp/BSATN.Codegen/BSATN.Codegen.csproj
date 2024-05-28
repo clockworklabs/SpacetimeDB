@@ -6,41 +6,35 @@
     <IsRoslynComponent>true</IsRoslynComponent>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
-    <AssemblyName>SpacetimeDB.Codegen</AssemblyName>
-    <AssemblyVersion>0.9.3</AssemblyVersion>
+    <AssemblyName>SpacetimeDB.BSATN.Codegen</AssemblyName>
+    <AssemblyVersion>0.8.1</AssemblyVersion>
     <IncludeBuildOutput>false</IncludeBuildOutput>
   </PropertyGroup>
 
   <PropertyGroup>
     <Version>$(AssemblyVersion)</Version>
-    <Title>SpacetimeDB Module Codegen</Title>
+    <Title>SpacetimeDB BSATN Codegen</Title>
     <Authors>RReverser</Authors>
     <Company>Clockwork Labs</Company>
     <Product>SpacetimeDB</Product>
-    <Description>The SpacetimeDB Codegen implements the Roslyn incremental generators for writing SpacetimeDB modules in C#.</Description>
+    <Description>The SpacetimeDB BSATN Codegen implements the Roslyn incremental generators for BSATN serialization/deserialization in C#.</Description>
     <Copyright>2023</Copyright>
     <PackageProjectUrl>https://spacetimedb.com/</PackageProjectUrl>
     <PackageIcon>logo.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDBLibCSharp</RepositoryUrl>
+    <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDB</RepositoryUrl>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.5.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.1" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="../logo.png" Pack="true" PackagePath="" />
     <None Include="README.md" Pack="true" PackagePath="" />
     <None Include="../LICENSE" Pack="true" PackagePath="" />
-    <!-- source generators need to be put in a specific folder -->
-    <!-- see https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.cookbook.md#package-a-generator-as-a-nuget-package -->
     <None Include="$(OutputPath)/$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
   </ItemGroup>
 

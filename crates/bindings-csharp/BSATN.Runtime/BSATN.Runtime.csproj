@@ -1,11 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <LangVersion>latest</LangVersion>
+    <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
+    <LangVersion>9</LangVersion>
     <Nullable>enable</Nullable>
-    <AssemblyName>SpacetimeDB.Runtime</AssemblyName>
-    <AssemblyVersion>0.9.3</AssemblyVersion>
+    <AssemblyName>SpacetimeDB.BSATN.Runtime</AssemblyName>
+    <AssemblyVersion>0.8.2</AssemblyVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
@@ -27,26 +27,18 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../BSATN.Runtime/BSATN.Runtime.csproj" />
     <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Linq.Expression.Optimizer" Version="1.0.15" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="../logo.png" Pack="true" PackagePath="" />
     <None Include="README.md" Pack="true" PackagePath="" />
     <None Include="../LICENSE" Pack="true" PackagePath="" />
-    <None Include="build/" Pack="true" PackagePath="build" />
-    <None Include="bindings.c" Pack="true" PackagePath="" />
-    <None Include="driver.h" Pack="true" PackagePath="" />
   </ItemGroup>
 
   <ItemGroup>
-    <UpToDateCheckInput Include="bindings.c" />
-    <UpToDateCheckInput Include="driver.h" />
+    <!-- dev-dependency to add internal C# classes and attributes not included in .NET Standard -->
+    <PackageReference Include="PolySharp" Version="1.14.1" PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
