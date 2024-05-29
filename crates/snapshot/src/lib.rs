@@ -1,3 +1,4 @@
+use dir_trie::{o_excl, o_rdonly, CountCreated};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_fs_utils::lockfile::Lockfile;
 use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize, Address};
@@ -10,7 +11,6 @@ use spacetimedb_table::{
 use std::{
     collections::BTreeMap,
     ffi::OsStr,
-    fs::OpenOptions,
     io::{Read, Write},
     path::{Path, PathBuf},
 };
@@ -86,12 +86,16 @@ impl Snapshot {
     /// Insert a single large blob from a [`BlobStore`]
     /// into the in-memory snapshot `self`
     /// and the on-disk object repository `object_repo`.
-    fn write_blob(&mut self, object_repo: &DirTrie, hash: &BlobHash, uses: usize, blob: &[u8]) -> anyhow::Result<()> {
-        // TODO(deduplication): Accept a previous `DirTrie` and,
-        // if it contains `hash`, hardlink rather than creating a new file.
-        let mut file = object_repo.open_entry(&hash.data, &o_excl())?;
-        // TODO(perf): Async IO?
-        file.write_all(blob)?;
+    fn write_blob(
+        &mut self,
+        object_repo: &DirTrie,
+        hash: &BlobHash,
+        uses: usize,
+        blob: &[u8],
+        prev_snapshot: Option<&DirTrie>,
+        counter: &mut CountCreated,
+    ) -> anyhow::Result<()> {
+        object_repo.hardlink_or_write(prev_snapshot, &hash.data, || blob, counter)?;
         self.blobs.push(BlobEntry {
             hash: *hash,
             uses: uses as u32,
@@ -102,9 +106,15 @@ impl Snapshot {
     /// Populate the in-memory snapshot `self`,
     /// and the on-disk object repository `object_repo`,
     /// with all large blos from `blobs`.
-    fn write_all_blobs(&mut self, object_repo: &DirTrie, blobs: &dyn BlobStore) -> anyhow::Result<()> {
+    fn write_all_blobs(
+        &mut self,
+        object_repo: &DirTrie,
+        blobs: &dyn BlobStore,
+        prev_snapshot: Option<&DirTrie>,
+        counter: &mut CountCreated,
+    ) -> anyhow::Result<()> {
         for (hash, uses, blob) in blobs.iter_blobs() {
-            self.write_blob(object_repo, hash, uses, blob)?;
+            self.write_blob(object_repo, hash, uses, blob, prev_snapshot, counter)?;
         }
         Ok(())
     }
@@ -114,43 +124,36 @@ impl Snapshot {
     ///
     /// Returns the hash of the `page` so that it may be inserted into an in-memory [`Snapshot`] object
     /// by [`Snapshot::write_table`].
-    fn write_page(object_repo: &DirTrie, page: &mut Page) -> anyhow::Result<blake3::Hash> {
+    fn write_page(
+        object_repo: &DirTrie,
+        page: &mut Page,
+        prev_snapshot: Option<&DirTrie>,
+        counter: &mut CountCreated,
+    ) -> anyhow::Result<blake3::Hash> {
         let hash = page
             .unmodified_hash()
             .cloned()
             .unwrap_or_else(|| page.save_content_hash());
 
-        // Dump the page to a file in the snapshot's object repo.
-        match object_repo.open_entry(hash.as_bytes(), &o_excl()) {
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                // We've already dumped a page with the same bytes.
-                // This is most likely to occur if two tables have equivalent schemas,
-                // or if a table contains multiple empty pages.
-                // In this case, do nothing.
-            }
+        object_repo.hardlink_or_write(prev_snapshot, hash.as_bytes(), || bsatn::to_vec(page).unwrap(), counter)?;
 
-            Ok(mut file) => {
-                // TODO(deduplication): Accept a previous `DirTrie` and,
-                // if it contains `hash`, hardlink rather than creating a new file.
-
-                // TODO(perf): Write directly to file without intermediate vec.
-                // TODO(perf): Async IO?
-                let page_bsatn = bsatn::to_vec(page)?;
-                file.write_all(&page_bsatn)?;
-            }
-            Err(e) => return Err(e.into()),
-        }
         Ok(hash)
     }
 
     /// Populate the in-memory snapshot `self`,
     /// and the on-disk object repository `object_repo`,
     /// with all pages from `table`.
-    fn write_table(&mut self, object_repo: &DirTrie, table: &mut Table) -> anyhow::Result<()> {
+    fn write_table(
+        &mut self,
+        object_repo: &DirTrie,
+        table: &mut Table,
+        prev_snapshot: Option<&DirTrie>,
+        counter: &mut CountCreated,
+    ) -> anyhow::Result<()> {
         let pages = table
             .pages_mut()
             .iter_mut()
-            .map(|page| Self::write_page(object_repo, page))
+            .map(|page| Self::write_page(object_repo, page, prev_snapshot, counter))
             .collect::<anyhow::Result<Vec<blake3::Hash>>>()?;
 
         self.tables.push(TableEntry {
@@ -167,9 +170,11 @@ impl Snapshot {
         &mut self,
         object_repo: &DirTrie,
         tables: impl Iterator<Item = &'db mut Table>,
+        prev_snapshot: Option<&DirTrie>,
+        counter: &mut CountCreated,
     ) -> anyhow::Result<()> {
         for table in tables {
-            self.write_table(object_repo, table)?;
+            self.write_table(object_repo, table, prev_snapshot, counter)?;
         }
         Ok(())
     }
@@ -284,18 +289,6 @@ pub struct SnapshotRepository {
     // and hardlink its objects into the next snapshot for deduplication.
 }
 
-fn o_excl() -> OpenOptions {
-    let mut options = OpenOptions::new();
-    options.create_new(true).write(true);
-    options
-}
-
-fn o_rdonly() -> OpenOptions {
-    let mut options = OpenOptions::new();
-    options.read(true);
-    options
-}
-
 impl SnapshotRepository {
     /// Capture a snapshot of the state of the database at `tx_offset`,
     /// where `tables` is the committed state of all the tables in the database,
@@ -308,6 +301,22 @@ impl SnapshotRepository {
         blobs: &'db dyn BlobStore,
         tx_offset: TxOffset,
     ) -> anyhow::Result<PathBuf> {
+        let prev_snapshot = self
+            .latest_snapshot()?
+            .map(|tx_offset| self.snapshot_dir_path(tx_offset));
+        let prev_snapshot = if let Some(prev_snapshot) = prev_snapshot {
+            assert!(
+                prev_snapshot.is_dir(),
+                "prev_snapshot {prev_snapshot:?} is not a directory"
+            );
+            let object_repo = Self::object_repo(&prev_snapshot)?;
+            Some(object_repo)
+        } else {
+            None
+        };
+
+        let mut counter = CountCreated::default();
+
         let snapshot_dir = self.snapshot_dir_path(tx_offset);
 
         // Before performing any observable operations,
@@ -325,8 +334,8 @@ impl SnapshotRepository {
 
         // Populate both the in-memory `Snapshot` object and the on-disk object repository
         // with all the blobs and pages.
-        snapshot.write_all_blobs(&object_repo, blobs)?;
-        snapshot.write_all_tables(&object_repo, tables)?;
+        snapshot.write_all_blobs(&object_repo, blobs, prev_snapshot.as_ref(), &mut counter)?;
+        snapshot.write_all_tables(&object_repo, tables, prev_snapshot.as_ref(), &mut counter)?;
 
         // Serialize and hash the in-memory `Snapshot` object.
         let snapshot_bsatn = bsatn::to_vec(&snapshot)?;
@@ -338,6 +347,14 @@ impl SnapshotRepository {
             snapshot_file.write_all(hash.as_bytes())?;
             snapshot_file.write_all(&snapshot_bsatn)?;
         }
+
+        log::info!(
+            "[{}] SNAPSHOT {:0>20}: Hardlinked {} objects and wrote {} objects",
+            self.database_address,
+            tx_offset,
+            counter.objects_hardlinked,
+            counter.objects_written,
+        );
 
         // Success! return the directory of the newly-created snapshot.
         // The lockfile will be dropped here.

@@ -4731,6 +4731,7 @@ dependencies = [
  "anyhow",
  "blake3",
  "hex",
+ "log",
  "spacetimedb-durability",
  "spacetimedb-fs-utils",
  "spacetimedb-lib",

@@ -15,9 +15,35 @@
 
 use std::{
     fs::{create_dir_all, File, OpenOptions, ReadDir},
-    io,
-    path::PathBuf,
+    io::{self, Write},
+    path::{Path, PathBuf},
 };
+
+/// [`OpenOptions`] corresponding to opening a file with `O_EXCL`,
+/// i.e. creating a new writeable file, failing if it already exists.
+pub fn o_excl() -> OpenOptions {
+    let mut options = OpenOptions::new();
+    options.create_new(true).write(true);
+    options
+}
+
+/// [`OpenOptions`] corresponding to opening a file with `O_RDONLY`,
+/// i.e. opening an existing file for reading.
+pub fn o_rdonly() -> OpenOptions {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    options
+}
+
+/// Counter for objects written newly to disk versus hardlinked,
+/// for diagnostic purposes with operations that may hardlink or write.
+///
+/// See [`DirTrie::hardlink_or_write`].
+#[derive(Default, Debug)]
+pub struct CountCreated {
+    pub objects_written: u64,
+    pub objects_hardlinked: u64,
+}
 
 /// A directory trie.
 pub struct DirTrie {
@@ -53,6 +79,76 @@ impl DirTrie {
         file_path
     }
 
+    /// Hardlink the entry for `file_id` from `src_repo` into `self`.
+    ///
+    /// Hardlinking makes the object shared between both [`DirTrie`]s
+    /// without copying the data on-disk.
+    /// Note that this is only possible within a single file system;
+    /// this method will likely return an error if `self` and `src_repo`
+    /// are in different file systems.
+    /// See [Wikipedia](https://en.wikipedia.org/wiki/Hard_link) for more information on hard links.
+    ///
+    /// Returns `Ok(true)` if the `file_id` existed in `src_repo` and was successfully linked into `self`,
+    /// `Ok(false)` if the `file_id` did not exist in `src_repo`,
+    /// or an `Err` if a filesystem operation failed.
+    ///
+    /// The object's hash is not verified against its `file_id`,
+    /// so if `file_id` is corrupted within `src_repo`,
+    /// the corrupted object will be hardlinked into `self`.
+    pub fn try_hardlink_from(&self, src_repo: &DirTrie, file_id: &FileId) -> Result<bool, io::Error> {
+        let src_file = src_repo.file_path(file_id);
+        if src_file.is_file() {
+            let dst_file = self.file_path(file_id);
+            Self::create_parent(&dst_file)?;
+            std::fs::hard_link(src_file, dst_file)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn create_parent(file: &Path) -> Result<(), io::Error> {
+        // Known to succeed because `self.file_path` creates a path with a parent.
+        let dir = file.parent().unwrap();
+
+        create_dir_all(dir)?;
+        Ok(())
+    }
+
+    /// Hardlink `file_id` from `src_repo` into `self`, or create it in `self` containing `contents`.
+    ///
+    /// `contents` is a thunk which will be called only if the `src_repo` does not contain `file_id`
+    /// in order to compute the file contents.
+    /// This allows callers to avoid expensive serialization if the object already exists in `src_repo`.
+    ///
+    /// If the source file exists but the hardlink operation fails, this method returns an error.
+    /// In this case, the destination file is not created.
+    /// See [`Self::try_hardlink_from`].
+    pub fn hardlink_or_write<Bytes: AsRef<[u8]>>(
+        &self,
+        src_repo: Option<&DirTrie>,
+        file_id: &FileId,
+        contents: impl FnOnce() -> Bytes,
+        counter: &mut CountCreated,
+    ) -> Result<(), io::Error> {
+        if self.contains_entry(file_id) {
+            return Ok(());
+        }
+
+        if let Some(src_repo) = src_repo {
+            if self.try_hardlink_from(src_repo, file_id)? {
+                counter.objects_hardlinked += 1;
+                return Ok(());
+            }
+        }
+
+        let mut file = self.open_entry(file_id, &o_excl())?;
+        let contents = contents();
+        file.write_all(contents.as_ref())?;
+        counter.objects_written += 1;
+        Ok(())
+    }
+
     #[allow(unused)]
     pub fn contains_entry(&self, file_id: &FileId) -> bool {
         let path = self.file_path(file_id);
@@ -62,12 +158,7 @@ impl DirTrie {
 
     pub fn open_entry(&self, file_id: &FileId, options: &OpenOptions) -> Result<File, io::Error> {
         let path = self.file_path(file_id);
-
-        // Known to succeed because `self.file_path` creates a path with a parent.
-        let dir = path.parent().unwrap();
-
-        create_dir_all(dir)?;
-
+        Self::create_parent(&path)?;
         options.open(path)
     }
 
