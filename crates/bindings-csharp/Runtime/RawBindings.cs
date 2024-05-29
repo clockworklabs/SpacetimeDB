@@ -11,7 +11,7 @@ public static partial class RawBindings
     // `LibraryImport` directly.
     const string StdbNamespace =
 #if EXPERIMENTAL_WASM_AOT
-        "spacetime_7.0"
+        "spacetime_8.0"
 #else
         "bindings"
 #endif
@@ -51,7 +51,6 @@ public static partial class RawBindings
     private const ushort ERRNO_UNIQUE_ALREADY_EXISTS = 3;
     private const ushort ERRNO_BUFFER_TOO_SMALL = 4;
 
-
     public class StdbException : Exception
     {
         public ushort Code { get; private set; }
@@ -63,28 +62,36 @@ public static partial class RawBindings
 
     public class NoSuchTableException : StdbException
     {
-        internal NoSuchTableException() : base(ERRNO_NO_SUCH_TABLE) { }
+        internal NoSuchTableException()
+            : base(ERRNO_NO_SUCH_TABLE) { }
+
         public override string Message => "No such table";
     }
 
     public class LookupNotFoundException : StdbException
     {
-        internal LookupNotFoundException() : base(ERRNO_LOOKUP_NOT_FOUND) { }
+        internal LookupNotFoundException()
+            : base(ERRNO_LOOKUP_NOT_FOUND) { }
+
         public override string Message => "Value or range provided not found in table";
     }
 
     public class UniqueAlreadyExistsException : StdbException
     {
-        internal UniqueAlreadyExistsException() : base(ERRNO_UNIQUE_ALREADY_EXISTS) { }
+        internal UniqueAlreadyExistsException()
+            : base(ERRNO_UNIQUE_ALREADY_EXISTS) { }
+
         public override string Message => "Value with given unique identifier already exists";
     }
 
     public class BufferTooSmallException : StdbException
     {
-        internal BufferTooSmallException() : base(ERRNO_BUFFER_TOO_SMALL) { }
-        public override string Message => "The provided buffer is not large enough to store the data";
-    }
+        internal BufferTooSmallException()
+            : base(ERRNO_BUFFER_TOO_SMALL) { }
 
+        public override string Message =>
+            "The provided buffer is not large enough to store the data";
+    }
 
     [NativeMarshalling(typeof(StatusMarshaller))]
     public struct CheckedStatus;
