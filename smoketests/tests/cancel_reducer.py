@@ -4,9 +4,9 @@ import time
 class CancelReducer(Smoketest):
     
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb, ScheduleToken};
+use spacetimedb::{println, ScheduleToken};
 
-#[spacetimedb(init)]
+#[spacetimedb::init]
 fn init() {
     let token = spacetimedb::schedule!("100ms", reducer(1));
     token.cancel();
@@ -14,12 +14,12 @@ fn init() {
     spacetimedb::schedule!("500ms", do_cancel(token));
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn do_cancel(token: ScheduleToken<reducer>) {
     token.cancel()
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn reducer(num: i32) {
     println!("the reducer ran: {}", num)
 }
