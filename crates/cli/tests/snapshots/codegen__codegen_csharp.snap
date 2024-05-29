@@ -388,7 +388,7 @@ namespace SpacetimeDB
 
 		public static IEnumerable<PkMultiIdentity> FilterByOther(uint value)
 		{
-			if (FindByOther(value) is { } found)
+			if (FindByOther(value) is {} found)
 			{
 				yield return found;
 			}
@@ -1064,7 +1064,7 @@ namespace SpacetimeDB
 
 		public static IEnumerable<TestE> FilterById(ulong value)
 		{
-			if (FindById(value) is { } found)
+			if (FindById(value) is {} found)
 			{
 				yield return found;
 			}
