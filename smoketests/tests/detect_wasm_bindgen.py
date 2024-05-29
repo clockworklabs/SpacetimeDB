@@ -3,9 +3,9 @@ from .. import Smoketest
 class WasmBindgen(Smoketest):
     AUTOPUBLISH = False
     MODULE_CODE = """
-use spacetimedb::{log, spacetimedb};
+use spacetimedb::log;
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn test() {
     log::info!("Hello! {}", now());
 }
@@ -27,9 +27,9 @@ extern "C" {
 class Getrandom(Smoketest):
     AUTOPUBLISH = False
     MODULE_CODE = """
-use spacetimedb::{log, spacetimedb};
+use spacetimedb::log;
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn test() {
     log::info!("Hello! {}", rand::random::<u8>());
 }

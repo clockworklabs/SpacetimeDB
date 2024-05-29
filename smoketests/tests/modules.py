@@ -7,9 +7,9 @@ class UpdateModule(Smoketest):
     AUTOPUBLISH = False
 
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Person {
     #[primarykey]
     #[autoinc]
@@ -17,12 +17,12 @@ pub struct Person {
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add(name: String) {
     Person::insert(Person { id: 0, name }).unwrap();
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn say_hello() {
     for person in Person::iter() {
         println!("Hello, {}!", person.name);
@@ -31,9 +31,7 @@ pub fn say_hello() {
 }
 """
     MODULE_CODE_B = """
-use spacetimedb::spacetimedb;
-
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Person {
     #[primarykey]
     #[autoinc]
@@ -44,9 +42,9 @@ pub struct Person {
 """
 
     MODULE_CODE_C = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Person {
     #[primarykey]
     #[autoinc]
@@ -54,12 +52,12 @@ pub struct Person {
     name: String,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Pet {
     species: String,
 }
 
-#[spacetimedb(update)]
+#[spacetimedb::update]
 pub fn on_module_update() {
     println!("MODULE UPDATED");
 }
@@ -103,19 +101,19 @@ pub fn on_module_update() {
 
 class UploadModule1(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Person {
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add(name: String) {
     Person::insert(Person { name });
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn say_hello() {
     for person in Person::iter() {
         println!("Hello, {}!", person.name);
@@ -140,14 +138,14 @@ pub fn say_hello() {
 
 class UploadModule2(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb, Timestamp};
+use spacetimedb::{println, Timestamp};
 
-#[spacetimedb(init)]
+#[spacetimedb::init]
 fn init() {
     spacetimedb::schedule!("100ms", my_repeating_reducer(Timestamp::now()));
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn my_repeating_reducer(prev: Timestamp) {
     println!("Invoked: ts={:?}, delta={:?}", Timestamp::now(), prev.elapsed());
     spacetimedb::schedule!("100ms", my_repeating_reducer(Timestamp::now()));

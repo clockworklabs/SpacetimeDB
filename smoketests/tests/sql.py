@@ -2,7 +2,7 @@ from .. import Smoketest
 
 class SqlFormat(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{spacetimedb, Identity};
+use spacetimedb::Identity;
 
 #[derive(spacetimedb::SpacetimeType)]
 pub struct TupleType {
@@ -23,7 +23,7 @@ pub struct TupleType {
     a_bytes: Vec<u8>,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct BuiltIn {
     a_b: bool,
     a_i8: i8,
@@ -43,7 +43,7 @@ pub struct BuiltIn {
     a_tuple: TupleType,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn test() {
     BuiltIn::insert(BuiltIn {
         a_b: true,

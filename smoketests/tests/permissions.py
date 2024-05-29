@@ -73,15 +73,13 @@ class Permissions(Smoketest):
     
 class PrivateTablePermissions(Smoketest):
     MODULE_CODE = """
-use spacetimedb::spacetimedb;
-
-#[spacetimedb(table)]
+#[spacetimedb::table]
 #[sats(name = "_Secret")]
 pub struct Secret {
     answer: u8,
 }
 
-#[spacetimedb(init)]
+#[spacetimedb::init]
 pub fn init() {
     Secret::insert(Secret { answer: 42 });
 }
