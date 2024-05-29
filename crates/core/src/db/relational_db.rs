@@ -472,14 +472,17 @@ impl RelationalDB {
     }
 
     fn maybe_do_snapshot(snapshots: &SnapshotRepository, ctx: &ExecutionContext, committed_state: &mut CommittedState) {
-        if committed_state.next_tx_offset % SNAPSHOT_FREQUENCY != 0 {
+        let Some(tx_offset) = committed_state.next_tx_offset.checked_sub(1) else {
+            return;
+        };
+        if tx_offset % SNAPSHOT_FREQUENCY != 0 {
             return;
         }
 
         log::info!(
             "Capturing snapshot of database {:?} at TX offset {}",
             ctx.database(),
-            committed_state.next_tx_offset
+            tx_offset
         );
 
         let start_time = std::time::Instant::now();
@@ -487,14 +490,14 @@ impl RelationalDB {
         if let Err(e) = snapshots.create_snapshot(
             committed_state.tables.values_mut(),
             &committed_state.blob_store,
-            committed_state.next_tx_offset,
+            tx_offset,
         ) {
             log::error!("Error capturing snapshot of database {:?}: {e:?}", ctx.database());
         } else {
             log::info!(
                 "Captured snapshot of database {:?} at TX offset {} in {:?}",
                 ctx.database(),
-                committed_state.next_tx_offset,
+                tx_offset,
                 start_time.elapsed()
             );
         }

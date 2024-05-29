@@ -159,7 +159,7 @@ impl Locking {
             page_store.set_contents(pages, fixed_row_size);
         }
 
-        commit_state.next_tx_offset = tx_offset;
+        commit_state.next_tx_offset = tx_offset + 1;
 
         Ok(datastore)
     }
