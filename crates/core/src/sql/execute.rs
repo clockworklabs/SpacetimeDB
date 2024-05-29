@@ -6,6 +6,7 @@ use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{DbProgram, TxMode};
+use itertools::Either;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::FieldName;
 use spacetimedb_lib::{ProductType, ProductValue};
@@ -41,23 +42,23 @@ pub fn ctx_sql(db: &RelationalDB) -> ExecutionContext {
     ExecutionContext::sql(db.address(), db.read_config().slow_query)
 }
 
+fn execute(p: &mut DbProgram<'_, '_>, ast: Vec<CrudExpr>) -> Result<Vec<MemTable>, DBError> {
+    let mut result = Vec::with_capacity(ast.len());
+    let query = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
+    // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
+    collect_result(&mut result, run_ast(p, query, [].into()).into())?;
+    Ok(result)
+}
+
 /// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
 ///
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
 ///
 /// Also, in case the execution takes more than x, log it as `slow query`
 pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
-    fn execute(p: &mut DbProgram<'_, '_>, ast: Vec<CrudExpr>) -> Result<Vec<MemTable>, DBError> {
-        let mut result = Vec::with_capacity(ast.len());
-        let query = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
-        // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
-        collect_result(&mut result, run_ast(p, query, [].into()).into())?;
-        Ok(result)
-    }
-
     let ctx = ctx_sql(db);
-    let slow_logger = SlowQueryLogger::query(&ctx, sql);
-    let result = if CrudExpr::is_reads(&ast) {
+    let _slow_logger = SlowQueryLogger::query(&ctx, sql).log_guard();
+    if CrudExpr::is_reads(&ast) {
         db.with_read_only(&ctx, |tx| {
             execute(&mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth), ast)
         })
@@ -65,16 +66,54 @@ pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthC
         db.with_auto_commit(&ctx, |mut_tx| {
             execute(&mut DbProgram::new(&ctx, db, &mut mut_tx.into(), auth), ast)
         })
-    }?;
-    slow_logger.log();
+    }
+}
 
-    Ok(result)
+/// Like [`execute_sql`], but for providing your own `tx`.
+///
+/// Returns None if you pass a mutable query with an immutable tx.
+pub fn execute_sql_tx<'a>(
+    db: &RelationalDB,
+    tx: impl Into<TxMode<'a>>,
+    sql: &str,
+    ast: Vec<CrudExpr>,
+    auth: AuthCtx,
+) -> Result<Option<Vec<MemTable>>, DBError> {
+    let mut tx = tx.into();
+
+    if matches!(tx, TxMode::Tx(_)) && !CrudExpr::is_reads(&ast) {
+        return Ok(None);
+    }
+
+    let ctx = ctx_sql(db);
+    let _slow_logger = SlowQueryLogger::query(&ctx, sql).log_guard();
+    execute(&mut DbProgram::new(&ctx, db, &mut tx, auth), ast).map(Some)
 }
 
 /// Run the `SQL` string using the `auth` credentials
 pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
-    let ast = db.with_read_only(&ctx_sql(db), |tx| compile_sql(db, tx, sql_text))?;
-    execute_sql(db, sql_text, ast, auth)
+    let ctx = ctx_sql(db);
+    let _slow_logger = SlowQueryLogger::query(&ctx, sql_text).log_guard();
+    let result = db.with_read_only(&ctx, |tx| {
+        let ast = compile_sql(db, tx, sql_text)?;
+        if CrudExpr::is_reads(&ast) {
+            let result = execute(&mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth), ast)?;
+            Ok::<_, DBError>(Either::Left(result))
+        } else {
+            // hehe. right. write.
+            Ok(Either::Right(ast))
+        }
+    })?;
+    match result {
+        Either::Left(result) => Ok(result),
+        // TODO: this should perhaps be an upgradable_read upgrade? or we should try
+        //       and figure out if we can detect the mutablility of the query before we take
+        //       the tx? once we have migrations we probably don't want to have stale
+        //       sql queries after a database schema have been updated.
+        Either::Right(ast) => db.with_auto_commit(&ctx, |tx| {
+            execute(&mut DbProgram::new(&ctx, db, &mut tx.into(), auth), ast)
+        }),
+    }
 }
 
 /// Translates a `FieldName` to the field's name.

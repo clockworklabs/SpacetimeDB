@@ -81,16 +81,21 @@ impl<'a> SlowQueryLogger<'a> {
         Self::new(sql, &ctx.slow_query_config.incremental_updates, ctx.workload())
     }
 
+    pub fn log_guard(self) -> impl Drop + 'a {
+        scopeguard::guard(self, |logger| {
+            logger.log();
+        })
+    }
+
     /// Log as `tracing::warn!` the query if it exceeds the threshold.
     pub fn log(&self) -> Option<Duration> {
-        if let Some((start, threshold)) = self.start.zip(self.threshold.as_ref()) {
+        if let Some((start, threshold)) = self.start.zip(*self.threshold) {
             let elapsed = start.elapsed();
-            if &elapsed > threshold {
-                let workload = self.workload.as_ref();
-                tracing::warn!(?workload, ?threshold, ?elapsed, ?self.sql, "SLOW QUERY");
+            if elapsed > threshold {
+                tracing::warn!(workload = %self.workload, ?threshold, ?elapsed, sql = ?self.sql, "SLOW QUERY");
                 return Some(elapsed);
             }
-        };
+        }
         None
     }
 }
