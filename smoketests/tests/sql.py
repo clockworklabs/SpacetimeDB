@@ -2,10 +2,10 @@ from .. import Smoketest
 
 class SqlFormat(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{spacetimedb, sats::{i256, u256}};
+use spacetimedb::sats::{i256, u256};
 
 #[derive(Copy, Clone)]
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct TInts {
     i8: i8,
     i16: i16,
@@ -15,13 +15,13 @@ pub struct TInts {
     i256: i256,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct TIntsTuple {
     tuple: TInts,
 }
 
 #[derive(Copy, Clone)]
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct TUints {
     u8: u8,
     u16: u16,
@@ -31,13 +31,13 @@ pub struct TUints {
     u256: u256,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct TUintsTuple {
     tuple: TUints,
 }
 
 #[derive(Clone)]
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct TOthers {
     bool: bool,
     f32: f32,
@@ -46,12 +46,12 @@ pub struct TOthers {
     bytes: Vec<u8>,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct TOthersTuple {
     tuple: TOthers
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn test() {
     let tuple = TInts {
         i8: -25,

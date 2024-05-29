@@ -297,12 +297,12 @@ fn schema_compat_and_updates_hack(
     //
     // UNSET = {}
     // INDEXED = { indexed }
-    // AUTO_INC = { autoinc }
+    // AUTO_INC = { auto_inc }
     // UNIQUE = INDEXED | { unique } = { unique, indexed }
-    // IDENTITY = UNIQUE | AUTO_INC = { unique, indexed, autoinc }
+    // IDENTITY = UNIQUE | AUTO_INC = { unique, indexed, auto_inc }
     // PRIMARY_KEY = UNIQUE | { pk } = { unique, indexed, pk }
-    // PRIMARY_KEY_AUTO = PRIMARY_KEY | AUTO_INC = { unique, indexed, autoinc, pk }
-    // PRIMARY_KEY_IDENTITY = PRIMARY_KEY | IDENTITY =  = { unique, indexed, autoinc, pk }
+    // PRIMARY_KEY_AUTO = PRIMARY_KEY | AUTO_INC = { unique, indexed, auto_inc, pk }
+    // PRIMARY_KEY_IDENTITY = PRIMARY_KEY | IDENTITY =  = { unique, indexed, auto_inc, pk }
     //
     // This entails that all attributes with `indexed`,
     // that have something additional,

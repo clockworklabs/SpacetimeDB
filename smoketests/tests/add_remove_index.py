@@ -4,15 +4,13 @@ class AddRemoveIndex(Smoketest):
     AUTOPUBLISH = False
 
     MODULE_CODE = """
-use spacetimedb::spacetimedb;
-
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct T1 { id: u64 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct T2 { id: u64 }
 
-#[spacetimedb(init)]
+#[spacetimedb::reducer(init)]
 pub fn init() {
     for id in 0..1_000 {
         T1::insert(T1 { id });
@@ -21,17 +19,13 @@ pub fn init() {
 }
 """
     MODULE_CODE_INDEXED = """
-use spacetimedb::spacetimedb;
+#[spacetimedb::table]
+pub struct T1 { #[index(btree)] id: u64 }
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "id", id))]
-pub struct T1 { id: u64 }
+#[spacetimedb::table]
+pub struct T2 { #[index(btree)] id: u64 }
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "id", id))]
-pub struct T2 { id: u64 }
-
-#[spacetimedb(init)]
+#[spacetimedb::reducer(init)]
 pub fn init() {
     for id in 0..1_000 {
         T1::insert(T1 { id });
@@ -39,7 +33,7 @@ pub fn init() {
     }
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add() {
     let id = 1_001;
     T1::insert(T1 { id });

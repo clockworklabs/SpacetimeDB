@@ -45,23 +45,22 @@ class DockerRestartModule(Smoketest):
     # Note: creating indexes on `Person`
     # exercises more possible failure cases when replaying after restart
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "name_idx", name))]
+#[spacetimedb::table(index(name = name_idx, btree(columns = [name])))]
 pub struct Person {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u32,
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add(name: String) {
 Person::insert(Person { id: 0, name }).unwrap();
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn say_hello() {
     for person in Person::iter() {
         println!("Hello, {}!", person.name);
@@ -92,23 +91,22 @@ class DockerRestartSql(Smoketest):
     # Note: creating indexes on `Person`
     # exercises more possible failure cases when replaying after restart
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "name_idx", name))]
+#[spacetimedb::table(index(name = name_idx, btree(columns = [name])))]
 pub struct Person {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u32,
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add(name: String) {
 Person::insert(Person { id: 0, name }).unwrap();
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn say_hello() {
     for person in Person::iter() {
         println!("Hello, {}!", person.name);
@@ -139,15 +137,15 @@ pub fn say_hello() {
 class DockerRestartAutoDisconnect(Smoketest):
     MODULE_CODE = """
 use log::info;
-use spacetimedb::{spacetimedb, Address, Identity, ReducerContext, TableType};
+use spacetimedb::{Address, Identity, ReducerContext, TableType};
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct ConnectedClients {
     identity: Identity,
     address: Address,
 }
 
-#[spacetimedb(connect)]
+#[spacetimedb::reducer(client_connected)]
 fn on_connect(ctx: ReducerContext) {
     ConnectedClients::insert(ConnectedClients {
         identity: ctx.sender,
@@ -155,7 +153,7 @@ fn on_connect(ctx: ReducerContext) {
     });
 }
 
-#[spacetimedb(disconnect)]
+#[spacetimedb::reducer(client_disconnected)]
 fn on_disconnect(ctx: ReducerContext) {
     let sender_identity = &ctx.sender;
     let sender_address = ctx.address.as_ref().expect("sender address unset");
@@ -167,7 +165,7 @@ fn on_disconnect(ctx: ReducerContext) {
     }
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn print_num_connected() {
     let n = ConnectedClients::iter().count();
     info!("CONNECTED CLIENTS: {n}")

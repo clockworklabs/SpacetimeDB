@@ -6,7 +6,7 @@ class CancelReducer(Smoketest):
     MODULE_CODE = """
     use spacetimedb::{duration, println, spacetimedb, spacetimedb_lib::ScheduleAt, ReducerContext};
 
-#[spacetimedb(init)]
+#[spacetimedb::reducer(init)]
 fn init() {
     let schedule = ScheuledReducerArgs::insert(ScheuledReducerArgs {
         num: 1,
@@ -23,17 +23,17 @@ fn init() {
      do_cancel(schedule.unwrap().scheduled_id);
 }
 
-#[spacetimedb(table(public), scheduled(reducer))]
+#[spacetimedb::table(public, scheduled(reducer))]
 pub struct ScheuledReducerArgs {
     num: i32,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn do_cancel(schedule_id: u64) {
     ScheuledReducerArgs::delete_by_scheduled_id(&schedule_id);
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn reducer(_ctx: ReducerContext, args: ScheuledReducerArgs) {
     println!("the reducer ran: {}", args.num);
 }
@@ -52,22 +52,22 @@ class SubscribeScheduledTable(Smoketest):
 use spacetimedb::{println, duration, spacetimedb, Timestamp, spacetimedb_lib::ScheduleAt, ReducerContext};
 
 
-#[spacetimedb(table(public), scheduled(my_reducer))]
+#[spacetimedb::table(public, scheduled(my_reducer))]
 pub struct ScheduledTable {
     prev: Timestamp,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn schedule_reducer() {
     let _ = ScheduledTable::insert(ScheduledTable { prev: Timestamp::from_micros_since_epoch(0), scheduled_id: 2, scheduled_at: Timestamp::from_micros_since_epoch(0).into(), });
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn schedule_repeated_reducer() {
     let _ = ScheduledTable::insert(ScheduledTable { prev: Timestamp::from_micros_since_epoch(0), scheduled_id: 1, scheduled_at: duration!(100ms).into(), });
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn my_reducer(_ctx: ReducerContext, arg: ScheduledTable) {
     println!("Invoked: ts={:?}, delta={:?}", Timestamp::now(), arg.prev.elapsed());
 }
@@ -117,17 +117,17 @@ class VolatileNonatomicScheduleImmediate(Smoketest):
     MODULE_CODE = """
 use spacetimedb::spacetimedb;
 
-#[spacetimedb(table(public))]
+#[spacetimedb::table(public)]
 pub struct MyTable {
     x: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn do_schedule() {
     spacetimedb::volatile_nonatomic_schedule_immediate!(do_insert("hello".to_owned()));
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn do_insert(x: String) {
     MyTable::insert(MyTable { x });
 }

@@ -1,14 +1,13 @@
-use spacetimedb::{query, spacetimedb, time_span::Span};
+use spacetimedb::{query, time_span::Span};
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "x", x))]
-#[spacetimedb(index(btree, name = "chunk", chunk))]
-#[spacetimedb(index(btree, name = "coordinates", x, z, dimension))]
+#[spacetimedb::table(index(name = coordinates, btree(columns = [x, z, dimension])))]
 #[derive(Debug, PartialEq, Eq)]
 pub struct Location {
-    #[primarykey]
+    #[primary_key]
     pub id: u64,
+    #[index(btree)]
     pub chunk: u64,
+    #[index(btree)]
     pub x: i32,
     pub z: i32,
     pub dimension: u32,
@@ -18,7 +17,7 @@ pub struct Location {
 const NUM_CHUNKS: u64 = 1000;
 const ROWS_PER_CHUNK: u64 = 1200;
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn load_location_table() {
     for chunk in 0u64..NUM_CHUNKS {
         for i in 0u64..ROWS_PER_CHUNK {
@@ -40,7 +39,7 @@ pub fn load_location_table() {
 const ID: u64 = 989_987;
 const CHUNK: u64 = ID / ROWS_PER_CHUNK;
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 /// Probing a single column index for a single row should be fast!
 pub fn test_index_scan_on_id() {
     let span = Span::start("Index scan on {id}");
@@ -49,7 +48,7 @@ pub fn test_index_scan_on_id() {
     assert_eq!(ID, location.id);
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 /// Scanning a single column index for `ROWS_PER_CHUNK` rows should also be fast!
 pub fn test_index_scan_on_chunk() {
     let span = Span::start("Index scan on {chunk}");
@@ -58,7 +57,7 @@ pub fn test_index_scan_on_chunk() {
     assert_eq!(n as u64, ROWS_PER_CHUNK);
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 /// Probing a multi-column index for a single row should be fast!
 pub fn test_index_scan_on_x_z_dimension() {
     let z = CHUNK as i32;
@@ -69,7 +68,7 @@ pub fn test_index_scan_on_x_z_dimension() {
     assert_eq!(n, 1);
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 /// Probing a multi-column index for `ROWS_PER_CHUNK` rows should also be fast!
 pub fn test_index_scan_on_x_z() {
     let z = CHUNK as i32;

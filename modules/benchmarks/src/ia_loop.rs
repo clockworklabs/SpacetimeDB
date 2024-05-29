@@ -3,12 +3,12 @@
 #![allow(clippy::too_many_arguments, unused_variables)]
 
 use crate::Load;
-use spacetimedb::{log, spacetimedb, SpacetimeType, Timestamp};
+use spacetimedb::{log, SpacetimeType, Timestamp};
 use std::hash::{Hash, Hasher};
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Velocity {
-    #[primarykey]
+    #[primary_key]
     pub entity_id: u32,
     pub x: f32,
     pub y: f32,
@@ -21,9 +21,9 @@ impl Velocity {
     }
 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Position {
-    #[primarykey]
+    #[primary_key]
     pub entity_id: u32,
     pub x: f32,
     pub y: f32,
@@ -65,47 +65,47 @@ pub enum AgentAction {
     Fighting,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 #[derive(Clone)]
 pub struct GameEnemyAiAgentState {
-    #[primarykey]
+    #[primary_key]
     pub entity_id: u64,
     pub last_move_timestamps: Vec<u64>,
     pub next_action_timestamp: u64,
     pub action: AgentAction,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 #[derive(Clone)]
 pub struct GameTargetableState {
-    #[primarykey]
+    #[primary_key]
     pub entity_id: u64,
     pub quad: i64,
 }
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "LiveTargetableState_quad", quad))]
+#[spacetimedb::table]
 pub struct GameLiveTargetableState {
     #[unique]
     pub entity_id: u64,
+    #[index(btree)]
     pub quad: i64,
 }
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "x", location_x))]
+#[spacetimedb::table]
 pub struct GameMobileEntityState {
-    #[primarykey]
+    #[primary_key]
     pub entity_id: u64,
 
+    #[index(btree)]
     pub location_x: i32,
     pub location_y: i32,
     pub timestamp: u64,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 #[derive(Clone)]
 pub struct GameEnemyState {
-    #[primarykey]
+    #[primary_key]
     pub entity_id: u64,
     pub herd_id: i32,
 }
@@ -117,10 +117,10 @@ pub struct SmallHexTile {
     pub dimension: u32,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 #[derive(Clone, Debug)]
 pub struct GameHerdCache {
-    #[primarykey]
+    #[primary_key]
     pub id: i32,
     pub dimension_id: u32,
     pub current_population: i32,
@@ -137,7 +137,7 @@ fn calculate_hash<T: Hash>(t: &T) -> u64 {
 }
 
 // ---------- insert bulk ----------
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn insert_bulk_position(count: u32) {
     for id in 0..count {
         Position::insert(Position::new(id, id as f32, (id + 5) as f32, (id * 5) as f32)).unwrap();
@@ -145,7 +145,7 @@ pub fn insert_bulk_position(count: u32) {
     log::info!("INSERT POSITION: {count}");
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn insert_bulk_velocity(count: u32) {
     for id in 0..count {
         Velocity::insert(Velocity::new(id, id as f32, (id + 5) as f32, (id * 5) as f32)).unwrap();
@@ -160,7 +160,7 @@ pub fn insert_bulk_velocity(count: u32) {
 // y = y + vy,
 // z = z + vz;
 // ```
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn update_position_all(expected: u32) {
     let mut count = 0;
     for mut position in Position::iter() {
@@ -185,7 +185,7 @@ pub fn update_position_all(expected: u32) {
 // FROM Velocity
 // WHERE Position.entity_id = Velocity.entity_id;
 // ```
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn update_position_with_velocity(expected: u32) {
     let mut count = 0;
     for velocity in Velocity::iter() {
@@ -206,7 +206,7 @@ pub fn update_position_with_velocity(expected: u32) {
 
 // Simulations for a game loop
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn insert_world(players: u64) {
     for (i, id) in (0..players).enumerate() {
         let next_action_timestamp = if i & 2 == 2 {
@@ -346,7 +346,7 @@ fn agent_loop(
 }
 
 // We check only for a single pass in the game loop.
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn game_loop_enemy_ia(players: u64) {
     let mut count = 0;
     let current_time_ms = moment_milliseconds();
@@ -371,7 +371,7 @@ pub fn game_loop_enemy_ia(players: u64) {
     log::info!("ENEMY IA LOOP PLAYERS: {players}, processed: {count}");
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn init_game_ia_loop(initial_load: u32) {
     let load = Load::new(initial_load);
 
@@ -383,7 +383,7 @@ pub fn init_game_ia_loop(initial_load: u32) {
     insert_world(load.num_players as u64);
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn run_game_ia_loop(initial_load: u32) {
     let load = Load::new(initial_load);
 

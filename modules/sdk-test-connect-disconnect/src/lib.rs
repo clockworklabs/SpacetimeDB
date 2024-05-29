@@ -8,24 +8,24 @@
 //! - Disconnect, then reconnect again.
 //! - Subscribe to `Disconnected`.
 //! - Observe the presence of one row with the client's `Identity`.
-use spacetimedb::{spacetimedb, Identity, ReducerContext};
+use spacetimedb::{Identity, ReducerContext};
 
-#[spacetimedb(table(public))]
+#[spacetimedb::table(public)]
 pub struct Connected {
     identity: Identity,
 }
 
-#[spacetimedb(table(public))]
+#[spacetimedb::table(public)]
 pub struct Disconnected {
     identity: Identity,
 }
 
-#[spacetimedb(connect)]
+#[spacetimedb::reducer(client_connected)]
 pub fn identity_connected(ctx: ReducerContext) {
     Connected::insert(Connected { identity: ctx.sender });
 }
 
-#[spacetimedb(disconnect)]
+#[spacetimedb::reducer(client_disconnected)]
 pub fn identity_disconnected(ctx: ReducerContext) {
     Disconnected::insert(Disconnected { identity: ctx.sender });
 }

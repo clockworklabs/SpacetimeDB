@@ -32,7 +32,9 @@ pub use rand;
 #[cfg(feature = "rand")]
 pub use rng::{random, rng, StdbRng};
 pub use sats::SpacetimeType;
-pub use spacetimedb_bindings_macro::{duration, query, spacetimedb, TableType};
+#[doc(hidden)]
+pub use spacetimedb_bindings_macro::__TableHelper;
+pub use spacetimedb_bindings_macro::{duration, query, reducer, table};
 pub use spacetimedb_bindings_sys as sys;
 pub use spacetimedb_lib;
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
@@ -469,7 +471,7 @@ pub mod query {
     /// according to the column's schema and then `Ord for AlgebraicValue`.
     ///
     /// **NOTE:** Do not use directly.
-    /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb(table)]`.
+    /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb::table]`.
     #[doc(hidden)]
     pub fn filter_by_unique_field<
         Table: TableType + FieldAccess<COL_IDX, Field = T>,
@@ -503,7 +505,7 @@ pub mod query {
     /// according to the column's schema and then `Ord for AlgebraicValue`.
     ///
     /// **NOTE:** Do not use directly.
-    /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb(table)]`.
+    /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb::table]`.
     #[doc(hidden)]
     pub fn filter_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(val: &T) -> TableIter<Table> {
         let iter = iter_by_col_eq(Table::table_id(), COL_IDX.into(), val).expect("iter_by_col_eq failed");
@@ -517,7 +519,7 @@ pub mod query {
     /// Returns the number of deleted rows.
     ///
     /// **NOTE:** Do not use directly.
-    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb(table)]`
+    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb::table]`
     /// where the field does not have a unique constraint.
     #[doc(hidden)]
     pub fn delete_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(val: &T) -> u32 {
@@ -534,7 +536,7 @@ pub mod query {
     /// Returns whether any rows were deleted.
     ///
     /// **NOTE:** Do not use directly.
-    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb(table)]`
+    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb::table]`
     /// where the field has a unique constraint.
     pub fn delete_by_unique_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(val: &T) -> bool {
         let count = delete_by_field::<Table, T, COL_IDX>(val);
@@ -548,7 +550,7 @@ pub mod query {
     /// according to the column's schema and then `Ord for AlgebraicValue`.
     ///
     /// **NOTE:** Do not use directly.
-    /// This is exposed as `update_by_{$field_name}` on types with `#[spacetimedb(table)]`.
+    /// This is exposed as `update_by_{$field_name}` on types with `#[spacetimedb::table]`.
     #[doc(hidden)]
     pub fn update_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(old: &T, new: Table) -> bool {
         // Delete the existing row, if any.

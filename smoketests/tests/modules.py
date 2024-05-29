@@ -7,22 +7,22 @@ class UpdateModule(Smoketest):
     AUTOPUBLISH = False
 
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Person {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u64,
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add(name: String) {
     Person::insert(Person { id: 0, name }).unwrap();
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn say_hello() {
     for person in Person::iter() {
         println!("Hello, {}!", person.name);
@@ -31,12 +31,10 @@ pub fn say_hello() {
 }
 """
     MODULE_CODE_B = """
-use spacetimedb::spacetimedb;
-
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Person {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u64,
     name: String,
     age: u8,
@@ -44,22 +42,22 @@ pub struct Person {
 """
 
     MODULE_CODE_C = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Person {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u64,
     name: String,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Pet {
     species: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn are_we_updated_yet() {
     println!("MODULE UPDATED");
 }
@@ -104,19 +102,19 @@ pub fn are_we_updated_yet() {
 
 class UploadModule1(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Person {
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add(name: String) {
     Person::insert(Person { name });
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn say_hello() {
     for person in Person::iter() {
         println!("Hello, {}!", person.name);
@@ -141,20 +139,20 @@ pub fn say_hello() {
 
 class UploadModule2(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, duration, spacetimedb, Timestamp, spacetimedb_lib::ScheduleAt, ReducerContext};
+use spacetimedb::{println, duration, Timestamp, ReducerContext};
 
 
-#[spacetimedb(table(public), scheduled(my_repeating_reducer))]
+#[spacetimedb::table(public, scheduled(my_repeating_reducer))]
 pub struct ScheduledMessage {
     prev: Timestamp,
 }
 
-#[spacetimedb(init)]
+#[spacetimedb::reducer(init)]
 fn init() {
     let _ = ScheduledMessage::insert(ScheduledMessage { prev: Timestamp::now(), scheduled_id: 0, scheduled_at: duration!(100ms).into(), });
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn my_repeating_reducer(_ctx: ReducerContext, arg: ScheduledMessage) {
     println!("Invoked: ts={:?}, delta={:?}", Timestamp::now(), arg.prev.elapsed());
 }
@@ -173,9 +171,7 @@ class HotswapModule(Smoketest):
     AUTOPUBLISH = False
 
     MODULE_CODE = """
-use spacetimedb::spacetimedb;
-
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Person {
     #[primarykey]
     #[autoinc]
@@ -183,7 +179,7 @@ pub struct Person {
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add_person(name: String) {
     Person::insert(Person { id: 0, name }).ok();
 }
@@ -192,7 +188,7 @@ pub fn add_person(name: String) {
     MODULE_CODE_B = """
 use spacetimedb::spacetimedb;
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Person {
     #[primarykey]
     #[autoinc]
@@ -200,18 +196,18 @@ pub struct Person {
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add_person(name: String) {
     Person::insert(Person { id: 0, name }).ok();
 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Pet {
     #[primarykey]
     species: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add_pet(species: String) {
     Pet::insert(Pet { species }).ok();
 }

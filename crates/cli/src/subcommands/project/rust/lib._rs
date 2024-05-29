@@ -1,31 +1,31 @@
-use spacetimedb::{spacetimedb, ReducerContext};
+use spacetimedb::ReducerContext;
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Person {
     name: String
 }
 
-#[spacetimedb(init)]
+#[spacetimedb::reducer(init)]
 pub fn init() {
     // Called when the module is initially published
 }
 
-#[spacetimedb(connect)]
+#[spacetimedb::reducer(client_connected)]
 pub fn identity_connected(_ctx: ReducerContext) {
     // Called everytime a new client connects
 }
 
-#[spacetimedb(disconnect)]
+#[spacetimedb::reducer(client_disconnected)]
 pub fn identity_disconnected(_ctx: ReducerContext) {
     // Called everytime a client disconnects
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add(name: String) {
     Person::insert(Person { name });
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn say_hello() {
     for person in Person::iter() {
         log::info!("Hello, {}!", person.name);
