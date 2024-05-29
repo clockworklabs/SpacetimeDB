@@ -177,7 +177,6 @@ pub fn translate_col(tx: &Tx, field: FieldName) -> Option<Box<str>> {
 #[cfg(test)]
 pub(crate) mod tests {
     use std::sync::Arc;
-
     use super::*;
     use crate::db::datastore::system_tables::{ST_TABLES_ID, ST_TABLES_NAME};
     use crate::db::relational_db::tests_utils::TestDB;

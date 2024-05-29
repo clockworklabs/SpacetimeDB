@@ -455,8 +455,8 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             self.db.insert(tx, table.table_id, row)?;
         }
         Ok(Code::Pass(Some(Update {
-            table_id: table.get_db_table().unwrap().table_id,
-            table_name: table.table_name().into(),
+            table_id: table.table_id,
+            table_name: table.head.table_name.clone(),
             inserts,
             deletes: Vec::default()
         })))
@@ -519,7 +519,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
 
     fn _execute_delete(&mut self, table: &DbTable, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
         let deletes = rows.clone();
-        let count = self.db.delete_by_rel(self.tx.unwrap_mut(), table.table_id, rows);
+        self.db.delete_by_rel(self.tx.unwrap_mut(), table.table_id, rows);
 
         Ok(Code::Pass(Some(Update {
             table_id: table.table_id,
