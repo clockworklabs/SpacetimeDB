@@ -44,10 +44,9 @@ class DockerRestartModule(Smoketest):
     # Note: creating indexes on `Person`
     # exercises more possible failure cases when replaying after restart
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "name_idx", name))]
+#[spacetimedb::table(index(btree, name = "name_idx", columns = [name]))]
 pub struct Person {
     #[primarykey]
     #[autoinc]
@@ -55,12 +54,12 @@ pub struct Person {
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add(name: String) {
 Person::insert(Person { id: 0, name }).unwrap();
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn say_hello() {
     for person in Person::iter() {
         println!("Hello, {}!", person.name);
@@ -91,10 +90,9 @@ class DockerRestartSql(Smoketest):
     # Note: creating indexes on `Person`
     # exercises more possible failure cases when replaying after restart
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "name_idx", name))]
+#[spacetimedb::table(index(btree, name = "name_idx", columns = [name]))]
 pub struct Person {
     #[primarykey]
     #[autoinc]
@@ -102,12 +100,12 @@ pub struct Person {
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add(name: String) {
 Person::insert(Person { id: 0, name }).unwrap();
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn say_hello() {
     for person in Person::iter() {
         println!("Hello, {}!", person.name);

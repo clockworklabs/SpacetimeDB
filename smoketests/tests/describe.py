@@ -2,19 +2,19 @@ from .. import Smoketest
 
 class ModuleDescription(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Person {
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add(name: String) {
     Person::insert(Person { name });
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn say_hello() {
     for person in Person::iter() {
         println!("Hello, {}!", person.name);

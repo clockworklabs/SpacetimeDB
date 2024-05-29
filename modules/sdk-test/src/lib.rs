@@ -7,7 +7,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use anyhow::{Context, Result};
-use spacetimedb::{spacetimedb, Address, Identity, ReducerContext, SpacetimeType};
+use spacetimedb::{Address, Identity, ReducerContext, SpacetimeType};
 
 #[derive(SpacetimeType)]
 pub enum SimpleEnum {
@@ -143,7 +143,7 @@ macro_rules! define_tables {
      { insert $insert:ident
        $(, $($ops:tt)* )? }
      $($field_name:ident $ty:ty),* $(,)*) => {
-        #[spacetimedb(reducer)]
+        #[spacetimedb::reducer]
         pub fn $insert ($($field_name : $ty,)*) {
             $name::insert($name { $($field_name,)* });
         }
@@ -157,7 +157,7 @@ macro_rules! define_tables {
      { insert_or_panic $insert:ident
        $(, $($ops:tt)* )? }
      $($field_name:ident $ty:ty),* $(,)*) => {
-        #[spacetimedb(reducer)]
+        #[spacetimedb::reducer]
         pub fn $insert ($($field_name : $ty,)*) {
             $name::insert($name { $($field_name,)* }).expect(concat!("Failed to insert row for table: ", stringify!($name)));
         }
@@ -171,7 +171,7 @@ macro_rules! define_tables {
      { update_by $update:ident = $update_method:ident($unique_field:ident)
        $(, $($ops:tt)* )? }
      $($field_name:ident $ty:ty),* $(,)*) => {
-        #[spacetimedb(reducer)]
+        #[spacetimedb::reducer]
         pub fn $update ($($field_name : $ty,)*) {
             let key = $unique_field.clone();
             $name::$update_method(&key, $name { $($field_name,)* });
@@ -186,7 +186,7 @@ macro_rules! define_tables {
      { delete_by $delete:ident = $delete_method:ident($unique_field:ident : $unique_ty:ty)
        $(, $($ops:tt)*)? }
      $($other_fields:tt)* ) => {
-        #[spacetimedb(reducer)]
+        #[spacetimedb::reducer]
         pub fn $delete ($unique_field : $unique_ty) {
             $name::$delete_method(&$unique_field);
         }
@@ -196,7 +196,7 @@ macro_rules! define_tables {
 
     // Define a table.
     (@one $name:ident { $($ops:tt)* } $($(#[$attr:meta])* $field_name:ident $ty:ty),* $(,)*) => {
-        #[spacetimedb(table(public))]
+        #[spacetimedb::table(public)]
         pub struct $name {
             $($(#[$attr])* pub $field_name : $ty,)*
         }
@@ -467,31 +467,31 @@ define_tables! {
     } #[primarykey] a Address, data i32;
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_caller_one_identity(ctx: ReducerContext) -> anyhow::Result<()> {
     OneIdentity::insert(OneIdentity { i: ctx.sender });
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_caller_vec_identity(ctx: ReducerContext) -> anyhow::Result<()> {
     VecIdentity::insert(VecIdentity { i: vec![ctx.sender] });
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_caller_unique_identity(ctx: ReducerContext, data: i32) -> anyhow::Result<()> {
     UniqueIdentity::insert(UniqueIdentity { i: ctx.sender, data })?;
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_caller_pk_identity(ctx: ReducerContext, data: i32) -> anyhow::Result<()> {
     PkIdentity::insert(PkIdentity { i: ctx.sender, data })?;
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_caller_one_address(ctx: ReducerContext) -> anyhow::Result<()> {
     OneAddress::insert(OneAddress {
         a: ctx.address.context("No address in reducer context")?,
@@ -499,7 +499,7 @@ fn insert_caller_one_address(ctx: ReducerContext) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_caller_vec_address(ctx: ReducerContext) -> anyhow::Result<()> {
     VecAddress::insert(VecAddress {
         a: vec![ctx.address.context("No address in reducer context")?],
@@ -507,7 +507,7 @@ fn insert_caller_vec_address(ctx: ReducerContext) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_caller_unique_address(ctx: ReducerContext, data: i32) -> anyhow::Result<()> {
     UniqueAddress::insert(UniqueAddress {
         a: ctx.address.context("No address in reducer context")?,
@@ -516,7 +516,7 @@ fn insert_caller_unique_address(ctx: ReducerContext, data: i32) -> anyhow::Resul
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_caller_pk_address(ctx: ReducerContext, data: i32) -> anyhow::Result<()> {
     PkAddress::insert(PkAddress {
         a: ctx.address.context("No address in reducer context")?,
@@ -563,5 +563,5 @@ define_tables! {
     ;
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn no_op_succeeds() {}

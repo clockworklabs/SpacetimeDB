@@ -14,20 +14,20 @@ class IntTests:
 
 
 autoinc1_template = string.Template("""
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Person_$KEY_TY {
     #[autoinc]
     key_col: $KEY_TY,
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add_$KEY_TY(name: String, expected_value: $KEY_TY) {
     let value = Person_$KEY_TY::insert(Person_$KEY_TY { key_col: 0, name });
     assert_eq!(value.key_col, expected_value);
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn say_hello_$KEY_TY() {
     for person in Person_$KEY_TY::iter() {
         println!("Hello, {}:{}!", person.key_col, person.name);
@@ -43,7 +43,7 @@ class AutoincBasic(IntTests, Smoketest):
     
     MODULE_CODE = f"""
 #![allow(non_camel_case_types)]
-use spacetimedb::{{println, spacetimedb}};
+use spacetimedb::println;
 {"".join(autoinc1_template.substitute(KEY_TY=int_ty) for int_ty in ints)}
 """
 
@@ -61,7 +61,7 @@ use spacetimedb::{{println, spacetimedb}};
 
 
 autoinc2_template = string.Template("""
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Person_$KEY_TY {
     #[autoinc]
     #[unique]
@@ -70,20 +70,20 @@ pub struct Person_$KEY_TY {
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add_new_$KEY_TY(name: String) -> Result<(), Box<dyn Error>> {
     let value = Person_$KEY_TY::insert(Person_$KEY_TY { key_col: 0, name })?;
     println!("Assigned Value: {} -> {}", value.key_col, value.name);
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn update_$KEY_TY(name: String, new_id: $KEY_TY) {
     Person_$KEY_TY::delete_by_name(&name);
     let _value = Person_$KEY_TY::insert(Person_$KEY_TY { key_col: new_id, name });
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn say_hello_$KEY_TY() {
     for person in Person_$KEY_TY::iter() {
         println!("Hello, {}:{}!", person.key_col, person.name);
@@ -99,7 +99,7 @@ class AutoincUnique(IntTests, Smoketest):
     MODULE_CODE = f"""
 #![allow(non_camel_case_types)]
 use std::error::Error;
-use spacetimedb::{{println, spacetimedb}};
+use spacetimedb::println;
 {"".join(autoinc2_template.substitute(KEY_TY=int_ty) for int_ty in ints)}
 """
 
