@@ -14,10 +14,11 @@ use super::relational_operators::Relation;
 use crate::db::datastore::system_tables::{StModuleRow, WASM_MODULE};
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::ExecutionContext;
+use crate::messages::control_db::HostType;
+use crate::util::spawn_rayon;
 use anyhow::anyhow;
 use core::fmt;
 use fs2::FileExt;
-use log::trace;
 use spacetimedb_commitlog as commitlog;
 use spacetimedb_durability::{self as durability, Durability};
 use spacetimedb_lib::address::Address;
@@ -48,7 +49,7 @@ type RowCountFn = Arc<dyn Fn(TableId, &str) -> i64 + Send + Sync>;
 /// It is not part of the [`Durability`] trait because it must report disk
 /// usage of the local instance only, even if exclusively remote durability is
 /// configured or the database is in follower state.
-type DiskSizeFn = Arc<dyn Fn() -> io::Result<u64> + Send + Sync>;
+pub type DiskSizeFn = Arc<dyn Fn() -> io::Result<u64> + Send + Sync>;
 
 pub type Txdata = commitlog::payload::Txdata<ProductValue>;
 
@@ -58,9 +59,11 @@ pub type ConnectedClients = HashSet<(Identity, Address)>;
 
 #[derive(Clone)]
 pub struct RelationalDB {
+    address: Address,
+    owner_identity: Identity,
+
     inner: Locking,
     durability: Option<Arc<dyn Durability<TxData = Txdata>>>,
-    address: Address,
 
     row_count_fn: RowCountFn,
     /// Function to determine the durable size on disk.
@@ -81,10 +84,11 @@ impl std::fmt::Debug for RelationalDB {
 
 impl RelationalDB {
     fn new(
+        lock: LockFile,
+        address: Address,
+        owner_identity: Identity,
         inner: Locking,
         durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
-        address: Address,
-        lock: LockFile,
     ) -> Self {
         let (durability, disk_size_fn) = durability.unzip();
         Self {
@@ -92,6 +96,7 @@ impl RelationalDB {
             durability,
 
             address,
+            owner_identity,
 
             row_count_fn: default_row_count_fn(address),
             disk_size_fn,
@@ -100,11 +105,28 @@ impl RelationalDB {
         }
     }
 
-    /// Open a database.
+    /// Open a database, which may or may not already exist.
     ///
-    /// The database does not need to exist.
+    /// # Initialization
     ///
-    /// Parameters:
+    /// When this method returns, the internal state of the database has been
+    /// initialized with nothing written to disk (regardless of the `durability`
+    /// setting).
+    ///
+    /// This allows to hand over a pointer to the database to a [`ModuleHost`][ModuleHost]
+    /// for initialization, which will call [`Self::set_initialized`],
+    /// initializing the database's [`Metadata`] transactionally.
+    ///
+    /// If, however, a non-empty `history` was supplied, [`Metadata`] will
+    /// already be be set. In this case, i.e. if either [`Self::metadata`] or
+    /// [`Self::program_bytes`] return a `Some` value, [`Self::set_initialized`]
+    /// should _not_ be called.
+    ///
+    /// Sometimes, one may want to obtain a database without a module (e.g. for
+    /// testing). In this case, **always** call [`Self::set_initialized`],
+    /// supplying a zero `program_hash` and empty `program_bytes`.
+    ///
+    /// # Parameters
     ///
     /// - `root`
     ///
@@ -120,7 +142,7 @@ impl RelationalDB {
     ///   An error is returned if the database already exists, but has a
     ///   different address.
     ///   If it is a new database, the address is stored in the database's
-    ///   system tables.
+    ///   system tables upon calling [`Self::set_initialized`].
     ///
     /// - `owner_identity`
     ///
@@ -129,7 +151,7 @@ impl RelationalDB {
     ///   An error is returned if the database already exists, but has a
     ///   different owner.
     ///   If it is a new database, the identity is stored in the database's
-    ///   system tables.
+    ///   system tables upon calling [`Self::set_initialized`].
     ///
     /// - `history`
     ///
@@ -146,9 +168,13 @@ impl RelationalDB {
     ///
     ///   `None` may be passed to obtain an in-memory only database.
     ///
+    /// # Return values
+    ///
     /// Alongside `Self`, the set of clients who were connected as of the most
     /// recent transaction in the `history` is returned as a [`ConnectedClients`].
     /// `__disconnect__` should be called for each entry.
+    ///
+    /// [ModuleHost]: crate::host::module_host::ModuleHost
     pub fn open(
         root: &Path,
         address: Address,
@@ -156,53 +182,66 @@ impl RelationalDB {
         history: impl durability::History<TxData = Txdata>,
         durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
     ) -> Result<(Self, ConnectedClients), DBError> {
-        trace!("[{}] DATABASE: OPEN", address);
-        let ctx = ExecutionContext::internal(address);
+        log::trace!("[{}] DATABASE: OPEN", address);
 
         let lock = LockFile::lock(root)?;
         let inner = Locking::bootstrap(address)?;
         let connected_clients = apply_history(&inner, address, history)?;
+        let db = Self::new(lock, address, owner_identity, inner, durability);
 
-        let meta = {
-            let tx = scopeguard::guard(inner.begin_tx(), |tx| inner.release_tx(&ctx, tx));
-            inner.metadata(&ctx, &tx)?
-        };
-
-        let db = Self::new(inner, durability, address, lock);
-        match meta {
-            None => {
-                db.with_auto_commit(&ctx, |tx| {
-                    let row = StModuleRow {
-                        database_address: address,
-                        owner_identity,
-
-                        program_kind: WASM_MODULE,
-                        program_hash: Hash::ZERO,
-                        program_bytes: [].into(),
-                    };
-                    let pv = row.into();
-                    trace!("[{}] DATABASE: init metadata: {:?}", address, pv);
-                    db.insert(tx, ST_MODULE_ID, pv).map(drop)
-                })?;
+        if let Some(meta) = db.metadata()? {
+            if meta.database_address != address {
+                return Err(anyhow!("mismatched database address: {} != {}", meta.database_address, address).into());
             }
-            Some(meta) => {
-                if meta.database_address != address {
-                    return Err(
-                        anyhow!("mismatched database address: {} != {}", meta.database_address, address).into(),
-                    );
-                }
-                if meta.owner_identity != owner_identity {
-                    return Err(anyhow!(
-                        "mismatched owner identity: {} != {}",
-                        meta.owner_identity,
-                        owner_identity
-                    )
-                    .into());
-                }
+            if meta.owner_identity != owner_identity {
+                return Err(anyhow!(
+                    "mismatched owner identity: {} != {}",
+                    meta.owner_identity,
+                    owner_identity
+                )
+                .into());
             }
         };
 
         Ok((db, connected_clients))
+    }
+
+    pub(crate) fn set_initialized(
+        &self,
+        tx: &mut MutTx,
+        host_type: HostType,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> Result<(), DBError> {
+        log::trace!(
+            "[{}] DATABASE: set initialized owner={} program_hash={}",
+            self.address,
+            self.owner_identity,
+            program_hash
+        );
+
+        // Probably a bug: the database is already initialized.
+        // Ignore if it would be a no-op.
+        if let Some(meta) = self.inner.metadata_mut_tx(tx)? {
+            if program_hash == meta.program_hash
+                && self.address == meta.database_address
+                && self.owner_identity == meta.owner_identity
+            {
+                return Ok(());
+            }
+            return Err(anyhow!("database {} already initialized", self.address).into());
+        }
+        let row = StModuleRow {
+            database_address: self.address,
+            owner_identity: self.owner_identity,
+
+            program_kind: match host_type {
+                HostType::Wasm => WASM_MODULE,
+            },
+            program_hash,
+            program_bytes,
+        };
+        self.insert(tx, ST_MODULE_ID, row.into()).map(drop)
     }
 
     pub fn metadata(&self) -> Result<Option<Metadata>, DBError> {
@@ -215,8 +254,17 @@ impl RelationalDB {
         self.with_read_only(&ctx, |tx| self.inner.program_bytes(&ctx, tx))
     }
 
-    pub fn update_program(&self, tx: &mut MutTx, program_hash: Hash, program_bytes: Box<[u8]>) -> Result<(), DBError> {
-        self.inner.update_program(tx, program_hash, program_bytes)
+    pub fn update_program(
+        &self,
+        tx: &mut MutTx,
+        host_type: HostType,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> Result<(), DBError> {
+        let program_kind = match host_type {
+            HostType::Wasm => WASM_MODULE,
+        };
+        self.inner.update_program(tx, program_kind, program_hash, program_bytes)
     }
 
     /// Replay ("fold") the provided [`spacetimedb_durability::History`] onto
@@ -860,7 +908,7 @@ impl RelationalDB {
 
 #[allow(unused)]
 #[derive(Clone)]
-pub struct LockFile {
+struct LockFile {
     path: Arc<Path>,
     lock: Arc<File>,
 }
@@ -922,6 +970,40 @@ where
     log::info!("[{}] DATABASE: rebuilt state after replay", address);
 
     Ok(replay.into_connected_clients())
+}
+
+/// Initialize local durability with the default parameters.
+///
+/// Also returned is a [`DiskSizeFn`] as required by [`RelationalDB::open`].
+///
+/// Note that this operation can be expensive, as it needs to traverse a suffix
+/// of the commitlog.
+pub async fn local_durability(db_path: &Path) -> io::Result<(Arc<durability::Local<ProductValue>>, DiskSizeFn)> {
+    let commitlog_dir = db_path.join("clog");
+    tokio::fs::create_dir_all(&commitlog_dir).await?;
+    let rt = tokio::runtime::Handle::current();
+    // TODO: Should this better be spawn_blocking?
+    let local = spawn_rayon(move || {
+        durability::Local::open(
+            commitlog_dir,
+            rt,
+            durability::local::Options {
+                commitlog: commitlog::Options {
+                    max_records_in_commit: 1.try_into().unwrap(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+    })
+    .await
+    .map(Arc::new)?;
+    let disk_size_fn = Arc::new({
+        let durability = local.clone();
+        move || durability.size_on_disk()
+    });
+
+    Ok((local, disk_size_fn))
 }
 
 fn default_row_count_fn(address: Address) -> RowCountFn {
@@ -1079,47 +1161,33 @@ pub mod tests_utils {
         }
 
         fn in_memory_internal(root: &Path) -> Result<RelationalDB, DBError> {
-            Self::open_db(root, EmptyHistory::new(), None).map(|(db, _)| db)
+            Self::open_db(root, EmptyHistory::new(), None)
         }
 
         fn durable_internal(
             root: &Path,
             rt: tokio::runtime::Handle,
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
-            let log_dir = root.join("clog");
-            fs::create_dir_all(&log_dir)?;
+            let (local, disk_size_fn) = rt.block_on(local_durability(root))?;
+            let history = local.clone();
+            let durability = local.clone() as Arc<dyn Durability<TxData = Txdata>>;
+            let db = Self::open_db(root, history, Some((durability, disk_size_fn)))?;
 
-            let handle = durability::Local::open(
-                log_dir,
-                rt,
-                durability::local::Options {
-                    commitlog: commitlog::Options {
-                        max_records_in_commit: 1.try_into().unwrap(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-            )
-            .map(Arc::new)?;
-            let disk_size_fn = Arc::new({
-                let handle = handle.clone();
-                move || handle.size_on_disk()
-            });
-            let (db, connected_clients) = Self::open_db(root, handle.clone(), Some((handle.clone(), disk_size_fn)))?;
-            // TODO: Should we be able to handle the non-empty case?
-            // `RelationalDB` cannot exist on its own then.
-            debug_assert!(connected_clients.is_empty());
-
-            Ok((db, handle))
+            Ok((db, local))
         }
 
         fn open_db(
             root: &Path,
             history: impl durability::History<TxData = Txdata>,
             durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
-        ) -> Result<(RelationalDB, ConnectedClients), DBError> {
-            RelationalDB::open(root, Self::ADDRESS, Self::OWNER, history, durability)
-                .map(|(db, clients)| (db.with_row_count(Self::row_count_fn()), clients))
+        ) -> Result<RelationalDB, DBError> {
+            let (db, connected_clients) = RelationalDB::open(root, Self::ADDRESS, Self::OWNER, history, durability)?;
+            debug_assert!(connected_clients.is_empty());
+            let db = db.with_row_count(Self::row_count_fn());
+            db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
+                db.set_initialized(tx, HostType::Wasm, Hash::ZERO, [].into())
+            })?;
+            Ok(db)
         }
 
         // NOTE: This is important to make compiler tests work.

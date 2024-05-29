@@ -5,7 +5,7 @@ use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::DatabaseLogger;
 use crate::db::datastore::traits::Metadata;
 use crate::db::db_metrics::DB_METRICS;
-use crate::db::relational_db::RelationalDB;
+use crate::db::relational_db::{self, RelationalDB};
 use crate::energy::{EnergyMonitor, EnergyQuanta};
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
@@ -14,17 +14,16 @@ use crate::util::spawn_rayon;
 use crate::{db, host};
 use anyhow::{anyhow, bail, ensure, Context as _};
 use async_trait::async_trait;
+use durability::Durability;
 use log::{debug, info, trace, warn};
 use parking_lot::Mutex;
 use serde::Serialize;
-use spacetimedb_commitlog as commitlog;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_durability as durability;
-use spacetimedb_lib::{hash_bytes, ProductValue};
+use spacetimedb_lib::hash_bytes;
 use spacetimedb_sats::hash::Hash;
 use std::fmt;
 use std::future::Future;
-use std::io;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -568,27 +567,6 @@ async fn make_module_host(
     .await
 }
 
-async fn make_local_durability(root_dir: &Path) -> io::Result<durability::Local<ProductValue>> {
-    let commitlog_dir = root_dir.join("clog");
-    tokio::fs::create_dir_all(&commitlog_dir).await?;
-    let rt = tokio::runtime::Handle::current();
-    // TODO: Should this better be spawn_blocking?
-    spawn_rayon(move || {
-        durability::Local::open(
-            commitlog_dir,
-            rt,
-            durability::local::Options {
-                commitlog: commitlog::Options {
-                    max_records_in_commit: 1.try_into().unwrap(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        )
-    })
-    .await
-}
-
 async fn load_program(storage: &ProgramStorage, hash: Hash) -> anyhow::Result<Box<[u8]>> {
     debug!("lookup program {}", hash);
     storage
@@ -704,26 +682,22 @@ impl Host {
         db_path.extend([&*database.address.to_hex(), &*instance_id.to_string()]);
         db_path.push("database");
 
-        let durability = make_local_durability(&db_path).await.map(Arc::new)?;
-        let (db, connected_clients) = RelationalDB::open(
-            &db_path,
-            database.address,
-            database.identity,
-            durability.clone(),
+        let (history, durability) = {
+            let (local, disk_size_fn) = relational_db::local_durability(&db_path).await?;
             match config.storage {
-                db::Storage::Memory => None,
+                db::Storage::Memory => (local, None),
                 db::Storage::Disk => {
-                    let disk_size_fn = Arc::new({
-                        let durability = durability.clone();
-                        move || durability.size_on_disk()
-                    });
-                    Some((durability, disk_size_fn))
+                    let history = local.clone();
+                    let durability = local as Arc<dyn Durability<TxData = relational_db::Txdata>>;
+                    (history, Some((durability, disk_size_fn)))
                 }
-            },
-        )?;
+            }
+        };
+        let (db, connected_clients) =
+            RelationalDB::open(&db_path, database.address, database.identity, history, durability)?;
         let (dbic, module_host, scheduler, scheduler_starter) = match db.program_bytes()? {
             // Launch module with program from existing database.
-            Some(program_bytes) if !program_bytes.is_empty() => {
+            Some(program_bytes) => {
                 launch_module(
                     root_dir,
                     database,
@@ -738,7 +712,7 @@ impl Host {
 
             // Database is empty, load program from external storage and run
             // initialization.
-            None | Some(_) => {
+            None => {
                 let program_hash = database.program_bytes_address;
                 let program_bytes = load_program(&program_storage, program_hash).await?;
                 let res = launch_module(

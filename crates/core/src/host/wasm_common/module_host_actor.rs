@@ -24,7 +24,7 @@ use crate::host::module_host::{
 };
 use crate::host::{ArgsTuple, EntityDef, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, Timestamp};
 use crate::identity::Identity;
-use crate::messages::control_db::Database;
+use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::sql;
 use crate::subscription::module_subscription_actor::WriteConflict;
@@ -356,7 +356,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                         .with_context(|| format!("failed to create table {table_name}"))?;
                 }
 
-                stdb.update_program(tx, program_hash, program_bytes)?;
+                stdb.set_initialized(tx, HostType::Wasm, program_hash, program_bytes)?;
 
                 anyhow::Ok(())
             })
@@ -414,7 +414,9 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let ctx = Lazy::new(|| ExecutionContext::internal(stdb.address()));
 
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        let (tx, _) = stdb.with_auto_rollback(&ctx, tx, |tx| stdb.update_program(tx, program_hash, program_bytes))?;
+        let (tx, _) = stdb.with_auto_rollback(&ctx, tx, |tx| {
+            stdb.update_program(tx, HostType::Wasm, program_hash, program_bytes)
+        })?;
         let res = crate::db::update::update_database(stdb, tx, proposed_tables, self.system_logger())?;
         let tx = match res {
             Ok(tx) => tx,

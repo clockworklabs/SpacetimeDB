@@ -10,7 +10,8 @@ use crate::{
     db::{
         datastore::{
             system_tables::{
-                read_st_module_bytes_col, StModuleFields, StModuleRow, StTableFields, ST_MODULE_ID, ST_TABLES_ID,
+                read_st_module_bytes_col, ModuleKind, StModuleFields, StModuleRow, StTableFields, ST_MODULE_ID,
+                ST_TABLES_ID,
             },
             traits::{
                 DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, RowTypeForTable, Tx, TxData, TxDatastore,
@@ -225,19 +226,7 @@ impl TxDatastore for Locking {
     fn metadata(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Metadata>> {
         self.iter_tx(ctx, tx, ST_MODULE_ID)?
             .next()
-            .map(|row_ref| {
-                let database_address =
-                    read_st_module_bytes_col(row_ref, StModuleFields::DatabaseAddress).map(Address::from_slice)?;
-                let owner_identity = read_st_module_bytes_col(row_ref, StModuleFields::OwnerIdentity)
-                    .map(|bytes| Identity::from_slice(&bytes))?;
-                let program_hash = read_st_module_bytes_col(row_ref, StModuleFields::ProgramHash)
-                    .map(|bytes| Hash::from_slice(&bytes))?;
-                Ok(Metadata {
-                    database_address,
-                    owner_identity,
-                    program_hash,
-                })
-            })
+            .map(metadata_from_row)
             .transpose()
     }
 
@@ -426,7 +415,18 @@ impl MutTxDatastore for Locking {
         tx.table_name(*table_id).is_some()
     }
 
-    fn update_program(&self, tx: &mut Self::MutTx, program_hash: Hash, program_bytes: Box<[u8]>) -> Result<()> {
+    fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>> {
+        let ctx = ExecutionContext::internal(self.database_address);
+        tx.iter(&ctx, ST_MODULE_ID)?.next().map(metadata_from_row).transpose()
+    }
+
+    fn update_program(
+        &self,
+        tx: &mut Self::MutTx,
+        program_kind: ModuleKind,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> Result<()> {
         let ctx = ExecutionContext::internal(self.database_address);
         let old = tx
             .iter(&ctx, ST_MODULE_ID)?
@@ -439,6 +439,7 @@ impl MutTxDatastore for Locking {
             .transpose()?;
         match old {
             Some((ptr, mut row)) => {
+                row.program_kind = program_kind;
                 row.program_hash = program_hash;
                 row.program_bytes = program_bytes;
 
@@ -848,6 +849,21 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
 
         Ok(())
     }
+}
+
+/// Construct a [`Metadata`] from the given [`RowRef`],
+/// reading only the columns necessary to construct the value.
+fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
+    let database_address = read_st_module_bytes_col(row, StModuleFields::DatabaseAddress).map(Address::from_slice)?;
+    let owner_identity =
+        read_st_module_bytes_col(row, StModuleFields::OwnerIdentity).map(|bytes| Identity::from_slice(&bytes))?;
+    let program_hash =
+        read_st_module_bytes_col(row, StModuleFields::ProgramHash).map(|bytes| Hash::from_slice(&bytes))?;
+    Ok(Metadata {
+        database_address,
+        owner_identity,
+        program_hash,
+    })
 }
 
 #[cfg(test)]

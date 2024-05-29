@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::{ops::RangeBounds, sync::Arc};
 
+use super::system_tables::ModuleKind;
 use super::Result;
 use crate::db::datastore::system_tables::ST_TABLES_ID;
 use crate::execution_context::ExecutionContext;
@@ -458,10 +459,21 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         row: ProductValue,
     ) -> Result<ProductValue>;
 
+    /// Obtain the [`Metadata`] for this datastore.
+    ///
+    /// Like [`TxDatastore`], but in a mutable transaction context.
+    fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>>;
+
     /// Update the datastore with the supplied binary program.
     ///
     /// The `program_hash` is the precomputed hash over `program_bytes`.
-    fn update_program(&self, tx: &mut Self::MutTx, program_hash: Hash, program_bytes: Box<[u8]>) -> Result<()>;
+    fn update_program(
+        &self,
+        tx: &mut Self::MutTx,
+        program_kind: ModuleKind,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> Result<()>;
 }
 
 #[cfg(test)]
