@@ -29,3 +29,4 @@ scoped-tls.workspace = true
 [dev-dependencies]
 rand.workspace = true
 bytes.workspace = true
+trybuild.workspace = true

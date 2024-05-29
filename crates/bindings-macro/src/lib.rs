@@ -16,7 +16,6 @@ use module::{derive_deserialize, derive_satstype, derive_serialize};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, TokenStreamExt};
 use spacetimedb_primitives::ColumnAttribute;
-use std::collections::HashMap;
 use std::time::Duration;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
@@ -294,6 +293,24 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
     let func_name = &original_function.sig.ident;
     let vis = &original_function.vis;
 
+    for param in &original_function.sig.generics.params {
+        match param {
+            syn::GenericParam::Lifetime(_) => {}
+            syn::GenericParam::Type(_) => {
+                return Err(syn::Error::new_spanned(
+                    param,
+                    "type parameters are not allowed on reducers",
+                ))
+            }
+            syn::GenericParam::Const(_) => {
+                return Err(syn::Error::new_spanned(
+                    param,
+                    "const parameters are not allowed on reducers",
+                ))
+            }
+        }
+    }
+
     // let errmsg = "reducer should have at least 2 arguments: (identity: Identity, timestamp: u64, ...)";
     // let ([arg1, arg2], args) = validate_reducer_args(&original_function.sig, errmsg)?;
 
@@ -348,6 +365,9 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
 
     let mut extra_impls = TokenStream::new();
 
+    let lt_params = &original_function.sig.generics;
+    let lt_where_clause = &lt_params.where_clause;
+
     if !matches!(extra, ReducerExtra::None) {
         let arg_names = typed_args
             .iter()
@@ -359,30 +379,11 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
             .collect::<Vec<_>>();
 
         extra_impls.extend(quote!(impl #func_name {
-            pub fn schedule(__time: spacetimedb::Timestamp #(, #arg_names: #arg_tys)*) -> spacetimedb::ScheduleToken<#func_name> {
-                spacetimedb::rt::schedule(__time, (#(#arg_names,)*))
+            pub fn schedule #lt_params (__time: spacetimedb::Timestamp #(, #arg_names: #arg_tys)*) -> spacetimedb::ScheduleToken<#func_name> #lt_where_clause {
+                spacetimedb::rt::schedule(__time, #func_name, (#(#arg_names,)*))
             }
         }));
     }
-
-    let generated_function = quote! {
-        fn __reducer(
-            __sender: spacetimedb::sys::Buffer,
-            __caller_address: spacetimedb::sys::Buffer,
-            __timestamp: u64,
-            __args: &[u8]
-        ) -> spacetimedb::sys::Buffer {
-            #(spacetimedb::rt::assert_reducer_arg::<#arg_tys>();)*
-            #(spacetimedb::rt::assert_reducer_ret::<#ret_ty>();)*
-            spacetimedb::rt::invoke_reducer(
-                #func_name,
-                __sender,
-                __caller_address,
-                __timestamp,
-                __args,
-            )
-        }
-    };
 
     let generated_describe_function = quote! {
         #[export_name = #register_describer_symbol]
@@ -397,13 +398,33 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
         };
         #[allow(non_camel_case_types)]
         #vis struct #func_name { _never: ::core::convert::Infallible }
+        const _: () = {
+            fn _assert_args #lt_params () #lt_where_clause {
+                #(let _ = <#arg_tys as spacetimedb::rt::ReducerArg>::_ITEM;)*
+                #(let _ = <#ret_ty as spacetimedb::rt::ReducerResult>::into_result;)*
+            }
+        };
+        impl #func_name {
+            fn invoke(
+                __sender: spacetimedb::sys::Buffer,
+                __caller_address: spacetimedb::sys::Buffer,
+                __timestamp: u64,
+                __args: &[u8]
+            ) -> spacetimedb::sys::Buffer {
+                spacetimedb::rt::invoke_reducer(
+                    #func_name,
+                    __sender,
+                    __caller_address,
+                    __timestamp,
+                    __args,
+                )
+            }
+        }
+        #[automatically_derived]
         impl spacetimedb::rt::ReducerInfo for #func_name {
             const NAME: &'static str = #reducer_name;
             const ARG_NAMES: &'static [Option<&'static str>] = &[#(#opt_arg_names),*];
-            const INVOKE: spacetimedb::rt::ReducerFn = {
-                #generated_function
-                __reducer
-            };
+            const INVOKE: spacetimedb::rt::ReducerFn = #func_name::invoke;
         }
         #extra_impls
         #original_function
@@ -502,6 +523,24 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     let module::SatsTypeData::Product(fields) = &sats_ty.data else {
         return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
     };
+
+    for param in &item.generics.params {
+        match param {
+            syn::GenericParam::Lifetime(_) => {}
+            syn::GenericParam::Type(_) => {
+                return Err(syn::Error::new_spanned(
+                    param,
+                    "type parameters are not allowed on tables",
+                ))
+            }
+            syn::GenericParam::Const(_) => {
+                return Err(syn::Error::new_spanned(
+                    param,
+                    "const parameters are not allowed on tables",
+                ))
+            }
+        }
+    }
 
     let mut columns = Vec::<Column>::new();
 
@@ -743,39 +782,24 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         };
     };
 
-    // Attempt to improve the compile error when a table field doesn't satisfy
-    // the supertraits of `TableType`. We make it so the field span indicates
-    // which fields are offenders, and error reporting stops if the field doesn't
-    // implement `SpacetimeType` (which happens to be the derive macro one is
-    // supposed to use). That is, the user doesn't see errors about `Serialize`,
-    // `Deserialize` not being satisfied, which they wouldn't know what to do
-    // about.
-    let assert_fields_are_spacetimetypes = {
-        let trait_ident = Ident::new("AssertSpacetimeFields", Span::call_site());
-        let field_impls = fields
-            .iter()
-            .map(|field| (field.ty, field.span))
-            .collect::<HashMap<_, _>>()
-            .into_iter()
-            .map(|(ty, span)| quote_spanned!(span=> impl #trait_ident for #ty {}));
-
-        quote_spanned! {item.span()=>
-            trait #trait_ident: spacetimedb::SpacetimeType {}
-            #(#field_impls)*
-        }
-    };
-
     // Output all macro data
     let emission = quote! {
         const _: () = {
             #describe_table_func
         };
 
-        const _: () = {
-            #assert_fields_are_spacetimetypes
-        };
-
         impl #original_struct_ident {
+            // Attempt to improve the compile error when a table field doesn't satisfy
+            // the supertraits of `TableType`. We make it so the field span indicates
+            // which fields are offenders, and error reporting stops if the field doesn't
+            // implement `SpacetimeType` (which happens to be the derive macro one is
+            // supposed to use). That is, the user doesn't see errors about `Serialize`,
+            // `Deserialize` not being satisfied, which they wouldn't know what to do
+            // about.
+            const ___ASSERT_SPACETIMETYPE: () = {
+                #(spacetimedb::rt::assert_spacetimetype::<#field_types>();)*
+            };
+
             #db_insert
             #(#unique_filter_funcs)*
             #(#unique_update_funcs)*
@@ -817,7 +841,9 @@ fn spacetimedb_index(
     let output = quote! {
         #original_struct
 
-        const _: () = spacetimedb::rt::assert_table::<#original_struct_name>();
+        const _: () = {
+            let _ = <#original_struct_name as spacetimedb::TableType>::TABLE_NAME;
+        };
     };
 
     if std::env::var("PROC_MACRO_DEBUG").is_ok() {
