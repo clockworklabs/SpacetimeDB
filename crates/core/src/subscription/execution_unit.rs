@@ -1,7 +1,9 @@
 use super::query::{self, Supported};
 use super::subscription::{IncrementalJoin, SupportedQuery};
+use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
+use crate::estimation;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{
     rel_value_to_table_row_op_binary, rel_value_to_table_row_op_json, DatabaseTableUpdate, DatabaseTableUpdateRelValue,
@@ -341,6 +343,11 @@ impl ExecutionUnit {
             sink.push(row);
         }
         Ok(())
+    }
+
+    /// The estimated number of rows returned by this execution unit.
+    pub fn row_estimate(&self, tx: &TxId) -> u64 {
+        estimation::num_rows(tx, &self.eval_plan)
     }
 }
 

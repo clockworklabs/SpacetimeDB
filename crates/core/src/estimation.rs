@@ -40,13 +40,18 @@ fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
             // Multiplying both estimates together will give us our expectation.
             Query::IndexJoin(join) => {
                 row_est(tx, &join.probe_side.source, &join.probe_side.query)
-                    * index_row_est(tx, src.table_id().unwrap(), &join.index_col.into())
+                    .saturating_mul(
+                        index_row_est(tx, src.table_id().unwrap(), &join.index_col.into())
+                    )
             }
             // Since inner join is our most expensive operation,
             // we maximally overestimate its output cardinality,
             // as though each row from the left joins with each row from the right.
             Query::JoinInner(join) => {
-                row_est(tx, src, input) * row_est(tx, &join.rhs.source, &join.rhs.query)
+                row_est(tx, src, input)
+                    .saturating_mul(
+                        row_est(tx, &join.rhs.source, &join.rhs.query)
+                    )
             }
         },
     }

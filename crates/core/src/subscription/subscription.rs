@@ -23,6 +23,7 @@
 use super::execution_unit::ExecutionUnit;
 use super::query;
 use crate::client::Protocol;
+use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
@@ -573,6 +574,14 @@ impl ExecutionSet {
             }
         }
         Ok(DatabaseUpdateRelValue { tables })
+    }
+
+    /// The estimated number of rows returned by this execution set.
+    pub fn row_estimate(&self, tx: &TxId) -> u64 {
+        self.exec_units
+            .iter()
+            .map(|unit| unit.row_estimate(tx))
+            .fold(0, |acc, est| acc.saturating_add(est))
     }
 }
 
