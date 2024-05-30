@@ -538,28 +538,29 @@ where
                 }
             })?;
 
-            let json = db.with_read_only(&ctx_sql(db), |tx| {
-                results
-                    .into_iter()
-                    .map(|result| {
-                        let rows = result.data;
-                        let schema = result
-                            .head
-                            .fields
-                            .iter()
-                            .map(|x| {
-                                let ty = x.algebraic_type.clone();
-                                let name = translate_col(tx, x.field);
-                                ProductTypeElement::new(ty, name)
-                            })
-                            .collect();
-                        StmtResultJson { schema, rows }
-                    })
-                    .collect::<Vec<_>>()
-            });
+                let json = db.with_read_only(&ctx_sql(db), |tx| {
+                    results
+                        .into_iter()
+                        .map(|result| {
+                            let rows = result.data;
+                            let schema = result
+                                .head
+                                .fields
+                                .iter()
+                                .map(|x| {
+                                    let ty = x.algebraic_type.clone();
+                                    let name = translate_col(tx, x.field);
+                                    ProductTypeElement::new(ty, name)
+                                })
+                                .collect();
+                            StmtResultJson { schema, rows }
+                        })
+                        .collect::<Vec<_>>()
+                });
 
-            Ok(json)
-        })
+                Ok(json)
+            },
+        )
         .await
         .map_err(log_and_500)??;
 

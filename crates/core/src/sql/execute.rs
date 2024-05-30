@@ -28,7 +28,11 @@ pub struct StmtResult {
 // TODO(cloutiertyler): we could do this the swift parsing way in which
 // we always generate a plan, but it may contain errors
 
-pub(crate) fn collect_result(result: &mut Vec<MemTable>, updates: &mut Vec<DatabaseTableUpdate>, r: CodeResult) -> Result<(), DBError> {
+pub(crate) fn collect_result(
+    result: &mut Vec<MemTable>,
+    updates: &mut Vec<DatabaseTableUpdate>,
+    r: CodeResult,
+) -> Result<(), DBError> {
     match r {
         CodeResult::Value(_) => {}
         CodeResult::Table(x) => result.push(x),
@@ -39,16 +43,16 @@ pub(crate) fn collect_result(result: &mut Vec<MemTable>, updates: &mut Vec<Datab
         }
         CodeResult::Halt(err) => return Err(DBError::VmUser(err)),
         CodeResult::Pass(x) => match x {
-            None => {},
+            None => {}
             Some(update) => {
                 updates.push(DatabaseTableUpdate {
                     table_name: update.table_name,
                     table_id: update.table_id,
                     inserts: update.inserts.into(),
-                    deletes: update.deletes.into()
+                    deletes: update.deletes.into(),
                 });
             }
-        }
+        },
     }
 
     Ok(())
@@ -95,13 +99,13 @@ pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthC
                 caller_address: None,
                 function_call: ModuleFunctionCall {
                     reducer: String::new(),
-                    args: ArgsTuple::default()
+                    args: ArgsTuple::default(),
                 },
                 status: EventStatus::Committed(DatabaseUpdate { tables: updates }),
                 energy_quanta_used: EnergyQuanta::ZERO,
                 host_execution_duration: Duration::ZERO,
                 request_id: None,
-                timer: None
+                timer: None,
             };
             match subs.unwrap().commit_and_broadcast_event(None, event, &ctx, tx).unwrap() {
                 Ok(_) => res,
@@ -176,7 +180,6 @@ pub fn translate_col(tx: &Tx, field: FieldName) -> Option<Box<str>> {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::sync::Arc;
     use super::*;
     use crate::db::datastore::system_tables::{ST_TABLES_ID, ST_TABLES_NAME};
     use crate::db::relational_db::tests_utils::TestDB;
@@ -189,8 +192,13 @@ pub(crate) mod tests {
     use spacetimedb_sats::relation::Header;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use spacetimedb_vm::eval::test_helpers::{create_game_data, mem_table, mem_table_without_table_name};
+    use std::sync::Arc;
 
-    pub(crate) fn execute_for_testing(db: &RelationalDB, sql_text: &str, q: Vec<CrudExpr>) -> Result<Vec<MemTable>, DBError> {
+    pub(crate) fn execute_for_testing(
+        db: &RelationalDB,
+        sql_text: &str,
+        q: Vec<CrudExpr>,
+    ) -> Result<Vec<MemTable>, DBError> {
         let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
         execute_sql(db, sql_text, q, AuthCtx::for_testing(), Some(&subs))
     }

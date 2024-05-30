@@ -458,7 +458,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             table_id: table.table_id,
             table_name: table.head.table_name.clone(),
             inserts,
-            deletes: Vec::default()
+            deletes: Vec::default(),
         })))
     }
 
@@ -525,7 +525,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             table_id: table.table_id,
             table_name: table.head.table_name.clone(),
             inserts: Vec::default(),
-            deletes
+            deletes,
         })))
     }
 

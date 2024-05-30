@@ -104,9 +104,9 @@ impl<'a> SlowQueryLogger<'a> {
 mod tests {
     use super::*;
 
-    use crate::sql::execute::tests::execute_for_testing;
     use crate::execution_context::ExecutionContext;
     use crate::sql::compiler::compile_sql;
+    use crate::sql::execute::tests::execute_for_testing;
     use spacetimedb_lib::error::ResultTest;
 
     use crate::config::ReadConfigOption;
