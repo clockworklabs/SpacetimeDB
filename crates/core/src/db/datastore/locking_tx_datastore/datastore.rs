@@ -160,6 +160,8 @@ impl Locking {
             table.rebuild_pointer_map(blob_store);
         }
 
+        commit_state.reset_system_table_schemas(database_address)?;
+
         commit_state.next_tx_offset = tx_offset + 1;
 
         Ok(datastore)

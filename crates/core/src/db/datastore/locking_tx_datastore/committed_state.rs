@@ -239,6 +239,19 @@ impl CommittedState {
             with_label_values(ST_SEQUENCES_ID, ST_SEQUENCES_NAME).inc();
         }
 
+        self.reset_system_table_schemas(database_address)?;
+
+        Ok(())
+    }
+
+    /// Compute the system table schemas from the system tables,
+    /// and store those schemas in the in-memory [`Table`] structures.
+    ///
+    /// Necessary during bootstrap because system tables include autoinc IDs
+    /// for objects like indexes and constraints
+    /// which are computed at insert-time,
+    /// and therefore not included in the hardcoded schemas.
+    pub(super) fn reset_system_table_schemas(&mut self, database_address: Address) -> Result<()> {
         // Re-read the schema with the correct ids...
         let ctx = ExecutionContext::internal(database_address);
         for schema in system_tables() {
