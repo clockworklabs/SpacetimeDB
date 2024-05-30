@@ -53,7 +53,7 @@ pub type Result<T> = std::result::Result<T, DBError>;
 #[derive(Clone)]
 pub struct Locking {
     /// The state of the database up to the point of the last committed transaction.
-    committed_state: Arc<RwLock<CommittedState>>,
+    pub(crate) committed_state: Arc<RwLock<CommittedState>>,
     /// The state of sequence generation in this database.
     sequence_state: Arc<Mutex<SequencesState>>,
     /// The address of this database.
@@ -148,7 +148,7 @@ impl Locking {
                 Some(schema) => Arc::new(schema),
                 None => commit_state.schema_for_table(&ctx, table_id)?,
             };
-            let (table, _) = commit_state.get_table_and_blob_store_or_create(table_id, schema);
+            let (table, blob_store) = commit_state.get_table_and_blob_store_or_create(table_id, schema);
             let fixed_row_size = table.row_size();
             let page_store = table.pages_mut();
             debug_assert!(page_store.is_empty());
@@ -157,6 +157,7 @@ impl Locking {
             // - We trust that the snapshot was consistent when created.
             // - We know the snapshot is uncorrupted because it passed hash verification.
             page_store.set_contents(pages, fixed_row_size);
+            table.rebuild_pointer_map(blob_store);
         }
 
         commit_state.next_tx_offset = tx_offset + 1;
@@ -732,7 +733,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
             .replay_insert(table_id, &schema, &row)
             .with_context(|| {
                 format!(
-                    "Error deleting row {:?} during transaction {:?} playback",
+                    "Error inserting row {:?} during transaction {:?} playback",
                     row, self.committed_state.next_tx_offset
                 )
             })?;

@@ -259,7 +259,13 @@ impl CommittedState {
         table
             .delete_equal_row(blob_store, rel, skip_index_update)
             .map_err(TableError::Insert)?
-            .ok_or_else(|| anyhow!("Delete for non-existent row when replaying transaction"))?;
+            .ok_or_else(|| {
+                anyhow!(
+                    "Delete for non-existent {} ({:?}) row when replaying transaction.",
+                    table.get_schema().table_name,
+                    table_id,
+                )
+            })?;
         Ok(())
     }
 

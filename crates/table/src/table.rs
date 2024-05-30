@@ -576,6 +576,17 @@ impl Table {
         }
         new
     }
+
+    /// Rebuild the [`PointerMap`] by iterating over all the rows in `self` and inserting them.
+    ///
+    /// Called when restoring from a snapshot after installing the pages.
+    pub fn rebuild_pointer_map(&mut self, blob_store: &dyn BlobStore) {
+        let ptrs = self
+            .scan_rows(blob_store)
+            .map(|row_ref| (row_ref.row_hash(), row_ref.pointer()))
+            .collect::<PointerMap>();
+        self.pointer_map = ptrs;
+    }
 }
 
 /// A reference to a single row within a table.

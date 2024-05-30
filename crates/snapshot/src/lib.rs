@@ -290,6 +290,11 @@ pub struct SnapshotRepository {
 }
 
 impl SnapshotRepository {
+    /// Read the [`Address`] of the database this [`SnapshotRepository`] is configured to snapshot.
+    pub fn database_address(&self) -> Address {
+        self.database_address
+    }
+
     /// Capture a snapshot of the state of the database at `tx_offset`,
     /// where `tables` is the committed state of all the tables in the database,
     /// and `blobs` is the committed state's blob store.
@@ -466,11 +471,16 @@ impl SnapshotRepository {
         })
     }
 
-    /// Return the `TxOffset` of the highest-offset complete snapshot in the repository.
+    /// Return the `TxOffset` of the highest-offset complete snapshot in the repository
+    /// lower than or equal to `upper_bound`.
+    ///
+    /// When searching for a snapshot to restore,
+    /// we will pass the [`spacetimedb_durability::Durability::durable_tx_offset`]
+    /// as the `upper_bound` to ensure we don't lose TXes.
     ///
     /// Does not verify that the snapshot of the returned `TxOffset` is valid and uncorrupted,
     /// so a subsequent [`Self::read_snapshot`] may fail.
-    pub fn latest_snapshot(&self) -> anyhow::Result<Option<TxOffset>> {
+    pub fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> anyhow::Result<Option<TxOffset>> {
         Ok(self
             .root
             // Item = Result<DirEntry>
@@ -486,8 +496,18 @@ impl SnapshotRepository {
             // Parse each entry's TxOffset from the file name; ignore unparseable.
             // Item = TxOffset
             .filter_map(|path| TxOffset::from_str_radix(path.file_stem()?.to_str()?, 10).ok())
+            // Ignore `tx_offset`s greater than the current upper bound.
+            .filter(|tx_offset| *tx_offset <= upper_bound)
             // Select the largest TxOffset.
             .max())
+    }
+
+    /// Return the `TxOffset` of the highest-offset complete snapshot in the repository.
+    ///
+    /// Does not verify that the snapshot of the returned `TxOffset` is valid and uncorrupted,
+    /// so a subsequent [`Self::read_snapshot`] may fail.
+    pub fn latest_snapshot(&self) -> anyhow::Result<Option<TxOffset>> {
+        self.latest_snapshot_older_than(TxOffset::MAX)
     }
 }
 
