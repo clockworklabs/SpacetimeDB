@@ -16,6 +16,7 @@
     at least it simplifies workflow for editing and testing C# code itself.
   -->
   <ItemGroup>
+    <ProjectReference Include="../../crates/bindings-csharp/BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" />
     <ProjectReference Include="../../crates/bindings-csharp/Codegen/Codegen.csproj" OutputItemType="Analyzer" />
     <ProjectReference Include="../../crates/bindings-csharp/Runtime/Runtime.csproj" />
   </ItemGroup>
