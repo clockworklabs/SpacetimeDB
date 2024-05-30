@@ -54,6 +54,8 @@ pub struct Table {
     squashed_offset: SquashedOffset,
     /// Store number of rows present in table.
     pub row_count: u64,
+    // Store the bytes stored in blob_store.
+    pub blob_store_bytes: usize,
 }
 
 /// The part of a `Table` concerned only with storing rows.
@@ -104,7 +106,7 @@ impl TableInner {
     }
 }
 
-static_assert_size!(Table, 248);
+static_assert_size!(Table, 256);
 
 /// Various error that can happen on table insertion.
 #[derive(Error, Debug)]
@@ -211,7 +213,7 @@ impl Table {
     ) -> Result<(RowHash, RowPointer), InsertError> {
         // Optimistically insert the `row` before checking for set-semantic collisions,
         // under the assumption that set-semantic collisions are rare.
-        let row_ref = self.insert_internal_allow_duplicate(blob_store, row)?;
+        let (row_ref, blob_bytes) = self.insert_internal_allow_duplicate(blob_store, row)?;
 
         // Ensure row isn't already there.
         // SAFETY: We just inserted `ptr`, so we know it's valid.
@@ -235,6 +237,7 @@ impl Table {
             return Err(InsertError::Duplicate(existing_row));
         }
         self.row_count += 1;
+        self.blob_store_bytes += blob_bytes;
 
         // If the optimistic insertion was correct,
         // i.e. this is not a set-semantic duplicate,
@@ -253,10 +256,10 @@ impl Table {
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
         row: &ProductValue,
-    ) -> Result<RowRef<'a>, InsertError> {
+    ) -> Result<(RowRef<'a>, usize), InsertError> {
         // SAFETY: `self.pages` is known to be specialized for `self.row_layout`,
         // as `self.pages` was constructed from `self.row_layout` in `Table::new`.
-        let ptr = unsafe {
+        let (ptr, blob_bytes) = unsafe {
             write_row_to_pages(
                 &mut self.inner.pages,
                 &self.visitor_prog,
@@ -269,7 +272,7 @@ impl Table {
         // SAFETY: We just inserted `ptr`, so it must be present.
         let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
 
-        Ok(row_ref)
+        Ok((row_ref, blob_bytes))
     }
 
     /// Finds the [`RowPointer`] to the row in `committed_table`
@@ -354,7 +357,11 @@ impl Table {
     /// # Safety
     ///
     /// `ptr` must point to a valid, live row in this table.
-    pub unsafe fn delete_internal_skip_pointer_map(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) {
+    pub unsafe fn delete_internal_skip_pointer_map(
+        &mut self,
+        blob_store: &mut dyn BlobStore,
+        ptr: RowPointer,
+    ) -> usize {
         // Delete the physical row.
         //
         // SAFETY:
@@ -365,7 +372,7 @@ impl Table {
             self.inner
                 .pages
                 .delete_row(&self.visitor_prog, self.row_size(), ptr, blob_store)
-        };
+        }
     }
 
     /// Deletes the row identified by `ptr` from the table.
@@ -385,9 +392,8 @@ impl Table {
 
         // Delete the physical row.
         // SAFETY: `ptr` points to a valid row in this table as `self.is_row_present(row)` holds.
-        unsafe {
-            self.delete_internal_skip_pointer_map(blob_store, ptr);
-        };
+        let blob_store_deleted_bytes = unsafe { self.delete_internal_skip_pointer_map(blob_store, ptr) };
+        self.blob_store_bytes = self.blob_store_bytes.saturating_sub(blob_store_deleted_bytes);
     }
 
     /// Deletes the row identified by `ptr` from the table.
@@ -458,7 +464,7 @@ impl Table {
         // Insert `row` temporarily so `temp_ptr` and `hash` can be used to find the row.
         // This must avoid consulting and inserting to the pointer map,
         // as the row is already present, set-semantically.
-        let temp_row = self.insert_internal_allow_duplicate(blob_store, row)?;
+        let (temp_row, _) = self.insert_internal_allow_duplicate(blob_store, row)?;
         let temp_ptr = temp_row.pointer();
         let hash = temp_row.row_hash();
 
@@ -969,6 +975,7 @@ impl Table {
             pointer_map: PointerMap::default(),
             squashed_offset,
             row_count: 0,
+            blob_store_bytes: 0,
         }
     }
 
@@ -1011,6 +1018,11 @@ impl Table {
         &self.inner.pages
     }
 
+    /// Returns the number of pages storing the physical rows of this table.
+    pub fn num_pages(&self) -> usize {
+        self.inner.pages.len()
+    }
+
     /// Returns the [`StaticBsatnLayout`] for this table,
     pub(crate) fn static_bsatn_layout(&self) -> Option<&StaticBsatnLayout> {
         self.inner.static_bsatn_layout.as_ref()
@@ -1022,6 +1034,7 @@ pub(crate) mod test {
     use super::*;
     use crate::blob_store::HashMapBlobStore;
     use crate::page::tests::hash_unmodified_save_get;
+    use crate::var_len::VarLenGranule;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
     use spacetimedb_sats::bsatn::to_vec;
@@ -1248,5 +1261,28 @@ pub(crate) mod test {
         // We expect this to panic.
         // Miri should not have any issue with this call either.
         table.get_row_ref(&NullBlobStore, ptr).unwrap().to_product_value();
+    }
+
+    #[test]
+    fn test_blob_store_bytes() {
+        let pt = AlgebraicType::String.into();
+        let mut table = table(pt);
+        let blob_store = &mut HashMapBlobStore::default();
+
+        let short_str = std::str::from_utf8(&[98; 6]).unwrap();
+        let (_, row_ref) = table.insert(blob_store, &product![short_str]).unwrap();
+        let short_row_ptr = row_ref.pointer();
+        assert_eq!(table.blob_store_bytes, 0);
+
+        let long_str = std::str::from_utf8(&[98; VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1]).unwrap();
+        let (_, row_ref) = table.insert(blob_store, &product![long_str]).unwrap();
+        let long_row_ptr = row_ref.pointer();
+        assert_eq!(table.blob_store_bytes, VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+
+        table.delete(blob_store, short_row_ptr, |_| ()).unwrap();
+        assert_eq!(table.blob_store_bytes, VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+
+        table.delete(blob_store, long_row_ptr, |_| ()).unwrap();
+        assert_eq!(table.blob_store_bytes, 0);
     }
 }

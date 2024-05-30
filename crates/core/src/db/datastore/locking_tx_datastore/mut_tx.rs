@@ -923,7 +923,7 @@ impl MutTxId {
                 "Table::insert_internal_allow_duplicates returned error of unexpected variant: {:?}",
                 e
             ),
-            Ok(row_ref) => {
+            Ok((row_ref, _)) => {
                 let hash = row_ref.row_hash();
                 let ptr = row_ref.pointer();
 

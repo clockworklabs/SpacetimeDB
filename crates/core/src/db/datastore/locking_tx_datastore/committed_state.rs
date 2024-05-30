@@ -36,7 +36,7 @@ use spacetimedb_sats::{
 };
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
-    indexes::{RowPointer, SquashedOffset},
+    indexes::{RowPointer, SquashedOffset, PAGE_DATA_SIZE},
     table::{IndexScanIter, InsertError, RowRef, Table},
 };
 use std::collections::BTreeMap;
@@ -478,6 +478,12 @@ impl CommittedState {
                 .rdb_num_table_rows
                 .with_label_values(db, &table_id.into(), table_name)
                 .add(num_ins as i64);
+
+            let table_size = (commit_table.num_pages() * PAGE_DATA_SIZE) + commit_table.blob_store_bytes;
+            DB_METRICS
+                .rdb_table_size
+                .with_label_values(db, &table_id.into(), table_name)
+                .set(table_size as i64);
 
             // Add all newly created indexes to the committed state.
             for (cols, mut index) in tx_table.indexes {
