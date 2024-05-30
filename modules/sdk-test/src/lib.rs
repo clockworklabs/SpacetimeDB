@@ -196,7 +196,7 @@ macro_rules! define_tables {
 
     // Define a table.
     (@one $name:ident { $($ops:tt)* } $($(#[$attr:meta])* $field_name:ident $ty:ty),* $(,)*) => {
-        #[spacetimedb(table)]
+        #[spacetimedb(table(public))]
         pub struct $name {
             $($(#[$attr])* pub $field_name : $ty,)*
         }
