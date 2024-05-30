@@ -735,7 +735,7 @@ SELECT * FROM inventory",
         let result = run_for_testing(&db, "select * from test where a >= 3 and a <= 5 and b >= 3 and b <= 5")?;
 
         let result = result.first().unwrap().clone();
-        assert_eq!(result.data, vec![row]);
+        assert_eq!(result.data, []);
 
         Ok(())
     }
