@@ -170,7 +170,6 @@ public static partial class Runtime
 
     public readonly struct Identity(byte[] bytes) : IEquatable<Identity>
     {
-        // Special name recognised by STDB generator.
         private readonly byte[] bytes = bytes;
 
         public bool Equals(Identity other) => bytes.SequenceEqual(other.bytes);
@@ -198,6 +197,7 @@ public static partial class Runtime
 
             public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
                 new AlgebraicType.Product(
+                    // Special name recognised by STDB generator.
                     [new("__identity_bytes", ByteArray.Instance.GetAlgebraicType(registrar))]
                 );
         }
@@ -205,7 +205,6 @@ public static partial class Runtime
 
     public readonly struct Address(byte[] bytes) : IEquatable<Address>
     {
-        // Special name recognised by STDB generator.
         private readonly byte[] bytes = bytes;
         public static readonly Address Zero = new(new byte[16]);
 
@@ -234,6 +233,7 @@ public static partial class Runtime
 
             public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
                 new AlgebraicType.Product(
+                    // Special name recognised by STDB generator.
                     [new("__address_bytes", ByteArray.Instance.GetAlgebraicType(registrar))]
                 );
         }
