@@ -77,7 +77,7 @@ metrics_group!(
         pub module_log_file_size: IntGaugeVec,
 
         #[name = spacetime_table_size_bytes]
-        #[help = "The number of bytes in a table with a precision of page size"]
+        #[help = "The number of bytes in a table with the precision of a page size"]
         #[labels(db: Address, table_id: u32, table_name: str)]
         pub rdb_table_size: IntGaugeVec,
     }

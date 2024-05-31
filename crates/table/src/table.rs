@@ -16,6 +16,7 @@ use super::{
     row_type_visitor::{row_type_visitor, VarLenVisitorProgram},
     static_assert_size,
 };
+use crate::indexes::PAGE_DATA_SIZE;
 use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
 use core::{fmt, ptr};
@@ -54,7 +55,10 @@ pub struct Table {
     squashed_offset: SquashedOffset,
     /// Store number of rows present in table.
     pub row_count: u64,
-    // Store the bytes stored in blob_store.
+    /// Stores the sum total number of bytes that each blob object in the table occupies.
+    ///
+    /// Note that the [`HashMapBlobStore`] does ref-counting and de-duplication,
+    /// but this sum will count an object each time its hash is mentioned, rather than just once.
     pub blob_store_bytes: usize,
 }
 
@@ -582,6 +586,14 @@ impl Table {
         }
         new
     }
+
+    /// Returns the number of bytes occupied by the pages and the blob store.
+    /// Note that result can be overstimated than actual physical size occupied by the table
+    /// because the blob store implemtation can do internal optimisations.
+    /// For more details, refer to the documentation of `self.blob_store_bytes`.
+    pub fn bytes_occupied_overestimate(&self) -> usize {
+        (self.num_pages() * PAGE_DATA_SIZE) + self.blob_store_bytes
+    }
 }
 
 /// A reference to a single row within a table.
@@ -1035,12 +1047,13 @@ pub(crate) mod test {
     use crate::blob_store::HashMapBlobStore;
     use crate::page::tests::hash_unmodified_save_get;
     use crate::var_len::VarLenGranule;
+    use blake3::hash;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
     use spacetimedb_sats::bsatn::to_vec;
     use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableDef};
     use spacetimedb_sats::proptest::generate_typed_row;
-    use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
+    use spacetimedb_sats::{product, product_type, AlgebraicType, ArrayValue};
 
     pub(crate) fn table(ty: ProductType) -> Table {
         let def = TableDef::from_product("", ty);
@@ -1265,24 +1278,31 @@ pub(crate) mod test {
 
     #[test]
     fn test_blob_store_bytes() {
-        let pt = AlgebraicType::String.into();
-        let mut table = table(pt);
+        let pt: ProductType = AlgebraicType::String.into();
+        let mut table1 = table(pt.clone());
         let blob_store = &mut HashMapBlobStore::default();
 
+        // insert short string, blob_store_bytes should be 0
         let short_str = std::str::from_utf8(&[98; 6]).unwrap();
-        let (_, row_ref) = table.insert(blob_store, &product![short_str]).unwrap();
+        let (_, row_ref) = table1.insert(blob_store, &product![short_str]).unwrap();
         let short_row_ptr = row_ref.pointer();
-        assert_eq!(table.blob_store_bytes, 0);
+        assert_eq!(table1.blob_store_bytes, 0);
 
+        // insert long string, blob_store_bytes should be the length of the string
         let long_str = std::str::from_utf8(&[98; VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1]).unwrap();
-        let (_, row_ref) = table.insert(blob_store, &product![long_str]).unwrap();
+        let (_, row_ref) = table1.insert(blob_store, &product![long_str]).unwrap();
         let long_row_ptr = row_ref.pointer();
-        assert_eq!(table.blob_store_bytes, VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        assert_eq!(table1.blob_store_bytes, VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
 
-        table.delete(blob_store, short_row_ptr, |_| ()).unwrap();
-        assert_eq!(table.blob_store_bytes, VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        // insert previous long string in new table, blob_store_bytes should show the length even though HashMapBlobStore deduplicates it
+        let mut table2 = table(pt);
+        table2.insert(blob_store, &product![long_str]).unwrap();
+        assert_eq!(table2.blob_store_bytes, VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
 
-        table.delete(blob_store, long_row_ptr, |_| ()).unwrap();
-        assert_eq!(table.blob_store_bytes, 0);
+        table1.delete(blob_store, short_row_ptr, |_| ()).unwrap();
+        assert_eq!(table1.blob_store_bytes, VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+
+        table1.delete(blob_store, long_row_ptr, |_| ()).unwrap();
+        assert_eq!(table1.blob_store_bytes, 0);
     }
 }
