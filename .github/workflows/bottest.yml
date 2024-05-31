@@ -12,15 +12,15 @@ on:
   issue_comment:
     types: [created]
 
-name: Bot test
+name: Automated bot test
 
 env:
   GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   GH_REPO: ${{ github.repository }}
 
 jobs:
-  benchmark:
-    name: run 30-bot bot test
+  autobottest:
+    name: run bot test (30 bots)
     runs-on: bots-runner
     permissions: write-all
     # filter for a comment containing 'benchmarks please'
@@ -65,10 +65,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ env.PR_REF || github.ref }}
-          # if we're on master we want to know what the sha of HEAD~1 is so
-          # that we can compare results from it to HEAD (in the "Fetch markdown
-          # summary PR" step). otherwise, we can use a fully shallow checkout
-          fetch-depth: ${{ env.PR_NUMBER && 1 || 2 }}
+          fetch-depth: 1
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
@@ -100,7 +97,7 @@ jobs:
           cp ~/BitCraftBots/results.zip bottest-results/$RESULTS_NAME.zip
 
       - name: Upload bot test results to DO spaces
-        uses: shallwefootball/s3-upload-action@master
+        uses: clockworklabs/s3-upload-action@master
         with:
           aws_key_id: ${{ secrets.AWS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
