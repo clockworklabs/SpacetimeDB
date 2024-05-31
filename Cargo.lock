@@ -4152,8 +4152,8 @@ dependencies = [
 name = "spacetimedb"
 version = "0.9.3"
 dependencies = [
- "bytes",
  "derive_more",
+ "getrandom",
  "log",
  "rand 0.8.5",
  "scoped-tls",
@@ -4216,7 +4216,6 @@ dependencies = [
 name = "spacetimedb-bindings-sys"
 version = "0.9.3"
 dependencies = [
- "getrandom",
  "spacetimedb-primitives",
 ]
 
@@ -4507,6 +4506,7 @@ dependencies = [
 name = "spacetimedb-quickstart-module"
 version = "0.1.0"
 dependencies = [
+ "rand 0.8.5",
  "spacetimedb",
 ]
 
