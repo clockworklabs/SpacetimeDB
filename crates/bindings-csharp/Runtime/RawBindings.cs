@@ -11,7 +11,7 @@ public static partial class RawBindings
     // `LibraryImport` directly.
     const string StdbNamespace =
 #if EXPERIMENTAL_WASM_AOT
-        "spacetime_7.0"
+        "spacetime_8.0"
 #else
         "bindings"
 #endif
