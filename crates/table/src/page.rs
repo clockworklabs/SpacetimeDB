@@ -2366,4 +2366,56 @@ pub(crate) mod tests {
         assert!(orig_iter.next().is_none());
         assert!(de_iter.next().is_none());
     }
+
+    #[test]
+    fn serde_round_trip_whole_page() {
+        let mut page = Page::new(u64_row_size());
+
+        let hash_pre_ins = hash_unmodified_save_get(&mut page);
+        let ser_pre_ins = bsatn::to_vec(&page).unwrap();
+        let de_pre_ins = bsatn::from_slice::<Box<Page>>(&ser_pre_ins).unwrap();
+        assert_eq!(de_pre_ins.content_hash(), hash_pre_ins);
+        assert_eq!(de_pre_ins.header.fixed.num_rows, 0);
+        assert!(de_pre_ins.header.fixed.present_rows == page.header.fixed.present_rows);
+
+        let offsets = (0..64)
+            .map(|val| insert_u64(&mut page, val))
+            .collect::<Vec<PageOffset>>();
+
+        let hash_ins = hash_unmodified_save_get(&mut page);
+
+        let ser_ins = bsatn::to_vec(&page).unwrap();
+        let de_ins = bsatn::from_slice::<Box<Page>>(&ser_ins).unwrap();
+        assert_eq!(de_ins.content_hash(), hash_ins);
+        assert_eq!(de_ins.header.fixed.num_rows, 64);
+        assert!(de_ins.header.fixed.present_rows == page.header.fixed.present_rows);
+        assert_eq!(
+            de_ins.iter_fixed_len(u64_row_size()).collect::<Vec<PageOffset>>(),
+            offsets
+        );
+
+        let offsets = offsets
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, offset)| {
+                if i % 2 == 0 {
+                    unsafe { page.delete_row(offset, u64_row_size(), u64_var_len_visitor(), &mut NullBlobStore) };
+                    None
+                } else {
+                    Some(offset)
+                }
+            })
+            .collect::<Vec<PageOffset>>();
+
+        let hash_del = hash_unmodified_save_get(&mut page);
+        let ser_del = bsatn::to_vec(&page).unwrap();
+        let de_del = bsatn::from_slice::<Box<Page>>(&ser_del).unwrap();
+        assert_eq!(de_del.content_hash(), hash_del);
+        assert_eq!(de_del.header.fixed.num_rows, 32);
+        assert!(de_del.header.fixed.present_rows == page.header.fixed.present_rows);
+        assert_eq!(
+            de_del.iter_fixed_len(u64_row_size()).collect::<Vec<PageOffset>>(),
+            offsets
+        );
+    }
 }

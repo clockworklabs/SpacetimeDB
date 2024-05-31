@@ -166,6 +166,12 @@ mod internal_unsafe {
     }
 }
 
+impl<B: BitBlock> std::cmp::PartialEq for FixedBitSet<B> {
+    fn eq(&self, other: &Self) -> bool {
+        self.storage() == other.storage()
+    }
+}
+
 impl<B: BitBlock> FixedBitSet<B> {
     /// Converts `idx` to its block index and the index within the block.
     const fn idx_to_pos(idx: usize) -> (usize, usize) {
@@ -380,5 +386,20 @@ pub(crate) mod test {
             prop_assert_eq!(collected, set.iter_set_from(0).collect::<Vec<_>>());
         }
 
+        #[test]
+        fn serde_round_trip(choices in between(0, MAX_NBITS)) {
+            let nbits = choices.get_ref().len();
+
+            // Set all the bits chosen.
+            let mut set = FixedBitSet::<DefaultBitBlock>::new(nbits);
+            for idx in &choices {
+                set.set(idx, true);
+            }
+
+            let ser = spacetimedb_lib::bsatn::to_vec(&set)?;
+            let de = spacetimedb_lib::bsatn::from_slice::<FixedBitSet<DefaultBitBlock>>(&ser)?;
+
+            assert!(set == de);
+        }
     }
 }
