@@ -747,6 +747,12 @@ pub struct PublishDatabaseQueryParams {
     client_address: Option<AddressForUrl>,
 }
 
+impl PublishDatabaseQueryParams {
+    pub fn name_or_address(&self) -> Option<&NameOrAddress> {
+        self.name_or_address.as_ref()
+    }
+}
+
 pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     State(ctx): State<S>,
     Path(PublishDatabaseParams {}): Path<PublishDatabaseParams>,

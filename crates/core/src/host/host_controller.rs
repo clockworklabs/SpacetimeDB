@@ -12,9 +12,9 @@ use crate::module_host_context::ModuleCreationContext;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::spawn_rayon;
 use crate::{db, host};
-use anyhow::{anyhow, bail, ensure, Context as _};
+use anyhow::{anyhow, bail, ensure, Context};
 use async_trait::async_trait;
-use durability::Durability;
+use durability::EmptyHistory;
 use log::{debug, info, trace, warn};
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -33,19 +33,6 @@ use tokio::task::AbortHandle;
 // TODO:
 //
 // - [db::Config] should be per-[Database]
-// - init / update to take program bytes, and store them in the db
-// - get / spawn to load program from db
-//
-// - Do we need to distinguish between init and update?
-//
-//   `custom_bootstrap` suggests we don't.
-//
-// - Ordering:
-//
-//   The fencing token could be made obsolete if the expected previous
-//   program hash is known. That, however, is not so easy in distributed
-//   spacetimedb, because a disconnect will make a node miss history events.
-//
 
 /// A shared mutable cell containing a module host and associated database.
 type HostCell = Arc<AsyncRwLock<Option<Host>>>;
@@ -208,8 +195,19 @@ impl HostController {
     /// Get a [`ModuleHost`] managed by this controller, or launch it from
     /// persistent state.
     ///
-    /// An error is returned if the host's program does not match the hash given
-    /// in [`Database`].
+    /// If the host is not running, it is started according to the default
+    /// [`db::Config`] set for this controller.
+    ///   The underlying database is restored from existing data at its
+    /// canonical filesystem location _iff_ the default config mandates disk
+    /// storage.
+    ///
+    /// The module will be instantiated from the program bytes stored in an
+    /// existing database.
+    ///   If the database is empty, the `program_bytes_address` of the given
+    /// [`Database`] will be used to load the program from the controller's
+    /// [`ProgramStorage`]. The initialization procedure (schema creation,
+    /// `__init__` reducer) will be invoked on the found module, and the
+    /// database will be marked as initialized.
     ///
     /// See also: [`Self::get_module_host`]
     #[tracing::instrument(skip_all)]
@@ -262,9 +260,6 @@ impl HostController {
     /// Run a computation on the [`RelationalDB`] of a [`ModuleHost`] managed by
     /// this controller, launching the host if necessary.
     ///
-    /// An error is returned if the host's program does not match the hash given
-    /// in [`Database`].
-    ///
     /// If the computation `F` panics, the host is removed from this controller,
     /// releasing its resources.
     #[tracing::instrument(skip_all)]
@@ -289,7 +284,9 @@ impl HostController {
     /// Update the [`ModuleHost`] identified by `instance_id` to the given
     /// program.
     ///
-    /// The host may not be running, in which case it is spawned.
+    /// The host may not be running, in which case it is spawned (see
+    /// [`Self::get_or_launch_module_host`] for details on what this entails).
+    ///
     /// If the host was running, and the update fails, the previous version of
     /// the host keeps running.
     #[tracing::instrument(skip_all)]
@@ -299,18 +296,20 @@ impl HostController {
         instance_id: u64,
         program_bytes: Box<[u8]>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        trace!("update module host {}/{}", database.address, instance_id);
-
-        let program_hash = database.program_bytes_address;
-        ensure!(
-            hash_bytes(&program_bytes) == program_hash,
-            "supplied program does not match hash"
+        let program_hash = hash_bytes(&program_bytes);
+        trace!(
+            "update module host {}/{}: genesis={} update-to={}",
+            database.address,
+            instance_id,
+            database.program_bytes_address,
+            program_hash
         );
 
         let mut guard = self.acquire_write_lock(instance_id).await;
         let (update_result, maybe_updated_host) = match guard.take() {
             // If we don't have a running `Host`, spawn one.
             None => {
+                trace!("host not running, try_init");
                 let host = self.try_init_host(database, instance_id).await?;
                 let module = host.module.borrow().clone();
                 let update_result = update_module(host.db(), &module, (program_hash, program_bytes)).await?;
@@ -339,12 +338,17 @@ impl HostController {
                         );
                         ensure!(
                             owner_identity == database.identity,
-                            "cannot (yet) change owner identity when updating module host"
+                            "cannot change owner identity when updating module host"
                         );
                     }
                 }
+                trace!("host found, updating");
                 let update_result = host
-                    .update_module(database.host_type, program_hash, self.unregister_fn(instance_id))
+                    .update_module(
+                        database.host_type,
+                        (program_hash, program_bytes),
+                        self.unregister_fn(instance_id),
+                    )
                     .await?;
 
                 (update_result, Some(host))
@@ -355,10 +359,11 @@ impl HostController {
         Ok(update_result)
     }
 
-    // Accomodates control db bootstrap, which we hope to unify with regular
-    // bootstrap in the future.
+    // Accomodates control db bootstrap.
+    // Lives here to avoid letting the [RelationalDB] escape the controller.
+    // TODO: Figure out a non-bracket variant of `using_database`.
     #[doc(hidden)]
-    pub async fn custom_bootstrap<F, G, T>(
+    pub async fn custom_bootstrap<F, T>(
         &self,
         expected_hash: Option<Hash>,
         database: Database,
@@ -381,49 +386,41 @@ impl HostController {
         };
         let module = host.module.clone();
 
-        match (stored_program_hash(host.db())?, expected_hash) {
-            (Some(stored_hash), _) if stored_hash == program_hash => {
-                info!("[{}] database up to date with program `{}`", db_addr, program_hash);
-                Ok(())
-            }
-            (Some(stored_hash), Some(expected_hash)) if stored_hash != expected_hash => Err(anyhow!(
-                "[{}] expected program `{}` found `{}`",
-                db_addr,
-                expected_hash,
-                stored_hash
-            )),
-            (Some(stored_hash), None) => Err(anyhow!(
-                "[{}] expected uninitialized database found program `{}`",
-                db_addr,
-                stored_hash
-            )),
-            (None, Some(expected_hash)) => {
-                Err(anyhow!("[{}] expected program `{}` found none", db_addr, expected_hash))
-            }
-
-            (None, None) => {
-                info!("[{}] initializing database with program `{}`", db_addr, program_hash);
-                // TODO: nonsensical
-                Ok(())
-            }
-
-            (Some(stored_hash), Some(_)) => {
-                info!(
-                    "[{}] updating database from `{}` to `{}`",
-                    db_addr, stored_hash, program_hash
+        // The program is now either:
+        //
+        // - the desired one from [Database], in which case we do nothing
+        // - `Some` expected hash, in which case we update to the desired one
+        // - `None` expected hash, in which case we also update
+        let stored_hash = stored_program_hash(host.db())?
+            .with_context(|| format!("[{}] database improperly initialized", db_addr))?;
+        if stored_hash == program_hash {
+            info!("[{}] database up-to-date with {}", db_addr, program_hash);
+            *guard = Some(host);
+        } else {
+            if let Some(expected_hash) = expected_hash {
+                ensure!(
+                    expected_hash == stored_hash,
+                    "[{}] expected program {} found {}",
+                    db_addr,
+                    expected_hash,
+                    stored_hash
                 );
-                let program_bytes = load_program(&self.program_storage, program_hash).await?;
-                let update_result = host
-                    .module
-                    .borrow()
-                    .update_database(program_hash, program_bytes.as_ref().into())
-                    .await?;
-                if update_result.is_ok() {
-                    *guard = Some(host);
-                }
-                update_result.map(drop).map_err(Into::into)
             }
-        }?;
+            info!(
+                "[{}] updating database from `{}` to `{}`",
+                db_addr, stored_hash, program_hash
+            );
+            let program_bytes = load_program(&self.program_storage, program_hash).await?;
+            let update_result = host
+                .module
+                .borrow()
+                .update_database(program_hash, program_bytes.as_ref().into())
+                .await?;
+            if update_result.is_ok() {
+                *guard = Some(host);
+            }
+            update_result.map(drop)?;
+        }
 
         let on_panic = self.unregister_fn(instance_id);
         tokio::task::spawn_blocking(move || post_boot(&module.borrow().dbic().relational_db))
@@ -658,8 +655,6 @@ struct Host {
     /// as the `dbic` is live. The task is aborted when [`Host`] is dropped.
     metrics_task: AbortHandle,
 
-    /// [`ProgramStorage`] to use for [`Host::update_module`].
-    program_storage: ProgramStorage,
     /// [`EnergyMonitor`] to use for [`Host::update_module`].
     energy_monitor: Arc<dyn EnergyMonitor>,
 }
@@ -669,6 +664,7 @@ impl Host {
     ///
     /// Note that this does **not** run module initialization routines, but may
     /// create on-disk artifacts if the host / database did not exist.
+    #[tracing::instrument(skip_all)]
     async fn try_init(
         root_dir: &Path,
         config: db::Config,
@@ -682,19 +678,22 @@ impl Host {
         db_path.extend([&*database.address.to_hex(), &*instance_id.to_string()]);
         db_path.push("database");
 
-        let (history, durability) = {
-            let (local, disk_size_fn) = relational_db::local_durability(&db_path).await?;
-            match config.storage {
-                db::Storage::Memory => (local, None),
-                db::Storage::Disk => {
-                    let history = local.clone();
-                    let durability = local as Arc<dyn Durability<TxData = relational_db::Txdata>>;
-                    (history, Some((durability, disk_size_fn)))
-                }
+        let (db, connected_clients) = match config.storage {
+            db::Storage::Memory => {
+                RelationalDB::open(&db_path, database.address, database.identity, EmptyHistory::new(), None)?
+            }
+            db::Storage::Disk => {
+                let (durability, disk_size_fn) = relational_db::local_durability(&db_path).await?;
+                let history = durability.clone();
+                RelationalDB::open(
+                    &db_path,
+                    database.address,
+                    database.identity,
+                    history,
+                    Some((durability, disk_size_fn)),
+                )?
             }
         };
-        let (db, connected_clients) =
-            RelationalDB::open(&db_path, database.address, database.identity, history, durability)?;
         let (dbic, module_host, scheduler, scheduler_starter) = match db.program_bytes()? {
             // Launch module with program from existing database.
             Some(program_bytes) => {
@@ -736,6 +735,7 @@ impl Host {
             }
         };
 
+        // Disconnect dangling clients.
         for (identity, address) in connected_clients {
             module_host
                 .call_identity_connected_disconnected(identity, address, false)
@@ -757,7 +757,6 @@ impl Host {
             scheduler,
             metrics_task,
 
-            program_storage,
             energy_monitor,
         })
     }
@@ -777,12 +776,11 @@ impl Host {
     async fn update_module(
         &mut self,
         host_type: HostType,
-        program_hash: Hash,
+        (program_hash, program_bytes): (Hash, Box<[u8]>),
         on_panic: impl Fn() + Send + Sync + 'static,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let dbic = &self.dbic;
         let (scheduler, scheduler_starter) = self.scheduler.new_with_same_db();
-        let program_bytes = load_program(&self.program_storage, program_hash).await?;
         let module = make_module_host(
             host_type,
             ModuleCreationContext {

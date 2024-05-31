@@ -206,7 +206,15 @@ impl RelationalDB {
         Ok((db, connected_clients))
     }
 
-    pub(crate) fn set_initialized(
+    /// Mark the database as initialized with the given module parameters.
+    ///
+    /// Records the database's address, owner and module parameters in the
+    /// system tables. The transactional context is supplied by the caller.
+    ///
+    /// It is an error to call this method on an alread-initialized database.
+    ///
+    /// See [`Self::open`] for further information.
+    pub fn set_initialized(
         &self,
         tx: &mut MutTx,
         host_type: HostType,
