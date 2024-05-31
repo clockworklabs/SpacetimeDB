@@ -479,6 +479,12 @@ impl CommittedState {
                 .with_label_values(db, &table_id.into(), table_name)
                 .add(num_ins as i64);
 
+            let table_size = commit_table.bytes_occupied_overestimate();
+            DB_METRICS
+                .rdb_table_size
+                .with_label_values(db, &table_id.into(), table_name)
+                .set(table_size as i64);
+
             // Add all newly created indexes to the committed state.
             for (cols, mut index) in tx_table.indexes {
                 if !commit_table.indexes.contains_key(&cols) {

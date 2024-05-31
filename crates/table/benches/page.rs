@@ -739,7 +739,7 @@ fn extract_product_value_from_page(c: &mut Criterion) {
     for (name, ty, value, _null_visitor, _aligned_offsets_visitor) in product_value_test_cases() {
         let mut group = c.benchmark_group("extract_product_value");
         let (ty, mut page, visitor) = ty_page_visitor(ty);
-        let offset = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
+        let (offset, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
         group.bench_function(name, |b| time_extract_one(b, &mut page, offset, &ty));
     }
 }
@@ -753,8 +753,8 @@ fn eq_in_page_same(c: &mut Criterion) {
     for (name, ty, value, _null_visitor, _aligned_offsets_visitor) in product_value_test_cases() {
         let (ty, mut page, visitor) = ty_page_visitor(ty);
 
-        let offset_0 = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
-        let offset_1 = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
+        let (offset_0, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
+        let (offset_1, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
 
         group.bench_function(name, |b| {
             b.iter(|| {
@@ -781,7 +781,7 @@ fn hash_in_page(c: &mut Criterion) {
     for (name, ty, value, _null_visitor, _aligned_offsets_visitor) in product_value_test_cases() {
         let (ty, mut page, visitor) = ty_page_visitor(ty);
 
-        let offset = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
+        let (offset, _) = unsafe { write_row_to_page(&mut page, &mut NullBlobStore, &visitor, &ty, &value) }.unwrap();
         group.bench_function(name, |b| {
             let mut hasher = RowHash::hasher_builder().build_hasher();
             b.iter(|| {
