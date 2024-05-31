@@ -374,7 +374,10 @@ namespace SpacetimeDB
 
 		public static IEnumerable<PkMultiIdentity> FilterById(uint value)
 		{
-			return new[] { FindById(value) };
+			if (FindById(value) is {} found)
+			{
+				yield return found;
+			}
 		}
 
 		public static PkMultiIdentity FindByOther(uint value)
@@ -385,7 +388,10 @@ namespace SpacetimeDB
 
 		public static IEnumerable<PkMultiIdentity> FilterByOther(uint value)
 		{
-			return new[] { FindByOther(value) };
+			if (FindByOther(value) is {} found)
+			{
+				yield return found;
+			}
 		}
 
 		private static object GetPrimaryKeyValue(object row) => ((PkMultiIdentity)row).Id;
@@ -1058,7 +1064,10 @@ namespace SpacetimeDB
 
 		public static IEnumerable<TestE> FilterById(ulong value)
 		{
-			return new[] { FindById(value) };
+			if (FindById(value) is {} found)
+			{
+				yield return found;
+			}
 		}
 
 		public static IEnumerable<TestE> FilterByName(string value)
