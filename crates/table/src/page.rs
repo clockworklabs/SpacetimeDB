@@ -39,7 +39,7 @@ use super::{
     layout::MIN_ROW_SIZE,
     var_len::{is_granule_offset_aligned, VarLenGranule, VarLenGranuleHeader, VarLenMembers, VarLenRef},
 };
-use crate::{fixed_bit_set::IterSet, static_assert_size};
+use crate::{fixed_bit_set::IterSet, static_assert_size, table::BlobNumBytes};
 use core::{mem, ops::ControlFlow, ptr};
 use thiserror::Error;
 
@@ -662,7 +662,7 @@ impl<'page> VarView<'page> {
         blob_store: &mut dyn BlobStore,
         var_len_obj: &impl AsRef<[u8]>,
         vlr: VarLenRef,
-    ) -> usize {
+    ) -> BlobNumBytes {
         let hash = blob_store.insert_blob(var_len_obj.as_ref());
 
         let granule = vlr.first_granule;
@@ -671,7 +671,7 @@ impl<'page> VarView<'page> {
         // 2. The null granule is trivially initialized.
         // 3. The caller promised that `granule` is safe to overwrite.
         unsafe { self.write_chunk_to_granule(&hash.data, hash.data.len(), granule, PageOffset::VAR_LEN_NULL) };
-        var_len_obj.as_ref().len()
+        var_len_obj.as_ref().len().into()
     }
 
     /// Write the `chunk` (data) to the [`VarLenGranule`] pointed to by `granule`,
@@ -812,7 +812,7 @@ impl<'page> VarView<'page> {
     /// SAFETY: `offset` must point to a valid [`VarLenGranule`] or be NULL.
     #[cold]
     #[inline(never)]
-    unsafe fn free_blob(&self, offset: PageOffset, blob_store: &mut dyn BlobStore) -> usize {
+    unsafe fn free_blob(&self, offset: PageOffset, blob_store: &mut dyn BlobStore) -> BlobNumBytes {
         assert!(!offset.is_var_len_null());
 
         // SAFETY: Per caller contract + the assertion above,
@@ -828,7 +828,8 @@ impl<'page> VarView<'page> {
         let blob_store_deleted_bytes = blob_store
             .retrieve_blob(&hash)
             .expect("failed to free var-len blob")
-            .len();
+            .len()
+            .into();
         blob_store.free_blob(&hash).expect("failed to free var-len blob");
         blob_store_deleted_bytes
     }
@@ -869,8 +870,8 @@ impl<'page> VarView<'page> {
     /// Frees an entire var-len linked-list object.
     ///
     /// SAFETY: `var_len_obj.first_granule` must point to a valid [`VarLenGranule`] or be NULL.
-    unsafe fn free_object(&mut self, var_len_obj: VarLenRef, blob_store: &mut dyn BlobStore) -> usize {
-        let mut blob_store_deleted_bytes = 0;
+    unsafe fn free_object(&mut self, var_len_obj: VarLenRef, blob_store: &mut dyn BlobStore) -> BlobNumBytes {
+        let mut blob_store_deleted_bytes = BlobNumBytes::default();
         // For large blob objects, extract the hash and tell `blob_store` to discard it.
         if var_len_obj.is_large_blob() {
             // SAFETY: `var_len_obj.first_granule` was promised to
@@ -1363,7 +1364,7 @@ impl Page {
         fixed_row_size: Size,
         var_len_visitor: &impl VarLenMembers,
         blob_store: &mut dyn BlobStore,
-    ) -> usize {
+    ) -> BlobNumBytes {
         self.header.fixed.debug_check_fixed_row_size(fixed_row_size);
 
         // We're modifying the page, so clear the unmodified hash.
@@ -1371,7 +1372,7 @@ impl Page {
 
         let (mut fixed, mut var) = self.split_fixed_var_mut();
 
-        let mut blob_store_deleted_bytes = 0;
+        let mut blob_store_deleted_bytes = BlobNumBytes::default();
 
         // Visit the var-len members of the fixed row and free them.
         let row = fixed.get_row(fixed_row, fixed_row_size);

@@ -3,6 +3,7 @@
 use super::blob_store::BlobStore;
 use super::indexes::{Bytes, PageIndex, PageOffset, RowPointer, Size};
 use super::page::Page;
+use super::table::BlobNumBytes;
 use super::var_len::VarLenMembers;
 use core::ops::{ControlFlow, Deref, Index, IndexMut};
 use thiserror::Error;
@@ -215,7 +216,7 @@ impl Pages {
         fixed_row_size: Size,
         row_ptr: RowPointer,
         blob_store: &mut dyn BlobStore,
-    ) -> usize {
+    ) -> BlobNumBytes {
         let page = &mut self[row_ptr.page_index()];
         let full_before = page.is_full(fixed_row_size);
         // SAFETY:

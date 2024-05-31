@@ -36,7 +36,7 @@ use spacetimedb_sats::{
 };
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
-    indexes::{RowPointer, SquashedOffset, PAGE_DATA_SIZE},
+    indexes::{RowPointer, SquashedOffset},
     table::{IndexScanIter, InsertError, RowRef, Table},
 };
 use std::collections::BTreeMap;
@@ -479,7 +479,7 @@ impl CommittedState {
                 .with_label_values(db, &table_id.into(), table_name)
                 .add(num_ins as i64);
 
-            let table_size = (commit_table.num_pages() * PAGE_DATA_SIZE) + commit_table.blob_store_bytes;
+            let table_size = commit_table.bytes_occupied_overestimate();
             DB_METRICS
                 .rdb_table_size
                 .with_label_values(db, &table_id.into(), table_name)

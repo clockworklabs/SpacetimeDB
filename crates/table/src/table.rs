@@ -20,6 +20,7 @@ use crate::indexes::PAGE_DATA_SIZE;
 use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
 use core::{fmt, ptr};
+use derive_more::{Add, AddAssign, From, Sub};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_primitives::{ColId, ColList, IndexId};
 use spacetimedb_sats::{
@@ -33,6 +34,9 @@ use spacetimedb_sats::{
 };
 use std::sync::Arc;
 use thiserror::Error;
+
+#[derive(Copy, Clone, Default, From, Add, Sub, AddAssign)]
+pub struct BlobNumBytes(usize);
 
 /// A database table containing the row schema, the rows, and indices.
 ///
@@ -59,7 +63,7 @@ pub struct Table {
     ///
     /// Note that the [`HashMapBlobStore`] does ref-counting and de-duplication,
     /// but this sum will count an object each time its hash is mentioned, rather than just once.
-    pub blob_store_bytes: usize,
+    blob_store_bytes: BlobNumBytes,
 }
 
 /// The part of a `Table` concerned only with storing rows.
@@ -260,7 +264,7 @@ impl Table {
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
         row: &ProductValue,
-    ) -> Result<(RowRef<'a>, usize), InsertError> {
+    ) -> Result<(RowRef<'a>, BlobNumBytes), InsertError> {
         // SAFETY: `self.pages` is known to be specialized for `self.row_layout`,
         // as `self.pages` was constructed from `self.row_layout` in `Table::new`.
         let (ptr, blob_bytes) = unsafe {
@@ -365,7 +369,7 @@ impl Table {
         &mut self,
         blob_store: &mut dyn BlobStore,
         ptr: RowPointer,
-    ) -> usize {
+    ) -> BlobNumBytes {
         // Delete the physical row.
         //
         // SAFETY:
@@ -397,7 +401,8 @@ impl Table {
         // Delete the physical row.
         // SAFETY: `ptr` points to a valid row in this table as `self.is_row_present(row)` holds.
         let blob_store_deleted_bytes = unsafe { self.delete_internal_skip_pointer_map(blob_store, ptr) };
-        self.blob_store_bytes = self.blob_store_bytes.saturating_sub(blob_store_deleted_bytes);
+        // just deleted bytes (blob_store_deleted_bytes) can not be greater than total bytes (self.blob_store_bytes)
+        self.blob_store_bytes = self.blob_store_bytes - blob_store_deleted_bytes;
     }
 
     /// Deletes the row identified by `ptr` from the table.
@@ -592,7 +597,7 @@ impl Table {
     /// because the blob store implemtation can do internal optimisations.
     /// For more details, refer to the documentation of `self.blob_store_bytes`.
     pub fn bytes_occupied_overestimate(&self) -> usize {
-        (self.num_pages() * PAGE_DATA_SIZE) + self.blob_store_bytes
+        (self.num_pages() * PAGE_DATA_SIZE) + (self.blob_store_bytes.0)
     }
 }
 
@@ -987,7 +992,7 @@ impl Table {
             pointer_map: PointerMap::default(),
             squashed_offset,
             row_count: 0,
-            blob_store_bytes: 0,
+            blob_store_bytes: BlobNumBytes::default(),
         }
     }
 
@@ -1047,13 +1052,12 @@ pub(crate) mod test {
     use crate::blob_store::HashMapBlobStore;
     use crate::page::tests::hash_unmodified_save_get;
     use crate::var_len::VarLenGranule;
-    use blake3::hash;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
     use spacetimedb_sats::bsatn::to_vec;
     use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableDef};
     use spacetimedb_sats::proptest::generate_typed_row;
-    use spacetimedb_sats::{product, product_type, AlgebraicType, ArrayValue};
+    use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
 
     pub(crate) fn table(ty: ProductType) -> Table {
         let def = TableDef::from_product("", ty);
@@ -1286,23 +1290,23 @@ pub(crate) mod test {
         let short_str = std::str::from_utf8(&[98; 6]).unwrap();
         let (_, row_ref) = table1.insert(blob_store, &product![short_str]).unwrap();
         let short_row_ptr = row_ref.pointer();
-        assert_eq!(table1.blob_store_bytes, 0);
+        assert_eq!(table1.blob_store_bytes.0, 0);
 
         // insert long string, blob_store_bytes should be the length of the string
         let long_str = std::str::from_utf8(&[98; VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1]).unwrap();
         let (_, row_ref) = table1.insert(blob_store, &product![long_str]).unwrap();
         let long_row_ptr = row_ref.pointer();
-        assert_eq!(table1.blob_store_bytes, VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        assert_eq!(table1.blob_store_bytes.0, VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
 
         // insert previous long string in new table, blob_store_bytes should show the length even though HashMapBlobStore deduplicates it
         let mut table2 = table(pt);
         table2.insert(blob_store, &product![long_str]).unwrap();
-        assert_eq!(table2.blob_store_bytes, VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        assert_eq!(table2.blob_store_bytes.0, VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
 
         table1.delete(blob_store, short_row_ptr, |_| ()).unwrap();
-        assert_eq!(table1.blob_store_bytes, VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        assert_eq!(table1.blob_store_bytes.0, VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
 
         table1.delete(blob_store, long_row_ptr, |_| ()).unwrap();
-        assert_eq!(table1.blob_store_bytes, 0);
+        assert_eq!(table1.blob_store_bytes.0, 0);
     }
 }

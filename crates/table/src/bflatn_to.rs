@@ -11,6 +11,7 @@ use super::{
     },
     page::{GranuleOffsetIter, Page, VarView},
     pages::Pages,
+    table::BlobNumBytes,
     util::range_move,
     var_len::{VarLenGranule, VarLenMembers, VarLenRef},
 };
@@ -45,7 +46,7 @@ pub unsafe fn write_row_to_pages(
     ty: &RowTypeLayout,
     val: &ProductValue,
     squashed_offset: SquashedOffset,
-) -> Result<(RowPointer, usize), Error> {
+) -> Result<(RowPointer, BlobNumBytes), Error> {
     let num_granules = required_var_len_granules_for_row(val);
 
     match pages.with_page_to_insert_row(ty.size(), num_granules, |page| {
@@ -85,7 +86,7 @@ pub unsafe fn write_row_to_page(
     visitor: &impl VarLenMembers,
     ty: &RowTypeLayout,
     val: &ProductValue,
-) -> Result<(PageOffset, usize), Error> {
+) -> Result<(PageOffset, BlobNumBytes), Error> {
     let fixed_row_size = ty.size();
     // SAFETY: We've used the right `row_size` and we trust that others have too.
     // `RowTypeLayout` also ensures that we satisfy the minimum row size.
@@ -163,8 +164,8 @@ impl BflatnSerializedRowBuffer<'_> {
     }
 
     /// Insert all large blobs into `blob_store` and their hashes to their granules.
-    fn write_large_blobs(mut self, blob_store: &mut dyn BlobStore) -> usize {
-        let mut blob_store_inserted_bytes = 0;
+    fn write_large_blobs(mut self, blob_store: &mut dyn BlobStore) -> BlobNumBytes {
+        let mut blob_store_inserted_bytes = BlobNumBytes::default();
         for (vlr, value) in self.large_blob_insertions {
             // SAFETY: `vlr` was given to us by `alloc_for_slice`
             // so it is properly aligned for a `VarLenGranule` and in bounds of the page.
