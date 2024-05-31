@@ -78,7 +78,7 @@ mod sym {
 /// The macro takes this `input`, which defines what the attribute does,
 /// and it is structured roughly like so:
 /// ```ignore
-/// input = table [, private | public] | init | connect | disconnect | migrate
+/// input = table [ ( private | public ) ] | init | connect | disconnect | migrate
 ///       | reducer
 ///       | index(btree | hash [, name = string] [, field_name:ident]*)
 /// ```

@@ -127,7 +127,7 @@ pub(crate) fn extract_sats_type<'a>(
     })
 }
 
-/// Ensures that the `public` modifier
+/// Ensures that the `public` modifier is not present.
 pub(crate) fn ensure_no_public(ty: &SatsType<'_>, mut ts: TokenStream) -> TokenStream {
     if let Some(span) = ty.public {
         ts.extend(syn::Error::new(span, "the `public` specifier is not allowed in this context").into_compile_error());
