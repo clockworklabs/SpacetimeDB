@@ -287,12 +287,6 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     program_bytes_address,
                     publisher_address,
                 };
-
-                // NOTE: If initialization fails, we'll still have the database
-                // in the control db.
-                // This will make any subsequent access return an error about
-                // the program hash not matching expectations, until the
-                // database is published again.
                 let database_id = self.control_db.insert_database(database.clone())?;
                 database.id = database_id;
 
@@ -330,7 +324,6 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     .await?;
 
                 if update_result.is_ok() {
-                    self.control_db.update_database(database.clone())?;
                     self.schedule_database(Some(database), Some(existing_db)).await?;
                 }
 

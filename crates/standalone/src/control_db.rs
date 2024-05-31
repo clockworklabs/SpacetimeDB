@@ -352,30 +352,6 @@ impl ControlDb {
         Ok(id)
     }
 
-    pub fn update_database(&self, database: Database) -> Result<()> {
-        let tree = self.db.open_tree("database")?;
-        let tree_by_address = self.db.open_tree("database_by_address")?;
-        let key = database.address.to_hex();
-
-        let old_value = tree.get(database.id.to_be_bytes())?;
-        if let Some(old_value) = old_value {
-            let old_database: Database = bsatn::from_slice(&old_value[..])?;
-
-            if database.address != old_database.address && tree_by_address.contains_key(key.as_bytes())? {
-                return Err(Error::DatabaseAlreadyExists(database.address));
-            }
-        }
-
-        let buf = sled::IVec::from(bsatn::to_vec(&database).unwrap());
-
-        tree.insert(database.id.to_be_bytes(), buf.clone())?;
-
-        let key = database.address.to_hex();
-        tree_by_address.insert(key, buf)?;
-
-        Ok(())
-    }
-
     pub fn delete_database(&self, id: u64) -> Result<Option<u64>> {
         let tree = self.db.open_tree("database")?;
         let tree_by_address = self.db.open_tree("database_by_address")?;
