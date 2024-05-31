@@ -8,22 +8,22 @@ use super::datastore::{
     },
     traits::TxData,
 };
+use super::db_metrics::DB_METRICS;
 use super::relational_operators::Relation;
-use crate::address::Address;
 use crate::config::DatabaseConfig;
-use crate::db::db_metrics::DB_METRICS;
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::{ExecutionContext, ReducerContext};
-use crate::hash::Hash;
 use crate::util::slow::SlowQueryConfig;
 use fs2::FileExt;
 use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
 use spacetimedb_durability::{self as durability, Durability};
+use spacetimedb_lib::address::Address;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, TableSchema};
+use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_vm::errors::ErrorVm;
@@ -157,11 +157,8 @@ impl RelationalDB {
             row_count_fn,
             disk_size_fn,
 
-            config: Arc::new(RwLock::new(DatabaseConfig::with_slow_query(
-                SlowQueryConfig::with_defaults(),
-            ))),
-
             _lock: Arc::new(lock),
+            config: Arc::new(RwLock::new(DatabaseConfig::new(SlowQueryConfig::with_defaults(), None))),
         })
     }
 
@@ -540,11 +537,12 @@ impl RelationalDB {
             .collect()
     }
 
-    pub fn create_table_for_test(
+    pub fn create_table_for_test_with_access(
         &self,
         name: &str,
         schema: &[(&str, AlgebraicType)],
         indexes: &[(ColId, &str)],
+        access: StAccess,
     ) -> Result<TableId, DBError> {
         let indexes = indexes
             .iter()
@@ -555,9 +553,18 @@ impl RelationalDB {
         let schema = TableDef::new(name.into(), Self::col_def_for_test(schema))
             .with_indexes(indexes)
             .with_type(StTableType::User)
-            .with_access(StAccess::Public);
+            .with_access(access);
 
         self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
+    }
+
+    pub fn create_table_for_test(
+        &self,
+        name: &str,
+        schema: &[(&str, AlgebraicType)],
+        indexes: &[(ColId, &str)],
+    ) -> Result<TableId, DBError> {
+        self.create_table_for_test_with_access(name, schema, indexes, StAccess::Public)
     }
 
     pub fn create_table_for_test_multi_column(

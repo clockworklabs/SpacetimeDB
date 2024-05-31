@@ -48,41 +48,54 @@ public class Module : IIncrementalGenerator
                             .Select(a => (ColumnAttrs)a.ConstructorArguments[0].Value!)
                             .SingleOrDefault();
 
-                        if (indexKind.HasFlag(ColumnAttrs.AutoInc))
+                        var isInteger = f.Type.SpecialType switch
                         {
-                            var isValidForAutoInc = f.Type.SpecialType switch
+                            SpecialType.System_Byte
+                            or SpecialType.System_SByte
+                            or SpecialType.System_Int16
+                            or SpecialType.System_UInt16
+                            or SpecialType.System_Int32
+                            or SpecialType.System_UInt32
+                            or SpecialType.System_Int64
+                            or SpecialType.System_UInt64
+                                => true,
+                            SpecialType.None
+                                => f.Type.ToString() is "System.Int128" or "System.UInt128",
+                            _ => false
+                        };
+
+                        if (indexKind.HasFlag(ColumnAttrs.AutoInc) && !isInteger)
+                        {
+                            throw new System.Exception(
+                                $"{f.Type} {f.Name} is not valid for AutoInc or Identity as it's not an integer."
+                            );
+                        }
+
+                        var isEquatable =
+                            isInteger
+                            || f.Type.SpecialType switch
                             {
-                                SpecialType.System_Byte
-                                or SpecialType.System_SByte
-                                or SpecialType.System_Int16
-                                or SpecialType.System_UInt16
-                                or SpecialType.System_Int32
-                                or SpecialType.System_UInt32
-                                or SpecialType.System_Int64
-                                or SpecialType.System_UInt64
-                                    => true,
+                                SpecialType.System_String or SpecialType.System_Boolean => true,
                                 SpecialType.None
-                                    => f.Type.ToString() switch
-                                    {
-                                        "System.Int128" or "System.UInt128" => true,
-                                        _ => false
-                                    },
-                                _ => false
+                                    => f.Type.ToString()
+                                        is "SpacetimeDB.Runtime.Address"
+                                            or "SpacetimeDB.Runtime.Identity",
+                                _ => false,
                             };
 
-                            if (!isValidForAutoInc)
-                            {
-                                throw new System.Exception(
-                                    $"Type {f.Type} is not valid for AutoInc or Identity as it's not an integer."
-                                );
-                            }
+                        if (indexKind.HasFlag(ColumnAttrs.Unique) && !isEquatable)
+                        {
+                            throw new System.Exception(
+                                $"{f.Type} {f.Name} is not valid for Identity, PrimaryKey or PrimaryKeyAuto as it's not an equatable primitive."
+                            );
                         }
 
                         return (
-                            Name: f.Name,
+                            f.Name,
                             Type: SymbolToName(f.Type),
                             TypeInfo: GetTypeInfo(f.Type),
-                            IndexKind: indexKind
+                            IndexKind: indexKind,
+                            IsEquatable: isEquatable
                         );
                     })
                     .ToArray();
@@ -149,18 +162,25 @@ public class Module : IIncrementalGenerator
                         ";
 
                     foreach (
-                        var (f, index) in t.Fields.Select(
-                            (f, i) => (f, $"new SpacetimeDB.RawBindings.ColId({i})")
-                        )
+                        var (f, i) in t.Fields.Select((field, i) => (field, i))
+                            .Where(pair => pair.field.IsEquatable)
                     )
                     {
+                        var index = $"new SpacetimeDB.RawBindings.ColId({i})";
+
+                        extensions +=
+                            $@"
+                                public static IEnumerable<{t.Name}> FilterBy{f.Name}({f.Type} {f.Name}) =>
+                                    new SpacetimeDB.Runtime.RawTableIterByColEq(tableId.Value, {index}, {f.TypeInfo}.ToBytes({f.Name}))
+                                    .SelectMany(GetSatsTypeInfo().ReadBytes);
+                            ";
+
                         if (f.IndexKind.HasFlag(ColumnAttrs.Unique))
                         {
                             extensions +=
                                 $@"
                                     public static {t.Name}? FindBy{f.Name}({f.Type} {f.Name}) =>
-                                        new SpacetimeDB.Runtime.RawTableIterByColEq(tableId.Value, {index}, {f.TypeInfo}.ToBytes({f.Name}))
-                                        .SelectMany(GetSatsTypeInfo().ReadBytes)
+                                        FilterBy{f.Name}({f.Name})
                                         .Cast<{t.Name}?>()
                                         .SingleOrDefault();
 
@@ -171,13 +191,6 @@ public class Module : IIncrementalGenerator
                                         SpacetimeDB.Runtime.UpdateByColEq(tableId.Value, {index}, {f.TypeInfo}.ToBytes({f.Name}), GetSatsTypeInfo().ToBytes(value));
                                 ";
                         }
-
-                        extensions +=
-                            $@"
-                                public static IEnumerable<{t.Name}> FilterBy{f.Name}({f.Type} {f.Name}) =>
-                                    new SpacetimeDB.Runtime.RawTableIterByColEq(tableId.Value, {index}, {f.TypeInfo}.ToBytes({f.Name}))
-                                    .SelectMany(GetSatsTypeInfo().ReadBytes);
-                            ";
                     }
 
                     return new KeyValuePair<string, string>(

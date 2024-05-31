@@ -5,6 +5,8 @@
 mod io;
 mod impls;
 mod logger;
+#[cfg(feature = "rand")]
+mod rng;
 #[doc(hidden)]
 pub mod rt;
 pub mod time_span;
@@ -23,6 +25,11 @@ use std::{fmt, panic};
 use sys::RowIter;
 
 pub use log;
+#[cfg(feature = "rand")]
+pub use rand;
+
+#[cfg(feature = "rand")]
+pub use rng::{random, rng, StdbRng};
 pub use sats::SpacetimeType;
 pub use spacetimedb_bindings_macro::{duration, query, spacetimedb, TableType};
 pub use spacetimedb_bindings_sys as sys;

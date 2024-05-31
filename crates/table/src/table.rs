@@ -6,7 +6,7 @@ use super::{
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
     eq::eq_row_in_page,
     eq_to_pv::eq_row_in_page_to_pv,
-    indexes::{Bytes, PageIndex, PageOffset, RowHash, RowPointer, Size, SquashedOffset},
+    indexes::{Bytes, PageIndex, PageOffset, RowHash, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE},
     layout::RowTypeLayout,
     page::{FixedLenRowsIter, Page},
     pages::Pages,
@@ -19,6 +19,7 @@ use super::{
 use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
 use core::{fmt, ptr};
+use derive_more::{Add, AddAssign, From, Sub};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_primitives::{ColId, ColList, IndexId};
 use spacetimedb_sats::{
@@ -32,6 +33,10 @@ use spacetimedb_sats::{
 };
 use std::sync::Arc;
 use thiserror::Error;
+
+/// The number of bytes used by, added to, or removed from a [`Table`]'s share of a [`BlobStore`].
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, From, Add, Sub, AddAssign)]
+pub struct BlobNumBytes(usize);
 
 /// A database table containing the row schema, the rows, and indices.
 ///
@@ -54,6 +59,11 @@ pub struct Table {
     squashed_offset: SquashedOffset,
     /// Store number of rows present in table.
     pub row_count: u64,
+    /// Stores the sum total number of bytes that each blob object in the table occupies.
+    ///
+    /// Note that the [`HashMapBlobStore`] does ref-counting and de-duplication,
+    /// but this sum will count an object each time its hash is mentioned, rather than just once.
+    blob_store_bytes: BlobNumBytes,
 }
 
 /// The part of a `Table` concerned only with storing rows.
@@ -104,7 +114,7 @@ impl TableInner {
     }
 }
 
-static_assert_size!(Table, 248);
+static_assert_size!(Table, 256);
 
 /// Various error that can happen on table insertion.
 #[derive(Error, Debug)]
@@ -211,7 +221,7 @@ impl Table {
     ) -> Result<(RowHash, RowPointer), InsertError> {
         // Optimistically insert the `row` before checking for set-semantic collisions,
         // under the assumption that set-semantic collisions are rare.
-        let row_ref = self.insert_internal_allow_duplicate(blob_store, row)?;
+        let (row_ref, blob_bytes) = self.insert_internal_allow_duplicate(blob_store, row)?;
 
         // Ensure row isn't already there.
         // SAFETY: We just inserted `ptr`, so we know it's valid.
@@ -235,6 +245,7 @@ impl Table {
             return Err(InsertError::Duplicate(existing_row));
         }
         self.row_count += 1;
+        self.blob_store_bytes += blob_bytes;
 
         // If the optimistic insertion was correct,
         // i.e. this is not a set-semantic duplicate,
@@ -253,10 +264,10 @@ impl Table {
         &'a mut self,
         blob_store: &'a mut dyn BlobStore,
         row: &ProductValue,
-    ) -> Result<RowRef<'a>, InsertError> {
+    ) -> Result<(RowRef<'a>, BlobNumBytes), InsertError> {
         // SAFETY: `self.pages` is known to be specialized for `self.row_layout`,
         // as `self.pages` was constructed from `self.row_layout` in `Table::new`.
-        let ptr = unsafe {
+        let (ptr, blob_bytes) = unsafe {
             write_row_to_pages(
                 &mut self.inner.pages,
                 &self.visitor_prog,
@@ -269,7 +280,7 @@ impl Table {
         // SAFETY: We just inserted `ptr`, so it must be present.
         let row_ref = unsafe { self.inner.get_row_ref_unchecked(blob_store, ptr) };
 
-        Ok(row_ref)
+        Ok((row_ref, blob_bytes))
     }
 
     /// Finds the [`RowPointer`] to the row in `committed_table`
@@ -354,7 +365,11 @@ impl Table {
     /// # Safety
     ///
     /// `ptr` must point to a valid, live row in this table.
-    pub unsafe fn delete_internal_skip_pointer_map(&mut self, blob_store: &mut dyn BlobStore, ptr: RowPointer) {
+    pub unsafe fn delete_internal_skip_pointer_map(
+        &mut self,
+        blob_store: &mut dyn BlobStore,
+        ptr: RowPointer,
+    ) -> BlobNumBytes {
         // Delete the physical row.
         //
         // SAFETY:
@@ -365,7 +380,7 @@ impl Table {
             self.inner
                 .pages
                 .delete_row(&self.visitor_prog, self.row_size(), ptr, blob_store)
-        };
+        }
     }
 
     /// Deletes the row identified by `ptr` from the table.
@@ -385,9 +400,10 @@ impl Table {
 
         // Delete the physical row.
         // SAFETY: `ptr` points to a valid row in this table as `self.is_row_present(row)` holds.
-        unsafe {
-            self.delete_internal_skip_pointer_map(blob_store, ptr);
-        };
+        let blob_store_deleted_bytes = unsafe { self.delete_internal_skip_pointer_map(blob_store, ptr) };
+        // Just deleted bytes (`blob_store_deleted_bytes`)
+        // cannot be greater than the total number of bytes (`self.blob_store_bytes`).
+        self.blob_store_bytes = self.blob_store_bytes - blob_store_deleted_bytes;
     }
 
     /// Deletes the row identified by `ptr` from the table.
@@ -458,7 +474,7 @@ impl Table {
         // Insert `row` temporarily so `temp_ptr` and `hash` can be used to find the row.
         // This must avoid consulting and inserting to the pointer map,
         // as the row is already present, set-semantically.
-        let temp_row = self.insert_internal_allow_duplicate(blob_store, row)?;
+        let (temp_row, _) = self.insert_internal_allow_duplicate(blob_store, row)?;
         let temp_ptr = temp_row.pointer();
         let hash = temp_row.row_hash();
 
@@ -575,6 +591,14 @@ impl Table {
             new.insert_index(&NullBlobStore, cols.clone(), index);
         }
         new
+    }
+
+    /// Returns the number of bytes occupied by the pages and the blob store.
+    /// Note that result can be more than the actual physical size occupied by the table
+    /// because the blob store implementation can do internal optimizations.
+    /// For more details, refer to the documentation of `self.blob_store_bytes`.
+    pub fn bytes_occupied_overestimate(&self) -> usize {
+        (self.num_pages() * PAGE_DATA_SIZE) + (self.blob_store_bytes.0)
     }
 }
 
@@ -969,6 +993,7 @@ impl Table {
             pointer_map: PointerMap::default(),
             squashed_offset,
             row_count: 0,
+            blob_store_bytes: BlobNumBytes::default(),
         }
     }
 
@@ -1011,6 +1036,11 @@ impl Table {
         &self.inner.pages
     }
 
+    /// Returns the number of pages storing the physical rows of this table.
+    fn num_pages(&self) -> usize {
+        self.inner.pages.len()
+    }
+
     /// Returns the [`StaticBsatnLayout`] for this table,
     pub(crate) fn static_bsatn_layout(&self) -> Option<&StaticBsatnLayout> {
         self.inner.static_bsatn_layout.as_ref()
@@ -1022,6 +1052,7 @@ pub(crate) mod test {
     use super::*;
     use crate::blob_store::HashMapBlobStore;
     use crate::page::tests::hash_unmodified_save_get;
+    use crate::var_len::VarLenGranule;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
     use spacetimedb_sats::bsatn::to_vec;
@@ -1248,5 +1279,51 @@ pub(crate) mod test {
         // We expect this to panic.
         // Miri should not have any issue with this call either.
         table.get_row_ref(&NullBlobStore, ptr).unwrap().to_product_value();
+    }
+
+    #[test]
+    fn test_blob_store_bytes() {
+        let pt: ProductType = [AlgebraicType::String, AlgebraicType::I32].into();
+        let blob_store = &mut HashMapBlobStore::default();
+        let mut insert =
+            |table: &mut Table, string, num| table.insert(blob_store, &product![string, num]).unwrap().1.pointer();
+        let mut table1 = table(pt.clone());
+
+        // Insert short string, `blob_store_bytes` should be 0.
+        let short_str = std::str::from_utf8(&[98; 6]).unwrap();
+        let short_row_ptr = insert(&mut table1, short_str, 0);
+        assert_eq!(table1.blob_store_bytes.0, 0);
+
+        // Insert long string, `blob_store_bytes` should be the length of the string.
+        const BLOB_OBJ_LEN: BlobNumBytes = BlobNumBytes(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        let long_str = std::str::from_utf8(&[98; BLOB_OBJ_LEN.0]).unwrap();
+        let long_row_ptr = insert(&mut table1, long_str, 0);
+        assert_eq!(table1.blob_store_bytes, BLOB_OBJ_LEN);
+
+        // Insert previous long string in the same table,
+        // `blob_store_bytes` should count the length twice,
+        // even though `HashMapBlobStore` deduplicates it.
+        let long_row_ptr2 = insert(&mut table1, long_str, 1);
+        const BLOB_OBJ_LEN_2X: BlobNumBytes = BlobNumBytes(BLOB_OBJ_LEN.0 * 2);
+        assert_eq!(table1.blob_store_bytes, BLOB_OBJ_LEN_2X);
+
+        // Insert previous long string in a new table,
+        // `blob_store_bytes` should show the length,
+        // even though `HashMapBlobStore` deduplicates it.
+        let mut table2 = table(pt);
+        let _ = insert(&mut table2, long_str, 0);
+        assert_eq!(table2.blob_store_bytes, BLOB_OBJ_LEN);
+
+        // Delete `short_str` row. This should not affect the byte count.
+        table1.delete(blob_store, short_row_ptr, |_| ()).unwrap();
+        assert_eq!(table1.blob_store_bytes, BLOB_OBJ_LEN_2X);
+
+        // Delete the first long string row. This gets us down to `BLOB_OBJ_LEN` (we had 2x before).
+        table1.delete(blob_store, long_row_ptr, |_| ()).unwrap();
+        assert_eq!(table1.blob_store_bytes, BLOB_OBJ_LEN);
+
+        // Delete the first long string row. This gets us down to 0 (we've now deleted 2x).
+        table1.delete(blob_store, long_row_ptr2, |_| ()).unwrap();
+        assert_eq!(table1.blob_store_bytes, 0.into());
     }
 }

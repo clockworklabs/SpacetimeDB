@@ -33,12 +33,12 @@ impl TableWithPrimaryKey for User {
 
 impl User {
     #[allow(unused)]
-    pub fn filter_by_identity(identity: Identity) -> Option<Self> {
-        Self::find(|row| row.identity == identity)
+    pub fn filter_by_identity(identity: Identity) -> TableIter<Self> {
+        Self::filter(|row| row.identity == identity)
     }
     #[allow(unused)]
-    pub fn filter_by_name(name: Option<String>) -> TableIter<Self> {
-        Self::filter(|row| row.name == name)
+    pub fn find_by_identity(identity: Identity) -> Option<Self> {
+        Self::find(|row| row.identity == identity)
     }
     #[allow(unused)]
     pub fn filter_by_online(online: bool) -> TableIter<Self> {

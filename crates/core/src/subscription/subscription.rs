@@ -23,6 +23,7 @@
 use super::execution_unit::ExecutionUnit;
 use super::query;
 use crate::client::Protocol;
+use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
@@ -35,12 +36,13 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::client_api::TableUpdate;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::ProductValue;
+use spacetimedb_lib::{Identity, ProductValue};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::error::AuthError;
 use spacetimedb_sats::relation::DbTable;
 use spacetimedb_vm::errors::ErrorVm;
-use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryExpr, SourceProvider, SourceSet};
+use spacetimedb_vm::expr::{self, AuthAccess, IndexJoin, Query, QueryExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::hash::Hash;
@@ -593,6 +595,14 @@ impl ExecutionSet {
         }
         Ok(DatabaseUpdateRelValue { tables })
     }
+
+    /// The estimated number of rows returned by this execution set.
+    pub fn row_estimate(&self, tx: &TxId) -> u64 {
+        self.exec_units
+            .iter()
+            .map(|unit| unit.row_estimate(tx))
+            .fold(0, |acc, est| acc.saturating_add(est))
+    }
 }
 
 impl FromIterator<SupportedQuery> for ExecutionSet {
@@ -629,6 +639,12 @@ impl From<Vec<Arc<ExecutionUnit>>> for ExecutionSet {
 impl From<Vec<SupportedQuery>> for ExecutionSet {
     fn from(value: Vec<SupportedQuery>) -> Self {
         ExecutionSet::from_iter(value)
+    }
+}
+
+impl AuthAccess for ExecutionSet {
+    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
+        self.exec_units.iter().try_for_each(|eu| eu.check_auth(owner, caller))
     }
 }
 

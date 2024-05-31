@@ -104,28 +104,4 @@ impl LargeTable {
     pub fn filter_by_n(n: String) -> TableIter<Self> {
         Self::filter(|row| row.n == n)
     }
-    #[allow(unused)]
-    pub fn filter_by_o(o: SimpleEnum) -> TableIter<Self> {
-        Self::filter(|row| row.o == o)
-    }
-    #[allow(unused)]
-    pub fn filter_by_p(p: EnumWithPayload) -> TableIter<Self> {
-        Self::filter(|row| row.p == p)
-    }
-    #[allow(unused)]
-    pub fn filter_by_q(q: UnitStruct) -> TableIter<Self> {
-        Self::filter(|row| row.q == q)
-    }
-    #[allow(unused)]
-    pub fn filter_by_r(r: ByteStruct) -> TableIter<Self> {
-        Self::filter(|row| row.r == r)
-    }
-    #[allow(unused)]
-    pub fn filter_by_s(s: EveryPrimitiveStruct) -> TableIter<Self> {
-        Self::filter(|row| row.s == s)
-    }
-    #[allow(unused)]
-    pub fn filter_by_t(t: EveryVecStruct) -> TableIter<Self> {
-        Self::filter(|row| row.t == t)
-    }
 }

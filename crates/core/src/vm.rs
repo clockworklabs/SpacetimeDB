@@ -1,8 +1,12 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 
+use crate::config::DatabaseConfig;
 use crate::db::cursor::{IndexCursor, TableCursor};
+use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::datastore::locking_tx_datastore::IterByColRange;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
+use crate::error::DBError;
+use crate::estimation;
 use crate::execution_context::ExecutionContext;
 use core::ops::RangeBounds;
 use itertools::Itertools;
@@ -386,12 +390,44 @@ pub struct DbProgram<'db, 'tx> {
     pub(crate) auth: AuthCtx,
 }
 
+/// If the subscriber is not the database owner,
+/// reject the request if the estimated cardinality exceeds the limit.
+pub fn check_row_limit<QuerySet>(
+    queries: &QuerySet,
+    tx: &TxId,
+    row_est: impl Fn(&QuerySet, &TxId) -> u64,
+    auth: &AuthCtx,
+    config: &DatabaseConfig,
+) -> Result<(), DBError> {
+    if auth.caller != auth.owner {
+        if let Some(limit) = config.row_limit {
+            let estimate = row_est(queries, tx);
+            if estimate > limit {
+                return Err(DBError::Other(anyhow::anyhow!(
+                    "Estimated cardinality ({estimate} rows) exceeds limit ({limit} rows)"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 impl<'db, 'tx> DbProgram<'db, 'tx> {
     pub fn new(ctx: &'tx ExecutionContext, db: &'db RelationalDB, tx: &'tx mut TxMode<'tx>, auth: AuthCtx) -> Self {
         Self { ctx, db, tx, auth }
     }
 
     fn _eval_query<const N: usize>(&mut self, query: &QueryExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
+        if let TxMode::Tx(tx) = self.tx {
+            check_row_limit(
+                query,
+                tx,
+                |expr, tx| estimation::num_rows(tx, expr),
+                &self.auth,
+                &self.db.read_config(),
+            )?;
+        }
+
         let table_access = query.source.table_access();
         tracing::trace!(table = query.source.table_name());
 

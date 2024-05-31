@@ -32,7 +32,11 @@ impl TableWithPrimaryKey for PkAddress {
 
 impl PkAddress {
     #[allow(unused)]
-    pub fn filter_by_a(a: Address) -> Option<Self> {
+    pub fn filter_by_a(a: Address) -> TableIter<Self> {
+        Self::filter(|row| row.a == a)
+    }
+    #[allow(unused)]
+    pub fn find_by_a(a: Address) -> Option<Self> {
         Self::find(|row| row.a == a)
     }
     #[allow(unused)]

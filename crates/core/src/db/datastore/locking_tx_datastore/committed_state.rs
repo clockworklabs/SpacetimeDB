@@ -2,10 +2,9 @@ use super::{
     datastore::Result,
     sequence::{Sequence, SequencesState},
     state_view::{Iter, IterByColRange, ScanIterByColRange, StateView},
-    tx_state::TxState,
+    tx_state::{DeleteTable, TxState},
 };
 use crate::{
-    address::Address,
     db::{
         datastore::{
             system_tables::{
@@ -23,8 +22,10 @@ use crate::{
     execution_context::{ExecutionContext, MetricType},
 };
 use anyhow::anyhow;
+use core::ops::RangeBounds;
 use itertools::Itertools;
 use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_lib::address::Address;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::{
     db::{
@@ -38,17 +39,14 @@ use spacetimedb_table::{
     indexes::{RowPointer, SquashedOffset},
     table::{IndexScanIter, InsertError, RowRef, Table},
 };
+use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    ops::RangeBounds,
-};
 
 #[derive(Default)]
-pub(crate) struct CommittedState {
-    pub(crate) next_tx_offset: u64,
-    pub(crate) tables: IntMap<TableId, Table>,
-    pub(crate) blob_store: HashMapBlobStore,
+pub(super) struct CommittedState {
+    pub(super) next_tx_offset: u64,
+    pub(super) tables: IntMap<TableId, Table>,
+    pub(super) blob_store: HashMapBlobStore,
 }
 
 impl StateView for CommittedState {
@@ -381,7 +379,7 @@ impl CommittedState {
     fn merge_apply_deletes(
         &mut self,
         tx_data: &mut TxData,
-        delete_tables: BTreeMap<TableId, BTreeSet<RowPointer>>,
+        delete_tables: BTreeMap<TableId, DeleteTable>,
         ctx: &ExecutionContext,
     ) {
         for (table_id, row_ptrs) in delete_tables {
@@ -401,21 +399,25 @@ impl CommittedState {
                     let pv = table
                         .delete(blob_store, row_ptr, |row| row.to_product_value())
                         .expect("Delete for non-existent row!");
-                    let table_name = &*table.get_schema().table_name;
-                    //Increment rows deleted metric
-                    ctx.metrics
-                        .write()
-                        .inc_by(table_id, MetricType::RowsDeleted, 1, || table_name.to_string());
-                    // Decrement table rows gauge
-                    DB_METRICS
-                        .rdb_num_table_rows
-                        .with_label_values(db, &table_id.into(), table_name)
-                        .dec();
                     deletes.push(pv);
                 }
+
+                let table_name = &*table.get_schema().table_name;
+
                 if !deletes.is_empty() {
-                    tx_data.set_deletes_for_table(table_id, &table.get_schema().table_name, deletes.into());
+                    tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
                 }
+
+                // Bulk update rows-deleted metric and the table rows gauge.
+                ctx.metrics
+                    .write()
+                    .inc_by(table_id, MetricType::RowsDeleted, row_ptrs.len() as u64, || {
+                        table_name.to_string()
+                    });
+                DB_METRICS
+                    .rdb_num_table_rows
+                    .with_label_values(db, &table_id.into(), table_name)
+                    .sub(row_ptrs.len() as i64);
             } else if !row_ptrs.is_empty() {
                 panic!("Deletion for non-existent table {:?}... huh?", table_id);
             }
@@ -455,22 +457,33 @@ impl CommittedState {
                     .insert(commit_blob_store, &pv)
                     .expect("Failed to insert when merging commit");
 
-                let table_name = &*commit_table.get_schema().table_name;
-                // Increment rows inserted metric
-                ctx.metrics
-                    .write()
-                    .inc_by(table_id, MetricType::RowsInserted, 1, || table_name.to_string());
-                // Increment table rows gauge
-                DB_METRICS
-                    .rdb_num_table_rows
-                    .with_label_values(db, &table_id.into(), table_name)
-                    .inc();
-
                 inserts.push(pv);
             }
+            let num_ins = inserts.len();
+
+            let table_name = &*commit_table.get_schema().table_name;
+
             if !inserts.is_empty() {
-                tx_data.set_inserts_for_table(table_id, &commit_table.get_schema().table_name, inserts.into());
+                tx_data.set_inserts_for_table(table_id, table_name, inserts.into());
             }
+
+            // Now we know how many rows were inserted,
+            // so bulk update rows-inserted metric and the table rows gauge.
+            ctx.metrics
+                .write()
+                .inc_by(table_id, MetricType::RowsInserted, num_ins as u64, || {
+                    table_name.to_string()
+                });
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(db, &table_id.into(), table_name)
+                .add(num_ins as i64);
+
+            let table_size = commit_table.bytes_occupied_overestimate();
+            DB_METRICS
+                .rdb_table_size
+                .with_label_values(db, &table_id.into(), table_name)
+                .set(table_size as i64);
 
             // Add all newly created indexes to the committed state.
             for (cols, mut index) in tx_table.indexes {
@@ -521,39 +534,21 @@ impl CommittedState {
         let blob_store = &mut self.blob_store;
         (table, blob_store)
     }
-
-    #[allow(unused)]
-    pub fn iter_by_col_range_maybe_index<'a, R: RangeBounds<AlgebraicValue>>(
-        &'a self,
-        ctx: &'a ExecutionContext,
-        table_id: TableId,
-        cols: ColList,
-        range: R,
-    ) -> Result<IterByColRange<'a, R>> {
-        match self.index_seek(table_id, &cols, &range) {
-            Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter::new(
-                ctx,
-                table_id,
-                None,
-                self,
-                committed_rows,
-            ))),
-            None => self.iter_by_col_range(ctx, table_id, cols, range),
-        }
-    }
 }
-#[allow(dead_code)]
+
 pub struct CommittedIndexIter<'a> {
+    #[allow(dead_code)]
     ctx: &'a ExecutionContext,
     table_id: TableId,
     tx_state: Option<&'a TxState>,
+    #[allow(dead_code)]
     committed_state: &'a CommittedState,
     committed_rows: IndexScanIter<'a>,
     num_committed_rows_fetched: u64,
 }
 
 impl<'a> CommittedIndexIter<'a> {
-    pub(crate) fn new(
+    pub(super) fn new(
         ctx: &'a ExecutionContext,
         table_id: TableId,
         tx_state: Option<&'a TxState>,

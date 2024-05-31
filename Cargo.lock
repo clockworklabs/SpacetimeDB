@@ -767,7 +767,7 @@ dependencies = [
 
 [[package]]
 name = "connect_disconnect_client"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "spacetimedb-sdk",
@@ -2280,9 +2280,9 @@ checksum = "884e2677b40cc8c339eaefcb701c32ef1fd2493d71118dc0ca4b6a736c93bd67"
 
 [[package]]
 name = "libc"
-version = "0.2.150"
+version = "0.2.153"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89d92a4743f9a61002fae18374ed11e7973f530cb3a3255fb354818118b2203c"
+checksum = "9c198f91728a82281a64e1f4f9eeb25d82cb32a5de251c6bd1b5154d63a8e7bd"
 
 [[package]]
 name = "libm"
@@ -4150,10 +4150,10 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
- "bytes",
  "derive_more",
+ "getrandom",
  "log",
  "rand 0.8.5",
  "scoped-tls",
@@ -4165,7 +4165,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bench"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "anymap",
@@ -4202,7 +4202,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "bitflags 2.4.1",
  "humantime",
@@ -4214,15 +4214,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
- "getrandom",
  "spacetimedb-primitives",
 ]
 
 [[package]]
 name = "spacetimedb-cli"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "base64 0.21.4",
@@ -4270,7 +4269,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4309,7 +4308,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api-messages"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "chrono",
  "hex",
@@ -4327,7 +4326,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-commitlog"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "bitflags 2.4.1",
  "crc32c",
@@ -4343,12 +4342,11 @@ dependencies = [
  "spacetimedb-sats",
  "tempfile",
  "thiserror",
- "tokio",
 ]
 
 [[package]]
 name = "spacetimedb-core"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -4440,7 +4438,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-data-structures"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "hashbrown 0.14.1",
  "nohash-hasher",
@@ -4450,7 +4448,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-durability"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "log",
@@ -4462,7 +4460,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-lib"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "bitflags 2.4.1",
@@ -4486,7 +4484,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-metrics"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "arrayvec",
  "itertools 0.12.0",
@@ -4496,7 +4494,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-primitives"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "bitflags 2.4.1",
  "either",
@@ -4508,12 +4506,13 @@ dependencies = [
 name = "spacetimedb-quickstart-module"
 version = "0.1.0"
 dependencies = [
+ "rand 0.8.5",
  "spacetimedb",
 ]
 
 [[package]]
 name = "spacetimedb-sats"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "ahash 0.8.11",
  "arrayvec",
@@ -4540,7 +4539,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sdk"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "anymap",
@@ -4568,7 +4567,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-standalone"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4598,7 +4597,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-table"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "ahash 0.8.11",
  "blake3",
@@ -4620,7 +4619,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-testing"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "clap 4.4.6",
@@ -4646,7 +4645,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-vm"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -4735,7 +4734,7 @@ dependencies = [
 
 [[package]]
 name = "sqltest"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4998,7 +4997,7 @@ dependencies = [
 
 [[package]]
 name = "test-client"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "env_logger",
@@ -5009,7 +5008,7 @@ dependencies = [
 
 [[package]]
 name = "test-counter"
-version = "0.9.0"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "spacetimedb-data-structures",

@@ -81,7 +81,7 @@ impl DatabaseInstanceContext {
 
     /// The size of the log file.
     pub fn log_file_size(&self) -> std::result::Result<u64, DBError> {
-        self.logger.size()
+        Ok(self.logger.size()?)
     }
 
     /// Obtain an array which can be summed to obtain the total disk usage.

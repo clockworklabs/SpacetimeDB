@@ -23,9 +23,4 @@ impl TableType for VecUnitStruct {
     type ReducerEvent = super::ReducerEvent;
 }
 
-impl VecUnitStruct {
-    #[allow(unused)]
-    pub fn filter_by_s(s: Vec<UnitStruct>) -> TableIter<Self> {
-        Self::filter(|row| row.s == s)
-    }
-}
+impl VecUnitStruct {}

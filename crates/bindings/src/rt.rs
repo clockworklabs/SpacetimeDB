@@ -35,8 +35,11 @@ pub fn invoke_reducer<'a, A: Args<'a>, T>(
     // Deserialize the arguments from a bsatn encoding.
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
-    // Run the reducer with the timestamp set.
-    let res = with_timestamp_set(ctx.timestamp, || reducer.invoke(ctx, args));
+    // Run the reducer with the environment all set up.
+    let invoke = || reducer.invoke(ctx, args);
+    #[cfg(feature = "rand")]
+    let invoke = || crate::rng::with_rng_set(invoke);
+    let res = with_timestamp_set(ctx.timestamp, invoke);
 
     // Any error is pushed into a `Buffer`.
     cvt_result(res)

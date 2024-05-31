@@ -1,7 +1,9 @@
 use super::query::{self, Supported};
 use super::subscription::{IncrementalJoin, SupportedQuery};
+use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
+use crate::estimation;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{
     rel_value_to_table_row_op_binary, rel_value_to_table_row_op_json, DatabaseTableUpdate, DatabaseTableUpdateRelValue,
@@ -11,11 +13,12 @@ use crate::json::client_api::TableUpdateJson;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
 use spacetimedb_client_api_messages::client_api::TableUpdate;
-use spacetimedb_lib::ProductValue;
+use spacetimedb_lib::{Identity, ProductValue};
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::db::error::AuthError;
 use spacetimedb_sats::relation::DbTable;
 use spacetimedb_vm::eval::IterRows;
-use spacetimedb_vm::expr::{NoInMemUsed, Query, QueryExpr, SourceExpr, SourceId};
+use spacetimedb_vm::expr::{AuthAccess, NoInMemUsed, Query, QueryExpr, SourceExpr, SourceId};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::RelValue;
 use std::hash::Hash;
@@ -340,5 +343,16 @@ impl ExecutionUnit {
             sink.push(row);
         }
         Ok(())
+    }
+
+    /// The estimated number of rows returned by this execution unit.
+    pub fn row_estimate(&self, tx: &TxId) -> u64 {
+        estimation::num_rows(tx, &self.eval_plan)
+    }
+}
+
+impl AuthAccess for ExecutionUnit {
+    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
+        self.eval_plan.check_auth(owner, caller)
     }
 }

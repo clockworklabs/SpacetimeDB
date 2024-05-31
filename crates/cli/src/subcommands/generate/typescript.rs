@@ -879,113 +879,62 @@ fn autogen_typescript_access_funcs_for_struct(
             }
             AlgebraicType::Builtin(b) => match maybe_primitive(b) {
                 MaybePrimitive::Primitive(ty) => ty,
-                MaybePrimitive::Array(ArrayType { elem_ty }) => {
-                    if let Some(BuiltinType::U8) = elem_ty.as_builtin() {
-                        // Do allow filtering for byte arrays
-                        "Uint8Array"
-                    } else {
-                        // TODO: We don't allow filtering based on an array type, but we might want other functionality here in the future.
-                        continue;
-                    }
-                }
-                MaybePrimitive::Map(_) => {
-                    // TODO: It would be nice to be able to say, give me all entries where this vec contains this value, which we can do.
-                    continue;
-                }
+                _ => continue,
             },
         };
 
-        let filter_return_type = fmt_fn(|f| {
-            if is_unique {
-                write!(f, "{struct_name_pascal_case} | null")
-            } else {
-                write!(f, "{struct_name_pascal_case}[]")
-            }
-        });
-
         writeln!(
             output,
-            "public static filterBy{typescript_field_name_pascal}(value: {typescript_field_type}): {filter_return_type}"
+            "public static *filterBy{typescript_field_name_pascal}(value: {typescript_field_type}): IterableIterator<{struct_name_pascal_case}>"
         );
 
         writeln!(output, "{{");
         {
             indent_scope!(output);
-            if !is_unique {
-                writeln!(output, "let result: {filter_return_type} = [];");
-            }
             writeln!(
                 output,
-                "for(let instance of this.db.getTable(\"{table_name}\").getInstances())"
+                "for (let instance of this.db.getTable(\"{table_name}\").getInstances())"
             );
             writeln!(output, "{{");
             {
                 indent_scope!(output);
-                if typescript_field_type == "Identity" || typescript_field_type == "Address" {
-                    writeln!(output, "if (instance.{typescript_field_name_camel}.isEqual(value)) {{");
-                    {
-                        indent_scope!(output);
-                        if is_unique {
-                            writeln!(output, "return instance;");
-                        } else {
-                            writeln!(output, "result.push(instance);");
-                        }
-                    }
-                    writeln!(output, "}}");
-                } else if typescript_field_type == "Uint8Array" {
-                    writeln!(
-                        output,
-                        "let byteArrayCompare = function (a1: Uint8Array, a2: Uint8Array)
-{{
-    if (a1.length !== a2.length)
-        return false;
-
-    for (let i=0; i<a1.length; i++)
-        if (a1[i]!==a2[i])
-            return false;
-
-    return true;
-}}"
-                    );
-                    writeln!(output);
-                    writeln!(
-                        output,
-                        "if (byteArrayCompare(instance.{typescript_field_name_camel}, value)) {{"
-                    );
-                    {
-                        indent_scope!(output);
-                        if is_unique {
-                            writeln!(output, "return instance;");
-                        } else {
-                            writeln!(output, "result.push(instance);");
-                        }
-                    }
-                    writeln!(output, "}}");
+                let condition = if typescript_field_type == "Identity" || typescript_field_type == "Address" {
+                    ".isEqual(value)"
                 } else {
-                    writeln!(output, "if (instance.{typescript_field_name_camel} === value) {{");
-                    {
-                        indent_scope!(output);
-                        if is_unique {
-                            writeln!(output, "return instance;");
-                        } else {
-                            writeln!(output, "result.push(instance);");
-                        }
-                    }
-                    writeln!(output, "}}");
+                    " === value"
+                };
+                writeln!(output, "if (instance.{typescript_field_name_camel}{condition}) {{");
+                {
+                    indent_scope!(output);
+                    writeln!(output, "yield instance;");
                 }
+                writeln!(output, "}}");
             }
             // End foreach
             writeln!(output, "}}");
-
-            if is_unique {
-                writeln!(output, "return null;");
-            } else {
-                writeln!(output, "return result;");
-            }
         }
         // End Func
         writeln!(output, "}}");
         writeln!(output);
+
+        if is_unique {
+            writeln!(
+                output,
+                "public static findBy{typescript_field_name_pascal}(value: {typescript_field_type}): {struct_name_pascal_case} | undefined"
+            );
+
+            writeln!(output, "{{");
+            {
+                indent_scope!(output);
+                writeln!(
+                    output,
+                    "return this.filterBy{typescript_field_name_pascal}(value).next().value;"
+                );
+            }
+            // End Func
+            writeln!(output, "}}");
+            writeln!(output);
+        }
     }
 }
 

@@ -165,9 +165,14 @@ impl SpacetimeDbFiles for FilesGlobal {
 /// Enumeration of options for reading configuration settings.
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub enum ReadConfigOption {
+    /// Log an ad-hoc query if it exceeds this threshold
     SlowQueryThreshold,
+    /// Log a subscription query if its incremental evaluation exceeds this threshold
     SlowIncrementalUpdatesThreshold,
+    /// Log a subscription query if its initial evaluation exceeds this threshold
     SlowSubscriptionsThreshold,
+    /// Reject queries whose estimated cardinality exceeds this limit
+    RowLimit,
 }
 
 impl ReadConfigOption {
@@ -182,6 +187,7 @@ impl Display for ReadConfigOption {
             ReadConfigOption::SlowQueryThreshold => "slow_ad_hoc_query_ms",
             ReadConfigOption::SlowIncrementalUpdatesThreshold => "slow_tx_update_ms",
             ReadConfigOption::SlowSubscriptionsThreshold => "slow_subscription_query_ms",
+            ReadConfigOption::RowLimit => "row_limit",
         };
         write!(f, "{value}")
     }
@@ -195,6 +201,7 @@ impl FromStr for ReadConfigOption {
             "slow_ad_hoc_query_ms" => Ok(Self::SlowQueryThreshold),
             "slow_tx_update_ms" => Ok(Self::SlowIncrementalUpdatesThreshold),
             "slow_subscription_query_ms" => Ok(Self::SlowSubscriptionsThreshold),
+            "row_limit" => Ok(Self::RowLimit),
             x => Err(ConfigError::NotFound(x.into())),
         }
     }
@@ -203,37 +210,40 @@ impl FromStr for ReadConfigOption {
 /// Holds a list of the runtime configurations settings of the database
 #[derive(Debug, Clone, Copy)]
 pub struct DatabaseConfig {
+    /// Log queries whose execution time exceeds this limit
     pub(crate) slow_query: SlowQueryConfig,
+    /// Reject queries whose estimated cardinality exceeds this limit
+    pub(crate) row_limit: Option<u64>,
 }
 
 impl DatabaseConfig {
-    /// Creates a new `DatabaseConfig` with the specified slow query settings.
-    pub(crate) fn with_slow_query(slow_query: SlowQueryConfig) -> Self {
-        Self { slow_query }
-    }
-
-    /// Reads a configuration setting specified by parsing `key`.
-    fn read(&self, key: &str) -> Result<Option<Duration>, ConfigError> {
-        let key = ReadConfigOption::from_str(key)?;
-
-        Ok(match key {
-            ReadConfigOption::SlowQueryThreshold => self.slow_query.queries,
-            ReadConfigOption::SlowIncrementalUpdatesThreshold => self.slow_query.incremental_updates,
-            ReadConfigOption::SlowSubscriptionsThreshold => self.slow_query.subscriptions,
-        })
+    /// Creates a new `DatabaseConfig` with the specified settings.
+    pub(crate) fn new(slow_query: SlowQueryConfig, row_limit: Option<u64>) -> Self {
+        Self { slow_query, row_limit }
     }
 
     /// Reads a configuration setting specified by parsing `key` and converts it into a `MemTable`.
     ///
     /// For returning as `table` for `SQL` queries.
     pub(crate) fn read_key_into_table(&self, key: &str) -> Result<MemTable, ConfigError> {
-        let value: AlgebraicValue = self.read(key)?.map(|v| v.as_millis()).into();
+        let (value, ty): (AlgebraicValue, _) = match ReadConfigOption::from_str(key)? {
+            ReadConfigOption::SlowQueryThreshold => (
+                self.slow_query.queries.map(|v| v.as_millis()).into(),
+                AlgebraicType::option(AlgebraicType::U128),
+            ),
+            ReadConfigOption::SlowIncrementalUpdatesThreshold => (
+                self.slow_query.incremental_updates.map(|v| v.as_millis()).into(),
+                AlgebraicType::option(AlgebraicType::U128),
+            ),
+            ReadConfigOption::SlowSubscriptionsThreshold => (
+                self.slow_query.subscriptions.map(|v| v.as_millis()).into(),
+                AlgebraicType::option(AlgebraicType::U128),
+            ),
+            ReadConfigOption::RowLimit => (self.row_limit.into(), AlgebraicType::option(AlgebraicType::U64)),
+        };
 
         let table_id = u32::MAX.into();
-        let col = Column::new(
-            FieldName::new(table_id, 0.into()),
-            AlgebraicType::option(AlgebraicType::U128),
-        );
+        let col = Column::new(FieldName::new(table_id, 0.into()), ty);
         let head = Header::new(table_id, "mem#read_key_into_table".into(), [col].into(), Vec::new());
 
         Ok(MemTable::from_iter(Arc::new(head), [product![value]]))
@@ -242,16 +252,17 @@ impl DatabaseConfig {
     /// Writes the configuration setting specified by parsing `key` and `value`.
     pub(crate) fn set_config(&mut self, key: &str, value: AlgebraicValue) -> Result<(), ErrorVm> {
         let config = ReadConfigOption::from_str(key)?;
-        let millis = match value.as_u64() {
-            Some(0) => None,
-            Some(value) => Some(Duration::from_millis(*value)),
-            None => return Err(ConfigError::TypeError(key.into(), value, AlgebraicType::U64).into()),
+        let Some(v) = value.as_u64() else {
+            return Err(ConfigError::TypeError(key.into(), value, AlgebraicType::U64).into());
         };
 
+        let to_dur_opt = |v| (v > 0).then(|| Duration::from_millis(v));
+
         match config {
-            ReadConfigOption::SlowQueryThreshold => self.slow_query.queries = millis,
-            ReadConfigOption::SlowIncrementalUpdatesThreshold => self.slow_query.incremental_updates = millis,
-            ReadConfigOption::SlowSubscriptionsThreshold => self.slow_query.subscriptions = millis,
+            ReadConfigOption::SlowQueryThreshold => self.slow_query.queries = to_dur_opt(*v),
+            ReadConfigOption::SlowIncrementalUpdatesThreshold => self.slow_query.incremental_updates = to_dur_opt(*v),
+            ReadConfigOption::SlowSubscriptionsThreshold => self.slow_query.subscriptions = to_dur_opt(*v),
+            ReadConfigOption::RowLimit => self.row_limit = (*v < u64::MAX).then_some(*v),
         };
 
         Ok(())
