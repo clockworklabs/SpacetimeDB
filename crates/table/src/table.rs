@@ -6,7 +6,7 @@ use super::{
     btree_index::{BTreeIndex, BTreeIndexRangeIter},
     eq::eq_row_in_page,
     eq_to_pv::eq_row_in_page_to_pv,
-    indexes::{Bytes, PageIndex, PageOffset, RowHash, RowPointer, Size, SquashedOffset},
+    indexes::{Bytes, PageIndex, PageOffset, RowHash, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE},
     layout::RowTypeLayout,
     page::{FixedLenRowsIter, Page},
     pages::Pages,
@@ -16,7 +16,6 @@ use super::{
     row_type_visitor::{row_type_visitor, VarLenVisitorProgram},
     static_assert_size,
 };
-use crate::indexes::PAGE_DATA_SIZE;
 use core::hash::{Hash, Hasher};
 use core::ops::RangeBounds;
 use core::{fmt, ptr};
@@ -35,7 +34,8 @@ use spacetimedb_sats::{
 use std::sync::Arc;
 use thiserror::Error;
 
-#[derive(Copy, Clone, Default, From, Add, Sub, AddAssign)]
+/// The number of bytes used by, added to, or removed from a [`Table`]'s share of a [`BlobStore`].
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default, From, Add, Sub, AddAssign)]
 pub struct BlobNumBytes(usize);
 
 /// A database table containing the row schema, the rows, and indices.
@@ -401,7 +401,8 @@ impl Table {
         // Delete the physical row.
         // SAFETY: `ptr` points to a valid row in this table as `self.is_row_present(row)` holds.
         let blob_store_deleted_bytes = unsafe { self.delete_internal_skip_pointer_map(blob_store, ptr) };
-        // just deleted bytes (blob_store_deleted_bytes) can not be greater than total bytes (self.blob_store_bytes)
+        // Just deleted bytes (`blob_store_deleted_bytes`)
+        // cannot be greater than the total number of bytes (`self.blob_store_bytes`).
         self.blob_store_bytes = self.blob_store_bytes - blob_store_deleted_bytes;
     }
 
@@ -593,8 +594,8 @@ impl Table {
     }
 
     /// Returns the number of bytes occupied by the pages and the blob store.
-    /// Note that result can be overstimated than actual physical size occupied by the table
-    /// because the blob store implemtation can do internal optimisations.
+    /// Note that result can be more than the actual physical size occupied by the table
+    /// because the blob store implementation can do internal optimizations.
     /// For more details, refer to the documentation of `self.blob_store_bytes`.
     pub fn bytes_occupied_overestimate(&self) -> usize {
         (self.num_pages() * PAGE_DATA_SIZE) + (self.blob_store_bytes.0)
@@ -1036,7 +1037,7 @@ impl Table {
     }
 
     /// Returns the number of pages storing the physical rows of this table.
-    pub fn num_pages(&self) -> usize {
+    fn num_pages(&self) -> usize {
         self.inner.pages.len()
     }
 
@@ -1282,31 +1283,47 @@ pub(crate) mod test {
 
     #[test]
     fn test_blob_store_bytes() {
-        let pt: ProductType = AlgebraicType::String.into();
-        let mut table1 = table(pt.clone());
+        let pt: ProductType = [AlgebraicType::String, AlgebraicType::I32].into();
         let blob_store = &mut HashMapBlobStore::default();
+        let mut insert =
+            |table: &mut Table, string, num| table.insert(blob_store, &product![string, num]).unwrap().1.pointer();
+        let mut table1 = table(pt.clone());
 
-        // insert short string, blob_store_bytes should be 0
+        // Insert short string, `blob_store_bytes` should be 0.
         let short_str = std::str::from_utf8(&[98; 6]).unwrap();
-        let (_, row_ref) = table1.insert(blob_store, &product![short_str]).unwrap();
-        let short_row_ptr = row_ref.pointer();
+        let short_row_ptr = insert(&mut table1, short_str, 0);
         assert_eq!(table1.blob_store_bytes.0, 0);
 
-        // insert long string, blob_store_bytes should be the length of the string
-        let long_str = std::str::from_utf8(&[98; VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1]).unwrap();
-        let (_, row_ref) = table1.insert(blob_store, &product![long_str]).unwrap();
-        let long_row_ptr = row_ref.pointer();
-        assert_eq!(table1.blob_store_bytes.0, VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        // Insert long string, `blob_store_bytes` should be the length of the string.
+        const BLOB_OBJ_LEN: BlobNumBytes = BlobNumBytes(VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        let long_str = std::str::from_utf8(&[98; BLOB_OBJ_LEN.0]).unwrap();
+        let long_row_ptr = insert(&mut table1, long_str, 0);
+        assert_eq!(table1.blob_store_bytes, BLOB_OBJ_LEN);
 
-        // insert previous long string in new table, blob_store_bytes should show the length even though HashMapBlobStore deduplicates it
+        // Insert previous long string in the same table,
+        // `blob_store_bytes` should count the length twice,
+        // even though `HashMapBlobStore` deduplicates it.
+        let long_row_ptr2 = insert(&mut table1, long_str, 1);
+        const BLOB_OBJ_LEN_2X: BlobNumBytes = BlobNumBytes(BLOB_OBJ_LEN.0 * 2);
+        assert_eq!(table1.blob_store_bytes, BLOB_OBJ_LEN_2X);
+
+        // Insert previous long string in a new table,
+        // `blob_store_bytes` should show the length,
+        // even though `HashMapBlobStore` deduplicates it.
         let mut table2 = table(pt);
-        table2.insert(blob_store, &product![long_str]).unwrap();
-        assert_eq!(table2.blob_store_bytes.0, VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        let _ = insert(&mut table2, long_str, 0);
+        assert_eq!(table2.blob_store_bytes, BLOB_OBJ_LEN);
 
+        // Delete `short_str` row. This should not affect the byte count.
         table1.delete(blob_store, short_row_ptr, |_| ()).unwrap();
-        assert_eq!(table1.blob_store_bytes.0, VarLenGranule::OBJECT_SIZE_BLOB_THRESHOLD + 1);
+        assert_eq!(table1.blob_store_bytes, BLOB_OBJ_LEN_2X);
 
+        // Delete the first long string row. This gets us down to `BLOB_OBJ_LEN` (we had 2x before).
         table1.delete(blob_store, long_row_ptr, |_| ()).unwrap();
-        assert_eq!(table1.blob_store_bytes.0, 0);
+        assert_eq!(table1.blob_store_bytes, BLOB_OBJ_LEN);
+
+        // Delete the first long string row. This gets us down to 0 (we've now deleted 2x).
+        table1.delete(blob_store, long_row_ptr2, |_| ()).unwrap();
+        assert_eq!(table1.blob_store_bytes, 0.into());
     }
 }

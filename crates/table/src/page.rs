@@ -822,15 +822,18 @@ impl<'page> VarView<'page> {
         // Actually free the blob.
         let hash = granule.blob_hash();
 
-        // The size of deleted_bytes is calculated here instead of requesting it from BlobStore.
-        // This is because the actual number of bytes deleted depends on the BlobStore's logic.
+        // The size of `deleted_bytes` is calculated here instead of requesting it from `blob_store`.
+        // This is because the actual number of bytes deleted depends on the `blob_store`'s logic.
         // We prefer to measure it from the datastore's point of view.
         let blob_store_deleted_bytes = blob_store
             .retrieve_blob(&hash)
             .expect("failed to free var-len blob")
             .len()
             .into();
+
+        // Actually free the blob.
         blob_store.free_blob(&hash).expect("failed to free var-len blob");
+
         blob_store_deleted_bytes
     }
 
