@@ -917,10 +917,8 @@ type FieldsIndexed = HashSet<(FieldName, OpCmp)>;
 ///   i.e., both `WHERE a = 1 AND b = 2`
 ///   and `WHERE b = 2 AND a = 1` are valid.
 ///
-/// - Queries against multi-col indices must use the same operator in their constraints.
+/// - Queries against multi-col indices must use `=`, for now, in their constraints.
 ///   Otherwise, the index cannot be used.
-///   That is, for `WHERE a < 1, b < 3`, we can use `ScanOrIndex::Index(Lt, [a, b], (1, 3))`,
-///   whereas for `WHERE a < 1, b != 3`, we cannot.
 ///
 /// - The use of multiple tables could generate redundant/duplicate operations like
 ///   `[ScanOrIndex::Index(a = 1), ScanOrIndex::Index(a = 1), ScanOrIndex::Scan(a = 1)]`.
@@ -953,11 +951,6 @@ type FieldsIndexed = HashSet<(FieldName, OpCmp)>;
 /// but rather, `select_best_index`
 /// would give us two separate `IndexScan`s.
 /// However, the upper layers of `QueryExpr` building will convert both of those into `Select`s.
-/// In the case of `SELECT * FROM students WHERE age > 18 AND height > 180`
-/// we would generate a single `IndexScan((age, height) > (18, 180))`.
-/// However, and depending on the table data, this might not be efficient,
-/// whereas `age = 18 AND height > 180` might.
-/// TODO: Revisit this to see if we want to restrict this or use statistics.
 fn select_best_index<'a>(
     fields_indexed: &mut FieldsIndexed,
     header: &'a Header,
@@ -982,57 +975,61 @@ fn select_best_index<'a>(
     let mut fields_map = BTreeMap::<_, SmallVec<[_; 1]>>::new();
     extract_fields(ops, header, &mut fields_map, &mut found);
 
-    // Go through each operator and index,
+    // Go through each index,
     // consuming all field constraints that can be served by an index.
-    //
-    // NOTE: We do not consider `OpCmp::NotEq` at the moment
-    // since those are typically not answered using an index.
-    for (col_list, cmp) in [OpCmp::Eq, OpCmp::Lt, OpCmp::LtEq, OpCmp::Gt, OpCmp::GtEq]
-        .into_iter()
-        .flat_map(|cmp| indices.iter().map(move |cl| (*cl, cmp)))
-    {
+    for col_list in indices {
         // (1) No fields left? We're done.
         if fields_map.is_empty() {
             break;
         }
 
         if col_list.is_singleton() {
-            // For a single column index,
-            // we want to avoid the `ProductValue` indirection of below.
-            for FieldValue { cmp, value, field, .. } in fields_map.remove(&(col_list.head(), cmp)).into_iter().flatten()
-            {
-                found.push(make_index_arg(cmp, col_list, value.clone()));
-                fields_indexed.insert((field, cmp));
-            }
-        } else if col_list
-            .iter()
-            // (2) Ensure that every col has a field.
-            .all(|col| fields_map.get(&(col, cmp)).filter(|fs| !fs.is_empty()).is_some())
-        {
-            // We've ensured `col_list ⊆ columns_of(field_map(cmp))`.
-            // Construct the value to compare against.
-            let mut elems = Vec::with_capacity(col_list.len() as usize);
-            for col in col_list.iter() {
-                // Retrieve the field for this (col, cmp) key.
-                // Remove the map entry if the list is empty now.
-                let Entry::Occupied(mut entry) = fields_map.entry((col, cmp)) else {
-                    // We ensured in (2) that the map is occupied for `(col, cmp)`.
-                    unreachable!()
-                };
-                let fields = entry.get_mut();
-                // We ensured in (2) that `fields` is non-empty.
-                let field = fields.pop().unwrap();
-                if fields.is_empty() {
-                    // Remove the entry so that (1) works.
-                    entry.remove();
+            // Go through each operator.
+            // NOTE: We do not consider `OpCmp::NotEq` at the moment
+            // since those are typically not answered using an index.
+            for cmp in [OpCmp::Eq, OpCmp::Lt, OpCmp::LtEq, OpCmp::Gt, OpCmp::GtEq] {
+                // For a single column index,
+                // we want to avoid the `ProductValue` indirection of below.
+                for FieldValue { cmp, value, field, .. } in
+                    fields_map.remove(&(col_list.head(), cmp)).into_iter().flatten()
+                {
+                    found.push(make_index_arg(cmp, col_list, value.clone()));
+                    fields_indexed.insert((field, cmp));
                 }
-
-                // Add the field value to the product value.
-                elems.push(field.value.clone());
-                fields_indexed.insert((field.field, cmp));
             }
-            let value = AlgebraicValue::product(elems);
-            found.push(make_index_arg(cmp, col_list, value));
+        } else {
+            // We have a multi column index.
+            // Try to fit constraints `c_0 = v_0, ..., c_n = v_n` to this index.
+            //
+            // For the time being, we restrict multi-col index scans to `=` only.
+            // This is what our infrastructure is set-up to handle soundly.
+            // To extend this support to ranges requires deeper changes.
+            // TODO(Centril, 2024-05-30): extend this support to ranges.
+            let cmp = OpCmp::Eq;
+
+            // Compute the minimum number of `=` constraints that every column in the index has.
+            let mut min_all_cols_num_eq = col_list
+                .iter()
+                .map(|col| fields_map.get(&(col, cmp)).map_or(0, |fs| fs.len()))
+                .min()
+                .unwrap_or_default();
+
+            // For all of these sets of constraints,
+            // construct the value to compare against.
+            while min_all_cols_num_eq > 0 {
+                let mut elems = Vec::with_capacity(col_list.len() as usize);
+                for col in col_list.iter() {
+                    // Cannot panic as `min_all_cols_num_eq > 0`.
+                    let field = pop_multimap(&mut fields_map, (col, cmp)).unwrap();
+                    fields_indexed.insert((field.field, cmp));
+                    // Add the field value to the product value.
+                    elems.push(field.value.clone());
+                }
+                // Construct the index scan.
+                let value = AlgebraicValue::product(elems);
+                found.push(make_index_arg(cmp, col_list, value));
+                min_all_cols_num_eq -= 1;
+            }
         }
     }
 
@@ -1045,6 +1042,20 @@ fn select_best_index<'a>(
     );
 
     found
+}
+
+/// Pop an element from `map[key]` in the multimap `map`,
+/// removing the entry entirely if there are no more elements left after popping.
+fn pop_multimap<K: Ord, V, const N: usize>(map: &mut BTreeMap<K, SmallVec<[V; N]>>, key: K) -> Option<V> {
+    let Entry::Occupied(mut entry) = map.entry(key) else {
+        return None;
+    };
+    let fields = entry.get_mut();
+    let val = fields.pop();
+    if fields.is_empty() {
+        entry.remove();
+    }
+    val
 }
 
 /// Extracts `name = val` when `lhs` is a field that exists and `rhs` is a value.
@@ -2169,13 +2180,13 @@ mod tests {
             "t1".into(),
             cols.to_vec(),
             vec![
-                //Index a
+                // Index a
                 (a.into(), Constraints::primary_key()),
-                //Index b
+                // Index b
                 (b.into(), Constraints::indexed()),
-                //Index b + c
+                // Index b + c
                 (col_list![b, c], Constraints::unique()),
-                //Index a + b + c + d
+                // Index a + b + c + d
                 (col_list![a, b, c, d], Constraints::indexed()),
             ],
         );
@@ -2331,13 +2342,13 @@ mod tests {
             make_index_arg(cmp, columns, val.clone())
         };
 
-        // Same field indexed
+        // `a > va AND a < vb` => `[index(a), index(a)]`
         assert_eq!(
             select_best_index(&[(OpCmp::Gt, col_a, &val_a), (OpCmp::Lt, col_a, &val_b)]),
             [idx(OpCmp::Lt, &[col_a], &val_b), idx(OpCmp::Gt, &[col_a], &val_a)].into()
         );
 
-        // Same field scan
+        // `d > vd AND d < vb` => `[scan(d), scan(d)]`
         assert_eq!(
             select_best_index(&[(OpCmp::Gt, col_d, &val_d), (OpCmp::Lt, col_d, &val_b)]),
             [
@@ -2346,31 +2357,30 @@ mod tests {
             ]
             .into()
         );
-        // One indexed other scan
+
+        // `b > vb AND c < vc` => `[index(b), scan(c)]`.
         assert_eq!(
             select_best_index(&[(OpCmp::Gt, col_b, &val_b), (OpCmp::Lt, col_c, &val_c)]),
             [idx(OpCmp::Gt, &[col_b], &val_b), scan(&arena, OpCmp::Lt, col_c, &val_c)].into()
         );
 
-        // 1 multi-indexed 1 index
+        // `b = vb AND a >= va AND c = vc` => `[index(b, c), index(a)]`
+        let idx_bc = idx(
+            OpCmp::Eq,
+            &[col_b, col_c],
+            &product![val_b.clone(), val_c.clone()].into(),
+        );
         assert_eq!(
+            //
             select_best_index(&[
                 (OpCmp::Eq, col_b, &val_b),
                 (OpCmp::GtEq, col_a, &val_a),
                 (OpCmp::Eq, col_c, &val_c),
             ]),
-            [
-                idx(
-                    OpCmp::Eq,
-                    &[col_b, col_c],
-                    &product![val_b.clone(), val_c.clone()].into(),
-                ),
-                idx(OpCmp::GtEq, &[col_a], &val_a),
-            ]
-            .into()
+            [idx_bc.clone(), idx(OpCmp::GtEq, &[col_a], &val_a),].into()
         );
 
-        // 1 indexed 2 scan
+        // `b > vb AND a = va AND c = vc` => `[index(a), index(b), scan(c)]`
         assert_eq!(
             select_best_index(&[
                 (OpCmp::Gt, col_b, &val_b),
@@ -2383,6 +2393,33 @@ mod tests {
                 scan(&arena, OpCmp::Lt, col_c, &val_c),
             ]
             .into()
+        );
+
+        // `a = va AND b = vb AND c = vc AND d > vd` => `[index(b, c), index(a), scan(d)]`
+        assert_eq!(
+            select_best_index(&[
+                (OpCmp::Eq, col_a, &val_a),
+                (OpCmp::Eq, col_b, &val_b),
+                (OpCmp::Eq, col_c, &val_c),
+                (OpCmp::Gt, col_d, &val_d),
+            ]),
+            [
+                idx_bc.clone(),
+                idx(OpCmp::Eq, &[col_a], &val_a),
+                scan(&arena, OpCmp::Gt, col_d, &val_d),
+            ]
+            .into()
+        );
+
+        // `b = vb AND c = vc AND b = vb AND c = vc` => `[index(b, c), index(b, c)]`
+        assert_eq!(
+            select_best_index(&[
+                (OpCmp::Eq, col_b, &val_b),
+                (OpCmp::Eq, col_c, &val_c),
+                (OpCmp::Eq, col_b, &val_b),
+                (OpCmp::Eq, col_c, &val_c),
+            ]),
+            [idx_bc.clone(), idx_bc].into()
         );
     }
 
