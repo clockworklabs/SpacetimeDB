@@ -53,6 +53,12 @@ impl<'a> From<&'a Tx> for TxMode<'a> {
     }
 }
 
+impl<'a> From<&'a mut Tx> for TxMode<'a> {
+    fn from(tx: &'a mut Tx) -> Self {
+        TxMode::Tx(tx)
+    }
+}
+
 fn bound_is_satisfiable(lower: &Bound<AlgebraicValue>, upper: &Bound<AlgebraicValue>) -> bool {
     match (lower, upper) {
         (Bound::Excluded(lower), Bound::Excluded(upper)) if lower >= upper => false,

@@ -261,10 +261,9 @@ impl ExecutionUnit {
         convert: impl FnMut(RelValue<'_>) -> T,
     ) -> Result<Vec<T>, DBError> {
         let tx: TxMode = tx.into();
-        let slow_query = SlowQueryLogger::subscription(ctx, sql);
+        let _slow_query = SlowQueryLogger::subscription(ctx, sql).log_guard();
         let query = build_query(ctx, db, &tx, eval_plan, &mut NoInMemUsed)?;
         let ops = query.collect_vec(convert)?;
-        slow_query.log();
         Ok(ops)
     }
 
@@ -277,12 +276,11 @@ impl ExecutionUnit {
         sql: &'a str,
         tables: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
     ) -> Result<Option<DatabaseTableUpdateRelValue<'a>>, DBError> {
-        let slow_query = SlowQueryLogger::incremental_updates(ctx, sql);
+        let _slow_query = SlowQueryLogger::incremental_updates(ctx, sql).log_guard();
         let updates = match &self.eval_incr_plan {
             EvalIncrPlan::Select(plan) => Self::eval_incr_query_expr(ctx, db, tx, tables, plan, self.return_table())?,
             EvalIncrPlan::Semijoin(plan) => plan.eval(ctx, db, tx, tables)?,
         };
-        slow_query.log();
 
         Ok(updates.has_updates().then(|| DatabaseTableUpdateRelValue {
             table_id: self.return_table(),

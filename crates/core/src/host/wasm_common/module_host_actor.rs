@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use bytes::Bytes;
 use std::sync::Arc;
 use std::time::Duration;
@@ -6,7 +6,6 @@ use std::time::Duration;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, Address, ModuleDef, ModuleValidationError, TableDesc};
-use spacetimedb_vm::expr::CrudExpr;
 
 use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
@@ -278,20 +277,11 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         log::debug!("One-off query: {query}");
         // Don't need the `slow query` logger on compilation
         let ctx = &ExecutionContext::sql(db.address(), db.read_config().slow_query);
-        let compiled: Vec<_> = db.with_read_only(ctx, |tx| {
+        db.with_read_only(ctx, |tx| {
             let ast = sql::compiler::compile_sql(db, tx, &query)?;
-            ast.into_iter()
-                .map(|expr| {
-                    if matches!(expr, CrudExpr::Query { .. }) {
-                        Ok(expr)
-                    } else {
-                        Err(anyhow!("One-off queries are not allowed to modify the database"))
-                    }
-                })
-                .collect::<Result<_, _>>()
-        })?;
-
-        sql::execute::execute_sql(db, &query, compiled, auth)
+            sql::execute::execute_sql_tx(db, tx, &query, ast, auth)
+                .and_then(|res| Ok(res.context("One-off queries are not allowed to modify the database")?))
+        })
     }
 
     fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
