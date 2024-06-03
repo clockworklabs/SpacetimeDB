@@ -388,8 +388,12 @@ pub trait ModuleInstance: Send + 'static {
         program_bytes: Box<[u8]>,
     ) -> anyhow::Result<Option<ReducerCallResult>>;
 
-    fn update_database(&mut self, program_hash: Hash, program_bytes: Box<[u8]>)
-        -> anyhow::Result<UpdateDatabaseResult>;
+    fn update_database(
+        &mut self,
+        caller_address: Option<Address>,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> anyhow::Result<UpdateDatabaseResult>;
 
     fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult;
 }
@@ -435,10 +439,11 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
     }
     fn update_database(
         &mut self,
+        caller_address: Option<Address>,
         program_hash: Hash,
         program_bytes: Box<[u8]>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        let ret = self.inst.update_database(program_hash, program_bytes);
+        let ret = self.inst.update_database(caller_address, program_hash, program_bytes);
         self.check_trap();
         ret
     }
@@ -885,11 +890,12 @@ impl ModuleHost {
 
     pub async fn update_database(
         &self,
+        caller_address: Option<Address>,
         program_hash: Hash,
         program_bytes: Box<[u8]>,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         self.call("<update_database>", move |inst| {
-            inst.update_database(program_hash, program_bytes)
+            inst.update_database(caller_address, program_hash, program_bytes)
         })
         .await?
         .map_err(Into::into)

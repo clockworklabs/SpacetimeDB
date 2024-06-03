@@ -252,16 +252,33 @@ impl RelationalDB {
         self.insert(tx, ST_MODULE_ID, row.into()).map(drop)
     }
 
+    /// Obtain the [`Metadata`] of this database.
+    ///
+    /// `None` if the database is not yet fully initialized.
     pub fn metadata(&self) -> Result<Option<Metadata>, DBError> {
         let ctx = ExecutionContext::internal(self.address);
         self.with_read_only(&ctx, |tx| self.inner.metadata(&ctx, tx))
     }
 
+    /// Obtain the raw bytes of the module associated with this database.
+    ///
+    /// `None` if the database is not yet fully initialized.
+    /// Note that a `Some` result may yield an empty slice.
     pub fn program_bytes(&self) -> Result<Option<Box<[u8]>>, DBError> {
         let ctx = ExecutionContext::internal(self.address);
         self.with_read_only(&ctx, |tx| self.inner.program_bytes(&ctx, tx))
     }
 
+    /// Update the module associated with this database.
+    ///
+    /// The caller must ensure that:
+    ///
+    /// - `program_hash` is the [`Hash`] over `program_bytes`.
+    /// - `program_bytes` is a valid module acc. to `host_type`.
+    /// - the schema updates contained in the module have been applied within
+    ///   the transactional context `tx`.
+    /// - the `__init__` reducer contained in the module has been executed
+    ///   within the transactional context `tx`.
     pub fn update_program(
         &self,
         tx: &mut MutTx,

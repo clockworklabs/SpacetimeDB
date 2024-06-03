@@ -20,7 +20,7 @@ use parking_lot::Mutex;
 use serde::Serialize;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_durability as durability;
-use spacetimedb_lib::hash_bytes;
+use spacetimedb_lib::{hash_bytes, Address};
 use spacetimedb_sats::hash::Hash;
 use std::fmt;
 use std::future::Future;
@@ -293,6 +293,8 @@ impl HostController {
     pub async fn update_module_host(
         &self,
         database: Database,
+        caller_address: Option<Address>,
+        host_type: HostType,
         instance_id: u64,
         program_bytes: Box<[u8]>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
@@ -301,7 +303,7 @@ impl HostController {
             "update module host {}/{}: genesis={} update-to={}",
             database.address,
             instance_id,
-            database.program_bytes_address,
+            database.initial_program,
             program_hash
         );
 
@@ -312,7 +314,14 @@ impl HostController {
                 trace!("host not running, try_init");
                 let host = self.try_init_host(database, instance_id).await?;
                 let module = host.module.borrow().clone();
-                let update_result = update_module(host.db(), &module, (program_hash, program_bytes)).await?;
+                // TODO: Make [ModuleHost] check if it supports the host type.
+                ensure!(
+                    matches!(host_type, HostType::Wasm),
+                    "unsupported host type {:?}",
+                    host_type,
+                );
+                let update_result =
+                    update_module(host.db(), &module, caller_address, (program_hash, program_bytes)).await?;
                 // If the update was not successul, drop the host.
                 // The `database` we gave it refers to a program hash which
                 // doesn't exist (because we just rejected it).
@@ -337,7 +346,7 @@ impl HostController {
                             "cannot change database address when updating module host"
                         );
                         ensure!(
-                            owner_identity == database.identity,
+                            owner_identity == database.owner_identity,
                             "cannot change owner identity when updating module host"
                         );
                     }
@@ -345,7 +354,8 @@ impl HostController {
                 trace!("host found, updating");
                 let update_result = host
                     .update_module(
-                        database.host_type,
+                        caller_address,
+                        host_type,
                         (program_hash, program_bytes),
                         self.unregister_fn(instance_id),
                     )
@@ -365,6 +375,7 @@ impl HostController {
     #[doc(hidden)]
     pub async fn custom_bootstrap<F, T>(
         &self,
+        caller_address: Option<Address>,
         expected_hash: Option<Hash>,
         database: Database,
         instance_id: u64,
@@ -377,7 +388,7 @@ impl HostController {
         trace!("custom bootstrap {}/{}", database.address, instance_id);
 
         let db_addr = database.address;
-        let program_hash = database.program_bytes_address;
+        let program_hash = database.initial_program;
 
         let mut guard = self.acquire_write_lock(instance_id).await;
         let host = match guard.take() {
@@ -414,7 +425,7 @@ impl HostController {
             let update_result = host
                 .module
                 .borrow()
-                .update_database(program_hash, program_bytes.as_ref().into())
+                .update_database(caller_address, program_hash, program_bytes.as_ref().into())
                 .await?;
             if update_result.is_ok() {
                 *guard = Some(host);
@@ -534,7 +545,7 @@ async fn make_dbic(
 ) -> anyhow::Result<DatabaseInstanceContext> {
     let log_path = DatabaseLogger::filepath(&database.address, instance_id);
     let logger = tokio::task::block_in_place(|| Arc::new(DatabaseLogger::open(log_path)));
-    let subscriptions = ModuleSubscriptions::new(relational_db.clone(), database.identity);
+    let subscriptions = ModuleSubscriptions::new(relational_db.clone(), database.owner_identity);
 
     Ok(DatabaseInstanceContext {
         database,
@@ -581,7 +592,7 @@ async fn launch_module(
     relational_db: Arc<RelationalDB>,
     energy_monitor: Arc<dyn EnergyMonitor>,
 ) -> anyhow::Result<(Arc<DatabaseInstanceContext>, ModuleHost, Scheduler, SchedulerStarter)> {
-    let program_hash = database.program_bytes_address;
+    let program_hash = database.initial_program;
     let host_type = database.host_type;
 
     let dbic = make_dbic(database, instance_id, relational_db).await.map(Arc::new)?;
@@ -616,6 +627,7 @@ async fn launch_module(
 async fn update_module(
     db: &RelationalDB,
     module: &ModuleHost,
+    caller_address: Option<Address>,
     (program_hash, program_bytes): (Hash, Box<[u8]>),
 ) -> anyhow::Result<UpdateDatabaseResult> {
     let addr = db.address();
@@ -627,7 +639,9 @@ async fn update_module(
         }
         Some(stored) => {
             info!("updating `{}` from {} to {}", addr, stored, program_hash);
-            let update_result = module.update_database(program_hash, program_bytes).await?;
+            let update_result = module
+                .update_database(caller_address, program_hash, program_bytes)
+                .await?;
             Ok(update_result)
         }
     }
@@ -679,16 +693,20 @@ impl Host {
         db_path.push("database");
 
         let (db, connected_clients) = match config.storage {
-            db::Storage::Memory => {
-                RelationalDB::open(&db_path, database.address, database.identity, EmptyHistory::new(), None)?
-            }
+            db::Storage::Memory => RelationalDB::open(
+                &db_path,
+                database.address,
+                database.owner_identity,
+                EmptyHistory::new(),
+                None,
+            )?,
             db::Storage::Disk => {
                 let (durability, disk_size_fn) = relational_db::local_durability(&db_path).await?;
                 let history = durability.clone();
                 RelationalDB::open(
                     &db_path,
                     database.address,
-                    database.identity,
+                    database.owner_identity,
                     history,
                     Some((durability, disk_size_fn)),
                 )?
@@ -712,7 +730,7 @@ impl Host {
             // Database is empty, load program from external storage and run
             // initialization.
             None => {
-                let program_hash = database.program_bytes_address;
+                let program_hash = database.initial_program;
                 let program_bytes = load_program(&program_storage, program_hash).await?;
                 let res = launch_module(
                     root_dir,
@@ -775,6 +793,7 @@ impl Host {
     /// Either way, the [`UpdateDatabaseResult`] is returned.
     async fn update_module(
         &mut self,
+        caller_address: Option<Address>,
         host_type: HostType,
         (program_hash, program_bytes): (Hash, Box<[u8]>),
         on_panic: impl Fn() + Send + Sync + 'static,
@@ -794,7 +813,13 @@ impl Host {
         )
         .await?;
 
-        let update_result = update_module(&dbic.relational_db, &module, (program_hash, program_bytes)).await?;
+        let update_result = update_module(
+            &dbic.relational_db,
+            &module,
+            caller_address,
+            (program_hash, program_bytes),
+        )
+        .await?;
         debug!("update result: {update_result:?}");
         if update_result.is_ok() {
             scheduler_starter.start(&module)?;

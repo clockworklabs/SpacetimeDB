@@ -23,7 +23,7 @@ use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{DiskStorage, HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, IdentityEmail, Node};
+use spacetimedb::messages::control_db::{Database, DatabaseInstance, IdentityEmail, Node};
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::stdb_path;
 use spacetimedb::worker_metrics::WORKER_METRICS;
@@ -276,41 +276,32 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         match existing_db {
             // The database does not already exist, so we'll create it.
             None => {
-                let program_bytes_address = self.program_store.put(&spec.program_bytes).await?;
+                let initial_program = self.program_store.put(&spec.program_bytes).await?;
                 let mut database = Database {
                     id: 0,
                     address: spec.address,
-                    identity: *identity,
-                    // TODO: Add to `DatabaseDef`
-                    host_type: HostType::Wasm,
-                    num_replicas: spec.num_replicas,
-                    program_bytes_address,
+                    owner_identity: *identity,
+                    host_type: spec.host_type,
+                    initial_program,
                     publisher_address,
                 };
                 let database_id = self.control_db.insert_database(database.clone())?;
                 database.id = database_id;
 
-                self.schedule_database(Some(database), None).await?;
+                self.schedule_replicas(database_id, spec.num_replicas).await?;
 
                 Ok(None)
             }
             // The database already exists, so we'll try to update it.
             // If that fails, we'll keep the old one.
-            Some(existing_db) => {
+            Some(database) => {
                 ensure!(
-                    &existing_db.identity == identity,
+                    &database.owner_identity == identity,
                     "Permission denied: `{}` does not own database `{}`",
                     identity,
                     spec.address.to_abbreviated_hex()
                 );
 
-                let program_bytes_address = self.program_store.put(&spec.program_bytes).await?;
-                let database = Database {
-                    num_replicas: spec.num_replicas,
-                    program_bytes_address,
-                    publisher_address,
-                    ..existing_db.clone()
-                };
                 let database_id = database.id;
                 let database_addr = database.address;
 
@@ -320,11 +311,58 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     .with_context(|| format!("Not found: leader instance for database `{}`", database_addr))?;
                 let update_result = self
                     .host_controller
-                    .update_module_host(database.clone(), leader.id, spec.program_bytes.into())
+                    .update_module_host(
+                        database,
+                        publisher_address,
+                        spec.host_type,
+                        leader.id,
+                        spec.program_bytes.into(),
+                    )
                     .await?;
 
                 if update_result.is_ok() {
-                    self.schedule_database(Some(database), Some(existing_db)).await?;
+                    let instances = self.control_db.get_database_instances_by_database(database_id)?;
+                    let desired_instances = spec.num_replicas as usize;
+                    if desired_instances == 0 {
+                        log::info!("Decommissioning all instances of database {}", database_addr);
+                        for instance in instances {
+                            self.delete_database_instance(instance.id).await?;
+                        }
+                    } else if desired_instances > instances.len() {
+                        let n = desired_instances - instances.len();
+                        log::info!(
+                            "Scaling up database {} from {} to {} instances",
+                            database_addr,
+                            instances.len(),
+                            n
+                        );
+                        for _ in 0..n {
+                            self.insert_database_instance(DatabaseInstance {
+                                id: 0,
+                                database_id,
+                                node_id: 0,
+                                leader: false,
+                            })
+                            .await?;
+                        }
+                    } else if desired_instances < instances.len() {
+                        let n = instances.len() - desired_instances;
+                        log::info!(
+                            "Scaling down database {} from {} to {} instances",
+                            database_addr,
+                            instances.len(),
+                            n
+                        );
+                        for instance in instances.into_iter().filter(|instance| !instance.leader).take(n) {
+                            self.delete_database_instance(instance.id).await?;
+                        }
+                    } else {
+                        log::debug!(
+                            "Desired replica count {} for database {} already satisfied",
+                            desired_instances,
+                            database_addr
+                        );
+                    }
                 }
 
                 anyhow::Ok(Some(update_result))
@@ -337,7 +375,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             return Ok(());
         };
         anyhow::ensure!(
-            &database.identity == identity,
+            &database.owner_identity == identity,
             // TODO: `PermissionDenied` should be a variant of `Error`,
             //       so we can match on it and return better error responses
             //       from HTTP endpoints.
@@ -346,7 +384,9 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         );
 
         self.control_db.delete_database(database.id)?;
-        self.schedule_database(None, Some(database)).await?;
+        for instance in self.control_db.get_database_instances_by_database(database.id)? {
+            self.delete_database_instance(instance.id).await?;
+        }
 
         Ok(())
     }
@@ -415,35 +455,6 @@ impl StandaloneEnv {
         Ok(())
     }
 
-    // Internal
-    #[allow(clippy::comparison_chain)]
-    async fn schedule_database(
-        &self,
-        database: Option<Database>,
-        old_database: Option<Database>,
-    ) -> Result<(), anyhow::Error> {
-        let new_replicas = database.as_ref().map(|db| db.num_replicas).unwrap_or(0) as i32;
-        let old_replicas = old_database.as_ref().map(|db| db.num_replicas).unwrap_or(0) as i32;
-        let replica_diff = new_replicas - old_replicas;
-
-        let database_id = if let Some(database) = database {
-            database.id
-        } else {
-            old_database.unwrap().id
-        };
-
-        log::trace!("Scheduling database {database_id}, new_replicas {new_replicas}, old_replicas {old_replicas}");
-
-        if replica_diff > 0 {
-            self.schedule_replicas(database_id, replica_diff as u32).await?;
-        } else if replica_diff < 0 {
-            self.deschedule_replicas(database_id, replica_diff.unsigned_abs())
-                .await?;
-        }
-
-        Ok(())
-    }
-
     async fn schedule_replicas(&self, database_id: u64, num_replicas: u32) -> Result<(), anyhow::Error> {
         // Just scheduling a bunch of replicas to the only machine
         for i in 0..num_replicas {
@@ -456,17 +467,6 @@ impl StandaloneEnv {
             self.insert_database_instance(database_instance).await?;
         }
 
-        Ok(())
-    }
-
-    async fn deschedule_replicas(&self, database_id: u64, num_replicas: u32) -> Result<(), anyhow::Error> {
-        for _ in 0..num_replicas {
-            let instances = self.control_db.get_database_instances_by_database(database_id)?;
-            let Some(instance) = instances.last() else {
-                return Ok(());
-            };
-            self.delete_database_instance(instance.id).await?;
-        }
         Ok(())
     }
 

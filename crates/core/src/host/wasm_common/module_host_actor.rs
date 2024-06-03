@@ -184,7 +184,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let reducers = ReducersMap(reducers.into_iter().map(|x| (x.name.clone(), x)).collect());
 
         let info = Arc::new(ModuleInfo {
-            identity: database_instance_context.identity,
+            identity: database_instance_context.owner_identity,
             address: database_instance_context.address,
             module_hash,
             typespace,
@@ -275,7 +275,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         query: String,
     ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError> {
         let db = &self.database_instance_context.relational_db;
-        let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
+        let auth = AuthCtx::new(self.database_instance_context.owner_identity, caller_identity);
         log::debug!("One-off query: {query}");
         // Don't need the `slow query` logger on compilation
         db.with_read_only(&ExecutionContext::sql(db.address()), |tx| {
@@ -374,7 +374,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 // the init/update reducer will receive it as the caller address.
                 // This is useful for bootstrapping the control DB in SpacetimeDB-cloud.
                 let Database {
-                    identity: caller_identity,
+                    owner_identity: caller_identity,
                     publisher_address: caller_address,
                     ..
                 } = self.database_instance_context().database;
@@ -403,6 +403,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     #[tracing::instrument(skip_all)]
     fn update_database(
         &mut self,
+        caller_address: Option<Address>,
         program_hash: Hash,
         program_bytes: Box<[u8]>,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
@@ -435,8 +436,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 // the init/update reducer will receive it as the caller address.
                 // This is useful for bootstrapping the control DB in SpacetimeDB-cloud.
                 let Database {
-                    identity: caller_identity,
-                    publisher_address: caller_address,
+                    owner_identity: caller_identity,
                     ..
                 } = self.database_instance_context().database;
                 let res = self.call_reducer_with_tx(
