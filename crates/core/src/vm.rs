@@ -17,7 +17,7 @@ use spacetimedb_sats::db::def::TableDef;
 use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header, RowCount};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::errors::ErrorVm;
-use spacetimedb_vm::eval::{join_inner, IterRows};
+use spacetimedb_vm::eval::{build_project, build_select, join_inner, IterRows};
 use spacetimedb_vm::expr::*;
 use spacetimedb_vm::iterators::RelIter;
 use spacetimedb_vm::program::{ProgramVm, Sources};
@@ -75,7 +75,7 @@ fn bound_is_satisfiable(lower: &Bound<AlgebraicValue>, upper: &Bound<AlgebraicVa
 //and pull all that crate in core. Will be revisited after trait refactor
 pub fn build_query<'a>(
     ctx: &'a ExecutionContext,
-    stdb: &'a RelationalDB,
+    db: &'a RelationalDB,
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
     sources: &mut impl SourceProvider<'a>,
@@ -87,7 +87,7 @@ pub fn build_query<'a>(
     // are only valid as the first operation in the list,
     // and construct a new base query.
     //
-    // Branches which use `result` will do `unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))`
+    // Branches which use `result` will do `unwrap_or_else(|| get_table(ctx, db, tx, &query.table, sources))`
     // to get an `IterRows` defaulting to the `query.table`.
     //
     // Branches which do not use the `result` will assert that it is `None`,
@@ -97,6 +97,13 @@ pub fn build_query<'a>(
     // TODO(bikeshedding): Refactor `QueryExpr` to separate `IndexJoin` from other `Query` variants,
     //   removing the need for this convoluted logic?
     let mut result = None;
+
+    let result_or_base = |sources: &mut _, result: &mut Option<_>| {
+        result
+            .take()
+            .map(Ok)
+            .unwrap_or_else(|| get_table(ctx, db, tx, &query.source, sources))
+    };
 
     for op in &query.query {
         result = Some(match op {
@@ -110,15 +117,11 @@ pub fn build_query<'a>(
                     Box::new(EmptyRelOps::new(table.head.clone())) as Box<IterRows<'a>>
                 } else {
                     let bounds = (bounds.start_bound(), bounds.end_bound());
-                    iter_by_col_range(ctx, stdb, tx, table, columns.clone(), bounds)?
+                    iter_by_col_range(ctx, db, tx, table, columns.clone(), bounds)?
                 }
             }
             Query::IndexScan(index_scan) => {
-                let result = result
-                    .take()
-                    .map(Ok)
-                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
-
+                let result = result_or_base(sources, &mut result)?;
                 let cols = &index_scan.columns;
                 let bounds = &index_scan.bounds;
 
@@ -146,7 +149,7 @@ pub fn build_query<'a>(
                     let start_bound = bounds.0.as_ref().map(|av| &av.as_product().unwrap().elements);
                     let end_bound = bounds.1.as_ref().map(|av| &av.as_product().unwrap().elements);
                     // Construct the query:
-                    let iter = result.select(move |row| {
+                    Box::new(result.select(move |row| {
                         // Go through each column position,
                         // project to a `Bound<AV>` for the position,
                         // and compare against the column in the row.
@@ -158,82 +161,45 @@ pub fn build_query<'a>(
                             let read_col = row.read_column(col.idx()).unwrap();
                             (start_bound, end_bound).contains(&*read_col)
                         }))
-                    });
-                    Box::new(iter)
+                    }))
                 }
+            }
+            Query::IndexJoin(_) if result.is_some() => {
+                return Err(anyhow::anyhow!("Invalid query: `IndexJoin` must be the first operator").into())
             }
             Query::IndexJoin(IndexJoin {
                 probe_side,
-                probe_field,
+                probe_col,
                 index_side,
                 index_select,
                 index_col,
                 return_index_rows,
-            }) => {
-                if result.is_some() {
-                    return Err(anyhow::anyhow!("Invalid query: `IndexJoin` must be the first operator").into());
-                }
+            }) => Box::new(IndexSemiJoin {
+                ctx,
+                db,
+                tx,
+                probe_side: build_query(ctx, db, tx, probe_side, sources)?,
+                probe_col: *probe_col,
+                index_header: index_side.head(),
+                index_select,
                 // The compiler guarantees that the index side is a db table,
                 // and therefore this unwrap is always safe.
-                let index_table = index_side.table_id().unwrap();
-                let index_header = index_side.head();
-                let probe_side = build_query(ctx, stdb, tx, probe_side, sources)?;
-                let probe_col = probe_side
-                    .head()
-                    .column_pos(*probe_field)
-                    .expect("query compiler should have ensured the column exist");
-                Box::new(IndexSemiJoin {
-                    ctx,
-                    db: stdb,
-                    tx,
-                    probe_side,
-                    probe_col,
-                    index_header,
-                    index_select,
-                    index_table,
-                    index_col: *index_col,
-                    index_iter: None,
-                    return_index_rows: *return_index_rows,
-                })
-            }
-            Query::Select(cmp) => {
-                let result = result
-                    .take()
-                    .map(Ok)
-                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
-                let header = result.head().clone();
-                let iter = result.select(move |row| cmp.compare(row, &header));
-                Box::new(iter)
-            }
-            Query::Project(cols, _) => {
-                let result = result
-                    .take()
-                    .map(Ok)
-                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
-                if cols.is_empty() {
-                    result
-                } else {
-                    let header = result.head().clone();
-                    let iter = result.project(cols, move |cols, row| {
-                        Ok(RelValue::Projection(row.project_owned(cols, &header)?))
-                    })?;
-                    Box::new(iter)
-                }
-            }
-            Query::JoinInner(join) => {
-                let lhs = result
-                    .take()
-                    .map(Ok)
-                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
-                let rhs = build_query(ctx, stdb, tx, &join.rhs, sources)?;
-                join_inner(lhs, rhs, join)?
-            }
+                index_table: index_side.table_id().unwrap(),
+                index_col: *index_col,
+                index_iter: None,
+                return_index_rows: *return_index_rows,
+            }),
+            Query::Select(cmp) => build_select(result_or_base(sources, &mut result)?, cmp),
+            Query::Project(proj) => build_project(result_or_base(sources, &mut result)?, proj),
+            Query::JoinInner(join) => join_inner(
+                result_or_base(sources, &mut result)?,
+                build_query(ctx, db, tx, &join.rhs, sources)?,
+                join,
+            ),
         })
     }
 
-    result
-        .map(Ok)
-        .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))
+    result_or_base(sources, &mut result)
 }
 
 /// Resolve `query` to a table iterator,
@@ -685,11 +651,9 @@ pub(crate) mod tests {
         let table_id = schema.table_id;
 
         let data = mem_table_one_u64(u32::MAX.into());
-        let rhs = *data.get_field_pos(0).unwrap();
         let mut sources = SourceSet::<_, 1>::empty();
         let rhs_source_expr = sources.add_mem_table(data);
-        let q =
-            QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, FieldName::new(table_id, 0.into()), rhs, false);
+        let q = QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, 0.into(), 0.into(), false);
         let result = run_query(&stdb, q, sources);
 
         // The expected result.
@@ -708,14 +672,11 @@ pub(crate) mod tests {
 
         let ctx = ExecutionContext::default();
         let (schema, row) = stdb.with_auto_commit(&ctx, |tx| create_inv_table(&stdb, tx))?;
-        let table_id = schema.table_id;
 
         let data = mem_table_one_u64(u32::MAX.into());
-        let rhs = *data.get_field_pos(0).unwrap();
         let mut sources = SourceSet::<_, 1>::empty();
         let rhs_source_expr = sources.add_mem_table(data);
-        let q =
-            QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, FieldName::new(table_id, 0.into()), rhs, true);
+        let q = QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, 0.into(), 0.into(), true);
         let result = run_query(&stdb, q, sources);
 
         // The expected result.

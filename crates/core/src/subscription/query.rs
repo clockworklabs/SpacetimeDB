@@ -205,7 +205,7 @@ mod tests {
         // For filtering out the hidden field `OP_TYPE_FIELD_NAME`
         let fields = &[0, 1].map(|c| FieldName::new(schema.table_id, c.into()).into());
 
-        let q = q.with_project(fields, None);
+        let q = q.with_project(fields, None).unwrap();
 
         Ok((schema, table, data, q))
     }
@@ -222,7 +222,7 @@ mod tests {
 
         let fields = &[0, 1].map(|c| FieldName::new(schema.table_id, c.into()).into());
 
-        let q = q.with_project(fields, None);
+        let q = q.with_project(fields, None).unwrap();
 
         Ok((schema, table, data, q))
     }
@@ -234,7 +234,7 @@ mod tests {
         data: &DatabaseTableUpdate,
     ) -> (QueryExpr, SourceSet<Vec<ProductValue>, 1>) {
         let data = data.deletes.iter().chain(data.inserts.iter()).cloned().collect();
-        let mem_table = MemTable::new(of.source.head().clone(), of.source.table_access(), data);
+        let mem_table = MemTable::new(of.head().clone(), of.source.table_access(), data);
         let mut sources = SourceSet::empty();
         of.source = sources.add_mem_table(mem_table);
         (of, sources)

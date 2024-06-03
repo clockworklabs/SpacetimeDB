@@ -41,14 +41,13 @@ pub trait RelOps<'a> {
     ///
     /// It is the equivalent of a `SELECT` clause on SQL.
     #[inline]
-    fn project<P>(self, cols: &[FieldExpr], extractor: P) -> Result<Project<Self, P>, ErrorVm>
+    fn project<'b, P>(self, after_head: &'b Arc<Header>, cols: &'b [FieldExpr], extractor: P) -> Project<'b, Self, P>
     where
-        P: for<'b> FnMut(&[FieldExpr], RelValue<'b>) -> Result<RelValue<'b>, ErrorVm>,
+        P: for<'c> FnMut(&[FieldExpr], RelValue<'c>) -> Result<RelValue<'c>, ErrorVm>,
         Self: Sized,
     {
         let count = self.row_count();
-        let head = self.head().project(cols)?;
-        Ok(Project::new(self, count, Arc::new(head), cols, extractor))
+        Project::new(self, count, after_head, cols, extractor)
     }
 
     /// Intersection between the left and the right, both (non-sorted) `iterators`.
@@ -70,7 +69,7 @@ pub trait RelOps<'a> {
         key_rhs: KeyRhs,
         predicate: Pred,
         project: Proj,
-    ) -> Result<JoinInner<'a, Self, Rhs, KeyLhs, KeyRhs, Pred, Proj>, ErrorVm>
+    ) -> JoinInner<'a, Self, Rhs, KeyLhs, KeyRhs, Pred, Proj>
     where
         Self: Sized,
         Pred: FnMut(&RelValue<'a>, &RelValue<'a>) -> bool,
@@ -79,7 +78,7 @@ pub trait RelOps<'a> {
         KeyRhs: FnMut(&RelValue<'a>) -> AlgebraicValue,
         Rhs: RelOps<'a>,
     {
-        Ok(JoinInner::new(head, self, with, key_lhs, key_rhs, predicate, project))
+        JoinInner::new(head, self, with, key_lhs, key_rhs, predicate, project)
     }
 
     /// Collect all the rows in this relation into a `Vec<T>` given a function `RelValue<'a> -> T`.
@@ -172,7 +171,7 @@ where
 
 #[derive(Clone, Debug)]
 pub struct Project<'a, I, P> {
-    pub(crate) head: Arc<Header>,
+    pub(crate) head: &'a Arc<Header>,
     pub(crate) count: RowCount,
     pub(crate) cols: &'a [FieldExpr],
     pub(crate) iter: I,
@@ -180,7 +179,13 @@ pub struct Project<'a, I, P> {
 }
 
 impl<'a, I, P> Project<'a, I, P> {
-    pub fn new(iter: I, count: RowCount, head: Arc<Header>, cols: &'a [FieldExpr], extractor: P) -> Project<'a, I, P> {
+    pub fn new(
+        iter: I,
+        count: RowCount,
+        head: &'a Arc<Header>,
+        cols: &'a [FieldExpr],
+        extractor: P,
+    ) -> Project<'a, I, P> {
         Project {
             iter,
             count,
@@ -197,7 +202,7 @@ where
     P: FnMut(&[FieldExpr], RelValue<'a>) -> Result<RelValue<'a>, ErrorVm>,
 {
     fn head(&self) -> &Arc<Header> {
-        &self.head
+        self.head
     }
 
     fn row_count(&self) -> RowCount {
