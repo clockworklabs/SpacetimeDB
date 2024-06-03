@@ -262,7 +262,7 @@ public static class Utils
                     .Append(parentClasses.Name) // e.g. Outer/Generic<T>
                     .Append(' ');
 
-                if (parentClasses.Child is null && intf is not null)
+                if (parentClasses.Child is null && interface_ is not null)
                 {
                     sb.Append(" : ").Append(interface_);
                 }
