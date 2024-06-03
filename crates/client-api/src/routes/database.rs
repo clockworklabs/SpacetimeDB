@@ -39,6 +39,8 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::sats::WithTypespace;
 use spacetimedb_lib::ProductTypeElement;
 
+const DEFAULT_HTTP_CALL_BODY_SIZE_LIMIT: usize = 2 * 1024 * 1024;
+
 pub(crate) struct DomainParsingRejection;
 
 impl IntoResponse for DomainParsingRejection {
@@ -960,12 +962,24 @@ where
     S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
     use axum::routing::{get, post};
+
+    let call_body_size_limit: usize = std::env::var("SPACETIMEDB_HTTP_CALL_BODY_SIZE_LIMIT")
+        .map(|l| {
+            l.parse().expect(
+                "SPACETIMEDB_HTTP_CALL_BODY_SIZE_LIMIT env variable is expected to parse into an unsigned integer",
+            )
+        })
+        .unwrap_or(DEFAULT_HTTP_CALL_BODY_SIZE_LIMIT);
+
     axum::Router::new()
         .route(
             "/subscribe/:name_or_address",
             get(super::subscribe::handle_websocket::<S>),
         )
-        .route("/call/:name_or_address/:reducer", post(call::<S>))
+        .route(
+            "/call/:name_or_address/:reducer",
+            post(call::<S>).layer(DefaultBodyLimit::max(call_body_size_limit)),
+        )
         .route("/schema/:name_or_address/:entity_type/:entity", get(describe::<S>))
         .route("/schema/:name_or_address", get(catalog::<S>))
         .route("/info/:name_or_address", get(info::<S>))
