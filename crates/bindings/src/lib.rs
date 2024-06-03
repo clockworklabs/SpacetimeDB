@@ -248,7 +248,6 @@ fn table_iter_filtered<T: TableType>(
     })
 }
 
-
 /// A table iterator which yields values of the `TableType` corresponding to the table.
 pub struct TableIter<T: TableType> {
     /// The underlying source of our `Buffer`s.
