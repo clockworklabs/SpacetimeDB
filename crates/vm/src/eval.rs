@@ -8,7 +8,7 @@ use spacetimedb_sats::ProductValue;
 pub type IterRows<'a> = dyn RelOps<'a> + 'a;
 
 pub fn build_select<'a>(base: impl RelOps<'a> + 'a, cmp: &'a ColumnOp) -> Box<IterRows<'a>> {
-    Box::new(base.select(move |row| cmp.compare(row)))
+    Box::new(base.select(move |row| cmp.eval_bool(row)))
 }
 
 pub fn build_project<'a>(base: impl RelOps<'a> + 'a, proj: &'a ProjectExpr) -> Box<IterRows<'a>> {
@@ -306,7 +306,6 @@ pub mod tests {
         let second_source_expr = sources.add_mem_table(table);
 
         let q = QueryExpr::new(source_expr).with_join_inner(second_source_expr, col, col, false);
-        dbg!(&q);
         let result = run_query(q.into(), sources);
 
         // The expected result.
