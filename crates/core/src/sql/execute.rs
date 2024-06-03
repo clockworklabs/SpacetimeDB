@@ -54,7 +54,12 @@ fn execute(p: &mut DbProgram<'_, '_>, ast: Vec<CrudExpr>) -> Result<Vec<MemTable
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
 ///
 /// Also, in case the execution takes more than x, log it as `slow query`
-pub fn execute_sql(db: &DatabaseEngine, sql: &str, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
+pub fn execute_sql(
+    db: &DatabaseEngine,
+    sql: &str,
+    ast: Vec<CrudExpr>,
+    auth: AuthCtx,
+) -> Result<Vec<MemTable>, DBError> {
     let ctx = ctx_sql(db);
     let _slow_logger = SlowQueryLogger::query(&ctx, sql).log_guard();
     if CrudExpr::is_reads(&ast) {

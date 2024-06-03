@@ -797,10 +797,7 @@ impl Host {
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let dbic = &self.dbic;
         let (scheduler, scheduler_starter) = self.scheduler.new_with_same_db();
-        let program_bytes = self
-            .program_storage
-            .load_program(&dbic.db_engine, program_hash)
-            .await?;
+        let program_bytes = self.program_storage.load_program(&dbic.db_engine, program_hash).await?;
         let module = make_module_host(
             host_type,
             ModuleCreationContext {

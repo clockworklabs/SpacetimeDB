@@ -77,7 +77,9 @@ pub struct DatabaseEngine {
 
 impl std::fmt::Debug for DatabaseEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DatabaseEngine").field("address", &self.address).finish()
+        f.debug_struct("DatabaseEngine")
+            .field("address", &self.address)
+            .finish()
     }
 }
 
@@ -1207,8 +1209,12 @@ mod tests {
         row.read_col(0).unwrap()
     }
 
-    fn collect_sorted<T: ReadColumn + Ord>(db_engine: &DatabaseEngine, tx: &MutTx, table_id: TableId) -> ResultTest<Vec<T>> {
-        let mut rows = db_engine 
+    fn collect_sorted<T: ReadColumn + Ord>(
+        db_engine: &DatabaseEngine,
+        tx: &MutTx,
+        table_id: TableId,
+    ) -> ResultTest<Vec<T>> {
+        let mut rows = db_engine
             .iter_mut(&ExecutionContext::default(), tx, table_id)?
             .map(read_first_col)
             .collect::<Vec<T>>();
@@ -1460,16 +1466,20 @@ mod tests {
         let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
 
         let schema = table_indexed(true);
-        let table_id = test_db.create_table(&mut tx, schema).expect("test_db.create_table failed");
+        let table_id = test_db
+            .create_table(&mut tx, schema)
+            .expect("test_db.create_table failed");
 
         assert!(
-            test_db.index_id_from_name(&tx, "MyTable_my_col_idx")
+            test_db
+                .index_id_from_name(&tx, "MyTable_my_col_idx")
                 .expect("index_id_from_name failed")
                 .is_some(),
             "Index not created"
         );
 
-        test_db.insert(&mut tx, table_id, product![1i64])
+        test_db
+            .insert(&mut tx, table_id, product![1i64])
             .expect("test_db.insert failed");
         match test_db.insert(&mut tx, table_id, product![1i64]) {
             Ok(_) => {
@@ -1682,13 +1692,16 @@ mod tests {
 
         let mut initial_tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
         let schema = TableDef::from_product("test_table", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
-        let table_id = test_db.create_table(&mut initial_tx, schema).expect("create_table failed");
+        let table_id = test_db
+            .create_table(&mut initial_tx, schema)
+            .expect("create_table failed");
 
         test_db.commit_tx(&ctx, initial_tx).expect("Commit initial_tx failed");
 
         // Insert a row and commit it, so the row is in the committed_state.
         let mut insert_tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
-        test_db.insert(&mut insert_tx, table_id, product!(AlgebraicValue::I32(0)))
+        test_db
+            .insert(&mut insert_tx, table_id, product!(AlgebraicValue::I32(0)))
             .expect("Insert insert_tx failed");
         test_db.commit_tx(&ctx, insert_tx).expect("Commit insert_tx failed");
 
@@ -1702,7 +1715,8 @@ mod tests {
         // Insert the row again, so that depending on the datastore internals,
         // it may now be only in the committed_state,
         // or in all three of the committed_state, delete_tables and insert_tables.
-        test_db.insert(&mut delete_insert_tx, table_id, product!(AlgebraicValue::I32(0)))
+        test_db
+            .insert(&mut delete_insert_tx, table_id, product!(AlgebraicValue::I32(0)))
             .expect("Insert delete_insert_tx failed");
 
         // Iterate over the table and assert that we see the committed-deleted-inserted row only once.
@@ -1753,27 +1767,29 @@ mod tests {
         // `__identity_connected__` call.
         {
             let tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
-            test_db.commit_tx(
-                &ExecutionContext::reducer(
-                    test_db.address(),
-                    ReducerContext {
-                        name: "__identity_connected__".into(),
-                        caller_identity: Identity::__dummy(),
-                        caller_address: Address::__DUMMY,
-                        timestamp,
-                        arg_bsatn: Bytes::new(),
-                    },
-                ),
-                tx,
-            )
-            .expect("failed to commit empty __identity_connected__ transaction");
+            test_db
+                .commit_tx(
+                    &ExecutionContext::reducer(
+                        test_db.address(),
+                        ReducerContext {
+                            name: "__identity_connected__".into(),
+                            caller_identity: Identity::__dummy(),
+                            caller_address: Address::__DUMMY,
+                            timestamp,
+                            arg_bsatn: Bytes::new(),
+                        },
+                    ),
+                    tx,
+                )
+                .expect("failed to commit empty __identity_connected__ transaction");
         }
 
         // Create a non-empty transaction including reducer info
         let table_id = {
             let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
             let table_id = test_db.create_table(&mut tx, schema).expect("failed to create table");
-            test_db.insert(&mut tx, table_id, product!(AlgebraicValue::I32(0)))
+            test_db
+                .insert(&mut tx, table_id, product!(AlgebraicValue::I32(0)))
                 .expect("failed to insert row");
             test_db.commit_tx(&ctx, tx).expect("failed to commit tx");
 
@@ -1784,9 +1800,11 @@ mod tests {
         // created by a mutable SQL transaction
         {
             let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
-            test_db.insert(&mut tx, table_id, product!(AlgebraicValue::I32(-42)))
+            test_db
+                .insert(&mut tx, table_id, product!(AlgebraicValue::I32(-42)))
                 .expect("failed to insert row");
-            test_db.commit_tx(&ExecutionContext::sql(test_db.address(), Default::default()), tx)
+            test_db
+                .commit_tx(&ExecutionContext::sql(test_db.address(), Default::default()), tx)
                 .expect("failed to commit tx");
         }
 

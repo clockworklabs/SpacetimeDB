@@ -346,7 +346,8 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                     let schema = schema?;
                     let table_name = schema.table_name.clone();
                     self.system_logger().info(&format!("Creating table `{table_name}`"));
-                    db_engine.create_table(tx, schema)
+                    db_engine
+                        .create_table(tx, schema)
                         .with_context(|| format!("failed to create table {table_name}"))?;
                 }
                 // Set the module hash. Morally, this should be done _after_ calling

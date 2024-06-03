@@ -38,7 +38,8 @@ pub fn update_database(
             SchemaUpdates::Updates { new_tables } => {
                 for (name, schema) in new_tables {
                     system_logger.info(&format!("Creating table `{}`", name));
-                    db_engine.create_table(tx, schema)
+                    db_engine
+                        .create_table(tx, schema)
                         .with_context(|| format!("failed to create table {}", name))?;
                 }
             }

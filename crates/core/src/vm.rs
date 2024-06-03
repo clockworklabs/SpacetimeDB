@@ -4,7 +4,7 @@ use crate::config::DatabaseConfig;
 use crate::db::cursor::{IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::datastore::locking_tx_datastore::IterByColRange;
-use crate::db::engine::{MutTx, DatabaseEngine, Tx};
+use crate::db::engine::{DatabaseEngine, MutTx, Tx};
 use crate::error::DBError;
 use crate::estimation;
 use crate::execution_context::ExecutionContext;
@@ -647,7 +647,8 @@ pub(crate) mod tests {
     fn test_db_query_inner_join() -> ResultTest<()> {
         let test_db = TestDB::durable()?;
 
-        let (schema, _) = test_db.with_auto_commit(&ExecutionContext::default(), |tx| create_inv_table(&test_db, tx))?;
+        let (schema, _) =
+            test_db.with_auto_commit(&ExecutionContext::default(), |tx| create_inv_table(&test_db, tx))?;
         let table_id = schema.table_id;
 
         let data = mem_table_one_u64(u32::MAX.into());

@@ -4,7 +4,7 @@ use super::query::compile_read_only_query;
 use super::subscription::ExecutionSet;
 use crate::client::messages::{SubscriptionUpdate, SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
-use crate::db::engine::{MutTx, DatabaseEngine, Tx};
+use crate::db::engine::{DatabaseEngine, MutTx, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};

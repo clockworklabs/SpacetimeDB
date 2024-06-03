@@ -178,7 +178,7 @@ impl InstanceEnv {
         let eq_value = &db_engine.decode_column(tx, table_id, col_id, value)?;
 
         // Find all rows in the table where the column data equates to `value`.
-        let rows_to_delete = db_engine 
+        let rows_to_delete = db_engine
             .iter_by_col_eq_mut(ctx, tx, table_id, col_id, eq_value)?
             .map(|row_ref| row_ref.pointer())
             // `delete_by_field` only cares about 1 element,

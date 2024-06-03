@@ -1,5 +1,5 @@
 use crate::config::ReadConfigOption;
-use crate::db::engine::{MutTx, DatabaseEngine, Tx};
+use crate::db::engine::{DatabaseEngine, MutTx, Tx};
 use crate::error::{DBError, PlanError};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_primitives::{ColList, ConstraintKind, Constraints};
@@ -983,7 +983,11 @@ fn compile_read_config(name: Vec<Ident>) -> Result<SqlAst, PlanError> {
 }
 
 /// Compiles a `SQL` clause
-fn compile_statement<T: TableSchemaView>(db: &DatabaseEngine, tx: &T, statement: Statement) -> Result<SqlAst, PlanError> {
+fn compile_statement<T: TableSchemaView>(
+    db: &DatabaseEngine,
+    tx: &T,
+    statement: Statement,
+) -> Result<SqlAst, PlanError> {
     match statement {
         Statement::Query(query) => Ok(compile_query(db, tx, *query)?),
         Statement::Insert {
