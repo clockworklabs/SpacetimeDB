@@ -115,18 +115,7 @@ impl ExecutionUnit {
             source.is_db_table(),
             "The plan passed to `compile_select_eval_incr` must read from `DbTable`s, but found in-mem table"
         );
-        // NOTE: The `eval_incr_plan` will reference a `SourceExpr::InMemory`
-        // with `row_count: RowCount::exact(0)`.
-        // This is inaccurate; while we cannot predict the exact number of rows,
-        // we know that it will never be 0,
-        // as we wouldn't have a [`DatabaseTableUpdate`] with no changes.
-        //
-        // Our current query planner doesn't use the `row_count` in any meaningful way,
-        // so this is fine.
-        // Some day down the line, when we have a real query planner,
-        // we may need to provide a row count estimation that is, if not accurate,
-        // at least less specifically inaccurate.
-        let source = SourceExpr::from_mem_table(source.head().clone(), source.table_access(), 0, SourceId(0));
+        let source = SourceExpr::from_mem_table(source.head().clone(), source.table_access(), SourceId(0));
         let query = expr.query.clone();
         QueryExpr { source, query }
     }
@@ -215,41 +204,29 @@ impl ExecutionUnit {
 
     /// Evaluate this execution unit against the database using the json format.
     #[tracing::instrument(skip_all)]
-    pub fn eval_json(
-        &self,
-        ctx: &ExecutionContext,
-        db: &RelationalDB,
-        tx: &Tx,
-        sql: &str,
-    ) -> Result<Option<TableUpdateJson>, DBError> {
+    pub fn eval_json(&self, ctx: &ExecutionContext, db: &RelationalDB, tx: &Tx, sql: &str) -> Option<TableUpdateJson> {
         let table_row_operations = Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, |row| {
             rel_value_to_table_row_op_json(row, OpType::Insert)
-        })?;
-        Ok((!table_row_operations.is_empty()).then(|| TableUpdateJson {
+        });
+        (!table_row_operations.is_empty()).then(|| TableUpdateJson {
             table_id: self.return_table().into(),
             table_name: self.return_name(),
             table_row_operations,
-        }))
+        })
     }
 
     /// Evaluate this execution unit against the database using the binary format.
     #[tracing::instrument(skip_all)]
-    pub fn eval_binary(
-        &self,
-        ctx: &ExecutionContext,
-        db: &RelationalDB,
-        tx: &Tx,
-        sql: &str,
-    ) -> Result<Option<TableUpdate>, DBError> {
+    pub fn eval_binary(&self, ctx: &ExecutionContext, db: &RelationalDB, tx: &Tx, sql: &str) -> Option<TableUpdate> {
         let mut scratch = Vec::new();
         let table_row_operations = Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, |row| {
             rel_value_to_table_row_op_binary(&mut scratch, &row, OpType::Insert)
-        })?;
-        Ok((!table_row_operations.is_empty()).then(|| TableUpdate {
+        });
+        (!table_row_operations.is_empty()).then(|| TableUpdate {
             table_id: self.return_table().into(),
             table_name: self.return_name().into(),
             table_row_operations,
-        }))
+        })
     }
 
     fn eval_query_expr<T>(
@@ -259,12 +236,9 @@ impl ExecutionUnit {
         eval_plan: &QueryExpr,
         sql: &str,
         convert: impl FnMut(RelValue<'_>) -> T,
-    ) -> Result<Vec<T>, DBError> {
-        let tx: TxMode = tx.into();
+    ) -> Vec<T> {
         let _slow_query = SlowQueryLogger::subscription(ctx, sql).log_guard();
-        let query = build_query(ctx, db, &tx, eval_plan, &mut NoInMemUsed)?;
-        let ops = query.collect_vec(convert)?;
-        Ok(ops)
+        build_query(ctx, db, &tx.into(), eval_plan, &mut NoInMemUsed).collect_vec(convert)
     }
 
     /// Evaluate this execution unit against the given delta tables.
@@ -275,18 +249,18 @@ impl ExecutionUnit {
         tx: &'a TxMode<'a>,
         sql: &'a str,
         tables: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
-    ) -> Result<Option<DatabaseTableUpdateRelValue<'a>>, DBError> {
+    ) -> Option<DatabaseTableUpdateRelValue<'a>> {
         let _slow_query = SlowQueryLogger::incremental_updates(ctx, sql).log_guard();
         let updates = match &self.eval_incr_plan {
-            EvalIncrPlan::Select(plan) => Self::eval_incr_query_expr(ctx, db, tx, tables, plan, self.return_table())?,
-            EvalIncrPlan::Semijoin(plan) => plan.eval(ctx, db, tx, tables)?,
+            EvalIncrPlan::Select(plan) => Self::eval_incr_query_expr(ctx, db, tx, tables, plan, self.return_table()),
+            EvalIncrPlan::Semijoin(plan) => plan.eval(ctx, db, tx, tables),
         };
 
-        Ok(updates.has_updates().then(|| DatabaseTableUpdateRelValue {
+        updates.has_updates().then(|| DatabaseTableUpdateRelValue {
             table_id: self.return_table(),
             table_name: self.return_name(),
             updates,
-        }))
+        })
     }
 
     fn eval_query_expr_against_memtable<'a>(
@@ -295,12 +269,12 @@ impl ExecutionUnit {
         tx: &'a TxMode,
         mem_table: &'a [ProductValue],
         eval_incr_plan: &'a QueryExpr,
-    ) -> Result<Box<IterRows<'a>>, DBError> {
+    ) -> Box<IterRows<'a>> {
         // Provide the updates from `table`.
         let sources = &mut Some(mem_table.iter().map(RelValue::ProjRef));
         // Evaluate the saved plan against the new updates,
         // returning an iterator over the selected rows.
-        build_query(ctx, db, tx, eval_incr_plan, sources).map_err(Into::into)
+        build_query(ctx, db, tx, eval_incr_plan, sources)
     }
 
     fn eval_incr_query_expr<'a>(
@@ -310,7 +284,7 @@ impl ExecutionUnit {
         tables: impl Iterator<Item = &'a DatabaseTableUpdate>,
         eval_incr_plan: &'a QueryExpr,
         return_table: TableId,
-    ) -> Result<UpdatesRelValue<'a>, DBError> {
+    ) -> UpdatesRelValue<'a> {
         assert!(
             eval_incr_plan.source.is_mem_table(),
             "Expected in-mem table in `eval_incr_plan`, but found `DbTable`"
@@ -324,23 +298,22 @@ impl ExecutionUnit {
             // without forgetting which are inserts and which are deletes.
             // Previously, we used to add such a column `"__op_type: AlgebraicType::U8"`.
             if !table.inserts.is_empty() {
-                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.inserts, eval_incr_plan)?;
-                Self::collect_rows(&mut inserts, query)?;
+                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.inserts, eval_incr_plan);
+                Self::collect_rows(&mut inserts, query);
             }
             if !table.deletes.is_empty() {
-                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.deletes, eval_incr_plan)?;
-                Self::collect_rows(&mut deletes, query)?;
+                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.deletes, eval_incr_plan);
+                Self::collect_rows(&mut deletes, query);
             }
         }
-        Ok(UpdatesRelValue { deletes, inserts })
+        UpdatesRelValue { deletes, inserts }
     }
 
     /// Collect the results of `query` into a vec `sink`.
-    fn collect_rows<'a>(sink: &mut Vec<RelValue<'a>>, mut query: Box<IterRows<'a>>) -> Result<(), DBError> {
-        while let Some(row) = query.next()? {
+    fn collect_rows<'a>(sink: &mut Vec<RelValue<'a>>, mut query: Box<IterRows<'a>>) {
+        while let Some(row) = query.next() {
             sink.push(row);
         }
-        Ok(())
     }
 
     /// The estimated number of rows returned by this execution unit.

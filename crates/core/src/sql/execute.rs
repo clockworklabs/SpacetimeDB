@@ -132,6 +132,7 @@ pub(crate) mod tests {
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::vm::tests::create_table_with_rows;
     use spacetimedb_lib::error::{ResultTest, TestError};
+    use spacetimedb_lib::relation::ColExpr;
     use spacetimedb_primitives::{col_list, ColId};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::relation::Header;
@@ -287,8 +288,7 @@ pub(crate) mod tests {
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
         // The expected result.
-        let col = table.head.fields[0].field;
-        let inv = table.head.project(&[col]).unwrap();
+        let inv = table.head.project(&[ColExpr::Col(0.into())]).unwrap();
 
         let row = product![1u64];
         let input = MemTable::new(inv.into(), table.table_access, vec![row]);
@@ -311,8 +311,7 @@ pub(crate) mod tests {
         let result = result.first().unwrap().clone();
 
         // The expected result.
-        let col = table.head.fields[0].field;
-        let inv = table.head.project(&[col]).unwrap();
+        let inv = table.head.project(&[ColExpr::Col(0.into())]).unwrap();
 
         let row = product![1u64];
         let input = MemTable::new(inv.into(), table.table_access, vec![row]);
@@ -338,8 +337,7 @@ pub(crate) mod tests {
         let mut result = result.first().unwrap().clone();
         result.data.sort();
         //The expected result
-        let col = table.head.fields[0].field;
-        let inv = table.head.project(&[col]).unwrap();
+        let inv = table.head.project(&[ColExpr::Col(0.into())]).unwrap();
 
         let input = MemTable::new(inv.into(), table.table_access, vec![product![1u64], product![2u64]]);
 
@@ -364,8 +362,7 @@ pub(crate) mod tests {
         let mut result = result.first().unwrap().clone();
         result.data.sort();
         // The expected result.
-        let col = table.head.fields[0].field;
-        let inv = table.head.project(&[col]).unwrap();
+        let inv = table.head.project(&[ColExpr::Col(0.into())]).unwrap();
 
         let input = MemTable::new(inv.into(), table.table_access, vec![product![1u64], product![2u64]]);
 

@@ -109,7 +109,7 @@ impl ModuleSubscriptions {
             &config,
         )?;
 
-        let database_update = execution_set.eval(&ctx, sender.protocol, &self.relational_db, &tx)?;
+        let database_update = execution_set.eval(&ctx, sender.protocol, &self.relational_db, &tx);
 
         WORKER_METRICS
             .initial_subscription_evals

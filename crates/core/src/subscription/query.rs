@@ -202,10 +202,8 @@ mod tests {
 
         let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
 
-        // For filtering out the hidden field `OP_TYPE_FIELD_NAME`
         let fields = &[0, 1].map(|c| FieldName::new(schema.table_id, c.into()).into());
-
-        let q = q.with_project(fields, None).unwrap();
+        let q = q.with_project(fields.into(), None).unwrap();
 
         Ok((schema, table, data, q))
     }
@@ -220,9 +218,8 @@ mod tests {
 
         let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
 
-        let fields = &[0, 1].map(|c| FieldName::new(schema.table_id, c.into()).into());
-
-        let q = q.with_project(fields, None).unwrap();
+        let fields = [0, 1].map(|c| FieldName::new(schema.table_id, c.into()).into());
+        let q = q.with_project(fields.into(), None).unwrap();
 
         Ok((schema, table, data, q))
     }
@@ -276,7 +273,7 @@ mod tests {
         let ctx = &ExecutionContext::incremental_update(db.address(), SlowQueryConfig::default());
         let tx = &tx.into();
         let update = update.tables.iter().collect::<Vec<_>>();
-        let result = s.eval_incr(ctx, db, tx, &update)?;
+        let result = s.eval_incr(ctx, db, tx, &update);
         assert_eq!(
             result.tables.len(),
             total_tables,
@@ -303,7 +300,7 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval(ctx, Protocol::Binary, db, tx)?.tables.unwrap_left();
+        let result = s.eval(ctx, Protocol::Binary, db, tx).tables.unwrap_left();
         assert_eq!(
             result.len(),
             total_tables,
@@ -367,7 +364,7 @@ mod tests {
         let ctx = &ExecutionContext::incremental_update(db.address(), SlowQueryConfig::default());
         let tx = (&tx).into();
         let update = update.tables.iter().collect::<Vec<_>>();
-        let result = query.eval_incr(ctx, &db, &tx, &update)?;
+        let result = query.eval_incr(ctx, &db, &tx, &update);
 
         assert_eq!(result.tables.len(), 1);
 
@@ -397,7 +394,9 @@ mod tests {
         let q_1 = q.clone();
         check_query(&db, &table, &tx, &q_1, &data)?;
 
-        let q_2 = q.with_select_cmp(OpCmp::Eq, FieldName::new(schema.table_id, 0.into()), scalar(1u64));
+        let q_2 = q
+            .with_select_cmp(OpCmp::Eq, FieldName::new(schema.table_id, 0.into()), scalar(1u64))
+            .unwrap();
         check_query(&db, &table, &tx, &q_2, &data)?;
 
         Ok(())
@@ -420,11 +419,9 @@ mod tests {
         check_query(&db, &table, &tx, &q, &data)?;
 
         // SELECT * FROM inventory WHERE inventory_id = 1
-        let q_id = QueryExpr::new(&*schema).with_select_cmp(
-            OpCmp::Eq,
-            FieldName::new(schema.table_id, 0.into()),
-            scalar(1u64),
-        );
+        let q_id = QueryExpr::new(&*schema)
+            .with_select_cmp(OpCmp::Eq, FieldName::new(schema.table_id, 0.into()), scalar(1u64))
+            .unwrap();
 
         let s = singleton_execution_set(q_id, "SELECT * FROM inventory WHERE inventory_id = 1".into())?;
 
@@ -723,7 +720,7 @@ mod tests {
         db.with_read_only(ctx, |tx| {
             let tx = (&*tx).into();
             let update = update.tables.iter().collect::<Vec<_>>();
-            let result = query.eval_incr(ctx, db, &tx, &update)?;
+            let result = query.eval_incr(ctx, db, &tx, &update);
             let tables = result
                 .tables
                 .into_iter()
