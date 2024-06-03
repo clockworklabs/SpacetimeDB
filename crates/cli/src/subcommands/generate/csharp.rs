@@ -575,6 +575,8 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 }
 
 pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String, String)> {
+    let mut results = Vec::new();
+
     let reducers: Vec<&ReducerDef> = items
         .iter()
         .filter_map(|i| {
@@ -690,10 +692,18 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
             writeln!(output, "return args is null ? null : new ReducerEvent(dbEvent, args);");
         });
     });
-    writeln!(output);
 
+    results.push(("_Globals/SpacetimeDBClient.cs".to_owned(), output.into_inner()));
+
+    // Note: Unity requires script classes to have the same name as the file they are in.
+    // That's why we're generating a separate file for Unity-specific code.
+
+    let mut output = CsharpAutogen::new(namespace, &["UnityEngine"]);
+
+    writeln!(output, "// This class is only used in Unity projects.");
+    writeln!(output, "// Attach this to a gameobject in your scene to use SpacetimeDB.");
     writeln!(output, "#if UNITY_5_3_OR_NEWER");
-    writeln!(output, "public class NetworkManager : UnityEngine.MonoBehaviour");
+    writeln!(output, "public class UnityNetworkManager : MonoBehaviour");
     indented_block(&mut output, |output| {
         writeln!(
             output,
@@ -703,5 +713,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
     });
     writeln!(output, "#endif");
 
-    vec![("_Globals.cs".to_string(), output.into_inner())]
+    results.push(("_Globals/UnityNetworkManager.cs".to_owned(), output.into_inner()));
+
+    results
 }
