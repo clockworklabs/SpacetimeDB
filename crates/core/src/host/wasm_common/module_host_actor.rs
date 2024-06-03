@@ -400,11 +400,11 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
         let proposed_tables = get_tabledefs(&self.info).collect::<anyhow::Result<Vec<_>>>()?;
 
-        let stdb = &*self.database_instance_context().db_engine;
-        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let db_engine = &*self.database_instance_context().db_engine;
+        let tx = db_engine.begin_mut_tx(IsolationLevel::Serializable);
 
         let res = crate::db::update::update_database(
-            stdb,
+            db_engine,
             tx,
             proposed_tables,
             fence,
@@ -418,7 +418,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
         let update_result = match self.info.reducers.lookup_id(UPDATE_DUNDER) {
             None => {
-                stdb.commit_tx(&ExecutionContext::internal(stdb.address()), tx)?;
+                db_engine.commit_tx(&ExecutionContext::internal(db_engine.address()), tx)?;
                 None
             }
 
@@ -494,7 +494,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let caller_address_opt = (caller_address != Address::__DUMMY).then_some(caller_address);
 
         let dbic = self.database_instance_context();
-        let stdb = &*dbic.db_engine.clone();
+        let db_engine = &*dbic.db_engine.clone();
         let address = dbic.address;
         let reducer_name = &*self.info.reducers[reducer_id].name;
 
@@ -522,7 +522,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             arg_bytes: args.get_bsatn().clone(),
         };
 
-        let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable));
+        let tx = tx.unwrap_or_else(|| db_engine.begin_mut_tx(IsolationLevel::Serializable));
         let _guard = WORKER_METRICS
             .reducer_plus_query_duration
             .with_label_values(&address, op.name)

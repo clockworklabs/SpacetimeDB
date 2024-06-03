@@ -168,22 +168,22 @@ impl ModuleSubscriptions {
         // Take a read lock on `subscriptions` before committing tx
         // else it can result in subscriber receiving duplicate updates.
         let subscriptions = self.subscriptions.read();
-        let stdb = &self.db_engine;
+        let db_engine = &self.db_engine;
 
         let read_tx = match &mut event.status {
             EventStatus::Committed(db_update) => {
-                let Some((tx_data, read_tx)) = stdb.commit_tx_downgrade(ctx, tx)? else {
+                let Some((tx_data, read_tx)) = db_engine.commit_tx_downgrade(ctx, tx)? else {
                     return Ok(Err(WriteConflict));
                 };
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
                 read_tx
             }
-            EventStatus::Failed(_) | EventStatus::OutOfEnergy => stdb.rollback_mut_tx_downgrade(ctx, tx),
+            EventStatus::Failed(_) | EventStatus::OutOfEnergy => db_engine.rollback_mut_tx_downgrade(ctx, tx),
         };
         let event = Arc::new(event);
 
         match &event.status {
-            EventStatus::Committed(_) => subscriptions.eval_updates(stdb, &read_tx, event.clone(), client),
+            EventStatus::Committed(_) => subscriptions.eval_updates(db_engine, &read_tx, event.clone(), client),
             EventStatus::Failed(_) => {
                 if let Some(client) = client {
                     let message = TransactionUpdateMessage::<DatabaseUpdate> {

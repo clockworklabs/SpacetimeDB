@@ -171,14 +171,14 @@ impl InstanceEnv {
         col_id: ColId,
         value: &[u8],
     ) -> Result<u32, NodesError> {
-        let stdb = &*self.dbic.db_engine;
+        let db_engine = &*self.dbic.db_engine;
         let tx = &mut *self.get_tx()?;
 
         // Interpret the `value` using the schema of the column.
-        let eq_value = &stdb.decode_column(tx, table_id, col_id, value)?;
+        let eq_value = &db_engine.decode_column(tx, table_id, col_id, value)?;
 
         // Find all rows in the table where the column data equates to `value`.
-        let rows_to_delete = stdb
+        let rows_to_delete = db_engine 
             .iter_by_col_eq_mut(ctx, tx, table_id, col_id, eq_value)?
             .map(|row_ref| row_ref.pointer())
             // `delete_by_field` only cares about 1 element,
@@ -186,7 +186,7 @@ impl InstanceEnv {
             .collect::<SmallVec<[_; 1]>>();
 
         // Delete them and count how many we deleted.
-        Ok(stdb.delete(tx, table_id, rows_to_delete))
+        Ok(db_engine.delete(tx, table_id, rows_to_delete))
     }
 
     /// Deletes all rows in the table identified by `table_id`
@@ -196,17 +196,17 @@ impl InstanceEnv {
     /// Returns an error if no rows were deleted.
     #[tracing::instrument(skip(self, relation))]
     pub fn delete_by_rel(&self, table_id: TableId, relation: &[u8]) -> Result<u32, NodesError> {
-        let stdb = &*self.dbic.db_engine;
+        let db_engine = &*self.dbic.db_engine;
         let tx = &mut *self.get_tx()?;
 
         // Find the row schema using it to decode a vector of product values.
-        let row_ty = stdb.row_schema_for_table(tx, table_id)?;
+        let row_ty = db_engine.row_schema_for_table(tx, table_id)?;
         // `TableType::delete` cares about a single element
         // so in that case we can avoid the allocation by using `smallvec`.
         let relation = ProductValue::decode_smallvec(&row_ty, &mut &*relation).map_err(NodesError::DecodeRow)?;
 
         // Delete them and return how many we deleted.
-        Ok(stdb.delete_by_rel(tx, table_id, relation))
+        Ok(db_engine.delete_by_rel(tx, table_id, relation))
     }
 
     /// Returns the `table_id` associated with the given `table_name`.
@@ -214,11 +214,11 @@ impl InstanceEnv {
     /// Errors with `TableNotFound` if the table does not exist.
     #[tracing::instrument(skip_all)]
     pub fn get_table_id(&self, table_name: &str) -> Result<TableId, NodesError> {
-        let stdb = &*self.dbic.db_engine;
+        let db_engine = &*self.dbic.db_engine;
         let tx = &mut *self.get_tx()?;
 
         // Query the table id from the name.
-        let table_id = stdb
+        let table_id = db_engine
             .table_id_from_name_mut(tx, table_name)?
             .ok_or(NodesError::TableNotFound)?;
 
@@ -244,7 +244,7 @@ impl InstanceEnv {
         index_type: u8,
         col_ids: Vec<u8>,
     ) -> Result<(), NodesError> {
-        let stdb = &*self.dbic.db_engine;
+        let db_engine = &*self.dbic.db_engine;
         let tx = &mut *self.get_tx()?;
 
         // TODO(george) This check should probably move towards src/db/index, but right
@@ -264,7 +264,7 @@ impl InstanceEnv {
             .build()
             .expect("Attempt to create an index with zero columns");
 
-        let is_unique = stdb.column_constraints(tx, table_id, &columns)?.has_unique();
+        let is_unique = db_engine.column_constraints(tx, table_id, &columns)?.has_unique();
 
         let index = IndexDef {
             columns,
@@ -273,7 +273,7 @@ impl InstanceEnv {
             index_type,
         };
 
-        stdb.create_index(tx, table_id, index)?;
+        db_engine.create_index(tx, table_id, index)?;
 
         Ok(())
     }
@@ -292,23 +292,23 @@ impl InstanceEnv {
         col_id: ColId,
         value: &[u8],
     ) -> Result<Vec<Box<[u8]>>, NodesError> {
-        let stdb = &*self.dbic.db_engine;
+        let db_engine = &*self.dbic.db_engine;
         let tx = &mut *self.get_tx()?;
 
         // Interpret the `value` using the schema of the column.
-        let value = &stdb.decode_column(tx, table_id, col_id, value)?;
+        let value = &db_engine.decode_column(tx, table_id, col_id, value)?;
 
         // Find all rows in the table where the column data matches `value`.
-        let chunks = ChunkedWriter::collect_iter(stdb.iter_by_col_eq_mut(ctx, tx, table_id, col_id, value)?);
+        let chunks = ChunkedWriter::collect_iter(db_engine.iter_by_col_eq_mut(ctx, tx, table_id, col_id, value)?);
         Ok(chunks)
     }
 
     #[tracing::instrument(skip_all)]
     pub fn iter_chunks(&self, ctx: &ExecutionContext, table_id: TableId) -> Result<Vec<Box<[u8]>>, NodesError> {
-        let stdb = &*self.dbic.db_engine;
+        let db_engine = &*self.dbic.db_engine;
         let tx = &mut *self.tx.get()?;
 
-        let chunks = ChunkedWriter::collect_iter(stdb.iter_mut(ctx, tx, table_id)?);
+        let chunks = ChunkedWriter::collect_iter(db_engine.iter_mut(ctx, tx, table_id)?);
         Ok(chunks)
     }
 
@@ -345,10 +345,10 @@ impl InstanceEnv {
             }
         }
 
-        let stdb = &self.dbic.db_engine;
+        let db_engine = &self.dbic.db_engine;
         let tx = &mut *self.tx.get()?;
 
-        let schema = stdb.schema_for_table_mut(tx, table_id)?;
+        let schema = db_engine.schema_for_table_mut(tx, table_id)?;
         let row_type = schema.get_row_type();
 
         let filter = filter::Expr::from_bytes(
@@ -364,14 +364,14 @@ impl InstanceEnv {
         // TODO(Centril): consider caching from `filter: &[u8] -> query: QueryExpr`.
         let query = QueryExpr::new(schema.as_ref())
             .with_select(filter_to_column_op(table_id, filter))
-            .optimize(&|table_id, table_name| stdb.row_count(table_id, table_name));
+            .optimize(&|table_id, table_name| db_engine.row_count(table_id, table_name));
 
         // TODO(Centril): Conditionally dump the `query` to a file and compare against integration test.
         // Invent a system where we can make these kinds of "optimization path tests".
 
         let tx: TxMode = tx.into();
         // SQL queries can never reference `MemTable`s, so pass in an empty set.
-        let mut query = build_query(ctx, stdb, &tx, &query, &mut NoInMemUsed)?;
+        let mut query = build_query(ctx, db_engine, &tx, &query, &mut NoInMemUsed)?;
 
         // write all rows and flush at row boundaries.
         let query_iter = std::iter::from_fn(|| query.next().transpose());
