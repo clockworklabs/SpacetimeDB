@@ -303,13 +303,17 @@ impl RelationalDB {
     #[tracing::instrument(skip_all)]
     pub fn begin_mut_tx(&self, isolation_level: IsolationLevel) -> MutTx {
         log::trace!("BEGIN MUT TX");
-        self.inner.begin_mut_tx(isolation_level)
+        let r = self.inner.begin_mut_tx(isolation_level);
+        log::trace!("ACQUIRED MUT TX");
+        r
     }
 
     #[tracing::instrument(skip_all)]
     pub fn begin_tx(&self) -> Tx {
         log::trace!("BEGIN TX");
-        self.inner.begin_tx()
+        let r = self.inner.begin_tx();
+        log::trace!("ACQUIRED TX");
+        r
     }
 
     #[tracing::instrument(skip_all)]
@@ -326,7 +330,7 @@ impl RelationalDB {
 
     #[tracing::instrument(skip_all)]
     pub fn release_tx(&self, ctx: &ExecutionContext, tx: Tx) {
-        log::trace!("ROLLBACK TX");
+        log::trace!("RELEASE TX");
         self.inner.release_tx(ctx, tx)
     }
 
@@ -486,9 +490,9 @@ impl RelationalDB {
     where
         F: FnOnce(&mut Tx) -> T,
     {
-        let mut tx = self.inner.begin_tx();
+        let mut tx = self.begin_tx();
         let res = f(&mut tx);
-        self.inner.release_tx(ctx, tx);
+        self.release_tx(ctx, tx);
         res
     }
 
