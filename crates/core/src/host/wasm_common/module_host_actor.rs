@@ -337,7 +337,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     #[tracing::instrument(skip(self, args), fields(db_id = self.instance.instance_env().dbic.id))]
     fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<Option<ReducerCallResult>> {
         let timestamp = Timestamp::now();
-        let db_engine: &crate::db::engine::DatabaseEngine = &*self.database_instance_context().db_engine;
+        let db_engine: &crate::db::engine::DatabaseEngine = &self.database_instance_context().db_engine;
         let ctx = ExecutionContext::internal(db_engine.address());
         let tx = db_engine.begin_mut_tx(IsolationLevel::Serializable);
         let (tx, ()) = db_engine
