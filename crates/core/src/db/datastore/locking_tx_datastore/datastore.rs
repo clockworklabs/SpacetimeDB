@@ -636,6 +636,15 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for Replay<F> {
     ) -> std::result::Result<(), Self::Error> {
         self.using_visitor(|visitor| txdata::consume_record_fn(visitor, version, tx_offset, reader))
     }
+
+    fn skip_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        _tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        self.using_visitor(|visitor| txdata::skip_record_fn(visitor, version, reader))
+    }
 }
 
 impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for &mut Replay<F> {
@@ -650,6 +659,15 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for &mut Replay<F> {
         reader: &mut R,
     ) -> std::result::Result<Self::Record, Self::Error> {
         spacetimedb_commitlog::Decoder::decode_record(&**self, version, tx_offset, reader)
+    }
+
+    fn skip_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        spacetimedb_commitlog::Decoder::skip_record(&**self, version, tx_offset, reader)
     }
 }
 
@@ -703,6 +721,18 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
     // To accomodate auxiliary traversals (e.g. for analytics), we may want to
     // provide a separate visitor yielding PVs.
     type Row = ProductValue;
+
+    fn skip_row<'a, R: BufReader<'a>>(
+        &mut self,
+        table_id: TableId,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        let schema = self
+            .committed_state
+            .schema_for_table(&ExecutionContext::default(), table_id)?;
+        ProductValue::decode(schema.get_row_type(), reader)?;
+        Ok(())
+    }
 
     fn visit_insert<'a, R: BufReader<'a>>(
         &mut self,

@@ -1830,6 +1830,14 @@ mod tests {
                 bail!("unexpected delete for table: {table_id}")
             }
 
+            fn skip_row<'a, R: BufReader<'a>>(
+                &mut self,
+                table_id: TableId,
+                _reader: &mut R,
+            ) -> Result<(), Self::Error> {
+                bail!("unexpected skip for table: {table_id}")
+            }
+
             fn visit_inputs(&mut self, inputs: &txdata::Inputs) -> Result<(), Self::Error> {
                 log::debug!("visit_inputs: {inputs:?}");
                 self.inputs.push(inputs.clone());
@@ -1862,6 +1870,15 @@ mod tests {
                 reader: &mut R,
             ) -> Result<Self::Record, Self::Error> {
                 txdata::decode_record_fn(&mut *self.0.borrow_mut(), version, tx_offset, reader)
+            }
+
+            fn skip_record<'a, R: BufReader<'a>>(
+                &self,
+                version: u8,
+                _tx_offset: u64,
+                reader: &mut R,
+            ) -> Result<(), Self::Error> {
+                txdata::skip_record_fn(&mut *self.0.borrow_mut(), version, reader)
             }
         }
 

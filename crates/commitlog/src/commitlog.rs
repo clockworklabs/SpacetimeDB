@@ -288,7 +288,7 @@ impl<R: Repo, T: Encode> Generic<R, T> {
         D: Decoder,
         D::Error: From<error::Traversal>,
     {
-        fold_transactions_internal(self.commits_from(offset).with_log_format_version(), decoder)
+        fold_transactions_internal(self.commits_from(offset).with_log_format_version(), decoder, offset)
     }
 }
 
@@ -344,7 +344,7 @@ where
     D::Error: From<error::Traversal> + From<io::Error>,
 {
     let commits = commits_from(repo, max_log_format_version, offset)?;
-    fold_transactions_internal(commits.with_log_format_version(), de)
+    fold_transactions_internal(commits.with_log_format_version(), de, offset)
 }
 
 fn transactions_from_internal<'a, R, D, T>(
@@ -366,7 +366,7 @@ where
         .skip_while(move |x| x.as_ref().map(|tx| tx.offset < offset).unwrap_or(false))
 }
 
-fn fold_transactions_internal<R, D>(mut commits: CommitsWithVersion<R>, de: D) -> Result<(), D::Error>
+fn fold_transactions_internal<R, D>(mut commits: CommitsWithVersion<R>, de: D, from: u64) -> Result<(), D::Error>
 where
     R: Repo,
     D: Decoder,
@@ -390,10 +390,19 @@ where
         };
         trace!("commit {} n={} version={}", commit.min_tx_offset, commit.n, version);
 
+        let max_tx_offset = commit.min_tx_offset + commit.n as u64;
+        if max_tx_offset <= from {
+            continue;
+        }
+
         let records = &mut commit.records.as_slice();
         for n in 0..commit.n {
             let tx_offset = commit.min_tx_offset + n as u64;
-            de.consume_record(version, tx_offset, records)?;
+            if tx_offset < from {
+                de.skip_record(version, tx_offset, records)?;
+            } else {
+                de.consume_record(version, tx_offset, records)?;
+            }
         }
     }
 
@@ -604,11 +613,11 @@ impl<R: Repo> Iterator for CommitsWithVersion<R> {
 
 #[cfg(test)]
 mod tests {
-    use std::iter::repeat;
+    use std::{cell::Cell, iter::repeat};
 
     use super::*;
     use crate::{
-        payload::ArrayDecoder,
+        payload::{ArrayDecodeError, ArrayDecoder},
         tests::helpers::{fill_log, mem_log},
     };
 
@@ -665,6 +674,71 @@ mod tests {
         // Nb.: the head commit is always returned,
         // because we don't know its offset upper bound
         assert_eq!(1, log.commits_from(10).count());
+    }
+
+    #[test]
+    fn fold_transactions_with_offset() {
+        let mut log = mem_log::<[u8; 32]>(32);
+        fill_log(&mut log, 10, repeat(1));
+
+        /// A [`Decoder`] which counts the number of records decoded,
+        /// and asserts that the `tx_offset` is as expected.
+        struct CountDecoder {
+            count: Cell<u64>,
+            next_tx_offset: Cell<u64>,
+        }
+
+        impl Decoder for &CountDecoder {
+            type Record = [u8; 32];
+            type Error = ArrayDecodeError;
+
+            fn decode_record<'a, R: spacetimedb_sats::buffer::BufReader<'a>>(
+                &self,
+                _version: u8,
+                _tx_offset: u64,
+                _reader: &mut R,
+            ) -> Result<Self::Record, Self::Error> {
+                unreachable!("Folding never calls `decode_record`")
+            }
+
+            fn consume_record<'a, R: spacetimedb_sats::buffer::BufReader<'a>>(
+                &self,
+                version: u8,
+                tx_offset: u64,
+                reader: &mut R,
+            ) -> Result<(), Self::Error> {
+                let decoder = ArrayDecoder::<32>;
+                decoder.consume_record(version, tx_offset, reader)?;
+                self.count.set(self.count.get() + 1);
+                let expected_tx_offset = self.next_tx_offset.get();
+                assert_eq!(expected_tx_offset, tx_offset);
+                self.next_tx_offset.set(expected_tx_offset + 1);
+                Ok(())
+            }
+
+            fn skip_record<'a, R: spacetimedb_sats::buffer::BufReader<'a>>(
+                &self,
+                version: u8,
+                tx_offset: u64,
+                reader: &mut R,
+            ) -> Result<(), Self::Error> {
+                let decoder = ArrayDecoder::<32>;
+                decoder.consume_record(version, tx_offset, reader)?;
+                Ok(())
+            }
+        }
+
+        for offset in 0..10 {
+            let decoder = CountDecoder {
+                count: Cell::new(0),
+                next_tx_offset: Cell::new(offset),
+            };
+
+            log.fold_transactions_from(offset, &decoder).unwrap();
+
+            assert_eq!(decoder.count.get(), 10 - offset);
+            assert_eq!(decoder.next_tx_offset.get(), 10);
+        }
     }
 
     #[test]
