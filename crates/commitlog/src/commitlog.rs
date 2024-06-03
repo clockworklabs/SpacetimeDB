@@ -347,7 +347,7 @@ where
         let records = &mut commit.records.as_slice();
         for n in 0..commit.n {
             let tx_offset = commit.min_tx_offset + n as u64;
-            if tx_offset <= from {
+            if tx_offset < from {
                 // TODO(perf): replace with `de.skip_record`, after implementing that.
                 de.decode_record(version, tx_offset, records)?;
             } else {

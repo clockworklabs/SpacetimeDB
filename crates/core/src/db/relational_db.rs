@@ -479,6 +479,16 @@ impl RelationalDB {
         Ok(Some((tx_data, tx)))
     }
 
+    /// Decide whether to append the transaction `(tx_data, ctx)` to the `durability`, and do so.
+    ///
+    /// Contains delicate filtering logic to avoid writing empty transactions to the commitlog.
+    /// This logic *must* stay in sync with
+    /// [`crate::db::datastore::locking_tx_datastore::committed_state::CommittedState::tx_consumes_offset`].
+    ///
+    /// A TX is written to the logs if any of the following holds:
+    /// - The TX inserted at least one row.
+    /// - The TX deleted at least one row.
+    /// - The TX was the result of the reducers `__identity_connected__` or `__identity_disconnected__`.
     fn do_durability(durability: &dyn Durability<TxData = Txdata>, ctx: &ExecutionContext, tx_data: &TxData) {
         use commitlog::payload::{
             txdata::{Mutations, Ops},

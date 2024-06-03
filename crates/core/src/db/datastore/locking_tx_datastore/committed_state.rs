@@ -383,10 +383,26 @@ impl CommittedState {
         table.get_row_ref(&self.blob_store, row_ptr).unwrap()
     }
 
+    /// True if the transaction `(tx_data, ctx)` will be written to the commitlog,
+    /// and therefore consumes a value from `self.next_tx_offset`.
+    ///
+    /// This logic *must* stay in sync with [`crate::db::relational_db::RelationalDB::do_durability`].
+    ///
+    /// A TX is written to the logs if any of the following holds:
+    /// - The TX inserted at least one row.
+    /// - The TX deleted at least one row.
+    /// - The TX was the result of the reducers `__identity_connected__` or `__identity_disconnected__`.
+    fn tx_consumes_offset(&self, tx_data: &TxData, ctx: &ExecutionContext) -> bool {
+        tx_data.inserts().any(|(_, inserted_rows)| !inserted_rows.is_empty())
+            || tx_data.deletes().any(|(_, deleted_rows)| !deleted_rows.is_empty())
+            || matches!(
+                ctx.reducer_context().map(|rcx| rcx.name.strip_prefix("__identity_")),
+                Some(Some("connected__" | "disconnected__"))
+            )
+    }
+
     pub fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
         let mut tx_data = TxData::default();
-
-        self.next_tx_offset += 1;
 
         // First, apply deletes. This will free up space in the committed tables.
         self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables, ctx);
@@ -395,6 +411,10 @@ impl CommittedState {
         // before allocating new pages.
 
         self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store, ctx);
+
+        if self.tx_consumes_offset(&tx_data, ctx) {
+            self.next_tx_offset += 1;
+        }
 
         tx_data
     }
