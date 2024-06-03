@@ -232,7 +232,7 @@ public static class Utils
             || kind == SyntaxKind.StructDeclaration
             || kind == SyntaxKind.RecordDeclaration;
 
-        public string GenerateExtensions(string contents, string? intf = null)
+        public string GenerateExtensions(string contents, string? interface_ = null)
         {
             var sb = new StringBuilder();
 
@@ -264,7 +264,7 @@ public static class Utils
 
                 if (parentClasses.Child is null && intf is not null)
                 {
-                    sb.Append(" : ").Append(intf);
+                    sb.Append(" : ").Append(interface_);
                 }
 
                 sb.Append(parentClasses.Constraints) // e.g. where T: new()
