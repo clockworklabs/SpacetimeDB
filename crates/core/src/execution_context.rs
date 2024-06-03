@@ -112,7 +112,7 @@ impl Metrics {
 /// Represents the context under which a database runtime method is executed.
 /// In particular it provides details about the currently executing txn to runtime operations.
 /// More generally it acts as a container for information that database operations may require to function correctly.
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct ExecutionContext {
     /// The database on which a transaction is being executed.
     database: Address,
@@ -173,6 +173,18 @@ impl From<&ReducerContext> for txdata::Inputs {
         txdata::Inputs {
             reducer_name,
             reducer_args: buf.into(),
+        }
+    }
+}
+
+impl Clone for ExecutionContext {
+    fn clone(&self) -> Self {
+        Self {
+            database: self.database,
+            reducer: self.reducer.clone(),
+            workload: self.workload,
+            metrics: <_>::default(),
+            slow_query_config: self.slow_query_config,
         }
     }
 }

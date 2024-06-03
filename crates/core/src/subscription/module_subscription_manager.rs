@@ -140,13 +140,17 @@ impl SubscriptionManager {
             }
 
             let span = tracing::info_span!("eval_incr").entered();
-            let ctx = ExecutionContext::incremental_update(db.address(), slow);
+            let all_ctx: Vec<ExecutionContext> =
+                vec![ExecutionContext::incremental_update(db.address(), slow); units.len()];
             let tx = &tx.into();
             let eval = units
+                .into_iter()
+                .zip(&all_ctx)
+                .collect::<Vec<_>>()
                 .par_iter()
-                .filter_map(|(&hash, tables)| {
-                    let unit = self.queries.get(hash)?;
-                    match unit.eval_incr(&ctx, db, tx, &unit.sql, tables.iter().copied()) {
+                .filter_map(|((&hash, tables), ctx)| {
+                    let unit = self.queries.get(&hash)?;
+                    match unit.eval_incr(ctx, db, tx, &unit.sql, tables.iter().copied()) {
                         Ok(None) => None,
                         Ok(Some(table)) => Some((hash, table)),
                         Err(err) => {
@@ -170,7 +174,7 @@ impl SubscriptionManager {
                     // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
                     let mut ops_bin: Option<Vec<TableRowOperation>> = None;
                     let mut ops_json: Option<Vec<TableRowOperationJson>> = None;
-                    self.subscribers.get(hash).into_iter().flatten().map(move |id| {
+                    self.subscribers.get(&hash).into_iter().flatten().map(move |id| {
                         let ops = match self.clients[id].protocol {
                             Protocol::Binary => {
                                 Either::Left(ops_bin.get_or_insert_with(|| (&delta.updates).into()).clone())
@@ -262,6 +266,9 @@ impl SubscriptionManager {
                     timer: event.timer,
                 };
                 send_to_client(self.client(id).as_ref(), &event, database_update);
+            });
+            tokio::task::spawn_blocking(|| {
+                drop(all_ctx);
             });
         })
     }
