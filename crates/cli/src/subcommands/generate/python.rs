@@ -655,6 +655,6 @@ pub fn autogen_python_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     output.into_inner()
 }
 
-pub fn autogen_python_globals(_ctx: &GenCtx, _items: &[GenItem]) -> Vec<Vec<(String, String)>> {
+pub fn autogen_python_globals(_ctx: &GenCtx, _items: &[GenItem]) -> Vec<(String, String)> {
     vec![] //TODO
 }

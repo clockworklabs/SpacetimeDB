@@ -128,7 +128,7 @@ pub fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
     fs::create_dir_all(out_dir)?;
 
     let mut paths = vec![];
-    for (fname, code) in generate(&wasm_file, lang, namespace.as_str())?.into_iter() {
+    for (fname, code) in generate(&wasm_file, lang, namespace.as_str())? {
         let path = out_dir.join(fname);
         paths.push(path.clone());
         fs::write(path, code)?;
@@ -223,12 +223,12 @@ pub fn generate<'a>(wasm_file: &'a Path, lang: Language, namespace: &'a str) -> 
         .iter()
         .filter_map(|item| item.generate(&ctx, lang, namespace))
         .collect();
-    files.extend(generate_globals(&ctx, lang, namespace, &items).into_iter().flatten());
+    files.extend(generate_globals(&ctx, lang, namespace, &items));
 
     Ok(files)
 }
 
-fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenItem]) -> Vec<Vec<(String, String)>> {
+fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenItem]) -> Vec<(String, String)> {
     match lang {
         Language::Csharp => csharp::autogen_csharp_globals(items, namespace),
         Language::TypeScript => typescript::autogen_typescript_globals(ctx, items),

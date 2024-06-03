@@ -741,7 +741,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 ///    to connect to a remote database, and passes the `handle_row_update`
 ///    and `handle_event` functions so the `BackgroundDbConnection` can spawn workers
 ///    which use those functions to dispatch on the content of messages.
-pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<Vec<(String, String)>> {
+pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, String)> {
     let mut output = CodeIndenter::new(String::new());
     let out = &mut output;
 
@@ -774,7 +774,7 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<Vec<(String,
     // Define `fn connect`.
     print_connect_defn(out);
 
-    vec![vec![("mod.rs".to_string(), output.into_inner())]]
+    vec![("mod.rs".to_string(), output.into_inner())]
 }
 
 /// Extra imports required by the `mod.rs` file, in addition to the [`SPACETIMEDB_IMPORTS`].
