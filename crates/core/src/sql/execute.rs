@@ -191,7 +191,7 @@ pub fn run(
         //       and figure out if we can detect the mutablility of the query before we take
         //       the tx? once we have migrations we probably don't want to have stale
         //       sql queries after a database schema have been updated.
-        Either::Right(ast) => execute_sql(db, sql_text, ast, auth, subs)
+        Either::Right(ast) => execute_sql(db, sql_text, ast, auth, subs),
     }
 }
 
