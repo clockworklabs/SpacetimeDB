@@ -62,7 +62,11 @@ pub fn ctx_sql(db: &RelationalDB) -> ExecutionContext {
     ExecutionContext::sql(db.address(), db.read_config().slow_query)
 }
 
-fn execute(p: &mut DbProgram<'_, '_>, ast: Vec<CrudExpr>, updates: &mut Vec<DatabaseTableUpdate>) -> Result<Vec<MemTable>, DBError> {
+fn execute(
+    p: &mut DbProgram<'_, '_>,
+    ast: Vec<CrudExpr>,
+    updates: &mut Vec<DatabaseTableUpdate>,
+) -> Result<Vec<MemTable>, DBError> {
     let mut result = Vec::with_capacity(ast.len());
     let query = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
     // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
@@ -75,23 +79,41 @@ fn execute(p: &mut DbProgram<'_, '_>, ast: Vec<CrudExpr>, updates: &mut Vec<Data
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
 ///
 /// Also, in case the execution takes more than x, log it as `slow query`
-pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthCtx, subs: Option<&ModuleSubscriptions>) -> Result<Vec<MemTable>, DBError> {
+pub fn execute_sql(
+    db: &RelationalDB,
+    sql: &str,
+    ast: Vec<CrudExpr>,
+    auth: AuthCtx,
+    subs: Option<&ModuleSubscriptions>,
+) -> Result<Vec<MemTable>, DBError> {
     let ctx = ctx_sql(db);
     let _slow_logger = SlowQueryLogger::query(&ctx, sql).log_guard();
     if CrudExpr::is_reads(&ast) {
         let mut updates = Vec::new();
         db.with_read_only(&ctx, |tx| {
-            execute(&mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth), ast, &mut updates)
+            execute(
+                &mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth),
+                ast,
+                &mut updates,
+            )
         })
     } else if subs.is_none() {
         let mut updates = Vec::new();
         db.with_auto_commit(&ctx, |mut_tx| {
-            execute(&mut DbProgram::new(&ctx, db, &mut mut_tx.into(), auth), ast, &mut updates)
+            execute(
+                &mut DbProgram::new(&ctx, db, &mut mut_tx.into(), auth),
+                ast,
+                &mut updates,
+            )
         })
     } else {
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
         let mut updates = Vec::with_capacity(ast.len());
-        let res = execute(&mut DbProgram::new(&ctx, db, &mut (&mut tx).into(), auth), ast, &mut updates);
+        let res = execute(
+            &mut DbProgram::new(&ctx, db, &mut (&mut tx).into(), auth),
+            ast,
+            &mut updates,
+        );
         if res.is_ok() && !updates.is_empty() {
             let event = ModuleEvent {
                 timestamp: Timestamp::now(),
@@ -111,8 +133,7 @@ pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthC
                 Ok(_) => res,
                 Err(WriteConflict) => todo!("See module_host_actor::call_reducer_with_tx"),
             }
-        }
-        else {
+        } else {
             db.finish_tx(&ctx, tx, res)
         }
     }
@@ -141,14 +162,23 @@ pub fn execute_sql_tx<'a>(
 }
 
 /// Run the `SQL` string using the `auth` credentials
-pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx, subs: Option<&ModuleSubscriptions>) -> Result<Vec<MemTable>, DBError> {
+pub fn run(
+    db: &RelationalDB,
+    sql_text: &str,
+    auth: AuthCtx,
+    subs: Option<&ModuleSubscriptions>,
+) -> Result<Vec<MemTable>, DBError> {
     let ctx = ctx_sql(db);
     let _slow_logger = SlowQueryLogger::query(&ctx, sql_text).log_guard();
     let result = db.with_read_only(&ctx, |tx| {
         let ast = compile_sql(db, tx, sql_text)?;
         if CrudExpr::is_reads(&ast) {
             let mut updates = Vec::new();
-            let result = execute(&mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth), ast, &mut updates)?;
+            let result = execute(
+                &mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth),
+                ast,
+                &mut updates,
+            )?;
             Ok::<_, DBError>(Either::Left(result))
         } else {
             // hehe. right. write.
@@ -161,10 +191,7 @@ pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx, subs: Option<&Modul
         //       and figure out if we can detect the mutablility of the query before we take
         //       the tx? once we have migrations we probably don't want to have stale
         //       sql queries after a database schema have been updated.
-        Either::Right(ast) => //db.with_auto_commit(&ctx, |tx| {
-            //execute(&mut DbProgram::new(&ctx, db, &mut tx.into(), auth), ast)
-        //}),
-        execute_sql(db, sql_text, ast, auth, subs)
+        Either::Right(ast) => execute_sql(db, sql_text, ast, auth, subs)
     }
 }
 
