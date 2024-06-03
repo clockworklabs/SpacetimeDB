@@ -129,6 +129,11 @@ pub fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
 
     let mut paths = vec![];
     for (fname, code) in generate(&wasm_file, lang, namespace.as_str())? {
+        let fname = Path::new(&fname);
+        // If a generator asks for a file in a subdirectory, create the subdirectory first.
+        if let Some(parent) = fname.parent().filter(|p| !p.as_os_str().is_empty()) {
+            fs::create_dir_all(out_dir.join(parent))?;
+        }
         let path = out_dir.join(fname);
         paths.push(path.clone());
         fs::write(path, code)?;
