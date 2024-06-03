@@ -522,21 +522,26 @@ where
         ))?;
     let instance_id = database_instance.id;
 
-    let json = worker_ctx
-        .host_controller()
+    let host = worker_ctx.host_controller();
+    let module_host = host
+        .get_or_launch_module_host(database.clone(), instance_id)
+        .await
+        .map_err(log_and_500)?;
+    let json = host
         .using_database(
             database,
             instance_id,
             move |db| -> axum::response::Result<_, (StatusCode, String)> {
                 tracing::info!(sql = body);
-                let results = sql::execute::run(db, &body, auth).map_err(|e| {
-                    log::warn!("{}", e);
-                    if let Some(auth_err) = e.get_auth_error() {
-                        (StatusCode::UNAUTHORIZED, auth_err.to_string())
-                    } else {
-                        (StatusCode::BAD_REQUEST, e.to_string())
-                    }
-                })?;
+                let results =
+                    sql::execute::run(db, &body, auth, Some(&module_host.info().subscriptions)).map_err(|e| {
+                        log::warn!("{}", e);
+                        if let Some(auth_err) = e.get_auth_error() {
+                            (StatusCode::UNAUTHORIZED, auth_err.to_string())
+                        } else {
+                            (StatusCode::BAD_REQUEST, e.to_string())
+                        }
+                    })?;
 
                 let json = db.with_read_only(&ctx_sql(db), |tx| {
                     results

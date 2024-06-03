@@ -38,20 +38,20 @@ pub fn eval<const N: usize, P: ProgramVm>(p: &mut P, code: Code, sources: Source
         Code::Block(lines) => {
             let mut result = Vec::with_capacity(lines.len());
             for x in lines {
-                let r = eval(p, x, sources);
-                if r != Code::Pass {
-                    result.push(r);
-                }
+                match eval(p, x, sources) {
+                    Code::Pass(None) => {}
+                    r => result.push(r),
+                };
             }
 
             match result.len() {
-                0 => Code::Pass,
+                0 => Code::Pass(None),
                 1 => result.pop().unwrap(),
                 _ => Code::Block(result),
             }
         }
         Code::Crud(q) => p.eval_query(q, sources).unwrap_or_else(|err| Code::Halt(err.into())),
-        Code::Pass => Code::Pass,
+        Code::Pass(x) => Code::Pass(x),
     }
 }
 

@@ -1,8 +1,15 @@
+use std::time::Duration;
+
 use super::compiler::compile_sql;
 use crate::db::datastore::locking_tx_datastore::state_view::StateView;
+use crate::db::datastore::traits::IsolationLevel;
 use crate::db::relational_db::{RelationalDB, Tx};
+use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
+use crate::host::{ArgsTuple, Timestamp};
+use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{DbProgram, TxMode};
 use itertools::Either;
@@ -21,17 +28,31 @@ pub struct StmtResult {
 // TODO(cloutiertyler): we could do this the swift parsing way in which
 // we always generate a plan, but it may contain errors
 
-pub(crate) fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBError> {
+pub(crate) fn collect_result(
+    result: &mut Vec<MemTable>,
+    updates: &mut Vec<DatabaseTableUpdate>,
+    r: CodeResult,
+) -> Result<(), DBError> {
     match r {
         CodeResult::Value(_) => {}
         CodeResult::Table(x) => result.push(x),
         CodeResult::Block(lines) => {
             for x in lines {
-                collect_result(result, x)?;
+                collect_result(result, updates, x)?;
             }
         }
         CodeResult::Halt(err) => return Err(DBError::VmUser(err)),
-        CodeResult::Pass => {}
+        CodeResult::Pass(x) => match x {
+            None => {}
+            Some(update) => {
+                updates.push(DatabaseTableUpdate {
+                    table_name: update.table_name,
+                    table_id: update.table_id,
+                    inserts: update.inserts.into(),
+                    deletes: update.deletes.into(),
+                });
+            }
+        },
     }
 
     Ok(())
@@ -41,11 +62,15 @@ pub fn ctx_sql(db: &RelationalDB) -> ExecutionContext {
     ExecutionContext::sql(db.address(), db.read_config().slow_query)
 }
 
-fn execute(p: &mut DbProgram<'_, '_>, ast: Vec<CrudExpr>) -> Result<Vec<MemTable>, DBError> {
+fn execute(
+    p: &mut DbProgram<'_, '_>,
+    ast: Vec<CrudExpr>,
+    updates: &mut Vec<DatabaseTableUpdate>,
+) -> Result<Vec<MemTable>, DBError> {
     let mut result = Vec::with_capacity(ast.len());
     let query = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
     // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
-    collect_result(&mut result, run_ast(p, query, [].into()).into())?;
+    collect_result(&mut result, updates, run_ast(p, query, [].into()).into())?;
     Ok(result)
 }
 
@@ -54,17 +79,63 @@ fn execute(p: &mut DbProgram<'_, '_>, ast: Vec<CrudExpr>) -> Result<Vec<MemTable
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
 ///
 /// Also, in case the execution takes more than x, log it as `slow query`
-pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
+pub fn execute_sql(
+    db: &RelationalDB,
+    sql: &str,
+    ast: Vec<CrudExpr>,
+    auth: AuthCtx,
+    subs: Option<&ModuleSubscriptions>,
+) -> Result<Vec<MemTable>, DBError> {
     let ctx = ctx_sql(db);
     let _slow_logger = SlowQueryLogger::query(&ctx, sql).log_guard();
     if CrudExpr::is_reads(&ast) {
+        let mut updates = Vec::new();
         db.with_read_only(&ctx, |tx| {
-            execute(&mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth), ast)
+            execute(
+                &mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth),
+                ast,
+                &mut updates,
+            )
+        })
+    } else if subs.is_none() {
+        let mut updates = Vec::new();
+        db.with_auto_commit(&ctx, |mut_tx| {
+            execute(
+                &mut DbProgram::new(&ctx, db, &mut mut_tx.into(), auth),
+                ast,
+                &mut updates,
+            )
         })
     } else {
-        db.with_auto_commit(&ctx, |mut_tx| {
-            execute(&mut DbProgram::new(&ctx, db, &mut mut_tx.into(), auth), ast)
-        })
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+        let mut updates = Vec::with_capacity(ast.len());
+        let res = execute(
+            &mut DbProgram::new(&ctx, db, &mut (&mut tx).into(), auth),
+            ast,
+            &mut updates,
+        );
+        if res.is_ok() && !updates.is_empty() {
+            let event = ModuleEvent {
+                timestamp: Timestamp::now(),
+                caller_identity: auth.caller,
+                caller_address: None,
+                function_call: ModuleFunctionCall {
+                    reducer: String::new(),
+                    args: ArgsTuple::default(),
+                },
+                status: EventStatus::Committed(DatabaseUpdate { tables: updates }),
+                energy_quanta_used: EnergyQuanta::ZERO,
+                host_execution_duration: Duration::ZERO,
+                request_id: None,
+                timer: None,
+            };
+            match subs.unwrap().commit_and_broadcast_event(None, event, &ctx, tx).unwrap() {
+                Ok(_) => res,
+                Err(WriteConflict) => todo!("See module_host_actor::call_reducer_with_tx"),
+            }
+        } else {
+            db.finish_tx(&ctx, tx, res)
+        }
     }
 }
 
@@ -86,17 +157,28 @@ pub fn execute_sql_tx<'a>(
 
     let ctx = ctx_sql(db);
     let _slow_logger = SlowQueryLogger::query(&ctx, sql).log_guard();
-    execute(&mut DbProgram::new(&ctx, db, &mut tx, auth), ast).map(Some)
+    let mut updates = Vec::new(); // No subscription updates in this path, because it requires owning the tx.
+    execute(&mut DbProgram::new(&ctx, db, &mut tx, auth), ast, &mut updates).map(Some)
 }
 
 /// Run the `SQL` string using the `auth` credentials
-pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
+pub fn run(
+    db: &RelationalDB,
+    sql_text: &str,
+    auth: AuthCtx,
+    subs: Option<&ModuleSubscriptions>,
+) -> Result<Vec<MemTable>, DBError> {
     let ctx = ctx_sql(db);
     let _slow_logger = SlowQueryLogger::query(&ctx, sql_text).log_guard();
     let result = db.with_read_only(&ctx, |tx| {
         let ast = compile_sql(db, tx, sql_text)?;
         if CrudExpr::is_reads(&ast) {
-            let result = execute(&mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth), ast)?;
+            let mut updates = Vec::new();
+            let result = execute(
+                &mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth),
+                ast,
+                &mut updates,
+            )?;
             Ok::<_, DBError>(Either::Left(result))
         } else {
             // hehe. right. write.
@@ -109,9 +191,7 @@ pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTa
         //       and figure out if we can detect the mutablility of the query before we take
         //       the tx? once we have migrations we probably don't want to have stale
         //       sql queries after a database schema have been updated.
-        Either::Right(ast) => db.with_auto_commit(&ctx, |tx| {
-            execute(&mut DbProgram::new(&ctx, db, &mut tx.into(), auth), ast)
-        }),
+        Either::Right(ast) => execute_sql(db, sql_text, ast, auth, subs),
     }
 }
 
@@ -133,15 +213,27 @@ pub(crate) mod tests {
     use crate::vm::tests::create_table_with_rows;
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::relation::ColExpr;
+    use spacetimedb_lib::Identity;
     use spacetimedb_primitives::{col_list, ColId};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::relation::Header;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use spacetimedb_vm::eval::test_helpers::{create_game_data, mem_table, mem_table_without_table_name};
+    use std::sync::Arc;
+
+    pub(crate) fn execute_for_testing(
+        db: &RelationalDB,
+        sql_text: &str,
+        q: Vec<CrudExpr>,
+    ) -> Result<Vec<MemTable>, DBError> {
+        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
+        execute_sql(db, sql_text, q, AuthCtx::for_testing(), Some(&subs))
+    }
 
     /// Short-cut for simplify test execution
     pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
-        run(db, sql_text, AuthCtx::for_testing())
+        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
+        run(db, sql_text, AuthCtx::for_testing(), Some(&subs))
     }
 
     fn create_data(total_rows: u64) -> ResultTest<(TestDB, MemTable)> {

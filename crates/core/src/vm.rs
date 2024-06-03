@@ -450,10 +450,16 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
 
     fn _execute_insert(&mut self, table: &DbTable, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
         let tx = self.tx.unwrap_mut();
+        let inserts = rows.clone(); // TODO code shouldn't be hot, let's remove later
         for row in rows {
             self.db.insert(tx, table.table_id, row)?;
         }
-        Ok(Code::Pass)
+        Ok(Code::Pass(Some(Update {
+            table_id: table.table_id,
+            table_name: table.head.table_name.clone(),
+            inserts,
+            deletes: Vec::default(),
+        })))
     }
 
     fn _execute_update<const N: usize>(
@@ -472,11 +478,12 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             .get_db_table()
             .expect("source for Update should be a DbTable");
 
-        self._execute_delete(table.table_id, deleted.data.clone());
+        self._execute_delete(table, deleted.data.clone())?;
 
         // Replace the columns in the matched rows with the assigned
         // values. No typechecking is performed here, nor that all
         // assignments are consumed.
+        let deletes = deleted.data.clone();
         let exprs: Vec<Option<ColExpr>> = (0..table.head.fields.len())
             .map(ColId::from)
             .map(|c| assigns.remove(&c))
@@ -502,26 +509,36 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
             })
             .collect_vec();
 
-        self._execute_insert(table, insert_rows)
+        let result = self._execute_insert(table, insert_rows);
+        let Ok(Code::Pass(Some(insert))) = result else {
+            return result;
+        };
+
+        Ok(Code::Pass(Some(Update { deletes, ..insert })))
     }
 
-    fn _execute_delete(&mut self, table: TableId, rows: Vec<ProductValue>) -> u32 {
-        self.db.delete_by_rel(self.tx.unwrap_mut(), table, rows)
+    fn _execute_delete(&mut self, table: &DbTable, rows: Vec<ProductValue>) -> Result<Code, ErrorVm> {
+        let deletes = rows.clone();
+        self.db.delete_by_rel(self.tx.unwrap_mut(), table.table_id, rows);
+
+        Ok(Code::Pass(Some(Update {
+            table_id: table.table_id,
+            table_name: table.head.table_name.clone(),
+            inserts: Vec::default(),
+            deletes,
+        })))
     }
 
     fn _delete_query<const N: usize>(&mut self, query: &QueryExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
         match self._eval_query(query, sources)? {
-            Code::Table(result) => Ok(Code::Value(
-                self._execute_delete(query.source.table_id().unwrap(), result.data)
-                    .into(),
-            )),
+            Code::Table(result) => self._execute_delete(query.source.get_db_table().unwrap(), result.data),
             r => Ok(r),
         }
     }
 
     fn _create_table(&mut self, table: TableDef) -> Result<Code, ErrorVm> {
         self.db.create_table(self.tx.unwrap_mut(), table)?;
-        Ok(Code::Pass)
+        Ok(Code::Pass(None))
     }
 
     fn _drop(&mut self, name: &str, kind: DbType) -> Result<Code, ErrorVm> {
@@ -549,12 +566,12 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
                 }
             }
         }
-        Ok(Code::Pass)
+        Ok(Code::Pass(None))
     }
 
     fn _set_config(&mut self, name: String, value: AlgebraicValue) -> Result<Code, ErrorVm> {
         self.db.set_config(&name, value)?;
-        Ok(Code::Pass)
+        Ok(Code::Pass(None))
     }
 
     fn _read_config(&self, name: String) -> Result<Code, ErrorVm> {
