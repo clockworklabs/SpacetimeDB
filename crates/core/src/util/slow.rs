@@ -111,18 +111,18 @@ mod tests {
     use spacetimedb_lib::identity::AuthCtx;
 
     use crate::config::ReadConfigOption;
-    use crate::db::relational_db::tests_utils::TestDB;
-    use crate::db::relational_db::RelationalDB;
+    use crate::db::engine::tests_utils::TestDB;
+    use crate::db::engine::DatabaseEngine;
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::relation::MemTable;
 
-    fn run_query(db: &RelationalDB, sql: String) -> ResultTest<MemTable> {
+    fn run_query(db: &DatabaseEngine, sql: String) -> ResultTest<MemTable> {
         let tx = db.begin_tx();
         let q = compile_sql(db, &tx, &sql)?;
         Ok(execute_sql(db, &sql, q, AuthCtx::for_testing())?.pop().unwrap())
     }
 
-    fn run_query_write(db: &RelationalDB, sql: String) -> ResultTest<()> {
+    fn run_query_write(db: &DatabaseEngine, sql: String) -> ResultTest<()> {
         let tx = db.begin_tx();
         let q = compile_sql(db, &tx, &sql)?;
         drop(tx);

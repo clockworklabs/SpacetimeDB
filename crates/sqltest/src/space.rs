@@ -1,6 +1,6 @@
 use crate::db::DBRunner;
 use async_trait::async_trait;
-use spacetimedb::db::relational_db::tests_utils::TestDB;
+use spacetimedb::db::engine::tests_utils::TestDB;
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::sql::compiler::compile_sql;

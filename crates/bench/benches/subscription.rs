@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use spacetimedb::client::Protocol;
-use spacetimedb::db::relational_db::RelationalDB;
+use spacetimedb::db::engine::DatabaseEngine;
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::host::module_host::DatabaseTableUpdate;
@@ -12,7 +12,7 @@ use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
 use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue};
 
-fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
+fn create_table_location(db: &DatabaseEngine) -> Result<TableId, DBError> {
     let schema = &[
         ("entity_id", AlgebraicType::U64),
         ("chunk_index", AlgebraicType::U64),
@@ -26,7 +26,7 @@ fn create_table_location(db: &RelationalDB) -> Result<TableId, DBError> {
     db.create_table_for_test_mix_indexes("location", schema, indexes, col_list![2, 3, 4])
 }
 
-fn create_table_footprint(db: &RelationalDB) -> Result<TableId, DBError> {
+fn create_table_footprint(db: &DatabaseEngine) -> Result<TableId, DBError> {
     let footprint = AlgebraicType::sum(["A", "B", "C", "D"].map(|n| (n, AlgebraicType::unit())));
     let schema = &[
         ("entity_id", AlgebraicType::U64),

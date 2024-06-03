@@ -190,7 +190,7 @@ WASI_SHIM(sock_shutdown, (int32_t, int32_t));
 // Mono retrieves executable name via argv[0], so we need to shim it with
 // some dummy name instead of returning an empty argv[] array to avoid
 // assertion failures.
-const char executable_name[] = "stdb.wasm";
+const char executable_name[] = "db_engine.wasm";
 
 int32_t WASI_NAME(args_sizes_get)(__wasi_size_t* argc,
                                   __wasi_size_t* argv_buf_size) {

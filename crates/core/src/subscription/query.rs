@@ -1,4 +1,4 @@
-use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::engine::{DatabaseEngine, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::sql::compiler::compile_sql;
 use crate::subscription::subscription::SupportedQuery;
@@ -20,7 +20,7 @@ pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
 /// This is necessary when merging multiple SQL queries into a single query set,
 /// as in [`crate::subscription::module_subscription_actor::ModuleSubscriptions::add_subscriber`].
 pub fn compile_read_only_query(
-    relational_db: &RelationalDB,
+    db_engine: &DatabaseEngine,
     tx: &Tx,
     input: &str,
 ) -> Result<Vec<SupportedQuery>, DBError> {
@@ -32,7 +32,7 @@ pub fn compile_read_only_query(
     // Remove redundant whitespace, and in particular newlines, for debug info.
     let input = WHITESPACE.replace_all(input, " ");
 
-    let compiled = compile_sql(relational_db, tx, &input)?;
+    let compiled = compile_sql(db_engine, tx, &input)?;
     let mut queries = Vec::with_capacity(compiled.len());
     for q in compiled {
         return Err(SubscriptionError::SideEffect(match q {
@@ -92,8 +92,8 @@ mod tests {
     use super::*;
     use crate::client::Protocol;
     use crate::db::datastore::traits::IsolationLevel;
-    use crate::db::relational_db::tests_utils::TestDB;
-    use crate::db::relational_db::MutTx;
+    use crate::db::engine::tests_utils::TestDB;
+    use crate::db::engine::MutTx;
     use crate::execution_context::ExecutionContext;
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate};
     use crate::sql::execute::collect_result;
@@ -122,7 +122,7 @@ mod tests {
     /// Runs a query that evaluates if the changes made should be reported to the [ModuleSubscriptionManager]
     fn run_query<const N: usize>(
         cx: &ExecutionContext,
-        db: &RelationalDB,
+        db: &DatabaseEngine,
         tx: &Tx,
         query: &QueryExpr,
         auth: AuthCtx,
@@ -155,17 +155,17 @@ mod tests {
         }
     }
 
-    fn insert_row(db: &RelationalDB, tx: &mut MutTx, table_id: TableId, row: ProductValue) -> ResultTest<()> {
+    fn insert_row(db: &DatabaseEngine, tx: &mut MutTx, table_id: TableId, row: ProductValue) -> ResultTest<()> {
         db.insert(tx, table_id, row)?;
         Ok(())
     }
 
-    fn delete_row(db: &RelationalDB, tx: &mut MutTx, table_id: TableId, row: ProductValue) {
+    fn delete_row(db: &DatabaseEngine, tx: &mut MutTx, table_id: TableId, row: ProductValue) {
         db.delete_by_rel(tx, table_id, [row]);
     }
 
     fn make_data(
-        db: &RelationalDB,
+        db: &DatabaseEngine,
         tx: &mut MutTx,
         table_name: &str,
         head: &ProductType,
@@ -187,7 +187,7 @@ mod tests {
     }
 
     fn make_inv(
-        db: &RelationalDB,
+        db: &DatabaseEngine,
         tx: &mut MutTx,
         access: StAccess,
     ) -> ResultTest<(Arc<TableSchema>, MemTable, DatabaseTableUpdate, QueryExpr)> {
@@ -211,7 +211,7 @@ mod tests {
     }
 
     fn make_player(
-        db: &RelationalDB,
+        db: &DatabaseEngine,
         tx: &mut MutTx,
     ) -> ResultTest<(Arc<TableSchema>, MemTable, DatabaseTableUpdate, QueryExpr)> {
         let table_name = "player";
@@ -241,7 +241,7 @@ mod tests {
     }
 
     fn check_query(
-        db: &RelationalDB,
+        db: &DatabaseEngine,
         table: &MemTable,
         tx: &Tx,
         q: &QueryExpr,
@@ -266,7 +266,7 @@ mod tests {
     }
 
     fn check_query_incr(
-        db: &RelationalDB,
+        db: &DatabaseEngine,
         tx: &Tx,
         s: &ExecutionSet,
         update: &DatabaseUpdate,
@@ -297,7 +297,7 @@ mod tests {
 
     fn check_query_eval(
         ctx: &ExecutionContext,
-        db: &RelationalDB,
+        db: &DatabaseEngine,
         tx: &Tx,
         s: &ExecutionSet,
         total_tables: usize,
@@ -632,7 +632,7 @@ mod tests {
     }
 
     /// Create table [lhs] with index on [id]
-    fn create_lhs_table_for_eval_incr(db: &RelationalDB) -> ResultTest<TableId> {
+    fn create_lhs_table_for_eval_incr(db: &DatabaseEngine) -> ResultTest<TableId> {
         const I32: AlgebraicType = AlgebraicType::I32;
         let lhs_id = db.create_table_for_test("lhs", &[("id", I32), ("x", I32)], &[(0.into(), "id")])?;
         db.with_auto_commit(&ExecutionContext::default(), |tx| {
@@ -644,7 +644,7 @@ mod tests {
     }
 
     /// Create table [rhs] with index on [id]
-    fn create_rhs_table_for_eval_incr(db: &RelationalDB) -> ResultTest<TableId> {
+    fn create_rhs_table_for_eval_incr(db: &DatabaseEngine) -> ResultTest<TableId> {
         const I32: AlgebraicType = AlgebraicType::I32;
         let rhs_id = db.create_table_for_test("rhs", &[("rid", I32), ("id", I32), ("y", I32)], &[(1.into(), "id")])?;
         db.with_auto_commit(&ExecutionContext::default(), |tx| {
@@ -655,7 +655,7 @@ mod tests {
         })
     }
 
-    fn compile_query(db: &RelationalDB) -> ResultTest<ExecutionSet> {
+    fn compile_query(db: &DatabaseEngine) -> ResultTest<ExecutionSet> {
         db.with_read_only(&ExecutionContext::default(), |tx| {
             // Should be answered using an index semijion
             let sql = "select lhs.* from lhs join rhs on lhs.id = rhs.id where rhs.y >= 2 and rhs.y <= 4";
@@ -667,7 +667,7 @@ mod tests {
         })
     }
 
-    fn run_eval_incr_test<T, F: Fn(&RelationalDB) -> ResultTest<T>>(test_fn: F) -> ResultTest<T> {
+    fn run_eval_incr_test<T, F: Fn(&DatabaseEngine) -> ResultTest<T>>(test_fn: F) -> ResultTest<T> {
         TestDB::durable().map(|db| test_fn(&db))??;
         TestDB::durable().map(|db| test_fn(&db.with_row_count(Arc::new(|_, _| 5))))?
     }
@@ -714,7 +714,7 @@ mod tests {
     }
 
     fn eval_incr(
-        db: &RelationalDB,
+        db: &DatabaseEngine,
         query: &ExecutionSet,
         tables: Vec<DatabaseTableUpdate>,
     ) -> ResultTest<DatabaseUpdate> {
@@ -744,7 +744,7 @@ mod tests {
     // Case 1:
     // Delete a row inside the region of rhs,
     // Insert a row inside the region of rhs.
-    fn index_join_case_1(db: &RelationalDB) -> ResultTest<()> {
+    fn index_join_case_1(db: &DatabaseEngine) -> ResultTest<()> {
         let _ = create_lhs_table_for_eval_incr(db)?;
         let rhs_id = create_rhs_table_for_eval_incr(db)?;
         let query = compile_query(db)?;
@@ -774,7 +774,7 @@ mod tests {
     // Case 2:
     // Delete a row outside the region of rhs,
     // Insert a row outside the region of rhs.
-    fn index_join_case_2(db: &RelationalDB) -> ResultTest<()> {
+    fn index_join_case_2(db: &DatabaseEngine) -> ResultTest<()> {
         let _ = create_lhs_table_for_eval_incr(db)?;
         let rhs_id = create_rhs_table_for_eval_incr(db)?;
         let query = compile_query(db)?;
@@ -804,7 +804,7 @@ mod tests {
     // Case 3:
     // Delete a row inside  the region of rhs,
     // Insert a row outside the region of rhs.
-    fn index_join_case_3(db: &RelationalDB) -> ResultTest<()> {
+    fn index_join_case_3(db: &DatabaseEngine) -> ResultTest<()> {
         let lhs_id = create_lhs_table_for_eval_incr(db)?;
         let rhs_id = create_rhs_table_for_eval_incr(db)?;
         let query = compile_query(db)?;
@@ -835,7 +835,7 @@ mod tests {
     // Case 4:
     // Delete a row outside the region of rhs,
     // Insert a row inside  the region of rhs.
-    fn index_join_case_4(db: &RelationalDB) -> ResultTest<()> {
+    fn index_join_case_4(db: &DatabaseEngine) -> ResultTest<()> {
         let lhs_id = create_lhs_table_for_eval_incr(db)?;
         let rhs_id = create_rhs_table_for_eval_incr(db)?;
         let query = compile_query(db)?;
@@ -866,7 +866,7 @@ mod tests {
     // Case 5:
     // Insert row into lhs,
     // Insert matching row inside the region of rhs.
-    fn index_join_case_5(db: &RelationalDB) -> ResultTest<()> {
+    fn index_join_case_5(db: &DatabaseEngine) -> ResultTest<()> {
         let lhs_id = create_lhs_table_for_eval_incr(db)?;
         let rhs_id = create_rhs_table_for_eval_incr(db)?;
         let query = compile_query(db)?;
@@ -897,7 +897,7 @@ mod tests {
     // Case 6:
     // Insert row into lhs,
     // Insert matching row outside the region of rhs.
-    fn index_join_case_6(db: &RelationalDB) -> ResultTest<()> {
+    fn index_join_case_6(db: &DatabaseEngine) -> ResultTest<()> {
         let lhs_id = create_lhs_table_for_eval_incr(db)?;
         let rhs_id = create_rhs_table_for_eval_incr(db)?;
         let query = compile_query(db)?;
@@ -927,7 +927,7 @@ mod tests {
     // Case 7:
     // Delete row from lhs,
     // Delete matching row inside the region of rhs.
-    fn index_join_case_7(db: &RelationalDB) -> ResultTest<()> {
+    fn index_join_case_7(db: &DatabaseEngine) -> ResultTest<()> {
         let lhs_id = create_lhs_table_for_eval_incr(db)?;
         let rhs_id = create_rhs_table_for_eval_incr(db)?;
         let query = compile_query(db)?;
@@ -959,7 +959,7 @@ mod tests {
     // Case 8:
     // Delete row from lhs,
     // Delete matching row outside the region of rhs.
-    fn index_join_case_8(db: &RelationalDB) -> ResultTest<()> {
+    fn index_join_case_8(db: &DatabaseEngine) -> ResultTest<()> {
         let lhs_id = create_lhs_table_for_eval_incr(db)?;
         let rhs_id = create_rhs_table_for_eval_incr(db)?;
         let query = compile_query(db)?;
@@ -990,7 +990,7 @@ mod tests {
     // Case 9:
     // Update row from lhs,
     // Update matching row inside the region of rhs.
-    fn index_join_case_9(db: &RelationalDB) -> ResultTest<()> {
+    fn index_join_case_9(db: &DatabaseEngine) -> ResultTest<()> {
         let lhs_id = create_lhs_table_for_eval_incr(db)?;
         let rhs_id = create_rhs_table_for_eval_incr(db)?;
         let query = compile_query(db)?;

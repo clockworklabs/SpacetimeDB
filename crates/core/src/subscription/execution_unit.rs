@@ -1,7 +1,7 @@
 use super::query::{self, Supported};
 use super::subscription::{IncrementalJoin, SupportedQuery};
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
-use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::engine::{DatabaseEngine, Tx};
 use crate::error::DBError;
 use crate::estimation;
 use crate::execution_context::ExecutionContext;
@@ -218,7 +218,7 @@ impl ExecutionUnit {
     pub fn eval_json(
         &self,
         ctx: &ExecutionContext,
-        db: &RelationalDB,
+        db: &DatabaseEngine,
         tx: &Tx,
         sql: &str,
     ) -> Result<Option<TableUpdateJson>, DBError> {
@@ -237,7 +237,7 @@ impl ExecutionUnit {
     pub fn eval_binary(
         &self,
         ctx: &ExecutionContext,
-        db: &RelationalDB,
+        db: &DatabaseEngine,
         tx: &Tx,
         sql: &str,
     ) -> Result<Option<TableUpdate>, DBError> {
@@ -254,7 +254,7 @@ impl ExecutionUnit {
 
     fn eval_query_expr<T>(
         ctx: &ExecutionContext,
-        db: &RelationalDB,
+        db: &DatabaseEngine,
         tx: &Tx,
         eval_plan: &QueryExpr,
         sql: &str,
@@ -271,7 +271,7 @@ impl ExecutionUnit {
     pub fn eval_incr<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        db: &'a RelationalDB,
+        db: &'a DatabaseEngine,
         tx: &'a TxMode<'a>,
         sql: &'a str,
         tables: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
@@ -291,7 +291,7 @@ impl ExecutionUnit {
 
     fn eval_query_expr_against_memtable<'a>(
         ctx: &'a ExecutionContext,
-        db: &'a RelationalDB,
+        db: &'a DatabaseEngine,
         tx: &'a TxMode,
         mem_table: &'a [ProductValue],
         eval_incr_plan: &'a QueryExpr,
@@ -305,7 +305,7 @@ impl ExecutionUnit {
 
     fn eval_incr_query_expr<'a>(
         ctx: &'a ExecutionContext,
-        db: &'a RelationalDB,
+        db: &'a DatabaseEngine,
         tx: &'a TxMode<'a>,
         tables: impl Iterator<Item = &'a DatabaseTableUpdate>,
         eval_incr_plan: &'a QueryExpr,

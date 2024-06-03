@@ -1,7 +1,7 @@
 use super::execution_unit::{ExecutionUnit, QueryHash};
 use crate::client::messages::{SerializableMessage, SubscriptionUpdate, TransactionUpdateMessage};
 use crate::client::{ClientConnectionSender, Protocol};
-use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::engine::{DatabaseEngine, Tx};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, ModuleEvent, ProtocolDatabaseUpdate};
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
@@ -117,7 +117,7 @@ impl SubscriptionManager {
     #[tracing::instrument(skip_all)]
     pub fn eval_updates(
         &self,
-        db: &RelationalDB,
+        db: &DatabaseEngine,
         tx: &Tx,
         event: Arc<ModuleEvent>,
         sender_client: Option<&ClientConnectionSender>,
@@ -289,7 +289,7 @@ mod tests {
 
     use crate::{
         client::{ClientActorId, ClientConnectionSender, ClientName, Protocol},
-        db::relational_db::{tests_utils::TestDB, RelationalDB},
+        db::engine::{tests_utils::TestDB, DatabaseEngine},
         energy::EnergyQuanta,
         execution_context::ExecutionContext,
         host::{
@@ -305,11 +305,11 @@ mod tests {
 
     use super::SubscriptionManager;
 
-    fn create_table(db: &RelationalDB, name: &str) -> ResultTest<TableId> {
+    fn create_table(db: &DatabaseEngine, name: &str) -> ResultTest<TableId> {
         Ok(db.create_table_for_test(name, &[("a", AlgebraicType::U8)], &[])?)
     }
 
-    fn compile_plan(db: &RelationalDB, sql: &str) -> ResultTest<Arc<ExecutionUnit>> {
+    fn compile_plan(db: &DatabaseEngine, sql: &str) -> ResultTest<Arc<ExecutionUnit>> {
         db.with_read_only(&ExecutionContext::default(), |tx| {
             let mut exprs = compile_sql(db, tx, sql)?;
             assert_eq!(1, exprs.len());

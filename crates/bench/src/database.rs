@@ -5,7 +5,7 @@ use crate::ResultBench;
 
 /// A database we can execute a standard benchmark suite against.
 /// Currently implemented for SQLite, raw Spacetime outside a module boundary
-/// (RelationalDB), and Spacetime through the module boundary.
+/// (DatabaseEngine), and Spacetime through the module boundary.
 ///
 /// Not all benchmarks have to go through this trait.
 pub trait BenchDatabase: Sized {

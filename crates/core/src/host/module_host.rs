@@ -676,7 +676,7 @@ impl ModuleHost {
             CLIENT_DISCONNECTED_DUNDER
         };
 
-        let db = &self.inner.dbic().relational_db;
+        let db = &self.inner.dbic().db_engine;
         let ctx = || {
             ExecutionContext::reducer(
                 db.address(),
@@ -747,7 +747,7 @@ impl ModuleHost {
         caller_address: Address,
         connected: bool,
     ) -> Result<(), DBError> {
-        let db = &*self.inner.dbic().relational_db;
+        let db = &*self.inner.dbic().db_engine;
         let ctx = &ExecutionContext::internal(db.address());
         let row = &StClientsRow {
             identity: caller_identity,
