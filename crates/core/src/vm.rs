@@ -4,7 +4,7 @@ use crate::config::DatabaseConfig;
 use crate::db::cursor::{IndexCursor, TableCursor};
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::datastore::locking_tx_datastore::IterByColRange;
-use crate::db::relational_db::{MutTx, RelationalDB, Tx};
+use crate::db::engine::{MutTx, DatabaseEngine, Tx};
 use crate::error::DBError;
 use crate::estimation;
 use crate::execution_context::ExecutionContext;
@@ -75,7 +75,7 @@ fn bound_is_satisfiable(lower: &Bound<AlgebraicValue>, upper: &Bound<AlgebraicVa
 //and pull all that crate in core. Will be revisited after trait refactor
 pub fn build_query<'a>(
     ctx: &'a ExecutionContext,
-    db: &'a RelationalDB,
+    db: &'a DatabaseEngine,
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
     sources: &mut impl SourceProvider<'a>,
@@ -214,7 +214,7 @@ pub fn build_query<'a>(
 /// On the other hand, if the `query` is a `SourceExpr::DbTable`, `sources` is unused.
 fn get_table<'a>(
     ctx: &'a ExecutionContext,
-    stdb: &'a RelationalDB,
+    stdb: &'a DatabaseEngine,
     tx: &'a TxMode,
     query: &SourceExpr,
     sources: &mut impl SourceProvider<'a>,
@@ -251,7 +251,7 @@ fn in_mem_to_rel_ops<'a>(
 
 fn iter_by_col_range<'a>(
     ctx: &'a ExecutionContext,
-    db: &'a RelationalDB,
+    db: &'a DatabaseEngine,
     tx: &'a TxMode,
     table: &'a DbTable,
     columns: ColList,
@@ -285,7 +285,7 @@ pub struct IndexSemiJoin<'a, 'c, Rhs: RelOps<'a>> {
     /// A new iterator will be instantiated for each row on the probe side.
     pub index_iter: Option<IterByColRange<'a, AlgebraicValue>>,
     /// A reference to the database.
-    pub db: &'a RelationalDB,
+    pub db: &'a DatabaseEngine,
     /// A reference to the current transaction.
     pub tx: &'a TxMode<'a>,
     /// The execution context for the current transaction.
@@ -353,11 +353,11 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoin<'a, '_, Rhs> {
     }
 }
 
-/// A [ProgramVm] implementation that carry a [RelationalDB] for it
+/// A [ProgramVm] implementation that carry a [DatabaseEngine] for it
 /// query execution
 pub struct DbProgram<'db, 'tx> {
     ctx: &'tx ExecutionContext,
-    pub(crate) db: &'db RelationalDB,
+    pub(crate) db: &'db DatabaseEngine,
     pub(crate) tx: &'tx mut TxMode<'tx>,
     pub(crate) auth: AuthCtx,
 }
@@ -385,7 +385,7 @@ pub fn check_row_limit<QuerySet>(
 }
 
 impl<'db, 'tx> DbProgram<'db, 'tx> {
-    pub fn new(ctx: &'tx ExecutionContext, db: &'db RelationalDB, tx: &'tx mut TxMode<'tx>, auth: AuthCtx) -> Self {
+    pub fn new(ctx: &'tx ExecutionContext, db: &'db DatabaseEngine, tx: &'tx mut TxMode<'tx>, auth: AuthCtx) -> Self {
         Self { ctx, db, tx, auth }
     }
 
@@ -570,7 +570,7 @@ pub(crate) mod tests {
         StTableRow, ST_COLUMNS_ID, ST_COLUMNS_NAME, ST_INDEXES_ID, ST_INDEXES_NAME, ST_RESERVED_SEQUENCE_RANGE,
         ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_NAME,
     };
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::engine::tests_utils::TestDB;
     use crate::execution_context::ExecutionContext;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
@@ -582,7 +582,7 @@ pub(crate) mod tests {
     use spacetimedb_vm::operator::OpCmp;
 
     pub(crate) fn create_table_with_rows(
-        db: &RelationalDB,
+        db: &DatabaseEngine,
         tx: &mut MutTx,
         table_name: &str,
         schema: ProductType,
@@ -620,7 +620,7 @@ pub(crate) mod tests {
     }
 
     /// Creates a table "inventory" with `(inventory_id: u64, name : String)` as columns.
-    fn create_inv_table(db: &RelationalDB, tx: &mut MutTx) -> ResultTest<(Arc<TableSchema>, ProductValue)> {
+    fn create_inv_table(db: &DatabaseEngine, tx: &mut MutTx) -> ResultTest<(Arc<TableSchema>, ProductValue)> {
         let schema_ty = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
         let schema = create_table_with_rows(db, tx, "inventory", schema_ty.clone(), &[row.clone()])?;
@@ -628,7 +628,7 @@ pub(crate) mod tests {
     }
 
     fn run_query<const N: usize>(
-        db: &RelationalDB,
+        db: &DatabaseEngine,
         q: QueryExpr,
         sources: SourceSet<Vec<ProductValue>, N>,
     ) -> MemTable {
@@ -645,16 +645,16 @@ pub(crate) mod tests {
 
     #[test]
     fn test_db_query_inner_join() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let (schema, _) = stdb.with_auto_commit(&ExecutionContext::default(), |tx| create_inv_table(&stdb, tx))?;
+        let (schema, _) = test_db.with_auto_commit(&ExecutionContext::default(), |tx| create_inv_table(&test_db, tx))?;
         let table_id = schema.table_id;
 
         let data = mem_table_one_u64(u32::MAX.into());
         let mut sources = SourceSet::<_, 1>::empty();
         let rhs_source_expr = sources.add_mem_table(data);
         let q = QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, 0.into(), 0.into(), false);
-        let result = run_query(&stdb, q, sources);
+        let result = run_query(&test_db, q, sources);
 
         // The expected result.
         let inv = ProductType::from([AlgebraicType::U64, AlgebraicType::String, AlgebraicType::U64]);
@@ -668,16 +668,16 @@ pub(crate) mod tests {
 
     #[test]
     fn test_db_query_semijoin() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
         let ctx = ExecutionContext::default();
-        let (schema, row) = stdb.with_auto_commit(&ctx, |tx| create_inv_table(&stdb, tx))?;
+        let (schema, row) = test_db.with_auto_commit(&ctx, |tx| create_inv_table(&test_db, tx))?;
 
         let data = mem_table_one_u64(u32::MAX.into());
         let mut sources = SourceSet::<_, 1>::empty();
         let rhs_source_expr = sources.add_mem_table(data);
         let q = QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, 0.into(), 0.into(), true);
-        let result = run_query(&stdb, q, sources);
+        let result = run_query(&test_db, q, sources);
 
         // The expected result.
         let input = mem_table(schema.table_id, schema.get_row_type().clone(), vec![row]);
@@ -686,7 +686,7 @@ pub(crate) mod tests {
         Ok(())
     }
 
-    fn check_catalog(db: &RelationalDB, name: &str, row: ProductValue, q: QueryExpr, schema: &TableSchema) {
+    fn check_catalog(db: &DatabaseEngine, name: &str, row: ProductValue, q: QueryExpr, schema: &TableSchema) {
         let result = run_query(db, q, [].into());
         let input = MemTable::from_iter(Header::from(schema).into(), [row]);
         assert_eq!(result, input, "{}", name);
@@ -694,8 +694,8 @@ pub(crate) mod tests {
 
     #[test]
     fn test_query_catalog_tables() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
-        let schema = &*stdb.schema_for_table(&stdb.begin_tx(), ST_TABLES_ID).unwrap();
+        let test_db = TestDB::durable()?;
+        let schema = &*test_db.schema_for_table(&test_db.begin_tx(), ST_TABLES_ID).unwrap();
 
         let q = QueryExpr::new(schema).with_select_cmp(
             OpCmp::Eq,
@@ -709,15 +709,15 @@ pub(crate) mod tests {
             table_access: StAccess::Public,
         }
         .into();
-        check_catalog(&stdb, ST_TABLES_NAME, st_table_row, q, schema);
+        check_catalog(&test_db, ST_TABLES_NAME, st_table_row, q, schema);
 
         Ok(())
     }
 
     #[test]
     fn test_query_catalog_columns() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
-        let schema = &*stdb.schema_for_table(&stdb.begin_tx(), ST_COLUMNS_ID).unwrap();
+        let test_db = TestDB::durable()?;
+        let schema = &*test_db.schema_for_table(&test_db.begin_tx(), ST_COLUMNS_ID).unwrap();
 
         let q = QueryExpr::new(schema)
             .with_select_cmp(
@@ -737,7 +737,7 @@ pub(crate) mod tests {
             col_type: AlgebraicType::U32,
         }
         .into();
-        check_catalog(&stdb, ST_COLUMNS_NAME, st_column_row, q, schema);
+        check_catalog(&test_db, ST_COLUMNS_NAME, st_column_row, q, schema);
 
         Ok(())
     }

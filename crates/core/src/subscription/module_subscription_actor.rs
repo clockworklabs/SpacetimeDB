@@ -4,7 +4,7 @@ use super::query::compile_read_only_query;
 use super::subscription::ExecutionSet;
 use crate::client::messages::{SubscriptionUpdate, SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
-use crate::db::relational_db::{MutTx, RelationalDB, Tx};
+use crate::db::engine::{MutTx, DatabaseEngine, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
@@ -22,7 +22,7 @@ type Subscriptions = Arc<RwLock<SubscriptionManager>>;
 
 #[derive(Debug, Clone)]
 pub struct ModuleSubscriptions {
-    relational_db: Arc<RelationalDB>,
+    db_engine: Arc<DatabaseEngine>,
     /// If taking a lock (tx) on the db at the same time, ALWAYS lock the db first.
     /// You will deadlock otherwise.
     subscriptions: Subscriptions,
@@ -32,9 +32,9 @@ pub struct ModuleSubscriptions {
 type AssertTxFn = Arc<dyn Fn(&Tx)>;
 
 impl ModuleSubscriptions {
-    pub fn new(relational_db: Arc<RelationalDB>, owner_identity: Identity) -> Self {
+    pub fn new(db_engine: Arc<DatabaseEngine>, owner_identity: Identity) -> Self {
         Self {
-            relational_db,
+            db_engine,
             subscriptions: Arc::new(RwLock::new(SubscriptionManager::default())),
             owner_identity,
         }
@@ -49,10 +49,10 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(), DBError> {
-        let config = self.relational_db.read_config();
-        let ctx = ExecutionContext::subscribe(self.relational_db.address(), config.slow_query);
-        let tx = scopeguard::guard(self.relational_db.begin_tx(), |tx| {
-            self.relational_db.release_tx(&ctx, tx);
+        let config = self.db_engine.read_config();
+        let ctx = ExecutionContext::subscribe(self.db_engine.address(), config.slow_query);
+        let tx = scopeguard::guard(self.db_engine.begin_tx(), |tx| {
+            self.db_engine.release_tx(&ctx, tx);
         });
         let request_id = subscription.request_id;
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
@@ -68,7 +68,7 @@ impl ModuleSubscriptions {
             let sql = sql.trim();
             if sql == super::query::SUBSCRIBE_TO_ALL_QUERY {
                 queries.extend(
-                    super::subscription::get_all(&self.relational_db, &tx, &auth)?
+                    super::subscription::get_all(&self.db_engine, &tx, &auth)?
                         .into_iter()
                         .map(|query| {
                             let hash = QueryHash::from_string(&query.sql);
@@ -82,7 +82,7 @@ impl ModuleSubscriptions {
             if let Some(unit) = guard.query(&hash) {
                 queries.push(unit);
             } else {
-                let mut compiled = compile_read_only_query(&self.relational_db, &tx, sql)?;
+                let mut compiled = compile_read_only_query(&self.db_engine, &tx, sql)?;
                 if compiled.len() > 1 {
                     return Result::Err(
                         SubscriptionError::Unsupported(String::from("Multiple statements in subscription query"))
@@ -109,11 +109,11 @@ impl ModuleSubscriptions {
             &config,
         )?;
 
-        let database_update = execution_set.eval(&ctx, sender.protocol, &self.relational_db, &tx)?;
+        let database_update = execution_set.eval(&ctx, sender.protocol, &self.db_engine, &tx)?;
 
         WORKER_METRICS
             .initial_subscription_evals
-            .with_label_values(&self.relational_db.address())
+            .with_label_values(&self.db_engine.address())
             .inc();
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
@@ -126,7 +126,7 @@ impl ModuleSubscriptions {
 
         WORKER_METRICS
             .subscription_queries
-            .with_label_values(&self.relational_db.address())
+            .with_label_values(&self.db_engine.address())
             .set(num_queries as i64);
 
         #[cfg(test)]
@@ -153,7 +153,7 @@ impl ModuleSubscriptions {
         subscriptions.remove_subscription(&(client_id.identity, client_id.address));
         WORKER_METRICS
             .subscription_queries
-            .with_label_values(&self.relational_db.address())
+            .with_label_values(&self.db_engine.address())
             .set(subscriptions.num_queries() as i64);
     }
 
@@ -168,7 +168,7 @@ impl ModuleSubscriptions {
         // Take a read lock on `subscriptions` before committing tx
         // else it can result in subscriber receiving duplicate updates.
         let subscriptions = self.subscriptions.read();
-        let stdb = &self.relational_db;
+        let stdb = &self.db_engine;
 
         let read_tx = match &mut event.status {
             EventStatus::Committed(db_update) => {
@@ -208,8 +208,8 @@ pub struct WriteConflict;
 mod tests {
     use super::{AssertTxFn, ModuleSubscriptions};
     use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
-    use crate::db::relational_db::tests_utils::TestDB;
-    use crate::db::relational_db::RelationalDB;
+    use crate::db::engine::tests_utils::TestDB;
+    use crate::db::engine::DatabaseEngine;
     use crate::error::DBError;
     use crate::execution_context::ExecutionContext;
     use spacetimedb_client_api_messages::client_api::Subscribe;
@@ -222,7 +222,7 @@ mod tests {
     use std::{sync::Arc, time::Duration};
     use tokio::sync::mpsc;
 
-    fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
+    fn add_subscriber(db: Arc<DatabaseEngine>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
         let owner = Identity::from_byte_array([1; 32]);
         let client = ClientActorId::for_test(Identity::ZERO);
         let sender = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));

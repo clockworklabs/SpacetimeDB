@@ -1,5 +1,5 @@
 use crate::config::ReadConfigOption;
-use crate::db::relational_db::{MutTx, RelationalDB, Tx};
+use crate::db::engine::{MutTx, DatabaseEngine, Tx};
 use crate::error::{DBError, PlanError};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_primitives::{ColList, ConstraintKind, Constraints};
@@ -473,11 +473,11 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
 }
 
 pub trait TableSchemaView {
-    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Arc<TableSchema>, PlanError>;
+    fn find_table(&self, db: &DatabaseEngine, t: Table) -> Result<Arc<TableSchema>, PlanError>;
 }
 
 impl TableSchemaView for Tx {
-    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Arc<TableSchema>, PlanError> {
+    fn find_table(&self, db: &DatabaseEngine, t: Table) -> Result<Arc<TableSchema>, PlanError> {
         let table_id = db
             .table_id_from_name(self, &t.name)?
             .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
@@ -490,7 +490,7 @@ impl TableSchemaView for Tx {
 }
 
 impl TableSchemaView for MutTx {
-    fn find_table(&self, db: &RelationalDB, t: Table) -> Result<Arc<TableSchema>, PlanError> {
+    fn find_table(&self, db: &DatabaseEngine, t: Table) -> Result<Arc<TableSchema>, PlanError> {
         let table_id = db
             .table_id_from_name_mut(self, &t.name)?
             .ok_or(PlanError::UnknownTable { table: t.name.clone() })?;
@@ -503,7 +503,7 @@ impl TableSchemaView for MutTx {
 }
 
 /// Compiles the `FROM` clause
-fn compile_from<T: TableSchemaView>(db: &RelationalDB, tx: &T, from: &[TableWithJoins]) -> Result<From, PlanError> {
+fn compile_from<T: TableSchemaView>(db: &DatabaseEngine, tx: &T, from: &[TableWithJoins]) -> Result<From, PlanError> {
     if from.len() > 1 {
         return Err(PlanError::Unsupported {
             feature: "Multiple tables in `FROM`.".into(),
@@ -624,7 +624,7 @@ fn compile_select_item(from: &From, select_item: SelectItem) -> Result<Column, P
 }
 
 /// Compiles the `SELECT ...` clause
-fn compile_select<T: TableSchemaView>(db: &RelationalDB, tx: &T, select: Select) -> Result<SqlAst, PlanError> {
+fn compile_select<T: TableSchemaView>(db: &DatabaseEngine, tx: &T, select: Select) -> Result<SqlAst, PlanError> {
     let from = compile_from(db, tx, &select.from)?;
     // SELECT ...
     let mut project = Vec::with_capacity(select.projection.len());
@@ -642,7 +642,7 @@ fn compile_select<T: TableSchemaView>(db: &RelationalDB, tx: &T, select: Select)
 }
 
 /// Compiles any `query` clause (currently only `SELECT...`)
-fn compile_query<T: TableSchemaView>(db: &RelationalDB, tx: &T, query: Query) -> Result<SqlAst, PlanError> {
+fn compile_query<T: TableSchemaView>(db: &DatabaseEngine, tx: &T, query: Query) -> Result<SqlAst, PlanError> {
     unsupported!(
         "SELECT",
         query.order_by,
@@ -696,7 +696,7 @@ fn compile_query<T: TableSchemaView>(db: &RelationalDB, tx: &T, query: Query) ->
 
 /// Compiles the `INSERT ...` clause
 fn compile_insert<T: TableSchemaView>(
-    db: &RelationalDB,
+    db: &DatabaseEngine,
     tx: &T,
     table_name: ObjectName,
     columns: Vec<Ident>,
@@ -735,7 +735,7 @@ fn compile_insert<T: TableSchemaView>(
 
 /// Compiles the `UPDATE ...` clause
 fn compile_update<T: TableSchemaView>(
-    db: &RelationalDB,
+    db: &DatabaseEngine,
     tx: &T,
     table: Table,
     assignments: Vec<Assignment>,
@@ -763,7 +763,7 @@ fn compile_update<T: TableSchemaView>(
 
 /// Compiles the `DELETE ...` clause
 fn compile_delete<T: TableSchemaView>(
-    db: &RelationalDB,
+    db: &DatabaseEngine,
     tx: &T,
     table: Table,
     selection: Option<SqlExpr>,
@@ -983,7 +983,7 @@ fn compile_read_config(name: Vec<Ident>) -> Result<SqlAst, PlanError> {
 }
 
 /// Compiles a `SQL` clause
-fn compile_statement<T: TableSchemaView>(db: &RelationalDB, tx: &T, statement: Statement) -> Result<SqlAst, PlanError> {
+fn compile_statement<T: TableSchemaView>(db: &DatabaseEngine, tx: &T, statement: Statement) -> Result<SqlAst, PlanError> {
     match statement {
         Statement::Query(query) => Ok(compile_query(db, tx, *query)?),
         Statement::Insert {
@@ -1169,7 +1169,7 @@ fn compile_statement<T: TableSchemaView>(db: &RelationalDB, tx: &T, statement: S
 
 /// Compiles a `sql` string into a `Vec<SqlAst>` using a SQL parser with [PostgreSqlDialect]
 pub(crate) fn compile_to_ast<T: TableSchemaView>(
-    db: &RelationalDB,
+    db: &DatabaseEngine,
     tx: &T,
     sql_text: &str,
 ) -> Result<Vec<SqlAst>, DBError> {

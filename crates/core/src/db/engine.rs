@@ -56,7 +56,7 @@ pub type Txdata = commitlog::payload::Txdata<ProductValue>;
 pub type ConnectedClients = HashSet<(Identity, Address)>;
 
 #[derive(Clone)]
-pub struct RelationalDB {
+pub struct DatabaseEngine {
     // TODO(cloutiertyler): This should not be public
     pub(crate) inner: Locking,
     durability: Option<Arc<dyn Durability<TxData = Txdata>>>,
@@ -75,13 +75,13 @@ pub struct RelationalDB {
     _lock: Arc<File>,
 }
 
-impl std::fmt::Debug for RelationalDB {
+impl std::fmt::Debug for DatabaseEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RelationalDB").field("address", &self.address).finish()
+        f.debug_struct("DatabaseEngine").field("address", &self.address).finish()
     }
 }
 
-impl RelationalDB {
+impl DatabaseEngine {
     /// Open a database with local durability.
     ///
     /// This is a convenience constructor which initializes the database with
@@ -181,7 +181,7 @@ impl RelationalDB {
         // TODO: Revisit once we actually replay history suffixes, ie. starting
         // from an offset larger than the history's min offset.
         // TODO: We may want to require that a `tokio::runtime::Handle` is
-        // always supplied when constructing a `RelationalDB`. This would allow
+        // always supplied when constructing a `DatabaseEngine`. This would allow
         // to spawn a timer task here which just prints the progress periodically
         // in case the history is finite but very long.
         let max_tx_offset = history.max_tx_offset();
@@ -223,7 +223,7 @@ impl RelationalDB {
         (self.row_count_fn)(table_id, table_name)
     }
 
-    /// Update this `RelationalDB` with an approximate row count function.
+    /// Update this `DatabaseEngine` with an approximate row count function.
     pub fn with_row_count(mut self, row_count: RowCountFn) -> Self {
         self.row_count_fn = row_count;
         self
@@ -521,7 +521,7 @@ impl RelationalDB {
     }
 }
 
-impl RelationalDB {
+impl DatabaseEngine {
     pub fn create_table<T: Into<TableDef>>(&self, tx: &mut MutTx, schema: T) -> Result<TableId, DBError> {
         self.inner.create_table_mut_tx(tx, schema.into())
     }
@@ -876,7 +876,7 @@ pub mod tests_utils {
     use core::ops::Deref;
     use tempfile::TempDir;
 
-    /// A [`RelationalDB`] in a temporary directory.
+    /// A [`DatabaseEngine`] in a temporary directory.
     ///
     /// When dropped, any resources including the temporary directory will be
     /// removed.
@@ -887,10 +887,10 @@ pub mod tests_utils {
     ///
     /// To keep the temporary directory, use [`Self::reopen`] or [`Self::into_parts`].
     ///
-    /// [`TestDB`] is deref-coercible into [`RelationalDB`], which is dubious
+    /// [`TestDB`] is deref-coercible into [`DatabaseEngine`], which is dubious
     /// but convenient.
     pub struct TestDB {
-        pub db: RelationalDB,
+        pub db: DatabaseEngine,
 
         // nb: drop order is declaration order
         durable: Option<DurableState>,
@@ -1001,7 +1001,7 @@ pub mod tests_utils {
         pub fn into_parts(
             self,
         ) -> (
-            RelationalDB,
+            DatabaseEngine,
             Option<Arc<durability::Local<ProductValue>>>,
             Option<tokio::runtime::Runtime>,
             TempDir,
@@ -1013,14 +1013,14 @@ pub mod tests_utils {
             (db, durability, rt, tmp_dir)
         }
 
-        fn in_memory_internal(root: &Path) -> Result<RelationalDB, DBError> {
-            Ok(RelationalDB::open(root, Self::ADDRESS, None)?.with_row_count(Self::row_count_fn()))
+        fn in_memory_internal(root: &Path) -> Result<DatabaseEngine, DBError> {
+            Ok(DatabaseEngine::open(root, Self::ADDRESS, None)?.with_row_count(Self::row_count_fn()))
         }
 
         fn durable_internal(
             root: &Path,
             rt: tokio::runtime::Handle,
-        ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
+        ) -> Result<(DatabaseEngine, Arc<durability::Local<ProductValue>>), DBError> {
             let log_dir = root.join("clog");
             create_dir_all(&log_dir)?;
 
@@ -1042,11 +1042,11 @@ pub mod tests_utils {
             });
 
             let (db, connected_clients) = {
-                let db = RelationalDB::open(root, Self::ADDRESS, Some((handle.clone(), disk_size_fn)))?;
+                let db = DatabaseEngine::open(root, Self::ADDRESS, Some((handle.clone(), disk_size_fn)))?;
                 db.apply(handle.clone())?
             };
             // TODO: Should we be able to handle the non-empty case?
-            // `RelationalDB` cannot exist on its own then.
+            // `DatabaseEngine` cannot exist on its own then.
             debug_assert!(connected_clients.is_empty());
 
             Ok((db.with_row_count(Self::row_count_fn()), handle))
@@ -1059,7 +1059,7 @@ pub mod tests_utils {
     }
 
     impl Deref for TestDB {
-        type Target = RelationalDB;
+        type Target = DatabaseEngine;
 
         fn deref(&self) -> &Self::Target {
             &self.db
@@ -1079,7 +1079,7 @@ mod tests {
         system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINTS_ID, ST_INDEXES_ID,
         ST_SEQUENCES_ID, ST_TABLES_ID,
     };
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::engine::tests_utils::TestDB;
     use crate::error::IndexError;
     use crate::execution_context::ReducerContext;
     use crate::host::Timestamp;
@@ -1135,24 +1135,24 @@ mod tests {
 
     #[test]
     fn test() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
-        stdb.commit_tx(&ExecutionContext::default(), tx)?;
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
+        test_db.create_table(&mut tx, my_table(AlgebraicType::I32))?;
+        test_db.commit_tx(&ExecutionContext::default(), tx)?;
 
         Ok(())
     }
 
     #[test]
     fn test_open_twice() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
-        stdb.commit_tx(&ExecutionContext::default(), tx)?;
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
+        test_db.create_table(&mut tx, my_table(AlgebraicType::I32))?;
+        test_db.commit_tx(&ExecutionContext::default(), tx)?;
 
-        match RelationalDB::local(stdb.path(), stdb.runtime().unwrap().clone(), Address::zero()) {
+        match DatabaseEngine::local(test_db.path(), test_db.runtime().unwrap().clone(), Address::zero()) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
             }
@@ -1169,23 +1169,23 @@ mod tests {
 
     #[test]
     fn test_table_name() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        let table_id = stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
-        let t_id = stdb.table_id_from_name_mut(&tx, "MyTable")?;
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
+        let table_id = test_db.create_table(&mut tx, my_table(AlgebraicType::I32))?;
+        let t_id = test_db.table_id_from_name_mut(&tx, "MyTable")?;
         assert_eq!(t_id, Some(table_id));
         Ok(())
     }
 
     #[test]
     fn test_column_name() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
-        let table_id = stdb.table_id_from_name_mut(&tx, "MyTable")?.unwrap();
-        let schema = stdb.schema_for_table_mut(&tx, table_id)?;
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
+        test_db.create_table(&mut tx, my_table(AlgebraicType::I32))?;
+        let table_id = test_db.table_id_from_name_mut(&tx, "MyTable")?.unwrap();
+        let schema = test_db.schema_for_table_mut(&tx, table_id)?;
         let col = schema.columns().iter().find(|x| &*x.col_name == "my_col").unwrap();
         assert_eq!(col.col_pos, 0.into());
         Ok(())
@@ -1193,12 +1193,12 @@ mod tests {
 
     #[test]
     fn test_create_table_pre_commit() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
         let schema = my_table(AlgebraicType::I32);
-        stdb.create_table(&mut tx, schema.clone())?;
-        let result = stdb.create_table(&mut tx, schema);
+        test_db.create_table(&mut tx, schema.clone())?;
+        let result = test_db.create_table(&mut tx, schema);
         result.expect_err("create_table should error when called twice");
         Ok(())
     }
@@ -1207,8 +1207,8 @@ mod tests {
         row.read_col(0).unwrap()
     }
 
-    fn collect_sorted<T: ReadColumn + Ord>(stdb: &RelationalDB, tx: &MutTx, table_id: TableId) -> ResultTest<Vec<T>> {
-        let mut rows = stdb
+    fn collect_sorted<T: ReadColumn + Ord>(db_engine: &DatabaseEngine, tx: &MutTx, table_id: TableId) -> ResultTest<Vec<T>> {
+        let mut rows = db_engine 
             .iter_mut(&ExecutionContext::default(), tx, table_id)?
             .map(read_first_col)
             .collect::<Vec<T>>();
@@ -1217,13 +1217,13 @@ mod tests {
     }
 
     fn collect_from_sorted<T: ReadColumn + Into<AlgebraicValue> + Ord>(
-        stdb: &RelationalDB,
+        db_engine: &DatabaseEngine,
         tx: &MutTx,
         table_id: TableId,
         from: T,
     ) -> ResultTest<Vec<T>> {
         let from: AlgebraicValue = from.into();
-        let mut rows = stdb
+        let mut rows = db_engine
             .iter_by_col_range_mut(&ExecutionContext::default(), tx, table_id, 0, from..)?
             .map(read_first_col)
             .collect::<Vec<T>>();
@@ -1231,80 +1231,80 @@ mod tests {
         Ok(rows)
     }
 
-    fn insert_three_i32s(stdb: &RelationalDB, tx: &mut MutTx, table_id: TableId) -> ResultTest<()> {
+    fn insert_three_i32s(db_engine: &DatabaseEngine, tx: &mut MutTx, table_id: TableId) -> ResultTest<()> {
         for v in [-1, 0, 1] {
-            stdb.insert(tx, table_id, product![v])?;
+            db_engine.insert(tx, table_id, product![v])?;
         }
         Ok(())
     }
 
     #[test]
     fn test_pre_commit() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        let table_id = stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
+        let table_id = test_db.create_table(&mut tx, my_table(AlgebraicType::I32))?;
 
-        insert_three_i32s(&stdb, &mut tx, table_id)?;
-        assert_eq!(collect_sorted::<i32>(&stdb, &tx, table_id)?, vec![-1, 0, 1]);
+        insert_three_i32s(&test_db, &mut tx, table_id)?;
+        assert_eq!(collect_sorted::<i32>(&test_db, &tx, table_id)?, vec![-1, 0, 1]);
         Ok(())
     }
 
     #[test]
     fn test_post_commit() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
 
-        let table_id = stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
+        let table_id = test_db.create_table(&mut tx, my_table(AlgebraicType::I32))?;
 
-        insert_three_i32s(&stdb, &mut tx, table_id)?;
-        stdb.commit_tx(&ExecutionContext::default(), tx)?;
+        insert_three_i32s(&test_db, &mut tx, table_id)?;
+        test_db.commit_tx(&ExecutionContext::default(), tx)?;
 
-        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        assert_eq!(collect_sorted::<i32>(&stdb, &tx, table_id)?, vec![-1, 0, 1]);
+        let tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
+        assert_eq!(collect_sorted::<i32>(&test_db, &tx, table_id)?, vec![-1, 0, 1]);
         Ok(())
     }
 
     #[test]
     fn test_filter_range_pre_commit() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
 
-        let table_id = stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
-        insert_three_i32s(&stdb, &mut tx, table_id)?;
-        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i32)?, vec![0, 1]);
+        let table_id = test_db.create_table(&mut tx, my_table(AlgebraicType::I32))?;
+        insert_three_i32s(&test_db, &mut tx, table_id)?;
+        assert_eq!(collect_from_sorted(&test_db, &tx, table_id, 0i32)?, vec![0, 1]);
         Ok(())
     }
 
     #[test]
     fn test_filter_range_post_commit() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
 
-        let table_id = stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
+        let table_id = test_db.create_table(&mut tx, my_table(AlgebraicType::I32))?;
 
-        insert_three_i32s(&stdb, &mut tx, table_id)?;
-        stdb.commit_tx(&ExecutionContext::default(), tx)?;
+        insert_three_i32s(&test_db, &mut tx, table_id)?;
+        test_db.commit_tx(&ExecutionContext::default(), tx)?;
 
-        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i32)?, vec![0, 1]);
+        let tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
+        assert_eq!(collect_from_sorted(&test_db, &tx, table_id, 0i32)?, vec![0, 1]);
         Ok(())
     }
 
     #[test]
     fn test_create_table_rollback() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
 
-        let table_id = stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
-        stdb.rollback_mut_tx(&ExecutionContext::default(), tx);
+        let table_id = test_db.create_table(&mut tx, my_table(AlgebraicType::I32))?;
+        test_db.rollback_mut_tx(&ExecutionContext::default(), tx);
 
-        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        let result = stdb.table_id_from_name_mut(&tx, "MyTable")?;
+        let tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
+        let result = test_db.table_id_from_name_mut(&tx, "MyTable")?;
         assert!(
             result.is_none(),
             "Table should not exist, so table_id_from_name should return none"
@@ -1312,7 +1312,7 @@ mod tests {
 
         let ctx = ExecutionContext::default();
 
-        let result = stdb.table_name_from_id_mut(&ctx, &tx, table_id)?;
+        let result = test_db.table_name_from_id_mut(&ctx, &tx, table_id)?;
         assert!(
             result.is_none(),
             "Table should not exist, so table_name_from_id_mut should return none",
@@ -1322,20 +1322,20 @@ mod tests {
 
     #[test]
     fn test_rollback() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
 
-        let table_id = stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
-        stdb.commit_tx(&ctx, tx)?;
+        let table_id = test_db.create_table(&mut tx, my_table(AlgebraicType::I32))?;
+        test_db.commit_tx(&ctx, tx)?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        insert_three_i32s(&stdb, &mut tx, table_id)?;
-        stdb.rollback_mut_tx(&ctx, tx);
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
+        insert_three_i32s(&test_db, &mut tx, table_id)?;
+        test_db.rollback_mut_tx(&ctx, tx);
 
-        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        assert_eq!(collect_sorted::<i32>(&stdb, &tx, table_id)?, Vec::<i32>::new());
+        let tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
+        assert_eq!(collect_sorted::<i32>(&test_db, &tx, table_id)?, Vec::<i32>::new());
         Ok(())
     }
 
@@ -1345,37 +1345,37 @@ mod tests {
 
     #[test]
     fn test_auto_inc() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
         let schema = table_auto_inc();
-        let table_id = stdb.create_table(&mut tx, schema)?;
+        let table_id = test_db.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col_primary_key_auto")?;
+        let sequence = test_db.sequence_id_from_name(&tx, "seq_MyTable_my_col_primary_key_auto")?;
         assert!(sequence.is_some(), "Sequence not created");
 
-        stdb.insert(&mut tx, table_id, product![0i64])?;
-        stdb.insert(&mut tx, table_id, product![0i64])?;
+        test_db.insert(&mut tx, table_id, product![0i64])?;
+        test_db.insert(&mut tx, table_id, product![0i64])?;
 
-        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1, 2]);
+        assert_eq!(collect_from_sorted(&test_db, &tx, table_id, 0i64)?, vec![1, 2]);
         Ok(())
     }
 
     #[test]
     fn test_auto_inc_disable() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
         let schema = table_auto_inc();
-        let table_id = stdb.create_table(&mut tx, schema)?;
+        let table_id = test_db.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col_primary_key_auto")?;
+        let sequence = test_db.sequence_id_from_name(&tx, "seq_MyTable_my_col_primary_key_auto")?;
         assert!(sequence.is_some(), "Sequence not created");
 
-        stdb.insert(&mut tx, table_id, product![5i64])?;
-        stdb.insert(&mut tx, table_id, product![6i64])?;
+        test_db.insert(&mut tx, table_id, product![5i64])?;
+        test_db.insert(&mut tx, table_id, product![6i64])?;
 
-        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![5, 6]);
+        assert_eq!(collect_from_sorted(&test_db, &tx, table_id, 0i64)?, vec![5, 6]);
         Ok(())
     }
 
@@ -1391,87 +1391,87 @@ mod tests {
             .is_test(true)
             .try_init();
 
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
         let schema = my_table(AlgebraicType::I64).with_column_sequence(0.into());
 
-        let table_id = stdb.create_table(&mut tx, schema)?;
+        let table_id = test_db.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col")?;
+        let sequence = test_db.sequence_id_from_name(&tx, "seq_MyTable_my_col")?;
         assert!(sequence.is_some(), "Sequence not created");
 
-        stdb.insert(&mut tx, table_id, product![0i64])?;
-        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1]);
+        test_db.insert(&mut tx, table_id, product![0i64])?;
+        assert_eq!(collect_from_sorted(&test_db, &tx, table_id, 0i64)?, vec![1]);
 
-        stdb.commit_tx(&ExecutionContext::default(), tx)?;
+        test_db.commit_tx(&ExecutionContext::default(), tx)?;
 
-        let stdb = stdb.reopen()?;
+        let test_db = test_db.reopen()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        stdb.insert(&mut tx, table_id, product![0i64]).unwrap();
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
+        test_db.insert(&mut tx, table_id, product![0i64]).unwrap();
 
         // Check the second row start after `SEQUENCE_PREALLOCATION_AMOUNT`
-        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1, 4098]);
+        assert_eq!(collect_from_sorted(&test_db, &tx, table_id, 0i64)?, vec![1, 4098]);
         Ok(())
     }
 
     #[test]
     fn test_indexed() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
         let schema = table_indexed(false);
-        let table_id = stdb.create_table(&mut tx, schema)?;
+        let table_id = test_db.create_table(&mut tx, schema)?;
 
         assert!(
-            stdb.index_id_from_name(&tx, "MyTable_my_col_idx")?.is_some(),
+            test_db.index_id_from_name(&tx, "MyTable_my_col_idx")?.is_some(),
             "Index not created"
         );
 
-        stdb.insert(&mut tx, table_id, product![1i64])?;
-        stdb.insert(&mut tx, table_id, product![1i64])?;
+        test_db.insert(&mut tx, table_id, product![1i64])?;
+        test_db.insert(&mut tx, table_id, product![1i64])?;
 
-        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1]);
+        assert_eq!(collect_from_sorted(&test_db, &tx, table_id, 0i64)?, vec![1]);
         Ok(())
     }
 
     #[test]
     fn test_row_count() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
         let schema = my_table(AlgebraicType::I64);
-        let table_id = stdb.create_table(&mut tx, schema)?;
-        stdb.insert(&mut tx, table_id, product![1i64])?;
-        stdb.insert(&mut tx, table_id, product![2i64])?;
-        stdb.commit_tx(&ExecutionContext::default(), tx)?;
+        let table_id = test_db.create_table(&mut tx, schema)?;
+        test_db.insert(&mut tx, table_id, product![1i64])?;
+        test_db.insert(&mut tx, table_id, product![2i64])?;
+        test_db.commit_tx(&ExecutionContext::default(), tx)?;
 
-        let stdb = stdb.reopen()?;
-        let tx = stdb.begin_tx();
+        let test_db = test_db.reopen()?;
+        let tx = test_db.begin_tx();
         assert_eq!(tx.get_row_count(table_id).unwrap(), 2);
         Ok(())
     }
 
     #[test]
     fn test_unique() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
 
         let schema = table_indexed(true);
-        let table_id = stdb.create_table(&mut tx, schema).expect("stdb.create_table failed");
+        let table_id = test_db.create_table(&mut tx, schema).expect("test_db.create_table failed");
 
         assert!(
-            stdb.index_id_from_name(&tx, "MyTable_my_col_idx")
+            test_db.index_id_from_name(&tx, "MyTable_my_col_idx")
                 .expect("index_id_from_name failed")
                 .is_some(),
             "Index not created"
         );
 
-        stdb.insert(&mut tx, table_id, product![1i64])
-            .expect("stdb.insert failed");
-        match stdb.insert(&mut tx, table_id, product![1i64]) {
+        test_db.insert(&mut tx, table_id, product![1i64])
+            .expect("test_db.insert failed");
+        match test_db.insert(&mut tx, table_id, product![1i64]) {
             Ok(_) => {
                 panic!("Allow to insert duplicate row")
             }
@@ -1491,33 +1491,33 @@ mod tests {
 
     #[test]
     fn test_identity() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
         let schema = table_indexed(true).with_column_constraint(Constraints::identity(), 0);
 
-        let table_id = stdb.create_table(&mut tx, schema)?;
+        let table_id = test_db.create_table(&mut tx, schema)?;
 
         assert!(
-            stdb.index_id_from_name(&tx, "MyTable_my_col_idx")?.is_some(),
+            test_db.index_id_from_name(&tx, "MyTable_my_col_idx")?.is_some(),
             "Index not created"
         );
 
-        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col_identity")?;
+        let sequence = test_db.sequence_id_from_name(&tx, "seq_MyTable_my_col_identity")?;
         assert!(sequence.is_some(), "Sequence not created");
 
-        stdb.insert(&mut tx, table_id, product![0i64])?;
-        stdb.insert(&mut tx, table_id, product![0i64])?;
+        test_db.insert(&mut tx, table_id, product![0i64])?;
+        test_db.insert(&mut tx, table_id, product![0i64])?;
 
-        assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1, 2]);
+        assert_eq!(collect_from_sorted(&test_db, &tx, table_id, 0i64)?, vec![1, 2]);
         Ok(())
     }
 
     #[test]
     fn test_cascade_drop_table() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
         let schema = TableDef::new(
             "MyTable".into(),
             ["col1", "col2", "col3", "col4"]
@@ -1545,46 +1545,46 @@ mod tests {
         )]);
 
         let ctx = ExecutionContext::default();
-        let table_id = stdb.create_table(&mut tx, schema)?;
+        let table_id = test_db.create_table(&mut tx, schema)?;
 
-        let indexes = stdb
+        let indexes = test_db
             .iter_mut(&ctx, &tx, ST_INDEXES_ID)?
             .map(|x| StIndexRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 4, "Wrong number of indexes");
 
-        let sequences = stdb
+        let sequences = test_db
             .iter_mut(&ctx, &tx, ST_SEQUENCES_ID)?
             .map(|x| StSequenceRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(sequences.len(), 1, "Wrong number of sequences");
 
-        let constraints = stdb
+        let constraints = test_db
             .iter_mut(&ctx, &tx, ST_CONSTRAINTS_ID)?
             .map(|x| StConstraintRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(constraints.len(), 4, "Wrong number of constraints");
 
-        stdb.drop_table(&ctx, &mut tx, table_id)?;
+        test_db.drop_table(&ctx, &mut tx, table_id)?;
 
-        let indexes = stdb
+        let indexes = test_db
             .iter_mut(&ctx, &tx, ST_INDEXES_ID)?
             .map(|x| StIndexRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(indexes.len(), 0, "Wrong number of indexes DROP");
 
-        let sequences = stdb
+        let sequences = test_db
             .iter_mut(&ctx, &tx, ST_SEQUENCES_ID)?
             .map(|x| StSequenceRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
         assert_eq!(sequences.len(), 0, "Wrong number of sequences DROP");
 
-        let constraints = stdb
+        let constraints = test_db
             .iter_mut(&ctx, &tx, ST_CONSTRAINTS_ID)?
             .map(|x| StConstraintRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
@@ -1596,19 +1596,19 @@ mod tests {
 
     #[test]
     fn test_rename_table() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
 
-        let table_id = stdb.create_table(&mut tx, table_indexed(true))?;
-        stdb.rename_table(&mut tx, table_id, "YourTable")?;
-        let table_name = stdb.table_name_from_id_mut(&ctx, &tx, table_id)?;
+        let table_id = test_db.create_table(&mut tx, table_indexed(true))?;
+        test_db.rename_table(&mut tx, table_id, "YourTable")?;
+        let table_name = test_db.table_name_from_id_mut(&ctx, &tx, table_id)?;
 
         assert_eq!(Some("YourTable"), table_name.as_ref().map(Cow::as_ref));
         // Also make sure we've removed the old ST_TABLES_ID row
         let mut n = 0;
-        for row in stdb.iter_mut(&ctx, &tx, ST_TABLES_ID)? {
+        for row in test_db.iter_mut(&ctx, &tx, ST_TABLES_ID)? {
             let table = StTableRow::try_from(row)?;
             if table.table_id == table_id {
                 n += 1;
@@ -1621,26 +1621,26 @@ mod tests {
 
     #[test]
     fn test_multi_column_index() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
         let columns = ["a", "b", "c"].map(|n| column(n, AlgebraicType::U64)).into();
 
         let indexes = vec![index("0", &[0, 1])];
         let schema = table("t", columns, indexes, vec![]);
 
-        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        let table_id = stdb.create_table(&mut tx, schema)?;
+        let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
+        let table_id = test_db.create_table(&mut tx, schema)?;
 
-        stdb.insert(&mut tx, table_id, product![0u64, 0u64, 1u64])?;
-        stdb.insert(&mut tx, table_id, product![0u64, 1u64, 2u64])?;
-        stdb.insert(&mut tx, table_id, product![1u64, 2u64, 2u64])?;
+        test_db.insert(&mut tx, table_id, product![0u64, 0u64, 1u64])?;
+        test_db.insert(&mut tx, table_id, product![0u64, 1u64, 2u64])?;
+        test_db.insert(&mut tx, table_id, product![1u64, 2u64, 2u64])?;
 
         let cols = col_list![0, 1];
         let value = product![0u64, 1u64].into();
 
         let ctx = ExecutionContext::default();
 
-        let IterByColEq::Index(mut iter) = stdb.iter_by_col_eq_mut(&ctx, &tx, table_id, cols, &value)? else {
+        let IterByColEq::Index(mut iter) = test_db.iter_by_col_eq_mut(&ctx, &tx, table_id, cols, &value)? else {
             panic!("expected index iterator");
         };
 
@@ -1659,16 +1659,16 @@ mod tests {
     // fn test_rename_column() -> ResultTest<()> {
     //     let (mut stdb, _tmp_dir) = make_test_db()?;
 
-    //     let mut tx_ = stdb.begin_mut_tx(IsolationLevel::Serializable);
+    //     let mut tx_ = test_db.begin_mut_tx(IsolationLevel::Serializable);
     //     let (tx, stdb) = tx_.get();
 
     //     let schema = &[("col1", AlgebraicType::U64, ColumnIndexAttribute::Identity)];
-    //     let table_id = stdb.create_table(tx, "MyTable", ProductTypeMeta::from_iter(&schema[..1]))?;
-    //     let column_id = stdb.column_id_from_name(tx, table_id, "col1")?.unwrap();
-    //     stdb.rename_column(tx, table_id, column_id, "id")?;
+    //     let table_id = test_db.create_table(tx, "MyTable", ProductTypeMeta::from_iter(&schema[..1]))?;
+    //     let column_id = test_db.column_id_from_name(tx, table_id, "col1")?.unwrap();
+    //     test_db.rename_column(tx, table_id, column_id, "id")?;
 
-    //     assert_eq!(Some(column_id), stdb.column_id_from_name(tx, table_id, "id")?);
-    //     assert_eq!(None, stdb.column_id_from_name(tx, table_id, "col1")?);
+    //     assert_eq!(Some(column_id), test_db.column_id_from_name(tx, table_id, "id")?);
+    //     assert_eq!(None, test_db.column_id_from_name(tx, table_id, "col1")?);
 
     //     Ok(())
     // }
@@ -1677,37 +1677,37 @@ mod tests {
     /// Test that iteration yields each row only once
     /// in the edge case where a row is committed and has been deleted and re-inserted within the iterating TX.
     fn test_insert_delete_insert_iter() {
-        let stdb = TestDB::durable().expect("failed to create TestDB");
+        let test_db = TestDB::durable().expect("failed to create TestDB");
         let ctx = ExecutionContext::default();
 
-        let mut initial_tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let mut initial_tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
         let schema = TableDef::from_product("test_table", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
-        let table_id = stdb.create_table(&mut initial_tx, schema).expect("create_table failed");
+        let table_id = test_db.create_table(&mut initial_tx, schema).expect("create_table failed");
 
-        stdb.commit_tx(&ctx, initial_tx).expect("Commit initial_tx failed");
+        test_db.commit_tx(&ctx, initial_tx).expect("Commit initial_tx failed");
 
         // Insert a row and commit it, so the row is in the committed_state.
-        let mut insert_tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        stdb.insert(&mut insert_tx, table_id, product!(AlgebraicValue::I32(0)))
+        let mut insert_tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
+        test_db.insert(&mut insert_tx, table_id, product!(AlgebraicValue::I32(0)))
             .expect("Insert insert_tx failed");
-        stdb.commit_tx(&ctx, insert_tx).expect("Commit insert_tx failed");
+        test_db.commit_tx(&ctx, insert_tx).expect("Commit insert_tx failed");
 
-        let mut delete_insert_tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let mut delete_insert_tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
         // Delete the row, so it's in the `delete_tables` of `delete_insert_tx`.
         assert_eq!(
-            stdb.delete_by_rel(&mut delete_insert_tx, table_id, [product!(AlgebraicValue::I32(0))]),
+            test_db.delete_by_rel(&mut delete_insert_tx, table_id, [product!(AlgebraicValue::I32(0))]),
             1
         );
 
         // Insert the row again, so that depending on the datastore internals,
         // it may now be only in the committed_state,
         // or in all three of the committed_state, delete_tables and insert_tables.
-        stdb.insert(&mut delete_insert_tx, table_id, product!(AlgebraicValue::I32(0)))
+        test_db.insert(&mut delete_insert_tx, table_id, product!(AlgebraicValue::I32(0)))
             .expect("Insert delete_insert_tx failed");
 
         // Iterate over the table and assert that we see the committed-deleted-inserted row only once.
         assert_eq!(
-            &stdb
+            &test_db
                 .iter_mut(&ctx, &delete_insert_tx, table_id)
                 .expect("iter delete_insert_tx failed")
                 .map(|row_ref| row_ref.to_product_value())
@@ -1715,7 +1715,7 @@ mod tests {
             &[product!(AlgebraicValue::I32(0))],
         );
 
-        stdb.rollback_mut_tx(&ctx, delete_insert_tx);
+        test_db.rollback_mut_tx(&ctx, delete_insert_tx);
     }
 
     #[test]
@@ -1726,11 +1726,11 @@ mod tests {
             .is_test(true)
             .try_init();
 
-        let stdb = TestDB::durable().expect("failed to create TestDB");
+        let test_db = TestDB::durable().expect("failed to create TestDB");
 
         let timestamp = Timestamp::now();
         let ctx = ExecutionContext::reducer(
-            stdb.address(),
+            test_db.address(),
             ReducerContext {
                 name: "abstract_concrete_proxy_factory_impl".into(),
                 caller_identity: Identity::__dummy(),
@@ -1745,17 +1745,17 @@ mod tests {
 
         // Create an empty transaction
         {
-            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-            stdb.commit_tx(&ctx, tx).expect("failed to commit empty transaction");
+            let tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
+            test_db.commit_tx(&ctx, tx).expect("failed to commit empty transaction");
         }
 
         // Create an empty transaction pretending to be an
         // `__identity_connected__` call.
         {
-            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-            stdb.commit_tx(
+            let tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
+            test_db.commit_tx(
                 &ExecutionContext::reducer(
-                    stdb.address(),
+                    test_db.address(),
                     ReducerContext {
                         name: "__identity_connected__".into(),
                         caller_identity: Identity::__dummy(),
@@ -1771,11 +1771,11 @@ mod tests {
 
         // Create a non-empty transaction including reducer info
         let table_id = {
-            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-            let table_id = stdb.create_table(&mut tx, schema).expect("failed to create table");
-            stdb.insert(&mut tx, table_id, product!(AlgebraicValue::I32(0)))
+            let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
+            let table_id = test_db.create_table(&mut tx, schema).expect("failed to create table");
+            test_db.insert(&mut tx, table_id, product!(AlgebraicValue::I32(0)))
                 .expect("failed to insert row");
-            stdb.commit_tx(&ctx, tx).expect("failed to commit tx");
+            test_db.commit_tx(&ctx, tx).expect("failed to commit tx");
 
             table_id
         };
@@ -1783,10 +1783,10 @@ mod tests {
         // Create a non-empty transaction without reducer info, as it would be
         // created by a mutable SQL transaction
         {
-            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-            stdb.insert(&mut tx, table_id, product!(AlgebraicValue::I32(-42)))
+            let mut tx = test_db.begin_mut_tx(IsolationLevel::Serializable);
+            test_db.insert(&mut tx, table_id, product!(AlgebraicValue::I32(-42)))
                 .expect("failed to insert row");
-            stdb.commit_tx(&ExecutionContext::sql(stdb.address(), Default::default()), tx)
+            test_db.commit_tx(&ExecutionContext::sql(test_db.address(), Default::default()), tx)
                 .expect("failed to commit tx");
         }
 
@@ -1861,7 +1861,7 @@ mod tests {
             }
         }
 
-        let (db, durablity, rt, dir) = stdb.into_parts();
+        let (db, durablity, rt, dir) = test_db.into_parts();
         // Free reference to durability.
         drop(db);
         // Ensure everything is flushed to disk.

@@ -272,7 +272,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         caller_identity: Identity,
         query: String,
     ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError> {
-        let db = &self.database_instance_context.relational_db;
+        let db = &self.database_instance_context.db_engine;
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
         log::debug!("One-off query: {query}");
         // Don't need the `slow query` logger on compilation
@@ -285,7 +285,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
     }
 
     fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
-        let db = &*self.database_instance_context.relational_db;
+        let db = &*self.database_instance_context.db_engine;
         db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
             let tables = db.get_all_tables_mut(tx)?;
             // We currently have unique table names,
@@ -337,28 +337,28 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     #[tracing::instrument(skip(self, args), fields(db_id = self.instance.instance_env().dbic.id))]
     fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<Option<ReducerCallResult>> {
         let timestamp = Timestamp::now();
-        let stdb = &*self.database_instance_context().relational_db;
-        let ctx = ExecutionContext::internal(stdb.address());
-        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        let (tx, ()) = stdb
+        let db_engine: &crate::db::engine::DatabaseEngine = &*self.database_instance_context().db_engine;
+        let ctx = ExecutionContext::internal(db_engine.address());
+        let tx = db_engine.begin_mut_tx(IsolationLevel::Serializable);
+        let (tx, ()) = db_engine
             .with_auto_rollback(&ctx, tx, |tx| {
                 for schema in get_tabledefs(&self.info) {
                     let schema = schema?;
                     let table_name = schema.table_name.clone();
                     self.system_logger().info(&format!("Creating table `{table_name}`"));
-                    stdb.create_table(tx, schema)
+                    db_engine.create_table(tx, schema)
                         .with_context(|| format!("failed to create table {table_name}"))?;
                 }
                 // Set the module hash. Morally, this should be done _after_ calling
                 // the `init` reducer, but that consumes our transaction context.
-                stdb.set_program_hash(tx, fence, self.info.module_hash)?;
+                db_engine.set_program_hash(tx, fence, self.info.module_hash)?;
                 anyhow::Ok(())
             })
             .inspect_err(|e| log::error!("{e:?}"))?;
 
         let rcr = match self.info.reducers.lookup_id(INIT_DUNDER) {
             None => {
-                stdb.commit_tx(&ctx, tx)?;
+                db_engine.commit_tx(&ctx, tx)?;
                 None
             }
 
@@ -400,7 +400,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
         let proposed_tables = get_tabledefs(&self.info).collect::<anyhow::Result<Vec<_>>>()?;
 
-        let stdb = &*self.database_instance_context().relational_db;
+        let stdb = &*self.database_instance_context().db_engine;
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
 
         let res = crate::db::update::update_database(
@@ -494,7 +494,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let caller_address_opt = (caller_address != Address::__DUMMY).then_some(caller_address);
 
         let dbic = self.database_instance_context();
-        let stdb = &*dbic.relational_db.clone();
+        let stdb = &*dbic.db_engine.clone();
         let address = dbic.address;
         let reducer_name = &*self.info.reducers[reducer_id].name;
 
@@ -642,7 +642,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 
     fn insert_st_client(&self, tx: &mut MutTxId, identity: Identity, address: Address) -> Result<(), DBError> {
-        let db = &*self.database_instance_context().relational_db;
+        let db = &*self.database_instance_context().db_engine;
         let row = &StClientsRow { identity, address };
 
         db.insert(tx, ST_CLIENTS_ID, row.into()).map(|_| ())

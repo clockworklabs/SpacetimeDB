@@ -136,9 +136,9 @@ impl InstanceEnv {
     }
 
     pub fn insert(&self, ctx: &ExecutionContext, table_id: TableId, buffer: &[u8]) -> Result<ProductValue, NodesError> {
-        let stdb = &*self.dbic.relational_db;
+        let db_engine = &*self.dbic.db_engine;
         let tx = &mut *self.get_tx()?;
-        let ret = stdb
+        let ret = db_engine
             .insert_bytes_as_row(tx, table_id, buffer)
             .inspect_err(|e| match e {
                 crate::error::DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
@@ -148,7 +148,7 @@ impl InstanceEnv {
                     value: _,
                 })) => {}
                 _ => {
-                    let res = stdb.table_name_from_id_mut(ctx, tx, table_id);
+                    let res = db_engine.table_name_from_id_mut(ctx, tx, table_id);
                     if let Ok(Some(table_name)) = res {
                         log::debug!("insert(table: {table_name}, table_id: {table_id}): {e}")
                     } else {
@@ -171,7 +171,7 @@ impl InstanceEnv {
         col_id: ColId,
         value: &[u8],
     ) -> Result<u32, NodesError> {
-        let stdb = &*self.dbic.relational_db;
+        let stdb = &*self.dbic.db_engine;
         let tx = &mut *self.get_tx()?;
 
         // Interpret the `value` using the schema of the column.
@@ -196,7 +196,7 @@ impl InstanceEnv {
     /// Returns an error if no rows were deleted.
     #[tracing::instrument(skip(self, relation))]
     pub fn delete_by_rel(&self, table_id: TableId, relation: &[u8]) -> Result<u32, NodesError> {
-        let stdb = &*self.dbic.relational_db;
+        let stdb = &*self.dbic.db_engine;
         let tx = &mut *self.get_tx()?;
 
         // Find the row schema using it to decode a vector of product values.
@@ -214,7 +214,7 @@ impl InstanceEnv {
     /// Errors with `TableNotFound` if the table does not exist.
     #[tracing::instrument(skip_all)]
     pub fn get_table_id(&self, table_name: &str) -> Result<TableId, NodesError> {
-        let stdb = &*self.dbic.relational_db;
+        let stdb = &*self.dbic.db_engine;
         let tx = &mut *self.get_tx()?;
 
         // Query the table id from the name.
@@ -244,7 +244,7 @@ impl InstanceEnv {
         index_type: u8,
         col_ids: Vec<u8>,
     ) -> Result<(), NodesError> {
-        let stdb = &*self.dbic.relational_db;
+        let stdb = &*self.dbic.db_engine;
         let tx = &mut *self.get_tx()?;
 
         // TODO(george) This check should probably move towards src/db/index, but right
@@ -292,7 +292,7 @@ impl InstanceEnv {
         col_id: ColId,
         value: &[u8],
     ) -> Result<Vec<Box<[u8]>>, NodesError> {
-        let stdb = &*self.dbic.relational_db;
+        let stdb = &*self.dbic.db_engine;
         let tx = &mut *self.get_tx()?;
 
         // Interpret the `value` using the schema of the column.
@@ -305,7 +305,7 @@ impl InstanceEnv {
 
     #[tracing::instrument(skip_all)]
     pub fn iter_chunks(&self, ctx: &ExecutionContext, table_id: TableId) -> Result<Vec<Box<[u8]>>, NodesError> {
-        let stdb = &*self.dbic.relational_db;
+        let stdb = &*self.dbic.db_engine;
         let tx = &mut *self.tx.get()?;
 
         let chunks = ChunkedWriter::collect_iter(stdb.iter_mut(ctx, tx, table_id)?);
@@ -345,7 +345,7 @@ impl InstanceEnv {
             }
         }
 
-        let stdb = &self.dbic.relational_db;
+        let stdb = &self.dbic.db_engine;
         let tx = &mut *self.tx.get()?;
 
         let schema = stdb.schema_for_table_mut(tx, table_id)?;

@@ -1,6 +1,6 @@
 use super::compiler::compile_sql;
 use crate::db::datastore::locking_tx_datastore::state_view::StateView;
-use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::engine::{DatabaseEngine, Tx};
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::util::slow::SlowQueryLogger;
@@ -37,7 +37,7 @@ pub(crate) fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Resul
     Ok(())
 }
 
-pub fn ctx_sql(db: &RelationalDB) -> ExecutionContext {
+pub fn ctx_sql(db: &DatabaseEngine) -> ExecutionContext {
     ExecutionContext::sql(db.address(), db.read_config().slow_query)
 }
 
@@ -54,7 +54,7 @@ fn execute(p: &mut DbProgram<'_, '_>, ast: Vec<CrudExpr>) -> Result<Vec<MemTable
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
 ///
 /// Also, in case the execution takes more than x, log it as `slow query`
-pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
+pub fn execute_sql(db: &DatabaseEngine, sql: &str, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     let ctx = ctx_sql(db);
     let _slow_logger = SlowQueryLogger::query(&ctx, sql).log_guard();
     if CrudExpr::is_reads(&ast) {
@@ -72,7 +72,7 @@ pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthC
 ///
 /// Returns None if you pass a mutable query with an immutable tx.
 pub fn execute_sql_tx<'a>(
-    db: &RelationalDB,
+    db: &DatabaseEngine,
     tx: impl Into<TxMode<'a>>,
     sql: &str,
     ast: Vec<CrudExpr>,
@@ -90,7 +90,7 @@ pub fn execute_sql_tx<'a>(
 }
 
 /// Run the `SQL` string using the `auth` credentials
-pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
+pub fn run(db: &DatabaseEngine, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
     let ctx = ctx_sql(db);
     let _slow_logger = SlowQueryLogger::query(&ctx, sql_text).log_guard();
     let result = db.with_read_only(&ctx, |tx| {
@@ -129,7 +129,7 @@ pub fn translate_col(tx: &Tx, field: FieldName) -> Option<Box<str>> {
 pub(crate) mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{ST_TABLES_ID, ST_TABLES_NAME};
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::engine::tests_utils::TestDB;
     use crate::vm::tests::create_table_with_rows;
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_primitives::{col_list, ColId};
@@ -139,24 +139,24 @@ pub(crate) mod tests {
     use spacetimedb_vm::eval::test_helpers::{create_game_data, mem_table, mem_table_without_table_name};
 
     /// Short-cut for simplify test execution
-    pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
+    pub(crate) fn run_for_testing(db: &DatabaseEngine, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
         run(db, sql_text, AuthCtx::for_testing())
     }
 
     fn create_data(total_rows: u64) -> ResultTest<(TestDB, MemTable)> {
-        let stdb = TestDB::durable()?;
+        let test_db = TestDB::durable()?;
 
         let rows: Vec<_> = (1..=total_rows)
             .map(|i| product!(i, format!("health{i}").into_boxed_str()))
             .collect();
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
 
-        let schema = stdb.with_auto_commit(&ExecutionContext::default(), |tx| {
-            create_table_with_rows(&stdb, tx, "inventory", head.clone(), &rows)
+        let schema = test_db.with_auto_commit(&ExecutionContext::default(), |tx| {
+            create_table_with_rows(&test_db, tx, "inventory", head.clone(), &rows)
         })?;
         let header = Header::from(&*schema).into();
 
-        Ok((stdb, MemTable::new(header, schema.table_access, rows)))
+        Ok((test_db, MemTable::new(header, schema.table_access, rows)))
     }
 
     #[test]
@@ -594,7 +594,7 @@ pub(crate) mod tests {
         let (db, _) = create_data(0)?;
 
         fn check_column(
-            db: &RelationalDB,
+            db: &DatabaseEngine,
             table_name: &str,
             is_null: bool,
             is_autoinc: bool,

@@ -24,7 +24,7 @@ use super::execution_unit::ExecutionUnit;
 use super::query;
 use crate::client::Protocol;
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
-use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::engine::{DatabaseEngine, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdateRelValue, ProtocolDatabaseUpdate, UpdatesRelValue};
@@ -130,7 +130,7 @@ type ResRV<'a> = Result<RelValue<'a>, ErrorVm>;
 /// Evaluates `query` and returns all the updates.
 fn eval_updates<'a>(
     ctx: &'a ExecutionContext,
-    db: &'a RelationalDB,
+    db: &'a DatabaseEngine,
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
     mut sources: impl SourceProvider<'a>,
@@ -265,7 +265,7 @@ impl IncrementalJoin {
     fn eval_lhs<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        db: &'a RelationalDB,
+        db: &'a DatabaseEngine,
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
     ) -> Result<impl Iterator<Item = ResRV<'a>>, DBError> {
@@ -276,7 +276,7 @@ impl IncrementalJoin {
     fn eval_rhs<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        db: &'a RelationalDB,
+        db: &'a DatabaseEngine,
         tx: &'a TxMode<'a>,
         rhs: impl 'a + Iterator<Item = &'a ProductValue>,
     ) -> Result<impl Iterator<Item = ResRV<'a>>, DBError> {
@@ -287,7 +287,7 @@ impl IncrementalJoin {
     fn eval_all<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        db: &'a RelationalDB,
+        db: &'a DatabaseEngine,
         tx: &'a TxMode<'a>,
         lhs: impl 'a + Iterator<Item = &'a ProductValue>,
         rhs: impl 'a + Iterator<Item = &'a ProductValue>,
@@ -353,7 +353,7 @@ impl IncrementalJoin {
     pub fn eval<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        db: &'a RelationalDB,
+        db: &'a DatabaseEngine,
         tx: &'a TxMode<'a>,
         updates: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
     ) -> Result<UpdatesRelValue<'a>, DBError> {
@@ -528,7 +528,7 @@ impl ExecutionSet {
         &self,
         ctx: &ExecutionContext,
         protocol: Protocol,
-        db: &RelationalDB,
+        db: &DatabaseEngine,
         tx: &Tx,
     ) -> Result<ProtocolDatabaseUpdate, DBError> {
         let tables = match protocol {
@@ -539,7 +539,7 @@ impl ExecutionSet {
     }
 
     #[tracing::instrument(skip_all)]
-    fn eval_json(&self, ctx: &ExecutionContext, db: &RelationalDB, tx: &Tx) -> Result<Vec<TableUpdateJson>, DBError> {
+    fn eval_json(&self, ctx: &ExecutionContext, db: &DatabaseEngine, tx: &Tx) -> Result<Vec<TableUpdateJson>, DBError> {
         // evaluate each of the execution units in this ExecutionSet in parallel
         self.exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
@@ -549,7 +549,7 @@ impl ExecutionSet {
     }
 
     #[tracing::instrument(skip_all)]
-    fn eval_binary(&self, ctx: &ExecutionContext, db: &RelationalDB, tx: &Tx) -> Result<Vec<TableUpdate>, DBError> {
+    fn eval_binary(&self, ctx: &ExecutionContext, db: &DatabaseEngine, tx: &Tx) -> Result<Vec<TableUpdate>, DBError> {
         // evaluate each of the execution units in this ExecutionSet in parallel
         self.exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
@@ -562,7 +562,7 @@ impl ExecutionSet {
     pub fn eval_incr<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
-        db: &'a RelationalDB,
+        db: &'a DatabaseEngine,
         tx: &'a TxMode<'a>,
         database_update: &'a [&'a DatabaseTableUpdate],
     ) -> Result<DatabaseUpdateRelValue<'a>, DBError> {
@@ -630,8 +630,8 @@ impl AuthAccess for ExecutionSet {
 /// Queries all the [`StTableType::User`] tables *right now*
 /// and turns them into [`QueryExpr`],
 /// the moral equivalent of `SELECT * FROM table`.
-pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> Result<Vec<SupportedQuery>, DBError> {
-    Ok(relational_db
+pub(crate) fn get_all(db_engine: &DatabaseEngine, tx: &Tx, auth: &AuthCtx) -> Result<Vec<SupportedQuery>, DBError> {
+    Ok(db_engine
         .get_all_tables(tx)?
         .iter()
         .map(Deref::deref)
@@ -649,7 +649,7 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::engine::tests_utils::TestDB;
     use crate::sql::compiler::compile_sql;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::relation::DbTable;

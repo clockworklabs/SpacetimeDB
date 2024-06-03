@@ -1,4 +1,4 @@
-use crate::db::relational_db::RelationalDB;
+use crate::db::engine::DatabaseEngine;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
 use core::ops::Deref;
@@ -17,7 +17,7 @@ use super::ast::TableSchemaView;
 const MAX_SQL_LENGTH: usize = 50_000;
 
 /// Compile the `SQL` expression into an `ast`
-pub fn compile_sql<T: TableSchemaView>(db: &RelationalDB, tx: &T, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
+pub fn compile_sql<T: TableSchemaView>(db: &DatabaseEngine, tx: &T, sql_text: &str) -> Result<Vec<CrudExpr>, DBError> {
     if sql_text.len() > MAX_SQL_LENGTH {
         return Err(anyhow::anyhow!("SQL query exceeds maximum allowed length: \"{sql_text:.120}...\"").into());
     }
@@ -203,7 +203,7 @@ fn compile_create_table(table: TableDef) -> CrudExpr {
 }
 
 /// Compiles a `SQL` clause
-fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, PlanError> {
+fn compile_statement(db: &DatabaseEngine, statement: SqlAst) -> Result<CrudExpr, PlanError> {
     let q = match statement {
         SqlAst::Select {
             from,
@@ -230,7 +230,7 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
 mod tests {
     use super::*;
     use crate::db::datastore::traits::IsolationLevel;
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::engine::tests_utils::TestDB;
     use crate::execution_context::ExecutionContext;
     use crate::sql::execute::tests::run_for_testing;
     use crate::vm::tests::create_table_with_rows;

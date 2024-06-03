@@ -2,7 +2,7 @@ use super::module_host::{EntityDef, EventStatus, ModuleHost, NoSuchModule, Updat
 use super::{ReducerArgs, Scheduler};
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::db::db_metrics::DB_METRICS;
-use crate::db::relational_db::{ConnectedClients, RelationalDB};
+use crate::db::engine::{ConnectedClients, DatabaseEngine};
 use crate::energy::{EnergyMonitor, EnergyQuanta};
 use crate::execution_context::ExecutionContext;
 use crate::messages::control_db::{Database, HostType};
@@ -63,7 +63,7 @@ where
     }
 }
 
-type SameDbStorage = dyn Fn(&RelationalDB, Hash) -> anyhow::Result<Option<AnyBytes>> + Send + Sync + 'static;
+type SameDbStorage = dyn Fn(&DatabaseEngine, Hash) -> anyhow::Result<Option<AnyBytes>> + Send + Sync + 'static;
 
 /// Source of the module binary.
 ///
@@ -72,7 +72,7 @@ type SameDbStorage = dyn Fn(&RelationalDB, Hash) -> anyhow::Result<Option<AnyByt
 pub enum ProgramStorage {
     /// External storage, addressable by program hash.
     External(Arc<dyn ExternalStorage>),
-    /// Storage inside the [`RelationalDB`] itself, but with a retrieval
+    /// Storage inside the [`DatabaseEngine`] itself, but with a retrieval
     /// function chosen by the user.
     SameDb(Arc<SameDbStorage>),
 }
@@ -86,12 +86,12 @@ impl ProgramStorage {
     /// Construct a [`ProgramStorage::SameDb`] from a lookup function.
     pub fn same_db<F>(f: F) -> Self
     where
-        F: Fn(&RelationalDB, Hash) -> anyhow::Result<Option<AnyBytes>> + Send + Sync + 'static,
+        F: Fn(&DatabaseEngine, Hash) -> anyhow::Result<Option<AnyBytes>> + Send + Sync + 'static,
     {
         Self::SameDb(Arc::new(f))
     }
 
-    async fn load_program(&self, db: &RelationalDB, program_hash: Hash) -> anyhow::Result<AnyBytes> {
+    async fn load_program(&self, db: &DatabaseEngine, program_hash: Hash) -> anyhow::Result<AnyBytes> {
         debug!("lookup program {}", program_hash);
         match self {
             ProgramStorage::External(external) => external.lookup(program_hash).await,
@@ -301,7 +301,7 @@ impl HostController {
         Ok(rx)
     }
 
-    /// Run a computation on the [`RelationalDB`] of a [`ModuleHost`] managed by
+    /// Run a computation on the [`DatabaseEngine`] of a [`ModuleHost`] managed by
     /// this controller, launching the host if necessary.
     ///
     /// An error is returned if the host's program does not match the hash given
@@ -312,13 +312,13 @@ impl HostController {
     #[tracing::instrument(skip_all)]
     pub async fn using_database<F, T>(&self, database: Database, instance_id: u64, f: F) -> anyhow::Result<T>
     where
-        F: FnOnce(&RelationalDB) -> T + Send + 'static,
+        F: FnOnce(&DatabaseEngine) -> T + Send + 'static,
         T: Send + 'static,
     {
         trace!("using database {}/{}", database.address, instance_id);
         let module = self.get_or_launch_module_host(database, instance_id).await?;
         let on_panic = self.unregister_fn(instance_id);
-        let result = tokio::task::spawn_blocking(move || f(&module.dbic().relational_db))
+        let result = tokio::task::spawn_blocking(move || f(&module.dbic().db_engine))
             .await
             .unwrap_or_else(|e| {
                 warn!("database operation panicked");
@@ -438,8 +438,8 @@ impl HostController {
         post_boot: F,
     ) -> anyhow::Result<T>
     where
-        F: FnOnce(&RelationalDB) -> anyhow::Result<T> + Send + 'static,
-        G: FnOnce(&RelationalDB) -> anyhow::Result<u128>,
+        F: FnOnce(&DatabaseEngine) -> anyhow::Result<T> + Send + 'static,
+        G: FnOnce(&DatabaseEngine) -> anyhow::Result<u128>,
         T: Send + 'static,
     {
         trace!("custom bootstrap {}/{}", database.address, instance_id);
@@ -503,7 +503,7 @@ impl HostController {
         }?;
 
         let on_panic = self.unregister_fn(instance_id);
-        tokio::task::spawn_blocking(move || post_boot(&module.borrow().dbic().relational_db))
+        tokio::task::spawn_blocking(move || post_boot(&module.borrow().dbic().db_engine))
             .await
             .unwrap_or_else(|e| {
                 warn!("post-boot database operation panicked");
@@ -602,12 +602,12 @@ impl HostController {
     }
 }
 
-fn stored_program_hash(db: &RelationalDB) -> anyhow::Result<Option<Hash>> {
+fn stored_program_hash(db: &DatabaseEngine) -> anyhow::Result<Option<Hash>> {
     db.with_read_only(&ExecutionContext::internal(db.address()), |tx| db.program_hash(tx))
         .map_err(Into::into)
 }
 
-fn guard_program_hash(db: &RelationalDB, expected: Option<Hash>) -> anyhow::Result<()> {
+fn guard_program_hash(db: &DatabaseEngine, expected: Option<Hash>) -> anyhow::Result<()> {
     let stored = stored_program_hash(db)?;
     ensure!(
         stored == expected,
@@ -668,7 +668,7 @@ async fn update_module(
     fence: u128,
     addr: Address,
     program_hash: Hash,
-    db: &RelationalDB,
+    db: &DatabaseEngine,
     module: &ModuleHost,
 ) -> anyhow::Result<UpdateDatabaseResult> {
     let stored_program_hash = db.with_read_only(&ExecutionContext::internal(addr), |tx| db.program_hash(tx))?;
@@ -733,7 +733,7 @@ impl Host {
         let (dbic, connected_clients) = make_dbic(root_dir, config, database, instance_id).await?;
         let dbic = Arc::new(dbic);
 
-        let program_bytes = program_storage.load_program(&dbic.relational_db, program_hash).await?;
+        let program_bytes = program_storage.load_program(&dbic.db_engine, program_hash).await?;
         let (scheduler, scheduler_starter) = Scheduler::open(dbic.scheduler_db_path(root_dir.to_path_buf()))?;
         let module_host = make_module_host(
             host_type,
@@ -799,7 +799,7 @@ impl Host {
         let (scheduler, scheduler_starter) = self.scheduler.new_with_same_db();
         let program_bytes = self
             .program_storage
-            .load_program(&dbic.relational_db, program_hash)
+            .load_program(&dbic.db_engine, program_hash)
             .await?;
         let module = make_module_host(
             host_type,
@@ -814,7 +814,7 @@ impl Host {
         )
         .await?;
 
-        let update_result = update_module(fence, dbic.address, program_hash, &dbic.relational_db, &module).await?;
+        let update_result = update_module(fence, dbic.address, program_hash, &dbic.db_engine, &module).await?;
         debug!("update result: {update_result:?}");
         if update_result.is_ok() {
             scheduler_starter.start(&module)?;
@@ -825,8 +825,8 @@ impl Host {
         Ok(update_result)
     }
 
-    fn db(&self) -> &RelationalDB {
-        &self.dbic.relational_db
+    fn db(&self) -> &DatabaseEngine {
+        &self.dbic.db_engine
     }
 }
 

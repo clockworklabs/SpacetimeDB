@@ -8,11 +8,11 @@ use log::debug;
 
 use super::Repo;
 
-const SEGMENT_FILE_EXT: &str = ".stdb.log";
+const SEGMENT_FILE_EXT: &str = ".db_engine.log";
 
 /// By convention, the file name of a segment consists of the minimum
 /// transaction offset contained in it, left-padded with zeroes to 20 digits,
-/// and the file extension `.stdb.log`.
+/// and the file extension `.db_engine.log`.
 pub fn segment_file_name(offset: u64) -> String {
     format!("{offset:0>20}{SEGMENT_FILE_EXT}")
 }

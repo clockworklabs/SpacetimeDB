@@ -1,4 +1,4 @@
-use crate::db::relational_db::Tx;
+use crate::db::engine::Tx;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr};
 
@@ -67,7 +67,7 @@ fn index_row_est(tx: &Tx, table_id: TableId, cols: &ColList) -> u64 {
 #[cfg(test)]
 mod tests {
     use crate::{
-        db::relational_db::{tests_utils::TestDB, RelationalDB},
+        db::engine::{tests_utils::TestDB, DatabaseEngine},
         error::DBError,
         estimation::num_rows,
         execution_context::ExecutionContext,
@@ -81,7 +81,7 @@ mod tests {
         TestDB::in_memory().expect("failed to make test db")
     }
 
-    fn num_rows_for(db: &RelationalDB, sql: &str) -> u64 {
+    fn num_rows_for(db: &DatabaseEngine, sql: &str) -> u64 {
         let tx = db.begin_tx();
         match &*compile_sql(db, &tx, sql).expect("Failed to compile sql") {
             [CrudExpr::Query(expr)] => num_rows(&tx, expr),
@@ -94,7 +94,7 @@ mod tests {
     const NUM_S_ROWS: u64 = 2;
     const NDV_S: u64 = 2;
 
-    fn create_table_t(db: &RelationalDB, indexed: bool) {
+    fn create_table_t(db: &DatabaseEngine, indexed: bool) {
         let indexes = &[(0.into(), "a")];
         let indexes = if indexed { indexes } else { &[] as &[_] };
         let table_id = db
@@ -111,7 +111,7 @@ mod tests {
         .expect("failed to insert into table");
     }
 
-    fn create_table_s(db: &RelationalDB, indexed: bool) {
+    fn create_table_s(db: &DatabaseEngine, indexed: bool) {
         let indexes = &[(0.into(), "a"), (1.into(), "c")];
         let indexes = if indexed { indexes } else { &[] as &[_] };
         let rhs = db

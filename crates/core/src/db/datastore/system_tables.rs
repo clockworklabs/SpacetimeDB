@@ -156,7 +156,7 @@ st_fields_enum!(enum StIndexFields {
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(
-    /// The fields that define the internal table [crate::db::relational_db::ST_SEQUENCES_NAME].
+    /// The fields that define the internal table [crate::db::engine::ST_SEQUENCES_NAME].
     enum StSequenceFields {
     "sequence_id", SequenceId = 0,
     "sequence_name", SequenceName = 1,

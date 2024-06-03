@@ -37,7 +37,7 @@ impl BenchDatabase for SQLite {
             Connection::open(temp_dir.path().join("test.db"))?
         };
         // For sqlite benchmarks we should set synchronous to either full or off which more
-        // closely aligns with wal_fsync=true and wal_fsync=false respectively in stdb.
+        // closely aligns with wal_fsync=true and wal_fsync=false respectively in db_engine.
         db.execute_batch(if fsync {
             "PRAGMA journal_mode = WAL; PRAGMA synchronous = full;"
         } else {

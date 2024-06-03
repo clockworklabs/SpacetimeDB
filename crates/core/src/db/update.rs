@@ -1,5 +1,5 @@
 use super::datastore::locking_tx_datastore::MutTxId;
-use super::relational_db::RelationalDB;
+use super::engine::DatabaseEngine;
 use crate::database_logger::SystemLogger;
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
@@ -24,21 +24,21 @@ pub enum UpdateDatabaseError {
 }
 
 pub fn update_database(
-    stdb: &RelationalDB,
+    db_engine: &DatabaseEngine,
     tx: MutTxId,
     proposed_tables: Vec<TableDef>,
     fence: u128,
     module_hash: Hash,
     system_logger: &SystemLogger,
 ) -> anyhow::Result<Result<MutTxId, UpdateDatabaseError>> {
-    let ctx = ExecutionContext::internal(stdb.address());
-    let (tx, res) = stdb.with_auto_rollback::<_, _, anyhow::Error>(&ctx, tx, |tx| {
-        let existing_tables = stdb.get_all_tables_mut(tx)?;
+    let ctx = ExecutionContext::internal(db_engine.address());
+    let (tx, res) = db_engine.with_auto_rollback::<_, _, anyhow::Error>(&ctx, tx, |tx| {
+        let existing_tables = db_engine.get_all_tables_mut(tx)?;
         match schema_updates(existing_tables, proposed_tables)? {
             SchemaUpdates::Updates { new_tables } => {
                 for (name, schema) in new_tables {
                     system_logger.info(&format!("Creating table `{}`", name));
-                    stdb.create_table(tx, schema)
+                    db_engine.create_table(tx, schema)
                         .with_context(|| format!("failed to create table {}", name))?;
                 }
             }
@@ -69,11 +69,11 @@ pub fn update_database(
 
         // Update the module hash. Morally, this should be done _after_ calling
         // the `update` reducer, but that consumes our transaction context.
-        stdb.set_program_hash(tx, fence, module_hash)?;
+        db_engine.set_program_hash(tx, fence, module_hash)?;
 
         Ok(Ok(()))
     })?;
-    Ok(stdb.rollback_on_err(&ctx, tx, res).map(|(tx, ())| tx))
+    Ok(db_engine.rollback_on_err(&ctx, tx, res).map(|(tx, ())| tx))
 }
 
 /// The reasons a table can become [`Tainted`].
@@ -117,7 +117,7 @@ pub enum SchemaUpdates {
 
 /// Compute the diff between the current and proposed schema.
 ///
-/// Compares all `existing_tables` loaded from the [`RelationalDB`] against the
+/// Compares all `existing_tables` loaded from the [`DatabaseEngine`] against the
 /// proposed [`TableDef`]s. The proposed schemas are assumed to represent the
 /// full schema information extracted from an STDB module.
 ///

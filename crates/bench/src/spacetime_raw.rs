@@ -3,7 +3,7 @@ use crate::{
     schemas::{table_name, BenchTable, IndexStrategy},
     ResultBench,
 };
-use spacetimedb::db::relational_db::{tests_utils::TestDB, RelationalDB};
+use spacetimedb::db::engine::{tests_utils::TestDB, DatabaseEngine};
 use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb_lib::sats::AlgebraicValue;
 use spacetimedb_primitives::{ColId, TableId};
@@ -11,7 +11,7 @@ use spacetimedb_sats::db::def::{IndexDef, TableDef};
 use std::hint::black_box;
 use tempdir::TempDir;
 
-pub type DbResult = (RelationalDB, TempDir, u32);
+pub type DbResult = (DatabaseEngine, TempDir, u32);
 
 pub struct SpacetimeRaw {
     pub db: TestDB,

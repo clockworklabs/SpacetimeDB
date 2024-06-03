@@ -1,5 +1,5 @@
 use super::database_logger::DatabaseLogger;
-use crate::db::relational_db::{ConnectedClients, RelationalDB};
+use crate::db::engine::{ConnectedClients, DatabaseEngine};
 use crate::db::{Config, Storage};
 use crate::error::DBError;
 use crate::messages::control_db::Database;
@@ -18,7 +18,7 @@ pub struct DatabaseInstanceContext {
     pub database_instance_id: u64,
     pub logger: Arc<DatabaseLogger>,
     pub subscriptions: ModuleSubscriptions,
-    pub relational_db: Arc<RelationalDB>,
+    pub db_engine: Arc<DatabaseEngine>,
 }
 
 impl DatabaseInstanceContext {
@@ -41,25 +41,25 @@ impl DatabaseInstanceContext {
         db_path.push("database");
 
         let log_path = DatabaseLogger::filepath(&database.address, instance_id);
-        let (relational_db, dangling_connections) = match config.storage {
+        let (db_engine, dangling_connections) = match config.storage {
             Storage::Memory => {
-                let db = RelationalDB::open(db_path, database.address, None)?;
+                let db = DatabaseEngine::open(db_path, database.address, None)?;
                 (Arc::new(db), None)
             }
             Storage::Disk => {
-                let (db, connected_clients) = RelationalDB::local(db_path, rt, database.address)?;
+                let (db, connected_clients) = DatabaseEngine::local(db_path, rt, database.address)?;
                 let connected_clients = (!connected_clients.is_empty()).then_some(connected_clients);
                 (Arc::new(db), connected_clients)
             }
         };
-        let subscriptions = ModuleSubscriptions::new(relational_db.clone(), database.identity);
+        let subscriptions = ModuleSubscriptions::new(db_engine.clone(), database.identity);
 
         let dbic = Self {
             database,
             database_instance_id: instance_id,
             logger: Arc::new(DatabaseLogger::open(log_path)),
             subscriptions,
-            relational_db,
+            db_engine,
         };
 
         Ok((dbic, dangling_connections))
@@ -76,7 +76,7 @@ impl DatabaseInstanceContext {
     ///
     /// An in-memory database will return `Ok(0)`.
     pub fn durability_size_on_disk(&self) -> io::Result<u64> {
-        self.relational_db.size_on_disk()
+        self.db_engine.size_on_disk()
     }
 
     /// The size of the log file.

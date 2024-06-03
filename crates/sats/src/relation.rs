@@ -255,7 +255,7 @@ pub trait Relation {
     fn row_count(&self) -> RowCount;
 }
 
-/// A stored table from [RelationalDB]
+/// A stored table from [DatabaseEngine]
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct DbTable {
     pub head: Arc<Header>,

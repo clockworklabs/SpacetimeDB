@@ -1,7 +1,7 @@
 pub mod cursor;
 pub mod datastore;
 pub mod db_metrics;
-pub mod relational_db;
+pub mod engine;
 mod relational_operators;
 pub mod update;
 

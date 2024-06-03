@@ -41,7 +41,7 @@ sort by
 pub async fn exec(con: Connection) -> Result<(), anyhow::Error> {
     let database = con.database.clone();
     let mut rl = Editor::<ReplHelper, DefaultHistory>::new().unwrap();
-    let history = home_dir().unwrap_or_else(temp_dir).join(".stdb.history.txt");
+    let history = home_dir().unwrap_or_else(temp_dir).join(".db_engine.history.txt");
     if rl.load_history(&history).is_err() {
         eprintln!("No previous history.");
     }

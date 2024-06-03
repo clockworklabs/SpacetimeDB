@@ -86,7 +86,7 @@ pub async fn perform_tracelog_replay(body: Bytes) -> axum::response::Result<impl
     );
     let iv = InstanceEnv::new(dbic, Scheduler::dummy(&tmp_dir.path().join("scheduler")), None);
 
-    let tx = iv.dbic.relational_db.begin_mut_tx(IsolationLevel::Serializable);
+    let tx = iv.dbic.db_engine.begin_mut_tx(IsolationLevel::Serializable);
 
     let (_, resp_body) = iv.tx.set(tx, || replay_report(&iv, &mut &body[..]));
 
