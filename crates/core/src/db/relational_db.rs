@@ -14,7 +14,7 @@ use crate::address::Address;
 use crate::config::DatabaseConfig;
 use crate::db::db_metrics::DB_METRICS;
 use crate::error::{DBError, DatabaseError, TableError};
-use crate::execution_context::{ExecutionContext, ReducerContext};
+use crate::execution_context::ExecutionContext;
 use crate::hash::Hash;
 use crate::util::slow::SlowQueryConfig;
 use durability::TxOffset;
@@ -449,11 +449,11 @@ impl RelationalDB {
     pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTx) -> Result<Option<TxData>, DBError> {
         log::trace!("COMMIT MUT TX");
 
-        self.maybe_do_snapshot(&*tx.committed_state_write_lock);
-
         let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? else {
             return Ok(None);
         };
+
+        self.maybe_do_snapshot(&tx_data);
 
         if let Some(durability) = &self.durability {
             Self::do_durability(&**durability, ctx, &tx_data)
@@ -466,11 +466,11 @@ impl RelationalDB {
     pub fn commit_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTx) -> Result<Option<(TxData, Tx)>, DBError> {
         log::trace!("COMMIT MUT TX");
 
-        self.maybe_do_snapshot(&*tx.committed_state_write_lock);
-
         let Some((tx_data, tx)) = self.inner.commit_mut_tx_downgrade(ctx, tx)? else {
             return Ok(None);
         };
+
+        self.maybe_do_snapshot(&tx_data);
 
         if let Some(durability) = &self.durability {
             Self::do_durability(&**durability, ctx, &tx_data)
@@ -479,73 +479,59 @@ impl RelationalDB {
         Ok(Some((tx_data, tx)))
     }
 
-    /// Decide whether to append the transaction `(tx_data, ctx)` to the `durability`, and do so.
+    /// If `(tx_data, ctx)` should be appended to the commitlog, do so.
     ///
-    /// Contains delicate filtering logic to avoid writing empty transactions to the commitlog.
-    /// This logic *must* stay in sync with
-    /// [`crate::db::datastore::locking_tx_datastore::committed_state::CommittedState::tx_consumes_offset`].
-    ///
-    /// A TX is written to the logs if any of the following holds:
-    /// - The TX inserted at least one row.
-    /// - The TX deleted at least one row.
-    /// - The TX was the result of the reducers `__identity_connected__` or `__identity_disconnected__`.
+    /// Note that by this stage,
+    /// [`crate::db::datastore::locking_tx_datastore::committed_state::tx_consumes_offset`]
+    /// has already decided based on the reducer and operations whether the transaction should be appended;
+    /// this method is responsible only for reading its decision out of the `tx_data`
+    /// and calling `durability.append_tx`.
     fn do_durability(durability: &dyn Durability<TxData = Txdata>, ctx: &ExecutionContext, tx_data: &TxData) {
         use commitlog::payload::{
             txdata::{Mutations, Ops},
             Txdata,
         };
 
-        let inserts: Box<_> = tx_data
-            .inserts()
-            .map(|(table_id, rowdata)| Ops {
-                table_id: *table_id,
-                rowdata: rowdata.clone(),
-            })
-            .collect();
-        let deletes: Box<_> = tx_data
-            .deletes()
-            .map(|(table_id, rowdata)| Ops {
-                table_id: *table_id,
-                rowdata: rowdata.clone(),
-            })
-            .collect();
+        if tx_data.tx_offset().is_some() {
+            let inserts: Box<_> = tx_data
+                .inserts()
+                .map(|(table_id, rowdata)| Ops {
+                    table_id: *table_id,
+                    rowdata: rowdata.clone(),
+                })
+                .collect();
+            let deletes: Box<_> = tx_data
+                .deletes()
+                .map(|(table_id, rowdata)| Ops {
+                    table_id: *table_id,
+                    rowdata: rowdata.clone(),
+                })
+                .collect();
 
-        // Avoid appending transactions to the commitlog which don't modify
-        // any tables.
-        //
-        // An exception ar connect / disconnect calls, which we always want
-        // paired in the log, so as to be able to disconnect clients
-        // automatically after a server crash. See:
-        // [`crate::host::ModuleHost::call_identity_connected_disconnected`]
-        //
-        // Note that this may change in the future: some analytics and/or
-        // timetravel queries may benefit from seeing all inputs, even if
-        // the database state did not change.
-        let is_noop = || inserts.is_empty() && deletes.is_empty();
-        let is_connect_disconnect = |ctx: &ReducerContext| {
-            matches!(
-                ctx.name.strip_prefix("__identity_"),
-                Some("connected__" | "disconnected__")
-            )
-        };
-        let inputs = ctx
-            .reducer_context()
-            .and_then(|rcx| (!is_noop() || is_connect_disconnect(rcx)).then(|| rcx.into()));
+            let inputs = ctx
+                .reducer_context()
+                .map(|rcx| rcx.into());
 
-        let txdata = Txdata {
-            inputs,
-            outputs: None,
-            mutations: Some(Mutations {
-                inserts,
-                deletes,
-                truncates: [].into(),
-            }),
-        };
+            let txdata = Txdata {
+                inputs,
+                outputs: None,
+                mutations: Some(Mutations {
+                    inserts,
+                    deletes,
+                    truncates: [].into(),
+                }),
+            };
 
-        if !txdata.is_empty() {
             log::trace!("append {txdata:?}");
             // TODO: Should measure queuing time + actual write
             durability.append_tx(txdata);
+        } else {
+            debug_assert!(tx_data.inserts().all(|(_, inserted_rows)| inserted_rows.is_empty()));
+            debug_assert!(tx_data.deletes().all(|(_, deleted_rows)| deleted_rows.is_empty()));
+            debug_assert!(! matches!(
+                ctx.reducer_context().map(|rcx| rcx.name.strip_prefix("__identity_")),
+                Some(Some("connected__" | "disconnected__"))
+            ));
         }
     }
 
@@ -553,10 +539,12 @@ impl RelationalDB {
     /// whether to request that the [`SnapshotWorker`] in `self` capture a snapshot of the database.
     ///
     /// Actual snapshotting happens asynchronously in a Tokio worker.
-    fn maybe_do_snapshot(&self, committed_state: &CommittedState) {
+    fn maybe_do_snapshot(&self, tx_data: &TxData) {
         if let Some(snapshot_worker) = &self.snapshots {
-            if committed_state.next_tx_offset % SNAPSHOT_FREQUENCY == 0 {
-                snapshot_worker.request_snapshot.unbounded_send(()).unwrap();
+            if let Some(tx_offset) = tx_data.tx_offset() {
+                if tx_offset % SNAPSHOT_FREQUENCY == 0 {
+                    snapshot_worker.request_snapshot.unbounded_send(()).unwrap();
+                }
             }
         }
     }
