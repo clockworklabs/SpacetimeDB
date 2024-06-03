@@ -631,11 +631,18 @@ pub(crate) mod tests {
             })
             .collect();
 
+        // **In our tests,** a name that start with '_' like '_sample' is private.
+        let access = if table_name.starts_with('_') {
+            StAccess::Private
+        } else {
+            StAccess::Public
+        };
+
         let table_id = db.create_table(
             tx,
             TableDef::new(table_name.into(), columns)
                 .with_type(StTableType::User)
-                .with_access(StAccess::for_name(table_name)),
+                .with_access(access),
         )?;
         let schema = db.schema_for_table_mut(tx, table_id)?;
 

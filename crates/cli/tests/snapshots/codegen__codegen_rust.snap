@@ -304,10 +304,10 @@ pub mod namespace.test_c;
 pub mod test_b;
 pub mod pk_multi_identity;
 pub mod point;
+pub mod private;
 pub mod test_a;
 pub mod test_d;
 pub mod test_e;
-pub mod private;
 pub mod add_player_reducer;
 pub mod add_private_reducer;
 pub mod delete_player_reducer;
@@ -320,10 +320,10 @@ pub use namespace.test_c::*;
 pub use test_b::*;
 pub use pk_multi_identity::*;
 pub use point::*;
+pub use private::*;
 pub use test_a::*;
 pub use test_d::*;
 pub use test_e::*;
-pub use private::*;
 pub use add_player_reducer::*;
 pub use add_private_reducer::*;
 pub use delete_player_reducer::*;
@@ -352,20 +352,20 @@ impl SpacetimeModule for Module {
 match table_name {
 						"PkMultiIdentity" => client_cache.handle_table_update_with_primary_key::<pk_multi_identity::PkMultiIdentity>(callbacks, table_update),
 			"Point" => client_cache.handle_table_update_no_primary_key::<point::Point>(callbacks, table_update),
+			"Private" => client_cache.handle_table_update_no_primary_key::<private::Private>(callbacks, table_update),
 			"TestA" => client_cache.handle_table_update_no_primary_key::<test_a::TestA>(callbacks, table_update),
 			"TestD" => client_cache.handle_table_update_no_primary_key::<test_d::TestD>(callbacks, table_update),
 			"TestE" => client_cache.handle_table_update_with_primary_key::<test_e::TestE>(callbacks, table_update),
-			"_Private" => client_cache.handle_table_update_no_primary_key::<private::Private>(callbacks, table_update),
 			_ => spacetimedb_sdk::log::error!("TableRowOperation on unknown table {:?}", table_name),
 }
 }
 fn invoke_row_callbacks(&self, reminders: &mut RowCallbackReminders, worker: &mut DbCallbacks, reducer_event: Option<Arc<AnyReducerEvent>>, state: &Arc<ClientCache>) {
 				reminders.invoke_callbacks::<pk_multi_identity::PkMultiIdentity>(worker, &reducer_event, state);
 		reminders.invoke_callbacks::<point::Point>(worker, &reducer_event, state);
+		reminders.invoke_callbacks::<private::Private>(worker, &reducer_event, state);
 		reminders.invoke_callbacks::<test_a::TestA>(worker, &reducer_event, state);
 		reminders.invoke_callbacks::<test_d::TestD>(worker, &reducer_event, state);
 		reminders.invoke_callbacks::<test_e::TestE>(worker, &reducer_event, state);
-		reminders.invoke_callbacks::<private::Private>(worker, &reducer_event, state);
 }
 fn handle_event(&self, event: Event, _reducer_callbacks: &mut ReducerCallbacks, _state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {
 		let Some(function_call) = &event.function_call else {
@@ -388,10 +388,10 @@ fn handle_resubscribe(&self, new_subs: TableUpdate, client_cache: &mut ClientCac
 match table_name {
 						"PkMultiIdentity" => client_cache.handle_resubscribe_for_type::<pk_multi_identity::PkMultiIdentity>(callbacks, new_subs),
 			"Point" => client_cache.handle_resubscribe_for_type::<point::Point>(callbacks, new_subs),
+			"Private" => client_cache.handle_resubscribe_for_type::<private::Private>(callbacks, new_subs),
 			"TestA" => client_cache.handle_resubscribe_for_type::<test_a::TestA>(callbacks, new_subs),
 			"TestD" => client_cache.handle_resubscribe_for_type::<test_d::TestD>(callbacks, new_subs),
 			"TestE" => client_cache.handle_resubscribe_for_type::<test_e::TestE>(callbacks, new_subs),
-			"_Private" => client_cache.handle_resubscribe_for_type::<private::Private>(callbacks, new_subs),
 			_ => spacetimedb_sdk::log::error!("TableRowOperation on unknown table {:?}", table_name),
 }
 }
@@ -543,7 +543,7 @@ pub struct Private {
 }
 
 impl TableType for Private {
-	const TABLE_NAME: &'static str = "_Private";
+	const TABLE_NAME: &'static str = "Private";
 	type ReducerEvent = super::ReducerEvent;
 }
 

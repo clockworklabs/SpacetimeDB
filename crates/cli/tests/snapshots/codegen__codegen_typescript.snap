@@ -387,7 +387,7 @@ export class Private extends DatabaseTable
 
 	public static *filterByName(value: string): IterableIterator<Private>
 	{
-		for (let instance of this.db.getTable("_Private").getInstances())
+		for (let instance of this.db.getTable("Private").getInstances())
 		{
 			if (instance.name === value) {
 				yield instance;
