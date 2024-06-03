@@ -399,9 +399,9 @@ where
         for n in 0..commit.n {
             let tx_offset = commit.min_tx_offset + n as u64;
             if tx_offset < from {
-                de.consume_record(version, tx_offset, records)?;
+                de.skip_record(version, tx_offset, records)?;
             } else {
-                de.decode_record(version, tx_offset, records)?;
+                de.consume_record(version, tx_offset, records)?;
             }
         }
     }
@@ -694,17 +694,11 @@ mod tests {
 
             fn decode_record<'a, R: spacetimedb_sats::buffer::BufReader<'a>>(
                 &self,
-                version: u8,
-                tx_offset: u64,
-                reader: &mut R,
+                _version: u8,
+                _tx_offset: u64,
+                _reader: &mut R,
             ) -> Result<Self::Record, Self::Error> {
-                let decoder = ArrayDecoder;
-                let record = decoder.decode_record(version, tx_offset, reader)?;
-                self.count.set(self.count.get() + 1);
-                let expected_tx_offset = self.next_tx_offset.get();
-                assert_eq!(expected_tx_offset, tx_offset);
-                self.next_tx_offset.set(expected_tx_offset + 1);
-                Ok(record)
+                unreachable!("Folding never calls `decode_record`")
             }
 
             fn consume_record<'a, R: spacetimedb_sats::buffer::BufReader<'a>>(
@@ -713,7 +707,22 @@ mod tests {
                 tx_offset: u64,
                 reader: &mut R,
             ) -> Result<(), Self::Error> {
-                let decoder: ArrayDecoder<32> = ArrayDecoder;
+                let decoder = ArrayDecoder::<32>;
+                decoder.consume_record(version, tx_offset, reader)?;
+                self.count.set(self.count.get() + 1);
+                let expected_tx_offset = self.next_tx_offset.get();
+                assert_eq!(expected_tx_offset, tx_offset);
+                self.next_tx_offset.set(expected_tx_offset + 1);
+                Ok(())
+            }
+
+            fn skip_record<'a, R: spacetimedb_sats::buffer::BufReader<'a>>(
+                &self,
+                version: u8,
+                tx_offset: u64,
+                reader: &mut R,
+            ) -> Result<(), Self::Error> {
+                let decoder = ArrayDecoder::<32>;
                 decoder.consume_record(version, tx_offset, reader)?;
                 Ok(())
             }
