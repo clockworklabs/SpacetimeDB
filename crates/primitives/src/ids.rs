@@ -23,6 +23,10 @@ pub struct SequenceId(pub u32);
 #[repr(transparent)]
 pub struct ConstraintId(pub u32);
 
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[repr(transparent)]
+pub struct ScheduledId(pub u64);
+
 macro_rules! system_id {
     ($name:ident) => {
         impl $name {

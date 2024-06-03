@@ -11,8 +11,8 @@ use crate::{
                 system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableFields, StTableRow,
                 SystemTable, ST_CLIENTS_ID, ST_CLIENT_IDX, ST_COLUMNS_ID, ST_COLUMNS_IDX, ST_COLUMNS_NAME,
                 ST_CONSTRAINTS_ID, ST_CONSTRAINTS_IDX, ST_CONSTRAINTS_NAME, ST_INDEXES_ID, ST_INDEXES_IDX,
-                ST_INDEXES_NAME, ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE, ST_SEQUENCES_ID,
-                ST_SEQUENCES_IDX, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_IDX,
+                ST_INDEXES_NAME, ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE, ST_SCHEDULED_ID,
+                ST_SCHEDULED_IDX, ST_SEQUENCES_ID, ST_SEQUENCES_IDX, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_IDX,
             },
             traits::TxData,
         },
@@ -204,6 +204,7 @@ impl CommittedState {
 
         self.create_table(ST_CLIENTS_ID, schemas[ST_CLIENT_IDX].clone());
 
+        self.create_table(ST_SCHEDULED_ID, schemas[ST_SCHEDULED_IDX].clone());
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store) =
             self.get_table_and_blob_store_or_create(ST_SEQUENCES_ID, &schemas[ST_SEQUENCES_IDX]);
