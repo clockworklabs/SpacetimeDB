@@ -24,7 +24,7 @@ pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
 pub use type_def::*;
 pub use type_value::{AlgebraicValue, ProductValue};
 
-pub const MODULE_ABI_MAJOR_VERSION: u16 = 7;
+pub const MODULE_ABI_MAJOR_VERSION: u16 = 8;
 
 // if it ends up we need more fields in the future, we can split one of them in two
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]

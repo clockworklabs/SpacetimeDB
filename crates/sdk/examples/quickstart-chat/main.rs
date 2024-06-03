@@ -111,7 +111,7 @@ fn on_message_inserted(message: &Message, reducer_event: Option<&ReducerEvent>) 
 }
 
 fn print_message(message: &Message) {
-    let sender = User::filter_by_identity(message.sender.clone())
+    let sender = User::find_by_identity(message.sender.clone())
         .map(|u| user_name_or_identity(&u))
         .unwrap_or_else(|| "unknown".to_string());
     println!("{}: {}", sender, message.text);

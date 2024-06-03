@@ -1,3 +1,4 @@
+use core::ops::RangeBounds;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_table::{
@@ -5,12 +6,9 @@ use spacetimedb_table::{
     indexes::{RowPointer, SquashedOffset},
     table::{IndexScanIter, RowRef, Table},
 };
-use std::{
-    collections::{btree_map, BTreeMap, BTreeSet},
-    ops::RangeBounds,
-};
+use std::collections::{btree_map, BTreeMap, BTreeSet};
 
-pub type DeleteTable = BTreeSet<RowPointer>;
+pub(super) type DeleteTable = BTreeSet<RowPointer>;
 
 /// `TxState` tracks all of the modifications made during a particular transaction.
 /// Rows inserted during a transaction will be added to insert_tables, and similarly,
@@ -39,20 +37,20 @@ pub type DeleteTable = BTreeSet<RowPointer>;
 ///   - any row in `delete_tables` must be in the associated `CommittedState`
 ///   - any row cannot be in both `insert_tables` and `delete_tables`
 #[derive(Default)]
-pub struct TxState {
+pub(super) struct TxState {
     //NOTE: Need to preserve order to correctly restore the db after reopen
     /// For any `TableId` that has had a row inserted into it in this TX
     /// (which may have since been deleted),
     /// a separate `Table` containing only the new insertions.
     ///
     /// `RowPointer`s into the `insert_tables` use `SquashedOffset::TX_STATE`.
-    pub(crate) insert_tables: BTreeMap<TableId, Table>,
+    pub(super) insert_tables: BTreeMap<TableId, Table>,
 
     /// For any `TableId` that has had a previously-committed row deleted from it,
     /// a set of the deleted previously-committed rows.
     ///
     /// Any `RowPointer` in this set will have `SquashedOffset::COMMITTED_STATE`.
-    pub(crate) delete_tables: BTreeMap<TableId, DeleteTable>,
+    pub(super) delete_tables: BTreeMap<TableId, DeleteTable>,
 
     /// A blob store for those blobs referred to by the `insert_tables`.
     ///
@@ -62,7 +60,7 @@ pub struct TxState {
     /// - Maintain the set of newly-referenced blob hashes in the `TxState`,
     ///   and free each of them during rollback.
     /// - Traverse all rows in the `insert_tables` and free each of their blobs during rollback.
-    pub(crate) blob_store: HashMapBlobStore,
+    pub(super) blob_store: HashMapBlobStore,
 }
 
 impl TxState {
@@ -74,7 +72,7 @@ impl TxState {
     ///
     /// For a unique index this will always yield at most one `RowId`.
     /// When there is no index this returns `None`.
-    pub fn index_seek<'a>(
+    pub(super) fn index_seek<'a>(
         &'a self,
         table_id: TableId,
         cols: &ColList,
@@ -98,7 +96,7 @@ impl TxState {
     // with `table_id`
     // and has not been passed to `self.delete`
     // is sufficient to demonstrate that a call to `self.get` is safe.
-    pub fn get(&self, table_id: TableId, row_ptr: RowPointer) -> RowRef<'_> {
+    pub(super) fn get(&self, table_id: TableId, row_ptr: RowPointer) -> RowRef<'_> {
         debug_assert!(
             row_ptr.squashed_offset().is_tx_state(),
             "Cannot get COMMITTED_STATE row_ptr from TxState.",
@@ -112,7 +110,7 @@ impl TxState {
         table.get_row_ref(&self.blob_store, row_ptr).unwrap()
     }
 
-    pub fn is_deleted(&self, table_id: TableId, row_ptr: RowPointer) -> bool {
+    pub(super) fn is_deleted(&self, table_id: TableId, row_ptr: RowPointer) -> bool {
         debug_assert!(
             row_ptr.squashed_offset().is_committed_state(),
             "Not meaningful to have a deleted TX_STATE row; it would just be removed from the insert_tables.",
@@ -123,17 +121,17 @@ impl TxState {
             .unwrap_or(false)
     }
 
-    pub fn get_delete_table_mut(&mut self, table_id: TableId) -> &mut DeleteTable {
+    pub(super) fn get_delete_table_mut(&mut self, table_id: TableId) -> &mut DeleteTable {
         self.delete_tables.entry(table_id).or_default()
     }
 
-    pub fn get_table_and_blob_store(&mut self, table_id: TableId) -> Option<(&mut Table, &mut dyn BlobStore)> {
+    pub(super) fn get_table_and_blob_store(&mut self, table_id: TableId) -> Option<(&mut Table, &mut dyn BlobStore)> {
         let table = self.insert_tables.get_mut(&table_id)?;
         let blob_store = &mut self.blob_store;
         Some((table, blob_store))
     }
 
-    pub fn get_table_and_blob_store_or_maybe_create_from<'this>(
+    pub(super) fn get_table_and_blob_store_or_maybe_create_from<'this>(
         &'this mut self,
         table_id: TableId,
         template: Option<&Table>,

@@ -24,54 +24,48 @@ public static class Runtime
         return result;
     }
 
-    private class BufferIter : IEnumerator<byte[]>, IDisposable
+    private class RowIter(RawBindings.RowIter handle) : IEnumerator<byte[]>, IDisposable
     {
-        private RawBindings.BufferIter handle;
+        private byte[] buffer = new byte[0x20_000];
         public byte[] Current { get; private set; } = [];
 
         object IEnumerator.Current => Current;
 
-        public BufferIter(RawBindings.TableId table_id, byte[]? filterBytes)
-        {
-            if (filterBytes is null)
-            {
-                RawBindings._iter_start(table_id, out handle);
-            }
-            else
-            {
-                RawBindings._iter_start_filtered(
-                    table_id,
-                    filterBytes,
-                    (uint)filterBytes.Length,
-                    out handle
-                );
-            }
-        }
-
         public bool MoveNext()
         {
-            RawBindings._iter_next(handle, out var nextBuf);
-            if (nextBuf.Equals(RawBindings.Buffer.INVALID))
+            uint buffer_len;
+            while (true)
             {
-                return false;
+                buffer_len = (uint)buffer.Length;
+                try
+                {
+                    RawBindings._iter_advance(handle, buffer, ref buffer_len);
+                }
+                catch (RawBindings.BufferTooSmallException)
+                {
+                    buffer = new byte[buffer_len];
+                    continue;
+                }
+                break;
             }
-            Current = nextBuf.Consume();
-            return true;
+            Current = new byte[buffer_len];
+            Array.Copy(buffer, 0, Current, 0, buffer_len);
+            return buffer_len != 0;
         }
 
         public void Dispose()
         {
-            if (!handle.Equals(RawBindings.BufferIter.INVALID))
+            if (!handle.Equals(RawBindings.RowIter.INVALID))
             {
                 RawBindings._iter_drop(handle);
-                handle = RawBindings.BufferIter.INVALID;
-                // Avoid running ~BufferIter if Dispose was executed successfully.
+                handle = RawBindings.RowIter.INVALID;
+                // Avoid running ~RowIter if Dispose was executed successfully.
                 GC.SuppressFinalize(this);
             }
         }
 
         // Free unmanaged resource just in case user hasn't disposed for some reason.
-        ~BufferIter()
+        ~RowIter()
         {
             // we already guard against double-free in Dispose.
             Dispose();
@@ -80,23 +74,6 @@ public static class Runtime
         public void Reset()
         {
             throw new NotImplementedException();
-        }
-    }
-
-    public class RawTableIter(RawBindings.TableId tableId, byte[]? filterBytes = null)
-        : IEnumerable<byte[]>
-    {
-        private readonly RawBindings.TableId tableId = tableId;
-        private readonly byte[]? filterBytes = filterBytes;
-
-        public IEnumerator<byte[]> GetEnumerator()
-        {
-            return new BufferIter(tableId, filterBytes);
-        }
-
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
         }
     }
 
@@ -294,13 +271,51 @@ public static class Runtime
         }
     }
 
-    public static byte[] IterByColEq(
-        RawBindings.TableId tableId,
-        RawBindings.ColId colId,
-        byte[] value
-    )
+    public class RawTableIter(RawBindings.TableId tableId) : IEnumerable<byte[]>
     {
-        RawBindings._iter_by_col_eq(tableId, colId, value, (uint)value.Length, out var buf);
-        return buf.Consume();
+        public IEnumerator<byte[]> GetEnumerator()
+        {
+            RawBindings._iter_start(tableId, out var handle);
+            return new RowIter(handle);
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+    }
+
+    public class RawTableIterFiltered(RawBindings.TableId tableId, byte[] filterBytes) : IEnumerable<byte[]>
+    {
+        public IEnumerator<byte[]> GetEnumerator()
+        {
+            RawBindings._iter_start_filtered(
+                tableId,
+                filterBytes,
+                (uint)filterBytes.Length,
+                out var handle
+            );
+            return new RowIter(handle);
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
+    }
+
+
+    public class RawTableIterByColEq(RawBindings.TableId tableId, RawBindings.ColId colId, byte[] value) : IEnumerable<byte[]>
+    {
+        public IEnumerator<byte[]> GetEnumerator()
+        {
+            RawBindings._iter_by_col_eq(tableId, colId, value, (uint)value.Length, out var handle);
+            return new RowIter(handle);
+        }
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            return GetEnumerator();
+        }
     }
 }

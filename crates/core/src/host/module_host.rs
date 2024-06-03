@@ -1,7 +1,10 @@
+use super::wasm_common::{CLIENT_CONNECTED_DUNDER, CLIENT_DISCONNECTED_DUNDER};
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::LogLevel;
+use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::system_tables::{StClientsFields, StClientsRow, ST_CLIENTS_ID};
 use crate::db::datastore::traits::TxData;
 use crate::db::update::UpdateDatabaseError;
 use crate::energy::EnergyQuanta;
@@ -10,23 +13,24 @@ use crate::execution_context::{ExecutionContext, ReducerContext};
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
+use crate::messages::control_db::Database;
 use crate::protobuf::client_api::{TableRowOperation, TableUpdate};
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
-use crate::util::notify_once::NotifyOnce;
 use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
 use derive_more::{From, Into};
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
 use itertools::{Either, Itertools};
+use smallvec::SmallVec;
 use spacetimedb_client_api_messages::client_api::table_row_operation::OperationType;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, IntMap};
 use spacetimedb_lib::bsatn::to_vec;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::{Address, ReducerDef, TableDesc};
-use spacetimedb_primitives::TableId;
-use spacetimedb_sats::{ProductValue, Typespace, WithTypespace};
+use spacetimedb_primitives::{col_list, TableId};
+use spacetimedb_sats::{algebraic_value, ProductValue, Typespace, WithTypespace};
 use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::fmt;
 use std::sync::{Arc, Weak};
@@ -441,6 +445,8 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
 pub struct ModuleHost {
     info: Arc<ModuleInfo>,
     inner: Arc<dyn DynModuleHost>,
+    /// Called whenever a reducer call on this host panics.
+    on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
 }
 
 impl fmt::Debug for ModuleHost {
@@ -463,7 +469,6 @@ trait DynModuleHost: Send + Sync + 'static {
         query: String,
     ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError>;
     fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error>;
-    fn start(&self);
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
 }
@@ -471,7 +476,6 @@ trait DynModuleHost: Send + Sync + 'static {
 struct HostControllerActor<T: Module> {
     module: Arc<T>,
     instance_pool: LendingPool<T::Instance>,
-    start: NotifyOnce,
 }
 
 impl<T: Module> HostControllerActor<T> {
@@ -501,7 +505,6 @@ async fn select_first<A: Future, B: Future<Output = ()>>(fut_a: A, fut_b: B) -> 
 #[async_trait::async_trait]
 impl<T: Module> DynModuleHost for HostControllerActor<T> {
     async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule> {
-        self.start.notified().await;
         // in the future we should do something like in the else branch here -- add more instances based on load.
         // we need to do write-skew retries first - right now there's only ever once instance per module.
         let inst = if true {
@@ -544,10 +547,6 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
         self.module.clear_table(table_name)
     }
 
-    fn start(&self) {
-        self.start.notify();
-    }
-
     fn exit(&self) -> Closed<'_> {
         self.instance_pool.close()
     }
@@ -560,11 +559,12 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
 pub struct WeakModuleHost {
     info: Arc<ModuleInfo>,
     inner: Weak<dyn DynModuleHost>,
+    on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
 }
 
 pub type UpdateDatabaseResult = Result<UpdateDatabaseSuccess, UpdateDatabaseError>;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct UpdateDatabaseSuccess {
     /// Outcome of calling the module's __update__ reducer, `None` if none is
     /// defined.
@@ -601,20 +601,16 @@ pub enum InitDatabaseError {
 }
 
 impl ModuleHost {
-    pub fn new(mut module: impl Module) -> Self {
+    pub fn new(mut module: impl Module, on_panic: impl Fn() + Send + Sync + 'static) -> Self {
         let info = module.info();
         let instance_pool = LendingPool::new();
         instance_pool.add_multiple(module.initial_instances()).unwrap();
         let inner = Arc::new(HostControllerActor {
             module: Arc::new(module),
             instance_pool,
-            start: NotifyOnce::new(),
         });
-        ModuleHost { info, inner }
-    }
-
-    pub fn start(&self) {
-        self.inner.start()
+        let on_panic = Arc::new(on_panic);
+        ModuleHost { info, inner, on_panic }
     }
 
     #[inline]
@@ -643,7 +639,11 @@ impl ModuleHost {
 
         let result = tokio::task::spawn_blocking(move || f(&mut *inst))
             .await
-            .unwrap_or_else(|e| std::panic::resume_unwind(e.into_panic()));
+            .unwrap_or_else(|e| {
+                log::warn!("reducer `{reducer}` panicked");
+                (self.on_panic)();
+                std::panic::resume_unwind(e.into_panic())
+            });
         Ok(result)
     }
 
@@ -659,59 +659,117 @@ impl ModuleHost {
             .await;
     }
 
+    /// Method is responsible for handling connect/disconnect events.
+    ///
+    /// It ensures pairing up those event in commitlogs
+    /// Though It can also create two entries `__identity_disconnect__`.
+    /// One is to actually run the reducer and another one to delete client from `st_clients`
     pub async fn call_identity_connected_disconnected(
         &self,
         caller_identity: Identity,
         caller_address: Address,
         connected: bool,
     ) -> Result<(), ReducerCallError> {
-        // TODO: DUNDER consts are in wasm_common, so seems weird to use them
-        // here. But maybe there should be dunders for this?
         let reducer_name = if connected {
-            "__identity_connected__"
+            CLIENT_CONNECTED_DUNDER
         } else {
-            "__identity_disconnected__"
+            CLIENT_DISCONNECTED_DUNDER
         };
 
-        self.call_reducer_inner(
-            caller_identity,
-            Some(caller_address),
-            None,
-            None,
-            None,
-            reducer_name,
-            ReducerArgs::Nullary,
-        )
-        .await
-        .map(drop)
-        .or_else(|e| match e {
-            // If the module doesn't define connected or disconnected, commit
-            // an empty transaction to ensure we always have those events
-            // paired in the commitlog.
-            //
-            // This is necessary to be able to disconnect clients after a server
-            // crash.
-            ReducerCallError::NoSuchReducer => {
-                let db = &self.inner.dbic().relational_db;
-                db.with_auto_commit(
-                    &ExecutionContext::reducer(
-                        db.address(),
-                        ReducerContext {
-                            name: reducer_name.to_owned(),
-                            caller_identity,
-                            caller_address,
-                            timestamp: Timestamp::now(),
-                            arg_bsatn: Bytes::new(),
-                        },
-                    ),
-                    |_| anyhow::Ok(()),
-                )
-                .ok();
+        let db = &self.inner.dbic().relational_db;
+        let ctx = || {
+            ExecutionContext::reducer(
+                db.address(),
+                ReducerContext {
+                    name: reducer_name.to_owned(),
+                    caller_identity,
+                    caller_address,
+                    timestamp: Timestamp::now(),
+                    arg_bsatn: Bytes::new(),
+                },
+            )
+        };
 
-                Ok(())
-            }
-            e => Err(e),
-        })
+        let result = self
+            .call_reducer_inner(
+                caller_identity,
+                Some(caller_address),
+                None,
+                None,
+                None,
+                reducer_name,
+                ReducerArgs::Nullary,
+            )
+            .await
+            .map(drop)
+            .or_else(|e| match e {
+                // If the module doesn't define connected or disconnected, commit
+                // a transaction to update `st_clients` and to ensure we always have those events
+                // paired in the commitlog.
+                //
+                // This is necessary to be able to disconnect clients after a server
+                // crash.
+                ReducerCallError::NoSuchReducer => db
+                    .with_auto_commit(&ctx(), |mut_tx| {
+                        if connected {
+                            self.update_st_clients(mut_tx, caller_identity, caller_address, connected)
+                        } else {
+                            Ok(())
+                        }
+                    })
+                    .map_err(|err| {
+                        InvalidReducerArguments {
+                            err: err.into(),
+                            reducer: reducer_name.into(),
+                        }
+                        .into()
+                    }),
+                e => Err(e),
+            });
+
+        // Deleting client from `st_clients`does not depend upon result of disconnect reducer hence done in a separate tx.
+        if !connected {
+            let _ = db
+                .with_auto_commit(&ctx(), |mut_tx| {
+                    self.update_st_clients(mut_tx, caller_identity, caller_address, connected)
+                })
+                .map_err(|e| {
+                    log::error!("st_clients table update failed with params with error: {:?}", e);
+                });
+        }
+        result
+    }
+
+    fn update_st_clients(
+        &self,
+        mut_tx: &mut MutTxId,
+        caller_identity: Identity,
+        caller_address: Address,
+        connected: bool,
+    ) -> Result<(), DBError> {
+        let db = &*self.inner.dbic().relational_db;
+        let ctx = &ExecutionContext::internal(db.address());
+        let row = &StClientsRow {
+            identity: caller_identity,
+            address: caller_address,
+        };
+
+        if connected {
+            db.insert(mut_tx, ST_CLIENTS_ID, row.into()).map(|_| ())
+        } else {
+            let row = db
+                .iter_by_col_eq_mut(
+                    ctx,
+                    mut_tx,
+                    ST_CLIENTS_ID,
+                    col_list![StClientsFields::Identity, StClientsFields::Address],
+                    &algebraic_value::AlgebraicValue::product(row),
+                )?
+                .map(|row_ref| row_ref.pointer())
+                .collect::<SmallVec<[_; 1]>>();
+            db.delete(mut_tx, ST_CLIENTS_ID, row);
+            Ok::<(), DBError>(())
+        }
     }
 
     async fn call_reducer_inner(
@@ -854,16 +912,27 @@ impl ModuleHost {
         WeakModuleHost {
             info: self.info.clone(),
             inner: Arc::downgrade(&self.inner),
+            on_panic: Arc::downgrade(&self.on_panic),
         }
+    }
+
+    pub fn database_info(&self) -> &Database {
+        &self.dbic().database
+    }
+
+    pub(crate) fn dbic(&self) -> &DatabaseInstanceContext {
+        self.inner.dbic()
     }
 }
 
 impl WeakModuleHost {
     pub fn upgrade(&self) -> Option<ModuleHost> {
         let inner = self.inner.upgrade()?;
+        let on_panic = self.on_panic.upgrade()?;
         Some(ModuleHost {
             info: self.info.clone(),
             inner,
+            on_panic,
         })
     }
 }

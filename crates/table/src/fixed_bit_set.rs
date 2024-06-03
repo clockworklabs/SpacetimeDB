@@ -123,7 +123,7 @@ mod internal_unsafe {
 
     impl<B> FixedBitSet<B> {
         /// Returns the backing `[B]` slice for shared access.
-        pub(super) const fn storage(&self) -> &[B] {
+        pub(crate) const fn storage(&self) -> &[B] {
             let ptr = self.ptr.as_ptr();
             let len = self.len as usize;
             // SAFETY:

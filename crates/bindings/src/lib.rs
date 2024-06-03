@@ -5,6 +5,8 @@
 mod io;
 mod impls;
 mod logger;
+#[cfg(feature = "rand")]
+mod rng;
 #[doc(hidden)]
 pub mod rt;
 pub mod time_span;
@@ -13,15 +15,22 @@ mod timestamp;
 use crate::sats::db::attr::ColumnAttribute;
 use crate::sats::db::def::IndexType;
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
+use spacetimedb_lib::sats::db::auth::StAccess;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, impl_st};
 use spacetimedb_lib::{bsatn, ProductType, ProductValue};
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::slice::from_ref;
 use std::{fmt, panic};
-use sys::{Buffer, BufferIter};
+use sys::RowIter;
 
 pub use log;
+#[cfg(feature = "rand")]
+pub use rand;
+
+#[cfg(feature = "rand")]
+pub use rng::{random, rng, StdbRng};
 pub use sats::SpacetimeType;
 pub use spacetimedb_bindings_macro::{duration, query, spacetimedb, TableType};
 pub use spacetimedb_bindings_sys as sys;
@@ -77,13 +86,12 @@ fn with_row_buf<R>(f: impl FnOnce(&mut Vec<u8>) -> R) -> R {
     thread_local! {
         /// A global buffer used for row data.
         // This gets optimized away to a normal global since wasm32 doesn't have threads by default.
-        static ROW_BUF: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(8 * 1024));
+        static ROW_BUF: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(DEFAULT_BUFFER_CAPACITY));
     }
 
-    ROW_BUF.with(|r| {
-        let mut buf = r.borrow_mut();
+    ROW_BUF.with_borrow_mut(|buf| {
         buf.clear();
-        f(&mut buf)
+        f(buf)
     })
 }
 
@@ -166,7 +174,7 @@ pub fn insert<T: TableType>(table_id: TableId, row: T) -> T::InsertResult {
 /// - there were unique constraint violations
 /// - `row` doesn't decode from BSATN to a `ProductValue`
 ///   according to the `ProductType` that the table's schema specifies
-pub fn iter_by_col_eq(table_id: TableId, col_id: u8, val: &impl Serialize) -> Result<Buffer> {
+pub fn iter_by_col_eq(table_id: TableId, col_id: u8, val: &impl Serialize) -> Result<RowIter> {
     with_row_buf(|bytes| {
         // Encode `val` as BSATN into `bytes` and then use that.
         bsatn::to_writer(bytes, val).unwrap();
@@ -225,92 +233,88 @@ pub fn delete_by_rel(table_id: TableId, relation: &[impl Serialize]) -> Result<u
     })
 }
 
-/// A table iterator which yields values of the `TableType` corresponding to the table.
-type TableTypeTableIter<T> = RawTableIter<TableTypeBufferDeserialize<T>>;
-
 // Get the iterator for this table with an optional filter,
-fn table_iter<T: TableType>(table_id: TableId, filter: Option<spacetimedb_lib::filter::Expr>) -> Result<TableIter<T>> {
-    // Decode the filter, if any.
-    let filter = filter
-        .as_ref()
-        .map(bsatn::to_vec)
-        .transpose()
-        .expect("Couldn't decode the filter query");
-
-    // Create the iterator.
-    let iter = sys::iter(table_id, filter.as_deref())?;
-
-    let deserializer = TableTypeBufferDeserialize::new();
-    Ok(RawTableIter::new(iter, deserializer).into())
+fn table_iter<T: TableType>(table_id: TableId) -> Result<TableIter<T>> {
+    sys::iter(table_id).map(TableIter::new)
 }
 
-/// A trait for deserializing multiple items out of a single `BufReader`.
-///
-/// Each `BufReader` holds a number of concatenated serialized objects.
-trait BufferDeserialize {
-    /// The type of the items being deserialized.
-    type Item;
-
-    /// Deserialize one entry from the `reader`, which must not be empty.
-    fn deserialize<'de>(&mut self, reader: impl BufReader<'de>) -> Self::Item;
+fn table_iter_filtered<T: TableType>(
+    table_id: TableId,
+    filter: &spacetimedb_lib::filter::Expr,
+) -> Result<TableIter<T>> {
+    with_row_buf(|buf| {
+        bsatn::to_writer(buf, filter).expect("Couldn't encode the filter query");
+        sys::iter_filtered(table_id, buf).map(TableIter::new)
+    })
 }
 
-/// Deserialize bsatn values to a particular `T` where `T: TableType`.
-struct TableTypeBufferDeserialize<T> {
-    _marker: PhantomData<T>,
-}
 
-impl<T> TableTypeBufferDeserialize<T> {
-    fn new() -> Self {
-        Self { _marker: PhantomData }
-    }
-}
-
-impl<T: TableType> BufferDeserialize for TableTypeBufferDeserialize<T> {
-    type Item = T;
-
-    fn deserialize<'de>(&mut self, mut reader: impl BufReader<'de>) -> Self::Item {
-        bsatn::from_reader(&mut reader).expect("Failed to decode row!")
-    }
-}
-
-/// Iterate over a sequence of `Buffer`s
-/// and deserialize a number of `<De as BufferDeserialize>::Item` out of each.
-struct RawTableIter<De> {
+/// A table iterator which yields values of the `TableType` corresponding to the table.
+pub struct TableIter<T: TableType> {
     /// The underlying source of our `Buffer`s.
-    inner: BufferIter,
+    inner: RowIter,
 
     /// The current position in the buffer, from which `deserializer` can read.
     reader: Cursor<Vec<u8>>,
 
-    deserializer: De,
+    _marker: PhantomData<T>,
 }
 
-impl<De: BufferDeserialize> RawTableIter<De> {
-    fn new(iter: BufferIter, deserializer: De) -> Self {
-        RawTableIter {
+// This should guarantee in most cases that we don't have to reallocate an iterator
+// buffer, unless there's a single row that serializes to >1 MiB.
+const DEFAULT_BUFFER_CAPACITY: usize = spacetimedb_primitives::ROW_ITER_CHUNK_SIZE * 2;
+
+thread_local! {
+    /// A global pool of buffers used for iteration.
+    // This gets optimized away to a normal global since wasm32 doesn't have threads by default.
+    static ITER_BUFS: RefCell<VecDeque<Vec<u8>>> = const { RefCell::new(VecDeque::new()) };
+}
+
+/// Take a buffer from the pool of buffers for row iterators, if one exists. Otherwise, allocate a new one.
+fn take_iter_buf() -> Vec<u8> {
+    ITER_BUFS
+        .with_borrow_mut(|v| v.pop_front())
+        .unwrap_or_else(|| Vec::with_capacity(DEFAULT_BUFFER_CAPACITY))
+}
+
+/// Return the buffer to the pool of buffers for row iterators.
+fn return_iter_buf(mut buf: Vec<u8>) {
+    buf.clear();
+    ITER_BUFS.with_borrow_mut(|v| v.push_back(buf))
+}
+
+impl<T: TableType> TableIter<T> {
+    fn new(iter: RowIter) -> Self {
+        TableIter {
             inner: iter,
-            reader: Cursor::new(Vec::new()),
-            deserializer,
+            reader: Cursor::new(take_iter_buf()),
+            _marker: PhantomData,
         }
     }
 }
 
-impl<T, De: BufferDeserialize<Item = T>> Iterator for RawTableIter<De> {
-    type Item = De::Item;
+impl<T: TableType> Drop for TableIter<T> {
+    fn drop(&mut self) {
+        return_iter_buf(std::mem::take(&mut self.reader.buf))
+    }
+}
+
+impl<T: TableType> Iterator for TableIter<T> {
+    type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             // If we currently have some bytes in the buffer to still decode, do that.
             if (&self.reader).remaining() > 0 {
-                let row = self.deserializer.deserialize(&self.reader);
+                let row = bsatn::from_reader(&mut &self.reader).expect("Failed to decode row!");
                 return Some(row);
             }
             // Otherwise, try to fetch the next chunk while reusing the buffer.
-            let buffer = self.inner.next()?;
-            let buffer = buffer.expect("RawTableIter::next: Failed to get buffer!");
+            self.reader.buf.clear();
             self.reader.pos.set(0);
-            buffer.read_into(&mut self.reader.buf);
+            if self.inner.read(&mut self.reader.buf) == 0 {
+                return None;
+            }
         }
     }
 }
@@ -326,25 +330,12 @@ pub struct IndexDesc<'a> {
     pub col_ids: &'a [u8],
 }
 
-/// A table iterator which yields values of the `TableType` corresponding to the table.
-#[derive(derive_more::From)]
-pub struct TableIter<T: TableType> {
-    iter: TableTypeTableIter<T>,
-}
-
-impl<T: TableType> Iterator for TableIter<T> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
 /// A trait for the set of types serializable, deserializable, and convertible to `AlgebraicType`.
 ///
 /// Additionally, the type knows its own table name, its column attributes, and indices.
 pub trait TableType: SpacetimeType + DeserializeOwned + Serialize {
     const TABLE_NAME: &'static str;
+    const TABLE_ACCESS: StAccess;
     const COLUMN_ATTRS: &'static [ColumnAttribute];
     const INDEXES: &'static [IndexDesc<'static>];
     type InsertResult: sealed::InsertResult<T = Self>;
@@ -359,7 +350,7 @@ pub trait TableType: SpacetimeType + DeserializeOwned + Serialize {
 
     /// Returns an iterator over the rows in this table.
     fn iter() -> TableIter<Self> {
-        table_iter(Self::table_id(), None).unwrap()
+        table_iter(Self::table_id()).unwrap()
     }
 
     /// Returns an iterator filtered by `filter` over the rows in this table.
@@ -367,7 +358,7 @@ pub trait TableType: SpacetimeType + DeserializeOwned + Serialize {
     /// **NOTE:** Do not use directly. This is exposed as `query!(...)`.
     #[doc(hidden)]
     fn iter_filtered(filter: spacetimedb_lib::filter::Expr) -> TableIter<Self> {
-        table_iter(Self::table_id(), Some(filter)).unwrap()
+        table_iter_filtered(Self::table_id(), &filter).unwrap()
     }
 
     /// Deletes this row `self` from the table.
@@ -471,16 +462,21 @@ pub mod query {
         val: &T,
     ) -> Option<Table> {
         // Find the row with a match.
-        let slice: &mut &[u8] = &mut &*iter_by_col_eq(Table::table_id(), COL_IDX, val).unwrap().read();
-        // We will always find either 0 or 1 rows here due to the unique constraint.
-        match slice.remaining() {
-            0 => None,
-            _ => {
-                let t = bsatn::from_reader(slice).unwrap();
-                assert_eq!(slice.remaining(), 0);
-                Some(t)
+        let iter = iter_by_col_eq(Table::table_id(), COL_IDX, val).unwrap();
+        with_row_buf(|buf| {
+            // We will always find either 0 or 1 rows here due to the unique constraint.
+            iter.read(buf);
+            if buf.is_empty() {
+                return None;
             }
-        }
+            let mut reader = buf.as_slice();
+            let row = bsatn::from_reader(&mut reader).unwrap();
+            assert!(
+                reader.is_empty(),
+                "iter_by_col_eq on unique field cannot return >1 rows"
+            );
+            Some(row)
+        })
     }
 
     /// Finds all rows of `Table` where the column at `COL_IDX` matches `val`,
@@ -490,14 +486,9 @@ pub mod query {
     /// **NOTE:** Do not use directly.
     /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb(table)]`.
     #[doc(hidden)]
-    pub fn filter_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u8>(val: &T) -> FilterByIter<Table> {
-        let rows = iter_by_col_eq(Table::table_id(), COL_IDX, val)
-            .expect("iter_by_col_eq failed")
-            .read();
-        FilterByIter {
-            cursor: Cursor::new(rows),
-            _phantom: PhantomData,
-        }
+    pub fn filter_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u8>(val: &T) -> TableIter<Table> {
+        let iter = iter_by_col_eq(Table::table_id(), COL_IDX, val).expect("iter_by_col_eq failed");
+        TableIter::new(iter)
     }
 
     /// Deletes all rows of `Table` where the column at `COL_IDX` matches `val`,

@@ -23,9 +23,4 @@ impl TableType for OneEnumWithPayload {
     type ReducerEvent = super::ReducerEvent;
 }
 
-impl OneEnumWithPayload {
-    #[allow(unused)]
-    pub fn filter_by_e(e: EnumWithPayload) -> TableIter<Self> {
-        Self::filter(|row| row.e == e)
-    }
-}
+impl OneEnumWithPayload {}

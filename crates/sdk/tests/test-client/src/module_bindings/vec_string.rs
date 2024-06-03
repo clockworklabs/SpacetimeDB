@@ -22,9 +22,4 @@ impl TableType for VecString {
     type ReducerEvent = super::ReducerEvent;
 }
 
-impl VecString {
-    #[allow(unused)]
-    pub fn filter_by_s(s: Vec<String>) -> TableIter<Self> {
-        Self::filter(|row| row.s == s)
-    }
-}
+impl VecString {}

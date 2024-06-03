@@ -8,25 +8,27 @@ use super::datastore::{
     },
     traits::TxData,
 };
+use super::db_metrics::DB_METRICS;
 use super::relational_operators::Relation;
-use crate::address::Address;
 use crate::config::DatabaseConfig;
-use crate::db::db_metrics::DB_METRICS;
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::{ExecutionContext, ReducerContext};
-use crate::hash::Hash;
 use crate::util::slow::SlowQueryConfig;
 use fs2::FileExt;
 use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
 use spacetimedb_durability::{self as durability, Durability};
+use spacetimedb_lib::address::Address;
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, TableSchema};
+use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_vm::errors::ErrorVm;
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::fs::{create_dir_all, File};
 use std::io;
 use std::ops::RangeBounds;
@@ -49,6 +51,10 @@ type DiskSizeFn = Arc<dyn Fn() -> io::Result<u64> + Send + Sync>;
 
 pub type Txdata = commitlog::payload::Txdata<ProductValue>;
 
+/// Clients for which a connect reducer call was found in the [`History`], but
+/// no corresponding disconnect.
+pub type ConnectedClients = HashSet<(Identity, Address)>;
+
 #[derive(Clone)]
 pub struct RelationalDB {
     // TODO(cloutiertyler): This should not be public
@@ -61,9 +67,12 @@ pub struct RelationalDB {
     /// is `Some`, `None` otherwise.
     disk_size_fn: Option<DiskSizeFn>,
 
-    // Release file lock last when dropping.
-    _lock: Arc<File>,
     config: Arc<RwLock<DatabaseConfig>>,
+
+    // DO NOT ADD FIELDS AFTER THIS.
+    // By default, fields are dropped in declaration order.
+    // We want to release the file lock last.
+    _lock: Arc<File>,
 }
 
 impl std::fmt::Debug for RelationalDB {
@@ -84,7 +93,15 @@ impl RelationalDB {
     ///
     /// The [`tokio::runtime::Handle`] is used to spawn background tasks which
     /// take care of flushing and syncing the log.
-    pub fn local(root: impl AsRef<Path>, rt: tokio::runtime::Handle, address: Address) -> Result<Self, DBError> {
+    ///
+    /// Alongside `Self`, the set of clients who were connected as of the most
+    /// recent transaction is returned as a [`ConnectedClients`].
+    /// `__disconnect__` should be called for each entry.
+    pub fn local(
+        root: impl AsRef<Path>,
+        rt: tokio::runtime::Handle,
+        address: Address,
+    ) -> Result<(Self, ConnectedClients), DBError> {
         let log_dir = root.as_ref().join("clog");
         create_dir_all(&log_dir)?;
         let durability = durability::Local::open(
@@ -141,9 +158,7 @@ impl RelationalDB {
             disk_size_fn,
 
             _lock: Arc::new(lock),
-            config: Arc::new(RwLock::new(DatabaseConfig::with_slow_query(
-                SlowQueryConfig::with_defaults(),
-            ))),
+            config: Arc::new(RwLock::new(DatabaseConfig::new(SlowQueryConfig::with_defaults(), None))),
         })
     }
 
@@ -152,9 +167,12 @@ impl RelationalDB {
     ///
     /// Consumes `self` in order to ensure exclusive access, and to prevent use
     /// of the database in case of an incomplete replay.
-    ///
     /// This restriction may be lifted in the future to allow for "live" followers.
-    pub fn apply<T>(self, history: T) -> Result<Self, DBError>
+    ///
+    /// Alongside `Self`, the set of clients who were connected as of the most
+    /// recent transaction is returned as a [`ConnectedClients`].
+    /// `__disconnect__` should be called for each entry.
+    pub fn apply<T>(self, history: T) -> Result<(Self, ConnectedClients), DBError>
     where
         T: durability::History<TxData = Txdata>,
     {
@@ -187,14 +205,16 @@ impl RelationalDB {
             }
         };
 
+        let mut replay = self.inner.replay(progress);
         history
-            .fold_transactions_from(0, self.inner.replay(progress))
+            .fold_transactions_from(0, &mut replay)
             .map_err(anyhow::Error::from)?;
         log::info!("[{}] DATABASE: applied transaction history", self.address);
         self.inner.rebuild_state_after_replay()?;
         log::info!("[{}] DATABASE: rebuilt state after replay", self.address);
+        let connected_clients = replay.into_connected_clients();
 
-        Ok(self)
+        Ok((self, connected_clients))
     }
 
     /// Returns an approximate row count for a particular table.
@@ -299,6 +319,12 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(skip_all)]
+    pub fn rollback_mut_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTx) -> Tx {
+        log::trace!("ROLLBACK MUT TX");
+        self.inner.rollback_mut_tx_downgrade(ctx, tx)
+    }
+
+    #[tracing::instrument(skip_all)]
     pub fn release_tx(&self, ctx: &ExecutionContext, tx: Tx) {
         log::trace!("ROLLBACK TX");
         self.inner.release_tx(ctx, tx)
@@ -306,73 +332,93 @@ impl RelationalDB {
 
     #[tracing::instrument(skip_all)]
     pub fn commit_tx(&self, ctx: &ExecutionContext, tx: MutTx) -> Result<Option<TxData>, DBError> {
-        use commitlog::payload::{
-            txdata::{Mutations, Ops},
-            Txdata,
-        };
-
         log::trace!("COMMIT MUT TX");
 
+        // TODO: Never returns `None` -- should it?
         let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? else {
             return Ok(None);
         };
 
         if let Some(durability) = &self.durability {
-            let inserts: Box<_> = tx_data
-                .inserts()
-                .map(|(table_id, rowdata)| Ops {
-                    table_id: *table_id,
-                    rowdata: rowdata.clone(),
-                })
-                .collect();
-            let deletes: Box<_> = tx_data
-                .deletes()
-                .map(|(table_id, rowdata)| Ops {
-                    table_id: *table_id,
-                    rowdata: rowdata.clone(),
-                })
-                .collect();
-
-            // Avoid appending transactions to the commitlog which don't modify
-            // any tables.
-            //
-            // An exception ar connect / disconnect calls, which we always want
-            // paired in the log, so as to be able to disconnect clients
-            // automatically after a server crash. See:
-            // [`crate::host::ModuleHost::call_identity_connected_disconnected`]
-            //
-            // Note that this may change in the future: some analytics and/or
-            // timetravel queries may benefit from seeing all inputs, even if
-            // the database state did not change.
-            let is_noop = || inserts.is_empty() && deletes.is_empty();
-            let is_connect_disconnect = |ctx: &ReducerContext| {
-                matches!(
-                    ctx.name.strip_prefix("__identity_"),
-                    Some("connected__" | "disconnected__")
-                )
-            };
-            let inputs = ctx
-                .reducer_context()
-                .and_then(|rcx| (!is_noop() || is_connect_disconnect(rcx)).then(|| rcx.into()));
-
-            let txdata = Txdata {
-                inputs,
-                outputs: None,
-                mutations: Some(Mutations {
-                    inserts,
-                    deletes,
-                    truncates: [].into(),
-                }),
-            };
-
-            if !txdata.is_empty() {
-                log::trace!("append {txdata:?}");
-                // TODO: Should measure queuing time + actual write
-                durability.append_tx(txdata);
-            }
+            Self::do_durability(&**durability, ctx, &tx_data)
         }
 
         Ok(Some(tx_data))
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub fn commit_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTx) -> Result<Option<(TxData, Tx)>, DBError> {
+        log::trace!("COMMIT MUT TX");
+
+        let Some((tx_data, tx)) = self.inner.commit_mut_tx_downgrade(ctx, tx)? else {
+            return Ok(None);
+        };
+
+        if let Some(durability) = &self.durability {
+            Self::do_durability(&**durability, ctx, &tx_data)
+        }
+
+        Ok(Some((tx_data, tx)))
+    }
+
+    fn do_durability(durability: &dyn Durability<TxData = Txdata>, ctx: &ExecutionContext, tx_data: &TxData) {
+        use commitlog::payload::{
+            txdata::{Mutations, Ops},
+            Txdata,
+        };
+
+        let inserts: Box<_> = tx_data
+            .inserts()
+            .map(|(table_id, rowdata)| Ops {
+                table_id: *table_id,
+                rowdata: rowdata.clone(),
+            })
+            .collect();
+        let deletes: Box<_> = tx_data
+            .deletes()
+            .map(|(table_id, rowdata)| Ops {
+                table_id: *table_id,
+                rowdata: rowdata.clone(),
+            })
+            .collect();
+
+        // Avoid appending transactions to the commitlog which don't modify
+        // any tables.
+        //
+        // An exception ar connect / disconnect calls, which we always want
+        // paired in the log, so as to be able to disconnect clients
+        // automatically after a server crash. See:
+        // [`crate::host::ModuleHost::call_identity_connected_disconnected`]
+        //
+        // Note that this may change in the future: some analytics and/or
+        // timetravel queries may benefit from seeing all inputs, even if
+        // the database state did not change.
+        let is_noop = || inserts.is_empty() && deletes.is_empty();
+        let is_connect_disconnect = |ctx: &ReducerContext| {
+            matches!(
+                ctx.name.strip_prefix("__identity_"),
+                Some("connected__" | "disconnected__")
+            )
+        };
+        let inputs = ctx
+            .reducer_context()
+            .and_then(|rcx| (!is_noop() || is_connect_disconnect(rcx)).then(|| rcx.into()));
+
+        let txdata = Txdata {
+            inputs,
+            outputs: None,
+            mutations: Some(Mutations {
+                inserts,
+                deletes,
+                truncates: [].into(),
+            }),
+        };
+
+        if !txdata.is_empty() {
+            log::trace!("append {txdata:?}");
+            // TODO: Should measure queuing time + actual write
+            durability.append_tx(txdata);
+        }
     }
 
     /// Run a fallible function in a transaction.
@@ -491,11 +537,12 @@ impl RelationalDB {
             .collect()
     }
 
-    pub fn create_table_for_test(
+    pub fn create_table_for_test_with_access(
         &self,
         name: &str,
         schema: &[(&str, AlgebraicType)],
         indexes: &[(ColId, &str)],
+        access: StAccess,
     ) -> Result<TableId, DBError> {
         let indexes = indexes
             .iter()
@@ -506,9 +553,18 @@ impl RelationalDB {
         let schema = TableDef::new(name.into(), Self::col_def_for_test(schema))
             .with_indexes(indexes)
             .with_type(StTableType::User)
-            .with_access(StAccess::Public);
+            .with_access(access);
 
         self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
+    }
+
+    pub fn create_table_for_test(
+        &self,
+        name: &str,
+        schema: &[(&str, AlgebraicType)],
+        indexes: &[(ColId, &str)],
+    ) -> Result<TableId, DBError> {
+        self.create_table_for_test_with_access(name, schema, indexes, StAccess::Public)
     }
 
     pub fn create_table_for_test_multi_column(
@@ -985,11 +1041,15 @@ pub mod tests_utils {
                 move || handle.size_on_disk()
             });
 
-            let rdb = RelationalDB::open(root, Self::ADDRESS, Some((handle.clone(), disk_size_fn)))?
-                .apply(handle.clone())?
-                .with_row_count(Self::row_count_fn());
+            let (db, connected_clients) = {
+                let db = RelationalDB::open(root, Self::ADDRESS, Some((handle.clone(), disk_size_fn)))?;
+                db.apply(handle.clone())?
+            };
+            // TODO: Should we be able to handle the non-empty case?
+            // `RelationalDB` cannot exist on its own then.
+            debug_assert!(connected_clients.is_empty());
 
-            Ok((rdb, handle))
+            Ok((db.with_row_count(Self::row_count_fn()), handle))
         }
 
         // NOTE: This is important to make compiler tests work.
@@ -1373,6 +1433,23 @@ mod tests {
         stdb.insert(&mut tx, table_id, product![1i64])?;
 
         assert_eq!(collect_from_sorted(&stdb, &tx, table_id, 0i64)?, vec![1]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_row_count() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let schema = my_table(AlgebraicType::I64);
+        let table_id = stdb.create_table(&mut tx, schema)?;
+        stdb.insert(&mut tx, table_id, product![1i64])?;
+        stdb.insert(&mut tx, table_id, product![2i64])?;
+        stdb.commit_tx(&ExecutionContext::default(), tx)?;
+
+        let stdb = stdb.reopen()?;
+        let tx = stdb.begin_tx();
+        assert_eq!(tx.get_row_count(table_id).unwrap(), 2);
         Ok(())
     }
 

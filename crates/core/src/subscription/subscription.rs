@@ -18,14 +18,12 @@
 //! not obvious how to compute the minimal set of operations for the client to
 //! synchronize its state. In general, we conjecture that server-side
 //! materialized views are necessary. We find, however, that a particular kind
-//! of join query _can_ be evaluated incrementally without materialized views,
-//! as described in the following section:
-//!
-#![doc = include_str!("../../../../docs/incremental-joins.md")]
+//! of join query _can_ be evaluated incrementally without materialized views.
 
 use super::execution_unit::ExecutionUnit;
 use super::query;
 use crate::client::Protocol;
+use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
@@ -38,12 +36,13 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_client_api_messages::client_api::TableUpdate;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::ProductValue;
+use spacetimedb_lib::{Identity, ProductValue};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::error::AuthError;
 use spacetimedb_sats::relation::DbTable;
 use spacetimedb_vm::errors::ErrorVm;
-use spacetimedb_vm::expr::{self, IndexJoin, Query, QueryExpr, SourceProvider, SourceSet};
+use spacetimedb_vm::expr::{self, AuthAccess, IndexJoin, Query, QueryExpr, SourceExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::hash::Hash;
@@ -504,16 +503,15 @@ fn with_delta_table(
 ) -> (IndexJoin, SourceSet<Vec<ProductValue>, 2>) {
     let mut sources = SourceSet::empty();
 
+    let mut add_mem_table =
+        |side: SourceExpr, data| sources.add_mem_table(MemTable::new(side.head().clone(), side.table_access(), data));
+
     if let Some(index_side) = index_side {
-        let head = join.index_side.head().clone();
-        let table_access = join.index_side.table_access();
-        join.index_side = sources.add_mem_table(MemTable::new(head, table_access, index_side));
+        join.index_side = add_mem_table(join.index_side, index_side);
     }
 
     if let Some(probe_side) = probe_side {
-        let head = join.probe_side.source.head().clone();
-        let table_access = join.probe_side.source.table_access();
-        join.probe_side.source = sources.add_mem_table(MemTable::new(head, table_access, probe_side));
+        join.probe_side.source = add_mem_table(join.probe_side.source, probe_side);
     }
 
     (join, sources)
@@ -576,6 +574,14 @@ impl ExecutionSet {
         }
         Ok(DatabaseUpdateRelValue { tables })
     }
+
+    /// The estimated number of rows returned by this execution set.
+    pub fn row_estimate(&self, tx: &TxId) -> u64 {
+        self.exec_units
+            .iter()
+            .map(|unit| unit.row_estimate(tx))
+            .fold(0, |acc, est| acc.saturating_add(est))
+    }
 }
 
 impl FromIterator<SupportedQuery> for ExecutionSet {
@@ -615,6 +621,12 @@ impl From<Vec<SupportedQuery>> for ExecutionSet {
     }
 }
 
+impl AuthAccess for ExecutionSet {
+    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
+        self.exec_units.iter().try_for_each(|eu| eu.check_auth(owner, caller))
+    }
+}
+
 /// Queries all the [`StTableType::User`] tables *right now*
 /// and turns them into [`QueryExpr`],
 /// the moral equivalent of `SELECT * FROM table`.
@@ -640,7 +652,7 @@ mod tests {
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::sql::compiler::compile_sql;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_sats::relation::{DbTable, FieldName};
+    use spacetimedb_sats::relation::DbTable;
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::expr::{CrudExpr, IndexJoin, Query, SourceExpr};
 
@@ -653,7 +665,7 @@ mod tests {
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[(1.into(), "b")];
-        let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
+        let _ = db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
         let schema = &[
@@ -703,10 +715,7 @@ mod tests {
                     source: SourceExpr::InMemory { .. },
                     query: ref lhs,
                 },
-            probe_field: FieldName {
-                table: probe_table,
-                col: probe_field,
-            },
+            probe_col,
             index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
@@ -723,8 +732,7 @@ mod tests {
         // Assert that original index and probe tables have been swapped.
         assert_eq!(index_table, rhs_id);
         assert_eq!(index_col, 0.into());
-        assert_eq!(probe_field, 1.into());
-        assert_eq!(probe_table, lhs_id);
+        assert_eq!(probe_col, 1.into());
         Ok(())
     }
 
@@ -746,7 +754,7 @@ mod tests {
             ("d", AlgebraicType::U64),
         ];
         let indexes = &[(0.into(), "b"), (1.into(), "c")];
-        let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
+        let _ = db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = db.begin_tx();
         // Should generate an index join since there is an index on `lhs.b`.
@@ -789,10 +797,7 @@ mod tests {
                     source: SourceExpr::InMemory { .. },
                     query: ref rhs,
                 },
-            probe_field: FieldName {
-                table: probe_table,
-                col: probe_field,
-            },
+            probe_col,
             index_side: SourceExpr::DbTable(DbTable {
                 table_id: index_table, ..
             }),
@@ -809,8 +814,7 @@ mod tests {
         // Assert that original index and probe tables have not been swapped.
         assert_eq!(index_table, lhs_id);
         assert_eq!(index_col, 1.into());
-        assert_eq!(probe_field, 0.into());
-        assert_eq!(probe_table, rhs_id);
+        assert_eq!(probe_col, 0.into());
         Ok(())
     }
 
@@ -863,6 +867,7 @@ mod tests {
 
         assert!(virtual_plan.source.is_mem_table());
         assert_eq!(virtual_plan.source.head(), expr.source.head());
+        assert_eq!(virtual_plan.head(), expr.head());
         assert_eq!(virtual_plan.query.len(), 1);
         let incr_join = &virtual_plan.query[0];
         let Query::JoinInner(ref incr_join) = incr_join else {
@@ -870,6 +875,7 @@ mod tests {
         };
         assert!(incr_join.rhs.source.is_mem_table());
         assert_ne!(incr_join.rhs.source.head(), expr.source.head());
-        assert!(incr_join.semi);
+        assert_ne!(incr_join.rhs.head(), expr.head());
+        assert_eq!(incr_join.inner, None);
     }
 }

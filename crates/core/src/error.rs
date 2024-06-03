@@ -177,9 +177,6 @@ pub enum DBError {
     DecodeHex(#[from] FromHexError),
     #[error("DatabaseError: {0}.")]
     Database(#[from] DatabaseError),
-    #[cfg(feature = "odb_rocksdb")]
-    #[error("RocksDbError: {0}.")]
-    RocksDbError(#[from] rocksdb::Error),
     #[error("SledError: {0}.")]
     SledDbError(#[from] sled::Error),
     #[error("Mutex was poisoned acquiring lock on MessageLog: {0}")]

@@ -23,9 +23,4 @@ impl TableType for VecByteStruct {
     type ReducerEvent = super::ReducerEvent;
 }
 
-impl VecByteStruct {
-    #[allow(unused)]
-    pub fn filter_by_s(s: Vec<ByteStruct>) -> TableIter<Self> {
-        Self::filter(|row| row.s == s)
-    }
-}
+impl VecByteStruct {}

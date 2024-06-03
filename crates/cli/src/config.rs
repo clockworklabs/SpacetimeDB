@@ -149,7 +149,7 @@ impl Lockfile {
         path.set_extension("lock");
         // Open with `create_new`, which fails if the file already exists.
         std::fs::File::create_new(&path).with_context(|| {
-            "Unable to acquire lock on config file {config_path:?}: failed to create lockfile {path:?}"
+            format!("Unable to acquire lock on config file {config_path:?}: failed to create lockfile {path:?}")
         })?;
 
         Ok(Lockfile { path })

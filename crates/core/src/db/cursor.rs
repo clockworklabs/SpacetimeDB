@@ -1,10 +1,8 @@
-use std::ops::RangeBounds;
-
+use super::datastore::locking_tx_datastore::{Iter, IterByColRange};
 use crate::error::DBError;
+use core::ops::RangeBounds;
 use spacetimedb_sats::relation::DbTable;
 use spacetimedb_sats::AlgebraicValue;
-
-use super::datastore::locking_tx_datastore::{Iter, IterByColRange};
 
 /// Common wrapper for relational iterators that work like cursors.
 pub struct TableCursor<'a> {

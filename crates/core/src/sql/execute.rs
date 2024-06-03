@@ -1,11 +1,11 @@
 use super::compiler::compile_sql;
 use crate::db::datastore::locking_tx_datastore::state_view::StateView;
-use crate::db::datastore::locking_tx_datastore::tx::TxId;
-use crate::db::relational_db::RelationalDB;
+use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{DbProgram, TxMode};
+use itertools::Either;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::FieldName;
 use spacetimedb_lib::{ProductType, ProductValue};
@@ -41,23 +41,23 @@ pub fn ctx_sql(db: &RelationalDB) -> ExecutionContext {
     ExecutionContext::sql(db.address(), db.read_config().slow_query)
 }
 
+fn execute(p: &mut DbProgram<'_, '_>, ast: Vec<CrudExpr>) -> Result<Vec<MemTable>, DBError> {
+    let mut result = Vec::with_capacity(ast.len());
+    let query = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
+    // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
+    collect_result(&mut result, run_ast(p, query, [].into()).into())?;
+    Ok(result)
+}
+
 /// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
 ///
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
 ///
 /// Also, in case the execution takes more than x, log it as `slow query`
 pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
-    fn execute(p: &mut DbProgram<'_, '_>, ast: Vec<CrudExpr>) -> Result<Vec<MemTable>, DBError> {
-        let mut result = Vec::with_capacity(ast.len());
-        let query = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
-        // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
-        collect_result(&mut result, run_ast(p, query, [].into()).into())?;
-        Ok(result)
-    }
-
     let ctx = ctx_sql(db);
-    let slow_logger = SlowQueryLogger::query(&ctx, sql);
-    let result = if CrudExpr::is_reads(&ast) {
+    let _slow_logger = SlowQueryLogger::query(&ctx, sql).log_guard();
+    if CrudExpr::is_reads(&ast) {
         db.with_read_only(&ctx, |tx| {
             execute(&mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth), ast)
         })
@@ -65,22 +65,60 @@ pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthC
         db.with_auto_commit(&ctx, |mut_tx| {
             execute(&mut DbProgram::new(&ctx, db, &mut mut_tx.into(), auth), ast)
         })
-    }?;
-    slow_logger.log();
+    }
+}
 
-    Ok(result)
+/// Like [`execute_sql`], but for providing your own `tx`.
+///
+/// Returns None if you pass a mutable query with an immutable tx.
+pub fn execute_sql_tx<'a>(
+    db: &RelationalDB,
+    tx: impl Into<TxMode<'a>>,
+    sql: &str,
+    ast: Vec<CrudExpr>,
+    auth: AuthCtx,
+) -> Result<Option<Vec<MemTable>>, DBError> {
+    let mut tx = tx.into();
+
+    if matches!(tx, TxMode::Tx(_)) && !CrudExpr::is_reads(&ast) {
+        return Ok(None);
+    }
+
+    let ctx = ctx_sql(db);
+    let _slow_logger = SlowQueryLogger::query(&ctx, sql).log_guard();
+    execute(&mut DbProgram::new(&ctx, db, &mut tx, auth), ast).map(Some)
 }
 
 /// Run the `SQL` string using the `auth` credentials
 pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
-    let ast = db.with_read_only(&ctx_sql(db), |tx| compile_sql(db, tx, sql_text))?;
-    execute_sql(db, sql_text, ast, auth)
+    let ctx = ctx_sql(db);
+    let _slow_logger = SlowQueryLogger::query(&ctx, sql_text).log_guard();
+    let result = db.with_read_only(&ctx, |tx| {
+        let ast = compile_sql(db, tx, sql_text)?;
+        if CrudExpr::is_reads(&ast) {
+            let result = execute(&mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth), ast)?;
+            Ok::<_, DBError>(Either::Left(result))
+        } else {
+            // hehe. right. write.
+            Ok(Either::Right(ast))
+        }
+    })?;
+    match result {
+        Either::Left(result) => Ok(result),
+        // TODO: this should perhaps be an upgradable_read upgrade? or we should try
+        //       and figure out if we can detect the mutablility of the query before we take
+        //       the tx? once we have migrations we probably don't want to have stale
+        //       sql queries after a database schema have been updated.
+        Either::Right(ast) => db.with_auto_commit(&ctx, |tx| {
+            execute(&mut DbProgram::new(&ctx, db, &mut tx.into(), auth), ast)
+        }),
+    }
 }
 
 /// Translates a `FieldName` to the field's name.
-pub fn translate_col(tx: &TxId, field: FieldName) -> Option<Box<str>> {
+pub fn translate_col(tx: &Tx, field: FieldName) -> Option<Box<str>> {
     Some(
-        tx.get_schema(&field.table)?
+        tx.get_schema(field.table)?
             .get_column(field.col.idx())?
             .col_name
             .clone(),
@@ -720,6 +758,24 @@ SELECT * FROM inventory",
         let result = run_for_testing(&db, "select * from test where x > 5 and x <= 4").unwrap();
         assert_eq!(result.len(), 1);
         assert!(result[0].data.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_multi_column_two_ranges() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        // Create table [test] with index on [a, b]
+        let schema = &[("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
+        let table_id = db.create_table_for_test_multi_column("test", schema, col_list![0, 1])?;
+        let row = product![4u8, 8u8];
+        db.with_auto_commit(&ExecutionContext::default(), |tx| db.insert(tx, table_id, row.clone()))?;
+
+        let result = run_for_testing(&db, "select * from test where a >= 3 and a <= 5 and b >= 3 and b <= 5")?;
+
+        let result = result.first().unwrap().clone();
+        assert_eq!(result.data, []);
+
         Ok(())
     }
 }

@@ -96,16 +96,12 @@ url.workspace = true
 urlencoding.workspace = true
 uuid.workspace = true
 wasmtime.workspace = true
-# Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
-rocksdb = { workspace = true, optional = true }
 
 [features]
 # Print a warning when doing an unindexed `iter_by_col_range` on a large table.
 unindexed_iter_by_col_range_warn = []
 # Optional storage engines.
-odb_rocksdb = ["dep:rocksdb"]
-odb_sled = []
-default = ["odb_sled", "unindexed_iter_by_col_range_warn"]
+default = ["unindexed_iter_by_col_range_warn"]
 # Enable test helpers and utils
 test = []
 
@@ -113,7 +109,6 @@ test = []
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }
 spacetimedb-sats = { path = "../sats", features = ["proptest"] }
 
-rusqlite.workspace = true
 criterion.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true

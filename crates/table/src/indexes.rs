@@ -88,7 +88,8 @@ impl Mul<usize> for Size {
 }
 
 /// An offset into a [`Page`].
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Add, Sub)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Add, Sub, bytemuck::NoUninit)]
+#[repr(transparent)]
 #[cfg_attr(any(test, feature = "proptest"), derive(proptest_derive::Arbitrary))]
 pub struct PageOffset(
     #[cfg_attr(any(test, feature = "proptest"), proptest(strategy = "0..PageOffset::PAGE_END.0"))] pub u16,

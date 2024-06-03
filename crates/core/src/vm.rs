@@ -1,8 +1,12 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 
+use crate::config::DatabaseConfig;
 use crate::db::cursor::{IndexCursor, TableCursor};
+use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::datastore::locking_tx_datastore::IterByColRange;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
+use crate::error::DBError;
+use crate::estimation;
 use crate::execution_context::ExecutionContext;
 use core::ops::RangeBounds;
 use itertools::Itertools;
@@ -13,7 +17,7 @@ use spacetimedb_sats::db::def::TableDef;
 use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header, RowCount};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::errors::ErrorVm;
-use spacetimedb_vm::eval::{join_inner, IterRows};
+use spacetimedb_vm::eval::{build_project, build_select, join_inner, IterRows};
 use spacetimedb_vm::expr::*;
 use spacetimedb_vm::iterators::RelIter;
 use spacetimedb_vm::program::{ProgramVm, Sources};
@@ -49,6 +53,12 @@ impl<'a> From<&'a Tx> for TxMode<'a> {
     }
 }
 
+impl<'a> From<&'a mut Tx> for TxMode<'a> {
+    fn from(tx: &'a mut Tx) -> Self {
+        TxMode::Tx(tx)
+    }
+}
+
 fn bound_is_satisfiable(lower: &Bound<AlgebraicValue>, upper: &Bound<AlgebraicValue>) -> bool {
     match (lower, upper) {
         (Bound::Excluded(lower), Bound::Excluded(upper)) if lower >= upper => false,
@@ -65,7 +75,7 @@ fn bound_is_satisfiable(lower: &Bound<AlgebraicValue>, upper: &Bound<AlgebraicVa
 //and pull all that crate in core. Will be revisited after trait refactor
 pub fn build_query<'a>(
     ctx: &'a ExecutionContext,
-    stdb: &'a RelationalDB,
+    db: &'a RelationalDB,
     tx: &'a TxMode<'a>,
     query: &'a QueryExpr,
     sources: &mut impl SourceProvider<'a>,
@@ -77,7 +87,7 @@ pub fn build_query<'a>(
     // are only valid as the first operation in the list,
     // and construct a new base query.
     //
-    // Branches which use `result` will do `unwrap_or_else(|| get_table(ctx, stdb, tx, &query.table, sources))`
+    // Branches which use `result` will do `unwrap_or_else(|| get_table(ctx, db, tx, &query.table, sources))`
     // to get an `IterRows` defaulting to the `query.table`.
     //
     // Branches which do not use the `result` will assert that it is `None`,
@@ -87,6 +97,13 @@ pub fn build_query<'a>(
     // TODO(bikeshedding): Refactor `QueryExpr` to separate `IndexJoin` from other `Query` variants,
     //   removing the need for this convoluted logic?
     let mut result = None;
+
+    let result_or_base = |sources: &mut _, result: &mut Option<_>| {
+        result
+            .take()
+            .map(Ok)
+            .unwrap_or_else(|| get_table(ctx, db, tx, &query.source, sources))
+    };
 
     for op in &query.query {
         result = Some(match op {
@@ -100,15 +117,11 @@ pub fn build_query<'a>(
                     Box::new(EmptyRelOps::new(table.head.clone())) as Box<IterRows<'a>>
                 } else {
                     let bounds = (bounds.start_bound(), bounds.end_bound());
-                    iter_by_col_range(ctx, stdb, tx, table, columns.clone(), bounds)?
+                    iter_by_col_range(ctx, db, tx, table, columns.clone(), bounds)?
                 }
             }
             Query::IndexScan(index_scan) => {
-                let result = result
-                    .take()
-                    .map(Ok)
-                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
-
+                let result = result_or_base(sources, &mut result)?;
                 let cols = &index_scan.columns;
                 let bounds = &index_scan.bounds;
 
@@ -136,7 +149,7 @@ pub fn build_query<'a>(
                     let start_bound = bounds.0.as_ref().map(|av| &av.as_product().unwrap().elements);
                     let end_bound = bounds.1.as_ref().map(|av| &av.as_product().unwrap().elements);
                     // Construct the query:
-                    let iter = result.select(move |row| {
+                    Box::new(result.select(move |row| {
                         // Go through each column position,
                         // project to a `Bound<AV>` for the position,
                         // and compare against the column in the row.
@@ -148,82 +161,45 @@ pub fn build_query<'a>(
                             let read_col = row.read_column(col.idx()).unwrap();
                             (start_bound, end_bound).contains(&*read_col)
                         }))
-                    });
-                    Box::new(iter)
+                    }))
                 }
+            }
+            Query::IndexJoin(_) if result.is_some() => {
+                return Err(anyhow::anyhow!("Invalid query: `IndexJoin` must be the first operator").into())
             }
             Query::IndexJoin(IndexJoin {
                 probe_side,
-                probe_field,
+                probe_col,
                 index_side,
                 index_select,
                 index_col,
                 return_index_rows,
-            }) => {
-                if result.is_some() {
-                    return Err(anyhow::anyhow!("Invalid query: `IndexJoin` must be the first operator").into());
-                }
+            }) => Box::new(IndexSemiJoin {
+                ctx,
+                db,
+                tx,
+                probe_side: build_query(ctx, db, tx, probe_side, sources)?,
+                probe_col: *probe_col,
+                index_header: index_side.head(),
+                index_select,
                 // The compiler guarantees that the index side is a db table,
                 // and therefore this unwrap is always safe.
-                let index_table = index_side.table_id().unwrap();
-                let index_header = index_side.head();
-                let probe_side = build_query(ctx, stdb, tx, probe_side, sources)?;
-                let probe_col = probe_side
-                    .head()
-                    .column_pos(*probe_field)
-                    .expect("query compiler should have ensured the column exist");
-                Box::new(IndexSemiJoin {
-                    ctx,
-                    db: stdb,
-                    tx,
-                    probe_side,
-                    probe_col,
-                    index_header,
-                    index_select,
-                    index_table,
-                    index_col: *index_col,
-                    index_iter: None,
-                    return_index_rows: *return_index_rows,
-                })
-            }
-            Query::Select(cmp) => {
-                let result = result
-                    .take()
-                    .map(Ok)
-                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
-                let header = result.head().clone();
-                let iter = result.select(move |row| cmp.compare(row, &header));
-                Box::new(iter)
-            }
-            Query::Project(cols, _) => {
-                let result = result
-                    .take()
-                    .map(Ok)
-                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
-                if cols.is_empty() {
-                    result
-                } else {
-                    let header = result.head().clone();
-                    let iter = result.project(cols, move |cols, row| {
-                        Ok(RelValue::Projection(row.project_owned(cols, &header)?))
-                    })?;
-                    Box::new(iter)
-                }
-            }
-            Query::JoinInner(join) => {
-                let lhs = result
-                    .take()
-                    .map(Ok)
-                    .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))?;
-                let rhs = build_query(ctx, stdb, tx, &join.rhs, sources)?;
-                join_inner(lhs, rhs, join)?
-            }
+                index_table: index_side.table_id().unwrap(),
+                index_col: *index_col,
+                index_iter: None,
+                return_index_rows: *return_index_rows,
+            }),
+            Query::Select(cmp) => build_select(result_or_base(sources, &mut result)?, cmp),
+            Query::Project(proj) => build_project(result_or_base(sources, &mut result)?, proj),
+            Query::JoinInner(join) => join_inner(
+                result_or_base(sources, &mut result)?,
+                build_query(ctx, db, tx, &join.rhs, sources)?,
+                join,
+            ),
         })
     }
 
-    result
-        .map(Ok)
-        .unwrap_or_else(|| get_table(ctx, stdb, tx, &query.source, sources))
+    result_or_base(sources, &mut result)
 }
 
 /// Resolve `query` to a table iterator,
@@ -386,12 +362,44 @@ pub struct DbProgram<'db, 'tx> {
     pub(crate) auth: AuthCtx,
 }
 
+/// If the subscriber is not the database owner,
+/// reject the request if the estimated cardinality exceeds the limit.
+pub fn check_row_limit<QuerySet>(
+    queries: &QuerySet,
+    tx: &TxId,
+    row_est: impl Fn(&QuerySet, &TxId) -> u64,
+    auth: &AuthCtx,
+    config: &DatabaseConfig,
+) -> Result<(), DBError> {
+    if auth.caller != auth.owner {
+        if let Some(limit) = config.row_limit {
+            let estimate = row_est(queries, tx);
+            if estimate > limit {
+                return Err(DBError::Other(anyhow::anyhow!(
+                    "Estimated cardinality ({estimate} rows) exceeds limit ({limit} rows)"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 impl<'db, 'tx> DbProgram<'db, 'tx> {
     pub fn new(ctx: &'tx ExecutionContext, db: &'db RelationalDB, tx: &'tx mut TxMode<'tx>, auth: AuthCtx) -> Self {
         Self { ctx, db, tx, auth }
     }
 
     fn _eval_query<const N: usize>(&mut self, query: &QueryExpr, sources: Sources<'_, N>) -> Result<Code, ErrorVm> {
+        if let TxMode::Tx(tx) = self.tx {
+            check_row_limit(
+                query,
+                tx,
+                |expr, tx| estimation::num_rows(tx, expr),
+                &self.auth,
+                &self.db.read_config(),
+            )?;
+        }
+
         let table_access = query.source.table_access();
         tracing::trace!(table = query.source.table_name());
 
@@ -558,10 +566,9 @@ impl<'a, R: RangeBounds<AlgebraicValue>> RelOps<'a> for IndexCursor<'a, R> {
 pub(crate) mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{
-        st_columns_schema, st_indexes_schema, st_sequences_schema, st_table_schema, StColumnFields, StColumnRow,
-        StIndexFields, StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, ST_COLUMNS_ID,
-        ST_COLUMNS_NAME, ST_INDEXES_ID, ST_INDEXES_NAME, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID,
-        ST_TABLES_NAME,
+        StColumnFields, StColumnRow, StIndexFields, StIndexRow, StSequenceFields, StSequenceRow, StTableFields,
+        StTableRow, ST_COLUMNS_ID, ST_COLUMNS_NAME, ST_INDEXES_ID, ST_INDEXES_NAME, ST_RESERVED_SEQUENCE_RANGE,
+        ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_NAME,
     };
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::execution_context::ExecutionContext;
@@ -590,11 +597,18 @@ pub(crate) mod tests {
             })
             .collect();
 
+        // **In our tests,** a name that start with '_' like '_sample' is private.
+        let access = if table_name.starts_with('_') {
+            StAccess::Private
+        } else {
+            StAccess::Public
+        };
+
         let table_id = db.create_table(
             tx,
             TableDef::new(table_name.into(), columns)
                 .with_type(StTableType::User)
-                .with_access(StAccess::for_name(table_name)),
+                .with_access(access),
         )?;
         let schema = db.schema_for_table_mut(tx, table_id)?;
 
@@ -637,11 +651,9 @@ pub(crate) mod tests {
         let table_id = schema.table_id;
 
         let data = mem_table_one_u64(u32::MAX.into());
-        let rhs = *data.get_field_pos(0).unwrap();
         let mut sources = SourceSet::<_, 1>::empty();
         let rhs_source_expr = sources.add_mem_table(data);
-        let q =
-            QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, FieldName::new(table_id, 0.into()), rhs, false);
+        let q = QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, 0.into(), 0.into(), false);
         let result = run_query(&stdb, q, sources);
 
         // The expected result.
@@ -660,14 +672,11 @@ pub(crate) mod tests {
 
         let ctx = ExecutionContext::default();
         let (schema, row) = stdb.with_auto_commit(&ctx, |tx| create_inv_table(&stdb, tx))?;
-        let table_id = schema.table_id;
 
         let data = mem_table_one_u64(u32::MAX.into());
-        let rhs = *data.get_field_pos(0).unwrap();
         let mut sources = SourceSet::<_, 1>::empty();
         let rhs_source_expr = sources.add_mem_table(data);
-        let q =
-            QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, FieldName::new(table_id, 0.into()), rhs, true);
+        let q = QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, 0.into(), 0.into(), true);
         let result = run_query(&stdb, q, sources);
 
         // The expected result.
@@ -686,9 +695,9 @@ pub(crate) mod tests {
     #[test]
     fn test_query_catalog_tables() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
-        let schema = st_table_schema();
+        let schema = &*stdb.schema_for_table(&stdb.begin_tx(), ST_TABLES_ID).unwrap();
 
-        let q = QueryExpr::new(&schema).with_select_cmp(
+        let q = QueryExpr::new(schema).with_select_cmp(
             OpCmp::Eq,
             FieldName::new(ST_TABLES_ID, StTableFields::TableName.into()),
             scalar(ST_TABLES_NAME),
@@ -700,7 +709,7 @@ pub(crate) mod tests {
             table_access: StAccess::Public,
         }
         .into();
-        check_catalog(&stdb, ST_TABLES_NAME, st_table_row, q, &schema);
+        check_catalog(&stdb, ST_TABLES_NAME, st_table_row, q, schema);
 
         Ok(())
     }
@@ -708,9 +717,9 @@ pub(crate) mod tests {
     #[test]
     fn test_query_catalog_columns() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
+        let schema = &*stdb.schema_for_table(&stdb.begin_tx(), ST_COLUMNS_ID).unwrap();
 
-        let schema = st_columns_schema();
-        let q = QueryExpr::new(&schema)
+        let q = QueryExpr::new(schema)
             .with_select_cmp(
                 OpCmp::Eq,
                 FieldName::new(ST_COLUMNS_ID, StColumnFields::TableId.into()),
@@ -728,7 +737,7 @@ pub(crate) mod tests {
             col_type: AlgebraicType::U32,
         }
         .into();
-        check_catalog(&stdb, ST_COLUMNS_NAME, st_column_row, q, &schema);
+        check_catalog(&stdb, ST_COLUMNS_NAME, st_column_row, q, schema);
 
         Ok(())
     }
@@ -744,8 +753,8 @@ pub(crate) mod tests {
         let index = IndexDef::btree("idx_1".into(), ColId(0), true);
         let index_id = db.with_auto_commit(&ctx, |tx| db.create_index(tx, table_id, index))?;
 
-        let indexes_schema = st_indexes_schema();
-        let q = QueryExpr::new(&indexes_schema).with_select_cmp(
+        let indexes_schema = &*db.schema_for_table(&db.begin_tx(), ST_INDEXES_ID).unwrap();
+        let q = QueryExpr::new(indexes_schema).with_select_cmp(
             OpCmp::Eq,
             FieldName::new(ST_INDEXES_ID, StIndexFields::IndexName.into()),
             scalar("idx_1"),
@@ -759,7 +768,7 @@ pub(crate) mod tests {
             index_type: IndexType::BTree,
         }
         .into();
-        check_catalog(&db, ST_INDEXES_NAME, st_index_row, q, &indexes_schema);
+        check_catalog(&db, ST_INDEXES_NAME, st_index_row, q, indexes_schema);
 
         Ok(())
     }
@@ -768,8 +777,8 @@ pub(crate) mod tests {
     fn test_query_catalog_sequences() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let schema = st_sequences_schema();
-        let q = QueryExpr::new(&schema).with_select_cmp(
+        let schema = &*db.schema_for_table(&db.begin_tx(), ST_SEQUENCES_ID).unwrap();
+        let q = QueryExpr::new(schema).with_select_cmp(
             OpCmp::Eq,
             FieldName::new(ST_SEQUENCES_ID, StSequenceFields::TableId.into()),
             scalar(ST_SEQUENCES_ID),
@@ -780,13 +789,13 @@ pub(crate) mod tests {
             table_id: 2.into(),
             col_pos: 0.into(),
             increment: 1,
-            start: 4,
+            start: ST_RESERVED_SEQUENCE_RANGE as i128 + 1,
             min_value: 1,
             max_value: i128::MAX,
-            allocated: 4096,
+            allocated: ST_RESERVED_SEQUENCE_RANGE as i128 * 2,
         }
         .into();
-        check_catalog(&db, ST_SEQUENCES_NAME, st_sequence_row, q, &schema);
+        check_catalog(&db, ST_SEQUENCES_NAME, st_sequence_row, q, schema);
 
         Ok(())
     }

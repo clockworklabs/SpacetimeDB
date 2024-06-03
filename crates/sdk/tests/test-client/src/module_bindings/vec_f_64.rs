@@ -22,9 +22,4 @@ impl TableType for VecF64 {
     type ReducerEvent = super::ReducerEvent;
 }
 
-impl VecF64 {
-    #[allow(unused)]
-    pub fn filter_by_f(f: Vec<f64>) -> TableIter<Self> {
-        Self::filter(|row| row.f == f)
-    }
-}
+impl VecF64 {}

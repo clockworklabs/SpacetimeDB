@@ -3,7 +3,6 @@ use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_primitives::{ColList, ConstraintKind, Constraints};
-use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{ColumnDef, ConstraintDef, TableDef, TableSchema};
 use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::relation::{FieldExpr, FieldName};
@@ -281,7 +280,6 @@ pub enum SqlAst {
     Drop {
         name: String,
         kind: DbType,
-        table_access: StAccess,
     },
     SetVar {
         name: String,
@@ -936,11 +934,7 @@ fn compile_drop(name: &ObjectName, kind: ObjectType) -> Result<SqlAst, PlanError
     };
 
     let name = name.to_string();
-    Ok(SqlAst::Drop {
-        table_access: StAccess::for_name(&name),
-        name,
-        kind,
-    })
+    Ok(SqlAst::Drop { name, kind })
 }
 
 /// Compiles the equivalent of `SET key = value`

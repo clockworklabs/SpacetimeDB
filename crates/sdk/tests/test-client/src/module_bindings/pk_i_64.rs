@@ -32,7 +32,11 @@ impl TableWithPrimaryKey for PkI64 {
 
 impl PkI64 {
     #[allow(unused)]
-    pub fn filter_by_n(n: i64) -> Option<Self> {
+    pub fn filter_by_n(n: i64) -> TableIter<Self> {
+        Self::filter(|row| row.n == n)
+    }
+    #[allow(unused)]
+    pub fn find_by_n(n: i64) -> Option<Self> {
         Self::find(|row| row.n == n)
     }
     #[allow(unused)]

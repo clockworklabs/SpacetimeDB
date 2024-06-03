@@ -23,9 +23,4 @@ impl TableType for OneUnitStruct {
     type ReducerEvent = super::ReducerEvent;
 }
 
-impl OneUnitStruct {
-    #[allow(unused)]
-    pub fn filter_by_s(s: UnitStruct) -> TableIter<Self> {
-        Self::filter(|row| row.s == s)
-    }
-}
+impl OneUnitStruct {}
