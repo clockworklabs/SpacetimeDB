@@ -390,8 +390,6 @@ impl CommittedState {
     pub fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
         let mut tx_data = TxData::default();
 
-        self.next_tx_offset += 1;
-
         // First, apply deletes. This will free up space in the committed tables.
         self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables, ctx);
 
