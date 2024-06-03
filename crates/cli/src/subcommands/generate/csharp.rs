@@ -651,7 +651,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
     });
     writeln!(output);
 
-    writeln!(output, "public class SpacetimeDBClient : SpacetimeDBClientBase");
+    writeln!(output, "public class SpacetimeDBClient : SpacetimeDBClientBase<ReducerEvent>");
     indented_block(&mut output, |output| {
         writeln!(output, "protected SpacetimeDBClient()");
         indented_block(output, |output| {
@@ -672,7 +672,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
 
         writeln!(
             output,
-            "protected override ReducerEventBase? ReducerEventFromDbEvent(ClientApi.Event dbEvent)"
+            "protected override ReducerEvent? ReducerEventFromDbEvent(ClientApi.Event dbEvent)"
         );
         indented_block(output, |output| {
             writeln!(output, "var argBytes = dbEvent.FunctionCall.ArgBytes;");
