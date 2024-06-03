@@ -80,7 +80,7 @@ impl SpaceDb {
         self.conn.with_read_only(&ExecutionContext::default(), |tx| {
             let ast = compile_sql(&self.conn, tx, sql)?;
             let subs = ModuleSubscriptions::new(Arc::new(self.conn.db.clone()), Identity::ZERO);
-            let result = execute_sql(&self.conn, sql, ast, self.auth, &subs)?;
+            let result = execute_sql(&self.conn, sql, ast, self.auth, Some(&subs))?;
             //remove comments to see which SQL worked. Can't collect it outside from lack of a hook in the external `sqllogictest` crate... :(
             //append_file(&std::path::PathBuf::from(".ok.sql"), sql)?;
             Ok(result)
