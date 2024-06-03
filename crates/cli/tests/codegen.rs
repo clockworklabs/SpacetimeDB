@@ -11,24 +11,25 @@ fn compiled_module() -> &'static Path {
         .path()
 }
 
-#[test]
-fn test_codegen_output() {
-    let outfiles: HashMap<_, _> = generate::generate(compiled_module(), generate::Language::Csharp, "SpacetimeDB")
-        .unwrap()
-        .into_iter()
-        .collect();
-    insta::with_settings!({ sort_maps => true }, {
-        insta::assert_toml_snapshot!(outfiles);
-    });
+macro_rules! declare_tests {
+    ($($name:ident => $lang:ident,)*) => {
+        $(
+            #[test]
+            fn $name() {
+                let outfiles: HashMap<_, _> = generate::generate(compiled_module(), generate::Language::$lang, "SpacetimeDB")
+                    .unwrap()
+                    .into_iter()
+                    .collect();
+                insta::with_settings!({ sort_maps => true }, {
+                    insta::assert_toml_snapshot!(outfiles);
+                });
+            }
+        )*
+    }
 }
 
-#[test]
-fn test_typescript_codegen_output() {
-    let outfiles: HashMap<_, _> = generate::generate(compiled_module(), generate::Language::TypeScript, "SpacetimeDB")
-        .unwrap()
-        .into_iter()
-        .collect();
-    insta::with_settings!({ sort_maps => true }, {
-        insta::assert_toml_snapshot!(outfiles);
-    });
+declare_tests! {
+    test_codegen_csharp => Csharp,
+    test_codegen_typescript => TypeScript,
+    test_codegen_rust => Rust,
 }

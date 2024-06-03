@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use bytes::Bytes;
 use std::sync::Arc;
 use std::time::Duration;
@@ -6,12 +6,12 @@ use std::time::Duration;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, Address, ModuleDef, ModuleValidationError, TableDesc};
-use spacetimedb_vm::expr::CrudExpr;
 
 use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record, SystemLogger};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::system_tables::{StClientsRow, ST_CLIENTS_ID};
 use crate::db::datastore::traits::IsolationLevel;
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use crate::execution_context::{self, ExecutionContext, ReducerContext};
@@ -25,7 +25,7 @@ use crate::identity::Identity;
 use crate::messages::control_db::Database;
 use crate::module_host_context::ModuleCreationContext;
 use crate::sql;
-use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::const_unwrap;
 use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
@@ -145,10 +145,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         module.for_each_export(|sym, ty| func_names.update_from_general(sym, ty))?;
         func_names.preinits.sort_unstable();
 
-        let owner_identity = database_instance_context.identity;
-        let relational_db = database_instance_context.relational_db.clone();
-        let subscriptions = ModuleSubscriptions::new(relational_db, owner_identity);
-
         let uninit_instance = module.instantiate_pre()?;
         let mut instance = uninit_instance.instantiate(
             InstanceEnv::new(database_instance_context.clone(), scheduler.clone()),
@@ -193,7 +189,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             reducers,
             catalog,
             log_tx,
-            subscriptions,
+            subscriptions: database_instance_context.subscriptions.clone(),
         });
 
         let func_names = Arc::new(func_names);
@@ -281,20 +277,11 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         log::debug!("One-off query: {query}");
         // Don't need the `slow query` logger on compilation
         let ctx = &ExecutionContext::sql(db.address(), db.read_config().slow_query);
-        let compiled: Vec<_> = db.with_read_only(ctx, |tx| {
+        db.with_read_only(ctx, |tx| {
             let ast = sql::compiler::compile_sql(db, tx, &query)?;
-            ast.into_iter()
-                .map(|expr| {
-                    if matches!(expr, CrudExpr::Query { .. }) {
-                        Ok(expr)
-                    } else {
-                        Err(anyhow!("One-off queries are not allowed to modify the database"))
-                    }
-                })
-                .collect::<Result<_, _>>()
-        })?;
-
-        sql::execute::execute_sql(db, &query, compiled, auth)
+            sql::execute::execute_sql_tx(db, tx, &query, ast, auth)
+                .and_then(|res| Ok(res.context("One-off queries are not allowed to modify the database")?))
+        })
     }
 
     fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
@@ -553,7 +540,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let ctx = ExecutionContext::reducer(address, ReducerContext::from(op.clone()));
         // run the call_reducer call in rayon. it's important that we don't acquire a lock inside a rayon task,
         // as that can lead to deadlock.
-        let (ctx, tx, result) = rayon::scope(|_| tx_slot.set(ctx, tx, || self.instance.call_reducer(op, budget)));
+        let (ctx, mut tx, result) = rayon::scope(|_| tx_slot.set(ctx, tx, || self.instance.call_reducer(op, budget)));
 
         let ExecuteResult {
             energy,
@@ -579,14 +566,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         }
         reducer_span.exit();
 
-        // Take a lock on our subscriptions now. Otherwise, we could have a race condition where we commit
-        // the tx, someone adds a subscription and receives this tx as an initial update, and then receives the
-        // update again when we broadcast_event.
-        let subscriptions = self.info.subscriptions.subscriptions.read();
         let status = match call_result {
             Err(err) => {
-                stdb.rollback_mut_tx(&ctx, tx);
-
                 T::log_traceback("reducer", reducer_name, &err);
 
                 WORKER_METRICS
@@ -604,22 +585,25 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 }
             }
             Ok(Err(errmsg)) => {
-                stdb.rollback_mut_tx(&ctx, tx);
-
                 log::info!("reducer returned error: {errmsg}");
 
                 EventStatus::Failed(errmsg.into())
             }
+            // we haven't actually comitted yet - `commit_and_broadcast_event` will commit
+            // for us and replace this with the actual database update.
             Ok(Ok(())) => {
-                if let Some(tx_data) = stdb.commit_tx(&ctx, tx).unwrap() {
-                    EventStatus::Committed(DatabaseUpdate::from_writes(&tx_data))
+                // Detecing a new client, and inserting it in `st_clients`
+                // Disconnect logic is written in module_host.rs, due to different transacationality requirements.
+                if reducer_name == CLIENT_CONNECTED_DUNDER {
+                    match self.insert_st_client(&mut tx, caller_identity, caller_address) {
+                        Ok(_) => EventStatus::Committed(DatabaseUpdate::default()),
+                        Err(err) => EventStatus::Failed(err.to_string()),
+                    }
                 } else {
-                    todo!("Write skew, you need to implement retries my man, T-dawg.");
+                    EventStatus::Committed(DatabaseUpdate::default())
                 }
             }
         };
-
-        let outcome = ReducerOutcome::from(&status);
 
         let event = ModuleEvent {
             timestamp,
@@ -635,12 +619,18 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             request_id,
             timer,
         };
-        self.info
+        let event = match self
+            .info
             .subscriptions
-            .blocking_broadcast_event(client.as_deref(), &subscriptions, Arc::new(event));
+            .commit_and_broadcast_event(client.as_deref(), event, &ctx, tx)
+            .unwrap()
+        {
+            Ok(ev) => ev,
+            Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
+        };
 
         ReducerCallResult {
-            outcome,
+            outcome: ReducerOutcome::from(&event.status),
             energy_used: energy.used,
             execution_duration: timings.total_duration,
         }
@@ -649,6 +639,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     // Helpers - NOT API
     fn system_logger(&self) -> &SystemLogger {
         self.database_instance_context().logger.system_logger()
+    }
+
+    fn insert_st_client(&self, tx: &mut MutTxId, identity: Identity, address: Address) -> Result<(), DBError> {
+        let db = &*self.database_instance_context().relational_db;
+        let row = &StClientsRow { identity, address };
+
+        db.insert(tx, ST_CLIENTS_ID, row.into()).map(|_| ())
     }
 }
 

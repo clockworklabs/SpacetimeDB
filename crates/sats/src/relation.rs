@@ -150,14 +150,10 @@ impl Header {
             .collect()
     }
 
-    pub fn has_constraint(&self, field: FieldName, constraint: Constraints) -> bool {
-        self.column_pos(field)
-            .map(|find| {
-                self.constraints
-                    .iter()
-                    .any(|(col, ct)| col.contains(find) && ct.contains(&constraint))
-            })
-            .unwrap_or(false)
+    pub fn has_constraint(&self, field: ColId, constraint: Constraints) -> bool {
+        self.constraints
+            .iter()
+            .any(|(col, ct)| col.contains(field) && ct.contains(&constraint))
     }
 
     /// Project the [FieldExpr] & the [Constraints] that referenced them

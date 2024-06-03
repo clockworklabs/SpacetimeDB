@@ -1,7 +1,7 @@
 use super::execution_unit::{ExecutionUnit, QueryHash};
 use crate::client::messages::{SerializableMessage, SubscriptionUpdate, TransactionUpdateMessage};
 use crate::client::{ClientConnectionSender, Protocol};
-use crate::db::relational_db::RelationalDB;
+use crate::db::relational_db::{RelationalDB, Tx};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, ModuleEvent, ProtocolDatabaseUpdate};
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
@@ -12,7 +12,6 @@ use spacetimedb_client_api_messages::client_api::{TableRowOperation, TableUpdate
 use spacetimedb_data_structures::map::{Entry, HashMap, HashSet, IntMap};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
-use std::ops::Deref;
 use std::sync::Arc;
 
 /// Clients are uniquely identified by their Identity and Address.
@@ -119,14 +118,12 @@ impl SubscriptionManager {
     pub fn eval_updates(
         &self,
         db: &RelationalDB,
+        tx: &Tx,
         event: Arc<ModuleEvent>,
         sender_client: Option<&ClientConnectionSender>,
     ) {
         let tables = &event.status.database_update().unwrap().tables;
         let slow = db.read_config().slow_query;
-        let tx = scopeguard::guard(db.begin_tx(), |tx| {
-            db.release_tx(&ExecutionContext::incremental_update(db.address(), slow), tx);
-        });
 
         // Put the main work on a rayon compute thread.
         rayon::scope(|_| {
@@ -144,7 +141,7 @@ impl SubscriptionManager {
 
             let span = tracing::info_span!("eval_incr").entered();
             let ctx = ExecutionContext::incremental_update(db.address(), slow);
-            let tx = &tx.deref().into();
+            let tx = &tx.into();
             let eval = units
                 .par_iter()
                 .filter_map(|(&hash, tables)| {
@@ -545,7 +542,8 @@ mod tests {
             timer: None,
         });
 
-        subscriptions.eval_updates(&db, event, Some(&client0));
+        let ctx = ExecutionContext::incremental_update(db.address(), db.read_config().slow_query);
+        db.with_read_only(&ctx, |tx| subscriptions.eval_updates(&db, tx, event, Some(&client0)));
 
         tokio::runtime::Builder::new_current_thread()
             .enable_time()

@@ -25,7 +25,11 @@ impl TableType for UniqueI16 {
 
 impl UniqueI16 {
     #[allow(unused)]
-    pub fn filter_by_n(n: i16) -> Option<Self> {
+    pub fn filter_by_n(n: i16) -> TableIter<Self> {
+        Self::filter(|row| row.n == n)
+    }
+    #[allow(unused)]
+    pub fn find_by_n(n: i16) -> Option<Self> {
         Self::find(|row| row.n == n)
     }
     #[allow(unused)]

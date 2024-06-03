@@ -1,6 +1,6 @@
+use core::marker::PhantomData;
 use spacetimedb_data_structures::map::HashSet;
-use spacetimedb_lib::ProductValue;
-use std::marker::PhantomData;
+use spacetimedb_sats::ProductValue;
 
 // NOTE
 // Currently anything that is IntoIterator is also a relation

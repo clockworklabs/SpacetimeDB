@@ -29,48 +29,50 @@ use crate::{
     static_assert_size,
 };
 use core::ops::RangeBounds;
-use multimap::{MultiMap, MultiMapRangeIter};
 use spacetimedb_primitives::{ColList, IndexId};
 use spacetimedb_sats::{algebraic_value::Packed, product_value::InvalidFieldError, AlgebraicValue};
 
 mod multimap;
 
+type Index<K> = multimap::MultiMap<K, RowPointer>;
+type IndexIter<'a, K> = multimap::MultiMapRangeIter<'a, K, RowPointer>;
+
 /// An iterator over a [`TypedMultiMap`], with a specialized key type.
 ///
 /// See module docs for info about specialization.
 enum TypedMultiMapRangeIter<'a> {
-    Bool(MultiMapRangeIter<'a, bool, RowPointer>),
-    U8(MultiMapRangeIter<'a, u8, RowPointer>),
-    I8(MultiMapRangeIter<'a, i8, RowPointer>),
-    U16(MultiMapRangeIter<'a, u16, RowPointer>),
-    I16(MultiMapRangeIter<'a, i16, RowPointer>),
-    U32(MultiMapRangeIter<'a, u32, RowPointer>),
-    I32(MultiMapRangeIter<'a, i32, RowPointer>),
-    U64(MultiMapRangeIter<'a, u64, RowPointer>),
-    I64(MultiMapRangeIter<'a, i64, RowPointer>),
-    U128(MultiMapRangeIter<'a, Packed<u128>, RowPointer>),
-    I128(MultiMapRangeIter<'a, Packed<i128>, RowPointer>),
-    String(MultiMapRangeIter<'a, Box<str>, RowPointer>),
-    AlgebraicValue(MultiMapRangeIter<'a, AlgebraicValue, RowPointer>),
+    Bool(IndexIter<'a, bool>),
+    U8(IndexIter<'a, u8>),
+    I8(IndexIter<'a, i8>),
+    U16(IndexIter<'a, u16>),
+    I16(IndexIter<'a, i16>),
+    U32(IndexIter<'a, u32>),
+    I32(IndexIter<'a, i32>),
+    U64(IndexIter<'a, u64>),
+    I64(IndexIter<'a, i64>),
+    U128(IndexIter<'a, Packed<u128>>),
+    I128(IndexIter<'a, Packed<i128>>),
+    String(IndexIter<'a, Box<str>>),
+    AlgebraicValue(IndexIter<'a, AlgebraicValue>),
 }
 
-impl<'a> Iterator for TypedMultiMapRangeIter<'a> {
+impl Iterator for TypedMultiMapRangeIter<'_> {
     type Item = RowPointer;
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            TypedMultiMapRangeIter::Bool(ref mut this) => this.next(),
-            TypedMultiMapRangeIter::U8(ref mut this) => this.next(),
-            TypedMultiMapRangeIter::I8(ref mut this) => this.next(),
-            TypedMultiMapRangeIter::U16(ref mut this) => this.next(),
-            TypedMultiMapRangeIter::I16(ref mut this) => this.next(),
-            TypedMultiMapRangeIter::U32(ref mut this) => this.next(),
-            TypedMultiMapRangeIter::I32(ref mut this) => this.next(),
-            TypedMultiMapRangeIter::U64(ref mut this) => this.next(),
-            TypedMultiMapRangeIter::I64(ref mut this) => this.next(),
-            TypedMultiMapRangeIter::U128(ref mut this) => this.next(),
-            TypedMultiMapRangeIter::I128(ref mut this) => this.next(),
-            TypedMultiMapRangeIter::String(ref mut this) => this.next(),
-            TypedMultiMapRangeIter::AlgebraicValue(ref mut this) => this.next(),
+            Self::Bool(this) => this.next(),
+            Self::U8(this) => this.next(),
+            Self::I8(this) => this.next(),
+            Self::U16(this) => this.next(),
+            Self::I16(this) => this.next(),
+            Self::U32(this) => this.next(),
+            Self::I32(this) => this.next(),
+            Self::U64(this) => this.next(),
+            Self::I64(this) => this.next(),
+            Self::U128(this) => this.next(),
+            Self::I128(this) => this.next(),
+            Self::String(this) => this.next(),
+            Self::AlgebraicValue(this) => this.next(),
         }
         .copied()
     }
@@ -106,19 +108,19 @@ impl BTreeIndexRangeIter<'_> {
 ///
 /// See module docs for info about specialization.
 enum TypedIndex {
-    Bool(MultiMap<bool, RowPointer>),
-    U8(MultiMap<u8, RowPointer>),
-    I8(MultiMap<i8, RowPointer>),
-    U16(MultiMap<u16, RowPointer>),
-    I16(MultiMap<i16, RowPointer>),
-    U32(MultiMap<u32, RowPointer>),
-    I32(MultiMap<i32, RowPointer>),
-    U64(MultiMap<u64, RowPointer>),
-    I64(MultiMap<i64, RowPointer>),
-    U128(MultiMap<Packed<u128>, RowPointer>),
-    I128(MultiMap<Packed<i128>, RowPointer>),
-    String(MultiMap<Box<str>, RowPointer>),
-    AlgebraicValue(MultiMap<AlgebraicValue, RowPointer>),
+    Bool(Index<bool>),
+    U8(Index<u8>),
+    I8(Index<i8>),
+    U16(Index<u16>),
+    I16(Index<i16>),
+    U32(Index<u32>),
+    I32(Index<i32>),
+    U64(Index<u64>),
+    I64(Index<i64>),
+    U128(Index<Packed<u128>>),
+    I128(Index<Packed<i128>>),
+    String(Index<Box<str>>),
+    AlgebraicValue(Index<AlgebraicValue>),
 }
 
 impl TypedIndex {
@@ -132,7 +134,7 @@ impl TypedIndex {
     /// Note, however, that it will not invoke undefined behavior.
     fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<(), InvalidFieldError> {
         fn insert_at_type<T: Ord + ReadColumn>(
-            this: &mut MultiMap<T, RowPointer>,
+            this: &mut Index<T>,
             cols: &ColList,
             row_ref: RowRef<'_>,
         ) -> Result<(), InvalidFieldError> {
@@ -143,20 +145,20 @@ impl TypedIndex {
             Ok(())
         }
         match self {
-            TypedIndex::Bool(this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::U8(this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::I8(this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::U16(this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::I16(this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::U32(this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::I32(this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::U64(this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::I64(this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::U128(this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::I128(this) => insert_at_type(this, cols, row_ref),
-            TypedIndex::String(this) => insert_at_type(this, cols, row_ref),
+            Self::Bool(this) => insert_at_type(this, cols, row_ref),
+            Self::U8(this) => insert_at_type(this, cols, row_ref),
+            Self::I8(this) => insert_at_type(this, cols, row_ref),
+            Self::U16(this) => insert_at_type(this, cols, row_ref),
+            Self::I16(this) => insert_at_type(this, cols, row_ref),
+            Self::U32(this) => insert_at_type(this, cols, row_ref),
+            Self::I32(this) => insert_at_type(this, cols, row_ref),
+            Self::U64(this) => insert_at_type(this, cols, row_ref),
+            Self::I64(this) => insert_at_type(this, cols, row_ref),
+            Self::U128(this) => insert_at_type(this, cols, row_ref),
+            Self::I128(this) => insert_at_type(this, cols, row_ref),
+            Self::String(this) => insert_at_type(this, cols, row_ref),
 
-            TypedIndex::AlgebraicValue(this) => {
+            Self::AlgebraicValue(this) => {
                 let key = row_ref.project_not_empty(cols)?;
                 this.insert(key, row_ref.pointer());
                 Ok(())
@@ -174,7 +176,7 @@ impl TypedIndex {
     /// Note, however, that it will not invoke undefined behavior.
     fn delete(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
         fn delete_at_type<T: Ord + ReadColumn>(
-            this: &mut MultiMap<T, RowPointer>,
+            this: &mut Index<T>,
             cols: &ColList,
             row_ref: RowRef<'_>,
         ) -> Result<bool, InvalidFieldError> {
@@ -185,21 +187,20 @@ impl TypedIndex {
         }
 
         match self {
-            TypedIndex::Bool(ref mut this) => delete_at_type(this, cols, row_ref),
+            Self::Bool(this) => delete_at_type(this, cols, row_ref),
+            Self::U8(this) => delete_at_type(this, cols, row_ref),
+            Self::I8(this) => delete_at_type(this, cols, row_ref),
+            Self::U16(this) => delete_at_type(this, cols, row_ref),
+            Self::I16(this) => delete_at_type(this, cols, row_ref),
+            Self::U32(this) => delete_at_type(this, cols, row_ref),
+            Self::I32(this) => delete_at_type(this, cols, row_ref),
+            Self::U64(this) => delete_at_type(this, cols, row_ref),
+            Self::I64(this) => delete_at_type(this, cols, row_ref),
+            Self::U128(this) => delete_at_type(this, cols, row_ref),
+            Self::I128(this) => delete_at_type(this, cols, row_ref),
+            Self::String(this) => delete_at_type(this, cols, row_ref),
 
-            TypedIndex::U8(ref mut this) => delete_at_type(this, cols, row_ref),
-            TypedIndex::I8(ref mut this) => delete_at_type(this, cols, row_ref),
-            TypedIndex::U16(ref mut this) => delete_at_type(this, cols, row_ref),
-            TypedIndex::I16(ref mut this) => delete_at_type(this, cols, row_ref),
-            TypedIndex::U32(ref mut this) => delete_at_type(this, cols, row_ref),
-            TypedIndex::I32(ref mut this) => delete_at_type(this, cols, row_ref),
-            TypedIndex::U64(ref mut this) => delete_at_type(this, cols, row_ref),
-            TypedIndex::I64(ref mut this) => delete_at_type(this, cols, row_ref),
-            TypedIndex::U128(ref mut this) => delete_at_type(this, cols, row_ref),
-            TypedIndex::I128(ref mut this) => delete_at_type(this, cols, row_ref),
-            TypedIndex::String(ref mut this) => delete_at_type(this, cols, row_ref),
-
-            TypedIndex::AlgebraicValue(ref mut this) => {
+            Self::AlgebraicValue(this) => {
                 let key = row_ref.project_not_empty(cols)?;
                 Ok(this.delete(&key, &row_ref.pointer()))
             }
@@ -208,111 +209,105 @@ impl TypedIndex {
 
     fn values_in_range(&self, range: &impl RangeBounds<AlgebraicValue>) -> TypedMultiMapRangeIter<'_> {
         fn iter_at_type<'a, T: Ord>(
-            this: &'a MultiMap<T, RowPointer>,
+            this: &'a Index<T>,
             range: &impl RangeBounds<AlgebraicValue>,
             av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
-        ) -> MultiMapRangeIter<'a, T, RowPointer> {
-            use std::ops::Bound;
-            let start = match range.start_bound() {
-                Bound::Included(v) => {
-                    Bound::Included(av_as_t(v).expect("Start bound of range does not conform to key type of index"))
-                }
-                Bound::Excluded(v) => {
-                    Bound::Excluded(av_as_t(v).expect("Start bound of range does not conform to key type of index"))
-                }
-                Bound::Unbounded => Bound::Unbounded,
-            };
-            let end = match range.end_bound() {
-                Bound::Included(v) => {
-                    Bound::Included(av_as_t(v).expect("End bound of range does not conform to key type of index"))
-                }
-                Bound::Excluded(v) => {
-                    Bound::Excluded(av_as_t(v).expect("End bound of range does not conform to key type of index"))
-                }
-                Bound::Unbounded => Bound::Unbounded,
-            };
+        ) -> IndexIter<'a, T> {
+            let av_as_t = |v| av_as_t(v).expect("bound does not conform to key type of index");
+            let start = range.start_bound().map(av_as_t);
+            let end = range.end_bound().map(av_as_t);
             this.values_in_range(&(start, end))
         }
+
         match self {
-            TypedIndex::Bool(ref this) => {
-                TypedMultiMapRangeIter::Bool(iter_at_type(this, range, AlgebraicValue::as_bool))
-            }
+            Self::Bool(this) => TypedMultiMapRangeIter::Bool(iter_at_type(this, range, AlgebraicValue::as_bool)),
+            Self::U8(this) => TypedMultiMapRangeIter::U8(iter_at_type(this, range, AlgebraicValue::as_u8)),
+            Self::I8(this) => TypedMultiMapRangeIter::I8(iter_at_type(this, range, AlgebraicValue::as_i8)),
+            Self::U16(this) => TypedMultiMapRangeIter::U16(iter_at_type(this, range, AlgebraicValue::as_u16)),
+            Self::I16(this) => TypedMultiMapRangeIter::I16(iter_at_type(this, range, AlgebraicValue::as_i16)),
+            Self::U32(this) => TypedMultiMapRangeIter::U32(iter_at_type(this, range, AlgebraicValue::as_u32)),
+            Self::I32(this) => TypedMultiMapRangeIter::I32(iter_at_type(this, range, AlgebraicValue::as_i32)),
+            Self::U64(this) => TypedMultiMapRangeIter::U64(iter_at_type(this, range, AlgebraicValue::as_u64)),
+            Self::I64(this) => TypedMultiMapRangeIter::I64(iter_at_type(this, range, AlgebraicValue::as_i64)),
+            Self::U128(this) => TypedMultiMapRangeIter::U128(iter_at_type(this, range, AlgebraicValue::as_u128)),
+            Self::I128(this) => TypedMultiMapRangeIter::I128(iter_at_type(this, range, AlgebraicValue::as_i128)),
+            Self::String(this) => TypedMultiMapRangeIter::String(iter_at_type(this, range, AlgebraicValue::as_string)),
 
-            TypedIndex::U8(ref this) => TypedMultiMapRangeIter::U8(iter_at_type(this, range, AlgebraicValue::as_u8)),
-            TypedIndex::I8(ref this) => TypedMultiMapRangeIter::I8(iter_at_type(this, range, AlgebraicValue::as_i8)),
-            TypedIndex::U16(ref this) => TypedMultiMapRangeIter::U16(iter_at_type(this, range, AlgebraicValue::as_u16)),
-            TypedIndex::I16(ref this) => TypedMultiMapRangeIter::I16(iter_at_type(this, range, AlgebraicValue::as_i16)),
-            TypedIndex::U32(ref this) => TypedMultiMapRangeIter::U32(iter_at_type(this, range, AlgebraicValue::as_u32)),
-            TypedIndex::I32(ref this) => TypedMultiMapRangeIter::I32(iter_at_type(this, range, AlgebraicValue::as_i32)),
-            TypedIndex::U64(ref this) => TypedMultiMapRangeIter::U64(iter_at_type(this, range, AlgebraicValue::as_u64)),
-            TypedIndex::I64(ref this) => TypedMultiMapRangeIter::I64(iter_at_type(this, range, AlgebraicValue::as_i64)),
-            TypedIndex::U128(ref this) => {
-                TypedMultiMapRangeIter::U128(iter_at_type(this, range, AlgebraicValue::as_u128))
-            }
-            TypedIndex::I128(ref this) => {
-                TypedMultiMapRangeIter::I128(iter_at_type(this, range, AlgebraicValue::as_i128))
-            }
-            TypedIndex::String(ref this) => {
-                TypedMultiMapRangeIter::String(iter_at_type(this, range, AlgebraicValue::as_string))
-            }
-
-            TypedIndex::AlgebraicValue(ref this) => TypedMultiMapRangeIter::AlgebraicValue(this.values_in_range(range)),
+            Self::AlgebraicValue(this) => TypedMultiMapRangeIter::AlgebraicValue(this.values_in_range(range)),
         }
     }
 
     fn clear(&mut self) {
         match self {
-            TypedIndex::Bool(ref mut this) => this.clear(),
-            TypedIndex::U8(ref mut this) => this.clear(),
-            TypedIndex::I8(ref mut this) => this.clear(),
-            TypedIndex::U16(ref mut this) => this.clear(),
-            TypedIndex::I16(ref mut this) => this.clear(),
-            TypedIndex::U32(ref mut this) => this.clear(),
-            TypedIndex::I32(ref mut this) => this.clear(),
-            TypedIndex::U64(ref mut this) => this.clear(),
-            TypedIndex::I64(ref mut this) => this.clear(),
-            TypedIndex::U128(ref mut this) => this.clear(),
-            TypedIndex::I128(ref mut this) => this.clear(),
-            TypedIndex::String(ref mut this) => this.clear(),
-            TypedIndex::AlgebraicValue(ref mut this) => this.clear(),
+            Self::Bool(this) => this.clear(),
+            Self::U8(this) => this.clear(),
+            Self::I8(this) => this.clear(),
+            Self::U16(this) => this.clear(),
+            Self::I16(this) => this.clear(),
+            Self::U32(this) => this.clear(),
+            Self::I32(this) => this.clear(),
+            Self::U64(this) => this.clear(),
+            Self::I64(this) => this.clear(),
+            Self::U128(this) => this.clear(),
+            Self::I128(this) => this.clear(),
+            Self::String(this) => this.clear(),
+            Self::AlgebraicValue(this) => this.clear(),
         }
     }
 
     #[allow(unused)] // used only by tests
     fn is_empty(&self) -> bool {
         match self {
-            TypedIndex::Bool(ref this) => this.is_empty(),
-            TypedIndex::U8(ref this) => this.is_empty(),
-            TypedIndex::I8(ref this) => this.is_empty(),
-            TypedIndex::U16(ref this) => this.is_empty(),
-            TypedIndex::I16(ref this) => this.is_empty(),
-            TypedIndex::U32(ref this) => this.is_empty(),
-            TypedIndex::I32(ref this) => this.is_empty(),
-            TypedIndex::U64(ref this) => this.is_empty(),
-            TypedIndex::I64(ref this) => this.is_empty(),
-            TypedIndex::U128(ref this) => this.is_empty(),
-            TypedIndex::I128(ref this) => this.is_empty(),
-            TypedIndex::String(ref this) => this.is_empty(),
-            TypedIndex::AlgebraicValue(ref this) => this.is_empty(),
+            Self::Bool(this) => this.is_empty(),
+            Self::U8(this) => this.is_empty(),
+            Self::I8(this) => this.is_empty(),
+            Self::U16(this) => this.is_empty(),
+            Self::I16(this) => this.is_empty(),
+            Self::U32(this) => this.is_empty(),
+            Self::I32(this) => this.is_empty(),
+            Self::U64(this) => this.is_empty(),
+            Self::I64(this) => this.is_empty(),
+            Self::U128(this) => this.is_empty(),
+            Self::I128(this) => this.is_empty(),
+            Self::String(this) => this.is_empty(),
+            Self::AlgebraicValue(this) => this.is_empty(),
         }
     }
 
     #[allow(unused)] // used only by tests
     fn len(&self) -> usize {
         match self {
-            TypedIndex::Bool(ref this) => this.len(),
-            TypedIndex::U8(ref this) => this.len(),
-            TypedIndex::I8(ref this) => this.len(),
-            TypedIndex::U16(ref this) => this.len(),
-            TypedIndex::I16(ref this) => this.len(),
-            TypedIndex::U32(ref this) => this.len(),
-            TypedIndex::I32(ref this) => this.len(),
-            TypedIndex::U64(ref this) => this.len(),
-            TypedIndex::I64(ref this) => this.len(),
-            TypedIndex::U128(ref this) => this.len(),
-            TypedIndex::I128(ref this) => this.len(),
-            TypedIndex::String(ref this) => this.len(),
-            TypedIndex::AlgebraicValue(ref this) => this.len(),
+            Self::Bool(this) => this.len(),
+            Self::U8(this) => this.len(),
+            Self::I8(this) => this.len(),
+            Self::U16(this) => this.len(),
+            Self::I16(this) => this.len(),
+            Self::U32(this) => this.len(),
+            Self::I32(this) => this.len(),
+            Self::U64(this) => this.len(),
+            Self::I64(this) => this.len(),
+            Self::U128(this) => this.len(),
+            Self::I128(this) => this.len(),
+            Self::String(this) => this.len(),
+            Self::AlgebraicValue(this) => this.len(),
+        }
+    }
+
+    fn num_keys(&self) -> usize {
+        match self {
+            Self::Bool(this) => this.num_keys(),
+            Self::U8(this) => this.num_keys(),
+            Self::I8(this) => this.num_keys(),
+            Self::U16(this) => this.num_keys(),
+            Self::I16(this) => this.num_keys(),
+            Self::U32(this) => this.num_keys(),
+            Self::I32(this) => this.num_keys(),
+            Self::U64(this) => this.num_keys(),
+            Self::I64(this) => this.num_keys(),
+            Self::U128(this) => this.num_keys(),
+            Self::I128(this) => this.num_keys(),
+            Self::String(this) => this.num_keys(),
+            Self::AlgebraicValue(this) => this.num_keys(),
         }
     }
 }
@@ -325,11 +320,9 @@ pub struct BTreeIndex {
     pub(crate) is_unique: bool,
     /// The actual index, specialized for the appropriate key type.
     idx: TypedIndex,
-    /// The index name, used for reporting unique constraint violations.
-    pub(crate) name: Box<str>,
 }
 
-static_assert_size!(BTreeIndex, 56);
+static_assert_size!(BTreeIndex, 40);
 
 impl BTreeIndex {
     /// Returns a new possibly unique index, with `index_id` for a set of columns.
@@ -338,7 +331,6 @@ impl BTreeIndex {
         row_type: &RowTypeLayout,
         indexed_columns: &ColList,
         is_unique: bool,
-        name: impl Into<Box<str>>,
     ) -> Result<Self, InvalidFieldError> {
         // If the index is on a single column of a primitive type,
         // use a homogeneous map with a native key type.
@@ -347,32 +339,31 @@ impl BTreeIndex {
             let col = row_type.product().elements.get(col_pos.idx()).ok_or(col_pos)?;
 
             match col.ty {
-                AlgebraicTypeLayout::Bool => TypedIndex::Bool(MultiMap::new()),
-                AlgebraicTypeLayout::I8 => TypedIndex::I8(MultiMap::new()),
-                AlgebraicTypeLayout::U8 => TypedIndex::U8(MultiMap::new()),
-                AlgebraicTypeLayout::I16 => TypedIndex::I16(MultiMap::new()),
-                AlgebraicTypeLayout::U16 => TypedIndex::U16(MultiMap::new()),
-                AlgebraicTypeLayout::I32 => TypedIndex::I32(MultiMap::new()),
-                AlgebraicTypeLayout::U32 => TypedIndex::U32(MultiMap::new()),
-                AlgebraicTypeLayout::I64 => TypedIndex::I64(MultiMap::new()),
-                AlgebraicTypeLayout::U64 => TypedIndex::U64(MultiMap::new()),
-                AlgebraicTypeLayout::I128 => TypedIndex::I128(MultiMap::new()),
-                AlgebraicTypeLayout::U128 => TypedIndex::U128(MultiMap::new()),
-                AlgebraicTypeLayout::String => TypedIndex::String(MultiMap::new()),
+                AlgebraicTypeLayout::Bool => TypedIndex::Bool(Index::new()),
+                AlgebraicTypeLayout::I8 => TypedIndex::I8(Index::new()),
+                AlgebraicTypeLayout::U8 => TypedIndex::U8(Index::new()),
+                AlgebraicTypeLayout::I16 => TypedIndex::I16(Index::new()),
+                AlgebraicTypeLayout::U16 => TypedIndex::U16(Index::new()),
+                AlgebraicTypeLayout::I32 => TypedIndex::I32(Index::new()),
+                AlgebraicTypeLayout::U32 => TypedIndex::U32(Index::new()),
+                AlgebraicTypeLayout::I64 => TypedIndex::I64(Index::new()),
+                AlgebraicTypeLayout::U64 => TypedIndex::U64(Index::new()),
+                AlgebraicTypeLayout::I128 => TypedIndex::I128(Index::new()),
+                AlgebraicTypeLayout::U128 => TypedIndex::U128(Index::new()),
+                AlgebraicTypeLayout::String => TypedIndex::String(Index::new()),
 
                 // If we don't specialize on the key type, use a map keyed on `AlgebraicValue`.
-                _ => TypedIndex::AlgebraicValue(MultiMap::new()),
+                _ => TypedIndex::AlgebraicValue(Index::new()),
             }
         } else {
             // If the index is on multiple columns, use a map keyed on `AlgebraicValue`,
             // as the keys will be `ProductValue`s.
-            TypedIndex::AlgebraicValue(MultiMap::new())
+            TypedIndex::AlgebraicValue(Index::new())
         };
         Ok(Self {
             index_id,
             is_unique,
             idx: typed_index,
-            name: name.into(),
         })
     }
 
@@ -436,6 +427,11 @@ impl BTreeIndex {
     pub fn clear(&mut self) {
         self.idx.clear();
     }
+
+    /// The number of unique keys in this index.
+    pub fn num_keys(&self) -> usize {
+        self.idx.num_keys()
+    }
 }
 
 #[cfg(test)]
@@ -471,7 +467,7 @@ mod test {
 
     fn new_index(row_type: &ProductType, cols: &ColList, is_unique: bool) -> BTreeIndex {
         let row_layout: RowTypeLayout = row_type.clone().into();
-        BTreeIndex::new(0.into(), &row_layout, cols, is_unique, "test_index").unwrap()
+        BTreeIndex::new(0.into(), &row_layout, cols, is_unique).unwrap()
     }
 
     fn table(ty: ProductType) -> Table {

@@ -11,5 +11,4 @@ rust-version.workspace = true
 bench = false
 
 [dependencies]
-getrandom = {workspace = true, optional = true}
 spacetimedb-primitives.workspace = true

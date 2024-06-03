@@ -12,7 +12,7 @@ use crate::sats::db::def::{ColumnDef, ConstraintDef, IndexDef, SequenceDef, Tabl
 use crate::timestamp::with_timestamp_set;
 use crate::{sys, ReducerContext, ScheduleToken, SpacetimeType, TableType, Timestamp};
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
-use spacetimedb_lib::sats::db::auth::{StAccess, StTableType};
+use spacetimedb_lib::sats::db::auth::StTableType;
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
@@ -35,8 +35,11 @@ pub fn invoke_reducer<'a, A: Args<'a>, T>(
     // Deserialize the arguments from a bsatn encoding.
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
-    // Run the reducer with the timestamp set.
-    let res = with_timestamp_set(ctx.timestamp, || reducer.invoke(ctx, args));
+    // Run the reducer with the environment all set up.
+    let invoke = || reducer.invoke(ctx, args);
+    #[cfg(feature = "rand")]
+    let invoke = || crate::rng::with_rng_set(invoke);
+    let res = with_timestamp_set(ctx.timestamp, invoke);
 
     // Any error is pushed into a `Buffer`.
     cvt_result(res)
@@ -439,7 +442,7 @@ pub fn register_table<T: TableType>() {
 
         let schema = TableDef::new(T::TABLE_NAME.into(), columns)
             .with_type(StTableType::User)
-            .with_access(StAccess::for_name(T::TABLE_NAME))
+            .with_access(T::TABLE_ACCESS)
             .with_constraints(constraints)
             .with_sequences(sequences)
             .with_indexes(indexes);

@@ -25,7 +25,11 @@ impl TableType for UniqueU8 {
 
 impl UniqueU8 {
     #[allow(unused)]
-    pub fn filter_by_n(n: u8) -> Option<Self> {
+    pub fn filter_by_n(n: u8) -> TableIter<Self> {
+        Self::filter(|row| row.n == n)
+    }
+    #[allow(unused)]
+    pub fn find_by_n(n: u8) -> Option<Self> {
         Self::find(|row| row.n == n)
     }
     #[allow(unused)]

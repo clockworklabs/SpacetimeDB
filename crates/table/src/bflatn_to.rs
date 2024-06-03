@@ -11,6 +11,7 @@ use super::{
     },
     page::{GranuleOffsetIter, Page, VarView},
     pages::Pages,
+    table::BlobNumBytes,
     util::range_move,
     var_len::{VarLenGranule, VarLenMembers, VarLenRef},
 };
@@ -45,7 +46,7 @@ pub unsafe fn write_row_to_pages(
     ty: &RowTypeLayout,
     val: &ProductValue,
     squashed_offset: SquashedOffset,
-) -> Result<RowPointer, Error> {
+) -> Result<(RowPointer, BlobNumBytes), Error> {
     let num_granules = required_var_len_granules_for_row(val);
 
     match pages.with_page_to_insert_row(ty.size(), num_granules, |page| {
@@ -57,7 +58,9 @@ pub unsafe fn write_row_to_pages(
         // - `visitor` came from `pages` which we can trust to visit in the right order.
         unsafe { write_row_to_page(page, blob_store, visitor, ty, val) }
     })? {
-        (page, Ok(offset)) => Ok(RowPointer::new(false, page, offset, squashed_offset)),
+        (page, Ok((offset, blob_inserted))) => {
+            Ok((RowPointer::new(false, page, offset, squashed_offset), blob_inserted))
+        }
         (_, Err(e)) => Err(e),
     }
 }
@@ -83,7 +86,7 @@ pub unsafe fn write_row_to_page(
     visitor: &impl VarLenMembers,
     ty: &RowTypeLayout,
     val: &ProductValue,
-) -> Result<PageOffset, Error> {
+) -> Result<(PageOffset, BlobNumBytes), Error> {
     let fixed_row_size = ty.size();
     // SAFETY: We've used the right `row_size` and we trust that others have too.
     // `RowTypeLayout` also ensures that we satisfy the minimum row size.
@@ -111,9 +114,9 @@ pub unsafe fn write_row_to_page(
     }
 
     // Haven't stored large blobs or init those granules with blob hashes yet, so do it now.
-    serialized.write_large_blobs(blob_store);
+    let blob_store_inserted_bytes = serialized.write_large_blobs(blob_store);
 
-    Ok(fixed_offset)
+    Ok((fixed_offset, blob_store_inserted_bytes))
 }
 
 /// The writing / serialization context used by the function [`write_row_to_page`].
@@ -161,16 +164,18 @@ impl BflatnSerializedRowBuffer<'_> {
     }
 
     /// Insert all large blobs into `blob_store` and their hashes to their granules.
-    fn write_large_blobs(mut self, blob_store: &mut dyn BlobStore) {
+    fn write_large_blobs(mut self, blob_store: &mut dyn BlobStore) -> BlobNumBytes {
+        let mut blob_store_inserted_bytes = BlobNumBytes::default();
         for (vlr, value) in self.large_blob_insertions {
             // SAFETY: `vlr` was given to us by `alloc_for_slice`
             // so it is properly aligned for a `VarLenGranule` and in bounds of the page.
             // However, as it was added to `self.large_blob_insertions`,
             // we have not yet written the hash to that granule.
             unsafe {
-                self.var_view.write_large_blob_hash_to_granule(blob_store, &value, vlr);
+                blob_store_inserted_bytes += self.var_view.write_large_blob_hash_to_granule(blob_store, &value, vlr);
             }
         }
+        blob_store_inserted_bytes
     }
 
     /// Write an `val`, an [`AlgebraicValue`], typed at `ty`, to the buffer.
@@ -455,7 +460,8 @@ impl BflatnSerializedRowBuffer<'_> {
 pub mod test {
     use super::*;
     use crate::{
-        bflatn_from::serialize_row_from_page, blob_store::HashMapBlobStore, row_type_visitor::row_type_visitor,
+        bflatn_from::serialize_row_from_page, blob_store::HashMapBlobStore, page::tests::hash_unmodified_save_get,
+        row_type_visitor::row_type_visitor,
     };
     use proptest::{prelude::*, prop_assert_eq, proptest};
     use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
@@ -470,12 +476,18 @@ pub mod test {
             let visitor = row_type_visitor(&ty);
             let blob_store = &mut HashMapBlobStore::default();
 
-            let offset = unsafe { write_row_to_page(&mut page, blob_store, &visitor, &ty, &val).unwrap() };
+            let hash_pre_ins = hash_unmodified_save_get(&mut page);
+
+            let (offset, _) = unsafe { write_row_to_page(&mut page, blob_store, &visitor, &ty, &val).unwrap() };
+
+            let hash_pre_ser = hash_unmodified_save_get(&mut page);
+            assert_ne!(hash_pre_ins, hash_pre_ser);
 
             let read_val = unsafe { serialize_row_from_page(ValueSerializer, &page, blob_store, offset, &ty) }
                 .unwrap().into_product().unwrap();
 
             prop_assert_eq!(val, read_val);
+            assert_eq!(hash_pre_ser, *page.unmodified_hash().unwrap());
         }
     }
 }

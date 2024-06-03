@@ -1,5 +1,5 @@
 use crate::errors::ErrorVm;
-use crate::expr::{Code, JoinExpr, SourceExpr, SourceSet};
+use crate::expr::{Code, ColumnOp, JoinExpr, ProjectExpr, SourceExpr, SourceSet};
 use crate::expr::{Expr, Query};
 use crate::iterators::RelIter;
 use crate::program::{ProgramVm, Sources};
@@ -7,7 +7,6 @@ use crate::rel_ops::RelOps;
 use crate::relation::RelValue;
 use spacetimedb_sats::relation::Relation;
 use spacetimedb_sats::ProductValue;
-use std::sync::Arc;
 
 pub type IterRows<'a> = dyn RelOps<'a> + 'a;
 
@@ -29,53 +28,43 @@ pub fn build_query<'a, const N: usize>(
             Query::IndexJoin(_) => {
                 panic!("index joins unsupported on memory tables")
             }
-            Query::Select(cmp) => {
-                let header = result.head().clone();
-                let iter = result.select(move |row| cmp.compare(row, &header));
-                Box::new(iter)
-            }
-            Query::Project(cols, _) => {
-                if cols.is_empty() {
-                    result
-                } else {
-                    let header = result.head().clone();
-                    let iter = result.project(cols, move |cols, row| {
-                        Ok(RelValue::Projection(row.project_owned(cols, &header)?))
-                    })?;
-                    Box::new(iter)
-                }
-            }
+            Query::Select(cmp) => build_select(result, cmp),
+            Query::Project(proj) => build_project(result, proj),
             Query::JoinInner(q) => {
                 let rhs = build_source_expr_query(sources, &q.rhs.source);
                 let rhs = build_query(rhs, &q.rhs.query, sources)?;
-                join_inner(result, rhs, q)?
+                join_inner(result, rhs, q)
             }
         };
     }
     Ok(result)
 }
 
-pub fn join_inner<'a>(
-    lhs: impl RelOps<'a> + 'a,
-    rhs: impl RelOps<'a> + 'a,
-    q: &'a JoinExpr,
-) -> Result<Box<IterRows<'a>>, ErrorVm> {
-    let lhs_head = lhs.head();
-    let rhs_head = rhs.head();
-    let col_lhs = lhs_head.column_pos_or_err(q.col_lhs)?;
-    let col_rhs = rhs_head.column_pos_or_err(q.col_rhs)?;
+pub fn build_select<'a>(base: impl RelOps<'a> + 'a, cmp: &'a ColumnOp) -> Box<IterRows<'a>> {
+    let header = base.head().clone();
+    Box::new(base.select(move |row| cmp.compare(row, &header)))
+}
 
-    let key_lhs = move |row: &RelValue<'_>| row.read_column(col_lhs.idx()).unwrap().into_owned();
-    let key_rhs = move |row: &RelValue<'_>| row.read_column(col_rhs.idx()).unwrap().into_owned();
-    let pred = move |l: &RelValue<'_>, r: &RelValue<'_>| l.read_column(col_lhs.idx()) == r.read_column(col_rhs.idx());
+pub fn build_project<'a>(base: impl RelOps<'a> + 'a, proj: &'a ProjectExpr) -> Box<IterRows<'a>> {
+    let header_before = base.head().clone();
+    Box::new(base.project(&proj.header_after, &proj.fields, move |cols, row| {
+        Ok(RelValue::Projection(row.project_owned(cols, &header_before)?))
+    }))
+}
 
-    Ok(if q.semi {
-        let head = lhs_head.clone();
-        Box::new(lhs.join_inner(rhs, head, key_lhs, key_rhs, pred, move |l, _| l)?)
+pub fn join_inner<'a>(lhs: impl RelOps<'a> + 'a, rhs: impl RelOps<'a> + 'a, q: &'a JoinExpr) -> Box<IterRows<'a>> {
+    let col_lhs = q.col_lhs.idx();
+    let col_rhs = q.col_rhs.idx();
+    let key_lhs = move |row: &RelValue<'_>| row.read_column(col_lhs).unwrap().into_owned();
+    let key_rhs = move |row: &RelValue<'_>| row.read_column(col_rhs).unwrap().into_owned();
+    let pred = move |l: &RelValue<'_>, r: &RelValue<'_>| l.read_column(col_lhs) == r.read_column(col_rhs);
+
+    if let Some(head) = q.inner.as_ref().cloned() {
+        Box::new(lhs.join_inner(rhs, head, key_lhs, key_rhs, pred, move |l, r| l.extend(r)))
     } else {
-        let head = Arc::new(lhs_head.extend(rhs_head));
-        Box::new(lhs.join_inner(rhs, head, key_lhs, key_rhs, pred, move |l, r| l.extend(r))?)
-    })
+        let head = lhs.head().clone();
+        Box::new(lhs.join_inner(rhs, head, key_lhs, key_rhs, pred, move |l, _| l))
+    }
 }
 
 pub(crate) fn build_source_expr_query<'a, const N: usize>(
@@ -240,6 +229,7 @@ pub mod tests {
     use crate::program::Program;
     use crate::relation::MemTable;
     use spacetimedb_lib::operator::{OpCmp, OpLogic};
+    use spacetimedb_primitives::ColId;
     use spacetimedb_sats::db::error::RelationError;
     use spacetimedb_sats::relation::{FieldName, Header};
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
@@ -261,11 +251,11 @@ pub mod tests {
 
         let q = QueryExpr::new(source_expr).with_select_cmp(OpCmp::Eq, field, scalar(1u64));
 
-        let head = q.source.head().clone();
+        let head = q.head().clone();
 
-        let result = run_ast(p, q.into(), sources);
+        let result = run_query(p, q.into(), sources);
         let row = product![1u64];
-        assert_eq!(result, Code::Table(MemTable::from_iter(head, [row])), "Query");
+        assert_eq!(result, MemTable::from_iter(head, [row]), "Query");
     }
 
     #[test]
@@ -278,8 +268,8 @@ pub mod tests {
 
         let source = QueryExpr::new(source_expr);
         let field = *table.get_field_pos(0).unwrap();
-        let q = source.clone().with_project(&[field.into()], None);
-        let head = q.source.head().clone();
+        let q = source.clone().with_project(&[field.into()], None).unwrap();
+        let head = q.head().clone();
 
         let result = run_ast(p, q.into(), sources);
         let row = product![1u64];
@@ -290,14 +280,10 @@ pub mod tests {
 
         let source = QueryExpr::new(source_expr);
         let field = FieldName::new(table.head.table_id, 1.into());
-        let q = source.with_project(&[field.into()], None);
-
-        let result = run_ast(p, q.into(), sources);
-        assert_eq!(
-            result,
-            Code::Halt(RelationError::FieldNotFound(head.clone_for_error(), field).into()),
-            "Bad Project"
-        );
+        assert!(matches!(
+            source.with_project(&[field.into()], None).unwrap_err(),
+            RelationError::FieldNotFound(h, f) if h == *head && f == field,
+        ));
     }
 
     #[test]
@@ -305,21 +291,19 @@ pub mod tests {
         let p = &mut Program;
         let table_id = 0.into();
         let table = mem_table_one_u64(table_id);
-        let column = table.head().fields[0].clone();
-        let field = *table.get_field_pos(0).unwrap();
+        let col: ColId = 0.into();
+        let field = table.head().fields[col.idx()].clone();
 
         let mut sources = SourceSet::<_, 2>::empty();
         let source_expr = sources.add_mem_table(table.clone());
         let second_source_expr = sources.add_mem_table(table);
 
-        let q = QueryExpr::new(source_expr).with_join_inner(second_source_expr, field, field, false);
-        let result = match run_ast(p, q.into(), sources) {
-            Code::Table(x) => x,
-            x => panic!("Invalid result {x}"),
-        };
+        let q = QueryExpr::new(source_expr).with_join_inner(second_source_expr, col, col, false);
+        dbg!(&q);
+        let result = run_query(p, q.into(), sources);
 
         // The expected result.
-        let head = Header::new(table_id, "".into(), [column.clone(), column].into(), Vec::new());
+        let head = Header::new(table_id, "".into(), [field.clone(), field].into(), Vec::new());
         let input = MemTable::from_iter(head.into(), [product!(1u64, 1u64)]);
 
         println!("{}", &result.head);
@@ -337,17 +321,14 @@ pub mod tests {
         let p = &mut Program;
         let table_id = 0.into();
         let table = mem_table_one_u64(table_id);
-        let field = *table.get_field_pos(0).unwrap();
+        let col = 0.into();
 
         let mut sources = SourceSet::<_, 2>::empty();
         let source_expr = sources.add_mem_table(table.clone());
         let second_source_expr = sources.add_mem_table(table);
 
-        let q = QueryExpr::new(source_expr).with_join_inner(second_source_expr, field, field, true);
-        let result = match run_ast(p, q.into(), sources) {
-            Code::Table(x) => x,
-            x => panic!("Invalid result {x}"),
-        };
+        let q = QueryExpr::new(source_expr).with_join_inner(second_source_expr, col, col, true);
+        let result = run_query(p, q.into(), sources);
 
         // The expected result.
         let inv = ProductType::from([(None, AlgebraicType::U64)]);
@@ -379,18 +360,18 @@ pub mod tests {
 
         let q = QueryExpr::new(source_expr.clone()).with_select_cmp(OpLogic::And, scalar(true), scalar(true));
 
-        let result = run_ast(p, q.into(), sources);
+        let result = run_query(p, q.into(), sources);
 
-        assert_eq!(result, Code::Table(inv.clone()), "Query And");
+        assert_eq!(result, inv.clone(), "Query And");
 
         let mut sources = SourceSet::<_, 1>::empty();
         let source_expr = sources.add_mem_table(input);
 
         let q = QueryExpr::new(source_expr).with_select_cmp(OpLogic::Or, scalar(true), scalar(false));
 
-        let result = run_ast(p, q.into(), sources);
+        let result = run_query(p, q.into(), sources);
 
-        assert_eq!(result, Code::Table(inv), "Query Or");
+        assert_eq!(result, inv, "Query Or");
     }
 
     #[test]
@@ -404,19 +385,16 @@ pub mod tests {
         let row = product![1u64, "health"];
 
         let table_id = 0.into();
-        let input = mem_table(table_id, inv, vec![row]);
-        let field = *input.get_field_pos(0).unwrap();
+        let input = mem_table(table_id, inv, [row]);
+        let col = 0.into();
 
         let mut sources = SourceSet::<_, 2>::empty();
         let source_expr = sources.add_mem_table(input.clone());
         let second_source_expr = sources.add_mem_table(input);
 
-        let q = QueryExpr::new(source_expr).with_join_inner(second_source_expr, field, field, false);
+        let q = QueryExpr::new(source_expr).with_join_inner(second_source_expr, col, col, false);
 
-        let result = match run_ast(p, q.into(), sources) {
-            Code::Table(x) => x,
-            x => panic!("Invalid result {x}"),
-        };
+        let result = run_query(p, q.into(), sources);
 
         //The expected result
         let inv = ProductType::from([
@@ -440,19 +418,16 @@ pub mod tests {
         let row = product![1u64, "health"];
 
         let table_id = 0.into();
-        let input = mem_table(table_id, inv, vec![row]);
-        let field = *input.get_field_pos(0).unwrap();
+        let input = mem_table(table_id, inv, [row]);
+        let col = 0.into();
 
         let mut sources = SourceSet::<_, 2>::empty();
         let source_expr = sources.add_mem_table(input.clone());
         let second_source_expr = sources.add_mem_table(input);
 
-        let q = QueryExpr::new(source_expr).with_join_inner(second_source_expr, field, field, true);
+        let q = QueryExpr::new(source_expr).with_join_inner(second_source_expr, col, col, true);
 
-        let result = match run_ast(p, q.into(), sources) {
-            Code::Table(x) => x,
-            x => panic!("Invalid result {x}"),
-        };
+        let result = run_query(p, q.into(), sources);
 
         // The expected result.
         let inv = ProductType::from([(None, AlgebraicType::U64), (Some("name"), AlgebraicType::String)]);
@@ -473,9 +448,13 @@ pub mod tests {
 
         // See table above.
         let data = create_game_data();
-        let [inv_inventory_id, inv_name] = [0, 1].map(|c: usize| data.inv.head().fields[c].field);
-        let [location_entity_id, location_x, location_z] = [0, 1, 2].map(|c| data.location.head().fields[c].field);
-        let [player_entity_id, player_inventory_id] = [0, 1].map(|c| data.player.head().fields[c].field);
+        let inv @ [inv_inventory_id, _] = [0, 1].map(|c| c.into());
+        let inv_head = data.inv.head().clone();
+        let inv_expr = |col: ColId| inv_head.fields[col.idx()].field.into();
+        let [location_entity_id, location_x, location_z] = [0, 1, 2].map(|c| c.into());
+        let [player_entity_id, player_inventory_id] = [0, 1].map(|c| c.into());
+        let loc_head = data.location.head().clone();
+        let loc_field = |col: ColId| loc_head.fields[col.idx()].field;
         let inv_table_id = data.inv.head.table_id;
         let player_table_id = data.player.head.table_id;
 
@@ -492,10 +471,10 @@ pub mod tests {
         // WHERE x > 0 AND x <= 32 AND z > 0 AND z <= 32
         let q = QueryExpr::new(player_source_expr)
             .with_join_inner(location_source_expr, player_entity_id, location_entity_id, true)
-            .with_select_cmp(OpCmp::Gt, location_x, scalar(0.0f32))
-            .with_select_cmp(OpCmp::LtEq, location_x, scalar(32.0f32))
-            .with_select_cmp(OpCmp::Gt, location_z, scalar(0.0f32))
-            .with_select_cmp(OpCmp::LtEq, location_z, scalar(32.0f32));
+            .with_select_cmp(OpCmp::Gt, loc_field(location_x), scalar(0.0f32))
+            .with_select_cmp(OpCmp::LtEq, loc_field(location_x), scalar(32.0f32))
+            .with_select_cmp(OpCmp::Gt, loc_field(location_z), scalar(0.0f32))
+            .with_select_cmp(OpCmp::LtEq, loc_field(location_z), scalar(32.0f32));
 
         let result = run_query(p, q.into(), sources);
 
@@ -528,12 +507,18 @@ pub mod tests {
             // so that the second join has access to the `Player.entity_id` field.
             // This necessitates a trailing `project` to get just `Inventory.*`.
             .with_join_inner(player_source_expr, inv_inventory_id, player_inventory_id, false)
-            .with_join_inner(location_source_expr, player_entity_id, location_entity_id, true)
-            .with_select_cmp(OpCmp::Gt, location_x, scalar(0.0f32))
-            .with_select_cmp(OpCmp::LtEq, location_x, scalar(32.0f32))
-            .with_select_cmp(OpCmp::Gt, location_z, scalar(0.0f32))
-            .with_select_cmp(OpCmp::LtEq, location_z, scalar(32.0f32))
-            .with_project(&[inv_inventory_id.into(), inv_name.into()], None);
+            .with_join_inner(
+                location_source_expr,
+                (inv_head.fields.len() + player_entity_id.idx()).into(),
+                location_entity_id,
+                true,
+            )
+            .with_select_cmp(OpCmp::Gt, loc_field(location_x), scalar(0.0f32))
+            .with_select_cmp(OpCmp::LtEq, loc_field(location_x), scalar(32.0f32))
+            .with_select_cmp(OpCmp::Gt, loc_field(location_z), scalar(0.0f32))
+            .with_select_cmp(OpCmp::LtEq, loc_field(location_z), scalar(32.0f32))
+            .with_project(&inv.map(inv_expr), Some(inv_table_id))
+            .unwrap();
 
         let result = run_query(p, q.into(), sources);
 

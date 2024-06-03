@@ -230,7 +230,7 @@ fn on_message_inserted(send: UiSend) -> impl FnMut(&Message, Option<&ReducerEven
 }
 
 fn print_message(send: &UiSend, message: &Message) {
-    let sender = User::filter_by_identity(message.sender.clone())
+    let sender = User::find_by_identity(message.sender.clone())
         .map(|u| user_name_or_identity(&u))
         .unwrap_or_else(|| "unknown".to_string());
     send.unbounded_send(UiMessage::Message {
@@ -262,7 +262,7 @@ fn on_name_set(send: UiSend) -> impl FnMut(&Identity, Option<Address>, &Status, 
     move |_sender_id, _sender_addr, status, name| {
         if let Status::Failed(err) = status {
             send.unbounded_send(UiMessage::NameRejected {
-                current_name: user_name_or_identity(&User::filter_by_identity(identity().unwrap()).unwrap()),
+                current_name: user_name_or_identity(&User::find_by_identity(identity().unwrap()).unwrap()),
                 rejected_name: name.clone(),
                 reason: err.clone(),
             })
