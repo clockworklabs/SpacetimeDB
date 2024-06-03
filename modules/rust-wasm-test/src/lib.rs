@@ -29,6 +29,9 @@ pub struct TestD {
     test_c: Option<TestC>,
 }
 
+// This table was specified as public.
+const _: () = assert!(matches!(TestD::TABLE_ACCESS, StAccess::Public));
+
 #[spacetimedb(table)]
 #[derive(Debug)]
 pub struct TestE {
@@ -41,13 +44,10 @@ pub struct TestE {
 // All tables are private by default.
 const _: () = assert!(matches!(TestE::TABLE_ACCESS, StAccess::Private));
 
-#[spacetimedb(table(public))]
-pub struct Public {
+#[spacetimedb(table)]
+pub struct Private {
     name: String,
 }
-
-// This table was specified as public.
-const _: () = assert!(matches!(Public::TABLE_ACCESS, StAccess::Public));
 
 #[spacetimedb(table(private))]
 #[spacetimedb(index(btree, name = "multi_column_index", x, y))]
@@ -206,14 +206,14 @@ impl Foo<'_> {
 }
 
 #[spacetimedb(reducer)]
-pub fn add_public(name: String) {
-    Public::insert(Public { name });
+pub fn add_private(name: String) {
+    Private::insert(Private { name });
 }
 
 #[spacetimedb(reducer)]
-pub fn query_public() {
-    for person in Public::iter() {
-        log::info!("Public, {}!", person.name);
+pub fn query_private() {
+    for person in Private::iter() {
+        log::info!("Private, {}!", person.name);
     }
-    log::info!("Public, World!");
+    log::info!("Private, World!");
 }
