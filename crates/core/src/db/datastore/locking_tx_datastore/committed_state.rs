@@ -360,6 +360,33 @@ impl CommittedState {
         table.get_row_ref(&self.blob_store, row_ptr).unwrap()
     }
 
+    /// True if the transaction `(tx_data, ctx)` will be written to the commitlog,
+    /// and therefore consumes a value from `self.next_tx_offset`.
+    ///
+    /// A TX is written to the logs if any of the following holds:
+    /// - The TX inserted at least one row.
+    /// - The TX deleted at least one row.
+    /// - The TX was the result of the reducers `__identity_connected__` or `__identity_disconnected__`.
+    fn tx_consumes_offset(&self, tx_data: &TxData, ctx: &ExecutionContext) -> bool {
+        // Avoid appending transactions to the commitlog which don't modify
+        // any tables.
+        //
+        // An exception are connect / disconnect calls, which we always want
+        // paired in the log, so as to be able to disconnect clients
+        // automatically after a server crash. See:
+        // [`crate::host::ModuleHost::call_identity_connected_disconnected`]
+        //
+        // Note that this may change in the future: some analytics and/or
+        // timetravel queries may benefit from seeing all inputs, even if
+        // the database state did not change.
+        tx_data.inserts().any(|(_, inserted_rows)| !inserted_rows.is_empty())
+            || tx_data.deletes().any(|(_, deleted_rows)| !deleted_rows.is_empty())
+            || matches!(
+                ctx.reducer_context().map(|rcx| rcx.name.strip_prefix("__identity_")),
+                Some(Some("connected__" | "disconnected__"))
+            )
+    }
+
     pub fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
         let mut tx_data = TxData::default();
 
@@ -372,6 +399,13 @@ impl CommittedState {
         // before allocating new pages.
 
         self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store, ctx);
+
+        // If the TX will be logged, record its projected tx offset,
+        // then increment the counter.
+        if self.tx_consumes_offset(&tx_data, ctx) {
+            tx_data.set_tx_offset(self.next_tx_offset);
+            self.next_tx_offset += 1;
+        }
 
         tx_data
     }
