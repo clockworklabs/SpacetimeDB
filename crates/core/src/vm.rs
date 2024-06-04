@@ -1,7 +1,8 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 
-use crate::config::DatabaseConfig;
+use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::datastore::locking_tx_datastore::IterByColRange;
+use crate::db::datastore::system_tables::{st_var_schema, StVarName, StVarRow, StVarTable, StVarValue};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
@@ -23,6 +24,8 @@ use spacetimedb_vm::iterators::RelIter;
 use spacetimedb_vm::program::{ProgramVm, Sources};
 use spacetimedb_vm::rel_ops::{EmptyRelOps, RelOps};
 use spacetimedb_vm::relation::{MemTable, RelValue};
+use std::str::FromStr;
+use std::sync::Arc;
 
 pub enum TxMode<'a> {
     MutTx(&'a mut MutTx),
@@ -402,13 +405,14 @@ pub struct DbProgram<'db, 'tx> {
 /// reject the request if the estimated cardinality exceeds the limit.
 pub fn check_row_limit<QuerySet>(
     queries: &QuerySet,
-    tx: &Tx,
-    row_est: impl Fn(&QuerySet, &Tx) -> u64,
+    ctx: &ExecutionContext,
+    db: &RelationalDB,
+    tx: &TxId,
+    row_est: impl Fn(&QuerySet, &TxId) -> u64,
     auth: &AuthCtx,
-    config: &DatabaseConfig,
 ) -> Result<(), DBError> {
     if auth.caller != auth.owner {
-        if let Some(limit) = config.row_limit {
+        if let Some(limit) = StVarTable::row_limit(ctx, db, tx)? {
             let estimate = row_est(queries, tx);
             if estimate > limit {
                 return Err(DBError::Other(anyhow::anyhow!(
@@ -429,10 +433,11 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         if let TxMode::Tx(tx) = self.tx {
             check_row_limit(
                 query,
+                self.ctx,
+                self.db,
                 tx,
                 |expr, tx| estimation::num_rows(tx, expr),
                 &self.auth,
-                &self.db.read_config(),
             )?;
         }
 
@@ -576,8 +581,32 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
 
     fn _read_config(&self, name: String) -> Result<Code, ErrorVm> {
         let config = self.db.read_config();
-
         Ok(Code::Table(config.read_key_into_table(&name)?))
+    }
+
+    fn _set_var(&mut self, name: String, value: AlgebraicValue) -> Result<Code, ErrorVm> {
+        let var = StVarName::from_str(&name)?;
+        let tx = self.tx.unwrap_mut();
+        let value = StVarValue::try_from_primitive(value)
+            .map_err(|v| anyhow::anyhow!("Invalid value for system variable {name}: {v:?}"))?;
+        StVarTable::write_var(self.ctx, self.db, tx, var, value)?;
+        Ok(Code::Pass(None))
+    }
+
+    fn _read_var(&self, name: String) -> Result<Code, ErrorVm> {
+        fn read_key_into_table(env: &DbProgram, name: &str) -> Result<MemTable, ErrorVm> {
+            if let TxMode::Tx(tx) = &env.tx {
+                let name = StVarName::from_str(name)?;
+                if let Some(value) = StVarTable::read_var(env.ctx, env.db, tx, name)? {
+                    return Ok(MemTable::from_iter(
+                        Arc::new(st_var_schema().into()),
+                        [ProductValue::from(StVarRow { name, value })],
+                    ));
+                }
+            }
+            Ok(MemTable::from_iter(Arc::new(st_var_schema().into()), []))
+        }
+        Ok(Code::Table(read_key_into_table(self, &name)?))
     }
 }
 
@@ -593,7 +622,10 @@ impl ProgramVm for DbProgram<'_, '_> {
             CrudExpr::Delete { query } => self._delete_query(&query, sources),
             CrudExpr::CreateTable { table } => self._create_table(*table),
             CrudExpr::Drop { name, kind, .. } => self._drop(&name, kind),
-            CrudExpr::SetVar { name, value } => self._set_config(name, value),
+            CrudExpr::SetVar { name, value } => {
+                self._set_var(name.clone(), value.clone())?;
+                self._set_config(name, value)
+            }
             CrudExpr::ReadVar { name } => self._read_config(name),
         }
     }

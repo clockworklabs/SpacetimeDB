@@ -866,6 +866,7 @@ impl RelationalDB {
     pub(crate) fn set_config(&self, key: &str, value: AlgebraicValue) -> Result<(), ErrorVm> {
         self.config.write().set_config(key, value)
     }
+
     /// Read the runtime configurations settings of the database
     pub(crate) fn read_config(&self) -> DatabaseConfig {
         *self.config.read()

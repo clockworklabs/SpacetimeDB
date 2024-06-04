@@ -1,5 +1,5 @@
 use crate::util::slow::SlowQueryConfig;
-use spacetimedb_sats::relation::{Column, FieldName, Header};
+use spacetimedb_lib::relation::{Column, FieldName, Header};
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue};
 use spacetimedb_vm::errors::{ConfigError, ErrorVm};
 use spacetimedb_vm::relation::MemTable;
