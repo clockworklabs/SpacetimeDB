@@ -1,5 +1,6 @@
 use std::path::Path;
 
+pub mod dir_trie;
 pub mod lockfile;
 
 pub fn create_parent_dir(file: &Path) -> Result<(), std::io::Error> {

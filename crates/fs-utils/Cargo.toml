@@ -8,3 +8,4 @@ description = "Assorted utilities for filesystem operations used in SpacetimeDB"
 
 [dependencies]
 thiserror.workspace = true
+hex.workspace = true
