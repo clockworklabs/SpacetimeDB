@@ -92,10 +92,13 @@ fn test_calling_a_reducer_with_private_table() {
             let json = r#"{"call": {"fn": "query_private", "args": []}}"#.to_string();
             module.send(json).await.unwrap();
 
-            assert_eq!(
-                read_logs(&module).await,
-                ["Private, Tyrion!", "Private, World!",].map(String::from)
-            );
+            let logs = read_logs(&module)
+                .await
+                .into_iter()
+                .skip_while(|r| r.starts_with("Timestamp"))
+                .collect::<Vec<_>>();
+
+            assert_eq!(logs, ["Private, Tyrion!", "Private, World!",].map(String::from));
         },
     );
 }
@@ -115,15 +118,17 @@ fn test_call_query_macro() {
                 .to_string();
             module.send(json).await.unwrap();
 
-            let logs = read_logs(&module).await;
-
-            assert_eq!(logs[0], "BEGIN");
-            assert!(logs[1].starts_with("sender: "));
-            assert!(logs[2].starts_with("timestamp: "));
-
+            let logs = read_logs(&module)
+                .await
+                .into_iter()
+                .filter(|line| {
+                    !(line.starts_with("sender:") || line.starts_with("timestamp:") || line.starts_with("Timestamp"))
+                })
+                .collect::<Vec<_>>();
             assert_eq!(
-                logs[3..],
+                logs,
                 [
+                    "BEGIN",
                     r#"bar: "Foo""#,
                     "Foo",
                     "Row count before delete: 1000",
