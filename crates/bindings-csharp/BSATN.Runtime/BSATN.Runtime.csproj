@@ -24,15 +24,20 @@
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDBLibCSharp</RepositoryUrl>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <!--
+      We don't want to publish this package to NuGet to reduce maintenance cost.
+      Instead, we put its sources directly in Unity SDK and include its DLL in SpacetimeDB.Runtime for regular C# consumers
+    -->
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" />
+    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="../logo.png" Pack="true" PackagePath="" />
-    <None Include="README.md" Pack="true" PackagePath="" />
+    <None Include="../Runtime/README.md" Pack="true" PackagePath="" />
     <None Include="../LICENSE" Pack="true" PackagePath="" />
   </ItemGroup>
 

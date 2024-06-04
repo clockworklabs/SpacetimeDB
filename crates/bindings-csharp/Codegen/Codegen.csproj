@@ -28,7 +28,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" />
+    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
@@ -42,6 +42,8 @@
     <!-- source generators need to be put in a specific folder -->
     <!-- see https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.cookbook.md#package-a-generator-as-a-nuget-package -->
     <None Include="$(OutputPath)/$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <!-- We want BSATN.Codegen to be an internal dependency shipped in the same package as Codegen itself. -->
+    <None Include="$(OutputPath)/SpacetimeDB.BSATN.Codegen.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
   </ItemGroup>
 
 </Project>

@@ -27,8 +27,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../BSATN.Runtime/BSATN.Runtime.csproj" />
-    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" />
+    <ProjectReference Include="../BSATN.Runtime/BSATN.Runtime.csproj" PrivateAssets="all" />
+    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
@@ -42,6 +42,8 @@
     <None Include="build/" Pack="true" PackagePath="build" />
     <None Include="bindings.c" Pack="true" PackagePath="" />
     <None Include="driver.h" Pack="true" PackagePath="" />
+    <!-- We want BSATN.Runtime to be an internal dependency shipped in the same package as Runtime itself. -->
+    <None Include="$(OutputPath)/SpacetimeDB.BSATN.Runtime.dll" Pack="true" PackagePath="lib/$(TargetFramework)" />
   </ItemGroup>
 
   <ItemGroup>
