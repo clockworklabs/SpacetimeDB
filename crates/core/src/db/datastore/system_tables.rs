@@ -743,6 +743,15 @@ pub struct StScheduledRow<ReducerName: AsRef<str>> {
     pub(crate) reducer_name: ReducerName,
 }
 
+impl TryFrom<RowRef<'_>> for StScheduledRow<Box<str>> {
+    type Error = DBError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+        Ok(StScheduledRow {
+            table_id: row.read_col(StScheduledFields::TableId)?,
+            reducer_name: row.read_col(StScheduledFields::ReducerName)?,
+        })
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

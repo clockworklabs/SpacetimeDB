@@ -1158,6 +1158,7 @@ mod tests {
             ]),
             StTableType::User,
             StAccess::Public,
+            None,
         )
     }
 
