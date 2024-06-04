@@ -27,9 +27,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- We want BSATN.Runtime to be an internal dependency shipped in the same package as Runtime itself. -->
-    <!-- The easiest way to do this without running into NuGet / .NET / WASI packing shenanigans is to just include sources. -->
-    <Compile Include="../BSATN.Runtime/src/*.cs" />
+    <ProjectReference Include="../BSATN.Runtime/BSATN.Runtime.csproj" />
     <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" PrivateAssets="all" />
   </ItemGroup>
 

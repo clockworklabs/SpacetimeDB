@@ -24,11 +24,6 @@
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDBLibCSharp</RepositoryUrl>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
-    <!--
-      We don't want to publish this package to NuGet to reduce maintenance cost.
-      Instead, we put its sources directly in Unity SDK and include its DLL in SpacetimeDB.Runtime for regular C# consumers
-    -->
-    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
