@@ -651,7 +651,10 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
     });
     writeln!(output);
 
-    writeln!(output, "public class SpacetimeDBClient : SpacetimeDBClientBase<ReducerEvent>");
+    writeln!(
+        output,
+        "public class SpacetimeDBClient : SpacetimeDBClientBase<ReducerEvent>"
+    );
     indented_block(&mut output, |output| {
         writeln!(output, "protected SpacetimeDBClient()");
         indented_block(output, |output| {
@@ -701,7 +704,10 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
     let mut output = CsharpAutogen::new(namespace, &["UnityEngine"]);
 
     writeln!(output, "// This class is only used in Unity projects.");
-    writeln!(output, "// Attach this to a gameobject in your scene to use SpacetimeDB.");
+    writeln!(
+        output,
+        "// Attach this to a gameobject in your scene to use SpacetimeDB."
+    );
     writeln!(output, "#if UNITY_5_3_OR_NEWER");
     writeln!(output, "public class UnityNetworkManager : MonoBehaviour");
     indented_block(&mut output, |output| {
