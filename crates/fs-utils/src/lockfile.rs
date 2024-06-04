@@ -39,19 +39,17 @@ impl Lockfile {
     pub fn for_file(file_path: &Path) -> Result<Self, LockfileError> {
         let path = Self::lock_path(file_path);
 
-        // Ensure the directory exists before attempting to create the lockfile.
-        create_parent_dir(file_path).map_err(|cause| LockfileError::Acquire {
+        let fail = |cause| LockfileError::Acquire {
             lock_path: path.clone(),
             file_path: file_path.to_path_buf(),
             cause,
-        })?;
+        };
+
+        // Ensure the directory exists before attempting to create the lockfile.
+        create_parent_dir(file_path).map_err(fail)?;
 
         // Open with `create_new`, which fails if the file already exists.
-        std::fs::File::create_new(&path).map_err(|cause| LockfileError::Acquire {
-            lock_path: path.clone(),
-            file_path: file_path.to_path_buf(),
-            cause,
-        })?;
+        std::fs::File::create_new(&path).map_err(fail)?;
 
         Ok(Lockfile { path })
     }
