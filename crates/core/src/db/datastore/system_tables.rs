@@ -193,8 +193,8 @@ st_fields_enum!(enum StClientsFields {
 });
 
 st_fields_enum!(enum StScheduledFields {
-    "table_id", TableId = 1,
-    "reducer_name", ReducerName = 2,
+    "table_id", TableId = 0,
+    "reducer_name", ReducerName = 1,
 });
 /// System Table [ST_TABLES_NAME]
 ///
