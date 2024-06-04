@@ -1,12 +1,13 @@
 from .. import Smoketest, random_string
 import tempfile
 import os
+from glob import iglob
 
 
 def count_matches(dir, needle):
     count = 0
-    for f in os.listdir(dir):
-        contents = open(os.path.join(dir, f)).read()
+    for f in iglob(os.path.join(dir, "**/*.cs"), recursive=True):
+        contents = open(f).read()
         count += contents.count(needle)
     return count
 
