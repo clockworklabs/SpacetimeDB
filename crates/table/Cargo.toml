@@ -32,6 +32,9 @@ blake3_pure = ["blake3/pure"]
 spacetimedb-data-structures.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-sats = { workspace = true, features = ["blake3"] }
+# All the dependencies we need are in `sats`,
+# but the `Serialize` and `Deserialize` derive macros refer to `lib` explicitly,
+# so we need to depend on `lib` in order to use them.
 spacetimedb-lib.workspace = true
 
 ahash.workspace = true

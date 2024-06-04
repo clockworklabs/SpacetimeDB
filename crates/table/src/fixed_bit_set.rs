@@ -63,12 +63,6 @@ mod internal_unsafe {
         slice::{from_raw_parts, from_raw_parts_mut},
     };
 
-    /// Computes how many blocks are needed to store that many bits.
-    fn blocks_for_bits<B: BitBlock>(bits: usize) -> usize {
-        // Must round e.g., 31 / 32 to 1 and 32 / 32 to 1 as well.
-        bits.div_ceil(B::BITS as usize)
-    }
-
     /// The type used to represent the number of bits the set can hold.
     ///
     /// Currently `u16` to keep `mem::size_of::<FixedBitSet>()` small.
@@ -114,24 +108,13 @@ mod internal_unsafe {
     });
 
     impl<B: BitBlock> FixedBitSet<B> {
-        fn from_boxed_slice(storage: Box<[B]>) -> Self {
+        pub(super) fn from_boxed_slice(storage: Box<[B]>) -> Self {
+            // SAFETY: required for the soundness of `Drop` as
+            // `dealloc` must receive the same layout as it was `alloc`ated with.
+            assert!(storage.len() <= Len::MAX as usize);
             let len = storage.len() as Len;
             let ptr = NonNull::from(Box::leak(storage)).cast();
             Self { ptr, len }
-        }
-
-        /// Allocates a new bit set capable of holding `bits` number of bits.
-        pub fn new(bits: usize) -> Self {
-            // Compute the number of blocks needed.
-            let nblocks = blocks_for_bits::<B>(bits);
-            // SAFETY: required for the soundness of `Drop` as
-            // `dealloc` must receive the same layout as it was `alloc`ated with.
-            assert!(nblocks <= Len::MAX as usize);
-
-            // Allocate the blocks and extract the pointer to the heap region.
-            let blocks: Box<[B]> = vec![B::ZERO; nblocks].into_boxed_slice();
-
-            Self::from_boxed_slice(blocks)
         }
     }
 
@@ -172,7 +155,24 @@ impl<B: BitBlock> std::cmp::PartialEq for FixedBitSet<B> {
     }
 }
 
+/// Computes how many blocks are needed to store that many bits.
+fn blocks_for_bits<B: BitBlock>(bits: usize) -> usize {
+    // Must round e.g., 31 / 32 to 1 and 32 / 32 to 1 as well.
+    bits.div_ceil(B::BITS as usize)
+}
+
 impl<B: BitBlock> FixedBitSet<B> {
+    /// Allocates a new bit set capable of holding `bits` number of bits.
+    pub fn new(bits: usize) -> Self {
+        // Compute the number of blocks needed.
+        let nblocks = blocks_for_bits::<B>(bits);
+
+        // Allocate the blocks and extract the pointer to the heap region.
+        let blocks: Box<[B]> = vec![B::ZERO; nblocks].into_boxed_slice();
+
+        Self::from_boxed_slice(blocks)
+    }
+
     /// Converts `idx` to its block index and the index within the block.
     const fn idx_to_pos(idx: usize) -> (usize, usize) {
         let bits = B::BITS as usize;

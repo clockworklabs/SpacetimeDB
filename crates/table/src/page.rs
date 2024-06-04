@@ -2292,6 +2292,7 @@ pub(crate) mod tests {
     fn serde_round_trip_whole_page() {
         let mut page = Page::new(u64_row_size());
 
+        // Construct an empty page, ser/de it, and assert that it's still empty.
         let hash_pre_ins = hash_unmodified_save_get(&mut page);
         let ser_pre_ins = bsatn::to_vec(&page).unwrap();
         let de_pre_ins = bsatn::from_slice::<Box<Page>>(&ser_pre_ins).unwrap();
@@ -2299,12 +2300,14 @@ pub(crate) mod tests {
         assert_eq!(de_pre_ins.header.fixed.num_rows, 0);
         assert!(de_pre_ins.header.fixed.present_rows == page.header.fixed.present_rows);
 
+        // Insert some rows into the page.
         let offsets = (0..64)
             .map(|val| insert_u64(&mut page, val))
             .collect::<Vec<PageOffset>>();
 
         let hash_ins = hash_unmodified_save_get(&mut page);
 
+        // Ser/de the page and assert that it contains the same rows.
         let ser_ins = bsatn::to_vec(&page).unwrap();
         let de_ins = bsatn::from_slice::<Box<Page>>(&ser_ins).unwrap();
         assert_eq!(de_ins.content_hash(), hash_ins);
@@ -2315,6 +2318,7 @@ pub(crate) mod tests {
             offsets
         );
 
+        // Delete the even-numbered rows, leaving the odds.
         let offsets = offsets
             .into_iter()
             .enumerate()
@@ -2328,6 +2332,7 @@ pub(crate) mod tests {
             })
             .collect::<Vec<PageOffset>>();
 
+        // Ser/de the page again and assert that it contains only the odd-numbered rows.
         let hash_del = hash_unmodified_save_get(&mut page);
         let ser_del = bsatn::to_vec(&page).unwrap();
         let de_del = bsatn::from_slice::<Box<Page>>(&ser_del).unwrap();
