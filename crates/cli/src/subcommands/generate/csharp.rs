@@ -701,7 +701,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
     // Note: Unity requires script classes to have the same name as the file they are in.
     // That's why we're generating a separate file for Unity-specific code.
 
-    let mut output = CsharpAutogen::new(namespace, &["UnityEngine"]);
+    let mut output = CsharpAutogen::new(namespace, &[]);
 
     writeln!(output, "// This class is only used in Unity projects.");
     writeln!(
@@ -709,7 +709,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
         "// Attach this to a gameobject in your scene to use SpacetimeDB."
     );
     writeln!(output, "#if UNITY_5_3_OR_NEWER");
-    writeln!(output, "public class UnityNetworkManager : MonoBehaviour");
+    writeln!(output, "public class UnityNetworkManager : UnityEngine.MonoBehaviour");
     indented_block(&mut output, |output| {
         writeln!(
             output,

@@ -725,14 +725,13 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
-using UnityEngine;
 
 namespace SpacetimeDB
 {
 	// This class is only used in Unity projects.
 	// Attach this to a gameobject in your scene to use SpacetimeDB.
 	#if UNITY_5_3_OR_NEWER
-	public class UnityNetworkManager : MonoBehaviour
+	public class UnityNetworkManager : UnityEngine.MonoBehaviour
 	{
 		private void OnDestroy() => SpacetimeDBClient.instance.Close();
 		private void Update() => SpacetimeDBClient.instance.Update();
