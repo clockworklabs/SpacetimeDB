@@ -7,9 +7,10 @@ from glob import iglob
 def count_matches(dir, needle):
     count = 0
     for f in iglob(os.path.join(dir, "**/*.cs"), recursive=True):
-        contents = open(f).read()
-        count += contents.count(needle)
+        with open(f) as f:
+            count += f.read().count(needle)
     return count
+
 
 class Namespaces(Smoketest):
     AUTOPUBLISH = False
