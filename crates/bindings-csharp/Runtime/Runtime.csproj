@@ -27,7 +27,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../BSATN.Runtime/BSATN.Runtime.csproj" PrivateAssets="all" />
+    <!-- We want BSATN.Runtime to be an internal dependency shipped in the same package as Runtime itself. -->
+    <!-- The easiest way to do this without running into NuGet / .NET / WASI packing shenanigans is to just include sources. -->
+    <Compile Include="../BSATN.Runtime/src/*.cs" />
     <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" PrivateAssets="all" />
   </ItemGroup>
 
@@ -42,20 +44,7 @@
     <None Include="build/" Pack="true" PackagePath="build" />
     <None Include="bindings.c" Pack="true" PackagePath="" />
     <None Include="driver.h" Pack="true" PackagePath="" />
-    <!-- We want BSATN.Runtime to be an internal dependency shipped in the same package as Runtime itself. -->
-    <None Include="$(OutputPath)/SpacetimeDB.BSATN.Runtime.dll" Pack="true" PackagePath="lib/$(TargetFramework)" />
   </ItemGroup>
-
-  <!-- <None Include /> hack above only works for NuGet packages, but not for local project references. So here we need another one... -->
-  <PropertyGroup>
-    <GetTargetPathDependsOn>$(GetTargetPathDependsOn);GetDependencyTargetPaths</GetTargetPathDependsOn>
-  </PropertyGroup>
-
-  <Target Name="GetDependencyTargetPaths">
-    <ItemGroup>
-      <TargetPathWithTargetPlatformMoniker Include="$(ProjectDir)/$(OutputPath)/SpacetimeDB.BSATN.Runtime.dll" IncludeRuntimeDependency="false" />
-    </ItemGroup>
-  </Target>
 
   <ItemGroup>
     <UpToDateCheckInput Include="bindings.c" />
