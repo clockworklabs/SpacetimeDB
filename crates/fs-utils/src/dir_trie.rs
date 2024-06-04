@@ -14,7 +14,7 @@
 //! which we expect to shrink the linear lookups to an acceptable size.
 
 use std::{
-    fs::{create_dir_all, File, OpenOptions, ReadDir},
+    fs::{create_dir_all, File, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
 };
@@ -107,6 +107,12 @@ impl DirTrie {
         }
     }
 
+    pub fn contains_entry(&self, file_id: &FileId) -> bool {
+        let path = self.file_path(file_id);
+
+        path.is_file()
+    }
+
     fn create_parent(file: &Path) -> Result<(), io::Error> {
         // Known to succeed because `self.file_path` creates a path with a parent.
         let dir = file.parent().unwrap();
@@ -149,62 +155,115 @@ impl DirTrie {
         Ok(())
     }
 
-    #[allow(unused)]
-    pub fn contains_entry(&self, file_id: &FileId) -> bool {
-        let path = self.file_path(file_id);
-
-        path.is_file()
-    }
-
     pub fn open_entry(&self, file_id: &FileId, options: &OpenOptions) -> Result<File, io::Error> {
         let path = self.file_path(file_id);
         Self::create_parent(&path)?;
         options.open(path)
     }
+}
 
-    #[allow(unused)]
-    pub fn iter_entries(&self) -> Result<impl Iterator<Item = Result<PathBuf, io::Error>>, io::Error> {
-        let subdirs = self.root.read_dir()?;
-        Ok(Iter {
-            subdirs,
-            current_dir: None,
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::io::Read;
+
+    const TEST_ID: FileId = [0xa5; FILE_ID_BYTES];
+    const TEST_STRING: &[u8] = b"test string";
+
+    fn with_test_dir_trie(f: impl FnOnce(DirTrie)) {
+        let root = tempdir::TempDir::new("test_dir_trie").unwrap();
+        let trie = DirTrie::open(root.path().to_path_buf()).unwrap();
+        f(trie)
+    }
+
+    #[test]
+    fn create_retrieve() {
+        with_test_dir_trie(|trie| {
+            // The trie starts empty, so it doesn't contain the `TEST_ID`'s file.
+            assert!(!trie.contains_entry(&TEST_ID));
+
+            // Create an entry in the trie and write some data to it.
+            {
+                let mut file = trie.open_entry(&TEST_ID, &o_excl()).unwrap();
+                file.write_all(TEST_STRING).unwrap();
+            }
+
+            // The trie now has that entry.
+            assert!(trie.contains_entry(&TEST_ID));
+
+            // Open the entry and read its data back.
+            {
+                let mut file = trie.open_entry(&TEST_ID, &o_rdonly()).unwrap();
+                let mut contents = Vec::new();
+                file.read_to_end(&mut contents).unwrap();
+                assert_eq!(&contents, TEST_STRING);
+            }
         })
     }
-}
 
-pub struct Iter {
-    subdirs: ReadDir,
+    #[test]
+    fn hardlink() {
+        with_test_dir_trie(|src| {
+            with_test_dir_trie(|dst| {
+                // Both tries starts empty, so they don't contain the `TEST_ID`'s file.
+                assert!(!src.contains_entry(&TEST_ID));
+                assert!(!dst.contains_entry(&TEST_ID));
 
-    current_dir: Option<ReadDir>,
-}
-
-impl Iterator for Iter {
-    type Item = Result<PathBuf, io::Error>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if let Some(current_dir) = self.current_dir.as_mut() {
-                match current_dir.next() {
-                    None => {
-                        self.current_dir = None;
-                    }
-                    Some(Err(e)) => return Some(Err(e)),
-                    Some(Ok(dirent)) => return Some(Ok(dirent.path())),
+                // Create an entry in `src` and write some data to it.
+                {
+                    let mut file = src.open_entry(&TEST_ID, &o_excl()).unwrap();
+                    file.write_all(TEST_STRING).unwrap();
                 }
-            } else {
-                match self.subdirs.next() {
-                    None => {
-                        return None;
-                    }
-                    Some(Err(e)) => {
-                        return Some(Err(e));
-                    }
-                    Some(Ok(new_dir)) => match new_dir.path().read_dir() {
-                        Err(e) => return Some(Err(e)),
-                        Ok(new_dir) => self.current_dir = Some(new_dir),
-                    },
+
+                // The `src` now contains the entry, but the `dst` still doesn't.
+                assert!(src.contains_entry(&TEST_ID));
+                assert!(!dst.contains_entry(&TEST_ID));
+
+                // Hardlink the entry from `src` into `dst`.
+                assert!(dst.try_hardlink_from(&src, &TEST_ID).unwrap());
+
+                // After hardlinking, the file is now in `dst`.
+                assert!(dst.contains_entry(&TEST_ID));
+                // Open the entry in `dst` and read its data back.
+                {
+                    let mut file = dst.open_entry(&TEST_ID, &o_rdonly()).unwrap();
+                    let mut contents = Vec::new();
+                    file.read_to_end(&mut contents).unwrap();
+                    assert_eq!(&contents, TEST_STRING);
                 }
+
+                // The file is still also in `src`, and its data hasn't changed.
+                assert!(src.contains_entry(&TEST_ID));
+                {
+                    let mut file = src.open_entry(&TEST_ID, &o_rdonly()).unwrap();
+                    let mut contents = Vec::new();
+                    file.read_to_end(&mut contents).unwrap();
+                    assert_eq!(&contents, TEST_STRING);
+                }
+            })
+        })
+    }
+
+    #[test]
+    fn open_options() {
+        with_test_dir_trie(|trie| {
+            // The trie starts empty, so it doesn't contain the `TEST_ID`'s file.
+            assert!(!trie.contains_entry(&TEST_ID));
+
+            // Because the file isn't there, we can't open it.
+            assert!(trie.open_entry(&TEST_ID, &o_rdonly()).is_err());
+
+            // Create an entry in the trie and write some data to it.
+            {
+                let mut file = trie.open_entry(&TEST_ID, &o_excl()).unwrap();
+                file.write_all(TEST_STRING).unwrap();
             }
-        }
+
+            // The trie now has that entry.
+            assert!(trie.contains_entry(&TEST_ID));
+
+            // Because the file is there, we can't create it.
+            assert!(trie.open_entry(&TEST_ID, &o_excl()).is_err());
+        })
     }
 }
