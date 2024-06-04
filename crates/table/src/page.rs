@@ -41,6 +41,7 @@ use super::{
 };
 use crate::{fixed_bit_set::IterSet, static_assert_size, table::BlobNumBytes};
 use core::{mem, ops::ControlFlow, ptr};
+use spacetimedb_lib::{de::Deserialize, ser::Serialize};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -54,7 +55,7 @@ pub enum Error {
 /// A cons-cell in a freelist either
 /// for an unused fixed-len cell or a variable-length granule.
 #[repr(C)] // Required for a stable ABI.
-#[derive(Clone, Copy, Debug, bytemuck::NoUninit)]
+#[derive(Clone, Copy, Debug, bytemuck::NoUninit, Serialize, Deserialize)]
 struct FreeCellRef {
     /// The address of the next free cell in a freelist.
     ///
@@ -125,6 +126,7 @@ impl FreeCellRef {
 
 /// All the fixed size header information.
 #[repr(C)] // Required for a stable ABI.
+#[derive(Serialize, Deserialize)] // So we can dump and restore pages during snapshotting.
 struct FixedHeader {
     /// A pointer to the head of the freelist which stores
     /// all the unused (freed) fixed row cells.
@@ -224,7 +226,7 @@ impl FixedHeader {
 
 /// All the var-len header information.
 #[repr(C)] // Required for a stable ABI.
-#[derive(bytemuck::NoUninit, Clone, Copy)]
+#[derive(bytemuck::NoUninit, Clone, Copy, Serialize, Deserialize)]
 struct VarHeader {
     /// A pointer to the head of the freelist which stores
     /// all the unused (freed) var-len granules.
@@ -277,6 +279,7 @@ impl VarHeader {
 /// as the whole [`Page`] is `Box`ed.
 #[repr(C)] // Required for a stable ABI.
 #[repr(align(64))] // Alignment must be same as `VarLenGranule::SIZE`.
+#[derive(Serialize, Deserialize)] // So we can dump and restore pages during snapshotting.
 struct PageHeader {
     /// The header data relating to the fixed component of a row.
     fixed: FixedHeader,
@@ -360,6 +363,7 @@ const _VLG_ALIGN_MULTIPLE_OF_FCR: () = assert!(mem::align_of::<VarLenGranule>() 
 // ^-- Must have align at least that of `VarLenGranule`,
 // so that `row_data[PageOffset::PAGE_END - VarLenGranule::SIZE]` is an aligned pointer to `VarLenGranule`.
 // TODO(bikeshedding): consider raising the alignment. We may want this to be OS page (4096) aligned.
+#[derive(Serialize, Deserialize)] // So we can dump and restore pages during snapshotting.
 pub struct Page {
     /// The header containing metadata on how to interpret and modify the `row_data`.
     header: PageHeader,
@@ -1759,6 +1763,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::{blob_store::NullBlobStore, layout::row_size_for_type, var_len::AlignedVarLenOffsets};
     use proptest::{collection::vec, prelude::*};
+    use spacetimedb_lib::bsatn;
 
     fn u64_row_size() -> Size {
         let fixed_row_size = row_size_for_type::<u64>();
@@ -2281,5 +2286,62 @@ pub(crate) mod tests {
 
         // Reading did not alter the hash.
         assert_eq!(hash_pre_iter, page.header.unmodified_hash.unwrap());
+    }
+
+    #[test]
+    fn serde_round_trip_whole_page() {
+        let mut page = Page::new(u64_row_size());
+
+        // Construct an empty page, ser/de it, and assert that it's still empty.
+        let hash_pre_ins = hash_unmodified_save_get(&mut page);
+        let ser_pre_ins = bsatn::to_vec(&page).unwrap();
+        let de_pre_ins = bsatn::from_slice::<Box<Page>>(&ser_pre_ins).unwrap();
+        assert_eq!(de_pre_ins.content_hash(), hash_pre_ins);
+        assert_eq!(de_pre_ins.header.fixed.num_rows, 0);
+        assert!(de_pre_ins.header.fixed.present_rows == page.header.fixed.present_rows);
+
+        // Insert some rows into the page.
+        let offsets = (0..64)
+            .map(|val| insert_u64(&mut page, val))
+            .collect::<Vec<PageOffset>>();
+
+        let hash_ins = hash_unmodified_save_get(&mut page);
+
+        // Ser/de the page and assert that it contains the same rows.
+        let ser_ins = bsatn::to_vec(&page).unwrap();
+        let de_ins = bsatn::from_slice::<Box<Page>>(&ser_ins).unwrap();
+        assert_eq!(de_ins.content_hash(), hash_ins);
+        assert_eq!(de_ins.header.fixed.num_rows, 64);
+        assert!(de_ins.header.fixed.present_rows == page.header.fixed.present_rows);
+        assert_eq!(
+            de_ins.iter_fixed_len(u64_row_size()).collect::<Vec<PageOffset>>(),
+            offsets
+        );
+
+        // Delete the even-numbered rows, leaving the odds.
+        let offsets = offsets
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, offset)| {
+                if i % 2 == 0 {
+                    unsafe { page.delete_row(offset, u64_row_size(), u64_var_len_visitor(), &mut NullBlobStore) };
+                    None
+                } else {
+                    Some(offset)
+                }
+            })
+            .collect::<Vec<PageOffset>>();
+
+        // Ser/de the page again and assert that it contains only the odd-numbered rows.
+        let hash_del = hash_unmodified_save_get(&mut page);
+        let ser_del = bsatn::to_vec(&page).unwrap();
+        let de_del = bsatn::from_slice::<Box<Page>>(&ser_del).unwrap();
+        assert_eq!(de_del.content_hash(), hash_del);
+        assert_eq!(de_del.header.fixed.num_rows, 32);
+        assert!(de_del.header.fixed.present_rows == page.header.fixed.present_rows);
+        assert_eq!(
+            de_del.iter_fixed_len(u64_row_size()).collect::<Vec<PageOffset>>(),
+            offsets
+        );
     }
 }
