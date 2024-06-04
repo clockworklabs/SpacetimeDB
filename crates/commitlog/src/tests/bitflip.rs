@@ -1,10 +1,12 @@
 use std::{
-    cmp,
+    fmt,
     io::{Read, Seek, SeekFrom, Write},
     iter::{repeat, successors},
+    num::NonZeroU8,
     rc::Rc,
 };
 
+use log::debug;
 use proptest::{prelude::*, sample::select};
 
 use crate::{
@@ -15,80 +17,114 @@ use crate::{
     Commit,
 };
 
+/// The serialized length of a commit's crc.
+const CRC_SIZE: usize = 4;
+/// Max size in bytes of a segment.
+const MAX_SEGMENT_SIZE: usize = 1024;
+/// Number of commits to generate.
 const NUM_COMMITS: usize = 100;
+/// Size in bytes of the (dummy) transactions to generate.
 const TX_SIZE: usize = 32;
+/// Number of transactions to generate per commit.
 const TXS_PER_COMMIT: usize = 10;
-const COMMIT_SIZE: usize = Commit::FRAMING_LEN + (TX_SIZE * TXS_PER_COMMIT);
 
-fn mk_log() -> commitlog::Generic<repo::Memory, [u8; TX_SIZE]> {
-    let mut log = mem_log::<[u8; TX_SIZE]>(1024);
-    fill_log(&mut log, NUM_COMMITS, repeat(TXS_PER_COMMIT));
-    log
+/// The size in bytes of one commit according to above parameters.
+const COMMIT_SIZE: usize = Commit::FRAMING_LEN + (TX_SIZE * TXS_PER_COMMIT) + CRC_SIZE;
+
+/// Iterator yielding the start offsets of the commits in a segment.
+fn commit_boundaries() -> impl Iterator<Item = usize> {
+    successors(Some(segment::Header::LEN), |n| Some(n + COMMIT_SIZE)).take_while(|&x| x <= MAX_SEGMENT_SIZE)
 }
 
 type Log = Rc<commitlog::Generic<repo::Memory, [u8; TX_SIZE]>>;
 
-#[derive(Debug)]
+fn mk_log() -> Log {
+    let mut log = mem_log::<[u8; TX_SIZE]>(MAX_SEGMENT_SIZE as _);
+    fill_log(&mut log, NUM_COMMITS, repeat(TXS_PER_COMMIT));
+    Rc::new(log)
+}
+
 struct Inputs {
     log: Log,
     segment: Segment,
     byte_pos: usize,
     bit_mask: u8,
+
+    // For debugging.
+    #[allow(unused)]
+    segment_offset: u64,
+}
+
+impl fmt::Debug for Inputs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Inputs")
+            .field("byte_pos", &self.byte_pos)
+            .field("bit_mask", &self.bit_mask)
+            .field("segment_offset", &self.segment_offset)
+            .finish()
+    }
 }
 
 impl Inputs {
     fn generate() -> impl Strategy<Value = Inputs> {
-        // hey proptest, `prop_compose` doesn't make this any more pleasant.
-        // how about, you know, do-notation?
+        // Open + fill log.
+        let log = mk_log();
+        // Obtain segment offsets.
+        let segment_offsets = log.repo.existing_offsets().unwrap();
         (
-            // Open + fill log, obtain segment offsets.
-            Just({
-                let log = mk_log();
-                let segment_offsets = log.repo.existing_offsets().unwrap();
-                (Rc::new(log), segment_offsets)
-            })
-            // Select a random segment offset.
-            .prop_flat_map(|(log, segment_offsets)| (Just(log), select(segment_offsets)))
-            // Open the segment at that offset.
-            .prop_map(|(log, offset)| {
-                let segment = log.repo.open_segment(offset).unwrap();
-                (log, segment)
-            })
-            // Generate a byte position where we want a bit to be flipped.
-            // The offset shall be past the segment + first commit headers,
-            // so as to reliably provoke checksum errors (and not any other
-            // errors).
-            .prop_flat_map(|(log, segment)| {
-                let byte_pos = segment::Header::LEN + commit::Header::LEN..segment.len();
-                (Just(log), Just(segment), byte_pos)
-            }),
+            // Select a random segment.
+            select(segment_offsets)
+                // Open the segment at that offset,
+                // and generate a byte position where we want a bit to be
+                // flipped.
+                .prop_flat_map(move |segment_offset| {
+                    let segment = log.repo.open_segment(segment_offset).unwrap();
+                    let byte_pos = byte_position(segment.len());
+                    (Just(log.clone()), Just(segment), Just(segment_offset), byte_pos)
+                }),
             // A byte to XOR with the byte at `byte_pos`
-            any::<u8>(),
+            any::<NonZeroU8>(),
         )
-            .prop_map(|((log, segment, byte_pos), bit_mask)| Self {
+            .prop_map(|((log, segment, segment_offset, byte_pos), bit_mask)| Self {
                 log,
                 segment,
                 byte_pos,
-                bit_mask,
+                bit_mask: bit_mask.get(),
+
+                segment_offset,
             })
     }
+}
+
+/// Select a random position of a byte within a segment.
+///
+/// The position shall not fall on any headers (segment or commit), so as to
+/// reliably provoke checksum errors (and not any other errors).
+fn byte_position(segment_len: usize) -> impl Strategy<Value = usize> {
+    (segment::Header::LEN + commit::Header::LEN + 1..segment_len).prop_map(|mut byte_pos| {
+        for x in commit_boundaries() {
+            if byte_pos >= x && byte_pos < x + COMMIT_SIZE {
+                byte_pos = byte_pos.max(x + commit::Header::LEN + 1);
+            }
+        }
+        byte_pos
+    })
 }
 
 proptest! {
     #[test]
     fn detect_bitflip_during_traversal(inputs in Inputs::generate()) {
         enable_logging();
+        debug!("TEST RUN: {inputs:?}");
 
-        let Inputs { log, mut segment, mut byte_pos, bit_mask } = inputs;
+        let Inputs {
+            log,
+            mut segment,
+            byte_pos,
+            bit_mask,
 
-        // Make sure we don't touch the commit header, so we're sure that the
-        // error will be a checksum mismatch. If we'd match on any out-of-order
-        // error, we might be missing error conditions we hadn't thought of.
-        for x in successors(Some(0), |n| Some(n * COMMIT_SIZE)).take(NUM_COMMITS) {
-            if byte_pos >= x && byte_pos < x + COMMIT_SIZE {
-                byte_pos = cmp::max(x + commit::Header::LEN + 1, byte_pos);
-            }
-        }
+            segment_offset:_ ,
+        } = inputs;
 
         segment.seek(SeekFrom::Start(byte_pos as u64)).unwrap();
         let mut buf = [0; 1];
