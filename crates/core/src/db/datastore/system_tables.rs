@@ -193,7 +193,6 @@ st_fields_enum!(enum StClientsFields {
 });
 
 st_fields_enum!(enum StScheduledFields {
-    "scheduled_id", ScheduledId = 0,
     "table_id", TableId = 1,
     "reducer_name", ReducerName = 2,
 });
@@ -365,13 +364,12 @@ fn st_scheduled_schema() -> TableSchema {
     TableDef::new(
         ST_SCHEDULED_NAME.into(),
         vec![
-            ColumnDef::sys(StScheduledFields::ScheduledId.name(), AlgebraicType::U64),
             ColumnDef::sys(StScheduledFields::TableId.name(), AlgebraicType::U32),
             ColumnDef::sys(StScheduledFields::ReducerName.name(), AlgebraicType::String),
         ],
     )
     .with_type(StTableType::System)
-    .with_column_constraint(Constraints::primary_key_auto(), StScheduledFields::ScheduledId)
+    .with_column_constraint(Constraints::unique(), StScheduledFields::TableId)
     .into_schema(ST_SCHEDULED_ID)
 }
 
@@ -741,7 +739,6 @@ impl From<&StClientsRow> for ProductValue {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StScheduledRow<ReducerName: AsRef<str>> {
-    pub(crate) scheduled_id: ScheduledId,
     pub(crate) table_id: TableId,
     pub(crate) reducer_name: ReducerName,
 }
