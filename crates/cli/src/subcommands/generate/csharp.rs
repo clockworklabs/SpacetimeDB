@@ -612,23 +612,23 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
 
     writeln!(output, "public partial class ReducerEvent : ReducerEventBase");
     indented_block(&mut output, |output| {
-        writeln!(output, "public IReducerArgs Args {{ get; }}");
+        writeln!(output, "public IReducerArgs? Args {{ get; }}");
         writeln!(output);
-        writeln!(output, "public string ReducerName => Args.ReducerName;");
+        writeln!(output, "public string ReducerName => Args?.ReducerName ?? \"<none>\";");
         writeln!(output);
         writeln!(
             output,
             r#"[Obsolete("ReducerType is deprecated, please match directly on type of .Args instead.")]"#
         );
-        writeln!(output, "public ReducerType Reducer => Args.ReducerType;");
+        writeln!(output, "public ReducerType Reducer => Args?.ReducerType ?? ReducerType.None;");
         writeln!(output);
         writeln!(
             output,
-            "public ReducerEvent(IReducerArgs args) : base() => Args = args;"
+            "public ReducerEvent(IReducerArgs? args) : base() => Args = args;"
         );
         writeln!(
             output,
-            "public ReducerEvent(ClientApi.Event dbEvent, IReducerArgs args) : base(dbEvent) => Args = args;"
+            "public ReducerEvent(ClientApi.Event dbEvent, IReducerArgs? args) : base(dbEvent) => Args = args;"
         );
         writeln!(output);
         // Properties for reducer args
@@ -639,14 +639,14 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
             );
             writeln!(
                 output,
-                "public {reducer_name}ArgsStruct {reducer_name}Args => ({reducer_name}ArgsStruct)Args;"
+                "public {reducer_name}ArgsStruct {reducer_name}Args => ({reducer_name}ArgsStruct)Args!;"
             );
         }
         writeln!(output);
         // Event handlers.
         writeln!(
             output,
-            "public override bool InvokeHandler() => Args.InvokeHandler(this);"
+            "public override bool InvokeHandler() => Args?.InvokeHandler(this) ?? false;"
         );
     });
     writeln!(output);
@@ -689,10 +689,11 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
                         "\"{reducer_str_name}\" => BSATNHelpers.FromProtoBytes<{reducer_name}ArgsStruct>(argBytes),"
                     );
                 }
-                writeln!(output, "_ => null");
+                writeln!(output, "\"<none>\" => null,");
+                writeln!(output, r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#);
             }
             writeln!(output, "}};");
-            writeln!(output, "return args is null ? null : new ReducerEvent(dbEvent, args);");
+            writeln!(output, "return new ReducerEvent(dbEvent, args);");
         });
     });
 
