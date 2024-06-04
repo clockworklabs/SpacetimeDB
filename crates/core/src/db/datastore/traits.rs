@@ -171,10 +171,29 @@ pub struct TxData {
     /// Map of all `TableId`s in both `inserts` and `deletes` to their
     /// corresponding table name.
     tables: IntMap<TableId, String>,
+    /// Tx offset of the transaction which performed these operations.
+    ///
+    /// `None` implies that `inserts` and `deletes` are both empty,
+    /// but `Some` does not necessarily imply that either is non-empty.
+    tx_offset: Option<u64>,
     // TODO: Store an `Arc<String>` or equivalent instead.
 }
 
 impl TxData {
+    /// Set `tx_offset` as the expected on-disk transaction offset of this transaction.
+    pub fn set_tx_offset(&mut self, tx_offset: u64) {
+        self.tx_offset = Some(tx_offset);
+    }
+
+    /// Read the expected on-disk transaction offset of this transaction.
+    ///
+    /// `None` implies that this [`TxData`] contains zero inserted or deleted rows,
+    /// but the inverse is not necessarily true;
+    /// a [`TxData`] may have a `tx_offset` but no row operations.
+    pub fn tx_offset(&self) -> Option<u64> {
+        self.tx_offset
+    }
+
     /// Set `rows` as the inserted rows for `(table_id, table_name)`.
     pub fn set_inserts_for_table(&mut self, table_id: TableId, table_name: &str, rows: Arc<[ProductValue]>) {
         self.inserts.insert(table_id, rows);

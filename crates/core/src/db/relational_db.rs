@@ -12,7 +12,7 @@ use super::db_metrics::DB_METRICS;
 use super::relational_operators::Relation;
 use crate::config::DatabaseConfig;
 use crate::error::{DBError, DatabaseError, TableError};
-use crate::execution_context::{ExecutionContext, ReducerContext};
+use crate::execution_context::ExecutionContext;
 use crate::util::slow::SlowQueryConfig;
 use fs2::FileExt;
 use parking_lot::RwLock;
@@ -365,63 +365,57 @@ impl RelationalDB {
         Ok(Some((tx_data, tx)))
     }
 
+    /// If `(tx_data, ctx)` should be appended to the commitlog, do so.
+    ///
+    /// Note that by this stage,
+    /// [`crate::db::datastore::locking_tx_datastore::committed_state::tx_consumes_offset`]
+    /// has already decided based on the reducer and operations whether the transaction should be appended;
+    /// this method is responsible only for reading its decision out of the `tx_data`
+    /// and calling `durability.append_tx`.
     fn do_durability(durability: &dyn Durability<TxData = Txdata>, ctx: &ExecutionContext, tx_data: &TxData) {
         use commitlog::payload::{
             txdata::{Mutations, Ops},
             Txdata,
         };
 
-        let inserts: Box<_> = tx_data
-            .inserts()
-            .map(|(table_id, rowdata)| Ops {
-                table_id: *table_id,
-                rowdata: rowdata.clone(),
-            })
-            .collect();
-        let deletes: Box<_> = tx_data
-            .deletes()
-            .map(|(table_id, rowdata)| Ops {
-                table_id: *table_id,
-                rowdata: rowdata.clone(),
-            })
-            .collect();
+        if tx_data.tx_offset().is_some() {
+            let inserts: Box<_> = tx_data
+                .inserts()
+                .map(|(table_id, rowdata)| Ops {
+                    table_id: *table_id,
+                    rowdata: rowdata.clone(),
+                })
+                .collect();
+            let deletes: Box<_> = tx_data
+                .deletes()
+                .map(|(table_id, rowdata)| Ops {
+                    table_id: *table_id,
+                    rowdata: rowdata.clone(),
+                })
+                .collect();
 
-        // Avoid appending transactions to the commitlog which don't modify
-        // any tables.
-        //
-        // An exception ar connect / disconnect calls, which we always want
-        // paired in the log, so as to be able to disconnect clients
-        // automatically after a server crash. See:
-        // [`crate::host::ModuleHost::call_identity_connected_disconnected`]
-        //
-        // Note that this may change in the future: some analytics and/or
-        // timetravel queries may benefit from seeing all inputs, even if
-        // the database state did not change.
-        let is_noop = || inserts.is_empty() && deletes.is_empty();
-        let is_connect_disconnect = |ctx: &ReducerContext| {
-            matches!(
-                ctx.name.strip_prefix("__identity_"),
-                Some("connected__" | "disconnected__")
-            )
-        };
-        let inputs = ctx
-            .reducer_context()
-            .and_then(|rcx| (!is_noop() || is_connect_disconnect(rcx)).then(|| rcx.into()));
+            let inputs = ctx.reducer_context().map(|rcx| rcx.into());
 
-        let txdata = Txdata {
-            inputs,
-            outputs: None,
-            mutations: Some(Mutations {
-                inserts,
-                deletes,
-                truncates: [].into(),
-            }),
-        };
+            let txdata = Txdata {
+                inputs,
+                outputs: None,
+                mutations: Some(Mutations {
+                    inserts,
+                    deletes,
+                    truncates: [].into(),
+                }),
+            };
 
-        if !txdata.is_empty() {
             log::trace!("append {txdata:?}");
             // TODO: Should measure queuing time + actual write
             durability.append_tx(txdata);
+        } else {
+            debug_assert!(tx_data.inserts().all(|(_, inserted_rows)| inserted_rows.is_empty()));
+            debug_assert!(tx_data.deletes().all(|(_, deleted_rows)| deleted_rows.is_empty()));
+            debug_assert!(!matches!(
+                ctx.reducer_context().map(|rcx| rcx.name.strip_prefix("__identity_")),
+                Some(Some("connected__" | "disconnected__"))
+            ));
         }
     }
 
