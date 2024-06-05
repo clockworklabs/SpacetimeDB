@@ -1,3 +1,4 @@
+// Note: the generated code depends on APIs and interfaces from crates/bindings-csharp/BSATN.Runtime.
 use super::util::fmt_fn;
 
 use std::fmt::{self, Write};

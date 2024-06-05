@@ -161,6 +161,14 @@ public struct TypeRegistrar() : ITypeRegistrar
             ? $"{type.Name.Remove(type.Name.IndexOf('`'))}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
             : type.Name;
 
+    // Registers type in the module definition.
+    //
+    // To avoid issues with self-recursion during registration as well as unnecessary construction
+    // of algebraic types for types that have already been registered, we accept a factory
+    // returning an AlgebraicType instead of the AlgebraicType itself.
+    //
+    // The factory callback will be called with the allocated type reference that can be used for
+    // e.g. self-recursion even before the algebraic type itself is constructed.
     public AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> makeType)
     {
         if (RegisteredTypes.TryGetValue(typeof(T), out var existingTypeRef))
