@@ -860,8 +860,8 @@ impl Config {
         // that approach (see https://github.com/clockworklabs/SpacetimeDB/issues/1339, and the
         // TODO in `lockfile.rs`).
         //
-        // We should address this issue, but we currently don't expect it to arise very frequently.
-        // (https://github.com/clockworklabs/SpacetimeDB/pull/1341#issuecomment-2150857432)
+        // We should address this issue, but we currently don't expect it to arise very frequently
+        // (see https://github.com/clockworklabs/SpacetimeDB/pull/1341#issuecomment-2150857432).
         if let Err(e) = atomic_write(&home_path, config) {
             eprintln!("could not save config file: {e}")
         }
