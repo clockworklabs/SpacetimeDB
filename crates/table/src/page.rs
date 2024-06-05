@@ -1696,6 +1696,14 @@ impl Page {
         self.header.unmodified_hash = Some(hash);
     }
 
+    /// Return the page's content hash, computing and saving it if it is not already stored.
+    pub fn save_or_get_content_hash(&mut self) -> blake3::Hash {
+        self.unmodified_hash().copied().unwrap_or_else(|| {
+            self.save_content_hash();
+            self.header.unmodified_hash.unwrap()
+        })
+    }
+
     /// Returns the stored unmodified hash, if any.
     pub fn unmodified_hash(&self) -> Option<&blake3::Hash> {
         self.header.unmodified_hash.as_ref()

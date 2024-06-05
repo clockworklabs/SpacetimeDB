@@ -15,7 +15,7 @@
 
 use std::{
     fs::{create_dir_all, File, OpenOptions},
-    io::{self, Write},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -175,6 +175,15 @@ impl DirTrie {
         let path = self.file_path(file_id);
         Self::create_parent(&path)?;
         options.open(path)
+    }
+
+    /// Open the entry keyed with `file_id` and read it into a `Vec<u8>`.
+    pub fn read_entry(&self, file_id: &FileId) -> Result<Vec<u8>, io::Error> {
+        let mut file = self.open_entry(file_id, &o_rdonly())?;
+        let mut buf = Vec::with_capacity(file.metadata()?.len() as usize);
+        // TODO(perf): Async IO?
+        file.read_to_end(&mut buf)?;
+        Ok(buf)
     }
 }
 

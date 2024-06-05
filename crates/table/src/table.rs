@@ -1039,12 +1039,10 @@ impl Table {
     /// Iterates over each [`Page`] in this table, ensuring that its hash is computed before yielding it.
     ///
     /// Used when capturing a snapshot.
-    pub fn iter_pages_with_hashes(&mut self) -> impl Iterator<Item = &Page> {
+    pub fn iter_pages_with_hashes(&mut self) -> impl Iterator<Item = (blake3::Hash, &Page)> {
         self.inner.pages.iter_mut().map(|page| {
-            if page.unmodified_hash().is_none() {
-                page.save_content_hash();
-            }
-            &**page
+            let hash = page.save_or_get_content_hash();
+            (hash, &**page)
         })
     }
 

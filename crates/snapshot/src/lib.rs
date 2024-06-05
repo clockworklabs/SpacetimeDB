@@ -1,3 +1,26 @@
+//! This crate implements capturing and restoring snapshots in SpacetimeDB.
+//!
+//! A snapshot is an on-disk view of the committed state of a database at a particular transaction offset.
+//! Snapshots exist as an optimization over replaying the commitlog;
+//! when restoring to the most recent transaction, rather than replaying the commitlog from 0,
+//! we can reload the most recent snapshot, then replay only the suffix of the commitlog.
+//!
+//! This crate is responsible for:
+//! - The on-disk format of snapshots.
+//! - A [`SnapshotRepository`] which contains multiple snapshots of a DB and can create and retrieve them.
+//! - Creating a snapshot given a view of a DB's committed state in [`SnapshotRepository::create_snapshot`].
+//! - Reading an on-disk snapshot into memory as a [`ReconstructedSnapshot`] in [`SnapshotRepository::read_snapshot`].
+//!   The [`ReconstructedSnapshot`] can then be installed into a datastore.
+//! - Locating the most-recent snapshot of a DB, or the most recent snapshot not newer than a given tx offset,
+//!   in [`SnapshotRepository::latest_snapshot`] and [`SnapshotRepository::latest_snapshot_older_than`].
+//!
+//! This crate *is not* responsible for:
+//! - Determining when to capture snapshots.
+//! - Deciding which snapshot to restore from after a restart.
+//! - Replaying the suffix of the commitlog after restoring a snapshot.
+//! - Transforming a [`ReconstructedSnapshot`] into a live Spacetime datastore.
+// TODO(docs): consider making the snapshot proposal public and either linking or pasting it here.
+
 use spacetimedb_durability::TxOffset;
 use spacetimedb_fs_utils::{
     dir_trie::{o_excl, o_rdonly, CountCreated, DirTrie},
@@ -84,6 +107,9 @@ impl Snapshot {
     /// Insert a single large blob from a [`BlobStore`]
     /// into the in-memory snapshot `self`
     /// and the on-disk object repository `object_repo`.
+    ///
+    /// If the `prev_snapshot` is supplied, this method will attempt to hardlink the blob's on-disk object
+    /// from that previous snapshot into `object_repo` rather than creating a fresh object.
     fn write_blob(
         &mut self,
         object_repo: &DirTrie,
@@ -103,7 +129,7 @@ impl Snapshot {
 
     /// Populate the in-memory snapshot `self`,
     /// and the on-disk object repository `object_repo`,
-    /// with all large blos from `blobs`.
+    /// with all large blobs from `blobs`.
     fn write_all_blobs(
         &mut self,
         object_repo: &DirTrie,
@@ -117,22 +143,22 @@ impl Snapshot {
         Ok(())
     }
 
-    /// Insert a single large blob from a [`BlobStore`]
-    /// into the on-disk object repository `object_repo`.
+    /// Write a single `page` into the on-disk object repository `object_repo`.
     ///
-    /// Returns the hash of the `page` so that it may be inserted into an in-memory [`Snapshot`] object
-    /// by [`Snapshot::write_table`].
+    /// `hash` must be the content hash of `page`, and must be stored in `page.unmodified_hash()`.
+    ///
+    /// Returns the `hash` for convenient use with [`Iter::map`] in [`Self::write_table`].
+    ///
+    /// If the `prev_snapshot` is supplied, this function will attempt to hardlink the page's on-disk object
+    /// from that previous snapshot into `object_repo` rather than creating a fresh object.
     fn write_page(
         object_repo: &DirTrie,
         page: &Page,
+        hash: blake3::Hash,
         prev_snapshot: Option<&DirTrie>,
         counter: &mut CountCreated,
     ) -> anyhow::Result<blake3::Hash> {
-        let hash = *page
-            .unmodified_hash()
-            // This `unwrap` will never fail because `page` came from `Table::iter_pages_with_hashes`,
-            // which ensures the hash is present before yielding each page.
-            .unwrap();
+        debug_assert!(page.unmodified_hash().copied() == Some(hash));
 
         object_repo.hardlink_or_write(prev_snapshot, hash.as_bytes(), || bsatn::to_vec(page).unwrap(), counter)?;
 
@@ -151,7 +177,7 @@ impl Snapshot {
     ) -> anyhow::Result<()> {
         let pages = table
             .iter_pages_with_hashes()
-            .map(|page| Self::write_page(object_repo, page, prev_snapshot, counter))
+            .map(|(hash, page)| Self::write_page(object_repo, page, hash, prev_snapshot, counter))
             .collect::<anyhow::Result<Vec<blake3::Hash>>>()?;
 
         self.tables.push(TableEntry {
@@ -186,13 +212,18 @@ impl Snapshot {
     fn read_from_file(path: &Path) -> anyhow::Result<Self> {
         let mut snapshot_file = o_rdonly().open(path)?;
 
+        // The snapshot file is prefixed with the hash of the `Snapshot`'s BSATN.
+        // Read that hash.
         let mut hash = [0; blake3::OUT_LEN];
         snapshot_file.read_exact(&mut hash)?;
         let hash = blake3::Hash::from_bytes(hash);
+
+        // Read the `Snapshot`'s BSATN and compute its hash.
         let mut snapshot_bsatn = vec![];
         snapshot_file.read_to_end(&mut snapshot_bsatn)?;
         let computed_hash = blake3::hash(&snapshot_bsatn);
 
+        // Compare the saved and computed hashes, and fail if they do not match.
         if hash != computed_hash {
             anyhow::bail!("Computed hash of snapshot file {path:?} does not match recorded hash: computed {computed_hash:?} but expected {hash:?}");
         }
@@ -209,11 +240,14 @@ impl Snapshot {
         let mut blob_store = HashMapBlobStore::default();
 
         for BlobEntry { hash, uses } in &self.blobs {
-            let mut file = object_repo.open_entry(&hash.data, &o_rdonly())?;
-            let mut buf = Vec::with_capacity(file.metadata()?.len() as usize);
-            // TODO(perf): Async IO?
-            file.read_to_end(&mut buf)?;
+            // Read the bytes of the blob object.
+            let buf = object_repo.read_entry(&hash.data)?;
+
+            // Compute the blob's hash.
             let computed_hash = BlobHash::hash_from_bytes(&buf);
+
+            // Compare the computed hash to the one recorded in the `Snapshot`,
+            // and fail if they do not match.
             if *hash != computed_hash {
                 anyhow::bail!("Computed hash of large blob does not match recorded hash: computed {computed_hash:?} but expected {hash:?}");
             }
@@ -230,15 +264,17 @@ impl Snapshot {
     /// as detected by comparing the hash of its bytes to the hash listed in `pages`.
     fn reconstruct_one_table_pages(object_repo: &DirTrie, pages: &[blake3::Hash]) -> anyhow::Result<Vec<Box<Page>>> {
         pages.iter().map(|hash| {
-            let mut file = object_repo.open_entry(hash.as_bytes(), &o_rdonly())?;
-            // TODO: avoid allocating a `Vec` here.
-            let mut buf = Vec::with_capacity(file.metadata()?.len() as usize);
-            // TODO(perf): Async IO?
-            file.read_to_end(&mut buf)?;
+            // Read the BSATN bytes of the on-disk page object.
+            let buf = object_repo.read_entry(hash.as_bytes())?;
+
+            // Deserialize the bytes into a `Page`.
             let page = bsatn::from_slice::<Box<Page>>(&buf)?;
 
+            // Compute the hash of the page.
             let computed_hash = page.content_hash();
 
+            // Compare the computed hash to the one recorded in the `Snapshot`,
+            // and fail if they do not match.
             if *hash != computed_hash {
                 anyhow::bail!("Computed hash of page does not match recorded hash: computed {computed_hash:?} but expected {hash:?}");
             }
@@ -259,7 +295,7 @@ impl Snapshot {
     ///
     /// This method cannot construct [`Table`] objects
     /// because doing so requires knowledge of the system tables' schemas
-    /// to compute the schemas of the user-defined tables.o
+    /// to compute the schemas of the user-defined tables
     ///
     /// Fails if any object file referenced in `self` (as a page or large blob)
     /// is missing or corrupted,
@@ -288,7 +324,7 @@ pub struct SnapshotRepository {
 }
 
 impl SnapshotRepository {
-    /// Read the [`Address`] of the database this [`SnapshotRepository`] is configured to snapshot.
+    /// Returns [`Address`] of the database this [`SnapshotRepository`] is configured to snapshot.
     pub fn database_address(&self) -> Address {
         self.database_address
     }
@@ -304,6 +340,8 @@ impl SnapshotRepository {
         blobs: &'db dyn BlobStore,
         tx_offset: TxOffset,
     ) -> anyhow::Result<PathBuf> {
+        // If a previous snapshot exists in this snapshot repo,
+        // get a handle on its object repo in order to hardlink shared objects into the new snapshot.
         let prev_snapshot = self
             .latest_snapshot()?
             .map(|tx_offset| self.snapshot_dir_path(tx_offset));
@@ -458,6 +496,10 @@ impl SnapshotRepository {
         })
     }
 
+    /// Open a repository at `root`, failing if the `root` doesn't exist or isn't a directory.
+    ///
+    /// Calls [`Path::is_dir`] and requires that the result is `true`.
+    /// See that method for more detailed preconditions on this function.
     pub fn open(root: PathBuf, database_address: Address, database_instance_id: u64) -> anyhow::Result<Self> {
         if !root.is_dir() {
             anyhow::bail!("Cannot open snapshot repository in non-directory {root:?}");
