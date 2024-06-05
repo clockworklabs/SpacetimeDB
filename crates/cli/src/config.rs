@@ -3,13 +3,12 @@ use anyhow::Context;
 use jsonwebtoken::DecodingKey;
 use serde::{Deserialize, Serialize};
 use spacetimedb::auth::identity::decode_token;
-use spacetimedb_fs_utils::create_parent_dir;
+use spacetimedb_fs_utils::{atomic_write, create_parent_dir};
 use spacetimedb_lib::Identity;
 use std::{
     fs,
     path::{Path, PathBuf},
 };
-use tempfile::NamedTempFile;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IdentityConfig {
@@ -579,15 +578,6 @@ Fetch the server's fingerprint with:
         cfg.ecdsa_public_key = None;
         Ok(())
     }
-}
-
-fn atomic_write(file_path: &PathBuf, data: String) -> anyhow::Result<()> {
-    let temp_file = NamedTempFile::new()?;
-    // Close the file, but keep the path to it around.
-    let temp_path = temp_file.into_temp_path();
-    std::fs::write(&temp_path, data)?;
-    std::fs::rename(&temp_path, file_path)?;
-    Ok(())
 }
 
 impl Config {
