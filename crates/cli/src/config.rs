@@ -3,12 +3,13 @@ use anyhow::Context;
 use jsonwebtoken::DecodingKey;
 use serde::{Deserialize, Serialize};
 use spacetimedb::auth::identity::decode_token;
-use spacetimedb_fs_utils::{create_parent_dir, lockfile::Lockfile};
+use spacetimedb_fs_utils::create_parent_dir;
 use spacetimedb_lib::Identity;
 use std::{
     fs,
     path::{Path, PathBuf},
 };
+use tempfile::NamedTempFile;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct IdentityConfig {
@@ -109,20 +110,6 @@ pub struct RawConfig {
 pub struct Config {
     proj: RawConfig,
     home: RawConfig,
-
-    /// The path from which we loaded the system config `home`,
-    /// and a [`Lockfile`] which guarantees us exclusive access to it.
-    ///
-    /// The lockfile is created before reading or creating the home config,
-    /// and closed upon dropping the config.
-    /// This allows us to mutate the config via [`Config::save`] without worrying about other processes.
-    ///
-    /// None only in tests, which are allowed to concurrently mutate configurations as much as they want,
-    /// since they use a hardcoded configuration rather than loading from a file.
-    ///
-    /// Note that it's not necessary to lock or remember the path of the project config,
-    /// since we never write to that file.
-    home_file: Option<(PathBuf, Lockfile)>,
 }
 
 const HOME_CONFIG_DIR: &str = ".spacetime";
@@ -594,21 +581,16 @@ Fetch the server's fingerprint with:
     }
 }
 
-impl Config {
-    /// Release the system configuration `Lockfile` contained in `self`, if it exists,
-    /// allowing other processes to access the configuration.
-    ///
-    /// This is equivalent to dropping `self`, but more explicit in purpose.
-    pub fn release_lock(self) {
-        // Just drop `self`, cleaning up its lockfile.
-        //
-        // If we had CLI subcommands which wanted to read a `Config` but never `Config::save` it,
-        // we could have this message take `&mut self` and set the `home_lock` to `None`.
-        // This seems unlikely to be useful,
-        // as many accesses to the `Config` will implicitly mutate and `save`,
-        // e.g. by creating a new identity if none exists.
-    }
+fn atomic_write(file_path: &PathBuf, data: String) -> anyhow::Result<()> {
+    let temp_file = NamedTempFile::new()?;
+    // Close the file, but keep the path to it around.
+    let temp_path = temp_file.into_temp_path();
+    std::fs::write(&temp_path, data)?;
+    std::fs::rename(&temp_path, file_path)?;
+    Ok(())
+}
 
+impl Config {
     pub fn default_server_name(&self) -> Option<&str> {
         self.proj
             .default_server
@@ -850,7 +832,6 @@ impl Config {
 
     pub fn load() -> Self {
         let home_path = Self::system_config_path();
-        let home_lock = Lockfile::for_file(&home_path).unwrap();
         let home = if home_path.exists() {
             Self::load_from_file(&home_path)
                 .inspect_err(|e| eprintln!("config file {home_path:?} is invalid: {e:#?}"))
@@ -861,50 +842,26 @@ impl Config {
 
         let proj = Self::load_proj_config();
 
-        Self {
-            home,
-            proj,
-
-            home_file: Some((home_path, home_lock)),
-        }
+        Self { home, proj }
     }
 
     #[doc(hidden)]
-    /// Used in tests; not backed by a file.
+    /// Used in tests.
     pub fn new_with_localhost() -> Self {
         Self {
             home: RawConfig::new_with_localhost(),
             proj: RawConfig::default(),
-
-            home_file: None,
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn clone_for_test(&self) -> Self {
-        assert!(
-            self.home_file.is_none(),
-            "Cannot clone_for_test a Config derived from file {:?}",
-            self.home_file,
-        );
-        Config {
-            home: self.home.clone(),
-            proj: self.proj.clone(),
-            home_file: None,
         }
     }
 
     pub fn save(&self) {
-        let Some((home_path, _)) = &self.home_file else {
-            return;
-        };
-
+        let home_path = Self::system_config_path();
         // If the `home_path` is in a directory, ensure it exists.
-        create_parent_dir(home_path).unwrap();
+        create_parent_dir(home_path.as_ref()).unwrap();
 
         let config = toml::to_string_pretty(&self.home).unwrap();
 
-        if let Err(e) = std::fs::write(home_path, config) {
+        if let Err(e) = atomic_write(&home_path, config) {
             eprintln!("could not save config file: {e}")
         }
     }
