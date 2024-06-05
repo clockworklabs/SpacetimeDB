@@ -1036,12 +1036,16 @@ impl Table {
         &self.inner.pages
     }
 
-    /// Returns the pages storing the physical rows of this table.
+    /// Iterates over each [`Page`] in this table, ensuring that its hash is computed before yielding it.
     ///
-    /// Exposed so snapshotting can visit each page, compute and store their hashes,
-    /// and write their data to disk.
-    pub fn pages_mut(&mut self) -> &mut Pages {
-        &mut self.inner.pages
+    /// Used when capturing a snapshot.
+    pub fn iter_pages_with_hashes(&mut self) -> impl Iterator<Item = &Page> {
+        self.inner.pages.iter_mut().map(|page| {
+            if page.unmodified_hash().is_none() {
+                page.save_content_hash();
+            }
+            &**page
+        })
     }
 
     /// Returns the number of pages storing the physical rows of this table.

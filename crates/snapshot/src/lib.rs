@@ -124,14 +124,15 @@ impl Snapshot {
     /// by [`Snapshot::write_table`].
     fn write_page(
         object_repo: &DirTrie,
-        page: &mut Page,
+        page: &Page,
         prev_snapshot: Option<&DirTrie>,
         counter: &mut CountCreated,
     ) -> anyhow::Result<blake3::Hash> {
-        let hash = page
+        let hash = *page
             .unmodified_hash()
-            .cloned()
-            .unwrap_or_else(|| page.save_content_hash());
+            // This `unwrap` will never fail because `page` came from `Table::iter_pages_with_hashes`,
+            // which ensures the hash is present before yielding each page.
+            .unwrap();
 
         object_repo.hardlink_or_write(prev_snapshot, hash.as_bytes(), || bsatn::to_vec(page).unwrap(), counter)?;
 
@@ -149,8 +150,7 @@ impl Snapshot {
         counter: &mut CountCreated,
     ) -> anyhow::Result<()> {
         let pages = table
-            .pages_mut()
-            .iter_mut()
+            .iter_pages_with_hashes()
             .map(|page| Self::write_page(object_repo, page, prev_snapshot, counter))
             .collect::<anyhow::Result<Vec<blake3::Hash>>>()?;
 
