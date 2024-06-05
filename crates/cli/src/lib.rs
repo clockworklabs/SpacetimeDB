@@ -59,11 +59,7 @@ pub async fn exec_subcommand(config: Config, cmd: &str, args: &ArgMatches) -> Re
         "build" => build::exec(config, args).await,
         "server" => server::exec(config, args).await,
         #[cfg(feature = "standalone")]
-        "start" => {
-            // Release the lockfile on the config, since we don't need it.
-            config.release_lock();
-            start::exec(args).await
-        }
+        "start" => start::exec(args).await,
         "upgrade" => upgrade::exec(config, args).await,
         unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
     }

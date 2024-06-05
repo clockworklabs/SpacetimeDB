@@ -100,10 +100,7 @@ pub fn cli() -> clap::Command {
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
-pub fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
-    // Release the lockfile on the config, since we don't need it.
-    config.release_lock();
-
+pub fn exec(_config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let wasm_file = args.get_one::<PathBuf>("wasm_file").cloned();
     let out_dir = args.get_one::<PathBuf>("out_dir").unwrap();

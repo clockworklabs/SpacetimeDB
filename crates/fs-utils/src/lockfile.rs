@@ -37,6 +37,12 @@ impl Lockfile {
     ///
     /// `file_path` should be the full path of the file to which to acquire exclusive access.
     pub fn for_file(file_path: &Path) -> Result<Self, LockfileError> {
+        // TODO: Someday, it would be nice to use OS locks to minimize edge cases (see
+        // https://github.com/clockworklabs/SpacetimeDB/pull/1341#issuecomment-2151018992).
+        //
+        // Currently, our files can be left around if a process is unceremoniously killed (most
+        // commonly with Ctrl-C, but this would also apply to e.g. power failure).
+        // See https://github.com/clockworklabs/SpacetimeDB/issues/1339.
         let path = Self::lock_path(file_path);
 
         let fail = |cause| LockfileError::Acquire {
