@@ -14,7 +14,7 @@ spacetimedb-sats = { workspace = true, features = ["blake3"] }
 spacetimedb-primitives.workspace = true
 spacetimedb-fs-utils.workspace = true
 
-anyhow.workspace = true
 blake3.workspace = true
 hex.workspace = true
 log.workspace = true
+thiserror.workspace = true

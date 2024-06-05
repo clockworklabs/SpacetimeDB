@@ -24,9 +24,14 @@
 use spacetimedb_durability::TxOffset;
 use spacetimedb_fs_utils::{
     dir_trie::{o_excl, o_rdonly, CountCreated, DirTrie},
-    lockfile::Lockfile,
+    lockfile::{Lockfile, LockfileError},
 };
-use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize, Address};
+use spacetimedb_lib::{
+    bsatn::{self},
+    de::Deserialize,
+    ser::Serialize,
+    Address,
+};
 use spacetimedb_primitives::TableId;
 use spacetimedb_table::{
     blob_store::{BlobHash, BlobStore, HashMapBlobStore},
@@ -39,6 +44,76 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
 };
+
+#[derive(Debug, Copy, Clone)]
+/// An object which may be associated with an error during snapshotting.
+pub enum ObjectType {
+    Blob(BlobHash),
+    Page(blake3::Hash),
+    Snapshot,
+}
+
+impl std::fmt::Display for ObjectType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match *self {
+            ObjectType::Blob(hash) => write!(f, "blob {hash:x?}"),
+            ObjectType::Page(hash) => write!(f, "page {hash:x?}"),
+            ObjectType::Snapshot => write!(f, "snapshot"),
+        }
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum SnapshotError {
+    #[error("Cannot open SnapshotRepo {0}: not an accessible directory")]
+    Open(PathBuf),
+    #[error("Failed to write {ty} to {dest_repo:?}, attempting to hardlink link from {source_repo:?}: {cause}")]
+    WriteObject {
+        ty: ObjectType,
+        dest_repo: PathBuf,
+        source_repo: Option<PathBuf>,
+        #[source]
+        cause: std::io::Error,
+    },
+    #[error("Failed to read {ty} from {source_repo:?}: {cause}")]
+    ReadObject {
+        ty: ObjectType,
+        source_repo: PathBuf,
+        #[source]
+        cause: std::io::Error,
+    },
+    #[error("Encountered corrupted {ty} in {source_repo:?}: expected hash {expected:x?}, but computed {computed:x?}")]
+    HashMismatch {
+        ty: ObjectType,
+        expected: [u8; 32],
+        computed: [u8; 32],
+        source_repo: PathBuf,
+    },
+    #[error("Failed to BSATN serialize {ty}: {cause}")]
+    Serialize {
+        ty: ObjectType,
+        #[source]
+        cause: bsatn::ser::BsatnError,
+    },
+    #[error("Failed to BSATN deserialize {ty} from {source_repo:?}: {cause}")]
+    Deserialize {
+        ty: ObjectType,
+        source_repo: PathBuf,
+        cause: bsatn::DecodeError,
+    },
+    #[error("Refusing to reconstruct incomplete snapshot {tx_offset}: lockfile {lockfile:?} exists")]
+    Incomplete { tx_offset: TxOffset, lockfile: PathBuf },
+    #[error("Refusing to reconstruct snapshot {tx_offset} with bad magic number {magic:x?}")]
+    BadMagic { tx_offset: TxOffset, magic: [u8; 4] },
+    #[error("Refusing to reconstruct snapshot {tx_offset} with unsupported version {version}")]
+    BadVersion { tx_offset: TxOffset, version: u8 },
+    #[error("Cannot open snapshot repository in non-directory {root:?}")]
+    NotDirectory { root: PathBuf },
+    #[error(transparent)]
+    Lockfile(#[from] LockfileError),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+}
 
 /// Magic number for snapshot files: a point in spacetime.
 ///
@@ -118,8 +193,15 @@ impl Snapshot {
         blob: &[u8],
         prev_snapshot: Option<&DirTrie>,
         counter: &mut CountCreated,
-    ) -> anyhow::Result<()> {
-        object_repo.hardlink_or_write(prev_snapshot, &hash.data, || blob, counter)?;
+    ) -> Result<(), SnapshotError> {
+        object_repo
+            .hardlink_or_write(prev_snapshot, &hash.data, || blob, counter)
+            .map_err(|cause| SnapshotError::WriteObject {
+                ty: ObjectType::Blob(*hash),
+                dest_repo: object_repo.root().to_path_buf(),
+                source_repo: prev_snapshot.map(|dest_repo| dest_repo.root().to_path_buf()),
+                cause,
+            })?;
         self.blobs.push(BlobEntry {
             hash: *hash,
             uses: uses as u32,
@@ -136,7 +218,7 @@ impl Snapshot {
         blobs: &dyn BlobStore,
         prev_snapshot: Option<&DirTrie>,
         counter: &mut CountCreated,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), SnapshotError> {
         for (hash, uses, blob) in blobs.iter_blobs() {
             self.write_blob(object_repo, hash, uses, blob, prev_snapshot, counter)?;
         }
@@ -157,10 +239,17 @@ impl Snapshot {
         hash: blake3::Hash,
         prev_snapshot: Option<&DirTrie>,
         counter: &mut CountCreated,
-    ) -> anyhow::Result<blake3::Hash> {
+    ) -> Result<blake3::Hash, SnapshotError> {
         debug_assert!(page.unmodified_hash().copied() == Some(hash));
 
-        object_repo.hardlink_or_write(prev_snapshot, hash.as_bytes(), || bsatn::to_vec(page).unwrap(), counter)?;
+        object_repo
+            .hardlink_or_write(prev_snapshot, hash.as_bytes(), || bsatn::to_vec(page).unwrap(), counter)
+            .map_err(|cause| SnapshotError::WriteObject {
+                ty: ObjectType::Page(hash),
+                dest_repo: object_repo.root().to_path_buf(),
+                source_repo: prev_snapshot.map(|source_repo| source_repo.root().to_path_buf()),
+                cause,
+            })?;
 
         Ok(hash)
     }
@@ -174,11 +263,11 @@ impl Snapshot {
         table: &mut Table,
         prev_snapshot: Option<&DirTrie>,
         counter: &mut CountCreated,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), SnapshotError> {
         let pages = table
             .iter_pages_with_hashes()
             .map(|(hash, page)| Self::write_page(object_repo, page, hash, prev_snapshot, counter))
-            .collect::<anyhow::Result<Vec<blake3::Hash>>>()?;
+            .collect::<Result<Vec<blake3::Hash>, SnapshotError>>()?;
 
         self.tables.push(TableEntry {
             table_id: table.schema.table_id,
@@ -196,7 +285,7 @@ impl Snapshot {
         tables: impl Iterator<Item = &'db mut Table>,
         prev_snapshot: Option<&DirTrie>,
         counter: &mut CountCreated,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), SnapshotError> {
         for table in tables {
             self.write_table(object_repo, table, prev_snapshot, counter)?;
         }
@@ -209,26 +298,44 @@ impl Snapshot {
     /// - `path` does not refer to a readable file.
     /// - The file at `path` is corrupted,
     ///   as detected by comparing the hash of its bytes to a hash recorded in the file.
-    fn read_from_file(path: &Path) -> anyhow::Result<Self> {
-        let mut snapshot_file = o_rdonly().open(path)?;
+    fn read_from_file(path: &Path) -> Result<Self, SnapshotError> {
+        let err_read_object = |cause| SnapshotError::ReadObject {
+            ty: ObjectType::Snapshot,
+            source_repo: path.to_path_buf(),
+            cause,
+        };
+        let mut snapshot_file = o_rdonly().open(path).map_err(err_read_object)?;
 
         // The snapshot file is prefixed with the hash of the `Snapshot`'s BSATN.
         // Read that hash.
         let mut hash = [0; blake3::OUT_LEN];
-        snapshot_file.read_exact(&mut hash)?;
+        snapshot_file.read_exact(&mut hash).map_err(err_read_object)?;
         let hash = blake3::Hash::from_bytes(hash);
 
         // Read the `Snapshot`'s BSATN and compute its hash.
         let mut snapshot_bsatn = vec![];
-        snapshot_file.read_to_end(&mut snapshot_bsatn)?;
+        snapshot_file
+            .read_to_end(&mut snapshot_bsatn)
+            .map_err(err_read_object)?;
         let computed_hash = blake3::hash(&snapshot_bsatn);
 
         // Compare the saved and computed hashes, and fail if they do not match.
         if hash != computed_hash {
-            anyhow::bail!("Computed hash of snapshot file {path:?} does not match recorded hash: computed {computed_hash:?} but expected {hash:?}");
+            return Err(SnapshotError::HashMismatch {
+                ty: ObjectType::Snapshot,
+                expected: *hash.as_bytes(),
+                computed: *computed_hash.as_bytes(),
+                source_repo: path.to_path_buf(),
+            });
         }
 
-        Ok(bsatn::from_slice::<Snapshot>(&snapshot_bsatn)?)
+        let snapshot = bsatn::from_slice::<Snapshot>(&snapshot_bsatn).map_err(|cause| SnapshotError::Deserialize {
+            ty: ObjectType::Snapshot,
+            source_repo: path.to_path_buf(),
+            cause,
+        })?;
+
+        Ok(snapshot)
     }
 
     /// Construct a [`HashMapBlobStore`] containing all the blobs referenced in `self`,
@@ -236,12 +343,18 @@ impl Snapshot {
     ///
     /// Fails if any of the object files is missing or corrupted,
     /// as detected by comparing the hash of its bytes to the hash recorded in `self`.
-    fn reconstruct_blob_store(&self, object_repo: &DirTrie) -> anyhow::Result<HashMapBlobStore> {
+    fn reconstruct_blob_store(&self, object_repo: &DirTrie) -> Result<HashMapBlobStore, SnapshotError> {
         let mut blob_store = HashMapBlobStore::default();
 
         for BlobEntry { hash, uses } in &self.blobs {
             // Read the bytes of the blob object.
-            let buf = object_repo.read_entry(&hash.data)?;
+            let buf = object_repo
+                .read_entry(&hash.data)
+                .map_err(|cause| SnapshotError::ReadObject {
+                    ty: ObjectType::Blob(*hash),
+                    source_repo: object_repo.root().to_path_buf(),
+                    cause,
+                })?;
 
             // Compute the blob's hash.
             let computed_hash = BlobHash::hash_from_bytes(&buf);
@@ -249,7 +362,12 @@ impl Snapshot {
             // Compare the computed hash to the one recorded in the `Snapshot`,
             // and fail if they do not match.
             if *hash != computed_hash {
-                anyhow::bail!("Computed hash of large blob does not match recorded hash: computed {computed_hash:?} but expected {hash:?}");
+                return Err(SnapshotError::HashMismatch {
+                    ty: ObjectType::Blob(*hash),
+                    expected: hash.data,
+                    computed: computed_hash.data,
+                    source_repo: object_repo.root().to_path_buf(),
+                });
             }
 
             blob_store.insert_with_uses(hash, *uses as usize, buf.into_boxed_slice());
@@ -262,31 +380,52 @@ impl Snapshot {
     ///
     /// Fails if any of the pages files is missing or corrupted,
     /// as detected by comparing the hash of its bytes to the hash listed in `pages`.
-    fn reconstruct_one_table_pages(object_repo: &DirTrie, pages: &[blake3::Hash]) -> anyhow::Result<Vec<Box<Page>>> {
-        pages.iter().map(|hash| {
-            // Read the BSATN bytes of the on-disk page object.
-            let buf = object_repo.read_entry(hash.as_bytes())?;
+    fn reconstruct_one_table_pages(
+        object_repo: &DirTrie,
+        pages: &[blake3::Hash],
+    ) -> Result<Vec<Box<Page>>, SnapshotError> {
+        pages
+            .iter()
+            .map(|hash| {
+                // Read the BSATN bytes of the on-disk page object.
+                let buf = object_repo
+                    .read_entry(hash.as_bytes())
+                    .map_err(|cause| SnapshotError::ReadObject {
+                        ty: ObjectType::Page(*hash),
+                        source_repo: object_repo.root().to_path_buf(),
+                        cause,
+                    })?;
 
-            // Deserialize the bytes into a `Page`.
-            let page = bsatn::from_slice::<Box<Page>>(&buf)?;
+                // Deserialize the bytes into a `Page`.
+                let page = bsatn::from_slice::<Box<Page>>(&buf).map_err(|cause| SnapshotError::Deserialize {
+                    ty: ObjectType::Page(*hash),
+                    source_repo: object_repo.root().to_path_buf(),
+                    cause,
+                })?;
 
-            // Compute the hash of the page.
-            let computed_hash = page.content_hash();
+                // Compute the hash of the page.
+                let computed_hash = page.content_hash();
 
-            // Compare the computed hash to the one recorded in the `Snapshot`,
-            // and fail if they do not match.
-            if *hash != computed_hash {
-                anyhow::bail!("Computed hash of page does not match recorded hash: computed {computed_hash:?} but expected {hash:?}");
-            }
+                // Compare the computed hash to the one recorded in the `Snapshot`,
+                // and fail if they do not match.
+                if *hash != computed_hash {
+                    return Err(SnapshotError::HashMismatch {
+                        ty: ObjectType::Page(*hash),
+                        expected: *hash.as_bytes(),
+                        computed: *computed_hash.as_bytes(),
+                        source_repo: object_repo.root().to_path_buf(),
+                    });
+                }
 
-            Ok::<Box<Page>, anyhow::Error>(page)
-        }).collect()
+                Ok::<Box<Page>, SnapshotError>(page)
+            })
+            .collect()
     }
 
     fn reconstruct_one_table(
         object_repo: &DirTrie,
         TableEntry { table_id, pages }: &TableEntry,
-    ) -> anyhow::Result<(TableId, Vec<Box<Page>>)> {
+    ) -> Result<(TableId, Vec<Box<Page>>), SnapshotError> {
         Ok((*table_id, Self::reconstruct_one_table_pages(object_repo, pages)?))
     }
 
@@ -300,7 +439,7 @@ impl Snapshot {
     /// Fails if any object file referenced in `self` (as a page or large blob)
     /// is missing or corrupted,
     /// as detected by comparing the hash of its bytes to the hash recorded in `self`.
-    fn reconstruct_tables(&self, object_repo: &DirTrie) -> anyhow::Result<BTreeMap<TableId, Vec<Box<Page>>>> {
+    fn reconstruct_tables(&self, object_repo: &DirTrie) -> Result<BTreeMap<TableId, Vec<Box<Page>>>, SnapshotError> {
         self.tables
             .iter()
             .map(|tbl| Self::reconstruct_one_table(object_repo, tbl))
@@ -339,7 +478,7 @@ impl SnapshotRepository {
         tables: impl Iterator<Item = &'db mut Table>,
         blobs: &'db dyn BlobStore,
         tx_offset: TxOffset,
-    ) -> anyhow::Result<PathBuf> {
+    ) -> Result<PathBuf, SnapshotError> {
         // If a previous snapshot exists in this snapshot repo,
         // get a handle on its object repo in order to hardlink shared objects into the new snapshot.
         let prev_snapshot = self
@@ -379,7 +518,10 @@ impl SnapshotRepository {
         snapshot.write_all_tables(&object_repo, tables, prev_snapshot.as_ref(), &mut counter)?;
 
         // Serialize and hash the in-memory `Snapshot` object.
-        let snapshot_bsatn = bsatn::to_vec(&snapshot)?;
+        let snapshot_bsatn = bsatn::to_vec(&snapshot).map_err(|cause| SnapshotError::Serialize {
+            ty: ObjectType::Snapshot,
+            cause,
+        })?;
         let hash = blake3::hash(&snapshot_bsatn);
 
         // Create the snapshot file, containing first the hash, then the `Snapshot`.
@@ -454,30 +596,28 @@ impl SnapshotRepository {
     ///
     /// This means that callers must inspect the returned [`ReconstructedSnapshot`]
     /// and verify that they can handle its contained database address, instance ID, module ABI version and transaction offset.
-    pub fn read_snapshot(&self, tx_offset: TxOffset) -> anyhow::Result<ReconstructedSnapshot> {
+    pub fn read_snapshot(&self, tx_offset: TxOffset) -> Result<ReconstructedSnapshot, SnapshotError> {
         let snapshot_dir = self.snapshot_dir_path(tx_offset);
         let lockfile = Lockfile::lock_path(&snapshot_dir);
         if lockfile.try_exists()? {
-            anyhow::bail!("Refusing to reconstruct snapshot {snapshot_dir:?}: lockfile {lockfile:?} exists");
+            return Err(SnapshotError::Incomplete { tx_offset, lockfile });
         }
 
         let snapshot_file_path = Self::snapshot_file_path(tx_offset, &snapshot_dir);
         let snapshot = Snapshot::read_from_file(&snapshot_file_path)?;
 
         if snapshot.magic != MAGIC {
-            anyhow::bail!(
-                "Refusing to reconstruct snapshot {snapshot_dir:?}: magic number {:?} ({:?}) does not match expected {:?} ({MAGIC:?})",
-                String::from_utf8_lossy(&snapshot.magic),
-                snapshot.magic,
-                std::str::from_utf8(&MAGIC).unwrap(),
-            );
+            return Err(SnapshotError::BadMagic {
+                tx_offset,
+                magic: snapshot.magic,
+            });
         }
 
         if snapshot.version != CURRENT_SNAPSHOT_VERSION {
-            anyhow::bail!(
-                "Refusing to reconstruct snapshot {snapshot_dir:?}: snapshot file version {} does not match supported version {CURRENT_SNAPSHOT_VERSION}",
-                snapshot.version,
-            );
+            return Err(SnapshotError::BadVersion {
+                tx_offset,
+                version: snapshot.version,
+            });
         }
 
         let object_repo = Self::object_repo(&snapshot_dir)?;
@@ -500,9 +640,9 @@ impl SnapshotRepository {
     ///
     /// Calls [`Path::is_dir`] and requires that the result is `true`.
     /// See that method for more detailed preconditions on this function.
-    pub fn open(root: PathBuf, database_address: Address, database_instance_id: u64) -> anyhow::Result<Self> {
+    pub fn open(root: PathBuf, database_address: Address, database_instance_id: u64) -> Result<Self, SnapshotError> {
         if !root.is_dir() {
-            anyhow::bail!("Cannot open snapshot repository in non-directory {root:?}");
+            return Err(SnapshotError::NotDirectory { root });
         }
         Ok(Self {
             root,
@@ -520,7 +660,7 @@ impl SnapshotRepository {
     ///
     /// Does not verify that the snapshot of the returned `TxOffset` is valid and uncorrupted,
     /// so a subsequent [`Self::read_snapshot`] may fail.
-    pub fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> anyhow::Result<Option<TxOffset>> {
+    pub fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> Result<Option<TxOffset>, SnapshotError> {
         Ok(self
             .root
             // Item = Result<DirEntry>
@@ -546,7 +686,7 @@ impl SnapshotRepository {
     ///
     /// Does not verify that the snapshot of the returned `TxOffset` is valid and uncorrupted,
     /// so a subsequent [`Self::read_snapshot`] may fail.
-    pub fn latest_snapshot(&self) -> anyhow::Result<Option<TxOffset>> {
+    pub fn latest_snapshot(&self) -> Result<Option<TxOffset>, SnapshotError> {
         self.latest_snapshot_older_than(TxOffset::MAX)
     }
 }

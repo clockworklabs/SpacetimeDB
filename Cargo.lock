@@ -4580,7 +4580,6 @@ dependencies = [
 name = "spacetimedb-snapshot"
 version = "0.9.3"
 dependencies = [
- "anyhow",
  "blake3",
  "hex",
  "log",
@@ -4590,6 +4589,7 @@ dependencies = [
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "spacetimedb-table",
+ "thiserror",
 ]
 
 [[package]]

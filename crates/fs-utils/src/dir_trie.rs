@@ -60,6 +60,11 @@ type FileId = [u8; FILE_ID_BYTES];
 const DIR_HEX_CHARS: usize = 2;
 
 impl DirTrie {
+    /// Returns the root of this `DirTrie` on disk.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     /// Open the directory trie at `root`,
     /// creating the root directory if it doesn't exist.
     ///
