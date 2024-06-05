@@ -4463,6 +4463,8 @@ dependencies = [
 name = "spacetimedb-fs-utils"
 version = "0.9.3"
 dependencies = [
+ "hex",
+ "tempdir",
  "thiserror",
 ]
 
