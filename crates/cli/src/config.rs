@@ -857,13 +857,11 @@ impl Config {
         // the config, the first writer will have its changes clobbered by the second writer.
         //
         // We used to use `Lockfile` to prevent this from happening, but we had other issues with
-        // that approach (see https://github.com/clockworklabs/SpacetimeDB/issues/1339).
-        // We should eventually reintroduce `Lockfile`, with further fixes (see the TODO in
-        // `lockfile.rs`).
+        // that approach (see https://github.com/clockworklabs/SpacetimeDB/issues/1339, and the
+        // TODO in `lockfile.rs`).
         //
-        // In a perfect world, we would also distinguish a read lock from a write lock, so that
-        // multiple parallel processes could read the config file. The current `Lockfile` doesn't
-        // allow this, but it's not the end of the world.
+        // We should address this issue, but we currently don't expect it to arise very frequently.
+        // (https://github.com/clockworklabs/SpacetimeDB/pull/1341#issuecomment-2150857432)
         if let Err(e) = atomic_write(&home_path, config) {
             eprintln!("could not save config file: {e}")
         }
