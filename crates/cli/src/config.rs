@@ -852,6 +852,17 @@ impl Config {
 
         let config = toml::to_string_pretty(&self.home).unwrap();
 
+        // TODO: We currently have a race condition if multiple processes are modifying the config.
+        // If process X and process Y read the config, each make independent changes, and then save
+        // the config, the first writer will have its changes clobbered by the second writer.
+        //
+        // We used to use `Lockfile` to prevent this from happening, but we had other issues with
+        // that approach (see https://github.com/clockworklabs/SpacetimeDB/issues/1339).
+        //
+        // We should eventually reintroduce `Lockfile`, with further fixes including OS locks (see
+        // the TODO in `lockfile.rs`). In a perfect world, we could distinguish a read lock from a
+        // write lock, so that multiple parallel processes could continue to read the config file,
+        // which the current `Lockfile` does not allow.
         if let Err(e) = atomic_write(&home_path, config) {
             eprintln!("could not save config file: {e}")
         }
