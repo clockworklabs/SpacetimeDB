@@ -675,7 +675,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
 
         writeln!(
             output,
-            "protected override ReducerEvent? ReducerEventFromDbEvent(ClientApi.Event dbEvent)"
+            "protected override ReducerEvent ReducerEventFromDbEvent(ClientApi.Event dbEvent)"
         );
         indented_block(output, |output| {
             writeln!(output, "var argBytes = dbEvent.FunctionCall.ArgBytes;");
