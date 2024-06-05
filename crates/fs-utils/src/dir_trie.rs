@@ -60,6 +60,11 @@ type FileId = [u8; FILE_ID_BYTES];
 const DIR_HEX_CHARS: usize = 2;
 
 impl DirTrie {
+    /// Open the directory trie at `root`,
+    /// creating the root directory if it doesn't exist.
+    ///
+    /// Returns an error if the `root` cannot be created as a directory.
+    /// See documentation on [`create_dir_all`] for more details.
     pub fn open(root: PathBuf) -> Result<Self, io::Error> {
         create_dir_all(&root)?;
         Ok(Self { root })
@@ -73,6 +78,9 @@ impl DirTrie {
         // Two additional chars for slashes.
         file_path.reserve(FILE_ID_HEX_CHARS + 2);
 
+        // The path will look like `root/xx/yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy`,
+        // where `xx` are the leading hex characters of the file id,
+        // and the `y`s are the remaining 62 hex characters.
         file_path.push(&file_id_hex[..DIR_HEX_CHARS]);
         file_path.push(&file_id_hex[DIR_HEX_CHARS..]);
 
@@ -107,6 +115,9 @@ impl DirTrie {
         }
     }
 
+    /// True if `file_id` is the key for an object present in this trie.
+    ///
+    /// Internally calls [`Path::is_file`]; see documentation on that method for detailed semantics.
     pub fn contains_entry(&self, file_id: &FileId) -> bool {
         let path = self.file_path(file_id);
 
@@ -155,6 +166,11 @@ impl DirTrie {
         Ok(())
     }
 
+    /// Open the file keyed with `file_id` with the given `options`.
+    ///
+    /// Sensible choices for `options` are:
+    /// - [`o_excl`], to create a new entry.
+    /// - [`o_rdonly`], to read an existing entry.
     pub fn open_entry(&self, file_id: &FileId, options: &OpenOptions) -> Result<File, io::Error> {
         let path = self.file_path(file_id);
         Self::create_parent(&path)?;
@@ -176,6 +192,20 @@ mod test {
         f(trie)
     }
 
+    /// Write the [`TEST_STRING`] into the entry [`TEST_ID`].
+    fn write_test_string(trie: &DirTrie) {
+        let mut file = trie.open_entry(&TEST_ID, &o_excl()).unwrap();
+        file.write_all(TEST_STRING).unwrap();
+    }
+
+    /// Read the entry [`TEST_ID`] and assert that its contents match the [`TEST_STRING`].
+    fn read_test_string(trie: &DirTrie) {
+        let mut file = trie.open_entry(&TEST_ID, &o_rdonly()).unwrap();
+        let mut contents = Vec::new();
+        file.read_to_end(&mut contents).unwrap();
+        assert_eq!(&contents, TEST_STRING);
+    }
+
     #[test]
     fn create_retrieve() {
         with_test_dir_trie(|trie| {
@@ -183,21 +213,13 @@ mod test {
             assert!(!trie.contains_entry(&TEST_ID));
 
             // Create an entry in the trie and write some data to it.
-            {
-                let mut file = trie.open_entry(&TEST_ID, &o_excl()).unwrap();
-                file.write_all(TEST_STRING).unwrap();
-            }
+            write_test_string(&trie);
 
             // The trie now has that entry.
             assert!(trie.contains_entry(&TEST_ID));
 
             // Open the entry and read its data back.
-            {
-                let mut file = trie.open_entry(&TEST_ID, &o_rdonly()).unwrap();
-                let mut contents = Vec::new();
-                file.read_to_end(&mut contents).unwrap();
-                assert_eq!(&contents, TEST_STRING);
-            }
+            read_test_string(&trie);
         })
     }
 
@@ -210,10 +232,7 @@ mod test {
                 assert!(!dst.contains_entry(&TEST_ID));
 
                 // Create an entry in `src` and write some data to it.
-                {
-                    let mut file = src.open_entry(&TEST_ID, &o_excl()).unwrap();
-                    file.write_all(TEST_STRING).unwrap();
-                }
+                write_test_string(&src);
 
                 // The `src` now contains the entry, but the `dst` still doesn't.
                 assert!(src.contains_entry(&TEST_ID));
@@ -225,21 +244,11 @@ mod test {
                 // After hardlinking, the file is now in `dst`.
                 assert!(dst.contains_entry(&TEST_ID));
                 // Open the entry in `dst` and read its data back.
-                {
-                    let mut file = dst.open_entry(&TEST_ID, &o_rdonly()).unwrap();
-                    let mut contents = Vec::new();
-                    file.read_to_end(&mut contents).unwrap();
-                    assert_eq!(&contents, TEST_STRING);
-                }
+                read_test_string(&dst);
 
                 // The file is still also in `src`, and its data hasn't changed.
                 assert!(src.contains_entry(&TEST_ID));
-                {
-                    let mut file = src.open_entry(&TEST_ID, &o_rdonly()).unwrap();
-                    let mut contents = Vec::new();
-                    file.read_to_end(&mut contents).unwrap();
-                    assert_eq!(&contents, TEST_STRING);
-                }
+                read_test_string(&src);
             })
         })
     }
@@ -254,10 +263,7 @@ mod test {
             assert!(trie.open_entry(&TEST_ID, &o_rdonly()).is_err());
 
             // Create an entry in the trie and write some data to it.
-            {
-                let mut file = trie.open_entry(&TEST_ID, &o_excl()).unwrap();
-                file.write_all(TEST_STRING).unwrap();
-            }
+            write_test_string(&trie);
 
             // The trie now has that entry.
             assert!(trie.contains_entry(&TEST_ID));
