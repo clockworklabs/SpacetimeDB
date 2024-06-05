@@ -205,6 +205,7 @@ pub fn schema_updates(
                     .collect(),
                 known_schema.table_type,
                 known_schema.table_access,
+                known_schema.scheduled.clone(),
             );
             let proposed_schema = TableSchema::from_def(known_schema.table_id, proposed_schema_def);
 
@@ -298,6 +299,7 @@ mod tests {
             vec![],
             StTableType::User,
             StAccess::Public,
+            None,
         ))];
         let proposed = vec![
             TableDef::new(
@@ -436,6 +438,7 @@ mod tests {
             vec![],
             StTableType::User,
             StAccess::Public,
+            None,
         ))];
         let proposed = vec![TableDef::new(
             "Person".into(),

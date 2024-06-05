@@ -26,9 +26,10 @@ pub(crate) const ST_CONSTRAINTS_ID: TableId = TableId(4);
 /// The static ID of the table that defines the stdb module associated with
 /// the database
 pub(crate) const ST_MODULE_ID: TableId = TableId(5);
-
 /// The static ID of the table that defines connected clients
 pub(crate) const ST_CLIENTS_ID: TableId = TableId(6);
+/// The static ID of the table that defines scheduled tables
+pub(crate) const ST_SCHEDULED_ID: TableId = TableId(7);
 
 pub(crate) const ST_TABLES_NAME: &str = "st_table";
 pub(crate) const ST_COLUMNS_NAME: &str = "st_columns";
@@ -37,6 +38,7 @@ pub(crate) const ST_INDEXES_NAME: &str = "st_indexes";
 pub(crate) const ST_CONSTRAINTS_NAME: &str = "st_constraints";
 pub(crate) const ST_MODULE_NAME: &str = "st_module";
 pub(crate) const ST_CLIENTS_NAME: &str = "st_clients";
+pub(crate) const ST_SCHEDULED_NAME: &str = "st_scheduled";
 
 /// Reserved range of sequence values used for system tables.
 ///
@@ -63,7 +65,7 @@ pub enum SystemTable {
     st_indexes,
     st_constraints,
 }
-pub(crate) fn system_tables() -> [TableSchema; 7] {
+pub(crate) fn system_tables() -> [TableSchema; 8] {
     [
         st_table_schema(),
         st_columns_schema(),
@@ -71,6 +73,7 @@ pub(crate) fn system_tables() -> [TableSchema; 7] {
         st_constraints_schema(),
         st_module_schema(),
         st_clients_schema(),
+        st_scheduled_schema(),
         // Is important this is always last, so the starting sequence for each
         // system table is correct.
         st_sequences_schema(),
@@ -84,7 +87,8 @@ pub(crate) const ST_INDEXES_IDX: usize = 2;
 pub(crate) const ST_CONSTRAINTS_IDX: usize = 3;
 pub(crate) const ST_MODULE_IDX: usize = 4;
 pub(crate) const ST_CLIENT_IDX: usize = 5;
-pub(crate) const ST_SEQUENCES_IDX: usize = 6;
+pub(crate) const ST_SCHEDULED_IDX: usize = 6;
+pub(crate) const ST_SEQUENCES_IDX: usize = 7;
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
         #[derive(Copy, Clone, Debug)]
@@ -188,6 +192,10 @@ st_fields_enum!(enum StClientsFields {
     "address", Address = 1,
 });
 
+st_fields_enum!(enum StScheduledFields {
+    "table_id", TableId = 0,
+    "reducer_name", ReducerName = 1,
+});
 /// System Table [ST_TABLES_NAME]
 ///
 /// | table_id | table_name  | table_type | table_access |
@@ -350,6 +358,19 @@ fn st_clients_schema() -> TableSchema {
     .with_type(StTableType::System)
     .with_column_index(col_list![StClientsFields::Identity, StClientsFields::Address], true)
     .into_schema(ST_CLIENTS_ID)
+}
+
+fn st_scheduled_schema() -> TableSchema {
+    TableDef::new(
+        ST_SCHEDULED_NAME.into(),
+        vec![
+            ColumnDef::sys(StScheduledFields::TableId.name(), AlgebraicType::U32),
+            ColumnDef::sys(StScheduledFields::ReducerName.name(), AlgebraicType::String),
+        ],
+    )
+    .with_type(StTableType::System)
+    .with_column_constraint(Constraints::unique(), StScheduledFields::TableId)
+    .into_schema(ST_SCHEDULED_ID)
 }
 
 pub(crate) fn table_name_is_system(table_name: &str) -> bool {
@@ -716,6 +737,21 @@ impl From<&StClientsRow> for ProductValue {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StScheduledRow<ReducerName: AsRef<str>> {
+    pub(crate) table_id: TableId,
+    pub(crate) reducer_name: ReducerName,
+}
+
+impl TryFrom<RowRef<'_>> for StScheduledRow<Box<str>> {
+    type Error = DBError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+        Ok(StScheduledRow {
+            table_id: row.read_col(StScheduledFields::TableId)?,
+            reducer_name: row.read_col(StScheduledFields::ReducerName)?,
+        })
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
