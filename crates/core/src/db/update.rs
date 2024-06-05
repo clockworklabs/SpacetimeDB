@@ -4,11 +4,12 @@ use crate::database_logger::SystemLogger;
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
 use anyhow::Context;
-use core::fmt;
+use core::{fmt, mem};
 use itertools::Itertools;
 use similar::{Algorithm, TextDiff};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_primitives::ConstraintKind;
+use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{ConstraintSchema, IndexSchema, SequenceSchema, TableDef, TableSchema};
 use spacetimedb_sats::hash::Hash;
 use std::collections::BTreeMap;
@@ -35,11 +36,18 @@ pub fn update_database(
     let (tx, res) = stdb.with_auto_rollback::<_, _, anyhow::Error>(&ctx, tx, |tx| {
         let existing_tables = stdb.get_all_tables_mut(tx)?;
         match schema_updates(existing_tables, proposed_tables)? {
-            SchemaUpdates::Updates { new_tables } => {
+            SchemaUpdates::Updates {
+                new_tables,
+                changed_access,
+            } => {
                 for (name, schema) in new_tables {
                     system_logger.info(&format!("Creating table `{}`", name));
                     stdb.create_table(tx, schema)
                         .with_context(|| format!("failed to create table {}", name))?;
+                }
+
+                for (name, access) in changed_access {
+                    stdb.alter_table_access(tx, name, access)?;
                 }
             }
 
@@ -112,6 +120,8 @@ pub enum SchemaUpdates {
     Updates {
         /// Tables to create.
         new_tables: HashMap<Box<str>, TableDef>,
+        /// The new table access levels.
+        changed_access: HashMap<Box<str>, StAccess>,
     },
 }
 
@@ -133,6 +143,7 @@ pub fn schema_updates(
     proposed_tables: Vec<TableDef>,
 ) -> anyhow::Result<SchemaUpdates> {
     let mut new_tables = HashMap::new();
+    let mut changed_access = HashMap::new();
     let mut tainted_tables = Vec::new();
 
     let mut known_tables: BTreeMap<Box<str>, Arc<TableSchema>> = existing_tables
@@ -197,7 +208,32 @@ pub fn schema_updates(
             );
             let proposed_schema = TableSchema::from_def(known_schema.table_id, proposed_schema_def);
 
-            if proposed_schema != known_schema {
+            // HACK(Centril): Compute whether the new schema is incompatible with the old,
+            // while ignoring `.table_access`.
+            let (schema_is_incompatible, proposed_schema, known_schema) = {
+                // Change the access of both known and proposed to `Public`.
+                // We could have also picked `Private`.
+                // It does not matter. We just want access to be irrelevant wrt. schema compatibility.
+                let mut proposed_schema = proposed_schema;
+                let mut known_schema = known_schema;
+                let proposed_access = mem::replace(&mut proposed_schema.table_access, StAccess::Public);
+                let known_access = mem::replace(&mut known_schema.table_access, StAccess::Public);
+
+                // Record a change to the table access.
+                if proposed_access != known_access {
+                    changed_access.insert(known_schema.table_name.clone(), proposed_access);
+                }
+
+                // Now, while ignoring `table_access`, compute schema compatibility.
+                let changed = proposed_schema != known_schema;
+
+                // Revert back to the original accesses.
+                proposed_schema.table_access = proposed_access;
+                known_schema.table_access = known_access;
+                (changed, proposed_schema, known_schema)
+            };
+
+            if schema_is_incompatible {
                 log::warn!("Schema incompatible: {}", proposed_schema.table_name);
                 log::debug!("Existing: {known_schema:?}");
                 log::debug!("Proposed: {proposed_schema:?}");
@@ -225,7 +261,10 @@ pub fn schema_updates(
     }
 
     let res = if tainted_tables.is_empty() {
-        SchemaUpdates::Updates { new_tables }
+        SchemaUpdates::Updates {
+            new_tables,
+            changed_access,
+        }
     } else {
         SchemaUpdates::Tainted(tainted_tables)
     };
@@ -267,7 +306,8 @@ mod tests {
                     col_name: "name".into(),
                     col_type: AlgebraicType::String,
                 }],
-            ),
+            )
+            .with_access(StAccess::Private),
             TableDef::new(
                 "Pet".into(),
                 vec![ColumnDef {
@@ -279,9 +319,17 @@ mod tests {
 
         match schema_updates(current, proposed.clone())? {
             SchemaUpdates::Tainted(tainted) => bail!("unexpectedly tainted: {tainted:#?}"),
-            SchemaUpdates::Updates { new_tables } => {
+            SchemaUpdates::Updates {
+                new_tables,
+                changed_access,
+            } => {
                 assert_eq!(new_tables.len(), 1);
                 assert_eq!(new_tables.get("Pet"), proposed.last());
+
+                assert_eq!(
+                    changed_access.into_iter().collect::<Vec<_>>(),
+                    [("Person".into(), StAccess::Private)]
+                );
 
                 Ok(())
             }

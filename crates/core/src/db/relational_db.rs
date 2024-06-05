@@ -517,6 +517,10 @@ impl RelationalDB {
             Ok(a) => Ok((tx, a)),
         }
     }
+
+    pub(crate) fn alter_table_access(&self, tx: &mut MutTx, name: Box<str>, access: StAccess) -> Result<(), DBError> {
+        self.inner.alter_table_access_mut_tx(tx, name, access)
+    }
 }
 
 impl RelationalDB {

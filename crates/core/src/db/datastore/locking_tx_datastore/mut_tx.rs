@@ -27,6 +27,7 @@ use spacetimedb_lib::address::Address;
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{
     db::{
+        auth::StAccess,
         def::{
             ConstraintDef, ConstraintSchema, IndexDef, IndexSchema, SequenceDef, SequenceSchema, TableDef, TableSchema,
             SEQUENCE_PREALLOCATION_AMOUNT,
@@ -236,18 +237,30 @@ impl MutTxId {
 
     pub fn rename_table(&mut self, table_id: TableId, new_name: &str, database_address: Address) -> Result<()> {
         let ctx = ExecutionContext::internal(database_address);
+        // Update the table's name in st_tables.
+        self.update_st_table_row(&ctx, database_address, table_id, |st| st.table_name = new_name.into())
+    }
 
+    fn update_st_table_row(
+        &mut self,
+        ctx: &ExecutionContext,
+        database_address: Address,
+        table_id: TableId,
+        updater: impl FnOnce(&mut StTableRow<Box<str>>),
+    ) -> Result<()> {
+        // Fetch the row.
         let st_table_ref = self
-            .iter_by_col_eq(&ctx, ST_TABLES_ID, StTableFields::TableId, &table_id.into())?
+            .iter_by_col_eq(ctx, ST_TABLES_ID, StTableFields::TableId, &table_id.into())?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
-        let mut st = StTableRow::try_from(st_table_ref)?;
-        let st_table_ptr = st_table_ref.pointer();
+        let mut row = StTableRow::try_from(st_table_ref)?;
+        let ptr = st_table_ref.pointer();
 
-        self.delete(ST_TABLES_ID, st_table_ptr)?;
-        // Update the table's name in st_tables.
-        st.table_name = new_name.into();
-        self.insert(ST_TABLES_ID, &mut st.into(), database_address)?;
+        // Delete the row, run updates, and insert again.
+        self.delete(ST_TABLES_ID, ptr)?;
+        updater(&mut row);
+        self.insert(ST_TABLES_ID, &mut row.into(), database_address)?;
+
         Ok(())
     }
 
@@ -263,6 +276,32 @@ impl MutTxId {
     pub fn table_name_from_id<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Option<Box<str>>> {
         self.iter_by_col_eq(ctx, ST_TABLES_ID, StTableFields::TableId, &table_id.into())
             .map(|mut iter| iter.next().map(|row| row.read_col(StTableFields::TableName).unwrap()))
+    }
+
+    /// Set the table access of `table_id` to `access`.
+    pub(crate) fn alter_table_access(
+        &mut self,
+        database_address: Address,
+        table_id: TableId,
+        access: StAccess,
+    ) -> Result<()> {
+        let ctx = ExecutionContext::internal(database_address);
+
+        // Write to the table in the tx state.
+        let (table, _) = if let Some(pair) = self.tx_state.get_table_and_blob_store(table_id) {
+            pair
+        } else {
+            let schema = self.schema_for_table(&ctx, table_id)?;
+            self.tx_state
+                .insert_tables
+                .insert(table_id, Table::new(schema, SquashedOffset::TX_STATE));
+            self.tx_state.get_table_and_blob_store(table_id).unwrap()
+        };
+        table.with_mut_schema(|s| s.table_access = access);
+
+        // Update system tables.
+        self.update_st_table_row(&ctx, database_address, table_id, |st| st.table_access = access)?;
+        Ok(())
     }
 
     pub fn create_index(&mut self, table_id: TableId, index: IndexDef, database_address: Address) -> Result<IndexId> {
@@ -317,7 +356,7 @@ impl MutTxId {
             let schema = self.schema_for_table(&ctx, table_id)?;
             self.tx_state
                 .insert_tables
-                .insert(index.table_id, Table::new(schema, SquashedOffset::TX_STATE));
+                .insert(table_id, Table::new(schema, SquashedOffset::TX_STATE));
             self.tx_state.get_table_and_blob_store(table_id).unwrap()
         };
 

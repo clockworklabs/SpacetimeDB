@@ -19,7 +19,7 @@ use crate::{
         },
         db_metrics::{DB_METRICS, MAX_TX_CPU_TIME},
     },
-    error::DBError,
+    error::{DBError, TableError},
     execution_context::ExecutionContext,
 };
 use anyhow::{anyhow, Context};
@@ -28,7 +28,10 @@ use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
-use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
+use spacetimedb_sats::db::{
+    auth::StAccess,
+    def::{IndexDef, SequenceDef, TableDef, TableSchema},
+};
 use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductValue};
 use spacetimedb_table::{indexes::RowPointer, table::RowRef};
 use std::time::{Duration, Instant};
@@ -124,6 +127,14 @@ impl Locking {
             progress: RefCell::new(progress),
             connected_clients: RefCell::new(HashSet::new()),
         }
+    }
+
+    pub(crate) fn alter_table_access_mut_tx(&self, tx: &mut MutTxId, name: Box<str>, access: StAccess) -> Result<()> {
+        let table_id = self
+            .table_id_from_name_mut_tx(tx, &name)?
+            .ok_or_else(|| TableError::NotFound(name.into()))?;
+
+        tx.alter_table_access(self.database_address, table_id, access)
     }
 }
 
