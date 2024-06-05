@@ -17,6 +17,7 @@ members = [
   "crates/primitives",
   "crates/sats",
   "crates/sdk",
+  "crates/snapshot",
   "crates/sqltest",
   "crates/standalone",
   "crates/table",
@@ -100,6 +101,7 @@ spacetimedb-standalone = { path = "crates/standalone", version = "0.9.3" }
 spacetimedb-table = { path = "crates/table", version = "0.9.3" }
 spacetimedb-vm = { path = "crates/vm", version = "0.9.3" }
 spacetimedb-fs-utils = { path = "crates/fs-utils", version = "0.9.3" }
+spacetimedb-snapshot = { path = "crates/snapshot", version = "0.9.3" }
 
 ahash = "0.8"
 anyhow = "1.0.68"
