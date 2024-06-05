@@ -34,6 +34,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
+
 pub struct StandaloneEnv {
     control_db: ControlDb,
     program_store: Arc<DiskStorage>,
