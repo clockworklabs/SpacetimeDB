@@ -1036,6 +1036,16 @@ impl Table {
         &self.inner.pages
     }
 
+    /// Iterates over each [`Page`] in this table, ensuring that its hash is computed before yielding it.
+    ///
+    /// Used when capturing a snapshot.
+    pub fn iter_pages_with_hashes(&mut self) -> impl Iterator<Item = (blake3::Hash, &Page)> {
+        self.inner.pages.iter_mut().map(|page| {
+            let hash = page.save_or_get_content_hash();
+            (hash, &**page)
+        })
+    }
+
     /// Returns the number of pages storing the physical rows of this table.
     fn num_pages(&self) -> usize {
         self.inner.pages.len()

@@ -15,7 +15,7 @@
 
 use std::{
     fs::{create_dir_all, File, OpenOptions},
-    io::{self, Write},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -60,6 +60,11 @@ type FileId = [u8; FILE_ID_BYTES];
 const DIR_HEX_CHARS: usize = 2;
 
 impl DirTrie {
+    /// Returns the root of this `DirTrie` on disk.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     /// Open the directory trie at `root`,
     /// creating the root directory if it doesn't exist.
     ///
@@ -175,6 +180,15 @@ impl DirTrie {
         let path = self.file_path(file_id);
         Self::create_parent(&path)?;
         options.open(path)
+    }
+
+    /// Open the entry keyed with `file_id` and read it into a `Vec<u8>`.
+    pub fn read_entry(&self, file_id: &FileId) -> Result<Vec<u8>, io::Error> {
+        let mut file = self.open_entry(file_id, &o_rdonly())?;
+        let mut buf = Vec::with_capacity(file.metadata()?.len() as usize);
+        // TODO(perf): Async IO?
+        file.read_to_end(&mut buf)?;
+        Ok(buf)
     }
 }
 
