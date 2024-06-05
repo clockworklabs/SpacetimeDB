@@ -92,7 +92,7 @@ public static partial class Runtime
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
         private static IEnumerable<T> ParseChunk<T>(byte[] chunk)
-            where T : IStructuralReadWrite
+            where T : IStructuralReadWrite, new()
         {
             using var stream = new MemoryStream(chunk);
             using var reader = new BinaryReader(stream);
@@ -103,7 +103,10 @@ public static partial class Runtime
         }
 
         public IEnumerable<T> Parse<T>()
-            where T : IStructuralReadWrite => this.SelectMany(ParseChunk<T>);
+            where T : IStructuralReadWrite, new()
+        {
+            return this.SelectMany(ParseChunk<T>);
+        }
     }
 
     public class RawTableIter(RawBindings.TableId tableId) : RawTableIterBase

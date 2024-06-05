@@ -657,32 +657,32 @@ namespace SpacetimeDB
 
 	public partial class ReducerEvent : ReducerEventBase
 	{
-		public IReducerArgs Args { get; }
+		public IReducerArgs? Args { get; }
 
-		public string ReducerName => Args.ReducerName;
+		public string ReducerName => Args?.ReducerName ?? "<none>";
 
 		[Obsolete("ReducerType is deprecated, please match directly on type of .Args instead.")]
-		public ReducerType Reducer => Args.ReducerType;
+		public ReducerType Reducer => Args?.ReducerType ?? ReducerType.None;
 
-		public ReducerEvent(IReducerArgs args) : base() => Args = args;
-		public ReducerEvent(ClientApi.Event dbEvent, IReducerArgs args) : base(dbEvent) => Args = args;
+		public ReducerEvent(IReducerArgs? args) : base() => Args = args;
+		public ReducerEvent(ClientApi.Event dbEvent, IReducerArgs? args) : base(dbEvent) => Args = args;
 
 		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
-		public AddPlayerArgsStruct AddPlayerArgs => (AddPlayerArgsStruct)Args;
+		public AddPlayerArgsStruct AddPlayerArgs => (AddPlayerArgsStruct)Args!;
 		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
-		public AddPrivateArgsStruct AddPrivateArgs => (AddPrivateArgsStruct)Args;
+		public AddPrivateArgsStruct AddPrivateArgs => (AddPrivateArgsStruct)Args!;
 		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
-		public DeletePlayerArgsStruct DeletePlayerArgs => (DeletePlayerArgsStruct)Args;
+		public DeletePlayerArgsStruct DeletePlayerArgs => (DeletePlayerArgsStruct)Args!;
 		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
-		public DeletePlayersByNameArgsStruct DeletePlayersByNameArgs => (DeletePlayersByNameArgsStruct)Args;
+		public DeletePlayersByNameArgsStruct DeletePlayersByNameArgs => (DeletePlayersByNameArgsStruct)Args!;
 		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
-		public QueryPrivateArgsStruct QueryPrivateArgs => (QueryPrivateArgsStruct)Args;
+		public QueryPrivateArgsStruct QueryPrivateArgs => (QueryPrivateArgsStruct)Args!;
 		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
-		public RepeatingTestArgsStruct RepeatingTestArgs => (RepeatingTestArgsStruct)Args;
+		public RepeatingTestArgsStruct RepeatingTestArgs => (RepeatingTestArgsStruct)Args!;
 		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
-		public TestArgsStruct TestArgs => (TestArgsStruct)Args;
+		public TestArgsStruct TestArgs => (TestArgsStruct)Args!;
 
-		public override bool InvokeHandler() => Args.InvokeHandler(this);
+		public override bool InvokeHandler() => Args?.InvokeHandler(this) ?? false;
 	}
 
 	public class SpacetimeDBClient : SpacetimeDBClientBase<ReducerEvent>
@@ -710,9 +710,10 @@ namespace SpacetimeDB
 				"query_private" => BSATNHelpers.FromProtoBytes<QueryPrivateArgsStruct>(argBytes),
 				"repeating_test" => BSATNHelpers.FromProtoBytes<RepeatingTestArgsStruct>(argBytes),
 				"test" => BSATNHelpers.FromProtoBytes<TestArgsStruct>(argBytes),
-				_ => null
+				"<none>" => null,
+				var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
 			};
-			return args is null ? null : new ReducerEvent(dbEvent, args);
+			return new ReducerEvent(dbEvent, args);
 		}
 	}
 }

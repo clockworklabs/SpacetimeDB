@@ -620,7 +620,10 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
             output,
             r#"[Obsolete("ReducerType is deprecated, please match directly on type of .Args instead.")]"#
         );
-        writeln!(output, "public ReducerType Reducer => Args?.ReducerType ?? ReducerType.None;");
+        writeln!(
+            output,
+            "public ReducerType Reducer => Args?.ReducerType ?? ReducerType.None;"
+        );
         writeln!(output);
         writeln!(
             output,
@@ -690,7 +693,10 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
                     );
                 }
                 writeln!(output, "\"<none>\" => null,");
-                writeln!(output, r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#);
+                writeln!(
+                    output,
+                    r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
+                );
             }
             writeln!(output, "}};");
             writeln!(output, "return new ReducerEvent(dbEvent, args);");
