@@ -106,6 +106,7 @@ pub struct RawConfig {
     server_configs: Vec<ServerConfig>,
 }
 
+#[derive(Debug, Clone)]
 pub struct Config {
     proj: RawConfig,
     home: RawConfig,
