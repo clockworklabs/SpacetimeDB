@@ -43,11 +43,11 @@ impl DatabaseInstanceContext {
         let log_path = DatabaseLogger::filepath(&database.address, instance_id);
         let (relational_db, dangling_connections) = match config.storage {
             Storage::Memory => {
-                let db = RelationalDB::open(db_path, database.address, None)?;
+                let db = RelationalDB::open(db_path, database.address, None, None)?;
                 (Arc::new(db), None)
             }
             Storage::Disk => {
-                let (db, connected_clients) = RelationalDB::local(db_path, rt, database.address)?;
+                let (db, connected_clients) = RelationalDB::local(db_path, rt, database.address, instance_id)?;
                 let connected_clients = (!connected_clients.is_empty()).then_some(connected_clients);
                 (Arc::new(db), connected_clients)
             }

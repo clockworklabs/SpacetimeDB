@@ -600,6 +600,21 @@ impl Table {
     pub fn bytes_occupied_overestimate(&self) -> usize {
         (self.num_pages() * PAGE_DATA_SIZE) + (self.blob_store_bytes.0)
     }
+
+    /// Reset the internal storage of `self` to be `pages`.
+    ///
+    /// This recomputes the pointer map based on the `pages`,
+    /// but does not recompute indexes.
+    ///
+    /// Used when restoring from a snapshot.
+    ///
+    /// # Safety
+    ///
+    /// The schema of rows stored in the `pages` must exactly match `self.schema` and `self.inner.row_layout`.
+    pub unsafe fn set_pages(&mut self, pages: Vec<Box<Page>>, blob_store: &dyn BlobStore) {
+        self.inner.pages.set_contents(pages, self.inner.row_layout.size());
+        self.rebuild_pointer_map(blob_store);
+    }
 }
 
 /// A reference to a single row within a table.
@@ -1054,6 +1069,17 @@ impl Table {
     /// Returns the [`StaticBsatnLayout`] for this table,
     pub(crate) fn static_bsatn_layout(&self) -> Option<&StaticBsatnLayout> {
         self.inner.static_bsatn_layout.as_ref()
+    }
+
+    /// Rebuild the [`PointerMap`] by iterating over all the rows in `self` and inserting them.
+    ///
+    /// Called when restoring from a snapshot after installing the pages.
+    fn rebuild_pointer_map(&mut self, blob_store: &dyn BlobStore) {
+        let ptrs = self
+            .scan_rows(blob_store)
+            .map(|row_ref| (row_ref.row_hash(), row_ref.pointer()))
+            .collect::<PointerMap>();
+        self.pointer_map = ptrs;
     }
 }
 

@@ -1,3 +1,4 @@
+use super::datastore::locking_tx_datastore::committed_state::CommittedState;
 use super::datastore::traits::{
     IsolationLevel, MutProgrammable, MutTx as _, MutTxDatastore, Programmable, RowTypeForTable, Tx as _, TxDatastore,
 };
@@ -14,7 +15,10 @@ use crate::config::DatabaseConfig;
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::ExecutionContext;
 use crate::util::slow::SlowQueryConfig;
+use durability::TxOffset;
 use fs2::FileExt;
+use futures::channel::mpsc;
+use futures::StreamExt;
 use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
 use spacetimedb_durability::{self as durability, Durability};
@@ -25,6 +29,7 @@ use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_snapshot::SnapshotRepository;
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_vm::errors::ErrorVm;
 use std::borrow::Cow;
@@ -60,6 +65,7 @@ pub struct RelationalDB {
     // TODO(cloutiertyler): This should not be public
     pub(crate) inner: Locking,
     durability: Option<Arc<dyn Durability<TxData = Txdata>>>,
+    snapshots: Option<Arc<SnapshotWorker>>,
     address: Address,
 
     row_count_fn: RowCountFn,
@@ -74,6 +80,76 @@ pub struct RelationalDB {
     // We want to release the file lock last.
     _lock: Arc<File>,
 }
+
+struct SnapshotWorker {
+    _handle: tokio::task::JoinHandle<()>,
+    request_snapshot: mpsc::UnboundedSender<()>,
+}
+
+impl SnapshotWorker {
+    fn new(committed_state: Arc<RwLock<CommittedState>>, repo: Arc<SnapshotRepository>) -> Self {
+        let (request_snapshot, trigger) = mpsc::unbounded();
+        let handle = tokio::spawn(Self::snapshot_loop(trigger, committed_state, repo));
+        SnapshotWorker {
+            _handle: handle,
+            request_snapshot,
+        }
+    }
+
+    async fn snapshot_loop(
+        mut trigger: mpsc::UnboundedReceiver<()>,
+        committed_state: Arc<RwLock<CommittedState>>,
+        repo: Arc<SnapshotRepository>,
+    ) {
+        while let Some(()) = trigger.next().await {
+            let committed_state = committed_state.clone();
+            let repo = repo.clone();
+            tokio::task::spawn_blocking(move || Self::take_snapshot(&committed_state, &repo))
+                .await
+                .unwrap();
+        }
+    }
+
+    fn take_snapshot(committed_state: &RwLock<CommittedState>, snapshots: &SnapshotRepository) {
+        let mut committed_state = committed_state.write();
+        let Some(tx_offset) = committed_state.next_tx_offset.checked_sub(1) else {
+            log::info!("SnapshotWorker::take_snapshot: refusing to take snapshot at tx_offset -1");
+            return;
+        };
+        log::info!(
+            "Capturing snapshot of database {:?} at TX offset {}",
+            snapshots.database_address(),
+            tx_offset,
+        );
+
+        let start_time = std::time::Instant::now();
+
+        let CommittedState {
+            ref mut tables,
+            ref blob_store,
+            ..
+        } = *committed_state;
+
+        if let Err(e) = snapshots.create_snapshot(tables.values_mut(), blob_store, tx_offset) {
+            log::error!(
+                "Error capturing snapshot of database {:?}: {e:?}",
+                snapshots.database_address()
+            );
+        } else {
+            log::info!(
+                "Captured snapshot of database {:?} at TX offset {} in {:?}",
+                snapshots.database_address(),
+                tx_offset,
+                start_time.elapsed()
+            );
+        }
+    }
+}
+
+/// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
+// TODO(config): Allow DBs to specify how frequently to snapshot.
+// TODO(bikeshedding): Snapshot based on number of bytes written to commitlog, not tx offsets.
+const SNAPSHOT_FREQUENCY: u64 = 1_000_000;
 
 impl std::fmt::Debug for RelationalDB {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -101,6 +177,7 @@ impl RelationalDB {
         root: impl AsRef<Path>,
         rt: tokio::runtime::Handle,
         address: Address,
+        instance_id: u64,
     ) -> Result<(Self, ConnectedClients), DBError> {
         let log_dir = root.as_ref().join("clog");
         create_dir_all(&log_dir)?;
@@ -121,7 +198,16 @@ impl RelationalDB {
             move || durability.size_on_disk()
         });
 
-        Self::open(root, address, Some((durability.clone(), disk_size_fn)))?.apply(durability)
+        let snapshot_dir = root.as_ref().join("snapshots");
+        create_dir_all(&snapshot_dir)?;
+        let snapshots = SnapshotRepository::open(snapshot_dir, address, instance_id).map(Arc::new)?;
+
+        let start = std::time::Instant::now();
+        let res =
+            Self::open(root, address, Some((durability.clone(), disk_size_fn)), Some(snapshots))?.apply(durability);
+        log::info!("[{address}] DATABASE: opened local in {:?}", start.elapsed());
+
+        res
     }
 
     /// Open a database with root directory `root` and the provided [`Durability`]
@@ -133,6 +219,7 @@ impl RelationalDB {
         root: impl AsRef<Path>,
         address: Address,
         durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
+        snapshots: Option<Arc<SnapshotRepository>>,
     ) -> Result<Self, DBError> {
         create_dir_all(&root)?;
 
@@ -141,7 +228,15 @@ impl RelationalDB {
             .map_err(|e| DatabaseError::DatabasedOpened(root.as_ref().to_path_buf(), e.into()))?;
 
         let (durability, disk_size_fn) = durability.map(|(a, b)| (Some(a), Some(b))).unwrap_or_default();
-        let inner = Locking::bootstrap(address)?;
+        // Check the latest durable TX and restore from a snapshot no newer than it,
+        // so that you drop TXes which were committed but not durable before the restart.
+        // TODO: delete or mark as invalid snapshots newer than this.
+        let durable_tx_offset = durability
+            .as_deref()
+            .and_then(|durability| durability.durable_tx_offset());
+        log::info!("[{address}] DATABASE: durable_tx_offset is {durable_tx_offset:?}");
+        let inner = Self::restore_from_snapshot_or_bootstrap(address, snapshots.as_deref(), durable_tx_offset)?;
+
         let row_count_fn: RowCountFn = Arc::new(move |table_id, table_name| {
             DB_METRICS
                 .rdb_num_table_rows
@@ -149,9 +244,13 @@ impl RelationalDB {
                 .get()
         });
 
+        let snapshot_worker =
+            snapshots.map(|repo| Arc::new(SnapshotWorker::new(inner.committed_state.clone(), repo.clone())));
+
         Ok(Self {
             inner,
             durability,
+            snapshots: snapshot_worker,
             address,
 
             row_count_fn,
@@ -160,6 +259,47 @@ impl RelationalDB {
             _lock: Arc::new(lock),
             config: Arc::new(RwLock::new(DatabaseConfig::new(SlowQueryConfig::with_defaults(), None))),
         })
+    }
+
+    fn restore_from_snapshot_or_bootstrap(
+        address: Address,
+        snapshots: Option<&SnapshotRepository>,
+        durable_tx_offset: Option<TxOffset>,
+    ) -> Result<Locking, DBError> {
+        if let Some(snapshots) = snapshots {
+            if let Some(durable_tx_offset) = durable_tx_offset {
+                // Don't restore from a snapshot newer than the `durable_tx_offset`,
+                // so that you drop TXes which were committed but not durable before the restart.
+                // TODO: delete or mark as invalid snapshots newer than this.
+                if let Some(tx_offset) = snapshots.latest_snapshot_older_than(durable_tx_offset)? {
+                    log::info!("[{address}] DATABASE: restoring snapshot of tx_offset {tx_offset}");
+                    let start = std::time::Instant::now();
+                    let snapshot = snapshots.read_snapshot(tx_offset)?;
+                    log::info!(
+                        "[{address}] DATABASE: read snapshot of tx_offset {tx_offset} in {:?}",
+                        start.elapsed(),
+                    );
+                    if snapshot.database_address != address {
+                        // TODO: return a proper typed error
+                        return Err(anyhow::anyhow!(
+                            "Snapshot has incorrect database_address: expected {address} but found {}",
+                            snapshot.database_address,
+                        )
+                        .into());
+                    }
+                    let start = std::time::Instant::now();
+                    let res = Locking::restore_from_snapshot(snapshot);
+                    log::info!(
+                        "[{address}] DATABASE: restored from snapshot of tx_offset {tx_offset} in {:?}",
+                        start.elapsed(),
+                    );
+                    return res;
+                }
+            }
+            log::info!("[{address}] DATABASE: no snapshot on disk");
+        }
+
+        Locking::bootstrap(address)
     }
 
     /// Replay ("fold") the provided [`spacetimedb_durability::History`] onto
@@ -206,8 +346,10 @@ impl RelationalDB {
         };
 
         let mut replay = self.inner.replay(progress);
+        let start = replay.next_tx_offset();
+
         history
-            .fold_transactions_from(0, &mut replay)
+            .fold_transactions_from(start, &mut replay)
             .map_err(anyhow::Error::from)?;
         log::info!("[{}] DATABASE: applied transaction history", self.address);
         self.inner.rebuild_state_after_replay()?;
@@ -343,6 +485,8 @@ impl RelationalDB {
             return Ok(None);
         };
 
+        self.maybe_do_snapshot(&tx_data);
+
         if let Some(durability) = &self.durability {
             Self::do_durability(&**durability, ctx, &tx_data)
         }
@@ -357,6 +501,8 @@ impl RelationalDB {
         let Some((tx_data, tx)) = self.inner.commit_mut_tx_downgrade(ctx, tx)? else {
             return Ok(None);
         };
+
+        self.maybe_do_snapshot(&tx_data);
 
         if let Some(durability) = &self.durability {
             Self::do_durability(&**durability, ctx, &tx_data)
@@ -416,6 +562,20 @@ impl RelationalDB {
                 ctx.reducer_context().map(|rcx| rcx.name.strip_prefix("__identity_")),
                 Some(Some("connected__" | "disconnected__"))
             ));
+        }
+    }
+
+    /// Decide based on the `committed_state.next_tx_offset`
+    /// whether to request that the [`SnapshotWorker`] in `self` capture a snapshot of the database.
+    ///
+    /// Actual snapshotting happens asynchronously in a Tokio worker.
+    fn maybe_do_snapshot(&self, tx_data: &TxData) {
+        if let Some(snapshot_worker) = &self.snapshots {
+            if let Some(tx_offset) = tx_data.tx_offset() {
+                if tx_offset % SNAPSHOT_FREQUENCY == 0 {
+                    snapshot_worker.request_snapshot.unbounded_send(()).unwrap();
+                }
+            }
         }
     }
 
@@ -1016,7 +1176,7 @@ pub mod tests_utils {
         }
 
         fn in_memory_internal(root: &Path) -> Result<RelationalDB, DBError> {
-            Ok(RelationalDB::open(root, Self::ADDRESS, None)?.with_row_count(Self::row_count_fn()))
+            Ok(RelationalDB::open(root, Self::ADDRESS, None, None)?.with_row_count(Self::row_count_fn()))
         }
 
         fn durable_internal(
@@ -1043,8 +1203,17 @@ pub mod tests_utils {
                 move || handle.size_on_disk()
             });
 
+            let snapshot_dir = root.join("snapshots");
+            create_dir_all(&snapshot_dir)?;
+            let snapshots = SnapshotRepository::open(snapshot_dir, Self::ADDRESS, 0).map(Arc::new)?;
+
             let (db, connected_clients) = {
-                let db = RelationalDB::open(root, Self::ADDRESS, Some((handle.clone(), disk_size_fn)))?;
+                let db = RelationalDB::open(
+                    root,
+                    Self::ADDRESS,
+                    Some((handle.clone(), disk_size_fn)),
+                    Some(snapshots),
+                )?;
                 db.apply(handle.clone())?
             };
             // TODO: Should we be able to handle the non-empty case?
@@ -1154,7 +1323,7 @@ mod tests {
         stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
-        match RelationalDB::local(stdb.path(), stdb.runtime().unwrap().clone(), Address::zero()) {
+        match RelationalDB::local(stdb.path(), stdb.runtime().unwrap().clone(), Address::zero(), 0) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
             }

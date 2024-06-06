@@ -4414,6 +4414,7 @@ dependencies = [
  "spacetimedb-metrics",
  "spacetimedb-primitives",
  "spacetimedb-sats",
+ "spacetimedb-snapshot",
  "spacetimedb-table",
  "spacetimedb-vm",
  "sqlparser",
