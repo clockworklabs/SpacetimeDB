@@ -237,90 +237,94 @@ mod tests {
 
     /// Asserts that a subscription holds a tx handle for the entire length of its evaluation.
     #[test]
-    fn test_tx_subscription_ordering() -> ResultTest<()> { with_tokio(|| {
-        let test_db = TestDB::durable()?;
+    fn test_tx_subscription_ordering() -> ResultTest<()> {
+        with_tokio(|| {
+            let test_db = TestDB::durable()?;
 
-        let runtime = test_db.runtime().cloned().unwrap();
-        let db = Arc::new(test_db.db.clone());
+            let runtime = test_db.runtime().cloned().unwrap();
+            let db = Arc::new(test_db.db.clone());
 
-        // Create table with one row
-        let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
-        db.with_auto_commit(&ExecutionContext::default(), |tx| {
-            db.insert(tx, table_id, product!(1_u8))
-        })?;
+            // Create table with one row
+            let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
+            db.with_auto_commit(&ExecutionContext::default(), |tx| {
+                db.insert(tx, table_id, product!(1_u8))
+            })?;
 
-        let (send, mut recv) = mpsc::unbounded_channel();
+            let (send, mut recv) = mpsc::unbounded_channel();
 
-        // Subscribing to T should return a single row.
-        let db2 = db.clone();
-        let query_handle = runtime.spawn_blocking(move || {
-            add_subscriber(
-                db.clone(),
-                "select * from T",
-                Some(Arc::new(move |tx: &_| {
-                    // Wake up writer thread after starting the reader tx
-                    let _ = send.send(());
-                    // Then go to sleep
-                    std::thread::sleep(Duration::from_secs(1));
-                    let ctx = ExecutionContext::default();
-                    // Assuming subscription evaluation holds a lock on the db,
-                    // any mutations to T will necessarily occur after,
-                    // and therefore we should only see a single row returned.
-                    assert_eq!(1, db.iter(&ctx, tx, table_id).unwrap().count());
-                })),
-            )
-        });
+            // Subscribing to T should return a single row.
+            let db2 = db.clone();
+            let query_handle = runtime.spawn_blocking(move || {
+                add_subscriber(
+                    db.clone(),
+                    "select * from T",
+                    Some(Arc::new(move |tx: &_| {
+                        // Wake up writer thread after starting the reader tx
+                        let _ = send.send(());
+                        // Then go to sleep
+                        std::thread::sleep(Duration::from_secs(1));
+                        let ctx = ExecutionContext::default();
+                        // Assuming subscription evaluation holds a lock on the db,
+                        // any mutations to T will necessarily occur after,
+                        // and therefore we should only see a single row returned.
+                        assert_eq!(1, db.iter(&ctx, tx, table_id).unwrap().count());
+                    })),
+                )
+            });
 
-        // Write a second row to T concurrently with the reader thread
-        let write_handle = runtime.spawn(async move {
-            let _ = recv.recv().await;
-            db2.with_auto_commit(&ExecutionContext::default(), |tx| {
-                db2.insert(tx, table_id, product!(2_u8))
-            })
-        });
+            // Write a second row to T concurrently with the reader thread
+            let write_handle = runtime.spawn(async move {
+                let _ = recv.recv().await;
+                db2.with_auto_commit(&ExecutionContext::default(), |tx| {
+                    db2.insert(tx, table_id, product!(2_u8))
+                })
+            });
 
-        runtime.block_on(write_handle)??;
-        runtime.block_on(query_handle)??;
+            runtime.block_on(write_handle)??;
+            runtime.block_on(query_handle)??;
 
-        test_db.close()?;
+            test_db.close()?;
 
-        Ok(())
-    })}
+            Ok(())
+        })
+    }
 
     #[test]
-    fn subs_cannot_access_private_tables() -> ResultTest<()> { with_tokio(|| {
-        let test_db = TestDB::durable()?;
-        let db = Arc::new(test_db.db.clone());
+    fn subs_cannot_access_private_tables() -> ResultTest<()> {
+        with_tokio(|| {
+            let test_db = TestDB::durable()?;
+            let db = Arc::new(test_db.db.clone());
 
-        // Create a public table.
-        let indexes = &[(0.into(), "a")];
-        let cols = &[("a", AlgebraicType::U8)];
-        let _ = db.create_table_for_test("public", cols, indexes)?;
+            // Create a public table.
+            let indexes = &[(0.into(), "a")];
+            let cols = &[("a", AlgebraicType::U8)];
+            let _ = db.create_table_for_test("public", cols, indexes)?;
 
-        // Create a private table.
-        let _ = db.create_table_for_test_with_access("private", cols, indexes, StAccess::Private)?;
+            // Create a private table.
+            let _ = db.create_table_for_test_with_access("private", cols, indexes, StAccess::Private)?;
 
-        // We can subscribe to a public table.
-        let subscribe = |sql| add_subscriber(db.clone(), sql, None);
-        assert!(subscribe("SELECT * FROM public").is_ok());
+            // We can subscribe to a public table.
+            let subscribe = |sql| add_subscriber(db.clone(), sql, None);
+            assert!(subscribe("SELECT * FROM public").is_ok());
 
-        // We cannot subscribe when a private table is mentioned,
-        // not even when in a join where the projection doesn't mention the table,
-        // as the mere fact of joining can leak information from the private table.
-        for sql in [
-            "SELECT * FROM private",
-            // Even if the query will return no rows, we still reject it.
-            "SELECT * FROM private WHERE 1 = 0",
-            "SELECT private.* FROM private",
-            "SELECT public.* FROM public JOIN private ON public.a = private.a WHERE private.a = 1",
-            "SELECT private.* FROM private JOIN public ON private.a = public.a WHERE public.a = 1",
-        ] {
-            assert!(matches!(
-                subscribe(sql).unwrap_err(),
-                DBError::Vm(ErrorVm::Auth(AuthError::TablePrivate { .. }))
-            ));
-        }
+            // We cannot subscribe when a private table is mentioned,
+            // not even when in a join where the projection doesn't mention the table,
+            // as the mere fact of joining can leak information from the private table.
+            for sql in [
+                "SELECT * FROM private",
+                // Even if the query will return no rows, we still reject it.
+                "SELECT * FROM private WHERE 1 = 0",
+                "SELECT private.* FROM private",
+                "SELECT public.* FROM public JOIN private ON public.a = private.a WHERE private.a = 1",
+                "SELECT private.* FROM private JOIN public ON private.a = public.a WHERE public.a = 1",
+            ] {
+                assert!(matches!(
+                    subscribe(sql).unwrap_err(),
+                    DBError::Vm(ErrorVm::Auth(AuthError::TablePrivate { .. }))
+                ));
+            }
 
-        Ok(())
-    })}
+            Ok(())
+        })
+    }
 }
