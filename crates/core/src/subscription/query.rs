@@ -92,7 +92,7 @@ mod tests {
     use super::*;
     use crate::client::Protocol;
     use crate::db::datastore::traits::IsolationLevel;
-    use crate::db::relational_db::tests_utils::{with_tokio, TestDB};
+    use crate::db::relational_db::tests_utils::TestDB;
     use crate::db::relational_db::MutTx;
     use crate::execution_context::ExecutionContext;
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate};
@@ -327,192 +327,185 @@ mod tests {
 
     #[test]
     fn test_eval_incr_for_index_scan() -> ResultTest<()> {
-        with_tokio(|| {
-            let db = TestDB::durable()?;
+        let db = TestDB::durable()?;
 
-            // Create table [test] with index on [b]
-            let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-            let indexes = &[(1.into(), "b")];
-            let table_id = db.create_table_for_test("test", schema, indexes)?;
+        // Create table [test] with index on [b]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(1.into(), "b")];
+        let table_id = db.create_table_for_test("test", schema, indexes)?;
 
-            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-            let mut deletes = Vec::new();
-            for i in 0u64..9u64 {
-                db.insert(&mut tx, table_id, product!(i, i))?;
-                deletes.push(product!(i + 10, i))
-            }
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+        let mut deletes = Vec::new();
+        for i in 0u64..9u64 {
+            db.insert(&mut tx, table_id, product!(i, i))?;
+            deletes.push(product!(i + 10, i))
+        }
 
-            let update = DatabaseUpdate {
-                tables: vec![DatabaseTableUpdate {
-                    table_id,
-                    table_name: "test".into(),
-                    deletes: deletes.into(),
-                    inserts: [].into(),
-                }],
-            };
+        let update = DatabaseUpdate {
+            tables: vec![DatabaseTableUpdate {
+                table_id,
+                table_name: "test".into(),
+                deletes: deletes.into(),
+                inserts: [].into(),
+            }],
+        };
 
-            db.commit_tx(&ExecutionContext::default(), tx)?;
-            let tx = db.begin_tx();
+        db.commit_tx(&ExecutionContext::default(), tx)?;
+        let tx = db.begin_tx();
 
-            let sql = "select * from test where b = 3";
-            let mut exp = compile_sql(&db, &tx, sql)?;
+        let sql = "select * from test where b = 3";
+        let mut exp = compile_sql(&db, &tx, sql)?;
 
-            let Some(CrudExpr::Query(query)) = exp.pop() else {
-                panic!("unexpected query {:#?}", exp[0]);
-            };
+        let Some(CrudExpr::Query(query)) = exp.pop() else {
+            panic!("unexpected query {:#?}", exp[0]);
+        };
 
-            let query: ExecutionSet = singleton_execution_set(query, sql.into())?;
+        let query: ExecutionSet = singleton_execution_set(query, sql.into())?;
 
-            let ctx = &ExecutionContext::incremental_update(db.address(), SlowQueryConfig::default());
-            let tx = (&tx).into();
-            let update = update.tables.iter().collect::<Vec<_>>();
-            let result = query.eval_incr(ctx, &db, &tx, &update);
+        let ctx = &ExecutionContext::incremental_update(db.address(), SlowQueryConfig::default());
+        let tx = (&tx).into();
+        let update = update.tables.iter().collect::<Vec<_>>();
+        let result = query.eval_incr(ctx, &db, &tx, &update);
 
-            assert_eq!(result.tables.len(), 1);
+        assert_eq!(result.tables.len(), 1);
 
-            let update = &result.tables[0].updates;
+        let update = &result.tables[0].updates;
 
-            assert_eq!(update.inserts.len(), 0);
-            assert_eq!(update.deletes.len(), 1);
+        assert_eq!(update.inserts.len(), 0);
+        assert_eq!(update.deletes.len(), 1);
 
-            let op = &update.deletes[0];
+        let op = &update.deletes[0];
 
-            assert_eq!(op.clone().into_product_value(), product!(13u64, 3u64));
-            Ok(())
-        })
+        assert_eq!(op.clone().into_product_value(), product!(13u64, 3u64));
+        Ok(())
     }
 
     #[test]
     fn test_subscribe() -> ResultTest<()> {
-        with_tokio(|| {
-            let db = TestDB::durable()?;
+        let db = TestDB::durable()?;
 
-            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
 
-            let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Public)?;
-            db.commit_tx(&ExecutionContext::default(), tx)?;
-            assert_eq!(schema.table_type, StTableType::User);
-            assert_eq!(schema.table_access, StAccess::Public);
+        let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Public)?;
+        db.commit_tx(&ExecutionContext::default(), tx)?;
+        assert_eq!(schema.table_type, StTableType::User);
+        assert_eq!(schema.table_access, StAccess::Public);
 
-            let tx = db.begin_tx();
-            let q_1 = q.clone();
-            check_query(&db, &table, &tx, &q_1, &data)?;
+        let tx = db.begin_tx();
+        let q_1 = q.clone();
+        check_query(&db, &table, &tx, &q_1, &data)?;
 
-            let q_2 = q
-                .with_select_cmp(OpCmp::Eq, FieldName::new(schema.table_id, 0.into()), scalar(1u64))
-                .unwrap();
-            check_query(&db, &table, &tx, &q_2, &data)?;
+        let q_2 = q
+            .with_select_cmp(OpCmp::Eq, FieldName::new(schema.table_id, 0.into()), scalar(1u64))
+            .unwrap();
+        check_query(&db, &table, &tx, &q_2, &data)?;
 
-            Ok(())
-        })
+        Ok(())
     }
 
     // Check that the `owner` can access private tables (that start with `_`) and that it fails if the `caller` is different
     #[test]
     fn test_subscribe_private() -> ResultTest<()> {
-        with_tokio(|| {
-            let db = TestDB::durable()?;
+        let db = TestDB::durable()?;
 
-            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
 
-            let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Private)?;
-            db.commit_tx(&ExecutionContext::default(), tx)?;
-            assert_eq!(schema.table_type, StTableType::User);
-            assert_eq!(schema.table_access, StAccess::Private);
+        let (schema, table, data, q) = make_inv(&db, &mut tx, StAccess::Private)?;
+        db.commit_tx(&ExecutionContext::default(), tx)?;
+        assert_eq!(schema.table_type, StTableType::User);
+        assert_eq!(schema.table_access, StAccess::Private);
 
-            let row = product!(1u64, "health");
-            let tx = db.begin_tx();
-            check_query(&db, &table, &tx, &q, &data)?;
+        let row = product!(1u64, "health");
+        let tx = db.begin_tx();
+        check_query(&db, &table, &tx, &q, &data)?;
 
-            // SELECT * FROM inventory WHERE inventory_id = 1
-            let q_id = QueryExpr::new(&*schema)
-                .with_select_cmp(OpCmp::Eq, FieldName::new(schema.table_id, 0.into()), scalar(1u64))
-                .unwrap();
+        // SELECT * FROM inventory WHERE inventory_id = 1
+        let q_id = QueryExpr::new(&*schema)
+            .with_select_cmp(OpCmp::Eq, FieldName::new(schema.table_id, 0.into()), scalar(1u64))
+            .unwrap();
 
-            let s = singleton_execution_set(q_id, "SELECT * FROM inventory WHERE inventory_id = 1".into())?;
+        let s = singleton_execution_set(q_id, "SELECT * FROM inventory WHERE inventory_id = 1".into())?;
 
-            let data = DatabaseTableUpdate {
-                table_id: schema.table_id,
-                table_name: "_inventory".into(),
-                deletes: [].into(),
-                inserts: [row.clone()].into(),
-            };
+        let data = DatabaseTableUpdate {
+            table_id: schema.table_id,
+            table_name: "_inventory".into(),
+            deletes: [].into(),
+            inserts: [row.clone()].into(),
+        };
 
-            let update = DatabaseUpdate {
-                tables: vec![data.clone()],
-            };
+        let update = DatabaseUpdate {
+            tables: vec![data.clone()],
+        };
 
-            check_query_incr(&db, &tx, &s, &update, 1, &[row])?;
+        check_query_incr(&db, &tx, &s, &update, 1, &[row])?;
 
-            let q = QueryExpr::new(&*schema);
+        let q = QueryExpr::new(&*schema);
 
-            let (q, sources) = query_to_mem_table(q, &data);
-            //Try access the private table
-            match run_query(
-                &ExecutionContext::default(),
-                &db,
-                &tx,
-                &q,
-                AuthCtx::new(Identity::__dummy(), Identity::from_byte_array([1u8; 32])),
-                sources,
-            ) {
-                Ok(_) => {
-                    panic!("it allows to execute against private table")
-                }
-                Err(err) => {
-                    if err.get_auth_error().is_none() {
-                        panic!("fail to report an `auth` violation for private table, it gets {err}")
-                    }
+        let (q, sources) = query_to_mem_table(q, &data);
+        //Try access the private table
+        match run_query(
+            &ExecutionContext::default(),
+            &db,
+            &tx,
+            &q,
+            AuthCtx::new(Identity::__dummy(), Identity::from_byte_array([1u8; 32])),
+            sources,
+        ) {
+            Ok(_) => {
+                panic!("it allows to execute against private table")
+            }
+            Err(err) => {
+                if err.get_auth_error().is_none() {
+                    panic!("fail to report an `auth` violation for private table, it gets {err}")
                 }
             }
+        }
 
-            Ok(())
-        })
+        Ok(())
     }
 
     #[test]
     fn test_subscribe_sql() -> ResultTest<()> {
-        with_tokio(|| {
-            let db = TestDB::durable()?;
+        let db = TestDB::durable()?;
 
-            // Create table [MobileEntityState]
-            let schema = &[
-                ("entity_id", AlgebraicType::U64),
-                ("location_x", AlgebraicType::I32),
-                ("location_z", AlgebraicType::I32),
-                ("destination_x", AlgebraicType::I32),
-                ("destination_z", AlgebraicType::I32),
-                ("is_running", AlgebraicType::Bool),
-                ("timestamp", AlgebraicType::U64),
-                ("dimension", AlgebraicType::U32),
-            ];
-            let indexes = &[
-                (0.into(), "entity_id"),
-                (1.into(), "location_x"),
-                (2.into(), "location_z"),
-            ];
-            db.create_table_for_test("MobileEntityState", schema, indexes)?;
+        // Create table [MobileEntityState]
+        let schema = &[
+            ("entity_id", AlgebraicType::U64),
+            ("location_x", AlgebraicType::I32),
+            ("location_z", AlgebraicType::I32),
+            ("destination_x", AlgebraicType::I32),
+            ("destination_z", AlgebraicType::I32),
+            ("is_running", AlgebraicType::Bool),
+            ("timestamp", AlgebraicType::U64),
+            ("dimension", AlgebraicType::U32),
+        ];
+        let indexes = &[
+            (0.into(), "entity_id"),
+            (1.into(), "location_x"),
+            (2.into(), "location_z"),
+        ];
+        db.create_table_for_test("MobileEntityState", schema, indexes)?;
 
-            // Create table [EnemyState]
-            let schema = &[
-                ("entity_id", AlgebraicType::U64),
-                ("herd_id", AlgebraicType::I32),
-                ("status", AlgebraicType::I32),
-                ("type", AlgebraicType::I32),
-                ("direction", AlgebraicType::I32),
-            ];
-            let indexes = &[(0.into(), "entity_id")];
-            db.create_table_for_test("EnemyState", schema, indexes)?;
+        // Create table [EnemyState]
+        let schema = &[
+            ("entity_id", AlgebraicType::U64),
+            ("herd_id", AlgebraicType::I32),
+            ("status", AlgebraicType::I32),
+            ("type", AlgebraicType::I32),
+            ("direction", AlgebraicType::I32),
+        ];
+        let indexes = &[(0.into(), "entity_id")];
+        db.create_table_for_test("EnemyState", schema, indexes)?;
 
-            let sql_insert = "\
+        let sql_insert = "\
         insert into MobileEntityState (entity_id, location_x, location_z, destination_x, destination_z, is_running, timestamp, dimension) values (1, 96001, 96001, 96001, 1867045146, false, 17167179743690094247, 3926297397);\
         insert into MobileEntityState (entity_id, location_x, location_z, destination_x, destination_z, is_running, timestamp, dimension) values (2, 96001, 191000, 191000, 1560020888, true, 2947537077064292621, 445019304);
 
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (1, 1181485940, 1633678837, 1158301365, 132191327);
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (2, 2017368418, 194072456, 34423057, 1296770410);";
-            run_for_testing(&db, sql_insert)?;
+        run_for_testing(&db, sql_insert)?;
 
-            let sql_query = "\
+        let sql_query = "\
         SELECT EnemyState.* FROM EnemyState \
         JOIN MobileEntityState ON MobileEntityState.entity_id = EnemyState.entity_id  \
         WHERE MobileEntityState.location_x > 96000 \
@@ -520,125 +513,120 @@ mod tests {
         AND MobileEntityState.location_z > 96000 \
         AND MobileEntityState.location_z < 192000";
 
-            let tx = db.begin_tx();
-            let qset = compile_read_only_query(&db, &tx, sql_query)?;
+        let tx = db.begin_tx();
+        let qset = compile_read_only_query(&db, &tx, sql_query)?;
 
-            for q in qset {
-                let result = run_query(
-                    &ExecutionContext::default(),
-                    &db,
-                    &tx,
-                    q.as_expr(),
-                    AuthCtx::for_testing(),
-                    SourceSet::<_, 0>::empty(),
-                )?;
-                assert_eq!(result.len(), 1, "Join query did not return any rows");
-            }
+        for q in qset {
+            let result = run_query(
+                &ExecutionContext::default(),
+                &db,
+                &tx,
+                q.as_expr(),
+                AuthCtx::for_testing(),
+                SourceSet::<_, 0>::empty(),
+            )?;
+            assert_eq!(result.len(), 1, "Join query did not return any rows");
+        }
 
-            Ok(())
-        })
+        Ok(())
     }
 
     #[test]
     fn test_subscribe_all() -> ResultTest<()> {
-        with_tokio(|| {
-            let db = TestDB::durable()?;
+        let db = TestDB::durable()?;
 
-            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
 
-            let (schema_1, _, _, _) = make_inv(&db, &mut tx, StAccess::Public)?;
-            let (schema_2, _, _, _) = make_player(&db, &mut tx)?;
-            db.commit_tx(&ExecutionContext::default(), tx)?;
-            let row_1 = product!(1u64, "health");
-            let row_2 = product!(2u64, "jhon doe");
-            let tx = db.begin_tx();
-            let s = get_all(&db, &tx, &AuthCtx::for_testing())?.into();
-            let ctx = ExecutionContext::subscribe(db.address(), SlowQueryConfig::default());
-            check_query_eval(&ctx, &db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
+        let (schema_1, _, _, _) = make_inv(&db, &mut tx, StAccess::Public)?;
+        let (schema_2, _, _, _) = make_player(&db, &mut tx)?;
+        db.commit_tx(&ExecutionContext::default(), tx)?;
+        let row_1 = product!(1u64, "health");
+        let row_2 = product!(2u64, "jhon doe");
+        let tx = db.begin_tx();
+        let s = get_all(&db, &tx, &AuthCtx::for_testing())?.into();
+        let ctx = ExecutionContext::subscribe(db.address(), SlowQueryConfig::default());
+        check_query_eval(&ctx, &db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
 
-            let data1 = DatabaseTableUpdate {
-                table_id: schema_1.table_id,
-                table_name: "inventory".into(),
-                deletes: [row_1].into(),
-                inserts: [].into(),
-            };
+        let data1 = DatabaseTableUpdate {
+            table_id: schema_1.table_id,
+            table_name: "inventory".into(),
+            deletes: [row_1].into(),
+            inserts: [].into(),
+        };
 
-            let data2 = DatabaseTableUpdate {
-                table_id: schema_2.table_id,
-                table_name: "player".into(),
-                deletes: [].into(),
-                inserts: [row_2].into(),
-            };
+        let data2 = DatabaseTableUpdate {
+            table_id: schema_2.table_id,
+            table_name: "player".into(),
+            deletes: [].into(),
+            inserts: [row_2].into(),
+        };
 
-            let update = DatabaseUpdate {
-                tables: vec![data1, data2],
-            };
+        let update = DatabaseUpdate {
+            tables: vec![data1, data2],
+        };
 
-            let row_1 = product!(1u64, "health");
-            let row_2 = product!(2u64, "jhon doe");
-            check_query_incr(&db, &tx, &s, &update, 2, &[row_1, row_2])?;
+        let row_1 = product!(1u64, "health");
+        let row_2 = product!(2u64, "jhon doe");
+        check_query_incr(&db, &tx, &s, &update, 2, &[row_1, row_2])?;
 
-            Ok(())
-        })
+        Ok(())
     }
 
     #[test]
     fn test_classify() -> ResultTest<()> {
-        with_tokio(|| {
-            let db = TestDB::durable()?;
+        let db = TestDB::durable()?;
 
-            // Create table [plain]
-            let schema = &[("id", AlgebraicType::U64)];
-            db.create_table_for_test("plain", schema, &[])?;
+        // Create table [plain]
+        let schema = &[("id", AlgebraicType::U64)];
+        db.create_table_for_test("plain", schema, &[])?;
 
-            // Create table [lhs] with indexes on [id] and [x]
-            let schema = &[("id", AlgebraicType::U64), ("x", AlgebraicType::I32)];
-            let indexes = &[(ColId(0), "id"), (ColId(1), "x")];
-            db.create_table_for_test("lhs", schema, indexes)?;
+        // Create table [lhs] with indexes on [id] and [x]
+        let schema = &[("id", AlgebraicType::U64), ("x", AlgebraicType::I32)];
+        let indexes = &[(ColId(0), "id"), (ColId(1), "x")];
+        db.create_table_for_test("lhs", schema, indexes)?;
 
-            // Create table [rhs] with indexes on [id] and [y]
-            let schema = &[("id", AlgebraicType::U64), ("y", AlgebraicType::I32)];
-            let indexes = &[(ColId(0), "id"), (ColId(1), "y")];
-            db.create_table_for_test("rhs", schema, indexes)?;
+        // Create table [rhs] with indexes on [id] and [y]
+        let schema = &[("id", AlgebraicType::U64), ("y", AlgebraicType::I32)];
+        let indexes = &[(ColId(0), "id"), (ColId(1), "y")];
+        db.create_table_for_test("rhs", schema, indexes)?;
 
-            let tx = db.begin_tx();
+        let tx = db.begin_tx();
 
-            // All single table queries are supported
-            let scans = [
-                "SELECT * FROM plain",
-                "SELECT * FROM plain WHERE id > 5",
-                "SELECT plain.* FROM plain",
-                "SELECT plain.* FROM plain WHERE plain.id = 5",
-                "SELECT * FROM lhs",
-                "SELECT * FROM lhs WHERE id > 5",
-            ];
-            for scan in scans {
-                let expr = compile_read_only_query(&db, &tx, scan)?.pop().unwrap();
-                assert_eq!(expr.kind(), Supported::Select, "{scan}\n{expr:#?}");
+        // All single table queries are supported
+        let scans = [
+            "SELECT * FROM plain",
+            "SELECT * FROM plain WHERE id > 5",
+            "SELECT plain.* FROM plain",
+            "SELECT plain.* FROM plain WHERE plain.id = 5",
+            "SELECT * FROM lhs",
+            "SELECT * FROM lhs WHERE id > 5",
+        ];
+        for scan in scans {
+            let expr = compile_read_only_query(&db, &tx, scan)?.pop().unwrap();
+            assert_eq!(expr.kind(), Supported::Select, "{scan}\n{expr:#?}");
+        }
+
+        // Only index semijoins are supported
+        let joins = ["SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE rhs.y < 10"];
+        for join in joins {
+            let expr = compile_read_only_query(&db, &tx, join)?.pop().unwrap();
+            assert_eq!(expr.kind(), Supported::Semijoin, "{join}\n{expr:#?}");
+        }
+
+        // All other joins are unsupported
+        let joins = [
+            "SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id",
+            "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id",
+            "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
+        ];
+        for join in joins {
+            match compile_read_only_query(&db, &tx, join) {
+                Err(DBError::Subscription(SubscriptionError::Unsupported(_))) => (),
+                x => panic!("Unexpected: {x:?}"),
             }
+        }
 
-            // Only index semijoins are supported
-            let joins = ["SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE rhs.y < 10"];
-            for join in joins {
-                let expr = compile_read_only_query(&db, &tx, join)?.pop().unwrap();
-                assert_eq!(expr.kind(), Supported::Semijoin, "{join}\n{expr:#?}");
-            }
-
-            // All other joins are unsupported
-            let joins = [
-                "SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id",
-                "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id",
-                "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
-            ];
-            for join in joins {
-                match compile_read_only_query(&db, &tx, join) {
-                    Err(DBError::Subscription(SubscriptionError::Unsupported(_))) => (),
-                    x => panic!("Unexpected: {x:?}"),
-                }
-            }
-
-            Ok(())
-        })
+        Ok(())
     }
 
     /// Create table [lhs] with index on [id]
@@ -684,45 +672,43 @@ mod tests {
 
     #[test]
     fn test_eval_incr_for_index_join() -> ResultTest<()> {
-        with_tokio(|| {
-            // Case 1:
-            // Delete a row inside the region of rhs,
-            // Insert a row inside the region of rhs.
-            run_eval_incr_test(index_join_case_1)?;
-            // Case 2:
-            // Delete a row outside the region of rhs,
-            // Insert a row outside the region of rhs.
-            run_eval_incr_test(index_join_case_2)?;
-            // Case 3:
-            // Delete a row inside  the region of rhs,
-            // Insert a row outside the region of rhs.
-            run_eval_incr_test(index_join_case_3)?;
-            // Case 4:
-            // Delete a row outside the region of rhs,
-            // Insert a row inside  the region of rhs.
-            run_eval_incr_test(index_join_case_4)?;
-            // Case 5:
-            // Insert row into lhs,
-            // Insert matching row inside the region of rhs.
-            run_eval_incr_test(index_join_case_5)?;
-            // Case 6:
-            // Insert row into lhs,
-            // Insert matching row outside the region of rhs.
-            run_eval_incr_test(index_join_case_6)?;
-            // Case 7:
-            // Delete row from lhs,
-            // Delete matching row inside the region of rhs.
-            run_eval_incr_test(index_join_case_7)?;
-            // Case 8:
-            // Delete row from lhs,
-            // Delete matching row outside the region of rhs.
-            run_eval_incr_test(index_join_case_8)?;
-            // Case 9:
-            // Update row from lhs,
-            // Update matching row inside the region of rhs.
-            run_eval_incr_test(index_join_case_9)?;
-            Ok(())
-        })
+        // Case 1:
+        // Delete a row inside the region of rhs,
+        // Insert a row inside the region of rhs.
+        run_eval_incr_test(index_join_case_1)?;
+        // Case 2:
+        // Delete a row outside the region of rhs,
+        // Insert a row outside the region of rhs.
+        run_eval_incr_test(index_join_case_2)?;
+        // Case 3:
+        // Delete a row inside  the region of rhs,
+        // Insert a row outside the region of rhs.
+        run_eval_incr_test(index_join_case_3)?;
+        // Case 4:
+        // Delete a row outside the region of rhs,
+        // Insert a row inside  the region of rhs.
+        run_eval_incr_test(index_join_case_4)?;
+        // Case 5:
+        // Insert row into lhs,
+        // Insert matching row inside the region of rhs.
+        run_eval_incr_test(index_join_case_5)?;
+        // Case 6:
+        // Insert row into lhs,
+        // Insert matching row outside the region of rhs.
+        run_eval_incr_test(index_join_case_6)?;
+        // Case 7:
+        // Delete row from lhs,
+        // Delete matching row inside the region of rhs.
+        run_eval_incr_test(index_join_case_7)?;
+        // Case 8:
+        // Delete row from lhs,
+        // Delete matching row outside the region of rhs.
+        run_eval_incr_test(index_join_case_8)?;
+        // Case 9:
+        // Update row from lhs,
+        // Update matching row inside the region of rhs.
+        run_eval_incr_test(index_join_case_9)?;
+        Ok(())
     }
 
     fn eval_incr(

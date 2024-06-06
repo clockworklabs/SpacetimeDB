@@ -640,7 +640,7 @@ pub(crate) fn get_all(relational_db: &RelationalDB, tx: &Tx, auth: &AuthCtx) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::relational_db::tests_utils::{with_tokio, TestDB};
+    use crate::db::relational_db::tests_utils::TestDB;
     use crate::sql::compiler::compile_sql;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::relation::DbTable;
@@ -651,230 +651,222 @@ mod tests {
     // Compile an index join after replacing the index side with a virtual table.
     // The original index and probe sides should be swapped after introducing the delta table.
     fn compile_incremental_index_join_index_side() -> ResultTest<()> {
-        with_tokio(|| {
-            let db = TestDB::durable()?;
+        let db = TestDB::durable()?;
 
-            // Create table [lhs] with index on [b]
-            let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-            let indexes = &[(1.into(), "b")];
-            let _ = db.create_table_for_test("lhs", schema, indexes)?;
+        // Create table [lhs] with index on [b]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(1.into(), "b")];
+        let _ = db.create_table_for_test("lhs", schema, indexes)?;
 
-            // Create table [rhs] with index on [b, c]
-            let schema = &[
-                ("b", AlgebraicType::U64),
-                ("c", AlgebraicType::U64),
-                ("d", AlgebraicType::U64),
-            ];
-            let indexes = &[(0.into(), "b"), (1.into(), "c")];
-            let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
+        // Create table [rhs] with index on [b, c]
+        let schema = &[
+            ("b", AlgebraicType::U64),
+            ("c", AlgebraicType::U64),
+            ("d", AlgebraicType::U64),
+        ];
+        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
-            let tx = db.begin_tx();
-            // Should generate an index join since there is an index on `lhs.b`.
-            // Should push the sargable range condition into the index join's probe side.
-            let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
-            let exp = compile_sql(&db, &tx, sql)?.remove(0);
+        let tx = db.begin_tx();
+        // Should generate an index join since there is an index on `lhs.b`.
+        // Should push the sargable range condition into the index join's probe side.
+        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
 
-            let CrudExpr::Query(mut expr) = exp else {
-                panic!("unexpected result from compilation: {:#?}", exp);
-            };
+        let CrudExpr::Query(mut expr) = exp else {
+            panic!("unexpected result from compilation: {:#?}", exp);
+        };
 
-            assert_eq!(expr.source.table_name(), "lhs");
-            assert_eq!(expr.query.len(), 1);
+        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(expr.query.len(), 1);
 
-            let join = expr.query.pop().unwrap();
-            let Query::IndexJoin(join) = join else {
-                panic!("expected an index join, but got {:#?}", join);
-            };
+        let join = expr.query.pop().unwrap();
+        let Query::IndexJoin(join) = join else {
+            panic!("expected an index join, but got {:#?}", join);
+        };
 
-            // Create an insert for an incremental update.
-            let delta = vec![product![0u64, 0u64]];
+        // Create an insert for an incremental update.
+        let delta = vec![product![0u64, 0u64]];
 
-            // Optimize the query plan for the incremental update.
-            let (expr, _sources) = with_delta_table(join, Some(delta), None);
-            let expr: QueryExpr = expr.into();
-            let mut expr = expr.optimize(&|_, _| i64::MAX);
-            assert_eq!(expr.source.table_name(), "lhs");
-            assert_eq!(expr.query.len(), 1);
+        // Optimize the query plan for the incremental update.
+        let (expr, _sources) = with_delta_table(join, Some(delta), None);
+        let expr: QueryExpr = expr.into();
+        let mut expr = expr.optimize(&|_, _| i64::MAX);
+        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(expr.query.len(), 1);
 
-            let join = expr.query.pop().unwrap();
-            let Query::IndexJoin(join) = join else {
-                panic!("expected an index join, but got {:#?}", join);
-            };
+        let join = expr.query.pop().unwrap();
+        let Query::IndexJoin(join) = join else {
+            panic!("expected an index join, but got {:#?}", join);
+        };
 
-            let IndexJoin {
-                probe_side:
-                    QueryExpr {
-                        source: SourceExpr::InMemory { .. },
-                        query: ref lhs,
-                    },
-                probe_col,
-                index_side:
-                    SourceExpr::DbTable(DbTable {
-                        table_id: index_table, ..
-                    }),
-                index_select: Some(_),
-                index_col,
-                return_index_rows: false,
-            } = join
-            else {
-                panic!("unexpected index join {:#?}", join);
-            };
+        let IndexJoin {
+            probe_side:
+                QueryExpr {
+                    source: SourceExpr::InMemory { .. },
+                    query: ref lhs,
+                },
+            probe_col,
+            index_side: SourceExpr::DbTable(DbTable {
+                table_id: index_table, ..
+            }),
+            index_select: Some(_),
+            index_col,
+            return_index_rows: false,
+        } = join
+        else {
+            panic!("unexpected index join {:#?}", join);
+        };
 
-            assert!(lhs.is_empty());
+        assert!(lhs.is_empty());
 
-            // Assert that original index and probe tables have been swapped.
-            assert_eq!(index_table, rhs_id);
-            assert_eq!(index_col, 0.into());
-            assert_eq!(probe_col, 1.into());
-            Ok(())
-        })
+        // Assert that original index and probe tables have been swapped.
+        assert_eq!(index_table, rhs_id);
+        assert_eq!(index_col, 0.into());
+        assert_eq!(probe_col, 1.into());
+        Ok(())
     }
 
     #[test]
     // Compile an index join after replacing the probe side with a virtual table.
     // The original index and probe sides should remain after introducing the virtual table.
     fn compile_incremental_index_join_probe_side() -> ResultTest<()> {
-        with_tokio(|| {
-            let db = TestDB::durable()?;
+        let db = TestDB::durable()?;
 
-            // Create table [lhs] with index on [b]
-            let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-            let indexes = &[(1.into(), "b")];
-            let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
+        // Create table [lhs] with index on [b]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(1.into(), "b")];
+        let lhs_id = db.create_table_for_test("lhs", schema, indexes)?;
 
-            // Create table [rhs] with index on [b, c]
-            let schema = &[
-                ("b", AlgebraicType::U64),
-                ("c", AlgebraicType::U64),
-                ("d", AlgebraicType::U64),
-            ];
-            let indexes = &[(0.into(), "b"), (1.into(), "c")];
-            let _ = db.create_table_for_test("rhs", schema, indexes)?;
+        // Create table [rhs] with index on [b, c]
+        let schema = &[
+            ("b", AlgebraicType::U64),
+            ("c", AlgebraicType::U64),
+            ("d", AlgebraicType::U64),
+        ];
+        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let _ = db.create_table_for_test("rhs", schema, indexes)?;
 
-            let tx = db.begin_tx();
-            // Should generate an index join since there is an index on `lhs.b`.
-            // Should push the sargable range condition into the index join's probe side.
-            let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
-            let exp = compile_sql(&db, &tx, sql)?.remove(0);
+        let tx = db.begin_tx();
+        // Should generate an index join since there is an index on `lhs.b`.
+        // Should push the sargable range condition into the index join's probe side.
+        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
+        let exp = compile_sql(&db, &tx, sql)?.remove(0);
 
-            let CrudExpr::Query(mut expr) = exp else {
-                panic!("unexpected result from compilation: {:#?}", exp);
-            };
+        let CrudExpr::Query(mut expr) = exp else {
+            panic!("unexpected result from compilation: {:#?}", exp);
+        };
 
-            assert_eq!(expr.source.table_name(), "lhs");
-            assert_eq!(expr.query.len(), 1);
+        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(expr.query.len(), 1);
 
-            let join = expr.query.pop().unwrap();
-            let Query::IndexJoin(join) = join else {
-                panic!("expected an index join, but got {:#?}", join);
-            };
+        let join = expr.query.pop().unwrap();
+        let Query::IndexJoin(join) = join else {
+            panic!("expected an index join, but got {:#?}", join);
+        };
 
-            // Create an insert for an incremental update.
-            let delta = vec![product![0u64, 0u64, 0u64]];
+        // Create an insert for an incremental update.
+        let delta = vec![product![0u64, 0u64, 0u64]];
 
-            // Optimize the query plan for the incremental update.
-            let (expr, _sources) = with_delta_table(join, None, Some(delta));
-            let expr = QueryExpr::from(expr);
-            let mut expr = expr.optimize(&|_, _| i64::MAX);
+        // Optimize the query plan for the incremental update.
+        let (expr, _sources) = with_delta_table(join, None, Some(delta));
+        let expr = QueryExpr::from(expr);
+        let mut expr = expr.optimize(&|_, _| i64::MAX);
 
-            assert_eq!(expr.source.table_name(), "lhs");
-            assert_eq!(expr.query.len(), 1);
-            assert!(expr.source.is_db_table());
+        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(expr.query.len(), 1);
+        assert!(expr.source.is_db_table());
 
-            let join = expr.query.pop().unwrap();
-            let Query::IndexJoin(join) = join else {
-                panic!("expected an index join, but got {:#?}", join);
-            };
+        let join = expr.query.pop().unwrap();
+        let Query::IndexJoin(join) = join else {
+            panic!("expected an index join, but got {:#?}", join);
+        };
 
-            let IndexJoin {
-                probe_side:
-                    QueryExpr {
-                        source: SourceExpr::InMemory { .. },
-                        query: ref rhs,
-                    },
-                probe_col,
-                index_side:
-                    SourceExpr::DbTable(DbTable {
-                        table_id: index_table, ..
-                    }),
-                index_select: None,
-                index_col,
-                return_index_rows: true,
-            } = join
-            else {
-                panic!("unexpected index join {:#?}", join);
-            };
+        let IndexJoin {
+            probe_side:
+                QueryExpr {
+                    source: SourceExpr::InMemory { .. },
+                    query: ref rhs,
+                },
+            probe_col,
+            index_side: SourceExpr::DbTable(DbTable {
+                table_id: index_table, ..
+            }),
+            index_select: None,
+            index_col,
+            return_index_rows: true,
+        } = join
+        else {
+            panic!("unexpected index join {:#?}", join);
+        };
 
-            assert!(!rhs.is_empty());
+        assert!(!rhs.is_empty());
 
-            // Assert that original index and probe tables have not been swapped.
-            assert_eq!(index_table, lhs_id);
-            assert_eq!(index_col, 1.into());
-            assert_eq!(probe_col, 0.into());
-            Ok(())
-        })
+        // Assert that original index and probe tables have not been swapped.
+        assert_eq!(index_table, lhs_id);
+        assert_eq!(index_col, 1.into());
+        assert_eq!(probe_col, 0.into());
+        Ok(())
     }
 
     #[test]
     fn compile_incremental_join_unindexed_semi_join() {
-        with_tokio(|| {
-            let db = TestDB::durable().expect("failed to make test db");
+        let db = TestDB::durable().expect("failed to make test db");
 
-            // Create table [lhs] with index on [b]
-            let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
-            let indexes = &[(1.into(), "b")];
-            let _lhs_id = db
-                .create_table_for_test("lhs", schema, indexes)
-                .expect("Failed to create_table_for_test lhs");
+        // Create table [lhs] with index on [b]
+        let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
+        let indexes = &[(1.into(), "b")];
+        let _lhs_id = db
+            .create_table_for_test("lhs", schema, indexes)
+            .expect("Failed to create_table_for_test lhs");
 
-            // Create table [rhs] with index on [b, c]
-            let schema = &[
-                ("b", AlgebraicType::U64),
-                ("c", AlgebraicType::U64),
-                ("d", AlgebraicType::U64),
-            ];
-            let indexes = &[(0.into(), "b"), (1.into(), "c")];
-            let _rhs_id = db
-                .create_table_for_test("rhs", schema, indexes)
-                .expect("Failed to create_table_for_test rhs");
+        // Create table [rhs] with index on [b, c]
+        let schema = &[
+            ("b", AlgebraicType::U64),
+            ("c", AlgebraicType::U64),
+            ("d", AlgebraicType::U64),
+        ];
+        let indexes = &[(0.into(), "b"), (1.into(), "c")];
+        let _rhs_id = db
+            .create_table_for_test("rhs", schema, indexes)
+            .expect("Failed to create_table_for_test rhs");
 
-            let tx = db.begin_tx();
+        let tx = db.begin_tx();
 
-            // Should generate an index join since there is an index on `lhs.b`.
-            // Should push the sargable range condition into the index join's probe side.
-            let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
-            let exp = compile_sql(&db, &tx, sql).expect("Failed to compile_sql").remove(0);
+        // Should generate an index join since there is an index on `lhs.b`.
+        // Should push the sargable range condition into the index join's probe side.
+        let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
+        let exp = compile_sql(&db, &tx, sql).expect("Failed to compile_sql").remove(0);
 
-            let CrudExpr::Query(expr) = exp else {
-                panic!("unexpected result from compilation: {:#?}", exp);
-            };
+        let CrudExpr::Query(expr) = exp else {
+            panic!("unexpected result from compilation: {:#?}", exp);
+        };
 
-            assert_eq!(expr.source.table_name(), "lhs");
-            assert_eq!(expr.query.len(), 1);
+        assert_eq!(expr.source.table_name(), "lhs");
+        assert_eq!(expr.query.len(), 1);
 
-            let src_join = &expr.query[0];
-            assert!(
-                matches!(src_join, Query::IndexJoin(_)),
-                "expected an index join, but got {:#?}",
-                src_join
-            );
+        let src_join = &expr.query[0];
+        assert!(
+            matches!(src_join, Query::IndexJoin(_)),
+            "expected an index join, but got {:#?}",
+            src_join
+        );
 
-            let incr = IncrementalJoin::new(&expr).expect("Failed to construct IncrementalJoin");
+        let incr = IncrementalJoin::new(&expr).expect("Failed to construct IncrementalJoin");
 
-            let virtual_plan = &incr.virtual_plan;
+        let virtual_plan = &incr.virtual_plan;
 
-            assert!(virtual_plan.source.is_mem_table());
-            assert_eq!(virtual_plan.source.head(), expr.source.head());
-            assert_eq!(virtual_plan.head(), expr.head());
-            assert_eq!(virtual_plan.query.len(), 1);
-            let incr_join = &virtual_plan.query[0];
-            let Query::JoinInner(ref incr_join) = incr_join else {
-                panic!("expected an inner semijoin, but got {:#?}", incr_join);
-            };
-            assert!(incr_join.rhs.source.is_mem_table());
-            assert_ne!(incr_join.rhs.source.head(), expr.source.head());
-            assert_ne!(incr_join.rhs.head(), expr.head());
-            assert_eq!(incr_join.inner, None);
-        })
+        assert!(virtual_plan.source.is_mem_table());
+        assert_eq!(virtual_plan.source.head(), expr.source.head());
+        assert_eq!(virtual_plan.head(), expr.head());
+        assert_eq!(virtual_plan.query.len(), 1);
+        let incr_join = &virtual_plan.query[0];
+        let Query::JoinInner(ref incr_join) = incr_join else {
+            panic!("expected an inner semijoin, but got {:#?}", incr_join);
+        };
+        assert!(incr_join.rhs.source.is_mem_table());
+        assert_ne!(incr_join.rhs.source.head(), expr.source.head());
+        assert_ne!(incr_join.rhs.head(), expr.head());
+        assert_eq!(incr_join.inner, None);
     }
 }

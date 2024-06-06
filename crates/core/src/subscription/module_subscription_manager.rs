@@ -282,10 +282,7 @@ mod tests {
 
     use crate::{
         client::{ClientActorId, ClientConnectionSender, ClientName, Protocol},
-        db::relational_db::{
-            tests_utils::{with_tokio, TestDB},
-            RelationalDB,
-        },
+        db::relational_db::{tests_utils::TestDB, RelationalDB},
         energy::EnergyQuanta,
         execution_context::ExecutionContext,
         host::{
@@ -336,235 +333,223 @@ mod tests {
 
     #[test]
     fn test_subscribe() -> ResultTest<()> {
-        with_tokio(|| {
-            let db = TestDB::durable()?;
+        let db = TestDB::durable()?;
 
-            let table_id = create_table(&db, "T")?;
-            let sql = "select * from T";
-            let plan = compile_plan(&db, sql)?;
-            let hash = plan.hash();
+        let table_id = create_table(&db, "T")?;
+        let sql = "select * from T";
+        let plan = compile_plan(&db, sql)?;
+        let hash = plan.hash();
 
-            let id = id(0);
-            let client = Arc::new(client(0));
+        let id = id(0);
+        let client = Arc::new(client(0));
 
-            let mut subscriptions = SubscriptionManager::default();
-            subscriptions.add_subscription(client, [plan]);
+        let mut subscriptions = SubscriptionManager::default();
+        subscriptions.add_subscription(client, [plan]);
 
-            assert!(subscriptions.contains_query(&hash));
-            assert!(subscriptions.contains_subscription(&id, &hash));
-            assert!(subscriptions.query_reads_from_table(&hash, &table_id));
+        assert!(subscriptions.contains_query(&hash));
+        assert!(subscriptions.contains_subscription(&id, &hash));
+        assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
-            Ok(())
-        })
+        Ok(())
     }
 
     #[test]
     fn test_unsubscribe() -> ResultTest<()> {
-        with_tokio(|| {
-            let db = TestDB::durable()?;
+        let db = TestDB::durable()?;
 
-            let table_id = create_table(&db, "T")?;
-            let sql = "select * from T";
-            let plan = compile_plan(&db, sql)?;
-            let hash = plan.hash();
+        let table_id = create_table(&db, "T")?;
+        let sql = "select * from T";
+        let plan = compile_plan(&db, sql)?;
+        let hash = plan.hash();
 
-            let id = id(0);
-            let client = Arc::new(client(0));
+        let id = id(0);
+        let client = Arc::new(client(0));
 
-            let mut subscriptions = SubscriptionManager::default();
-            subscriptions.add_subscription(client, [plan]);
-            subscriptions.remove_subscription(&id);
+        let mut subscriptions = SubscriptionManager::default();
+        subscriptions.add_subscription(client, [plan]);
+        subscriptions.remove_subscription(&id);
 
-            assert!(!subscriptions.contains_query(&hash));
-            assert!(!subscriptions.contains_subscription(&id, &hash));
-            assert!(!subscriptions.query_reads_from_table(&hash, &table_id));
+        assert!(!subscriptions.contains_query(&hash));
+        assert!(!subscriptions.contains_subscription(&id, &hash));
+        assert!(!subscriptions.query_reads_from_table(&hash, &table_id));
 
-            Ok(())
-        })
+        Ok(())
     }
 
     #[test]
     fn test_subscribe_idempotent() -> ResultTest<()> {
-        with_tokio(|| {
-            let db = TestDB::durable()?;
+        let db = TestDB::durable()?;
 
-            let table_id = create_table(&db, "T")?;
-            let sql = "select * from T";
-            let plan = compile_plan(&db, sql)?;
-            let hash = plan.hash();
+        let table_id = create_table(&db, "T")?;
+        let sql = "select * from T";
+        let plan = compile_plan(&db, sql)?;
+        let hash = plan.hash();
 
-            let id = id(0);
-            let client = Arc::new(client(0));
+        let id = id(0);
+        let client = Arc::new(client(0));
 
-            let mut subscriptions = SubscriptionManager::default();
-            subscriptions.add_subscription(client.clone(), [plan.clone()]);
-            subscriptions.add_subscription(client.clone(), [plan.clone()]);
+        let mut subscriptions = SubscriptionManager::default();
+        subscriptions.add_subscription(client.clone(), [plan.clone()]);
+        subscriptions.add_subscription(client.clone(), [plan.clone()]);
 
-            assert!(subscriptions.contains_query(&hash));
-            assert!(subscriptions.contains_subscription(&id, &hash));
-            assert!(subscriptions.query_reads_from_table(&hash, &table_id));
+        assert!(subscriptions.contains_query(&hash));
+        assert!(subscriptions.contains_subscription(&id, &hash));
+        assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
-            subscriptions.remove_subscription(&id);
+        subscriptions.remove_subscription(&id);
 
-            assert!(!subscriptions.contains_query(&hash));
-            assert!(!subscriptions.contains_subscription(&id, &hash));
-            assert!(!subscriptions.query_reads_from_table(&hash, &table_id));
+        assert!(!subscriptions.contains_query(&hash));
+        assert!(!subscriptions.contains_subscription(&id, &hash));
+        assert!(!subscriptions.query_reads_from_table(&hash, &table_id));
 
-            Ok(())
-        })
+        Ok(())
     }
 
     #[test]
     fn test_share_queries_full() -> ResultTest<()> {
-        with_tokio(|| {
-            let db = TestDB::durable()?;
+        let db = TestDB::durable()?;
 
-            let table_id = create_table(&db, "T")?;
-            let sql = "select * from T";
-            let plan = compile_plan(&db, sql)?;
-            let hash = plan.hash();
+        let table_id = create_table(&db, "T")?;
+        let sql = "select * from T";
+        let plan = compile_plan(&db, sql)?;
+        let hash = plan.hash();
 
-            let id0 = id(0);
-            let client0 = Arc::new(client(0));
+        let id0 = id(0);
+        let client0 = Arc::new(client(0));
 
-            let id1 = id(1);
-            let client1 = Arc::new(client(1));
+        let id1 = id(1);
+        let client1 = Arc::new(client(1));
 
-            let mut subscriptions = SubscriptionManager::default();
-            subscriptions.add_subscription(client0, [plan.clone()]);
-            subscriptions.add_subscription(client1, [plan.clone()]);
+        let mut subscriptions = SubscriptionManager::default();
+        subscriptions.add_subscription(client0, [plan.clone()]);
+        subscriptions.add_subscription(client1, [plan.clone()]);
 
-            assert!(subscriptions.contains_query(&hash));
-            assert!(subscriptions.contains_subscription(&id0, &hash));
-            assert!(subscriptions.contains_subscription(&id1, &hash));
-            assert!(subscriptions.query_reads_from_table(&hash, &table_id));
+        assert!(subscriptions.contains_query(&hash));
+        assert!(subscriptions.contains_subscription(&id0, &hash));
+        assert!(subscriptions.contains_subscription(&id1, &hash));
+        assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
-            subscriptions.remove_subscription(&id0);
+        subscriptions.remove_subscription(&id0);
 
-            assert!(subscriptions.contains_query(&hash));
-            assert!(subscriptions.contains_subscription(&id1, &hash));
-            assert!(subscriptions.query_reads_from_table(&hash, &table_id));
+        assert!(subscriptions.contains_query(&hash));
+        assert!(subscriptions.contains_subscription(&id1, &hash));
+        assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
-            assert!(!subscriptions.contains_subscription(&id0, &hash));
+        assert!(!subscriptions.contains_subscription(&id0, &hash));
 
-            Ok(())
-        })
+        Ok(())
     }
 
     #[test]
     fn test_share_queries_partial() -> ResultTest<()> {
-        with_tokio(|| {
-            let db = TestDB::durable()?;
+        let db = TestDB::durable()?;
 
-            let t = create_table(&db, "T")?;
-            let s = create_table(&db, "S")?;
+        let t = create_table(&db, "T")?;
+        let s = create_table(&db, "S")?;
 
-            let scan = "select * from T";
-            let select0 = "select * from T where a = 0";
-            let select1 = "select * from S where a = 1";
+        let scan = "select * from T";
+        let select0 = "select * from T where a = 0";
+        let select1 = "select * from S where a = 1";
 
-            let plan_scan = compile_plan(&db, scan)?;
-            let plan_select0 = compile_plan(&db, select0)?;
-            let plan_select1 = compile_plan(&db, select1)?;
+        let plan_scan = compile_plan(&db, scan)?;
+        let plan_select0 = compile_plan(&db, select0)?;
+        let plan_select1 = compile_plan(&db, select1)?;
 
-            let hash_scan = plan_scan.hash();
-            let hash_select0 = plan_select0.hash();
-            let hash_select1 = plan_select1.hash();
+        let hash_scan = plan_scan.hash();
+        let hash_select0 = plan_select0.hash();
+        let hash_select1 = plan_select1.hash();
 
-            let id0 = id(0);
-            let client0 = Arc::new(client(0));
+        let id0 = id(0);
+        let client0 = Arc::new(client(0));
 
-            let id1 = id(1);
-            let client1 = Arc::new(client(1));
+        let id1 = id(1);
+        let client1 = Arc::new(client(1));
 
-            let mut subscriptions = SubscriptionManager::default();
-            subscriptions.add_subscription(client0, [plan_scan.clone(), plan_select0.clone()]);
-            subscriptions.add_subscription(client1, [plan_scan.clone(), plan_select1.clone()]);
+        let mut subscriptions = SubscriptionManager::default();
+        subscriptions.add_subscription(client0, [plan_scan.clone(), plan_select0.clone()]);
+        subscriptions.add_subscription(client1, [plan_scan.clone(), plan_select1.clone()]);
 
-            assert!(subscriptions.contains_query(&hash_scan));
-            assert!(subscriptions.contains_query(&hash_select0));
-            assert!(subscriptions.contains_query(&hash_select1));
+        assert!(subscriptions.contains_query(&hash_scan));
+        assert!(subscriptions.contains_query(&hash_select0));
+        assert!(subscriptions.contains_query(&hash_select1));
 
-            assert!(subscriptions.contains_subscription(&id0, &hash_scan));
-            assert!(subscriptions.contains_subscription(&id0, &hash_select0));
+        assert!(subscriptions.contains_subscription(&id0, &hash_scan));
+        assert!(subscriptions.contains_subscription(&id0, &hash_select0));
 
-            assert!(subscriptions.contains_subscription(&id1, &hash_scan));
-            assert!(subscriptions.contains_subscription(&id1, &hash_select1));
+        assert!(subscriptions.contains_subscription(&id1, &hash_scan));
+        assert!(subscriptions.contains_subscription(&id1, &hash_select1));
 
-            assert!(subscriptions.query_reads_from_table(&hash_scan, &t));
-            assert!(subscriptions.query_reads_from_table(&hash_select0, &t));
-            assert!(subscriptions.query_reads_from_table(&hash_select1, &s));
+        assert!(subscriptions.query_reads_from_table(&hash_scan, &t));
+        assert!(subscriptions.query_reads_from_table(&hash_select0, &t));
+        assert!(subscriptions.query_reads_from_table(&hash_select1, &s));
 
-            assert!(!subscriptions.query_reads_from_table(&hash_scan, &s));
-            assert!(!subscriptions.query_reads_from_table(&hash_select0, &s));
-            assert!(!subscriptions.query_reads_from_table(&hash_select1, &t));
+        assert!(!subscriptions.query_reads_from_table(&hash_scan, &s));
+        assert!(!subscriptions.query_reads_from_table(&hash_select0, &s));
+        assert!(!subscriptions.query_reads_from_table(&hash_select1, &t));
 
-            subscriptions.remove_subscription(&id0);
+        subscriptions.remove_subscription(&id0);
 
-            assert!(subscriptions.contains_query(&hash_scan));
-            assert!(subscriptions.contains_query(&hash_select1));
-            assert!(!subscriptions.contains_query(&hash_select0));
+        assert!(subscriptions.contains_query(&hash_scan));
+        assert!(subscriptions.contains_query(&hash_select1));
+        assert!(!subscriptions.contains_query(&hash_select0));
 
-            assert!(subscriptions.contains_subscription(&id1, &hash_scan));
-            assert!(subscriptions.contains_subscription(&id1, &hash_select1));
+        assert!(subscriptions.contains_subscription(&id1, &hash_scan));
+        assert!(subscriptions.contains_subscription(&id1, &hash_select1));
 
-            assert!(!subscriptions.contains_subscription(&id0, &hash_scan));
-            assert!(!subscriptions.contains_subscription(&id0, &hash_select0));
+        assert!(!subscriptions.contains_subscription(&id0, &hash_scan));
+        assert!(!subscriptions.contains_subscription(&id0, &hash_select0));
 
-            assert!(subscriptions.query_reads_from_table(&hash_scan, &t));
-            assert!(subscriptions.query_reads_from_table(&hash_select1, &s));
+        assert!(subscriptions.query_reads_from_table(&hash_scan, &t));
+        assert!(subscriptions.query_reads_from_table(&hash_select1, &s));
 
-            assert!(!subscriptions.query_reads_from_table(&hash_scan, &s));
-            assert!(!subscriptions.query_reads_from_table(&hash_select1, &t));
+        assert!(!subscriptions.query_reads_from_table(&hash_scan, &s));
+        assert!(!subscriptions.query_reads_from_table(&hash_select1, &t));
 
-            Ok(())
-        })
+        Ok(())
     }
 
     #[test]
     fn test_caller_transaction_update_without_subscription() -> ResultTest<()> {
-        with_tokio(|| {
-            // test if a transaction update is sent to the reducer caller even if
-            // the caller haven't subscribed to any updates
-            let db = TestDB::durable()?;
+        // test if a transaction update is sent to the reducer caller even if
+        // the caller haven't subscribed to any updates
+        let db = TestDB::durable()?;
 
-            let id0 = Identity::ZERO;
-            let client0 = ClientActorId::for_test(id0);
-            let (client0, mut rx) = ClientConnectionSender::dummy_with_channel(client0, Protocol::Binary);
+        let id0 = Identity::ZERO;
+        let client0 = ClientActorId::for_test(id0);
+        let (client0, mut rx) = ClientConnectionSender::dummy_with_channel(client0, Protocol::Binary);
 
-            let subscriptions = SubscriptionManager::default();
+        let subscriptions = SubscriptionManager::default();
 
-            let event = Arc::new(ModuleEvent {
-                timestamp: Timestamp::now(),
-                caller_identity: id0,
-                caller_address: Some(client0.id.address),
-                function_call: ModuleFunctionCall {
-                    reducer: "DummyReducer".into(),
-                    args: ArgsTuple::nullary(),
-                },
-                status: EventStatus::Committed(DatabaseUpdate::default()),
-                energy_quanta_used: EnergyQuanta::ZERO,
-                host_execution_duration: Duration::default(),
-                request_id: None,
-                timer: None,
+        let event = Arc::new(ModuleEvent {
+            timestamp: Timestamp::now(),
+            caller_identity: id0,
+            caller_address: Some(client0.id.address),
+            function_call: ModuleFunctionCall {
+                reducer: "DummyReducer".into(),
+                args: ArgsTuple::nullary(),
+            },
+            status: EventStatus::Committed(DatabaseUpdate::default()),
+            energy_quanta_used: EnergyQuanta::ZERO,
+            host_execution_duration: Duration::default(),
+            request_id: None,
+            timer: None,
+        });
+
+        let ctx = ExecutionContext::incremental_update(db.address(), db.read_config().slow_query);
+        db.with_read_only(&ctx, |tx| subscriptions.eval_updates(&db, tx, event, Some(&client0)));
+
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+            .block_on(async move {
+                tokio::time::timeout(Duration::from_millis(20), async move {
+                    rx.recv().await.expect("Expected at least one message");
+                })
+                .await
+                .expect("Timed out waiting for a message to the client");
             });
 
-            let ctx = ExecutionContext::incremental_update(db.address(), db.read_config().slow_query);
-            db.with_read_only(&ctx, |tx| subscriptions.eval_updates(&db, tx, event, Some(&client0)));
-
-            tokio::runtime::Builder::new_current_thread()
-                .enable_time()
-                .build()
-                .unwrap()
-                .block_on(async move {
-                    tokio::time::timeout(Duration::from_millis(20), async move {
-                        rx.recv().await.expect("Expected at least one message");
-                    })
-                    .await
-                    .expect("Timed out waiting for a message to the client");
-                });
-
-            Ok(())
-        })
+        Ok(())
     }
 }
