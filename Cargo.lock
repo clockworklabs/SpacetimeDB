@@ -4465,6 +4465,7 @@ version = "0.9.3"
 dependencies = [
  "anyhow",
  "hex",
+ "rand 0.8.5",
  "tempdir",
  "tempfile",
  "thiserror",

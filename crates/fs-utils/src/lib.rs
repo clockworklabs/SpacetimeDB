@@ -1,5 +1,5 @@
+use rand::Rng;
 use std::path::{Path, PathBuf};
-use tempfile::NamedTempFile;
 
 pub mod dir_trie;
 pub mod lockfile;
@@ -34,9 +34,12 @@ pub fn create_parent_dir(file: &Path) -> Result<(), std::io::Error> {
 }
 
 pub fn atomic_write(file_path: &PathBuf, data: String) -> anyhow::Result<()> {
-    let temp_file = NamedTempFile::new()?;
-    // Close the file, but keep the path to it around.
-    let temp_path = temp_file.into_temp_path();
+    let mut temp_path = file_path.clone();
+    temp_path.set_extension(".tmp");
+    let mut rng = rand::thread_rng();
+    while temp_path.exists() {
+        temp_path.set_extension(format!(".tmp{}", rng.gen::<u32>()));
+    }
     std::fs::write(&temp_path, data)?;
     std::fs::rename(&temp_path, file_path)?;
     Ok(())
