@@ -624,7 +624,9 @@ async fn make_module_host(
     mcc: ModuleCreationContext,
     unregister: impl Fn() + Send + Sync + 'static,
 ) -> anyhow::Result<ModuleHost> {
+    let rt = tokio::runtime::Handle::current();
     spawn_rayon(move || {
+        let _rt = rt.enter();
         let module_host = match host_type {
             HostType::Wasm => {
                 let start = Instant::now();
@@ -647,6 +649,7 @@ async fn make_dbic(
     let root_dir = root_dir.to_path_buf();
     let rt = tokio::runtime::Handle::current();
     spawn_rayon(move || {
+        let _rt = rt.enter();
         let start = Instant::now();
         let dbic = DatabaseInstanceContext::from_database(config, database, instance_id, root_dir, rt)?;
         trace!("dbic::from_database blocked for {:?}", start.elapsed());
