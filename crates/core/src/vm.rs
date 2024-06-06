@@ -607,7 +607,7 @@ pub(crate) mod tests {
         StTableRow, ST_COLUMNS_ID, ST_COLUMNS_NAME, ST_INDEXES_ID, ST_INDEXES_NAME, ST_RESERVED_SEQUENCE_RANGE,
         ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_NAME,
     };
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::relational_db::tests_utils::{with_tokio, TestDB};
     use crate::execution_context::ExecutionContext;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
@@ -683,45 +683,49 @@ pub(crate) mod tests {
 
     #[test]
     fn test_db_query_inner_join() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        with_tokio(|| {
+            let stdb = TestDB::durable()?;
 
-        let (schema, _) = stdb.with_auto_commit(&ExecutionContext::default(), |tx| create_inv_table(&stdb, tx))?;
-        let table_id = schema.table_id;
+            let (schema, _) = stdb.with_auto_commit(&ExecutionContext::default(), |tx| create_inv_table(&stdb, tx))?;
+            let table_id = schema.table_id;
 
-        let data = mem_table_one_u64(u32::MAX.into());
-        let mut sources = SourceSet::<_, 1>::empty();
-        let rhs_source_expr = sources.add_mem_table(data);
-        let q = QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, 0.into(), 0.into(), false);
-        let result = run_query(&stdb, q, sources);
+            let data = mem_table_one_u64(u32::MAX.into());
+            let mut sources = SourceSet::<_, 1>::empty();
+            let rhs_source_expr = sources.add_mem_table(data);
+            let q = QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, 0.into(), 0.into(), false);
+            let result = run_query(&stdb, q, sources);
 
-        // The expected result.
-        let inv = ProductType::from([AlgebraicType::U64, AlgebraicType::String, AlgebraicType::U64]);
-        let row = product![1u64, "health", 1u64];
-        let input = mem_table(table_id, inv, vec![row]);
+            // The expected result.
+            let inv = ProductType::from([AlgebraicType::U64, AlgebraicType::String, AlgebraicType::U64]);
+            let row = product![1u64, "health", 1u64];
+            let input = mem_table(table_id, inv, vec![row]);
 
-        assert_eq!(result.data, input.data, "Inventory");
+            assert_eq!(result.data, input.data, "Inventory");
 
-        Ok(())
+            Ok(())
+        })
     }
 
     #[test]
     fn test_db_query_semijoin() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+        with_tokio(|| {
+            let stdb = TestDB::durable()?;
 
-        let ctx = ExecutionContext::default();
-        let (schema, row) = stdb.with_auto_commit(&ctx, |tx| create_inv_table(&stdb, tx))?;
+            let ctx = ExecutionContext::default();
+            let (schema, row) = stdb.with_auto_commit(&ctx, |tx| create_inv_table(&stdb, tx))?;
 
-        let data = mem_table_one_u64(u32::MAX.into());
-        let mut sources = SourceSet::<_, 1>::empty();
-        let rhs_source_expr = sources.add_mem_table(data);
-        let q = QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, 0.into(), 0.into(), true);
-        let result = run_query(&stdb, q, sources);
+            let data = mem_table_one_u64(u32::MAX.into());
+            let mut sources = SourceSet::<_, 1>::empty();
+            let rhs_source_expr = sources.add_mem_table(data);
+            let q = QueryExpr::new(&*schema).with_join_inner(rhs_source_expr, 0.into(), 0.into(), true);
+            let result = run_query(&stdb, q, sources);
 
-        // The expected result.
-        let input = mem_table(schema.table_id, schema.get_row_type().clone(), vec![row]);
-        assert_eq!(result.data, input.data, "Inventory");
+            // The expected result.
+            let input = mem_table(schema.table_id, schema.get_row_type().clone(), vec![row]);
+            assert_eq!(result.data, input.data, "Inventory");
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn check_catalog(db: &RelationalDB, name: &str, row: ProductValue, q: QueryExpr, schema: &TableSchema) {
@@ -732,117 +736,125 @@ pub(crate) mod tests {
 
     #[test]
     fn test_query_catalog_tables() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
-        let schema = &*stdb.schema_for_table(&stdb.begin_tx(), ST_TABLES_ID).unwrap();
+        with_tokio(|| {
+            let stdb = TestDB::durable()?;
+            let schema = &*stdb.schema_for_table(&stdb.begin_tx(), ST_TABLES_ID).unwrap();
 
-        let q = QueryExpr::new(schema)
-            .with_select_cmp(
-                OpCmp::Eq,
-                FieldName::new(ST_TABLES_ID, StTableFields::TableName.into()),
-                scalar(ST_TABLES_NAME),
-            )
-            .unwrap();
-        let st_table_row = StTableRow {
-            table_id: ST_TABLES_ID,
-            table_name: ST_TABLES_NAME.into(),
-            table_type: StTableType::System,
-            table_access: StAccess::Public,
-        }
-        .into();
-        check_catalog(&stdb, ST_TABLES_NAME, st_table_row, q, schema);
+            let q = QueryExpr::new(schema)
+                .with_select_cmp(
+                    OpCmp::Eq,
+                    FieldName::new(ST_TABLES_ID, StTableFields::TableName.into()),
+                    scalar(ST_TABLES_NAME),
+                )
+                .unwrap();
+            let st_table_row = StTableRow {
+                table_id: ST_TABLES_ID,
+                table_name: ST_TABLES_NAME.into(),
+                table_type: StTableType::System,
+                table_access: StAccess::Public,
+            }
+            .into();
+            check_catalog(&stdb, ST_TABLES_NAME, st_table_row, q, schema);
 
-        Ok(())
+            Ok(())
+        })
     }
 
     #[test]
     fn test_query_catalog_columns() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
-        let schema = &*stdb.schema_for_table(&stdb.begin_tx(), ST_COLUMNS_ID).unwrap();
+        with_tokio(|| {
+            let stdb = TestDB::durable()?;
+            let schema = &*stdb.schema_for_table(&stdb.begin_tx(), ST_COLUMNS_ID).unwrap();
 
-        let q = QueryExpr::new(schema)
-            .with_select_cmp(
-                OpCmp::Eq,
-                FieldName::new(ST_COLUMNS_ID, StColumnFields::TableId.into()),
-                scalar(ST_COLUMNS_ID),
-            )
-            .unwrap()
-            .with_select_cmp(
-                OpCmp::Eq,
-                FieldName::new(ST_COLUMNS_ID, StColumnFields::ColPos.into()),
-                scalar(StColumnFields::TableId as u32),
-            )
-            .unwrap();
-        let st_column_row = StColumnRow {
-            table_id: ST_COLUMNS_ID,
-            col_pos: StColumnFields::TableId.col_id(),
-            col_name: StColumnFields::TableId.col_name(),
-            col_type: AlgebraicType::U32,
-        }
-        .into();
-        check_catalog(&stdb, ST_COLUMNS_NAME, st_column_row, q, schema);
+            let q = QueryExpr::new(schema)
+                .with_select_cmp(
+                    OpCmp::Eq,
+                    FieldName::new(ST_COLUMNS_ID, StColumnFields::TableId.into()),
+                    scalar(ST_COLUMNS_ID),
+                )
+                .unwrap()
+                .with_select_cmp(
+                    OpCmp::Eq,
+                    FieldName::new(ST_COLUMNS_ID, StColumnFields::ColPos.into()),
+                    scalar(StColumnFields::TableId as u32),
+                )
+                .unwrap();
+            let st_column_row = StColumnRow {
+                table_id: ST_COLUMNS_ID,
+                col_pos: StColumnFields::TableId.col_id(),
+                col_name: StColumnFields::TableId.col_name(),
+                col_type: AlgebraicType::U32,
+            }
+            .into();
+            check_catalog(&stdb, ST_COLUMNS_NAME, st_column_row, q, schema);
 
-        Ok(())
+            Ok(())
+        })
     }
 
     #[test]
     fn test_query_catalog_indexes() -> ResultTest<()> {
-        let db = TestDB::durable()?;
+        with_tokio(|| {
+            let db = TestDB::durable()?;
 
-        let ctx = ExecutionContext::default();
-        let (schema, _) = db.with_auto_commit(&ctx, |tx| create_inv_table(&db, tx))?;
-        let table_id = schema.table_id;
+            let ctx = ExecutionContext::default();
+            let (schema, _) = db.with_auto_commit(&ctx, |tx| create_inv_table(&db, tx))?;
+            let table_id = schema.table_id;
 
-        let index = IndexDef::btree("idx_1".into(), ColId(0), true);
-        let index_id = db.with_auto_commit(&ctx, |tx| db.create_index(tx, table_id, index))?;
+            let index = IndexDef::btree("idx_1".into(), ColId(0), true);
+            let index_id = db.with_auto_commit(&ctx, |tx| db.create_index(tx, table_id, index))?;
 
-        let indexes_schema = &*db.schema_for_table(&db.begin_tx(), ST_INDEXES_ID).unwrap();
-        let q = QueryExpr::new(indexes_schema)
-            .with_select_cmp(
-                OpCmp::Eq,
-                FieldName::new(ST_INDEXES_ID, StIndexFields::IndexName.into()),
-                scalar("idx_1"),
-            )
-            .unwrap();
-        let st_index_row = StIndexRow {
-            index_id,
-            index_name: "idx_1".into(),
-            table_id,
-            columns: ColList::new(0.into()),
-            is_unique: true,
-            index_type: IndexType::BTree,
-        }
-        .into();
-        check_catalog(&db, ST_INDEXES_NAME, st_index_row, q, indexes_schema);
+            let indexes_schema = &*db.schema_for_table(&db.begin_tx(), ST_INDEXES_ID).unwrap();
+            let q = QueryExpr::new(indexes_schema)
+                .with_select_cmp(
+                    OpCmp::Eq,
+                    FieldName::new(ST_INDEXES_ID, StIndexFields::IndexName.into()),
+                    scalar("idx_1"),
+                )
+                .unwrap();
+            let st_index_row = StIndexRow {
+                index_id,
+                index_name: "idx_1".into(),
+                table_id,
+                columns: ColList::new(0.into()),
+                is_unique: true,
+                index_type: IndexType::BTree,
+            }
+            .into();
+            check_catalog(&db, ST_INDEXES_NAME, st_index_row, q, indexes_schema);
 
-        Ok(())
+            Ok(())
+        })
     }
 
     #[test]
     fn test_query_catalog_sequences() -> ResultTest<()> {
-        let db = TestDB::durable()?;
+        with_tokio(|| {
+            let db = TestDB::durable()?;
 
-        let schema = &*db.schema_for_table(&db.begin_tx(), ST_SEQUENCES_ID).unwrap();
-        let q = QueryExpr::new(schema)
-            .with_select_cmp(
-                OpCmp::Eq,
-                FieldName::new(ST_SEQUENCES_ID, StSequenceFields::TableId.into()),
-                scalar(ST_SEQUENCES_ID),
-            )
-            .unwrap();
-        let st_sequence_row = StSequenceRow {
-            sequence_id: 3.into(),
-            sequence_name: "seq_st_sequence_sequence_id_primary_key_auto".into(),
-            table_id: 2.into(),
-            col_pos: 0.into(),
-            increment: 1,
-            start: ST_RESERVED_SEQUENCE_RANGE as i128 + 1,
-            min_value: 1,
-            max_value: i128::MAX,
-            allocated: ST_RESERVED_SEQUENCE_RANGE as i128 * 2,
-        }
-        .into();
-        check_catalog(&db, ST_SEQUENCES_NAME, st_sequence_row, q, schema);
+            let schema = &*db.schema_for_table(&db.begin_tx(), ST_SEQUENCES_ID).unwrap();
+            let q = QueryExpr::new(schema)
+                .with_select_cmp(
+                    OpCmp::Eq,
+                    FieldName::new(ST_SEQUENCES_ID, StSequenceFields::TableId.into()),
+                    scalar(ST_SEQUENCES_ID),
+                )
+                .unwrap();
+            let st_sequence_row = StSequenceRow {
+                sequence_id: 3.into(),
+                sequence_name: "seq_st_sequence_sequence_id_primary_key_auto".into(),
+                table_id: 2.into(),
+                col_pos: 0.into(),
+                increment: 1,
+                start: ST_RESERVED_SEQUENCE_RANGE as i128 + 1,
+                min_value: 1,
+                max_value: i128::MAX,
+                allocated: ST_RESERVED_SEQUENCE_RANGE as i128 * 2,
+            }
+            .into();
+            check_catalog(&db, ST_SEQUENCES_NAME, st_sequence_row, q, schema);
 
-        Ok(())
+            Ok(())
+        })
     }
 }

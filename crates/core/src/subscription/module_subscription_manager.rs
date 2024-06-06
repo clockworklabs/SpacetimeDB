@@ -282,7 +282,7 @@ mod tests {
 
     use crate::{
         client::{ClientActorId, ClientConnectionSender, ClientName, Protocol},
-        db::relational_db::{tests_utils::TestDB, RelationalDB},
+        db::relational_db::{tests_utils::{with_tokio, TestDB}, RelationalDB},
         energy::EnergyQuanta,
         execution_context::ExecutionContext,
         host::{
@@ -332,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn test_subscribe() -> ResultTest<()> {
+    fn test_subscribe() -> ResultTest<()> { with_tokio(|| {
         let db = TestDB::durable()?;
 
         let table_id = create_table(&db, "T")?;
@@ -351,10 +351,10 @@ mod tests {
         assert!(subscriptions.query_reads_from_table(&hash, &table_id));
 
         Ok(())
-    }
+    })}
 
     #[test]
-    fn test_unsubscribe() -> ResultTest<()> {
+    fn test_unsubscribe() -> ResultTest<()> { with_tokio(|| {
         let db = TestDB::durable()?;
 
         let table_id = create_table(&db, "T")?;
@@ -374,10 +374,10 @@ mod tests {
         assert!(!subscriptions.query_reads_from_table(&hash, &table_id));
 
         Ok(())
-    }
+    })}
 
     #[test]
-    fn test_subscribe_idempotent() -> ResultTest<()> {
+    fn test_subscribe_idempotent() -> ResultTest<()> { with_tokio(|| {
         let db = TestDB::durable()?;
 
         let table_id = create_table(&db, "T")?;
@@ -403,10 +403,10 @@ mod tests {
         assert!(!subscriptions.query_reads_from_table(&hash, &table_id));
 
         Ok(())
-    }
+    })}
 
     #[test]
-    fn test_share_queries_full() -> ResultTest<()> {
+    fn test_share_queries_full() -> ResultTest<()> { with_tokio(|| {
         let db = TestDB::durable()?;
 
         let table_id = create_table(&db, "T")?;
@@ -438,10 +438,10 @@ mod tests {
         assert!(!subscriptions.contains_subscription(&id0, &hash));
 
         Ok(())
-    }
+    })}
 
     #[test]
-    fn test_share_queries_partial() -> ResultTest<()> {
+    fn test_share_queries_partial() -> ResultTest<()> { with_tokio(|| {
         let db = TestDB::durable()?;
 
         let t = create_table(&db, "T")?;
@@ -506,10 +506,10 @@ mod tests {
         assert!(!subscriptions.query_reads_from_table(&hash_select1, &t));
 
         Ok(())
-    }
+    })}
 
     #[test]
-    fn test_caller_transaction_update_without_subscription() -> ResultTest<()> {
+    fn test_caller_transaction_update_without_subscription() -> ResultTest<()> { with_tokio(|| {
         // test if a transaction update is sent to the reducer caller even if
         // the caller haven't subscribed to any updates
         let db = TestDB::durable()?;
@@ -546,10 +546,10 @@ mod tests {
                 tokio::time::timeout(Duration::from_millis(20), async move {
                     rx.recv().await.expect("Expected at least one message");
                 })
-                .await
-                .expect("Timed out waiting for a message to the client");
+                    .await
+                    .expect("Timed out waiting for a message to the client");
             });
 
         Ok(())
-    }
+    })}
 }

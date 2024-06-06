@@ -208,7 +208,7 @@ pub struct WriteConflict;
 mod tests {
     use super::{AssertTxFn, ModuleSubscriptions};
     use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
-    use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::relational_db::tests_utils::{with_tokio, TestDB};
     use crate::db::relational_db::RelationalDB;
     use crate::error::DBError;
     use crate::execution_context::ExecutionContext;
@@ -237,7 +237,7 @@ mod tests {
 
     /// Asserts that a subscription holds a tx handle for the entire length of its evaluation.
     #[test]
-    fn test_tx_subscription_ordering() -> ResultTest<()> {
+    fn test_tx_subscription_ordering() -> ResultTest<()> { with_tokio(|| {
         let test_db = TestDB::durable()?;
 
         let runtime = test_db.runtime().cloned().unwrap();
@@ -285,10 +285,10 @@ mod tests {
         test_db.close()?;
 
         Ok(())
-    }
+    })}
 
     #[test]
-    fn subs_cannot_access_private_tables() -> ResultTest<()> {
+    fn subs_cannot_access_private_tables() -> ResultTest<()> { with_tokio(|| {
         let test_db = TestDB::durable()?;
         let db = Arc::new(test_db.db.clone());
 
@@ -322,5 +322,5 @@ mod tests {
         }
 
         Ok(())
-    }
+    })}
 }
