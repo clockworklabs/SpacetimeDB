@@ -270,8 +270,9 @@ impl RelationalDB {
             if let Some(durable_tx_offset) = durable_tx_offset {
                 // Don't restore from a snapshot newer than the `durable_tx_offset`,
                 // so that you drop TXes which were committed but not durable before the restart.
-                // TODO: delete or mark as invalid snapshots newer than this.
                 if let Some(tx_offset) = snapshots.latest_snapshot_older_than(durable_tx_offset)? {
+                    // Mark any newer snapshots as invalid, as the new history will diverge from their state.
+                    snapshots.invalidate_newer_snapshots(durable_tx_offset)?;
                     log::info!("[{address}] DATABASE: restoring snapshot of tx_offset {tx_offset}");
                     let start = std::time::Instant::now();
                     let snapshot = snapshots.read_snapshot(tx_offset)?;
