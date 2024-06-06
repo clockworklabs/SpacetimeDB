@@ -103,10 +103,11 @@ impl ModuleSubscriptions {
 
         check_row_limit(
             &execution_set,
+            &ctx,
+            &self.relational_db,
             &tx,
             |execution_set, tx| execution_set.row_estimate(tx),
             &auth,
-            &config,
         )?;
 
         let database_update = execution_set.eval(&ctx, sender.protocol, &self.relational_db, &tx);
