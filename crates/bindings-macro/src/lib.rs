@@ -989,7 +989,7 @@ impl ClosureArg {
             }
             // other literals can be inlined into the AST as-is
             Expr::Lit(_) => Ok(()),
-            // unary expressions can be also hoisted out to AST builder, in particulal this
+            // unary expressions can be also hoisted out to AST builder, in particular this
             // is important to support negative literals like `-123`
             Expr::Unary(ExprUnary { expr: arg, .. }) => self.make_rhs(arg),
             Expr::Group(group) => self.make_rhs(&mut group.expr),
