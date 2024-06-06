@@ -29,13 +29,13 @@ use spacetimedb::{spacetimedb, Identity, SpacetimeType, ReducerContext};
 use log;
 ```
 
-Then we are going to start by adding the global `Config` table. Right now it only contains the "message of the day" but it can be extended to store other configuration variables. This also uses a couple of macros, like `#[spacetimedb(table(...))]` which you can learn more about in our [Rust module reference](/docs/modules/rust) (including making your tables `private`!). Simply put, this just tells SpacetimeDB to create a table which uses this struct as the schema for the table.
+Then we are going to start by adding the global `Config` table. Right now it only contains the "message of the day" but it can be extended to store other configuration variables. This also uses a couple of macros, like `#[spacetimedb(table)]` which you can learn more about in our [Rust module reference](/docs/modules/rust). Simply put, this just tells SpacetimeDB to create a table which uses this struct as the schema for the table.
 
 **Append to the bottom of lib.rs:**
 
 ```rust
 // We're using this table as a singleton, so there should typically only be one element where the version is 0.
-#[spacetimedb(table(public))]
+#[spacetimedb(table)]
 #[derive(Clone)]
 pub struct Config {
     #[primarykey]
@@ -44,7 +44,7 @@ pub struct Config {
 }
 ```
 
-Next, we're going to define a new `SpacetimeType` called `StdbVector3` which we're going to use to store positions. The difference between a `#[derive(SpacetimeType)]` and a `#[spacetimedb(table(...))]` is that tables actually store data, whereas the deriving `SpacetimeType` just allows you to create a new column of that type in a SpacetimeDB table. Therefore, `StdbVector3` is not, itself, a table.
+Next, we're going to define a new `SpacetimeType` called `StdbVector3` which we're going to use to store positions. The difference between a `#[derive(SpacetimeType)]` and a `#[spacetimedb(table)]` is that tables actually store data, whereas the deriving `SpacetimeType` just allows you to create a new column of that type in a SpacetimeDB table. Therefore, `StdbVector3` is not, itself, a table.
 
 **Append to the bottom of lib.rs:**
 
@@ -64,7 +64,7 @@ Now we're going to create a table which actually uses the `StdbVector3` that we 
 // This stores information related to all entities in our game. In this tutorial
 // all entities must at least have an entity_id, a position, a direction and they
 // must specify whether or not they are moving.
-#[spacetimedb(table(public))]
+#[spacetimedb(table)]
 #[derive(Clone)]
 pub struct EntityComponent {
     #[primarykey]
@@ -87,7 +87,7 @@ Next, we will define the `PlayerComponent` table. The `PlayerComponent` table is
 // All players have this component and it associates an entity with the user's
 // Identity. It also stores their username and whether or not they're logged in.
 #[derive(Clone)]
-#[spacetimedb(table(public))]
+#[spacetimedb(table)]
 pub struct PlayerComponent {
     // An entity_id that matches an entity_id in the `EntityComponent` table.
     #[primarykey]
@@ -264,7 +264,7 @@ First lets add a new `ChatMessage` table to the SpacetimeDB module. Add the foll
 **Append to the bottom of server/src/lib.rs:**
 
 ```rust
-#[spacetimedb(table(public))]
+#[spacetimedb(table)]
 pub struct ChatMessage {
     // The primary key for this table will be auto-incremented
     #[primarykey]

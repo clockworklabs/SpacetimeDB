@@ -34,7 +34,7 @@ pub enum ResourceNodeType {
     Iron,
 }
 
-#[spacetimedb(table(public))]
+#[spacetimedb(table)]
 #[derive(Clone)]
 pub struct ResourceNodeComponent {
     #[primarykey]
@@ -48,7 +48,7 @@ pub struct ResourceNodeComponent {
 Because resource nodes never move, the `MobileEntityComponent` is overkill. Instead, we will add a new entity component named `StaticLocationComponent` that only stores the position and rotation.
 
 ```rust
-#[spacetimedb(table(public))]
+#[spacetimedb(table)]
 #[derive(Clone)]
 pub struct StaticLocationComponent {
     #[primarykey]
@@ -62,7 +62,7 @@ pub struct StaticLocationComponent {
 3. We are also going to add a couple of additional column to our Config table. `map_extents` let's our spawner know where it can spawn the nodes. `num_resource_nodes` is the maximum number of nodes to spawn on the map. Update the config table in lib.rs.
 
 ```rust
-#[spacetimedb(table(public))]
+#[spacetimedb(table)]
 pub struct Config {
     // Config is a global table with a single row. This table will be used to
     // store configuration or global variables
