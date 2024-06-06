@@ -44,8 +44,9 @@ pub fn say_hello() {
         self.assertEqual(self.logs(5).count("Hello, Tyler!"), 1)
 
         out = self.spacetime("sql", self.address, "SELECT * FROM Person")
+        # The spaces after the name are important
         self.assertMultiLineEqual(out, """\
- name  
--------
- Tyler 
+ name    
+---------
+ "Tyler" 
 """)

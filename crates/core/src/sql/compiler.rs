@@ -239,7 +239,9 @@ mod tests {
     use spacetimedb_lib::{Address, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
     use spacetimedb_sats::db::auth::StAccess;
-    use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType};
+    use spacetimedb_sats::{
+        product, satn, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, Typespace, ValueWithType,
+    };
     use spacetimedb_vm::expr::{ColumnOp, IndexJoin, IndexScan, JoinExpr, Query};
     use std::convert::From;
     use std::ops::Bound;
@@ -395,7 +397,7 @@ mod tests {
         Ok(())
     }
 
-    // Verify the output of `sql` match the inputs for `Identity`, 'Address' & bynary data.
+    // Verify the output of `sql` matches the inputs for `Identity`, 'Address' & binary data.
     #[test]
     fn output_identity_address() -> ResultTest<()> {
         let row = product![AlgebraicValue::from(Identity::__dummy())];
