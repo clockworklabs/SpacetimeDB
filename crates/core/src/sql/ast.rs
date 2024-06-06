@@ -1,4 +1,3 @@
-use crate::config::ReadConfigOption;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
@@ -18,7 +17,6 @@ use sqlparser::ast::{
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
-use std::str::FromStr;
 use std::sync::Arc;
 
 /// Simplify to detect features of the syntax we don't support yet
@@ -283,7 +281,7 @@ pub enum SqlAst {
     },
     SetVar {
         name: String,
-        value: AlgebraicValue,
+        literal: String,
     },
     ReadVar {
         name: String,
@@ -337,12 +335,6 @@ fn infer_str_or_enum(field: Option<&AlgebraicType>, value: String) -> Result<Alg
     } else {
         Ok(AlgebraicValue::String(value.into()))
     }
-}
-
-/// Parses `name` as a [ReadConfigOption] and then parse the numeric value.
-fn infer_config(name: &str, value: &str, is_long: bool) -> Result<AlgebraicValue, ErrorVm> {
-    let config = ReadConfigOption::from_str(name)?;
-    infer_number(Some(&config.type_of()), value, is_long)
 }
 
 /// Compiles a [SqlExpr] expression into a [ColumnOp]
@@ -952,9 +944,9 @@ fn compile_set_config(name: ObjectName, value: Vec<SqlExpr>) -> Result<SqlAst, P
         }
     };
 
-    let value = match value {
+    let literal = match value {
         SqlExpr::Value(x) => match x {
-            Value::Number(value, is_long) => infer_config(&name, &value, is_long)?,
+            Value::Number(value, _) => value,
             x => {
                 return Err(PlanError::Unsupported {
                     feature: format!("Unsupported value for config: {x}."),
@@ -968,7 +960,7 @@ fn compile_set_config(name: ObjectName, value: Vec<SqlExpr>) -> Result<SqlAst, P
         }
     };
 
-    Ok(SqlAst::SetVar { name, value })
+    Ok(SqlAst::SetVar { name, literal })
 }
 
 /// Compiles the equivalent of `SHOW key`

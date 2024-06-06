@@ -22,6 +22,7 @@ use spacetimedb_vm::expr::{AuthAccess, NoInMemUsed, Query, QueryExpr, SourceExpr
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::RelValue;
 use std::hash::Hash;
+use std::time::Duration;
 
 /// A hash for uniquely identifying query execution units,
 /// to avoid recompilation of queries that have an open subscription.
@@ -204,10 +205,18 @@ impl ExecutionUnit {
 
     /// Evaluate this execution unit against the database using the json format.
     #[tracing::instrument(skip_all)]
-    pub fn eval_json(&self, ctx: &ExecutionContext, db: &RelationalDB, tx: &Tx, sql: &str) -> Option<TableUpdateJson> {
-        let table_row_operations = Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, |row| {
-            rel_value_to_table_row_op_json(row, OpType::Insert)
-        });
+    pub fn eval_json(
+        &self,
+        ctx: &ExecutionContext,
+        db: &RelationalDB,
+        tx: &Tx,
+        sql: &str,
+        slow_query_threshold: Option<Duration>,
+    ) -> Option<TableUpdateJson> {
+        let table_row_operations =
+            Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, slow_query_threshold, |row| {
+                rel_value_to_table_row_op_json(row, OpType::Insert)
+            });
         (!table_row_operations.is_empty()).then(|| TableUpdateJson {
             table_id: self.return_table().into(),
             table_name: self.return_name(),
@@ -217,11 +226,19 @@ impl ExecutionUnit {
 
     /// Evaluate this execution unit against the database using the binary format.
     #[tracing::instrument(skip_all)]
-    pub fn eval_binary(&self, ctx: &ExecutionContext, db: &RelationalDB, tx: &Tx, sql: &str) -> Option<TableUpdate> {
+    pub fn eval_binary(
+        &self,
+        ctx: &ExecutionContext,
+        db: &RelationalDB,
+        tx: &Tx,
+        sql: &str,
+        slow_query_threshold: Option<Duration>,
+    ) -> Option<TableUpdate> {
         let mut scratch = Vec::new();
-        let table_row_operations = Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, |row| {
-            rel_value_to_table_row_op_binary(&mut scratch, &row, OpType::Insert)
-        });
+        let table_row_operations =
+            Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, slow_query_threshold, |row| {
+                rel_value_to_table_row_op_binary(&mut scratch, &row, OpType::Insert)
+            });
         (!table_row_operations.is_empty()).then(|| TableUpdate {
             table_id: self.return_table().into(),
             table_name: self.return_name().into(),
@@ -235,9 +252,10 @@ impl ExecutionUnit {
         tx: &Tx,
         eval_plan: &QueryExpr,
         sql: &str,
+        slow_query_threshold: Option<Duration>,
         convert: impl FnMut(RelValue<'_>) -> T,
     ) -> Vec<T> {
-        let _slow_query = SlowQueryLogger::subscription(ctx, sql).log_guard();
+        let _slow_query = SlowQueryLogger::new(sql, slow_query_threshold, ctx.workload()).log_guard();
         build_query(ctx, db, &tx.into(), eval_plan, &mut NoInMemUsed).collect_vec(convert)
     }
 
@@ -249,8 +267,9 @@ impl ExecutionUnit {
         tx: &'a TxMode<'a>,
         sql: &'a str,
         tables: impl 'a + Clone + Iterator<Item = &'a DatabaseTableUpdate>,
+        slow_query_threshold: Option<Duration>,
     ) -> Option<DatabaseTableUpdateRelValue<'a>> {
-        let _slow_query = SlowQueryLogger::incremental_updates(ctx, sql).log_guard();
+        let _slow_query = SlowQueryLogger::new(sql, slow_query_threshold, ctx.workload()).log_guard();
         let updates = match &self.eval_incr_plan {
             EvalIncrPlan::Select(plan) => Self::eval_incr_query_expr(ctx, db, tx, tables, plan, self.return_table()),
             EvalIncrPlan::Semijoin(plan) => plan.eval(ctx, db, tx, tables),

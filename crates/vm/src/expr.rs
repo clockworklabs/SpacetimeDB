@@ -838,7 +838,7 @@ pub enum CrudExpr {
     },
     SetVar {
         name: String,
-        value: AlgebraicValue,
+        literal: String,
     },
     ReadVar {
         name: String,
