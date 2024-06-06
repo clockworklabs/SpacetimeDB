@@ -388,10 +388,11 @@ impl HostController {
         trace!("custom bootstrap {}/{}", database.address, instance_id);
 
         let db_addr = database.address;
+        let host_type = database.host_type;
         let program_hash = database.initial_program;
 
         let mut guard = self.acquire_write_lock(instance_id).await;
-        let host = match guard.take() {
+        let mut host = match guard.take() {
             Some(host) => host,
             None => self.try_init_host(database, instance_id).await?,
         };
@@ -423,9 +424,12 @@ impl HostController {
             );
             let program_bytes = load_program(&self.program_storage, program_hash).await?;
             let update_result = host
-                .module
-                .borrow()
-                .update_database(caller_address, program_hash, program_bytes.as_ref().into())
+                .update_module(
+                    caller_address,
+                    host_type,
+                    (program_hash, program_bytes),
+                    self.unregister_fn(instance_id),
+                )
                 .await?;
             if update_result.is_ok() {
                 *guard = Some(host);
