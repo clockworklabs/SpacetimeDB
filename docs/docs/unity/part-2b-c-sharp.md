@@ -30,7 +30,7 @@ using SpacetimeDB.Module;
 using static SpacetimeDB.Runtime;
 ```
 
-Then we are going to start by adding the global `Config` table. Right now it only contains the "message of the day" but it can be extended to store other configuration variables. This also uses a couple of macros, like `#[spacetimedb(table)]` which you can learn more about in our [C# module reference](/docs/modules/c-sharp). Simply put, this just tells SpacetimeDB to create a table which uses this struct as the schema for the table.
+Then we are going to start by adding the global `Config` table. Right now it only contains the "message of the day" but it can be extended to store other configuration variables. This also uses a couple of attributes, like `[SpacetimeDB.Table]` which you can learn more about in our [C# module reference](/docs/modules/c-sharp). Simply put, this just tells SpacetimeDB to create a table which uses this struct as the schema for the table.
 
 **Append to the bottom of lib.cs:**
 
