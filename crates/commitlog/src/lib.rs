@@ -12,6 +12,7 @@ mod varint;
 pub use crate::{
     commit::Commit,
     payload::{Decoder, Encode},
+    repo::fs,
     segment::{Transaction, DEFAULT_LOG_FORMAT_VERSION},
     varchar::Varchar,
 };
@@ -47,6 +48,8 @@ pub struct Options {
     ///
     /// Default: 65,535
     pub max_records_in_commit: NonZeroU16,
+    /// Options for the filesystem storage backend.
+    pub fs_options: fs::Options,
 }
 
 impl Default for Options {
@@ -55,6 +58,7 @@ impl Default for Options {
             log_format_version: DEFAULT_LOG_FORMAT_VERSION,
             max_segment_size: 1024 * 1024 * 1024,
             max_records_in_commit: NonZeroU16::MAX,
+            fs_options: fs::Options::default(),
         }
     }
 }
@@ -79,7 +83,7 @@ impl<T> Commitlog<T> {
     /// free-standing functions in this module for how to traverse a read-only
     /// commitlog.
     pub fn open(root: impl Into<PathBuf>, opts: Options) -> io::Result<Self> {
-        let inner = commitlog::Generic::open(repo::Fs::new(root), opts)?;
+        let inner = commitlog::Generic::open(repo::Fs::new(root, opts.fs_options), opts)?;
 
         Ok(Self {
             inner: RwLock::new(inner),
@@ -388,7 +392,7 @@ pub fn commits_from(
     root: impl Into<PathBuf>,
     offset: u64,
 ) -> io::Result<impl Iterator<Item = Result<Commit, error::Traversal>>> {
-    commitlog::commits_from(repo::Fs::new(root), DEFAULT_LOG_FORMAT_VERSION, offset)
+    commitlog::commits_from(repo::Fs::new(root, <_>::default()), DEFAULT_LOG_FORMAT_VERSION, offset)
 }
 
 /// Obtain an iterator which traverses the commitlog located at the `root`
@@ -423,7 +427,12 @@ where
     D::Error: From<error::Traversal>,
     T: 'a,
 {
-    commitlog::transactions_from(repo::Fs::new(root), DEFAULT_LOG_FORMAT_VERSION, offset, de)
+    commitlog::transactions_from(
+        repo::Fs::new(root, <_>::default()),
+        DEFAULT_LOG_FORMAT_VERSION,
+        offset,
+        de,
+    )
 }
 
 /// Traverse the commitlog located at the `root` directory from the start and
@@ -449,5 +458,10 @@ where
     D: Decoder,
     D::Error: From<error::Traversal> + From<io::Error>,
 {
-    commitlog::fold_transactions_from(repo::Fs::new(root), DEFAULT_LOG_FORMAT_VERSION, offset, de)
+    commitlog::fold_transactions_from(
+        repo::Fs::new(root, <_>::default()),
+        DEFAULT_LOG_FORMAT_VERSION,
+        offset,
+        de,
+    )
 }

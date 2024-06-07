@@ -23,12 +23,9 @@ pub fn segment_file_name(offset: u64) -> String {
 //
 // - should use advisory locks?
 
-/// A commitlog repository [`Repo`] which stores commits in ordinary files on
-/// disk.
-#[derive(Clone, Debug)]
-pub struct Fs {
-    /// The base directory within which segment files will be stored.
-    pub root: PathBuf,
+/// Options for [`Fs`].
+#[derive(Clone, Copy, Debug)]
+pub struct Options {
     /// Use `O_DIRECT` or platform equivalent.
     ///
     /// Setting this to true will make reads and writes bypass the OS's page
@@ -50,15 +47,33 @@ pub struct Fs {
     pub sync_io: bool,
 }
 
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            direct_io: false,
+            sync_io: false,
+        }
+    }
+}
+
+/// A commitlog repository [`Repo`] which stores commits in ordinary files on
+/// disk.
+#[derive(Clone, Debug)]
+pub struct Fs {
+    /// The base directory within which segment files will be stored.
+    pub root: PathBuf,
+    /// Options.
+    pub opts: Options,
+}
+
 impl Fs {
     /// Create a commitlog repository which stores segments in the directory `root`.
     ///
     /// `root` must name an extant, accessible, writeable directory.
-    pub fn new(root: impl Into<PathBuf>) -> Self {
+    pub fn new(root: impl Into<PathBuf>, opts: Options) -> Self {
         Self {
             root: root.into(),
-            direct_io: true,
-            sync_io: false,
+            opts,
         }
     }
 
@@ -88,8 +103,7 @@ impl Repo for Fs {
         open(
             self.segment_path(offset),
             File::options().read(true).write(true).create_new(true),
-            self.direct_io,
-            self.sync_io,
+            self.opts,
         )
         .or_else(|e| {
             if e.kind() == io::ErrorKind::AlreadyExists {
@@ -109,8 +123,7 @@ impl Repo for Fs {
         open(
             self.segment_path(offset),
             File::options().read(true).write(true),
-            self.direct_io,
-            self.sync_io,
+            self.opts,
         )
     }
 
@@ -143,7 +156,11 @@ impl Repo for Fs {
     }
 }
 
-pub fn open(path: impl AsRef<Path>, opts: &mut OpenOptions, direct_io: bool, sync_io: bool) -> io::Result<File> {
+pub fn open(
+    path: impl AsRef<Path>,
+    opts: &mut OpenOptions,
+    Options { direct_io, sync_io }: Options,
+) -> io::Result<File> {
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         use std::os::unix::fs::OpenOptionsExt;

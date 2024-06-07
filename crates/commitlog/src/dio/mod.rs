@@ -13,7 +13,14 @@ pub use reader::PagedReader;
 pub use writer::PagedWriter;
 
 pub fn open_file(path: impl AsRef<Path>, opts: &mut OpenOptions) -> io::Result<File> {
-    crate::repo::fs::open(path, opts, true, false)
+    crate::repo::fs::open(
+        path,
+        opts,
+        crate::fs::Options {
+            direct_io: true,
+            sync_io: false,
+        },
+    )
 }
 
 pub trait WriteAt {

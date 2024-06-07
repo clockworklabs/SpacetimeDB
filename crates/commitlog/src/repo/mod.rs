@@ -10,7 +10,7 @@ use crate::{
     Options,
 };
 
-pub(crate) mod fs;
+pub mod fs;
 #[cfg(test)]
 pub mod mem;
 
