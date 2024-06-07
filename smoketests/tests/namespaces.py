@@ -1,14 +1,16 @@
 from .. import Smoketest, random_string
 import tempfile
 import os
+from glob import iglob
 
 
 def count_matches(dir, needle):
     count = 0
-    for f in os.listdir(dir):
-        contents = open(os.path.join(dir, f)).read()
-        count += contents.count(needle)
+    for f in iglob(os.path.join(dir, "**/*.cs"), recursive=True):
+        with open(f) as f:
+            count += f.read().count(needle)
     return count
+
 
 class Namespaces(Smoketest):
     AUTOPUBLISH = False
