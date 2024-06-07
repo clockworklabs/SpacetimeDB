@@ -65,7 +65,7 @@ pub struct RelationalDB {
     // TODO(cloutiertyler): This should not be public
     pub(crate) inner: Locking,
     durability: Option<Arc<dyn Durability<TxData = Txdata>>>,
-    snapshots: Option<Arc<SnapshotWorker>>,
+    snapshot_worker: Option<Arc<SnapshotWorker>>,
     address: Address,
 
     row_count_fn: RowCountFn,
@@ -110,7 +110,7 @@ impl SnapshotWorker {
         }
     }
 
-    fn take_snapshot(committed_state: &RwLock<CommittedState>, snapshots: &SnapshotRepository) {
+    fn take_snapshot(committed_state: &RwLock<CommittedState>, snapshot_repo: &SnapshotRepository) {
         let mut committed_state = committed_state.write();
         let Some(tx_offset) = committed_state.next_tx_offset.checked_sub(1) else {
             log::info!("SnapshotWorker::take_snapshot: refusing to take snapshot at tx_offset -1");
@@ -118,7 +118,7 @@ impl SnapshotWorker {
         };
         log::info!(
             "Capturing snapshot of database {:?} at TX offset {}",
-            snapshots.database_address(),
+            snapshot_repo.database_address(),
             tx_offset,
         );
 
@@ -130,15 +130,15 @@ impl SnapshotWorker {
             ..
         } = *committed_state;
 
-        if let Err(e) = snapshots.create_snapshot(tables.values_mut(), blob_store, tx_offset) {
+        if let Err(e) = snapshot_repo.create_snapshot(tables.values_mut(), blob_store, tx_offset) {
             log::error!(
                 "Error capturing snapshot of database {:?}: {e:?}",
-                snapshots.database_address()
+                snapshot_repo.database_address()
             );
         } else {
             log::info!(
                 "Captured snapshot of database {:?} at TX offset {} in {:?}",
-                snapshots.database_address(),
+                snapshot_repo.database_address(),
                 tx_offset,
                 start_time.elapsed()
             );
@@ -200,11 +200,16 @@ impl RelationalDB {
 
         let snapshot_dir = root.as_ref().join("snapshots");
         create_dir_all(&snapshot_dir)?;
-        let snapshots = SnapshotRepository::open(snapshot_dir, address, instance_id).map(Arc::new)?;
+        let snapshot_repo = SnapshotRepository::open(snapshot_dir, address, instance_id).map(Arc::new)?;
 
         let start = std::time::Instant::now();
-        let res =
-            Self::open(root, address, Some((durability.clone(), disk_size_fn)), Some(snapshots))?.apply(durability);
+        let res = Self::open(
+            root,
+            address,
+            Some((durability.clone(), disk_size_fn)),
+            Some(snapshot_repo),
+        )?
+        .apply(durability);
         log::info!("[{address}] DATABASE: opened local in {:?}", start.elapsed());
 
         res
@@ -219,7 +224,7 @@ impl RelationalDB {
         root: impl AsRef<Path>,
         address: Address,
         durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
-        snapshots: Option<Arc<SnapshotRepository>>,
+        snapshot_repo: Option<Arc<SnapshotRepository>>,
     ) -> Result<Self, DBError> {
         create_dir_all(&root)?;
 
@@ -235,7 +240,7 @@ impl RelationalDB {
             .as_deref()
             .and_then(|durability| durability.durable_tx_offset());
         log::info!("[{address}] DATABASE: durable_tx_offset is {durable_tx_offset:?}");
-        let inner = Self::restore_from_snapshot_or_bootstrap(address, snapshots.as_deref(), durable_tx_offset)?;
+        let inner = Self::restore_from_snapshot_or_bootstrap(address, snapshot_repo.as_deref(), durable_tx_offset)?;
 
         let row_count_fn: RowCountFn = Arc::new(move |table_id, table_name| {
             DB_METRICS
@@ -245,12 +250,12 @@ impl RelationalDB {
         });
 
         let snapshot_worker =
-            snapshots.map(|repo| Arc::new(SnapshotWorker::new(inner.committed_state.clone(), repo.clone())));
+            snapshot_repo.map(|repo| Arc::new(SnapshotWorker::new(inner.committed_state.clone(), repo.clone())));
 
         Ok(Self {
             inner,
             durability,
-            snapshots: snapshot_worker,
+            snapshot_worker,
             address,
 
             row_count_fn,
@@ -263,19 +268,19 @@ impl RelationalDB {
 
     fn restore_from_snapshot_or_bootstrap(
         address: Address,
-        snapshots: Option<&SnapshotRepository>,
+        snapshot_repo: Option<&SnapshotRepository>,
         durable_tx_offset: Option<TxOffset>,
     ) -> Result<Locking, DBError> {
-        if let Some(snapshots) = snapshots {
+        if let Some(snapshot_repo) = snapshot_repo {
             if let Some(durable_tx_offset) = durable_tx_offset {
                 // Don't restore from a snapshot newer than the `durable_tx_offset`,
                 // so that you drop TXes which were committed but not durable before the restart.
-                if let Some(tx_offset) = snapshots.latest_snapshot_older_than(durable_tx_offset)? {
+                if let Some(tx_offset) = snapshot_repo.latest_snapshot_older_than(durable_tx_offset)? {
                     // Mark any newer snapshots as invalid, as the new history will diverge from their state.
-                    snapshots.invalidate_newer_snapshots(durable_tx_offset)?;
+                    snapshot_repo.invalidate_newer_snapshots(durable_tx_offset)?;
                     log::info!("[{address}] DATABASE: restoring snapshot of tx_offset {tx_offset}");
                     let start = std::time::Instant::now();
-                    let snapshot = snapshots.read_snapshot(tx_offset)?;
+                    let snapshot = snapshot_repo.read_snapshot(tx_offset)?;
                     log::info!(
                         "[{address}] DATABASE: read snapshot of tx_offset {tx_offset} in {:?}",
                         start.elapsed(),
@@ -571,7 +576,7 @@ impl RelationalDB {
     ///
     /// Actual snapshotting happens asynchronously in a Tokio worker.
     fn maybe_do_snapshot(&self, tx_data: &TxData) {
-        if let Some(snapshot_worker) = &self.snapshots {
+        if let Some(snapshot_worker) = &self.snapshot_worker {
             if let Some(tx_offset) = tx_data.tx_offset() {
                 if tx_offset % SNAPSHOT_FREQUENCY == 0 {
                     snapshot_worker.request_snapshot.unbounded_send(()).unwrap();
@@ -1210,14 +1215,14 @@ pub mod tests_utils {
 
             let snapshot_dir = root.join("snapshots");
             create_dir_all(&snapshot_dir)?;
-            let snapshots = SnapshotRepository::open(snapshot_dir, Self::ADDRESS, 0).map(Arc::new)?;
+            let snapshot_repo = SnapshotRepository::open(snapshot_dir, Self::ADDRESS, 0).map(Arc::new)?;
 
             let (db, connected_clients) = {
                 let db = RelationalDB::open(
                     root,
                     Self::ADDRESS,
                     Some((handle.clone(), disk_size_fn)),
-                    Some(snapshots),
+                    Some(snapshot_repo),
                 )?;
                 db.apply(handle.clone())?
             };
