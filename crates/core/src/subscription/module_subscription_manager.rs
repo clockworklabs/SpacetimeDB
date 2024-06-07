@@ -252,7 +252,9 @@ impl SubscriptionManager {
             {
                 // Caller is not subscribed to any queries,
                 // but send a transaction update with an empty subscription update.
-                send_to_client(client, &event, SubscriptionUpdate::<DatabaseUpdate>::default());
+                let mut db_update = SubscriptionUpdate::<DatabaseUpdate>::default();
+                db_update.request_id = event.request_id;
+                send_to_client(client, &event, db_update);
             }
 
             eval.into_iter().for_each(|(id, tables)| {
