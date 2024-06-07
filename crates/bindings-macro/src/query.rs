@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
-use quote::quote_spanned;
-use syn::parse::{Parse, ParseStream};
+use quote::{quote, quote_spanned};
+use syn::parse::{Parse, ParseStream, Parser};
 use syn::spanned::Spanned;
 use syn::{parse_quote, BinOp, Expr, ExprBinary, ExprLit, ExprUnary, Ident, Member, Token, Type, UnOp};
 
@@ -158,33 +158,35 @@ impl ClosureArg {
     }
 }
 
-struct ClosureLike {
-    arg: ClosureArg,
-    body: Box<Expr>,
-}
+fn handle_closure(arg: &ClosureArg, body: &Expr) -> syn::Result<TokenStream> {
+    let table_ty = &arg.table_ty;
+    let expr = arg.handle_expr(&body)?;
 
-impl Parse for ClosureLike {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        Ok(Self {
-            arg: input.parse()?,
-            body: input.parse()?,
-        })
-    }
-}
-
-impl ClosureLike {
-    fn handle(&self) -> syn::Result<TokenStream> {
-        let table_ty = &self.arg.table_ty;
-        let expr = self.arg.handle_expr(&self.body)?;
-
-        Ok(quote_spanned!(self.body.span()=> {
-            <#table_ty as spacetimedb::TableType>::iter_filtered(#expr)
-        }))
-    }
+    Ok(quote_spanned!(body.span()=> {
+        <#table_ty as spacetimedb::TableType>::iter_filtered(#expr)
+    }))
 }
 
 pub(crate) fn query_impl(input: TokenStream) -> TokenStream {
-    syn::parse2::<ClosureLike>(input)
-        .and_then(|closure_like| closure_like.handle())
-        .unwrap_or_else(syn::Error::into_compile_error)
+    let parser = |input: ParseStream| {
+        let arg = input.parse::<ClosureArg>()?;
+        let body = input.parse::<Expr>();
+
+        let result = body.and_then(|body| handle_closure(&arg, &body));
+
+        let output = result.unwrap_or_else(|error| {
+            let error = error.into_compile_error();
+            let table_ty = &arg.table_ty;
+            quote!(({
+                #error
+                // if the error was just in the body, but we know the table for the query,
+                // still inform type inference that this expression will be a TableIter<$tablety>,
+                // so that the rest of their code doesn't lose all type info in their IDE
+                <#table_ty as spacetimedb::TableType>::iter()
+            }))
+        });
+
+        Ok(output)
+    };
+    parser.parse2(input).unwrap_or_else(syn::Error::into_compile_error)
 }
