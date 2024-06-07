@@ -7,6 +7,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "client", "client.csproj", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SpacetimeDB.ClientSDK", "..\..\..\SpacetimeDB.ClientSDK.csproj", "{242A8146-A58D-43E9-A2BD-31FFC6851AA6}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Codegen", "..\..\..\..\SpacetimeDB\crates\bindings-csharp\BSATN.Codegen\BSATN.Codegen.csproj", "{C7C0ED26-79E4-478B-8B15-71E2B078541D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Runtime", "..\..\..\..\SpacetimeDB\crates\bindings-csharp\BSATN.Runtime\BSATN.Runtime.csproj", "{BD1F3C9B-CEA0-4447-B754-4BF55D6C509F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +25,14 @@ Global
 		{242A8146-A58D-43E9-A2BD-31FFC6851AA6}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{242A8146-A58D-43E9-A2BD-31FFC6851AA6}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{242A8146-A58D-43E9-A2BD-31FFC6851AA6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C7C0ED26-79E4-478B-8B15-71E2B078541D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C7C0ED26-79E4-478B-8B15-71E2B078541D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C7C0ED26-79E4-478B-8B15-71E2B078541D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C7C0ED26-79E4-478B-8B15-71E2B078541D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BD1F3C9B-CEA0-4447-B754-4BF55D6C509F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BD1F3C9B-CEA0-4447-B754-4BF55D6C509F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BD1F3C9B-CEA0-4447-B754-4BF55D6C509F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BD1F3C9B-CEA0-4447-B754-4BF55D6C509F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

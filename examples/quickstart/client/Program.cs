@@ -35,6 +35,7 @@ void RegisterCallbacks()
     SpacetimeDBClient.instance.onConnect += OnConnect;
     SpacetimeDBClient.instance.onIdentityReceived += OnIdentityReceived;
     SpacetimeDBClient.instance.onSubscriptionApplied += OnSubscriptionApplied;
+    SpacetimeDBClient.instance.onUnhandledReducerError += onUnhandledReducerError;
 
     User.OnInsert += User_OnInsert;
     User.OnUpdate += User_OnUpdate;
@@ -133,6 +134,11 @@ void OnSubscriptionApplied()
 {
     Console.WriteLine("Connected");
     PrintMessagesInOrder();
+}
+
+void onUnhandledReducerError(ReducerEvent reducerEvent)
+{
+    Console.WriteLine($"Unhandled reducer error in {reducerEvent.ReducerName}: {reducerEvent.ErrMessage}");
 }
 
 const string HOST = "http://localhost:3000";
