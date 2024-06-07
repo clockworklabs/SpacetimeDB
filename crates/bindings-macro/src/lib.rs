@@ -90,21 +90,6 @@ mod sym {
     }
 }
 
-mod kw {
-    syn::custom_keyword!(btree);
-    syn::custom_keyword!(connect);
-    syn::custom_keyword!(disconnect);
-    syn::custom_keyword!(hash);
-    syn::custom_keyword!(index);
-    syn::custom_keyword!(init);
-    syn::custom_keyword!(migrate);
-    syn::custom_keyword!(name);
-    syn::custom_keyword!(reducer);
-    syn::custom_keyword!(repeat);
-    syn::custom_keyword!(table);
-    syn::custom_keyword!(update);
-}
-
 /// `f` should return only whats newly added; it doesn't need to output the item.
 fn cvt_attr<Item: Parse>(
     args: StdTokenStream,
@@ -159,15 +144,6 @@ fn check_duplicate_msg<T>(x: &Option<T>, src: impl ErrorSource, msg: impl std::f
 enum IndexType {
     BTree,
     Hash,
-}
-
-impl syn::parse::Parse for IndexType {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        Ok(match_tok!(match input {
-            kw::btree => Self::BTree,
-            kw::hash => Self::Hash,
-        }))
-    }
 }
 
 impl quote::ToTokens for IndexType {
@@ -367,6 +343,30 @@ impl TableArgs {
         .parse2(input)?;
         Ok(args)
     }
+
+    fn parse_index_attr(field: &Ident, attr: &syn::Attribute) -> syn::Result<IndexArg> {
+        let mut kind = None;
+        attr.parse_nested_meta(|meta| {
+            match_meta!(match meta {
+                sym::btree => {
+                    check_duplicate_msg(&kind, &meta, "index type specified twice")?;
+                    kind = Some(IndexType::BTree);
+                }
+                sym::hash => {
+                    check_duplicate_msg(&kind, &meta, "index type specified twice")?;
+                    kind = Some(IndexType::Hash);
+                }
+            });
+            Ok(())
+        })?;
+        let kind =
+            kind.ok_or_else(|| syn::Error::new_spanned(&attr.meta, "must specify kind of index (`btree` or `hash`)"))?;
+        Ok(IndexArg {
+            kind,
+            name: None,
+            columns: vec![field.clone()],
+        })
+    }
 }
 
 impl IndexArg {
@@ -519,12 +519,8 @@ fn table_impl(mut args: TableArgs, item: syn::DeriveInput) -> syn::Result<TokenS
         let mut col_attr = ColumnAttribute::UNSET;
         for attr in field.original_attrs {
             if attr.path() == sym::index {
-                let kind = attr.parse_args::<IndexType>()?;
-                args.indices.push(IndexArg {
-                    kind,
-                    name: None,
-                    columns: vec![field.ident.unwrap().clone()],
-                });
+                let index = TableArgs::parse_index_attr(field.ident.unwrap(), attr)?;
+                args.indices.push(index);
                 continue;
             }
             let Some(attr) = ColumnAttr::parse(attr)? else { continue };
@@ -860,10 +856,16 @@ pub fn duration(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 fn parse_duration(input: ParseStream) -> syn::Result<Duration> {
-    let (s, span) = match_tok!(match input {
-        s @ syn::LitStr => (s.value(), s.span()),
-        i @ syn::LitInt => (i.to_string(), i.span()),
-    });
+    let lookahead = input.lookahead1();
+    let (s, span) = if lookahead.peek(syn::LitStr) {
+        let s = input.parse::<syn::LitStr>()?;
+        (s.value(), s.span())
+    } else if lookahead.peek(syn::LitInt) {
+        let i = input.parse::<syn::LitInt>()?;
+        (i.to_string(), i.span())
+    } else {
+        return Err(lookahead.error());
+    };
     humantime::parse_duration(&s).map_err(|e| syn::Error::new(span, format_args!("can't parse as duration: {e}")))
 }
 
