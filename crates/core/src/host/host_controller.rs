@@ -445,11 +445,12 @@ impl HostController {
         trace!("custom bootstrap {}/{}", database.address, instance_id);
 
         let db_addr = database.address;
+        let host_type = database.host_type;
         let program_hash = database.program_bytes_address;
         let ctx = ExecutionContext::internal(db_addr);
 
         let mut guard = self.acquire_write_lock(instance_id).await;
-        let host = match guard.take() {
+        let mut host = match guard.take() {
             Some(host) => host,
             None => self.try_init_host(database, instance_id).await?,
         };
@@ -459,6 +460,7 @@ impl HostController {
         match (stored_program_hash, expected_hash) {
             (Some(stored_hash), _) if stored_hash == program_hash => {
                 info!("[{}] database up to date with program `{}`", db_addr, program_hash);
+                *guard = Some(host);
                 Ok(())
             }
             (Some(stored_hash), Some(expected_hash)) if stored_hash != expected_hash => Err(anyhow!(
@@ -479,13 +481,12 @@ impl HostController {
             (None, None) => {
                 info!("[{}] initializing database with program `{}`", db_addr, program_hash);
                 let fence = acquire_lease(host.db())?;
-                let call_result = host.module.borrow().init_database(fence, ReducerArgs::Nullary).await?;
-                match call_result {
-                    None => Ok(()),
-                    Some(res) => Result::from(res).inspect(|_| {
-                        *guard = Some(host);
-                    }),
+                let init_result = host.module.borrow().init_database(fence, ReducerArgs::Nullary).await?;
+                if let Some(call_result) = init_result {
+                    Result::from(call_result)?;
                 }
+                *guard = Some(host);
+                Ok(())
             }
 
             (Some(stored_hash), Some(_)) => {
@@ -494,7 +495,9 @@ impl HostController {
                     db_addr, stored_hash, program_hash
                 );
                 let fence = acquire_lease(host.db())?;
-                let update_result = host.module.borrow().update_database(fence).await?;
+                let update_result = host
+                    .update_module(fence, host_type, program_hash, self.unregister_fn(instance_id))
+                    .await?;
                 if update_result.is_ok() {
                     *guard = Some(host);
                 }
