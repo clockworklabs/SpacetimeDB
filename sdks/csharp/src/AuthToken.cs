@@ -98,4 +98,31 @@ namespace SpacetimeDB
         }
     }
 }
+#else
+using UnityEngine;
+
+namespace SpacetimeDB
+{
+    // This is an optional helper class to store your auth token in PlayerPrefs
+    // Override GetTokenKey() if you want to use a player pref key specific to your game
+    public static class AuthToken
+    {
+        public static string Token => PlayerPrefs.GetString(GetTokenKey());
+
+        public static void SaveToken(string token)
+        {
+            PlayerPrefs.SetString(GetTokenKey(), token);
+        }
+
+        public static string GetTokenKey()
+        {
+            var key = "spacetimedb.identity_token";
+    #if UNITY_EDITOR
+            // Different editors need different keys
+            key += $" - {Application.dataPath}";
+    #endif
+            return key;
+        }
+    }
+}
 #endif

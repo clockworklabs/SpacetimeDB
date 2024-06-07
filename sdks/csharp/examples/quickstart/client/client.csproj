@@ -8,9 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Google.Protobuf" Version="3.23.4" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <ProjectReference Include="../../../SpacetimeDB.ClientSDK.csproj" />
+    <ProjectReference Include="../../../../SpacetimeDB/crates/bindings-csharp/BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" />
   </ItemGroup>
 
   <ItemGroup>

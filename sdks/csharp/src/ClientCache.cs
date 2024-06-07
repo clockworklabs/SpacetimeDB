@@ -1,68 +1,28 @@
 ﻿using System;
-using System.Collections.Concurrent;
+using System.Collections;
 using System.Collections.Generic;
-using System.Reflection;
-using SpacetimeDB.SATS;
 using System.Linq;
+using SpacetimeDB.BSATN;
+using Google.Protobuf;
 
 namespace SpacetimeDB
 {
     public class ClientCache
     {
-        public class TableCache
+        public interface ITableCache : IEnumerable<KeyValuePair<byte[], IDatabaseTable>>
         {
-            private readonly Type clientTableType;
-            private readonly AlgebraicType rowSchema;
+            Type ClientTableType { get; }
+            bool InsertEntry(byte[] rowBytes, IDatabaseTable value);
+            bool DeleteEntry(byte[] rowBytes);
+            IDatabaseTable DecodeValue(ByteString bytes);
+        }
 
-            // The function to use for decoding a type value
-            private Func<AlgebraicValue, object> decoderFunc;
+        public class TableCache<T> : ITableCache
+            where T: IDatabaseTable, IStructuralReadWrite, new()
+        {
+            public Type ClientTableType => typeof(T);
 
-            // Maps from primary key to type value
-            public readonly Dictionary<byte[], object> entries = new(ByteArrayComparer.Instance);
-
-            public Type ClientTableType
-            {
-                get => clientTableType;
-            }
-
-            public Action<object> InternalValueInsertedCallback;
-            public Action<object> InternalValueDeletedCallback;
-            public Action<object, ClientApi.Event> InsertCallback;
-            public Action<object, ClientApi.Event> BeforeDeleteCallback;
-            public Action<object, ClientApi.Event> DeleteCallback;
-            public Action<object, object, ClientApi.Event> UpdateCallback;
-            public Func<object, object> GetPrimaryKeyValueFunc;
-
-            public AlgebraicType RowSchema
-            {
-                get => rowSchema;
-            }
-
-            public TableCache(Type clientTableType, AlgebraicType rowSchema, Func<AlgebraicValue, object> decoderFunc)
-            {
-                this.clientTableType = clientTableType;
-
-                this.rowSchema = rowSchema;
-                this.decoderFunc = decoderFunc;
-                InternalValueInsertedCallback = (Action<object>)clientTableType.GetMethod("InternalOnValueInserted", BindingFlags.NonPublic | BindingFlags.Static)?.CreateDelegate(typeof(Action<object>));
-                InternalValueDeletedCallback = (Action<object>)clientTableType.GetMethod("InternalOnValueDeleted", BindingFlags.NonPublic | BindingFlags.Static)?.CreateDelegate(typeof(Action<object>));
-                InsertCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnInsertEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));
-                BeforeDeleteCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnBeforeDeleteEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));
-                DeleteCallback = (Action<object, ClientApi.Event>)clientTableType.GetMethod("OnDeleteEvent")?.CreateDelegate(typeof(Action<object, ClientApi.Event>));
-                UpdateCallback = (Action<object, object, ClientApi.Event>)clientTableType.GetMethod("OnUpdateEvent")?.CreateDelegate(typeof(Action<object, object, ClientApi.Event>));
-                GetPrimaryKeyValueFunc = (Func<object, object>)clientTableType.GetMethod("GetPrimaryKeyValue", BindingFlags.NonPublic | BindingFlags.Static)
-                    ?.CreateDelegate(typeof(Func<object, object>));
-            }
-
-            /// <summary>
-            /// Decodes the given AlgebraicValue into the out parameter `obj`.
-            /// </summary>
-            /// <param name="value">The AlgebraicValue to decode.</param>
-            /// <param name="obj">The domain object for `value`</param>
-            public void SetAndForgetDecodedValue(AlgebraicValue value, out object obj)
-            {
-                obj = decoderFunc(value);
-            }
+            public static readonly Dictionary<byte[], T> Entries = new (ByteArrayComparer.Instance);
 
             /// <summary>
             /// Inserts the value into the table. There can be no existing value with the provided BSATN bytes.
@@ -70,7 +30,7 @@ namespace SpacetimeDB
             /// <param name="rowBytes">The BSATN encoded bytes of the row to retrieve.</param>
             /// <param name="value">The parsed row encoded by the <paramref>rowBytes</paramref>.</param>
             /// <returns>True if the row was inserted, false if the row wasn't inserted because it was a duplicate.</returns>
-            public bool InsertEntry(byte[] rowBytes, object value) => entries.TryAdd(rowBytes, value);
+            public bool InsertEntry(byte[] rowBytes, IDatabaseTable value) => Entries.TryAdd(rowBytes, (T)value);
 
             /// <summary>
             /// Deletes a value from the table.
@@ -79,7 +39,7 @@ namespace SpacetimeDB
             /// <returns>True if and only if the value was previously resident and has been deleted.</returns>
             public bool DeleteEntry(byte[] rowBytes)
             {
-                if (entries.Remove(rowBytes))
+                if (Entries.Remove(rowBytes))
                 {
                     return true;
                 }
@@ -88,30 +48,28 @@ namespace SpacetimeDB
                 return false;
             }
 
-            public object? GetPrimaryKeyValue(object row)
-            {
-                return GetPrimaryKeyValueFunc?.Invoke(row);
-            }
+            // The function to use for decoding a type value.
+            public IDatabaseTable DecodeValue(ByteString bytes) => BSATNHelpers.FromProtoBytes<T>(bytes);
+
+            public IEnumerator<KeyValuePair<byte[], IDatabaseTable>> GetEnumerator() => Entries.Select(kv => new KeyValuePair<byte[], IDatabaseTable>(kv.Key, kv.Value)).GetEnumerator();
+
+            IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
         }
 
-        private readonly ConcurrentDictionary<string, TableCache> tables =
-            new ConcurrentDictionary<string, TableCache>();
+        private readonly Dictionary<string, ITableCache> tables = new();
 
-        public void AddTable(Type clientTableType, AlgebraicType tableRowDef, Func<AlgebraicValue, object> decodeFunc)
+        public void AddTable<T>()
+            where T: IDatabaseTable, IStructuralReadWrite, new()
         {
-            string name = clientTableType.Name;
+            string name = typeof(T).Name;
 
-            if (tables.TryGetValue(name, out _))
+            if (!tables.TryAdd(name, new TableCache<T>()))
             {
                 Logger.LogError($"Table with name already exists: {name}");
-                return;
             }
-
-            // Initialize this table
-            tables[name] = new TableCache(clientTableType, tableRowDef, decodeFunc);
         }
 
-        public TableCache? GetTable(string name)
+        public ITableCache? GetTable(string name)
         {
             if (tables.TryGetValue(name, out var table))
             {
@@ -122,13 +80,6 @@ namespace SpacetimeDB
             return null;
         }
 
-        public IEnumerable<object> GetObjects(string name)
-        {
-            return GetTable(name)?.entries.Values ?? Enumerable.Empty<object>();
-        }
-
-        public int Count(string name) => GetTable(name)?.entries.Count ?? 0;
-
-        public IEnumerable<TableCache> GetTables() => tables.Values;
+        public IEnumerable<ITableCache> GetTables() => tables.Values;
     }
 }

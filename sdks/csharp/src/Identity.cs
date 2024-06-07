@@ -1,62 +1,45 @@
 using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
-using SpacetimeDB.SATS;
+using System.IO;
+using SpacetimeDB.BSATN;
 
 namespace SpacetimeDB
 {
-    public struct Identity : IEquatable<Identity>
+    public readonly struct Identity : IEquatable<Identity>
     {
-        private byte[] bytes;
 
         public const int SIZE = 32;
 
-        public byte[] Bytes => bytes;
+        public readonly byte[] Bytes;
 
-        public static AlgebraicType GetAlgebraicType()
+        private Identity(byte[] bytes) => Bytes = bytes;
+
+        public readonly struct BSATN : IReadWrite<Identity>
         {
-            return new AlgebraicType
-            {
-                type = AlgebraicType.Type.Builtin,
-                builtin = new BuiltinType
-                {
-                    type = BuiltinType.Type.Array,
-                    arrayType = new AlgebraicType
+            public Identity Read(BinaryReader reader) => From(ByteArray.Instance.Read(reader));
+            public void Write(BinaryWriter writer, Identity value) => ByteArray.Instance.Write(writer, value.Bytes);
+
+            public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
+                new AlgebraicType.Product(
+                    new AggregateElement[]
                     {
-                        type = AlgebraicType.Type.Builtin,
-                        builtin = new BuiltinType
-                        {
-                            type = BuiltinType.Type.U8
-                        }
+                        new("__identity_bytes", ByteArray.Instance.GetAlgebraicType(registrar))
                     }
-                }
-            };
+                );
         }
 
-        public static explicit operator Identity(AlgebraicValue v) => new Identity
-        {
-            bytes = v.AsBytes(),
-        };
-
-        public static Identity From(byte[] bytes)
-        {
+        public static Identity From(byte[] bytes) =>
             // TODO: should we validate length here?
-            return new Identity
-            {
-                bytes = bytes,
-            };
-        }
+            new(bytes);
 
-        public bool Equals(Identity other) => ByteArrayComparer.Instance.Equals(bytes, other.bytes);
+        public bool Equals(Identity other) => ByteArrayComparer.Instance.Equals(Bytes, other.Bytes);
 
-        public override bool Equals(object o) => o is Identity other && Equals(other);
+        public override bool Equals(object? o) => o is Identity other && Equals(other);
 
         public static bool operator ==(Identity a, Identity b) => a.Equals(b);
         public static bool operator !=(Identity a, Identity b) => !a.Equals(b);
 
-        public override int GetHashCode() => ByteArrayComparer.Instance.GetHashCode(bytes);
+        public override int GetHashCode() => ByteArrayComparer.Instance.GetHashCode(Bytes);
 
-        public override string ToString() => ByteArrayComparer.ToHexString(bytes);
+        public override string ToString() => ByteArrayComparer.ToHexString(Bytes);
     }
 }

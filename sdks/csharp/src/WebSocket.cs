@@ -5,16 +5,17 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Google.Protobuf;
 
 namespace SpacetimeDB
 {
     public delegate void WebSocketOpenEventHandler();
 
-    public delegate void WebSocketMessageEventHandler(byte[] message);
+    public delegate void WebSocketMessageEventHandler(byte[] message, DateTime timestamp);
 
     public delegate void WebSocketCloseEventHandler(WebSocketCloseStatus? code, WebSocketError? error);
 
-    public delegate void WebSocketConnectErrorEventHandler(WebSocketError? error, string? message);
+    public delegate void WebSocketConnectErrorEventHandler(WebSocketError? error, string message);
     public delegate void WebSocketSendErrorEventHandler(Exception e);
 
     public struct ConnectOptions
@@ -48,7 +49,7 @@ namespace SpacetimeDB
 
         public bool IsConnected { get { return Ws != null && Ws.State == WebSocketState.Open; } }
 
-        public async Task Connect(string auth, string host, string nameOrAddress, Address clientAddress)
+        public async Task Connect(string? auth, string host, string nameOrAddress, Address clientAddress)
         {
             var url = new Uri($"{host}/database/subscribe/{nameOrAddress}?client_address={clientAddress}");
             Ws.Options.AddSubProtocol(_options.Protocol);
@@ -58,7 +59,7 @@ namespace SpacetimeDB
             {
                 var tokenBytes = Encoding.UTF8.GetBytes($"token:{auth}");
                 var base64 = Convert.ToBase64String(tokenBytes);
-                Ws.Options.SetRequestHeader("Authorization", "Basic " + base64);
+                Ws.Options.SetRequestHeader("Authorization", $"Basic {base64}");
             }
             else
             {
@@ -104,6 +105,7 @@ namespace SpacetimeDB
                         return;
                     }
 
+                    var startReceive = DateTime.UtcNow;
                     var count = receiveResult.Count;
                     while (receiveResult.EndOfMessage == false)
                     {
@@ -126,7 +128,7 @@ namespace SpacetimeDB
                     if (OnMessage != null)
                     {
                         var message = _receiveBuffer.Take(count).ToArray();
-                        dispatchQueue.Enqueue(() => OnMessage(message));
+                        dispatchQueue.Enqueue(() => OnMessage(message, startReceive));
                     }
                 }
                 catch (WebSocketException ex)
@@ -153,11 +155,11 @@ namespace SpacetimeDB
         /// before we start another one. This function is also thread safe, just in case.
         /// </summary>
         /// <param name="message">The message to send</param>
-        public void Send(byte[] message)
+        public void Send(ClientApi.Message message)
         {
             lock (messageSendQueue)
             {
-                messageSendQueue.Enqueue(message);
+                messageSendQueue.Enqueue(message.ToByteArray());
                 senderTask ??= Task.Run(ProcessSendQueue);
             }
         }
@@ -181,7 +183,7 @@ namespace SpacetimeDB
                         }
                     }
 
-                    await Ws!.SendAsync(message, WebSocketMessageType.Text, true, CancellationToken.None);
+                    await Ws!.SendAsync(message, WebSocketMessageType.Binary, true, CancellationToken.None);
                 }
             }
             catch (Exception e)

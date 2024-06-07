@@ -29,7 +29,7 @@
 
   <ItemGroup>
     <PackageReference Include="Google.Protobuf" Version="3.23.3" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <ProjectReference Include="../SpacetimeDB/crates/bindings-csharp/BSATN.Runtime/BSATN.Runtime.csproj" />
   </ItemGroup>
 
   <ItemGroup>

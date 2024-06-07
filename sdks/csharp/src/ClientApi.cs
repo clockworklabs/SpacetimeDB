@@ -35,44 +35,48 @@ namespace ClientApi {
             "eRgHIAEoCzIXLmNsaWVudF9hcGkuT25lT2ZmUXVlcnlIABI+ChNvbmVPZmZR",
             "dWVyeVJlc3BvbnNlGAggASgLMh8uY2xpZW50X2FwaS5PbmVPZmZRdWVyeVJl",
             "c3BvbnNlSABCBgoEdHlwZSJBCg1JZGVudGl0eVRva2VuEhAKCGlkZW50aXR5",
-            "GAEgASgMEg0KBXRva2VuGAIgASgJEg8KB2FkZHJlc3MYAyABKAwiMQoMRnVu",
-            "Y3Rpb25DYWxsEg8KB3JlZHVjZXIYASABKAkSEAoIYXJnQnl0ZXMYAiABKAwi",
-            "IgoJU3Vic2NyaWJlEhUKDXF1ZXJ5X3N0cmluZ3MYASADKAkisAIKBUV2ZW50",
-            "EhEKCXRpbWVzdGFtcBgBIAEoBBIWCg5jYWxsZXJJZGVudGl0eRgCIAEoDBIu",
-            "CgxmdW5jdGlvbkNhbGwYAyABKAsyGC5jbGllbnRfYXBpLkZ1bmN0aW9uQ2Fs",
-            "bBIoCgZzdGF0dXMYBCABKA4yGC5jbGllbnRfYXBpLkV2ZW50LlN0YXR1cxIP",
-            "CgdtZXNzYWdlGAUgASgJEhoKEmVuZXJneV9xdWFudGFfdXNlZBgGIAEoAxIm",
-            "Ch5ob3N0X2V4ZWN1dGlvbl9kdXJhdGlvbl9taWNyb3MYByABKAQSFQoNY2Fs",
-            "bGVyQWRkcmVzcxgIIAEoDCI2CgZTdGF0dXMSDQoJY29tbWl0dGVkEAASCgoG",
-            "ZmFpbGVkEAESEQoNb3V0X29mX2VuZXJneRACIkMKElN1YnNjcmlwdGlvblVw",
-            "ZGF0ZRItCgx0YWJsZVVwZGF0ZXMYASADKAsyFy5jbGllbnRfYXBpLlRhYmxl",
-            "VXBkYXRlImwKC1RhYmxlVXBkYXRlEg8KB3RhYmxlSWQYASABKA0SEQoJdGFi",
-            "bGVOYW1lGAIgASgJEjkKEnRhYmxlUm93T3BlcmF0aW9ucxgDIAMoCzIdLmNs",
-            "aWVudF9hcGkuVGFibGVSb3dPcGVyYXRpb24iggEKEVRhYmxlUm93T3BlcmF0",
-            "aW9uEjcKAm9wGAEgASgOMisuY2xpZW50X2FwaS5UYWJsZVJvd09wZXJhdGlv",
-            "bi5PcGVyYXRpb25UeXBlEgsKA3JvdxgDIAEoDCInCg1PcGVyYXRpb25UeXBl",
-            "EgoKBkRFTEVURRAAEgoKBklOU0VSVBABInEKEVRyYW5zYWN0aW9uVXBkYXRl",
-            "EiAKBWV2ZW50GAEgASgLMhEuY2xpZW50X2FwaS5FdmVudBI6ChJzdWJzY3Jp",
-            "cHRpb25VcGRhdGUYAiABKAsyHi5jbGllbnRfYXBpLlN1YnNjcmlwdGlvblVw",
-            "ZGF0ZSI1CgtPbmVPZmZRdWVyeRIRCgltZXNzYWdlSWQYASABKAwSEwoLcXVl",
-            "cnlTdHJpbmcYAiABKAkiYAoTT25lT2ZmUXVlcnlSZXNwb25zZRIRCgltZXNz",
-            "YWdlSWQYASABKAwSDQoFZXJyb3IYAiABKAkSJwoGdGFibGVzGAMgAygLMhcu",
-            "Y2xpZW50X2FwaS5PbmVPZmZUYWJsZSItCgtPbmVPZmZUYWJsZRIRCgl0YWJs",
-            "ZU5hbWUYAiABKAkSCwoDcm93GAQgAygMYgZwcm90bzM="));
+            "GAEgASgMEg0KBXRva2VuGAIgASgJEg8KB2FkZHJlc3MYAyABKAwiRAoMRnVu",
+            "Y3Rpb25DYWxsEg8KB3JlZHVjZXIYASABKAkSEAoIYXJnQnl0ZXMYAiABKAwS",
+            "EQoJcmVxdWVzdElkGAMgASgNIjUKCVN1YnNjcmliZRIVCg1xdWVyeV9zdHJp",
+            "bmdzGAEgAygJEhEKCXJlcXVlc3RJZBgCIAEoDSKwAgoFRXZlbnQSEQoJdGlt",
+            "ZXN0YW1wGAEgASgEEhYKDmNhbGxlcklkZW50aXR5GAIgASgMEi4KDGZ1bmN0",
+            "aW9uQ2FsbBgDIAEoCzIYLmNsaWVudF9hcGkuRnVuY3Rpb25DYWxsEigKBnN0",
+            "YXR1cxgEIAEoDjIYLmNsaWVudF9hcGkuRXZlbnQuU3RhdHVzEg8KB21lc3Nh",
+            "Z2UYBSABKAkSGgoSZW5lcmd5X3F1YW50YV91c2VkGAYgASgDEiYKHmhvc3Rf",
+            "ZXhlY3V0aW9uX2R1cmF0aW9uX21pY3JvcxgHIAEoBBIVCg1jYWxsZXJBZGRy",
+            "ZXNzGAggASgMIjYKBlN0YXR1cxINCgljb21taXR0ZWQQABIKCgZmYWlsZWQQ",
+            "ARIRCg1vdXRfb2ZfZW5lcmd5EAIihAEKElN1YnNjcmlwdGlvblVwZGF0ZRIt",
+            "Cgx0YWJsZVVwZGF0ZXMYASADKAsyFy5jbGllbnRfYXBpLlRhYmxlVXBkYXRl",
+            "EhEKCXJlcXVlc3RJZBgCIAEoDRIsCiR0b3RhbF9ob3N0X2V4ZWN1dGlvbl9k",
+            "dXJhdGlvbl9taWNyb3MYAyABKAQibAoLVGFibGVVcGRhdGUSDwoHdGFibGVJ",
+            "ZBgBIAEoDRIRCgl0YWJsZU5hbWUYAiABKAkSOQoSdGFibGVSb3dPcGVyYXRp",
+            "b25zGAMgAygLMh0uY2xpZW50X2FwaS5UYWJsZVJvd09wZXJhdGlvbiKCAQoR",
+            "VGFibGVSb3dPcGVyYXRpb24SNwoCb3AYASABKA4yKy5jbGllbnRfYXBpLlRh",
+            "YmxlUm93T3BlcmF0aW9uLk9wZXJhdGlvblR5cGUSCwoDcm93GAMgASgMIicK",
+            "DU9wZXJhdGlvblR5cGUSCgoGREVMRVRFEAASCgoGSU5TRVJUEAEicQoRVHJh",
+            "bnNhY3Rpb25VcGRhdGUSIAoFZXZlbnQYASABKAsyES5jbGllbnRfYXBpLkV2",
+            "ZW50EjoKEnN1YnNjcmlwdGlvblVwZGF0ZRgCIAEoCzIeLmNsaWVudF9hcGku",
+            "U3Vic2NyaXB0aW9uVXBkYXRlIjUKC09uZU9mZlF1ZXJ5EhEKCW1lc3NhZ2VJ",
+            "ZBgBIAEoDBITCgtxdWVyeVN0cmluZxgCIAEoCSKOAQoTT25lT2ZmUXVlcnlS",
+            "ZXNwb25zZRIRCgltZXNzYWdlSWQYASABKAwSDQoFZXJyb3IYAiABKAkSJwoG",
+            "dGFibGVzGAMgAygLMhcuY2xpZW50X2FwaS5PbmVPZmZUYWJsZRIsCiR0b3Rh",
+            "bF9ob3N0X2V4ZWN1dGlvbl9kdXJhdGlvbl9taWNyb3MYBCABKAQiLQoLT25l",
+            "T2ZmVGFibGUSEQoJdGFibGVOYW1lGAIgASgJEgsKA3JvdxgEIAMoDGIGcHJv",
+            "dG8z"));
       descriptor = pbr::FileDescriptor.FromGeneratedCode(descriptorData,
           new pbr::FileDescriptor[] { },
           new pbr::GeneratedClrTypeInfo(null, null, new pbr::GeneratedClrTypeInfo[] {
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.Message), global::ClientApi.Message.Parser, new[]{ "FunctionCall", "SubscriptionUpdate", "Event", "TransactionUpdate", "IdentityToken", "Subscribe", "OneOffQuery", "OneOffQueryResponse" }, new[]{ "Type" }, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.IdentityToken), global::ClientApi.IdentityToken.Parser, new[]{ "Identity", "Token", "Address" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.FunctionCall), global::ClientApi.FunctionCall.Parser, new[]{ "Reducer", "ArgBytes" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.Subscribe), global::ClientApi.Subscribe.Parser, new[]{ "QueryStrings" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.FunctionCall), global::ClientApi.FunctionCall.Parser, new[]{ "Reducer", "ArgBytes", "RequestId" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.Subscribe), global::ClientApi.Subscribe.Parser, new[]{ "QueryStrings", "RequestId" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.Event), global::ClientApi.Event.Parser, new[]{ "Timestamp", "CallerIdentity", "FunctionCall", "Status", "Message", "EnergyQuantaUsed", "HostExecutionDurationMicros", "CallerAddress" }, null, new[]{ typeof(global::ClientApi.Event.Types.Status) }, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.SubscriptionUpdate), global::ClientApi.SubscriptionUpdate.Parser, new[]{ "TableUpdates" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.SubscriptionUpdate), global::ClientApi.SubscriptionUpdate.Parser, new[]{ "TableUpdates", "RequestId", "TotalHostExecutionDurationMicros" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.TableUpdate), global::ClientApi.TableUpdate.Parser, new[]{ "TableId", "TableName", "TableRowOperations" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.TableRowOperation), global::ClientApi.TableRowOperation.Parser, new[]{ "Op", "Row" }, null, new[]{ typeof(global::ClientApi.TableRowOperation.Types.OperationType) }, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.TransactionUpdate), global::ClientApi.TransactionUpdate.Parser, new[]{ "Event", "SubscriptionUpdate" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.OneOffQuery), global::ClientApi.OneOffQuery.Parser, new[]{ "MessageId", "QueryString" }, null, null, null, null),
-            new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.OneOffQueryResponse), global::ClientApi.OneOffQueryResponse.Parser, new[]{ "MessageId", "Error", "Tables" }, null, null, null, null),
+            new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.OneOffQueryResponse), global::ClientApi.OneOffQueryResponse.Parser, new[]{ "MessageId", "Error", "Tables", "TotalHostExecutionDurationMicros" }, null, null, null, null),
             new pbr::GeneratedClrTypeInfo(typeof(global::ClientApi.OneOffTable), global::ClientApi.OneOffTable.Parser, new[]{ "TableName", "Row" }, null, null, null, null)
           }));
     }
@@ -86,6 +90,7 @@ namespace ClientApi {
   /// but I don't think we want to do that yet.
   /// TODO: Split this up into ServerBound and ClientBound if there's no overlap
   /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class Message : pb::IMessage<Message>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -724,6 +729,7 @@ namespace ClientApi {
   //// If the client connected anonymously,
   //// the database will generate new credentials to identify it.
   /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class IdentityToken : pb::IMessage<IdentityToken>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -994,10 +1000,12 @@ namespace ClientApi {
   ////
   //// - `argBytes` is the arguments to the reducer, encoded as BSATN.
   ////
+  //// - `requestId` is a identifier for client request.
   //// SpacetimeDB models reducers as taking a single `AlgebraicValue` as an argument, which
   //// generally will be a `ProductValue` containing all of the args (except the
   //// `ReducerContext`, which is injected by the host, not provided in this API).
   /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class FunctionCall : pb::IMessage<FunctionCall>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -1034,6 +1042,7 @@ namespace ClientApi {
     public FunctionCall(FunctionCall other) : this() {
       reducer_ = other.reducer_;
       argBytes_ = other.argBytes_;
+      requestId_ = other.requestId_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -1070,6 +1079,18 @@ namespace ClientApi {
       }
     }
 
+    /// <summary>Field number for the "requestId" field.</summary>
+    public const int RequestIdFieldNumber = 3;
+    private uint requestId_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public uint RequestId {
+      get { return requestId_; }
+      set {
+        requestId_ = value;
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -1087,6 +1108,7 @@ namespace ClientApi {
       }
       if (Reducer != other.Reducer) return false;
       if (ArgBytes != other.ArgBytes) return false;
+      if (RequestId != other.RequestId) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -1096,6 +1118,7 @@ namespace ClientApi {
       int hash = 1;
       if (Reducer.Length != 0) hash ^= Reducer.GetHashCode();
       if (ArgBytes.Length != 0) hash ^= ArgBytes.GetHashCode();
+      if (RequestId != 0) hash ^= RequestId.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -1122,6 +1145,10 @@ namespace ClientApi {
         output.WriteRawTag(18);
         output.WriteBytes(ArgBytes);
       }
+      if (RequestId != 0) {
+        output.WriteRawTag(24);
+        output.WriteUInt32(RequestId);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -1140,6 +1167,10 @@ namespace ClientApi {
         output.WriteRawTag(18);
         output.WriteBytes(ArgBytes);
       }
+      if (RequestId != 0) {
+        output.WriteRawTag(24);
+        output.WriteUInt32(RequestId);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -1155,6 +1186,9 @@ namespace ClientApi {
       }
       if (ArgBytes.Length != 0) {
         size += 1 + pb::CodedOutputStream.ComputeBytesSize(ArgBytes);
+      }
+      if (RequestId != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeUInt32Size(RequestId);
       }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
@@ -1173,6 +1207,9 @@ namespace ClientApi {
       }
       if (other.ArgBytes.Length != 0) {
         ArgBytes = other.ArgBytes;
+      }
+      if (other.RequestId != 0) {
+        RequestId = other.RequestId;
       }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
@@ -1197,6 +1234,10 @@ namespace ClientApi {
             ArgBytes = input.ReadBytes();
             break;
           }
+          case 24: {
+            RequestId = input.ReadUInt32();
+            break;
+          }
         }
       }
     #endif
@@ -1218,6 +1259,10 @@ namespace ClientApi {
           }
           case 18: {
             ArgBytes = input.ReadBytes();
+            break;
+          }
+          case 24: {
+            RequestId = input.ReadUInt32();
             break;
           }
         }
@@ -1245,6 +1290,7 @@ namespace ClientApi {
   //// `SubscriptionUpdate` containing every existing row that matches `B`, even if some were
   //// already in `A`.
   /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class Subscribe : pb::IMessage<Subscribe>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -1280,6 +1326,7 @@ namespace ClientApi {
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public Subscribe(Subscribe other) : this() {
       queryStrings_ = other.queryStrings_.Clone();
+      requestId_ = other.requestId_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -1300,6 +1347,18 @@ namespace ClientApi {
       get { return queryStrings_; }
     }
 
+    /// <summary>Field number for the "requestId" field.</summary>
+    public const int RequestIdFieldNumber = 2;
+    private uint requestId_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public uint RequestId {
+      get { return requestId_; }
+      set {
+        requestId_ = value;
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -1316,6 +1375,7 @@ namespace ClientApi {
         return true;
       }
       if(!queryStrings_.Equals(other.queryStrings_)) return false;
+      if (RequestId != other.RequestId) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -1324,6 +1384,7 @@ namespace ClientApi {
     public override int GetHashCode() {
       int hash = 1;
       hash ^= queryStrings_.GetHashCode();
+      if (RequestId != 0) hash ^= RequestId.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -1343,6 +1404,10 @@ namespace ClientApi {
       output.WriteRawMessage(this);
     #else
       queryStrings_.WriteTo(output, _repeated_queryStrings_codec);
+      if (RequestId != 0) {
+        output.WriteRawTag(16);
+        output.WriteUInt32(RequestId);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -1354,6 +1419,10 @@ namespace ClientApi {
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
       queryStrings_.WriteTo(ref output, _repeated_queryStrings_codec);
+      if (RequestId != 0) {
+        output.WriteRawTag(16);
+        output.WriteUInt32(RequestId);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -1365,6 +1434,9 @@ namespace ClientApi {
     public int CalculateSize() {
       int size = 0;
       size += queryStrings_.CalculateSize(_repeated_queryStrings_codec);
+      if (RequestId != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeUInt32Size(RequestId);
+      }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
       }
@@ -1378,6 +1450,9 @@ namespace ClientApi {
         return;
       }
       queryStrings_.Add(other.queryStrings_);
+      if (other.RequestId != 0) {
+        RequestId = other.RequestId;
+      }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
 
@@ -1397,6 +1472,10 @@ namespace ClientApi {
             queryStrings_.AddEntriesFrom(input, _repeated_queryStrings_codec);
             break;
           }
+          case 16: {
+            RequestId = input.ReadUInt32();
+            break;
+          }
         }
       }
     #endif
@@ -1414,6 +1493,10 @@ namespace ClientApi {
             break;
           case 10: {
             queryStrings_.AddEntriesFrom(ref input, _repeated_queryStrings_codec);
+            break;
+          }
+          case 16: {
+            RequestId = input.ReadUInt32();
             break;
           }
         }
@@ -1465,6 +1548,7 @@ namespace ClientApi {
   ////                   if and only if one was provided to the `call` HTTP endpoint.
   ////                   Reducers invoked by WebSocket will always have a `callerAddress`.
   /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class Event : pb::IMessage<Event>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -1947,7 +2031,14 @@ namespace ClientApi {
   ////
   //// A single `SubscriptionUpdate` may contain `TableUpdate` messages for multiple
   //// tables.
+  //// - `requestId` is identifier sent by the client in requests, Host should ensure to
+  ////               to include the same requestId in the response.
+  ////
+  //// - `total_host_execution_duration_micros` its the overall time between Host recevived a request
+  ////                                          and sent a `TransactionUpdate` or `SubscriptionUpdate`.
+  ////                                          '0' is default value.
   /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class SubscriptionUpdate : pb::IMessage<SubscriptionUpdate>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -1983,6 +2074,8 @@ namespace ClientApi {
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public SubscriptionUpdate(SubscriptionUpdate other) : this() {
       tableUpdates_ = other.tableUpdates_.Clone();
+      requestId_ = other.requestId_;
+      totalHostExecutionDurationMicros_ = other.totalHostExecutionDurationMicros_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -2003,6 +2096,30 @@ namespace ClientApi {
       get { return tableUpdates_; }
     }
 
+    /// <summary>Field number for the "requestId" field.</summary>
+    public const int RequestIdFieldNumber = 2;
+    private uint requestId_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public uint RequestId {
+      get { return requestId_; }
+      set {
+        requestId_ = value;
+      }
+    }
+
+    /// <summary>Field number for the "total_host_execution_duration_micros" field.</summary>
+    public const int TotalHostExecutionDurationMicrosFieldNumber = 3;
+    private ulong totalHostExecutionDurationMicros_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public ulong TotalHostExecutionDurationMicros {
+      get { return totalHostExecutionDurationMicros_; }
+      set {
+        totalHostExecutionDurationMicros_ = value;
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -2019,6 +2136,8 @@ namespace ClientApi {
         return true;
       }
       if(!tableUpdates_.Equals(other.tableUpdates_)) return false;
+      if (RequestId != other.RequestId) return false;
+      if (TotalHostExecutionDurationMicros != other.TotalHostExecutionDurationMicros) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -2027,6 +2146,8 @@ namespace ClientApi {
     public override int GetHashCode() {
       int hash = 1;
       hash ^= tableUpdates_.GetHashCode();
+      if (RequestId != 0) hash ^= RequestId.GetHashCode();
+      if (TotalHostExecutionDurationMicros != 0UL) hash ^= TotalHostExecutionDurationMicros.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -2046,6 +2167,14 @@ namespace ClientApi {
       output.WriteRawMessage(this);
     #else
       tableUpdates_.WriteTo(output, _repeated_tableUpdates_codec);
+      if (RequestId != 0) {
+        output.WriteRawTag(16);
+        output.WriteUInt32(RequestId);
+      }
+      if (TotalHostExecutionDurationMicros != 0UL) {
+        output.WriteRawTag(24);
+        output.WriteUInt64(TotalHostExecutionDurationMicros);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -2057,6 +2186,14 @@ namespace ClientApi {
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     void pb::IBufferMessage.InternalWriteTo(ref pb::WriteContext output) {
       tableUpdates_.WriteTo(ref output, _repeated_tableUpdates_codec);
+      if (RequestId != 0) {
+        output.WriteRawTag(16);
+        output.WriteUInt32(RequestId);
+      }
+      if (TotalHostExecutionDurationMicros != 0UL) {
+        output.WriteRawTag(24);
+        output.WriteUInt64(TotalHostExecutionDurationMicros);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -2068,6 +2205,12 @@ namespace ClientApi {
     public int CalculateSize() {
       int size = 0;
       size += tableUpdates_.CalculateSize(_repeated_tableUpdates_codec);
+      if (RequestId != 0) {
+        size += 1 + pb::CodedOutputStream.ComputeUInt32Size(RequestId);
+      }
+      if (TotalHostExecutionDurationMicros != 0UL) {
+        size += 1 + pb::CodedOutputStream.ComputeUInt64Size(TotalHostExecutionDurationMicros);
+      }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
       }
@@ -2081,6 +2224,12 @@ namespace ClientApi {
         return;
       }
       tableUpdates_.Add(other.tableUpdates_);
+      if (other.RequestId != 0) {
+        RequestId = other.RequestId;
+      }
+      if (other.TotalHostExecutionDurationMicros != 0UL) {
+        TotalHostExecutionDurationMicros = other.TotalHostExecutionDurationMicros;
+      }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
 
@@ -2098,6 +2247,14 @@ namespace ClientApi {
             break;
           case 10: {
             tableUpdates_.AddEntriesFrom(input, _repeated_tableUpdates_codec);
+            break;
+          }
+          case 16: {
+            RequestId = input.ReadUInt32();
+            break;
+          }
+          case 24: {
+            TotalHostExecutionDurationMicros = input.ReadUInt64();
             break;
           }
         }
@@ -2119,6 +2276,14 @@ namespace ClientApi {
             tableUpdates_.AddEntriesFrom(ref input, _repeated_tableUpdates_codec);
             break;
           }
+          case 16: {
+            RequestId = input.ReadUInt32();
+            break;
+          }
+          case 24: {
+            TotalHostExecutionDurationMicros = input.ReadUInt64();
+            break;
+          }
         }
       }
     }
@@ -2136,6 +2301,7 @@ namespace ClientApi {
   ////
   //// `tableRowOperations` are actual modified rows.
   /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class TableUpdate : pb::IMessage<TableUpdate>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -2402,6 +2568,7 @@ namespace ClientApi {
   ////
   //// - `row` is the row itself, encoded as BSATN.
   /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class TableRowOperation : pb::IMessage<TableRowOperation>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -2652,6 +2819,7 @@ namespace ClientApi {
   ////
   //// - `subscriptionUpdate` contains changes to subscribed rows.
   /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class TransactionUpdate : pb::IMessage<TransactionUpdate>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -2906,6 +3074,7 @@ namespace ClientApi {
   //// To avoid data leaks, the server will NOT cache responses to messages based on UUID!
   //// It also will not check for duplicate IDs. They are just a way to match responses to messages. 
   /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class OneOffQuery : pb::IMessage<OneOffQuery>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -3139,6 +3308,7 @@ namespace ClientApi {
   ////
   //// The messageId will be identical to the one sent in the original query.
   /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class OneOffQueryResponse : pb::IMessage<OneOffQueryResponse>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
@@ -3176,6 +3346,7 @@ namespace ClientApi {
       messageId_ = other.messageId_;
       error_ = other.error_;
       tables_ = other.tables_.Clone();
+      totalHostExecutionDurationMicros_ = other.totalHostExecutionDurationMicros_;
       _unknownFields = pb::UnknownFieldSet.Clone(other._unknownFields);
     }
 
@@ -3220,6 +3391,18 @@ namespace ClientApi {
       get { return tables_; }
     }
 
+    /// <summary>Field number for the "total_host_execution_duration_micros" field.</summary>
+    public const int TotalHostExecutionDurationMicrosFieldNumber = 4;
+    private ulong totalHostExecutionDurationMicros_;
+    [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
+    [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
+    public ulong TotalHostExecutionDurationMicros {
+      get { return totalHostExecutionDurationMicros_; }
+      set {
+        totalHostExecutionDurationMicros_ = value;
+      }
+    }
+
     [global::System.Diagnostics.DebuggerNonUserCodeAttribute]
     [global::System.CodeDom.Compiler.GeneratedCode("protoc", null)]
     public override bool Equals(object other) {
@@ -3238,6 +3421,7 @@ namespace ClientApi {
       if (MessageId != other.MessageId) return false;
       if (Error != other.Error) return false;
       if(!tables_.Equals(other.tables_)) return false;
+      if (TotalHostExecutionDurationMicros != other.TotalHostExecutionDurationMicros) return false;
       return Equals(_unknownFields, other._unknownFields);
     }
 
@@ -3248,6 +3432,7 @@ namespace ClientApi {
       if (MessageId.Length != 0) hash ^= MessageId.GetHashCode();
       if (Error.Length != 0) hash ^= Error.GetHashCode();
       hash ^= tables_.GetHashCode();
+      if (TotalHostExecutionDurationMicros != 0UL) hash ^= TotalHostExecutionDurationMicros.GetHashCode();
       if (_unknownFields != null) {
         hash ^= _unknownFields.GetHashCode();
       }
@@ -3275,6 +3460,10 @@ namespace ClientApi {
         output.WriteString(Error);
       }
       tables_.WriteTo(output, _repeated_tables_codec);
+      if (TotalHostExecutionDurationMicros != 0UL) {
+        output.WriteRawTag(32);
+        output.WriteUInt64(TotalHostExecutionDurationMicros);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(output);
       }
@@ -3294,6 +3483,10 @@ namespace ClientApi {
         output.WriteString(Error);
       }
       tables_.WriteTo(ref output, _repeated_tables_codec);
+      if (TotalHostExecutionDurationMicros != 0UL) {
+        output.WriteRawTag(32);
+        output.WriteUInt64(TotalHostExecutionDurationMicros);
+      }
       if (_unknownFields != null) {
         _unknownFields.WriteTo(ref output);
       }
@@ -3311,6 +3504,9 @@ namespace ClientApi {
         size += 1 + pb::CodedOutputStream.ComputeStringSize(Error);
       }
       size += tables_.CalculateSize(_repeated_tables_codec);
+      if (TotalHostExecutionDurationMicros != 0UL) {
+        size += 1 + pb::CodedOutputStream.ComputeUInt64Size(TotalHostExecutionDurationMicros);
+      }
       if (_unknownFields != null) {
         size += _unknownFields.CalculateSize();
       }
@@ -3330,6 +3526,9 @@ namespace ClientApi {
         Error = other.Error;
       }
       tables_.Add(other.tables_);
+      if (other.TotalHostExecutionDurationMicros != 0UL) {
+        TotalHostExecutionDurationMicros = other.TotalHostExecutionDurationMicros;
+      }
       _unknownFields = pb::UnknownFieldSet.MergeFrom(_unknownFields, other._unknownFields);
     }
 
@@ -3355,6 +3554,10 @@ namespace ClientApi {
           }
           case 26: {
             tables_.AddEntriesFrom(input, _repeated_tables_codec);
+            break;
+          }
+          case 32: {
+            TotalHostExecutionDurationMicros = input.ReadUInt64();
             break;
           }
         }
@@ -3384,6 +3587,10 @@ namespace ClientApi {
             tables_.AddEntriesFrom(ref input, _repeated_tables_codec);
             break;
           }
+          case 32: {
+            TotalHostExecutionDurationMicros = input.ReadUInt64();
+            break;
+          }
         }
       }
     }
@@ -3394,6 +3601,7 @@ namespace ClientApi {
   /// <summary>
   //// A table included as part of a one-off query.
   /// </summary>
+  [global::System.Diagnostics.DebuggerDisplayAttribute("{ToString(),nq}")]
   public sealed partial class OneOffTable : pb::IMessage<OneOffTable>
   #if !GOOGLE_PROTOBUF_REFSTRUCT_COMPATIBILITY_MODE
       , pb::IBufferMessage
