@@ -5,6 +5,7 @@ use core::fmt;
 use derive_more::From;
 use spacetimedb_lib::{Address, Identity, SumType};
 use spacetimedb_primitives::*;
+use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::hash::Hash;
@@ -14,6 +15,8 @@ use spacetimedb_sats::{
     SumValue,
 };
 use spacetimedb_table::table::RowRef;
+use spacetimedb_vm::errors::{ErrorType, ErrorVm};
+use spacetimedb_vm::ops::parse;
 use std::ops::Deref as _;
 use std::str::FromStr;
 use strum::Display;
@@ -773,7 +776,7 @@ impl StVarTable {
 
     /// Read the value of [ST_VARNAME_SLOW_SUB] from `st_var`
     pub fn sub_limit(ctx: &ExecutionContext, db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(ms)) = Self::read_var(ctx, db, tx, StVarName::SlowQryThreshold)? {
+        if let Some(StVarValue::U64(ms)) = Self::read_var(ctx, db, tx, StVarName::SlowSubThreshold)? {
             return Ok(Some(ms));
         }
         Ok(None)
@@ -781,7 +784,7 @@ impl StVarTable {
 
     /// Read the value of [ST_VARNAME_SLOW_INC] from `st_var`
     pub fn incr_limit(ctx: &ExecutionContext, db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(ms)) = Self::read_var(ctx, db, tx, StVarName::SlowQryThreshold)? {
+        if let Some(StVarValue::U64(ms)) = Self::read_var(ctx, db, tx, StVarName::SlowIncThreshold)? {
             return Ok(Some(ms));
         }
         Ok(None)
@@ -809,8 +812,9 @@ impl StVarTable {
         db: &RelationalDB,
         tx: &mut MutTxId,
         name: StVarName,
-        value: StVarValue,
+        literal: &str,
     ) -> Result<(), DBError> {
+        let value = Self::parse_var(name, literal)?;
         if let Some(row_ref) = db
             .iter_by_col_eq_mut(ctx, tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
             .next()
@@ -819,6 +823,18 @@ impl StVarTable {
         }
         db.insert(tx, ST_VAR_ID, ProductValue::from(StVarRow { name, value }))?;
         Ok(())
+    }
+
+    /// Parse the literal representation of a system variable
+    fn parse_var(name: StVarName, literal: &str) -> Result<StVarValue, DBError> {
+        StVarValue::try_from_primitive(parse::parse(literal, &name.type_of())?).map_err(|v| {
+            ErrorVm::Type(ErrorType::Parse {
+                value: literal.to_string(),
+                ty: fmt_algebraic_type(&name.type_of()).to_string(),
+                err: format!("error parsing value: {:?}", v),
+            })
+            .into()
+        })
     }
 }
 
@@ -1095,7 +1111,7 @@ mod tests {
         let db = TestDB::durable().expect("failed to create db");
         let ctx = ExecutionContext::default();
         let _ = db.with_auto_commit(&ctx, |tx| {
-            StVarTable::write_var(&ctx, &db, tx, StVarName::RowLimit, StVarValue::U64(5))
+            StVarTable::write_var(&ctx, &db, tx, StVarName::RowLimit, "5")
         });
         assert_eq!(
             5,

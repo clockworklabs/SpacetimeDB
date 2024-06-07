@@ -276,8 +276,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
         log::debug!("One-off query: {query}");
         // Don't need the `slow query` logger on compilation
-        let ctx = &ExecutionContext::sql(db.address(), db.read_config().slow_query);
-        db.with_read_only(ctx, |tx| {
+        db.with_read_only(&ExecutionContext::sql(db.address()), |tx| {
             let ast = sql::compiler::compile_sql(db, tx, &query)?;
             sql::execute::execute_sql_tx(db, tx, &query, ast, auth)
                 .and_then(|res| Ok(res.context("One-off queries are not allowed to modify the database")?))

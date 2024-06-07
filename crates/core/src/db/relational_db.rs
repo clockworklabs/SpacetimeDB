@@ -10,12 +10,9 @@ use super::datastore::{
 };
 use super::db_metrics::DB_METRICS;
 use super::relational_operators::Relation;
-use crate::config::DatabaseConfig;
 use crate::error::{DBError, DatabaseError, TableError};
 use crate::execution_context::ExecutionContext;
-use crate::util::slow::SlowQueryConfig;
 use fs2::FileExt;
-use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
 use spacetimedb_durability::{self as durability, Durability};
 use spacetimedb_lib::address::Address;
@@ -26,7 +23,6 @@ use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, Tabl
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_table::indexes::RowPointer;
-use spacetimedb_vm::errors::ErrorVm;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fs::{create_dir_all, File};
@@ -66,8 +62,6 @@ pub struct RelationalDB {
     /// Function to determine the durable size on disk. `Some` if `durability`
     /// is `Some`, `None` otherwise.
     disk_size_fn: Option<DiskSizeFn>,
-
-    config: Arc<RwLock<DatabaseConfig>>,
 
     // DO NOT ADD FIELDS AFTER THIS.
     // By default, fields are dropped in declaration order.
@@ -158,7 +152,6 @@ impl RelationalDB {
             disk_size_fn,
 
             _lock: Arc::new(lock),
-            config: Arc::new(RwLock::new(DatabaseConfig::new(SlowQueryConfig::with_defaults(), None))),
         })
     }
 
@@ -860,16 +853,6 @@ impl RelationalDB {
     /// is, an impl of [`crate::host::ModuleInstance`].
     pub(crate) fn set_program_hash(&self, tx: &mut MutTx, fence: u128, hash: Hash) -> Result<(), DBError> {
         self.inner.set_program_hash(tx, fence, hash)
-    }
-
-    /// Set a runtime configurations setting of the database
-    pub(crate) fn set_config(&self, key: &str, value: AlgebraicValue) -> Result<(), ErrorVm> {
-        self.config.write().set_config(key, value)
-    }
-
-    /// Read the runtime configurations settings of the database
-    pub(crate) fn read_config(&self) -> DatabaseConfig {
-        *self.config.read()
     }
 }
 
@@ -1789,7 +1772,7 @@ mod tests {
             let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
             stdb.insert(&mut tx, table_id, product!(AlgebraicValue::I32(-42)))
                 .expect("failed to insert row");
-            stdb.commit_tx(&ExecutionContext::sql(stdb.address(), Default::default()), tx)
+            stdb.commit_tx(&ExecutionContext::sql(stdb.address()), tx)
                 .expect("failed to commit tx");
         }
 

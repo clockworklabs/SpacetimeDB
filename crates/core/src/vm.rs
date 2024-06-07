@@ -2,7 +2,7 @@
 
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::datastore::locking_tx_datastore::IterByColRange;
-use crate::db::datastore::system_tables::{st_var_schema, StVarName, StVarRow, StVarTable, StVarValue};
+use crate::db::datastore::system_tables::{st_var_schema, StVarName, StVarRow, StVarTable};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
@@ -395,7 +395,7 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoinRight<'a, '_, Rhs> {
 /// A [ProgramVm] implementation that carry a [RelationalDB] for it
 /// query execution
 pub struct DbProgram<'db, 'tx> {
-    ctx: &'tx ExecutionContext,
+    pub(crate) ctx: &'tx ExecutionContext,
     pub(crate) db: &'db RelationalDB,
     pub(crate) tx: &'tx mut TxMode<'tx>,
     pub(crate) auth: AuthCtx,
@@ -574,22 +574,9 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         Ok(Code::Pass(None))
     }
 
-    fn _set_config(&mut self, name: String, value: AlgebraicValue) -> Result<Code, ErrorVm> {
-        self.db.set_config(&name, value)?;
-        Ok(Code::Pass(None))
-    }
-
-    fn _read_config(&self, name: String) -> Result<Code, ErrorVm> {
-        let config = self.db.read_config();
-        Ok(Code::Table(config.read_key_into_table(&name)?))
-    }
-
-    fn _set_var(&mut self, name: String, value: AlgebraicValue) -> Result<Code, ErrorVm> {
-        let var = StVarName::from_str(&name)?;
+    fn _set_var(&mut self, name: String, literal: String) -> Result<Code, ErrorVm> {
         let tx = self.tx.unwrap_mut();
-        let value = StVarValue::try_from_primitive(value)
-            .map_err(|v| anyhow::anyhow!("Invalid value for system variable {name}: {v:?}"))?;
-        StVarTable::write_var(self.ctx, self.db, tx, var, value)?;
+        StVarTable::write_var(self.ctx, self.db, tx, StVarName::from_str(&name)?, &literal)?;
         Ok(Code::Pass(None))
     }
 
@@ -622,11 +609,8 @@ impl ProgramVm for DbProgram<'_, '_> {
             CrudExpr::Delete { query } => self._delete_query(&query, sources),
             CrudExpr::CreateTable { table } => self._create_table(*table),
             CrudExpr::Drop { name, kind, .. } => self._drop(&name, kind),
-            CrudExpr::SetVar { name, value } => {
-                self._set_var(name.clone(), value.clone())?;
-                self._set_config(name, value)
-            }
-            CrudExpr::ReadVar { name } => self._read_config(name),
+            CrudExpr::SetVar { name, literal } => self._set_var(name, literal),
+            CrudExpr::ReadVar { name } => self._read_var(name),
         }
     }
 }
