@@ -16,7 +16,7 @@ bench = false
 
 [dependencies]
 spacetimedb-data-structures.workspace = true
-spacetimedb-lib = { workspace = true, features = ["serde"] }
+spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"] }
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-commitlog.workspace = true
 spacetimedb-durability.workspace = true
@@ -45,6 +45,7 @@ enum-map.workspace = true
 flate2.workspace = true
 fs2.workspace = true
 futures.workspace = true
+hashbrown = { workspace = true, features = ["rayon", "serde"] }
 hex.workspace = true
 hostname.workspace = true
 hyper.workspace = true
