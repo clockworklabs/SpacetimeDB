@@ -1,3 +1,34 @@
+use proc_macro2::Span;
+
+pub(crate) trait ErrorSource {
+    fn error(self, msg: impl std::fmt::Display) -> syn::Error;
+}
+impl ErrorSource for Span {
+    fn error(self, msg: impl std::fmt::Display) -> syn::Error {
+        syn::Error::new(self, msg)
+    }
+}
+impl ErrorSource for &syn::meta::ParseNestedMeta<'_> {
+    fn error(self, msg: impl std::fmt::Display) -> syn::Error {
+        self.error(msg)
+    }
+}
+/// Ensures that `x` is `None` or returns an error.
+pub(crate) fn check_duplicate<T>(x: &Option<T>, src: impl ErrorSource) -> syn::Result<()> {
+    check_duplicate_msg(x, src, "duplicate attribute")
+}
+pub(crate) fn check_duplicate_msg<T>(
+    x: &Option<T>,
+    src: impl ErrorSource,
+    msg: impl std::fmt::Display,
+) -> syn::Result<()> {
+    if x.is_none() {
+        Ok(())
+    } else {
+        Err(src.error(msg))
+    }
+}
+
 pub(crate) fn one_of(options: &[crate::sym::Symbol]) -> String {
     match options {
         [] => "unexpected attribute".to_owned(),
@@ -30,7 +61,7 @@ macro_rules! match_meta {
     (@match ($($acc:tt)*), ($($comparisons:expr),*), $meta:ident {}) => {
         match () {
             $($acc)*
-            _ => return Err($meta.error($crate::macros::one_of(&[$($comparisons),*]))),
+            _ => return Err($meta.error($crate::util::one_of(&[$($comparisons),*]))),
         }
     };
 
