@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_names)]
 use spacetimedb::sats::db::auth::StAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
-use spacetimedb::{query, Deserialize, ReducerContext, SpacetimeType, TableType, Timestamp};
+use spacetimedb::{query, table, Deserialize, ReducerContext, SpacetimeType, TableType, Timestamp};
 
 #[spacetimedb::table]
 pub struct TestA {
@@ -23,7 +23,7 @@ pub enum TestC {
     Bar,
 }
 
-#[spacetimedb::table(public)]
+#[table(public)]
 pub struct TestD {
     test_c: Option<TestC>,
 }
