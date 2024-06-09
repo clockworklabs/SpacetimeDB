@@ -15,12 +15,13 @@ proptest = ["dep:proptest", "dep:proptest-derive"]
 # Used by `spacetimedb_table`,
 # which serializes and deserializes Blake3 hashes during snapshotting.
 blake3 = ["dep:blake3"]
+metrics_impls = ["dep:spacetimedb-metrics"]
 
 [dependencies]
 spacetimedb-bindings-macro.workspace = true
 spacetimedb-data-structures.workspace = true
 spacetimedb-primitives.workspace = true
-spacetimedb-metrics.workspace = true
+spacetimedb-metrics = { workspace = true, optional = true }
 
 arrayvec.workspace = true
 bitflags.workspace = true

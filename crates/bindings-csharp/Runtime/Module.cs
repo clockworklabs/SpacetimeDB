@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using SpacetimeDB.SATS;
+using SpacetimeDB.BSATN;
 
 [SpacetimeDB.Type]
 public partial struct IndexDef(
@@ -114,51 +114,12 @@ partial struct TypeAlias(string name, AlgebraicType.Ref typeRef)
 partial record MiscModuleExport : SpacetimeDB.TaggedEnum<(TypeAlias TypeAlias, Unit _Reserved)>;
 
 [SpacetimeDB.Type]
-public partial struct ModuleDef
+public partial struct ModuleDef()
 {
-    List<AlgebraicType> Types = [];
-    List<TableDesc> Tables = [];
-    List<ReducerDef> Reducers = [];
-    List<MiscModuleExport> MiscExports = [];
-
-    public ModuleDef() { }
-
-    public AlgebraicType.Ref AllocTypeRef()
-    {
-        var index = Types.Count;
-        var typeRef = new AlgebraicType.Ref(index);
-        // to be replaced by a real type
-        Types.Add(AlgebraicType.Uninhabited);
-        return typeRef;
-    }
-
-    // Note: this intends to generate a valid identifier, but it's not guaranteed to be unique as it's not proper mangling.
-    // Fix it up to a different mangling scheme if it causes problems.
-    private static string GetFriendlyName(Type type) =>
-        type.IsGenericType
-            ? $"{type.Name.Remove(type.Name.IndexOf('`'))}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
-            : type.Name;
-
-    public void SetTypeRef<T>(AlgebraicType.Ref typeRef, AlgebraicType type, bool anonymous = false)
-    {
-        Types[typeRef.Ref_] = type;
-        if (!anonymous)
-        {
-            MiscExports.Add(
-                new MiscModuleExport.TypeAlias(new TypeAlias(GetFriendlyName(typeof(T)), typeRef))
-            );
-        }
-    }
-
-    public void Add(TableDesc table)
-    {
-        Tables.Add(table);
-    }
-
-    public void Add(ReducerDef reducer)
-    {
-        Reducers.Add(reducer);
-    }
+    internal List<AlgebraicType> Types = [];
+    public List<TableDesc> Tables = [];
+    public List<ReducerDef> Reducers = [];
+    internal List<MiscModuleExport> MiscExports = [];
 }
 
 [System.Flags]
@@ -184,40 +145,78 @@ public static class ReducerKind
 
 public interface IReducer
 {
-    SpacetimeDB.Module.ReducerDef MakeReducerDef();
+    SpacetimeDB.Module.ReducerDef MakeReducerDef(ITypeRegistrar registrar);
     void Invoke(System.IO.BinaryReader reader, Runtime.ReducerContext args);
+}
+
+public struct TypeRegistrar() : ITypeRegistrar
+{
+    public ModuleDef Module = new();
+    private Dictionary<Type, AlgebraicType.Ref> RegisteredTypes = [];
+
+    // Note: this intends to generate a valid identifier, but it's not guaranteed to be unique as it's not proper mangling.
+    // Fix it up to a different mangling scheme if it causes problems.
+    private static string GetFriendlyName(Type type) =>
+        type.IsGenericType
+            ? $"{type.Name.Remove(type.Name.IndexOf('`'))}_{string.Join("_", type.GetGenericArguments().Select(GetFriendlyName))}"
+            : type.Name;
+
+    // Registers type in the module definition.
+    //
+    // To avoid issues with self-recursion during registration as well as unnecessary construction
+    // of algebraic types for types that have already been registered, we accept a factory
+    // returning an AlgebraicType instead of the AlgebraicType itself.
+    //
+    // The factory callback will be called with the allocated type reference that can be used for
+    // e.g. self-recursion even before the algebraic type itself is constructed.
+    public AlgebraicType.Ref RegisterType<T>(Func<AlgebraicType.Ref, AlgebraicType> makeType)
+    {
+        if (RegisteredTypes.TryGetValue(typeof(T), out var existingTypeRef))
+        {
+            return existingTypeRef;
+        }
+        var typeRef = new AlgebraicType.Ref(Module.Types.Count);
+        RegisteredTypes.Add(typeof(T), typeRef);
+        // Put a dummy value just so that we get stable index even if `makeType` recursively adds more types.
+        Module.Types.Add(typeRef);
+        // Now we can safely call `makeType`.
+        var realType = makeType(typeRef);
+        // And, finally, replace the dummy value with the real one.
+        Module.Types[typeRef.Ref_] = realType;
+        // If it's a table, it doesn't need an alias and will be registered automatically.
+        if (!typeof(T).IsDefined(typeof(SpacetimeDB.TableAttribute), false))
+        {
+            Module.MiscExports.Add(
+                new MiscModuleExport.TypeAlias(new TypeAlias(GetFriendlyName(typeof(T)), typeRef))
+            );
+        }
+        return typeRef;
+    }
 }
 
 public static class FFI
 {
-    private static List<IReducer> reducers = [];
-    private static ModuleDef module = new();
+    private static readonly List<IReducer> reducers = [];
+    public static readonly TypeRegistrar TypeRegistrar = new();
 
     public static void RegisterReducer(IReducer reducer)
     {
         reducers.Add(reducer);
-        module.Add(reducer.MakeReducerDef());
+        TypeRegistrar.Module.Reducers.Add(reducer.MakeReducerDef(TypeRegistrar));
     }
 
-    public static void RegisterTable(TableDesc table) => module.Add(table);
-
-    public static AlgebraicType.Ref AllocTypeRef() => module.AllocTypeRef();
-
-    public static void SetTypeRef<T>(
-        AlgebraicType.Ref typeRef,
-        AlgebraicType type,
-        bool anonymous = false
-    ) => module.SetTypeRef<T>(typeRef, type, anonymous);
+    public static void RegisterTable(TableDesc tableDesc)
+    {
+        TypeRegistrar.Module.Tables.Add(tableDesc);
+    }
 
     public static RawBindings.Buffer __describe_module__()
     {
         // replace `module` with a temporary internal module that will register ModuleDef, AlgebraicType and other internal types
         // during the ModuleDef.GetSatsTypeInfo() instead of exposing them via user's module.
-        var userModule = module;
         try
         {
-            module = new();
-            var moduleBytes = ModuleDef.GetSatsTypeInfo().ToBytes(userModule);
+            var moduleBytes = IStructuralReadWrite.ToBytes(TypeRegistrar.Module);
             var res = RawBindings._buffer_alloc(moduleBytes, (uint)moduleBytes.Length);
             return res;
         }
@@ -225,10 +224,6 @@ public static class FFI
         {
             Runtime.Log($"Error while describing the module: {e}", Runtime.LogLevel.Error);
             return RawBindings.Buffer.INVALID;
-        }
-        finally
-        {
-            module = userModule;
         }
     }
 

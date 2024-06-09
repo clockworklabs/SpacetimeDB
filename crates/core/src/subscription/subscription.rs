@@ -48,6 +48,7 @@ use std::hash::Hash;
 use std::iter;
 use std::ops::Deref;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// A [`QueryExpr`] tagged with [`query::Supported`].
 ///
@@ -521,31 +522,44 @@ impl ExecutionSet {
         protocol: Protocol,
         db: &RelationalDB,
         tx: &Tx,
+        slow_query_threshold: Option<Duration>,
     ) -> ProtocolDatabaseUpdate {
         let tables = match protocol {
-            Protocol::Binary => Either::Left(self.eval_binary(ctx, db, tx)),
-            Protocol::Text => Either::Right(self.eval_json(ctx, db, tx)),
+            Protocol::Binary => Either::Left(self.eval_binary(ctx, db, tx, slow_query_threshold)),
+            Protocol::Text => Either::Right(self.eval_json(ctx, db, tx, slow_query_threshold)),
         };
         ProtocolDatabaseUpdate { tables }
     }
 
     #[tracing::instrument(skip_all)]
-    fn eval_json(&self, ctx: &ExecutionContext, db: &RelationalDB, tx: &Tx) -> Vec<TableUpdateJson> {
+    fn eval_json(
+        &self,
+        ctx: &ExecutionContext,
+        db: &RelationalDB,
+        tx: &Tx,
+        slow_query_threshold: Option<Duration>,
+    ) -> Vec<TableUpdateJson> {
         // evaluate each of the execution units in this ExecutionSet in parallel
         self.exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
-            .filter_map(|unit| unit.eval_json(ctx, db, tx, &unit.sql))
+            .filter_map(|unit| unit.eval_json(ctx, db, tx, &unit.sql, slow_query_threshold))
             .collect()
     }
 
     #[tracing::instrument(skip_all)]
-    fn eval_binary(&self, ctx: &ExecutionContext, db: &RelationalDB, tx: &Tx) -> Vec<TableUpdate> {
+    fn eval_binary(
+        &self,
+        ctx: &ExecutionContext,
+        db: &RelationalDB,
+        tx: &Tx,
+        slow_query_threshold: Option<Duration>,
+    ) -> Vec<TableUpdate> {
         // evaluate each of the execution units in this ExecutionSet in parallel
         self.exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
-            .filter_map(|unit| unit.eval_binary(ctx, db, tx, &unit.sql))
+            .filter_map(|unit| unit.eval_binary(ctx, db, tx, &unit.sql, slow_query_threshold))
             .collect()
     }
 
@@ -556,10 +570,18 @@ impl ExecutionSet {
         db: &'a RelationalDB,
         tx: &'a TxMode<'a>,
         database_update: &'a [&'a DatabaseTableUpdate],
+        slow_query_threshold: Option<Duration>,
     ) -> DatabaseUpdateRelValue<'a> {
         let mut tables = Vec::new();
         for unit in &self.exec_units {
-            if let Some(table) = unit.eval_incr(ctx, db, tx, &unit.sql, database_update.iter().copied()) {
+            if let Some(table) = unit.eval_incr(
+                ctx,
+                db,
+                tx,
+                &unit.sql,
+                database_update.iter().copied(),
+                slow_query_threshold,
+            ) {
                 tables.push(table);
             }
         }

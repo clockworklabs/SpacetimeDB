@@ -83,7 +83,7 @@ pub struct TableDesc {
 }
 
 impl TableDesc {
-    pub fn into_table_def(table: WithTypespace<'_, TableDesc>) -> anyhow::Result<spacetimedb_sats::db::def::TableDef> {
+    pub fn into_table_def(table: WithTypespace<'_, TableDesc>) -> anyhow::Result<TableDef> {
         let schema = table
             .map(|t| &t.data)
             .resolve_refs()

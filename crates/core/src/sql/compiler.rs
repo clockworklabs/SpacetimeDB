@@ -220,7 +220,7 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
         SqlAst::Delete { table, selection } => compile_delete(table, selection)?,
         SqlAst::CreateTable { table } => compile_create_table(table),
         SqlAst::Drop { name, kind } => CrudExpr::Drop { name, kind },
-        SqlAst::SetVar { name, value } => CrudExpr::SetVar { name, value },
+        SqlAst::SetVar { name, literal } => CrudExpr::SetVar { name, literal },
         SqlAst::ReadVar { name } => CrudExpr::ReadVar { name },
     };
 

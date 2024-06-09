@@ -4,6 +4,7 @@ use super::query::compile_read_only_query;
 use super::subscription::ExecutionSet;
 use crate::client::messages::{SubscriptionUpdate, SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
+use crate::db::datastore::system_tables::StVarTable;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
@@ -16,6 +17,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::AuthAccess;
+use std::time::Duration;
 use std::{sync::Arc, time::Instant};
 
 type Subscriptions = Arc<RwLock<SubscriptionManager>>;
@@ -49,8 +51,7 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(), DBError> {
-        let config = self.relational_db.read_config();
-        let ctx = ExecutionContext::subscribe(self.relational_db.address(), config.slow_query);
+        let ctx = ExecutionContext::subscribe(self.relational_db.address());
         let tx = scopeguard::guard(self.relational_db.begin_tx(), |tx| {
             self.relational_db.release_tx(&ctx, tx);
         });
@@ -103,13 +104,15 @@ impl ModuleSubscriptions {
 
         check_row_limit(
             &execution_set,
+            &ctx,
+            &self.relational_db,
             &tx,
             |execution_set, tx| execution_set.row_estimate(tx),
             &auth,
-            &config,
         )?;
 
-        let database_update = execution_set.eval(&ctx, sender.protocol, &self.relational_db, &tx);
+        let slow_query_threshold = StVarTable::sub_limit(&ctx, &self.relational_db, &tx)?.map(Duration::from_millis);
+        let database_update = execution_set.eval(&ctx, sender.protocol, &self.relational_db, &tx, slow_query_threshold);
 
         WORKER_METRICS
             .initial_subscription_evals
@@ -183,7 +186,11 @@ impl ModuleSubscriptions {
         let event = Arc::new(event);
 
         match &event.status {
-            EventStatus::Committed(_) => subscriptions.eval_updates(stdb, &read_tx, event.clone(), client),
+            EventStatus::Committed(_) => {
+                let ctx = ExecutionContext::incremental_update(stdb.address());
+                let slow_query_threshold = StVarTable::incr_limit(&ctx, stdb, &read_tx)?.map(Duration::from_millis);
+                subscriptions.eval_updates(&ctx, stdb, &read_tx, event.clone(), client, slow_query_threshold)
+            }
             EventStatus::Failed(_) => {
                 if let Some(client) = client {
                     let message = TransactionUpdateMessage::<DatabaseUpdate> {

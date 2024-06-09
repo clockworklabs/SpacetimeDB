@@ -1,3 +1,4 @@
+// Note: the generated code depends on APIs and interfaces from crates/bindings-csharp/BSATN.Runtime.
 use super::util::fmt_fn;
 
 use std::fmt::{self, Write};
@@ -5,14 +6,12 @@ use std::ops::Deref;
 
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::db::def::TableSchema;
-use spacetimedb_lib::sats::{
-    AlgebraicType, AlgebraicType::Builtin, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, SumType,
-};
+use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, SumType};
 use spacetimedb_lib::{ReducerDef, TableDesc};
 use spacetimedb_primitives::ColList;
 
 use super::code_indenter::CodeIndenter;
-use super::{GenCtx, GenItem, INDENT};
+use super::{GenCtx, GenItem};
 
 enum MaybePrimitive<'a> {
     Primitive(&'static str),
@@ -48,32 +47,7 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
         AlgebraicType::Sum(sum_type) => {
             // This better be an option type
             if let Some(inner_ty) = sum_type.as_option() {
-                match inner_ty {
-                    Builtin(b) => match b {
-                        BuiltinType::Bool
-                        | BuiltinType::I8
-                        | BuiltinType::U8
-                        | BuiltinType::I16
-                        | BuiltinType::U16
-                        | BuiltinType::I32
-                        | BuiltinType::U32
-                        | BuiltinType::I64
-                        | BuiltinType::U64
-                        | BuiltinType::I128
-                        | BuiltinType::U128
-                        | BuiltinType::F32
-                        | BuiltinType::F64 => {
-                            // This has to be a nullable type.
-                            write!(f, "{}?", ty_fmt(ctx, inner_ty, namespace))
-                        }
-                        _ => {
-                            write!(f, "{}", ty_fmt(ctx, inner_ty, namespace))
-                        }
-                    },
-                    _ => {
-                        write!(f, "{}", ty_fmt(ctx, inner_ty, namespace))
-                    }
-                }
+                write!(f, "{}?", ty_fmt(ctx, inner_ty, namespace))
             } else {
                 unimplemented!()
             }
@@ -132,152 +106,29 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
     })
 }
 
-fn convert_builtintype<'a>(
-    ctx: &'a GenCtx,
-    vecnest: usize,
-    b: &'a BuiltinType,
-    value: impl fmt::Display + 'a,
-    namespace: &'a str,
-) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| match maybe_primitive(b) {
-        MaybePrimitive::Primitive(_) => {
-            write!(f, "{value}.As{b:?}()")
-        }
-        MaybePrimitive::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => {
-            write!(f, "{value}.AsBytes()")
-        }
-        MaybePrimitive::Array(ArrayType { elem_ty }) => {
-            let csharp_type = ty_fmt(ctx, elem_ty, namespace);
-            writeln!(
-                f,
-                "((System.Func<System.Collections.Generic.List<{csharp_type}>>)(() => {{"
-            )?;
-            writeln!(
-                f,
-                "\tvar vec{vecnest} = new System.Collections.Generic.List<{csharp_type}>();"
-            )?;
-            writeln!(f, "\tvar vec{vecnest}_source = {value}.AsArray();")?;
-            writeln!(f, "\tforeach(var entry in vec{vecnest}_source!)")?;
-            writeln!(f, "\t{{")?;
-            writeln!(
-                f,
-                "\t\tvec{vecnest}.Add({});",
-                convert_type(ctx, vecnest + 1, elem_ty, "entry", namespace)
-            )?;
-            writeln!(f, "\t}}")?;
-            writeln!(f, "\treturn vec{vecnest};")?;
-            write!(f, "}}))()")
-        }
-        MaybePrimitive::Map(_) => todo!(),
-    })
-}
-
-fn convert_type<'a>(
-    ctx: &'a GenCtx,
-    vecnest: usize,
-    ty: &'a AlgebraicType,
-    value: impl fmt::Display + 'a,
-    namespace: &'a str,
-) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| match ty {
-        AlgebraicType::Product(product) => {
-            if product.is_identity() {
-                write!(
-                    f,
-                    "SpacetimeDB.Identity.From({value}.AsProductValue().elements[0].AsBytes())"
-                )
-            } else if product.is_address() {
-                write!(
-                    f,
-                    "(SpacetimeDB.Address)SpacetimeDB.Address.From({value}.AsProductValue().elements[0].AsBytes())"
-                )
-            } else {
-                unimplemented!()
-            }
-        }
+fn default_init(ctx: &GenCtx, ty: &AlgebraicType) -> &'static str {
+    match ty {
         AlgebraicType::Sum(sum_type) => {
-            if let Some(inner_ty) = sum_type.as_option() {
-                match inner_ty {
-                    Builtin(ty) => match ty {
-                        BuiltinType::Bool
-                        | BuiltinType::I8
-                        | BuiltinType::U8
-                        | BuiltinType::I16
-                        | BuiltinType::U16
-                        | BuiltinType::I32
-                        | BuiltinType::U32
-                        | BuiltinType::I64
-                        | BuiltinType::U64
-                        | BuiltinType::I128
-                        | BuiltinType::U128
-                        | BuiltinType::F32
-                        | BuiltinType::F64 => write!(
-                            f,
-                            "{}.AsSumValue().tag == 1 ? null : new {}?({}.AsSumValue().value{})",
-                            value,
-                            ty_fmt(ctx, inner_ty, namespace),
-                            value,
-                            &convert_type(ctx, vecnest, inner_ty, "", namespace),
-                        ),
-                        _ => fmt::Display::fmt(
-                            &convert_type(
-                                ctx,
-                                vecnest,
-                                inner_ty,
-                                format_args!("{value}.AsSumValue().tag == 1 ? null : {value}.AsSumValue().value"),
-                                namespace,
-                            ),
-                            f,
-                        ),
-                    },
-                    _ => fmt::Display::fmt(
-                        &convert_type(
-                            ctx,
-                            vecnest,
-                            inner_ty,
-                            format_args!("{value}.AsSumValue().tag == 1 ? null : {value}.AsSumValue().value"),
-                            namespace,
-                        ),
-                        f,
-                    ),
-                }
+            // Options have a default value of null which is fine for us, and simple enums have their own default.
+            if sum_type.as_option().is_some() || sum_type.is_simple_enum() {
+                ""
             } else {
                 unimplemented!()
             }
         }
-        AlgebraicType::Builtin(b) => fmt::Display::fmt(&convert_builtintype(ctx, vecnest, b, &value, namespace), f),
-        AlgebraicType::Ref(r) => {
-            let name = csharp_typename(ctx, *r);
-            let algebraic_type = &ctx.typespace.types[r.idx()];
-            match algebraic_type {
-                AlgebraicType::Sum(sum) => {
-                    if sum.is_simple_enum() {
-                        let split: Vec<&str> = name.split('.').collect();
-                        if split.len() >= 2 {
-                            assert_eq!(
-                                split.len(),
-                                2,
-                                "Enum namespaces can only be in the form Namespace.EnumName, invalid value={name}"
-                            );
-                            let enum_namespace = split[0];
-                            let enum_name = split[1];
-                            write!(f, "{namespace}.{enum_namespace}.Into{enum_name}({value})")
-                        } else {
-                            writeln!(
-                                f,
-                                "({name})Enum.Parse(typeof({name}), {value}.AsSumValue().tag.ToString())"
-                            )
-                        }
-                    } else {
-                        unimplemented!()
-                    }
-                }
-                _ => {
-                    write!(f, "({namespace}.{name})({value})")
-                }
-            }
-        }
-    })
+        // For product types, we can just use the default constructor.
+        AlgebraicType::Product(_) => " = new()",
+        AlgebraicType::Builtin(b) => match b {
+            // Strings must have explicit default value of "".
+            BuiltinType::String => r#" = """#,
+            // Byte arrays must be initialized to an empty array.
+            BuiltinType::Array(a) if *a.elem_ty == AlgebraicType::U8 => " = Array.Empty<byte>()",
+            // Lists and Dictionaries must be instantiated with new().
+            BuiltinType::Array(_) | BuiltinType::Map(_) => " = new()",
+            _ => "",
+        },
+        AlgebraicType::Ref(r) => default_init(ctx, &ctx.typespace.types[r.idx()]),
+    }
 }
 
 // can maybe do something fancy with this in the future
@@ -315,9 +166,13 @@ impl CsharpAutogen {
 
         writeln!(
             output,
-            "// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE",
+            "// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE"
         );
         writeln!(output, "// WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.");
+        writeln!(output, "// <auto-generated />");
+        writeln!(output);
+
+        writeln!(output, "#nullable enable");
         writeln!(output);
 
         writeln!(output, "using System;");
@@ -343,111 +198,24 @@ impl CsharpAutogen {
     }
 }
 
-fn convert_algebraic_type<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| match ty {
-        AlgebraicType::Product(product_type) => write!(f, "{}", convert_product_type(ctx, product_type, namespace)),
-        AlgebraicType::Sum(sum_type) => write!(f, "{}", convert_sum_type(ctx, sum_type, namespace)),
-        AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-            MaybePrimitive::Primitive(_) => {
-                write!(
-                    f,
-                    "SpacetimeDB.SATS.AlgebraicType.CreatePrimitiveType(SpacetimeDB.SATS.BuiltinType.Type.{b:?})"
-                )
-            }
-            MaybePrimitive::Array(ArrayType { elem_ty }) => write!(
-                f,
-                "SpacetimeDB.SATS.AlgebraicType.CreateArrayType({})",
-                convert_algebraic_type(ctx, elem_ty, namespace)
-            ),
-            MaybePrimitive::Map(_) => todo!(),
-        },
-        AlgebraicType::Ref(r) => {
-            let name = csharp_typename(ctx, *r);
-            match &ctx.typespace.types[r.idx()] {
-                AlgebraicType::Sum(sum_type) => {
-                    if sum_type.is_simple_enum() {
-                        let parts: Vec<&str> = name.split('.').collect();
-                        if parts.len() >= 2 {
-                            let enum_namespace = parts[0];
-                            let enum_name = parts[1];
-                            write!(f, "{namespace}.{enum_namespace}.GetAlgebraicTypeFor{enum_name}()")
-                        } else {
-                            write!(f, "{}", convert_sum_type(ctx, sum_type, namespace))
-                        }
-                    } else {
-                        unimplemented!()
-                    }
-                }
-                _ => {
-                    write!(f, "{namespace}.{name}.GetAlgebraicType()")
-                }
-            }
-        }
-    })
-}
-
-fn convert_product_type<'a>(
-    ctx: &'a GenCtx,
-    product_type: &'a ProductType,
-    namespace: &'a str,
-) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| {
-        writeln!(
-            f,
-            "SpacetimeDB.SATS.AlgebraicType.CreateProductType(new SpacetimeDB.SATS.ProductTypeElement[]"
-        )?;
-        writeln!(f, "{{")?;
-        for elem in &*product_type.elements {
-            writeln!(
-                f,
-                "{INDENT}new SpacetimeDB.SATS.ProductTypeElement({}, {}),",
-                elem.name
-                    .to_owned()
-                    .map(|s| format!("\"{s}\""))
-                    .unwrap_or("null".into()),
-                convert_algebraic_type(ctx, &elem.algebraic_type, namespace)
-            )?;
-        }
-        write!(f, "}})")
-    })
-}
-
-fn convert_sum_type<'a>(ctx: &'a GenCtx, sum_type: &'a SumType, namespace: &'a str) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| {
-        writeln!(
-            f,
-            "SpacetimeDB.SATS.AlgebraicType.CreateSumType(new System.Collections.Generic.List<SpacetimeDB.SATS.SumTypeVariant>"
-        )?;
-        writeln!(f, "{{")?;
-        for elem in &*sum_type.variants {
-            writeln!(
-                f,
-                "\tnew SpacetimeDB.SATS.SumTypeVariant({}, {}),",
-                elem.name
-                    .to_owned()
-                    .map(|s| format!("\"{s}\""))
-                    .unwrap_or("null".into()),
-                convert_algebraic_type(ctx, &elem.algebraic_type, namespace)
-            )?;
-        }
-        write!(f, "}})")
-    })
-}
-
-pub fn autogen_csharp_sum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespace: &str) -> String {
+pub fn autogen_csharp_sum(
+    /* will be used in future for tagged enum */ _ctx: &GenCtx,
+    name: &str,
+    sum_type: &SumType,
+    namespace: &str,
+) -> String {
     if sum_type.is_simple_enum() {
-        autogen_csharp_enum(ctx, name, sum_type, namespace)
+        autogen_csharp_enum(name, sum_type, namespace)
     } else {
         unimplemented!();
     }
 }
 
-pub fn autogen_csharp_enum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespace: &str) -> String {
+pub fn autogen_csharp_enum(name: &str, sum_type: &SumType, namespace: &str) -> String {
     let mut output = CsharpAutogen::new(namespace, &[]);
 
     let mut sum_namespace = None;
     let mut sum_type_name = name.replace("r#", "").to_case(Case::Pascal);
-    let mut sum_full_enum_type_name = sum_type_name.clone();
     if sum_type_name.contains('.') {
         let split: Vec<&str> = sum_type_name.split('.').collect();
         if split.len() != 2 {
@@ -456,89 +224,39 @@ pub fn autogen_csharp_enum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespa
 
         sum_namespace = Some(split[0].to_string().to_case(Case::Pascal));
         sum_type_name = split[1].to_string().to_case(Case::Pascal);
-        sum_full_enum_type_name = format!("{}.Types.{}", sum_namespace.clone().unwrap(), sum_type_name);
     }
 
-    writeln!(
-        output,
-        "public {}",
-        match sum_namespace.clone() {
-            None => format!("enum {sum_type_name}"),
-            Some(namespace) => format!("partial class {namespace}"),
-        },
-    );
-    indented_block(&mut output, |output| match sum_namespace {
-        Some(_) => {
-            writeln!(output, "public partial class Types");
-            indented_block(output, |output| {
-                writeln!(output, "public enum {sum_type_name}");
-                indented_block(output, |output| {
-                    for variant in &*sum_type.variants {
-                        let variant_name = variant
-                            .name
-                            .as_ref()
-                            .expect("All sum variants should have names!")
-                            .replace("r#", "");
-                        writeln!(output, "{variant_name},");
-                    }
-                });
-            });
+    if let Some(sum_namespace) = &sum_namespace {
+        writeln!(output, "public partial class {sum_namespace}");
+        writeln!(output, "{{");
+        output.indent(1);
 
-            writeln!(
-                output,
-                "public static SpacetimeDB.SATS.AlgebraicType GetAlgebraicTypeFor{sum_type_name}()"
-            );
-            indented_block(output, |output| {
-                writeln!(output, "return {};", convert_sum_type(ctx, sum_type, namespace));
-            });
+        writeln!(output, "public partial class Types");
+        writeln!(output, "{{");
+        output.indent(1);
+    }
 
-            autogen_csharp_enum_value_to_struct(output, sum_type_name, sum_full_enum_type_name, sum_type);
-        }
-        None => {
-            for variant in &*sum_type.variants {
-                let variant_name = variant
-                    .name
-                    .as_ref()
-                    .expect("All sum variants should have names!")
-                    .replace("r#", "");
-                writeln!(output, "{variant_name},");
-            }
+    writeln!(output, "[SpacetimeDB.Type]");
+    writeln!(output, "public enum {sum_type_name}");
+    indented_block(&mut output, |output| {
+        for variant in &*sum_type.variants {
+            let variant_name = variant
+                .name
+                .as_ref()
+                .expect("All sum variants should have names!")
+                .replace("r#", "");
+            writeln!(output, "{variant_name},");
         }
     });
+
+    if sum_namespace.is_some() {
+        for _ in 0..2 {
+            output.dedent(1);
+            writeln!(output, "}}");
+        }
+    }
 
     output.into_inner()
-}
-
-fn autogen_csharp_enum_value_to_struct(
-    output: &mut CodeIndenter<String>,
-    sum_name: String,
-    sum_full_enum_name: String,
-    sum_type: &SumType,
-) {
-    writeln!(
-        output,
-        "public static {sum_full_enum_name} Into{sum_name}(SpacetimeDB.SATS.AlgebraicValue value)",
-    );
-    indented_block(output, |output| {
-        writeln!(output, "var sumValue = value.AsSumValue();");
-        writeln!(output, "switch (sumValue.tag)");
-        indented_block(output, |output| {
-            for (idx, variant) in sum_type.variants.iter().enumerate() {
-                let field_name = variant
-                    .name
-                    .as_ref()
-                    .expect("autogen'd product types should have field names");
-                let csharp_variant_name = field_name.to_string().replace("r#", "").to_case(Case::Pascal);
-                writeln!(output, "case {idx}:");
-                {
-                    indent_scope!(output);
-                    writeln!(output, "return {sum_full_enum_name}.{csharp_variant_name};");
-                }
-            }
-        });
-        writeln!(output);
-        writeln!(output, "return default;");
-    });
 }
 
 pub fn autogen_csharp_tuple(ctx: &GenCtx, name: &str, tuple: &ProductType, namespace: &str) -> String {
@@ -570,13 +288,30 @@ fn autogen_csharp_product_table_common(
     schema: Option<TableSchema>,
     namespace: &str,
 ) -> String {
-    let mut output = CsharpAutogen::new(namespace, &["System.Collections.Generic", "System.Linq"]);
-
-    writeln!(
-        output,
-        "[Newtonsoft.Json.JsonObject(Newtonsoft.Json.MemberSerialization.OptIn)]"
+    let mut output = CsharpAutogen::new(
+        namespace,
+        &[
+            "System.Collections.Generic",
+            "System.Linq",
+            "System.Runtime.Serialization",
+        ],
     );
-    writeln!(output, "public partial class {name} : IDatabaseTable");
+
+    writeln!(output, "[SpacetimeDB.Type]");
+    writeln!(output, "[DataContract]");
+    write!(output, "public partial class {name}");
+    if let Some(schema) = &schema {
+        write!(
+            output,
+            " : SpacetimeDB.{parent}<{name}, {namespace}.ReducerEvent>",
+            parent = if schema.pk().is_some() {
+                "DatabaseTableWithPrimaryKey"
+            } else {
+                "DatabaseTable"
+            }
+        );
+    }
+    writeln!(output);
     indented_block(&mut output, |output| {
         for field in &*product_type.elements {
             let field_name = field
@@ -584,49 +319,22 @@ fn autogen_csharp_product_table_common(
                 .as_ref()
                 .expect("autogen'd tuples should have field names")
                 .replace("r#", "");
-            writeln!(output, "[Newtonsoft.Json.JsonProperty(\"{field_name}\")]");
-            match &field.algebraic_type {
-                Builtin(BuiltinType::Array(ArrayType { elem_ty: array_type })) => {
-                    if let Builtin(BuiltinType::U8) = **array_type {
-                        writeln!(
-                            output,
-                            "[Newtonsoft.Json.JsonConverter(typeof(SpacetimeDB.ByteArrayConverter))]"
-                        );
-                    }
-                }
-                AlgebraicType::Sum(sum) => {
-                    if sum.as_option().is_some() {
-                        writeln!(output, "[SpacetimeDB.Some]");
-                    } else {
-                        unimplemented!()
-                    }
-                }
-                AlgebraicType::Ref(type_ref) => {
-                    let ref_type = &ctx.typespace.types[type_ref.idx()];
-                    if let AlgebraicType::Sum(sum_type) = ref_type {
-                        if sum_type.is_simple_enum() {
-                            writeln!(output, "[SpacetimeDB.Enum]");
-                        } else {
-                            unimplemented!()
-                        }
-                    }
-                }
-                _ => {}
-            }
 
+            writeln!(output, "[DataMember(Name = \"{field_name}\")]");
             writeln!(
                 output,
-                "public {} {};",
+                "public {} {}{};",
                 ty_fmt(ctx, &field.algebraic_type, namespace),
-                field_name.to_case(Case::Pascal)
+                field_name.to_case(Case::Pascal),
+                default_init(ctx, &field.algebraic_type)
             );
         }
-
         writeln!(output);
 
-        // If this is a table, we want to generate indexes
+        // If this is a table, we want to generate event accessor and indexes
         if let Some(schema) = &schema {
             let constraints = schema.column_constraints();
+            let mut unique_indexes = Vec::new();
             // Declare custom index dictionaries
             for col in schema.columns() {
                 let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
@@ -638,177 +346,44 @@ fn autogen_csharp_product_table_common(
                     output,
                     "private static Dictionary<{type_name}, {name}> {field_name}_Index = new(16);"
                 );
+                unique_indexes.push(field_name);
             }
-            writeln!(output);
-            // OnInsert method for updating indexes
-            writeln!(
-                output,
-                "private static void InternalOnValueInserted(object insertedValue)"
-            );
-            indented_block(output, |output| {
-                writeln!(output, "var val = ({name})insertedValue;");
-                for col in schema.columns() {
-                    let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
-                    if !constraints[&ColList::new(col.col_pos)].has_unique() {
-                        continue;
-                    }
-                    writeln!(output, "{field_name}_Index[val.{field_name}] = val;");
-                }
-            });
-            writeln!(output);
-            // OnDelete method for updating indexes
-            writeln!(
-                output,
-                "private static void InternalOnValueDeleted(object deletedValue)"
-            );
-            indented_block(output, |output| {
-                writeln!(output, "var val = ({name})deletedValue;");
-                for col in schema.columns() {
-                    let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
-                    if !constraints[&ColList::new(col.col_pos)].has_unique() {
-                        continue;
-                    }
-                    writeln!(output, "{field_name}_Index.Remove(val.{field_name});");
-                }
-            });
-            writeln!(output);
-        } // End indexes
-
-        writeln!(
-            output,
-            "public static SpacetimeDB.SATS.AlgebraicType GetAlgebraicType()"
-        );
-        indented_block(output, |output| {
-            writeln!(output, "return {};", convert_product_type(ctx, product_type, namespace));
-        });
-        writeln!(output);
-
-        autogen_csharp_product_value_to_struct(output, ctx, name, product_type, namespace);
-
-        writeln!(output);
-
-        // If this is a table, we want to include functions for accessing the table data
-        if let Some(column_attrs) = &schema {
-            // Insert the funcs for accessing this struct
-            let has_primary_key =
-                autogen_csharp_access_funcs_for_struct(output, name, product_type, name, column_attrs);
-
-            writeln!(output);
-
-            writeln!(
-                output,
-                "public delegate void InsertEventHandler({name} insertedValue, {namespace}.ReducerEvent dbEvent);"
-            );
-            if has_primary_key {
-                writeln!(output, "public delegate void UpdateEventHandler({name} oldValue, {name} newValue, {namespace}.ReducerEvent dbEvent);");
-            }
-            writeln!(
-                output,
-                "public delegate void DeleteEventHandler({name} deletedValue, {namespace}.ReducerEvent dbEvent);"
-            );
-            writeln!(output, "public static event InsertEventHandler OnInsert;");
-            if has_primary_key {
-                writeln!(output, "public static event UpdateEventHandler OnUpdate;");
-            }
-            writeln!(output, "public static event DeleteEventHandler OnBeforeDelete;");
-            writeln!(output, "public static event DeleteEventHandler OnDelete;");
-            writeln!(output);
-
-            writeln!(
-                output,
-                "public static void OnInsertEvent(object newValue, ClientApi.Event dbEvent)"
-            );
-            indented_block(output, |output| {
-                writeln!(
-                    output,
-                    "OnInsert?.Invoke(({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
-                );
-            });
-            writeln!(output);
-
-            if has_primary_key {
-                writeln!(
-                    output,
-                    "public static void OnUpdateEvent(object oldValue, object newValue, ClientApi.Event dbEvent)"
-                );
+            if !unique_indexes.is_empty() {
+                writeln!(output);
+                // OnInsert method for updating indexes
+                writeln!(output, "public override void InternalOnValueInserted()");
                 indented_block(output, |output| {
-                    writeln!(output, "OnUpdate?.Invoke(({name})oldValue,({name})newValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);");
+                    for col in schema.columns() {
+                        let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
+                        if !constraints[&ColList::new(col.col_pos)].has_unique() {
+                            continue;
+                        }
+                        writeln!(output, "{field_name}_Index[{field_name}] = this;");
+                    }
+                });
+                writeln!(output);
+                // OnDelete method for updating indexes
+                writeln!(output, "public override void InternalOnValueDeleted()");
+                indented_block(output, |output| {
+                    for col in schema.columns() {
+                        let field_name = col.col_name.replace("r#", "").to_case(Case::Pascal);
+                        if !constraints[&ColList::new(col.col_pos)].has_unique() {
+                            continue;
+                        }
+                        writeln!(output, "{field_name}_Index.Remove({field_name});");
+                    }
                 });
                 writeln!(output);
             }
 
-            writeln!(
-                output,
-                "public static void OnBeforeDeleteEvent(object oldValue, ClientApi.Event dbEvent)"
-            );
-            indented_block(output, |output| {
-                writeln!(
-                    output,
-                    "OnBeforeDelete?.Invoke(({name})oldValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
-                );
-            });
+            // If this is a table, we want to include functions for accessing the table data
+            // Insert the funcs for accessing this struct
+            autogen_csharp_access_funcs_for_struct(output, name, product_type, name, schema);
             writeln!(output);
-
-            writeln!(
-                output,
-                "public static void OnDeleteEvent(object oldValue, ClientApi.Event dbEvent)"
-            );
-            indented_block(output, |output| {
-                writeln!(
-                    output,
-                    "OnDelete?.Invoke(({name})oldValue,(ReducerEvent)dbEvent?.FunctionCall.CallInfo);"
-                );
-            });
         }
     });
 
     output.into_inner()
-}
-
-fn autogen_csharp_product_value_to_struct(
-    output: &mut CodeIndenter<String>,
-    ctx: &GenCtx,
-    struct_name_pascal_case: &str,
-    product_type: &ProductType,
-    namespace: &str,
-) {
-    writeln!(
-        output,
-        "public static explicit operator {struct_name_pascal_case}(SpacetimeDB.SATS.AlgebraicValue value)",
-    );
-    indented_block(output, |output| {
-        writeln!(output, "if (value == null) return null;");
-
-        writeln!(output, "var productValue = value.AsProductValue();");
-
-        // vec conversion go here
-        writeln!(output, "return new {struct_name_pascal_case}");
-        writeln!(output, "{{");
-        {
-            indent_scope!(output);
-            for (idx, field) in product_type.elements.iter().enumerate() {
-                let field_name = field
-                    .name
-                    .as_ref()
-                    .expect("autogen'd product types should have field names");
-                let field_type = &field.algebraic_type;
-                let csharp_field_name = field_name.to_string().replace("r#", "").to_case(Case::Pascal);
-
-                writeln!(
-                    output,
-                    "{csharp_field_name} = {},",
-                    convert_type(
-                        ctx,
-                        0,
-                        field_type,
-                        format_args!("productValue.elements[{idx}]"),
-                        namespace,
-                    )
-                );
-            }
-        }
-        writeln!(output, "}};");
-    });
 }
 
 fn indented_block<R>(output: &mut CodeIndenter<String>, f: impl FnOnce(&mut CodeIndenter<String>) -> R) -> R {
@@ -822,36 +397,9 @@ fn autogen_csharp_access_funcs_for_struct(
     output: &mut CodeIndenter<String>,
     struct_name_pascal_case: &str,
     product_type: &ProductType,
-    table_name: &str,
+    _table_name: &str,
     schema: &TableSchema,
-) -> bool {
-    let primary_col_idx = schema.pk();
-
-    writeln!(output, "public static IEnumerable<{struct_name_pascal_case}> Iter()");
-    indented_block(output, |output| {
-        writeln!(
-            output,
-            "return SpacetimeDBClient.clientDB.GetObjects(\"{table_name}\").Cast<{struct_name_pascal_case}>();",
-        );
-    });
-    writeln!(output);
-
-    // Simple alias for Iter().Where(...) for API parity with C# server-side modules.
-    writeln!(
-        output,
-        "public static IEnumerable<{struct_name_pascal_case}> Query(Func<{struct_name_pascal_case}, bool> filter)"
-    );
-    indented_block(output, |output| {
-        writeln!(output, "return Iter().Where(filter);",);
-    });
-    writeln!(output);
-
-    writeln!(output, "public static int Count()");
-    indented_block(output, |output| {
-        writeln!(output, "return SpacetimeDBClient.clientDB.Count(\"{table_name}\");");
-    });
-    writeln!(output);
-
+) {
     let constraints = schema.column_constraints();
     for col in schema.columns() {
         let is_unique = constraints[&ColList::new(col.col_pos)].has_unique();
@@ -883,7 +431,7 @@ fn autogen_csharp_access_funcs_for_struct(
         if is_unique {
             writeln!(
                 output,
-                "public static {struct_name_pascal_case} FindBy{csharp_field_name_pascal}({csharp_field_type} value)"
+                "public static {struct_name_pascal_case}? FindBy{csharp_field_name_pascal}({csharp_field_type} value)"
             );
             indented_block(output, |output| {
                 writeln!(
@@ -916,215 +464,120 @@ fn autogen_csharp_access_funcs_for_struct(
     if let Some(primary_col_index) = schema.pk() {
         writeln!(
             output,
-            "private static object GetPrimaryKeyValue(object row) => (({struct_name_pascal_case})row).{col_name_pascal_case};",
+            "public override object GetPrimaryKeyValue() => {col_name_pascal_case};",
             col_name_pascal_case = primary_col_index.col_name.replace("r#", "").to_case(Case::Pascal)
         );
     }
-
-    primary_col_idx.is_some()
 }
-
-// fn convert_enumdef(tuple: &SumType) -> impl fmt::Display + '_ {
-//     fmt_fn(move |f| {
-//         writeln!(f, "AlgebraicType.Tuple(new ProductTypeElement[]")?;
-//         writeln!(f, "{{")?;
-//         for (i, elem) in tuple.elements.iter().enumerate() {
-//             let comma = if i == tuple.elements.len() - 1 { "" } else { "," };
-//             writeln!(f, "{INDENT}{}{}", convert_elementdef(elem), comma)?;
-//         }
-//         writeln!(f, "}}")
-//     })
-// }
 
 pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &str) -> String {
     let func_name = &*reducer.name;
     // let reducer_pascal_name = func_name.to_case(Case::Pascal);
     let func_name_pascal_case = func_name.to_case(Case::Pascal);
 
-    let mut output = CsharpAutogen::new(namespace, &["ClientApi", "Newtonsoft.Json.Linq"]);
+    let mut output = CsharpAutogen::new(namespace, &[]);
 
-    let mut func_arguments: String = String::new();
-    let mut arg_types: String = String::new();
+    //Args struct
+    writeln!(output, "[SpacetimeDB.Type]");
+    writeln!(
+        output,
+        "public partial class {func_name_pascal_case}ArgsStruct : IReducerArgs"
+    );
 
-    writeln!(output, "public static partial class Reducer");
+    let mut func_params: String = String::new();
+    let mut field_inits: String = String::new();
+
     indented_block(&mut output, |output| {
-        let mut json_args = String::new();
+        writeln!(
+            output,
+            "ReducerType IReducerArgs.ReducerType => ReducerType.{func_name_pascal_case};"
+        );
+        writeln!(output, "string IReducerArgsBase.ReducerName => \"{func_name}\";");
+        writeln!(output, "bool IReducerArgs.InvokeHandler(ReducerEvent reducerEvent) => Reducer.On{func_name_pascal_case}(reducerEvent, this);");
+        if !reducer.args.is_empty() {
+            writeln!(output);
+        }
         for (arg_i, arg) in reducer.args.iter().enumerate() {
             let name = arg
                 .name
                 .as_deref()
                 .unwrap_or_else(|| panic!("reducer args should have names: {func_name}"));
             let arg_name = name.to_case(Case::Camel);
+            let field_name = name.to_case(Case::Pascal);
             let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, namespace);
 
-            if !json_args.is_empty() {
-                json_args.push_str(", ");
+            if arg_i != 0 {
+                func_params.push_str(", ");
+                field_inits.push_str(", ");
             }
-
-            match &arg.algebraic_type {
-                AlgebraicType::Sum(sum_type) => {
-                    if sum_type.as_option().is_some() {
-                        json_args.push_str(&format!("new SpacetimeDB.SomeWrapper<{arg_type_str}>({arg_name})"));
-                    } else {
-                        json_args.push_str(&arg_name);
-                    }
-                }
-                AlgebraicType::Product(_) => {
-                    json_args.push_str(arg_name.as_str());
-                }
-                Builtin(_) => {
-                    json_args.push_str(arg_name.as_str());
-                }
-                AlgebraicType::Ref(type_ref) => {
-                    let ref_type = &ctx.typespace.types[type_ref.idx()];
-                    if let AlgebraicType::Sum(sum_type) = ref_type {
-                        if sum_type.is_simple_enum() {
-                            json_args
-                                .push_str(format!("new SpacetimeDB.EnumWrapper<{arg_type_str}>({arg_name})").as_str());
-                        } else {
-                            unimplemented!()
-                        }
-                    } else {
-                        json_args.push_str(arg_name.as_str());
-                    }
-                }
-            }
-
-            if arg_i > 0 {
-                func_arguments.push_str(", ");
-            }
-            arg_types.push_str(", ");
-
-            write!(func_arguments, "{arg_type_str} {arg_name}").unwrap();
-            write!(arg_types, "{arg_type_str}").unwrap();
+            writeln!(
+                output,
+                "public {arg_type_str} {field_name}{};",
+                default_init(ctx, &arg.algebraic_type)
+            );
+            write!(func_params, "{arg_type_str} {arg_name}").unwrap();
+            write!(field_inits, "{field_name} = {arg_name}").unwrap();
         }
+    });
 
-        let delegate_args = if !reducer.args.is_empty() {
-            format!(", {}", func_arguments.clone())
-        } else {
-            func_arguments.clone()
-        };
+    writeln!(output);
+
+    writeln!(output, "public static partial class Reducer");
+    indented_block(&mut output, |output| {
+        let delegate_separator = if !reducer.args.is_empty() { ", " } else { "" };
         writeln!(
             output,
-            "public delegate void {func_name_pascal_case}Handler(ReducerEvent reducerEvent{delegate_args});"
+            "public delegate void {func_name_pascal_case}Handler(ReducerEvent reducerEvent{delegate_separator}{func_params});"
         );
         writeln!(
             output,
-            "public static event {func_name_pascal_case}Handler On{func_name_pascal_case}Event;"
+            "public static event {func_name_pascal_case}Handler? On{func_name_pascal_case}Event;"
         );
 
         writeln!(output);
 
-        writeln!(output, "public static void {func_name_pascal_case}({func_arguments})");
+        writeln!(output, "public static void {func_name_pascal_case}({func_params})");
         indented_block(output, |output| {
-            // Tell the network manager to send this message
-            writeln!(output, "var _argArray = new object[] {{{json_args}}};");
-            writeln!(output, "var _message = new SpacetimeDBClient.ReducerCallRequest {{");
-            {
-                indent_scope!(output);
-                writeln!(output, "fn = \"{}\",", reducer.name);
-                writeln!(output, "args = _argArray,");
-            }
-            writeln!(output, "}};");
-
             writeln!(
                 output,
-                "SpacetimeDBClient.instance.InternalCallReducer(Newtonsoft.Json.JsonConvert.SerializeObject(_message, _settings));"
+                "SpacetimeDBClient.instance.InternalCallReducer(new {func_name_pascal_case}ArgsStruct {{ {field_inits} }});"
             );
         });
         writeln!(output);
 
-        writeln!(output, "[ReducerCallback(FunctionName = \"{func_name}\")]");
         writeln!(
             output,
-            "public static bool On{func_name_pascal_case}(ClientApi.Event dbEvent)"
+            "public static bool On{func_name_pascal_case}(ReducerEvent reducerEvent, {func_name_pascal_case}ArgsStruct args)"
         );
         indented_block(output, |output| {
-            writeln!(output, "if(On{func_name_pascal_case}Event != null)");
-            indented_block(output, |output| {
-                writeln!(
-                    output,
-                    "var args = ((ReducerEvent)dbEvent.FunctionCall.CallInfo).{func_name_pascal_case}Args;"
-                );
-                writeln!(
-                    output,
-                    "On{func_name_pascal_case}Event((ReducerEvent)dbEvent.FunctionCall.CallInfo"
-                );
-                // Write out arguments one per line
-                {
-                    indent_scope!(output);
-                    for (i, arg) in reducer.args.iter().enumerate() {
-                        let arg_name = arg
-                            .name
-                            .clone()
-                            .unwrap_or_else(|| format!("arg_{i}").into())
-                            .deref()
-                            .to_case(Case::Pascal);
-                        let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, namespace);
-                        writeln!(output, ",({arg_type_str})args.{arg_name}");
-                    }
+            writeln!(output, "if (On{func_name_pascal_case}Event == null) return false;");
+            writeln!(output, "On{func_name_pascal_case}Event(");
+            // Write out arguments one per line
+            {
+                indent_scope!(output);
+                write!(output, "reducerEvent");
+                for (i, arg) in reducer.args.iter().enumerate() {
+                    writeln!(output, ",");
+                    let arg_name = arg
+                        .name
+                        .as_deref()
+                        .map_or_else(|| format!("Arg{i}"), |name| name.to_case(Case::Pascal));
+                    write!(output, "args.{arg_name}");
                 }
-                writeln!(output, ");");
-                writeln!(output, "return true;");
-            });
-            writeln!(output, "return false;");
-        });
-        writeln!(output);
-
-        writeln!(output, "[DeserializeEvent(FunctionName = \"{func_name}\")]");
-        writeln!(
-            output,
-            "public static void {func_name_pascal_case}DeserializeEventArgs(ClientApi.Event dbEvent)"
-        );
-        indented_block(output, |output| {
-            writeln!(output, "var args = new {func_name_pascal_case}ArgsStruct();");
-            writeln!(output, "var bsatnBytes = dbEvent.FunctionCall.ArgBytes;");
-            writeln!(output, "using var ms = new System.IO.MemoryStream();");
-            writeln!(output, "ms.SetLength(bsatnBytes.Length);");
-            writeln!(output, "bsatnBytes.CopyTo(ms.GetBuffer(), 0);");
-            writeln!(output, "ms.Position = 0;");
-            writeln!(output, "using var reader = new System.IO.BinaryReader(ms);");
-            for (i, arg) in reducer.args.iter().enumerate() {
-                let arg_name = arg
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| format!("arg_{i}").into())
-                    .deref()
-                    .to_case(Case::Pascal);
-                let algebraic_type = convert_algebraic_type(ctx, &arg.algebraic_type, namespace);
-                writeln!(
-                    output,
-                    "var args_{i}_value = SpacetimeDB.SATS.AlgebraicValue.Deserialize({algebraic_type}, reader);"
-                );
-                let convert = convert_type(ctx, 0, &arg.algebraic_type, format!("args_{i}_value"), namespace);
-                writeln!(output, "args.{arg_name} = {convert};");
+                writeln!(output);
             }
-
-            writeln!(output, "dbEvent.FunctionCall.CallInfo = new ReducerEvent(ReducerType.{func_name_pascal_case}, \"{func_name}\", dbEvent.Timestamp, Identity.From(dbEvent.CallerIdentity.ToByteArray()), Address.From(dbEvent.CallerAddress.ToByteArray()), dbEvent.Message, dbEvent.Status, args);");
+            writeln!(output, ");");
+            writeln!(output, "return true;");
         });
-    });
-    writeln!(output);
-
-    //Args struct
-    writeln!(output, "public partial class {func_name_pascal_case}ArgsStruct");
-    indented_block(&mut output, |output| {
-        for (i, arg) in reducer.args.iter().enumerate() {
-            let arg_name = arg
-                .name
-                .clone()
-                .unwrap_or_else(|| format!("arg_{i}").into())
-                .deref()
-                .to_case(Case::Pascal);
-            let cs_type = ty_fmt(ctx, &arg.algebraic_type, namespace);
-            writeln!(output, "public {cs_type} {arg_name};");
-        }
     });
     writeln!(output);
 
     output.into_inner()
 }
 
-pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(String, String)>> {
+pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String, String)> {
+    let mut results = Vec::new();
+
     let reducers: Vec<&ReducerDef> = items
         .iter()
         .filter_map(|i| {
@@ -1140,71 +593,141 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<Vec<(St
         .map(|reducer| reducer.name.deref().to_case(Case::Pascal))
         .collect();
 
-    let mut output = CsharpAutogen::new(namespace, &["ClientApi", "Newtonsoft.Json.Linq"]);
+    let mut output = CsharpAutogen::new(namespace, &[]);
 
     writeln!(output, "public enum ReducerType");
     indented_block(&mut output, |output| {
         writeln!(output, "None,");
-        for reducer in reducer_names {
-            writeln!(output, "{reducer},");
+        for reducer_name in &reducer_names {
+            writeln!(output, "{reducer_name},");
         }
+    });
+    writeln!(output);
+
+    writeln!(output, "public interface IReducerArgs : IReducerArgsBase");
+    indented_block(&mut output, |output| {
+        writeln!(output, "ReducerType ReducerType {{ get; }}");
+        writeln!(output, "bool InvokeHandler(ReducerEvent reducerEvent);");
     });
     writeln!(output);
 
     writeln!(output, "public partial class ReducerEvent : ReducerEventBase");
     indented_block(&mut output, |output| {
-        writeln!(output, "public ReducerType Reducer {{ get; private set; }}");
+        writeln!(output, "public IReducerArgs? Args {{ get; }}");
         writeln!(output);
-        writeln!(output, "public ReducerEvent(ReducerType reducer, string reducerName, ulong timestamp, SpacetimeDB.Identity identity, SpacetimeDB.Address? callerAddress, string errMessage, ClientApi.Event.Types.Status status, object args)");
-        {
-            indent_scope!(output);
-            writeln!(
-                output,
-                ": base(reducerName, timestamp, identity, callerAddress, errMessage, status, args)"
-            );
-        }
-        indented_block(output, |output| {
-            writeln!(output, "Reducer = reducer;");
-        });
+        writeln!(output, "public string ReducerName => Args?.ReducerName ?? \"<none>\";");
+        writeln!(output);
+        writeln!(
+            output,
+            r#"[Obsolete("ReducerType is deprecated, please match directly on type of .Args instead.")]"#
+        );
+        writeln!(
+            output,
+            "public ReducerType Reducer => Args?.ReducerType ?? ReducerType.None;"
+        );
+        writeln!(output);
+        writeln!(
+            output,
+            "public ReducerEvent(IReducerArgs? args) : base() => Args = args;"
+        );
+        writeln!(
+            output,
+            "public ReducerEvent(ClientApi.Event dbEvent, IReducerArgs? args) : base(dbEvent) => Args = args;"
+        );
         writeln!(output);
         // Properties for reducer args
-        for reducer in &reducers {
-            let reducer_name = reducer.name.deref().to_case(Case::Pascal);
-            writeln!(output, "public {reducer_name}ArgsStruct {reducer_name}Args");
-            indented_block(output, |output| {
-                writeln!(output, "get");
-                indented_block(output, |output| {
-                    writeln!(output, "if (Reducer != ReducerType.{reducer_name}) throw new SpacetimeDB.ReducerMismatchException(Reducer.ToString(), \"{reducer_name}\");");
-                    writeln!(output, "return ({reducer_name}ArgsStruct)Args;");
-                });
-            });
+        for reducer_name in &reducer_names {
+            writeln!(
+                output,
+                r#"[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]"#
+            );
+            writeln!(
+                output,
+                "public {reducer_name}ArgsStruct {reducer_name}Args => ({reducer_name}ArgsStruct)Args!;"
+            );
         }
+        writeln!(output);
+        // Event handlers.
+        writeln!(
+            output,
+            "public override bool InvokeHandler() => Args?.InvokeHandler(this) ?? false;"
+        );
+    });
+    writeln!(output);
+
+    writeln!(
+        output,
+        "public class SpacetimeDBClient : SpacetimeDBClientBase<ReducerEvent>"
+    );
+    indented_block(&mut output, |output| {
+        writeln!(output, "protected SpacetimeDBClient()");
+        indented_block(output, |output| {
+            for item in items {
+                if let GenItem::Table(table) = item {
+                    writeln!(
+                        output,
+                        "clientDB.AddTable<{table_name}>();",
+                        table_name = table.schema.table_name
+                    );
+                }
+            }
+        });
+        writeln!(output);
+
+        writeln!(output, "public static readonly SpacetimeDBClient instance = new();");
+        writeln!(output);
+
+        writeln!(
+            output,
+            "protected override ReducerEvent ReducerEventFromDbEvent(ClientApi.Event dbEvent)"
+        );
+        indented_block(output, |output| {
+            writeln!(output, "var argBytes = dbEvent.FunctionCall.ArgBytes;");
+            writeln!(output, "IReducerArgs? args = dbEvent.FunctionCall.Reducer switch {{");
+            {
+                indent_scope!(output);
+                for (reducer, reducer_name) in std::iter::zip(&reducers, &reducer_names) {
+                    let reducer_str_name = &reducer.name;
+                    writeln!(
+                        output,
+                        "\"{reducer_str_name}\" => BSATNHelpers.FromProtoBytes<{reducer_name}ArgsStruct>(argBytes),"
+                    );
+                }
+                writeln!(output, "\"<none>\" => null,");
+                writeln!(
+                    output,
+                    r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
+                );
+            }
+            writeln!(output, "}};");
+            writeln!(output, "return new ReducerEvent(dbEvent, args);");
+        });
     });
 
-    let mut result = vec![vec![("ReducerEvent.cs".to_string(), output.into_inner())]];
+    results.push(("_Globals/SpacetimeDBClient.cs".to_owned(), output.into_inner()));
+
+    // Note: Unity requires script classes to have the same name as the file they are in.
+    // That's why we're generating a separate file for Unity-specific code.
 
     let mut output = CsharpAutogen::new(namespace, &[]);
 
-    writeln!(output, "[ReducerClass]");
-    writeln!(output, "public partial class Reducer");
+    writeln!(output, "// This class is only used in Unity projects.");
+    writeln!(
+        output,
+        "// Attach this to a gameobject in your scene to use SpacetimeDB."
+    );
+    writeln!(output, "#if UNITY_5_3_OR_NEWER");
+    writeln!(output, "public class UnityNetworkManager : UnityEngine.MonoBehaviour");
     indented_block(&mut output, |output| {
         writeln!(
             output,
-            "private static Newtonsoft.Json.JsonSerializerSettings _settings = new Newtonsoft.Json.JsonSerializerSettings"
+            "private void OnDestroy() => SpacetimeDBClient.instance.Close();"
         );
-        writeln!(output, "{{");
-        {
-            indent_scope!(output);
-            writeln!(
-                output,
-                "Converters = {{ new SpacetimeDB.SomeWrapperConverter(), new SpacetimeDB.EnumWrapperConverter() }},"
-            );
-            writeln!(output, "ContractResolver = new SpacetimeDB.JsonContractResolver(),");
-        }
-        writeln!(output, "}};");
+        writeln!(output, "private void Update() => SpacetimeDBClient.instance.Update();");
     });
+    writeln!(output, "#endif");
 
-    result.push(vec![("ReducerJsonSettings.cs".into(), output.into_inner())]);
+    results.push(("_Globals/UnityNetworkManager.cs".to_owned(), output.into_inner()));
 
-    result
+    results
 }

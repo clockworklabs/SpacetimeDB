@@ -32,3 +32,6 @@ rand = { workspace = true, optional = true }
 # if someone tries to use rand's ThreadRng, it will fail to link
 # because no one defined __getrandom_custom
 getrandom = { workspace = true, optional = true, features = ["custom"] }
+
+[dev-dependencies]
+insta.workspace = true
