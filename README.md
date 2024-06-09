@@ -58,7 +58,6 @@
 </p>
 
 <br>
-<br>
 
 ## What is [SpacetimeDB](https://spacetimedb.com)?
 
