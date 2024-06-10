@@ -565,9 +565,7 @@ async fn make_module_host(
     mcc: ModuleCreationContext,
     unregister: impl Fn() + Send + Sync + 'static,
 ) -> anyhow::Result<ModuleHost> {
-    let rt = tokio::runtime::Handle::current();
     spawn_rayon(move || {
-        let _rt = rt.enter();
         let module_host = match host_type {
             HostType::Wasm => {
                 let start = Instant::now();
