@@ -1,6 +1,6 @@
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
-use spacetimedb_sats::{impl_deserialize, impl_serialize};
+use spacetimedb_sats::{impl_deserialize, impl_serialize, AlgebraicType};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, serde::Serialize)]
 #[serde(transparent)]
@@ -17,12 +17,15 @@ impl Timestamp {
         Self(dur.as_micros() as u64)
     }
     pub fn to_systemtime(self) -> SystemTime {
-        SystemTime::UNIX_EPOCH + Duration::from_micros(self.0)
+        SystemTime::UNIX_EPOCH + std::time::Duration::from_micros(self.0)
     }
-    pub fn to_duration_from_now(self) -> Duration {
+    pub fn to_duration_from_now(self) -> std::time::Duration {
         self.to_systemtime()
             .duration_since(SystemTime::now())
-            .unwrap_or(Duration::ZERO)
+            .unwrap_or(std::time::Duration::default())
+    }
+    pub fn get_type() -> AlgebraicType {
+        AlgebraicType::U64
     }
 }
 

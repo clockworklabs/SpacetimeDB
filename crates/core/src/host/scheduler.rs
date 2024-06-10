@@ -1,19 +1,37 @@
-use std::path::Path;
+use std::sync::Arc;
 
 use futures::StreamExt;
 use rustc_hash::FxHashMap;
 use sled::transaction::{ConflictableTransactionError::Abort as TxAbort, TransactionError};
-use spacetimedb_lib::bsatn;
 use spacetimedb_lib::bsatn::ser::BsatnError;
+use spacetimedb_lib::bsatn::to_vec;
+use spacetimedb_lib::de::Deserialize;
+use spacetimedb_lib::scheduler::ScheduleAt;
+use spacetimedb_lib::{bsatn, AlgebraicType, AlgebraicValue, ProductValue, SumType, Timestamp};
+use spacetimedb_primitives::TableId;
+use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
+use spacetimedb_sats::satn::Satn;
+use spacetimedb_sats::SumValue;
+use spacetimedb_table::layout::PrimitiveType;
+use sqlparser::ast::Interval;
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 use tokio_util::time::delay_queue::Expired;
 use tokio_util::time::{delay_queue, DelayQueue};
 
+use crate::db::datastore::locking_tx_datastore::state_view::StateView;
+use crate::db::datastore::system_tables::{StScheduledRow, ST_SCHEDULED_ID};
+use crate::db::relational_db::RelationalDB;
+use crate::execution_context::ExecutionContext;
+
 use super::module_host::WeakModuleHost;
-use super::{ModuleHost, ReducerArgs, ReducerCallError, Timestamp};
+use super::{ModuleHost, ReducerArgs, ReducerCallError};
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
-pub struct ScheduledReducerId(pub u64);
+pub struct ScheduledReducerId {
+    table_id: TableId,
+    scheduled_id: u64,
+}
 
 enum MsgOrExit<T> {
     Msg(T),
@@ -35,42 +53,32 @@ struct ScheduledReducer {
 #[derive(Clone)]
 pub struct Scheduler {
     tx: mpsc::UnboundedSender<MsgOrExit<SchedulerMessage>>,
-    db: sled::Db,
+    db: Arc<RelationalDB>,
 }
 
 pub struct SchedulerStarter {
     rx: mpsc::UnboundedReceiver<MsgOrExit<SchedulerMessage>>,
-    db: sled::Db,
+    db: Arc<RelationalDB>,
 }
 
 impl Scheduler {
-    pub fn dummy(dummy_path: &Path) -> Self {
-        let (tx, _) = mpsc::unbounded_channel();
-        let db = sled::open(dummy_path).unwrap();
-        Self { tx, db }
-    }
+    //  pub fn dummy() -> Self {
+    //      let (tx, _) = mpsc::unbounded_channel();
+    //      let db = TestDB::durable().unwrap();
+    //      Self { tx, db: Arc::new(*db) }
+    //  }
 
-    pub fn open(scheduler_db_path: impl AsRef<Path>) -> anyhow::Result<(Self, SchedulerStarter)> {
-        let db = sled::Config::default()
-            .path(scheduler_db_path)
-            .flush_every_ms(Some(50))
-            .mode(sled::Mode::HighThroughput)
-            .open()?;
-
-        Ok(Self::from_db(db))
-    }
-
-    fn from_db(db: sled::Db) -> (Self, SchedulerStarter) {
+    pub fn open(db: Arc<RelationalDB>) -> (Self, SchedulerStarter) {
         let (tx, rx) = mpsc::unbounded_channel();
         (Scheduler { tx, db: db.clone() }, SchedulerStarter { rx, db })
     }
 
     pub fn new_with_same_db(&self) -> (Self, SchedulerStarter) {
-        Self::from_db(self.db.clone())
+        Self::open(self.db.clone())
     }
 
     pub fn clear(&self) {
-        self.db.clear().unwrap()
+        // self.db.clear().unwrap()
     }
 }
 
@@ -78,14 +86,40 @@ impl SchedulerStarter {
     // TODO(cloutiertyler): This whole start dance is scuffed, but I don't have
     // time to make it better right now.
     pub fn start(self, module_host: &ModuleHost) -> anyhow::Result<()> {
-        let mut queue = DelayQueue::new();
+        let mut queue: DelayQueue<ScheduledReducerId> = DelayQueue::new();
+        let ctx = &ExecutionContext::internal(self.db.address());
+        let tx = self.db.begin_tx();
+        // Find all Scheduled tables
+        for row in self.db.iter(&ctx, &tx, ST_SCHEDULED_ID)? {
+            let scheduled_table = StScheduledRow::try_from(row).expect("Error reading scheduled table row");
 
-        for entry in self.db.iter() {
-            let (k, v) = entry?;
-            let get_u64 = |b: &[u8]| u64::from_le_bytes(b.try_into().unwrap());
-            let id = ScheduledReducerId(get_u64(&k));
-            let at = Timestamp(get_u64(&v[..8]));
-            queue.insert(id, at.to_duration_from_now());
+            // Insert each entry (row) in DelayQueue
+            for row_ref in self.db.iter(&ctx, &tx, scheduled_table.table_id)? {
+                // First two columns for schjedile table are fixed i.e `schedule_id` and
+                // `ScheuleAt` respectivelty
+
+                let scheduled_id: u64 = row_ref
+                    .read_col::<u64>(1)
+                    .map_err(|_| anyhow::anyhow!("Error reading scheduled_at"))?;
+
+                let schedule_at: ScheduleAt = row_ref
+                    .read_col::<AlgebraicValue>(2)
+                    .map_err(|_| anyhow::anyhow!("Error reading scheduled_at"))?
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("Error reading scheduled_at"))?;
+
+                let at_time = match schedule_at {
+                    ScheduleAt::Time(time) => time,
+                    ScheduleAt::Interval(dur) => todo!(),
+                };
+                queue.insert(
+                    ScheduledReducerId {
+                        table_id: scheduled_table.table_id,
+                        scheduled_id,
+                    },
+                    at_time.to_duration_from_now(),
+                );
+            }
         }
 
         tokio::spawn(
@@ -93,7 +127,6 @@ impl SchedulerStarter {
                 rx: self.rx,
                 queue,
                 key_map: FxHashMap::default(),
-                db: self.db,
                 module_host: module_host.downgrade(),
             }
             .run(),
@@ -181,14 +214,10 @@ impl Scheduler {
             reducer,
             bsatn_args,
         };
-
-        let id = self.db.transaction(|tx| {
-            let id = tx.generate_id()?;
-            let reducer = bsatn::to_vec(&reducer).map_err(TxAbort)?;
-            tx.insert(&id.to_le_bytes(), reducer)?;
-            Ok(ScheduledReducerId(id))
-        })?;
-
+        let id = ScheduledReducerId {
+            table_id: TableId::default(),
+            scheduled_id: 0,
+        };
         // if the actor has exited, it's fine to ignore; it means that the host actor calling
         // schedule will exit soon as well, and it'll be scheduled to run when the module host restarts
         let _ = self.tx.send(MsgOrExit::Msg(SchedulerMessage::Schedule { id, at }));
@@ -196,21 +225,21 @@ impl Scheduler {
     }
 
     pub fn cancel(&self, id: ScheduledReducerId) {
-        let res = self.db.transaction(|tx| {
-            tx.remove(&id.0.to_le_bytes())?;
-            Ok(())
-        });
-        match res {
-            Ok(()) => {
-                // if it's exited it's not gonna run it :) see also the comment in schedule()
-                let _ = self.tx.send(MsgOrExit::Msg(SchedulerMessage::Cancel { id }));
-            }
-            // we could return an error here, but that would give them information that
-            // there exists a scheduled reducer with this id. like returning a HTTP 400
-            // instead of a 404
-            Err(TransactionError::Abort(())) => {}
-            Err(TransactionError::Storage(e)) => panic!("sled error: {e:?}"),
-        }
+        // let res = self.db.transaction(|tx| {
+        //     tx.remove(&id.0.to_le_bytes())?;
+        //     Ok(())
+        // });
+        // match res {
+        //     Ok(()) => {
+        //         // if it's exited it's not gonna run it :) see also the comment in schedule()
+        //         let _ = self.tx.send(MsgOrExit::Msg(SchedulerMessage::Cancel { id }));
+        //     }
+        //     // we could return an error here, but that would give them information that
+        //     // there exists a scheduled reducer with this id. like returning a HTTP 400
+        //     // instead of a 404
+        //     Err(TransactionError::Abort(())) => {}
+        //     Err(TransactionError::Storage(e)) => panic!("sled error: {e:?}"),
+        // }
     }
 
     pub fn close(&self) {
@@ -222,7 +251,6 @@ struct SchedulerActor {
     rx: mpsc::UnboundedReceiver<MsgOrExit<SchedulerMessage>>,
     queue: DelayQueue<ScheduledReducerId>,
     key_map: FxHashMap<ScheduledReducerId, delay_queue::Key>,
-    db: sled::Db,
     module_host: WeakModuleHost,
 }
 
@@ -258,43 +286,43 @@ impl SchedulerActor {
     }
 
     async fn handle_queued(&mut self, id: Expired<ScheduledReducerId>) {
-        let id = id.into_inner();
-        self.key_map.remove(&id);
-        let Some(module_host) = self.module_host.upgrade() else {
-            return;
-        };
-        let Some(scheduled) = self.db.get(id.0.to_le_bytes()).unwrap() else {
-            return;
-        };
-        let scheduled: ScheduledReducer = bsatn::from_slice(&scheduled).unwrap();
+        // let id = id.into_inner();
+        // self.key_map.remove(&id);
+        // let Some(module_host) = self.module_host.upgrade() else {
+        //     return;
+        // };
+        // let Some(scheduled) = self.db.get(id.0.to_le_bytes()).unwrap() else {
+        //     return;
+        // };
+        // let scheduled: ScheduledReducer = bsatn::from_slice(&scheduled).unwrap();
 
-        let db = self.db.clone();
-        tokio::spawn(async move {
-            let info = module_host.info();
-            let identity = info.identity;
-            // TODO: pass a logical "now" timestamp to this reducer call, but there's some
-            //       intricacies to get right (how much drift to tolerate? what kind of tokio::time::MissedTickBehavior do we want?)
-            let res = module_host
-                .call_reducer(
-                    identity,
-                    // Scheduled reducers take `None` as the caller address.
-                    None,
-                    None,
-                    None,
-                    None,
-                    &scheduled.reducer,
-                    ReducerArgs::Bsatn(scheduled.bsatn_args.into()),
-                )
-                .await;
-            if !matches!(res, Err(ReducerCallError::NoSuchModule(_))) {
-                // if we didn't actually call the reducer because the module exited, leave
-                // the ScheduledReducer in the database for when the module restarts
-                let _ = db.remove(id.0.to_le_bytes());
-            }
-            match res {
-                Ok(_) => {}
-                Err(e) => log::error!("invoking scheduled reducer failed: {e:#}"),
-            }
-        });
+        // let db = self.db.clone();
+        // tokio::spawn(async move {
+        //     let info = module_host.info();
+        //     let identity = info.identity;
+        //     // TODO: pass a logical "now" timestamp to this reducer call, but there's some
+        //     //       intricacies to get right (how much drift to tolerate? what kind of tokio::time::MissedTickBehavior do we want?)
+        //     let res = module_host
+        //         .call_reducer(
+        //             identity,
+        //             // Scheduled reducers take `None` as the caller address.
+        //             None,
+        //             None,
+        //             None,
+        //             None,
+        //             &scheduled.reducer,
+        //             ReducerArgs::Bsatn(scheduled.bsatn_args.into()),
+        //         )
+        //         .await;
+        //     if !matches!(res, Err(ReducerCallError::NoSuchModule(_))) {
+        //         // if we didn't actually call the reducer because the module exited, leave
+        //         // the ScheduledReducer in the database for when the module restarts
+        //         let _ = db.remove(id.0.to_le_bytes());
+        //     }
+        //     match res {
+        //         Ok(_) => {}
+        //         Err(e) => log::error!("invoking scheduled reducer failed: {e:#}"),
+        //     }
+        // });
     }
 }

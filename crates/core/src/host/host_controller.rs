@@ -523,7 +523,6 @@ impl HostController {
             if let Some(host) = lock.write_owned().await.take() {
                 let module = host.module.borrow().clone();
                 module.exit().await;
-                host.scheduler.clear();
             }
         }
 
@@ -734,7 +733,7 @@ impl Host {
         let dbic = Arc::new(dbic);
 
         let program_bytes = program_storage.load_program(&dbic.relational_db, program_hash).await?;
-        let (scheduler, scheduler_starter) = Scheduler::open(dbic.scheduler_db_path(root_dir.to_path_buf()))?;
+        let (scheduler, scheduler_starter) = Scheduler::open(dbic.relational_db.clone());
         let module_host = make_module_host(
             host_type,
             ModuleCreationContext {

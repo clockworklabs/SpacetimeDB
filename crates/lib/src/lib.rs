@@ -6,6 +6,8 @@ pub mod address;
 pub mod filter;
 pub mod identity;
 pub mod operator;
+pub mod scheduler;
+pub mod timestamp;
 pub mod type_def {
     pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};
 }
@@ -18,9 +20,11 @@ pub mod version;
 
 pub use address::Address;
 pub use identity::Identity;
+pub use scheduler::Duration;
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
 pub use spacetimedb_sats::relation;
 pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
+pub use timestamp::Timestamp;
 pub use type_def::*;
 pub use type_value::{AlgebraicValue, ProductValue};
 

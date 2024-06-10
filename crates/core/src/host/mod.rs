@@ -18,7 +18,6 @@ pub mod scheduler;
 mod wasmtime;
 // Visible for integration testing.
 pub mod instance_env;
-mod timestamp;
 mod wasm_common;
 
 pub use disk_storage::DiskStorage;
@@ -29,7 +28,6 @@ pub use module_host::{
     EntityDef, ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult, UpdateDatabaseSuccess,
 };
 pub use scheduler::Scheduler;
-pub use timestamp::Timestamp;
 
 #[derive(Debug)]
 pub enum ReducerArgs {

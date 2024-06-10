@@ -7,7 +7,6 @@ use std::ops::DerefMut;
 use std::sync::Arc;
 
 use super::scheduler::{ScheduleError, ScheduledReducerId, Scheduler};
-use super::timestamp::Timestamp;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -17,6 +16,7 @@ use crate::vm::{build_query, TxMode};
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::ProductValue;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::{ColId, ColListBuilder, TableId};
 use spacetimedb_sats::db::def::{IndexDef, IndexType};
 use spacetimedb_sats::relation::{FieldExpr, FieldName};

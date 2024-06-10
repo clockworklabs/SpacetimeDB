@@ -1082,7 +1082,6 @@ mod tests {
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::error::IndexError;
     use crate::execution_context::ReducerContext;
-    use crate::host::Timestamp;
     use anyhow::bail;
     use bytes::Bytes;
     use commitlog::payload::txdata;
@@ -1090,6 +1089,7 @@ mod tests {
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
+    use spacetimedb_lib::Timestamp;
     use spacetimedb_sats::bsatn;
     use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::db::def::{ColumnDef, ConstraintDef};
