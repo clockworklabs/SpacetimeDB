@@ -613,6 +613,10 @@ impl Table {
     /// The schema of rows stored in the `pages` must exactly match `self.schema` and `self.inner.row_layout`.
     pub unsafe fn set_pages(&mut self, pages: Vec<Box<Page>>, blob_store: &dyn BlobStore) {
         self.inner.pages.set_contents(pages, self.inner.row_layout.size());
+
+        // Recompute table metadata based on the new pages.
+        // Compute the row count first, in case later computations want to use it as a capacity to pre-allocate.
+        self.compute_row_count(blob_store);
         self.rebuild_pointer_map(blob_store);
     }
 }
@@ -1073,13 +1077,26 @@ impl Table {
 
     /// Rebuild the [`PointerMap`] by iterating over all the rows in `self` and inserting them.
     ///
-    /// Called when restoring from a snapshot after installing the pages.
+    /// Called when restoring from a snapshot after installing the pages,
+    /// but after computing the row count,
+    /// since snapshots do not save the pointer map..
     fn rebuild_pointer_map(&mut self, blob_store: &dyn BlobStore) {
+        // TODO(perf): Pre-allocate `PointerMap.map` with capacity `self.row_count`.
+        // Alternatively, do this at the same time as `compute_row_count`.
         let ptrs = self
             .scan_rows(blob_store)
             .map(|row_ref| (row_ref.row_hash(), row_ref.pointer()))
             .collect::<PointerMap>();
         self.pointer_map = ptrs;
+    }
+
+    /// Compute and store `self.row_count` by iterating over all the rows in `self` and counting them.
+    ///
+    /// Called when restoring from a snapshot after installing the pages,
+    /// since snapshots do not save the row count.
+    fn compute_row_count(&mut self, blob_store: &dyn BlobStore) {
+        let num_rows = self.scan_rows(blob_store).count();
+        self.row_count = num_rows as u64;
     }
 }
 

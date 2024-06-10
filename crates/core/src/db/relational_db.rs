@@ -18,13 +18,12 @@ use crate::execution_context::ExecutionContext;
 use crate::messages::control_db::HostType;
 use crate::util::spawn_rayon;
 use anyhow::anyhow;
-use durability::TxOffset;
 use fs2::FileExt;
 use futures::channel::mpsc;
 use futures::StreamExt;
 use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
-use spacetimedb_durability::{self as durability, Durability};
+use spacetimedb_durability::{self as durability, Durability, TxOffset};
 use spacetimedb_lib::address::Address;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
@@ -85,6 +84,9 @@ pub struct RelationalDB {
 
 struct SnapshotWorker {
     _handle: tokio::task::JoinHandle<()>,
+    /// Send end of the [`Self::snapshot_loop`]'s `trigger` receiver.
+    ///
+    /// Send a message along this queue to request that the `snapshot_loop` asynchronously capture a snapshot.
     request_snapshot: mpsc::UnboundedSender<()>,
 }
 
@@ -98,6 +100,7 @@ impl SnapshotWorker {
         }
     }
 
+    /// The snapshot loop takes a snapshot after each `trigger` message received.
     async fn snapshot_loop(
         mut trigger: mpsc::UnboundedReceiver<()>,
         committed_state: Arc<RwLock<CommittedState>>,
@@ -1205,6 +1208,8 @@ pub async fn local_durability(db_path: &Path) -> io::Result<(Arc<durability::Loc
     Ok((local, disk_size_fn))
 }
 
+/// Open a [`SnapshotRepository`] at `db_path/snapshots`,
+/// configured to store snapshots of the database `database_address`/`database_instance_id`.
 pub fn open_snapshot_repo(
     db_path: &Path,
     database_address: Address,

@@ -130,6 +130,18 @@ impl Locking {
         }
     }
 
+    /// Construct a new [`Locking`] datastore containing the state stored in `snapshot`.
+    ///
+    /// - Construct all the tables referenced by `snapshot`, computing their schemas
+    ///   either from known system table schemas or from `st_table` and friends.
+    /// - Populate those tables with all rows in `snapshot`.
+    /// - Construct a [`HashMapBlobStore`] containing all the large blobs referenced by `snapshot`,
+    ///   with reference counts specified in `snapshot`.
+    /// - Do [`CommittedState::reset_system_table_schemas`] to fix-up autoinc IDs in the system tables,
+    ///   to ensure those schemas match what [`Self::bootstrap`] would install.
+    /// - Notably, **do not** construct indexes or sequences.
+    ///   This should be done by [`Self::rebuild_state_after_replay`],
+    ///   after replaying the suffix of the commitlog.
     pub fn restore_from_snapshot(snapshot: ReconstructedSnapshot) -> Result<Self> {
         let ReconstructedSnapshot {
             database_address,

@@ -713,6 +713,8 @@ impl SnapshotRepository {
         let newer_snapshots = self
             .all_snapshots()?
             .filter(|tx_offset| *tx_offset > upper_bound)
+            // Collect to a vec to avoid iterator invalidation,
+            // as the subsequent `for` loop will mutate the directory.
             .collect::<Vec<TxOffset>>();
 
         for newer_snapshot in newer_snapshots {
