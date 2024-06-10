@@ -18,19 +18,12 @@ fn append(c: &mut Criterion) {
         payloads
     };
 
-    const IO_MODES: [(bool, bool); 4] = [(false, false), (false, true), (true, false), (true, true)];
     const TXS_PER_COMMIT: [u16; 3] = [1, 32, 128];
 
-    for (direct_io, sync_io) in IO_MODES {
+    for direct_io in [false, true] {
         for max_records_in_commit in TXS_PER_COMMIT {
-            // `O_DSYNC` is just too slow without aggressive buffering.
-            if sync_io && max_records_in_commit < 128 {
-                continue;
-            }
-            let id = BenchmarkId::from_parameter(format!(
-                "direct-io={} sync-io={} tx/commit={}",
-                direct_io, sync_io, max_records_in_commit
-            ));
+            let id =
+                BenchmarkId::from_parameter(format!("direct-io={} tx/commit={}", direct_io, max_records_in_commit));
             let max_records_in_commit = NonZeroU16::new(max_records_in_commit).unwrap();
 
             group
@@ -39,21 +32,24 @@ fn append(c: &mut Criterion) {
                 .throughput(Throughput::Elements(1000))
                 .bench_with_input(
                     id,
-                    &(direct_io, sync_io, max_records_in_commit, &payloads),
-                    |b, &(direct_io, sync_io, max_records_in_commit, payloads)| {
+                    &(direct_io, max_records_in_commit, &payloads),
+                    |b, &(direct_io, max_records_in_commit, payloads)| {
                         let tmp = tempdir().unwrap();
                         let clog = Commitlog::open(
                             tmp.path(),
                             Options {
                                 max_records_in_commit,
-                                fs_options: fs::Options { direct_io, sync_io },
+                                fs_options: fs::Options {
+                                    direct_io,
+                                    sync_io: false,
+                                },
                                 ..Default::default()
                             },
                         )
                         .unwrap();
 
                         b.iter(|| {
-                            for _ in 0..1000 {
+                            for i in 0..1000 {
                                 for payload in payloads {
                                     let mut retry = Some(payload);
                                     while let Some(txdata) = retry.take() {
@@ -63,8 +59,11 @@ fn append(c: &mut Criterion) {
                                         }
                                     }
                                 }
-                                clog.flush_and_sync().unwrap();
+                                if i % 10 == 0 {
+                                    clog.flush_and_sync().unwrap();
+                                }
                             }
+                            clog.flush_and_sync().unwrap();
                         })
                     },
                 );
