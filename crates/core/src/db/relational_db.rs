@@ -36,12 +36,12 @@ use spacetimedb_snapshot::{SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
 use std::borrow::Cow;
 use std::collections::HashSet;
+use std::fmt;
 use std::fs::{self, File};
 use std::io;
 use std::ops::RangeBounds;
 use std::path::Path;
 use std::sync::Arc;
-use std::fmt;
 
 pub type MutTx = <Locking as super::datastore::traits::MutTx>::MutTx;
 pub type Tx = <Locking as super::datastore::traits::Tx>::Tx;
@@ -1193,10 +1193,16 @@ pub async fn local_durability(db_path: &Path) -> io::Result<(Arc<durability::Loc
     Ok((local, disk_size_fn))
 }
 
-pub fn open_snapshot_repo(db_path: &Path, database_address: Address, database_instance_id: u64) -> Result<Arc<SnapshotRepository>, SnapshotError> {
+pub fn open_snapshot_repo(
+    db_path: &Path,
+    database_address: Address,
+    database_instance_id: u64,
+) -> Result<Arc<SnapshotRepository>, Box<SnapshotError>> {
     let snapshot_dir = db_path.join("snapshots");
-    std::fs::create_dir_all(&snapshot_dir)?;
-    SnapshotRepository::open(snapshot_dir, database_address, database_instance_id).map(Arc::new)
+    std::fs::create_dir_all(&snapshot_dir).map_err(|e| Box::new(SnapshotError::from(e)))?;
+    SnapshotRepository::open(snapshot_dir, database_address, database_instance_id)
+        .map(Arc::new)
+        .map_err(Box::new)
 }
 
 fn default_row_count_fn(address: Address) -> RowCountFn {
@@ -1380,7 +1386,8 @@ pub mod tests_utils {
             durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
             snapshot_repo: Option<Arc<SnapshotRepository>>,
         ) -> Result<RelationalDB, DBError> {
-            let (db, connected_clients) = RelationalDB::open(root, Self::ADDRESS, Self::OWNER, history, durability, snapshot_repo)?;
+            let (db, connected_clients) =
+                RelationalDB::open(root, Self::ADDRESS, Self::OWNER, history, durability, snapshot_repo)?;
             debug_assert!(connected_clients.is_empty());
             let db = db.with_row_count(Self::row_count_fn());
             db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
@@ -1490,7 +1497,14 @@ mod tests {
         stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
-        match RelationalDB::open(stdb.path(), Address::ZERO, Identity::ZERO, EmptyHistory::new(), None, None) {
+        match RelationalDB::open(
+            stdb.path(),
+            Address::ZERO,
+            Identity::ZERO,
+            EmptyHistory::new(),
+            None,
+            None,
+        ) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
             }
