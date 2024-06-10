@@ -178,6 +178,14 @@ impl Locking {
                 //   so the layout used in the `pages` must be consistent with the schema.
                 table.set_pages(pages, blob_store);
             }
+
+            // Set the `rdb_num_table_rows` metric for the table.
+            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+            // and therefore has performance implications and must not be disabled.
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(&database_address, &table_id.0, &schema.table_name)
+                .set(table.row_count as i64);
         }
 
         committed_state.reset_system_table_schemas(database_address)?;
