@@ -74,6 +74,8 @@ public static class GeneratorSnapshotTests
         SourceText.From(Assembly.GetExecutingAssembly().GetManifestResourceStream("Sample.cs")!)
     );
 
+    record struct StepOutput(string Key, IncrementalStepRunReason Reason, object Value);
+
     [Theory]
     [InlineData(typeof(SpacetimeDB.Codegen.Module))]
     [InlineData(typeof(SpacetimeDB.Codegen.Type))]
@@ -87,9 +89,39 @@ public static class GeneratorSnapshotTests
         );
 
         var generator = (IIncrementalGenerator)Activator.CreateInstance(generatorType)!;
-        var driver = CSharpGeneratorDriver.Create(generator);
+        var driver = CSharpGeneratorDriver.Create(
+            [generator.AsSourceGenerator()],
+            driverOptions: new(
+                disabledOutputs: IncrementalGeneratorOutputKind.None,
+                trackIncrementalGeneratorSteps: true
+            )
+        );
         // Store the new driver instance - it contains the results and the cache.
         var genDriver = driver.RunGenerators(compilation);
+        // Run again with a new compilation to see if the cache is working.
+        var newCompilation = compilation.Clone();
+        var regenDriver = genDriver.RunGenerators(newCompilation);
+
+        var regenSteps = regenDriver
+            .GetRunResult()
+            .Results[0]
+            .TrackedSteps.Where(step => step.Key.StartsWith("SpacetimeDB."))
+            .SelectMany(step =>
+                step.Value.SelectMany(value => value.Outputs)
+                    .Select(output => new StepOutput(step.Key, output.Reason, output.Value))
+            )
+            .ToImmutableArray();
+
+        // Ensure that we have tracked steps at all.
+        Assert.NotEmpty(regenSteps);
+
+        // Ensure that all steps were cached.
+        Assert.Empty(
+            regenSteps.Where(step =>
+                step.Reason
+                    is not (IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged)
+            )
+        );
 
         return Verify(genDriver).UseFileName(generatorType.Name);
     }

@@ -1,15 +1,38 @@
 namespace SpacetimeDB;
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using static System.Collections.StructuralComparisons;
 
 public static class Utils
 {
+    // Even ImmutableArray<T> is not deeply equatable, which makes it a common
+    // pain point for source generators as they must use only cacheable types.
+    public readonly record struct EquatableArray<T>(ImmutableArray<T> Array) : IEnumerable<T>
+        where T : IEquatable<T>
+    {
+        // Moves contents from the builder to the equatable array.
+        public EquatableArray(ImmutableArray<T>.Builder builder)
+            : this(builder.ToImmutable()) { }
+
+        public int Length => Array.Length;
+        public T this[int index] => Array[index];
+
+        public bool Equals(EquatableArray<T> other) => Array.SequenceEqual(other.Array);
+
+        public override int GetHashCode() => StructuralEqualityComparer.GetHashCode(Array);
+
+        public IEnumerator<T> GetEnumerator() => ((IEnumerable<T>)Array).GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator() => ((IEnumerable)Array).GetEnumerator();
+    }
+
     private static readonly SymbolDisplayFormat SymbolFormat = SymbolDisplayFormat
         .FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)
         .AddMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType)
@@ -145,10 +168,10 @@ public static class Utils
     public readonly record struct Scope
     {
         // Reversed list of typescopes, from innermost to outermost.
-        private readonly ImmutableArray<TypeScope> typeScopes;
+        private readonly EquatableArray<TypeScope> typeScopes;
 
         // Reversed list of namespaces, from innermost to outermost.
-        private readonly ImmutableArray<string> namespaces;
+        private readonly EquatableArray<string> namespaces;
 
         public Scope(MemberDeclarationSyntax? node)
         {
@@ -168,7 +191,7 @@ public static class Utils
                 // Move to the next outer type
                 node = type.Parent as MemberDeclarationSyntax;
             }
-            typeScopes = typeScopes_.ToImmutable();
+            typeScopes = new(typeScopes_);
 
             // We've now reached the outermost type, so we can determine the namespace
             var namespaces_ = ImmutableArray.CreateBuilder<string>();
@@ -177,7 +200,7 @@ public static class Utils
                 namespaces_.Add(ns.Name.ToString());
                 node = node.Parent as MemberDeclarationSyntax;
             }
-            namespaces = namespaces_.ToImmutable();
+            namespaces = new(namespaces_);
         }
 
         public readonly record struct TypeScope(string Keyword, string Name, string Constraints);
