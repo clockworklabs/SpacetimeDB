@@ -137,6 +137,11 @@ public static class Utils
         }
     }
 
+    public static IEnumerable<IFieldSymbol> GetFields(INamedTypeSymbol type)
+    {
+        return type.GetMembers().OfType<IFieldSymbol>().Where(f => !f.IsStatic);
+    }
+
     // Borrowed & modified code for generating in-place extensions for partial structs/classes/etc. Source:
     // https://andrewlock.net/creating-a-source-generator-part-5-finding-a-type-declarations-namespace-and-type-hierarchy/
 

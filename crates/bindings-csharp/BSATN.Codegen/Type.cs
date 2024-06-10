@@ -68,61 +68,42 @@ public class Type : IIncrementalGenerator
                 predicate: (node, ct) => predicate(node),
                 transform: (context, ct) =>
                 {
-                    var type = (TypeDeclarationSyntax)context.TargetNode;
+                    var typeSyntax = (TypeDeclarationSyntax)context.TargetNode;
+                    var type = context.SemanticModel.GetDeclaredSymbol(typeSyntax, ct)!;
+                    var fields = GetFields(type);
+                    var isTaggedEnum = false;
 
                     // Check if type implements generic `SpacetimeDB.TaggedEnum<Variants>` and, if so, extract the `Variants` type.
-                    var taggedEnumVariants = type.BaseList?.Types
-                        .OfType<SimpleBaseTypeSyntax>()
-                        .Select(t => context.SemanticModel.GetTypeInfo(t.Type, ct).Type)
-                        .OfType<INamedTypeSymbol>()
-                        .Where(t =>
-                            t.OriginalDefinition.ToString() == "SpacetimeDB.TaggedEnum<Variants>"
-                        )
-                        .Select(t =>
-                            (ImmutableArray<IFieldSymbol>?)
-                                ((INamedTypeSymbol)t.TypeArguments[0]).TupleElements
-                        )
-                        .FirstOrDefault();
-
-                    var fields = type.Members.OfType<FieldDeclarationSyntax>()
-                        .Where(f =>
-                            !f.Modifiers.Any(m =>
-                                m.IsKind(SyntaxKind.StaticKeyword)
-                                || m.IsKind(SyntaxKind.ConstKeyword)
-                            )
-                        )
-                        .SelectMany(f =>
-                        {
-                            var typeSymbol = context
-                                .SemanticModel.GetTypeInfo(f.Declaration.Type, ct)
-                                .Type!;
-                            // Seems like a bug in Roslyn - nullability annotation is not set on the top type.
-                            // Set it manually for now. TODO: report upstream.
-                            if (f.Declaration.Type is NullableTypeSyntax)
-                            {
-                                typeSymbol = typeSymbol.WithNullableAnnotation(
-                                    NullableAnnotation.Annotated
-                                );
-                            }
-                            return f.Declaration.Variables.Select(v => new VariableDeclaration(
-                                v.Identifier.Text,
-                                typeSymbol
-                            ));
-                        });
-
-                    if (taggedEnumVariants is not null)
+                    if (
+                        type.BaseType?.OriginalDefinition.ToString()
+                        == "SpacetimeDB.TaggedEnum<Variants>"
+                    )
                     {
+                        isTaggedEnum = true;
+
+                        if (
+                            type.BaseType.TypeArguments[0]
+                            is not INamedTypeSymbol
+                            {
+                                IsTupleType: true,
+                                TupleElements: var taggedEnumVariants
+                            }
+                        )
+                        {
+                            throw new InvalidOperationException(
+                                "TaggedEnum must have a tuple type argument."
+                            );
+                        }
+
                         if (fields.Any())
                         {
                             throw new InvalidOperationException("Tagged enums cannot have fields.");
                         }
-                        fields = taggedEnumVariants.Value.Select(v => new VariableDeclaration(
-                            v.Name,
-                            v.Type
-                        ));
+
+                        fields = taggedEnumVariants;
                     }
 
-                    if (type.TypeParameterList is not null)
+                    if (typeSyntax.TypeParameterList is not null)
                     {
                         throw new InvalidOperationException(
                             "Types with type parameters are not yet supported."
@@ -131,11 +112,13 @@ public class Type : IIncrementalGenerator
 
                     return new
                     {
-                        Scope = new Scope(type),
-                        ShortName = type.Identifier.Text,
-                        FullName = SymbolToName(context.SemanticModel.GetDeclaredSymbol(type, ct)!),
-                        IsTaggedEnum = taggedEnumVariants is not null,
-                        Members = fields.ToArray(),
+                        Scope = new Scope(typeSyntax),
+                        ShortName = type.Name,
+                        FullName = SymbolToName(type),
+                        IsTaggedEnum = isTaggedEnum,
+                        Members = fields
+                            .Select(v => new VariableDeclaration(v.Name, v.Type))
+                            .ToImmutableArray(),
                     };
                 }
             )
