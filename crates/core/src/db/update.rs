@@ -11,7 +11,6 @@ use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_primitives::ConstraintKind;
 use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::db::def::{ConstraintSchema, IndexSchema, SequenceSchema, TableDef, TableSchema};
-use spacetimedb_sats::hash::Hash;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -28,8 +27,6 @@ pub fn update_database(
     stdb: &RelationalDB,
     tx: MutTxId,
     proposed_tables: Vec<TableDef>,
-    fence: u128,
-    module_hash: Hash,
     system_logger: &SystemLogger,
 ) -> anyhow::Result<Result<MutTxId, UpdateDatabaseError>> {
     let ctx = ExecutionContext::internal(stdb.address());
@@ -74,10 +71,6 @@ pub fn update_database(
                 return Ok(Err(UpdateDatabaseError::IncompatibleSchema { tables }));
             }
         }
-
-        // Update the module hash. Morally, this should be done _after_ calling
-        // the `update` reducer, but that consumes our transaction context.
-        stdb.set_program_hash(tx, fence, module_hash)?;
 
         Ok(Ok(()))
     })?;

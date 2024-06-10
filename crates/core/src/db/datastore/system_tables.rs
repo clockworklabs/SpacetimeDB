@@ -1,7 +1,6 @@
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, TableError};
 use crate::execution_context::ExecutionContext;
-use core::fmt;
 use derive_more::From;
 use spacetimedb_lib::{Address, Identity, SumType};
 use spacetimedb_primitives::*;
@@ -193,9 +192,11 @@ st_fields_enum!(enum StConstraintFields {
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StModuleFields {
-    "program_hash", ProgramHash = 0,
-    "kind", Kind = 1,
-    "epoch", Epoch = 2,
+    "database_address", DatabaseAddress = 0,
+    "owner_identity", OwnerIdentity = 1,
+    "program_kind", ProgramKind = 2,
+    "program_hash", ProgramHash = 3,
+    "program_bytes", ProgramBytes = 4,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StClientsFields {
@@ -331,23 +332,24 @@ fn st_constraints_schema() -> TableSchema {
 /// This table holds exactly one row, describing the latest version of the
 /// SpacetimeDB module associated with the database:
 ///
+/// * `database_address` is the [`Address`] of the database.
+/// * `owner_identity` is the [`Identity`] of the owner of the database.
+/// * `program_kind` is the [`ModuleKind`] (currently always [`WASM_MODULE`]).
 /// * `program_hash` is the [`Hash`] of the raw bytes of the (compiled) module.
-/// * `constraints` is the [`ModuleKind`] (currently always [`WASM_MODULE`]).
-/// * `epoch` is a _fencing token_ used to protect against concurrent updates.
+/// * `program_bytes` are the raw bytes of the (compiled) module.
 ///
-/// | program_hash        | kind     | epoch |
-/// |---------------------|----------|-------|
-/// | [250, 207, 5, ...]  | 0        | 42    |
-fn st_module_schema() -> TableSchema {
+/// | database_address | owner_identity |  program_kind | program_bytes | program_hash        |
+/// |------------------|----------------|---------------|---------------|---------------------|
+/// | <bytes>          | <bytes>        |  0            | <bytes>       | <bytes>             |
+pub(crate) fn st_module_schema() -> TableSchema {
     TableDef::new(
         ST_MODULE_NAME.into(),
         vec![
-            ColumnDef::sys(
-                StModuleFields::ProgramHash.name(),
-                AlgebraicType::array(AlgebraicType::U8),
-            ),
-            ColumnDef::sys(StModuleFields::Kind.name(), AlgebraicType::U8),
-            ColumnDef::sys(StModuleFields::Epoch.name(), AlgebraicType::U128),
+            ColumnDef::sys(StModuleFields::DatabaseAddress.name(), AlgebraicType::bytes()),
+            ColumnDef::sys(StModuleFields::OwnerIdentity.name(), AlgebraicType::bytes()),
+            ColumnDef::sys(StModuleFields::ProgramKind.name(), AlgebraicType::U8),
+            ColumnDef::sys(StModuleFields::ProgramHash.name(), AlgebraicType::bytes()),
+            ColumnDef::sys(StModuleFields::ProgramBytes.name(), AlgebraicType::bytes()),
         ],
     )
     .with_type(StTableType::System)
@@ -674,7 +676,7 @@ impl From<StConstraintRow<Box<str>>> for ConstraintSchema {
     }
 }
 
-/// Indicates the kind of module the `program_hash` of a [`StModuleRow`]
+/// Indicates the kind of module the `program_bytes` of a [`StModuleRow`]
 /// describes.
 ///
 /// More or less a placeholder to allow for future non-WASM hosts without
@@ -690,55 +692,68 @@ pub const WASM_MODULE: ModuleKind = ModuleKind(0);
 impl_serialize!([] ModuleKind, (self, ser) => self.0.serialize(ser));
 impl_deserialize!([] ModuleKind, de => u8::deserialize(de).map(Self));
 
-/// A monotonically increasing "epoch" value.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Epoch(pub(crate) u128);
-
-impl_serialize!([] Epoch, (self, ser) => self.0.serialize(ser));
-impl_deserialize!([] Epoch, de => u128::deserialize(de).map(Self));
-
-impl fmt::Display for Epoch {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StModuleRow {
+    pub(crate) database_address: Address,
+    pub(crate) owner_identity: Identity,
+    pub(crate) program_kind: ModuleKind,
     pub(crate) program_hash: Hash,
-    pub(crate) kind: ModuleKind,
-    pub(crate) epoch: Epoch,
+    pub(crate) program_bytes: Box<[u8]>,
+}
+
+pub fn read_st_module_bytes_col(row: RowRef<'_>, col: StModuleFields) -> Result<Box<[u8]>, DBError> {
+    let bytes = row.read_col::<ArrayValue>(col.col_id())?;
+    if let ArrayValue::U8(bytes) = bytes {
+        Ok(bytes)
+    } else {
+        Err(InvalidFieldError {
+            name: Some(col.name()),
+            col_pos: col.col_id(),
+        }
+        .into())
+    }
 }
 
 impl TryFrom<RowRef<'_>> for StModuleRow {
     type Error = DBError;
 
     fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
-        let col_pos = StModuleFields::ProgramHash.col_id();
-        let bytes = row.read_col::<ArrayValue>(col_pos)?;
-        let ArrayValue::U8(bytes) = bytes else {
-            let name = Some(StModuleFields::ProgramHash.name());
-            return Err(InvalidFieldError { name, col_pos }.into());
-        };
-        let program_hash = Hash::from_slice(&bytes);
+        let database_address =
+            read_st_module_bytes_col(row, StModuleFields::DatabaseAddress).map(Address::from_slice)?;
+        let owner_identity =
+            read_st_module_bytes_col(row, StModuleFields::OwnerIdentity).map(|bytes| Identity::from_slice(&bytes))?;
+        let program_kind = row.read_col::<u8>(StModuleFields::ProgramKind).map(ModuleKind)?;
+        let program_hash =
+            read_st_module_bytes_col(row, StModuleFields::ProgramHash).map(|bytes| Hash::from_slice(&bytes))?;
+        let program_bytes = read_st_module_bytes_col(row, StModuleFields::ProgramBytes)?;
 
         Ok(Self {
+            owner_identity,
+            database_address,
+            program_kind,
             program_hash,
-            kind: row.read_col::<u8>(StModuleFields::Kind).map(ModuleKind)?,
-            epoch: row.read_col::<u128>(StModuleFields::Epoch).map(Epoch)?,
+            program_bytes,
         })
     }
 }
 
-impl From<&StModuleRow> for ProductValue {
+impl From<StModuleRow> for ProductValue {
     fn from(
         StModuleRow {
+            owner_identity,
+            database_address,
+            program_kind: ModuleKind(program_kind),
             program_hash,
-            kind: ModuleKind(kind),
-            epoch: Epoch(epoch),
-        }: &StModuleRow,
+            program_bytes,
+        }: StModuleRow,
     ) -> Self {
-        product![AlgebraicValue::Bytes(program_hash.as_slice().into()), *kind, *epoch,]
+        product![
+            AlgebraicValue::Bytes((*database_address.as_slice()).into()),
+            AlgebraicValue::Bytes((*owner_identity.as_bytes()).into()),
+            program_kind,
+            AlgebraicValue::Bytes(program_hash.as_slice().into()),
+            AlgebraicValue::Bytes(program_bytes)
+        ]
     }
 }
 

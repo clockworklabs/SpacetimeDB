@@ -27,7 +27,7 @@ use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::UpdateDatabaseSuccess;
 use spacetimedb::identity::Identity;
 use spacetimedb::json::client_api::StmtResultJson;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance};
+use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType};
 use spacetimedb::sql;
 use spacetimedb::sql::execute::{ctx_sql, translate_col};
 use spacetimedb_client_api_messages::name::{self, DnsLookupResponse, DomainName, PublishOp, PublishResult};
@@ -79,7 +79,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         log::error!("Could not find database: {}", address.to_hex());
         (StatusCode::NOT_FOUND, "No such database.")
     })?;
-    let identity = database.identity;
+    let identity = database.owner_identity;
     let database_instance = worker_ctx
         .get_leader_database_instance_by_database(database.id)
         .ok_or((
@@ -369,10 +369,9 @@ pub async fn info<S: ControlStateDelegate>(
     let host_type: &str = database.host_type.as_ref();
     let response_json = json!({
         "address": database.address,
-        "identity": database.identity,
+        "owner_identity": database.owner_identity,
         "host_type": host_type,
-        "num_replicas": database.num_replicas,
-        "program_bytes_address": database.program_bytes_address,
+        "initial_program": database.initial_program,
     });
     Ok((StatusCode::OK, axum::Json(response_json)))
 }
@@ -416,12 +415,12 @@ where
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
-    if database.identity != auth.identity {
+    if database.owner_identity != auth.identity {
         return Err((
             StatusCode::BAD_REQUEST,
             format!(
                 "Identity does not own database, expected: {} got: {}",
-                database.identity.to_hex(),
+                database.owner_identity.to_hex(),
                 auth.identity.to_hex()
             ),
         )
@@ -512,7 +511,7 @@ where
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
-    let auth = AuthCtx::new(database.identity, auth.identity);
+    let auth = AuthCtx::new(database.owner_identity, auth.identity);
     log::debug!("auth: {auth:?}");
     let database_instance = worker_ctx
         .get_leader_database_instance_by_database(database.id)
@@ -747,6 +746,12 @@ pub struct PublishDatabaseQueryParams {
     client_address: Option<AddressForUrl>,
 }
 
+impl PublishDatabaseQueryParams {
+    pub fn name_or_address(&self) -> Option<&NameOrAddress> {
+        self.name_or_address.as_ref()
+    }
+}
+
 pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     State(ctx): State<S>,
     Path(PublishDatabaseParams {}): Path<PublishDatabaseParams>,
@@ -811,6 +816,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
                 address: db_addr,
                 program_bytes: body.into(),
                 num_replicas: 1,
+                host_type: HostType::Wasm,
             },
         )
         .await
@@ -884,7 +890,7 @@ pub async fn set_name<S: ControlStateDelegate>(
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
-    if database.identity != auth.identity {
+    if database.owner_identity != auth.identity {
         return Err((StatusCode::UNAUTHORIZED, "Identity does not own database.").into());
     }
 
