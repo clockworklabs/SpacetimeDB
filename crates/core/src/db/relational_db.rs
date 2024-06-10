@@ -663,6 +663,18 @@ impl RelationalDB {
     /// whether to request that the [`SnapshotWorker`] in `self` capture a snapshot of the database.
     ///
     /// Actual snapshotting happens asynchronously in a Tokio worker.
+    ///
+    /// Snapshotting must happen independent of the durable TX offset known by the [`Durability`]
+    /// because capturing a snapshot requires access to the committed state,
+    /// which in the general case may advance beyond the durable TX offset,
+    /// as our durability is an asynchronous write-behind log.
+    /// An alternate implementation might keep a second materialized [`CommittedState`]
+    /// which followed the durable TX offset rather than the committed-not-yet-durable state,
+    /// in which case we would be able to snapshot only TXes known to be durable.
+    /// In this implementation, we snapshot the existing [`CommittedState`]
+    /// which stores the committed-not-yet-durable state.
+    /// This requires a small amount of additional logic when restoring from a snapshot
+    /// to ensure we don't restore a snapshot more recent than the durable TX offset.
     fn maybe_do_snapshot(&self, tx_data: &TxData) {
         if let Some(snapshot_worker) = &self.snapshot_worker {
             if let Some(tx_offset) = tx_data.tx_offset() {
