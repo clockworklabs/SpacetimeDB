@@ -1,7 +1,6 @@
 //! Provides identifiers such as `TableId`.
 
 use core::fmt;
-use spacetimedb_data_structures::map::ValidAsIdentityHash;
 
 #[derive(Debug, Default, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(transparent)]
@@ -31,7 +30,7 @@ macro_rules! system_id {
             }
         }
 
-        impl ValidAsIdentityHash for $name {}
+        impl nohash_hasher::IsEnabled for $name {}
 
         impl From<i32> for $name {
             fn from(value: i32) -> Self {

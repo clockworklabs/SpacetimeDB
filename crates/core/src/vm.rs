@@ -1,7 +1,8 @@
 //! The [DbProgram] that execute arbitrary queries & code against the database.
 
-use crate::config::DatabaseConfig;
+use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::datastore::locking_tx_datastore::IterByColRange;
+use crate::db::datastore::system_tables::{st_var_schema, StVarName, StVarRow, StVarTable};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
@@ -23,6 +24,8 @@ use spacetimedb_vm::iterators::RelIter;
 use spacetimedb_vm::program::{ProgramVm, Sources};
 use spacetimedb_vm::rel_ops::{EmptyRelOps, RelOps};
 use spacetimedb_vm::relation::{MemTable, RelValue};
+use std::str::FromStr;
+use std::sync::Arc;
 
 pub enum TxMode<'a> {
     MutTx(&'a mut MutTx),
@@ -392,7 +395,7 @@ impl<'a, Rhs: RelOps<'a>> RelOps<'a> for IndexSemiJoinRight<'a, '_, Rhs> {
 /// A [ProgramVm] implementation that carry a [RelationalDB] for it
 /// query execution
 pub struct DbProgram<'db, 'tx> {
-    ctx: &'tx ExecutionContext,
+    pub(crate) ctx: &'tx ExecutionContext,
     pub(crate) db: &'db RelationalDB,
     pub(crate) tx: &'tx mut TxMode<'tx>,
     pub(crate) auth: AuthCtx,
@@ -402,13 +405,14 @@ pub struct DbProgram<'db, 'tx> {
 /// reject the request if the estimated cardinality exceeds the limit.
 pub fn check_row_limit<QuerySet>(
     queries: &QuerySet,
-    tx: &Tx,
-    row_est: impl Fn(&QuerySet, &Tx) -> u64,
+    ctx: &ExecutionContext,
+    db: &RelationalDB,
+    tx: &TxId,
+    row_est: impl Fn(&QuerySet, &TxId) -> u64,
     auth: &AuthCtx,
-    config: &DatabaseConfig,
 ) -> Result<(), DBError> {
     if auth.caller != auth.owner {
-        if let Some(limit) = config.row_limit {
+        if let Some(limit) = StVarTable::row_limit(ctx, db, tx)? {
             let estimate = row_est(queries, tx);
             if estimate > limit {
                 return Err(DBError::Other(anyhow::anyhow!(
@@ -429,10 +433,11 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         if let TxMode::Tx(tx) = self.tx {
             check_row_limit(
                 query,
+                self.ctx,
+                self.db,
                 tx,
                 |expr, tx| estimation::num_rows(tx, expr),
                 &self.auth,
-                &self.db.read_config(),
             )?;
         }
 
@@ -569,15 +574,26 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         Ok(Code::Pass(None))
     }
 
-    fn _set_config(&mut self, name: String, value: AlgebraicValue) -> Result<Code, ErrorVm> {
-        self.db.set_config(&name, value)?;
+    fn _set_var(&mut self, name: String, literal: String) -> Result<Code, ErrorVm> {
+        let tx = self.tx.unwrap_mut();
+        StVarTable::write_var(self.ctx, self.db, tx, StVarName::from_str(&name)?, &literal)?;
         Ok(Code::Pass(None))
     }
 
-    fn _read_config(&self, name: String) -> Result<Code, ErrorVm> {
-        let config = self.db.read_config();
-
-        Ok(Code::Table(config.read_key_into_table(&name)?))
+    fn _read_var(&self, name: String) -> Result<Code, ErrorVm> {
+        fn read_key_into_table(env: &DbProgram, name: &str) -> Result<MemTable, ErrorVm> {
+            if let TxMode::Tx(tx) = &env.tx {
+                let name = StVarName::from_str(name)?;
+                if let Some(value) = StVarTable::read_var(env.ctx, env.db, tx, name)? {
+                    return Ok(MemTable::from_iter(
+                        Arc::new(st_var_schema().into()),
+                        [ProductValue::from(StVarRow { name, value })],
+                    ));
+                }
+            }
+            Ok(MemTable::from_iter(Arc::new(st_var_schema().into()), []))
+        }
+        Ok(Code::Table(read_key_into_table(self, &name)?))
     }
 }
 
@@ -593,8 +609,8 @@ impl ProgramVm for DbProgram<'_, '_> {
             CrudExpr::Delete { query } => self._delete_query(&query, sources),
             CrudExpr::CreateTable { table } => self._create_table(*table),
             CrudExpr::Drop { name, kind, .. } => self._drop(&name, kind),
-            CrudExpr::SetVar { name, value } => self._set_config(name, value),
-            CrudExpr::ReadVar { name } => self._read_config(name),
+            CrudExpr::SetVar { name, literal } => self._set_var(name, literal),
+            CrudExpr::ReadVar { name } => self._read_var(name),
         }
     }
 }
@@ -625,6 +641,7 @@ pub(crate) mod tests {
         table_name: &str,
         schema: ProductType,
         rows: &[ProductValue],
+        access: StAccess,
     ) -> ResultTest<Arc<TableSchema>> {
         let columns: Vec<_> = Vec::from(schema.elements)
             .into_iter()
@@ -634,13 +651,6 @@ pub(crate) mod tests {
                 col_type: e.algebraic_type,
             })
             .collect();
-
-        // **In our tests,** a name that start with '_' like '_sample' is private.
-        let access = if table_name.starts_with('_') {
-            StAccess::Private
-        } else {
-            StAccess::Public
-        };
 
         let table_id = db.create_table(
             tx,
@@ -661,7 +671,7 @@ pub(crate) mod tests {
     fn create_inv_table(db: &RelationalDB, tx: &mut MutTx) -> ResultTest<(Arc<TableSchema>, ProductValue)> {
         let schema_ty = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
-        let schema = create_table_with_rows(db, tx, "inventory", schema_ty.clone(), &[row.clone()])?;
+        let schema = create_table_with_rows(db, tx, "inventory", schema_ty.clone(), &[row.clone()], StAccess::Public)?;
         Ok((schema, row))
     }
 

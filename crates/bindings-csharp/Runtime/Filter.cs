@@ -4,21 +4,19 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq.Expressions;
-using SpacetimeDB.SATS;
+using SpacetimeDB.BSATN;
 
-class ErasedValue(Action<BinaryWriter> write)
+readonly record struct ErasedValue(Action<BinaryWriter> write)
 {
-    private static readonly TypeInfo<ErasedValue> erasedTypeInfo = new TypeInfo<ErasedValue>(
-        // uninhabited type (sum type with zero variants)
-        // we don't really intent to use it but need to put something here to conform to the GetSatsTypeInfo() "interface"
-        AlgebraicType.Uninhabited,
-        (reader) => throw new NotSupportedException("cannot deserialize type-erased value"),
-        (writer, value) => value.write(writer)
-    );
+    public readonly struct BSATN : SpacetimeDB.BSATN.IReadWrite<ErasedValue>
+    {
+        public ErasedValue Read(BinaryReader reader) => throw new NotSupportedException();
 
-    public static TypeInfo<ErasedValue> GetSatsTypeInfo() => erasedTypeInfo;
+        public void Write(BinaryWriter writer, ErasedValue value) => value.write(writer);
 
-    private readonly Action<BinaryWriter> write = write;
+        public AlgebraicType GetAlgebraicType(ITypeRegistrar _) =>
+            throw new NotSupportedException();
+    }
 }
 
 [SpacetimeDB.Type]
@@ -83,34 +81,33 @@ partial record Expr : SpacetimeDB.TaggedEnum<(Cmp Cmp, Logic Logic, Unary Unary)
 
 public class Filter
 {
-    private readonly KeyValuePair<string, TypeInfo<object?>>[] fieldTypeInfos;
+    private readonly KeyValuePair<string, Action<BinaryWriter, object?>>[] fieldTypeInfos;
 
-    private Filter(KeyValuePair<string, TypeInfo<object?>>[] fieldTypeInfos)
+    private Filter(KeyValuePair<string, Action<BinaryWriter, object?>>[] fieldTypeInfos)
     {
         this.fieldTypeInfos = fieldTypeInfos;
     }
 
     public static byte[] Compile<T>(
-        KeyValuePair<string, TypeInfo<object?>>[] fieldTypeInfos,
+        KeyValuePair<string, Action<BinaryWriter, object?>>[] fieldTypeInfos,
         Expression<Func<T, bool>> rowFilter
     )
     {
         var filter = new Filter(fieldTypeInfos);
         var expr = filter.HandleExpr(rowFilter.Body);
-        var bytes = Expr.GetSatsTypeInfo().ToBytes(expr);
-        return bytes;
+        return IStructuralReadWrite.ToBytes(new Expr.BSATN(), expr);
     }
 
     (byte, Type) ExprAsTableField(Expression expr) =>
         expr switch
         {
-            // LINQ inserts spurrious conversions in comparisons, so we need to unwrap them
+            // LINQ inserts spurious conversions in comparisons, so we need to unwrap them
             UnaryExpression { NodeType: ExpressionType.Convert, Operand: var arg }
                 => ExprAsTableField(arg),
             MemberExpression
             {
                 Expression: ParameterExpression,
-                Member: { Name: var memberName },
+                Member.Name: var memberName,
                 Type: var type
             }
                 => ((byte)Array.FindIndex(fieldTypeInfos, pair => pair.Key == memberName), type),
@@ -120,7 +117,7 @@ public class Filter
                 )
         };
 
-    object? ExprAsRhs(Expression expr) =>
+    static object? ExprAsRhs(Expression expr) =>
         expr switch
         {
             ConstantExpression { Value: var value } => value,
@@ -133,7 +130,7 @@ public class Filter
 
         var rhs = ExprAsRhs(expr.Right);
         rhs = Convert.ChangeType(rhs, type);
-        var rhsWrite = fieldTypeInfos[lhsFieldIndex].Value.Write;
+        var rhsWrite = fieldTypeInfos[lhsFieldIndex].Value;
         var erasedRhs = new ErasedValue((writer) => rhsWrite(writer, rhs));
 
         var args = new CmpArgs(lhsFieldIndex, new Rhs.Value(erasedRhs));

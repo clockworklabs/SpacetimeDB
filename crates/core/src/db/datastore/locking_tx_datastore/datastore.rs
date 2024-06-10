@@ -10,12 +10,11 @@ use crate::{
     db::{
         datastore::{
             system_tables::{
-                system_table_schema, Epoch, StModuleFields, StModuleRow, StTableFields, ST_MODULE_ID, ST_TABLES_ID,
-                WASM_MODULE,
+                read_st_module_bytes_col, system_table_schema, ModuleKind, StModuleFields, StModuleRow, StTableFields,
+                ST_MODULE_ID, ST_TABLES_ID,
             },
             traits::{
-                DataRow, IsolationLevel, MutProgrammable, MutTx, MutTxDatastore, Programmable, RowTypeForTable, Tx,
-                TxData, TxDatastore,
+                DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, RowTypeForTable, Tx, TxData, TxDatastore,
             },
         },
         db_metrics::{DB_METRICS, MAX_TX_CPU_TIME},
@@ -264,6 +263,20 @@ impl TxDatastore for Locking {
             })
             .collect()
     }
+
+    fn metadata(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Metadata>> {
+        self.iter_tx(ctx, tx, ST_MODULE_ID)?
+            .next()
+            .map(metadata_from_row)
+            .transpose()
+    }
+
+    fn program_bytes(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Box<[u8]>>> {
+        self.iter_tx(ctx, tx, ST_MODULE_ID)?
+            .next()
+            .map(|row_ref| read_st_module_bytes_col(row_ref, StModuleFields::ProgramBytes))
+            .transpose()
+    }
 }
 
 impl MutTxDatastore for Locking {
@@ -442,6 +455,43 @@ impl MutTxDatastore for Locking {
     fn table_id_exists_mut_tx(&self, tx: &Self::MutTx, table_id: &TableId) -> bool {
         tx.table_name(*table_id).is_some()
     }
+
+    fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>> {
+        let ctx = ExecutionContext::internal(self.database_address);
+        tx.iter(&ctx, ST_MODULE_ID)?.next().map(metadata_from_row).transpose()
+    }
+
+    fn update_program(
+        &self,
+        tx: &mut Self::MutTx,
+        program_kind: ModuleKind,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> Result<()> {
+        let ctx = ExecutionContext::internal(self.database_address);
+        let old = tx
+            .iter(&ctx, ST_MODULE_ID)?
+            .next()
+            .map(|row| {
+                let ptr = row.pointer();
+                let row = StModuleRow::try_from(row)?;
+                Ok::<_, DBError>((ptr, row))
+            })
+            .transpose()?;
+        match old {
+            Some((ptr, mut row)) => {
+                row.program_kind = program_kind;
+                row.program_hash = program_hash;
+                row.program_bytes = program_bytes;
+
+                tx.delete(ST_MODULE_ID, ptr)?;
+                tx.insert(ST_MODULE_ID, &mut row.into(), self.database_address)
+                    .map(drop)
+            }
+
+            None => Err(anyhow!("database {} improperly initialized: no metadata", self.database_address).into()),
+        }
+    }
 }
 
 pub(super) fn record_metrics(ctx: &ExecutionContext, tx_timer: Instant, lock_wait_time: Duration, committed: bool) {
@@ -563,64 +613,6 @@ impl Locking {
         // the MutTx and release the lock.
         record_metrics(ctx, timer, lock_wait_time, true);
         Ok(Some(res))
-    }
-}
-
-impl Programmable for Locking {
-    fn program_hash(&self, tx: &TxId) -> Result<Option<spacetimedb_sats::hash::Hash>> {
-        tx.iter(&ExecutionContext::internal(self.database_address), ST_MODULE_ID)?
-            .next()
-            .map(|row| StModuleRow::try_from(row).map(|st| st.program_hash))
-            .transpose()
-    }
-}
-
-impl MutProgrammable for Locking {
-    type FencingToken = u128;
-
-    fn set_program_hash(&self, tx: &mut MutTxId, fence: Self::FencingToken, hash: Hash) -> Result<()> {
-        let ctx = ExecutionContext::internal(self.database_address);
-        let mut iter = tx.iter(&ctx, ST_MODULE_ID)?;
-        if let Some(row_ref) = iter.next() {
-            let epoch = row_ref.read_col::<u128>(StModuleFields::Epoch)?;
-            if fence <= epoch {
-                return Err(anyhow!("stale fencing token: {}, storage is at epoch: {}", fence, epoch).into());
-            }
-
-            // Note the borrow checker requires that we explictly drop the iterator.
-            // That is, before we delete and insert.
-            // This is because datastore iterators write to the metric store when dropped.
-            // Hence if we don't explicitly drop here,
-            // there will be another immutable borrow of self after the two mutable borrows below.
-
-            tx.delete(ST_MODULE_ID, row_ref.pointer())?;
-            tx.insert(
-                ST_MODULE_ID,
-                &mut ProductValue::from(&StModuleRow {
-                    program_hash: hash,
-                    kind: WASM_MODULE,
-                    epoch: Epoch(fence),
-                }),
-                self.database_address,
-            )?;
-            return Ok(());
-        }
-
-        // Note the borrow checker requires that we explictly drop the iterator before we insert.
-        // This is because datastore iterators write to the metric store when dropped.
-        // Hence if we don't explicitly drop here,
-        // there will be another immutable borrow of self after the mutable borrow of the insert.
-
-        tx.insert(
-            ST_MODULE_ID,
-            &mut ProductValue::from(&StModuleRow {
-                program_hash: hash,
-                kind: WASM_MODULE,
-                epoch: Epoch(fence),
-            }),
-            self.database_address,
-        )?;
-        Ok(())
     }
 }
 
@@ -904,11 +896,26 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
     }
 }
 
+/// Construct a [`Metadata`] from the given [`RowRef`],
+/// reading only the columns necessary to construct the value.
+fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
+    let database_address = read_st_module_bytes_col(row, StModuleFields::DatabaseAddress).map(Address::from_slice)?;
+    let owner_identity =
+        read_st_module_bytes_col(row, StModuleFields::OwnerIdentity).map(|bytes| Identity::from_slice(&bytes))?;
+    let program_hash =
+        read_st_module_bytes_col(row, StModuleFields::ProgramHash).map(|bytes| Hash::from_slice(&bytes))?;
+    Ok(Metadata {
+        database_address,
+        owner_identity,
+        program_hash,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{
-        system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_COLUMNS_ID,
+        system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, StVarValue, ST_COLUMNS_ID,
         ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_RESERVED_SEQUENCE_RANGE, ST_SEQUENCES_ID,
     };
     use crate::db::datastore::traits::{IsolationLevel, MutTx};
@@ -1286,6 +1293,7 @@ mod tests {
             TableRow { id: 4, name: "st_constraints", ty: StTableType::System, access: StAccess::Public },
             TableRow { id: 5, name: "st_module", ty: StTableType::System, access: StAccess::Public },
             TableRow { id: 6, name: "st_clients", ty: StTableType::System, access: StAccess::Public },
+            TableRow { id: 7, name: "st_var", ty: StTableType::System, access: StAccess::Public },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_columns()?, map_array([
@@ -1322,12 +1330,17 @@ mod tests {
             ColRow { table: 4, pos: 3, name: "table_id", ty: AlgebraicType::U32 },
             ColRow { table: 4, pos: 4, name: "columns", ty: AlgebraicType::array(AlgebraicType::U32) },
 
-            ColRow { table: 5, pos: 0, name: "program_hash", ty: AlgebraicType::array(AlgebraicType::U8) },
-            ColRow { table: 5, pos: 1, name: "kind", ty: AlgebraicType::U8 },
-            ColRow { table: 5, pos: 2, name: "epoch", ty: AlgebraicType::U128 },
+            ColRow { table: 5, pos: 0, name: "database_address", ty: AlgebraicType::bytes() },
+            ColRow { table: 5, pos: 1, name: "owner_identity", ty: AlgebraicType::bytes() },
+            ColRow { table: 5, pos: 2, name: "program_kind", ty: AlgebraicType::U8 },
+            ColRow { table: 5, pos: 3, name: "program_hash", ty: AlgebraicType::bytes() },
+            ColRow { table: 5, pos: 4, name: "program_bytes", ty: AlgebraicType::bytes() },
 
             ColRow { table: 6, pos: 0, name: "identity", ty: Identity::get_type() },
             ColRow { table: 6, pos: 1, name: "address", ty: Address::get_type() },
+
+            ColRow { table: 7, pos: 0, name: "name", ty: AlgebraicType::String },
+            ColRow { table: 7, pos: 1, name: "value", ty: StVarValue::type_of() },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1338,6 +1351,7 @@ mod tests {
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 6, table: 6, col: col_list![0, 1], name: "idx_st_clients_identity_address_unique", unique: true },
+            IndexRow { id: 7, table: 7, col: col(0), name: "idx_st_var_name_primary_key_unique", unique: true },
         ]));
         let start = FIRST_NON_SYSTEM_ID as i128;
         #[rustfmt::skip]
@@ -1362,6 +1376,7 @@ mod tests {
             ConstraintRow { constraint_id: 4, table_id: 3, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_indexes_index_id_primary_key_auto" },
             ConstraintRow { constraint_id: 5, table_id: 4, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_constraints_constraint_id_primary_key_auto" },
             ConstraintRow { constraint_id: 6, table_id: 6, columns: col_list![0, 1], constraints: Constraints::unique(), constraint_name: "ct_st_clients_identity_address_unique" },
+            ConstraintRow { constraint_id: 7, table_id: 7, columns: col(0), constraints: Constraints::primary_key(), constraint_name: "ct_st_var_name_primary_key" },
         ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -1743,6 +1758,7 @@ mod tests {
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 6, table: 6, col: col_list![0, 1], name: "idx_st_clients_identity_address_unique", unique: true },
+            IndexRow { id: 7, table: 7, col: col(0), name: "idx_st_var_name_primary_key_unique", unique: true },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx", unique: true },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "age_idx", unique: true },
@@ -1788,6 +1804,7 @@ mod tests {
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 6, table: 6, col: col_list![0, 1], name: "idx_st_clients_identity_address_unique", unique: true },
+            IndexRow { id: 7, table: 7, col: col(0), name: "idx_st_var_name_primary_key_unique", unique: true },
             IndexRow { id: seq_start    , table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx", unique: true },
             IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "age_idx", unique: true },
@@ -1833,6 +1850,7 @@ mod tests {
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 6, table: 6, col: col_list![0, 1], name: "idx_st_clients_identity_address_unique", unique: true },
+            IndexRow { id: 7, table: 7, col: col(0), name: "idx_st_var_name_primary_key_unique", unique: true },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },
             IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx", unique: true },
         ].map(Into::into));

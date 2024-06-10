@@ -125,38 +125,36 @@ public class Module : IIncrementalGenerator
 
                             public static IEnumerable<{t.Name}> Iter() =>
                                 new SpacetimeDB.Runtime.RawTableIter(tableId.Value)
-                                .SelectMany(GetSatsTypeInfo().ReadBytes);
+                                .Parse<{t.Name}>();
 
-                            private static readonly Lazy<KeyValuePair<string, SpacetimeDB.SATS.TypeInfo<object?>>[]> fieldTypeInfos = new (() => new KeyValuePair<string, SpacetimeDB.SATS.TypeInfo<object?>>[] {{
-                                {string.Join("\n", t.Fields.Select(f => $"new (nameof({f.Name}), {f.TypeInfo}.EraseType()),"))}
-                            }});
-
-                            public static SpacetimeDB.Module.TableDesc MakeTableDesc() => new (
+                            public static SpacetimeDB.Module.TableDesc MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
                                 new (
                                     nameof({t.Name}),
                                     new SpacetimeDB.Module.ColumnDefWithAttrs[] {{ {string.Join(",", t.Fields.Select(f => $@"
                                         new (
-                                            new SpacetimeDB.Module.ColumnDef(nameof({f.Name}), {f.TypeInfo}.AlgebraicType),
+                                            new SpacetimeDB.Module.ColumnDef(nameof({f.Name}), BSATN.{f.Name}.GetAlgebraicType(registrar)),
                                             SpacetimeDB.Module.ColumnAttrs.{f.IndexKind}
                                         )
                                     "))} }}
                                 ),
-                                (SpacetimeDB.SATS.AlgebraicType.Ref){t.Name}.GetSatsTypeInfo().AlgebraicType
+                                (SpacetimeDB.BSATN.AlgebraicType.Ref) new BSATN().GetAlgebraicType(registrar)
                             );
+
+                            private static readonly Lazy<KeyValuePair<string, Action<BinaryWriter, object?>>[]> fieldTypeInfos = new (() => new KeyValuePair<string, Action<BinaryWriter, object?>>[] {{
+                                {string.Join("\n", t.Fields.Select(f => $"new (nameof({f.Name}), (w, v) => BSATN.{f.Name}.Write(w, ({f.Type}) v!)),"))}
+                            }});
 
                             public static IEnumerable<{t.Name}> Query(System.Linq.Expressions.Expression<Func<{t.Name}, bool>> filter) =>
                                 new SpacetimeDB.Runtime.RawTableIterFiltered(tableId.Value, SpacetimeDB.Filter.Filter.Compile<{t.Name}>(fieldTypeInfos.Value, filter))
-                                .SelectMany(GetSatsTypeInfo().ReadBytes);
+                                .Parse<{t.Name}>();
 
                             public void Insert() {{
-                                var typeInfo = GetSatsTypeInfo();
-                                var bytes = typeInfo.ToBytes(this);
-                                SpacetimeDB.Runtime.Insert(tableId.Value, bytes);
+                                var bytes = SpacetimeDB.Runtime.Insert(tableId.Value, this);
                                 // bytes should contain modified value now with autoinc fields updated
                                 {(autoIncFields.Any() ? $@"
-                                    var newInstance = typeInfo.ReadBytes(bytes).SingleOrDefault();
-
-                                    {string.Join("\n", autoIncFields.Select(f => $"this.{f} = newInstance.{f};"))}
+                                    using var stream = new System.IO.MemoryStream(bytes);
+                                    using var reader = new System.IO.BinaryReader(stream);
+                                    ReadFields(reader);
                                 " : "")}
                             }}
                         ";
@@ -171,8 +169,8 @@ public class Module : IIncrementalGenerator
                         extensions +=
                             $@"
                                 public static IEnumerable<{t.Name}> FilterBy{f.Name}({f.Type} {f.Name}) =>
-                                    new SpacetimeDB.Runtime.RawTableIterByColEq(tableId.Value, {index}, {f.TypeInfo}.ToBytes({f.Name}))
-                                    .SelectMany(GetSatsTypeInfo().ReadBytes);
+                                    new SpacetimeDB.Runtime.RawTableIterByColEq(tableId.Value, {index}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name}))
+                                    .Parse<{t.Name}>();
                             ";
 
                         if (f.IndexKind.HasFlag(ColumnAttrs.Unique))
@@ -185,10 +183,10 @@ public class Module : IIncrementalGenerator
                                         .SingleOrDefault();
 
                                     public static bool DeleteBy{f.Name}({f.Type} {f.Name}) =>
-                                        SpacetimeDB.Runtime.DeleteByColEq(tableId.Value, {index}, {f.TypeInfo}.ToBytes({f.Name})) > 0;
+                                        SpacetimeDB.Runtime.DeleteByColEq(tableId.Value, {index}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name})) > 0;
 
                                     public static bool UpdateBy{f.Name}({f.Type} {f.Name}, {t.Name} value) =>
-                                        SpacetimeDB.Runtime.UpdateByColEq(tableId.Value, {index}, {f.TypeInfo}.ToBytes({f.Name}), GetSatsTypeInfo().ToBytes(value));
+                                        SpacetimeDB.Runtime.UpdateByColEq(tableId.Value, {index}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name}), value);
                                 ";
                         }
                     }
@@ -250,12 +248,12 @@ public class Module : IIncrementalGenerator
                         r.Name,
                         Class: $@"
                             class {r.Name}: IReducer {{
-                                {string.Join("\n", r.Args.Where(a => !a.IsContextArg).Select(a => $"SpacetimeDB.SATS.TypeInfo<{a.Type}> {a.Name} = {GetTypeInfo(a.Type)};"))}
+                                {string.Join("\n", r.Args.Where(a => !a.IsContextArg).Select(a => $"{GetTypeInfo(a.Type)} {a.Name} = new();"))}
 
-                                SpacetimeDB.Module.ReducerDef IReducer.MakeReducerDef() {{
+                                SpacetimeDB.Module.ReducerDef IReducer.MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) {{
                                     return new (
                                         ""{r.ExportName}""
-                                        {string.Join("", r.Args.Where(a => !a.IsContextArg).Select(a => $",\nnew SpacetimeDB.SATS.AggregateElement(nameof({a.Name}), {a.Name}.AlgebraicType)"))}
+                                        {string.Join("", r.Args.Where(a => !a.IsContextArg).Select(a => $",\nnew SpacetimeDB.BSATN.AggregateElement(nameof({a.Name}), {a.Name}.GetAlgebraicType(registrar))"))}
                                     );
                                 }}
 
@@ -305,11 +303,11 @@ public class Module : IIncrementalGenerator
                 [UnmanagedCallersOnly(EntryPoint = ""__preinit__10_init_csharp"")]
 #else
                 // Prevent trimming of FFI exports that are invoked from C and not visible to C# trimmer.
-                [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(FFI))]
+                [DynamicDependency(DynamicallyAccessedMemberTypes.PublicMethods, typeof(FFI))]
 #endif
                 public static void Main() {{
                     {string.Join("\n", addReducers.Select(r => $"FFI.RegisterReducer(new {r.Name}());"))}
-                    {string.Join("\n", tableNames.Select(t => $"FFI.RegisterTable({t}.MakeTableDesc());"))}
+                    {string.Join("\n", tableNames.Select(t => $"FFI.RegisterTable({t}.MakeTableDesc(FFI.TypeRegistrar));"))}
                 }}
 
 // Exports only work from the main assembly, so we need to generate forwarding methods.
@@ -342,7 +340,7 @@ public class Module : IIncrementalGenerator
                             public static SpacetimeDB.Runtime.ScheduleToken Schedule{r.Name}(DateTimeOffset time{string.Join("", r.Args.Where(a => !a.IsContextArg).Select(a => $", {a.Type} {a.Name}"))}) {{
                                 using var stream = new MemoryStream();
                                 using var writer = new BinaryWriter(stream);
-                                {string.Join("\n", r.Args.Where(a => !a.IsContextArg).Select(a => $"{GetTypeInfo(a.Type)}.Write(writer, {a.Name});"))}
+                                {string.Join("\n", r.Args.Where(a => !a.IsContextArg).Select(a => $"new {GetTypeInfo(a.Type)}().Write(writer, {a.Name});"))}
                                 return new(nameof({r.Name}), stream.ToArray(), time);
                             }}
                         "

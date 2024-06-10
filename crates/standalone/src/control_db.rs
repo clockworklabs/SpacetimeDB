@@ -1,9 +1,4 @@
-use std::borrow::Cow;
-
-use anyhow::{anyhow, Context};
-
 use spacetimedb::address::Address;
-
 use spacetimedb::hash::hash_bytes;
 use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, EnergyBalance, IdentityEmail, Node};
@@ -357,30 +352,6 @@ impl ControlDb {
         Ok(id)
     }
 
-    pub fn update_database(&self, database: Database) -> Result<()> {
-        let tree = self.db.open_tree("database")?;
-        let tree_by_address = self.db.open_tree("database_by_address")?;
-        let key = database.address.to_hex();
-
-        let old_value = tree.get(database.id.to_be_bytes())?;
-        if let Some(old_value) = old_value {
-            let old_database: Database = bsatn::from_slice(&old_value[..])?;
-
-            if database.address != old_database.address && tree_by_address.contains_key(key.as_bytes())? {
-                return Err(Error::DatabaseAlreadyExists(database.address));
-            }
-        }
-
-        let buf = sled::IVec::from(bsatn::to_vec(&database).unwrap());
-
-        tree.insert(database.id.to_be_bytes(), buf.clone())?;
-
-        let key = database.address.to_hex();
-        tree_by_address.insert(key, buf)?;
-
-        Ok(())
-    }
-
     pub fn delete_database(&self, id: u64) -> Result<Option<u64>> {
         let tree = self.db.open_tree("database")?;
         let tree_by_address = self.db.open_tree("database_by_address")?;
@@ -572,81 +543,4 @@ impl ControlDb {
 
         Ok(())
     }
-
-    /// Acquire a lock on `key`.
-    ///
-    /// If the lock can not be acquired immediately, an error is returned.
-    ///
-    /// This method is essentially simulating locking in the distributed version
-    /// of SpacetimeDB. It does not, however, provide time-based expiration of
-    /// a lock.
-    pub fn lock<'a, S>(&self, key: S) -> Result<Lock<'a>>
-    where
-        S: Into<Cow<'a, str>>,
-    {
-        let tree = self.db.open_tree("locks")?;
-        let token = self.db.generate_id().map(Some)?;
-        let key = key.into();
-        match cas_u64(&tree, &key, None, token)? {
-            Ok(()) => Ok(Lock { key, token, tree }),
-            Err(_) => Err(anyhow!("Lock on `{key}` taken").into()),
-        }
-    }
-}
-
-/// A keyed lock acquired by [`ControlDb::lock`].
-///
-/// The lock is released on drop, or by calling [`Lock::release`].
-pub struct Lock<'a> {
-    key: Cow<'a, str>,
-    token: Option<u64>,
-    tree: sled::Tree,
-}
-
-impl Lock<'_> {
-    /// Return the [fencing token] associated with this lock.
-    ///
-    /// [fencing token]: https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html
-    pub fn token(&self) -> u64 {
-        self.token.expect("fencing token must be set unless self was dropped")
-    }
-
-    /// Release this lock, consuming `self`.
-    ///
-    /// A [`Lock`] is automatically released when it goes out of scope, however
-    /// any errors are lost in this case. Use [`Self::release`] to observe those
-    /// errors.
-    pub fn _release(mut self) -> Result<()> {
-        let this = &mut self;
-        this.release_internal()
-    }
-
-    fn release_internal(&mut self) -> Result<()> {
-        if let Some(tok) = self.token.take() {
-            cas_u64(&self.tree, &self.key, Some(tok), None)?.context("lock token changed while held")?
-        }
-        Ok(())
-    }
-}
-
-impl Drop for Lock<'_> {
-    fn drop(&mut self) {
-        if let Err(e) = self.release_internal() {
-            log::error!("Failed to release lock on `{}`: {}", self.key, e);
-        }
-    }
-}
-
-/// [`sled::Tree::compare_and_swap`] specialized to `&str` keys and `u64` values.
-fn cas_u64(
-    tree: &sled::Tree,
-    key: &str,
-    old: Option<u64>,
-    new: Option<u64>,
-) -> sled::Result<std::result::Result<(), sled::CompareAndSwapError>> {
-    tree.compare_and_swap(
-        key,
-        old.map(|x| x.to_be_bytes()).as_ref(),
-        new.map(|x| x.to_be_bytes()).as_ref(),
-    )
 }

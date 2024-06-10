@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>SpacetimeDB.BSATN.Codegen</AssemblyName>
+    <AssemblyVersion>0.8.1</AssemblyVersion>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!--
+      We don't want to publish this package to NuGet to reduce maintenance cost
+      as well as shenanigans with transitive deps in source generators. (https://github.com/dotnet/roslyn/issues/43903)
+      Instead, we put its DLL directly in Unity SDK and include it in SpacetimeDB.Codegen for regular C# consumers
+    -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Version>$(AssemblyVersion)</Version>
+    <Title>SpacetimeDB BSATN Codegen</Title>
+    <Authors>RReverser</Authors>
+    <Company>Clockwork Labs</Company>
+    <Product>SpacetimeDB</Product>
+    <Description>The SpacetimeDB BSATN Codegen implements the Roslyn incremental generators for BSATN serialization/deserialization in C#.</Description>
+    <Copyright>2023</Copyright>
+    <PackageProjectUrl>https://spacetimedb.com/</PackageProjectUrl>
+    <PackageIcon>logo.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDB</RepositoryUrl>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.1" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../logo.png" Pack="true" PackagePath="" />
+    <None Include="../Codegen/README.md" Pack="true" PackagePath="" />
+    <None Include="../LICENSE" Pack="true" PackagePath="" />
+    <None Include="$(OutputPath)/$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+  </ItemGroup>
+
+</Project>

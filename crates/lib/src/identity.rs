@@ -35,6 +35,7 @@ pub struct Identity {
 
 impl_st!([] Identity, _ts => Identity::get_type());
 
+#[cfg(feature = "metrics_impls")]
 impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Identity {
     fn as_prometheus_str(&self) -> impl AsRef<str> + '_ {
         self.to_hex()

@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use super::compiler::compile_sql;
 use crate::db::datastore::locking_tx_datastore::state_view::StateView;
+use crate::db::datastore::system_tables::StVarTable;
 use crate::db::datastore::traits::IsolationLevel;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::energy::EnergyQuanta;
@@ -59,14 +60,21 @@ pub(crate) fn collect_result(
 }
 
 pub fn ctx_sql(db: &RelationalDB) -> ExecutionContext {
-    ExecutionContext::sql(db.address(), db.read_config().slow_query)
+    ExecutionContext::sql(db.address())
 }
 
 fn execute(
     p: &mut DbProgram<'_, '_>,
     ast: Vec<CrudExpr>,
+    sql: &str,
     updates: &mut Vec<DatabaseTableUpdate>,
 ) -> Result<Vec<MemTable>, DBError> {
+    let slow_query_threshold = if let TxMode::Tx(tx) = p.tx {
+        StVarTable::query_limit(p.ctx, p.db, tx)?.map(Duration::from_millis)
+    } else {
+        None
+    };
+    let _slow_query_logger = SlowQueryLogger::new(sql, slow_query_threshold, p.ctx.workload()).log_guard();
     let mut result = Vec::with_capacity(ast.len());
     let query = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
     // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
@@ -87,13 +95,13 @@ pub fn execute_sql(
     subs: Option<&ModuleSubscriptions>,
 ) -> Result<Vec<MemTable>, DBError> {
     let ctx = ctx_sql(db);
-    let _slow_logger = SlowQueryLogger::query(&ctx, sql).log_guard();
     if CrudExpr::is_reads(&ast) {
         let mut updates = Vec::new();
         db.with_read_only(&ctx, |tx| {
             execute(
                 &mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth),
                 ast,
+                sql,
                 &mut updates,
             )
         })
@@ -103,6 +111,7 @@ pub fn execute_sql(
             execute(
                 &mut DbProgram::new(&ctx, db, &mut mut_tx.into(), auth),
                 ast,
+                sql,
                 &mut updates,
             )
         })
@@ -112,6 +121,7 @@ pub fn execute_sql(
         let res = execute(
             &mut DbProgram::new(&ctx, db, &mut (&mut tx).into(), auth),
             ast,
+            sql,
             &mut updates,
         );
         if res.is_ok() && !updates.is_empty() {
@@ -156,9 +166,8 @@ pub fn execute_sql_tx<'a>(
     }
 
     let ctx = ctx_sql(db);
-    let _slow_logger = SlowQueryLogger::query(&ctx, sql).log_guard();
     let mut updates = Vec::new(); // No subscription updates in this path, because it requires owning the tx.
-    execute(&mut DbProgram::new(&ctx, db, &mut tx, auth), ast, &mut updates).map(Some)
+    execute(&mut DbProgram::new(&ctx, db, &mut tx, auth), ast, sql, &mut updates).map(Some)
 }
 
 /// Run the `SQL` string using the `auth` credentials
@@ -169,7 +178,6 @@ pub fn run(
     subs: Option<&ModuleSubscriptions>,
 ) -> Result<Vec<MemTable>, DBError> {
     let ctx = ctx_sql(db);
-    let _slow_logger = SlowQueryLogger::query(&ctx, sql_text).log_guard();
     let result = db.with_read_only(&ctx, |tx| {
         let ast = compile_sql(db, tx, sql_text)?;
         if CrudExpr::is_reads(&ast) {
@@ -177,6 +185,7 @@ pub fn run(
             let result = execute(
                 &mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth),
                 ast,
+                sql_text,
                 &mut updates,
             )?;
             Ok::<_, DBError>(Either::Left(result))
@@ -245,7 +254,7 @@ pub(crate) mod tests {
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
 
         let schema = stdb.with_auto_commit(&ExecutionContext::default(), |tx| {
-            create_table_with_rows(&stdb, tx, "inventory", head.clone(), &rows)
+            create_table_with_rows(&stdb, tx, "inventory", head.clone(), &rows, StAccess::Public)
         })?;
         let header = Header::from(&*schema).into();
 
@@ -473,9 +482,16 @@ pub(crate) mod tests {
         let db = TestDB::durable()?;
 
         let (p_schema, inv_schema) = db.with_auto_commit::<_, _, TestError>(&ExecutionContext::default(), |tx| {
-            let i = create_table_with_rows(&db, tx, "Inventory", data.inv_ty, &data.inv.data)?;
-            let p = create_table_with_rows(&db, tx, "Player", data.player_ty, &data.player.data)?;
-            create_table_with_rows(&db, tx, "Location", data.location_ty, &data.location.data)?;
+            let i = create_table_with_rows(&db, tx, "Inventory", data.inv_ty, &data.inv.data, StAccess::Public)?;
+            let p = create_table_with_rows(&db, tx, "Player", data.player_ty, &data.player.data, StAccess::Public)?;
+            create_table_with_rows(
+                &db,
+                tx,
+                "Location",
+                data.location_ty,
+                &data.location.data,
+                StAccess::Public,
+            )?;
             Ok((p, i))
         })?;
 
@@ -864,6 +880,46 @@ SELECT * FROM inventory",
 
         let result = result.first().unwrap().clone();
         assert_eq!(result.data, []);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_row_limit() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
+        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<_, DBError> {
+            for i in 0..5u8 {
+                db.insert(tx, table_id, product!(i))?;
+            }
+            Ok(())
+        })?;
+
+        let server = Identity::from_hashing_bytes("server");
+        let client = Identity::from_hashing_bytes("client");
+
+        let internal_auth = AuthCtx::new(server, server);
+        let external_auth = AuthCtx::new(server, client);
+
+        // No row limit, both queries pass.
+        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_ok());
+
+        // Set row limit.
+        assert!(run(&db, "SET row_limit = 4", internal_auth, None).is_ok());
+
+        // External query fails.
+        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_err());
+
+        // Increase row limit.
+        assert!(run(&db, "DELETE FROM st_var WHERE name = 'row_limit'", internal_auth, None).is_ok());
+        assert!(run(&db, "SET row_limit = 5", internal_auth, None).is_ok());
+
+        // Both queries pass.
+        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_ok());
 
         Ok(())
     }

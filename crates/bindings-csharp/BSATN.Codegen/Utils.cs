@@ -8,9 +8,9 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-static class Utils
+public static class Utils
 {
-    internal static string SymbolToName(ISymbol symbol)
+    public static string SymbolToName(ISymbol symbol)
     {
         return symbol.ToDisplayString(
             SymbolDisplayFormat
@@ -22,7 +22,7 @@ static class Utils
         );
     }
 
-    internal static void RegisterSourceOutputs(
+    public static void RegisterSourceOutputs(
         this IncrementalValuesProvider<KeyValuePair<string, string>> methods,
         IncrementalGeneratorInitializationContext context
     )
@@ -44,6 +44,8 @@ static class Utils
         );
     }
 
+    public static string MakeRwTypeParam(string typeParam) => typeParam + "RW";
+
     public static string GetTypeInfo(ITypeSymbol type)
     {
         // We need to distinguish handle nullable reference types specially:
@@ -56,65 +58,79 @@ static class Utils
         )
         {
             // if we're here, then this is a nullable reference type like `string?`.
-            return $"SpacetimeDB.SATS.AlgebraicType.MakeRefOption({GetTypeInfo(type.WithNullableAnnotation(NullableAnnotation.None))})";
+            type = type.WithNullableAnnotation(NullableAnnotation.None);
+            return $"SpacetimeDB.BSATN.RefOption<{type}, {GetTypeInfo(type)}>";
         }
         return type switch
         {
-            ITypeParameterSymbol typeParameter => $"{typeParameter.Name}TypeInfo",
+            ITypeParameterSymbol typeParameter => MakeRwTypeParam(typeParameter.Name),
             INamedTypeSymbol namedType
                 => type.SpecialType switch
                 {
-                    SpecialType.System_Boolean => "SpacetimeDB.SATS.BuiltinType.BoolTypeInfo",
-                    SpecialType.System_SByte => "SpacetimeDB.SATS.BuiltinType.I8TypeInfo",
-                    SpecialType.System_Byte => "SpacetimeDB.SATS.BuiltinType.U8TypeInfo",
-                    SpecialType.System_Int16 => "SpacetimeDB.SATS.BuiltinType.I16TypeInfo",
-                    SpecialType.System_UInt16 => "SpacetimeDB.SATS.BuiltinType.U16TypeInfo",
-                    SpecialType.System_Int32 => "SpacetimeDB.SATS.BuiltinType.I32TypeInfo",
-                    SpecialType.System_UInt32 => "SpacetimeDB.SATS.BuiltinType.U32TypeInfo",
-                    SpecialType.System_Int64 => "SpacetimeDB.SATS.BuiltinType.I64TypeInfo",
-                    SpecialType.System_UInt64 => "SpacetimeDB.SATS.BuiltinType.U64TypeInfo",
-                    SpecialType.System_Single => "SpacetimeDB.SATS.BuiltinType.F32TypeInfo",
-                    SpecialType.System_Double => "SpacetimeDB.SATS.BuiltinType.F64TypeInfo",
-                    SpecialType.System_String => "SpacetimeDB.SATS.BuiltinType.StringTypeInfo",
-                    SpecialType.None when type.ToString() == "System.Int128"
-                        => "SpacetimeDB.SATS.BuiltinType.I128TypeInfo",
-                    SpecialType.None when type.ToString() == "System.UInt128"
-                        => "SpacetimeDB.SATS.BuiltinType.U128TypeInfo",
-                    SpecialType.None
-                        when namedType.EnumUnderlyingType is not null
-                            // check that enums also have [SpacetimeDB.Type]
-                            // we don't currently do anything special whether or not it exists but might in the future
-                            // so this requirement is mostly for future-proofing
-                            && type.GetAttributes()
-                                .Any(a =>
-                                    a.AttributeClass?.ToDisplayString()
-                                    == "SpacetimeDB.TypeAttribute"
-                                )
-                        => $"SpacetimeDB.SATS.BuiltinType.MakeEnum<{type}>()",
-                    SpecialType.None
-                        => $"{type.OriginalDefinition.ToString() switch
-                        {
-                            "System.Collections.Generic.List<T>" => "SpacetimeDB.SATS.BuiltinType.MakeList",
-                            "System.Collections.Generic.Dictionary<TKey, TValue>" => "SpacetimeDB.SATS.BuiltinType.MakeMap",
-                            // If we're here, then this is nullable value type like `int?`.
-                            "System.Nullable<T>" => $"SpacetimeDB.SATS.AlgebraicType.MakeValueOption",
-                            var name when name.StartsWith("System.") => throw new InvalidOperationException(
-                                $"Unsupported system type {name}"
-                            ),
-                            _ => $"{type}.GetSatsTypeInfo",
-                        }}({string.Join(", ", namedType.TypeArguments.Select(GetTypeInfo))})",
+                    SpecialType.System_Boolean => "SpacetimeDB.BSATN.Bool",
+                    SpecialType.System_SByte => "SpacetimeDB.BSATN.I8",
+                    SpecialType.System_Byte => "SpacetimeDB.BSATN.U8",
+                    SpecialType.System_Int16 => "SpacetimeDB.BSATN.I16",
+                    SpecialType.System_UInt16 => "SpacetimeDB.BSATN.U16",
+                    SpecialType.System_Int32 => "SpacetimeDB.BSATN.I32",
+                    SpecialType.System_UInt32 => "SpacetimeDB.BSATN.U32",
+                    SpecialType.System_Int64 => "SpacetimeDB.BSATN.I64",
+                    SpecialType.System_UInt64 => "SpacetimeDB.BSATN.U64",
+                    SpecialType.System_Single => "SpacetimeDB.BSATN.F32",
+                    SpecialType.System_Double => "SpacetimeDB.BSATN.F64",
+                    SpecialType.System_String => "SpacetimeDB.BSATN.String",
+                    SpecialType.None => GetTypeInfoForNamedType(namedType),
                     _
                         => throw new InvalidOperationException(
-                            $"Unsupported special type {type.SpecialType} ({type})"
+                            $"Unsupported special type {type} ({type.SpecialType})"
                         )
                 },
-            IArrayTypeSymbol arrayType
-                => arrayType.ElementType is INamedTypeSymbol namedType
+            IArrayTypeSymbol { ElementType: var elementType }
+                => elementType is INamedTypeSymbol namedType
                 && namedType.SpecialType == SpecialType.System_Byte
-                    ? "SpacetimeDB.SATS.BuiltinType.BytesTypeInfo"
-                    : $"SpacetimeDB.SATS.BuiltinType.MakeArray({GetTypeInfo(arrayType.ElementType)})",
+                    ? "SpacetimeDB.BSATN.ByteArray"
+                    : $"SpacetimeDB.BSATN.Array<{elementType}, {GetTypeInfo(elementType)}>",
             _ => throw new InvalidOperationException($"Unsupported type {type}")
         };
+
+        static string GetTypeInfoForNamedType(INamedTypeSymbol type)
+        {
+            if (type.TypeKind == TypeKind.Enum)
+            {
+                if (
+                    !type.GetAttributes()
+                        .Any(a =>
+                            a.AttributeClass?.ToDisplayString() == "SpacetimeDB.TypeAttribute"
+                        )
+                )
+                {
+                    throw new InvalidOperationException(
+                        $"Enum {type} does not have a [SpacetimeDB.Type] attribute"
+                    );
+                }
+                return $"SpacetimeDB.BSATN.Enum<{SymbolToName(type)}>";
+            }
+            var result = type.OriginalDefinition.ToString() switch
+            {
+                // (U)Int128 are not treated by C# as regular primitives, so we need to match them by type name.
+                "System.Int128" => "SpacetimeDB.BSATN.I128",
+                "System.UInt128" => "SpacetimeDB.BSATN.U128",
+                "System.Collections.Generic.List<T>" => $"SpacetimeDB.BSATN.List",
+                "System.Collections.Generic.Dictionary<TKey, TValue>"
+                    => $"SpacetimeDB.BSATN.Dictionary",
+                // If we're here, then this is nullable *value* type like `int?`.
+                "System.Nullable<T>" => $"SpacetimeDB.BSATN.ValueOption",
+                var name when name.StartsWith("System.")
+                    => throw new InvalidOperationException($"Unsupported system type {name}"),
+                _ => $"{SymbolToName(type)}.BSATN"
+            };
+            if (type.IsGenericType)
+            {
+                result +=
+                    $"<{string.Join(", ", type.TypeArguments.Select(SymbolToName).Concat(type.TypeArguments.Select(GetTypeInfo)))}>";
+            }
+            return result;
+        }
     }
 
     // Borrowed & modified code for generating in-place extensions for partial structs/classes/etc. Source:
@@ -216,7 +232,7 @@ static class Utils
             || kind == SyntaxKind.StructDeclaration
             || kind == SyntaxKind.RecordDeclaration;
 
-        public string GenerateExtensions(string contents)
+        public string GenerateExtensions(string contents, string? interface_ = null)
         {
             var sb = new StringBuilder();
 
@@ -244,8 +260,14 @@ static class Utils
                     .Append(parentClasses.Keyword) // e.g. class/struct/record
                     .Append(' ')
                     .Append(parentClasses.Name) // e.g. Outer/Generic<T>
-                    .Append(' ')
-                    .Append(parentClasses.Constraints) // e.g. where T: new()
+                    .Append(' ');
+
+                if (parentClasses.Child is null && interface_ is not null)
+                {
+                    sb.Append(" : ").Append(interface_);
+                }
+
+                sb.Append(parentClasses.Constraints) // e.g. where T: new()
                     .AppendLine(
                         @"
             {"

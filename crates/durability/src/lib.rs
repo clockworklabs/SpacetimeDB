@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{iter, marker::PhantomData, sync::Arc};
 
 pub use spacetimedb_commitlog::{error, payload::Txdata, Decoder, Transaction};
 
@@ -115,5 +115,45 @@ impl<T: History> History for Arc<T> {
 
     fn max_tx_offset(&self) -> Option<TxOffset> {
         (**self).max_tx_offset()
+    }
+}
+
+#[derive(Default)]
+pub struct EmptyHistory<T> {
+    _txdata: PhantomData<T>,
+}
+
+impl<T> EmptyHistory<T> {
+    pub const fn new() -> Self {
+        Self { _txdata: PhantomData }
+    }
+}
+
+impl<T> History for EmptyHistory<T> {
+    type TxData = T;
+
+    fn fold_transactions_from<D>(&self, _offset: TxOffset, _decoder: D) -> Result<(), D::Error>
+    where
+        D: Decoder,
+        D::Error: From<error::Traversal>,
+    {
+        Ok(())
+    }
+
+    fn transactions_from<'a, D>(
+        &self,
+        _offset: TxOffset,
+        _decoder: &'a D,
+    ) -> impl Iterator<Item = Result<Transaction<Self::TxData>, D::Error>>
+    where
+        D: Decoder<Record = Self::TxData>,
+        D::Error: From<error::Traversal>,
+        Self::TxData: 'a,
+    {
+        iter::empty()
+    }
+
+    fn max_tx_offset(&self) -> Option<TxOffset> {
+        Some(0)
     }
 }

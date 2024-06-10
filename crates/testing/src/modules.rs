@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Instant;
 
+use spacetimedb::messages::control_db::HostType;
 use tokio::runtime::{Builder, Runtime};
 
 use spacetimedb::address::Address;
@@ -162,6 +163,7 @@ impl CompiledModule {
                 address: db_address,
                 program_bytes,
                 num_replicas: 1,
+                host_type: HostType::Wasm,
             },
         )
         .await

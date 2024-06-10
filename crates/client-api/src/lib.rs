@@ -10,7 +10,7 @@ use spacetimedb::client::ClientActorIndex;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance, IdentityEmail, Node};
+use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, IdentityEmail, Node};
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_client_api_messages::recovery::RecoveryCode;
@@ -54,6 +54,8 @@ pub struct DatabaseDef {
     pub program_bytes: Vec<u8>,
     /// The desired number of replicas the database shall have.
     pub num_replicas: u32,
+    /// The host type of the supplied program.
+    pub host_type: HostType,
 }
 
 /// API of the SpacetimeDB control plane.
