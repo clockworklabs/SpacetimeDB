@@ -186,10 +186,19 @@ impl Locking {
                 .rdb_num_table_rows
                 .with_label_values(&database_address, &table_id.0, &schema.table_name)
                 .set(table.row_count as i64);
+
+            // Also set the `rdb_table_size` metric for the table.
+            let table_size = table.bytes_occupied_overestimate();
+            DB_METRICS
+                .rdb_table_size
+                .with_label_values(&database_address, &table_id.into(), &schema.table_name)
+                .set(table_size as i64);
         }
 
+        // Fix up autoinc IDs in the cached system table schemas.
         committed_state.reset_system_table_schemas(database_address)?;
 
+        // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
         committed_state.next_tx_offset = tx_offset + 1;
 
         Ok(datastore)
