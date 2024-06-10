@@ -151,7 +151,7 @@ impl SnapshotWorker {
 /// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
 // TODO(config): Allow DBs to specify how frequently to snapshot.
 // TODO(bikeshedding): Snapshot based on number of bytes written to commitlog, not tx offsets.
-const SNAPSHOT_FREQUENCY: u64 = 1_000;
+const SNAPSHOT_FREQUENCY: u64 = 1_000_000;
 
 impl std::fmt::Debug for RelationalDB {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
