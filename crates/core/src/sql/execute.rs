@@ -254,7 +254,7 @@ pub(crate) mod tests {
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
 
         let schema = stdb.with_auto_commit(&ExecutionContext::default(), |tx| {
-            create_table_with_rows(&stdb, tx, "inventory", head.clone(), &rows)
+            create_table_with_rows(&stdb, tx, "inventory", head.clone(), &rows, StAccess::Public)
         })?;
         let header = Header::from(&*schema).into();
 
@@ -482,9 +482,16 @@ pub(crate) mod tests {
         let db = TestDB::durable()?;
 
         let (p_schema, inv_schema) = db.with_auto_commit::<_, _, TestError>(&ExecutionContext::default(), |tx| {
-            let i = create_table_with_rows(&db, tx, "Inventory", data.inv_ty, &data.inv.data)?;
-            let p = create_table_with_rows(&db, tx, "Player", data.player_ty, &data.player.data)?;
-            create_table_with_rows(&db, tx, "Location", data.location_ty, &data.location.data)?;
+            let i = create_table_with_rows(&db, tx, "Inventory", data.inv_ty, &data.inv.data, StAccess::Public)?;
+            let p = create_table_with_rows(&db, tx, "Player", data.player_ty, &data.player.data, StAccess::Public)?;
+            create_table_with_rows(
+                &db,
+                tx,
+                "Location",
+                data.location_ty,
+                &data.location.data,
+                StAccess::Public,
+            )?;
             Ok((p, i))
         })?;
 

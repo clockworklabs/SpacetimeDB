@@ -238,6 +238,7 @@ mod tests {
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::{Address, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
+    use spacetimedb_sats::db::auth::StAccess;
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType};
     use spacetimedb_vm::expr::{ColumnOp, IndexJoin, IndexScan, JoinExpr, Query};
     use std::convert::From;
@@ -995,7 +996,7 @@ mod tests {
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
         let head = ProductType::from([("a", AlgebraicType::simple_enum(["Player", "Gm"].into_iter()))]);
         let rows: Vec<_> = (1..=10).map(|_| product!(AlgebraicValue::enum_simple(0))).collect();
-        create_table_with_rows(&db, &mut tx, "enum", head.clone(), &rows)?;
+        create_table_with_rows(&db, &mut tx, "enum", head.clone(), &rows, StAccess::Public)?;
         db.commit_tx(&ExecutionContext::default(), tx)?;
 
         // Should work with any qualified field

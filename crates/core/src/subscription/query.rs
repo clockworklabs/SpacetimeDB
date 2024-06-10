@@ -170,8 +170,9 @@ mod tests {
         table_name: &str,
         head: &ProductType,
         row: &ProductValue,
+        access: StAccess,
     ) -> ResultTest<(Arc<TableSchema>, MemTable, DatabaseTableUpdate, QueryExpr)> {
-        let schema = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()])?;
+        let schema = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()], access)?;
         let table = mem_table(schema.table_id, schema.get_row_type().clone(), [row.clone()]);
 
         let data = DatabaseTableUpdate {
@@ -191,16 +192,10 @@ mod tests {
         tx: &mut MutTx,
         access: StAccess,
     ) -> ResultTest<(Arc<TableSchema>, MemTable, DatabaseTableUpdate, QueryExpr)> {
-        let table_name = if access == StAccess::Public {
-            "inventory"
-        } else {
-            "_inventory"
-        };
-
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
 
-        let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
+        let (schema, table, data, q) = make_data(db, tx, "inventory", &head, &row, access)?;
 
         let fields = &[0, 1].map(|c| FieldName::new(schema.table_id, c.into()).into());
         let q = q.with_project(fields.into(), None).unwrap();
@@ -216,7 +211,7 @@ mod tests {
         let head = ProductType::from([("player_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(2u64, "jhon doe");
 
-        let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
+        let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row, StAccess::Public)?;
 
         let fields = [0, 1].map(|c| FieldName::new(schema.table_id, c.into()).into());
         let q = q.with_project(fields.into(), None).unwrap();
@@ -402,7 +397,6 @@ mod tests {
         Ok(())
     }
 
-    // Check that the `owner` can access private tables (that start with `_`) and that it fails if the `caller` is different
     #[test]
     fn test_subscribe_private() -> ResultTest<()> {
         let db = TestDB::durable()?;
@@ -427,7 +421,7 @@ mod tests {
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
-            table_name: "_inventory".into(),
+            table_name: "inventory".into(),
             deletes: [].into(),
             inserts: [row.clone()].into(),
         };

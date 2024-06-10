@@ -641,6 +641,7 @@ pub(crate) mod tests {
         table_name: &str,
         schema: ProductType,
         rows: &[ProductValue],
+        access: StAccess,
     ) -> ResultTest<Arc<TableSchema>> {
         let columns: Vec<_> = Vec::from(schema.elements)
             .into_iter()
@@ -650,13 +651,6 @@ pub(crate) mod tests {
                 col_type: e.algebraic_type,
             })
             .collect();
-
-        // **In our tests,** a name that start with '_' like '_sample' is private.
-        let access = if table_name.starts_with('_') {
-            StAccess::Private
-        } else {
-            StAccess::Public
-        };
 
         let table_id = db.create_table(
             tx,
@@ -677,7 +671,7 @@ pub(crate) mod tests {
     fn create_inv_table(db: &RelationalDB, tx: &mut MutTx) -> ResultTest<(Arc<TableSchema>, ProductValue)> {
         let schema_ty = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
-        let schema = create_table_with_rows(db, tx, "inventory", schema_ty.clone(), &[row.clone()])?;
+        let schema = create_table_with_rows(db, tx, "inventory", schema_ty.clone(), &[row.clone()], StAccess::Public)?;
         Ok((schema, row))
     }
 
