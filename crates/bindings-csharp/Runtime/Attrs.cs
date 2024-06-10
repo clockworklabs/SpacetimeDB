@@ -14,7 +14,10 @@ public sealed class ReducerAttribute(string? name = null) : Attribute
     Inherited = false,
     AllowMultiple = false
 )]
-public sealed class TableAttribute : Attribute { }
+public sealed class TableAttribute : Attribute
+{
+    public bool Public { get; init; }
+}
 
 [AttributeUsage(AttributeTargets.Field, Inherited = false, AllowMultiple = false)]
 public sealed class ColumnAttribute(ColumnAttrs type) : Attribute
