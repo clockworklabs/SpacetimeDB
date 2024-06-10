@@ -65,7 +65,7 @@ public struct ColumnDefWithAttrs(ColumnDef columnDef, ColumnAttrs attrs)
 }
 
 [SpacetimeDB.Type]
-public partial struct TableDef(string tableName, ColumnDefWithAttrs[] columns)
+public partial struct TableDef(string tableName, ColumnDefWithAttrs[] columns, bool isPublic)
 {
     string TableName = tableName;
     ColumnDef[] Columns = columns.Select(col => col.ColumnDef).ToArray();
@@ -86,7 +86,7 @@ public partial struct TableDef(string tableName, ColumnDefWithAttrs[] columns)
     string TableType = "user";
 
     // "public" | "private"
-    string TableAccess = tableName.StartsWith('_') ? "private" : "public";
+    string TableAccess = isPublic ? "public" : "private";
 }
 
 [SpacetimeDB.Type]

@@ -106,6 +106,9 @@ public class Module : IIncrementalGenerator
                     Name = table.Identifier.Text,
                     FullName = SymbolToName(context.SemanticModel.GetDeclaredSymbol(table)!),
                     Fields = fields,
+                    Public = context
+                        .Attributes.SelectMany(attr => attr.NamedArguments)
+                        .Any(pair => pair.Key == "Public" && pair.Value.Value is true)
                 };
             }
         );
@@ -135,7 +138,8 @@ public class Module : IIncrementalGenerator
                                             new SpacetimeDB.Module.ColumnDef(nameof({f.Name}), BSATN.{f.Name}.GetAlgebraicType(registrar)),
                                             SpacetimeDB.Module.ColumnAttrs.{f.IndexKind}
                                         )
-                                    "))} }}
+                                    "))} }},
+                                    {(t.Public ? "true" : "false")}
                                 ),
                                 (SpacetimeDB.BSATN.AlgebraicType.Ref) new BSATN().GetAlgebraicType(registrar)
                             );
