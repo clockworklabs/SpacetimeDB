@@ -808,23 +808,23 @@ impl<'a> RowRef<'a> {
     /// as a row may contain multiple references to the same large blob.
     /// This seems unlikely to occur in practice.
     fn blob_store_bytes(&self) -> usize {
-        let mut bytes = 0;
-        let (page, offset) = self.page_and_offset();
-        let row_data = page.get_row_data(offset, self.table.row_layout.size());
+        let row_data = self.get_row_data();
+        let (page, _) = self.page_and_offset();
         // SAFETY:
         // - Existence of a `RowRef` treated as proof
         //   of the row's validity and type information's correctness.
-        for vlr in unsafe { self.table.visitor_prog.visit_var_len(row_data) } {
-            if vlr.is_large_blob() {
+        unsafe { self.table.visitor_prog.visit_var_len(row_data) }
+            .filter(|vlr| vlr.is_large_blob())
+            .map(|vlr| {
                 // SAFETY:
                 // - Because `vlr.is_large_blob`, it points to exactly one granule.
                 let granule = unsafe { page.iter_var_len_object(vlr.first_granule) }.next().unwrap();
                 let blob_hash = granule.blob_hash();
                 let blob = self.blob_store.retrieve_blob(&blob_hash).unwrap();
-                bytes += blob.len();
-            }
-        }
-        bytes
+
+                blob.len()
+            })
+            .sum()
     }
 }
 
