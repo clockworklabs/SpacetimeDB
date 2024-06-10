@@ -152,17 +152,22 @@ impl Locking {
         } = snapshot;
 
         let datastore = Self::new(database_address);
-        let mut commit_state = datastore.committed_state.write_arc();
-        commit_state.blob_store = blob_store;
+        let mut committed_state = datastore.committed_state.write_arc();
+        committed_state.blob_store = blob_store;
 
         let ctx = ExecutionContext::internal(datastore.database_address);
 
+        // Note that `tables` is a `BTreeMap`, and so iterates in increasing order.
+        // This means that we will instantiate and populate the system tables before any user tables.
         for (table_id, pages) in tables {
             let schema = match system_table_schema(table_id) {
                 Some(schema) => Arc::new(schema),
-                None => commit_state.schema_for_table(&ctx, table_id)?,
+                // In this case, `schema_for_table` will never see a cached schema,
+                // as the committed state is newly constructed and we have not accessed this schema yet.
+                // As such, this call will compute and save the schema from `st_table` and friends.
+                None => committed_state.schema_for_table(&ctx, table_id)?,
             };
-            let (table, blob_store) = commit_state.get_table_and_blob_store_or_create(table_id, &schema);
+            let (table, blob_store) = committed_state.get_table_and_blob_store_or_create(table_id, &schema);
             unsafe {
                 // Safety:
                 // - The snapshot is uncorrupted because reconstructing it verified its hashes.
@@ -175,9 +180,9 @@ impl Locking {
             }
         }
 
-        commit_state.reset_system_table_schemas(database_address)?;
+        committed_state.reset_system_table_schemas(database_address)?;
 
-        commit_state.next_tx_offset = tx_offset + 1;
+        committed_state.next_tx_offset = tx_offset + 1;
 
         Ok(datastore)
     }
