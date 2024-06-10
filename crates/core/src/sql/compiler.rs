@@ -239,7 +239,9 @@ mod tests {
     use spacetimedb_lib::{Address, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
     use spacetimedb_sats::db::auth::StAccess;
-    use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType};
+    use spacetimedb_sats::{
+        product, satn, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, Typespace, ValueWithType,
+    };
     use spacetimedb_vm::expr::{ColumnOp, IndexJoin, IndexScan, JoinExpr, Query};
     use std::convert::From;
     use std::ops::Bound;
@@ -358,19 +360,19 @@ mod tests {
 
         // Check can be used by CRUD ops:
         let sql = &format!(
-            "INSERT INTO test (identity, identity_mix, address) VALUES (0x{}, x'91DDA09DB9A56D8FA6C024D843E805D8262191DB3B4BA84C5EFCD1AD451FED4E', 0x{})",
-            Identity::__dummy().to_hex().as_str(),
-            Address::__DUMMY.to_hex().as_str(),
+            "INSERT INTO test (identity, identity_mix, address) VALUES ({}, x'91DDA09DB9A56D8FA6C024D843E805D8262191DB3B4BA84C5EFCD1AD451FED4E', {})",
+            Identity::__dummy(),
+            Address::__DUMMY,
         );
         run_for_testing(&db, sql)?;
 
         let tx = db.begin_tx();
         // Compile query, check for both hex formats and it to be case-insensitive...
         let sql = &format!(
-            "select * from test where identity = 0x{} AND identity_mix = x'93dda09db9a56d8fa6c024d843e805D8262191db3b4bA84c5efcd1ad451fed4e' AND address = x'{}' AND address = 0x{}",
-            Identity::__dummy().to_hex().as_str(),
-            Address::__DUMMY.to_hex().as_str(),
-            Address::__DUMMY.to_hex().as_str(),
+            "select * from test where identity = {} AND identity_mix = x'93dda09db9a56d8fa6c024d843e805D8262191db3b4bA84c5efcd1ad451fed4e' AND address = x'{}' AND address = {}",
+            Identity::__dummy(),
+            Address::__DUMMY,
+            Address::__DUMMY,
         );
 
         let rows = run_for_testing(&db, sql)?;
@@ -391,6 +393,65 @@ mod tests {
         };
 
         assert_eq!(rows[0].data, vec![row]);
+
+        Ok(())
+    }
+
+    // Verify the output of `sql` matches the inputs for `Identity`, 'Address' & binary data.
+    #[test]
+    fn output_identity_address() -> ResultTest<()> {
+        let row = product![AlgebraicValue::from(Identity::__dummy())];
+        let kind = ProductType::new(Box::new([ProductTypeElement::new(
+            Identity::get_type(),
+            Some("i".into()),
+        )]));
+        let ty = Typespace::EMPTY.with_type(&kind);
+        let out = ty
+            .with_values(&row)
+            .map(|value| satn::PsqlWrapper { ty: &kind, value }.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        assert_eq!(
+            out,
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        );
+
+        // Check tuples
+        let kind = [
+            ("a", AlgebraicType::String),
+            ("b", AlgebraicType::bytes()),
+            ("o", Identity::get_type()),
+            ("p", Address::get_type()),
+        ]
+        .into();
+
+        let value = AlgebraicValue::product([
+            AlgebraicValue::String("a".into()),
+            AlgebraicValue::Bytes((*Identity::ZERO.as_bytes()).into()),
+            AlgebraicValue::Bytes((*Identity::ZERO.as_bytes()).into()),
+            AlgebraicValue::Bytes((*Address::__DUMMY.as_slice()).into()),
+        ]);
+
+        assert_eq!(
+            satn::PsqlWrapper { ty: &kind, value }.to_string().as_str(),
+            "(0 = \"a\", 1 = 0x0000000000000000000000000000000000000000000000000000000000000000, 2 = 0x0000000000000000000000000000000000000000000000000000000000000000, 3 = 0x00000000000000000000000000000000)"
+        );
+
+        let ty = Typespace::EMPTY.with_type(&kind);
+
+        // Check struct
+        let value = product![
+            AlgebraicValue::String("a".into()),
+            AlgebraicValue::Bytes((*Identity::ZERO.as_bytes()).into()),
+            AlgebraicValue::product([AlgebraicValue::Bytes((*Identity::ZERO.as_bytes()).into())]),
+            AlgebraicValue::product([AlgebraicValue::Bytes((*Address::__DUMMY.as_slice()).into())]),
+        ];
+
+        let value = ValueWithType::new(ty, &value);
+        assert_eq!(
+            satn::PsqlWrapper { ty: ty.ty(), value }.to_string().as_str(),
+            "(a = \"a\", b = 0x0000000000000000000000000000000000000000000000000000000000000000, o = 0x0000000000000000000000000000000000000000000000000000000000000000, p = 0x00000000000000000000000000000000)"
+        );
 
         Ok(())
     }

@@ -1,8 +1,9 @@
 use anyhow::Context as _;
 use core::{fmt, net::Ipv6Addr};
-use hex::FromHex as _;
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
+use spacetimedb_lib::from_hex_pad;
 use spacetimedb_sats::hex::HexString;
+use spacetimedb_sats::product_type::ADDRESS_TAG;
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType, AlgebraicValue, ProductValue};
 
 /// This is the address for a SpacetimeDB database or client connection.
@@ -19,7 +20,7 @@ pub struct Address {
     __address_bytes: [u8; 16],
 }
 
-impl_st!([] Address, _ts => AlgebraicType::product([("__address_bytes", AlgebraicType::bytes())]));
+impl_st!([] Address, _ts => AlgebraicType::product([(ADDRESS_TAG, AlgebraicType::bytes())]));
 
 #[cfg(feature = "metrics_impls")]
 impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Address {
@@ -52,7 +53,7 @@ impl Address {
     };
 
     pub fn get_type() -> AlgebraicType {
-        AlgebraicType::product([("__address_bytes", AlgebraicType::bytes())])
+        AlgebraicType::product([(ADDRESS_TAG, AlgebraicType::bytes())])
     }
 
     pub fn from_arr(arr: &[u8; 16]) -> Self {
@@ -68,7 +69,7 @@ impl Address {
     }
 
     pub fn from_hex(hex: &str) -> Result<Self, anyhow::Error> {
-        <[u8; 16]>::from_hex(hex)
+        from_hex_pad::<[u8; 16], _>(hex)
             .context("Addresses must be 32 hex characters (16 bytes) in length.")
             .map(|arr| Self::from_arr(&arr))
     }
