@@ -883,4 +883,44 @@ SELECT * FROM inventory",
 
         Ok(())
     }
+
+    #[test]
+    fn test_row_limit() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
+        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<_, DBError> {
+            for i in 0..5u8 {
+                db.insert(tx, table_id, product!(i))?;
+            }
+            Ok(())
+        })?;
+
+        let server = Identity::from_hashing_bytes("server");
+        let client = Identity::from_hashing_bytes("client");
+
+        let internal_auth = AuthCtx::new(server, server);
+        let external_auth = AuthCtx::new(server, client);
+
+        // No row limit, both queries pass.
+        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_ok());
+
+        // Set row limit.
+        assert!(run(&db, "SET row_limit = 4", internal_auth, None).is_ok());
+
+        // External query fails.
+        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_err());
+
+        // Increase row limit.
+        assert!(run(&db, "DELETE FROM st_var WHERE name = 'row_limit'", internal_auth, None).is_ok());
+        assert!(run(&db, "SET row_limit = 5", internal_auth, None).is_ok());
+
+        // Both queries pass.
+        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_ok());
+
+        Ok(())
+    }
 }
