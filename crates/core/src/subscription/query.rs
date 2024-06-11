@@ -499,12 +499,12 @@ mod tests {
         run_for_testing(&db, sql_insert)?;
 
         let sql_query = "\
-            SELECT EnemyState.* FROM EnemyState \
-            JOIN MobileEntityState ON MobileEntityState.entity_id = EnemyState.entity_id  \
-            WHERE MobileEntityState.location_x > 96000 \
-            AND MobileEntityState.location_x < 192000 \
-            AND MobileEntityState.location_z > 96000 \
-            AND MobileEntityState.location_z < 192000";
+        SELECT EnemyState.* FROM EnemyState \
+        JOIN MobileEntityState ON MobileEntityState.entity_id = EnemyState.entity_id  \
+        WHERE MobileEntityState.location_x > 96000 \
+        AND MobileEntityState.location_x < 192000 \
+        AND MobileEntityState.location_z > 96000 \
+        AND MobileEntityState.location_z < 192000";
 
         let tx = db.begin_tx();
         let qset = compile_read_only_query(&db, &tx, sql_query)?;

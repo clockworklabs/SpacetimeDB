@@ -10,8 +10,8 @@ use crate::{
     db::{
         datastore::{
             system_tables::{
-                read_st_module_bytes_col, ModuleKind, StModuleFields, StModuleRow, StTableFields, ST_MODULE_ID,
-                ST_TABLES_ID,
+                read_st_module_bytes_col, system_table_schema, ModuleKind, StModuleFields, StModuleRow, StTableFields,
+                ST_MODULE_ID, ST_TABLES_ID,
             },
             traits::{
                 DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, RowTypeForTable, Tx, TxData, TxDatastore,
@@ -33,6 +33,7 @@ use spacetimedb_sats::db::{
     def::{IndexDef, SequenceDef, TableDef, TableSchema},
 };
 use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductValue};
+use spacetimedb_snapshot::ReconstructedSnapshot;
 use spacetimedb_table::{indexes::RowPointer, table::RowRef};
 use std::time::{Duration, Instant};
 use std::{borrow::Cow, collections::HashSet, sync::Arc};
@@ -53,7 +54,7 @@ pub type Result<T> = std::result::Result<T, DBError>;
 #[derive(Clone)]
 pub struct Locking {
     /// The state of the database up to the point of the last committed transaction.
-    committed_state: Arc<RwLock<CommittedState>>,
+    pub(crate) committed_state: Arc<RwLock<CommittedState>>,
     /// The state of sequence generation in this database.
     sequence_state: Arc<Mutex<SequencesState>>,
     /// The address of this database.
@@ -127,6 +128,80 @@ impl Locking {
             progress: RefCell::new(progress),
             connected_clients: RefCell::new(HashSet::new()),
         }
+    }
+
+    /// Construct a new [`Locking`] datastore containing the state stored in `snapshot`.
+    ///
+    /// - Construct all the tables referenced by `snapshot`, computing their schemas
+    ///   either from known system table schemas or from `st_table` and friends.
+    /// - Populate those tables with all rows in `snapshot`.
+    /// - Construct a [`HashMapBlobStore`] containing all the large blobs referenced by `snapshot`,
+    ///   with reference counts specified in `snapshot`.
+    /// - Do [`CommittedState::reset_system_table_schemas`] to fix-up autoinc IDs in the system tables,
+    ///   to ensure those schemas match what [`Self::bootstrap`] would install.
+    /// - Notably, **do not** construct indexes or sequences.
+    ///   This should be done by [`Self::rebuild_state_after_replay`],
+    ///   after replaying the suffix of the commitlog.
+    pub fn restore_from_snapshot(snapshot: ReconstructedSnapshot) -> Result<Self> {
+        let ReconstructedSnapshot {
+            database_address,
+            tx_offset,
+            blob_store,
+            tables,
+            ..
+        } = snapshot;
+
+        let datastore = Self::new(database_address);
+        let mut committed_state = datastore.committed_state.write_arc();
+        committed_state.blob_store = blob_store;
+
+        let ctx = ExecutionContext::internal(datastore.database_address);
+
+        // Note that `tables` is a `BTreeMap`, and so iterates in increasing order.
+        // This means that we will instantiate and populate the system tables before any user tables.
+        for (table_id, pages) in tables {
+            let schema = match system_table_schema(table_id) {
+                Some(schema) => Arc::new(schema),
+                // In this case, `schema_for_table` will never see a cached schema,
+                // as the committed state is newly constructed and we have not accessed this schema yet.
+                // As such, this call will compute and save the schema from `st_table` and friends.
+                None => committed_state.schema_for_table(&ctx, table_id)?,
+            };
+            let (table, blob_store) = committed_state.get_table_and_blob_store_or_create(table_id, &schema);
+            unsafe {
+                // Safety:
+                // - The snapshot is uncorrupted because reconstructing it verified its hashes.
+                // - The schema in `table` is either derived from the st_table and st_column,
+                //   which were restored from the snapshot,
+                //   or it is a known schema for a system table.
+                // - We trust that the snapshot was consistent when created,
+                //   so the layout used in the `pages` must be consistent with the schema.
+                table.set_pages(pages, blob_store);
+            }
+
+            // Set the `rdb_num_table_rows` metric for the table.
+            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+            // and therefore has performance implications and must not be disabled.
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(&database_address, &table_id.0, &schema.table_name)
+                .set(table.row_count as i64);
+
+            // Also set the `rdb_table_size` metric for the table.
+            let table_size = table.bytes_occupied_overestimate();
+            DB_METRICS
+                .rdb_table_size
+                .with_label_values(&database_address, &table_id.into(), &schema.table_name)
+                .set(table_size as i64);
+        }
+
+        // Fix up autoinc IDs in the cached system table schemas.
+        committed_state.reset_system_table_schemas(database_address)?;
+
+        // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
+        committed_state.next_tx_offset = tx_offset + 1;
+
+        Ok(datastore)
     }
 
     pub(crate) fn alter_table_access_mut_tx(&self, tx: &mut MutTxId, name: Box<str>, access: StAccess) -> Result<()> {
@@ -616,6 +691,10 @@ impl<F> Replay<F> {
             connected_clients: &mut self.connected_clients.borrow_mut(),
         };
         f(&mut visitor)
+    }
+
+    pub(crate) fn next_tx_offset(&self) -> u64 {
+        self.committed_state.read_arc().next_tx_offset
     }
 }
 

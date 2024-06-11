@@ -703,9 +703,11 @@ impl Host {
                 database.owner_identity,
                 EmptyHistory::new(),
                 None,
+                None,
             )?,
             db::Storage::Disk => {
                 let (durability, disk_size_fn) = relational_db::local_durability(&db_path).await?;
+                let snapshot_repo = relational_db::open_snapshot_repo(&db_path, database.address, instance_id)?;
                 let history = durability.clone();
                 RelationalDB::open(
                     &db_path,
@@ -713,6 +715,7 @@ impl Host {
                     database.owner_identity,
                     history,
                     Some((durability, disk_size_fn)),
+                    Some(snapshot_repo),
                 )?
             }
         };

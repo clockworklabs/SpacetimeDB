@@ -1,3 +1,14 @@
+//! Schema definitions and accesses to the system tables,
+//! which store metadata about a SpacetimeDB database.
+//!
+//! When defining a new system table, remember to:
+//! - Define constants for its ID and name.
+//! - Add it to [`system_tables`], and define a constant for its index there.
+//! - Use [`st_fields_enum`] to define its column enum.
+//! - Define a function that returns its schema.
+//! - Add its schema to [`system_table_schema`].
+//! - Define a Rust struct which holds its rows, and implement `TryFrom<RowRef<'_>>` for that struct.
+
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, TableError};
 use crate::execution_context::ExecutionContext;
@@ -390,6 +401,26 @@ pub fn st_var_schema() -> TableSchema {
     .with_type(StTableType::System)
     .with_column_constraint(Constraints::primary_key(), StVarFields::Name)
     .into_schema(ST_VAR_ID)
+}
+
+/// If `table_id` refers to a known system table, return its schema.
+///
+/// Used when restoring from a snapshot; system tables are reinstantiated with this schema,
+/// whereas user tables are reinstantiated with a schema computed from the snapshotted system tables.
+///
+/// This must be kept in sync with the set of system tables.
+pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
+    match table_id {
+        ST_TABLES_ID => Some(st_table_schema()),
+        ST_COLUMNS_ID => Some(st_columns_schema()),
+        ST_SEQUENCES_ID => Some(st_sequences_schema()),
+        ST_INDEXES_ID => Some(st_indexes_schema()),
+        ST_CONSTRAINTS_ID => Some(st_constraints_schema()),
+        ST_MODULE_ID => Some(st_module_schema()),
+        ST_CLIENTS_ID => Some(st_clients_schema()),
+        ST_VAR_ID => Some(st_var_schema()),
+        _ => None,
+    }
 }
 
 pub(crate) fn table_name_is_system(table_name: &str) -> bool {
