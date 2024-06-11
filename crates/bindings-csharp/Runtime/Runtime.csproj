@@ -7,7 +7,6 @@
     <AssemblyName>SpacetimeDB.Runtime</AssemblyName>
     <AssemblyVersion>0.10.0</AssemblyVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
 
   <PropertyGroup>
