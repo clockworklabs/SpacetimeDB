@@ -28,4 +28,4 @@ partial class PrivateTable : SpacetimeDB.BSATN.IStructuralReadWrite
                 )
             );
     }
-}
+} // PrivateTable

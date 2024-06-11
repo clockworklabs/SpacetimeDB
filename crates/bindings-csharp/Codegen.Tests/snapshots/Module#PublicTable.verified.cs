@@ -432,4 +432,4 @@ partial class PublicTable
                 nullableReferenceField
             )
         ).Parse<PublicTable>();
-}
+} // PublicTable

@@ -2,10 +2,10 @@ namespace SpacetimeDB;
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 public static class Utils
@@ -140,160 +140,99 @@ public static class Utils
     // Borrowed & modified code for generating in-place extensions for partial structs/classes/etc. Source:
     // https://andrewlock.net/creating-a-source-generator-part-5-finding-a-type-declarations-namespace-and-type-hierarchy/
 
-    public class Scope(TypeDeclarationSyntax type)
+    public readonly record struct Scope
     {
-        private string nameSpace = GetNamespace(type);
-        private ParentClass? parentClasses = GetParentClasses(type);
+        // Reversed list of typescopes, from innermost to outermost.
+        private readonly ImmutableArray<TypeScope> typeScopes;
 
-        // determine the namespace the class/enum/struct is declared in, if any
-        static string GetNamespace(BaseTypeDeclarationSyntax syntax)
+        // Reversed list of namespaces, from innermost to outermost.
+        private readonly ImmutableArray<string> namespaces;
+
+        public Scope(MemberDeclarationSyntax? node)
         {
-            // If we don't have a namespace at all we'll return an empty string
-            // This accounts for the "default namespace" case
-            string nameSpace = string.Empty;
-
-            // Get the containing syntax node for the type declaration
-            // (could be a nested type, for example)
-            SyntaxNode? potentialNamespaceParent = syntax.Parent;
-
-            // Keep moving "out" of nested classes etc until we get to a namespace
-            // or until we run out of parents
-            while (
-                potentialNamespaceParent != null
-                && potentialNamespaceParent is not NamespaceDeclarationSyntax
-                && potentialNamespaceParent is not FileScopedNamespaceDeclarationSyntax
-            )
-            {
-                potentialNamespaceParent = potentialNamespaceParent.Parent;
-            }
-
-            // Build up the final namespace by looping until we no longer have a namespace declaration
-            if (potentialNamespaceParent is BaseNamespaceDeclarationSyntax namespaceParent)
-            {
-                // We have a namespace. Use that as the type
-                nameSpace = namespaceParent.Name.ToString();
-
-                // Keep moving "out" of the namespace declarations until we
-                // run out of nested namespace declarations
-                while (true)
-                {
-                    if (namespaceParent.Parent is not NamespaceDeclarationSyntax parent)
-                    {
-                        break;
-                    }
-
-                    // Add the outer namespace as a prefix to the final namespace
-                    nameSpace = $"{namespaceParent.Name}.{nameSpace}";
-                    namespaceParent = parent;
-                }
-            }
-
-            // return the final namespace
-            return nameSpace;
-        }
-
-        public class ParentClass(
-            string keyword,
-            string name,
-            string constraints,
-            Scope.ParentClass? child
-        )
-        {
-            public readonly ParentClass? Child = child;
-            public readonly string Keyword = keyword;
-            public readonly string Name = name;
-            public readonly string Constraints = constraints;
-        }
-
-        static ParentClass? GetParentClasses(TypeDeclarationSyntax typeSyntax)
-        {
-            // Try and get the parent syntax. If it isn't a type like class/struct, this will be null
-            TypeDeclarationSyntax? parentSyntax = typeSyntax;
-            ParentClass? parentClassInfo = null;
-
+            var typeScopes_ = ImmutableArray.CreateBuilder<TypeScope>();
             // Keep looping while we're in a supported nested type
-            while (parentSyntax != null && IsAllowedKind(parentSyntax.Kind()))
+            while (node is TypeDeclarationSyntax type)
             {
                 // Record the parent type keyword (class/struct etc), name, and constraints
-                parentClassInfo = new ParentClass(
-                    keyword: parentSyntax.Keyword.ValueText,
-                    name: parentSyntax.Identifier.ToString() + parentSyntax.TypeParameterList,
-                    constraints: parentSyntax.ConstraintClauses.ToString(),
-                    child: parentClassInfo
+                typeScopes_.Add(
+                    new TypeScope(
+                        Keyword: type.Keyword.ValueText,
+                        Name: type.Identifier.ToString() + type.TypeParameterList,
+                        Constraints: type.ConstraintClauses.ToString()
+                    )
                 ); // set the child link (null initially)
 
                 // Move to the next outer type
-                parentSyntax = (parentSyntax.Parent as TypeDeclarationSyntax);
+                node = type.Parent as MemberDeclarationSyntax;
             }
+            typeScopes = typeScopes_.ToImmutable();
 
-            // return a link to the outermost parent type
-            return parentClassInfo;
+            // We've now reached the outermost type, so we can determine the namespace
+            var namespaces_ = ImmutableArray.CreateBuilder<string>();
+            while (node is BaseNamespaceDeclarationSyntax ns)
+            {
+                namespaces_.Add(ns.Name.ToString());
+                node = node.Parent as MemberDeclarationSyntax;
+            }
+            namespaces = namespaces_.ToImmutable();
         }
 
-        // We can only be nested in class/struct/record
-        static bool IsAllowedKind(SyntaxKind kind) =>
-            kind == SyntaxKind.ClassDeclaration
-            || kind == SyntaxKind.StructDeclaration
-            || kind == SyntaxKind.RecordDeclaration;
+        public readonly record struct TypeScope(string Keyword, string Name, string Constraints);
 
         public string GenerateExtensions(string contents, string? interface_ = null)
         {
             var sb = new StringBuilder();
 
-            // If we don't have a namespace, generate the code in the "default"
-            // namespace, either global:: or a different <RootNamespace>
-            var hasNamespace = !string.IsNullOrEmpty(nameSpace);
-            if (hasNamespace)
+            // Join all namespaces into a single namespace statement, starting with the outermost.
+            if (namespaces.Length > 0)
             {
-                // We could use a file-scoped namespace here which would be a little impler,
-                // but that requires C# 10, which might not be available.
-                // Depends what you want to support!
-                sb.Append("namespace ")
-                    .Append(nameSpace)
-                    .AppendLine(
-                        @"
-        {"
-                    );
+                sb.Append("namespace ");
+                var first = true;
+                foreach (var ns in namespaces.Reverse())
+                {
+                    if (!first)
+                    {
+                        sb.Append('.');
+                    }
+                    first = false;
+                    sb.Append(ns);
+                }
+                sb.AppendLine(" {");
             }
 
-            // Loop through the full parent type hiearchy, starting with the outermost
-            var parentsCount = 0;
-            while (parentClasses is not null)
+            // Loop through the full parent type hiearchy, starting with the outermost.
+            foreach (var (i, typeScope) in typeScopes.Select((ts, i) => (i, ts)).Reverse())
             {
-                sb.Append("    partial ")
-                    .Append(parentClasses.Keyword) // e.g. class/struct/record
+                sb.Append("partial ")
+                    .Append(typeScope.Keyword) // e.g. class/struct/record
                     .Append(' ')
-                    .Append(parentClasses.Name) // e.g. Outer/Generic<T>
+                    .Append(typeScope.Name) // e.g. Outer/Generic<T>
                     .Append(' ');
 
-                if (parentClasses.Child is null && interface_ is not null)
+                if (i == 0 && interface_ is not null)
                 {
                     sb.Append(" : ").Append(interface_);
                 }
 
-                sb.Append(parentClasses.Constraints) // e.g. where T: new()
-                    .AppendLine(
-                        @"
-            {"
-                    );
-                parentsCount++; // keep track of how many layers deep we are
-                parentClasses = parentClasses.Child; // repeat with the next child
+                sb.Append(typeScope.Constraints).AppendLine(" {");
             }
 
-            // Write the actual target generation code here. Not shown for brevity
-            sb.AppendLine(contents);
+            sb.AppendLine();
+            sb.Append(contents);
+            sb.AppendLine();
 
             // We need to "close" each of the parent types, so write
             // the required number of '}'
-            for (int i = 0; i < parentsCount; i++)
+            foreach (var typeScope in typeScopes)
             {
-                sb.AppendLine(@"    }");
+                sb.Append("} // ").AppendLine(typeScope.Name);
             }
 
             // Close the namespace, if we had one
-            if (hasNamespace)
+            if (namespaces.Length > 0)
             {
-                sb.Append('}').AppendLine();
+                sb.AppendLine("} // namespace");
             }
 
             return sb.ToString();

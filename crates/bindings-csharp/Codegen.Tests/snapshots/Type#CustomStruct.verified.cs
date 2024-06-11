@@ -43,4 +43,4 @@ partial struct CustomStruct : SpacetimeDB.BSATN.IStructuralReadWrite
                 )
             );
     }
-}
+} // CustomStruct

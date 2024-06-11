@@ -63,4 +63,4 @@ partial record CustomTaggedEnum
                 )
             );
     }
-}
+} // CustomTaggedEnum

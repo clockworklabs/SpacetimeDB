@@ -15,4 +15,4 @@ partial class Reducers
         new PublicTable.BSATN().Write(writer, data);
         return new(nameof(InsertData), stream.ToArray(), time);
     }
-}
+} // Reducers

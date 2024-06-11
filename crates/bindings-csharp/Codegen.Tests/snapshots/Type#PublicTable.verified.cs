@@ -159,4 +159,4 @@ partial class PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
                 )
             );
     }
-}
+} // PublicTable
