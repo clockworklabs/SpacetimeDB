@@ -930,8 +930,8 @@ mod tests {
     use crate::db::datastore::Result;
     use crate::error::{DBError, IndexError};
     use itertools::Itertools;
+    use spacetimedb_lib::address::Address;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::{address::Address, identity::Identity};
     use spacetimedb_primitives::{col_list, ColId, Constraints};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::{

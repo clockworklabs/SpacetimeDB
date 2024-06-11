@@ -797,11 +797,11 @@ impl From<StModuleRow> for ProductValue {
         }: StModuleRow,
     ) -> Self {
         product![
-            AlgebraicValue::Bytes((*database_address.as_slice()).into()),
-            AlgebraicValue::Bytes((*owner_identity.as_bytes()).into()),
+            database_address.as_slice().as_slice(),
+            owner_identity.as_bytes().as_slice(),
             program_kind,
-            AlgebraicValue::Bytes(program_hash.as_slice().into()),
-            AlgebraicValue::Bytes(program_bytes)
+            program_hash.as_slice(),
+            program_bytes
         ]
     }
 }
@@ -814,7 +814,7 @@ pub struct StClientsRow {
 
 impl From<&StClientsRow> for ProductValue {
     fn from(x: &StClientsRow) -> Self {
-        product![x.identity, x.address]
+        product![x.identity.as_bytes().as_slice(), x.address.as_slice().as_slice()]
     }
 }
 
