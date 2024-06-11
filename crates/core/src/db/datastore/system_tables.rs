@@ -758,16 +758,22 @@ pub fn read_bytes_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Box<[u
 }
 
 /// Read an [`Address`] directly from the column `col` in `row`.
+///
+/// The [`Address`] is assumed to be stored as a flat byte array.
 pub fn read_addr_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Address, DBError> {
     read_bytes_from_col(row, col).map(Address::from_slice)
 }
 
 /// Read an [`Identity`] directly from the column `col` in `row`.
+///
+/// The [`Identity`] is assumed to be stored as a flat byte array.
 pub fn read_identity_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Identity, DBError> {
     read_bytes_from_col(row, col).map(|bytes| Identity::from_slice(&bytes))
 }
 
 /// Read a [`Hash`] directly from the column `col` in `row`.
+///
+/// The [`Hash`] is assumed to be stored as a flat byte array.
 pub fn read_hash_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Hash, DBError> {
     read_bytes_from_col(row, col).map(|bytes| Hash::from_slice(&bytes))
 }
