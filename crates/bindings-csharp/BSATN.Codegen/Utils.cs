@@ -95,6 +95,10 @@ public static class Utils
 
         static string GetTypeInfoForNamedType(INamedTypeSymbol type)
         {
+            if (type.TypeKind == TypeKind.Error)
+            {
+                throw new InvalidOperationException($"Could not resolve type {type}");
+            }
             if (type.TypeKind == TypeKind.Enum)
             {
                 if (
