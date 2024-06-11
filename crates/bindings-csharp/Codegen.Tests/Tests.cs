@@ -74,8 +74,6 @@ public static class GeneratorSnapshotTests
         SourceText.From(Assembly.GetExecutingAssembly().GetManifestResourceStream("Sample.cs")!)
     );
 
-    record struct StepOutput(string Key, IncrementalStepRunReason Reason, object Value);
-
     [Theory]
     [InlineData(typeof(SpacetimeDB.Codegen.Module))]
     [InlineData(typeof(SpacetimeDB.Codegen.Type))]
@@ -89,17 +87,10 @@ public static class GeneratorSnapshotTests
         );
 
         var generator = (IIncrementalGenerator)Activator.CreateInstance(generatorType)!;
-        var driver = CSharpGeneratorDriver.Create(
-            [generator.AsSourceGenerator()],
-            driverOptions: new(
-                disabledOutputs: IncrementalGeneratorOutputKind.None,
-                trackIncrementalGeneratorSteps: true
-            )
-        );
-        // Store the new driver instance - it contains the cache.
-        var cachedDriver = driver.RunGenerators(compilation);
-        var genResult = cachedDriver.GetRunResult();
+        var driver = CSharpGeneratorDriver.Create(generator);
+        // Store the new driver instance - it contains the results and the cache.
+        var genDriver = driver.RunGenerators(compilation);
 
-        return Verify(genResult).UseFileName(generatorType.Name);
+        return Verify(genDriver).UseFileName(generatorType.Name);
     }
 }
