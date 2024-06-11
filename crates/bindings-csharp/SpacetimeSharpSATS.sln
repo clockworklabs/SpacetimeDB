@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BSATN.Codegen", "BSATN.Code
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BSATN.Runtime", "BSATN.Runtime\BSATN.Runtime.csproj", "{A3AFB5AD-15DE-46CC-ACEE-E5819C07BE58}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Codegen.Tests", "Codegen.Tests\Codegen.Tests.csproj", "{2C282EBD-8E37-4F4C-8EE1-E91E21E75FEE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -36,5 +38,9 @@ Global
 		{A3AFB5AD-15DE-46CC-ACEE-E5819C07BE58}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A3AFB5AD-15DE-46CC-ACEE-E5819C07BE58}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A3AFB5AD-15DE-46CC-ACEE-E5819C07BE58}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2C282EBD-8E37-4F4C-8EE1-E91E21E75FEE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2C282EBD-8E37-4F4C-8EE1-E91E21E75FEE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2C282EBD-8E37-4F4C-8EE1-E91E21E75FEE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2C282EBD-8E37-4F4C-8EE1-E91E21E75FEE}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
