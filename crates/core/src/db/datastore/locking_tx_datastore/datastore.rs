@@ -10,8 +10,9 @@ use crate::{
     db::{
         datastore::{
             system_tables::{
-                read_st_module_bytes_col, system_table_schema, ModuleKind, StClientsRow, StModuleFields, StModuleRow,
-                StTableFields, ST_CLIENTS_ID, ST_MODULE_ID, ST_TABLES_ID,
+                read_addr_from_col, read_bytes_from_col, read_hash_from_col, read_identity_from_col,
+                system_table_schema, ModuleKind, StClientsRow, StModuleFields, StModuleRow, StTableFields,
+                ST_CLIENTS_ID, ST_MODULE_ID, ST_TABLES_ID,
             },
             traits::{
                 DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, RowTypeForTable, Tx, TxData, TxDatastore,
@@ -203,6 +204,8 @@ impl Locking {
         Ok(datastore)
     }
 
+    /// Returns a list over all the currently connected clients,
+    /// reading from the `st_clients` system table.
     pub fn connected_clients<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
@@ -320,7 +323,7 @@ impl TxDatastore for Locking {
     fn program_bytes(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Box<[u8]>>> {
         self.iter_tx(ctx, tx, ST_MODULE_ID)?
             .next()
-            .map(|row_ref| read_st_module_bytes_col(row_ref, StModuleFields::ProgramBytes))
+            .map(|row_ref| read_bytes_from_col(row_ref, StModuleFields::ProgramBytes))
             .transpose()
     }
 }
@@ -909,15 +912,10 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
 /// Construct a [`Metadata`] from the given [`RowRef`],
 /// reading only the columns necessary to construct the value.
 fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
-    let database_address = read_st_module_bytes_col(row, StModuleFields::DatabaseAddress).map(Address::from_slice)?;
-    let owner_identity =
-        read_st_module_bytes_col(row, StModuleFields::OwnerIdentity).map(|bytes| Identity::from_slice(&bytes))?;
-    let program_hash =
-        read_st_module_bytes_col(row, StModuleFields::ProgramHash).map(|bytes| Hash::from_slice(&bytes))?;
     Ok(Metadata {
-        database_address,
-        owner_identity,
-        program_hash,
+        database_address: read_addr_from_col(row, StModuleFields::DatabaseAddress)?,
+        owner_identity: read_identity_from_col(row, StModuleFields::OwnerIdentity)?,
+        program_hash: read_hash_from_col(row, StModuleFields::ProgramHash)?,
     })
 }
 

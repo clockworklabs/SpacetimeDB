@@ -619,9 +619,9 @@ impl ProgramVm for DbProgram<'_, '_> {
 pub(crate) mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{
-        StColumnFields, StColumnRow, StIndexFields, StIndexRow, StSequenceFields, StSequenceRow, StTableFields,
-        StTableRow, ST_COLUMNS_ID, ST_COLUMNS_NAME, ST_INDEXES_ID, ST_INDEXES_NAME, ST_RESERVED_SEQUENCE_RANGE,
-        ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_NAME,
+        StColumnFields, StColumnRow, StFields as _, StIndexFields, StIndexRow, StSequenceFields, StSequenceRow,
+        StTableFields, StTableRow, ST_COLUMNS_ID, ST_COLUMNS_NAME, ST_INDEXES_ID, ST_INDEXES_NAME,
+        ST_RESERVED_SEQUENCE_RANGE, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_NAME,
     };
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::execution_context::ExecutionContext;
