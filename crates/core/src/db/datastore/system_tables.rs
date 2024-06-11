@@ -387,8 +387,8 @@ fn st_clients_schema() -> TableSchema {
     TableDef::new(
         ST_CLIENTS_NAME.into(),
         vec![
-            ColumnDef::sys(StClientsFields::Identity.name(), Identity::get_type()),
-            ColumnDef::sys(StClientsFields::Address.name(), Address::get_type()),
+            ColumnDef::sys(StClientsFields::Identity.name(), AlgebraicType::bytes()),
+            ColumnDef::sys(StClientsFields::Address.name(), AlgebraicType::bytes()),
         ],
     )
     .with_type(StTableType::System)

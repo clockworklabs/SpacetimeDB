@@ -1344,8 +1344,8 @@ mod tests {
             ColRow { table: 5, pos: 3, name: "program_hash", ty: AlgebraicType::bytes() },
             ColRow { table: 5, pos: 4, name: "program_bytes", ty: AlgebraicType::bytes() },
 
-            ColRow { table: 6, pos: 0, name: "identity", ty: Identity::get_type() },
-            ColRow { table: 6, pos: 1, name: "address", ty: Address::get_type() },
+            ColRow { table: 6, pos: 0, name: "identity", ty: AlgebraicType::bytes() },
+            ColRow { table: 6, pos: 1, name: "address", ty: AlgebraicType::bytes() },
 
             ColRow { table: 7, pos: 0, name: "name", ty: AlgebraicType::String },
             ColRow { table: 7, pos: 1, name: "value", ty: StVarValue::type_of() },
