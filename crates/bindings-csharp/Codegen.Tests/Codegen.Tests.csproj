@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CSharpier.Core" Version="0.28.2" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.6.0" />
+    <PackageReference Include="Verify.SourceGenerators" Version="2.2.0" />
+    <PackageReference Include="Verify.XUnit" Version="25.0.1" />
+    <PackageReference Include="xunit" Version="2.8.1" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.1" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Codegen/Codegen.csproj" />
+    <ProjectReference Include="../Runtime/Runtime.csproj" />
+
+    <Compile Remove="Sample.cs" />
+    <EmbeddedResource Include="Sample.cs" LogicalName="Sample.cs" />
+  </ItemGroup>
+
+</Project>

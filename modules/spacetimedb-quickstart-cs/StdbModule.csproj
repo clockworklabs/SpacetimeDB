@@ -1,13 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- needs to be exe for initializers to be embedded correctly -->
     <TargetFramework>net8.0</TargetFramework>
     <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <!-- for debugging the codegen -->
-    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
 
   <!--
