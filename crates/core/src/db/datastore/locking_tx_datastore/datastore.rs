@@ -10,8 +10,9 @@ use crate::{
     db::{
         datastore::{
             system_tables::{
-                read_st_module_bytes_col, system_table_schema, ModuleKind, StModuleFields, StModuleRow, StTableFields,
-                ST_MODULE_ID, ST_TABLES_ID,
+                read_addr_from_col, read_bytes_from_col, read_hash_from_col, read_identity_from_col,
+                system_table_schema, ModuleKind, StClientsRow, StModuleFields, StModuleRow, StTableFields,
+                ST_CLIENTS_ID, ST_MODULE_ID, ST_TABLES_ID,
             },
             traits::{
                 DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, RowTypeForTable, Tx, TxData, TxDatastore,
@@ -36,7 +37,7 @@ use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, Pro
 use spacetimedb_snapshot::ReconstructedSnapshot;
 use spacetimedb_table::{indexes::RowPointer, table::RowRef};
 use std::time::{Duration, Instant};
-use std::{borrow::Cow, collections::HashSet, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, DBError>;
@@ -126,7 +127,6 @@ impl Locking {
             database_address: self.database_address,
             committed_state: self.committed_state.clone(),
             progress: RefCell::new(progress),
-            connected_clients: RefCell::new(HashSet::new()),
         }
     }
 
@@ -202,6 +202,21 @@ impl Locking {
         committed_state.next_tx_offset = tx_offset + 1;
 
         Ok(datastore)
+    }
+
+    /// Returns a list over all the currently connected clients,
+    /// reading from the `st_clients` system table.
+    pub fn connected_clients<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        tx: &'a TxId,
+    ) -> Result<impl Iterator<Item = Result<(Identity, Address)>> + 'a> {
+        let iter = self.iter_tx(ctx, tx, ST_CLIENTS_ID)?.map(|row_ref| {
+            let row = StClientsRow::try_from(row_ref)?;
+            Ok((row.identity, row.address))
+        });
+
+        Ok(iter)
     }
 
     pub(crate) fn alter_table_access_mut_tx(&self, tx: &mut MutTxId, name: Box<str>, access: StAccess) -> Result<()> {
@@ -308,7 +323,7 @@ impl TxDatastore for Locking {
     fn program_bytes(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Box<[u8]>>> {
         self.iter_tx(ctx, tx, ST_MODULE_ID)?
             .next()
-            .map(|row_ref| read_st_module_bytes_col(row_ref, StModuleFields::ProgramBytes))
+            .map(|row_ref| read_bytes_from_col(row_ref, StModuleFields::ProgramBytes))
             .transpose()
     }
 }
@@ -668,17 +683,6 @@ pub struct Replay<F> {
     database_address: Address,
     committed_state: Arc<RwLock<CommittedState>>,
     progress: RefCell<F>,
-    /// Tracks the connect / disconnect calls recorded in the transaction history.
-    ///
-    /// If non-empty after a replay, the remaining entries were not gracefully
-    /// disconnected. A disconnect call should be performed for each.
-    connected_clients: RefCell<HashSet<(Identity, Address)>>,
-}
-
-impl<F> Replay<F> {
-    pub fn into_connected_clients(self) -> HashSet<(Identity, Address)> {
-        self.connected_clients.into_inner()
-    }
 }
 
 impl<F> Replay<F> {
@@ -688,7 +692,6 @@ impl<F> Replay<F> {
             database_address: &self.database_address,
             committed_state: &mut committed_state,
             progress: &mut *self.progress.borrow_mut(),
-            connected_clients: &mut self.connected_clients.borrow_mut(),
         };
         f(&mut visitor)
     }
@@ -794,7 +797,6 @@ struct ReplayVisitor<'a, F> {
     database_address: &'a Address,
     committed_state: &'a mut CommittedState,
     progress: &'a mut F,
-    connected_clients: &'a mut HashSet<(Identity, Address)>,
 }
 
 impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, F> {
@@ -905,43 +907,15 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
 
         Ok(())
     }
-
-    fn visit_inputs(&mut self, inputs: &txdata::Inputs) -> std::result::Result<(), Self::Error> {
-        let decode_caller = || {
-            let buf = &mut inputs.reducer_args.as_ref();
-            let caller_identity: Identity = bsatn::from_reader(buf).context("Could not decode caller identity")?;
-            let caller_address: Address = bsatn::from_reader(buf).context("Could not decode caller address")?;
-            anyhow::Ok((caller_identity, caller_address))
-        };
-        if let Some(action) = inputs.reducer_name.strip_prefix("__identity_") {
-            let caller = decode_caller()?;
-            match action {
-                "connected__" => {
-                    self.connected_clients.insert(caller);
-                }
-                "disconnected__" => {
-                    self.connected_clients.remove(&caller);
-                }
-                _ => {}
-            }
-        }
-
-        Ok(())
-    }
 }
 
 /// Construct a [`Metadata`] from the given [`RowRef`],
 /// reading only the columns necessary to construct the value.
 fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
-    let database_address = read_st_module_bytes_col(row, StModuleFields::DatabaseAddress).map(Address::from_slice)?;
-    let owner_identity =
-        read_st_module_bytes_col(row, StModuleFields::OwnerIdentity).map(|bytes| Identity::from_slice(&bytes))?;
-    let program_hash =
-        read_st_module_bytes_col(row, StModuleFields::ProgramHash).map(|bytes| Hash::from_slice(&bytes))?;
     Ok(Metadata {
-        database_address,
-        owner_identity,
-        program_hash,
+        database_address: read_addr_from_col(row, StModuleFields::DatabaseAddress)?,
+        owner_identity: read_identity_from_col(row, StModuleFields::OwnerIdentity)?,
+        program_hash: read_hash_from_col(row, StModuleFields::ProgramHash)?,
     })
 }
 
@@ -956,8 +930,8 @@ mod tests {
     use crate::db::datastore::Result;
     use crate::error::{DBError, IndexError};
     use itertools::Itertools;
+    use spacetimedb_lib::address::Address;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::{address::Address, identity::Identity};
     use spacetimedb_primitives::{col_list, ColId, Constraints};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::{
@@ -1370,8 +1344,8 @@ mod tests {
             ColRow { table: 5, pos: 3, name: "program_hash", ty: AlgebraicType::bytes() },
             ColRow { table: 5, pos: 4, name: "program_bytes", ty: AlgebraicType::bytes() },
 
-            ColRow { table: 6, pos: 0, name: "identity", ty: Identity::get_type() },
-            ColRow { table: 6, pos: 1, name: "address", ty: Address::get_type() },
+            ColRow { table: 6, pos: 0, name: "identity", ty: AlgebraicType::bytes() },
+            ColRow { table: 6, pos: 1, name: "address", ty: AlgebraicType::bytes() },
 
             ColRow { table: 7, pos: 0, name: "name", ty: AlgebraicType::String },
             ColRow { table: 7, pos: 1, name: "value", ty: StVarValue::type_of() },

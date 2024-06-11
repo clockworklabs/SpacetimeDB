@@ -101,6 +101,27 @@ pub(crate) fn system_tables() -> [TableSchema; 8] {
     ]
 }
 
+/// Types that represent the fields / columns of a system table.
+pub trait StFields: Copy + Sized {
+    /// Returns the column position of the system table field.
+    fn col_id(self) -> ColId;
+
+    /// Returns the column index of the system table field.
+    #[inline]
+    fn col_idx(self) -> usize {
+        self.col_id().idx()
+    }
+
+    /// Returns the column name of the system table field a static string slice.
+    fn name(self) -> &'static str;
+
+    /// Returns the column name of the system table field as a boxed slice.
+    #[inline]
+    fn col_name(self) -> Box<str> {
+        self.name().into()
+    }
+}
+
 // The following are indices into the array returned by [`system_tables`].
 pub(crate) const ST_TABLES_IDX: usize = 0;
 pub(crate) const ST_COLUMNS_IDX: usize = 1;
@@ -118,24 +139,14 @@ macro_rules! st_fields_enum {
             $($var = $discr,)*
         }
 
-        impl $ty_name {
+        impl StFields for $ty_name {
             #[inline]
-            pub fn col_id(self) -> ColId {
+            fn col_id(self) -> ColId {
                 ColId(self as u32)
             }
 
             #[inline]
-            pub fn col_idx(self) -> usize {
-                self.col_id().idx()
-            }
-
-            #[inline]
-            pub fn col_name(self) -> Box<str> {
-                self.name().into()
-            }
-
-            #[inline]
-            pub fn name(self) -> &'static str {
+            fn name(self) -> &'static str {
                 match self {
                     $(Self::$var => $name,)*
                 }
@@ -376,8 +387,8 @@ fn st_clients_schema() -> TableSchema {
     TableDef::new(
         ST_CLIENTS_NAME.into(),
         vec![
-            ColumnDef::sys(StClientsFields::Identity.name(), Identity::get_type()),
-            ColumnDef::sys(StClientsFields::Address.name(), Address::get_type()),
+            ColumnDef::sys(StClientsFields::Identity.name(), AlgebraicType::bytes()),
+            ColumnDef::sys(StClientsFields::Address.name(), AlgebraicType::bytes()),
         ],
     )
     .with_type(StTableType::System)
@@ -732,7 +743,8 @@ pub struct StModuleRow {
     pub(crate) program_bytes: Box<[u8]>,
 }
 
-pub fn read_st_module_bytes_col(row: RowRef<'_>, col: StModuleFields) -> Result<Box<[u8]>, DBError> {
+/// Read bytes directly from the column `col` in `row`.
+pub fn read_bytes_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Box<[u8]>, DBError> {
     let bytes = row.read_col::<ArrayValue>(col.col_id())?;
     if let ArrayValue::U8(bytes) = bytes {
         Ok(bytes)
@@ -745,25 +757,37 @@ pub fn read_st_module_bytes_col(row: RowRef<'_>, col: StModuleFields) -> Result<
     }
 }
 
+/// Read an [`Address`] directly from the column `col` in `row`.
+///
+/// The [`Address`] is assumed to be stored as a flat byte array.
+pub fn read_addr_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Address, DBError> {
+    read_bytes_from_col(row, col).map(Address::from_slice)
+}
+
+/// Read an [`Identity`] directly from the column `col` in `row`.
+///
+/// The [`Identity`] is assumed to be stored as a flat byte array.
+pub fn read_identity_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Identity, DBError> {
+    read_bytes_from_col(row, col).map(|bytes| Identity::from_slice(&bytes))
+}
+
+/// Read a [`Hash`] directly from the column `col` in `row`.
+///
+/// The [`Hash`] is assumed to be stored as a flat byte array.
+pub fn read_hash_from_col(row: RowRef<'_>, col: impl StFields) -> Result<Hash, DBError> {
+    read_bytes_from_col(row, col).map(|bytes| Hash::from_slice(&bytes))
+}
+
 impl TryFrom<RowRef<'_>> for StModuleRow {
     type Error = DBError;
 
     fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
-        let database_address =
-            read_st_module_bytes_col(row, StModuleFields::DatabaseAddress).map(Address::from_slice)?;
-        let owner_identity =
-            read_st_module_bytes_col(row, StModuleFields::OwnerIdentity).map(|bytes| Identity::from_slice(&bytes))?;
-        let program_kind = row.read_col::<u8>(StModuleFields::ProgramKind).map(ModuleKind)?;
-        let program_hash =
-            read_st_module_bytes_col(row, StModuleFields::ProgramHash).map(|bytes| Hash::from_slice(&bytes))?;
-        let program_bytes = read_st_module_bytes_col(row, StModuleFields::ProgramBytes)?;
-
         Ok(Self {
-            owner_identity,
-            database_address,
-            program_kind,
-            program_hash,
-            program_bytes,
+            database_address: read_addr_from_col(row, StModuleFields::DatabaseAddress)?,
+            owner_identity: read_identity_from_col(row, StModuleFields::OwnerIdentity)?,
+            program_kind: row.read_col::<u8>(StModuleFields::ProgramKind).map(ModuleKind)?,
+            program_hash: read_hash_from_col(row, StModuleFields::ProgramHash)?,
+            program_bytes: read_bytes_from_col(row, StModuleFields::ProgramBytes)?,
         })
     }
 }
@@ -779,11 +803,11 @@ impl From<StModuleRow> for ProductValue {
         }: StModuleRow,
     ) -> Self {
         product![
-            AlgebraicValue::Bytes((*database_address.as_slice()).into()),
-            AlgebraicValue::Bytes((*owner_identity.as_bytes()).into()),
+            database_address.as_slice().as_slice(),
+            owner_identity.as_bytes().as_slice(),
             program_kind,
-            AlgebraicValue::Bytes(program_hash.as_slice().into()),
-            AlgebraicValue::Bytes(program_bytes)
+            program_hash.as_slice(),
+            program_bytes
         ]
     }
 }
@@ -796,7 +820,17 @@ pub struct StClientsRow {
 
 impl From<&StClientsRow> for ProductValue {
     fn from(x: &StClientsRow) -> Self {
-        product![x.identity, x.address]
+        product![x.identity.as_bytes().as_slice(), x.address.as_slice().as_slice()]
+    }
+}
+
+impl TryFrom<RowRef<'_>> for StClientsRow {
+    type Error = DBError;
+
+    fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
+        let identity = read_identity_from_col(row, StClientsFields::Identity)?;
+        let address = read_addr_from_col(row, StClientsFields::Address)?;
+        Ok(Self { identity, address })
     }
 }
 

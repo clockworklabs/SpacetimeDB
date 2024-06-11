@@ -10,9 +10,9 @@ use super::{
 use crate::db::{
     datastore::{
         system_tables::{
-            table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields,
-            StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMNS_ID,
-            ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
+            table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StFields as _,
+            StIndexFields, StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable,
+            ST_COLUMNS_ID, ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
         },
         traits::{RowTypeForTable, TxData},
     },
