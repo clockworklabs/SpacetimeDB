@@ -12,7 +12,7 @@ static partial class Module
     }
 
     [SpacetimeDB.Type]
-    public partial struct EnumWithPayload
+    public partial record EnumWithPayload
         : SpacetimeDB.TaggedEnum<(
             byte U8,
             ushort U16,
@@ -34,7 +34,7 @@ static partial class Module
             List<int> Ints,
             List<string> Strings,
             List<SimpleEnum> SimpleEnums
-        )> { }
+        )>;
 
     [SpacetimeDB.Type]
     public partial struct UnitStruct { }
@@ -87,7 +87,7 @@ static partial class Module
         public List<Address> p;
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneU8
     {
         public byte n;
@@ -99,7 +99,7 @@ static partial class Module
         new OneU8 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneU16
     {
         public ushort n;
@@ -111,7 +111,7 @@ static partial class Module
         new OneU16 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneU32
     {
         public uint n;
@@ -123,7 +123,7 @@ static partial class Module
         new OneU32 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneU64
     {
         public ulong n;
@@ -135,7 +135,7 @@ static partial class Module
         new OneU64 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneU128
     {
         public UInt128 n;
@@ -147,7 +147,7 @@ static partial class Module
         new OneU128 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneI8
     {
         public sbyte n;
@@ -159,7 +159,7 @@ static partial class Module
         new OneI8 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneI16
     {
         public short n;
@@ -171,7 +171,7 @@ static partial class Module
         new OneI16 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneI32
     {
         public int n;
@@ -183,7 +183,7 @@ static partial class Module
         new OneI32 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneI64
     {
         public long n;
@@ -195,7 +195,7 @@ static partial class Module
         new OneI64 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneI128
     {
         public Int128 n;
@@ -207,7 +207,7 @@ static partial class Module
         new OneI128 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneBool
     {
         public bool b;
@@ -219,7 +219,7 @@ static partial class Module
         new OneBool { b = b }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneF32
     {
         public float f;
@@ -231,7 +231,7 @@ static partial class Module
         new OneF32 { f = f }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneF64
     {
         public double f;
@@ -243,7 +243,7 @@ static partial class Module
         new OneF64 { f = f }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneString
     {
         public string s;
@@ -255,7 +255,7 @@ static partial class Module
         new OneString { s = s }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneIdentity
     {
         public Identity i;
@@ -267,7 +267,7 @@ static partial class Module
         new OneIdentity { i = i }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneAddress
     {
         public Address a;
@@ -279,7 +279,7 @@ static partial class Module
         new OneAddress { a = a }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneSimpleEnum
     {
         public SimpleEnum e;
@@ -291,7 +291,7 @@ static partial class Module
         new OneSimpleEnum { e = e }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneEnumWithPayload
     {
         public EnumWithPayload e;
@@ -303,7 +303,7 @@ static partial class Module
         new OneEnumWithPayload { e = e }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneUnitStruct
     {
         public UnitStruct s;
@@ -315,7 +315,7 @@ static partial class Module
         new OneUnitStruct { s = s }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneByteStruct
     {
         public ByteStruct s;
@@ -327,7 +327,7 @@ static partial class Module
         new OneByteStruct { s = s }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneEveryPrimitiveStruct
     {
         public EveryPrimitiveStruct s;
@@ -339,7 +339,7 @@ static partial class Module
         new OneEveryPrimitiveStruct { s = s }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct OneEveryVecStruct
     {
         public EveryVecStruct s;
@@ -351,7 +351,7 @@ static partial class Module
         new OneEveryVecStruct { s = s }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecU8
     {
         public List<byte> n;
@@ -363,7 +363,7 @@ static partial class Module
         new VecU8 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecU16
     {
         public List<ushort> n;
@@ -375,7 +375,7 @@ static partial class Module
         new VecU16 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecU32
     {
         public List<uint> n;
@@ -387,7 +387,7 @@ static partial class Module
         new VecU32 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecU64
     {
         public List<ulong> n;
@@ -399,7 +399,7 @@ static partial class Module
         new VecU64 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecU128
     {
         public List<UInt128> n;
@@ -411,7 +411,7 @@ static partial class Module
         new VecU128 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecI8
     {
         public List<sbyte> n;
@@ -423,7 +423,7 @@ static partial class Module
         new VecI8 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecI16
     {
         public List<short> n;
@@ -435,7 +435,7 @@ static partial class Module
         new VecI16 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecI32
     {
         public List<int> n;
@@ -447,7 +447,7 @@ static partial class Module
         new VecI32 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecI64
     {
         public List<long> n;
@@ -459,7 +459,7 @@ static partial class Module
         new VecI64 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecI128
     {
         public List<Int128> n;
@@ -471,7 +471,7 @@ static partial class Module
         new VecI128 { n = n }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecBool
     {
         public List<bool> b;
@@ -483,7 +483,7 @@ static partial class Module
         new VecBool { b = b }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecF32
     {
         public List<float> f;
@@ -495,7 +495,7 @@ static partial class Module
         new VecF32 { f = f }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecF64
     {
         public List<double> f;
@@ -507,7 +507,7 @@ static partial class Module
         new VecF64 { f = f }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecString
     {
         public List<string> s;
@@ -519,7 +519,7 @@ static partial class Module
         new VecString { s = s }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecIdentity
     {
         public List<Identity> i;
@@ -531,7 +531,7 @@ static partial class Module
         new VecIdentity { i = i }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecAddress
     {
         public List<Address> a;
@@ -543,7 +543,7 @@ static partial class Module
         new VecAddress { a = a }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecSimpleEnum
     {
         public List<SimpleEnum> e;
@@ -555,7 +555,7 @@ static partial class Module
         new VecSimpleEnum { e = e }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecEnumWithPayload
     {
         public List<EnumWithPayload> e;
@@ -567,7 +567,7 @@ static partial class Module
         new VecEnumWithPayload { e = e }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecUnitStruct
     {
         public List<UnitStruct> s;
@@ -579,7 +579,7 @@ static partial class Module
         new VecUnitStruct { s = s }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecByteStruct
     {
         public List<ByteStruct> s;
@@ -591,7 +591,7 @@ static partial class Module
         new VecByteStruct { s = s }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecEveryPrimitiveStruct
     {
         public List<EveryPrimitiveStruct> s;
@@ -603,7 +603,7 @@ static partial class Module
         new VecEveryPrimitiveStruct { s = s }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct VecEveryVecStruct
     {
         public List<EveryVecStruct> s;
@@ -615,7 +615,7 @@ static partial class Module
         new VecEveryVecStruct { s = s }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueU8
     {
         [SpacetimeDB.Column(ColumnAttrs.Unique)]
@@ -642,7 +642,7 @@ static partial class Module
         UniqueU8.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueU16
     {
         [SpacetimeDB.Column(ColumnAttrs.Unique)]
@@ -669,7 +669,7 @@ static partial class Module
         UniqueU16.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueU32
     {
         [SpacetimeDB.Column(ColumnAttrs.Unique)]
@@ -696,7 +696,7 @@ static partial class Module
         UniqueU32.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueU64
     {
         [SpacetimeDB.Column(ColumnAttrs.Unique)]
@@ -723,7 +723,7 @@ static partial class Module
         UniqueU64.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueU128
     {
         [SpacetimeDB.Column(ColumnAttrs.Unique)]
@@ -750,7 +750,7 @@ static partial class Module
         UniqueU128.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueI8
     {
         [SpacetimeDB.Column(ColumnAttrs.Unique)]
@@ -777,7 +777,7 @@ static partial class Module
         UniqueI8.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueI16
     {
         [SpacetimeDB.Column(ColumnAttrs.Unique)]
@@ -804,7 +804,7 @@ static partial class Module
         UniqueI16.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueI32
     {
         [SpacetimeDB.Column(ColumnAttrs.Unique)]
@@ -831,7 +831,7 @@ static partial class Module
         UniqueI32.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueI64
     {
         [SpacetimeDB.Column(ColumnAttrs.Unique)]
@@ -858,7 +858,7 @@ static partial class Module
         UniqueI64.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueI128
     {
         [SpacetimeDB.Column(ColumnAttrs.Unique)]
@@ -885,7 +885,7 @@ static partial class Module
         UniqueI128.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueBool
     {
         [SpacetimeDB.Column(ColumnAttrs.Unique)]
@@ -912,7 +912,7 @@ static partial class Module
         UniqueBool.DeleteByb(b);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueString
     {
         [SpacetimeDB.Column(ColumnAttrs.Unique)]
@@ -939,7 +939,7 @@ static partial class Module
         UniqueString.DeleteBys(s);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueIdentity
     {
         [SpacetimeDB.Column(ColumnAttrs.Unique)]
@@ -966,7 +966,7 @@ static partial class Module
         UniqueIdentity.DeleteByi(i);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueAddress
     {
         [SpacetimeDB.Column(ColumnAttrs.Unique)]
@@ -993,7 +993,7 @@ static partial class Module
         UniqueAddress.DeleteBya(a);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct PkU8
     {
         [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
@@ -1020,7 +1020,7 @@ static partial class Module
         PkU8.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct PkU16
     {
         [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
@@ -1047,7 +1047,7 @@ static partial class Module
         PkU16.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct PkU32
     {
         [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
@@ -1074,7 +1074,7 @@ static partial class Module
         PkU32.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct PkU64
     {
         [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
@@ -1101,7 +1101,7 @@ static partial class Module
         PkU64.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct PkU128
     {
         [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
@@ -1128,7 +1128,7 @@ static partial class Module
         PkU128.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct PkI8
     {
         [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
@@ -1155,7 +1155,7 @@ static partial class Module
         PkI8.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct PkI16
     {
         [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
@@ -1182,7 +1182,7 @@ static partial class Module
         PkI16.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct PkI32
     {
         [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
@@ -1209,7 +1209,7 @@ static partial class Module
         PkI32.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct PkI64
     {
         [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
@@ -1236,7 +1236,7 @@ static partial class Module
         PkI64.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct PkI128
     {
         [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
@@ -1263,7 +1263,7 @@ static partial class Module
         PkI128.DeleteByn(n);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct PkBool
     {
         [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
@@ -1290,7 +1290,7 @@ static partial class Module
         PkBool.DeleteByb(b);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct PkString
     {
         [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
@@ -1317,7 +1317,7 @@ static partial class Module
         PkString.DeleteBys(s);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct PkIdentity
     {
         [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
@@ -1344,7 +1344,7 @@ static partial class Module
         PkIdentity.DeleteByi(i);
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct PkAddress
     {
         [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
@@ -1372,37 +1372,37 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_one_identity(DbEventArgs ctx)
+    public static void insert_caller_one_identity(ReducerContext ctx)
     {
         new OneIdentity { i = ctx.Sender }.Insert();
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_vec_identity(DbEventArgs ctx)
+    public static void insert_caller_vec_identity(ReducerContext ctx)
     {
         new VecIdentity { i = new List<Identity> { ctx.Sender } }.Insert();
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_unique_identity(DbEventArgs ctx, int data)
+    public static void insert_caller_unique_identity(ReducerContext ctx, int data)
     {
         new UniqueIdentity { i = ctx.Sender, data = data }.Insert();
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_pk_identity(DbEventArgs ctx, int data)
+    public static void insert_caller_pk_identity(ReducerContext ctx, int data)
     {
         new PkIdentity { i = ctx.Sender, data = data }.Insert();
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_one_address(DbEventArgs ctx)
+    public static void insert_caller_one_address(ReducerContext ctx)
     {
         new OneAddress { a = (Address)ctx.Address!, }.Insert();
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_vec_address(DbEventArgs ctx)
+    public static void insert_caller_vec_address(ReducerContext ctx)
     {
         // VecAddress::insert(VecAddress {
         //     < a[_]>::into_vec(
@@ -1413,18 +1413,18 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_unique_address(DbEventArgs ctx, int data)
+    public static void insert_caller_unique_address(ReducerContext ctx, int data)
     {
         new UniqueAddress { a = (Address)ctx.Address!, data = data }.Insert();
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_caller_pk_address(DbEventArgs ctx, int data)
+    public static void insert_caller_pk_address(ReducerContext ctx, int data)
     {
         new PkAddress { a = (Address)ctx.Address!, data = data }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct LargeTable
     {
         public byte a;
@@ -1498,7 +1498,7 @@ static partial class Module
         }.Insert();
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct TableHoldsTable
     {
         public OneU8 a;
@@ -1510,4 +1510,7 @@ static partial class Module
     {
         new TableHoldsTable { a = a, b = b }.Insert();
     }
+
+    [SpacetimeDB.Reducer]
+    public static void no_op_succeeds() { }
 }

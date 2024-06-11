@@ -1,13 +1,17 @@
+use core::ops::Deref;
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::{ops::RangeBounds, sync::Arc};
 
+use super::system_tables::ModuleKind;
 use super::Result;
 use crate::db::datastore::system_tables::ST_TABLES_ID;
 use crate::execution_context::ExecutionContext;
+use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::hash::Hash;
-use spacetimedb_sats::DataKey;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 
 /// The `IsolationLevel` enum specifies the degree to which a transaction is
@@ -159,31 +163,108 @@ pub enum IsolationLevel {
     Serializable,
 }
 
-/// Operations in a transaction are either Inserts or Deletes.
-/// Inserts report the byte objects they inserted, to be persisted
-/// later in an object store.
-pub enum TxOp {
-    Insert(Arc<Vec<u8>>),
-    Delete,
-}
-
-/// A record of a single operation within a transaction.
-pub struct TxRecord {
-    /// Whether the operation was an insert or a delete.
-    pub(crate) op: TxOp,
-    /// The value of the modified row.
-    pub(crate) product_value: ProductValue,
-    /// The key of the modified row.
-    pub(crate) key: DataKey,
-    /// The table that was modified.
-    pub(crate) table_id: TableId,
-    /// The table that was modified.
-    pub(crate) table_name: String,
-}
-
 /// A record of all the operations within a transaction.
+#[derive(Default)]
 pub struct TxData {
-    pub(crate) records: Vec<TxRecord>,
+    /// The inserted rows per table.
+    inserts: BTreeMap<TableId, Arc<[ProductValue]>>,
+    /// The deleted rows per table.
+    deletes: BTreeMap<TableId, Arc<[ProductValue]>>,
+    /// Map of all `TableId`s in both `inserts` and `deletes` to their
+    /// corresponding table name.
+    tables: IntMap<TableId, String>,
+    /// Tx offset of the transaction which performed these operations.
+    ///
+    /// `None` implies that `inserts` and `deletes` are both empty,
+    /// but `Some` does not necessarily imply that either is non-empty.
+    tx_offset: Option<u64>,
+    // TODO: Store an `Arc<String>` or equivalent instead.
+}
+
+impl TxData {
+    /// Set `tx_offset` as the expected on-disk transaction offset of this transaction.
+    pub fn set_tx_offset(&mut self, tx_offset: u64) {
+        self.tx_offset = Some(tx_offset);
+    }
+
+    /// Read the expected on-disk transaction offset of this transaction.
+    ///
+    /// `None` implies that this [`TxData`] contains zero inserted or deleted rows,
+    /// but the inverse is not necessarily true;
+    /// a [`TxData`] may have a `tx_offset` but no row operations.
+    pub fn tx_offset(&self) -> Option<u64> {
+        self.tx_offset
+    }
+
+    /// Set `rows` as the inserted rows for `(table_id, table_name)`.
+    pub fn set_inserts_for_table(&mut self, table_id: TableId, table_name: &str, rows: Arc<[ProductValue]>) {
+        self.inserts.insert(table_id, rows);
+        self.tables.entry(table_id).or_insert_with(|| table_name.to_owned());
+    }
+
+    /// Set `rows` as the deleted rows for `(table_id, table_name)`.
+    pub fn set_deletes_for_table(&mut self, table_id: TableId, table_name: &str, rows: Arc<[ProductValue]>) {
+        self.deletes.insert(table_id, rows);
+        self.tables.entry(table_id).or_insert_with(|| table_name.to_owned());
+    }
+
+    /// Obtain an iterator over the inserted rows per table.
+    pub fn inserts(&self) -> impl Iterator<Item = (&TableId, &Arc<[ProductValue]>)> + '_ {
+        self.inserts.iter()
+    }
+
+    /// Obtain an iterator over the inserted rows per table.
+    ///
+    /// If you don't need access to the table name, [`Self::inserts`] is
+    /// slightly more efficient.
+    pub fn inserts_with_table_name(&self) -> impl Iterator<Item = (&TableId, &str, &Arc<[ProductValue]>)> + '_ {
+        self.inserts.iter().map(|(table_id, rows)| {
+            let table_name = self
+                .tables
+                .get(table_id)
+                .expect("invalid `TxData`: partial table name mapping");
+            (table_id, table_name.as_str(), rows)
+        })
+    }
+
+    /// Obtain an iterator over the deleted rows per table.
+    pub fn deletes(&self) -> impl Iterator<Item = (&TableId, &Arc<[ProductValue]>)> + '_ {
+        self.deletes.iter()
+    }
+
+    /// Obtain an iterator over the inserted rows per table.
+    ///
+    /// If you don't need access to the table name, [`Self::deletes`] is
+    /// slightly more efficient.
+    pub fn deletes_with_table_name(&self) -> impl Iterator<Item = (&TableId, &str, &Arc<[ProductValue]>)> + '_ {
+        self.deletes.iter().map(|(table_id, rows)| {
+            let table_name = self
+                .tables
+                .get(table_id)
+                .expect("invalid `TxData`: partial table name mapping");
+            (table_id, table_name.as_str(), rows)
+        })
+    }
+}
+
+/// The result of [`MutTxDatastore::row_type_for_table_mut_tx`] and friends.
+/// This is a smart pointer returning a `&ProductType`.
+pub enum RowTypeForTable<'a> {
+    /// A reference can be stored to the type.
+    Ref(&'a ProductType),
+    /// The type is within the schema.
+    Arc(Arc<TableSchema>),
+}
+
+impl Deref for RowTypeForTable<'_> {
+    type Target = ProductType;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Ref(x) => x,
+            Self::Arc(x) => x.get_row_type(),
+        }
+    }
 }
 
 pub trait Data: Into<ProductValue> {
@@ -221,6 +302,17 @@ pub trait MutTx {
     fn rollback_mut_tx_for_test(&self, tx: Self::MutTx);
 }
 
+/// Standard metadata associated with a database.
+#[derive(Debug)]
+pub struct Metadata {
+    /// The stable address of the database.
+    pub database_address: Address,
+    /// The identity of the database's owner .
+    pub owner_identity: Identity,
+    /// The hash of the binary module set for the database.
+    pub program_hash: Hash,
+}
+
 pub trait TxDatastore: DataRow + Tx {
     type Iter<'a>: Iterator<Item = Self::RowRef<'a>>
     where
@@ -230,7 +322,7 @@ pub trait TxDatastore: DataRow + Tx {
     where
         Self: 'a;
 
-    type IterByColEq<'a>: Iterator<Item = Self::RowRef<'a>>
+    type IterByColEq<'a, 'r>: Iterator<Item = Self::RowRef<'a>>
     where
         Self: 'a;
 
@@ -245,24 +337,30 @@ pub trait TxDatastore: DataRow + Tx {
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
 
-    fn iter_by_col_eq_tx<'a>(
+    fn iter_by_col_eq_tx<'a, 'r>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
         cols: impl Into<ColList>,
-        value: AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a>>;
+        value: &'r AlgebraicValue,
+    ) -> Result<Self::IterByColEq<'a, 'r>>;
 
     fn table_id_exists_tx(&self, tx: &Self::Tx, table_id: &TableId) -> bool;
     fn table_id_from_name_tx(&self, tx: &Self::Tx, table_name: &str) -> Result<Option<TableId>>;
     fn table_name_from_id_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Option<Cow<'a, str>>>;
-    fn schema_for_table_tx<'tx>(&self, tx: &'tx Self::Tx, table_id: TableId) -> super::Result<Cow<'tx, TableSchema>>;
-    fn get_all_tables_tx<'tx>(
-        &self,
-        ctx: &ExecutionContext,
-        tx: &'tx Self::Tx,
-    ) -> super::Result<Vec<Cow<'tx, TableSchema>>>;
+    fn schema_for_table_tx(&self, tx: &Self::Tx, table_id: TableId) -> super::Result<Arc<TableSchema>>;
+    fn get_all_tables_tx(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> super::Result<Vec<Arc<TableSchema>>>;
+
+    /// Obtain the [`Metadata`] for this datastore.
+    ///
+    /// A `None` return value means that the datastore is not fully initialized yet.
+    fn metadata(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Metadata>>;
+
+    /// Obtain the raw bytes of the compiled module associated with this datastore.
+    ///
+    /// A `None` return value means that the datastore is not fully initialized yet.
+    fn program_bytes(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Box<[u8]>>>;
 }
 
 pub trait MutTxDatastore: TxDatastore + MutTx {
@@ -271,8 +369,8 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     // In these methods, we use `'tx` because the return type must borrow data
     // from `Inner` in the `Locking` implementation,
     // and `Inner` lives in `tx: &MutTxId`.
-    fn row_type_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<Cow<'tx, ProductType>>;
-    fn schema_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<Cow<'tx, TableSchema>>;
+    fn row_type_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<RowTypeForTable<'tx>>;
+    fn schema_for_table_mut_tx(&self, tx: &Self::MutTx, table_id: TableId) -> Result<Arc<TableSchema>>;
     fn drop_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId) -> Result<()>;
     fn rename_table_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, new_name: &str) -> Result<()>;
     fn table_id_from_name_mut_tx(&self, tx: &Self::MutTx, table_name: &str) -> Result<Option<TableId>>;
@@ -283,11 +381,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         tx: &'a Self::MutTx,
         table_id: TableId,
     ) -> Result<Option<Cow<'a, str>>>;
-    fn get_all_tables_mut_tx<'tx>(
-        &self,
-        ctx: &ExecutionContext,
-        tx: &'tx Self::MutTx,
-    ) -> super::Result<Vec<Cow<'tx, TableSchema>>> {
+    fn get_all_tables_mut_tx(&self, ctx: &ExecutionContext, tx: &Self::MutTx) -> super::Result<Vec<Arc<TableSchema>>> {
         let mut tables = Vec::new();
         let table_rows = self.iter_mut_tx(ctx, tx, ST_TABLES_ID)?.collect::<Vec<_>>();
         for row in table_rows {
@@ -332,14 +426,14 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         cols: impl Into<ColList>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>>;
-    fn iter_by_col_eq_mut_tx<'a>(
+    fn iter_by_col_eq_mut_tx<'a, 'r>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
         cols: impl Into<ColList>,
-        value: AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a>>;
+        value: &'r AlgebraicValue,
+    ) -> Result<Self::IterByColEq<'a, 'r>>;
     fn get_mut_tx<'a>(
         &self,
         tx: &'a Self::MutTx,
@@ -364,42 +458,29 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         table_id: TableId,
         row: ProductValue,
     ) -> Result<ProductValue>;
-}
 
-/// Describes a programmable [`TxDatastore`].
-///
-/// A programmable datastore is one which has a program of some kind associated
-/// with it.
-pub trait Programmable: TxDatastore {
-    /// Retrieve the [`Hash`] of the program currently associated with the
-    /// datastore.
+    /// Obtain the [`Metadata`] for this datastore.
     ///
-    /// A `None` result means that no program is currently associated, e.g.
-    /// because the datastore has not been fully initialized yet.
-    fn program_hash(&self, tx: &Self::Tx) -> Result<Option<Hash>>;
-}
+    /// Like [`TxDatastore`], but in a mutable transaction context.
+    fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>>;
 
-/// Describes a [`Programmable`] datastore which allows to update the program
-/// associated with it.
-pub trait MutProgrammable: MutTxDatastore {
-    /// A fencing token (usually a monotonic counter) which allows to order
-    /// `set_module_hash` with respect to a distributed locking service.
-    type FencingToken: Eq + Ord;
-
-    /// Update the [`Hash`] of the program currently associated with the
-    /// datastore.
+    /// Update the datastore with the supplied binary program.
     ///
-    /// The operation runs within the transactional context `tx`. The fencing
-    /// token `fence` must be verified to be greater than in any previous
-    /// invocations of this method.
-    fn set_program_hash(&self, tx: &mut Self::MutTx, fence: Self::FencingToken, hash: Hash) -> Result<()>;
+    /// The `program_hash` is the precomputed hash over `program_bytes`.
+    fn update_program(
+        &self,
+        tx: &mut Self::MutTx,
+        program_kind: ModuleKind,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> Result<()>;
 }
 
 #[cfg(test)]
 mod tests {
     use spacetimedb_primitives::{col_list, ColId, Constraints};
     use spacetimedb_sats::db::def::ConstraintDef;
-    use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType, ProductTypeElement, Typespace};
+    use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType, Typespace};
 
     use super::{ColumnDef, IndexDef, TableDef};
 
@@ -432,16 +513,7 @@ mod tests {
             schema: expected_schema.clone(),
             data: AlgebraicTypeRef(0),
         };
-        let row_type = ProductType::new(vec![
-            ProductTypeElement {
-                name: Some("id".into()),
-                algebraic_type: AlgebraicType::U32,
-            },
-            ProductTypeElement {
-                name: Some("name".into()),
-                algebraic_type: AlgebraicType::String,
-            },
-        ]);
+        let row_type = ProductType::from([("id", AlgebraicType::U32), ("name", AlgebraicType::String)]);
 
         let mut datastore_schema = spacetimedb_lib::TableDesc::into_table_def(
             Typespace::new(vec![row_type.into()]).with_type(&lib_table_def),

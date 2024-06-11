@@ -1,21 +1,21 @@
+use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_primitives::SequenceId;
 use spacetimedb_sats::db::def::SequenceSchema;
-use std::collections::HashMap;
 
-pub struct Sequence {
+pub(super) struct Sequence {
     schema: SequenceSchema,
-    pub(crate) value: i128,
+    pub(super) value: i128,
 }
 
 impl Sequence {
-    pub fn new(schema: SequenceSchema) -> Self {
+    pub(super) fn new(schema: SequenceSchema) -> Self {
         Self {
             value: schema.start,
             schema,
         }
     }
 
-    pub(crate) fn id(&self) -> SequenceId {
+    pub(super) fn id(&self) -> SequenceId {
         self.schema.sequence_id
     }
 
@@ -43,7 +43,7 @@ impl Sequence {
     }
 
     /// Returns the next value iff no allocation is needed.
-    pub fn gen_next_value(&mut self) -> Option<i128> {
+    pub(super) fn gen_next_value(&mut self) -> Option<i128> {
         if self.needs_allocation() {
             return None;
         }
@@ -52,15 +52,15 @@ impl Sequence {
         Some(value)
     }
 
-    pub fn allocated(&self) -> i128 {
+    pub(super) fn allocated(&self) -> i128 {
         self.schema.allocated
     }
 
-    pub fn next_value(&self) -> i128 {
+    fn next_value(&self) -> i128 {
         self.nth_value(1)
     }
 
-    pub fn nth_value(&self, n: usize) -> i128 {
+    pub(super) fn nth_value(&self, n: usize) -> i128 {
         let mut value = self.value;
         for _ in 0..n {
             value = Self::next_in_sequence(
@@ -85,31 +85,31 @@ impl Sequence {
     /// 5. restart
     /// 6. incr = 1 allocated = 10, value = 10
     /// 7. next_value() -> 11
-    pub fn needs_allocation(&self) -> bool {
+    fn needs_allocation(&self) -> bool {
         self.value == self.schema.allocated
     }
 
-    pub fn set_allocation(&mut self, allocated: i128) {
+    pub(super) fn set_allocation(&mut self, allocated: i128) {
         self.schema.allocated = allocated;
     }
 }
 
 /// A map of [`SequenceId`] -> [`Sequence`].
 #[derive(Default)]
-pub struct SequencesState {
-    sequences: HashMap<SequenceId, Sequence>,
+pub(super) struct SequencesState {
+    sequences: IntMap<SequenceId, Sequence>,
 }
 
 impl SequencesState {
-    pub fn get_sequence_mut(&mut self, seq_id: SequenceId) -> Option<&mut Sequence> {
+    pub(super) fn get_sequence_mut(&mut self, seq_id: SequenceId) -> Option<&mut Sequence> {
         self.sequences.get_mut(&seq_id)
     }
 
-    pub fn insert(&mut self, seq_id: SequenceId, seq: Sequence) {
+    pub(super) fn insert(&mut self, seq_id: SequenceId, seq: Sequence) {
         self.sequences.insert(seq_id, seq);
     }
 
-    pub fn remove(&mut self, seq_id: SequenceId) {
+    pub(super) fn remove(&mut self, seq_id: SequenceId) {
         self.sequences.remove(&seq_id);
     }
 }

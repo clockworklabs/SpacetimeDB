@@ -4,7 +4,7 @@ use std::any::TypeId;
 use std::collections::{btree_map, BTreeMap};
 use std::fmt;
 use std::marker::PhantomData;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use sys::Buffer;
 
@@ -12,18 +12,14 @@ use crate::sats::db::def::{ColumnDef, ConstraintDef, IndexDef, SequenceDef, Tabl
 use crate::timestamp::with_timestamp_set;
 use crate::{sys, ReducerContext, ScheduleToken, SpacetimeType, TableType, Timestamp};
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
-use spacetimedb_lib::sats::db::auth::{StAccess, StTableType};
+use spacetimedb_lib::sats::db::auth::StTableType;
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, AlgebraicType, AlgebraicTypeRef, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
 use spacetimedb_lib::{bsatn, Address, Identity, MiscModuleExport, ModuleDef, ReducerDef, TableDesc, TypeAlias};
 use spacetimedb_primitives::*;
 
-pub use once_cell::sync::{Lazy, OnceCell};
-
 /// The `sender` invokes `reducer` at `timestamp` and provides it with the given `args`.
-///
-/// The `epilogue` is executed after `reducer` has finished.
 ///
 /// Returns an invalid buffer on success
 /// and otherwise the error is written into the fresh one returned.
@@ -33,20 +29,17 @@ pub fn invoke_reducer<'a, A: Args<'a>, T>(
     client_address: Buffer,
     timestamp: u64,
     args: &'a [u8],
-    epilogue: impl FnOnce(Result<(), &str>),
 ) -> Buffer {
     let ctx = assemble_context(sender, timestamp, client_address);
 
     // Deserialize the arguments from a bsatn encoding.
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
-    // Run the reducer with the timestamp set.
-    let res = with_timestamp_set(ctx.timestamp, || {
-        let res: Result<(), Box<str>> = reducer.invoke(ctx, args);
-        // Then run the epilogue.
-        epilogue(res.as_ref().copied().map_err(|e| &**e));
-        res
-    });
+    // Run the reducer with the environment all set up.
+    let invoke = || reducer.invoke(ctx, args);
+    #[cfg(feature = "rand")]
+    let invoke = || crate::rng::with_rng_set(invoke);
+    let res = with_timestamp_set(ctx.timestamp, invoke);
 
     // Any error is pushed into a `Buffer`.
     cvt_result(res)
@@ -272,7 +265,7 @@ macro_rules! impl_reducer {
                     name: Info::NAME.into(),
                     args: vec![
                         $(ProductTypeElement {
-                            name: $T.map(str::to_owned),
+                            name: $T.map(Into::into),
                             algebraic_type: <$T>::make_type(_typespace),
                         }),*
                     ],
@@ -449,7 +442,7 @@ pub fn register_table<T: TableType>() {
 
         let schema = TableDef::new(T::TABLE_NAME.into(), columns)
             .with_type(StTableType::User)
-            .with_access(StAccess::for_name(T::TABLE_NAME))
+            .with_access(T::TABLE_ACCESS)
             .with_constraints(constraints)
             .with_sequences(sequences)
             .with_indexes(indexes);
@@ -472,7 +465,7 @@ impl From<crate::IndexDesc<'_>> for IndexDef {
         };
 
         IndexDef {
-            index_name: index.name.to_string(),
+            index_name: index.name.into(),
             is_unique: false,
             index_type: index.ty,
             columns,
@@ -538,7 +531,7 @@ static DESCRIBERS: Mutex<Vec<fn(&mut ModuleBuilder)>> = Mutex::new(Vec::new());
 
 /// A reducer function takes in `(Sender, Timestamp, Args)` and writes to a new `Buffer`.
 pub type ReducerFn = fn(Buffer, Buffer, u64, &[u8]) -> Buffer;
-static REDUCERS: OnceCell<Vec<ReducerFn>> = OnceCell::new();
+static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
 
 /// Describes the module into a serialized form that is returned and writes the set of `REDUCERS`.
 #[no_mangle]

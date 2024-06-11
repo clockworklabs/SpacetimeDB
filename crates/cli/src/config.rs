@@ -1,12 +1,12 @@
-use crate::util::{contains_protocol, host_or_url_to_host_and_protocol};
+use crate::util::{contains_protocol, host_or_url_to_host_and_protocol, is_hex_identity};
 use anyhow::Context;
 use jsonwebtoken::DecodingKey;
 use serde::{Deserialize, Serialize};
 use spacetimedb::auth::identity::decode_token;
+use spacetimedb_fs_utils::{atomic_write, create_parent_dir};
 use spacetimedb_lib::Identity;
 use std::{
     fs,
-    io::{Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -106,11 +106,7 @@ pub struct RawConfig {
     server_configs: Vec<ServerConfig>,
 }
 
-const DEFAULT_HOST: &str = "127.0.0.1:3000";
-const DEFAULT_PROTOCOL: &str = "http";
-const DEFAULT_HOST_NICKNAME: &str = "local";
-
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Config {
     proj: RawConfig,
     home: RawConfig,
@@ -141,25 +137,24 @@ fn hanging_default_server_context(server: &str) -> String {
 
 impl RawConfig {
     fn new_with_localhost() -> Self {
+        let local = ServerConfig {
+            default_identity: None,
+            host: "127.0.0.1:3000".to_string(),
+            protocol: "http".to_string(),
+            nickname: Some("local".to_string()),
+            ecdsa_public_key: None,
+        };
+        let testnet = ServerConfig {
+            default_identity: None,
+            host: "testnet.spacetimedb.com".to_string(),
+            protocol: "https".to_string(),
+            nickname: Some("testnet".to_string()),
+            ecdsa_public_key: None,
+        };
         RawConfig {
-            default_server: Some(DEFAULT_HOST_NICKNAME.to_string()),
+            default_server: testnet.nickname.clone(),
             identity_configs: Vec::new(),
-            server_configs: vec![
-                ServerConfig {
-                    default_identity: None,
-                    host: DEFAULT_HOST.to_string(),
-                    protocol: DEFAULT_PROTOCOL.to_string(),
-                    nickname: Some(DEFAULT_HOST_NICKNAME.to_string()),
-                    ecdsa_public_key: None,
-                },
-                ServerConfig {
-                    default_identity: None,
-                    host: "testnet.spacetimedb.com".to_string(),
-                    protocol: "https".to_string(),
-                    nickname: Some("testnet".to_string()),
-                    ecdsa_public_key: None,
-                },
-            ],
+            server_configs: vec![local, testnet],
         }
     }
 
@@ -789,79 +784,60 @@ impl Config {
         &self.home.server_configs
     }
 
-    fn find_config_filename(config_dir: &PathBuf) -> Option<&'static str> {
-        let read_dir = fs::read_dir(config_dir).unwrap();
-        let filenames = [DOT_SPACETIME_FILENAME, SPACETIME_FILENAME, CONFIG_FILENAME];
-        let mut config_filename = None;
-        'outer: for path in read_dir {
-            for name in filenames {
-                if name == path.as_ref().unwrap().file_name().to_str().unwrap() {
-                    config_filename = Some(name);
-                    break 'outer;
-                }
-            }
-        }
-        config_filename
+    fn find_config_path(config_dir: &Path) -> Option<PathBuf> {
+        [DOT_SPACETIME_FILENAME, SPACETIME_FILENAME, CONFIG_FILENAME]
+            .iter()
+            .map(|filename| config_dir.join(filename))
+            .find(|path| path.exists())
     }
 
-    fn load_raw(config_dir: PathBuf, is_project: bool) -> RawConfig {
-        // If a config file overload has been specified, use that instead
-        if !is_project {
-            if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
-                return Self::load_from_file(config_path.as_ref());
-            }
+    fn system_config_path() -> PathBuf {
+        if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
+            config_path.into()
+        } else {
+            let mut config_path = dirs::home_dir().unwrap();
+            config_path.push(HOME_CONFIG_DIR);
+            Self::find_config_path(&config_path).unwrap_or_else(|| config_path.join(CONFIG_FILENAME))
         }
-        if !config_dir.exists() {
-            fs::create_dir_all(&config_dir).unwrap();
-        }
-
-        let config_filename = Self::find_config_filename(&config_dir);
-        let Some(config_filename) = config_filename else {
-            return if is_project {
-                // Return an empty config without creating a file.
-                RawConfig::default()
-            } else {
-                // Return a default config with http://127.0.0.1:3000 as the default server.
-                // Do not (yet) create a file.
-                // The config file will be created later by `Config::save` if necessary.
-                RawConfig::new_with_localhost()
-            };
-        };
-
-        let config_path = config_dir.join(config_filename);
-        Self::load_from_file(&config_path)
     }
 
-    fn load_from_file(config_path: &Path) -> RawConfig {
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .read(true)
-            .open(config_path)
-            .unwrap();
-
-        let mut text = String::new();
-        file.read_to_string(&mut text).unwrap();
-        toml::from_str(&text).unwrap()
+    fn load_from_file(config_path: &Path) -> anyhow::Result<RawConfig> {
+        let text = fs::read_to_string(config_path)?;
+        Ok(toml::from_str(&text)?)
     }
 
-    pub fn load() -> Self {
-        let home_dir = dirs::home_dir().unwrap();
-        let home_config = Self::load_raw(home_dir.join(HOME_CONFIG_DIR), false);
-
+    fn load_proj_config() -> RawConfig {
         // TODO(cloutiertyler): For now we're checking for a spacetime.toml file
         // in the current directory. Eventually this should really be that we
         // search parent directories above the current directory to find
         // spacetime.toml files like a .gitignore file
         let cur_dir = std::env::current_dir().expect("No current working directory!");
-        let cur_config = Self::load_raw(cur_dir, true);
-
-        Self {
-            home: home_config,
-            proj: cur_config,
+        if let Some(config_path) = Self::find_config_path(&cur_dir) {
+            Self::load_from_file(&config_path)
+                .inspect_err(|e| eprintln!("config file {config_path:?} is invalid: {e:#}"))
+                .unwrap_or_default()
+        } else {
+            Default::default()
         }
     }
 
+    pub fn load() -> Self {
+        let home_path = Self::system_config_path();
+        let home = if home_path.exists() {
+            Self::load_from_file(&home_path)
+                .inspect_err(|e| eprintln!("config file {home_path:?} is invalid: {e:#?}"))
+                .unwrap_or_default()
+        } else {
+            RawConfig::new_with_localhost()
+        };
+
+        let proj = Self::load_proj_config();
+
+        Self { home, proj }
+    }
+
+    #[doc(hidden)]
+    /// Used in tests.
     pub fn new_with_localhost() -> Self {
         Self {
             home: RawConfig::new_with_localhost(),
@@ -870,30 +846,25 @@ impl Config {
     }
 
     pub fn save(&self) {
-        let config_path = if let Some(config_path) = std::env::var_os("SPACETIME_CONFIG_FILE") {
-            PathBuf::from(&config_path)
-        } else {
-            let home_dir = dirs::home_dir().unwrap();
-            let config_dir = home_dir.join(HOME_CONFIG_DIR);
-            if !config_dir.exists() {
-                fs::create_dir_all(&config_dir).unwrap();
-            }
+        let home_path = Self::system_config_path();
+        // If the `home_path` is in a directory, ensure it exists.
+        create_parent_dir(home_path.as_ref()).unwrap();
 
-            let config_filename = Self::find_config_filename(&config_dir).unwrap_or(CONFIG_FILENAME);
-            config_dir.join(config_filename)
-        };
+        let config = toml::to_string_pretty(&self.home).unwrap();
 
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .open(config_path)
-            .unwrap();
-
-        let str = toml::to_string_pretty(&self.home).unwrap();
-
-        file.set_len(0).unwrap();
-        file.write_all(str.as_bytes()).unwrap();
-        file.sync_all().unwrap();
+        // TODO: We currently have a race condition if multiple processes are modifying the config.
+        // If process X and process Y read the config, each make independent changes, and then save
+        // the config, the first writer will have its changes clobbered by the second writer.
+        //
+        // We used to use `Lockfile` to prevent this from happening, but we had other issues with
+        // that approach (see https://github.com/clockworklabs/SpacetimeDB/issues/1339, and the
+        // TODO in `lockfile.rs`).
+        //
+        // We should address this issue, but we currently don't expect it to arise very frequently
+        // (see https://github.com/clockworklabs/SpacetimeDB/pull/1341#issuecomment-2150857432).
+        if let Err(e) = atomic_write(&home_path, config) {
+            eprintln!("could not save config file: {e}")
+        }
     }
 
     pub fn get_default_identity_config(&self, server: Option<&str>) -> anyhow::Result<&IdentityConfig> {
@@ -907,13 +878,22 @@ Import an existing identity with:
         })
     }
 
-    pub fn name_exists(&self, nickname: &str) -> bool {
-        for name in self.identity_configs().iter().map(|c| &c.nickname) {
-            if name.as_ref() == Some(&nickname.to_string()) {
-                return true;
-            }
+    pub fn name_exists(&self, name: &str) -> bool {
+        self.get_identity_config_by_name(name).is_some()
+    }
+
+    pub fn identity_exists(&self, identity: &Identity) -> bool {
+        self.get_identity_config_by_identity(identity).is_some()
+    }
+
+    pub fn can_set_name(&self, new_nickname: &str) -> Result<(), anyhow::Error> {
+        if self.name_exists(new_nickname) {
+            return Err(anyhow::anyhow!("An identity with that name already exists."));
         }
-        false
+        if is_hex_identity(new_nickname) {
+            return Err(anyhow::anyhow!("An identity name cannot be an identity."));
+        }
+        Ok(())
     }
 
     pub fn get_identity_config_by_name(&self, name: &str) -> Option<&IdentityConfig> {

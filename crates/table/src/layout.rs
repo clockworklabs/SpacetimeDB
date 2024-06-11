@@ -18,16 +18,22 @@ use spacetimedb_sats::{
     SumTypeVariant,
 };
 
-/// Aligns a `base` offset to the `required_alignment` and returns it.
+/// Aligns a `base` offset to the `required_alignment` (in the positive direction) and returns it.
 ///
 /// When `base` is already aligned, `base` will be returned.
 pub const fn align_to(base: usize, required_alignment: usize) -> usize {
-    let misalignment = base % required_alignment;
-    if misalignment == 0 {
+    if required_alignment == 0 {
+        // Avoid computing the remainder below, as that panics.
+        // This path is reachable for e.g., uninhabited types.
         base
     } else {
-        let padding = required_alignment - misalignment;
-        base + padding
+        let misalignment = base % required_alignment;
+        if misalignment == 0 {
+            base
+        } else {
+            let padding = required_alignment - misalignment;
+            base + padding
+        }
     }
 }
 
@@ -89,7 +95,7 @@ pub trait HasLayout {
 ///   where `VarLenType` returns a static ref to [`VAR_LEN_REF_LAYOUT`],
 ///   and `PrimitiveType` dispatches on its variant to return a static ref
 ///   to a type-specific `Layout`.
-#[derive(Debug, PartialEq, Eq, EnumAsInner)]
+#[derive(Debug, PartialEq, Eq, Clone, EnumAsInner)]
 pub enum AlgebraicTypeLayout {
     /// A sum type, annotated with its layout.
     Sum(SumTypeLayout),
@@ -159,7 +165,7 @@ pub const fn row_size_for_type<T>() -> Size {
 /// The type of a row, annotated with a [`Layout`].
 ///
 /// This type ensures that the minimum row size is adhered to.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RowTypeLayout(ProductTypeLayout);
 
 impl RowTypeLayout {
@@ -201,7 +207,7 @@ impl Index<usize> for RowTypeLayout {
 }
 
 /// A mirror of [`ProductType`] annotated with a [`Layout`].
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ProductTypeLayout {
     /// The memoized layout of the product type.
     pub layout: Layout,
@@ -216,7 +222,7 @@ impl HasLayout for ProductTypeLayout {
 }
 
 /// A mirrior of [`ProductTypeElement`] annotated with a [`Layout`].
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ProductTypeElementLayout {
     /// The relative offset of a field's value to its parent product value.
     pub offset: u16,
@@ -228,18 +234,19 @@ pub struct ProductTypeElementLayout {
     ///
     /// This allows us to convert back to `ProductTypeElement`,
     /// which we do when reporting type errors.
-    pub name: Option<String>,
+    pub name: Option<Box<str>>,
 }
 
 /// A mirrior of [`SumType`] annotated with a [`Layout`].
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SumTypeLayout {
     /// The layout of a sum value of this sum type.
     pub layout: Layout,
     /// The variants of the sum type.
     pub variants: Collection<SumTypeVariantLayout>,
-    /// The relative offset of a sum value's tag for sums of this type.
-    pub tag_offset: u16,
+    /// The relative offset of a sum value's payload for sums of this type.
+    /// Sum value tags are always at offset 0.
+    pub payload_offset: u16,
 }
 
 impl HasLayout for SumTypeLayout {
@@ -249,7 +256,7 @@ impl HasLayout for SumTypeLayout {
 }
 
 /// A mirrior of [`SumTypeVariant`] annotated with a [`Layout`].
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SumTypeVariantLayout {
     /// The type of the variant.
     pub ty: AlgebraicTypeLayout,
@@ -258,12 +265,12 @@ pub struct SumTypeVariantLayout {
     ///
     /// This allows us to convert back to `SumTypeVariant`,
     /// which we do when reporting type errors.
-    pub name: Option<String>,
+    pub name: Option<Box<str>>,
 }
 
 /// Variants of [`BuiltinType`] which do not require a `VarLenRef` indirection,
 /// i.e. bools, integers and floats.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PrimitiveType {
     Bool,
     I8,
@@ -294,7 +301,7 @@ impl HasLayout for PrimitiveType {
 
 /// [`BuiltinType`] variants which require a `VarLenRef` indirection,
 /// i.e. strings, arrays and maps.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum VarLenType {
     /// The string type corresponds to `AlgebraicType::String`.
     String,
@@ -365,8 +372,7 @@ impl From<ProductType> for ProductTypeLayout {
         // This is consistent with Rust.
         let mut max_child_align = 1;
 
-        let elements = ty
-            .elements
+        let elements = Vec::from(ty.elements)
             .into_iter()
             .map(|elem| {
                 let layout_type: AlgebraicTypeLayout = elem.algebraic_type.into();
@@ -401,8 +407,7 @@ impl From<SumType> for SumTypeLayout {
         // This is consistent with Rust.
         let mut max_child_align = 0;
 
-        let variants = ty
-            .variants
+        let variants = Vec::from(ty.variants)
             .into_iter()
             .map(|variant| {
                 let layout_type: AlgebraicTypeLayout = variant.algebraic_type.into();
@@ -418,13 +423,25 @@ impl From<SumType> for SumTypeLayout {
             .collect::<Vec<_>>()
             .into();
 
-        let tag_offset = max_child_size as u16;
-        let size = align_to(max_child_size + 1, max_child_align) as u16;
-        let align = max_child_align as u16;
+        // Guarantees that tag fits inside align.
+        let align = u16::max(max_child_align as u16, 1);
+
+        // Ensure the payload field is sufficiently aligned for all its members.
+        // `max_child_size` and `max_child_align` will already be consistent
+        // if the most-aligned variant is also the largest,
+        // but this is not necessarily the case.
+        // E.g. if variant A is a product of 31 `u8`s, and variant B is a single `u64`,
+        // `max_child_size` will be 31 and `max_child_align` will be 8.
+        // Note that `payload_size` may be 0.
+        let payload_size = align_to(max_child_size, max_child_align);
+
+        // [tag | pad to align | payload]
+        let size = align + payload_size as u16;
+        let payload_offset = align;
         let layout = Layout { align, size };
         Self {
             layout,
-            tag_offset,
+            payload_offset,
             variants,
         }
     }
@@ -536,33 +553,24 @@ impl SumTypeVariantLayout {
 
 impl SumTypeLayout {
     pub fn offset_of_variant_data(&self, _variant_tag: u8) -> usize {
-        // Store the tag at the end, so that the payloads are trivially aligned without padding before.
+        // Store the tag at the start, similar to BSATN.
+        // Unlike BSATN, there is also padding.
         //
         // ```ignore
-        // [ variant data | tag | padding ]
+        // [ tag | padding to variant data align | variant data ]
         // ```
         //
-        // This means the variant data is always at offset 0.
-        //
-        // (Could swap the order of the tag & the padding, but it doesn't matter,
-        // as you need to know size & align of the variant data to compute the tag offset either way.)
-        //
-        // TODO(bikeshedding): consider if this is better than storing the tag at the beginning.
-        // Given that we pre-compute and memoize the offset of the tag,
-        // there's very little performance reason to switch.
-        0
+        self.payload_offset as usize
     }
 
     pub fn offset_of_tag(&self) -> usize {
-        // Store the tag at the end, so that the payloads are trivially aligned without padding before.
+        // Store the tag at the start, similar to BSATN.
         //
         // ```ignore
-        // [ variant data | tag | padding ]
+        // [ tag | padding to variant data align | variant data ]
         // ```
         //
-        // This means the tag is always just past the variant data,
-        // i.e. at `sum_data_size(sum)`.
-        self.tag_offset as usize
+        0
     }
 }
 
@@ -586,7 +594,7 @@ pub fn required_var_len_granules_for_row(val: &ProductValue) -> usize {
     }
 
     fn traverse_product(val: &ProductValue, count: &mut usize) {
-        for elt in &val.elements {
+        for elt in val {
             traverse_av(elt, count);
         }
     }
@@ -612,10 +620,10 @@ pub fn bsatn_len(val: &AlgebraicValue) -> usize {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::proptest_sats::generate_algebraic_type;
-    use itertools::Itertools;
+    use itertools::Itertools as _;
     use proptest::collection::vec;
     use proptest::prelude::*;
+    use spacetimedb_sats::proptest::generate_algebraic_type;
 
     #[test]
     fn align_to_expected() {
@@ -772,7 +780,7 @@ mod test {
             let sum_permutations = variants
                 .into_iter()
                 .permutations(len)
-                .map(|vars| vars.into_iter().map(SumTypeVariant::from).collect::<Vec<_>>())
+                .map(|vars| vars.into_iter().map(SumTypeVariant::from).collect::<Box<[_]>>())
                 .map(AlgebraicType::sum);
             // Compute the layouts of each equivalent sum type.
             let mut sum_layout_perms = sum_permutations

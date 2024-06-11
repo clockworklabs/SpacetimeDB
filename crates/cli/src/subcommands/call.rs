@@ -7,9 +7,8 @@ use anyhow::{bail, Context, Error};
 use clap::{Arg, ArgAction, ArgMatches};
 use itertools::Either;
 use serde_json::Value;
-use spacetimedb::db::AlgebraicType;
 use spacetimedb_lib::de::serde::deserialize_from;
-use spacetimedb_lib::sats::{AlgebraicTypeRef, BuiltinType, Typespace};
+use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, BuiltinType, Typespace};
 use spacetimedb_lib::{Address, ProductTypeElement};
 use std::fmt::Write;
 use std::iter;
@@ -35,8 +34,8 @@ pub fn cli() -> clap::Command {
                 .help("The nickname, host name or URL of the server hosting the database"),
         )
         .arg(
-            Arg::new("as_identity")
-                .long("as-identity")
+            Arg::new("identity")
+                .long("identity")
                 .short('i')
                 .conflicts_with("anon_identity")
                 .help("The identity to use for the call"),
@@ -45,7 +44,7 @@ pub fn cli() -> clap::Command {
             Arg::new("anon_identity")
                 .long("anon-identity")
                 .short('a')
-                .conflicts_with("as_identity")
+                .conflicts_with("identity")
                 .action(ArgAction::SetTrue)
                 .help("If this flag is present, the call will be executed with no identity provided"),
         )
@@ -58,7 +57,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
     let arguments = args.get_many::<String>("arguments");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
 
-    let as_identity = args.get_one::<String>("as_identity");
+    let identity = args.get_one::<String>("identity");
     let anon_identity = args.get_flag("anon_identity");
 
     let address = database_address(&config, database, server).await?;
@@ -69,7 +68,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         address.clone(),
         reducer_name
     ));
-    let auth_header = get_auth_header_only(&mut config, anon_identity, as_identity, server).await?;
+    let auth_header = get_auth_header_only(&mut config, anon_identity, identity, server).await?;
     let builder = add_auth_header_opt(builder, &auth_header);
     let describe_reducer = util::describe_reducer(
         &mut config,
@@ -77,7 +76,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         server.map(|x| x.to_string()),
         reducer_name.clone(),
         anon_identity,
-        as_identity.cloned(),
+        identity.cloned(),
     )
     .await?;
 
@@ -198,10 +197,10 @@ fn reducer_signature(schema_json: Value, reducer_name: &str) -> Option<String> {
     fn ctx(typespace: &Typespace, r: AlgebraicTypeRef) -> String {
         let ty = &typespace[r];
         let mut ty_str = String::new();
-        write_type(&|r| ctx(typespace, r), &mut ty_str, ty);
+        write_type(&|r| ctx(typespace, r), &mut ty_str, ty).unwrap();
         ty_str
     }
-    write_arglist_no_delimiters(&|r| ctx(&typespace, r), &mut args, &params, None);
+    write_arglist_no_delimiters(&|r| ctx(&typespace, r), &mut args, &params, None).unwrap();
     let args = args.trim().trim_end_matches(',').replace('\n', " ");
 
     // Print the full signature to `reducer_fmt`.

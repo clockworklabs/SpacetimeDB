@@ -1,9 +1,7 @@
-# Warning: we removed binstall recently because they added a dependency on the QUIC protocol.
-
 ARG CARGO_PROFILE=release
 
 
-FROM rust:1.76.0 AS chef
+FROM rust:1.78.0 AS chef
 RUN rust_target=$(rustc -vV | awk '/^host:/{ print $2 }') && \
   curl https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-$rust_target.tgz -fL | tar xz -C $CARGO_HOME/bin
 RUN cargo binstall -y cargo-chef@0.1.56

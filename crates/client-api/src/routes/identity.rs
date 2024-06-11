@@ -63,21 +63,14 @@ pub async fn get_identity<S: ControlStateDelegate>(
         None => None,
         Some(email) => {
             let identities = ctx.get_identities_for_email(email.as_str()).map_err(log_and_500)?;
-            if identities.is_empty() {
-                None
-            } else {
-                let mut response = GetIdentityResponse {
-                    identities: Vec::<GetIdentityResponseEntry>::new(),
-                };
-
-                for identity_email in identities {
-                    response.identities.push(GetIdentityResponseEntry {
-                        identity: identity_email.identity,
-                        email: identity_email.email,
-                    })
-                }
-                Some(response)
-            }
+            let identities = identities
+                .into_iter()
+                .map(|identity_email| GetIdentityResponseEntry {
+                    identity: identity_email.identity,
+                    email: identity_email.email,
+                })
+                .collect::<Vec<_>>();
+            (!identities.is_empty()).then_some(GetIdentityResponse { identities })
         }
     };
     let identity_response = lookup.ok_or(StatusCode::NOT_FOUND)?;
@@ -175,7 +168,7 @@ pub async fn get_databases<S: ControlStateDelegate>(
     })?;
     let addresses = all_dbs
         .iter()
-        .filter(|db| db.identity == identity)
+        .filter(|db| db.owner_identity == identity)
         .map(|db| db.address)
         .collect();
     Ok(axum::Json(GetDatabasesResponse { addresses }))

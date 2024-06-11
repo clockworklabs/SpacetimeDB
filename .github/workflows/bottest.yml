@@ -1,0 +1,134 @@
+on:
+  push:
+    branches:
+      - master
+      - jgilles/bottest3
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull Request Number'
+        required: false
+        default: ''
+  issue_comment:
+    types: [created]
+
+name: Automated bot test
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  autobottest:
+    name: run bot test (30 bots)
+    runs-on: bots-runner
+    permissions: write-all
+    # filter for a comment containing 'benchmarks please'
+    if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'bots please')) }}
+    env:
+      PR_NUMBER: ${{ github.event.inputs.pr_number || github.event.issue.number || null }}
+    steps:
+      - name: Check membership
+        if: ${{ github.event_name == 'issue_comment' }}
+        env:
+          CONTRIB_ORG: clockworklabs
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          ORG_READ_TOKEN: ${{ secrets.ORG_READ_TOKEN }}
+        run: |
+          curl -OL https://github.com/cli/cli/releases/download/v2.37.0/gh_2.37.0_linux_amd64.deb && sudo dpkg -i gh_2.37.0_linux_amd64.deb
+          if [[ $(GH_TOKEN=$ORG_READ_TOKEN gh api --paginate /orgs/{owner}/members --jq 'any(.login == env.COMMENT_AUTHOR)') != true ]]; then
+            gh pr comment $PR_NUMBER -b "Sorry, you don't have permission to run bot tests."
+            exit 1
+          fi
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      - name: Post initial comment
+        run: |
+          if [[ $PR_NUMBER ]]; then
+            comment_parent=issues/$PR_NUMBER
+            comment_update=issues/comments
+          else
+            comment_parent=commits/$GITHUB_SHA
+            comment_update=comments
+          fi
+          comment_body="Bot test in progress..."
+          comment_id=$(gh api "/repos/{owner}/{repo}/$comment_parent/comments" -f body="$comment_body" --jq .id)
+          echo "COMMENT_UPDATE_URL=/repos/{owner}/{repo}/$comment_update/$comment_id" >>$GITHUB_ENV
+
+      - name: find PR branch
+        if: ${{ env.PR_NUMBER }}
+        run: echo "PR_REF=$(gh pr view $PR_NUMBER --json headRefName --jq .headRefName)" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.PR_REF || github.ref }}
+          fetch-depth: 1
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          components: clippy
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          override: true
+
+      - name: Build the bots
+        run: |
+          git apply .github/workflows/bottest_tracing_fix.patch
+          cargo build --release --bin spacetime
+
+      - name: Run bot test script
+        run: |
+          echo "We're on a bots runner, so expecting to find the BitCraftBots repo set up in the expected location"
+          echo "Let's hope the bots runner is up to date!!!"
+          SPACETIME_BIN="$PWD/target/release/spacetime"
+          cd ~/BitCraftBots
+          # using 'exec' allows the process to receive graceful termination signals (note: actions is bad)
+          exec python3 -m scripts.bottest "$SPACETIME_BIN"
+
+      - name: Archive results
+        run: |
+          RESULTS_NAME="pr-$PR_NUMBER-$GITHUB_SHA"
+          mkdir -p bottest-results
+          cp ~/BitCraftBots/results.zip bottest-results/$RESULTS_NAME.zip
+
+      - name: Upload bot test results to DO spaces
+        uses: clockworklabs/s3-upload-action@master
+        with:
+          aws_key_id: ${{ secrets.AWS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY}}
+          aws_bucket: "spacetimedb-private-bottest-results"
+          source_dir: bottest-results
+          endpoint: https://nyc3.digitaloceanspaces.com
+          destination_dir: bottests
+
+      - name: Post comment
+        run: |
+          RESULTS_NAME="pr-$PR_NUMBER-$GITHUB_SHA"
+          BODY="<details><summary>Bot test results</summary>
+
+          Test results are stored on DO Spaces [here](https://cloud.digitalocean.com/spaces/spacetimedb-private-bottest-results?path=bottests%2F). You'll need to log in
+          (we keep these secret).
+
+          The results of this test are named $RESULTS_NAME.zip.
+
+          </details>"
+
+          gh api "$COMMENT_UPDATE_URL" -X PATCH -f body="$BODY"
+
+      - name: Post failure comment
+        if: ${{ failure() && env.COMMENT_UPDATE_URL }}
+        run: |
+          BODY="Bot test failed. Please check [the workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details."
+          gh api "$COMMENT_UPDATE_URL" -X PATCH -f body="$BODY"
+
+      - name: Clean up
+        if: always()
+        run: |
+          rm -fr /stdb/*
+          rm -fr bottest-results/
+          rm -fr crates/bench/bottest/

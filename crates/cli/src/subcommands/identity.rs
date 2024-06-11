@@ -4,14 +4,15 @@ use crate::{
 };
 use std::io::Write;
 
-use crate::util::{is_hex_identity, print_identity_config};
+use crate::util::print_identity_config;
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use email_address::EmailAddress;
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use spacetimedb::auth::identity::decode_token;
-use spacetimedb_lib::{recovery::RecoveryCodeResponse, Identity};
+use spacetimedb_client_api_messages::recovery::RecoveryCodeResponse;
+use spacetimedb_lib::Identity;
 use tabled::{
     settings::{object::Columns, Alignment, Modify, Style},
     Table, Tabled,
@@ -84,6 +85,8 @@ fn get_subcommands() -> Vec<Command> {
         Command::new("list").about("List saved identities which apply to a server")
             .arg(
                 Arg::new("server")
+                    .short('s')
+                    .long("server")
                     .help("The nickname, host name or URL of the server to list identities for")
                     .conflicts_with("all")
             )
@@ -385,15 +388,8 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let alias = args.get_one::<String>("name");
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let default = *args.get_one::<bool>("default").unwrap();
-
-    if let Some(alias) = alias {
-        if config.name_exists(alias) {
-            return Err(anyhow::anyhow!("An identity with that name already exists."));
-        }
-
-        if is_hex_identity(alias.as_str()) {
-            return Err(anyhow::anyhow!("An identity name cannot be an identity."));
-        }
+    if let Some(x) = alias {
+        config.can_set_name(x)?;
     }
 
     let email = args.get_one::<String>("email");
@@ -451,6 +447,13 @@ async fn exec_import(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
 
     //optional
     let nickname = args.get_one::<String>("name").cloned();
+    if let Some(x) = nickname.as_deref() {
+        config.can_set_name(x)?;
+    }
+
+    if config.identity_exists(&identity) {
+        return Err(anyhow::anyhow!("Identity \"{}\" already exists in config", identity));
+    };
 
     config.identity_configs_mut().push(IdentityConfig {
         identity,
@@ -581,10 +584,11 @@ async fn exec_token(config: Config, args: &ArgMatches) -> Result<(), anyhow::Err
 /// Executes the `identity set-default` command which sets the default identity.
 async fn exec_set_name(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let new_name = args.get_one::<String>("name").unwrap();
-    let identity_or_name = args.get_one::<String>("identity").unwrap();
+    let identity = args.get_one::<String>("identity").unwrap();
+    config.can_set_name(new_name.as_str())?;
     let ic = config
-        .get_identity_config_mut(identity_or_name)
-        .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {identity_or_name}"))?;
+        .get_identity_config_mut(identity)
+        .ok_or_else(|| anyhow::anyhow!("Missing identity credentials for identity: {identity}"))?;
     ic.nickname = Some(new_name.to_owned());
     println!("Updated identity:");
     print_identity_config(ic);

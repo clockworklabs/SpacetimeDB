@@ -3,9 +3,9 @@ use crate::{
     schemas::{table_name, BenchTable, IndexStrategy},
     ResultBench,
 };
-use ahash::AHashMap;
 use lazy_static::lazy_static;
 use rusqlite::Connection;
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicValue, ProductType};
 use std::{
     fmt::Write,
@@ -135,8 +135,8 @@ impl BenchDatabase for SQLite {
 
     fn update_bulk<T: BenchTable>(&mut self, table_id: &Self::TableId, row_count: u32) -> ResultBench<()> {
         let mut product = T::product_type();
-        let id_column = product.elements.swap_remove(0).name.unwrap();
-        let update_column = product.elements.swap_remove(1).name.unwrap();
+        let id_column = product.elements[0].name.take().unwrap();
+        let update_column = product.elements[1].name.take().unwrap();
         // this relies on IDs having been generated in order...
         let statement =
             format!("UPDATE {table_id} SET {update_column} = {update_column} + 1 WHERE {id_column} < {row_count}");
@@ -175,11 +175,7 @@ impl BenchDatabase for SQLite {
         value: AlgebraicValue,
     ) -> ResultBench<()> {
         let statement = memo_query(BenchName::Filter, table_id, || {
-            let column: String = T::product_type()
-                .elements
-                .swap_remove(column_index as usize)
-                .name
-                .unwrap();
+            let column: Box<str> = T::product_type().elements[column_index as usize].name.take().unwrap();
             format!("SELECT * FROM {table_id} WHERE {column} = ?")
         });
 
@@ -246,7 +242,7 @@ fn memo_query<F: FnOnce() -> String>(bench_name: BenchName, table_id: &str, gene
     let bench_queries = if let Some(bench_queries) = queries.get_mut(&bench_name) {
         bench_queries
     } else {
-        queries.insert(bench_name, AHashMap::default());
+        queries.insert(bench_name, HashMap::default());
         queries.get_mut(&bench_name).unwrap()
     };
 
@@ -262,8 +258,8 @@ fn memo_query<F: FnOnce() -> String>(bench_name: BenchName, table_id: &str, gene
 lazy_static! {
     // bench_name -> table_id -> query.
     // Double hashmap is necessary because of tuple dereferencing problems.
-    static ref QUERIES: RwLock<ahash::AHashMap<BenchName, ahash::AHashMap<String, Arc<str>>>> =
-        RwLock::new(ahash::AHashMap::default());
+    static ref QUERIES: RwLock<HashMap<BenchName, HashMap<String, Arc<str>>>> =
+        RwLock::default();
 }
 
 #[inline(never)]

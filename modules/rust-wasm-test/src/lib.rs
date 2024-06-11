@@ -1,6 +1,7 @@
 #![allow(clippy::disallowed_names)]
-use spacetimedb::{query, spacetimedb, Deserialize, ReducerContext, SpacetimeType, Timestamp};
-use spacetimedb_lib::bsatn;
+use spacetimedb::sats::db::auth::StAccess;
+use spacetimedb::spacetimedb_lib::{self, bsatn};
+use spacetimedb::{query, spacetimedb, Deserialize, ReducerContext, SpacetimeType, TableType, Timestamp};
 
 #[spacetimedb(table)]
 #[spacetimedb(index(btree, name = "foo", x))]
@@ -23,10 +24,13 @@ pub enum TestC {
     Bar,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb(table(public))]
 pub struct TestD {
     test_c: Option<TestC>,
 }
+
+// This table was specified as public.
+const _: () = assert!(matches!(TestD::TABLE_ACCESS, StAccess::Public));
 
 #[spacetimedb(table)]
 #[derive(Debug)]
@@ -37,17 +41,23 @@ pub struct TestE {
     name: String,
 }
 
+// All tables are private by default.
+const _: () = assert!(matches!(TestE::TABLE_ACCESS, StAccess::Private));
+
 #[spacetimedb(table)]
-pub struct _Private {
+pub struct Private {
     name: String,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb(table(private))]
 #[spacetimedb(index(btree, name = "multi_column_index", x, y))]
 pub struct Point {
     x: i64,
     y: i64,
 }
+
+// It is redundant, but we can explicitly specify a table as private.
+const _: () = assert!(matches!(Point::TABLE_ACCESS, StAccess::Private));
 
 // Test we can compile multiple constraints
 #[spacetimedb(table)]
@@ -73,10 +83,13 @@ pub fn update() {
     log::info!("Update called!");
 }
 
-#[spacetimedb(reducer, repeat = 1000ms)]
+#[spacetimedb(reducer)]
 pub fn repeating_test(ctx: ReducerContext, prev_time: Timestamp) {
     let delta_time = prev_time.elapsed();
     log::trace!("Timestamp: {:?}, Delta time: {:?}", ctx.timestamp, delta_time);
+
+    // Reschedule ourselves.
+    spacetimedb::schedule!("1000ms", repeating_test(_, Timestamp::now()));
 }
 
 #[spacetimedb(reducer)]
@@ -194,12 +207,12 @@ impl Foo<'_> {
 
 #[spacetimedb(reducer)]
 pub fn add_private(name: String) {
-    _Private::insert(_Private { name });
+    Private::insert(Private { name });
 }
 
 #[spacetimedb(reducer)]
 pub fn query_private() {
-    for person in _Private::iter() {
+    for person in Private::iter() {
         log::info!("Private, {}!", person.name);
     }
     log::info!("Private, World!");

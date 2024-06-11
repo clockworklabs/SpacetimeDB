@@ -1,8 +1,10 @@
+use self::module_host_actor::ReducerOp;
+
 use super::wasm_instance_env::WasmInstanceEnv;
 use super::{Mem, WasmtimeFuel};
 use crate::energy::ReducerBudget;
 use crate::host::instance_env::InstanceEnv;
-use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError, ReducerOp};
+use crate::host::wasm_common::module_host_actor::{DescribeError, InitializationError};
 use crate::host::wasm_common::*;
 use anyhow::anyhow;
 use bytes::Bytes;
@@ -32,34 +34,17 @@ impl WasmtimeModule {
         WasmtimeModule { module }
     }
 
-    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(7, 0);
+    pub const IMPLEMENTED_ABI: abi::VersionTuple = abi::VersionTuple::new(8, 0);
 
     pub(super) fn link_imports(linker: &mut Linker<WasmInstanceEnv>) -> anyhow::Result<()> {
         #[allow(clippy::assertions_on_constants)]
         const _: () = assert!(WasmtimeModule::IMPLEMENTED_ABI.major == spacetimedb_lib::MODULE_ABI_MAJOR_VERSION);
-        linker
-            .func_wrap("spacetime_7.0", "_schedule_reducer", WasmInstanceEnv::schedule_reducer)?
-            .func_wrap("spacetime_7.0", "_cancel_reducer", WasmInstanceEnv::cancel_reducer)?
-            .func_wrap("spacetime_7.0", "_delete_by_col_eq", WasmInstanceEnv::delete_by_col_eq)?
-            .func_wrap("spacetime_7.0", "_delete_by_rel", WasmInstanceEnv::delete_by_rel)?
-            .func_wrap("spacetime_7.0", "_insert", WasmInstanceEnv::insert)?
-            .func_wrap("spacetime_7.0", "_get_table_id", WasmInstanceEnv::get_table_id)?
-            .func_wrap("spacetime_7.0", "_create_index", WasmInstanceEnv::create_index)?
-            .func_wrap("spacetime_7.0", "_iter_by_col_eq", WasmInstanceEnv::iter_by_col_eq)?
-            .func_wrap("spacetime_7.0", "_iter_start", WasmInstanceEnv::iter_start)?
-            .func_wrap(
-                "spacetime_7.0",
-                "_iter_start_filtered",
-                WasmInstanceEnv::iter_start_filtered,
-            )?
-            .func_wrap("spacetime_7.0", "_iter_next", WasmInstanceEnv::iter_next)?
-            .func_wrap("spacetime_7.0", "_iter_drop", WasmInstanceEnv::iter_drop)?
-            .func_wrap("spacetime_7.0", "_console_log", WasmInstanceEnv::console_log)?
-            .func_wrap("spacetime_7.0", "_buffer_len", WasmInstanceEnv::buffer_len)?
-            .func_wrap("spacetime_7.0", "_buffer_consume", WasmInstanceEnv::buffer_consume)?
-            .func_wrap("spacetime_7.0", "_buffer_alloc", WasmInstanceEnv::buffer_alloc)?
-            .func_wrap("spacetime_7.0", "_span_start", WasmInstanceEnv::span_start)?
-            .func_wrap("spacetime_7.0", "_span_end", WasmInstanceEnv::span_end)?;
+        macro_rules! link_functions {
+            ($($module:literal :: $func:ident,)*) => {
+                linker$(.func_wrap($module, concat!("_", stringify!($func)), WasmInstanceEnv::$func)?)*;
+            }
+        }
+        abi_funcs!(link_functions);
         Ok(())
     }
 }
@@ -188,6 +173,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
     type Trap = anyhow::Error;
 
+    #[tracing::instrument(skip_all)]
     fn call_reducer(
         &mut self,
         op: ReducerOp<'_>,

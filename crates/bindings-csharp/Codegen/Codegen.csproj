@@ -7,7 +7,8 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <AssemblyName>SpacetimeDB.Codegen</AssemblyName>
-    <AssemblyVersion>0.8.1</AssemblyVersion>
+    <AssemblyVersion>0.10.0</AssemblyVersion>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -27,6 +28,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.5.0" PrivateAssets="all" />
   </ItemGroup>
 
@@ -34,12 +39,22 @@
     <None Include="../logo.png" Pack="true" PackagePath="" />
     <None Include="README.md" Pack="true" PackagePath="" />
     <None Include="../LICENSE" Pack="true" PackagePath="" />
-    <!-- apparently analyzers need to be in specific folder and need custom PowerShell script to be distributed -->
-    <!-- see https://roslyn-analyzers.readthedocs.io/en/latest/create-nuget-package.html and other docs -->
+    <!-- source generators need to be put in a specific folder -->
+    <!-- see https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.cookbook.md#package-a-generator-as-a-nuget-package -->
     <None Include="$(OutputPath)/$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
-    <!-- they also need some custom PowerShell scripts copied from template or docs (whyyyy) -->
-    <!-- see https://learn.microsoft.com/en-us/nuget/guides/analyzers-conventions#install-and-uninstall-scripts -->
-    <None Update="tools/*.ps1" CopyToOutputDirectory="Always" Pack="true" PackagePath="tools" />
+    <!-- We want BSATN.Codegen to be an internal dependency shipped in the same package as Codegen itself. -->
+    <None Include="$(OutputPath)/SpacetimeDB.BSATN.Codegen.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
   </ItemGroup>
+
+  <!-- <None Include /> hack above only works for NuGet packages, but not for local project references. So here we need another one... -->
+  <PropertyGroup>
+    <GetTargetPathDependsOn>$(GetTargetPathDependsOn);GetDependencyTargetPaths</GetTargetPathDependsOn>
+  </PropertyGroup>
+
+  <Target Name="GetDependencyTargetPaths">
+    <ItemGroup>
+      <TargetPathWithTargetPlatformMoniker Include="$(ProjectDir)/$(OutputPath)/SpacetimeDB.BSATN.Codegen.dll" IncludeRuntimeDependency="false" />
+    </ItemGroup>
+  </Target>
 
 </Project>

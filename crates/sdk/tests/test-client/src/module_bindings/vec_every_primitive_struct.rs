@@ -23,9 +23,4 @@ impl TableType for VecEveryPrimitiveStruct {
     type ReducerEvent = super::ReducerEvent;
 }
 
-impl VecEveryPrimitiveStruct {
-    #[allow(unused)]
-    pub fn filter_by_s(s: Vec<EveryPrimitiveStruct>) -> TableIter<Self> {
-        Self::filter(|row| row.s == s)
-    }
-}
+impl VecEveryPrimitiveStruct {}

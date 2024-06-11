@@ -3,7 +3,7 @@ use std::{env, fs};
 
 extern crate regex;
 
-use crate::version;
+use crate::{version, Config};
 use clap::{Arg, ArgMatches};
 use flate2::read::GzDecoder;
 use futures::stream::StreamExt;
@@ -121,7 +121,7 @@ async fn download_with_progress(client: &reqwest::Client, url: &str, temp_path: 
     Ok(())
 }
 
-pub async fn exec(args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let version = args.get_one::<String>("version");
     let current_exe_path = env::current_exe()?;
     let force = args.get_flag("force");

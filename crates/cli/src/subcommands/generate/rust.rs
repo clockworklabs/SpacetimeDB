@@ -8,13 +8,14 @@ use spacetimedb_lib::sats::{
 };
 use spacetimedb_lib::{ReducerDef, TableDesc};
 use spacetimedb_primitives::ColList;
-use std::collections::HashSet;
-use std::fmt::Write;
+use std::collections::BTreeSet;
+use std::fmt::{self, Write};
+use std::ops::Deref;
 
 type Indenter = CodeIndenter<String>;
 
 /// Pairs of (module_name, TypeName).
-type Imports = HashSet<(String, String)>;
+type Imports = BTreeSet<(String, String)>;
 
 enum MaybePrimitive<'a> {
     Primitive(&'a str),
@@ -44,46 +45,46 @@ fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
 }
 
 fn write_type_ctx(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
-    write_type(&|r| type_name(ctx, r), out, ty)
+    write_type(&|r| type_name(ctx, r), out, ty).unwrap()
 }
 
-pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut W, ty: &AlgebraicType) {
+pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut W, ty: &AlgebraicType) -> fmt::Result {
     match ty {
         AlgebraicType::Sum(sum_type) => {
             if let Some(inner_ty) = sum_type.as_option() {
-                write!(out, "Option::<").unwrap();
-                write_type(ctx, out, inner_ty);
-                write!(out, ">").unwrap();
+                write!(out, "Option::<")?;
+                write_type(ctx, out, inner_ty)?;
+                write!(out, ">")?;
             } else {
-                write!(out, "enum ").unwrap();
+                write!(out, "enum ")?;
                 print_comma_sep_braced(out, &sum_type.variants, |out: &mut W, elem: &_| {
                     if let Some(name) = &elem.name {
-                        write!(out, "{}: ", name).unwrap();
+                        write!(out, "{name}: ")?;
                     }
-                    write_type(ctx, out, &elem.algebraic_type);
-                });
+                    write_type(ctx, out, &elem.algebraic_type)
+                })?;
             }
         }
         AlgebraicType::Product(p) if p.is_identity() => {
-            write!(out, "Identity").unwrap();
+            write!(out, "Identity")?;
         }
         AlgebraicType::Product(p) if p.is_address() => {
-            write!(out, "Address").unwrap();
+            write!(out, "Address")?;
         }
         AlgebraicType::Product(ProductType { elements }) => {
             print_comma_sep_braced(out, elements, |out: &mut W, elem: &ProductTypeElement| {
                 if let Some(name) = &elem.name {
-                    write!(out, "{}: ", name).unwrap();
+                    write!(out, "{name}: ")?;
                 }
-                write_type(ctx, out, &elem.algebraic_type);
-            });
+                write_type(ctx, out, &elem.algebraic_type)
+            })?;
         }
         AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-            MaybePrimitive::Primitive(p) => write!(out, "{}", p).unwrap(),
+            MaybePrimitive::Primitive(p) => write!(out, "{p}")?,
             MaybePrimitive::Array(ArrayType { elem_ty }) => {
-                write!(out, "Vec::<").unwrap();
-                write_type(ctx, out, elem_ty);
-                write!(out, ">").unwrap();
+                write!(out, "Vec::<")?;
+                write_type(ctx, out, elem_ty)?;
+                write!(out, ">")?;
             }
             MaybePrimitive::Map(ty) => {
                 // TODO: Should `BuiltinType::Map` translate to `HashMap`? This requires
@@ -94,40 +95,47 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
                 // UPDATE: No, `AlgebraicType::Map` is supposed to be `BTreeMap`. Fix this.
                 //         This will require deriving `Ord` for generated types,
                 //         and is likely to be a big headache.
-                write!(out, "HashMap::<").unwrap();
-                write_type(ctx, out, &ty.key_ty);
-                write!(out, ", ").unwrap();
-                write_type(ctx, out, &ty.ty);
-                write!(out, ">").unwrap();
+                write!(out, "HashMap::<")?;
+                write_type(ctx, out, &ty.key_ty)?;
+                write!(out, ", ")?;
+                write_type(ctx, out, &ty.ty)?;
+                write!(out, ">")?;
             }
         },
         AlgebraicType::Ref(r) => {
-            write!(out, "{}", ctx(*r)).unwrap();
+            write!(out, "{}", ctx(*r))?;
         }
     }
+    Ok(())
 }
 
-fn print_comma_sep_braced<W: Write, T>(out: &mut W, elems: &[T], on: impl Fn(&mut W, &T)) {
-    write!(out, "{{").unwrap();
+fn print_comma_sep_braced<W: Write, T>(
+    out: &mut W,
+    elems: &[T],
+    on: impl Fn(&mut W, &T) -> fmt::Result,
+) -> fmt::Result {
+    write!(out, "{{")?;
 
     let mut iter = elems.iter();
 
     // First factor.
     if let Some(elem) = iter.next() {
-        write!(out, " ").unwrap();
-        on(out, elem);
+        write!(out, " ")?;
+        on(out, elem)?;
     }
     // Other factors.
     for elem in iter {
-        write!(out, ", ").unwrap();
-        on(out, elem);
+        write!(out, ", ")?;
+        on(out, elem)?;
     }
 
     if !elems.is_empty() {
-        write!(out, " ").unwrap();
+        write!(out, " ")?;
     }
 
-    write!(out, "}}").unwrap();
+    write!(out, "}}")?;
+
+    Ok(())
 }
 
 // This is (effectively) duplicated in [typescript.rs] as `typescript_typename` and in
@@ -142,7 +150,7 @@ fn type_name(ctx: &GenCtx, typeref: AlgebraicTypeRef) -> String {
 
 fn print_lines(output: &mut Indenter, lines: &[&str]) {
     for line in lines {
-        writeln!(output, "{}", line).unwrap();
+        writeln!(output, "{line}");
     }
 }
 
@@ -181,7 +189,7 @@ fn print_spacetimedb_imports(output: &mut Indenter) {
 
 fn print_file_header(output: &mut Indenter) {
     print_auto_generated_file_comment(output);
-    write!(output, "{}", ALLOW_UNUSED_IMPORTS).unwrap();
+    write!(output, "{ALLOW_UNUSED_IMPORTS}");
     print_spacetimedb_imports(output);
 }
 
@@ -223,12 +231,12 @@ pub fn autogen_rust_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> String 
 
     print_enum_derives(out);
 
-    write!(out, "pub enum {} ", sum_type_name).unwrap();
+    write!(out, "pub enum {sum_type_name} ");
 
     out.delimited_block(
         "{",
         |out| {
-            for variant in &sum_type.variants {
+            for variant in &*sum_type.variants {
                 write_enum_variant(ctx, out, variant);
                 out.newline();
             }
@@ -241,10 +249,10 @@ pub fn autogen_rust_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> String 
 
 fn write_enum_variant(ctx: &GenCtx, out: &mut Indenter, variant: &SumTypeVariant) {
     let Some(name) = &variant.name else {
-        panic!("Sum type variant has no name: {:?}", variant);
+        panic!("Sum type variant has no name: {variant:?}");
     };
-    let name = name.to_case(Case::Pascal);
-    write!(out, "{}", name).unwrap();
+    let name = name.deref().to_case(Case::Pascal);
+    write!(out, "{name}");
     match &variant.algebraic_type {
         AlgebraicType::Product(ProductType { elements }) if elements.is_empty() => {
             // If the contained type is the unit type, i.e. this variant has no members,
@@ -252,14 +260,14 @@ fn write_enum_variant(ctx: &GenCtx, out: &mut Indenter, variant: &SumTypeVariant
             // ```
             // Foo,
             // ```
-            writeln!(out, ",").unwrap();
+            writeln!(out, ",");
         }
         otherwise => {
             // If the contained type is not a product, i.e. this variant has a single
             // member, write it tuple-style, with parens.
-            write!(out, "(").unwrap();
+            write!(out, "(");
             write_type_ctx(ctx, out, otherwise);
-            write!(out, "),").unwrap();
+            write!(out, "),");
         }
     }
 }
@@ -288,7 +296,7 @@ fn write_arglist_no_delimiters_ctx(
     // Written before each line. Useful for `pub`.
     prefix: Option<&str>,
 ) {
-    write_arglist_no_delimiters(&|r| type_name(ctx, r), out, elements, prefix)
+    write_arglist_no_delimiters(&|r| type_name(ctx, r), out, elements, prefix).unwrap()
 }
 
 pub fn write_arglist_no_delimiters(
@@ -298,21 +306,22 @@ pub fn write_arglist_no_delimiters(
 
     // Written before each line. Useful for `pub`.
     prefix: Option<&str>,
-) {
+) -> fmt::Result {
     for elt in elements {
         if let Some(prefix) = prefix {
-            write!(out, "{} ", prefix).unwrap();
+            write!(out, "{prefix} ")?;
         }
 
         let Some(name) = &elt.name else {
-            panic!("Product type element has no name: {:?}", elt);
+            panic!("Product type element has no name: {elt:?}");
         };
-        let name = name.to_case(Case::Snake);
+        let name = name.deref().to_case(Case::Snake);
 
-        write!(out, "{}: ", name).unwrap();
-        write_type(ctx, out, &elt.algebraic_type);
-        writeln!(out, ",").unwrap();
+        write!(out, "{name}: ")?;
+        write_type(ctx, out, &elt.algebraic_type)?;
+        writeln!(out, ",")?;
     }
+    Ok(())
 }
 
 /// Generate a file which defines a `struct` corresponding to the `product` type.
@@ -337,7 +346,7 @@ pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDesc) -> String {
     let mut output = CodeIndenter::new(String::new());
     let out = &mut output;
 
-    let type_name = table.schema.table_name.to_case(Case::Pascal);
+    let type_name = table.schema.table_name.deref().to_case(Case::Pascal);
 
     begin_rust_struct_def_shared(ctx, out, &type_name, &find_product_type(ctx, table.data).elements);
 
@@ -396,7 +405,7 @@ fn begin_rust_struct_def_shared(ctx: &GenCtx, out: &mut Indenter, name: &str, el
 
     print_struct_derives(out);
 
-    write!(out, "pub struct {} ", name).unwrap();
+    write!(out, "pub struct {name} ");
 
     // TODO: if elements is empty, define a unit struct with no brace-delimited list of fields.
     write_struct_type_fields_in_braces(
@@ -412,15 +421,15 @@ fn find_primary_key_column_index(table: &TableSchema) -> Option<usize> {
 }
 
 fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableSchema) {
-    let type_name = table.table_name.to_case(Case::Pascal);
+    let type_name = table.table_name.deref().to_case(Case::Pascal);
 
-    write!(out, "impl TableType for {} ", type_name).unwrap();
+    write!(out, "impl TableType for {type_name} ");
 
     out.delimited_block(
         "{",
         |out| {
-            writeln!(out, "const TABLE_NAME: &'static str = {:?};", table.table_name).unwrap();
-            writeln!(out, "type ReducerEvent = super::ReducerEvent;").unwrap();
+            writeln!(out, "const TABLE_NAME: &'static str = {:?};", table.table_name);
+            writeln!(out, "type ReducerEvent = super::ReducerEvent;");
         },
         "}\n",
     );
@@ -428,19 +437,19 @@ fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableSchema) {
     out.newline();
 
     if let Some(pk_field) = table.pk() {
-        let pk_field_name = pk_field.col_name.to_case(Case::Snake);
+        let pk_field_name = pk_field.col_name.deref().to_case(Case::Snake);
         // TODO: ensure that primary key types are always `Eq`, `Hash`, `Clone`.
-        write!(out, "impl TableWithPrimaryKey for {} ", type_name).unwrap();
+        write!(out, "impl TableWithPrimaryKey for {type_name} ");
         out.delimited_block(
             "{",
             |out| {
-                write!(out, "type PrimaryKey = ").unwrap();
+                write!(out, "type PrimaryKey = ");
                 write_type_ctx(ctx, out, &pk_field.col_type);
-                writeln!(out, ";").unwrap();
+                writeln!(out, ";");
 
                 out.delimited_block(
                     "fn primary_key(&self) -> &Self::PrimaryKey {",
-                    |out| writeln!(out, "&self.{}", pk_field_name).unwrap(),
+                    |out| writeln!(out, "&self.{pk_field_name}"),
                     "}\n",
                 )
             },
@@ -454,47 +463,62 @@ fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableSchema) {
 }
 
 fn print_table_filter_methods(ctx: &GenCtx, out: &mut Indenter, table_type_name: &str, table: &TableSchema) {
-    write!(out, "impl {} ", table_type_name).unwrap();
+    write!(out, "impl {table_type_name} ");
     let constraints = table.column_constraints();
     out.delimited_block(
         "{",
         |out| {
             for field in table.columns() {
-                let field_name = field.col_name.to_case(Case::Snake);
-                // TODO: ensure that fields are PartialEq
-                writeln!(out, "{}", ALLOW_UNUSED).unwrap();
-                write!(out, "pub fn filter_by_{}({}: ", field_name, field_name).unwrap();
+                let field_name = field.col_name.deref().to_case(Case::Snake);
+                match &field.col_type {
+                    AlgebraicType::Product(prod) => {
+                        if !prod.is_special() {
+                            continue;
+                        }
+                    }
+                    AlgebraicType::Ref(_)
+                    | AlgebraicType::Sum(_)
+                    | AlgebraicType::Builtin(BuiltinType::Array(_) | BuiltinType::Map(_)) => {
+                        continue;
+                    }
+                    AlgebraicType::Builtin(_) => {}
+                }
+                writeln!(out, "{ALLOW_UNUSED}");
+                write!(out, "pub fn filter_by_{field_name}({field_name}: ");
                 // TODO: the filter methods should take the target value by
                 //       reference. String fields should take &str, and array/vector
                 //       fields should take &[T]. Determine if integer types should be by
                 //       value. Is there a trait for this?
                 //       Look at `Borrow` or Deref or AsRef?
                 write_type_ctx(ctx, out, &field.col_type);
-                write!(out, ") -> ").unwrap();
+                write!(out, ") -> ");
                 let ct = constraints[&ColList::new(field.col_pos)];
 
-                if ct.has_unique() {
-                    write!(out, "Option<Self>").unwrap();
-                } else {
-                    write!(out, "TableIter<Self>").unwrap();
-                }
+                write!(out, "TableIter<Self>");
                 out.delimited_block(
                     " {",
                     |out| {
                         writeln!(
                             out,
-                            "Self::{}(|row| row.{} == {})",
                             // TODO: for primary keys, we should be able to do better than
                             //       `find` or `filter`. We should be able to look up
                             //       directly in the `TableCache`.
-                            if ct.has_unique() { "find" } else { "filter" },
-                            field_name,
-                            field_name,
+                            "Self::filter(|row| row.{field_name} == {field_name})",
                         )
-                        .unwrap()
                     },
                     "}\n",
                 );
+                if ct.has_unique() {
+                    writeln!(out, "{ALLOW_UNUSED}");
+                    write!(out, "pub fn find_by_{field_name}({field_name}: ");
+                    write_type_ctx(ctx, out, &field.col_type);
+                    write!(out, ") -> Option<Self> ");
+                    out.delimited_block(
+                        "{",
+                        |out| writeln!(out, "Self::find(|row| row.{field_name} == {field_name})"),
+                        "}\n",
+                    );
+                }
             }
         },
         "}\n",
@@ -502,30 +526,30 @@ fn print_table_filter_methods(ctx: &GenCtx, out: &mut Indenter, table_type_name:
 }
 
 fn reducer_type_name(reducer: &ReducerDef) -> String {
-    let mut name = reducer.name.to_case(Case::Pascal);
+    let mut name = reducer.name.deref().to_case(Case::Pascal);
     name.push_str("Args");
     name
 }
 
 fn reducer_variant_name(reducer: &ReducerDef) -> String {
-    reducer.name.to_case(Case::Pascal)
+    reducer.name.deref().to_case(Case::Pascal)
 }
 
 fn reducer_module_name(reducer: &ReducerDef) -> String {
-    let mut name = reducer.name.to_case(Case::Snake);
+    let mut name = reducer.name.deref().to_case(Case::Snake);
     name.push_str("_reducer");
     name
 }
 
 fn reducer_function_name(reducer: &ReducerDef) -> String {
-    reducer.name.to_case(Case::Snake)
+    reducer.name.deref().to_case(Case::Snake)
 }
 
 fn iter_reducer_arg_names(reducer: &ReducerDef) -> impl Iterator<Item = Option<String>> + '_ {
     reducer
         .args
         .iter()
-        .map(|elt| elt.name.as_ref().map(|name| name.to_case(Case::Snake)))
+        .map(|elt| elt.name.as_ref().map(|name| name.deref().to_case(Case::Snake)))
 }
 
 fn iter_reducer_arg_types(reducer: &'_ ReducerDef) -> impl Iterator<Item = &'_ AlgebraicType> {
@@ -533,14 +557,14 @@ fn iter_reducer_arg_types(reducer: &'_ ReducerDef) -> impl Iterator<Item = &'_ A
 }
 
 fn print_reducer_struct_literal(out: &mut Indenter, reducer: &ReducerDef) {
-    write!(out, "{} ", reducer_type_name(reducer)).unwrap();
+    write!(out, "{} ", reducer_type_name(reducer));
     // TODO: if reducer.args is empty, write a unit struct.
     out.delimited_block(
         "{",
         |out| {
             for arg_name in iter_reducer_arg_names(reducer) {
                 let name = arg_name.unwrap();
-                writeln!(out, "{},", name).unwrap();
+                writeln!(out, "{name},");
             }
         },
         "}",
@@ -561,11 +585,11 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 
     out.newline();
 
-    write!(out, "impl Reducer for {} ", type_name).unwrap();
+    write!(out, "impl Reducer for {type_name} ");
 
     out.delimited_block(
         "{",
-        |out| writeln!(out, "const REDUCER_NAME: &'static str = {:?};", &reducer.name).unwrap(),
+        |out| writeln!(out, "const REDUCER_NAME: &'static str = {:?};", &reducer.name),
         "}\n",
     );
 
@@ -573,8 +597,8 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 
     // Function definition for the convenient caller, which takes normal args, constructs
     // an instance of the struct, and calls `invoke` on it.
-    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
-    write!(out, "pub fn {}", func_name).unwrap();
+    writeln!(out, "{ALLOW_UNUSED}");
+    write!(out, "pub fn {func_name}");
 
     // arglist
     // TODO: if reducer.args is empty, just write "()" with no newlines
@@ -589,7 +613,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
         "{",
         |out| {
             print_reducer_struct_literal(out, reducer);
-            writeln!(out, ".invoke();").unwrap();
+            writeln!(out, ".invoke();");
         },
         "}\n",
     );
@@ -599,36 +623,34 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     // Function definition for convenient callback function,
     // which takes a closure fromunpacked args,
     // and wraps it in a closure from the args struct.
-    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    writeln!(out, "{ALLOW_UNUSED}");
     write!(
         out,
-        "pub fn on_{}(mut __callback: impl FnMut(&Identity, Option<Address>, &Status",
-        func_name
-    )
-    .unwrap();
+        "pub fn on_{func_name}(mut __callback: impl FnMut(&Identity, Option<Address>, &Status"
+    );
     for arg_type in iter_reducer_arg_types(reducer) {
-        write!(out, ", &").unwrap();
+        write!(out, ", &");
         write_type_ctx(ctx, out, arg_type);
     }
-    writeln!(out, ") + Send + 'static) -> ReducerCallbackId<{}> ", type_name).unwrap();
+    writeln!(out, ") + Send + 'static) -> ReducerCallbackId<{type_name}> ");
     out.delimited_block(
         "{",
         |out| {
-            write!(out, "{}", type_name).unwrap();
+            write!(out, "{type_name}");
             out.delimited_block(
                 "::on_reducer(move |__identity, __addr, __status, __args| {",
                 |out| {
-                    write!(out, "let ").unwrap();
+                    write!(out, "let ");
                     print_reducer_struct_literal(out, reducer);
-                    writeln!(out, " = __args;").unwrap();
+                    writeln!(out, " = __args;");
                     out.delimited_block(
                         "__callback(",
                         |out| {
-                            writeln!(out, "__identity,").unwrap();
-                            writeln!(out, "__addr,").unwrap();
-                            writeln!(out, "__status,").unwrap();
+                            writeln!(out, "__identity,");
+                            writeln!(out, "__addr,");
+                            writeln!(out, "__status,");
                             for arg_name in iter_reducer_arg_names(reducer) {
-                                writeln!(out, "{},", arg_name.unwrap()).unwrap();
+                                writeln!(out, "{},", arg_name.unwrap());
                             }
                         },
                         ");\n",
@@ -643,36 +665,34 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     out.newline();
 
     // Function definition for convenient once_on callback function.
-    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    writeln!(out, "{ALLOW_UNUSED}");
     write!(
         out,
-        "pub fn once_on_{}(__callback: impl FnOnce(&Identity, Option<Address>, &Status",
-        func_name
-    )
-    .unwrap();
+        "pub fn once_on_{func_name}(__callback: impl FnOnce(&Identity, Option<Address>, &Status"
+    );
     for arg_type in iter_reducer_arg_types(reducer) {
-        write!(out, ", &").unwrap();
+        write!(out, ", &");
         write_type_ctx(ctx, out, arg_type);
     }
-    writeln!(out, ") + Send + 'static) -> ReducerCallbackId<{}> ", type_name).unwrap();
+    writeln!(out, ") + Send + 'static) -> ReducerCallbackId<{type_name}> ");
     out.delimited_block(
         "{",
         |out| {
-            write!(out, "{}", type_name).unwrap();
+            write!(out, "{type_name}");
             out.delimited_block(
                 "::once_on_reducer(move |__identity, __addr, __status, __args| {",
                 |out| {
-                    write!(out, "let ").unwrap();
+                    write!(out, "let ");
                     print_reducer_struct_literal(out, reducer);
-                    writeln!(out, " = __args;").unwrap();
+                    writeln!(out, " = __args;");
                     out.delimited_block(
                         "__callback(",
                         |out| {
-                            writeln!(out, "__identity,").unwrap();
-                            writeln!(out, "__addr,").unwrap();
-                            writeln!(out, "__status,").unwrap();
+                            writeln!(out, "__identity,");
+                            writeln!(out, "__addr,");
+                            writeln!(out, "__status,");
                             for arg_name in iter_reducer_arg_names(reducer) {
-                                writeln!(out, "{},", arg_name.unwrap()).unwrap();
+                                writeln!(out, "{},", arg_name.unwrap());
                             }
                         },
                         ");\n",
@@ -687,17 +707,12 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
     out.newline();
 
     // Function definition for callback-canceling `remove_on_{reducer}` function.
-    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
-    write!(
-        out,
-        "pub fn remove_on_{}(id: ReducerCallbackId<{}>) ",
-        func_name, type_name,
-    )
-    .unwrap();
+    writeln!(out, "{ALLOW_UNUSED}");
+    write!(out, "pub fn remove_on_{func_name}(id: ReducerCallbackId<{type_name}>) ");
     out.delimited_block(
         "{",
         |out| {
-            writeln!(out, "{}::remove_on_reducer(id);", type_name,).unwrap();
+            writeln!(out, "{type_name}::remove_on_reducer(id);");
         },
         "}\n",
     );
@@ -726,7 +741,7 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String {
 ///    to connect to a remote database, and passes the `handle_row_update`
 ///    and `handle_event` functions so the `BackgroundDbConnection` can spawn workers
 ///    which use those functions to dispatch on the content of messages.
-pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<Vec<(String, String)>> {
+pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, String)> {
     let mut output = CodeIndenter::new(String::new());
     let out = &mut output;
 
@@ -759,7 +774,7 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<Vec<(String,
     // Define `fn connect`.
     print_connect_defn(out);
 
-    vec![vec![("mod.rs".to_string(), output.into_inner())]]
+    vec![("mod.rs".to_string(), output.into_inner())]
 }
 
 /// Extra imports required by the `mod.rs` file, in addition to the [`SPACETIMEDB_IMPORTS`].
@@ -794,7 +809,7 @@ fn iter_table_items(items: &[GenItem]) -> impl Iterator<Item = &TableDesc> {
 
 fn iter_module_names(items: &[GenItem]) -> impl Iterator<Item = String> + '_ {
     items.iter().map(|item| match item {
-        GenItem::Table(table) => table.schema.table_name.to_case(Case::Snake),
+        GenItem::Table(table) => table.schema.table_name.deref().to_case(Case::Snake),
         GenItem::TypeAlias(ty) => ty.name.to_case(Case::Snake),
         GenItem::Reducer(reducer) => reducer_module_name(reducer),
     })
@@ -803,14 +818,14 @@ fn iter_module_names(items: &[GenItem]) -> impl Iterator<Item = String> + '_ {
 /// Print `pub mod` declarations for all the files that will be generated for `items`.
 fn print_module_decls(out: &mut Indenter, items: &[GenItem]) {
     for module_name in iter_module_names(items) {
-        writeln!(out, "pub mod {};", module_name).unwrap();
+        writeln!(out, "pub mod {module_name};");
     }
 }
 
 /// Print `pub use *` declarations for all the files that will be generated for `items`.
 fn print_module_reexports(out: &mut Indenter, items: &[GenItem]) {
     for module_name in iter_module_names(items) {
-        writeln!(out, "pub use {}::*;", module_name).unwrap();
+        writeln!(out, "pub use {module_name}::*;");
     }
 }
 
@@ -838,8 +853,8 @@ fn print_spacetime_module_struct_defn(ctx: &GenCtx, out: &mut Indenter, items: &
     // Muffle unused warning for `Module`, which is not supposed to be visible to
     // users. It will be used if and only if `connect` is used, so that unused warning is
     // sufficient, and not as confusing.
-    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
-    writeln!(out, "pub struct Module;").unwrap();
+    writeln!(out, "{ALLOW_UNUSED}");
+    writeln!(out, "pub struct Module;");
     out.delimited_block(
         "impl SpacetimeModule for Module {",
         |out| {
@@ -859,7 +874,7 @@ fn print_handle_table_update_defn(_ctx: &GenCtx, out: &mut Indenter, items: &[Ge
     out.delimited_block(
         "fn handle_table_update(&self, table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
         |out| {
-            writeln!(out, "let table_name = &table_update.table_name[..];").unwrap();
+            writeln!(out, "let table_name = &table_update.table_name[..];");
             out.delimited_block(
                 "match table_name {",
                 |out| {
@@ -874,14 +889,14 @@ fn print_handle_table_update_defn(_ctx: &GenCtx, out: &mut Indenter, items: &[Ge
                             } else {
                                 "handle_table_update_no_primary_key"
                             },
-                            table.table_name.to_case(Case::Snake),
-                            table.table_name.to_case(Case::Pascal),
-                        ).unwrap();
+                            table.table_name.deref().to_case(Case::Snake),
+                            table.table_name.deref().to_case(Case::Pascal),
+                        );
                     }
                     writeln!(
                         out,
-                        "_ => spacetimedb_sdk::log::error!(\"TableRowOperation on unknown table {{:?}}\", table_name),",
-                    ).unwrap();
+                        "_ => spacetimedb_sdk::log::error!(\"TableRowOperation on unknown table {{:?}}\", table_name),"
+                    );
                 },
                 "}\n",
             );
@@ -900,9 +915,9 @@ fn print_invoke_row_callbacks_defn(out: &mut Indenter, items: &[GenItem]) {
                 writeln!(
                     out,
                     "reminders.invoke_callbacks::<{}::{}>(worker, &reducer_event, state);",
-                    table.schema.table_name.to_case(Case::Snake),
-                    table.schema.table_name.to_case(Case::Pascal),
-                ).unwrap();
+                    table.schema.table_name.deref().to_case(Case::Snake),
+                    table.schema.table_name.deref().to_case(Case::Pascal),
+                );
             }
         },
         "}\n",
@@ -916,7 +931,7 @@ fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
     out.delimited_block(
         "fn handle_resubscribe(&self, new_subs: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
         |out| {
-            writeln!(out, "let table_name = &new_subs.table_name[..];").unwrap();
+            writeln!(out, "let table_name = &new_subs.table_name[..];");
             out.delimited_block(
                 "match table_name {",
                 |out| {
@@ -925,14 +940,14 @@ fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
                             out,
                             "{:?} => client_cache.handle_resubscribe_for_type::<{}::{}>(callbacks, new_subs),",
                             table.schema.table_name,
-                            table.schema.table_name.to_case(Case::Snake),
-                            table.schema.table_name.to_case(Case::Pascal),
-                        ).unwrap();
+                            table.schema.table_name.deref().to_case(Case::Snake),
+                            table.schema.table_name.deref().to_case(Case::Pascal),
+                        );
                     }
                     writeln!(
                         out,
-                        "_ => spacetimedb_sdk::log::error!(\"TableRowOperation on unknown table {{:?}}\", table_name)," ,
-                    ).unwrap();
+                        "_ => spacetimedb_sdk::log::error!(\"TableRowOperation on unknown table {{:?}}\", table_name),"
+                    );
                 },
                 "}\n",
             );
@@ -950,8 +965,7 @@ fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
         |out| {
             out.delimited_block(
                 "let Some(function_call) = &event.function_call else {",
-                |out| writeln!(out, "spacetimedb_sdk::log::warn!(\"Received Event with None function_call\"); return None;")
-                    .unwrap(),
+                |out| writeln!(out, "spacetimedb_sdk::log::warn!(\"Received Event with None function_call\"); return None;"),
                 "};\n",
             );
 
@@ -960,7 +974,7 @@ fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
             // Clippy doesn't like this, as it could be a `let` binding,
             // but we're not going to add logic to handle that case,
             // so just quiet the lint.
-            writeln!(out, "#[allow(clippy::match_single_binding)]").unwrap();
+            writeln!(out, "#[allow(clippy::match_single_binding)]");
 
             out.delimited_block(
                 "match &function_call.reducer[..] {",
@@ -973,12 +987,12 @@ fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
                             reducer_module_name(reducer),
                             reducer_type_name(reducer),
                             reducer_variant_name(reducer),
-                        ).unwrap();
+                        );
                     }
                     writeln!(
                         out,
-                        "unknown => {{ spacetimedb_sdk::log::error!(\"Event on an unknown reducer: {{:?}}\", unknown); None }}",
-                    ).unwrap();
+                        "unknown => {{ spacetimedb_sdk::log::error!(\"Event on an unknown reducer: {{:?}}\", unknown); None }}"
+                    );
                 },
                 "}\n",
             );
@@ -1015,8 +1029,8 @@ where
                 writeln!(
                     out,
                     "connection.connect(spacetimedb_uri, db_name, credentials, Arc::new(Module))?;"
-                ).unwrap();
-                writeln!(out, "Ok(())").unwrap();
+                );
+                writeln!(out, "Ok(())");
             },
             "})\n",
         ),
@@ -1025,7 +1039,7 @@ where
 }
 
 fn print_reducer_event_defn(out: &mut Indenter, items: &[GenItem]) {
-    writeln!(out, "{}", ALLOW_UNUSED).unwrap();
+    writeln!(out, "{ALLOW_UNUSED}");
 
     print_enum_derives(out);
     out.delimited_block(
@@ -1038,8 +1052,7 @@ fn print_reducer_event_defn(out: &mut Indenter, items: &[GenItem]) {
                     reducer_variant_name(reducer),
                     reducer_module_name(reducer),
                     reducer_type_name(reducer),
-                )
-                .unwrap();
+                );
             }
         },
         "}\n",
@@ -1090,7 +1103,7 @@ fn generate_imports(ctx: &GenCtx, imports: &mut Imports, ty: &AlgebraicType) {
 fn print_imports(out: &mut Indenter, imports: Imports, this_file: (&str, &str)) {
     for (module_name, type_name) in imports {
         if (module_name.as_str(), type_name.as_str()) != this_file {
-            writeln!(out, "use super::{}::{};", module_name, type_name).unwrap();
+            writeln!(out, "use super::{module_name}::{type_name};");
         }
     }
 }
@@ -1109,7 +1122,7 @@ fn gen_and_print_imports<Roots, SearchFn>(
 ) where
     SearchFn: FnOnce(&GenCtx, &mut Imports, Roots),
 {
-    let mut imports = HashSet::new();
+    let mut imports = BTreeSet::new();
     search_fn(ctx, &mut imports, roots);
 
     print_imports(out, imports, this_file);

@@ -1,20 +1,22 @@
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use bytes::Bytes;
+use once_cell::unsync::Lazy;
 use std::sync::Arc;
 use std::time::Duration;
 
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, Address, ModuleDef, TableDesc};
-use spacetimedb_vm::expr::CrudExpr;
+use spacetimedb_lib::{bsatn, Address, ModuleDef, ModuleValidationError, TableDesc};
+use spacetimedb_sats::hash::Hash;
 
 use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record, SystemLogger};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
+use crate::db::datastore::system_tables::{StClientsRow, ST_CLIENTS_ID};
 use crate::db::datastore::traits::IsolationLevel;
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
-use crate::execution_context::ExecutionContext;
+use crate::execution_context::{self, ExecutionContext, ReducerContext};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
     CallReducerParams, DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
@@ -22,11 +24,12 @@ use crate::host::module_host::{
 };
 use crate::host::{ArgsTuple, EntityDef, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, Timestamp};
 use crate::identity::Identity;
-use crate::messages::control_db::Database;
+use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::sql;
-use crate::subscription::module_subscription_actor::ModuleSubscriptions;
+use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::const_unwrap;
+use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
 use spacetimedb_sats::db::def::TableDef;
 
@@ -90,6 +93,8 @@ pub(crate) struct WasmModuleHostActor<T: WasmModule> {
 pub enum InitializationError {
     #[error(transparent)]
     Validation(#[from] ValidationError),
+    #[error(transparent)]
+    ModuleValidation(#[from] ModuleValidationError),
     #[error("setup function returned an error: {0}")]
     Setup(Box<str>),
     #[error("wasm trap while calling {func:?}")]
@@ -142,10 +147,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         module.for_each_export(|sym, ty| func_names.update_from_general(sym, ty))?;
         func_names.preinits.sort_unstable();
 
-        let owner_identity = database_instance_context.identity;
-        let relational_db = database_instance_context.relational_db.clone();
-        let subscriptions = ModuleSubscriptions::new(relational_db, owner_identity);
-
         let uninit_instance = module.instantiate_pre()?;
         let mut instance = uninit_instance.instantiate(
             InstanceEnv::new(database_instance_context.clone(), scheduler.clone()),
@@ -153,7 +154,8 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         )?;
 
         let desc = instance.extract_descriptions()?;
-        let desc = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
+        let desc: ModuleDef = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
+        desc.validate_reducers()?;
         let ModuleDef {
             mut typespace,
             mut tables,
@@ -173,20 +175,23 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             tables
                 .into_iter()
                 .map(|x| (x.schema.table_name.clone(), EntityDef::Table(x))),
-            reducers.iter().map(|x| (x.name.clone(), EntityDef::Reducer(x.clone()))),
+            reducers
+                .iter()
+                .filter(|r| !(r.name.starts_with("__") && r.name.ends_with("__")))
+                .map(|x| (x.name.clone(), EntityDef::Reducer(x.clone()))),
         )
         .collect();
         let reducers = ReducersMap(reducers.into_iter().map(|x| (x.name.clone(), x)).collect());
 
         let info = Arc::new(ModuleInfo {
-            identity: database_instance_context.identity,
+            identity: database_instance_context.owner_identity,
             address: database_instance_context.address,
             module_hash,
             typespace,
             reducers,
             catalog,
             log_tx,
-            subscriptions,
+            subscriptions: database_instance_context.subscriptions.clone(),
         });
 
         let func_names = Arc::new(func_names);
@@ -241,6 +246,10 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         self.make_from_instance(instance)
     }
 
+    fn dbic(&self) -> &DatabaseInstanceContext {
+        &self.database_instance_context
+    }
+
     fn inject_logs(&self, log_level: LogLevel, message: &str) {
         self.database_instance_context.logger.write(
             log_level,
@@ -259,32 +268,24 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         self.scheduler.close()
     }
 
+    #[tracing::instrument(skip_all)]
     fn one_off_query(
         &self,
         caller_identity: Identity,
         query: String,
     ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError> {
         let db = &self.database_instance_context.relational_db;
-        let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
+        let auth = AuthCtx::new(self.database_instance_context.owner_identity, caller_identity);
         log::debug!("One-off query: {query}");
-        let ctx = &ExecutionContext::sql(db.address());
-        let compiled = db.with_read_only(ctx, |tx| {
-            sql::compiler::compile_sql(db, tx, &query)?
-                .into_iter()
-                .map(|expr| {
-                    if matches!(expr, CrudExpr::Query { .. }) {
-                        Ok(expr)
-                    } else {
-                        Err(anyhow!("One-off queries are not allowed to modify the database"))
-                    }
-                })
-                .collect::<Result<_, _>>()
-        })?;
-
-        sql::execute::execute_sql(db, compiled, auth)
+        // Don't need the `slow query` logger on compilation
+        db.with_read_only(&ExecutionContext::sql(db.address()), |tx| {
+            let ast = sql::compiler::compile_sql(db, tx, &query)?;
+            sql::execute::execute_sql_tx(db, tx, &query, ast, auth)
+                .and_then(|res| Ok(res.context("One-off queries are not allowed to modify the database")?))
+        })
     }
 
-    fn clear_table(&self, table_name: String) -> Result<(), anyhow::Error> {
+    fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
         let db = &*self.database_instance_context.relational_db;
         db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
             let tables = db.get_all_tables_mut(tx)?;
@@ -292,7 +293,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
             // so we can assume there's only one table to clear.
             if let Some(table_id) = tables
                 .iter()
-                .find_map(|t| (t.table_name == table_name).then_some(t.table_id))
+                .find_map(|t| (&*t.table_name == table_name).then_some(t.table_id))
             {
                 db.clear_table(tx, table_id)?;
             }
@@ -334,8 +335,13 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         self.trapped
     }
 
-    #[tracing::instrument(skip(self, args), fields(db_id = self.instance.instance_env().dbic.id))]
-    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<ReducerCallResult> {
+    #[tracing::instrument(skip_all, fields(db_id = self.instance.instance_env().dbic.id))]
+    fn init_database(
+        &mut self,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> anyhow::Result<Option<ReducerCallResult>> {
+        log::debug!("init database");
         let timestamp = Timestamp::now();
         let stdb = &*self.database_instance_context().relational_db;
         let ctx = ExecutionContext::internal(stdb.address());
@@ -349,9 +355,9 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                     stdb.create_table(tx, schema)
                         .with_context(|| format!("failed to create table {table_name}"))?;
                 }
-                // Set the module hash. Morally, this should be done _after_ calling
-                // the `init` reducer, but that consumes our transaction context.
-                stdb.set_program_hash(tx, fence, self.info.module_hash)?;
+
+                stdb.set_initialized(tx, HostType::Wasm, program_hash, program_bytes)?;
+
                 anyhow::Ok(())
             })
             .inspect_err(|e| log::error!("{e:?}"))?;
@@ -359,11 +365,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let rcr = match self.info.reducers.lookup_id(INIT_DUNDER) {
             None => {
                 stdb.commit_tx(&ctx, tx)?;
-                ReducerCallResult {
-                    outcome: ReducerOutcome::Committed,
-                    energy_used: EnergyQuanta::ZERO,
-                    execution_duration: Duration::ZERO,
-                }
+                None
             }
 
             Some(reducer_id) => {
@@ -372,22 +374,24 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 // the init/update reducer will receive it as the caller address.
                 // This is useful for bootstrapping the control DB in SpacetimeDB-cloud.
                 let Database {
-                    identity: caller_identity,
+                    owner_identity: caller_identity,
                     publisher_address: caller_address,
                     ..
                 } = self.database_instance_context().database;
                 let client = None;
-                self.call_reducer_with_tx(
+                Some(self.call_reducer_with_tx(
                     Some(tx),
                     CallReducerParams {
                         timestamp,
                         caller_identity,
                         caller_address: caller_address.unwrap_or(Address::__DUMMY),
                         client,
+                        request_id: None,
+                        timer: None,
                         reducer_id,
-                        args,
+                        args: ArgsTuple::nullary(),
                     },
-                )
+                ))
             }
         };
 
@@ -397,22 +401,24 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     }
 
     #[tracing::instrument(skip_all)]
-    fn update_database(&mut self, fence: u128) -> Result<UpdateDatabaseResult, anyhow::Error> {
+    fn update_database(
+        &mut self,
+        caller_address: Option<Address>,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         let timestamp = Timestamp::now();
 
         let proposed_tables = get_tabledefs(&self.info).collect::<anyhow::Result<Vec<_>>>()?;
 
         let stdb = &*self.database_instance_context().relational_db;
-        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let ctx = Lazy::new(|| ExecutionContext::internal(stdb.address()));
 
-        let res = crate::db::update::update_database(
-            stdb,
-            tx,
-            proposed_tables,
-            fence,
-            self.info.module_hash,
-            self.system_logger(),
-        )?;
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let (tx, _) = stdb.with_auto_rollback(&ctx, tx, |tx| {
+            stdb.update_program(tx, HostType::Wasm, program_hash, program_bytes)
+        })?;
+        let res = crate::db::update::update_database(stdb, tx, proposed_tables, self.system_logger())?;
         let tx = match res {
             Ok(tx) => tx,
             Err(e) => return Ok(Err(e)),
@@ -420,7 +426,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
         let update_result = match self.info.reducers.lookup_id(UPDATE_DUNDER) {
             None => {
-                stdb.commit_tx(&ExecutionContext::internal(stdb.address()), tx)?;
+                stdb.commit_tx(&ctx, tx)?;
                 None
             }
 
@@ -430,8 +436,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 // the init/update reducer will receive it as the caller address.
                 // This is useful for bootstrapping the control DB in SpacetimeDB-cloud.
                 let Database {
-                    identity: caller_identity,
-                    publisher_address: caller_address,
+                    owner_identity: caller_identity,
                     ..
                 } = self.database_instance_context().database;
                 let res = self.call_reducer_with_tx(
@@ -441,6 +446,8 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                         caller_identity,
                         caller_address: caller_address.unwrap_or(Address::__DUMMY),
                         client: None,
+                        request_id: None,
+                        timer: None,
                         reducer_id,
                         args: ArgsTuple::nullary(),
                     },
@@ -479,14 +486,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     /// The method also performs various measurements and records energy usage,
     /// as well as broadcasting a [`ModuleEvent`] containg information about
     /// the outcome of the call.
+    #[tracing::instrument(skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
         let CallReducerParams {
             timestamp,
             caller_identity,
             caller_address,
             client,
+            request_id,
             reducer_id,
             args,
+            timer,
         } = params;
         let caller_address_opt = (caller_address != Address::__DUMMY).then_some(caller_address);
 
@@ -494,10 +504,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let stdb = &*dbic.relational_db.clone();
         let address = dbic.address;
         let reducer_name = &*self.info.reducers[reducer_id].name;
-        WORKER_METRICS
-            .reducer_count
-            .with_label_values(&address, reducer_name)
-            .inc();
 
         let _outer_span = tracing::trace_span!("call_reducer",
             reducer_name,
@@ -524,7 +530,12 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         };
 
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable));
-        let tx_slot = self.instance.instance_env().tx.clone();
+        let _guard = WORKER_METRICS
+            .reducer_plus_query_duration
+            .with_label_values(&address, op.name)
+            .with_timer(tx.timer);
+
+        let mut tx_slot = self.instance.instance_env().tx.clone();
 
         let reducer_span = tracing::trace_span!(
             "run_reducer",
@@ -533,10 +544,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             energy.used = tracing::field::Empty,
         )
         .entered();
-
+        let ctx = ExecutionContext::reducer(address, ReducerContext::from(op.clone()));
         // run the call_reducer call in rayon. it's important that we don't acquire a lock inside a rayon task,
         // as that can lead to deadlock.
-        let (tx, result) = rayon::scope(|_| tx_slot.set(tx, || self.instance.call_reducer(op, budget)));
+        let (ctx, mut tx, result) = rayon::scope(|_| tx_slot.set(ctx, tx, || self.instance.call_reducer(op, budget)));
 
         let ExecuteResult {
             energy,
@@ -562,21 +573,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         }
         reducer_span.exit();
 
-        WORKER_METRICS
-            .reducer_compute_time
-            .with_label_values(&address, reducer_name)
-            .observe(timings.total_duration.as_secs_f64());
-
-        // Take a lock on our subscriptions now. Otherwise, we could have a race condition where we commit
-        // the tx, someone adds a subscription and receives this tx as an initial update, and then receives the
-        // update again when we broadcast_event.
-        let subscriptions = self.info.subscriptions.subscriptions.read();
-
-        let ctx = ExecutionContext::reducer(address, reducer_name);
         let status = match call_result {
             Err(err) => {
-                stdb.rollback_mut_tx(&ctx, tx);
-
                 T::log_traceback("reducer", reducer_name, &err);
 
                 WORKER_METRICS
@@ -594,31 +592,25 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
                 }
             }
             Ok(Err(errmsg)) => {
-                stdb.rollback_mut_tx(&ctx, tx);
-
                 log::info!("reducer returned error: {errmsg}");
 
                 EventStatus::Failed(errmsg.into())
             }
+            // we haven't actually comitted yet - `commit_and_broadcast_event` will commit
+            // for us and replace this with the actual database update.
             Ok(Ok(())) => {
-                if let Some((tx_data, bytes_written)) = stdb.commit_tx(&ctx, tx).unwrap() {
-                    // TODO(cloutiertyler): This tracking doesn't really belong here if we want to write transactions to disk
-                    // in batches. This is because it's possible for a tiny reducer call to trigger a whole commit to be written to disk.
-                    // We should track the commit sizes instead internally to the CommitLog probably.
-                    if let Some(bytes_written) = bytes_written {
-                        WORKER_METRICS
-                            .reducer_write_size
-                            .with_label_values(&address, reducer_name)
-                            .observe(bytes_written as f64);
+                // Detecing a new client, and inserting it in `st_clients`
+                // Disconnect logic is written in module_host.rs, due to different transacationality requirements.
+                if reducer_name == CLIENT_CONNECTED_DUNDER {
+                    match self.insert_st_client(&mut tx, caller_identity, caller_address) {
+                        Ok(_) => EventStatus::Committed(DatabaseUpdate::default()),
+                        Err(err) => EventStatus::Failed(err.to_string()),
                     }
-                    EventStatus::Committed(DatabaseUpdate::from_writes(stdb, &tx_data))
                 } else {
-                    todo!("Write skew, you need to implement retries my man, T-dawg.");
+                    EventStatus::Committed(DatabaseUpdate::default())
                 }
             }
         };
-
-        let outcome = ReducerOutcome::from(&status);
 
         let event = ModuleEvent {
             timestamp,
@@ -631,13 +623,21 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             status,
             energy_quanta_used: energy.used,
             host_execution_duration: timings.total_duration,
+            request_id,
+            timer,
         };
-        self.info
+        let event = match self
+            .info
             .subscriptions
-            .blocking_broadcast_event(client.as_ref(), &subscriptions, &event);
+            .commit_and_broadcast_event(client.as_deref(), event, &ctx, tx)
+            .unwrap()
+        {
+            Ok(ev) => ev,
+            Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
+        };
 
         ReducerCallResult {
-            outcome,
+            outcome: ReducerOutcome::from(&event.status),
             energy_used: energy.used,
             execution_duration: timings.total_duration,
         }
@@ -647,14 +647,44 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     fn system_logger(&self) -> &SystemLogger {
         self.database_instance_context().logger.system_logger()
     }
+
+    fn insert_st_client(&self, tx: &mut MutTxId, identity: Identity, address: Address) -> Result<(), DBError> {
+        let db = &*self.database_instance_context().relational_db;
+        let row = &StClientsRow { identity, address };
+
+        db.insert(tx, ST_CLIENTS_ID, row.into()).map(|_| ())
+    }
 }
 
-#[derive(Debug)]
+/// Describes a reducer call in a cheaply shareable way.
+#[derive(Clone, Debug)]
 pub struct ReducerOp<'a> {
     pub id: ReducerId,
     pub name: &'a str,
     pub caller_identity: &'a Identity,
     pub caller_address: &'a Address,
     pub timestamp: Timestamp,
+    /// The BSATN-serialized arguments passed to the reducer.
     pub arg_bytes: Bytes,
+}
+
+impl From<ReducerOp<'_>> for execution_context::ReducerContext {
+    fn from(
+        ReducerOp {
+            id: _,
+            name,
+            caller_identity,
+            caller_address,
+            timestamp,
+            arg_bytes,
+        }: ReducerOp<'_>,
+    ) -> Self {
+        Self {
+            name: name.to_owned(),
+            caller_identity: *caller_identity,
+            caller_address: *caller_address,
+            timestamp,
+            arg_bsatn: arg_bytes.clone(),
+        }
+    }
 }

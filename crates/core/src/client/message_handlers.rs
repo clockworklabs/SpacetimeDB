@@ -1,8 +1,9 @@
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::energy::EnergyQuanta;
 use crate::execution_context::WorkloadType;
-use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
+use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::{ReducerArgs, Timestamp};
 use crate::identity::Identity;
 use crate::protobuf::client_api::{message, FunctionCall, Message, Subscribe};
@@ -11,6 +12,7 @@ use base64::Engine;
 use bytes::Bytes;
 use bytestring::ByteString;
 use prost::Message as _;
+use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::Address;
 
 use super::messages::{ServerMessage, TransactionUpdateMessage};
@@ -60,9 +62,17 @@ async fn handle_binary(
 ) -> Result<(), MessageHandleError> {
     let message = Message::decode(Bytes::from(message_buf))?;
     let message = match message.r#type {
-        Some(message::Type::FunctionCall(FunctionCall { ref reducer, arg_bytes })) => {
+        Some(message::Type::FunctionCall(FunctionCall {
+            ref reducer,
+            arg_bytes,
+            request_id,
+        })) => {
             let args = ReducerArgs::Bsatn(arg_bytes.into());
-            DecodedMessage::Call { reducer, args }
+            DecodedMessage::Call {
+                reducer,
+                args,
+                request_id,
+            }
         }
         Some(message::Type::Subscribe(subscription)) => DecodedMessage::Subscribe(subscription),
         Some(message::Type::OneOffQuery(ref oneoff)) => DecodedMessage::OneOffQuery {
@@ -84,9 +94,15 @@ enum RawJsonMessage<'a> {
         #[serde(borrow, rename = "fn")]
         func: std::borrow::Cow<'a, str>,
         args: &'a serde_json::value::RawValue,
+        #[serde(default)]
+        request_id: u32,
     },
     #[serde(rename = "subscribe")]
-    Subscribe { query_strings: Vec<String> },
+    Subscribe {
+        query_strings: Vec<String>,
+        #[serde(default)]
+        request_id: u32,
+    },
     #[serde(rename = "one_off_query")]
     OneOffQuery {
         #[serde(borrow)]
@@ -103,11 +119,26 @@ async fn handle_text(client: &ClientConnection, message: String, timer: Instant)
     let msg = serde_json::from_str::<RawJsonMessage>(&message)?;
     let mut message_id_ = Vec::new();
     let msg = match msg {
-        RawJsonMessage::Call { ref func, args } => {
+        RawJsonMessage::Call {
+            ref func,
+            args,
+            request_id,
+        } => {
             let args = ReducerArgs::Json(message.slice_ref(args.get()));
-            DecodedMessage::Call { reducer: func, args }
+            DecodedMessage::Call {
+                reducer: func,
+                args,
+                request_id,
+            }
         }
-        RawJsonMessage::Subscribe { query_strings } => DecodedMessage::Subscribe(Subscribe { query_strings }),
+
+        RawJsonMessage::Subscribe {
+            query_strings,
+            request_id,
+        } => DecodedMessage::Subscribe(Subscribe {
+            query_strings,
+            request_id,
+        }),
         RawJsonMessage::OneOffQuery {
             query_string: ref query,
             message_id,
@@ -132,6 +163,7 @@ enum DecodedMessage<'a> {
     Call {
         reducer: &'a str,
         args: ReducerArgs,
+        request_id: RequestId,
     },
     Subscribe(Subscribe),
     OneOffQuery {
@@ -144,8 +176,12 @@ impl DecodedMessage<'_> {
     async fn handle(self, client: &ClientConnection, timer: Instant) -> Result<(), MessageExecutionError> {
         let address = client.module.info().address;
         let res = match self {
-            DecodedMessage::Call { reducer, args } => {
-                let res = client.call_reducer(reducer, args).await;
+            DecodedMessage::Call {
+                reducer,
+                args,
+                request_id,
+            } => {
+                let res = client.call_reducer(reducer, args, request_id, timer).await;
                 WORKER_METRICS
                     .request_round_trip
                     .with_label_values(&WorkloadType::Reducer, &address, reducer)
@@ -153,7 +189,7 @@ impl DecodedMessage<'_> {
                 res.map(drop).map_err(|e| (Some(reducer), e.into()))
             }
             DecodedMessage::Subscribe(subscription) => {
-                let res = client.subscribe(subscription).await;
+                let res = client.subscribe(subscription, timer).await;
                 WORKER_METRICS
                     .request_round_trip
                     .with_label_values(&WorkloadType::Subscribe, &address, "")
@@ -164,7 +200,7 @@ impl DecodedMessage<'_> {
                 query_string: query,
                 message_id,
             } => {
-                let res = client.one_off_query(query, message_id).await;
+                let res = client.one_off_query(query, message_id, timer).await;
                 WORKER_METRICS
                     .request_round_trip
                     .with_label_values(&WorkloadType::Sql, &address, "")
@@ -181,7 +217,7 @@ impl DecodedMessage<'_> {
     }
 }
 
-/// An error that arises from executing a message.  
+/// An error that arises from executing a message.
 #[derive(thiserror::Error, Debug)]
 #[error("error executing message (reducer: {reducer:?}) (err: {err:?})")]
 pub struct MessageExecutionError {
@@ -205,22 +241,24 @@ impl MessageExecutionError {
             status: EventStatus::Failed(format!("{:#}", self.err)),
             energy_quanta_used: EnergyQuanta::ZERO,
             host_execution_duration: Duration::ZERO,
+            request_id: Some(RequestId::default()),
+            timer: None,
         }
     }
 }
 
 impl ServerMessage for MessageExecutionError {
     fn serialize_text(self) -> crate::json::client_api::MessageJson {
-        TransactionUpdateMessage {
-            event: &mut self.into_event(),
+        TransactionUpdateMessage::<DatabaseUpdate> {
+            event: Arc::new(self.into_event()),
             database_update: Default::default(),
         }
         .serialize_text()
     }
 
     fn serialize_binary(self) -> Message {
-        TransactionUpdateMessage {
-            event: &mut self.into_event(),
+        TransactionUpdateMessage::<DatabaseUpdate> {
+            event: Arc::new(self.into_event()),
             database_update: Default::default(),
         }
         .serialize_binary()
@@ -243,6 +281,24 @@ mod tests {
         {
             assert_eq!(query, "SELECT * FROM User WHERE name != 'bananas'");
             assert_eq!(message_id, "ywS3WFquDECZQ0UdLZN1IA==");
+        } else {
+            panic!("wrong variant")
+        }
+    }
+
+    #[test]
+    fn parse_function_call() {
+        let message = r#"{ "call": { "fn": "reducer_name", "request_id": 2, "args": "{}" } }"#;
+        let parsed = serde_json::from_str::<RawJsonMessage>(message).unwrap();
+
+        if let RawJsonMessage::Call {
+            request_id,
+            func,
+            args: _,
+        } = parsed
+        {
+            assert_eq!(request_id, 2);
+            assert_eq!(func, "reducer_name");
         } else {
             panic!("wrong variant")
         }

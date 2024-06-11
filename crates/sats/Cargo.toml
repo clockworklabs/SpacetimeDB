@@ -11,11 +11,17 @@ description = "Spacetime Algebraic Type Notation"
 serde = ["dep:serde"]
 # Allows using `Arbitrary` impls defined in this crate.
 proptest = ["dep:proptest", "dep:proptest-derive"]
+# Impls `Serialize` and `Deserialize` for `blake3::Hash`.
+# Used by `spacetimedb_table`,
+# which serializes and deserializes Blake3 hashes during snapshotting.
+blake3 = ["dep:blake3"]
+metrics_impls = ["dep:spacetimedb-metrics"]
 
 [dependencies]
 spacetimedb-bindings-macro.workspace = true
+spacetimedb-data-structures.workspace = true
 spacetimedb-primitives.workspace = true
-spacetimedb-metrics.workspace = true
+spacetimedb-metrics = { workspace = true, optional = true }
 
 arrayvec.workspace = true
 bitflags.workspace = true
@@ -28,12 +34,16 @@ itertools.workspace = true
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
 sha3.workspace = true
+second-stack.workspace = true
 serde = { workspace = true, optional = true }
 smallvec.workspace = true
 thiserror.workspace = true
-tracing.workspace = true
+
+# For the `blake3` feature.
+blake3 = { workspace = true, optional = true }
 
 [dev-dependencies]
+ahash.workspace = true
 bytes.workspace = true
 rand.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.

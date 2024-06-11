@@ -5,7 +5,6 @@ use spacetimedb_sats::{impl_serialize, WithTypespace};
 pub mod address;
 pub mod filter;
 pub mod identity;
-pub mod name;
 pub mod operator;
 pub mod type_def {
     pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};
@@ -15,22 +14,17 @@ pub mod type_value {
 }
 
 pub mod error;
-#[cfg(feature = "serde")]
-pub mod recovery;
-#[cfg(feature = "cli")]
-pub mod util;
 pub mod version;
 
 pub use address::Address;
 pub use identity::Identity;
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
 pub use spacetimedb_sats::relation;
-pub use spacetimedb_sats::DataKey;
 pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
 pub use type_def::*;
 pub use type_value::{AlgebraicValue, ProductValue};
 
-pub const MODULE_ABI_MAJOR_VERSION: u16 = 7;
+pub const MODULE_ABI_MAJOR_VERSION: u16 = 8;
 
 // if it ends up we need more fields in the future, we can split one of them in two
 #[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
@@ -89,7 +83,7 @@ pub struct TableDesc {
 }
 
 impl TableDesc {
-    pub fn into_table_def(table: WithTypespace<'_, TableDesc>) -> anyhow::Result<spacetimedb_sats::db::def::TableDef> {
+    pub fn into_table_def(table: WithTypespace<'_, TableDesc>) -> anyhow::Result<TableDef> {
         let schema = table
             .map(|t| &t.data)
             .resolve_refs()
@@ -107,7 +101,7 @@ impl TableDesc {
 
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
 pub struct ReducerDef {
-    pub name: String,
+    pub name: Box<str>,
     pub args: Vec<ProductTypeElement>,
 }
 
@@ -192,4 +186,49 @@ pub enum MiscModuleExport {
 pub struct TypeAlias {
     pub name: String,
     pub ty: sats::AlgebraicTypeRef,
+}
+
+impl ModuleDef {
+    pub fn validate_reducers(&self) -> Result<(), ModuleValidationError> {
+        for reducer in &self.reducers {
+            match &*reducer.name {
+                // in the future, these should maybe be flagged as lifecycle reducers by a MiscModuleExport
+                //  or something, rather than by magic names
+                "__init__" => {}
+                "__identity_connected__" | "__identity_disconnected__" | "__update__" | "__migrate__" => {
+                    if !reducer.args.is_empty() {
+                        return Err(ModuleValidationError::InvalidLifecycleReducer {
+                            reducer: reducer.name.clone(),
+                        });
+                    }
+                }
+                name if name.starts_with("__") && name.ends_with("__") => {
+                    return Err(ModuleValidationError::UnknownDunderscore)
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ModuleValidationError {
+    #[error("lifecycle reducer {reducer:?} has invalid signature")]
+    InvalidLifecycleReducer { reducer: Box<str> },
+    #[error("reducers with double-underscores at the start and end of their names are not allowed")]
+    UnknownDunderscore,
+}
+
+/// Converts a hexadecimal string reference to a byte array.
+///
+/// This function takes a reference to a hexadecimal string and attempts to convert it into a byte array.
+///
+/// If the hexadecimal string starts with "0x", these characters are ignored.
+pub fn from_hex_pad<R: hex::FromHex<Error = hex::FromHexError>, T: AsRef<[u8]>>(
+    hex: T,
+) -> Result<R, hex::FromHexError> {
+    let hex = hex.as_ref();
+    let hex = if hex.starts_with(b"0x") { &hex[2..] } else { hex };
+    hex::FromHex::from_hex(hex)
 }

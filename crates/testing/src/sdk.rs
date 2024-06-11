@@ -1,7 +1,7 @@
 use duct::cmd;
 use lazy_static::lazy_static;
 use rand::distributions::{Alphanumeric, DistString};
-use std::collections::HashMap;
+use spacetimedb_data_structures::map::HashMap;
 use std::fs::create_dir_all;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
@@ -147,6 +147,8 @@ fn publish_module(wasm_file: &str) -> String {
     let name = random_module_name();
     invoke_cli(&[
         "publish",
+        "--server",
+        "local",
         "--debug",
         "--project-path",
         wasm_file,
@@ -199,7 +201,7 @@ fn generate_bindings(language: &str, wasm_file: &str, client_project: &str, gene
             "--wasm-file",
             wasm_file,
             "--out-dir",
-            &generate_dir,
+            generate_dir,
         ]);
     })
 }

@@ -1,3 +1,11 @@
+use super::identity::IdentityForUrl;
+use crate::auth::{
+    SpacetimeAuth, SpacetimeAuthHeader, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros, SpacetimeIdentity,
+    SpacetimeIdentityToken,
+};
+use crate::routes::subscribe::generate_random_address;
+use crate::util::{ByteStringBody, NameOrAddress};
+use crate::{log_and_500, ControlStateDelegate, DatabaseDef, NodeDelegate};
 use axum::body::{Body, Bytes};
 use axum::extract::{DefaultBodyLimit, Path, Query, State};
 use axum::response::{ErrorResponse, IntoResponse};
@@ -19,27 +27,18 @@ use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::UpdateDatabaseSuccess;
 use spacetimedb::identity::Identity;
 use spacetimedb::json::client_api::StmtResultJson;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance};
-use spacetimedb::sql::execute::execute;
+use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType};
+use spacetimedb::sql;
+use spacetimedb::sql::execute::{ctx_sql, translate_col};
+use spacetimedb_client_api_messages::name::{self, DnsLookupResponse, DomainName, PublishOp, PublishResult};
+use spacetimedb_client_api_messages::recovery::{RecoveryCode, RecoveryCodeResponse};
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::name::{self, DnsLookupResponse, DomainName, DomainParsingError, PublishOp, PublishResult};
-use spacetimedb_lib::recovery::{RecoveryCode, RecoveryCodeResponse};
 use spacetimedb_lib::sats::WithTypespace;
-use std::collections::HashMap;
-use std::convert::From;
+use spacetimedb_lib::ProductTypeElement;
 
-use super::identity::IdentityForUrl;
-use crate::auth::{
-    SpacetimeAuth, SpacetimeAuthHeader, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros, SpacetimeIdentity,
-    SpacetimeIdentityToken,
-};
-use crate::routes::subscribe::generate_random_address;
-use crate::util::{ByteStringBody, NameOrAddress};
-use crate::{log_and_500, ControlStateDelegate, DatabaseDef, NodeDelegate};
-
-#[derive(derive_more::From)]
-pub(crate) struct DomainParsingRejection(pub(crate) DomainParsingError);
+pub(crate) struct DomainParsingRejection;
 
 impl IntoResponse for DomainParsingRejection {
     fn into_response(self) -> axum::response::Response {
@@ -80,7 +79,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         log::error!("Could not find database: {}", address.to_hex());
         (StatusCode::NOT_FOUND, "No such database.")
     })?;
-    let identity = database.identity;
+    let identity = database.owner_identity;
     let database_instance = worker_ctx
         .get_leader_database_instance_by_database(database.id)
         .ok_or((
@@ -89,17 +88,10 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         ))?;
     let instance_id = database_instance.id;
     let host = worker_ctx.host_controller();
-
-    let module = match host.get_module_host(instance_id) {
-        Ok(m) => m,
-        Err(_) => {
-            let dbic = worker_ctx
-                .load_module_host_context(database, instance_id)
-                .await
-                .map_err(log_and_500)?;
-            host.spawn_module_host(dbic).await.map_err(log_and_500)?
-        }
-    };
+    let module = host
+        .get_or_launch_module_host(database, instance_id)
+        .await
+        .map_err(log_and_500)?;
 
     // HTTP callers always need an address to provide to connect/disconnect,
     // so generate one if none was provided.
@@ -114,7 +106,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         return Err((StatusCode::NOT_FOUND, format!("{:#}", anyhow::anyhow!(e))).into());
     }
     let result = match module
-        .call_reducer(caller_identity, Some(client_address), None, &reducer, args)
+        .call_reducer(caller_identity, Some(client_address), None, None, None, &reducer, args)
         .await
     {
         Ok(rcr) => Ok(rcr),
@@ -283,17 +275,11 @@ where
     let call_info = extract_db_call_info(&worker_ctx, auth, &address).await?;
 
     let instance_id = call_info.database_instance.id;
-    let host = worker_ctx.host_controller();
-    let module = match host.get_module_host(instance_id) {
-        Ok(m) => m,
-        Err(_) => {
-            let dbic = worker_ctx
-                .load_module_host_context(database, instance_id)
-                .await
-                .map_err(log_and_500)?;
-            host.spawn_module_host(dbic).await.map_err(log_and_500)?
-        }
-    };
+    let module = worker_ctx
+        .host_controller()
+        .get_or_launch_module_host(database, instance_id)
+        .await
+        .map_err(log_and_500)?;
 
     let entity_type = entity_type.as_str().parse().map_err(|()| {
         log::debug!("Request to describe unhandled entity type: {}", entity_type);
@@ -341,16 +327,10 @@ where
 
     let instance_id = call_info.database_instance.id;
     let host = worker_ctx.host_controller();
-    let module = match host.get_module_host(instance_id) {
-        Ok(m) => m,
-        Err(_) => {
-            let dbic = worker_ctx
-                .load_module_host_context(database, instance_id)
-                .await
-                .map_err(log_and_500)?;
-            host.spawn_module_host(dbic).await.map_err(log_and_500)?
-        }
-    };
+    let module = host
+        .get_or_launch_module_host(database, instance_id)
+        .await
+        .map_err(log_and_500)?;
     let catalog = module.catalog();
     let expand = expand.unwrap_or(false);
     let response_catalog: HashMap<_, _> = catalog
@@ -389,10 +369,9 @@ pub async fn info<S: ControlStateDelegate>(
     let host_type: &str = database.host_type.as_ref();
     let response_json = json!({
         "address": database.address,
-        "identity": database.identity,
+        "owner_identity": database.owner_identity,
         "host_type": host_type,
-        "num_replicas": database.num_replicas,
-        "program_bytes_address": database.program_bytes_address,
+        "initial_program": database.initial_program,
     });
     Ok((StatusCode::OK, axum::Json(response_json)))
 }
@@ -436,12 +415,12 @@ where
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
-    if database.identity != auth.identity {
+    if database.owner_identity != auth.identity {
         return Err((
             StatusCode::BAD_REQUEST,
             format!(
                 "Identity does not own database, expected: {} got: {}",
-                database.identity.to_hex(),
+                database.owner_identity.to_hex(),
                 auth.identity.to_hex()
             ),
         )
@@ -461,16 +440,10 @@ where
 
     let body = if follow {
         let host = worker_ctx.host_controller();
-        let module = match host.get_module_host(instance_id) {
-            Ok(m) => m,
-            Err(_) => {
-                let dbic = worker_ctx
-                    .load_module_host_context(database, instance_id)
-                    .await
-                    .map_err(log_and_500)?;
-                host.spawn_module_host(dbic).await.map_err(log_and_500)?
-            }
-        };
+        let module = host
+            .get_or_launch_module_host(database, instance_id)
+            .await
+            .map_err(log_and_500)?;
         let log_rx = module.subscribe_to_logs().map_err(log_and_500)?;
 
         let stream = tokio_stream::wrappers::BroadcastStream::new(log_rx).filter_map(move |x| {
@@ -538,7 +511,7 @@ where
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
-    let auth = AuthCtx::new(database.identity, auth.identity);
+    let auth = AuthCtx::new(database.owner_identity, auth.identity);
     log::debug!("auth: {auth:?}");
     let database_instance = worker_ctx
         .get_leader_database_instance_by_database(database.id)
@@ -549,43 +522,51 @@ where
     let instance_id = database_instance.id;
 
     let host = worker_ctx.host_controller();
-    match host.get_module_host(instance_id) {
-        Ok(_) => {}
-        Err(_) => {
-            let dbic = worker_ctx
-                .load_module_host_context(database, instance_id)
-                .await
-                .map_err(log_and_500)?;
-            host.spawn_module_host(dbic).await.map_err(log_and_500)?;
-        }
-    };
+    let module_host = host
+        .get_or_launch_module_host(database.clone(), instance_id)
+        .await
+        .map_err(log_and_500)?;
+    let json = host
+        .using_database(
+            database,
+            instance_id,
+            move |db| -> axum::response::Result<_, (StatusCode, String)> {
+                tracing::info!(sql = body);
+                let results =
+                    sql::execute::run(db, &body, auth, Some(&module_host.info().subscriptions)).map_err(|e| {
+                        log::warn!("{}", e);
+                        if let Some(auth_err) = e.get_auth_error() {
+                            (StatusCode::UNAUTHORIZED, auth_err.to_string())
+                        } else {
+                            (StatusCode::BAD_REQUEST, e.to_string())
+                        }
+                    })?;
 
-    let results = match execute(
-        worker_ctx.database_instance_context_controller(),
-        instance_id,
-        body,
-        auth,
-    ) {
-        Ok(results) => results,
-        Err(err) => {
-            log::warn!("{}", err);
-            return if let Some(auth_err) = err.get_auth_error() {
-                let err = format!("{auth_err}");
-                Err((StatusCode::UNAUTHORIZED, err).into())
-            } else {
-                let err = format!("{err}");
-                Err((StatusCode::BAD_REQUEST, err).into())
-            };
-        }
-    };
+                let json = db.with_read_only(&ctx_sql(db), |tx| {
+                    results
+                        .into_iter()
+                        .map(|result| {
+                            let rows = result.data;
+                            let schema = result
+                                .head
+                                .fields
+                                .iter()
+                                .map(|x| {
+                                    let ty = x.algebraic_type.clone();
+                                    let name = translate_col(tx, x.field);
+                                    ProductTypeElement::new(ty, name)
+                                })
+                                .collect();
+                            StmtResultJson { schema, rows }
+                        })
+                        .collect::<Vec<_>>()
+                });
 
-    let json = results
-        .into_iter()
-        .map(|result| StmtResultJson {
-            schema: result.head.ty(),
-            rows: result.data,
-        })
-        .collect::<Vec<_>>();
+                Ok(json)
+            },
+        )
+        .await
+        .map_err(log_and_500)??;
 
     Ok((StatusCode::OK, axum::Json(json)))
 }
@@ -608,7 +589,7 @@ pub async fn dns<S: ControlStateDelegate>(
     Path(DNSParams { database_name }): Path<DNSParams>,
     Query(DNSQueryParams {}): Query<DNSQueryParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let domain = database_name.parse().map_err(DomainParsingRejection)?;
+    let domain = database_name.parse().map_err(|_| DomainParsingRejection)?;
     let address = ctx.lookup_address(&domain).map_err(log_and_500)?;
     let response = if let Some(address) = address {
         DnsLookupResponse::Success { domain, address }
@@ -645,7 +626,7 @@ pub async fn register_tld<S: ControlStateDelegate>(
     // so, unless you are the owner, this will fail, hence not using get_or_create
     let auth = auth_or_unauth(auth)?;
 
-    let tld = tld.parse::<DomainName>().map_err(DomainParsingRejection)?.into();
+    let tld = tld.parse::<DomainName>().map_err(|_| DomainParsingRejection)?.into();
     let result = ctx.register_tld(&auth.identity, tld).await.map_err(log_and_500)?;
     Ok(axum::Json(result))
 }
@@ -765,6 +746,12 @@ pub struct PublishDatabaseQueryParams {
     client_address: Option<AddressForUrl>,
 }
 
+impl PublishDatabaseQueryParams {
+    pub fn name_or_address(&self) -> Option<&NameOrAddress> {
+        self.name_or_address.as_ref()
+    }
+}
+
 pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     State(ctx): State<S>,
     Path(PublishDatabaseParams {}): Path<PublishDatabaseParams>,
@@ -829,6 +816,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
                 address: db_addr,
                 program_bytes: body.into(),
                 num_replicas: 1,
+                host_type: HostType::Wasm,
             },
         )
         .await
@@ -902,11 +890,11 @@ pub async fn set_name<S: ControlStateDelegate>(
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
-    if database.identity != auth.identity {
+    if database.owner_identity != auth.identity {
         return Err((StatusCode::UNAUTHORIZED, "Identity does not own database.").into());
     }
 
-    let domain = domain.parse().map_err(DomainParsingRejection)?;
+    let domain = domain.parse().map_err(|_| DomainParsingRejection)?;
     let response = ctx
         .create_dns_record(&auth.identity, &domain, &address)
         .await

@@ -1,6 +1,6 @@
 use serial_test::serial;
 use spacetimedb_testing::modules::{
-    CompilationMode, CompiledModule, LogLevel, LoggerRecord, ModuleHandle, DEFAULT_CONFIG,
+    CompilationMode, CompiledModule, LogLevel, LoggerRecord, ModuleHandle, DEFAULT_CONFIG, IN_MEMORY_CONFIG,
 };
 
 fn init() {
@@ -92,10 +92,13 @@ fn test_calling_a_reducer_with_private_table() {
             let json = r#"{"call": {"fn": "query_private", "args": []}}"#.to_string();
             module.send(json).await.unwrap();
 
-            assert_eq!(
-                read_logs(&module).await,
-                ["Private, Tyrion!", "Private, World!",].map(String::from)
-            );
+            let logs = read_logs(&module)
+                .await
+                .into_iter()
+                .skip_while(|r| r.starts_with("Timestamp"))
+                .collect::<Vec<_>>();
+
+            assert_eq!(logs, ["Private, Tyrion!", "Private, World!",].map(String::from));
         },
     );
 }
@@ -115,15 +118,17 @@ fn test_call_query_macro() {
                 .to_string();
             module.send(json).await.unwrap();
 
-            let logs = read_logs(&module).await;
-
-            assert_eq!(logs[0], "BEGIN");
-            assert!(logs[1].starts_with("sender: "));
-            assert!(logs[2].starts_with("timestamp: "));
-
+            let logs = read_logs(&module)
+                .await
+                .into_iter()
+                .filter(|line| {
+                    !(line.starts_with("sender:") || line.starts_with("timestamp:") || line.starts_with("Timestamp"))
+                })
+                .collect::<Vec<_>>();
             assert_eq!(
-                logs[3..],
+                logs,
                 [
+                    "BEGIN",
                     r#"bar: "Foo""#,
                     "Foo",
                     "Row count before delete: 1000",
@@ -136,6 +141,47 @@ fn test_call_query_macro() {
                 ]
                 .map(String::from)
             );
+        },
+    );
+}
+
+#[test]
+#[serial]
+/// This test runs the index scan workloads in the `perf-test` module.
+/// Timing spans should be < 1ms if the correct index was used.
+/// Otherwise these workloads will degenerate into full table scans.
+fn test_index_scans() {
+    init();
+    CompiledModule::compile("perf-test", CompilationMode::Release).with_module_async(
+        IN_MEMORY_CONFIG,
+        |module| async move {
+            let json = r#"{"call": {"fn": "load_location_table", "args": []}}"#;
+            module.send(json.to_string()).await.unwrap();
+
+            let json = r#"{"call": {"fn": "test_index_scan_on_id", "args": []}}"#;
+            module.send(json.to_string()).await.unwrap();
+
+            let json = r#"{"call": {"fn": "test_index_scan_on_chunk", "args": []}}"#;
+            module.send(json.to_string()).await.unwrap();
+
+            let json = r#"{"call": {"fn": "test_index_scan_on_x_z_dimension", "args": []}}"#;
+            module.send(json.to_string()).await.unwrap();
+
+            // TODO(1011): Uncomment once multi-column prefix scans are supported
+            // let json = r#"{"call": {"fn": "test_index_scan_on_x_z", "args": []}}"#;
+            // module.send(json.to_string()).await.unwrap();
+
+            let logs = read_logs(&module).await;
+
+            // Each timing span should be < 1ms
+            let timing = |line: &str| {
+                line.starts_with("Timing span")
+                    && (line.ends_with("ns") || line.ends_with("us") || line.ends_with("µs"))
+            };
+            assert!(timing(&logs[0]));
+            assert!(timing(&logs[1]));
+            assert!(timing(&logs[2]));
+            // assert!(timing(&logs[3]));
         },
     );
 }

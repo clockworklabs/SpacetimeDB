@@ -7,15 +7,17 @@ pub fn cli() -> clap::Command {
     clap::Command::new("build")
         .about("Builds a spacetime module.")
         .arg(
-            Arg::new("project-path")
-                .default_value(".")
+            Arg::new("project_path")
+                .long("project-path")
+                .short('p')
                 .value_parser(clap::value_parser!(PathBuf))
-                .help("The path of the project that you would like to build."),
+                .default_value(".")
+                .help("The system path (absolute or relative) to the project you would like to build")
         )
         .arg(
             Arg::new("skip_clippy")
                 .long("skip_clippy")
-                .short('s')
+                .short('S')
                 .action(SetTrue)
                 .env("SPACETIME_SKIP_CLIPPY")
                 .value_parser(clap::builder::FalseyValueParser::new())
@@ -30,8 +32,8 @@ pub fn cli() -> clap::Command {
         )
 }
 
-pub async fn exec(_: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let project_path = args.get_one::<PathBuf>("project-path").unwrap();
+pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+    let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let skip_clippy = args.get_flag("skip_clippy");
     let build_debug = args.get_flag("debug");
 

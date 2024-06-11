@@ -1,8 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- needs to be exe for initializers to be embedded correctly -->
-    <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -10,8 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.Codegen" Version="0.8.*" />
-    <PackageReference Include="SpacetimeDB.Runtime" Version="0.8.*" />
+    <PackageReference Include="SpacetimeDB.Codegen" Version="0.10.*" />
+    <PackageReference Include="SpacetimeDB.Runtime" Version="0.10.*" />
   </ItemGroup>
 
 </Project>

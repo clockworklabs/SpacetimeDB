@@ -25,7 +25,11 @@ impl TableType for UniqueU128 {
 
 impl UniqueU128 {
     #[allow(unused)]
-    pub fn filter_by_n(n: u128) -> Option<Self> {
+    pub fn filter_by_n(n: u128) -> TableIter<Self> {
+        Self::filter(|row| row.n == n)
+    }
+    #[allow(unused)]
+    pub fn find_by_n(n: u128) -> Option<Self> {
         Self::find(|row| row.n == n)
     }
     #[allow(unused)]

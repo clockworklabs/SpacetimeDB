@@ -18,14 +18,16 @@ required-features = [] # Features required to build this target (N/A for lib)
 
 [dependencies]
 spacetimedb-core.workspace = true
-spacetimedb-lib = { workspace = true, features = ["cli"] }
+spacetimedb-lib.workspace = true
 spacetimedb-client-api.workspace = true
+spacetimedb-client-api-messages.workspace = true
 
 anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
 clap = { workspace = true, features = ["derive", "string"] }
 dirs.workspace = true
+futures.workspace = true
 hostname.workspace = true
 http.workspace = true
 log.workspace = true
@@ -34,6 +36,7 @@ prometheus.workspace = true
 scopeguard.workspace = true
 serde_json.workspace = true
 sled.workspace = true
+socket2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tower-http.workspace = true

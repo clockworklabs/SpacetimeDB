@@ -1,6 +1,7 @@
 use crate::db::def::IndexType;
 use crate::product_value::InvalidFieldError;
 use crate::relation::{FieldName, Header};
+use crate::satn::Satn as _;
 use crate::{buffer, AlgebraicType, AlgebraicValue};
 use derive_more::Display;
 use spacetimedb_primitives::{ColId, ColList, TableId};
@@ -10,25 +11,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum TypeError {
-    #[error("Arrays must be homogeneous. It expects to be `{{expect.to_satns()}}` but `{{value.to_satns()}}` is of type `{{found.to_satns()}}`")]
-    Array {
-        expect: AlgebraicType,
-        found: AlgebraicType,
-        value: AlgebraicValue,
-    },
-    #[error("Arrays must define a type for the elements")]
-    ArrayEmpty,
-    #[error("Maps must be homogeneous. It expects to be `{{key_expect.to_satns()}}:{{value_expect.to_satns()}}` but `{{key.to_satns()}}::{{value.to_satns()}}` is of type `{{key_found.to_satns()}}:{{value_found.to_satns()}}`")]
-    Map {
-        key_expect: AlgebraicType,
-        value_expect: AlgebraicType,
-        key_found: AlgebraicType,
-        value_found: AlgebraicType,
-        key: AlgebraicValue,
-        value: AlgebraicValue,
-    },
-    #[error("Maps must define a type for both key & value")]
-    MapEmpty,
+    #[error("The type of `{{value.to_satns()}}` cannot be inferred")]
+    CannotInferType { value: AlgebraicValue },
 }
 
 #[derive(Error, Debug, Clone)]
@@ -105,10 +89,12 @@ pub enum RelationError {
     FieldNotFound(Header, FieldName),
     #[error("Field `{0}` fail to infer the type: {1}")]
     TypeInference(FieldName, TypeError),
+    #[error("Field with value `{}` was not a `bool`", val.to_satn())]
+    NotBoolValue { val: AlgebraicValue },
+    #[error("Field `{field}` was expected to be `bool` but is `{}`", ty.to_satn())]
+    NotBoolType { field: FieldName, ty: AlgebraicType },
     #[error("Field declaration only support `table.field` or `field`. It gets instead `{0}`")]
     FieldPathInvalid(String),
-    #[error("Field `{1}` not found at position {0}")]
-    FieldNotFoundAtPos(usize, FieldName),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Display)]
@@ -122,30 +108,30 @@ pub enum DefType {
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum SchemaError {
     #[error("Multiple primary columns defined for table: {table} columns: {pks:?}")]
-    MultiplePrimaryKeys { table: String, pks: Vec<String> },
+    MultiplePrimaryKeys { table: Box<str>, pks: Vec<String> },
     #[error("table id `{table_id}` should have name")]
     EmptyTableName { table_id: TableId },
     #[error("{ty} {name} columns `{columns:?}` not found  in table `{table}`")]
     ColumnsNotFound {
-        name: String,
-        table: String,
+        name: Box<str>,
+        table: Box<str>,
         columns: Vec<ColId>,
         ty: DefType,
     },
     #[error("table `{table}` {ty} should have name. {ty} id: {id}")]
-    EmptyName { table: String, ty: DefType, id: u32 },
+    EmptyName { table: Box<str>, ty: DefType, id: u32 },
     #[error("table `{table}` have `Constraints::unset()` for columns: {columns:?}")]
     ConstraintUnset {
-        table: String,
-        name: String,
+        table: Box<str>,
+        name: Box<str>,
         columns: ColList,
     },
     #[error("Attempt to define a column with more than 1 auto_inc sequence: Table: `{table}`, Field: `{field}`")]
-    OneAutoInc { table: String, field: String },
+    OneAutoInc { table: Box<str>, field: Box<str> },
     #[error("Only Btree Indexes are supported: Table: `{table}`, Index: `{index}` is a `{index_type}`")]
     OnlyBtree {
-        table: String,
-        index: String,
+        table: Box<str>,
+        index: Box<str>,
         index_type: IndexType,
     },
 }

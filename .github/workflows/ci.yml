@@ -4,6 +4,12 @@ on:
     branches:
       - master
   merge_group:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull Request Number'
+        required: false
+        default: ''
 
 name: CI
 
@@ -12,17 +18,30 @@ jobs:
     name: Smoketests
     runs-on: spacetimedb-runner
     steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
       - uses: dsherret/rust-toolchain-file@v1
       - name: Start containers
         run: docker compose up -d
       - name: Run smoketests
-        run: test/run-smoke-tests.sh --parallel -x bitcraftmini-pretest zz_docker-restart-module zz_docker-restart-repeating-reducer zz_docker-restart-sql
+        run: python -m smoketests --docker -x zz_docker
       # These cannot run in parallel, even though the script tries to handle it
       # TODO: Fix flaky tests https://github.com/clockworklabs/SpacetimeDB/issues/630
       # - name: Run restarting smoketests
-      #   run: test/run-smoke-tests.sh zz_docker-restart-module zz_docker-restart-repeating-reducer zz_docker-restart-sql
+      #   run: python -m smoketests --docker zz_docker
       - name: Stop containers
         if: always()
         run: docker compose down
@@ -31,8 +50,22 @@ jobs:
     name: Test Suite
     runs-on: spacetimedb-runner
     steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
 
       - uses: dsherret/rust-toolchain-file@v1
 
@@ -46,7 +79,10 @@ jobs:
           sudo chmod 777 /stdb
 
       - name: Run cargo test
-        run: cargo test --all --features odb_rocksdb,odb_sled,metrics
+        run: cargo test --all
+
+      - name: C# SDK tests
+        run: dotnet test crates/bindings-csharp
 
   lints:
     name: Lints
@@ -62,7 +98,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run cargo clippy
-        run: cargo clippy --all --tests --benches --features odb_rocksdb,odb_sled,metrics -- -D warnings
+        run: cargo clippy --all --tests --benches -- -D warnings
 
   wasm_bindings:
     name: Build and test wasm bindings
@@ -74,7 +110,7 @@ jobs:
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
       - name: Build rust-wasm-test
-        run: cargo run -p spacetimedb-cli -- build modules/rust-wasm-test
+        run: cargo run -p spacetimedb-cli -- build --project-path modules/rust-wasm-test
 
       - name: Run bindgen tests
         run: cargo test -p spacetimedb-cli

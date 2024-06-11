@@ -19,7 +19,7 @@ pub struct u32_u64_str {
     // column 1
     age: u64,
     // column 2
-    name: String,
+    name: Box<str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -32,6 +32,18 @@ pub struct u32_u64_u64 {
     y: u64,
 }
 // ---------- END SYNCED CODE ----------
+
+/// This is a duplicate of [`u32_u64_u64`] with the fields shuffled to minimize interior padding,
+/// used to compare the effects of interior padding on BFLATN -> BSATN serialization.
+///
+/// This type *should not* be used for any benchmarks except `special::serialize_benchmarks`,
+/// as it doesn't have proper implementations in modules or Sqlite.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct u64_u64_u32 {
+    x: u64,
+    y: u64,
+    id: u32,
+}
 
 /// A schema used in the benchmarks.
 /// Schemas should convert to a `ProductType` / `ProductValue` in a canonical way.
@@ -70,7 +82,7 @@ impl BenchTable for u32_u64_str {
         sats::product![self.id, self.age, self.name,]
     }
 
-    type SqliteParams = (u32, u64, String);
+    type SqliteParams = (u32, u64, Box<str>);
     fn into_sqlite_params(self) -> Self::SqliteParams {
         (self.id, self.age, self.name)
     }
@@ -96,6 +108,28 @@ impl BenchTable for u32_u64_u64 {
     type SqliteParams = (u32, u64, u64);
     fn into_sqlite_params(self) -> Self::SqliteParams {
         (self.id, self.x, self.y)
+    }
+}
+
+impl BenchTable for u64_u64_u32 {
+    fn name() -> &'static str {
+        "u64_u64_u32"
+    }
+    fn product_type() -> sats::ProductType {
+        [
+            ("x", sats::AlgebraicType::U64),
+            ("y", sats::AlgebraicType::U64),
+            ("id", sats::AlgebraicType::U32),
+        ]
+        .into()
+    }
+    fn into_product_value(self) -> sats::ProductValue {
+        sats::product![self.x, self.y, self.id]
+    }
+
+    type SqliteParams = ();
+    fn into_sqlite_params(self) -> Self::SqliteParams {
+        unimplemented!()
     }
 }
 
@@ -158,7 +192,7 @@ pub trait RandomTable {
 
 impl RandomTable for u32_u64_str {
     fn gen(id: u32, rng: &mut XorShiftLite, buckets: u64) -> Self {
-        let name = nth_name(rng.gen() % buckets);
+        let name = nth_name(rng.gen() % buckets).into();
         let age = rng.gen() % buckets;
         u32_u64_str { id, name, age }
     }
@@ -169,6 +203,14 @@ impl RandomTable for u32_u64_u64 {
         let x = rng.gen() % buckets;
         let y = rng.gen() % buckets;
         u32_u64_u64 { id, x, y }
+    }
+}
+
+impl RandomTable for u64_u64_u32 {
+    fn gen(id: u32, rng: &mut XorShiftLite, buckets: u64) -> Self {
+        let x = rng.gen() % buckets;
+        let y = rng.gen() % buckets;
+        u64_u64_u32 { x, y, id }
     }
 }
 

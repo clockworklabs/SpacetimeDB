@@ -1518,16 +1518,14 @@ pub fn from_str_mut(s: &mut str) -> SlimStrMut<'_> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::hash_map::DefaultHasher;
-
-    use crate::nstr;
+    use std::hash::BuildHasher;
 
     use super::*;
+    use crate::map::DefaultHashBuilder;
+    use crate::nstr;
 
     fn hash_of<T: Hash>(x: T) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        x.hash(&mut hasher);
-        hasher.finish()
+        DefaultHashBuilder::default().hash_one(&x)
     }
 
     fn hash_properties<T>(a: &T, b: &T, a_deref: &T::Target, b_deref: &T::Target)
@@ -1540,7 +1538,7 @@ mod tests {
         assert_ne!(hash_of(a), hash_of(b));
     }
 
-    fn ord_properties<T: Ord>(a: &T, b: &T, a_deref: &T::Target, b_deref: &T::Target)
+    fn ord_properties<T>(a: &T, b: &T, a_deref: &T::Target, b_deref: &T::Target)
     where
         T: Ord + Debug + Deref + PartialOrd<<T as Deref>::Target>,
     {

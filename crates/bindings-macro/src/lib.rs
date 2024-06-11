@@ -21,8 +21,8 @@ use std::time::Duration;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::{
-    parse_quote, BinOp, Expr, ExprBinary, ExprLit, ExprUnary, FnArg, Ident, ItemFn, ItemStruct, Member, Token, Type,
-    UnOp,
+    parse_quote, token, BinOp, Expr, ExprBinary, ExprLit, ExprUnary, FnArg, Ident, ItemFn, ItemStruct, Member, Path,
+    Token, Type, TypePath, UnOp,
 };
 
 mod sym {
@@ -41,6 +41,9 @@ mod sym {
 
     /// Matches `primarykey`.
     pub const PRIMARYKEY: Symbol = Symbol("primarykey");
+
+    /// Matches `public`.
+    pub const PUBLIC: Symbol = Symbol("public");
 
     /// Matches `sats`.
     pub const SATS: Symbol = Symbol("sats");
@@ -75,8 +78,8 @@ mod sym {
 /// The macro takes this `input`, which defines what the attribute does,
 /// and it is structured roughly like so:
 /// ```ignore
-/// input = table | init | connect | disconnect | migrate
-///       | reducer [, repeat = Duration]
+/// input = table [ ( private | public ) ] | init | connect | disconnect | migrate
+///       | reducer
 ///       | index(btree | hash [, name = string] [, field_name:ident]*)
 /// ```
 ///
@@ -100,9 +103,10 @@ pub fn spacetimedb(macro_args: proc_macro::TokenStream, item: proc_macro::TokenS
 /// On `item`, route the macro `input` to the various interpretations.
 fn route_input(input: MacroInput, item: TokenStream) -> syn::Result<TokenStream> {
     match input {
-        MacroInput::Table => spacetimedb_table(item),
+        MacroInput::Table(public) => spacetimedb_table(item, public),
         MacroInput::Init => spacetimedb_init(item),
-        MacroInput::Reducer { repeat } => spacetimedb_reducer(repeat, item),
+        MacroInput::Reducer(Some(span)) => Err(syn::Error::new(span, "`repeat` support has been removed")),
+        MacroInput::Reducer(None) => spacetimedb_reducer(item),
         MacroInput::Connect => spacetimedb_special_reducer("__identity_connected__", item),
         MacroInput::Disconnect => spacetimedb_special_reducer("__identity_disconnected__", item),
         MacroInput::Migrate => spacetimedb_special_reducer("__migrate__", item),
@@ -122,11 +126,9 @@ fn duration_totokens(dur: Duration) -> TokenStream {
 
 /// Defines the input space of the `spacetimedb` macro.
 enum MacroInput {
-    Table,
+    Table(Option<Span>),
     Init,
-    Reducer {
-        repeat: Option<Duration>,
-    },
+    Reducer(Option<Span>),
     Connect,
     Disconnect,
     Migrate,
@@ -174,23 +176,38 @@ fn check_duplicate_meta<T>(x: &Option<T>, meta: &syn::meta::ParseNestedMeta<'_>)
 impl syn::parse::Parse for MacroInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         Ok(match_tok!(match input {
-            kw::table => Self::Table,
+            kw::table => {
+                let mut public = None;
+                // Look for `(public)` or `(private)`.
+                if input.peek(token::Paren) {
+                    let in_parens;
+                    syn::parenthesized!(in_parens in input);
+                    let in_parens = &in_parens;
+                    let start = in_parens.span();
+                    match_tok!(match in_parens {
+                        kw::public => public = Some(start),
+                        kw::private => {}
+                    })
+                }
+                Self::Table(public)
+            }
             kw::init => Self::Init,
             kw::reducer => {
                 // Eat an optional comma, and then if anything follows,
                 // it has to be `repeat = Duration`.
                 let mut repeat = None;
                 comma_then_comma_delimited(input, || {
+                    let start = input.span();
                     match_tok!(match input {
-                        tok @ kw::repeat => {
-                            check_duplicate(&repeat, tok.span)?;
+                        kw::repeat => {
                             input.parse::<Token![=]>()?;
-                            repeat = Some(input.call(parse_duration)?);
+                            input.call(parse_duration)?;
+                            repeat = Some(start);
                         }
                     });
                     Ok(())
                 })?;
-                Self::Reducer { repeat }
+                Self::Reducer(repeat)
             }
             kw::connect => Self::Connect,
             kw::disconnect => Self::Disconnect,
@@ -258,13 +275,14 @@ mod kw {
     syn::custom_keyword!(btree);
     syn::custom_keyword!(hash);
     syn::custom_keyword!(name);
+    syn::custom_keyword!(private);
+    syn::custom_keyword!(public);
     syn::custom_keyword!(repeat);
     syn::custom_keyword!(update);
 }
 
 /// Generates a reducer in place of `item`.
-fn spacetimedb_reducer(repeat: Option<Duration>, item: TokenStream) -> syn::Result<TokenStream> {
-    let repeat_dur = repeat.map_or(ReducerExtra::Schedule, ReducerExtra::Repeat);
+fn spacetimedb_reducer(item: TokenStream) -> syn::Result<TokenStream> {
     let original_function = syn::parse2::<ItemFn>(item)?;
 
     // Extract reducer name, making sure it's not `__XXX__` as that's the form we reserve for special reducers.
@@ -276,7 +294,7 @@ fn spacetimedb_reducer(repeat: Option<Duration>, item: TokenStream) -> syn::Resu
         ));
     }
 
-    gen_reducer(original_function, &reducer_name, repeat_dur)
+    gen_reducer(original_function, &reducer_name, ReducerExtra::Schedule)
 }
 
 /// Generates the special `__init__` "reducer" in place of `item`.
@@ -289,7 +307,6 @@ fn spacetimedb_init(item: TokenStream) -> syn::Result<TokenStream> {
 enum ReducerExtra {
     None,
     Schedule,
-    Repeat(Duration),
 }
 
 fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtra) -> syn::Result<TokenStream> {
@@ -348,7 +365,6 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
 
     let register_describer_symbol = format!("__preinit__20_register_describer_{reducer_name}");
 
-    let mut epilogue = TokenStream::new();
     let mut extra_impls = TokenStream::new();
 
     if !matches!(extra, ReducerExtra::None) {
@@ -368,20 +384,6 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
         }));
     }
 
-    if let ReducerExtra::Repeat(repeat_dur) = &extra {
-        let repeat_dur = duration_totokens(*repeat_dur);
-        epilogue.extend(quote! {
-            if _res.is_ok() {
-                spacetimedb::rt::schedule_repeater::<_, _, #func_name>(#func_name)
-            }
-        });
-        extra_impls.extend(quote! {
-            impl spacetimedb::rt::RepeaterInfo for #func_name {
-                const REPEAT_INTERVAL: ::core::time::Duration = #repeat_dur;
-            }
-        });
-    }
-
     let generated_function = quote! {
         fn __reducer(
             __sender: spacetimedb::sys::Buffer,
@@ -397,7 +399,6 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
                 __caller_address,
                 __timestamp,
                 __args,
-                |_res| { #epilogue },
             )
         }
     };
@@ -435,9 +436,12 @@ struct Column<'a> {
     attr: ColumnAttribute,
 }
 
-fn spacetimedb_table(item: TokenStream) -> syn::Result<TokenStream> {
+fn spacetimedb_table(item: TokenStream, public: Option<Span>) -> syn::Result<TokenStream> {
+    let public = public.map(|span| quote_spanned!(span => #[sats(public)]));
+
     Ok(quote! {
         #[derive(spacetimedb::TableType)]
+        #public
         #item
     })
 }
@@ -501,6 +505,17 @@ impl ColumnAttr {
     }
 }
 
+/// Heuristically determine if the path `p` is one of Rust's primitive integer types.
+/// This is an approximation, as the user could do `use String as u8`.
+fn is_integer_type(p: &Path) -> bool {
+    p.get_ident().map_or(false, |i| {
+        matches!(
+            i.to_string().as_str(),
+            "u8" | "i8" | "u16" | "i16" | "u32" | "i32" | "u64" | "i64" | "u128" | "i128"
+        )
+    })
+}
+
 fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream> {
     let sats_ty = module::sats_type_from_derive(&item, quote!(spacetimedb::spacetimedb_lib))?;
 
@@ -514,7 +529,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
 
     let get_table_id_func = quote! {
         fn table_id() -> spacetimedb::TableId {
-            static TABLE_ID: spacetimedb::rt::OnceCell<spacetimedb::TableId> = spacetimedb::rt::OnceCell::new();
+            static TABLE_ID: std::sync::OnceLock<spacetimedb::TableId> = std::sync::OnceLock::new();
             *TABLE_ID.get_or_init(|| {
                 spacetimedb::get_table_id(<Self as spacetimedb::TableType>::TABLE_NAME)
             })
@@ -546,19 +561,10 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
             col_attr |= extra_col_attr;
         }
 
-        if col_attr.contains(ColumnAttribute::AUTO_INC) {
-            let valid_for_autoinc = if let syn::Type::Path(p) = field.ty {
-                // TODO: this is janky as heck
-                matches!(
-                    &*p.path.segments.last().unwrap().ident.to_string(),
-                    "u8" | "i8" | "u16" | "i16" | "u32" | "i32" | "u64" | "i64" | "u128" | "i128"
-                )
-            } else {
-                false
-            };
-            if !valid_for_autoinc {
-                return Err(syn::Error::new(field.ident.unwrap().span(), "An `autoinc` or `identity` column must be one of the integer types: u8, i8, u16, i16, u32, i32, u64, i64, u128, i128"));
-            }
+        if col_attr.contains(ColumnAttribute::AUTO_INC)
+            && !matches!(field.ty, syn::Type::Path(p) if is_integer_type(&p.path))
+        {
+            return Err(syn::Error::new(field.ident.unwrap().span(), "An `autoinc` or `identity` column must be one of the integer types: u8, i8, u16, i16, u32, i32, u64, i64, u128, i128"));
         }
 
         let column = Column {
@@ -647,17 +653,21 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         let filter_func_ident = format_ident!("filter_by_{}", column_ident);
         let delete_func_ident = format_ident!("delete_by_{}", column_ident);
 
-        let skip = if let syn::Type::Path(p) = column_type {
+        let is_filterable = if let syn::Type::Path(TypePath { path, .. }) = column_type {
             // TODO: this is janky as heck
-            !matches!(
-                &*p.path.segments.last().unwrap().ident.to_string(),
-                "u8" | "i8" | "u16" | "i16" | "u32" | "i32" | "u64" | "i64" | "Hash" | "Identity" | "String" | "bool"
-            )
+            is_integer_type(path)
+                || path.is_ident("String")
+                || path.is_ident("bool")
+                // For these we use the last element of the path because they can be more commonly namespaced.
+                || matches!(
+                    &*path.segments.last().unwrap().ident.to_string(),
+                    "Address" | "Identity"
+                )
         } else {
-            true
+            false
         };
 
-        if skip {
+        if !is_filterable {
             return None;
         }
 
@@ -693,6 +703,12 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         }
     };
 
+    let table_access = if let Some(span) = sats_ty.public {
+        quote_spanned!(span=> spacetimedb::sats::db::auth::StAccess::Public)
+    } else {
+        quote!(spacetimedb::sats::db::auth::StAccess::Private)
+    };
+
     let deserialize_impl = derive_deserialize(&sats_ty);
     let serialize_impl = derive_serialize(&sats_ty);
     let schema_impl = derive_satstype(&sats_ty, false);
@@ -708,6 +724,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     let tabletype_impl = quote! {
         impl spacetimedb::TableType for #original_struct_ident {
             const TABLE_NAME: &'static str = #table_name;
+            const TABLE_ACCESS: spacetimedb::sats::db::auth::StAccess = #table_access;
             const COLUMN_ATTRS: &'static [spacetimedb::sats::db::attr::ColumnAttribute] = &[
                 #(spacetimedb::sats::db::attr::ColumnAttribute::#column_attrs),*
             ];
@@ -865,7 +882,7 @@ fn parse_duration(input: ParseStream) -> syn::Result<Duration> {
 pub fn deserialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     module::sats_type_from_derive(&input, quote!(spacetimedb_lib))
-        .map(|ty| derive_deserialize(&ty))
+        .map(|ty| module::ensure_no_public(&ty, derive_deserialize(&ty)))
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
@@ -874,7 +891,7 @@ pub fn deserialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 pub fn serialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     module::sats_type_from_derive(&input, quote!(spacetimedb_lib))
-        .map(|ty| derive_serialize(&ty))
+        .map(|ty| module::ensure_no_public(&ty, derive_serialize(&ty)))
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
@@ -906,6 +923,7 @@ pub fn schema_type(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 }
             };
         };
+        let emission = module::ensure_no_public(&ty, emission);
 
         if std::env::var("PROC_MACRO_DEBUG").is_ok() {
             {
@@ -971,7 +989,7 @@ impl ClosureArg {
             }
             // other literals can be inlined into the AST as-is
             Expr::Lit(_) => Ok(()),
-            // unary expressions can be also hoisted out to AST builder, in particulal this
+            // unary expressions can be also hoisted out to AST builder, in particular this
             // is important to support negative literals like `-123`
             Expr::Unary(ExprUnary { expr: arg, .. }) => self.make_rhs(arg),
             Expr::Group(group) => self.make_rhs(&mut group.expr),

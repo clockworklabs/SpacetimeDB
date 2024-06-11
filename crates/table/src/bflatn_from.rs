@@ -73,7 +73,10 @@ unsafe fn serialize_product<S: Serializer>(
     let elems = &ty.elements;
     let mut ser = ser.serialize_named_product(elems.len())?;
 
+    let my_offset = curr_offset.get();
+
     for elem_ty in elems.iter() {
+        curr_offset.set(my_offset + elem_ty.offset as usize);
         // SAFETY: By 1., `value` is valid at `ty`,
         // so it follows that valid and properly aligned sub-`value`s
         // are valid `elem_ty.ty`s.
@@ -107,8 +110,7 @@ unsafe fn serialize_sum<S: Serializer>(
     ty: &SumTypeLayout,
 ) -> Result<S::Ok, S::Error> {
     // Read the tag of the sum value.
-    // SAFETY: `bytes[curr_offset..]` hold a sum value at `ty`.
-    let (tag, data_ty) = unsafe { read_tag(bytes, ty, curr_offset.get()) };
+    let (tag, data_ty) = read_tag(bytes, ty, curr_offset.get());
 
     // Serialize the variant data value.
     let data_offset = &Cell::new(curr_offset.get() + ty.offset_of_variant_data(tag));
@@ -130,20 +132,9 @@ unsafe fn serialize_sum<S: Serializer>(
 }
 
 /// Reads the tag of the sum value and selects the data variant type.
-///
-/// # Safety
-///
-/// `bytes[curr_offset..]` has a sum value typed at `ty`.
-pub unsafe fn read_tag<'ty>(
-    bytes: &Bytes,
-    ty: &'ty SumTypeLayout,
-    curr_offset: usize,
-) -> (u8, &'ty AlgebraicTypeLayout) {
+pub fn read_tag<'ty>(bytes: &Bytes, ty: &'ty SumTypeLayout, curr_offset: usize) -> (u8, &'ty AlgebraicTypeLayout) {
     let tag_offset = ty.offset_of_tag();
     let tag = bytes[curr_offset + tag_offset];
-    // SAFETY: Caller promised that `bytes[curr_offset..]` has a sum value typed at `ty`.
-    // We can therefore assume that `curr_offset + tag_offset` refers to a valid `u8`.
-    let tag = unsafe { tag.assume_init() };
 
     // Extract the variant data type depending on the tag.
     let data_ty = &ty.variants[tag as usize].ty;
@@ -184,10 +175,13 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
     curr_offset: CurrOffset<'_>,
     ty: &AlgebraicTypeLayout,
 ) -> Result<S::Ok, S::Error> {
-    let ty_alignment = ty.align();
-    update(curr_offset, |co| *co = align_to(*co, ty_alignment));
+    debug_assert_eq!(
+        curr_offset.get(),
+        align_to(curr_offset.get(), ty.align()),
+        "curr_offset {curr_offset:?} insufficiently aligned for type {ty:#?}",
+    );
 
-    let res = match ty {
+    match ty {
         AlgebraicTypeLayout::Sum(ty) => {
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
             unsafe { serialize_sum(ser, bytes, page, blob_store, curr_offset, ty) }
@@ -245,10 +239,7 @@ pub(crate) unsafe fn serialize_value<S: Serializer>(
             // SAFETY: `value` was valid at `ty` and `VarLenRef`s won't be dangling.
             unsafe { serialize_bsatn(ser, bytes, page, blob_store, curr_offset, ty) }
         }
-    };
-    // TODO(perf,bikeshedding): unncessary work for some cases?
-    update(curr_offset, |co| *co = align_to(*co, ty_alignment));
-    res
+    }
 }
 
 /// Serialize `value = &bytes[range_move(0..::String.size(), *curr_offset)]` into a `ser`,
@@ -302,7 +293,7 @@ unsafe fn serialize_bsatn<S: Serializer>(
     let vlr = unsafe { read_from_bytes::<VarLenRef>(bytes, curr_offset) };
 
     if vlr.is_large_blob() {
-        // SAFETY: As `vlr` a blob, `vlr.first_granule` always points to a valid granule.
+        // SAFETY: As `vlr` is a blob, `vlr.first_granule` always points to a valid granule.
         let blob = unsafe { vlr_blob_bytes(page, blob_store, vlr) };
         // SAFETY: The BSATN in `blob` is encoded from an `AlgebraicValue`.
         unsafe { ser.serialize_bsatn(ty, blob) }

@@ -2,13 +2,13 @@
 
 pub(crate) mod committed_state;
 pub mod datastore;
-pub(crate) mod mut_tx;
+mod mut_tx;
 pub use mut_tx::MutTxId;
-pub(crate) mod sequence;
+mod sequence;
 pub(crate) mod state_view;
 pub use state_view::{Iter, IterByColEq, IterByColRange};
 pub(crate) mod tx;
-pub(crate) mod tx_state;
+mod tx_state;
 
 use parking_lot::{
     lock_api::{ArcMutexGuard, ArcRwLockReadGuard, ArcRwLockWriteGuard},

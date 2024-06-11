@@ -1,15 +1,14 @@
 use derive_more::From;
 use futures::{Future, FutureExt};
 use std::borrow::Cow;
+use std::pin::pin;
 use tokio::sync::oneshot;
 
 pub mod prometheus_handle;
 
-mod future_queue;
 pub mod lending_pool;
 pub mod notify_once;
-
-pub use future_queue::{future_queue, FutureQueue};
+pub mod slow;
 
 pub(crate) fn string_from_utf8_lossy_owned(v: Vec<u8>) -> String {
     match String::from_utf8_lossy(&v) {
@@ -27,6 +26,12 @@ pub enum AnyBytes {
 
 impl From<Vec<u8>> for AnyBytes {
     fn from(b: Vec<u8>) -> Self {
+        Self::Bytes(b.into())
+    }
+}
+
+impl From<Box<[u8]>> for AnyBytes {
+    fn from(b: Box<[u8]>) -> Self {
         Self::Bytes(b.into())
     }
 }
@@ -67,4 +72,15 @@ pub fn spawn_rayon<R: Send + 'static>(f: impl FnOnce() -> R + Send + 'static) ->
         }
     });
     rx.map(|res| res.unwrap().unwrap_or_else(|err| std::panic::resume_unwind(err)))
+}
+
+/// Await `fut`, while also polling `also`.
+pub async fn also_poll<Fut: Future>(fut: Fut, also: impl Future<Output = ()>) -> Fut::Output {
+    let mut also = pin!(also.fuse());
+    let mut fut = pin!(fut);
+    std::future::poll_fn(|cx| {
+        let _ = also.poll_unpin(cx);
+        fut.poll_unpin(cx)
+    })
+    .await
 }

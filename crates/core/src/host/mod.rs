@@ -10,7 +10,9 @@ use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{ProductValue, ReducerDef};
 use spacetimedb_sats::WithTypespace;
 
+mod disk_storage;
 mod host_controller;
+#[allow(clippy::too_many_arguments)]
 pub mod module_host;
 pub mod scheduler;
 mod wasmtime;
@@ -19,7 +21,10 @@ pub mod instance_env;
 mod timestamp;
 mod wasm_common;
 
-pub use host_controller::{DescribedEntityType, HostController, ReducerCallResult, ReducerOutcome};
+pub use disk_storage::DiskStorage;
+pub use host_controller::{
+    DescribedEntityType, ExternalStorage, HostController, ProgramStorage, ReducerCallResult, ReducerOutcome,
+};
 pub use module_host::{
     EntityDef, ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult, UpdateDatabaseSuccess,
 };
@@ -68,15 +73,12 @@ pub struct ArgsTuple {
 }
 
 impl ArgsTuple {
-    #[allow(clippy::declare_interior_mutable_const)] // false positive on Bytes
-    const NULLARY: Self = ArgsTuple {
-        tuple: spacetimedb_sats::product![],
-        bsatn: OnceCell::with_value(Bytes::new()),
-        json: OnceCell::with_value(ByteString::from_static("[]")),
-    };
-
-    pub const fn nullary() -> Self {
-        Self::NULLARY
+    pub fn nullary() -> Self {
+        ArgsTuple {
+            tuple: spacetimedb_sats::product![],
+            bsatn: OnceCell::with_value(Bytes::new()),
+            json: OnceCell::with_value(ByteString::from_static("[]")),
+        }
     }
 
     pub fn get_bsatn(&self) -> &Bytes {
@@ -116,7 +118,7 @@ impl From<usize> for ReducerId {
 pub struct InvalidReducerArguments {
     #[source]
     err: anyhow::Error,
-    reducer: String,
+    reducer: Box<str>,
 }
 
 fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T) -> anyhow::Result<T::Value> {

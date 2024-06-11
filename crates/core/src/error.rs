@@ -5,6 +5,7 @@ use std::sync::{MutexGuard, PoisonError};
 
 use hex::FromHexError;
 use spacetimedb_sats::AlgebraicType;
+use spacetimedb_snapshot::SnapshotError;
 use spacetimedb_table::read_column;
 use spacetimedb_table::table::{self, UniqueConstraintViolation};
 use thiserror::Error;
@@ -18,7 +19,6 @@ use spacetimedb_sats::db::def::IndexDef;
 use spacetimedb_sats::db::error::{LibError, RelationError, SchemaErrors};
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::relation::FieldName;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_vm::errors::{ErrorKind, ErrorLang, ErrorVm};
 use spacetimedb_vm::expr::Crud;
@@ -26,7 +26,7 @@ use spacetimedb_vm::expr::Crud;
 #[derive(Error, Debug)]
 pub enum TableError {
     #[error("Table with name `{0}` start with 'st_' and that is reserved for internal system tables.")]
-    System(String),
+    System(Box<str>),
     #[error("Table with name `{0}` already exists.")]
     Exist(String),
     #[error("Table with name `{0}` not found.")]
@@ -56,7 +56,7 @@ pub enum TableError {
     )]
     DecodeField {
         table: String,
-        field: String,
+        field: Box<str>,
         expect: String,
         found: String,
     },
@@ -103,18 +103,15 @@ pub enum PlanError {
     #[error("Unsupported feature: `{feature}`")]
     Unsupported { feature: String },
     #[error("Unknown table: `{table}`")]
-    UnknownTable { table: String },
+    UnknownTable { table: Box<str> },
     #[error("Qualified Table `{expect}` not found")]
     TableNotFoundQualified { expect: String },
     #[error("Unknown field: `{field}` not found in the table(s): `{tables:?}`")]
-    UnknownField { field: FieldName, tables: Vec<String> },
+    UnknownField { field: String, tables: Vec<Box<str>> },
     #[error("Field(s): `{fields:?}` not found in the table(s): `{tables:?}`")]
-    UnknownFields {
-        fields: Vec<FieldName>,
-        tables: Vec<String>,
-    },
+    UnknownFields { fields: Vec<String>, tables: Vec<Box<str>> },
     #[error("Ambiguous field: `{field}`. Also found in {found:?}")]
-    AmbiguousField { field: String, found: Vec<FieldName> },
+    AmbiguousField { field: String, found: Vec<String> },
     #[error("Plan error: `{0}`")]
     Unstructured(String),
     #[error("Internal DBError: `{0}`")]
@@ -181,9 +178,6 @@ pub enum DBError {
     DecodeHex(#[from] FromHexError),
     #[error("DatabaseError: {0}.")]
     Database(#[from] DatabaseError),
-    #[cfg(feature = "odb_rocksdb")]
-    #[error("RocksDbError: {0}.")]
-    RocksDbError(#[from] rocksdb::Error),
     #[error("SledError: {0}.")]
     SledDbError(#[from] sled::Error),
     #[error("Mutex was poisoned acquiring lock on MessageLog: {0}")]
@@ -206,7 +200,16 @@ pub enum DBError {
     #[error("Error replaying the commit log: {0}")]
     LogReplay(#[from] LogReplayError),
     #[error(transparent)]
+    // Box the inner [`SnapshotError`] to keep Clippy quiet about large `Err` variants.
+    Snapshot(#[from] Box<SnapshotError>),
+    #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+impl From<SnapshotError> for DBError {
+    fn from(e: SnapshotError) -> Self {
+        DBError::Snapshot(Box::new(e))
+    }
 }
 
 impl DBError {
@@ -324,9 +327,11 @@ pub enum NodesError {
     #[error("table with name {0:?} already exists")]
     AlreadyExists(String),
     #[error("table with name `{0}` start with 'st_' and that is reserved for internal system tables.")]
-    SystemName(String),
+    SystemName(Box<str>),
     #[error("internal db error: {0}")]
     Internal(#[source] Box<DBError>),
+    #[error(transparent)]
+    BadQuery(#[from] RelationError),
     #[error("invalid index type: {0}")]
     BadIndexType(u8),
 }
@@ -340,5 +345,11 @@ impl From<DBError> for NodesError {
             DBError::Table(TableError::ColumnNotFound(_)) => Self::BadColumn,
             _ => Self::Internal(Box::new(e)),
         }
+    }
+}
+
+impl From<ErrorVm> for NodesError {
+    fn from(err: ErrorVm) -> Self {
+        DBError::from(err).into()
     }
 }

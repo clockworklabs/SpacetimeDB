@@ -393,7 +393,11 @@ impl BackgroundDbConnection {
     pub(crate) fn subscribe_owned(&self, queries: Vec<String>) -> Result<()> {
         self.send_message(client_api_messages::Message {
             r#type: Some(client_api_messages::message::Type::Subscribe(
-                client_api_messages::Subscribe { query_strings: queries },
+                // Todo: generate random request_id instead of 0.
+                client_api_messages::Subscribe {
+                    query_strings: queries,
+                    request_id: 0,
+                },
             )),
         })
         .with_context(|| "Subscribing to new queries")
@@ -405,6 +409,7 @@ impl BackgroundDbConnection {
                 client_api_messages::FunctionCall {
                     reducer: R::REDUCER_NAME.to_string(),
                     arg_bytes: bsatn::to_vec(&reducer).expect("Serializing reducer failed"),
+                    request_id: 0,
                 },
             )),
         })

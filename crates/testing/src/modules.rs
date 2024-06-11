@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Instant;
 
+use spacetimedb::messages::control_db::HostType;
 use tokio::runtime::{Builder, Runtime};
 
 use spacetimedb::address::Address;
@@ -12,7 +13,7 @@ use prost::Message;
 use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol};
 use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb::database_logger::DatabaseLogger;
-use spacetimedb::db::{Config, FsyncPolicy, Storage};
+use spacetimedb::db::{Config, Storage};
 use spacetimedb::protobuf::client_api;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
 use spacetimedb_lib::sats;
@@ -59,6 +60,7 @@ impl ModuleHandle {
             r#type: Some(client_api::message::Type::FunctionCall(client_api::FunctionCall {
                 reducer: reducer.to_string(),
                 arg_bytes: sats::bsatn::to_vec(&args)?,
+                request_id: 0,
             })),
         };
         self.send(message.encode_to_vec()).await
@@ -161,6 +163,7 @@ impl CompiledModule {
                 address: db_address,
                 program_bytes,
                 num_replicas: 1,
+                host_type: HostType::Wasm,
             },
         )
         .await
@@ -175,7 +178,12 @@ impl CompiledModule {
             name: env.client_actor_index().next_client_name(),
         };
 
-        let module = env.host_controller().get_module_host(instance.id).unwrap();
+        let module = env
+            .host_controller()
+            .get_module_host(instance.id)
+            .await
+            .expect("host should be running");
+        let (_, module_rx) = tokio::sync::watch::channel(module);
 
         // TODO: it might be neat to add some functionality to module handle to make
         // it easier to interact with the database. For example it could include
@@ -183,7 +191,7 @@ impl CompiledModule {
         // for stuff like "get logs" or "get message log"
         ModuleHandle {
             _env: env,
-            client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module),
+            client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module_rx),
             db_address,
         }
     }
@@ -191,10 +199,10 @@ impl CompiledModule {
 
 /// For testing, persist to disk by default, as many tests
 /// exercise functionality like restarting the database.
-pub static DEFAULT_CONFIG: Config = Config {
-    storage: Storage::Disk,
-    fsync: FsyncPolicy::Never,
-};
+pub static DEFAULT_CONFIG: Config = Config { storage: Storage::Disk };
+
+/// For performance tests, do not persist to disk.
+pub static IN_MEMORY_CONFIG: Config = Config { storage: Storage::Disk };
 
 /// Used to parse output from module logs.
 ///

@@ -10,7 +10,7 @@ use crate::{de::Deserialize, ser::Serialize};
 #[sats(crate = crate)]
 pub struct SumTypeVariant {
     /// The name of the variant, if any.
-    pub name: Option<String>,
+    pub name: Option<Box<str>>,
     /// The type of the variant.
     ///
     /// Unlike a language like Rust,
@@ -23,7 +23,7 @@ pub struct SumTypeVariant {
 
 impl SumTypeVariant {
     /// Returns a sum type variant with an optional `name` and `algebraic_type`.
-    pub const fn new(algebraic_type: AlgebraicType, name: Option<String>) -> Self {
+    pub const fn new(algebraic_type: AlgebraicType, name: Option<Box<str>>) -> Self {
         Self { algebraic_type, name }
     }
 
@@ -31,7 +31,7 @@ impl SumTypeVariant {
     pub fn new_named(algebraic_type: AlgebraicType, name: impl AsRef<str>) -> Self {
         Self {
             algebraic_type,
-            name: Some(name.as_ref().to_owned()),
+            name: Some(name.as_ref().into()),
         }
     }
 

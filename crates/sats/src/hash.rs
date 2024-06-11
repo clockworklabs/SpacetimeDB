@@ -2,7 +2,6 @@ use crate::hex::HexString;
 use crate::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
 use core::fmt;
 use sha3::{Digest, Keccak256};
-use spacetimedb_metrics::typed_prometheus::AsPrometheusLabel;
 
 pub const HASH_SIZE: usize = 32;
 
@@ -16,7 +15,8 @@ impl_st!([] Hash, _ts => AlgebraicType::bytes());
 impl_serialize!([] Hash, (self, ser) => self.data.serialize(ser));
 impl_deserialize!([] Hash, de => Ok(Self { data: <_>::deserialize(de)? }));
 
-impl AsPrometheusLabel for Hash {
+#[cfg(feature = "metrics_impls")]
+impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Hash {
     fn as_prometheus_str(&self) -> impl AsRef<str> + '_ {
         self.to_hex()
     }
@@ -57,6 +57,10 @@ impl Hash {
     pub fn from_hex(hex: impl AsRef<[u8]>) -> Result<Self, hex::FromHexError> {
         hex::FromHex::from_hex(hex)
     }
+
+    pub fn is_zero(&self) -> bool {
+        self == &Self::ZERO
+    }
 }
 
 pub fn hash_bytes(bytes: impl AsRef<[u8]>) -> Hash {
@@ -75,8 +79,6 @@ impl fmt::Debug for Hash {
         f.debug_tuple("Hash").field(&format_args!("{self}")).finish()
     }
 }
-
-pub struct HashFromHexError(usize);
 
 impl hex::FromHex for Hash {
     type Error = hex::FromHexError;

@@ -20,8 +20,11 @@ bench = false
 [dependencies]
 spacetimedb-primitives.workspace = true
 spacetimedb-core.workspace = true
-spacetimedb-lib = { workspace = true, features = ["cli"] }
+spacetimedb-data-structures.workspace = true
+spacetimedb-lib.workspace = true
 spacetimedb-standalone = { workspace = true, optional = true }
+spacetimedb-client-api-messages.workspace = true
+spacetimedb-fs-utils.workspace = true
 
 anyhow.workspace = true
 base64.workspace = true
@@ -52,6 +55,7 @@ tabled.workspace = true
 tar.workspace = true
 tempfile.workspace = true
 termcolor.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 toml.workspace = true
 wasmbin.workspace = true
@@ -59,6 +63,7 @@ wasmtime.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+spacetimedb-testing = { path = "../testing" }
 
 [features]
 standalone = ["spacetimedb-standalone"]

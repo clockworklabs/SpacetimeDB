@@ -7,6 +7,7 @@ use clap::{Arg, ArgAction, ArgMatches};
 use futures::{AsyncBufReadExt, TryStreamExt};
 use is_terminal::IsTerminal;
 use termcolor::{Color, ColorSpec, WriteColor};
+use tokio::io::AsyncWriteExt;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("logs")
@@ -42,6 +43,13 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("A flag indicating whether or not to follow the logs")
                 .long_help("A flag that causes logs to not stop when end of the log file is reached, but rather to wait for additional data to be appended to the input."),
+        )
+        .arg(
+            Arg::new("json")
+                .long("json")
+                .required(false)
+                .action(ArgAction::SetTrue)
+                .help("Output raw json log records"),
         )
         .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
@@ -90,20 +98,26 @@ struct LogsParams {
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let identity = args.get_one::<String>("identity");
-    let num_lines = args.get_one::<u32>("num_lines").copied();
+    let mut num_lines = args.get_one::<u32>("num_lines").copied();
     let database = args.get_one::<String>("database").unwrap();
     let follow = args.get_flag("follow");
+    let json = args.get_flag("json");
 
     let auth_header = get_auth_header_only(&mut config, false, identity, server).await?;
 
     let address = database_address(&config, database, server).await?;
 
-    // TODO: num_lines should default to like 10 if follow is specified?
+    if follow && num_lines.is_none() {
+        // We typically don't want logs from the very beginning if we're also following.
+        num_lines = Some(10);
+    }
     let query_parms = LogsParams { num_lines, follow };
 
-    let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", config.get_host_url(server)?, address));
+    let host_url = config.get_host_url(server)?;
+
+    let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", host_url, address));
     let builder = add_auth_header_opt(builder, &auth_header);
-    let res = builder.query(&query_parms).send().await?;
+    let mut res = builder.query(&query_parms).send().await?;
     let status = res.status();
 
     if status.is_client_error() || status.is_server_error() {
@@ -111,7 +125,15 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         anyhow::bail!(err)
     }
 
-    let term_color = if std::io::stderr().is_terminal() {
+    if json {
+        let mut stdout = tokio::io::stdout();
+        while let Some(chunk) = res.chunk().await? {
+            stdout.write_all(&chunk).await?;
+        }
+        return Ok(());
+    }
+
+    let term_color = if std::io::stdout().is_terminal() {
         termcolor::ColorChoice::Auto
     } else {
         termcolor::ColorChoice::Never

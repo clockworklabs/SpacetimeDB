@@ -2,9 +2,9 @@ use anyhow::Context;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STD, Engine as _};
 use reqwest::RequestBuilder;
 use serde::Deserialize;
-use spacetimedb_lib::name::{DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
+use spacetimedb_client_api_messages::name::{DnsLookupResponse, RegisterTldResult, ReverseDNSResponse};
+use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::{Address, AlgebraicType, Identity};
-use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 
@@ -152,7 +152,7 @@ pub async fn select_identity_config(
         config
             .get_identity_config(identity_or_name)
             .cloned()
-            .ok_or_else(|| anyhow::anyhow!("No such identity credentials for identity: {}", identity_or_name))
+            .ok_or_else(|| anyhow::anyhow!("No identity credentials for identity \"{}\"", identity_or_name))
     } else {
         Ok(init_default(config, None, server).await?.identity_config)
     }
@@ -361,7 +361,7 @@ Has the server rotated its keys?
 Remove the outdated identity with:
 \tspacetime identity remove {identity}
 Generate a new identity with:
-\tspacetime identity new --no-email --server {server}"
+\tspacetime identity new --no-email --server {server} --default"
         )
     })
 }

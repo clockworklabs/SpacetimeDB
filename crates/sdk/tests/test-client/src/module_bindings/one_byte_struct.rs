@@ -23,9 +23,4 @@ impl TableType for OneByteStruct {
     type ReducerEvent = super::ReducerEvent;
 }
 
-impl OneByteStruct {
-    #[allow(unused)]
-    pub fn filter_by_s(s: ByteStruct) -> TableIter<Self> {
-        Self::filter(|row| row.s == s)
-    }
-}
+impl OneByteStruct {}

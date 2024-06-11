@@ -107,12 +107,12 @@ impl Typespace {
     pub fn inline_typerefs_in_type(&mut self, ty: &mut AlgebraicType) -> Result<(), TypeRefError> {
         match ty {
             AlgebraicType::Sum(sum_ty) => {
-                for variant in &mut sum_ty.variants {
+                for variant in &mut *sum_ty.variants {
                     self.inline_typerefs_in_type(&mut variant.algebraic_type)?;
                 }
             }
             AlgebraicType::Product(product_ty) => {
-                for element in &mut product_ty.elements {
+                for element in &mut *product_ty.elements {
                     self.inline_typerefs_in_type(&mut element.algebraic_type)?;
                 }
             }

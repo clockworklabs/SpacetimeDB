@@ -57,12 +57,13 @@ pub struct IdentityTokenJson {
 pub struct FunctionCallJson {
     pub reducer: String,
     pub args: ByteString,
+    pub request_id: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TableUpdateJson {
     pub table_id: u32,
-    pub table_name: String,
+    pub table_name: Box<str>,
     pub table_row_operations: Vec<TableRowOperationJson>,
 }
 
@@ -77,6 +78,8 @@ pub struct TableRowOperationJson {
 #[derive(Debug, Clone, Serialize)]
 pub struct SubscriptionUpdateJson {
     pub table_updates: Vec<TableUpdateJson>,
+    pub request_id: u32,
+    pub total_host_execution_duration_micros: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -113,4 +116,19 @@ pub struct OneOffQueryResponseJson {
 pub struct OneOffTableJson {
     pub table_name: String,
     pub rows: Vec<ProductValue>,
+}
+
+#[test]
+fn parse_function_call() {
+    let subscription_update = SubscriptionUpdateJson {
+        table_updates: Vec::new(),
+        request_id: 4,
+        total_host_execution_duration_micros: 1234,
+    };
+
+    let message = serde_json::to_string(&subscription_update).unwrap();
+    assert_eq!(
+        message,
+        r#"{"table_updates":[],"request_id":4,"total_host_execution_duration_micros":1234}"#
+    );
 }

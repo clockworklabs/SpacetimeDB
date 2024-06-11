@@ -5,13 +5,17 @@ use super::util::range_move;
 use crate::static_assert_size;
 use ahash::RandomState;
 use core::fmt;
-use core::mem::MaybeUninit;
 use core::ops::{AddAssign, Div, Mul, Range, SubAssign};
 use derive_more::{Add, Sub};
-use nohash_hasher::IsEnabled;
+use spacetimedb_data_structures::map::ValidAsIdentityHash;
+use spacetimedb_sats::{impl_deserialize, impl_serialize};
 
-/// A byte is a possibly uninit `u8`.
-pub type Byte = MaybeUninit<u8>;
+/// A byte is a `u8`.
+///
+/// Previous implementations used `MaybeUninit<u8>` here,
+/// but it became necessary to serialize pages to enable snapshotting,
+/// so we require that all bytes in a page be valid `u8`s, never uninit.
+pub type Byte = u8;
 
 /// A slice of [`Byte`]s.
 pub type Bytes = [Byte];
@@ -52,7 +56,7 @@ pub struct RowHash(pub u64);
 static_assert_size!(RowHash, 8);
 
 /// `RowHash` is already a hash, so no need to hash again.
-impl IsEnabled for RowHash {}
+impl ValidAsIdentityHash for RowHash {}
 
 impl RowHash {
     /// Returns a `Hasher` builder that yields the type of hashes that `RowHash` stores.
@@ -65,6 +69,10 @@ impl RowHash {
 /// The size of something in page storage in bytes.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Add, Sub)]
 pub struct Size(pub u16);
+
+// We need to be able to serialize and deserialize `Size` because they appear in the `PageHeader`.
+impl_serialize!([] Size, (self, ser) => self.0.serialize(ser));
+impl_deserialize!([] Size, de => u16::deserialize(de).map(Size));
 
 impl Size {
     /// Returns the size for use in `usize` computations.
@@ -85,13 +93,18 @@ impl Mul<usize> for Size {
 }
 
 /// An offset into a [`Page`].
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Add, Sub)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Add, Sub, bytemuck::NoUninit)]
+#[repr(transparent)]
 #[cfg_attr(any(test, feature = "proptest"), derive(proptest_derive::Arbitrary))]
 pub struct PageOffset(
     #[cfg_attr(any(test, feature = "proptest"), proptest(strategy = "0..PageOffset::PAGE_END.0"))] pub u16,
 );
 
 static_assert_size!(PageOffset, 2);
+
+// We need to ser/de `PageOffset`s because they appear within the `PageHeader`.
+impl_serialize!([] PageOffset, (self, ser) => self.0.serialize(ser));
+impl_deserialize!([] PageOffset, de => u16::deserialize(de).map(PageOffset));
 
 impl PageOffset {
     /// Returns the offset as a `usize` index.

@@ -2,9 +2,10 @@ pub mod de;
 pub mod ser;
 
 use crate::{AlgebraicType, ArrayValue, MapValue, ProductValue, SumValue};
+use core::mem;
+use core::ops::{Bound, RangeBounds};
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
-use std::ops::{Bound, RangeBounds};
 
 /// Totally ordered [`f32`] allowing all IEEE-754 floating point values.
 pub type F32 = decorum::Total<f32>;
@@ -21,7 +22,7 @@ pub type F64 = decorum::Total<f64>;
 /// These are only values and not expressions.
 /// That is, they are canonical and cannot be simplified further by some evaluation.
 /// So forms like `42 + 24` are not represented in an `AlgebraicValue`.
-#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, From)]
+#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, From)]
 pub enum AlgebraicValue {
     /// A structural sum value.
     ///
@@ -63,7 +64,7 @@ pub enum AlgebraicValue {
     ///
     /// We box the `MapValue` to reduce size
     /// and because we assume that map values will be uncommon.
-    Map(MapValue),
+    Map(Box<MapValue>),
     /// A [`bool`] value of type [`AlgebraicType::Bool`].
     Bool(bool),
     /// An [`i8`] value of type [`AlgebraicType::I8`].
@@ -85,11 +86,11 @@ pub enum AlgebraicValue {
     /// An [`i128`] value of type [`AlgebraicType::I128`].
     ///
     /// We box these up as they allow us to shrink `AlgebraicValue`.
-    I128(i128),
+    I128(Packed<i128>),
     /// A [`u128`] value of type [`AlgebraicType::U128`].
     ///
     /// We box these up as they allow us to shrink `AlgebraicValue`.
-    U128(u128),
+    U128(Packed<u128>),
     /// A totally ordered [`F32`] value of type [`AlgebraicType::F32`].
     ///
     /// All floating point values defined in IEEE-754 are supported.
@@ -107,11 +108,39 @@ pub enum AlgebraicValue {
     /// A UTF-8 string value of type [`AlgebraicType::String`].
     ///
     /// Uses Rust's standard representation of strings.
-    String(String),
+    String(Box<str>),
+}
+
+/// Wraps `T` making the outer type packed with alignment 1.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(packed)]
+pub struct Packed<T>(pub T);
+
+impl From<u128> for AlgebraicValue {
+    fn from(value: u128) -> Self {
+        Self::U128(Packed(value))
+    }
+}
+
+impl From<i128> for AlgebraicValue {
+    fn from(value: i128) -> Self {
+        Self::I128(Packed(value))
+    }
+}
+
+impl<T> From<T> for Packed<T> {
+    fn from(value: T) -> Self {
+        Self(value)
+    }
 }
 
 #[allow(non_snake_case)]
 impl AlgebraicValue {
+    /// Extract the value and replace it with a dummy one that is cheap to make.
+    pub fn take(&mut self) -> Self {
+        mem::replace(self, Self::U8(0))
+    }
+
     /// Interpret the value as a byte slice or `None` if it isn't a byte slice.
     #[inline]
     pub fn as_bytes(&self) -> Option<&[u8]> {
@@ -125,17 +154,17 @@ impl AlgebraicValue {
     ///
     /// The type of `UNIT` is `()`.
     pub fn unit() -> Self {
-        Self::product([].into())
+        Self::product([])
     }
 
-    /// Returns an [`AlgebraicValue`] representing `v: Vec<u8>`.
+    /// Returns an [`AlgebraicValue`] representing `v: Box<[u8]>`.
     #[inline]
-    pub const fn Bytes(v: Vec<u8>) -> Self {
+    pub const fn Bytes(v: Box<[u8]>) -> Self {
         Self::Array(ArrayValue::U8(v))
     }
 
     /// Converts `self` into a byte string, if applicable.
-    pub fn into_bytes(self) -> Result<Vec<u8>, Self> {
+    pub fn into_bytes(self) -> Result<Box<[u8]>, Self> {
         match self {
             Self::Array(ArrayValue::U8(v)) => Ok(v),
             _ => Err(self),
@@ -164,71 +193,74 @@ impl AlgebraicValue {
         Self::Sum(SumValue { tag, value })
     }
 
+    /// Returns an [`AlgebraicValue`] representing a sum value with `tag` and empty [AlgebraicValue::product], that is
+    /// valid for simple enums without payload.
+    pub fn enum_simple(tag: u8) -> Self {
+        let value = Box::new(AlgebraicValue::product(vec![]));
+        Self::Sum(SumValue { tag, value })
+    }
+
     /// Returns an [`AlgebraicValue`] representing a product value with the given `elements`.
-    pub const fn product(elements: Vec<Self>) -> Self {
-        Self::Product(ProductValue { elements })
+    pub fn product(elements: impl Into<ProductValue>) -> Self {
+        Self::Product(elements.into())
     }
 
     /// Returns an [`AlgebraicValue`] representing a map value defined by the given `map`.
     pub fn map(map: MapValue) -> Self {
-        Self::Map(map)
-    }
-
-    /// Returns the [`AlgebraicType`] of the sum value `x`.
-    pub(crate) fn type_of_sum(x: &SumValue) -> AlgebraicType {
-        // TODO(centril, #104): This is unsound!
-        //
-        //   The type of a sum value must be a sum type and *not* a product type.
-        //   Suppose `x.tag` is for the variant `VarName(VarType)`.
-        //   Then `VarType` is *not* the same type as `{ VarName(VarType) | r }`
-        //   where `r` represents a polymorphic variants compontent.
-        //
-        //   To assign this a correct type we either have to store the type with the value
-        //   or alternatively, we must have polymorphic variants (see row polymorphism)
-        //   *and* derive the correct variant name.
-        AlgebraicType::product([x.value.type_of()])
+        Self::Map(Box::new(map))
     }
 
     /// Returns the [`AlgebraicType`] of the product value `x`.
-    pub(crate) fn type_of_product(x: &ProductValue) -> AlgebraicType {
-        AlgebraicType::product(x.elements.iter().map(|x| x.type_of().into()).collect::<Vec<_>>())
+    pub(crate) fn type_of_product(x: &ProductValue) -> Option<AlgebraicType> {
+        let mut elems = Vec::with_capacity(x.elements.len());
+        for elem in &*x.elements {
+            elems.push(elem.type_of()?.into());
+        }
+        Some(AlgebraicType::product(elems.into_boxed_slice()))
     }
 
     /// Returns the [`AlgebraicType`] of the map with key type `k` and value type `v`.
-    pub(crate) fn type_of_map(val: &MapValue) -> AlgebraicType {
-        AlgebraicType::product(if let Some((k, v)) = val.first_key_value() {
-            [k.type_of(), v.type_of()]
-        } else {
-            // TODO(centril): What is the motivation for this?
-            //   I think this requires a soundness argument.
-            //   I could see that it is OK with the argument that this is an empty map
-            //   under the requirement that we cannot insert elements into the map.
-            [AlgebraicType::never(), AlgebraicType::never()]
-        })
+    pub(crate) fn type_of_map(val: &MapValue) -> Option<AlgebraicType> {
+        let (k, v) = val.first_key_value().and_then(|(k, v)| k.type_of().zip(v.type_of()))?;
+        Some(AlgebraicType::product([k, v]))
     }
 
     /// Infer the [`AlgebraicType`] of an [`AlgebraicValue`].
-    pub fn type_of(&self) -> AlgebraicType {
-        // TODO: What are the types of empty arrays/maps/sums?
+    ///
+    /// This function is partial
+    /// as type inference is not possible for `AlgebraicValue` in the case of sums.
+    /// Thus the method only answers for the decidable subset.
+    ///
+    /// # A note on sums
+    ///
+    /// The type of a sum value must be a sum type and *not* a product type.
+    /// Suppose `x.tag` is for the variant `VarName(VarType)`.
+    /// Then `VarType` is *not* the same type as `{ VarName(VarType) | r }`
+    /// where `r` represents a polymorphic variants component.
+    ///
+    /// To assign this a correct type we either have to store the type with the value
+    /// r alternatively, we must have polymorphic variants (see row polymorphism)
+    /// *and* derive the correct variant name.
+    pub fn type_of(&self) -> Option<AlgebraicType> {
         match self {
-            Self::Sum(x) => Self::type_of_sum(x),
+            Self::Sum(_) => None,
             Self::Product(x) => Self::type_of_product(x),
-            Self::Array(x) => x.type_of().into(),
+            Self::Array(x) => x.type_of().map(Into::into),
             Self::Map(x) => Self::type_of_map(x),
-            Self::Bool(_) => AlgebraicType::Bool,
-            Self::I8(_) => AlgebraicType::I8,
-            Self::U8(_) => AlgebraicType::U8,
-            Self::I16(_) => AlgebraicType::I16,
-            Self::U16(_) => AlgebraicType::U16,
-            Self::I32(_) => AlgebraicType::I32,
-            Self::U32(_) => AlgebraicType::U32,
-            Self::I64(_) => AlgebraicType::I64,
-            Self::U64(_) => AlgebraicType::U64,
-            Self::I128(_) => AlgebraicType::I128,
-            Self::U128(_) => AlgebraicType::U128,
-            Self::F32(_) => AlgebraicType::F32,
-            Self::F64(_) => AlgebraicType::F64,
-            Self::String(_) => AlgebraicType::String,
+            Self::Bool(_) => Some(AlgebraicType::Bool),
+            Self::I8(_) => Some(AlgebraicType::I8),
+            Self::U8(_) => Some(AlgebraicType::U8),
+            Self::I16(_) => Some(AlgebraicType::I16),
+            Self::U16(_) => Some(AlgebraicType::U16),
+            Self::I32(_) => Some(AlgebraicType::I32),
+            Self::U32(_) => Some(AlgebraicType::U32),
+            Self::I64(_) => Some(AlgebraicType::I64),
+            Self::U64(_) => Some(AlgebraicType::U64),
+            Self::I128(_) => Some(AlgebraicType::I128),
+            Self::U128(_) => Some(AlgebraicType::U128),
+            Self::F32(_) => Some(AlgebraicType::F32),
+            Self::F64(_) => Some(AlgebraicType::F64),
+            Self::String(_) => Some(AlgebraicType::String),
         }
     }
 
@@ -245,8 +277,8 @@ impl AlgebraicValue {
             Self::U32(x) => x == 0,
             Self::I64(x) => x == 0,
             Self::U64(x) => x == 0,
-            Self::I128(x) => x == 0,
-            Self::U128(x) => x == 0,
+            Self::I128(x) => x.0 == 0,
+            Self::U128(x) => x.0 == 0,
             Self::F32(x) => x == 0.0,
             Self::F64(x) => x == 0.0,
             _ => false,
@@ -283,8 +315,17 @@ impl<T: Into<AlgebraicValue>> From<Option<T>> for AlgebraicValue {
     }
 }
 
-// An AlgebraicValue can be interpreted as a range containing a only the value itself.
-// This is useful for BTrees where single key scans are still viewed range scans.
+/// An AlgebraicValue can be interpreted as a range containing a only the value itself.
+/// This is useful for BTrees where single key scans are still viewed range scans.
+impl RangeBounds<AlgebraicValue> for &AlgebraicValue {
+    fn start_bound(&self) -> Bound<&AlgebraicValue> {
+        Bound::Included(self)
+    }
+    fn end_bound(&self) -> Bound<&AlgebraicValue> {
+        Bound::Included(self)
+    }
+}
+
 impl RangeBounds<AlgebraicValue> for AlgebraicValue {
     fn start_bound(&self) -> Bound<&AlgebraicValue> {
         Bound::Included(self)
@@ -317,7 +358,7 @@ mod tests {
     fn product_value() {
         let product_type = AlgebraicType::product([("foo", AlgebraicType::I32)]);
         let typespace = Typespace::new(vec![]);
-        let product_value = AlgebraicValue::product([AlgebraicValue::I32(42)].into());
+        let product_value = AlgebraicValue::product([AlgebraicValue::I32(42)]);
         assert_eq!(
             "(foo = 42)",
             in_space(&typespace, &product_type, &product_value).to_satn(),
@@ -343,7 +384,7 @@ mod tests {
     #[test]
     fn array() {
         let array = AlgebraicType::array(AlgebraicType::U8);
-        let value = AlgebraicValue::Array(ArrayValue::Sum(Vec::new()));
+        let value = AlgebraicValue::Array(ArrayValue::Sum([].into()));
         let typespace = Typespace::new(vec![]);
         assert_eq!(in_space(&typespace, &array, &value).to_satn(), "[]");
     }

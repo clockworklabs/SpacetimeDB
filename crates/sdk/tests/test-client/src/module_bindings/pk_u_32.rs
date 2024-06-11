@@ -32,7 +32,11 @@ impl TableWithPrimaryKey for PkU32 {
 
 impl PkU32 {
     #[allow(unused)]
-    pub fn filter_by_n(n: u32) -> Option<Self> {
+    pub fn filter_by_n(n: u32) -> TableIter<Self> {
+        Self::filter(|row| row.n == n)
+    }
+    #[allow(unused)]
+    pub fn find_by_n(n: u32) -> Option<Self> {
         Self::find(|row| row.n == n)
     }
     #[allow(unused)]

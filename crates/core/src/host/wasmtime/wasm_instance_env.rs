@@ -1,20 +1,21 @@
 #![allow(clippy::too_many_arguments)]
 
+use std::ops::DerefMut;
 use std::time::Instant;
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
-use crate::db::db_metrics::DB_METRICS;
 use crate::execution_context::ExecutionContext;
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::timestamp::Timestamp;
 use crate::host::wasm_common::instrumentation;
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
 use crate::host::wasm_common::{
-    err_to_errno, instrumentation::CallTimes, AbiRuntimeError, BufferIdx, BufferIterIdx, BufferIters, Buffers,
-    TimingSpan, TimingSpanIdx, TimingSpanSet,
+    err_to_errno, instrumentation::CallTimes, AbiRuntimeError, BufferIdx, Buffers, RowIterIdx, RowIters, TimingSpan,
+    TimingSpanIdx, TimingSpanSet,
 };
 use crate::host::AbiCall;
 use anyhow::{anyhow, Context};
+use spacetimedb_primitives::errno;
 use wasmtime::{AsContext, Caller, StoreContextMut};
 
 use crate::host::instance_env::InstanceEnv;
@@ -54,7 +55,7 @@ pub(super) struct WasmInstanceEnv {
     buffers: Buffers,
 
     /// The slab of `BufferIters` created for this instance.
-    iters: BufferIters,
+    iters: RowIters,
 
     /// Track time spent in module-defined spans.
     timing_spans: TimingSpanSet,
@@ -129,7 +130,7 @@ impl WasmInstanceEnv {
     /// Signal to this `WasmInstanceEnv` that a reducer call is beginning.
     pub fn start_reducer(&mut self, name: &str) {
         self.reducer_start = Instant::now();
-        self.reducer_name = name.to_owned();
+        name.clone_into(&mut self.reducer_name);
     }
 
     /// Signal to this `WasmInstanceEnv` that a reducer call is over.
@@ -153,21 +154,8 @@ impl WasmInstanceEnv {
     }
 
     /// Returns an execution context for a reducer call.
-    fn reducer_context(&self) -> ExecutionContext {
-        ExecutionContext::reducer(self.instance_env().dbic.address, self.reducer_name.as_str())
-    }
-
-    // TODO: make this part of cvt(), maybe?
-    /// Gather the appropriate metadata and log a wasm_abi_call_duration_ns with the given AbiCall & duration
-    #[cfg(feature = "metrics")]
-    fn start_abi_call_timer(&self, call: AbiCall) -> prometheus::HistogramTimer {
-        let ctx = self.reducer_context();
-        let db = ctx.database();
-
-        DB_METRICS
-            .wasm_abi_call_duration_sec
-            .with_label_values(&db, &self.reducer_name, &call)
-            .start_timer()
+    fn reducer_context(&self) -> Result<impl DerefMut<Target = ExecutionContext> + '_, WasmError> {
+        self.instance_env().get_ctx().map_err(|err| WasmError::Db(err.into()))
     }
 
     /// Call the function `f` with the name `func`.
@@ -201,11 +189,15 @@ impl WasmInstanceEnv {
         Err(match err {
             WasmError::Db(err) => match err_to_errno(&err) {
                 Some(errno) => {
-                    log::debug!("abi call to {func} returned a normal error: {err:#}");
-                    return Ok(errno.into());
+                    log::debug!(
+                        "abi call to {func} returned an errno: {errno} ({})",
+                        errno::strerror(errno).unwrap_or("<unknown>")
+                    );
+                    return Ok(errno.get().into());
                 }
                 None => anyhow::Error::from(AbiRuntimeError { func, err }),
             },
+            WasmError::BufferTooSmall => return Ok(errno::BUFFER_TOO_SMALL.get().into()),
             WasmError::Wasm(err) => err,
         })
     }
@@ -380,11 +372,6 @@ impl WasmInstanceEnv {
     ///   according to the `ProductType` that the table's schema specifies.
     #[tracing::instrument(skip_all)]
     pub fn insert(caller: Caller<'_, Self>, table_id: u32, row: WasmPtr<u8>, row_len: u32) -> RtResult<u32> {
-        // TODO: Instead of writing this metric on every insert call,
-        // we should aggregate and write at the end of the transaction.
-        #[cfg(feature = "metrics")]
-        let _guard = caller.data().start_abi_call_timer(AbiCall::Insert);
-
         Self::cvt(caller, AbiCall::Insert, |caller| {
             let (mem, env) = Self::mem_env(caller);
 
@@ -394,7 +381,7 @@ impl WasmInstanceEnv {
             // Insert the row into the DB. We get back the decoded version.
             // Then re-encode and write that back into WASM memory at `row`.
             // We're doing this because of autoinc.
-            let ctx = env.reducer_context();
+            let ctx = env.reducer_context()?;
             let new_row = env.instance_env.insert(&ctx, table_id.into(), row_buffer)?;
             new_row.encode(&mut { row_buffer });
             Ok(())
@@ -418,7 +405,6 @@ impl WasmInstanceEnv {
     ///   according to the `AlgebraicType` that the table's schema specifies for `col_id`.
     /// - `value + value_len` overflows a 64-bit integer
     /// - writing to `out` would overflow a 32-bit integer
-    #[tracing::instrument(skip_all)]
     pub fn delete_by_col_eq(
         caller: Caller<'_, Self>,
         table_id: u32,
@@ -427,12 +413,9 @@ impl WasmInstanceEnv {
         value_len: u32,
         out: WasmPtr<u32>,
     ) -> RtResult<u32> {
-        #[cfg(feature = "metrics")]
-        let _guard = caller.data().start_abi_call_timer(AbiCall::DeleteByColEq);
-
         Self::cvt_ret(caller, AbiCall::DeleteByColEq, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
-            let ctx = env.reducer_context();
+            let ctx = env.reducer_context()?;
             let value = mem.deref_slice(value, value_len)?;
             let count = env
                 .instance_env
@@ -529,7 +512,7 @@ impl WasmInstanceEnv {
         Self::cvt(caller, AbiCall::CreateIndex, |caller| {
             let (mem, env) = Self::mem_env(caller);
             // Read the index name from WASM memory.
-            let index_name = mem.deref_str(index_name, index_name_len)?.to_owned();
+            let index_name = mem.deref_str(index_name, index_name_len)?.into();
 
             // Read the column ids on which to create an index from WASM memory.
             // This may be one column or an index on several columns.
@@ -558,33 +541,32 @@ impl WasmInstanceEnv {
     /// - `(val, val_len)` cannot be decoded to an `AlgebraicValue`
     ///   typed at the `AlgebraicType` of the column,
     /// - `val + val_len` overflows a 64-bit integer
-    #[tracing::instrument(skip_all)]
     pub fn iter_by_col_eq(
         caller: Caller<'_, Self>,
         table_id: u32,
         col_id: u32,
         val: WasmPtr<u8>,
         val_len: u32,
-        out: WasmPtr<BufferIdx>,
+        out: WasmPtr<RowIterIdx>,
     ) -> RtResult<u32> {
-        #[cfg(feature = "metrics")]
-        let _guard = caller.data().start_abi_call_timer(AbiCall::IterByColEq);
-
         Self::cvt_ret(caller, AbiCall::IterByColEq, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
             // Read the test value from WASM memory.
             let value = mem.deref_slice(val, val_len)?;
 
             // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context();
+            let ctx = env.reducer_context()?;
 
             // Find the relevant rows.
-            let data = env
+            let chunks = env
                 .instance_env
-                .iter_by_col_eq(&ctx, table_id.into(), col_id.into(), value)?;
+                .iter_by_col_eq_chunks(&ctx, table_id.into(), col_id.into(), value)?;
+
+            // Release the immutable borrow of `env.buffers` by dropping `ctx`.
+            drop(ctx);
 
             // Insert the encoded + concatenated rows into a new buffer and return its id.
-            Ok(env.buffers.insert(data.into()))
+            Ok(env.iters.insert(chunks.into_iter()))
         })
     }
 
@@ -596,17 +578,14 @@ impl WasmInstanceEnv {
     /// Returns an error if
     /// - a table with the provided `table_id` doesn't exist
     // #[tracing::instrument(skip_all)]
-    pub fn iter_start(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<BufferIterIdx>) -> RtResult<u32> {
-        #[cfg(feature = "metrics")]
-        let _guard = caller.data().start_abi_call_timer(AbiCall::IterStart);
-
+    pub fn iter_start(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<RowIterIdx>) -> RtResult<u32> {
         Self::cvt_ret(caller, AbiCall::IterStart, out, |caller| {
             let env = caller.data_mut();
             // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context();
+            let ctx = env.reducer_context()?;
             // Collect the iterator chunks.
             let chunks = env.instance_env.iter_chunks(&ctx, table_id.into())?;
-
+            drop(ctx);
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
             Ok(env.iters.insert(chunks.into_iter()))
@@ -626,35 +605,31 @@ impl WasmInstanceEnv {
     /// - a table with the provided `table_id` doesn't exist
     /// - `(filter, filter_len)` doesn't decode to a filter expression
     /// - `filter + filter_len` overflows a 64-bit integer
-    // #[tracing::instrument(skip_all)]
     pub fn iter_start_filtered(
         caller: Caller<'_, Self>,
         table_id: u32,
         filter: WasmPtr<u8>,
         filter_len: u32,
-        out: WasmPtr<BufferIterIdx>,
+        out: WasmPtr<RowIterIdx>,
     ) -> RtResult<u32> {
-        #[cfg(feature = "metrics")]
-        let _guard = caller.data().start_abi_call_timer(AbiCall::IterStartFiltered);
-
         Self::cvt_ret(caller, AbiCall::IterStartFiltered, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
             // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context();
+            let ctx = env.reducer_context()?;
 
             // Read the slice `(filter, filter_len)`.
             let filter = mem.deref_slice(filter, filter_len)?;
 
             // Construct the iterator.
             let chunks = env.instance_env.iter_filtered_chunks(&ctx, table_id.into(), filter)?;
-
+            drop(ctx);
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
             Ok(env.iters.insert(chunks.into_iter()))
         })
     }
 
-    /// Advances the registered iterator with the index given by `iter_key`.
+    /// Advances the registered iterator with the index given by `iter`.
     ///
     /// On success, the next element (the row as bytes) is written to a buffer.
     /// The buffer's index is returned and written to the `out` pointer.
@@ -666,34 +641,57 @@ impl WasmInstanceEnv {
     /// - writing to `out` would overflow a 32-bit integer
     /// - advancing the iterator resulted in an error
     // #[tracing::instrument(skip_all)]
-    pub fn iter_next(caller: Caller<'_, Self>, iter_key: u32, out: WasmPtr<BufferIdx>) -> RtResult<u32> {
-        Self::cvt_ret(caller, AbiCall::IterNext, out, |caller| {
-            let env = caller.data_mut();
+    pub fn iter_advance(
+        caller: Caller<'_, Self>,
+        iter: u32,
+        buffer: WasmPtr<u8>,
+        buffer_len: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        let iter = RowIterIdx(iter);
+        Self::cvt(caller, AbiCall::IterNext, |caller| {
+            let (mem, env) = Self::mem_env(caller);
 
-            // Retrieve the iterator by `iter_key`.
-            let iter = env.iters.get_mut(BufferIterIdx(iter_key)).context("no such iterator")?;
+            // Retrieve the iterator by `iter`.
+            let iter = env.iters.get_mut(iter).context("no such iterator")?;
 
+            let buffer_len_ = u32::read_from(mem, buffer_len)?;
+            let mut wasm_buffer = mem.deref_slice_mut(buffer, buffer_len_)?;
+
+            let mut written = 0;
             // Advance the iterator.
-            Ok(iter
-                .next()
-                .map_or(BufferIdx::INVALID, |buf| env.insert_buffer(buf.into())))
+            while let Some(chunk) = iter.as_slice().first() {
+                let Some(buf_chunk) = wasm_buffer.get_mut(..chunk.len()) else {
+                    break;
+                };
+                buf_chunk.copy_from_slice(chunk);
+                written += chunk.len();
+                wasm_buffer = &mut wasm_buffer[chunk.len()..];
+                iter.next();
+            }
+            if written == 0 {
+                if let Some(chunk) = iter.as_slice().first() {
+                    u32::try_from(chunk.len()).unwrap().write_to(mem, buffer_len)?;
+                    return Err(WasmError::BufferTooSmall);
+                }
+            }
+            (written as u32).write_to(mem, buffer_len)?;
+
+            Ok(())
         })
     }
 
-    /// Drops the entire registered iterator with the index given by `iter_key`.
+    /// Drops the entire registered iterator with the index given by `iter`.
     /// The iterator is effectively de-registered.
     ///
     /// Returns an error if the iterator does not exist.
     // #[tracing::instrument(skip_all)]
-    pub fn iter_drop(caller: Caller<'_, Self>, iter_key: u32) -> RtResult<u32> {
-        Self::cvt(caller, AbiCall::IterDrop, |caller| {
-            caller
-                .data_mut()
-                .iters
-                .take(BufferIterIdx(iter_key))
-                .context("no such iterator")?;
-            Ok(())
-        })
+    pub fn iter_drop(mut caller: Caller<'_, Self>, iter: u32) -> RtResult<()> {
+        caller
+            .data_mut()
+            .iters
+            .take(RowIterIdx(iter))
+            .context("no such iterator")?;
+        Ok(())
     }
 
     /// Returns the length (number of bytes) of buffer `bufh` without

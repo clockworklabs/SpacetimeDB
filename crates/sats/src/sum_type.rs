@@ -34,18 +34,18 @@ pub struct SumType {
     /// The possible variants of the sum type.
     ///
     /// The order is relevant as it defines the tags of the variants at runtime.
-    pub variants: Vec<SumTypeVariant>,
+    pub variants: Box<[SumTypeVariant]>,
 }
 
 impl SumType {
     /// Returns a sum type with these possible `variants`.
-    pub const fn new(variants: Vec<SumTypeVariant>) -> Self {
+    pub const fn new(variants: Box<[SumTypeVariant]>) -> Self {
         Self { variants }
     }
 
     /// Returns a sum type of unnamed variants taken from `types`.
-    pub fn new_unnamed(types: Vec<AlgebraicType>) -> Self {
-        let variants = types.into_iter().map(|ty| ty.into()).collect::<Vec<_>>();
+    pub fn new_unnamed(types: Box<[AlgebraicType]>) -> Self {
+        let variants = Vec::from(types).into_iter().map(|ty| ty.into()).collect();
         Self { variants }
     }
 
@@ -70,10 +70,30 @@ impl SumType {
     pub fn is_simple_enum(&self) -> bool {
         self.variants.iter().all(SumTypeVariant::is_unit)
     }
+
+    /// Returns the sum type variant using `tag_name` with their tag position.
+    pub fn get_variant(&self, tag_name: &str) -> Option<(u8, &SumTypeVariant)> {
+        self.variants.iter().enumerate().find_map(|(pos, x)| {
+            if x.name.as_deref() == Some(tag_name) {
+                Some((pos as u8, x))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Returns the sum type variant using `tag_name` with their tag position, if this is a [Self::is_simple_enum]
+    pub fn get_variant_simple(&self, tag_name: &str) -> Option<(u8, &SumTypeVariant)> {
+        if self.is_simple_enum() {
+            self.get_variant(tag_name)
+        } else {
+            None
+        }
+    }
 }
 
-impl From<Vec<SumTypeVariant>> for SumType {
-    fn from(fields: Vec<SumTypeVariant>) -> Self {
+impl From<Box<[SumTypeVariant]>> for SumType {
+    fn from(fields: Box<[SumTypeVariant]>) -> Self {
         SumType::new(fields)
     }
 }

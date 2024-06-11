@@ -1,17 +1,20 @@
 use std::ops::Deref;
+use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+use std::sync::Arc;
 use std::time::Instant;
 
+use super::messages::{OneOffQueryResponseMessage, SerializableMessage};
+use super::{message_handlers, ClientActorId, MessageHandleError};
 use crate::error::DBError;
-use crate::host::{ModuleHost, ReducerArgs, ReducerCallError, ReducerCallResult};
+use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
 use crate::protobuf::client_api::Subscribe;
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
 use futures::prelude::*;
-use tokio::sync::mpsc;
-
-use super::messages::{OneOffQueryResponseMessage, ServerMessage};
-use super::{message_handlers, ClientActorId, MessageHandleError};
+use spacetimedb_lib::identity::RequestId;
+use tokio::sync::{mpsc, oneshot, watch};
+use tokio::task::AbortHandle;
 
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub enum Protocol {
@@ -19,38 +22,66 @@ pub enum Protocol {
     Binary,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ClientConnectionSender {
     pub id: ClientActorId,
     pub protocol: Protocol,
-    sendtx: mpsc::Sender<DataMessage>,
+    sendtx: mpsc::Sender<SerializableMessage>,
+    abort_handle: AbortHandle,
+    cancelled: AtomicBool,
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("client disconnected")]
-pub struct ClientClosed;
+pub enum ClientSendError {
+    #[error("client disconnected")]
+    Disconnected,
+    #[error("client was not responding and has been disconnected")]
+    Cancelled,
+}
 
 impl ClientConnectionSender {
+    pub fn dummy_with_channel(id: ClientActorId, protocol: Protocol) -> (Self, mpsc::Receiver<SerializableMessage>) {
+        let (sendtx, rx) = mpsc::channel(1);
+        // just make something up, it doesn't need to be attached to a real task
+        let abort_handle = match tokio::runtime::Handle::try_current() {
+            Ok(h) => h.spawn(async {}).abort_handle(),
+            Err(_) => tokio::runtime::Runtime::new().unwrap().spawn(async {}).abort_handle(),
+        };
+        (
+            Self {
+                id,
+                protocol,
+                sendtx,
+                abort_handle,
+                cancelled: AtomicBool::new(false),
+            },
+            rx,
+        )
+    }
+
     pub fn dummy(id: ClientActorId, protocol: Protocol) -> Self {
-        let (sendtx, _) = mpsc::channel(1);
-        Self { id, protocol, sendtx }
+        Self::dummy_with_channel(id, protocol).0
     }
 
-    pub fn send_message(&self, message: impl ServerMessage) -> impl Future<Output = Result<(), ClientClosed>> + '_ {
-        self.send(message.serialize(self.protocol))
+    pub fn send_message(&self, message: impl Into<SerializableMessage>) -> Result<(), ClientSendError> {
+        self.send(message.into())
     }
 
-    pub async fn send(&self, message: DataMessage) -> Result<(), ClientClosed> {
-        let bytes_len = message.len();
-
-        self.sendtx.send(message).await.map_err(|_| ClientClosed)?;
-
-        WORKER_METRICS.websocket_sent.with_label_values(&self.id.identity).inc();
-
-        WORKER_METRICS
-            .websocket_sent_msg_size
-            .with_label_values(&self.id.identity)
-            .observe(bytes_len as f64);
+    fn send(&self, message: SerializableMessage) -> Result<(), ClientSendError> {
+        if self.cancelled.load(Relaxed) {
+            return Err(ClientSendError::Cancelled);
+        }
+        self.sendtx.try_send(message).map_err(|e| match e {
+            mpsc::error::TrySendError::Full(_) => {
+                // we've hit CLIENT_CHANNEL_CAPACITY messages backed up in
+                // the channel, so forcibly kick the client
+                tracing::warn!(identity = %self.id.identity, address = %self.id.address, "client channel capacity exceeded");
+                self.abort_handle.abort();
+                self.cancelled.store(true, Relaxed);
+                ClientSendError::Cancelled
+            }
+            mpsc::error::TrySendError::Closed(_) => ClientSendError::Disconnected,
+        })?;
 
         Ok(())
     }
@@ -59,9 +90,10 @@ impl ClientConnectionSender {
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct ClientConnection {
-    sender: ClientConnectionSender,
+    sender: Arc<ClientConnectionSender>,
     pub database_instance_id: u64,
     pub module: ModuleHost,
+    module_rx: watch::Receiver<ModuleHost>,
 }
 
 impl Deref for ClientConnection {
@@ -91,55 +123,85 @@ impl DataMessage {
     }
 }
 
+// if a client racks up this many messages in the queue without ACK'ing
+// anything, we boot 'em.
+const CLIENT_CHANNEL_CAPACITY: usize = 16 * KB;
+const KB: usize = 1024;
+
 impl ClientConnection {
     /// Returns an error if ModuleHost closed
     pub async fn spawn<F, Fut>(
         id: ClientActorId,
         protocol: Protocol,
         database_instance_id: u64,
-        module: ModuleHost,
+        mut module_rx: watch::Receiver<ModuleHost>,
         actor: F,
     ) -> Result<ClientConnection, ReducerCallError>
     where
-        F: FnOnce(ClientConnection, mpsc::Receiver<DataMessage>) -> Fut,
+        F: FnOnce(ClientConnection, mpsc::Receiver<SerializableMessage>) -> Fut,
         Fut: Future<Output = ()> + Send + 'static,
     {
         // Add this client as a subscriber
         // TODO: Right now this is connecting clients directly to an instance, but their requests should be
         // logically subscribed to the database, not any particular instance. We should handle failover for
         // them and stuff. Not right now though.
+        let module = module_rx.borrow_and_update().clone();
         module
             .call_identity_connected_disconnected(id.identity, id.address, true)
             .await?;
 
-        // Buffer up to 64 client messages
-        let (sendtx, sendrx) = mpsc::channel::<DataMessage>(64);
+        let (sendtx, sendrx) = mpsc::channel::<SerializableMessage>(CLIENT_CHANNEL_CAPACITY);
 
         let db = module.info().address;
 
-        let sender = ClientConnectionSender { id, protocol, sendtx };
+        let (fut_tx, fut_rx) = oneshot::channel::<Fut>();
+        // weird dance so that we can get an abort_handle into ClientConnection
+        let abort_handle = tokio::spawn(async move {
+            let Ok(fut) = fut_rx.await else { return };
+
+            let _gauge_guard = WORKER_METRICS.connected_clients.with_label_values(&db).inc_scope();
+
+            fut.await
+        })
+        .abort_handle();
+
+        let sender = Arc::new(ClientConnectionSender {
+            id,
+            protocol,
+            sendtx,
+            abort_handle,
+            cancelled: AtomicBool::new(false),
+        });
         let this = Self {
             sender,
             database_instance_id,
             module,
+            module_rx,
         };
 
         let actor_fut = actor(this.clone(), sendrx);
-        let gauge_guard = WORKER_METRICS.connected_clients.with_label_values(&db).inc_scope();
-        tokio::spawn(actor_fut.map(|()| drop(gauge_guard)));
+        // if this fails, the actor() function called .abort(), which like... okay, I guess?
+        let _ = fut_tx.send(actor_fut);
 
         Ok(this)
     }
 
-    pub fn dummy(id: ClientActorId, protocol: Protocol, database_instance_id: u64, module: ModuleHost) -> Self {
+    pub fn dummy(
+        id: ClientActorId,
+        protocol: Protocol,
+        database_instance_id: u64,
+        mut module_rx: watch::Receiver<ModuleHost>,
+    ) -> Self {
+        let module = module_rx.borrow_and_update().clone();
         Self {
-            sender: ClientConnectionSender::dummy(id, protocol),
+            sender: Arc::new(ClientConnectionSender::dummy(id, protocol)),
             database_instance_id,
             module,
+            module_rx,
         }
     }
 
-    pub fn sender(&self) -> ClientConnectionSender {
+    pub fn sender(&self) -> Arc<ClientConnectionSender> {
         self.sender.clone()
     }
 
@@ -152,41 +214,70 @@ impl ClientConnection {
         message_handlers::handle(self, message.into(), timer)
     }
 
-    pub async fn call_reducer(&self, reducer: &str, args: ReducerArgs) -> Result<ReducerCallResult, ReducerCallError> {
+    pub async fn watch_module_host(&mut self) -> Result<(), NoSuchModule> {
+        match self.module_rx.changed().await {
+            Ok(()) => {
+                self.module = self.module_rx.borrow_and_update().clone();
+                Ok(())
+            }
+            Err(_) => Err(NoSuchModule),
+        }
+    }
+
+    pub async fn call_reducer(
+        &self,
+        reducer: &str,
+        args: ReducerArgs,
+        request_id: RequestId,
+        timer: Instant,
+    ) -> Result<ReducerCallResult, ReducerCallError> {
         self.module
             .call_reducer(
                 self.id.identity,
                 Some(self.id.address),
                 Some(self.sender()),
+                Some(request_id),
+                Some(timer),
                 reducer,
                 args,
             )
             .await
     }
 
-    pub async fn subscribe(&self, subscription: Subscribe) -> Result<(), DBError> {
+    pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<(), DBError> {
         let me = self.clone();
-        tokio::task::spawn_blocking(move || me.module.subscriptions().add_subscriber(me.sender, subscription))
-            .await
-            .unwrap()
+        tokio::task::spawn_blocking(move || {
+            me.module
+                .subscriptions()
+                .add_subscriber(me.sender, subscription, timer, None)
+        })
+        .await
+        .unwrap()
     }
 
-    pub async fn one_off_query(&self, query: &str, message_id: &[u8]) -> Result<(), anyhow::Error> {
+    pub async fn one_off_query(&self, query: &str, message_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {
         let result = self.module.one_off_query(self.id.identity, query.to_owned()).await;
         let message_id = message_id.to_owned();
+        let total_host_execution_duration = timer.elapsed().as_micros() as u64;
         let response = match result {
             Ok(results) => OneOffQueryResponseMessage {
                 message_id,
                 error: None,
                 results,
+                total_host_execution_duration,
             },
             Err(err) => OneOffQueryResponseMessage {
                 message_id,
                 error: Some(format!("{}", err)),
                 results: Vec::new(),
+                total_host_execution_duration,
             },
         };
-        self.send_message(response).await?;
+        self.send_message(response)?;
         Ok(())
+    }
+
+    pub async fn disconnect(self) {
+        self.module.disconnect_client(self.id).await
     }
 }

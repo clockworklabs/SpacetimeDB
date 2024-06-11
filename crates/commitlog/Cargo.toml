@@ -1,0 +1,29 @@
+[package]
+name = "spacetimedb-commitlog"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "LICENSE"
+
+description = "Implementation of the SpacetimeDB commitlog."
+
+[features]
+default = ["serde"]
+
+[dependencies]
+bitflags.workspace = true
+crc32c.workspace = true
+itertools.workspace = true
+log.workspace = true
+serde = { workspace = true, optional = true }
+spacetimedb-primitives.workspace = true
+spacetimedb-sats.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+env_logger.workspace = true
+once_cell.workspace = true
+proptest-derive.workspace = true
+proptest.workspace = true
+rand.workspace = true
+tempfile.workspace = true

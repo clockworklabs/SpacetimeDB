@@ -3,8 +3,10 @@
 use super::blob_store::BlobStore;
 use super::indexes::{Bytes, PageIndex, PageOffset, RowPointer, Size};
 use super::page::Page;
+use super::table::BlobNumBytes;
 use super::var_len::VarLenMembers;
 use core::ops::{ControlFlow, Deref, Index, IndexMut};
+use std::ops::DerefMut;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -215,7 +217,7 @@ impl Pages {
         fixed_row_size: Size,
         row_ptr: RowPointer,
         blob_store: &mut dyn BlobStore,
-    ) {
+    ) -> BlobNumBytes {
         let page = &mut self[row_ptr.page_index()];
         let full_before = page.is_full(fixed_row_size);
         // SAFETY:
@@ -224,15 +226,15 @@ impl Pages {
         //
         // - `fixed_row_size` is consistent with the size in bytes of the fixed part of the row.
         //   The size is also conistent with `var_len_visitor`.
-        unsafe {
-            page.delete_row(row_ptr.page_offset(), fixed_row_size, var_len_visitor, blob_store);
-        }
+        let blob_store_deleted_bytes =
+            unsafe { page.delete_row(row_ptr.page_offset(), fixed_row_size, var_len_visitor, blob_store) };
 
         // If the page was previously full, mark it as non-full now,
         // since we just opened a space in it.
         if full_before {
             self.mark_page_non_full(row_ptr.page_index());
         }
+        blob_store_deleted_bytes
     }
 
     /// Materialize a view of rows in `self` for which the  `filter` returns `true`.
@@ -326,6 +328,26 @@ impl Pages {
 
         partial_copied_pages
     }
+
+    /// Set this [`Pages`]' contents to be the `pages`.
+    ///
+    /// Used when restoring from a snapshot.
+    ///
+    /// Each page in the `pages` must be consistent with the schema for this [`Pages`],
+    /// i.e. the schema for the [`crate::table::Table`] which contains `self`.
+    ///
+    /// Should only ever be called when `self.is_empty()`.
+    ///
+    /// Also populates `self.non_full_pages`.
+    pub fn set_contents(&mut self, pages: Vec<Box<Page>>, fixed_row_size: Size) {
+        debug_assert!(self.is_empty());
+        self.non_full_pages = pages
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, page)| (!page.is_full(fixed_row_size)).then_some(PageIndex(idx as _)))
+            .collect();
+        self.pages = pages;
+    }
 }
 
 impl Deref for Pages {
@@ -333,5 +355,11 @@ impl Deref for Pages {
 
     fn deref(&self) -> &Self::Target {
         &self.pages
+    }
+}
+
+impl DerefMut for Pages {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.pages
     }
 }

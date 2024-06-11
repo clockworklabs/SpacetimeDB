@@ -9,6 +9,7 @@ use spacetimedb_lib::sats::{satn, Typespace};
 use tabled::settings::Style;
 
 use crate::config::Config;
+use crate::errors::error_for_status;
 use crate::util::{database_address, get_auth_header_only};
 
 pub fn cli() -> clap::Command {
@@ -38,8 +39,8 @@ pub fn cli() -> clap::Command {
                 .required(true)
         )
         .arg(
-            Arg::new("as_identity")
-                .long("as-identity")
+            Arg::new("identity")
+                .long("identity")
                 .short('i')
                 .conflicts_with("anon_identity")
                 .help("The identity to use for querying the database")
@@ -49,7 +50,7 @@ pub fn cli() -> clap::Command {
             Arg::new("anon_identity")
                 .long("anon-identity")
                 .short('a')
-                .conflicts_with("as_identity")
+                .conflicts_with("identity")
                 .action(ArgAction::SetTrue)
                 .help("If this flag is present, no identity will be provided when querying the database")
         )
@@ -64,12 +65,12 @@ pub fn cli() -> clap::Command {
 pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let database = args.get_one::<String>("database").unwrap();
-    let as_identity = args.get_one::<String>("as_identity");
+    let identity = args.get_one::<String>("identity");
     let anon_identity = args.get_flag("anon_identity");
 
     Ok(Connection {
         host: config.get_host_url(server)?,
-        auth_header: get_auth_header_only(&mut config, anon_identity, as_identity, server).await?,
+        auth_header: get_auth_header_only(&mut config, anon_identity, identity, server).await?,
         address: database_address(&config, database, server).await?,
         database: database.to_string(),
     })
@@ -88,11 +89,8 @@ fn print_timings(now: Instant) {
 pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, with_stats: bool) -> Result<(), anyhow::Error> {
     let now = Instant::now();
 
-    let json = builder
-        .body(sql.to_owned())
-        .send()
+    let json = error_for_status(builder.body(sql.to_owned()).send().await?)
         .await?
-        .error_for_status()?
         .text()
         .await?;
 
@@ -135,7 +133,7 @@ fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<tabled::
             .elements
             .iter()
             .enumerate()
-            .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}"))),
+            .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}").into())),
     );
 
     let ty = Typespace::EMPTY.with_type(schema);
@@ -143,7 +141,7 @@ fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<tabled::
         let row = from_json_seed(row.get(), SeedWrapper(ty))?;
         builder.push_record(
             ty.with_values(&row)
-                .map(|col_val| satn::PsqlWrapper(col_val).to_string()),
+                .map(|value| satn::PsqlWrapper { ty: ty.ty(), value }.to_string()),
         );
     }
 

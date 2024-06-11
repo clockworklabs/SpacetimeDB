@@ -1,6 +1,9 @@
+use second_stack::uninit_slice;
+
 use crate::ser::{self, ForwardNamedToSeqProduct, Serialize};
 use crate::{AlgebraicType, AlgebraicValue, ArrayValue, MapValue, F32, F64};
 use core::convert::Infallible;
+use core::mem::MaybeUninit;
 use core::ptr;
 use std::alloc::{self, Layout};
 
@@ -45,10 +48,10 @@ impl ser::Serializer for ValueSerializer {
     method!(serialize_f64 -> f64);
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::String(v.to_owned()))
+        Ok(AlgebraicValue::String(v.into()))
     }
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
-        Ok(AlgebraicValue::Bytes(v.to_owned()))
+        Ok(AlgebraicValue::Bytes(v.into()))
     }
 
     fn serialize_array(self, len: usize) -> Result<Self::SerializeArray, Self::Error> {
@@ -96,10 +99,12 @@ impl ser::Serializer for ValueSerializer {
         chunks: I,
     ) -> Result<Self::Ok, Self::Error> {
         // SAFETY: Caller promised `total_bsatn_len == chunks.map(|c| c.len()).sum() <= isize::MAX`.
-        let bsatn = unsafe { concat_byte_chunks(total_bsatn_len, chunks) };
-
-        // SAFETY: Caller promised `AlgebraicValue::decode(ty, &mut bytes).is_ok()`.
-        unsafe { self.serialize_bsatn(ty, &bsatn) }
+        unsafe {
+            concat_byte_chunks_buf(total_bsatn_len, chunks, |bsatn| {
+                // SAFETY: Caller promised `AlgebraicValue::decode(ty, &mut bytes).is_ok()`.
+                ValueSerializer.serialize_bsatn(ty, bsatn)
+            })
+        }
     }
 
     unsafe fn serialize_str_in_chunks<'a, I: Iterator<Item = &'a [u8]>>(
@@ -112,7 +117,7 @@ impl ser::Serializer for ValueSerializer {
 
         // SAFETY: Caller promised `bytes` is UTF-8.
         let string = unsafe { String::from_utf8_unchecked(bytes) };
-        Ok(string.into())
+        Ok(string.into_boxed_str().into())
     }
 }
 
@@ -136,23 +141,12 @@ unsafe fn concat_byte_chunks<'a>(total_len: usize, chunks: impl Iterator<Item = 
         alloc::handle_alloc_error(layout);
     }
 
-    // Copy over each `chunk`, moving `dst` by `chunk.len()` time.
-    let mut dst = ptr;
-    for chunk in chunks {
-        let len = chunk.len();
-        // SAFETY:
-        // - `chunk` is valid for reads for `len` bytes.
-        // - `dst` is valid for writes as we own it
-        //    and as (1) caller promised that all `chunk`s will fit in `total_len`,
-        //    this entails that `dst..dst + len` is always in bounds of the allocation.
-        // - `chunk` and `dst` are trivially properly aligned (`align_of::<u8>() == 1`).
-        // - The allocation `ptr` points to is new so derived pointers cannot overlap with `chunk`.
-        unsafe {
-            ptr::copy_nonoverlapping(chunk.as_ptr(), dst, len);
-        }
-        // SAFETY: Same as (1).
-        dst = unsafe { dst.add(len) };
-    }
+    // Copy over each `chunk`.
+    // SAFETY:
+    // 1. `ptr` is valid for writes as we own it
+    //    caller promised that all `chunk`s will fit in `total_len`.
+    // 2. `ptr` points to a new allocation so it cannot overlap with any in `chunks`.
+    unsafe { write_byte_chunks(ptr, chunks) };
 
     // Convert allocation to a `Vec<u8>`.
     // SAFETY:
@@ -163,6 +157,72 @@ unsafe fn concat_byte_chunks<'a>(total_len: usize, chunks: impl Iterator<Item = 
     // - `total_len` values were initialized at type `u8`
     //    as we know `total_len == chunks.map(|c| c.len()).sum()`.
     unsafe { Vec::from_raw_parts(ptr, total_len, total_len) }
+}
+
+/// Returns the concatenation of `chunks` that must be of `total_len` as a `Vec<u8>`.
+///
+/// # Safety
+///
+/// - `total_len == chunks.map(|c| c.len()).sum() <= isize::MAX`
+pub unsafe fn concat_byte_chunks_buf<'a, R>(
+    total_len: usize,
+    chunks: impl Iterator<Item = &'a [u8]>,
+    run: impl FnOnce(&[u8]) -> R,
+) -> R {
+    uninit_slice(total_len, |buf: &mut [MaybeUninit<u8>]| {
+        let dst = buf.as_mut_ptr().cast();
+        debug_assert_eq!(total_len, buf.len());
+        // SAFETY:
+        // 1. `buf.len() == total_len`
+        // 2. `buf` cannot overlap with anything yielded by `var_iter`.
+        unsafe { write_byte_chunks(dst, chunks) }
+        // SAFETY: Every byte of `buf` was initialized in the previous call
+        // as we know that `total_len == var_iter.map(|c| c.len()).sum()`.
+        let bytes = unsafe { slice_assume_init_ref(buf) };
+        run(bytes)
+    })
+}
+
+/// Copies over each `chunk` in `chunks` to `dst`, writing `total_len` bytes to `dst`.
+///
+/// # Safety
+///
+/// Let `total_len == chunks.map(|c| c.len()).sum()`.
+/// 1. `dst` must be valid for writes for `total_len` bytes.
+/// 2. `dst..(dst + total_len)` does not overlap with any slice yielded by `chunks`.
+unsafe fn write_byte_chunks<'a>(mut dst: *mut u8, chunks: impl Iterator<Item = &'a [u8]>) {
+    // Copy over each `chunk`, moving `dst` by `chunk.len()` time.
+    for chunk in chunks {
+        let len = chunk.len();
+        // SAFETY:
+        // - By line above, `chunk` is valid for reads for `len` bytes.
+        // - By (1) `dst` is valid for writes as promised by caller
+        //   and that all `chunk`s will fit in `total_len`.
+        //   This entails that `dst..dst + len` is always in bounds of the allocation.
+        // - `chunk` and `dst` are trivially properly aligned (`align_of::<u8>() == 1`).
+        // - By (2) derived pointers of `dst` cannot overlap with `chunk`.
+        unsafe {
+            ptr::copy_nonoverlapping(chunk.as_ptr(), dst, len);
+        }
+        // SAFETY: Same as (1).
+        dst = unsafe { dst.add(len) };
+    }
+}
+
+/// Convert a `[MaybeUninit<T>]` into a `[T]` by asserting all elements are initialized.
+///
+/// Identitcal copy of the source of `MaybeUninit::slice_assume_init_ref`, but that's not stabilized.
+/// https://doc.rust-lang.org/std/mem/union.MaybeUninit.html#method.slice_assume_init_ref
+///
+/// # Safety
+///
+/// All elements of `slice` must be initialized.
+pub const unsafe fn slice_assume_init_ref<T>(slice: &[MaybeUninit<T>]) -> &[T] {
+    // SAFETY: casting `slice` to a `*const [T]` is safe since the caller guarantees that
+    // `slice` is initialized, and `MaybeUninit` is guaranteed to have the same layout as `T`.
+    // The pointer obtained is valid since it refers to memory owned by `slice` which is a
+    // reference and thus guaranteed to be valid for reads.
+    unsafe { &*(slice as *const [MaybeUninit<T>] as *const [T]) }
 }
 
 /// Continuation for serializing an array.
@@ -224,7 +284,7 @@ enum ArrayValueBuilder {
     /// An array of totally ordered [`F64`]s.
     F64(Vec<F64>),
     /// An array of UTF-8 strings.
-    String(Vec<String>),
+    String(Vec<Box<str>>),
     /// An array of arrays.
     Array(Vec<ArrayValue>),
     /// An array of maps.
@@ -275,7 +335,7 @@ impl ArrayValueBuilder {
         match val {
             AlgebraicValue::Sum(x) => vec(x, capacity).into(),
             AlgebraicValue::Product(x) => vec(x, capacity).into(),
-            AlgebraicValue::Map(x) => vec(x, capacity).into(),
+            AlgebraicValue::Map(x) => vec(*x, capacity).into(),
             AlgebraicValue::Bool(x) => vec(x, capacity).into(),
             AlgebraicValue::I8(x) => vec(x, capacity).into(),
             AlgebraicValue::U8(x) => vec(x, capacity).into(),
@@ -285,8 +345,8 @@ impl ArrayValueBuilder {
             AlgebraicValue::U32(x) => vec(x, capacity).into(),
             AlgebraicValue::I64(x) => vec(x, capacity).into(),
             AlgebraicValue::U64(x) => vec(x, capacity).into(),
-            AlgebraicValue::I128(x) => vec(x, capacity).into(),
-            AlgebraicValue::U128(x) => vec(x, capacity).into(),
+            AlgebraicValue::I128(x) => vec(x.0, capacity).into(),
+            AlgebraicValue::U128(x) => vec(x.0, capacity).into(),
             AlgebraicValue::F32(x) => vec(x, capacity).into(),
             AlgebraicValue::F64(x) => vec(x, capacity).into(),
             AlgebraicValue::String(x) => vec(x, capacity).into(),
@@ -303,7 +363,7 @@ impl ArrayValueBuilder {
         match (self, val) {
             (Self::Sum(v), AlgebraicValue::Sum(val)) => v.push(val),
             (Self::Product(v), AlgebraicValue::Product(val)) => v.push(val),
-            (Self::Map(v), AlgebraicValue::Map(val)) => v.push(val),
+            (Self::Map(v), AlgebraicValue::Map(val)) => v.push(*val),
             (Self::Bool(v), AlgebraicValue::Bool(val)) => v.push(val),
             (Self::I8(v), AlgebraicValue::I8(val)) => v.push(val),
             (Self::U8(v), AlgebraicValue::U8(val)) => v.push(val),
@@ -313,8 +373,8 @@ impl ArrayValueBuilder {
             (Self::U32(v), AlgebraicValue::U32(val)) => v.push(val),
             (Self::I64(v), AlgebraicValue::I64(val)) => v.push(val),
             (Self::U64(v), AlgebraicValue::U64(val)) => v.push(val),
-            (Self::I128(v), AlgebraicValue::I128(val)) => v.push(val),
-            (Self::U128(v), AlgebraicValue::U128(val)) => v.push(val),
+            (Self::I128(v), AlgebraicValue::I128(val)) => v.push(val.0),
+            (Self::U128(v), AlgebraicValue::U128(val)) => v.push(val.0),
             (Self::F32(v), AlgebraicValue::F32(val)) => v.push(val),
             (Self::F64(v), AlgebraicValue::F64(val)) => v.push(val),
             (Self::String(v), AlgebraicValue::String(val)) => v.push(val),
@@ -330,24 +390,24 @@ impl From<ArrayValueBuilder> for ArrayValue {
     fn from(value: ArrayValueBuilder) -> Self {
         use ArrayValueBuilder::*;
         match value {
-            Sum(v) => Self::Sum(v),
-            Product(v) => Self::Product(v),
-            Bool(v) => Self::Bool(v),
-            I8(v) => Self::I8(v),
-            U8(v) => Self::U8(v),
-            I16(v) => Self::I16(v),
-            U16(v) => Self::U16(v),
-            I32(v) => Self::I32(v),
-            U32(v) => Self::U32(v),
-            I64(v) => Self::I64(v),
-            U64(v) => Self::U64(v),
-            I128(v) => Self::I128(v),
-            U128(v) => Self::U128(v),
-            F32(v) => Self::F32(v),
-            F64(v) => Self::F64(v),
-            String(v) => Self::String(v),
-            Array(v) => Self::Array(v),
-            Map(v) => Self::Map(v),
+            Sum(v) => Self::Sum(v.into()),
+            Product(v) => Self::Product(v.into()),
+            Bool(v) => Self::Bool(v.into()),
+            I8(v) => Self::I8(v.into()),
+            U8(v) => Self::U8(v.into()),
+            I16(v) => Self::I16(v.into()),
+            U16(v) => Self::U16(v.into()),
+            I32(v) => Self::I32(v.into()),
+            U32(v) => Self::U32(v.into()),
+            I64(v) => Self::I64(v.into()),
+            U64(v) => Self::U64(v.into()),
+            I128(v) => Self::I128(v.into()),
+            U128(v) => Self::U128(v.into()),
+            F32(v) => Self::F32(v.into()),
+            F64(v) => Self::F64(v.into()),
+            String(v) => Self::String(v.into()),
+            Array(v) => Self::Array(v.into()),
+            Map(v) => Self::Map(v.into()),
         }
     }
 }
@@ -384,7 +444,7 @@ impl_from_array!(i128, I128);
 impl_from_array!(u128, U128);
 impl_from_array!(F32, F32);
 impl_from_array!(F64, F64);
-impl_from_array!(String, String);
+impl_from_array!(Box<str>, String);
 impl_from_array!(ArrayValue, Array);
 impl_from_array!(MapValue, Map);
 

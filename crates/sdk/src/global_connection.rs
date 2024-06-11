@@ -118,7 +118,7 @@ thread_local! {
     /// and accesses to the client cache state (e.g. by `TableType::iter`)
     /// will inspect the `CURRENT_STATE`, rather than the most-recent state
     /// in `global_connection::CONNECTION`.
-    pub(crate) static CURRENT_STATE: RefCell<Option<ClientCacheView>> = RefCell::new(None);
+    pub(crate) static CURRENT_STATE: RefCell<Option<ClientCacheView>> = const { RefCell::new(None) };
 }
 
 /// If `CURRENT_STATE` is bound,

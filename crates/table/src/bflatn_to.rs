@@ -11,8 +11,9 @@ use super::{
     },
     page::{GranuleOffsetIter, Page, VarView},
     pages::Pages,
-    util::{maybe_uninit_write_slice, range_move},
-    var_len::{visit_var_len_assume_init, VarLenGranule, VarLenMembers, VarLenRef},
+    table::BlobNumBytes,
+    util::range_move,
+    var_len::{VarLenGranule, VarLenMembers, VarLenRef},
 };
 use spacetimedb_sats::{bsatn::to_writer, buffer::BufWriter, AlgebraicType, AlgebraicValue, ProductValue, SumValue};
 use thiserror::Error;
@@ -45,7 +46,7 @@ pub unsafe fn write_row_to_pages(
     ty: &RowTypeLayout,
     val: &ProductValue,
     squashed_offset: SquashedOffset,
-) -> Result<RowPointer, Error> {
+) -> Result<(RowPointer, BlobNumBytes), Error> {
     let num_granules = required_var_len_granules_for_row(val);
 
     match pages.with_page_to_insert_row(ty.size(), num_granules, |page| {
@@ -57,7 +58,9 @@ pub unsafe fn write_row_to_pages(
         // - `visitor` came from `pages` which we can trust to visit in the right order.
         unsafe { write_row_to_page(page, blob_store, visitor, ty, val) }
     })? {
-        (page, Ok(offset)) => Ok(RowPointer::new(false, page, offset, squashed_offset)),
+        (page, Ok((offset, blob_inserted))) => {
+            Ok((RowPointer::new(false, page, offset, squashed_offset), blob_inserted))
+        }
         (_, Err(e)) => Err(e),
     }
 }
@@ -83,7 +86,7 @@ pub unsafe fn write_row_to_page(
     visitor: &impl VarLenMembers,
     ty: &RowTypeLayout,
     val: &ProductValue,
-) -> Result<PageOffset, Error> {
+) -> Result<(PageOffset, BlobNumBytes), Error> {
     let fixed_row_size = ty.size();
     // SAFETY: We've used the right `row_size` and we trust that others have too.
     // `RowTypeLayout` also ensures that we satisfy the minimum row size.
@@ -111,9 +114,9 @@ pub unsafe fn write_row_to_page(
     }
 
     // Haven't stored large blobs or init those granules with blob hashes yet, so do it now.
-    serialized.write_large_blobs(blob_store);
+    let blob_store_inserted_bytes = serialized.write_large_blobs(blob_store);
 
-    Ok(fixed_offset)
+    Ok((fixed_offset, blob_store_inserted_bytes))
 }
 
 /// The writing / serialization context used by the function [`write_row_to_page`].
@@ -151,31 +154,39 @@ impl BflatnSerializedRowBuffer<'_> {
         //    and `fixed_buf.len()` matches exactly the size of the row type.
         // - `fixed_buf`'s `VarLenRef`s are initialized up to `last_allocated_var_len_index`.
         // - `visitor` is proper for the row type.
-        let visitor_iter = unsafe { visit_var_len_assume_init(visitor, self.fixed_buf) };
+        let visitor_iter = unsafe { visitor.visit_var_len(self.fixed_buf) };
         for vlr in visitor_iter.take(self.last_allocated_var_len_index) {
             // SAFETY: The `vlr` came from the allocation in `write_var_len_obj`
             // which wrote it to the fixed part using `write_var_len_ref`.
             // Thus, it points to a valid `VarLenGranule`.
-            unsafe { self.var_view.free_object_ignore_blob(vlr) };
+            unsafe { self.var_view.free_object_ignore_blob(*vlr) };
         }
     }
 
     /// Insert all large blobs into `blob_store` and their hashes to their granules.
-    fn write_large_blobs(mut self, blob_store: &mut dyn BlobStore) {
+    fn write_large_blobs(mut self, blob_store: &mut dyn BlobStore) -> BlobNumBytes {
+        let mut blob_store_inserted_bytes = BlobNumBytes::default();
         for (vlr, value) in self.large_blob_insertions {
             // SAFETY: `vlr` was given to us by `alloc_for_slice`
             // so it is properly aligned for a `VarLenGranule` and in bounds of the page.
-            // However, as it was added to `self.large_blob_insertion`, it is also uninit.
+            // However, as it was added to `self.large_blob_insertions`,
+            // we have not yet written the hash to that granule.
             unsafe {
-                self.var_view.write_large_blob_hash_to_granule(blob_store, &value, vlr);
+                blob_store_inserted_bytes += self.var_view.write_large_blob_hash_to_granule(blob_store, &value, vlr);
             }
         }
+        blob_store_inserted_bytes
     }
 
     /// Write an `val`, an [`AlgebraicValue`], typed at `ty`, to the buffer.
     fn write_value(&mut self, ty: &AlgebraicTypeLayout, val: &AlgebraicValue) -> Result<(), Error> {
-        let ty_alignment = ty.align();
-        self.curr_offset = align_to(self.curr_offset, ty_alignment);
+        debug_assert_eq!(
+            self.curr_offset,
+            align_to(self.curr_offset, ty.align()),
+            "curr_offset {} insufficiently aligned for type {:#?}",
+            self.curr_offset,
+            val,
+        );
 
         match (ty, val) {
             // For sums, select the type based on the sum tag,
@@ -196,8 +207,8 @@ impl BflatnSerializedRowBuffer<'_> {
             (&AlgebraicTypeLayout::U32, AlgebraicValue::U32(val)) => self.write_u32(*val),
             (&AlgebraicTypeLayout::I64, AlgebraicValue::I64(val)) => self.write_i64(*val),
             (&AlgebraicTypeLayout::U64, AlgebraicValue::U64(val)) => self.write_u64(*val),
-            (&AlgebraicTypeLayout::I128, AlgebraicValue::I128(val)) => self.write_i128(*val),
-            (&AlgebraicTypeLayout::U128, AlgebraicValue::U128(val)) => self.write_u128(*val),
+            (&AlgebraicTypeLayout::I128, AlgebraicValue::I128(val)) => self.write_i128(val.0),
+            (&AlgebraicTypeLayout::U128, AlgebraicValue::U128(val)) => self.write_u128(val.0),
             // Float types:
             (&AlgebraicTypeLayout::F32, AlgebraicValue::F32(val)) => self.write_f32((*val).into()),
             (&AlgebraicTypeLayout::F64, AlgebraicValue::F64(val)) => self.write_f64((*val).into()),
@@ -216,8 +227,6 @@ impl BflatnSerializedRowBuffer<'_> {
             // If the type doesn't match the value, return an error.
             (ty, val) => Err(Error::WrongType(ty.algebraic_type(), val.clone()))?,
         }
-
-        self.curr_offset = align_to(self.curr_offset, ty_alignment);
 
         Ok(())
     }
@@ -247,14 +256,19 @@ impl BflatnSerializedRowBuffer<'_> {
         // so we need to check that our `ProductValue` has the same number of elements
         // as our `ProductTypeLayout` to be sure it's typed correctly.
         // Otherwise, if the value is too long, we'll discard its fields (whatever),
-        // or if it's too long, we'll leave some fields in the page uninit (very bad).
+        // or if it's too long, we'll leave some fields in the page "uninit"
+        // (actually valid-unconstrained) (very bad).
         if ty.elements.len() != val.elements.len() {
             return Err(Error::WrongType(
                 ty.algebraic_type(),
                 AlgebraicValue::Product(val.clone()),
             ));
         }
+
+        let base_offset = self.curr_offset;
+
         for (elt_ty, elt) in ty.elements.iter().zip(val.elements.iter()) {
+            self.curr_offset = base_offset + elt_ty.offset as usize;
             self.write_value(&elt_ty.ty, elt)?;
         }
         Ok(())
@@ -295,7 +309,9 @@ impl BflatnSerializedRowBuffer<'_> {
         } else {
             // Write directly to the page.
             // SAFETY: `vlr.first_granule` points to a granule
-            // even though the granule's data is uninit as of yet.
+            // even though the granule's data is not initialized as of yet.
+            // Note that the granule stores valid-unconstrained bytes (i.e. they are not uninit),
+            // but they may be leftovers from a previous allocation.
             let iter = unsafe { self.var_view.granule_offset_iter(vlr.first_granule) };
             let mut writer = GranuleBufWriter { buf: None, iter };
             to_writer(&mut writer, val).unwrap();
@@ -340,7 +356,7 @@ impl BflatnSerializedRowBuffer<'_> {
 
                     // Write to the granule.
                     for (to, byte) in write_to.iter_mut().zip(extend_with) {
-                        to.write(*byte);
+                        *to = *byte;
                     }
 
                     slice = rest;
@@ -370,7 +386,7 @@ impl BflatnSerializedRowBuffer<'_> {
     /// Write `bytes: &[u8; N]` starting at the current offset
     /// and advance the offset by `N`.
     fn write_bytes<const N: usize>(&mut self, bytes: &[u8; N]) {
-        maybe_uninit_write_slice(&mut self.fixed_buf[range_move(0..N, self.curr_offset)], bytes);
+        self.fixed_buf[range_move(0..N, self.curr_offset)].copy_from_slice(bytes);
         self.curr_offset += N;
     }
 
@@ -443,15 +459,16 @@ impl BflatnSerializedRowBuffer<'_> {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::proptest_sats::generate_typed_row;
     use crate::{
-        bflatn_from::serialize_row_from_page, blob_store::HashMapBlobStore, row_type_visitor::row_type_visitor,
+        bflatn_from::serialize_row_from_page, blob_store::HashMapBlobStore, page::tests::hash_unmodified_save_get,
+        row_type_visitor::row_type_visitor,
     };
     use proptest::{prelude::*, prop_assert_eq, proptest};
     use spacetimedb_sats::algebraic_value::ser::ValueSerializer;
+    use spacetimedb_sats::proptest::generate_typed_row;
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(2048))]
+        #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]
         #[test]
         fn av_serde_round_trip_through_page((ty, val) in generate_typed_row()) {
             let ty: RowTypeLayout = ty.into();
@@ -459,12 +476,18 @@ pub mod test {
             let visitor = row_type_visitor(&ty);
             let blob_store = &mut HashMapBlobStore::default();
 
-            let offset = unsafe { write_row_to_page(&mut page, blob_store, &visitor, &ty, &val).unwrap() };
+            let hash_pre_ins = hash_unmodified_save_get(&mut page);
+
+            let (offset, _) = unsafe { write_row_to_page(&mut page, blob_store, &visitor, &ty, &val).unwrap() };
+
+            let hash_pre_ser = hash_unmodified_save_get(&mut page);
+            assert_ne!(hash_pre_ins, hash_pre_ser);
 
             let read_val = unsafe { serialize_row_from_page(ValueSerializer, &page, blob_store, offset, &ty) }
                 .unwrap().into_product().unwrap();
 
             prop_assert_eq!(val, read_val);
+            assert_eq!(hash_pre_ser, *page.unmodified_hash().unwrap());
         }
     }
 }

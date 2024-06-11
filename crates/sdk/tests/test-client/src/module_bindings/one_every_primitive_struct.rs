@@ -23,9 +23,4 @@ impl TableType for OneEveryPrimitiveStruct {
     type ReducerEvent = super::ReducerEvent;
 }
 
-impl OneEveryPrimitiveStruct {
-    #[allow(unused)]
-    pub fn filter_by_s(s: EveryPrimitiveStruct) -> TableIter<Self> {
-        Self::filter(|row| row.s == s)
-    }
-}
+impl OneEveryPrimitiveStruct {}

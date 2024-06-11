@@ -4,7 +4,9 @@
 #include <stdint.h>
 #include <unistd.h>
 
+#ifndef EXPERIMENTAL_WASM_AOT
 #include "driver.h"
+#endif
 
 #define OPAQUE_TYPEDEF(name, T) \
   typedef struct name {         \
@@ -18,14 +20,20 @@ OPAQUE_TYPEDEF(IndexType, uint8_t);
 OPAQUE_TYPEDEF(LogLevel, uint8_t);
 OPAQUE_TYPEDEF(ScheduleToken, uint64_t);
 OPAQUE_TYPEDEF(Buffer, uint32_t);
-OPAQUE_TYPEDEF(BufferIter, uint32_t);
+OPAQUE_TYPEDEF(RowIter, uint32_t);
 
 #define CSTR(s) (uint8_t*)s, sizeof(s) - 1
 
-#define IMPORT(ret, name, params, args)                             \
-  __attribute__((import_module("spacetime_7.0"),                    \
-                 import_name(#name))) extern ret name##_imp params; \
+#define STDB_EXTERN(name) \
+  __attribute__((import_module("spacetime_8.0"), import_name(#name))) extern
+
+#ifndef EXPERIMENTAL_WASM_AOT
+#define IMPORT(ret, name, params, args)    \
+  STDB_EXTERN(name) ret name##_imp params; \
   ret name params { return name##_imp args; }
+#else
+#define IMPORT(ret, name, params, args) STDB_EXTERN(name) ret name params;
+#endif
 
 IMPORT(void, _console_log,
        (LogLevel level, const uint8_t* target, uint32_t target_len,
@@ -43,7 +51,7 @@ IMPORT(Status, _create_index,
        (index_name, index_name_len, table_id, col_ids, col_ids_len, type));
 IMPORT(Status, _iter_by_col_eq,
        (TableId table_id, ColId col_id, const uint8_t* value,
-        uint32_t value_len, BufferIter* iter),
+        uint32_t value_len, RowIter* iter),
        (table_id, col_id, value, value_len, iter));
 IMPORT(Status, _insert, (TableId table_id, const uint8_t* row, uint32_t len),
        (table_id, row, len));
@@ -55,14 +63,16 @@ IMPORT(Status, _delete_by_rel,
        (TableId table_id, const uint8_t* relation, uint32_t relation_len,
         uint32_t* num_deleted),
        (table_id, relation, relation_len, num_deleted));
-IMPORT(Status, _iter_start, (TableId table_id, BufferIter* iter),
+IMPORT(Status, _iter_start, (TableId table_id, RowIter* iter),
        (table_id, iter));
 IMPORT(Status, _iter_start_filtered,
        (TableId table_id, const uint8_t* filter, uint32_t filter_len,
-        BufferIter* iter),
+        RowIter* iter),
        (table_id, filter, filter_len, iter));
-IMPORT(Status, _iter_next, (BufferIter iter, Buffer* row), (iter, row));
-IMPORT(Status, _iter_drop, (BufferIter iter), (iter));
+IMPORT(Status, _iter_advance,
+       (RowIter iter, uint8_t* buffer, size_t* buffer_len),
+       (iter, buffer, buffer_len));
+IMPORT(void, _iter_drop, (RowIter iter), (iter));
 IMPORT(void, _schedule_reducer,
        (const uint8_t* name, uint32_t name_len, const uint8_t* args,
         uint32_t args_len, uint64_t timestamp, ScheduleToken* token),
@@ -73,6 +83,7 @@ IMPORT(void, _buffer_consume, (Buffer buf, uint8_t* dst, uint32_t dst_len),
        (buf, dst, dst_len));
 IMPORT(Buffer, _buffer_alloc, (const uint8_t* data, uint32_t len), (data, len));
 
+#ifndef EXPERIMENTAL_WASM_AOT
 static MonoClass* ffi_class;
 
 #define CEXPORT(name) __attribute__((export_name(#name))) name
@@ -111,6 +122,7 @@ EXPORT(Buffer, __call_reducer__,
        (uint32_t id, Buffer caller_identity, Buffer caller_address,
         uint64_t timestamp, Buffer args),
        &id, &caller_identity, &caller_address, &timestamp, &args);
+#endif
 
 // Shims to avoid dependency on WASI in the generated Wasm file.
 
@@ -208,9 +220,10 @@ int32_t WASI_NAME(fd_write)(__wasi_fd_t fd, const __wasi_ciovec_t* iovs,
     // Note: this will produce ugly broken output, but there's not much we can
     // do about it until we have proper line-buffered WASI writer in the core.
     // It's better than nothing though.
-    _console_log_imp((LogLevel){fd == STDERR_FILENO ? /*WARN*/ 1 : /*INFO*/ 2},
-                     CSTR("wasi"), CSTR(__FILE__), __LINE__, iovs[i].buf,
-                     iovs[i].buf_len);
+    _console_log((LogLevel){fd == STDERR_FILENO ? /*WARN*/ 1 : /*INFO*/
+                                2},
+                 CSTR("wasi"), CSTR(__FILE__), __LINE__, iovs[i].buf,
+                 iovs[i].buf_len);
     *retptr0 += iovs[i].buf_len;
   }
   return 0;

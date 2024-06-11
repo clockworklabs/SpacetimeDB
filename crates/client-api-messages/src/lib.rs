@@ -2,3 +2,6 @@
 #![allow(clippy::four_forward_slashes)]
 
 include!(concat!(env!("OUT_DIR"), "/protobuf.rs"));
+
+pub mod name;
+pub mod recovery;

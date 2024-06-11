@@ -85,12 +85,20 @@ if [[ -z "$DATAFILE" ]]; then
     DATAFILE=perf.data
 fi
 if [[ -z "$SPACETIME_PID" ]]; then
-    if [[ $(ps -a | grep spacetime | wc -l) != 1 ]] ; then
-        echo "spacetime PID not found, is it running?"
-	exit 1
+    # -f allows us to get the args
+    # -e lets us see all users
+    SPACETIMES="$(ps -a -e -f | grep '\<spacetime\>.*\<start\>' | grep -v '\<grep\>')"
+    LINES="$(echo "$SPACETIMES" | wc -l)"
+    if [[ $LINES < 1 ]] ; then
+        >&2 echo "spacetime PID not found, is it running?"
+        exit 1
+    elif [[ $LINES > 1 ]] ; then
+        >&2 echo "Multiple spacetime PIDs. Specify one with -z"
+        >&2 echo "$SPACETIMES"
+        exit 1
     fi
 
-    SPACETIME_PID=$(ps -a | grep spacetime | awk '{print $1}')
+    SPACETIME_PID=$(echo "$SPACETIMES" | awk '{print $2}')
 fi
 if ! [[ $SPACETIME_PID =~ ^[0-9]+$ ]]; then
     >&2 echo "Refusing to instrument suspicious-looking PID: $SPACETIME_PID"

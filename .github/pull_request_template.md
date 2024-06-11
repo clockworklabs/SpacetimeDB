@@ -17,3 +17,11 @@ but also to its interactions with existing and future code.*
 
 *If you answered more than a 2, explain what is complex about the PR,
 and what other components it interacts with in potentially concerning ways.*
+
+# Testing
+
+*Describe any testing you've done, and any testing you'd like your reviewers to do,
+so that you're confident that all the changes work as expected!*
+
+- [x] *Write a test you've completed here.*
+- [ ] *Write a test you want a reviewer to do here, so they can check it off when they're satisfied.*

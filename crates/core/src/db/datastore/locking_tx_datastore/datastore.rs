@@ -7,33 +7,38 @@ use super::{
     tx_state::TxState,
 };
 use crate::{
-    address::Address,
     db::{
         datastore::{
             system_tables::{
-                Epoch, StModuleFields, StModuleRow, StTableFields, ST_MODULE_ID, ST_TABLES_ID, WASM_MODULE,
+                read_addr_from_col, read_bytes_from_col, read_hash_from_col, read_identity_from_col,
+                system_table_schema, ModuleKind, StClientsRow, StModuleFields, StModuleRow, StTableFields,
+                ST_CLIENTS_ID, ST_MODULE_ID, ST_TABLES_ID,
             },
             traits::{
-                DataRow, IsolationLevel, MutProgrammable, MutTx, MutTxDatastore, Programmable, Tx, TxData, TxDatastore,
+                DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, RowTypeForTable, Tx, TxData, TxDatastore,
             },
         },
         db_metrics::{DB_METRICS, MAX_TX_CPU_TIME},
-        messages::{transaction::Transaction, write::Operation},
-        ostorage::ObjectDB,
     },
-    error::DBError,
+    error::{DBError, TableError},
     execution_context::ExecutionContext,
 };
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
+use core::{cell::RefCell, ops::RangeBounds};
 use parking_lot::{Mutex, RwLock};
+use spacetimedb_commitlog::payload::{txdata, Txdata};
+use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
-use spacetimedb_sats::db::def::{IndexDef, SequenceDef, TableDef, TableSchema};
-use spacetimedb_sats::{hash::Hash, AlgebraicValue, DataKey, ProductType, ProductValue};
+use spacetimedb_sats::db::{
+    auth::StAccess,
+    def::{IndexDef, SequenceDef, TableDef, TableSchema},
+};
+use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductValue};
+use spacetimedb_snapshot::ReconstructedSnapshot;
 use spacetimedb_table::{indexes::RowPointer, table::RowRef};
-use std::ops::RangeBounds;
-use std::sync::Arc;
-use std::time::Instant;
-use std::{borrow::Cow, time::Duration};
+use std::time::{Duration, Instant};
+use std::{borrow::Cow, sync::Arc};
+use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, DBError>;
 
@@ -50,7 +55,7 @@ pub type Result<T> = std::result::Result<T, DBError>;
 #[derive(Clone)]
 pub struct Locking {
     /// The state of the database up to the point of the last committed transaction.
-    committed_state: Arc<RwLock<CommittedState>>,
+    pub(crate) committed_state: Arc<RwLock<CommittedState>>,
     /// The state of sequence generation in this database.
     sequence_state: Arc<Mutex<SequencesState>>,
     /// The address of this database.
@@ -111,110 +116,115 @@ impl Locking {
         Ok(())
     }
 
-    /// n.b. (Tyler) We actually **do not** want to check constraints at replay
-    /// time because not only is it a pain, but actually **subtly wrong** the
-    /// way we have it implemented. It's wrong because the actual constraints of
-    /// the database may change as different transactions are added to the
-    /// schema and you would actually have to change your indexes and
-    /// constraints as you replayed the log. This we are not currently doing
-    /// (we're building all the non-bootstrapped indexes at the end after
-    /// replaying), and thus aren't implementing constraint checking correctly
-    /// as it stands.
+    /// Obtain a [`spacetimedb_commitlog::Decoder`] suitable for replaying a
+    /// [`spacetimedb_durability::History`] onto the currently committed state.
     ///
-    /// However, the above is all rendered moot anyway because we don't need to
-    /// check constraints while replaying if we just assume that they were all
-    /// checked prior to the transaction committing in the first place.
-    ///
-    /// Note also that operation/mutation ordering **does not** matter for
-    /// operations inside a transaction of the message log assuming we only ever
-    /// insert **OR** delete a unique row in one transaction. If we ever insert
-    /// **AND** delete then order **does** matter. The issue caused by checking
-    /// constraints for each operation while replaying does not imply that order
-    /// matters. Ordering of operations would **only** matter if you wanted to
-    /// view the state of the database as of a partially applied transaction. We
-    /// never actually want to do this, because after a transaction has been
-    /// committed, it is assumed that all operations happen instantaneously and
-    /// atomically at the timestamp of the transaction. The only time that we
-    /// actually want to view the state of a database while a transaction is
-    /// partially applied is while the transaction is running **before** it
-    /// commits. Thus, we only care about operation ordering while the
-    /// transaction is running, but we do not care about it at all in the
-    /// context of the commit log.
-    ///
-    /// Not caring about the order in the log, however, requires that we **do
-    /// not** check index constraints during replay of transaction operatoins.
-    /// We **could** check them in between transactions if we wanted to update
-    /// the indexes and constraints as they changed during replay, but that is
-    /// unnecessary.
-    pub fn replay_transaction(&self, transaction: &Transaction, odb: &dyn ObjectDB) -> Result<()> {
-        let mut committed_state = self.committed_state.write_arc();
-        for write in &transaction.writes {
-            let table_id = TableId(write.set_id);
-            let schema = committed_state
-                .schema_for_table(&ExecutionContext::default(), table_id)?
-                .into_owned();
-            let table_name = schema.table_name.clone();
-            let row_type = schema.get_row_type();
-
-            let decode_row = |mut data: &[u8], source: &str| {
-                ProductValue::decode(row_type, &mut data).unwrap_or_else(|e| {
-                    panic!(
-                        "Couldn't decode product value from {}: `{}`. Expected row type: {:?}",
-                        source, e, row_type
-                    )
-                })
-            };
-
-            let data_key_to_av = |data_key| match data_key {
-                DataKey::Data(data) => decode_row(&data, "message log"),
-
-                DataKey::Hash(hash) => {
-                    let data = odb.get(hash).unwrap_or_else(|| {
-                        panic!("Object {hash} referenced from transaction not present in object DB");
-                    });
-                    decode_row(&data, "object DB")
-                }
-            };
-
-            let row = data_key_to_av(write.data_key);
-
-            match write.operation {
-                Operation::Delete => {
-                    committed_state
-                        .replay_delete_by_rel(table_id, &row)
-                        .unwrap_or_else(|e| {
-                            panic!(
-                                "Error deleting row {:?} during transaction {:?} playback: {:?}",
-                                &row, committed_state.next_tx_offset, e
-                            );
-                        });
-                    // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
-                    // and therefore has performance implications and must not be disabled.
-                    DB_METRICS
-                        .rdb_num_table_rows
-                        .with_label_values(&self.database_address, &table_id.into(), &table_name)
-                        .dec();
-                }
-                Operation::Insert => {
-                    committed_state
-                        .replay_insert(table_id, &schema, &row)
-                        .unwrap_or_else(|e| {
-                            panic!(
-                                "Failed to insert row {:?} during transaction {:?} playback: {:?}",
-                                &row, committed_state.next_tx_offset, e
-                            );
-                        });
-                    // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
-                    // and therefore has performance implications and must not be disabled.
-                    DB_METRICS
-                        .rdb_num_table_rows
-                        .with_label_values(&self.database_address, &table_id.into(), &table_name)
-                        .inc();
-                }
-            }
+    /// The provided closure will be called for each transaction found in the
+    /// history, the parameter is the transaction's offset. The closure is called
+    /// _before_ the transaction is applied to the database state.
+    pub fn replay<F: FnMut(u64)>(&self, progress: F) -> Replay<F> {
+        Replay {
+            database_address: self.database_address,
+            committed_state: self.committed_state.clone(),
+            progress: RefCell::new(progress),
         }
-        committed_state.next_tx_offset += 1;
-        Ok(())
+    }
+
+    /// Construct a new [`Locking`] datastore containing the state stored in `snapshot`.
+    ///
+    /// - Construct all the tables referenced by `snapshot`, computing their schemas
+    ///   either from known system table schemas or from `st_table` and friends.
+    /// - Populate those tables with all rows in `snapshot`.
+    /// - Construct a [`HashMapBlobStore`] containing all the large blobs referenced by `snapshot`,
+    ///   with reference counts specified in `snapshot`.
+    /// - Do [`CommittedState::reset_system_table_schemas`] to fix-up autoinc IDs in the system tables,
+    ///   to ensure those schemas match what [`Self::bootstrap`] would install.
+    /// - Notably, **do not** construct indexes or sequences.
+    ///   This should be done by [`Self::rebuild_state_after_replay`],
+    ///   after replaying the suffix of the commitlog.
+    pub fn restore_from_snapshot(snapshot: ReconstructedSnapshot) -> Result<Self> {
+        let ReconstructedSnapshot {
+            database_address,
+            tx_offset,
+            blob_store,
+            tables,
+            ..
+        } = snapshot;
+
+        let datastore = Self::new(database_address);
+        let mut committed_state = datastore.committed_state.write_arc();
+        committed_state.blob_store = blob_store;
+
+        let ctx = ExecutionContext::internal(datastore.database_address);
+
+        // Note that `tables` is a `BTreeMap`, and so iterates in increasing order.
+        // This means that we will instantiate and populate the system tables before any user tables.
+        for (table_id, pages) in tables {
+            let schema = match system_table_schema(table_id) {
+                Some(schema) => Arc::new(schema),
+                // In this case, `schema_for_table` will never see a cached schema,
+                // as the committed state is newly constructed and we have not accessed this schema yet.
+                // As such, this call will compute and save the schema from `st_table` and friends.
+                None => committed_state.schema_for_table(&ctx, table_id)?,
+            };
+            let (table, blob_store) = committed_state.get_table_and_blob_store_or_create(table_id, &schema);
+            unsafe {
+                // Safety:
+                // - The snapshot is uncorrupted because reconstructing it verified its hashes.
+                // - The schema in `table` is either derived from the st_table and st_column,
+                //   which were restored from the snapshot,
+                //   or it is a known schema for a system table.
+                // - We trust that the snapshot was consistent when created,
+                //   so the layout used in the `pages` must be consistent with the schema.
+                table.set_pages(pages, blob_store);
+            }
+
+            // Set the `rdb_num_table_rows` metric for the table.
+            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+            // and therefore has performance implications and must not be disabled.
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(&database_address, &table_id.0, &schema.table_name)
+                .set(table.row_count as i64);
+
+            // Also set the `rdb_table_size` metric for the table.
+            let table_size = table.bytes_occupied_overestimate();
+            DB_METRICS
+                .rdb_table_size
+                .with_label_values(&database_address, &table_id.into(), &schema.table_name)
+                .set(table_size as i64);
+        }
+
+        // Fix up autoinc IDs in the cached system table schemas.
+        committed_state.reset_system_table_schemas(database_address)?;
+
+        // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
+        committed_state.next_tx_offset = tx_offset + 1;
+
+        Ok(datastore)
+    }
+
+    /// Returns a list over all the currently connected clients,
+    /// reading from the `st_clients` system table.
+    pub fn connected_clients<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        tx: &'a TxId,
+    ) -> Result<impl Iterator<Item = Result<(Identity, Address)>> + 'a> {
+        let iter = self.iter_tx(ctx, tx, ST_CLIENTS_ID)?.map(|row_ref| {
+            let row = StClientsRow::try_from(row_ref)?;
+            Ok((row.identity, row.address))
+        });
+
+        Ok(iter)
+    }
+
+    pub(crate) fn alter_table_access_mut_tx(&self, tx: &mut MutTxId, name: Box<str>, access: StAccess) -> Result<()> {
+        let table_id = self
+            .table_id_from_name_mut_tx(tx, &name)?
+            .ok_or_else(|| TableError::NotFound(name.into()))?;
+
+        tx.alter_table_access(self.database_address, table_id, access)
     }
 }
 
@@ -249,11 +259,11 @@ impl Tx for Locking {
 
 impl TxDatastore for Locking {
     type Iter<'a> = Iter<'a> where Self: 'a;
-    type IterByColEq<'a> = IterByColRange<'a, AlgebraicValue> where Self: 'a;
+    type IterByColEq<'a, 'r> = IterByColRange<'a, &'r AlgebraicValue> where Self: 'a;
     type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRange<'a, R> where Self: 'a;
 
     fn iter_tx<'a>(&'a self, ctx: &'a ExecutionContext, tx: &'a Self::Tx, table_id: TableId) -> Result<Self::Iter<'a>> {
-        tx.iter(ctx, &table_id)
+        tx.iter(ctx, table_id)
     }
 
     fn iter_by_col_range_tx<'a, R: RangeBounds<AlgebraicValue>>(
@@ -264,22 +274,22 @@ impl TxDatastore for Locking {
         cols: impl Into<ColList>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>> {
-        tx.iter_by_col_range(ctx, &table_id, cols.into(), range)
+        tx.iter_by_col_range(ctx, table_id, cols.into(), range)
     }
 
-    fn iter_by_col_eq_tx<'a>(
+    fn iter_by_col_eq_tx<'a, 'r>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Self::Tx,
         table_id: TableId,
         cols: impl Into<ColList>,
-        value: AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a>> {
-        tx.iter_by_col_eq(ctx, &table_id, cols.into(), value)
+        value: &'r AlgebraicValue,
+    ) -> Result<Self::IterByColEq<'a, 'r>> {
+        tx.iter_by_col_eq(ctx, table_id, cols, value)
     }
 
     fn table_id_exists_tx(&self, tx: &Self::Tx, table_id: &TableId) -> bool {
-        tx.table_exists(table_id).is_some()
+        tx.table_name(*table_id).is_some()
     }
 
     fn table_id_from_name_tx(&self, tx: &Self::Tx, table_name: &str) -> Result<Option<TableId>> {
@@ -287,20 +297,34 @@ impl TxDatastore for Locking {
     }
 
     fn table_name_from_id_tx<'a>(&'a self, tx: &'a Self::Tx, table_id: TableId) -> Result<Option<Cow<'a, str>>> {
-        Ok(tx.table_exists(&table_id).map(Cow::Borrowed))
+        Ok(tx.table_name(table_id).map(Cow::Borrowed))
     }
 
-    fn schema_for_table_tx<'tx>(&self, tx: &'tx Self::Tx, table_id: TableId) -> Result<Cow<'tx, TableSchema>> {
+    fn schema_for_table_tx(&self, tx: &Self::Tx, table_id: TableId) -> Result<Arc<TableSchema>> {
         tx.schema_for_table(&ExecutionContext::internal(self.database_address), table_id)
     }
 
-    fn get_all_tables_tx<'tx>(&self, ctx: &ExecutionContext, tx: &'tx Self::Tx) -> Result<Vec<Cow<'tx, TableSchema>>> {
+    fn get_all_tables_tx(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Vec<Arc<TableSchema>>> {
         self.iter_tx(ctx, tx, ST_TABLES_ID)?
             .map(|row_ref| {
                 let table_id = row_ref.read_col(StTableFields::TableId)?;
                 self.schema_for_table_tx(tx, table_id)
             })
             .collect()
+    }
+
+    fn metadata(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Metadata>> {
+        self.iter_tx(ctx, tx, ST_MODULE_ID)?
+            .next()
+            .map(metadata_from_row)
+            .transpose()
+    }
+
+    fn program_bytes(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Box<[u8]>>> {
+        self.iter_tx(ctx, tx, ST_MODULE_ID)?
+            .next()
+            .map(|row_ref| read_bytes_from_col(row_ref, StModuleFields::ProgramBytes))
+            .transpose()
     }
 }
 
@@ -322,7 +346,7 @@ impl MutTxDatastore for Locking {
     /// reflect the schema of the table.q
     ///
     /// This function is known to be called quite frequently.
-    fn row_type_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<Cow<'tx, ProductType>> {
+    fn row_type_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<RowTypeForTable<'tx>> {
         tx.row_type_for_table(table_id, self.database_address)
     }
 
@@ -330,7 +354,7 @@ impl MutTxDatastore for Locking {
     /// expensive than `row_type_for_table_mut_tx`.  Prefer
     /// `row_type_for_table_mut_tx` if you only need to access the `ProductType`
     /// of the table.
-    fn schema_for_table_mut_tx<'tx>(&self, tx: &'tx Self::MutTx, table_id: TableId) -> Result<Cow<'tx, TableSchema>> {
+    fn schema_for_table_mut_tx(&self, tx: &Self::MutTx, table_id: TableId) -> Result<Arc<TableSchema>> {
         tx.schema_for_table(&ExecutionContext::internal(self.database_address), table_id)
     }
 
@@ -354,7 +378,8 @@ impl MutTxDatastore for Locking {
         tx: &'a Self::MutTx,
         table_id: TableId,
     ) -> Result<Option<Cow<'a, str>>> {
-        tx.table_name_from_id(ctx, table_id).map(|opt| opt.map(Cow::Owned))
+        tx.table_name_from_id(ctx, table_id)
+            .map(|opt| opt.map(|s| Cow::Owned(s.into())))
     }
 
     fn create_index_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, index: IndexDef) -> Result<IndexId> {
@@ -399,7 +424,7 @@ impl MutTxDatastore for Locking {
         tx: &'a Self::MutTx,
         table_id: TableId,
     ) -> Result<Self::Iter<'a>> {
-        tx.iter(ctx, &table_id)
+        tx.iter(ctx, table_id)
     }
 
     fn iter_by_col_range_mut_tx<'a, R: RangeBounds<AlgebraicValue>>(
@@ -410,18 +435,18 @@ impl MutTxDatastore for Locking {
         cols: impl Into<ColList>,
         range: R,
     ) -> Result<Self::IterByColRange<'a, R>> {
-        tx.iter_by_col_range(ctx, &table_id, cols.into(), range)
+        tx.iter_by_col_range(ctx, table_id, cols.into(), range)
     }
 
-    fn iter_by_col_eq_mut_tx<'a>(
+    fn iter_by_col_eq_mut_tx<'a, 'r>(
         &'a self,
         ctx: &'a ExecutionContext,
         tx: &'a Self::MutTx,
         table_id: TableId,
         cols: impl Into<ColList>,
-        value: AlgebraicValue,
-    ) -> Result<Self::IterByColEq<'a>> {
-        tx.iter_by_col_eq(ctx, &table_id, cols.into(), value)
+        value: &'r AlgebraicValue,
+    ) -> Result<Self::IterByColEq<'a, 'r>> {
+        tx.iter_by_col_eq(ctx, table_id, cols.into(), value)
     }
 
     fn get_mut_tx<'a>(
@@ -477,12 +502,48 @@ impl MutTxDatastore for Locking {
     }
 
     fn table_id_exists_mut_tx(&self, tx: &Self::MutTx, table_id: &TableId) -> bool {
-        tx.table_exists(table_id).is_some()
+        tx.table_name(*table_id).is_some()
+    }
+
+    fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>> {
+        let ctx = ExecutionContext::internal(self.database_address);
+        tx.iter(&ctx, ST_MODULE_ID)?.next().map(metadata_from_row).transpose()
+    }
+
+    fn update_program(
+        &self,
+        tx: &mut Self::MutTx,
+        program_kind: ModuleKind,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> Result<()> {
+        let ctx = ExecutionContext::internal(self.database_address);
+        let old = tx
+            .iter(&ctx, ST_MODULE_ID)?
+            .next()
+            .map(|row| {
+                let ptr = row.pointer();
+                let row = StModuleRow::try_from(row)?;
+                Ok::<_, DBError>((ptr, row))
+            })
+            .transpose()?;
+        match old {
+            Some((ptr, mut row)) => {
+                row.program_kind = program_kind;
+                row.program_hash = program_hash;
+                row.program_bytes = program_bytes;
+
+                tx.delete(ST_MODULE_ID, ptr)?;
+                tx.insert(ST_MODULE_ID, &mut row.into(), self.database_address)
+                    .map(drop)
+            }
+
+            None => Err(anyhow!("database {} improperly initialized: no metadata", self.database_address).into()),
+        }
     }
 }
 
-#[cfg(feature = "metrics")]
-pub(crate) fn record_metrics(ctx: &ExecutionContext, tx_timer: Instant, lock_wait_time: Duration, committed: bool) {
+pub(super) fn record_metrics(ctx: &ExecutionContext, tx_timer: Instant, lock_wait_time: Duration, committed: bool) {
     let workload = &ctx.workload();
     let db = &ctx.database();
     let reducer = ctx.reducer_name();
@@ -544,15 +605,26 @@ impl MutTx for Locking {
     }
 
     fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) {
-        #[cfg(feature = "metrics")]
-        record_metrics(ctx, tx.timer, tx.lock_wait_time, false);
+        let lock_wait_time = tx.lock_wait_time;
+        let timer = tx.timer;
+        // TODO(cloutiertyler): We should probably track the tx.rollback() time separately.
         tx.rollback();
+
+        // Record metrics for the transaction at the very end right before we drop
+        // the MutTx and release the lock.
+        record_metrics(ctx, timer, lock_wait_time, false);
     }
 
     fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> Result<Option<TxData>> {
-        #[cfg(feature = "metrics")]
-        record_metrics(ctx, tx.timer, tx.lock_wait_time, true);
-        Ok(Some(tx.commit()))
+        let lock_wait_time = tx.lock_wait_time;
+        let timer = tx.timer;
+        // TODO(cloutiertyler): We should probably track the tx.commit() time separately.
+        let res = tx.commit(ctx);
+
+        // Record metrics for the transaction at the very end right before we drop
+        // the MutTx and release the lock.
+        record_metrics(ctx, timer, lock_wait_time, true);
+        Ok(Some(res))
     }
 
     #[cfg(test)]
@@ -566,77 +638,299 @@ impl MutTx for Locking {
     }
 }
 
-impl Programmable for Locking {
-    fn program_hash(&self, tx: &TxId) -> Result<Option<spacetimedb_sats::hash::Hash>> {
-        tx.iter(&ExecutionContext::internal(self.database_address), &ST_MODULE_ID)?
-            .next()
-            .map(|row| StModuleRow::try_from(row).map(|st| st.program_hash))
-            .transpose()
+impl Locking {
+    pub fn rollback_mut_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTxId) -> TxId {
+        let lock_wait_time = tx.lock_wait_time;
+        let timer = tx.timer;
+        // TODO(cloutiertyler): We should probably track the tx.rollback() time separately.
+        let tx = tx.rollback_downgrade();
+
+        // Record metrics for the transaction at the very end right before we drop
+        // the MutTx and release the lock.
+        record_metrics(ctx, timer, lock_wait_time, false);
+
+        tx
+    }
+
+    pub fn commit_mut_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTxId) -> Result<Option<(TxData, TxId)>> {
+        let lock_wait_time = tx.lock_wait_time;
+        let timer = tx.timer;
+        // TODO(cloutiertyler): We should probably track the tx.commit() time separately.
+        let res = tx.commit_downgrade(ctx);
+
+        // Record metrics for the transaction at the very end right before we drop
+        // the MutTx and release the lock.
+        record_metrics(ctx, timer, lock_wait_time, true);
+        Ok(Some(res))
     }
 }
 
-impl MutProgrammable for Locking {
-    type FencingToken = u128;
+#[derive(Debug, Error)]
+pub enum ReplayError {
+    #[error("Expected tx offset {expected}, encountered {encountered}")]
+    InvalidOffset { expected: u64, encountered: u64 },
+    #[error(transparent)]
+    Decode(#[from] bsatn::DecodeError),
+    #[error(transparent)]
+    Db(#[from] DBError),
+    #[error(transparent)]
+    Any(#[from] anyhow::Error),
+}
 
-    fn set_program_hash(&self, tx: &mut MutTxId, fence: Self::FencingToken, hash: Hash) -> Result<()> {
-        let ctx = ExecutionContext::internal(self.database_address);
-        let mut iter = tx.iter(&ctx, &ST_MODULE_ID)?;
-        if let Some(row_ref) = iter.next() {
-            let epoch = row_ref.read_col::<u128>(StModuleFields::Epoch)?;
-            if fence <= epoch {
-                return Err(anyhow!("stale fencing token: {}, storage is at epoch: {}", fence, epoch).into());
-            }
+/// A [`spacetimedb_commitlog::Decoder`] suitable for replaying a transaction
+/// history into the database state.
+pub struct Replay<F> {
+    database_address: Address,
+    committed_state: Arc<RwLock<CommittedState>>,
+    progress: RefCell<F>,
+}
 
-            // Note the borrow checker requires that we explictly drop the iterator.
-            // That is, before we delete and insert.
-            // This is because datastore iterators write to the metric store when dropped.
-            // Hence if we don't explicitly drop here,
-            // there will be another immutable borrow of self after the two mutable borrows below.
-            drop(iter);
+impl<F> Replay<F> {
+    fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<F>) -> T) -> T {
+        let mut committed_state = self.committed_state.write_arc();
+        let mut visitor = ReplayVisitor {
+            database_address: &self.database_address,
+            committed_state: &mut committed_state,
+            progress: &mut *self.progress.borrow_mut(),
+        };
+        f(&mut visitor)
+    }
 
-            tx.delete(ST_MODULE_ID, row_ref.pointer())?;
-            tx.insert(
-                ST_MODULE_ID,
-                &mut ProductValue::from(&StModuleRow {
-                    program_hash: hash,
-                    kind: WASM_MODULE,
-                    epoch: Epoch(fence),
-                }),
-                self.database_address,
-            )?;
-            return Ok(());
-        }
+    pub(crate) fn next_tx_offset(&self) -> u64 {
+        self.committed_state.read_arc().next_tx_offset
+    }
+}
 
-        // Note the borrow checker requires that we explictly drop the iterator before we insert.
-        // This is because datastore iterators write to the metric store when dropped.
-        // Hence if we don't explicitly drop here,
-        // there will be another immutable borrow of self after the mutable borrow of the insert.
-        drop(iter);
+impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for Replay<F> {
+    type Record = Txdata<ProductValue>;
+    type Error = txdata::DecoderError<ReplayError>;
 
-        tx.insert(
-            ST_MODULE_ID,
-            &mut ProductValue::from(&StModuleRow {
-                program_hash: hash,
-                kind: WASM_MODULE,
-                epoch: Epoch(fence),
-            }),
-            self.database_address,
-        )?;
+    fn decode_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<Self::Record, Self::Error> {
+        self.using_visitor(|visitor| txdata::decode_record_fn(visitor, version, tx_offset, reader))
+    }
+
+    fn consume_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        self.using_visitor(|visitor| txdata::consume_record_fn(visitor, version, tx_offset, reader))
+    }
+
+    fn skip_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        _tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        self.using_visitor(|visitor| txdata::skip_record_fn(visitor, version, reader))
+    }
+}
+
+impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for &mut Replay<F> {
+    type Record = txdata::Txdata<ProductValue>;
+    type Error = txdata::DecoderError<ReplayError>;
+
+    #[inline]
+    fn decode_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<Self::Record, Self::Error> {
+        spacetimedb_commitlog::Decoder::decode_record(&**self, version, tx_offset, reader)
+    }
+
+    fn skip_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        spacetimedb_commitlog::Decoder::skip_record(&**self, version, tx_offset, reader)
+    }
+}
+
+// n.b. (Tyler) We actually **do not** want to check constraints at replay
+// time because not only is it a pain, but actually **subtly wrong** the
+// way we have it implemented. It's wrong because the actual constraints of
+// the database may change as different transactions are added to the
+// schema and you would actually have to change your indexes and
+// constraints as you replayed the log. This we are not currently doing
+// (we're building all the non-bootstrapped indexes at the end after
+// replaying), and thus aren't implementing constraint checking correctly
+// as it stands.
+//
+// However, the above is all rendered moot anyway because we don't need to
+// check constraints while replaying if we just assume that they were all
+// checked prior to the transaction committing in the first place.
+//
+// Note also that operation/mutation ordering **does not** matter for
+// operations inside a transaction of the message log assuming we only ever
+// insert **OR** delete a unique row in one transaction. If we ever insert
+// **AND** delete then order **does** matter. The issue caused by checking
+// constraints for each operation while replaying does not imply that order
+// matters. Ordering of operations would **only** matter if you wanted to
+// view the state of the database as of a partially applied transaction. We
+// never actually want to do this, because after a transaction has been
+// committed, it is assumed that all operations happen instantaneously and
+// atomically at the timestamp of the transaction. The only time that we
+// actually want to view the state of a database while a transaction is
+// partially applied is while the transaction is running **before** it
+// commits. Thus, we only care about operation ordering while the
+// transaction is running, but we do not care about it at all in the
+// context of the commit log.
+//
+// Not caring about the order in the log, however, requires that we **do
+// not** check index constraints during replay of transaction operatoins.
+// We **could** check them in between transactions if we wanted to update
+// the indexes and constraints as they changed during replay, but that is
+// unnecessary.
+
+struct ReplayVisitor<'a, F> {
+    database_address: &'a Address,
+    committed_state: &'a mut CommittedState,
+    progress: &'a mut F,
+}
+
+impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, F> {
+    type Error = ReplayError;
+    // NOTE: Technically, this could be `()` if and when we can extract the
+    // row data without going through `ProductValue` (PV).
+    // To accomodate auxiliary traversals (e.g. for analytics), we may want to
+    // provide a separate visitor yielding PVs.
+    type Row = ProductValue;
+
+    fn skip_row<'a, R: BufReader<'a>>(
+        &mut self,
+        table_id: TableId,
+        reader: &mut R,
+    ) -> std::result::Result<(), Self::Error> {
+        let schema = self
+            .committed_state
+            .schema_for_table(&ExecutionContext::default(), table_id)?;
+        ProductValue::decode(schema.get_row_type(), reader)?;
         Ok(())
     }
+
+    fn visit_insert<'a, R: BufReader<'a>>(
+        &mut self,
+        table_id: TableId,
+        reader: &mut R,
+    ) -> std::result::Result<Self::Row, Self::Error> {
+        let schema = self
+            .committed_state
+            .schema_for_table(&ExecutionContext::default(), table_id)?;
+        let row = ProductValue::decode(schema.get_row_type(), reader)?;
+
+        self.committed_state
+            .replay_insert(table_id, &schema, &row)
+            .with_context(|| {
+                format!(
+                    "Error deleting row {:?} during transaction {:?} playback",
+                    row, self.committed_state.next_tx_offset
+                )
+            })?;
+        // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+        // and therefore has performance implications and must not be disabled.
+        DB_METRICS
+            .rdb_num_table_rows
+            .with_label_values(self.database_address, &table_id.into(), &schema.table_name)
+            .inc();
+
+        Ok(row)
+    }
+
+    fn visit_delete<'a, R: BufReader<'a>>(
+        &mut self,
+        table_id: TableId,
+        reader: &mut R,
+    ) -> std::result::Result<Self::Row, Self::Error> {
+        let schema = self
+            .committed_state
+            .schema_for_table(&ExecutionContext::default(), table_id)?;
+        // TODO: avoid clone
+        let table_name = schema.table_name.clone();
+        let row = ProductValue::decode(schema.get_row_type(), reader)?;
+
+        self.committed_state
+            .replay_delete_by_rel(table_id, &row)
+            .with_context(|| {
+                format!(
+                    "Error deleting row {:?} during transaction {:?} playback",
+                    row, self.committed_state.next_tx_offset
+                )
+            })?;
+        // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+        // and therefore has performance implications and must not be disabled.
+        DB_METRICS
+            .rdb_num_table_rows
+            .with_label_values(self.database_address, &table_id.into(), &table_name)
+            .dec();
+
+        Ok(row)
+    }
+
+    fn visit_truncate(&mut self, _table_id: TableId) -> std::result::Result<(), Self::Error> {
+        Err(anyhow!("visit: truncate not yet supported").into())
+    }
+
+    fn visit_tx_start(&mut self, offset: u64) -> std::result::Result<(), Self::Error> {
+        // The first transaction in a history must have the same offset as the
+        // committed state.
+        //
+        // (Technically, the history should guarantee that all subsequent
+        // transaction offsets are contiguous, but we don't currently have a
+        // good way to only check the first transaction.)
+        //
+        // Note that this is not a panic, because the starting offset can be
+        // chosen at runtime.
+        if offset != self.committed_state.next_tx_offset {
+            return Err(ReplayError::InvalidOffset {
+                expected: self.committed_state.next_tx_offset,
+                encountered: offset,
+            });
+        }
+        (self.progress)(offset);
+
+        Ok(())
+    }
+
+    fn visit_tx_end(&mut self) -> std::result::Result<(), Self::Error> {
+        self.committed_state.next_tx_offset += 1;
+
+        Ok(())
+    }
+}
+
+/// Construct a [`Metadata`] from the given [`RowRef`],
+/// reading only the columns necessary to construct the value.
+fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
+    Ok(Metadata {
+        database_address: read_addr_from_col(row, StModuleFields::DatabaseAddress)?,
+        owner_identity: read_identity_from_col(row, StModuleFields::OwnerIdentity)?,
+        program_hash: read_hash_from_col(row, StModuleFields::ProgramHash)?,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{
-        system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_COLUMNS_ID,
-        ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID,
+        system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, StVarValue, ST_COLUMNS_ID,
+        ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_RESERVED_SEQUENCE_RANGE, ST_SEQUENCES_ID,
     };
     use crate::db::datastore::traits::{IsolationLevel, MutTx};
     use crate::db::datastore::Result;
     use crate::error::{DBError, IndexError};
     use itertools::Itertools;
+    use spacetimedb_lib::address::Address;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_primitives::{col_list, ColId, Constraints};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
@@ -646,21 +940,25 @@ mod tests {
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_table::table::UniqueConstraintViolation;
 
+    /// For the first user-created table, sequences in the system tables start
+    /// from this value.
+    const FIRST_NON_SYSTEM_ID: u32 = ST_RESERVED_SEQUENCE_RANGE + 1;
+
     /// Utility to query the system tables and return their concrete table row
     pub struct SystemTableQuery<'a> {
         db: &'a MutTxId,
-        ctx: &'a ExecutionContext<'a>,
+        ctx: &'a ExecutionContext,
     }
 
-    fn query_st_tables<'a>(ctx: &'a ExecutionContext<'a>, tx: &'a MutTxId) -> SystemTableQuery<'a> {
+    fn query_st_tables<'a>(ctx: &'a ExecutionContext, tx: &'a MutTxId) -> SystemTableQuery<'a> {
         SystemTableQuery { db: tx, ctx }
     }
 
     impl SystemTableQuery<'_> {
-        pub fn scan_st_tables(&self) -> Result<Vec<StTableRow<String>>> {
+        pub fn scan_st_tables(&self) -> Result<Vec<StTableRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, &ST_TABLES_ID)?
+                .iter(self.ctx, ST_TABLES_ID)?
                 .map(|row| StTableRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
@@ -669,20 +967,20 @@ mod tests {
         pub fn scan_st_tables_by_col(
             &self,
             cols: impl Into<ColList>,
-            value: AlgebraicValue,
-        ) -> Result<Vec<StTableRow<String>>> {
+            value: &AlgebraicValue,
+        ) -> Result<Vec<StTableRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter_by_col_eq(self.ctx, &ST_TABLES_ID, cols.into(), value)?
+                .iter_by_col_eq(self.ctx, ST_TABLES_ID, cols.into(), value)?
                 .map(|row| StTableRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_columns(&self) -> Result<Vec<StColumnRow<String>>> {
+        pub fn scan_st_columns(&self) -> Result<Vec<StColumnRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, &ST_COLUMNS_ID)?
+                .iter(self.ctx, ST_COLUMNS_ID)?
                 .map(|row| StColumnRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
@@ -691,38 +989,38 @@ mod tests {
         pub fn scan_st_columns_by_col(
             &self,
             cols: impl Into<ColList>,
-            value: AlgebraicValue,
-        ) -> Result<Vec<StColumnRow<String>>> {
+            value: &AlgebraicValue,
+        ) -> Result<Vec<StColumnRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter_by_col_eq(self.ctx, &ST_COLUMNS_ID, cols.into(), value)?
+                .iter_by_col_eq(self.ctx, ST_COLUMNS_ID, cols.into(), value)?
                 .map(|row| StColumnRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_constraints(&self) -> Result<Vec<StConstraintRow<String>>> {
+        pub fn scan_st_constraints(&self) -> Result<Vec<StConstraintRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, &ST_CONSTRAINTS_ID)?
+                .iter(self.ctx, ST_CONSTRAINTS_ID)?
                 .map(|row| StConstraintRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.constraint_id)
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_sequences(&self) -> Result<Vec<StSequenceRow<String>>> {
+        pub fn scan_st_sequences(&self) -> Result<Vec<StSequenceRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, &ST_SEQUENCES_ID)?
+                .iter(self.ctx, ST_SEQUENCES_ID)?
                 .map(|row| StSequenceRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.sequence_id))
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_indexes(&self) -> Result<Vec<StIndexRow<String>>> {
+        pub fn scan_st_indexes(&self) -> Result<Vec<StIndexRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, &ST_INDEXES_ID)?
+                .iter(self.ctx, ST_INDEXES_ID)?
                 .map(|row| StIndexRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.index_id)
                 .collect::<Vec<_>>())
@@ -742,7 +1040,11 @@ mod tests {
     }
 
     fn map_array<A, B: From<A>, const N: usize>(a: [A; N]) -> Vec<B> {
-        a.map(Into::into).into()
+        map_array_fn(a, Into::into)
+    }
+
+    fn map_array_fn<A, B, F: Fn(A) -> B, const N: usize>(a: [A; N], f: F) -> Vec<B> {
+        a.map(f).into()
     }
 
     struct IndexRow<'a> {
@@ -752,7 +1054,7 @@ mod tests {
         name: &'a str,
         unique: bool,
     }
-    impl From<IndexRow<'_>> for StIndexRow<String> {
+    impl From<IndexRow<'_>> for StIndexRow<Box<str>> {
         fn from(value: IndexRow<'_>) -> Self {
             Self {
                 index_id: value.id.into(),
@@ -771,7 +1073,7 @@ mod tests {
         ty: StTableType,
         access: StAccess,
     }
-    impl From<TableRow<'_>> for StTableRow<String> {
+    impl From<TableRow<'_>> for StTableRow<Box<str>> {
         fn from(value: TableRow<'_>) -> Self {
             Self {
                 table_id: value.id.into(),
@@ -788,7 +1090,7 @@ mod tests {
         name: &'a str,
         ty: AlgebraicType,
     }
-    impl From<ColRow<'_>> for StColumnRow<String> {
+    impl From<ColRow<'_>> for StColumnRow<Box<str>> {
         fn from(value: ColRow<'_>) -> Self {
             Self {
                 table_id: value.table.into(),
@@ -803,7 +1105,7 @@ mod tests {
             Self {
                 table_id: value.table.into(),
                 col_pos: value.pos.into(),
-                col_name: value.name.to_string(),
+                col_name: value.name.into(),
                 col_type: value.ty,
             }
         }
@@ -811,7 +1113,7 @@ mod tests {
     impl From<ColRow<'_>> for ColumnDef {
         fn from(value: ColRow<'_>) -> Self {
             Self {
-                col_name: value.name.to_string(),
+                col_name: value.name.into(),
                 col_type: value.ty,
             }
         }
@@ -824,11 +1126,11 @@ mod tests {
         col_pos: u32,
         start: i128,
     }
-    impl From<SequenceRow<'_>> for StSequenceRow<String> {
+    impl From<SequenceRow<'_>> for StSequenceRow<Box<str>> {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
-                sequence_name: value.name.to_string(),
+                sequence_name: value.name.into(),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
                 increment: 1,
@@ -844,7 +1146,7 @@ mod tests {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
-                sequence_name: value.name.to_string(),
+                sequence_name: value.name.into(),
                 table_id: value.table.into(),
                 col_pos: value.col_pos.into(),
                 increment: 1,
@@ -869,7 +1171,7 @@ mod tests {
                 index_id: value.id.into(),
                 table_id: value.table.into(),
                 columns: ColId(value.col).into(),
-                index_name: value.name.to_string(),
+                index_name: value.name.into(),
                 is_unique: value.unique,
                 index_type: IndexType::BTree,
             }
@@ -883,7 +1185,7 @@ mod tests {
         table_id: u32,
         columns: ColList,
     }
-    impl From<ConstraintRow<'_>> for StConstraintRow<String> {
+    impl From<ConstraintRow<'_>> for StConstraintRow<Box<str>> {
         fn from(value: ConstraintRow<'_>) -> Self {
             Self {
                 constraint_id: value.constraint_id.into(),
@@ -909,10 +1211,11 @@ mod tests {
 
     #[rustfmt::skip]
     fn basic_table_schema_cols() -> [ColRow<'static>; 3] {
+        let table = FIRST_NON_SYSTEM_ID;
         [
-            ColRow { table: 6, pos: 0, name: "id", ty: AlgebraicType::U32 },
-            ColRow { table: 6, pos: 1, name: "name", ty: AlgebraicType::String },
-            ColRow { table: 6, pos: 2, name: "age", ty: AlgebraicType::U32 },
+            ColRow { table, pos: 0, name: "id", ty: AlgebraicType::U32 },
+            ColRow { table, pos: 1, name: "name", ty: AlgebraicType::String },
+            ColRow { table, pos: 2, name: "age", ty: AlgebraicType::U32 },
         ]
     }
 
@@ -937,20 +1240,23 @@ mod tests {
 
     #[rustfmt::skip]
     fn basic_table_schema_created(table_id: TableId) -> TableSchema {
+        let table: u32 = table_id.into();
+        let seq_start = FIRST_NON_SYSTEM_ID;
+
         TableSchema::new(
             table_id,
             "Foo".into(),
             map_array(basic_table_schema_cols()),
              map_array([
-                IdxSchema { id: 6, table: 6, col: 0, name: "id_idx", unique: true },
-                IdxSchema { id: 7, table: 6, col: 1, name: "name_idx", unique: true },
+                IdxSchema { id: seq_start,     table, col: 0, name: "id_idx", unique: true },
+                IdxSchema { id: seq_start + 1, table, col: 1, name: "name_idx", unique: true },
             ]),
             map_array([
-                ConstraintRow { constraint_id: 6, table_id: 6, columns: col(0), constraints: Constraints::unique(), constraint_name: "ct_Foo_id_idx_unique" },
-                ConstraintRow { constraint_id: 7, table_id: 6, columns: col(1), constraints: Constraints::unique(), constraint_name: "ct_Foo_name_idx_unique" }
+                ConstraintRow { constraint_id: seq_start,     table_id: table, columns: col(0), constraints: Constraints::unique(), constraint_name: "ct_Foo_id_idx_unique" },
+                ConstraintRow { constraint_id: seq_start + 1, table_id: table, columns: col(1), constraints: Constraints::unique(), constraint_name: "ct_Foo_name_idx_unique" }
             ]),
              map_array([
-                SequenceRow { id: 4, table: 6, col_pos: 0, name: "seq_Foo_id", start: 1 }
+                SequenceRow { id: seq_start, table, col_pos: 0, name: "seq_Foo_id", start: 1 }
             ]),
             StTableType::User,
             StAccess::Public,
@@ -973,21 +1279,8 @@ mod tests {
             .collect()
     }
 
-    //TODO(shub), begin_tx is not yet implemented for Tx, creating this utility for tests.
-    fn begin_tx(db: &Locking) -> TxId {
-        let timer = Instant::now();
-
-        let committed_state_shared_lock = db.committed_state.read_arc();
-        let lock_wait_time = timer.elapsed();
-        TxId {
-            committed_state_shared_lock,
-            lock_wait_time,
-            timer,
-        }
-    }
-
     fn all_rows_tx(tx: &TxId, table_id: TableId) -> Vec<ProductValue> {
-        tx.iter(&ExecutionContext::default(), &table_id)
+        tx.iter(&ExecutionContext::default(), table_id)
             .unwrap()
             .map(|r| r.to_product_value().clone())
             .collect()
@@ -1007,6 +1300,8 @@ mod tests {
             TableRow { id: 3, name: "st_indexes", ty: StTableType::System, access: StAccess::Public },
             TableRow { id: 4, name: "st_constraints", ty: StTableType::System, access: StAccess::Public },
             TableRow { id: 5, name: "st_module", ty: StTableType::System, access: StAccess::Public },
+            TableRow { id: 6, name: "st_clients", ty: StTableType::System, access: StAccess::Public },
+            TableRow { id: 7, name: "st_var", ty: StTableType::System, access: StAccess::Public },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_columns()?, map_array([
@@ -1043,9 +1338,17 @@ mod tests {
             ColRow { table: 4, pos: 3, name: "table_id", ty: AlgebraicType::U32 },
             ColRow { table: 4, pos: 4, name: "columns", ty: AlgebraicType::array(AlgebraicType::U32) },
 
-            ColRow { table: 5, pos: 0, name: "program_hash", ty: AlgebraicType::array(AlgebraicType::U8) },
-            ColRow { table: 5, pos: 1, name: "kind", ty: AlgebraicType::U8 },
-            ColRow { table: 5, pos: 2, name: "epoch", ty: AlgebraicType::U128 },
+            ColRow { table: 5, pos: 0, name: "database_address", ty: AlgebraicType::bytes() },
+            ColRow { table: 5, pos: 1, name: "owner_identity", ty: AlgebraicType::bytes() },
+            ColRow { table: 5, pos: 2, name: "program_kind", ty: AlgebraicType::U8 },
+            ColRow { table: 5, pos: 3, name: "program_hash", ty: AlgebraicType::bytes() },
+            ColRow { table: 5, pos: 4, name: "program_bytes", ty: AlgebraicType::bytes() },
+
+            ColRow { table: 6, pos: 0, name: "identity", ty: AlgebraicType::bytes() },
+            ColRow { table: 6, pos: 1, name: "address", ty: AlgebraicType::bytes() },
+
+            ColRow { table: 7, pos: 0, name: "name", ty: AlgebraicType::String },
+            ColRow { table: 7, pos: 1, name: "value", ty: StVarValue::type_of() },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
@@ -1055,14 +1358,23 @@ mod tests {
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
+            IndexRow { id: 6, table: 6, col: col_list![0, 1], name: "idx_st_clients_identity_address_unique", unique: true },
+            IndexRow { id: 7, table: 7, col: col(0), name: "idx_st_var_name_primary_key_unique", unique: true },
         ]));
+        let start = FIRST_NON_SYSTEM_ID as i128;
         #[rustfmt::skip]
-        assert_eq!(query.scan_st_sequences()?, map_array([
-            SequenceRow { id: 0, table: 0, col_pos: 0, name: "seq_st_table_table_id_primary_key_auto",  start: 6 },
-            SequenceRow { id: 3, table: 2, col_pos: 0, name: "seq_st_sequence_sequence_id_primary_key_auto", start: 4 },
-            SequenceRow { id: 1, table: 3, col_pos: 0, name: "seq_st_indexes_index_id_primary_key_auto",  start: 6 },
-            SequenceRow { id: 2, table: 4, col_pos: 0, name: "seq_st_constraints_constraint_id_primary_key_auto", start: 6 },
-        ]));
+        assert_eq!(query.scan_st_sequences()?, map_array_fn(
+            [
+                SequenceRow { id: 0, table: 0, col_pos: 0, name: "seq_st_table_table_id_primary_key_auto", start },
+                SequenceRow { id: 3, table: 2, col_pos: 0, name: "seq_st_sequence_sequence_id_primary_key_auto", start },
+                SequenceRow { id: 1, table: 3, col_pos: 0, name: "seq_st_indexes_index_id_primary_key_auto", start },
+                SequenceRow { id: 2, table: 4, col_pos: 0, name: "seq_st_constraints_constraint_id_primary_key_auto", start },
+            ],
+            |row| StSequenceRow {
+                allocated: ST_RESERVED_SEQUENCE_RANGE as i128 * 2,
+                ..StSequenceRow::from(row)
+            }
+        ));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_constraints()?, map_array([
             ConstraintRow { constraint_id: 0, table_id: 0, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_table_table_id_primary_key_auto" },
@@ -1071,6 +1383,8 @@ mod tests {
             ConstraintRow { constraint_id: 3, table_id: 2, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_sequence_sequence_id_primary_key_auto" },
             ConstraintRow { constraint_id: 4, table_id: 3, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_indexes_index_id_primary_key_auto" },
             ConstraintRow { constraint_id: 5, table_id: 4, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_constraints_constraint_id_primary_key_auto" },
+            ConstraintRow { constraint_id: 6, table_id: 6, columns: col_list![0, 1], constraints: Constraints::unique(), constraint_name: "ct_st_clients_identity_address_unique" },
+            ConstraintRow { constraint_id: 7, table_id: 7, columns: col(0), constraints: Constraints::primary_key(), constraint_name: "ct_st_var_name_primary_key" },
         ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -1136,12 +1450,12 @@ mod tests {
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
-        let table_rows = query.scan_st_tables_by_col(ColId(0), table_id.into())?;
+        let table_rows = query.scan_st_tables_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
         assert_eq!(table_rows, map_array([
-            TableRow { id: 6, name: "Foo", ty: StTableType::User, access: StAccess::Public }
+            TableRow { id: FIRST_NON_SYSTEM_ID, name: "Foo", ty: StTableType::User, access: StAccess::Public }
         ]));
-        let column_rows = query.scan_st_columns_by_col(ColId(0), table_id.into())?;
+        let column_rows = query.scan_st_columns_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
         assert_eq!(column_rows, map_array(basic_table_schema_cols()));
         Ok(())
@@ -1155,12 +1469,12 @@ mod tests {
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
-        let table_rows = query.scan_st_tables_by_col(ColId(0), table_id.into())?;
+        let table_rows = query.scan_st_tables_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
         assert_eq!(table_rows, map_array([
-            TableRow { id: 6, name: "Foo", ty: StTableType::User, access: StAccess::Public }
+            TableRow { id: FIRST_NON_SYSTEM_ID, name: "Foo", ty: StTableType::User, access: StAccess::Public }
         ]));
-        let column_rows = query.scan_st_columns_by_col(ColId(0), table_id.into())?;
+        let column_rows = query.scan_st_columns_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
         assert_eq!(column_rows, map_array(basic_table_schema_cols()));
 
@@ -1179,9 +1493,9 @@ mod tests {
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
-        let table_rows = query.scan_st_tables_by_col(ColId(0), table_id.into())?;
+        let table_rows = query.scan_st_tables_by_col(ColId(0), &table_id.into())?;
         assert_eq!(table_rows, []);
-        let column_rows = query.scan_st_columns_by_col(ColId(0), table_id.into())?;
+        let column_rows = query.scan_st_columns_by_col(ColId(0), &table_id.into())?;
         assert_eq!(column_rows, []);
         Ok(())
     }
@@ -1212,10 +1526,12 @@ mod tests {
         datastore.commit_mut_tx_for_test(tx)?;
 
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
-        let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?.into_owned();
+        let schema = datastore.schema_for_table_mut_tx(&tx, table_id)?;
 
+        let mut dropped_indexes = 0;
         for index in &*schema.indexes {
             datastore.drop_index_mut_tx(&mut tx, index.index_id)?;
+            dropped_indexes += 1;
         }
         assert!(
             datastore.schema_for_table_mut_tx(&tx, table_id)?.indexes.is_empty(),
@@ -1236,8 +1552,8 @@ mod tests {
         )?;
 
         let expected_indexes = [IdxSchema {
-            id: 8,
-            table: 6,
+            id: ST_RESERVED_SEQUENCE_RANGE + dropped_indexes + 1,
+            table: FIRST_NON_SYSTEM_ID,
             col: 0,
             name: "id_idx",
             unique: true,
@@ -1439,6 +1755,7 @@ mod tests {
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
+        let seq_start = FIRST_NON_SYSTEM_ID;
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
         assert_eq!(index_rows, [
@@ -1448,9 +1765,11 @@ mod tests {
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 6, table: 6, col: col(0), name: "id_idx", unique: true },
-            IndexRow { id: 7, table: 6, col: col(1), name: "name_idx", unique: true },
-            IndexRow { id: 8, table: 6, col: col(2), name: "age_idx", unique: true },
+            IndexRow { id: 6, table: 6, col: col_list![0, 1], name: "idx_st_clients_identity_address_unique", unique: true },
+            IndexRow { id: 7, table: 7, col: col(0), name: "idx_st_var_name_primary_key_unique", unique: true },
+            IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },
+            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx", unique: true },
+            IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "age_idx", unique: true },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
@@ -1482,6 +1801,7 @@ mod tests {
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
+        let seq_start = FIRST_NON_SYSTEM_ID;
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
         assert_eq!(index_rows, [
@@ -1491,9 +1811,11 @@ mod tests {
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 6, table: 6, col: col(0), name: "id_idx", unique: true },
-            IndexRow { id: 7, table: 6, col: col(1), name: "name_idx", unique: true },
-            IndexRow { id: 8, table: 6, col: col(2), name: "age_idx", unique: true },
+            IndexRow { id: 6, table: 6, col: col_list![0, 1], name: "idx_st_clients_identity_address_unique", unique: true },
+            IndexRow { id: 7, table: 7, col: col(0), name: "idx_st_var_name_primary_key_unique", unique: true },
+            IndexRow { id: seq_start    , table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },
+            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx", unique: true },
+            IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "age_idx", unique: true },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
@@ -1525,6 +1847,7 @@ mod tests {
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
 
+        let seq_start = FIRST_NON_SYSTEM_ID;
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
         assert_eq!(index_rows, [
@@ -1534,8 +1857,10 @@ mod tests {
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 6, table: 6, col: col(0), name: "id_idx", unique: true },
-            IndexRow { id: 7, table: 6, col: col(1), name: "name_idx", unique: true },
+            IndexRow { id: 6, table: 6, col: col_list![0, 1], name: "idx_st_clients_identity_address_unique", unique: true },
+            IndexRow { id: 7, table: 7, col: col(0), name: "idx_st_var_name_primary_key_unique", unique: true },
+            IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },
+            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx", unique: true },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
@@ -1565,7 +1890,7 @@ mod tests {
                     tx,
                     table_id,
                     ColId(0),
-                    AlgebraicValue::U32(1),
+                    &AlgebraicValue::U32(1),
                 )
                 .unwrap()
                 .map(|row_ref| row_ref.to_product_value())
@@ -1610,8 +1935,8 @@ mod tests {
         datastore.commit_mut_tx_for_test(tx)?;
 
         // create multiple read only tx, and use them together.
-        let read_tx_1 = begin_tx(&datastore);
-        let read_tx_2 = begin_tx(&datastore);
+        let read_tx_1 = datastore.begin_tx();
+        let read_tx_2 = datastore.begin_tx();
         let rows = &[row1, row2];
         assert_eq!(&all_rows_tx(&read_tx_2, table_id), rows);
         assert_eq!(&all_rows_tx(&read_tx_1, table_id), rows);

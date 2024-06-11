@@ -1,13 +1,21 @@
 use spacetimedb_sats::db::error::{AuthError, RelationError};
-use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use std::fmt;
 use thiserror::Error;
+
+use crate::expr::SourceId;
+
+#[derive(Error, Debug)]
+pub enum ConfigError {
+    #[error("Config parameter `{0}` not found.")]
+    NotFound(String),
+    #[error("Value for config parameter `{0}` is invalid: `{1:?}`. Expected: `{2:?}`")]
+    TypeError(String, AlgebraicValue, AlgebraicType),
+}
 
 /// Typing Errors
 #[derive(Error, Debug)]
 pub enum ErrorType {
-    #[error("Field should resolve to `bool`, but it got the value `{{0.to_satn()}}`")]
-    FieldBool(AlgebraicValue),
     #[error("Error Parsing `{value}` into type [{ty}]: {err}")]
     Parse { value: String, ty: String, err: String },
 }
@@ -25,6 +33,10 @@ pub enum ErrorVm {
     Auth(#[from] AuthError),
     #[error("Unsupported: {0}")]
     Unsupported(String),
+    #[error("No source table with index {0:?}")]
+    NoSuchSource(SourceId),
+    #[error("ConfigError: {0}")]
+    Config(#[from] ConfigError),
     #[error("{0}")]
     Other(#[from] anyhow::Error),
 }
@@ -120,6 +132,12 @@ impl From<ErrorVm> for ErrorLang {
             ErrorVm::Unsupported(err) => ErrorLang::new(ErrorKind::Compiler, Some(&err)),
             ErrorVm::Lang(err) => err,
             ErrorVm::Auth(err) => ErrorLang::new(ErrorKind::Unauthorized, Some(&err.to_string())),
+            ErrorVm::Config(err) => ErrorLang::new(ErrorKind::Db, Some(&err.to_string())),
+            err @ ErrorVm::NoSuchSource(_) => ErrorLang {
+                kind: ErrorKind::Invalid,
+                msg: Some(format!("{err:?}")),
+                context: None,
+            },
         }
     }
 }
