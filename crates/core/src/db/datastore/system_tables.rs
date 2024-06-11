@@ -800,6 +800,27 @@ impl From<&StClientsRow> for ProductValue {
     }
 }
 
+impl TryFrom<RowRef<'_>> for StClientsRow {
+    type Error = DBError;
+
+    fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
+        fn read_col<T: TryFrom<AlgebraicValue>>(row: RowRef<'_>, col: StClientsFields) -> Result<T, DBError> {
+            row.read_col::<AlgebraicValue>(col.col_id())?.try_into().map_err(|_| {
+                InvalidFieldError {
+                    name: Some(col.name()),
+                    col_pos: col.col_id(),
+                }
+                .into()
+            })
+        }
+
+        let identity = read_col(row, StClientsFields::Identity)?;
+        let address = read_col(row, StClientsFields::Address)?;
+
+        Ok(Self { identity, address })
+    }
+}
+
 /// A handle for reading system variables from `st_var`
 pub struct StVarTable;
 

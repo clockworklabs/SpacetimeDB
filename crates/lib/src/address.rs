@@ -128,6 +128,21 @@ impl From<Address> for AlgebraicValue {
     }
 }
 
+impl TryFrom<AlgebraicValue> for Address {
+    type Error = AlgebraicValue;
+
+    fn try_from(av: AlgebraicValue) -> Result<Self, Self::Error> {
+        match &av {
+            AlgebraicValue::Product(pv) => pv
+                .field_as_bytes(0, Some("__address_bytes"))
+                .map(Self::from_slice)
+                .map_err(|_| av),
+
+            _ => Err(av),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AddressForUrl(u128);
 

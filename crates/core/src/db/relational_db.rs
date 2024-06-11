@@ -58,8 +58,15 @@ pub type DiskSizeFn = Arc<dyn Fn() -> io::Result<u64> + Send + Sync>;
 
 pub type Txdata = commitlog::payload::Txdata<ProductValue>;
 
-/// Clients for which a connect reducer call was found in the [`History`], but
-/// no corresponding disconnect.
+/// The set of clients considered connected to the database.
+///
+/// A client is considered connected if there exists a corresponding row in the
+/// `st_clients` system table.
+///
+/// If rows exist in `st_clients` upon [`RelationalDB::open`], the database was
+/// not shut down gracefully. Such "dangling" clients should be removed by
+/// calling [`crate::host::ModuleHost::call_identity_connected_disconnected`]
+/// for each entry in [`ConnectedClients`].
 pub type ConnectedClients = HashSet<(Identity, Address)>;
 
 #[derive(Clone)]
@@ -261,9 +268,11 @@ impl RelationalDB {
     ///
     /// # Return values
     ///
-    /// Alongside `Self`, the set of clients who were connected as of the most
-    /// recent transaction in the `history` is returned as a [`ConnectedClients`].
-    /// `__disconnect__` should be called for each entry.
+    /// Alongside `Self`, [`ConnectedClients`] is returned, which is the set of
+    /// clients considered connected at the given snapshot and `history`.
+    ///
+    /// If [`ConnectedClients`] is non-empty, the database did not shut down
+    /// gracefully. The caller is responsible for disconnecting the clients.
     ///
     /// [ModuleHost]: crate::host::module_host::ModuleHost
     pub fn open(
@@ -290,7 +299,7 @@ impl RelationalDB {
         log::info!("[{address}] DATABASE: durable_tx_offset is {durable_tx_offset:?}");
         let inner = Self::restore_from_snapshot_or_bootstrap(address, snapshot_repo.as_deref(), durable_tx_offset)?;
 
-        let connected_clients = apply_history(&inner, address, history)?;
+        apply_history(&inner, address, history)?;
         let db = Self::new(lock, address, owner_identity, inner, durability, snapshot_repo);
 
         if let Some(meta) = db.metadata()? {
@@ -306,6 +315,7 @@ impl RelationalDB {
                 .into());
             }
         };
+        let connected_clients = db.connected_clients()?;
 
         Ok((db, connected_clients))
     }
@@ -373,6 +383,12 @@ impl RelationalDB {
         self.with_read_only(&ctx, |tx| self.inner.program_bytes(&ctx, tx))
     }
 
+    /// Read the set of clients currently connected to the database.
+    pub fn connected_clients(&self) -> Result<ConnectedClients, DBError> {
+        let ctx = ExecutionContext::internal(self.address);
+        self.with_read_only(&ctx, |tx| self.inner.connected_clients(&ctx, tx)?.collect())
+    }
+
     /// Update the module associated with this database.
     ///
     /// The caller must ensure that:
@@ -438,22 +454,18 @@ impl RelationalDB {
         Locking::bootstrap(address)
     }
 
-    /// Replay ("fold") the provided [`spacetimedb_durability::History`] onto
-    /// the database state.
+    /// Apply the provided [`spacetimedb_durability::History`] onto the database
+    /// state.
     ///
     /// Consumes `self` in order to ensure exclusive access, and to prevent use
     /// of the database in case of an incomplete replay.
     /// This restriction may be lifted in the future to allow for "live" followers.
-    ///
-    /// Alongside `Self`, the set of clients who were connected as of the most
-    /// recent transaction is returned as a [`ConnectedClients`].
-    /// `__disconnect__` should be called for each entry.
-    pub fn apply<T>(self, history: T) -> Result<(Self, ConnectedClients), DBError>
+    pub fn apply<T>(self, history: T) -> Result<Self, DBError>
     where
         T: durability::History<TxData = Txdata>,
     {
-        let connected_clients = apply_history(&self.inner, self.address, history)?;
-        Ok((self, connected_clients))
+        apply_history(&self.inner, self.address, history)?;
+        Ok(self)
     }
 
     /// Returns an approximate row count for a particular table.
@@ -1135,7 +1147,7 @@ impl fmt::Debug for LockFile {
     }
 }
 
-fn apply_history<H>(datastore: &Locking, address: Address, history: H) -> Result<ConnectedClients, DBError>
+fn apply_history<H>(datastore: &Locking, address: Address, history: H) -> Result<(), DBError>
 where
     H: durability::History<TxData = Txdata>,
 {
@@ -1171,7 +1183,7 @@ where
     datastore.rebuild_state_after_replay()?;
     log::info!("[{}] DATABASE: rebuilt state after replay", address);
 
-    Ok(replay.into_connected_clients())
+    Ok(())
 }
 
 /// Initialize local durability with the default parameters.

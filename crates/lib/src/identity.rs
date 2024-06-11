@@ -135,6 +135,20 @@ impl From<Identity> for AlgebraicValue {
     }
 }
 
+impl TryFrom<AlgebraicValue> for Identity {
+    type Error = AlgebraicValue;
+
+    fn try_from(av: AlgebraicValue) -> Result<Self, Self::Error> {
+        match &av {
+            AlgebraicValue::Product(pv) => pv
+                .field_as_bytes(0, Some("__identity_bytes"))
+                .map(Self::from_slice)
+                .map_err(|_| av),
+            _ => Err(av),
+        }
+    }
+}
+
 #[cfg(feature = "serde")]
 impl serde::Serialize for Identity {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
