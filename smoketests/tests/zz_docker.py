@@ -1,5 +1,6 @@
+import time
 from .. import Smoketest, run_cmd, requires_docker
-from urllib.request import urlopen, URLError
+from urllib.request import urlopen
 
 
 def restart_docker():
@@ -23,16 +24,19 @@ def restart_docker():
 def ping():
     tries = 0
     host = "127.0.0.1:3000"
-    while tries < 5:
+    while tries < 10:
         tries += 1
         try:
+            print(f"Ping Server at {host}")
             urlopen(f"http://{host}/database/ping")
+            print("Server up")
             break
-        except URLError:
+        except Exception:
             print("Server down")
+            time.sleep(3)
     else:
         raise Exception(f"Server at {host} not responding")
-    print(f"Server up after {tries} try")
+    print(f"Server up after {tries} tries")
 
 
 @requires_docker
