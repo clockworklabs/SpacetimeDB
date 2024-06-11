@@ -2,3 +2,4 @@ bin
 obj
 *.received.*
 .vs
+*.verified.cs linguist-generated=true eol=lf

@@ -28,7 +28,7 @@ public static class GeneratorSnapshotTests
                 sb.Clear();
                 var result = CSharpier.CodeFormatter.Format(
                     unformattedCode,
-                    new() { IncludeGenerated = true }
+                    new() { IncludeGenerated = true, EndOfLine = CSharpier.EndOfLine.LF }
                 );
                 if (result.CompilationErrors.Any())
                 {
