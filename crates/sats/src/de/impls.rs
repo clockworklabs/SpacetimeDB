@@ -58,6 +58,7 @@ impl_prim! {
 }
 
 impl_deserialize!([] (), de => de.deserialize_product(UnitVisitor));
+impl_deserialize!([T] PhantomData<T>, de => de.deserialize_product(UnitVisitor).map(|_| PhantomData));
 
 /// The `UnitVisitor` looks for a unit product.
 /// That is, it consumes nothing from the input.

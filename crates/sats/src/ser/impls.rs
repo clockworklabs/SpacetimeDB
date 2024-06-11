@@ -1,5 +1,6 @@
 use spacetimedb_primitives::ColList;
 use std::collections::BTreeMap;
+use std::marker::PhantomData;
 
 use crate::{
     AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType, F32, F64,
@@ -45,6 +46,7 @@ macro_rules! impl_prim {
 }
 
 impl_serialize!([] (), (self, ser) => ser.serialize_seq_product(0)?.end());
+impl_serialize!([T] PhantomData<T>, (self, ser) => ser.serialize_seq_product(0)?.end());
 
 impl_prim! {
     (bool, serialize_bool) /*(u8, serialize_u8)*/ (u16, serialize_u16)

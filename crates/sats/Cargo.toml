@@ -33,11 +33,14 @@ second-stack.workspace = true
 serde = { workspace = true, optional = true }
 smallvec.workspace = true
 thiserror.workspace = true
+lazy_static.workspace = true
+rand.workspace = true
+unicode-ident.workspace = true
+unicode-normalization.workspace = true
 
 [dev-dependencies]
 ahash.workspace = true
 bytes.workspace = true
-rand.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true
 proptest-derive.workspace = true

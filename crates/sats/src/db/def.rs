@@ -153,7 +153,7 @@ impl IndexSchema {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Display, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Display, Hash, de::Deserialize, ser::Serialize)]
 #[sats(crate = crate)]
 pub enum IndexType {
     BTree = 0,

@@ -137,6 +137,22 @@ pub enum SchemaError {
 }
 
 #[derive(thiserror::Error, Debug, PartialEq)]
+pub enum IdentifierError {
+    #[error("Identifier `{name}` is reserved by spacetimedb and cannot be used for table, column, or reducer names.")]
+    Reserved { name: Box<str> },
+
+    #[error("Identifier `{name}`'s starting character '{invalid_start}' does not start with an underscore or Unicode XID start character (according to Unicode Standard Annex 31).")]
+    InvalidStart { name: Box<str>, invalid_start: char },
+
+    #[error("Identifier `{name}` contains a character '{invalid_continue}' that is not a Unicode XID continue character (according to Unicode Standard Annex 31).")]
+    InvalidContinue { name: Box<str>, invalid_continue: char },
+
+    // This is not a particularly useful error without a link to WHICH identifier is empty.
+    #[error("Identifier is empty.")]
+    Empty {},
+}
+
+#[derive(thiserror::Error, Debug, PartialEq)]
 pub struct SchemaErrors(pub Vec<SchemaError>);
 
 impl fmt::Display for SchemaErrors {
