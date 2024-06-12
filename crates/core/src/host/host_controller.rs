@@ -369,22 +369,32 @@ impl HostController {
         Ok(update_result)
     }
 
-    // Accomodates control db bootstrap.
-    // Lives here to avoid letting the [RelationalDB] escape the controller.
-    // TODO: Figure out a non-bracket variant of `using_database`.
-    #[doc(hidden)]
-    pub async fn custom_bootstrap<F, T>(
+    /// Start the host `instance_id` and conditionally update it.
+    ///
+    /// If the host was not initialized before, it is initialized with the
+    /// program [`Database::initial_program`], which is loaded from the
+    /// controller's [`ProgramStorage`].
+    ///
+    /// If it was already initialized and its stored program hash matches
+    /// [`Database::initial_program`], no further action is taken.
+    ///
+    /// Otherwise, if `expected_hash` is `Some` and does **not** match the
+    /// stored hash, an error is returned.
+    ///
+    /// Otherwise, the host is updated to [`Database::initial_program`], loading
+    /// the program data from the controller's [`ProgramStorage`].
+    ///
+    /// > Note that this ascribes different semantics to [`Database::initial_program`]
+    /// > than elsewhere, where the [`Database`] value is provided by the control
+    /// > database. The method is mainly useful for bootstrapping the control
+    /// > database itself.
+    pub async fn init_maybe_update_module_host(
         &self,
-        caller_address: Option<Address>,
-        expected_hash: Option<Hash>,
         database: Database,
         instance_id: u64,
-        post_boot: F,
-    ) -> anyhow::Result<T>
-    where
-        F: FnOnce(&RelationalDB) -> anyhow::Result<T> + Send + 'static,
-        T: Send + 'static,
-    {
+        caller_address: Option<Address>,
+        expected_hash: Option<Hash>,
+    ) -> anyhow::Result<watch::Receiver<ModuleHost>> {
         trace!("custom bootstrap {}/{}", database.address, instance_id);
 
         let db_addr = database.address;
@@ -396,7 +406,7 @@ impl HostController {
             Some(host) => host,
             None => self.try_init_host(database, instance_id).await?,
         };
-        let module = host.module.clone();
+        let module = host.module.subscribe();
 
         // The program is now either:
         //
@@ -437,15 +447,7 @@ impl HostController {
             update_result.map(drop)?;
         }
 
-        let on_panic = self.unregister_fn(instance_id);
-        tokio::task::spawn_blocking(move || post_boot(&module.borrow().dbic().relational_db))
-            .await
-            .unwrap_or_else(|e| {
-                warn!("post-boot database operation panicked");
-                on_panic();
-                std::panic::resume_unwind(e.into_panic())
-            })
-            .map_err(Into::into)
+        Ok(module)
     }
 
     /// Release all resources of the [`ModuleHost`] identified by `instance_id`,
