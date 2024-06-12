@@ -69,14 +69,13 @@ pub struct no_index_u32_u64_u64 {
     y: u64,
 }
 
-#[spacetimedb::table(
-    index(btree, name = "id", columns =  [id]),
-    index(btree, name = "x", columns = [x]),
-    index(btree, name = "y", columns = [y]),
-)]
+#[spacetimedb::table]
 pub struct btree_each_column_u32_u64_u64 {
+    #[index(btree)]
     id: u32,
+    #[index(btree)]
     x: u64,
+    #[index(btree)]
     y: u64,
 }
 
