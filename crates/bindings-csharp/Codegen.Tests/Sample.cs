@@ -65,6 +65,7 @@ public partial class PublicTable
     public Dictionary<string, int> DictionaryField = [];
     public int? NullableValueField;
     public string? NullableReferenceField;
+    public Dictionary<CustomEnum?, List<int?>?>? ComplexNestedField;
 }
 
 public static class Reducers

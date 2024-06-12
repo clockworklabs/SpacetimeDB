@@ -193,6 +193,13 @@ partial class PublicTable
                             BSATN.NullableReferenceField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
+                    ),
+                    new(
+                        new SpacetimeDB.Module.ColumnDef(
+                            nameof(ComplexNestedField),
+                            BSATN.ComplexNestedField.GetAlgebraicType(registrar)
+                        ),
+                        SpacetimeDB.Module.ColumnAttrs.UnSet
                     )
                 },
                 false
@@ -272,6 +279,18 @@ partial class PublicTable
                     new(
                         nameof(NullableReferenceField),
                         (w, v) => BSATN.NullableReferenceField.Write(w, (string?)v!)
+                    ),
+                    new(
+                        nameof(ComplexNestedField),
+                        (w, v) =>
+                            BSATN.ComplexNestedField.Write(
+                                w,
+                                (System.Collections.Generic.Dictionary<
+                                    CustomEnum?,
+                                    System.Collections.Generic.List<int?>?
+                                >?)
+                                    v!
+                            )
                     ),
                 }
         );

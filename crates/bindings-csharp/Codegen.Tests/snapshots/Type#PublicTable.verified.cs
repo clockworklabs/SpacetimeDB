@@ -32,6 +32,7 @@ partial class PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
         DictionaryField = BSATN.DictionaryField.Read(reader);
         NullableValueField = BSATN.NullableValueField.Read(reader);
         NullableReferenceField = BSATN.NullableReferenceField.Read(reader);
+        ComplexNestedField = BSATN.ComplexNestedField.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
@@ -61,6 +62,7 @@ partial class PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
         BSATN.DictionaryField.Write(writer, DictionaryField);
         BSATN.NullableValueField.Write(writer, NullableValueField);
         BSATN.NullableReferenceField.Write(writer, NullableReferenceField);
+        BSATN.ComplexNestedField.Write(writer, ComplexNestedField);
     }
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<PublicTable>
@@ -102,6 +104,24 @@ partial class PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
             string,
             SpacetimeDB.BSATN.String
         > NullableReferenceField = new();
+        internal static readonly SpacetimeDB.BSATN.RefOption<
+            System.Collections.Generic.Dictionary<
+                CustomEnum?,
+                System.Collections.Generic.List<int?>?
+            >,
+            SpacetimeDB.BSATN.Dictionary<
+                CustomEnum?,
+                System.Collections.Generic.List<int?>?,
+                SpacetimeDB.BSATN.ValueOption<CustomEnum, SpacetimeDB.BSATN.Enum<CustomEnum>>,
+                SpacetimeDB.BSATN.RefOption<
+                    System.Collections.Generic.List<int?>,
+                    SpacetimeDB.BSATN.List<
+                        int?,
+                        SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>
+                    >
+                >
+            >
+        > ComplexNestedField = new();
 
         public PublicTable Read(System.IO.BinaryReader reader) =>
             SpacetimeDB.BSATN.IStructuralReadWrite.Read<PublicTable>(reader);
@@ -154,6 +174,10 @@ partial class PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
                         new(
                             nameof(NullableReferenceField),
                             NullableReferenceField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(ComplexNestedField),
+                            ComplexNestedField.GetAlgebraicType(registrar)
                         )
                     }
                 )

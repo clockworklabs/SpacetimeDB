@@ -58,7 +58,7 @@ public static class Utils
         )
         {
             // If we're here, then this is a nullable reference type like `string?` and the original definition is `string`.
-            type = type.OriginalDefinition;
+            type = type.WithNullableAnnotation(NullableAnnotation.None);
             return $"SpacetimeDB.BSATN.RefOption<{type}, {GetTypeInfo(type)}>";
         }
         return type switch
