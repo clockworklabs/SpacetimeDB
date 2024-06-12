@@ -13,7 +13,7 @@ use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol
 use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, Storage};
-use spacetimedb::messages::ws;
+use spacetimedb::messages::websocket as ws;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
 use spacetimedb_lib::{bsatn, sats};
 

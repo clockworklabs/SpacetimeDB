@@ -5,7 +5,7 @@ use crate::db::relational_db::{RelationalDB, Tx};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, ModuleEvent, ProtocolDatabaseUpdate};
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
-use crate::messages::ws::{self, TableUpdate};
+use crate::messages::websocket::{self as ws, TableUpdate};
 use arrayvec::ArrayVec;
 use itertools::Either;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};

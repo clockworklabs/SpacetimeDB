@@ -9,7 +9,7 @@ use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
-use crate::messages::ws::Subscribe;
+use crate::messages::websocket::Subscribe;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
@@ -219,7 +219,7 @@ mod tests {
     use crate::db::relational_db::RelationalDB;
     use crate::error::DBError;
     use crate::execution_context::ExecutionContext;
-    use spacetimedb_client_api_messages::ws::Subscribe;
+    use spacetimedb_client_api_messages::websocket::Subscribe;
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
     use spacetimedb_sats::db::auth::StAccess;
     use spacetimedb_sats::db::error::AuthError;

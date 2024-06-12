@@ -14,7 +14,7 @@ use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
 use crate::messages::control_db::Database;
-use crate::messages::ws::{self, TableUpdate};
+use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::sql;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};

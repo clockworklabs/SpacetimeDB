@@ -29,7 +29,7 @@ use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdateRelValue, ProtocolDatabaseUpdate, UpdatesRelValue};
 use crate::json::client_api::TableUpdateJson;
-use crate::messages::ws;
+use crate::messages::websocket as ws;
 use crate::vm::{build_query, TxMode};
 use anyhow::Context;
 use itertools::Either;

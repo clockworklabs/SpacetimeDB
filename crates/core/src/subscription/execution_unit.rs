@@ -10,7 +10,7 @@ use crate::host::module_host::{
     UpdatesRelValue,
 };
 use crate::json::client_api::TableUpdateJson;
-use crate::messages::ws::TableUpdate;
+use crate::messages::websocket::TableUpdate;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
 use spacetimedb_lib::{Identity, ProductValue};

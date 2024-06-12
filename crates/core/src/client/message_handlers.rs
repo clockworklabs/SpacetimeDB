@@ -6,7 +6,7 @@ use crate::execution_context::WorkloadType;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::{ReducerArgs, ReducerId, Timestamp};
 use crate::identity::Identity;
-use crate::messages::ws::{self, CallReducer, ClientMessage, OneOffQuery, Subscribe};
+use crate::messages::websocket::{self as ws, CallReducer, ClientMessage, OneOffQuery, Subscribe};
 use crate::worker_metrics::WORKER_METRICS;
 use base64::Engine;
 use bytes::Bytes;

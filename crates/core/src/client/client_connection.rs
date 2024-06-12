@@ -7,7 +7,7 @@ use super::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use super::{message_handlers, ClientActorId, MessageHandleError};
 use crate::error::DBError;
 use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
-use crate::messages::ws::Subscribe;
+use crate::messages::websocket::Subscribe;
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;

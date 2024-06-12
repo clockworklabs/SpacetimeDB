@@ -12,7 +12,7 @@ use crate::json::client_api::{
     EventJson, FunctionCallJson, IdentityTokenJson, MessageJson, OneOffQueryResponseJson, OneOffTableJson,
     SubscriptionUpdateJson, TableUpdateJson, TransactionUpdateJson,
 };
-use crate::messages::ws;
+use crate::messages::websocket as ws;
 use spacetimedb_lib::{bsatn, Address};
 
 use super::message_handlers::MessageExecutionError;
