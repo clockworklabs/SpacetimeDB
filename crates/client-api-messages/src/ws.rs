@@ -6,9 +6,12 @@ use spacetimedb_sats::SpacetimeType;
 use crate::energy::EnergyQuanta;
 use crate::timestamp::Timestamp;
 
+/// Messages sent from the client to the server.
+///
+/// Parametric over the reducer argument type to enable [`ClientMessage::map_args`].
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
-pub enum ClientMessage<Args = Row> {
+pub enum ClientMessage<Args = BsatnBytes> {
     /// Request a reducer run.
     CallReducer(CallReducer<Args>),
     /// Register SQL queries on which to receive updates.
@@ -35,25 +38,22 @@ impl<Args> ClientMessage<Args> {
     }
 }
 
+/// Request a reducer run.
+///
+/// Parametric over the argument type to enable [`ClientMessage::map_args`].
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
-pub struct CallReducer<Args> {
-    /// The name or id of the reducer to call.
-    pub reducer: ReducerId,
-    /// The arguments to the reducer, encoded as ????.
+pub struct CallReducer<Args = BsatnBytes> {
+    /// The name of the reducer to call.
+    pub reducer: String,
+    /// The arguments to the reducer.
+    ///
+    /// In the wire format, this will be a [`BsatnBytes`], encoded according to the reducer's argument schema.
     pub args: Args,
-    /// An identifier for a client request
+    /// An identifier for a client request.
+    ///
+    /// The server will include the same ID in the response [`TransactionUpdate`].
     pub request_id: u32,
-}
-
-/// A specification of the reducer to call for [`CallReducer`].
-#[derive(SpacetimeType)]
-#[sats(crate = spacetimedb_lib)]
-pub enum ReducerId {
-    /// A reducer specified by its name.
-    Name(String),
-    // /// A reducer specified by its numerical ID.
-    // Id(u32),
 }
 
 /// Sent by client to database to register a set of queries, about which the client will
@@ -93,6 +93,7 @@ pub struct OneOffQuery {
     pub query_string: String,
 }
 
+/// Messages sent from the server to the client.
 #[derive(SpacetimeType, derive_more::From)]
 #[sats(crate = spacetimedb_lib)]
 pub enum ServerMessage {
@@ -106,9 +107,11 @@ pub enum ServerMessage {
     OneOffQueryResponse(OneOffQueryResponse),
 }
 
+/// Response to [`Subscribe`] containing the initial matching rows.
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct InitialSubscription {
+    /// A [`DatabaseUpdate`] containing only inserts, the rows which match the subscription queries.
     pub database_update: DatabaseUpdate,
     /// An identifier sent by the client in requests.
     /// The server will include the same request_id in the response.
@@ -168,6 +171,7 @@ pub struct TransactionUpdate {
     pub host_execution_duration_micros: u64,
 }
 
+/// Contained in a [`TransactionUpdate`], metadata about a reducer invocation.
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct ReducerCallInfo {
@@ -175,8 +179,8 @@ pub struct ReducerCallInfo {
     pub reducer_name: String,
     /// The numerical id of the reducer that was called.
     pub reducer_id: u32,
-    /// The arguments to the reducer.
-    pub args: Row,
+    /// The arguments to the reducer, encoded as BSATN according to the reducer's argument schema.
+    pub args: BsatnBytes,
     /// An identifier for a client request
     pub request_id: u32,
 }
@@ -196,6 +200,7 @@ pub enum UpdateStatus {
     OutOfEnergy,
 }
 
+/// A collection of inserted and deleted rows, contained in a [`TransactionUpdate`] or [`SubscriptionUpdate`].
 #[derive(SpacetimeType, Debug, Clone, Default)]
 #[sats(crate = spacetimedb_lib)]
 pub struct DatabaseUpdate {
@@ -216,8 +221,7 @@ impl FromIterator<TableUpdate> for DatabaseUpdate {
     }
 }
 
-/// Part of a `SubscriptionUpdate` received by client from database for alterations to a
-/// single table.
+/// Part of a [`DatabaseUpdate`] received by client from database for alterations to a single table.
 #[derive(SpacetimeType, Debug, Clone)]
 #[sats(crate = spacetimedb_lib)]
 pub struct TableUpdate {
@@ -226,22 +230,32 @@ pub struct TableUpdate {
     pub table_id: TableId,
     /// The name of the table.
     pub table_name: String,
-    pub deletes: Vec<Row>,
-    pub inserts: Vec<Row>,
+    /// When in a [`TransactionUpdate`], the matching rows of this table deleted by the transaction.
+    ///
+    /// Rows are encoded as BSATN according to the table's schema.
+    ///
+    /// Always empty when in an [`InitialSubscription`].
+    pub deletes: Vec<BsatnBytes>,
+    /// When in a [`TransactionUpdate`], the matching rows of this table inserted by the transaction.
+    /// When in an [`InitialSubscription`], the matching rows of this table in the entire committed state.
+    ///
+    /// Rows are encoded as BSATN according to the table's schema.
+    pub inserts: Vec<BsatnBytes>,
 }
 
+/// BSATN-encoded bytes of either a row in a table, or the arguments to a reducer.
 #[derive(SpacetimeType, Debug, Clone, derive_more::From)]
 #[sats(crate = spacetimedb_lib, transparent)]
-pub struct Row(pub Bytes);
+pub struct BsatnBytes(pub Bytes);
 
-impl From<Vec<u8>> for Row {
+impl From<Vec<u8>> for BsatnBytes {
     fn from(b: Vec<u8>) -> Self {
-        Row(b.into())
+        BsatnBytes(b.into())
     }
 }
 
-/// A one-off query response.
-/// Will contain either one error or multiple response rows.
+/// A response to a [`OneOffQuery`].
+/// Will contain either one error or some number of response rows.
 /// At most one of these messages will be sent in reply to any query.
 ///
 /// The messageId will be identical to the one sent in the original query.
@@ -249,15 +263,22 @@ impl From<Vec<u8>> for Row {
 #[sats(crate = spacetimedb_lib)]
 pub struct OneOffQueryResponse {
     pub message_id: Vec<u8>,
+    /// If query compilation or evalaution errored, an error message.
     pub error: Option<String>,
+
+    /// If query compilation and evaluation succeeded, a set of resulting rows, grouped by table.
     pub tables: Vec<OneOffTable>,
+
+    /// The total duration of query compilation and evaluation on the server, in microseconds.
     pub total_host_execution_duration_micros: u64,
 }
 
-/// A table included as part of a one-off query.
+/// A table included as part of a [`OneOffQueryResponse`].
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
 pub struct OneOffTable {
+    /// The name of the table.
     pub table_name: String,
-    pub rows: Vec<Row>,
+    /// The set of rows which matched the query, encoded as BSATN according to the table's schema.
+    pub rows: Vec<BsatnBytes>,
 }

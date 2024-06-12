@@ -201,7 +201,7 @@ impl UpdatesRelValue<'_> {
             .collect()
     }
 
-    pub fn to_bsatn(&self) -> (Vec<ws::Row>, Vec<ws::Row>) {
+    pub fn to_bsatn(&self) -> (Vec<ws::BsatnBytes>, Vec<ws::BsatnBytes>) {
         let mut scratch = Vec::new();
         (
             self.deletes
@@ -248,7 +248,7 @@ pub(crate) fn rel_value_to_table_row_op_json(row: RelValue<'_>, op: OpType) -> T
 }
 
 /// Annotate `row` BSATN-encoded with `op` as a `TableRowOperation`.
-pub(crate) fn rel_value_to_table_row(scratch: &mut Vec<u8>, row: &RelValue<'_>) -> ws::Row {
+pub(crate) fn rel_value_to_table_row(scratch: &mut Vec<u8>, row: &RelValue<'_>) -> ws::BsatnBytes {
     row.to_bsatn_extend(scratch).unwrap();
     let row = scratch.clone();
     scratch.clear();

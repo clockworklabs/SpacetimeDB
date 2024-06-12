@@ -56,7 +56,7 @@ impl ModuleHandle {
 
     pub async fn call_reducer_binary(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
         let message = ws::ClientMessage::CallReducer(ws::CallReducer {
-            reducer: ws::ReducerId::Name(reducer.to_string()),
+            reducer: reducer.to_string(),
             args: bsatn::to_vec(&args).unwrap(),
             request_id: 0,
         });

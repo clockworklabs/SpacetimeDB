@@ -364,7 +364,7 @@ impl BackgroundDbConnection {
 
     pub(crate) fn invoke_reducer<R: Reducer>(&self, reducer: R) -> Result<()> {
         self.send_message(ws_messages::ClientMessage::CallReducer(ws_messages::CallReducer {
-            reducer: ws_messages::ReducerId::Name(R::REDUCER_NAME.to_string()),
+            reducer: R::REDUCER_NAME.to_string(),
             args: bsatn::to_vec(&reducer).expect("Serializing reducer failed").into(),
             request_id: 0,
         }))

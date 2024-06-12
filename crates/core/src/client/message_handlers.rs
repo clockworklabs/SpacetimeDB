@@ -68,7 +68,6 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
             args,
             request_id,
         }) => {
-            let ws::ReducerId::Name(reducer) = reducer;
             let res = client.call_reducer(reducer, args, request_id, timer).await;
             WORKER_METRICS
                 .request_round_trip
@@ -115,7 +114,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
 fn decode_json_message(message: ByteString) -> Result<ClientMessage<ReducerArgs>, MessageHandleError> {
     let msg = match serde_json::from_str::<RawJsonMessage<'_>>(&message)? {
         RawJsonMessage::Call { func, args, request_id } => ClientMessage::CallReducer(CallReducer {
-            reducer: ws::ReducerId::Name(func.into_owned()),
+            reducer: func.into_owned(),
             args: ReducerArgs::Json(message.slice_ref(args.get())),
             request_id,
         }),
