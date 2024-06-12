@@ -3,6 +3,7 @@ namespace Codegen.Tests;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -12,6 +13,19 @@ using Xunit;
 
 public static class GeneratorSnapshotTests
 {
+    private static string GetDotNetDir() =>
+        Path.GetDirectoryName(typeof(object).Assembly.Location)!;
+
+    private static string GetProjectDirectory([CallerFilePath] string? currentFile = null) =>
+        Path.GetDirectoryName(currentFile)!;
+
+    private static readonly ImmutableArray<PortableExecutableReference> CompilationReferences;
+
+    private static readonly CSharpCompilationOptions CompilationOptions =
+        new(OutputKind.ConsoleApplication, nullableContextOptions: NullableContextOptions.Enable);
+
+    private static readonly SyntaxTree SampleSource;
+
     static GeneratorSnapshotTests()
     {
         // Default diff order is weird and causes new lines to look like deleted and old as inserted.
@@ -43,36 +57,24 @@ public static class GeneratorSnapshotTests
             },
             ScrubberLocation.Last
         );
-    }
 
-    private static readonly string DotNetDir = Path.GetDirectoryName(
-        typeof(object).Assembly.Location
-    )!;
-
-    private static readonly ImmutableArray<PortableExecutableReference> CompilationReferences =
-        Enumerable
+        var dotNetDir = GetDotNetDir();
+        var projectDir = GetProjectDirectory();
+        CompilationReferences = Enumerable
             .Concat(
                 ImmutableArray
                     .Create("System.Private.CoreLib", "System.Runtime")
-                    .Select(assemblyName => Path.Join(DotNetDir, $"{assemblyName}.dll")),
+                    .Select(name => $"{dotNetDir}/{name}.dll"),
                 ImmutableArray
-                    .Create(
-                        // For `SpacetimeDB.BSATN.Runtime`.
-                        typeof(SpacetimeDB.TypeAttribute),
-                        // For `SpacetimeDB.Runtime`.
-                        typeof(SpacetimeDB.TableAttribute)
-                    )
-                    .Select(type => type.Assembly.Location)
+                    .Create("BSATN.Runtime", "Runtime")
+                    .Select(name => $"{projectDir}/../{name}/bin/Debug/net8.0/SpacetimeDB.{name}.dll")
             )
             .Select(assemblyPath => MetadataReference.CreateFromFile(assemblyPath))
             .ToImmutableArray();
 
-    private static readonly CSharpCompilationOptions CompilationOptions =
-        new(OutputKind.ConsoleApplication, nullableContextOptions: NullableContextOptions.Enable);
-
-    private static readonly SyntaxTree SampleSource = CSharpSyntaxTree.ParseText(
-        SourceText.From(Assembly.GetExecutingAssembly().GetManifestResourceStream("Sample.cs")!)
-    );
+        using var sample = File.OpenRead($"{projectDir}/Sample.cs");
+        SampleSource = CSharpSyntaxTree.ParseText(SourceText.From(sample));
+    }
 
     [Theory]
     [InlineData(typeof(SpacetimeDB.Codegen.Module))]
