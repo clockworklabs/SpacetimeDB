@@ -1,7 +1,5 @@
-// TODO: change the triple-slash comments to normal comments in the .proto
-#![allow(clippy::four_forward_slashes)]
-
-include!(concat!(env!("OUT_DIR"), "/protobuf.rs"));
-
+pub mod energy;
 pub mod name;
 pub mod recovery;
+pub mod timestamp;
+pub mod ws;

@@ -147,7 +147,7 @@ where
         // message.
         let message = IdentityTokenMessage {
             identity: auth.identity,
-            identity_token,
+            token: identity_token,
             address: client_address,
         };
         if let Err(e) = client.send_message(message) {

@@ -29,11 +29,11 @@ use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdateRelValue, ProtocolDatabaseUpdate, UpdatesRelValue};
 use crate::json::client_api::TableUpdateJson;
+use crate::messages::ws;
 use crate::vm::{build_query, TxMode};
 use anyhow::Context;
 use itertools::Either;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use spacetimedb_client_api_messages::client_api::TableUpdate;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{Identity, ProductValue};
@@ -554,13 +554,15 @@ impl ExecutionSet {
         db: &RelationalDB,
         tx: &Tx,
         slow_query_threshold: Option<Duration>,
-    ) -> Vec<TableUpdate> {
+    ) -> ws::DatabaseUpdate {
         // evaluate each of the execution units in this ExecutionSet in parallel
-        self.exec_units
+        let tables = self
+            .exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
             .filter_map(|unit| unit.eval_binary(ctx, db, tx, &unit.sql, slow_query_threshold))
-            .collect()
+            .collect();
+        ws::DatabaseUpdate { tables }
     }
 
     #[tracing::instrument(skip_all)]

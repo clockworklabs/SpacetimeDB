@@ -1,8 +1,9 @@
 use std::time::{Duration, SystemTime};
 
-use spacetimedb_sats::{impl_deserialize, impl_serialize};
+use spacetimedb_sats::SpacetimeType;
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug, serde::Serialize)]
+#[derive(SpacetimeType, Copy, Clone, PartialEq, Eq, Debug, serde::Serialize)]
+#[sats(crate = spacetimedb_sats, transparent)]
 #[serde(transparent)]
 #[repr(transparent)]
 pub struct Timestamp(pub u64);
@@ -25,6 +26,3 @@ impl Timestamp {
             .unwrap_or(Duration::ZERO)
     }
 }
-
-impl_deserialize!([] Timestamp, de => u64::deserialize(de).map(Self));
-impl_serialize!([] Timestamp, (self, ser) => self.0.serialize(ser));

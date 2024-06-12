@@ -7,16 +7,15 @@ description = "Types for the SpacetimeDB client API messages"
 
 [dependencies]
 spacetimedb-lib = { workspace = true, features = ["serde"] }
+spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 
+bytes.workspace = true
 chrono = { workspace = true, features = ["serde"] }
-prost.workspace = true
 serde = { workspace = true, features = ["derive"] }
 strum.workspace = true
 thiserror.workspace = true
-
-[build-dependencies]
-prost-build.workspace = true
+derive_more.workspace = true
 
 [dev-dependencies]
 hex.workspace = true

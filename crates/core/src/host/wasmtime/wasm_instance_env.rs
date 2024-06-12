@@ -6,7 +6,6 @@ use std::time::Instant;
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::execution_context::ExecutionContext;
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
-use crate::host::timestamp::Timestamp;
 use crate::host::wasm_common::instrumentation;
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
 use crate::host::wasm_common::{
@@ -14,6 +13,7 @@ use crate::host::wasm_common::{
     TimingSpanIdx, TimingSpanSet,
 };
 use crate::host::AbiCall;
+use crate::host::Timestamp;
 use anyhow::{anyhow, Context};
 use spacetimedb_primitives::errno;
 use wasmtime::{AsContext, Caller, StoreContextMut};

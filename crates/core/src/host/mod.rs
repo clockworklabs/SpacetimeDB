@@ -18,7 +18,6 @@ pub mod scheduler;
 mod wasmtime;
 // Visible for integration testing.
 pub mod instance_env;
-mod timestamp;
 mod wasm_common;
 
 pub use disk_storage::DiskStorage;
@@ -29,7 +28,7 @@ pub use module_host::{
     EntityDef, ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult, UpdateDatabaseSuccess,
 };
 pub use scheduler::Scheduler;
-pub use timestamp::Timestamp;
+pub use spacetimedb_client_api_messages::timestamp::Timestamp;
 
 #[derive(Debug)]
 pub enum ReducerArgs {
@@ -110,6 +109,16 @@ impl std::fmt::Display for ReducerId {
 impl From<usize> for ReducerId {
     fn from(id: usize) -> Self {
         Self(id as u32)
+    }
+}
+impl From<u32> for ReducerId {
+    fn from(id: u32) -> Self {
+        Self(id)
+    }
+}
+impl From<ReducerId> for u32 {
+    fn from(id: ReducerId) -> Self {
+        id.0
     }
 }
 

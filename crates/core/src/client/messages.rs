@@ -1,22 +1,19 @@
 use base64::Engine;
 use brotli::CompressorReader;
 use derive_more::From;
-use prost::Message as _;
 use spacetimedb_lib::identity::RequestId;
+use spacetimedb_vm::relation::MemTable;
 use std::io::Read;
 use std::sync::Arc;
 use std::time::Instant;
 
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ProtocolDatabaseUpdate};
-use crate::identity::Identity;
 use crate::json::client_api::{
     EventJson, FunctionCallJson, IdentityTokenJson, MessageJson, OneOffQueryResponseJson, OneOffTableJson,
     SubscriptionUpdateJson, TableUpdateJson, TransactionUpdateJson,
 };
-use crate::protobuf::client_api::{event, message, Event, FunctionCall, IdentityToken, Message, TransactionUpdate};
-use spacetimedb_client_api_messages::client_api::{OneOffQueryResponse, OneOffTable, TableUpdate};
-use spacetimedb_lib::Address;
-use spacetimedb_vm::relation::MemTable;
+use crate::messages::ws;
+use spacetimedb_lib::{bsatn, Address};
 
 use super::message_handlers::MessageExecutionError;
 use super::{DataMessage, Protocol};
@@ -28,7 +25,7 @@ pub trait ServerMessage: Sized {
         match protocol {
             Protocol::Text => self.serialize_text().to_json().into(),
             Protocol::Binary => {
-                let msg_bytes = self.serialize_binary().encode_to_vec();
+                let msg_bytes = bsatn::to_vec(&self.serialize_binary()).unwrap();
                 let reader = &mut &msg_bytes[..];
 
                 // TODO(perf): Compression should depend on message size and type.
@@ -64,7 +61,7 @@ pub trait ServerMessage: Sized {
         }
     }
     fn serialize_text(self) -> MessageJson;
-    fn serialize_binary(self) -> Message;
+    fn serialize_binary(self) -> ws::ServerMessage;
 }
 
 #[derive(Debug, From)]
@@ -89,7 +86,7 @@ impl ServerMessage for SerializableMessage {
         }
     }
 
-    fn serialize_binary(self) -> Message {
+    fn serialize_binary(self) -> ws::ServerMessage {
         match self {
             SerializableMessage::Query(msg) => msg.serialize_binary(),
             SerializableMessage::Error(msg) => msg.serialize_binary(),
@@ -101,29 +98,18 @@ impl ServerMessage for SerializableMessage {
     }
 }
 
-#[derive(Debug)]
-pub struct IdentityTokenMessage {
-    pub identity: Identity,
-    pub identity_token: String,
-    pub address: Address,
-}
+pub type IdentityTokenMessage = ws::IdentityToken;
 
 impl ServerMessage for IdentityTokenMessage {
     fn serialize_text(self) -> MessageJson {
         MessageJson::IdentityToken(IdentityTokenJson {
             identity: self.identity,
-            token: self.identity_token,
+            token: self.token,
             address: self.address,
         })
     }
-    fn serialize_binary(self) -> Message {
-        Message {
-            r#type: Some(message::Type::IdentityToken(IdentityToken {
-                identity: self.identity.as_bytes().to_vec(),
-                token: self.identity_token,
-                address: self.address.as_slice().to_vec(),
-            })),
-        }
+    fn serialize_binary(self) -> ws::ServerMessage {
+        ws::ServerMessage::IdentityToken(self)
     }
 }
 
@@ -133,7 +119,7 @@ pub struct TransactionUpdateMessage<U> {
     pub database_update: SubscriptionUpdate<U>,
 }
 
-impl<U: Into<Vec<TableUpdate>> + Into<Vec<TableUpdateJson>>> ServerMessage for TransactionUpdateMessage<U> {
+impl<U: Into<ws::DatabaseUpdate> + Into<Vec<TableUpdateJson>>> ServerMessage for TransactionUpdateMessage<U> {
     fn serialize_text(self) -> MessageJson {
         let Self { event, database_update } = self;
         let (status_str, errmsg) = match &event.status {
@@ -163,37 +149,30 @@ impl<U: Into<Vec<TableUpdate>> + Into<Vec<TableUpdateJson>>> ServerMessage for T
         })
     }
 
-    fn serialize_binary(self) -> Message {
+    fn serialize_binary(self) -> ws::ServerMessage {
         let Self { event, database_update } = self;
-        let (status, errmsg) = match &event.status {
-            EventStatus::Committed(_) => (event::Status::Committed, String::new()),
-            EventStatus::Failed(errmsg) => (event::Status::Failed, errmsg.clone()),
-            EventStatus::OutOfEnergy => (event::Status::OutOfEnergy, String::new()),
+        let status = match &event.status {
+            EventStatus::Committed(_) => ws::UpdateStatus::Committed(database_update.database_update.into()),
+            EventStatus::Failed(errmsg) => ws::UpdateStatus::Failed(errmsg.clone()),
+            EventStatus::OutOfEnergy => ws::UpdateStatus::OutOfEnergy,
         };
 
-        let event = Event {
-            timestamp: event.timestamp.0,
-            status: status.into(),
-            caller_identity: event.caller_identity.to_vec(),
-            function_call: Some(FunctionCall {
-                reducer: event.function_call.reducer.to_owned(),
-                arg_bytes: event.function_call.args.get_bsatn().clone().into(),
+        let tx_update = ws::TransactionUpdate {
+            timestamp: event.timestamp,
+            status,
+            caller_identity: event.caller_identity,
+            reducer_call: ws::ReducerCallInfo {
+                reducer_name: event.function_call.reducer.to_owned(),
+                reducer_id: event.function_call.reducer_id.into(),
+                args: event.function_call.args.get_bsatn().clone().into(),
                 request_id: database_update.request_id.unwrap_or(0),
-            }),
-            message: errmsg,
-            energy_quanta_used: event.energy_quanta_used.get() as i64,
+            },
+            energy_quanta_used: event.energy_quanta_used,
             host_execution_duration_micros: event.host_execution_duration.as_micros() as u64,
-            caller_address: event.caller_address.unwrap_or(Address::zero()).as_slice().to_vec(),
+            caller_address: event.caller_address.unwrap_or(Address::zero()),
         };
 
-        let tx_update = TransactionUpdate {
-            event: Some(event),
-            subscription_update: Some(database_update.into_protobuf()),
-        };
-
-        Message {
-            r#type: Some(message::Type::TransactionUpdate(tx_update)),
-        }
+        ws::ServerMessage::TransactionUpdate(tx_update)
     }
 }
 
@@ -207,10 +186,13 @@ impl ServerMessage for SubscriptionUpdateMessage {
         MessageJson::SubscriptionUpdate(self.subscription_update.into_json())
     }
 
-    fn serialize_binary(self) -> Message {
-        let msg = self.subscription_update.into_protobuf();
-        let r#type = Some(message::Type::SubscriptionUpdate(msg));
-        Message { r#type }
+    fn serialize_binary(self) -> ws::ServerMessage {
+        let upd = self.subscription_update;
+        ws::ServerMessage::InitialSubscription(ws::InitialSubscription {
+            database_update: upd.database_update.into(),
+            request_id: upd.request_id.unwrap_or(0),
+            total_host_execution_duration_micros: upd.timer.map_or(0, |t| t.elapsed().as_micros() as u64),
+        })
     }
 }
 
@@ -219,16 +201,6 @@ pub struct SubscriptionUpdate<U> {
     pub database_update: U,
     pub request_id: Option<RequestId>,
     pub timer: Option<Instant>,
-}
-
-impl<T: Into<Vec<TableUpdate>>> SubscriptionUpdate<T> {
-    fn into_protobuf(self) -> spacetimedb_client_api_messages::client_api::SubscriptionUpdate {
-        spacetimedb_client_api_messages::client_api::SubscriptionUpdate {
-            table_updates: self.database_update.into(),
-            request_id: self.request_id.unwrap_or(0),
-            total_host_execution_duration_micros: self.timer.map_or(0, |t| t.elapsed().as_micros() as u64),
-        }
-    }
 }
 
 impl<T: Into<Vec<TableUpdateJson>>> SubscriptionUpdate<T> {
@@ -265,29 +237,23 @@ impl ServerMessage for OneOffQueryResponseMessage {
         })
     }
 
-    fn serialize_binary(self) -> Message {
-        Message {
-            r#type: Some(message::Type::OneOffQueryResponse(OneOffQueryResponse {
-                message_id: self.message_id,
-                error: self.error.unwrap_or_default(),
-                tables: self
-                    .results
-                    .into_iter()
-                    .map(|table| OneOffTable {
-                        table_name: table.head.table_name.clone().into(),
-                        row: table
-                            .data
-                            .into_iter()
-                            .map(|row| {
-                                let mut row_bytes = Vec::new();
-                                row.encode(&mut row_bytes);
-                                row_bytes
-                            })
-                            .collect(),
-                    })
-                    .collect(),
-                total_host_execution_duration_micros: self.total_host_execution_duration,
-            })),
-        }
+    fn serialize_binary(self) -> ws::ServerMessage {
+        ws::ServerMessage::OneOffQueryResponse(ws::OneOffQueryResponse {
+            message_id: self.message_id,
+            error: self.error,
+            tables: self
+                .results
+                .into_iter()
+                .map(|table| ws::OneOffTable {
+                    table_name: table.head.table_name.clone().into(),
+                    rows: table
+                        .data
+                        .into_iter()
+                        .map(|row| bsatn::to_vec(&row).unwrap().into())
+                        .collect(),
+                })
+                .collect(),
+            total_host_execution_duration_micros: self.total_host_execution_duration,
+        })
     }
 }

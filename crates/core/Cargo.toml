@@ -62,7 +62,6 @@ parking_lot.workspace = true
 paste.workspace = true
 pin-project-lite.workspace = true
 prometheus.workspace = true
-prost.workspace = true
 rayon.workspace = true
 rayon-core.workspace = true
 regex.workspace = true
@@ -117,6 +116,3 @@ proptest.workspace = true
 proptest-derive.workspace = true
 rand.workspace = true
 env_logger.workspace = true
-
-[build-dependencies]
-prost-build.workspace = true

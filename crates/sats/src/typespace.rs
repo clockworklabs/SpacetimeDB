@@ -253,3 +253,10 @@ impl_st!([] (), _ts => AlgebraicType::unit());
 impl_st!([] &str, _ts => AlgebraicType::String);
 impl_st!([T: SpacetimeType] Vec<T>, ts => AlgebraicType::array(T::make_type(ts)));
 impl_st!([T: SpacetimeType] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));
+
+impl_st!([] spacetimedb_primitives::ColId, _ts => AlgebraicType::U32);
+impl_st!([] spacetimedb_primitives::TableId, _ts => AlgebraicType::U32);
+impl_st!([] spacetimedb_primitives::IndexId, _ts => AlgebraicType::U32);
+impl_st!([] spacetimedb_primitives::SequenceId, _ts => AlgebraicType::U32);
+
+impl_st!([] bytes::Bytes, _ts => AlgebraicType::bytes());

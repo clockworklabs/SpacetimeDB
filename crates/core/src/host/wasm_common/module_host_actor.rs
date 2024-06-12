@@ -5,13 +5,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, Address, ModuleDef, ModuleValidationError, TableDesc};
 use spacetimedb_sats::hash::Hash;
 
 use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
-use crate::database_logger::{LogLevel, Record, SystemLogger};
+use crate::database_logger::SystemLogger;
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::system_tables::{StClientsRow, ST_CLIENTS_ID};
 use crate::db::datastore::traits::IsolationLevel;
@@ -26,7 +25,6 @@ use crate::host::{ArgsTuple, EntityDef, ReducerCallResult, ReducerId, ReducerOut
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
-use crate::sql;
 use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::const_unwrap;
 use crate::util::prometheus_handle::HistogramExt;
@@ -250,55 +248,8 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         &self.database_instance_context
     }
 
-    fn inject_logs(&self, log_level: LogLevel, message: &str) {
-        self.database_instance_context.logger.write(
-            log_level,
-            &Record {
-                ts: chrono::Utc::now(),
-                target: None,
-                filename: Some("external"),
-                line_number: None,
-                message,
-            },
-            &(),
-        )
-    }
-
     fn close(self) {
         self.scheduler.close()
-    }
-
-    #[tracing::instrument(skip_all)]
-    fn one_off_query(
-        &self,
-        caller_identity: Identity,
-        query: String,
-    ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError> {
-        let db = &self.database_instance_context.relational_db;
-        let auth = AuthCtx::new(self.database_instance_context.owner_identity, caller_identity);
-        log::debug!("One-off query: {query}");
-        // Don't need the `slow query` logger on compilation
-        db.with_read_only(&ExecutionContext::sql(db.address()), |tx| {
-            let ast = sql::compiler::compile_sql(db, tx, &query)?;
-            sql::execute::execute_sql_tx(db, tx, &query, ast, auth)
-                .and_then(|res| Ok(res.context("One-off queries are not allowed to modify the database")?))
-        })
-    }
-
-    fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
-        let db = &*self.database_instance_context.relational_db;
-        db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
-            let tables = db.get_all_tables_mut(tx)?;
-            // We currently have unique table names,
-            // so we can assume there's only one table to clear.
-            if let Some(table_id) = tables
-                .iter()
-                .find_map(|t| (&*t.table_name == table_name).then_some(t.table_id))
-            {
-                db.clear_table(tx, table_id)?;
-            }
-            Ok(())
-        })
     }
 }
 
@@ -479,8 +430,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     /// depending on the outcome of the reducer call.
     //
     // TODO(kim): This should probably change in the future. The reason it is
-    // not straightforward is that the returned [`EventStatus`] is constructed
-    // from transaction data in the [`EventStatus::Committed`] (i.e. success)
+    // not straightforward is that the returned [`UpdateStatus`] is constructed
+    // from transaction data in the [`UpdateStatus::Committed`] (i.e. success)
     // case.
     //
     /// The method also performs various measurements and records energy usage,
@@ -618,6 +569,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             caller_address: caller_address_opt,
             function_call: ModuleFunctionCall {
                 reducer: reducer_name.to_owned(),
+                reducer_id,
                 args,
             },
             status,

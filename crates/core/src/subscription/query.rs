@@ -295,7 +295,7 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval(ctx, Protocol::Binary, db, tx, None).tables.unwrap_left();
+        let result = s.eval(ctx, Protocol::Binary, db, tx, None).tables.unwrap_left().tables;
         assert_eq!(
             result.len(),
             total_tables,
@@ -304,7 +304,7 @@ mod tests {
 
         let result = result
             .into_iter()
-            .flat_map(|x| x.table_row_operations.into_iter().map(|x| x.row))
+            .flat_map(|x| x.deletes.into_iter().chain(x.inserts).map(|r| r.0))
             .sorted()
             .collect_vec();
 

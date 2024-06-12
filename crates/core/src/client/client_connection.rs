@@ -7,7 +7,7 @@ use super::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use super::{message_handlers, ClientActorId, MessageHandleError};
 use crate::error::DBError;
 use crate::host::{ModuleHost, NoSuchModule, ReducerArgs, ReducerCallError, ReducerCallResult};
-use crate::protobuf::client_api::Subscribe;
+use crate::messages::ws::Subscribe;
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
@@ -255,8 +255,8 @@ impl ClientConnection {
         .unwrap()
     }
 
-    pub async fn one_off_query(&self, query: &str, message_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {
-        let result = self.module.one_off_query(self.id.identity, query.to_owned()).await;
+    pub fn one_off_query(&self, query: &str, message_id: &[u8], timer: Instant) -> Result<(), anyhow::Error> {
+        let result = self.module.one_off_query(self.id.identity, query.to_owned());
         let message_id = message_id.to_owned();
         let total_host_execution_duration = timer.elapsed().as_micros() as u64;
         let response = match result {

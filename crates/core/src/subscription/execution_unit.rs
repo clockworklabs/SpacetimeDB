@@ -6,13 +6,13 @@ use crate::error::DBError;
 use crate::estimation;
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{
-    rel_value_to_table_row_op_binary, rel_value_to_table_row_op_json, DatabaseTableUpdate, DatabaseTableUpdateRelValue,
-    OpType, UpdatesRelValue,
+    rel_value_to_table_row, rel_value_to_table_row_op_json, DatabaseTableUpdate, DatabaseTableUpdateRelValue, OpType,
+    UpdatesRelValue,
 };
 use crate::json::client_api::TableUpdateJson;
+use crate::messages::ws::TableUpdate;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
-use spacetimedb_client_api_messages::client_api::TableUpdate;
 use spacetimedb_lib::{Identity, ProductValue};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::db::error::AuthError;
@@ -235,14 +235,14 @@ impl ExecutionUnit {
         slow_query_threshold: Option<Duration>,
     ) -> Option<TableUpdate> {
         let mut scratch = Vec::new();
-        let table_row_operations =
-            Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, slow_query_threshold, |row| {
-                rel_value_to_table_row_op_binary(&mut scratch, &row, OpType::Insert)
-            });
-        (!table_row_operations.is_empty()).then(|| TableUpdate {
-            table_id: self.return_table().into(),
+        let inserts = Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, slow_query_threshold, |row| {
+            rel_value_to_table_row(&mut scratch, &row)
+        });
+        (!inserts.is_empty()).then(|| TableUpdate {
+            table_id: self.return_table(),
             table_name: self.return_name().into(),
-            table_row_operations,
+            deletes: vec![],
+            inserts,
         })
     }
 
