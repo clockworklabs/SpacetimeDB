@@ -90,7 +90,9 @@ mod sym {
     }
 }
 
-/// `f` should return only whats newly added; it doesn't need to output the item.
+/// Parses `item`, passing it and `args` to `f`,
+/// which should return only whats newly added, excluding the `item`.
+/// Returns the full token stream `extra_attr item newly_added`.
 fn cvt_attr<Item: Parse>(
     args: StdTokenStream,
     item: StdTokenStream,
@@ -128,6 +130,7 @@ impl ErrorSource for &syn::meta::ParseNestedMeta<'_> {
         self.error(msg)
     }
 }
+
 /// Ensures that `x` is `None` or returns an error.
 fn check_duplicate<T>(x: &Option<T>, src: impl ErrorSource) -> syn::Result<()> {
     check_duplicate_msg(x, src, "duplicate attribute")
@@ -152,7 +155,34 @@ impl quote::ToTokens for IndexType {
     }
 }
 
-/// Generates a reducer in place of `item`.
+/// Marks a function as a spacetimedb reducer.
+///
+/// A reducer is a function which traverses and updates the database,
+/// a sort of stored procedure that lives in the database, and which can be invoked remotely.
+/// Each reducer call runs in its own transaction,
+/// and its updates to the database are only committed if the reducer returns successfully.
+///
+/// A reducer may take no arguments, like so:
+///
+/// ```rust,ignore
+/// #[spacetimedb::reducer] 
+/// pub fn hello_world() {
+///     println!("Hello, World!");
+/// }
+/// ```
+///
+/// But it may also take some:
+/// ```rust,ignore
+/// #[spacetimedb::reducer]
+/// pub fn add_person(name: String, age: u16) {
+///     // Logic to add a person with `name` and `age`.
+/// }
+/// ```
+///
+/// Reducers cannot return values, but can return errors.
+/// To do so, a reducer must have a return type of `Result<(), impl Debug>`.
+/// When such an error occurs, it will be formatted and printed out to logs,
+/// resulting in an aborted transaction.
 #[proc_macro_attribute]
 pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     cvt_attr(args, item, quote!(), |args, original_function: ItemFn| {
@@ -295,6 +325,7 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
     })
 }
 
+#[derive(Default)]
 struct TableArgs {
     public: Option<Span>,
     name: Option<LitStr>,
@@ -310,11 +341,7 @@ struct IndexArg {
 impl TableArgs {
     fn parse(input: TokenStream) -> syn::Result<Self> {
         let mut specified_access = false;
-        let mut args = TableArgs {
-            public: None,
-            name: None,
-            indices: Vec::new(),
-        };
+        let mut args = TableArgs::default();
         syn::meta::parser(|meta| {
             let mut specified_access = || {
                 if specified_access {
@@ -344,6 +371,7 @@ impl TableArgs {
         Ok(args)
     }
 
+    /// Parses an inline `#[index(btree | hash)]` attribute on a field.
     fn parse_index_attr(field: &Ident, attr: &syn::Attribute) -> syn::Result<IndexArg> {
         let mut kind = None;
         attr.parse_nested_meta(|meta| {
@@ -830,22 +858,44 @@ macro_rules! special_reducer {
 }
 
 special_reducer!(
-    // TODO: doc
+    /// Marks the function as a reducer run the first time a module is published
+    /// and anytime the database is cleared.
+    ///
+    /// The reducer cannot be called manually
+    /// and may not have any parameters except for `ReducerContext`.
+    /// As with normal [`reducer`]s, an `init` reducer may return a `Result`.
+    /// If an error occurs when initializing, the module will not be published.
     init = "__init__"
 );
 
 special_reducer!(
-    // TODO: doc
+    /// Marks the function as a reducer run when a client connects to the SpacetimeDB module.
+    /// Their identity can be found in the sender value of the `ReducerContext`.
+    ///
+    /// The reducer cannot be called manually
+    /// and may not have any parameters except for `ReducerContext`.
+    /// If an error occurs in the reducer, the client will be disconnected.
     connect = "__identity_connected__"
 );
 
 special_reducer!(
-    // TODO: doc
+    /// Marks the function as a reducer run when a client disconnects from the SpacetimeDB module.
+    /// Their identity can be found in the sender value of the `ReducerContext`.
+    ///
+    /// The reducer cannot be called manually
+    /// and may not have any parameters except for `ReducerContext`.
+    /// If an error occurs in the disconnect reducer,
+    /// the client is still recorded as disconnected.
     disconnect = "__identity_disconnected__"
 );
 
 special_reducer!(
-    // TODO: doc
+    /// Marks the function as a reducer to run when the module is updated,
+    /// i.e., when publishing a module for a database that has already been initialized.
+    ///
+    /// The reducer cannot be called manually and may not have any parameters.
+    /// As with normal [`reducer`]s, an `init` reducer may return a `Result`.
+    /// If an error occurs when initializing, the module will not be published.
     update = "__update__"
 );
 
