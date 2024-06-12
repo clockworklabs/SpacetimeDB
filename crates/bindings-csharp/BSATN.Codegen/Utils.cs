@@ -10,16 +10,16 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 public static class Utils
 {
+    private static readonly SymbolDisplayFormat SymbolFormat = SymbolDisplayFormat
+        .FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)
+        .AddMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType)
+        .AddMiscellaneousOptions(
+            SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier
+        );
+
     public static string SymbolToName(ISymbol symbol)
     {
-        return symbol.ToDisplayString(
-            SymbolDisplayFormat
-                .FullyQualifiedFormat.WithMemberOptions(
-                    SymbolDisplayMemberOptions.IncludeContainingType
-                )
-                .WithGenericsOptions(SymbolDisplayGenericsOptions.IncludeTypeParameters)
-                .WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)
-        );
+        return symbol.ToDisplayString(SymbolFormat);
     }
 
     public static void RegisterSourceOutputs(
