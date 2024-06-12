@@ -1,6 +1,7 @@
 #![allow(non_camel_case_types)]
 
 use serde::Deserialize;
+use spacetimedb_lib::de::Deserialize as SatsDeserializer;
 use spacetimedb_lib::sats;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -12,7 +13,7 @@ pub const BENCH_PKEY_INDEX: u32 = 0;
 // It needs to match the schemas used inside the benchmark.
 
 // ---------- SYNCED CODE ----------
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, SatsDeserializer)]
 pub struct u32_u64_str {
     // column 0
     id: u32,
@@ -22,7 +23,7 @@ pub struct u32_u64_str {
     name: Box<str>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, SatsDeserializer)]
 pub struct u32_u64_u64 {
     // column 0
     id: u32,
@@ -38,7 +39,7 @@ pub struct u32_u64_u64 {
 ///
 /// This type *should not* be used for any benchmarks except `special::serialize_benchmarks`,
 /// as it doesn't have proper implementations in modules or Sqlite.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, SatsDeserializer)]
 pub struct u64_u64_u32 {
     x: u64,
     y: u64,
