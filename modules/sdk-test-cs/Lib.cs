@@ -616,6 +616,78 @@ static partial class Module
     }
 
     [SpacetimeDB.Table(Public = true)]
+    public partial struct OptionI32
+    {
+        public int? n;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_option_i32(int? n)
+    {
+        new OptionI32 { n = n }.Insert();
+    }
+
+    [SpacetimeDB.Table(Public = true)]
+    public partial struct OptionString
+    {
+        public string? s;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_option_string(string? s)
+    {
+        new OptionString { s = s }.Insert();
+    }
+
+    [SpacetimeDB.Table(Public = true)]
+    public partial struct OptionIdentity
+    {
+        public Identity? i;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_option_identity(Identity? i)
+    {
+        new OptionIdentity { i = i }.Insert();
+    }
+
+    [SpacetimeDB.Table(Public = true)]
+    public partial struct OptionSimpleEnum
+    {
+        public SimpleEnum? e;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_option_simple_enum(SimpleEnum? e)
+    {
+        new OptionSimpleEnum { e = e }.Insert();
+    }
+
+    [SpacetimeDB.Table(Public = true)]
+    public partial struct OptionEveryPrimitiveStruct
+    {
+        public EveryPrimitiveStruct? s;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_option_every_primitive_struct(EveryPrimitiveStruct? s)
+    {
+        new OptionEveryPrimitiveStruct { s = s }.Insert();
+    }
+
+    [SpacetimeDB.Table(Public = true)]
+    public partial struct OptionVecOptionI32
+    {
+        public List<int?>? n;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void insert_option_vec_option_i32(List<int?>? n)
+    {
+        new OptionVecOptionI32 { n = n }.Insert();
+    }
+
+    [SpacetimeDB.Table(Public = true)]
     public partial struct UniqueU8
     {
         [SpacetimeDB.Column(ColumnAttrs.Unique)]

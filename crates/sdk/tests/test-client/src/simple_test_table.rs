@@ -324,6 +324,42 @@ impl_simple_test_table! {
         insert_reducer = insert_vec_every_vec_struct;
         insert_reducer_event = InsertVecEveryVecStruct;
     }
+    OptionI32 {
+        Contents = Option<i32>;
+        field_name = n;
+        insert_reducer = insert_option_i_32;
+        insert_reducer_event = InsertOptionI32;
+    }
+    OptionString {
+        Contents = Option<String>;
+        field_name = s;
+        insert_reducer = insert_option_string;
+        insert_reducer_event = InsertOptionString;
+    }
+    OptionIdentity {
+        Contents = Option<Identity>;
+        field_name = i;
+        insert_reducer = insert_option_identity;
+        insert_reducer_event = InsertOptionIdentity;
+    }
+    OptionSimpleEnum {
+        Contents = Option<SimpleEnum>;
+        field_name = e;
+        insert_reducer = insert_option_simple_enum;
+        insert_reducer_event = InsertOptionSimpleEnum;
+    }
+    OptionEveryPrimitiveStruct {
+        Contents = Option<EveryPrimitiveStruct>;
+        field_name = s;
+        insert_reducer = insert_option_every_primitive_struct;
+        insert_reducer_event = InsertOptionEveryPrimitiveStruct;
+    }
+    OptionVecOptionI32 {
+        Contents = Option<Vec<Option<i32>>>;
+        field_name = n;
+        insert_reducer = insert_option_vec_option_i_32;
+        insert_reducer_event = InsertOptionVecOptionI32;
+    }
 }
 
 pub fn insert_one<T: SimpleTestTable>(test_counter: &Arc<TestCounter>, value: T::Contents) {

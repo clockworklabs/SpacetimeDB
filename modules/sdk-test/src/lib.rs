@@ -278,6 +278,16 @@ define_tables! {
     VecEveryVecStruct { insert insert_vec_every_vec_struct } s Vec<EveryVecStruct>;
 }
 
+// Tables holding an Option of various types.
+define_tables! {
+    OptionI32 { insert insert_option_i32 } n Option<i32>;
+    OptionString { insert insert_option_string } s Option<String>;
+    OptionIdentity { insert insert_option_identity } i Option<Identity>;
+    OptionSimpleEnum { insert insert_option_simple_enum } e Option<SimpleEnum>;
+    OptionEveryPrimitiveStruct { insert insert_option_every_primitive_struct } s Option<EveryPrimitiveStruct>;
+    OptionVecOptionI32 { insert insert_option_vec_option_i32 } v Option<Vec<Option<i32>>>;
+}
+
 // Tables mapping a unique, but non-pk, key to a boring i32 payload.
 // This allows us to test delete events, and the semantically correct absence of update events.
 define_tables! {
