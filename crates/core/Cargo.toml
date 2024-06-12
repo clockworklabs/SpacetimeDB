@@ -25,7 +25,6 @@ spacetimedb-primitives.workspace = true
 spacetimedb-sats = { workspace = true, features = ["serde"] }
 spacetimedb-table.workspace = true
 spacetimedb-vm.workspace = true
-spacetimedb-snapshot.workspace = true
 
 anyhow = { workspace = true, features = ["backtrace"] }
 arrayvec.workspace = true
