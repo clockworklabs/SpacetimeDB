@@ -19,9 +19,9 @@ pub struct DatabaseDefBuilder {
 impl DatabaseDefBuilder {
     // invariant: looking up a constructed `Ref` in the `in_progress` table will return the correct value until `build` is called, after
     // which that `Ref` is invalidated.
-    // The key lookup tables are updated in `build`. They cannot be updated here because we allow adding duplicate tables while building.
+    // The key lookup tables are updated in `build`. They cannot be updated before `build` because we allow adding duplicate tables while constructing a schema.
     // In addition, the "position" field of `ColumnDef`s is invalid until `build` is called.
-    // However, the "columns" field of `TableDef`
+    // However, the "columns" field of `TableDef` is maintained correctly here, although it is sorted in `build`.
 
     /// Create a new `DatabaseDefBuilder`.
     /// `sanity` should only be set if deserializing.
