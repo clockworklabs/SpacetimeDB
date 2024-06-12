@@ -24,7 +24,7 @@ partial class PublicTable
                             nameof(id),
                             BSATN.id.GetAlgebraicType(registrar)
                         ),
-                        SpacetimeDB.Module.ColumnAttrs.PrimaryKeyAuto
+                        SpacetimeDB.Module.ColumnAttrs.PrimaryKeyIdentity
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(

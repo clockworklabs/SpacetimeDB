@@ -5,19 +5,8 @@ using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using SpacetimeDB.Module;
 using static Utils;
-
-[System.Flags]
-enum ColumnAttrs : byte
-{
-    UnSet = 0b0000,
-    Indexed = 0b0001,
-    AutoInc = 0b0010,
-    Unique = Indexed | 0b0100,
-    Identity = Unique | AutoInc,
-    PrimaryKey = Unique | 0b1000,
-    PrimaryKeyAuto = PrimaryKey | AutoInc,
-}
 
 [Generator]
 public class Module : IIncrementalGenerator
