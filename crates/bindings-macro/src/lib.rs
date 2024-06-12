@@ -370,31 +370,6 @@ impl TableArgs {
         .parse2(input)?;
         Ok(args)
     }
-
-    /// Parses an inline `#[index(btree | hash)]` attribute on a field.
-    fn parse_index_attr(field: &Ident, attr: &syn::Attribute) -> syn::Result<IndexArg> {
-        let mut kind = None;
-        attr.parse_nested_meta(|meta| {
-            match_meta!(match meta {
-                sym::btree => {
-                    check_duplicate_msg(&kind, &meta, "index type specified twice")?;
-                    kind = Some(IndexType::BTree);
-                }
-                sym::hash => {
-                    check_duplicate_msg(&kind, &meta, "index type specified twice")?;
-                    kind = Some(IndexType::Hash);
-                }
-            });
-            Ok(())
-        })?;
-        let kind =
-            kind.ok_or_else(|| syn::Error::new_spanned(&attr.meta, "must specify kind of index (`btree` or `hash`)"))?;
-        Ok(IndexArg {
-            kind,
-            name: None,
-            columns: vec![field.clone()],
-        })
-    }
 }
 
 impl IndexArg {
@@ -432,14 +407,76 @@ impl IndexArg {
         let columns = columns.ok_or_else(|| meta.error("must specify columns = [col1, col2] for index"))?;
         Ok(IndexArg { kind, name, columns })
     }
+
+    /// Parses an inline `#[index(btree | hash)]` attribute on a field.
+    fn parse_index_attr(field: &Ident, attr: &syn::Attribute) -> syn::Result<Self> {
+        let mut kind = None;
+        attr.parse_nested_meta(|meta| {
+            match_meta!(match meta {
+                sym::btree => {
+                    check_duplicate_msg(&kind, &meta, "index type specified twice")?;
+                    kind = Some(IndexType::BTree);
+                }
+                sym::hash => {
+                    check_duplicate_msg(&kind, &meta, "index type specified twice")?;
+                    kind = Some(IndexType::Hash);
+                }
+            });
+            Ok(())
+        })?;
+        let kind =
+            kind.ok_or_else(|| syn::Error::new_spanned(&attr.meta, "must specify kind of index (`btree` or `hash`)"))?;
+        Ok(IndexArg {
+            kind,
+            name: None,
+            columns: vec![field.clone()],
+        })
+    }
 }
 
-/// Generates code for treating this type as a table.
+/// Generates code for treating this struct type as a table.
 ///
-/// Among other things, this derives `Serialize`, `Deserialize`,
-/// `SpacetimeType`, and `TableType` for our type.
+/// Among other things, this derives [`Serialize`], [`Deserialize`],
+/// [`SpacetimeType`], and [`TableType`] for our type.
 ///
-/// A table type must be a `struct`, whose fields may be annotated with the following attributes:
+/// # Example
+///
+/// ```ignore
+/// #[spacetimedb::table(public, name = "Users")]
+/// pub struct User {
+///     #[autoinc]
+///     #[primarykey]
+///     pub id: u32,
+///     #[unique]
+///     pub username: String,
+///     #[index(btree)]
+///     pub popularity: u32,
+/// }
+/// ```
+///
+/// # Macro arguments
+///
+/// * `public` and `private`
+///
+///    Tables are private by default. If you'd like to make your table publically
+///    accessible by anyone, put `public` in the macro arguments (e.g.
+///    `#[spacetimedb::table(public)]`). You can also specify `private` if
+///    you'd like to be specific. This is fully separate from Rust's module visibility
+///    system; `pub struct` or `pub(crate) struct` do not affect the table visibility, only
+///    the visibility of the items in your own source code.
+///
+/// * `index(btree | hash, name = "...", columns = [a, b, c])`
+///
+///    You can specify an index on 1 or more of the table's columns with the above syntax.
+///    You can also just put `#[index(btree | hash)]` on the field itself if you only need
+///    a single-column attribute; see column attributes below.
+///
+/// * `name = "..."`
+///
+///    Specify the name of the table in the database, if you want it to be different from
+///    the name of the struct.
+///
+/// # Column (field) attributes
 ///
 /// * `#[autoinc]`
 ///
@@ -463,6 +500,11 @@ impl IndexArg {
 /// * `#[index(btree | hash)]`
 ///
 ///    Creates a single-column index with the specified algorithm.
+///
+/// [`Serialize`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.Serialize.html
+/// [`Deserialize`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.Deserialize.html
+/// [`SpacetimeType`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.SpacetimeType.html
+/// [`TableType`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.TableType.html
 #[proc_macro_attribute]
 pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     // put this on the struct so we don't get unknown attribute errors
@@ -524,10 +566,15 @@ fn is_integer_type(p: &Path) -> bool {
 }
 
 fn table_impl(mut args: TableArgs, item: syn::DeriveInput) -> syn::Result<TokenStream> {
-    let sats_ty = module::sats_type_from_derive(&item, quote!(spacetimedb::spacetimedb_lib))?;
+    let mut sats_ty = module::sats_type_from_derive(&item, quote!(spacetimedb::spacetimedb_lib))?;
 
     let original_struct_ident = sats_ty.ident;
-    let table_name = &sats_ty.name;
+    // TODO: error on setting sats name for a table
+    let table_name = args
+        .name
+        .map(|s| s.value())
+        .unwrap_or_else(|| original_struct_ident.to_string());
+    sats_ty.name.clone_from(&table_name);
     let module::SatsTypeData::Product(fields) = &sats_ty.data else {
         return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
     };
@@ -551,7 +598,7 @@ fn table_impl(mut args: TableArgs, item: syn::DeriveInput) -> syn::Result<TokenS
         let mut col_attr = ColumnAttribute::UNSET;
         for attr in field.original_attrs {
             if attr.path() == sym::index {
-                let index = TableArgs::parse_index_attr(field.ident.unwrap(), attr)?;
+                let index = IndexArg::parse_index_attr(field.ident.unwrap(), attr)?;
                 args.indices.push(index);
                 continue;
             }
@@ -603,7 +650,7 @@ fn table_impl(mut args: TableArgs, item: syn::DeriveInput) -> syn::Result<TokenS
             })
             .collect::<syn::Result<Vec<_>>>()?;
         let name = index.name.map(|s| s.value()).unwrap_or_else(|| {
-            [&**table_name]
+            [&*table_name]
                 .into_iter()
                 .chain(cols.iter().map(|col| col.field.name.as_deref().unwrap()))
                 .collect::<Vec<_>>()
