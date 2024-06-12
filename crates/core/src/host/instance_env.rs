@@ -113,7 +113,8 @@ impl InstanceEnv {
         args: Vec<u8>,
         time: Timestamp,
     ) -> Result<ScheduledReducerId, ScheduleError> {
-        self.scheduler.schedule(reducer, args, time)
+       self.scheduler.schedule(reducer, args, time);
+       todo!()
     }
 
     #[tracing::instrument(skip_all)]

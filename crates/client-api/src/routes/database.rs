@@ -106,7 +106,16 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         return Err((StatusCode::NOT_FOUND, format!("{:#}", anyhow::anyhow!(e))).into());
     }
     let result = match module
-        .call_reducer(caller_identity, Some(client_address), None, None, None, &reducer, args)
+        .call_reducer(
+            None,
+            caller_identity,
+            Some(client_address),
+            None,
+            None,
+            None,
+            &reducer,
+            args,
+        )
         .await
     {
         Ok(rcr) => Ok(rcr),

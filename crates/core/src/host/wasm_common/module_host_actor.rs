@@ -467,8 +467,8 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         }))
     }
 
-    fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
-        crate::callgrind_flag::invoke_allowing_callgrind(|| self.call_reducer_with_tx(None, params))
+    fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
+        crate::callgrind_flag::invoke_allowing_callgrind(|| self.call_reducer_with_tx(tx, params))
     }
 }
 

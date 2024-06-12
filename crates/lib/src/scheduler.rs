@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_sats::{
     algebraic_value::de::{ValueDeserializeError, ValueDeserializer},
+    db::error::TypeError,
     de::Deserialize as _,
     impl_deserialize, impl_serialize, impl_st, AlgebraicType, AlgebraicValue,
 };
@@ -17,9 +18,11 @@ impl Duration {
     pub fn get_type() -> AlgebraicType {
         AlgebraicType::U64
     }
+}
 
-    pub fn to_timestamp(&self, from: Timestamp) -> Timestamp {
-        Timestamp(self.0 + from.0)
+impl From<Duration> for std::time::Duration {
+    fn from(value: Duration) -> Self {
+        Self::from_micros(value.0)
     }
 }
 

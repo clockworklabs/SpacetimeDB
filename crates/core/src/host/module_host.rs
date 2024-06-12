@@ -391,7 +391,7 @@ pub trait ModuleInstance: Send + 'static {
 
     fn update_database(&mut self, fence: u128) -> anyhow::Result<UpdateDatabaseResult>;
 
-    fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult;
+    fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult;
 }
 
 pub struct CallReducerParams {
@@ -434,8 +434,8 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
         self.check_trap();
         ret
     }
-    fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
-        let ret = self.inst.call_reducer(params);
+    fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
+        let ret = self.inst.call_reducer(tx, params);
         self.check_trap();
         ret
     }
@@ -692,6 +692,7 @@ impl ModuleHost {
 
         let result = self
             .call_reducer_inner(
+                None,
                 caller_identity,
                 Some(caller_address),
                 None,
@@ -774,6 +775,7 @@ impl ModuleHost {
 
     async fn call_reducer_inner(
         &self,
+        tx: Option<MutTxId>,
         caller_identity: Identity,
         caller_address: Option<Address>,
         client: Option<Arc<ClientConnectionSender>>,
@@ -792,7 +794,7 @@ impl ModuleHost {
         let caller_address = caller_address.unwrap_or(Address::__DUMMY);
 
         self.call(reducer_name, move |inst| {
-            inst.call_reducer(CallReducerParams {
+            inst.call_reducer(None, CallReducerParams {
                 timestamp: Timestamp::now(),
                 caller_identity,
                 caller_address,
@@ -809,6 +811,7 @@ impl ModuleHost {
 
     pub async fn call_reducer(
         &self,
+        tx: Option<MutTxId>,
         caller_identity: Identity,
         caller_address: Option<Address>,
         client: Option<Arc<ClientConnectionSender>>,
@@ -822,6 +825,7 @@ impl ModuleHost {
         }
         let res = self
             .call_reducer_inner(
+                tx,
                 caller_identity,
                 caller_address,
                 client,
