@@ -1,4 +1,4 @@
-use spacetimedb_client_api_messages::ws::{ClientMessage, ServerMessage};
+use spacetimedb_client_api_messages::websocket::{ClientMessage, ServerMessage};
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::ModuleDef;
 
