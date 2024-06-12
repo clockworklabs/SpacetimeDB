@@ -30,14 +30,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="../logo.png" Pack="true" PackagePath="" />
-    <None Include="../Runtime/README.md" Pack="true" PackagePath="" />
-    <None Include="../LICENSE" Pack="true" PackagePath="" />
+    <!-- dev-dependency to add internal C# classes and attributes not included in .NET Standard -->
+    <PackageReference Include="PolySharp" Version="1.14.1" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- dev-dependency to add internal C# classes and attributes not included in .NET Standard -->
-    <PackageReference Include="PolySharp" Version="1.14.1" PrivateAssets="all" />
+    <None Include="../logo.png" Pack="true" PackagePath="" />
+    <None Include="../Runtime/README.md" Pack="true" PackagePath="" />
+    <None Include="../LICENSE" Pack="true" PackagePath="" />
   </ItemGroup>
 
 </Project>
