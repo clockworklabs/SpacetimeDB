@@ -72,16 +72,19 @@ public class Module : IIncrementalGenerator
                         }
 
                         var isEquatable =
-                            isInteger
-                            || f.Type.SpecialType switch
-                            {
-                                SpecialType.System_String or SpecialType.System_Boolean => true,
-                                SpecialType.None
-                                    => f.Type.ToString()
-                                        is "SpacetimeDB.Runtime.Address"
-                                            or "SpacetimeDB.Runtime.Identity",
-                                _ => false,
-                            };
+                            (
+                                isInteger
+                                || f.Type.SpecialType switch
+                                {
+                                    SpecialType.System_String or SpecialType.System_Boolean => true,
+                                    SpecialType.None
+                                        => f.Type.ToString()
+                                            is "SpacetimeDB.Runtime.Address"
+                                                or "SpacetimeDB.Runtime.Identity",
+                                    _ => false,
+                                }
+                            )
+                            && f.Type.NullableAnnotation != NullableAnnotation.Annotated;
 
                         if (indexKind.HasFlag(ColumnAttrs.Unique) && !isEquatable)
                         {
