@@ -8,8 +8,8 @@ public partial struct CustomStruct
 {
     public const int IGNORE_ME = 0;
     public static readonly string IGNORE_ME_TOO = "";
-    public int intField;
-    public string stringField;
+    public int IntField;
+    public string StringField;
 }
 
 [SpacetimeDB.Type]
@@ -17,8 +17,8 @@ public partial struct CustomClass
 {
     public const int IGNORE_ME = 0;
     public static readonly string IGNORE_ME_TOO = "";
-    public int intField;
-    public string stringField;
+    public int IntField;
+    public string StringField;
 }
 
 [SpacetimeDB.Type]
@@ -39,32 +39,33 @@ public partial class PrivateTable { }
 public partial class PublicTable
 {
     [SpacetimeDB.Column(ColumnAttrs.PrimaryKeyAuto)]
-    public int id;
+    public int Id;
 
-    public byte byteField;
-    public ushort ushortField;
-    public uint uintField;
-    public ulong ulongField;
-    public UInt128 uint128Field;
-    public sbyte sbyteField;
-    public short shortField;
-    public int intField;
-    public long longField;
-    public Int128 int128Field;
-    public bool boolField;
-    public float floatField;
-    public double doubleField;
-    public string stringField = "";
-    public Identity identityField;
-    public Address addressField;
-    public CustomStruct customStructField;
-    public CustomClass customClassField;
-    public CustomEnum customEnumField;
-    public CustomTaggedEnum customTaggedEnumField = new CustomTaggedEnum.IntVariant(0);
-    public List<int> listField = [];
-    public Dictionary<string, int> dictionaryField = [];
-    public int? nullableValueField;
-    public string? nullableReferenceField;
+    public byte ByteField;
+    public ushort UshortField;
+    public uint UintField;
+    public ulong UlongField;
+    public UInt128 Uint128Field;
+    public sbyte SbyteField;
+    public short ShortField;
+    public int IntField;
+    public long LongField;
+    public Int128 Int128Field;
+    public bool BoolField;
+    public float FloatField;
+    public double DoubleField;
+    public string StringField = "";
+    public Identity IdentityField;
+    public Address AddressField;
+    public CustomStruct CustomStructField;
+    public CustomClass CustomClassField;
+    public CustomEnum CustomEnumField;
+    public CustomTaggedEnum CustomTaggedEnumField = new CustomTaggedEnum.IntVariant(0);
+    public List<int> ListField = [];
+    public Dictionary<string, int> DictionaryField = [];
+    public int? NullableValueField;
+    public string? NullableReferenceField;
+    public Dictionary<CustomEnum?, List<int?>?>? ComplexNestedField;
 }
 
 public static class Reducers

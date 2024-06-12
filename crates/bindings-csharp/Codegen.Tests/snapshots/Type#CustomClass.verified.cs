@@ -7,20 +7,20 @@ partial struct CustomClass : SpacetimeDB.BSATN.IStructuralReadWrite
 {
     public void ReadFields(System.IO.BinaryReader reader)
     {
-        intField = BSATN.intField.Read(reader);
-        stringField = BSATN.stringField.Read(reader);
+        IntField = BSATN.IntField.Read(reader);
+        StringField = BSATN.StringField.Read(reader);
     }
 
     public void WriteFields(System.IO.BinaryWriter writer)
     {
-        BSATN.intField.Write(writer, intField);
-        BSATN.stringField.Write(writer, stringField);
+        BSATN.IntField.Write(writer, IntField);
+        BSATN.StringField.Write(writer, StringField);
     }
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<CustomClass>
     {
-        internal static readonly SpacetimeDB.BSATN.I32 intField = new();
-        internal static readonly SpacetimeDB.BSATN.String stringField = new();
+        internal static readonly SpacetimeDB.BSATN.I32 IntField = new();
+        internal static readonly SpacetimeDB.BSATN.String StringField = new();
 
         public CustomClass Read(System.IO.BinaryReader reader) =>
             SpacetimeDB.BSATN.IStructuralReadWrite.Read<CustomClass>(reader);
@@ -37,8 +37,8 @@ partial struct CustomClass : SpacetimeDB.BSATN.IStructuralReadWrite
                 typeRef => new SpacetimeDB.BSATN.AlgebraicType.Product(
                     new SpacetimeDB.BSATN.AggregateElement[]
                     {
-                        new(nameof(intField), intField.GetAlgebraicType(registrar)),
-                        new(nameof(stringField), stringField.GetAlgebraicType(registrar))
+                        new(nameof(IntField), IntField.GetAlgebraicType(registrar)),
+                        new(nameof(StringField), StringField.GetAlgebraicType(registrar))
                     }
                 )
             );

@@ -10,16 +10,16 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 public static class Utils
 {
+    private static readonly SymbolDisplayFormat SymbolFormat = SymbolDisplayFormat
+        .FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)
+        .AddMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType)
+        .AddMiscellaneousOptions(
+            SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier
+        );
+
     public static string SymbolToName(ISymbol symbol)
     {
-        return symbol.ToDisplayString(
-            SymbolDisplayFormat
-                .FullyQualifiedFormat.WithMemberOptions(
-                    SymbolDisplayMemberOptions.IncludeContainingType
-                )
-                .WithGenericsOptions(SymbolDisplayGenericsOptions.IncludeTypeParameters)
-                .WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)
-        );
+        return symbol.ToDisplayString(SymbolFormat);
     }
 
     public static void RegisterSourceOutputs(
@@ -58,7 +58,7 @@ public static class Utils
         )
         {
             // If we're here, then this is a nullable reference type like `string?` and the original definition is `string`.
-            type = type.OriginalDefinition;
+            type = type.WithNullableAnnotation(NullableAnnotation.None);
             return $"SpacetimeDB.BSATN.RefOption<{type}, {GetTypeInfo(type)}>";
         }
         return type switch

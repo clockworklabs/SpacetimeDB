@@ -83,6 +83,12 @@ pub mod insert_one_u_32_reducer;
 pub mod insert_one_u_64_reducer;
 pub mod insert_one_u_8_reducer;
 pub mod insert_one_unit_struct_reducer;
+pub mod insert_option_every_primitive_struct_reducer;
+pub mod insert_option_i_32_reducer;
+pub mod insert_option_identity_reducer;
+pub mod insert_option_simple_enum_reducer;
+pub mod insert_option_string_reducer;
+pub mod insert_option_vec_option_i_32_reducer;
 pub mod insert_pk_address_reducer;
 pub mod insert_pk_bool_reducer;
 pub mod insert_pk_i_128_reducer;
@@ -158,6 +164,12 @@ pub mod one_u_32;
 pub mod one_u_64;
 pub mod one_u_8;
 pub mod one_unit_struct;
+pub mod option_every_primitive_struct;
+pub mod option_i_32;
+pub mod option_identity;
+pub mod option_simple_enum;
+pub mod option_string;
+pub mod option_vec_option_i_32;
 pub mod pk_address;
 pub mod pk_bool;
 pub mod pk_i_128;
@@ -303,6 +315,12 @@ pub use insert_one_u_32_reducer::*;
 pub use insert_one_u_64_reducer::*;
 pub use insert_one_u_8_reducer::*;
 pub use insert_one_unit_struct_reducer::*;
+pub use insert_option_every_primitive_struct_reducer::*;
+pub use insert_option_i_32_reducer::*;
+pub use insert_option_identity_reducer::*;
+pub use insert_option_simple_enum_reducer::*;
+pub use insert_option_string_reducer::*;
+pub use insert_option_vec_option_i_32_reducer::*;
 pub use insert_pk_address_reducer::*;
 pub use insert_pk_bool_reducer::*;
 pub use insert_pk_i_128_reducer::*;
@@ -378,6 +396,12 @@ pub use one_u_32::*;
 pub use one_u_64::*;
 pub use one_u_8::*;
 pub use one_unit_struct::*;
+pub use option_every_primitive_struct::*;
+pub use option_i_32::*;
+pub use option_identity::*;
+pub use option_simple_enum::*;
+pub use option_string::*;
+pub use option_vec_option_i_32::*;
 pub use pk_address::*;
 pub use pk_bool::*;
 pub use pk_i_128::*;
@@ -522,6 +546,14 @@ pub enum ReducerEvent {
     InsertOneU64(insert_one_u_64_reducer::InsertOneU64Args),
     InsertOneU8(insert_one_u_8_reducer::InsertOneU8Args),
     InsertOneUnitStruct(insert_one_unit_struct_reducer::InsertOneUnitStructArgs),
+    InsertOptionEveryPrimitiveStruct(
+        insert_option_every_primitive_struct_reducer::InsertOptionEveryPrimitiveStructArgs,
+    ),
+    InsertOptionI32(insert_option_i_32_reducer::InsertOptionI32Args),
+    InsertOptionIdentity(insert_option_identity_reducer::InsertOptionIdentityArgs),
+    InsertOptionSimpleEnum(insert_option_simple_enum_reducer::InsertOptionSimpleEnumArgs),
+    InsertOptionString(insert_option_string_reducer::InsertOptionStringArgs),
+    InsertOptionVecOptionI32(insert_option_vec_option_i_32_reducer::InsertOptionVecOptionI32Args),
     InsertPkAddress(insert_pk_address_reducer::InsertPkAddressArgs),
     InsertPkBool(insert_pk_bool_reducer::InsertPkBoolArgs),
     InsertPkI128(insert_pk_i_128_reducer::InsertPkI128Args),
@@ -658,6 +690,26 @@ impl SpacetimeModule for Module {
             "OneU8" => client_cache.handle_table_update_no_primary_key::<one_u_8::OneU8>(callbacks, table_update),
             "OneUnitStruct" => client_cache
                 .handle_table_update_no_primary_key::<one_unit_struct::OneUnitStruct>(callbacks, table_update),
+            "OptionEveryPrimitiveStruct" => client_cache
+                .handle_table_update_no_primary_key::<option_every_primitive_struct::OptionEveryPrimitiveStruct>(
+                    callbacks,
+                    table_update,
+                ),
+            "OptionI32" => {
+                client_cache.handle_table_update_no_primary_key::<option_i_32::OptionI32>(callbacks, table_update)
+            }
+            "OptionIdentity" => client_cache
+                .handle_table_update_no_primary_key::<option_identity::OptionIdentity>(callbacks, table_update),
+            "OptionSimpleEnum" => client_cache
+                .handle_table_update_no_primary_key::<option_simple_enum::OptionSimpleEnum>(callbacks, table_update),
+            "OptionString" => {
+                client_cache.handle_table_update_no_primary_key::<option_string::OptionString>(callbacks, table_update)
+            }
+            "OptionVecOptionI32" => client_cache
+                .handle_table_update_no_primary_key::<option_vec_option_i_32::OptionVecOptionI32>(
+                    callbacks,
+                    table_update,
+                ),
             "PkAddress" => {
                 client_cache.handle_table_update_with_primary_key::<pk_address::PkAddress>(callbacks, table_update)
             }
@@ -797,6 +849,16 @@ impl SpacetimeModule for Module {
         reminders.invoke_callbacks::<one_u_64::OneU64>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<one_u_8::OneU8>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<one_unit_struct::OneUnitStruct>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<option_every_primitive_struct::OptionEveryPrimitiveStruct>(
+            worker,
+            &reducer_event,
+            state,
+        );
+        reminders.invoke_callbacks::<option_i_32::OptionI32>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<option_identity::OptionIdentity>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<option_simple_enum::OptionSimpleEnum>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<option_string::OptionString>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<option_vec_option_i_32::OptionVecOptionI32>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<pk_address::PkAddress>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<pk_bool::PkBool>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<pk_i_128::PkI128>(worker, &reducer_event, state);
@@ -924,6 +986,12 @@ match &function_call.reducer[..] {
 			"insert_one_u64" => _reducer_callbacks.handle_event_of_type::<insert_one_u_64_reducer::InsertOneU64Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneU64),
 			"insert_one_u8" => _reducer_callbacks.handle_event_of_type::<insert_one_u_8_reducer::InsertOneU8Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneU8),
 			"insert_one_unit_struct" => _reducer_callbacks.handle_event_of_type::<insert_one_unit_struct_reducer::InsertOneUnitStructArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneUnitStruct),
+			"insert_option_every_primitive_struct" => _reducer_callbacks.handle_event_of_type::<insert_option_every_primitive_struct_reducer::InsertOptionEveryPrimitiveStructArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOptionEveryPrimitiveStruct),
+			"insert_option_i32" => _reducer_callbacks.handle_event_of_type::<insert_option_i_32_reducer::InsertOptionI32Args, ReducerEvent>(event, _state, ReducerEvent::InsertOptionI32),
+			"insert_option_identity" => _reducer_callbacks.handle_event_of_type::<insert_option_identity_reducer::InsertOptionIdentityArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOptionIdentity),
+			"insert_option_simple_enum" => _reducer_callbacks.handle_event_of_type::<insert_option_simple_enum_reducer::InsertOptionSimpleEnumArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOptionSimpleEnum),
+			"insert_option_string" => _reducer_callbacks.handle_event_of_type::<insert_option_string_reducer::InsertOptionStringArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOptionString),
+			"insert_option_vec_option_i32" => _reducer_callbacks.handle_event_of_type::<insert_option_vec_option_i_32_reducer::InsertOptionVecOptionI32Args, ReducerEvent>(event, _state, ReducerEvent::InsertOptionVecOptionI32),
 			"insert_pk_address" => _reducer_callbacks.handle_event_of_type::<insert_pk_address_reducer::InsertPkAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertPkAddress),
 			"insert_pk_bool" => _reducer_callbacks.handle_event_of_type::<insert_pk_bool_reducer::InsertPkBoolArgs, ReducerEvent>(event, _state, ReducerEvent::InsertPkBool),
 			"insert_pk_i128" => _reducer_callbacks.handle_event_of_type::<insert_pk_i_128_reducer::InsertPkI128Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkI128),
@@ -1050,6 +1118,22 @@ match &function_call.reducer[..] {
             "OneUnitStruct" => {
                 client_cache.handle_resubscribe_for_type::<one_unit_struct::OneUnitStruct>(callbacks, new_subs)
             }
+            "OptionEveryPrimitiveStruct" => client_cache
+                .handle_resubscribe_for_type::<option_every_primitive_struct::OptionEveryPrimitiveStruct>(
+                    callbacks, new_subs,
+                ),
+            "OptionI32" => client_cache.handle_resubscribe_for_type::<option_i_32::OptionI32>(callbacks, new_subs),
+            "OptionIdentity" => {
+                client_cache.handle_resubscribe_for_type::<option_identity::OptionIdentity>(callbacks, new_subs)
+            }
+            "OptionSimpleEnum" => {
+                client_cache.handle_resubscribe_for_type::<option_simple_enum::OptionSimpleEnum>(callbacks, new_subs)
+            }
+            "OptionString" => {
+                client_cache.handle_resubscribe_for_type::<option_string::OptionString>(callbacks, new_subs)
+            }
+            "OptionVecOptionI32" => client_cache
+                .handle_resubscribe_for_type::<option_vec_option_i_32::OptionVecOptionI32>(callbacks, new_subs),
             "PkAddress" => client_cache.handle_resubscribe_for_type::<pk_address::PkAddress>(callbacks, new_subs),
             "PkBool" => client_cache.handle_resubscribe_for_type::<pk_bool::PkBool>(callbacks, new_subs),
             "PkI128" => client_cache.handle_resubscribe_for_type::<pk_i_128::PkI128>(callbacks, new_subs),
