@@ -165,7 +165,7 @@ impl quote::ToTokens for IndexType {
 /// A reducer may take no arguments, like so:
 ///
 /// ```rust,ignore
-/// #[spacetimedb::reducer] 
+/// #[spacetimedb::reducer]
 /// pub fn hello_world() {
 ///     println!("Hello, World!");
 /// }
@@ -434,6 +434,35 @@ impl IndexArg {
     }
 }
 
+/// Generates code for treating this type as a table.
+///
+/// Among other things, this derives `Serialize`, `Deserialize`,
+/// `SpacetimeType`, and `TableType` for our type.
+///
+/// A table type must be a `struct`, whose fields may be annotated with the following attributes:
+///
+/// * `#[autoinc]`
+///
+///    Creates a database sequence.
+///
+///    When a row is inserted with the annotated field set to `0` (zero),
+///    the sequence is incremented, and this value is used instead.
+///    Can only be used on numeric types and may be combined with indexes.
+///
+///    Note that using `#[autoinc]` on a field does not also imply `#[primarykey]` or `#[unique]`.
+///    If those semantics are desired, those attributes should also be used.
+///
+/// * `#[unique]`
+///
+///    Creates an index and unique constraint for the annotated field.
+///
+/// * `#[primarykey]`
+///
+///    Similar to `#[unique]`, but generates additional CRUD methods.
+///
+/// * `#[index(btree | hash)]`
+///
+///    Creates a single-column index with the specified algorithm.
 #[proc_macro_attribute]
 pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     // put this on the struct so we don't get unknown attribute errors
@@ -494,31 +523,6 @@ fn is_integer_type(p: &Path) -> bool {
     })
 }
 
-/// Generates code for treating this type as a table.
-///
-/// Among other things, this derives `Serialize`, `Deserialize`,
-/// `SpacetimeType`, and `TableType` for our type.
-///
-/// A table type must be a `struct`, whose fields may be annotated with the following attributes:
-///
-/// * `#[autoinc]`
-///
-///    Creates a database sequence.
-///
-///    When a row is inserted with the annotated field set to `0` (zero),
-///    the sequence is incremented, and this value is used instead.
-///    Can only be used on numeric types and may be combined with indexes.
-///
-///    Note that using `#[autoinc]` on a field does not also imply `#[primarykey]` or `#[unique]`.
-///    If those semantics are desired, those attributes should also be used.
-///
-/// * `#[unique]`
-///
-///    Creates an index and unique constraint for the annotated field.
-///
-/// * `#[primarykey]`
-///
-///    Similar to `#[unique]`, but generates additional CRUD methods.
 fn table_impl(mut args: TableArgs, item: syn::DeriveInput) -> syn::Result<TokenStream> {
     let sats_ty = module::sats_type_from_derive(&item, quote!(spacetimedb::spacetimedb_lib))?;
 
@@ -599,13 +603,11 @@ fn table_impl(mut args: TableArgs, item: syn::DeriveInput) -> syn::Result<TokenS
             })
             .collect::<syn::Result<Vec<_>>>()?;
         let name = index.name.map(|s| s.value()).unwrap_or_else(|| {
-            format!(
-                "default_index__{}",
-                cols.iter()
-                    .map(|col| col.field.name.as_deref().unwrap())
-                    .collect::<Vec<_>>()
-                    .join("__")
-            )
+            [&**table_name]
+                .into_iter()
+                .chain(cols.iter().map(|col| col.field.name.as_deref().unwrap()))
+                .collect::<Vec<_>>()
+                .join("_")
         });
         let col_ids = cols.iter().map(|col| col.index);
         let ty = index.kind;
