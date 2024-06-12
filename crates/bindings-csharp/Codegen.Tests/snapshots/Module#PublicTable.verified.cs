@@ -21,176 +21,176 @@ partial class PublicTable
                 {
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(id),
-                            BSATN.id.GetAlgebraicType(registrar)
+                            nameof(Id),
+                            BSATN.Id.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.PrimaryKeyAuto
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(byteField),
-                            BSATN.byteField.GetAlgebraicType(registrar)
+                            nameof(ByteField),
+                            BSATN.ByteField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(ushortField),
-                            BSATN.ushortField.GetAlgebraicType(registrar)
+                            nameof(UshortField),
+                            BSATN.UshortField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(uintField),
-                            BSATN.uintField.GetAlgebraicType(registrar)
+                            nameof(UintField),
+                            BSATN.UintField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(ulongField),
-                            BSATN.ulongField.GetAlgebraicType(registrar)
+                            nameof(UlongField),
+                            BSATN.UlongField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(uint128Field),
-                            BSATN.uint128Field.GetAlgebraicType(registrar)
+                            nameof(Uint128Field),
+                            BSATN.Uint128Field.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(sbyteField),
-                            BSATN.sbyteField.GetAlgebraicType(registrar)
+                            nameof(SbyteField),
+                            BSATN.SbyteField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(shortField),
-                            BSATN.shortField.GetAlgebraicType(registrar)
+                            nameof(ShortField),
+                            BSATN.ShortField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(intField),
-                            BSATN.intField.GetAlgebraicType(registrar)
+                            nameof(IntField),
+                            BSATN.IntField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(longField),
-                            BSATN.longField.GetAlgebraicType(registrar)
+                            nameof(LongField),
+                            BSATN.LongField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(int128Field),
-                            BSATN.int128Field.GetAlgebraicType(registrar)
+                            nameof(Int128Field),
+                            BSATN.Int128Field.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(boolField),
-                            BSATN.boolField.GetAlgebraicType(registrar)
+                            nameof(BoolField),
+                            BSATN.BoolField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(floatField),
-                            BSATN.floatField.GetAlgebraicType(registrar)
+                            nameof(FloatField),
+                            BSATN.FloatField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(doubleField),
-                            BSATN.doubleField.GetAlgebraicType(registrar)
+                            nameof(DoubleField),
+                            BSATN.DoubleField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(stringField),
-                            BSATN.stringField.GetAlgebraicType(registrar)
+                            nameof(StringField),
+                            BSATN.StringField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(identityField),
-                            BSATN.identityField.GetAlgebraicType(registrar)
+                            nameof(IdentityField),
+                            BSATN.IdentityField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(addressField),
-                            BSATN.addressField.GetAlgebraicType(registrar)
+                            nameof(AddressField),
+                            BSATN.AddressField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(customStructField),
-                            BSATN.customStructField.GetAlgebraicType(registrar)
+                            nameof(CustomStructField),
+                            BSATN.CustomStructField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(customClassField),
-                            BSATN.customClassField.GetAlgebraicType(registrar)
+                            nameof(CustomClassField),
+                            BSATN.CustomClassField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(customEnumField),
-                            BSATN.customEnumField.GetAlgebraicType(registrar)
+                            nameof(CustomEnumField),
+                            BSATN.CustomEnumField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(customTaggedEnumField),
-                            BSATN.customTaggedEnumField.GetAlgebraicType(registrar)
+                            nameof(CustomTaggedEnumField),
+                            BSATN.CustomTaggedEnumField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(listField),
-                            BSATN.listField.GetAlgebraicType(registrar)
+                            nameof(ListField),
+                            BSATN.ListField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(dictionaryField),
-                            BSATN.dictionaryField.GetAlgebraicType(registrar)
+                            nameof(DictionaryField),
+                            BSATN.DictionaryField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(nullableValueField),
-                            BSATN.nullableValueField.GetAlgebraicType(registrar)
+                            nameof(NullableValueField),
+                            BSATN.NullableValueField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     ),
                     new(
                         new SpacetimeDB.Module.ColumnDef(
-                            nameof(nullableReferenceField),
-                            BSATN.nullableReferenceField.GetAlgebraicType(registrar)
+                            nameof(NullableReferenceField),
+                            BSATN.NullableReferenceField.GetAlgebraicType(registrar)
                         ),
                         SpacetimeDB.Module.ColumnAttrs.UnSet
                     )
@@ -208,70 +208,70 @@ partial class PublicTable
             () =>
                 new KeyValuePair<string, Action<BinaryWriter, object?>>[]
                 {
-                    new(nameof(id), (w, v) => BSATN.id.Write(w, (int)v!)),
-                    new(nameof(byteField), (w, v) => BSATN.byteField.Write(w, (byte)v!)),
-                    new(nameof(ushortField), (w, v) => BSATN.ushortField.Write(w, (ushort)v!)),
-                    new(nameof(uintField), (w, v) => BSATN.uintField.Write(w, (uint)v!)),
-                    new(nameof(ulongField), (w, v) => BSATN.ulongField.Write(w, (ulong)v!)),
+                    new(nameof(Id), (w, v) => BSATN.Id.Write(w, (int)v!)),
+                    new(nameof(ByteField), (w, v) => BSATN.ByteField.Write(w, (byte)v!)),
+                    new(nameof(UshortField), (w, v) => BSATN.UshortField.Write(w, (ushort)v!)),
+                    new(nameof(UintField), (w, v) => BSATN.UintField.Write(w, (uint)v!)),
+                    new(nameof(UlongField), (w, v) => BSATN.UlongField.Write(w, (ulong)v!)),
                     new(
-                        nameof(uint128Field),
-                        (w, v) => BSATN.uint128Field.Write(w, (System.UInt128)v!)
+                        nameof(Uint128Field),
+                        (w, v) => BSATN.Uint128Field.Write(w, (System.UInt128)v!)
                     ),
-                    new(nameof(sbyteField), (w, v) => BSATN.sbyteField.Write(w, (sbyte)v!)),
-                    new(nameof(shortField), (w, v) => BSATN.shortField.Write(w, (short)v!)),
-                    new(nameof(intField), (w, v) => BSATN.intField.Write(w, (int)v!)),
-                    new(nameof(longField), (w, v) => BSATN.longField.Write(w, (long)v!)),
+                    new(nameof(SbyteField), (w, v) => BSATN.SbyteField.Write(w, (sbyte)v!)),
+                    new(nameof(ShortField), (w, v) => BSATN.ShortField.Write(w, (short)v!)),
+                    new(nameof(IntField), (w, v) => BSATN.IntField.Write(w, (int)v!)),
+                    new(nameof(LongField), (w, v) => BSATN.LongField.Write(w, (long)v!)),
                     new(
-                        nameof(int128Field),
-                        (w, v) => BSATN.int128Field.Write(w, (System.Int128)v!)
+                        nameof(Int128Field),
+                        (w, v) => BSATN.Int128Field.Write(w, (System.Int128)v!)
                     ),
-                    new(nameof(boolField), (w, v) => BSATN.boolField.Write(w, (bool)v!)),
-                    new(nameof(floatField), (w, v) => BSATN.floatField.Write(w, (float)v!)),
-                    new(nameof(doubleField), (w, v) => BSATN.doubleField.Write(w, (double)v!)),
-                    new(nameof(stringField), (w, v) => BSATN.stringField.Write(w, (string)v!)),
+                    new(nameof(BoolField), (w, v) => BSATN.BoolField.Write(w, (bool)v!)),
+                    new(nameof(FloatField), (w, v) => BSATN.FloatField.Write(w, (float)v!)),
+                    new(nameof(DoubleField), (w, v) => BSATN.DoubleField.Write(w, (double)v!)),
+                    new(nameof(StringField), (w, v) => BSATN.StringField.Write(w, (string)v!)),
                     new(
-                        nameof(identityField),
-                        (w, v) => BSATN.identityField.Write(w, (SpacetimeDB.Runtime.Identity)v!)
-                    ),
-                    new(
-                        nameof(addressField),
-                        (w, v) => BSATN.addressField.Write(w, (SpacetimeDB.Runtime.Address)v!)
+                        nameof(IdentityField),
+                        (w, v) => BSATN.IdentityField.Write(w, (SpacetimeDB.Runtime.Identity)v!)
                     ),
                     new(
-                        nameof(customStructField),
-                        (w, v) => BSATN.customStructField.Write(w, (CustomStruct)v!)
+                        nameof(AddressField),
+                        (w, v) => BSATN.AddressField.Write(w, (SpacetimeDB.Runtime.Address)v!)
                     ),
                     new(
-                        nameof(customClassField),
-                        (w, v) => BSATN.customClassField.Write(w, (CustomClass)v!)
+                        nameof(CustomStructField),
+                        (w, v) => BSATN.CustomStructField.Write(w, (CustomStruct)v!)
                     ),
                     new(
-                        nameof(customEnumField),
-                        (w, v) => BSATN.customEnumField.Write(w, (CustomEnum)v!)
+                        nameof(CustomClassField),
+                        (w, v) => BSATN.CustomClassField.Write(w, (CustomClass)v!)
                     ),
                     new(
-                        nameof(customTaggedEnumField),
-                        (w, v) => BSATN.customTaggedEnumField.Write(w, (CustomTaggedEnum)v!)
+                        nameof(CustomEnumField),
+                        (w, v) => BSATN.CustomEnumField.Write(w, (CustomEnum)v!)
                     ),
                     new(
-                        nameof(listField),
-                        (w, v) => BSATN.listField.Write(w, (System.Collections.Generic.List<int>)v!)
+                        nameof(CustomTaggedEnumField),
+                        (w, v) => BSATN.CustomTaggedEnumField.Write(w, (CustomTaggedEnum)v!)
                     ),
                     new(
-                        nameof(dictionaryField),
+                        nameof(ListField),
+                        (w, v) => BSATN.ListField.Write(w, (System.Collections.Generic.List<int>)v!)
+                    ),
+                    new(
+                        nameof(DictionaryField),
                         (w, v) =>
-                            BSATN.dictionaryField.Write(
+                            BSATN.DictionaryField.Write(
                                 w,
                                 (System.Collections.Generic.Dictionary<string, int>)v!
                             )
                     ),
                     new(
-                        nameof(nullableValueField),
-                        (w, v) => BSATN.nullableValueField.Write(w, (int?)v!)
+                        nameof(NullableValueField),
+                        (w, v) => BSATN.NullableValueField.Write(w, (int?)v!)
                     ),
                     new(
-                        nameof(nullableReferenceField),
-                        (w, v) => BSATN.nullableReferenceField.Write(w, (string?)v!)
+                        nameof(NullableReferenceField),
+                        (w, v) => BSATN.NullableReferenceField.Write(w, (string?)v!)
                     ),
                 }
         );
@@ -294,130 +294,130 @@ partial class PublicTable
         ReadFields(reader);
     }
 
-    public static IEnumerable<PublicTable> FilterByid(int id) =>
+    public static IEnumerable<PublicTable> FilterById(int Id) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
             new SpacetimeDB.RawBindings.ColId(0),
-            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.id, id)
+            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.Id, Id)
         ).Parse<PublicTable>();
 
-    public static PublicTable? FindByid(int id) =>
-        FilterByid(id).Cast<PublicTable?>().SingleOrDefault();
+    public static PublicTable? FindById(int Id) =>
+        FilterById(Id).Cast<PublicTable?>().SingleOrDefault();
 
-    public static bool DeleteByid(int id) =>
+    public static bool DeleteById(int Id) =>
         SpacetimeDB.Runtime.DeleteByColEq(
             tableId.Value,
             new SpacetimeDB.RawBindings.ColId(0),
-            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.id, id)
+            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.Id, Id)
         ) > 0;
 
-    public static bool UpdateByid(int id, PublicTable value) =>
+    public static bool UpdateById(int Id, PublicTable value) =>
         SpacetimeDB.Runtime.UpdateByColEq(
             tableId.Value,
             new SpacetimeDB.RawBindings.ColId(0),
-            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.id, id),
+            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.Id, Id),
             value
         );
 
-    public static IEnumerable<PublicTable> FilterBybyteField(byte byteField) =>
+    public static IEnumerable<PublicTable> FilterByByteField(byte ByteField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
             new SpacetimeDB.RawBindings.ColId(1),
-            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.byteField, byteField)
+            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.ByteField, ByteField)
         ).Parse<PublicTable>();
 
-    public static IEnumerable<PublicTable> FilterByushortField(ushort ushortField) =>
+    public static IEnumerable<PublicTable> FilterByUshortField(ushort UshortField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
             new SpacetimeDB.RawBindings.ColId(2),
-            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.ushortField, ushortField)
+            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.UshortField, UshortField)
         ).Parse<PublicTable>();
 
-    public static IEnumerable<PublicTable> FilterByuintField(uint uintField) =>
+    public static IEnumerable<PublicTable> FilterByUintField(uint UintField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
             new SpacetimeDB.RawBindings.ColId(3),
-            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.uintField, uintField)
+            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.UintField, UintField)
         ).Parse<PublicTable>();
 
-    public static IEnumerable<PublicTable> FilterByulongField(ulong ulongField) =>
+    public static IEnumerable<PublicTable> FilterByUlongField(ulong UlongField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
             new SpacetimeDB.RawBindings.ColId(4),
-            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.ulongField, ulongField)
+            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.UlongField, UlongField)
         ).Parse<PublicTable>();
 
-    public static IEnumerable<PublicTable> FilterByuint128Field(System.UInt128 uint128Field) =>
+    public static IEnumerable<PublicTable> FilterByUint128Field(System.UInt128 Uint128Field) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
             new SpacetimeDB.RawBindings.ColId(5),
-            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.uint128Field, uint128Field)
+            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.Uint128Field, Uint128Field)
         ).Parse<PublicTable>();
 
-    public static IEnumerable<PublicTable> FilterBysbyteField(sbyte sbyteField) =>
+    public static IEnumerable<PublicTable> FilterBySbyteField(sbyte SbyteField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
             new SpacetimeDB.RawBindings.ColId(6),
-            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.sbyteField, sbyteField)
+            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.SbyteField, SbyteField)
         ).Parse<PublicTable>();
 
-    public static IEnumerable<PublicTable> FilterByshortField(short shortField) =>
+    public static IEnumerable<PublicTable> FilterByShortField(short ShortField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
             new SpacetimeDB.RawBindings.ColId(7),
-            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.shortField, shortField)
+            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.ShortField, ShortField)
         ).Parse<PublicTable>();
 
-    public static IEnumerable<PublicTable> FilterByintField(int intField) =>
+    public static IEnumerable<PublicTable> FilterByIntField(int IntField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
             new SpacetimeDB.RawBindings.ColId(8),
-            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.intField, intField)
+            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.IntField, IntField)
         ).Parse<PublicTable>();
 
-    public static IEnumerable<PublicTable> FilterBylongField(long longField) =>
+    public static IEnumerable<PublicTable> FilterByLongField(long LongField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
             new SpacetimeDB.RawBindings.ColId(9),
-            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.longField, longField)
+            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.LongField, LongField)
         ).Parse<PublicTable>();
 
-    public static IEnumerable<PublicTable> FilterByint128Field(System.Int128 int128Field) =>
+    public static IEnumerable<PublicTable> FilterByInt128Field(System.Int128 Int128Field) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
             new SpacetimeDB.RawBindings.ColId(10),
-            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.int128Field, int128Field)
+            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.Int128Field, Int128Field)
         ).Parse<PublicTable>();
 
-    public static IEnumerable<PublicTable> FilterByboolField(bool boolField) =>
+    public static IEnumerable<PublicTable> FilterByBoolField(bool BoolField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
             new SpacetimeDB.RawBindings.ColId(11),
-            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.boolField, boolField)
+            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.BoolField, BoolField)
         ).Parse<PublicTable>();
 
-    public static IEnumerable<PublicTable> FilterBystringField(string stringField) =>
+    public static IEnumerable<PublicTable> FilterByStringField(string StringField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
             new SpacetimeDB.RawBindings.ColId(14),
-            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.stringField, stringField)
+            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.StringField, StringField)
         ).Parse<PublicTable>();
 
-    public static IEnumerable<PublicTable> FilterByidentityField(
-        SpacetimeDB.Runtime.Identity identityField
+    public static IEnumerable<PublicTable> FilterByIdentityField(
+        SpacetimeDB.Runtime.Identity IdentityField
     ) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
             new SpacetimeDB.RawBindings.ColId(15),
-            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.identityField, identityField)
+            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.IdentityField, IdentityField)
         ).Parse<PublicTable>();
 
-    public static IEnumerable<PublicTable> FilterByaddressField(
-        SpacetimeDB.Runtime.Address addressField
+    public static IEnumerable<PublicTable> FilterByAddressField(
+        SpacetimeDB.Runtime.Address AddressField
     ) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
             new SpacetimeDB.RawBindings.ColId(16),
-            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.addressField, addressField)
+            SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.AddressField, AddressField)
         ).Parse<PublicTable>();
 } // PublicTable
