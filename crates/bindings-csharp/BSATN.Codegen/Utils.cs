@@ -49,16 +49,16 @@ public static class Utils
     public static string GetTypeInfo(ITypeSymbol type)
     {
         // We need to distinguish handle nullable reference types specially:
-        // compiler expands something like `int?` to `System.Nullable<int>` but with the nullable annotation set to `Annotated`
+        // compiler expands something like `int?` to `System.Nullable<int>` with the nullable annotation set to `Annotated`
         // while something like `string?` is expanded to `string` with the nullable annotation set to `Annotated`...
         // Beautiful design requires beautiful hacks.
         if (
             type.NullableAnnotation == NullableAnnotation.Annotated
-            && type.OriginalDefinition.ToString() != "System.Nullable<T>"
+            && type.OriginalDefinition.SpecialType != SpecialType.System_Nullable_T
         )
         {
-            // if we're here, then this is a nullable reference type like `string?`.
-            type = type.WithNullableAnnotation(NullableAnnotation.None);
+            // If we're here, then this is a nullable reference type like `string?` and the original definition is `string`.
+            type = type.OriginalDefinition;
             return $"SpacetimeDB.BSATN.RefOption<{type}, {GetTypeInfo(type)}>";
         }
         return type switch
@@ -86,8 +86,7 @@ public static class Utils
                         )
                 },
             IArrayTypeSymbol { ElementType: var elementType }
-                => elementType is INamedTypeSymbol namedType
-                && namedType.SpecialType == SpecialType.System_Byte
+                => elementType.SpecialType == SpecialType.System_Byte
                     ? "SpacetimeDB.BSATN.ByteArray"
                     : $"SpacetimeDB.BSATN.Array<{elementType}, {GetTypeInfo(elementType)}>",
             _ => throw new InvalidOperationException($"Unsupported type {type}")
@@ -103,9 +102,7 @@ public static class Utils
             {
                 if (
                     !type.GetAttributes()
-                        .Any(a =>
-                            a.AttributeClass?.ToDisplayString() == "SpacetimeDB.TypeAttribute"
-                        )
+                        .Any(a => a.AttributeClass?.ToString() == "SpacetimeDB.TypeAttribute")
                 )
                 {
                     throw new InvalidOperationException(

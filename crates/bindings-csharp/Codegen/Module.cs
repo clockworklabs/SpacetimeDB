@@ -43,7 +43,7 @@ public class Module : IIncrementalGenerator
                     {
                         var indexKind = f.GetAttributes()
                             .Where(a =>
-                                a.AttributeClass?.ToDisplayString() == "SpacetimeDB.ColumnAttribute"
+                                a.AttributeClass?.ToString() == "SpacetimeDB.ColumnAttribute"
                             )
                             .Select(a => (ColumnAttrs)a.ConstructorArguments[0].Value!)
                             .SingleOrDefault();
