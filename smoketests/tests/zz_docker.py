@@ -68,7 +68,7 @@ pub fn say_hello() {
     println!("Hello, World!");
 }
 """
-    
+
     def test_restart_module(self):
         """This tests to see if SpacetimeDB can be queried after a restart"""
 
@@ -115,7 +115,7 @@ pub fn say_hello() {
     println!("Hello, World!");
 }
 """
-    
+
     def test_restart_module(self):
         """This tests to see if SpacetimeDB can be queried after a restart"""
 
@@ -132,8 +132,62 @@ pub fn say_hello() {
         restart_docker()
 
         sql_out = self.spacetime("sql", self.address, "SELECT name FROM Person WHERE id = 3")
-        self.assertMultiLineEqual(sql_out, """\
- name     
-----------
- Samantha 
-""")
+        self.assertMultiLineEqual(sql_out, """ name       \n------------\n "Samantha" \n""")
+
+@requires_docker
+class DockerRestartAutoDisconnect(Smoketest):
+    MODULE_CODE = """
+use log::info;
+use spacetimedb::{spacetimedb, Address, Identity, ReducerContext, TableType};
+
+#[spacetimedb(table)]
+pub struct ConnectedClients {
+    identity: Identity,
+    address: Address,
+}
+
+#[spacetimedb(connect)]
+fn on_connect(ctx: ReducerContext) {
+    ConnectedClients::insert(ConnectedClients {
+        identity: ctx.sender,
+        address: ctx.address.expect("sender address unset"),
+    });
+}
+
+#[spacetimedb(disconnect)]
+fn on_disconnect(ctx: ReducerContext) {
+    let sender_identity = &ctx.sender;
+    let sender_address = ctx.address.as_ref().expect("sender address unset");
+    let match_client = |row: &ConnectedClients| {
+        &row.identity == sender_identity && &row.address == sender_address
+    };
+    if let Some(client) = ConnectedClients::iter().find(match_client) {
+        ConnectedClients::delete(&client);
+    }
+}
+
+#[spacetimedb(reducer)]
+fn print_num_connected() {
+    let n = ConnectedClients::iter().count();
+    info!("CONNECTED CLIENTS: {n}")
+}
+"""
+
+    def test_restart_disconnects(self):
+        """Tests if clients are automatically disconnected after a restart"""
+
+        # Start two subscribers
+        self.subscribe("SELECT * FROM ConnectedClients", n=2)
+        self.subscribe("SELECT * FROM ConnectedClients", n=2)
+
+        # Assert that we have two clients + the reducer call
+        self.call("print_num_connected")
+        logs = self.logs(10)
+        self.assertEqual("CONNECTED CLIENTS: 3", logs.pop())
+
+        restart_docker()
+
+        # After restart, only the current call should be connected
+        self.call("print_num_connected")
+        logs = self.logs(10)
+        self.assertEqual("CONNECTED CLIENTS: 1", logs.pop())
