@@ -14,6 +14,7 @@ pub(crate) struct SatsType<'a> {
     pub generics: &'a syn::Generics,
     pub name: String,
     pub krate: TokenStream,
+    // may want to use in the future
     #[allow(unused)]
     pub original_attrs: &'a [syn::Attribute],
     pub data: SatsTypeData<'a>,
@@ -38,6 +39,7 @@ pub(crate) struct SatsVariant<'a> {
     pub name: String,
     pub ty: Option<&'a syn::Type>,
     pub member: Option<syn::Member>,
+    // may want to use in the future
     #[allow(unused)]
     pub original_attrs: &'a [syn::Attribute],
 }
