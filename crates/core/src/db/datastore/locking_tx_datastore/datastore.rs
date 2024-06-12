@@ -18,7 +18,7 @@ use crate::{
                 DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, RowTypeForTable, Tx, TxData, TxDatastore,
             },
         },
-        db_metrics::{DB_METRICS, MAX_TX_CPU_TIME},
+        db_metrics::DB_METRICS,
     },
     error::{DBError, TableError},
     execution_context::ExecutionContext,
@@ -566,22 +566,6 @@ pub(super) fn record_metrics(ctx: &ExecutionContext, tx_timer: Instant, lock_wai
         .rdb_txn_elapsed_time_sec
         .with_label_values(workload, db, reducer)
         .observe(elapsed_time);
-
-    let mut guard = MAX_TX_CPU_TIME.lock().unwrap();
-    let max_cpu_time = *guard
-        .entry((*db, *workload, reducer.to_owned()))
-        .and_modify(|max| {
-            if cpu_time > *max {
-                *max = cpu_time;
-            }
-        })
-        .or_insert_with(|| cpu_time);
-
-    drop(guard);
-    DB_METRICS
-        .rdb_txn_cpu_time_sec_max
-        .with_label_values(workload, db, reducer)
-        .set(max_cpu_time);
 }
 
 impl MutTx for Locking {
