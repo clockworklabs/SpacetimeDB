@@ -35,7 +35,10 @@ use spacetimedb_sats::db::{
 };
 use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductValue};
 use spacetimedb_snapshot::ReconstructedSnapshot;
-use spacetimedb_table::{indexes::RowPointer, table::RowRef};
+use spacetimedb_table::{
+    indexes::RowPointer,
+    table::{RowRef, Table},
+};
 use std::time::{Duration, Instant};
 use std::{borrow::Cow, sync::Arc};
 use thiserror::Error;
@@ -543,7 +546,15 @@ impl MutTxDatastore for Locking {
     }
 }
 
-pub(super) fn record_metrics(ctx: &ExecutionContext, tx_timer: Instant, lock_wait_time: Duration, committed: bool) {
+/// This utility is responsible for recording all transaction metrics.
+pub(super) fn record_metrics(
+    ctx: &ExecutionContext,
+    tx_timer: Instant,
+    lock_wait_time: Duration,
+    committed: bool,
+    tx_data: Option<&TxData>,
+    committed_state: Option<&CommittedState>,
+) {
     let workload = &ctx.workload();
     let db = &ctx.database();
     let reducer = ctx.reducer_name();
@@ -552,20 +563,59 @@ pub(super) fn record_metrics(ctx: &ExecutionContext, tx_timer: Instant, lock_wai
 
     let elapsed_time = elapsed_time.as_secs_f64();
     let cpu_time = cpu_time.as_secs_f64();
-    // Note, we record empty transactions in our metrics.
-    // That is, transactions that don't write any rows to the commit log.
+
+    // Increment tx counter
     DB_METRICS
         .rdb_num_txns
         .with_label_values(workload, db, reducer, &committed)
         .inc();
+    // Record tx cpu time
     DB_METRICS
         .rdb_txn_cpu_time_sec
         .with_label_values(workload, db, reducer)
         .observe(cpu_time);
+    // Record tx elapsed time
     DB_METRICS
         .rdb_txn_elapsed_time_sec
         .with_label_values(workload, db, reducer)
         .observe(elapsed_time);
+
+    /// Update table rows and table size gauges,
+    /// and sets them to zero if no table is present.
+    fn update_table_gauges(db: &Address, table_id: &TableId, table_name: &str, table: Option<&Table>) {
+        let (mut table_rows, mut table_size) = (0, 0);
+        if let Some(table) = table {
+            table_rows = table.row_count as i64;
+            table_size = table.bytes_occupied_overestimate() as i64;
+        }
+        DB_METRICS
+            .rdb_num_table_rows
+            .with_label_values(db, &table_id.0, table_name)
+            .set(table_rows);
+        DB_METRICS
+            .rdb_table_size
+            .with_label_values(db, &table_id.0, table_name)
+            .set(table_size);
+    }
+
+    if let (Some(tx_data), Some(committed_state)) = (tx_data, committed_state) {
+        for (table_id, table_name, inserts) in tx_data.inserts_with_table_name() {
+            update_table_gauges(db, table_id, table_name, committed_state.get_table(*table_id));
+            // Increment rows inserted counter
+            DB_METRICS
+                .rdb_num_rows_inserted
+                .with_label_values(workload, db, reducer, &table_id.0, table_name)
+                .inc_by(inserts.len() as u64);
+        }
+        for (table_id, table_name, deletes) in tx_data.deletes_with_table_name() {
+            update_table_gauges(db, table_id, table_name, committed_state.get_table(*table_id));
+            // Increment rows deleted counter
+            DB_METRICS
+                .rdb_num_rows_deleted
+                .with_label_values(workload, db, reducer, &table_id.0, table_name)
+                .inc_by(deletes.len() as u64);
+        }
+    }
 }
 
 impl MutTx for Locking {
@@ -589,26 +639,11 @@ impl MutTx for Locking {
     }
 
     fn rollback_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) {
-        let lock_wait_time = tx.lock_wait_time;
-        let timer = tx.timer;
-        // TODO(cloutiertyler): We should probably track the tx.rollback() time separately.
-        tx.rollback();
-
-        // Record metrics for the transaction at the very end right before we drop
-        // the MutTx and release the lock.
-        record_metrics(ctx, timer, lock_wait_time, false);
+        tx.rollback(ctx);
     }
 
     fn commit_mut_tx(&self, ctx: &ExecutionContext, tx: Self::MutTx) -> Result<Option<TxData>> {
-        let lock_wait_time = tx.lock_wait_time;
-        let timer = tx.timer;
-        // TODO(cloutiertyler): We should probably track the tx.commit() time separately.
-        let res = tx.commit(ctx);
-
-        // Record metrics for the transaction at the very end right before we drop
-        // the MutTx and release the lock.
-        record_metrics(ctx, timer, lock_wait_time, true);
-        Ok(Some(res))
+        Ok(Some(tx.commit(ctx)))
     }
 
     #[cfg(test)]
@@ -624,28 +659,11 @@ impl MutTx for Locking {
 
 impl Locking {
     pub fn rollback_mut_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTxId) -> TxId {
-        let lock_wait_time = tx.lock_wait_time;
-        let timer = tx.timer;
-        // TODO(cloutiertyler): We should probably track the tx.rollback() time separately.
-        let tx = tx.rollback_downgrade();
-
-        // Record metrics for the transaction at the very end right before we drop
-        // the MutTx and release the lock.
-        record_metrics(ctx, timer, lock_wait_time, false);
-
-        tx
+        tx.rollback_downgrade(ctx)
     }
 
     pub fn commit_mut_tx_downgrade(&self, ctx: &ExecutionContext, tx: MutTxId) -> Result<Option<(TxData, TxId)>> {
-        let lock_wait_time = tx.lock_wait_time;
-        let timer = tx.timer;
-        // TODO(cloutiertyler): We should probably track the tx.commit() time separately.
-        let res = tx.commit_downgrade(ctx);
-
-        // Record metrics for the transaction at the very end right before we drop
-        // the MutTx and release the lock.
-        record_metrics(ctx, timer, lock_wait_time, true);
-        Ok(Some(res))
+        Ok(Some(tx.commit_downgrade(ctx)))
     }
 }
 
