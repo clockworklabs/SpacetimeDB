@@ -1,4 +1,4 @@
-//! Defines procedural macros like `#[spacetimedb(table)]`,
+//! Defines procedural macros like `#[spacetimedb::table]`,
 //! simplifying writing SpacetimeDB modules in Rust.
 
 #![crate_type = "proc-macro"]
@@ -13,43 +13,50 @@ extern crate proc_macro;
 
 use bitflags::Flags;
 use module::{derive_deserialize, derive_satstype, derive_serialize};
+use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned, TokenStreamExt};
 use spacetimedb_primitives::ColumnAttribute;
 use std::collections::HashMap;
 use std::time::Duration;
-use syn::parse::{Parse, ParseStream};
+use syn::meta::ParseNestedMeta;
+use syn::parse::{Nothing, Parse, ParseStream, Parser};
+use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::{
-    parse_quote, token, BinOp, Expr, ExprBinary, ExprLit, ExprUnary, FnArg, Ident, ItemFn, ItemStruct, Member, Path,
-    Token, Type, TypePath, UnOp,
+    parse_quote, BinOp, Expr, ExprBinary, ExprLit, ExprUnary, FnArg, Ident, ItemFn, LitStr, Member, Path, Token, Type,
+    TypePath, UnOp,
 };
 
 mod sym {
+
     /// A symbol known at compile-time against
     /// which identifiers and paths may be matched.
     pub struct Symbol(&'static str);
 
-    /// Matches `autoinc`.
-    pub const AUTOINC: Symbol = Symbol("autoinc");
+    macro_rules! symbol {
+        ($ident:ident) => {
+            symbol!($ident, $ident);
+        };
+        ($const:ident, $ident:ident) => {
+            #[allow(non_upper_case_globals)]
+            #[doc = concat!("Matches `", stringify!($ident), "`.")]
+            pub const $const: Symbol = Symbol(stringify!($ident));
+        };
+    }
 
-    /// Matches `crate`.
-    pub const CRATE: Symbol = Symbol("crate");
-
-    /// Matches `name`.
-    pub const NAME: Symbol = Symbol("name");
-
-    /// Matches `primarykey`.
-    pub const PRIMARYKEY: Symbol = Symbol("primarykey");
-
-    /// Matches `public`.
-    pub const PUBLIC: Symbol = Symbol("public");
-
-    /// Matches `sats`.
-    pub const SATS: Symbol = Symbol("sats");
-
-    /// Matches `unique`.
-    pub const UNIQUE: Symbol = Symbol("unique");
+    symbol!(autoinc);
+    symbol!(btree);
+    symbol!(columns);
+    symbol!(crate_, crate);
+    symbol!(hash);
+    symbol!(index);
+    symbol!(name);
+    symbol!(primarykey);
+    symbol!(private);
+    symbol!(public);
+    symbol!(sats);
+    symbol!(unique);
 
     impl PartialEq<Symbol> for syn::Ident {
         fn eq(&self, sym: &Symbol) -> bool {
@@ -71,48 +78,34 @@ mod sym {
             self.is_ident(sym)
         }
     }
-}
-
-/// Defines the `#[spacetimedb(input)]` procedural attribute.
-///
-/// The macro takes this `input`, which defines what the attribute does,
-/// and it is structured roughly like so:
-/// ```ignore
-/// input = table [ ( private | public ) ] | init | connect | disconnect | migrate
-///       | reducer
-///       | index(btree | hash [, name = string] [, field_name:ident]*)
-/// ```
-///
-/// For description of the field attributes on `#[spacetimedb(table)]` structs,
-/// see [`TableType`](spacetimedb_tabletype).
-#[proc_macro_attribute]
-pub fn spacetimedb(macro_args: proc_macro::TokenStream, item: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let item: TokenStream = item.into();
-    let orig_input = item.clone();
-
-    syn::parse::<MacroInput>(macro_args)
-        .and_then(|input| route_input(input, item))
-        .unwrap_or_else(|x| {
-            let mut out = orig_input;
-            out.extend(x.into_compile_error());
-            out
-        })
-        .into()
-}
-
-/// On `item`, route the macro `input` to the various interpretations.
-fn route_input(input: MacroInput, item: TokenStream) -> syn::Result<TokenStream> {
-    match input {
-        MacroInput::Table(public) => spacetimedb_table(item, public),
-        MacroInput::Init => spacetimedb_init(item),
-        MacroInput::Reducer(Some(span)) => Err(syn::Error::new(span, "`repeat` support has been removed")),
-        MacroInput::Reducer(None) => spacetimedb_reducer(item),
-        MacroInput::Connect => spacetimedb_special_reducer("__identity_connected__", item),
-        MacroInput::Disconnect => spacetimedb_special_reducer("__identity_disconnected__", item),
-        MacroInput::Migrate => spacetimedb_special_reducer("__migrate__", item),
-        MacroInput::Index { ty, name, field_names } => spacetimedb_index(ty, name, field_names, item),
-        MacroInput::Update => spacetimedb_special_reducer("__update__", item),
+    impl std::fmt::Display for Symbol {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(self.0)
+        }
     }
+    impl std::borrow::Borrow<str> for Symbol {
+        fn borrow(&self) -> &str {
+            self.0
+        }
+    }
+}
+
+/// Parses `item`, passing it and `args` to `f`,
+/// which should return only whats newly added, excluding the `item`.
+/// Returns the full token stream `extra_attr item newly_added`.
+fn cvt_attr<Item: Parse>(
+    args: StdTokenStream,
+    item: StdTokenStream,
+    extra_attr: TokenStream,
+    f: impl FnOnce(TokenStream, Item) -> syn::Result<TokenStream>,
+) -> StdTokenStream {
+    let item: TokenStream = item.into();
+    let parsed_item = match syn::parse2::<Item>(item.clone()) {
+        Ok(i) => i,
+        Err(e) => return TokenStream::from_iter([item, e.into_compile_error()]).into(),
+    };
+    let generated = f(args.into(), parsed_item).unwrap_or_else(syn::Error::into_compile_error);
+    TokenStream::from_iter([extra_attr, item, generated]).into()
 }
 
 /// Convert the `dur`ation to a `TokenStream` corresponding to it.
@@ -124,122 +117,29 @@ fn duration_totokens(dur: Duration) -> TokenStream {
     })
 }
 
-/// Defines the input space of the `spacetimedb` macro.
-enum MacroInput {
-    Table(Option<Span>),
-    Init,
-    Reducer(Option<Span>),
-    Connect,
-    Disconnect,
-    Migrate,
-    Index {
-        ty: IndexType,
-        name: Option<String>,
-        field_names: Vec<Ident>,
-    },
-    Update,
+trait ErrorSource {
+    fn error(self, msg: impl std::fmt::Display) -> syn::Error;
 }
-
-/// Parse `f()` delimited by `,` until `input` is empty.
-///
-/// ` `; `,`; `, f()`; `, f(),`; are some valid parses.
-fn comma_then_comma_delimited(
-    input: syn::parse::ParseStream,
-    mut f: impl FnMut() -> syn::Result<()>,
-) -> syn::Result<()> {
-    while !input.is_empty() {
-        input.parse::<Token![,]>()?;
-        if input.is_empty() {
-            break;
-        }
-        f()?;
+impl ErrorSource for Span {
+    fn error(self, msg: impl std::fmt::Display) -> syn::Error {
+        syn::Error::new(self, msg)
     }
-    Ok(())
+}
+impl ErrorSource for &syn::meta::ParseNestedMeta<'_> {
+    fn error(self, msg: impl std::fmt::Display) -> syn::Error {
+        self.error(msg)
+    }
 }
 
 /// Ensures that `x` is `None` or returns an error.
-fn check_duplicate<T>(x: &Option<T>, span: Span) -> syn::Result<()> {
+fn check_duplicate<T>(x: &Option<T>, src: impl ErrorSource) -> syn::Result<()> {
+    check_duplicate_msg(x, src, "duplicate attribute")
+}
+fn check_duplicate_msg<T>(x: &Option<T>, src: impl ErrorSource, msg: impl std::fmt::Display) -> syn::Result<()> {
     if x.is_none() {
         Ok(())
     } else {
-        Err(syn::Error::new(span, "duplicate attribute"))
-    }
-}
-fn check_duplicate_meta<T>(x: &Option<T>, meta: &syn::meta::ParseNestedMeta<'_>) -> syn::Result<()> {
-    if x.is_none() {
-        Ok(())
-    } else {
-        Err(meta.error("duplicate attribute"))
-    }
-}
-
-impl syn::parse::Parse for MacroInput {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        Ok(match_tok!(match input {
-            kw::table => {
-                let mut public = None;
-                // Look for `(public)` or `(private)`.
-                if input.peek(token::Paren) {
-                    let in_parens;
-                    syn::parenthesized!(in_parens in input);
-                    let in_parens = &in_parens;
-                    let start = in_parens.span();
-                    match_tok!(match in_parens {
-                        kw::public => public = Some(start),
-                        kw::private => {}
-                    })
-                }
-                Self::Table(public)
-            }
-            kw::init => Self::Init,
-            kw::reducer => {
-                // Eat an optional comma, and then if anything follows,
-                // it has to be `repeat = Duration`.
-                let mut repeat = None;
-                comma_then_comma_delimited(input, || {
-                    let start = input.span();
-                    match_tok!(match input {
-                        kw::repeat => {
-                            input.parse::<Token![=]>()?;
-                            input.call(parse_duration)?;
-                            repeat = Some(start);
-                        }
-                    });
-                    Ok(())
-                })?;
-                Self::Reducer(repeat)
-            }
-            kw::connect => Self::Connect,
-            kw::disconnect => Self::Disconnect,
-            kw::migrate => Self::Migrate,
-            kw::index => {
-                // Extract stuff in parens.
-                let in_parens;
-                syn::parenthesized!(in_parens in input);
-                let in_parens = &in_parens;
-
-                // Parse `btree` or `hash`.
-                let ty: IndexType = in_parens.parse()?;
-
-                // Find `name = $string_literal`.
-                // Also find plain identifiers that become field names to index.
-                let mut name = None;
-                let mut field_names = Vec::new();
-                comma_then_comma_delimited(in_parens, || {
-                    match_tok!(match in_parens {
-                        (tok, _) @ (kw::name, Token![=]) => {
-                            check_duplicate(&name, tok.span)?;
-                            let v = in_parens.parse::<syn::LitStr>()?;
-                            name = Some(v.value())
-                        }
-                        ident @ Ident => field_names.push(ident),
-                    });
-                    Ok(())
-                })?;
-                Self::Index { ty, name, field_names }
-            }
-            kw::update => Self::Update,
-        }))
+        Err(src.error(msg))
     }
 }
 
@@ -249,59 +149,56 @@ enum IndexType {
     Hash,
 }
 
-impl syn::parse::Parse for IndexType {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        Ok(match_tok!(match input {
-            kw::btree => Self::BTree,
-            kw::hash => Self::Hash,
-        }))
-    }
-}
-
 impl quote::ToTokens for IndexType {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         tokens.append(Ident::new(&format!("{self:?}"), Span::call_site()))
     }
 }
 
-mod kw {
-    syn::custom_keyword!(table);
-    syn::custom_keyword!(init);
-    syn::custom_keyword!(reducer);
-    syn::custom_keyword!(connect);
-    syn::custom_keyword!(disconnect);
-    syn::custom_keyword!(migrate);
-    syn::custom_keyword!(index);
-    syn::custom_keyword!(btree);
-    syn::custom_keyword!(hash);
-    syn::custom_keyword!(name);
-    syn::custom_keyword!(private);
-    syn::custom_keyword!(public);
-    syn::custom_keyword!(repeat);
-    syn::custom_keyword!(update);
-}
+/// Marks a function as a spacetimedb reducer.
+///
+/// A reducer is a function which traverses and updates the database,
+/// a sort of stored procedure that lives in the database, and which can be invoked remotely.
+/// Each reducer call runs in its own transaction,
+/// and its updates to the database are only committed if the reducer returns successfully.
+///
+/// A reducer may take no arguments, like so:
+///
+/// ```rust,ignore
+/// #[spacetimedb::reducer]
+/// pub fn hello_world() {
+///     println!("Hello, World!");
+/// }
+/// ```
+///
+/// But it may also take some:
+/// ```rust,ignore
+/// #[spacetimedb::reducer]
+/// pub fn add_person(name: String, age: u16) {
+///     // Logic to add a person with `name` and `age`.
+/// }
+/// ```
+///
+/// Reducers cannot return values, but can return errors.
+/// To do so, a reducer must have a return type of `Result<(), impl Debug>`.
+/// When such an error occurs, it will be formatted and printed out to logs,
+/// resulting in an aborted transaction.
+#[proc_macro_attribute]
+pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    cvt_attr(args, item, quote!(), |args, original_function: ItemFn| {
+        syn::parse2::<Nothing>(args)?;
 
-/// Generates a reducer in place of `item`.
-fn spacetimedb_reducer(item: TokenStream) -> syn::Result<TokenStream> {
-    let original_function = syn::parse2::<ItemFn>(item)?;
+        // Extract reducer name, making sure it's not `__XXX__` as that's the form we reserve for special reducers.
+        let reducer_name = original_function.sig.ident.to_string();
+        if reducer_name.starts_with("__") && reducer_name.ends_with("__") {
+            return Err(syn::Error::new_spanned(
+                &original_function.sig.ident,
+                "reserved reducer name",
+            ));
+        }
 
-    // Extract reducer name, making sure it's not `__XXX__` as that's the form we reserve for special reducers.
-    let reducer_name = original_function.sig.ident.to_string();
-    if reducer_name.starts_with("__") && reducer_name.ends_with("__") {
-        return Err(syn::Error::new_spanned(
-            &original_function.sig.ident,
-            "reserved reducer name",
-        ));
-    }
-
-    gen_reducer(original_function, &reducer_name, ReducerExtra::Schedule)
-}
-
-/// Generates the special `__init__` "reducer" in place of `item`.
-fn spacetimedb_init(item: TokenStream) -> syn::Result<TokenStream> {
-    let original_function = syn::parse2::<ItemFn>(item)?;
-
-    gen_reducer(original_function, "__init__", ReducerExtra::None)
+        gen_reducer(original_function, &reducer_name, ReducerExtra::Schedule)
+    })
 }
 
 enum ReducerExtra {
@@ -425,33 +322,161 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
             };
         }
         #extra_impls
-        #original_function
     })
 }
 
-// TODO: We actually need to add a constraint that requires this column to be unique!
-struct Column<'a> {
-    index: u8,
-    field: &'a module::SatsField<'a>,
-    attr: ColumnAttribute,
+#[derive(Default)]
+struct TableArgs {
+    public: Option<Span>,
+    name: Option<LitStr>,
+    indices: Vec<IndexArg>,
 }
 
-fn spacetimedb_table(item: TokenStream, public: Option<Span>) -> syn::Result<TokenStream> {
-    let public = public.map(|span| quote_spanned!(span => #[sats(public)]));
-
-    Ok(quote! {
-        #[derive(spacetimedb::TableType)]
-        #public
-        #item
-    })
+struct IndexArg {
+    kind: IndexType,
+    name: Option<LitStr>,
+    columns: Vec<Ident>,
 }
 
-/// Generates code for treating this type as a table.
+impl TableArgs {
+    fn parse(input: TokenStream) -> syn::Result<Self> {
+        let mut specified_access = false;
+        let mut args = TableArgs::default();
+        syn::meta::parser(|meta| {
+            let mut specified_access = || {
+                if specified_access {
+                    return Err(meta.error("already specified access level"));
+                }
+                specified_access = true;
+                Ok(())
+            };
+            match_meta!(match meta {
+                sym::public => {
+                    specified_access()?;
+                    args.public = Some(meta.path.span());
+                }
+                sym::private => {
+                    specified_access()?;
+                }
+                sym::name => {
+                    check_duplicate(&args.name, &meta)?;
+                    let value = meta.value()?;
+                    args.name = Some(value.parse()?);
+                }
+                sym::index => args.indices.push(IndexArg::parse_meta(meta)?),
+            });
+            Ok(())
+        })
+        .parse2(input)?;
+        Ok(args)
+    }
+}
+
+impl IndexArg {
+    fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
+        let mut kind = None;
+        let mut name = None;
+        let mut columns = None;
+        meta.parse_nested_meta(|meta| {
+            match_meta!(match meta {
+                sym::btree => {
+                    check_duplicate_msg(&kind, &meta, "index type specified twice")?;
+                    kind = Some(IndexType::BTree);
+                }
+                sym::hash => {
+                    check_duplicate_msg(&kind, &meta, "index type specified twice")?;
+                    kind = Some(IndexType::Hash);
+                }
+                sym::name => {
+                    check_duplicate(&name, &meta)?;
+                    let value = meta.value()?;
+                    name = Some(value.parse()?);
+                }
+                sym::columns => {
+                    check_duplicate(&columns, &meta)?;
+                    let value = meta.value()?;
+                    let inner;
+                    syn::bracketed!(inner in value);
+                    let cols = Punctuated::<Ident, Token![,]>::parse_terminated(&inner)?;
+                    columns = Some(cols.into_iter().collect());
+                }
+            });
+            Ok(())
+        })?;
+        let kind = kind.ok_or_else(|| meta.error("must specify either `btree` or `hash` for index"))?;
+        let columns = columns.ok_or_else(|| meta.error("must specify columns = [col1, col2] for index"))?;
+        Ok(IndexArg { kind, name, columns })
+    }
+
+    /// Parses an inline `#[index(btree | hash)]` attribute on a field.
+    fn parse_index_attr(field: &Ident, attr: &syn::Attribute) -> syn::Result<Self> {
+        let mut kind = None;
+        attr.parse_nested_meta(|meta| {
+            match_meta!(match meta {
+                sym::btree => {
+                    check_duplicate_msg(&kind, &meta, "index type specified twice")?;
+                    kind = Some(IndexType::BTree);
+                }
+                sym::hash => {
+                    check_duplicate_msg(&kind, &meta, "index type specified twice")?;
+                    kind = Some(IndexType::Hash);
+                }
+            });
+            Ok(())
+        })?;
+        let kind =
+            kind.ok_or_else(|| syn::Error::new_spanned(&attr.meta, "must specify kind of index (`btree` or `hash`)"))?;
+        Ok(IndexArg {
+            kind,
+            name: None,
+            columns: vec![field.clone()],
+        })
+    }
+}
+
+/// Generates code for treating this struct type as a table.
 ///
-/// Among other things, this derives `Serialize`, `Deserialize`,
-/// `SpacetimeType`, and `TableType` for our type.
+/// Among other things, this derives [`Serialize`], [`Deserialize`],
+/// [`SpacetimeType`], and [`TableType`] for our type.
 ///
-/// A table type must be a `struct`, whose fields may be annotated with the following attributes:
+/// # Example
+///
+/// ```no_run
+/// #[spacetimedb::table(public, name = "Users")]
+/// pub struct User {
+///     #[autoinc]
+///     #[primarykey]
+///     pub id: u32,
+///     #[unique]
+///     pub username: String,
+///     #[index(btree)]
+///     pub popularity: u32,
+/// }
+/// ```
+///
+/// # Macro arguments
+///
+/// * `public` and `private`
+///
+///    Tables are private by default. If you'd like to make your table publically
+///    accessible by anyone, put `public` in the macro arguments (e.g.
+///    `#[spacetimedb::table(public)]`). You can also specify `private` if
+///    you'd like to be specific. This is fully separate from Rust's module visibility
+///    system; `pub struct` or `pub(crate) struct` do not affect the table visibility, only
+///    the visibility of the items in your own source code.
+///
+/// * `index(btree | hash, name = "...", columns = [a, b, c])`
+///
+///    You can specify an index on 1 or more of the table's columns with the above syntax.
+///    You can also just put `#[index(btree | hash)]` on the field itself if you only need
+///    a single-column attribute; see column attributes below.
+///
+/// * `name = "..."`
+///
+///    Specify the name of the table in the database, if you want it to be different from
+///    the name of the struct.
+///
+/// # Column (field) attributes
 ///
 /// * `#[autoinc]`
 ///
@@ -471,12 +496,36 @@ fn spacetimedb_table(item: TokenStream, public: Option<Span>) -> syn::Result<Tok
 /// * `#[primarykey]`
 ///
 ///    Similar to `#[unique]`, but generates additional CRUD methods.
-#[proc_macro_derive(TableType, attributes(sats, unique, autoinc, primarykey))]
-pub fn spacetimedb_tabletype(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let item = syn::parse_macro_input!(item as syn::DeriveInput);
-    spacetimedb_tabletype_impl(item)
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
+///
+/// * `#[index(btree | hash)]`
+///
+///    Creates a single-column index with the specified algorithm.
+///
+/// [`Serialize`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.Serialize.html
+/// [`Deserialize`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.Deserialize.html
+/// [`SpacetimeType`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.SpacetimeType.html
+/// [`TableType`]: https://docs.rs/spacetimedb/latest/spacetimedb/trait.TableType.html
+#[proc_macro_attribute]
+pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    // put this on the struct so we don't get unknown attribute errors
+    let extra_attr = quote!(#[derive(spacetimedb::__TableHelper)]);
+    cvt_attr(args, item, extra_attr, |args, item: syn::DeriveInput| {
+        let args = TableArgs::parse(args)?;
+        table_impl(args, item)
+    })
+}
+
+#[doc(hidden)]
+#[proc_macro_derive(__TableHelper, attributes(sats, unique, autoinc, primarykey, index))]
+pub fn table_helper(_input: StdTokenStream) -> StdTokenStream {
+    Default::default()
+}
+
+// TODO: We actually need to add a constraint that requires this column to be unique!
+struct Column<'a> {
+    index: u8,
+    field: &'a module::SatsField<'a>,
+    attr: ColumnAttribute,
 }
 
 enum ColumnAttr {
@@ -490,13 +539,13 @@ impl ColumnAttr {
         let Some(ident) = attr.path().get_ident() else {
             return Ok(None);
         };
-        Ok(if ident == sym::UNIQUE {
+        Ok(if ident == sym::unique {
             attr.meta.require_path_only()?;
             Some(ColumnAttr::Unique(ident.span()))
-        } else if ident == sym::AUTOINC {
+        } else if ident == sym::autoinc {
             attr.meta.require_path_only()?;
             Some(ColumnAttr::Autoinc(ident.span()))
-        } else if ident == sym::PRIMARYKEY {
+        } else if ident == sym::primarykey {
             attr.meta.require_path_only()?;
             Some(ColumnAttr::Primarykey(ident.span()))
         } else {
@@ -516,11 +565,16 @@ fn is_integer_type(p: &Path) -> bool {
     })
 }
 
-fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream> {
-    let sats_ty = module::sats_type_from_derive(&item, quote!(spacetimedb::spacetimedb_lib))?;
+fn table_impl(mut args: TableArgs, item: syn::DeriveInput) -> syn::Result<TokenStream> {
+    let mut sats_ty = module::sats_type_from_derive(&item, quote!(spacetimedb::spacetimedb_lib))?;
 
     let original_struct_ident = sats_ty.ident;
-    let table_name = &sats_ty.name;
+    // TODO: error on setting sats name for a table
+    let table_name = args
+        .name
+        .map(|s| s.value())
+        .unwrap_or_else(|| original_struct_ident.to_string());
+    sats_ty.name.clone_from(&table_name);
     let module::SatsTypeData::Product(fields) = &sats_ty.data else {
         return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
     };
@@ -543,6 +597,11 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
 
         let mut col_attr = ColumnAttribute::UNSET;
         for attr in field.original_attrs {
+            if attr.path() == sym::index {
+                let index = IndexArg::parse_index_attr(field.ident.unwrap(), attr)?;
+                args.indices.push(index);
+                continue;
+            }
             let Some(attr) = ColumnAttr::parse(attr)? else { continue };
             let duplicate = |span| syn::Error::new(span, "duplicate attribute");
             let (extra_col_attr, span) = match attr {
@@ -578,25 +637,27 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
 
     let mut indexes = vec![];
 
-    for attr in sats_ty.original_attrs {
-        if attr.path().segments.last().unwrap().ident != "spacetimedb" {
-            continue;
-        }
-        let args = attr.parse_args::<MacroInput>()?;
-        let MacroInput::Index { ty, name, field_names } = args else {
-            continue;
-        };
-        let col_ids = field_names
+    for index in args.indices {
+        let cols = index
+            .columns
             .iter()
             .map(|ident| {
                 let col = columns
                     .iter()
                     .find(|col| col.field.ident == Some(ident))
                     .ok_or_else(|| syn::Error::new(ident.span(), "not a column of the table"))?;
-                Ok(col.index)
+                Ok(col)
             })
             .collect::<syn::Result<Vec<_>>>()?;
-        let name = name.as_deref().unwrap_or("default_index");
+        let name = index.name.map(|s| s.value()).unwrap_or_else(|| {
+            [&*table_name]
+                .into_iter()
+                .chain(cols.iter().map(|col| col.field.name.as_deref().unwrap()))
+                .collect::<Vec<_>>()
+                .join("_")
+        });
+        let col_ids = cols.iter().map(|col| col.index);
+        let ty = index.kind;
         indexes.push(quote!(spacetimedb::IndexDesc {
             name: #name,
             ty: spacetimedb::sats::db::def::IndexType::#ty,
@@ -703,7 +764,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         }
     };
 
-    let table_access = if let Some(span) = sats_ty.public {
+    let table_access = if let Some(span) = args.public {
         quote_spanned!(span=> spacetimedb::sats::db::auth::StAccess::Public)
     } else {
         quote!(spacetimedb::sats::db::auth::StAccess::Private)
@@ -833,36 +894,59 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     Ok(emission)
 }
 
-fn spacetimedb_index(
-    _index_type: IndexType,
-    _index_name: Option<String>,
-    _field_names: Vec<Ident>,
-    item: TokenStream,
-) -> syn::Result<TokenStream> {
-    let original_struct = syn::parse2::<ItemStruct>(item)?;
-
-    let original_struct_name = &original_struct.ident;
-
-    let output = quote! {
-        #original_struct
-
-        const _: () = spacetimedb::rt::assert_table::<#original_struct_name>();
-    };
-
-    if std::env::var("PROC_MACRO_DEBUG").is_ok() {
-        {
-            #![allow(clippy::disallowed_macros)]
-            println!("{}", output);
+macro_rules! special_reducer {
+    ($(#[$attr:meta])* $name:ident = $reducer_name:literal) => {
+        #[proc_macro_attribute]
+        pub fn $name(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+            cvt_attr(args, item, quote!(), |args, original_function: ItemFn| {
+                syn::parse2::<Nothing>(args)?;
+                gen_reducer(original_function, $reducer_name, ReducerExtra::None)
+            })
         }
-    }
-
-    Ok(output)
+    };
 }
 
-fn spacetimedb_special_reducer(name: &str, item: TokenStream) -> syn::Result<TokenStream> {
-    let original_function = syn::parse2::<ItemFn>(item)?;
-    gen_reducer(original_function, name, ReducerExtra::None)
-}
+special_reducer!(
+    /// Marks the function as a reducer run the first time a module is published
+    /// and anytime the database is cleared.
+    ///
+    /// The reducer cannot be called manually
+    /// and may not have any parameters except for `ReducerContext`.
+    /// As with normal [`reducer`]s, an `init` reducer may return a `Result`.
+    /// If an error occurs when initializing, the module will not be published.
+    init = "__init__"
+);
+
+special_reducer!(
+    /// Marks the function as a reducer run when a client connects to the SpacetimeDB module.
+    /// Their identity can be found in the sender value of the `ReducerContext`.
+    ///
+    /// The reducer cannot be called manually
+    /// and may not have any parameters except for `ReducerContext`.
+    /// If an error occurs in the reducer, the client will be disconnected.
+    connect = "__identity_connected__"
+);
+
+special_reducer!(
+    /// Marks the function as a reducer run when a client disconnects from the SpacetimeDB module.
+    /// Their identity can be found in the sender value of the `ReducerContext`.
+    ///
+    /// The reducer cannot be called manually
+    /// and may not have any parameters except for `ReducerContext`.
+    /// If an error occurs in the disconnect reducer,
+    /// the client is still recorded as disconnected.
+    disconnect = "__identity_disconnected__"
+);
+
+special_reducer!(
+    /// Marks the function as a reducer to run when the module is updated,
+    /// i.e., when publishing a module for a database that has already been initialized.
+    ///
+    /// The reducer cannot be called manually and may not have any parameters.
+    /// As with normal [`reducer`]s, an `init` reducer may return a `Result`.
+    /// If an error occurs when initializing, the module will not be published.
+    update = "__update__"
+);
 
 #[proc_macro]
 pub fn duration(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -871,10 +955,16 @@ pub fn duration(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 fn parse_duration(input: ParseStream) -> syn::Result<Duration> {
-    let (s, span) = match_tok!(match input {
-        s @ syn::LitStr => (s.value(), s.span()),
-        i @ syn::LitInt => (i.to_string(), i.span()),
-    });
+    let lookahead = input.lookahead1();
+    let (s, span) = if lookahead.peek(syn::LitStr) {
+        let s = input.parse::<syn::LitStr>()?;
+        (s.value(), s.span())
+    } else if lookahead.peek(syn::LitInt) {
+        let i = input.parse::<syn::LitInt>()?;
+        (i.to_string(), i.span())
+    } else {
+        return Err(lookahead.error());
+    };
     humantime::parse_duration(&s).map_err(|e| syn::Error::new(span, format_args!("can't parse as duration: {e}")))
 }
 
@@ -882,7 +972,7 @@ fn parse_duration(input: ParseStream) -> syn::Result<Duration> {
 pub fn deserialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     module::sats_type_from_derive(&input, quote!(spacetimedb_lib))
-        .map(|ty| module::ensure_no_public(&ty, derive_deserialize(&ty)))
+        .map(|ty| derive_deserialize(&ty))
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
@@ -891,7 +981,7 @@ pub fn deserialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 pub fn serialize(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     module::sats_type_from_derive(&input, quote!(spacetimedb_lib))
-        .map(|ty| module::ensure_no_public(&ty, derive_serialize(&ty)))
+        .map(|ty| derive_serialize(&ty))
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
@@ -923,7 +1013,6 @@ pub fn schema_type(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 }
             };
         };
-        let emission = module::ensure_no_public(&ty, emission);
 
         if std::env::var("PROC_MACRO_DEBUG").is_ok() {
             {
@@ -1122,9 +1211,9 @@ impl ClosureLike {
 /// # Example
 ///
 /// ```ignore // unfortunately, doctest doesn't work well inside proc-macro
-/// use spacetimedb::{spacetimedb, query};
+/// use spacetimedb::query;
 ///
-/// #[spacetimedb(table)]
+/// #[spacetimedb::table]
 /// pub struct Person {
 ///     name: String,
 ///     age: u32,
