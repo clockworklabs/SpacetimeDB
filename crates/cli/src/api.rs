@@ -49,6 +49,8 @@ impl ClientApi {
         self.client.post(self.con.db_uri("sql"))
     }
 
+
+    /// Reads the `ModuleDef` from the `schema` endpoint.
     pub async fn module_def(&self) -> anyhow::Result<ModuleDef> {
         let res = self
             .client

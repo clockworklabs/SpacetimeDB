@@ -186,6 +186,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let api = ClientApi::new(conn);
     let module_def = api.module_def().await?;
 
+    // Change the URI scheme from `http(s)` to `ws(s)`.
     let mut uri = http::Uri::try_from(api.con.db_uri("subscribe")).unwrap().into_parts();
     uri.scheme = uri.scheme.map(|s| {
         if s == Scheme::HTTP {
@@ -197,8 +198,10 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
         }
     });
 
+    // Create the websocket request.
     let mut req = http::Uri::from_parts(uri).unwrap().into_client_request()?;
     req.headers_mut().insert(header::SEC_WEBSOCKET_PROTOCOL, TEXT_PROTOCOL);
+    //  Add the authorization header, if any.
     if let Some(auth_header) = &api.con.auth_header {
         req.headers_mut()
             .insert(header::AUTHORIZATION, auth_header.try_into().unwrap());
@@ -206,12 +209,14 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let (mut ws, _) = tokio_tungstenite::connect_async(req).await?;
 
     let task = async {
+        // Send the initial subscription request.
         let msg = ClientMessage::Subscribe {
             query_strings: queries.cloned().collect(),
         };
         ws.send(serde_json::to_string(&msg).unwrap().into()).await?;
 
         let mut stdout = tokio::io::stdout();
+        // Wait for the first initial update reply and print it if requested.
         while let Some(msg) = ws.try_next().await? {
             let Some(msg) = parse_msg_json(&msg) else { continue };
             match msg {
