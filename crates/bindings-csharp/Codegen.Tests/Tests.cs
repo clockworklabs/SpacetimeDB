@@ -3,6 +3,7 @@ namespace Codegen.Tests;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -12,6 +13,12 @@ using Xunit;
 
 public static class GeneratorSnapshotTests
 {
+    // Note that we can't use assembly path here because it will be put in some deep nested folder.
+    // Instead, to get the test project directory, we can use the `CallerFilePath` attribute which will magically give us path to the current file.
+    private static string GetProjectDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path)!;
+
+    private static readonly CSharpCompilation SampleCompilation;
+
     static GeneratorSnapshotTests()
     {
         // Default diff order is weird and causes new lines to look like deleted and old as inserted.
@@ -43,36 +50,31 @@ public static class GeneratorSnapshotTests
             },
             ScrubberLocation.Last
         );
-    }
 
-    private static readonly string DotNetDir = Path.GetDirectoryName(
-        typeof(object).Assembly.Location
-    )!;
+        var projectDir = GetProjectDir();
+        using var sampleSource = File.OpenRead($"{projectDir}/Sample.cs");
 
-    private static readonly ImmutableArray<PortableExecutableReference> CompilationReferences =
-        Enumerable
-            .Concat(
-                ImmutableArray
+        var stdbAssemblies = ImmutableArray
+                    .Create("BSATN.Runtime", "Runtime")
+                    .Select(name => $"{projectDir}/../{name}/bin/Debug/net8.0/SpacetimeDB.{name}.dll");
+
+        var dotNetDir = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
+        var dotNetAssemblies = ImmutableArray
                     .Create("System.Private.CoreLib", "System.Runtime")
-                    .Select(assemblyName => Path.Join(DotNetDir, $"{assemblyName}.dll")),
-                ImmutableArray
-                    .Create(
-                        // For `SpacetimeDB.BSATN.Runtime`.
-                        typeof(SpacetimeDB.TypeAttribute),
-                        // For `SpacetimeDB.Runtime`.
-                        typeof(SpacetimeDB.TableAttribute)
-                    )
-                    .Select(type => type.Assembly.Location)
-            )
-            .Select(assemblyPath => MetadataReference.CreateFromFile(assemblyPath))
-            .ToImmutableArray();
+                    .Select(name => $"{dotNetDir}/{name}.dll");
 
-    private static readonly CSharpCompilationOptions CompilationOptions =
-        new(OutputKind.ConsoleApplication, nullableContextOptions: NullableContextOptions.Enable);
-
-    private static readonly SyntaxTree SampleSource = CSharpSyntaxTree.ParseText(
-        SourceText.From(Assembly.GetExecutingAssembly().GetManifestResourceStream("Sample.cs")!)
-    );
+        SampleCompilation = CSharpCompilation.Create(
+            assemblyName: "Sample",
+            references: Enumerable
+                .Concat(
+                    dotNetAssemblies,
+                    stdbAssemblies
+                )
+                .Select(assemblyPath => MetadataReference.CreateFromFile(assemblyPath)),
+            options: new(OutputKind.NetModule, nullableContextOptions: NullableContextOptions.Enable),
+            syntaxTrees: [CSharpSyntaxTree.ParseText(SourceText.From(sampleSource))]
+        );
+    }
 
     record struct StepOutput(string Key, IncrementalStepRunReason Reason, object Value);
 
@@ -81,13 +83,6 @@ public static class GeneratorSnapshotTests
     [InlineData(typeof(SpacetimeDB.Codegen.Type))]
     public static Task VerifyDriver(Type generatorType)
     {
-        var compilation = CSharpCompilation.Create(
-            assemblyName: generatorType.Name,
-            references: CompilationReferences,
-            options: CompilationOptions,
-            syntaxTrees: [SampleSource]
-        );
-
         var generator = (IIncrementalGenerator)Activator.CreateInstance(generatorType)!;
         var driver = CSharpGeneratorDriver.Create(
             [generator.AsSourceGenerator()],
@@ -97,10 +92,9 @@ public static class GeneratorSnapshotTests
             )
         );
         // Store the new driver instance - it contains the results and the cache.
-        var genDriver = driver.RunGenerators(compilation);
+        var genDriver = driver.RunGenerators(SampleCompilation);
         // Run again with a new compilation to see if the cache is working.
-        var newCompilation = compilation.Clone();
-        var regenDriver = genDriver.RunGenerators(newCompilation);
+        var regenDriver = genDriver.RunGenerators(SampleCompilation.Clone());
 
         var regenSteps = regenDriver
             .GetRunResult()

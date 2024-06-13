@@ -12,15 +12,12 @@ using static System.Collections.StructuralComparisons;
 
 public static class Utils
 {
-    // Even ImmutableArray<T> is not deeply equatable, which makes it a common
+    // Even `ImmutableArray<T>` is not deeply equatable, which makes it a common
     // pain point for source generators as they must use only cacheable types.
+    // As a result, everyone builds their own `EquatableArray<T>` type.
     public readonly record struct EquatableArray<T>(ImmutableArray<T> Array) : IEnumerable<T>
         where T : IEquatable<T>
     {
-        // Moves contents from the builder to the equatable array.
-        public EquatableArray(ImmutableArray<T>.Builder builder)
-            : this(builder.ToImmutable()) { }
-
         public int Length => Array.Length;
         public T this[int index] => Array[index];
 
@@ -191,7 +188,7 @@ public static class Utils
                 // Move to the next outer type
                 node = type.Parent as MemberDeclarationSyntax;
             }
-            typeScopes = new(typeScopes_);
+            typeScopes = new(typeScopes_.ToImmutable());
 
             // We've now reached the outermost type, so we can determine the namespace
             var namespaces_ = ImmutableArray.CreateBuilder<string>();
@@ -200,7 +197,7 @@ public static class Utils
                 namespaces_.Add(ns.Name.ToString());
                 node = node.Parent as MemberDeclarationSyntax;
             }
-            namespaces = new(namespaces_);
+            namespaces = new(namespaces_.ToImmutable());
         }
 
         public readonly record struct TypeScope(string Keyword, string Name, string Constraints);

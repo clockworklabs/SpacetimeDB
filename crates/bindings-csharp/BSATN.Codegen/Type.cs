@@ -155,9 +155,9 @@ public class Type : IIncrementalGenerator
 
                     var typeDesc = "";
 
-                    var bsatnDecls = type.Members.Select(m => (m.Name, m.TypeInfo)).ToList();
+                    var bsatnDecls = type.Members.Select(m => (m.Name, m.TypeInfo)).ToImmutableArray();
 
-                    var fieldNames = bsatnDecls.Select(m => m.Name).ToArray();
+                    var fieldNames = bsatnDecls.Select(m => m.Name).ToImmutableArray();
 
                     if (type.IsTaggedEnum)
                     {
