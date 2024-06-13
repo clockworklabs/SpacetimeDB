@@ -23,7 +23,7 @@ if [ $DRY_RUN != 1 ] ; then
 fi
 
 BASEDIR=$(pwd)
-declare -a CRATES=("metrics" "primitives" "bindings-macro" "bindings-sys" "sats" "lib" "bindings" "vm" "client-api-messages" "core" "client-api" "standalone" "cli" "sdk")
+declare -a CRATES=("metrics" "primitives" "fs-utils" "data-structures" "bindings-macro" "bindings-sys" "sats" "commitlog" "durability" "lib" "bindings" "table" "snapshot" "vm" "client-api-messages" "core" "client-api" "standalone" "cli" "sdk")
 
 for crate in "${CRATES[@]}" ; do
 	if [ ! -d "${BASEDIR}/crates/${crate}" ] ; then
