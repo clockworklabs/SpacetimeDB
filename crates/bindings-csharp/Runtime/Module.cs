@@ -237,6 +237,7 @@ public static class FFI
     {
         try
         {
+            Runtime.Random = new((int)timestamp);
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
             reducers[(int)id].Invoke(
