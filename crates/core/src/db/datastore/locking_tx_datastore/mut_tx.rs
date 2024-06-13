@@ -1,6 +1,6 @@
 use super::{
     committed_state::{CommittedIndexIter, CommittedState},
-    datastore::Result,
+    datastore::{record_metrics, Result},
     sequence::{Sequence, SequencesState},
     state_view::{IndexSeekIterMutTxId, Iter, IterByColRange, ScanIterByColRange, StateView},
     tx::TxId,
@@ -711,7 +711,18 @@ impl MutTxId {
             tx_state,
             ..
         } = self;
-        committed_state_write_lock.merge(tx_state, ctx)
+        let tx_data = committed_state_write_lock.merge(tx_state, ctx);
+        // Record metrics for the transaction at the very end,
+        // right before we drop and release the lock.
+        record_metrics(
+            ctx,
+            self.timer,
+            self.lock_wait_time,
+            false,
+            Some(&tx_data),
+            Some(&committed_state_write_lock),
+        );
+        tx_data
     }
 
     pub fn commit_downgrade(self, ctx: &ExecutionContext) -> (TxData, TxId) {
@@ -721,6 +732,16 @@ impl MutTxId {
             ..
         } = self;
         let tx_data = committed_state_write_lock.merge(tx_state, ctx);
+        // Record metrics for the transaction at the very end,
+        // right before we drop and release the lock.
+        record_metrics(
+            ctx,
+            self.timer,
+            self.lock_wait_time,
+            false,
+            Some(&tx_data),
+            Some(&committed_state_write_lock),
+        );
         let tx = TxId {
             committed_state_shared_lock: SharedWriteGuard::downgrade(committed_state_write_lock),
             lock_wait_time: Duration::ZERO,
@@ -729,12 +750,16 @@ impl MutTxId {
         (tx_data, tx)
     }
 
-    pub fn rollback(self) {
-        // TODO: Check that no sequences exceed their allocation after the rollback.
+    pub fn rollback(self, ctx: &ExecutionContext) {
+        // Record metrics for the transaction at the very end,
+        // right before we drop and release the lock.
+        record_metrics(ctx, self.timer, self.lock_wait_time, false, None, None);
     }
 
-    pub fn rollback_downgrade(self) -> TxId {
-        // TODO: Check that no sequences exceed their allocation after the rollback.
+    pub fn rollback_downgrade(self, ctx: &ExecutionContext) -> TxId {
+        // Record metrics for the transaction at the very end,
+        // right before we drop and release the lock.
+        record_metrics(ctx, self.timer, self.lock_wait_time, false, None, None);
         TxId {
             committed_state_shared_lock: SharedWriteGuard::downgrade(self.committed_state_write_lock),
             lock_wait_time: Duration::ZERO,
