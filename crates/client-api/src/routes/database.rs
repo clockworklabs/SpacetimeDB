@@ -435,7 +435,7 @@ where
         ))?;
     let instance_id = database_instance.id;
 
-    let filepath = DatabaseLogger::filepath(&address, instance_id);
+    let filepath = DatabaseLogger::filepath(instance_id);
     let lines = DatabaseLogger::read_latest(&filepath, num_lines).await;
 
     let body = if follow {

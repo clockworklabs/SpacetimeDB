@@ -72,7 +72,7 @@ impl ModuleHandle {
     }
 
     pub async fn read_log(&self, size: Option<u32>) -> String {
-        let filepath = DatabaseLogger::filepath(&self.db_address, self.client.database_instance_id);
+        let filepath = DatabaseLogger::filepath(self.client.database_instance_id);
         DatabaseLogger::read_latest(&filepath, size).await
     }
 }

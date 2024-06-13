@@ -547,7 +547,7 @@ async fn make_dbic(
     instance_id: u64,
     relational_db: Arc<RelationalDB>,
 ) -> anyhow::Result<DatabaseInstanceContext> {
-    let log_path = DatabaseLogger::filepath(&database.address, instance_id);
+    let log_path = DatabaseLogger::filepath(instance_id);
     let logger = tokio::task::block_in_place(|| Arc::new(DatabaseLogger::open(log_path)));
     let subscriptions = ModuleSubscriptions::new(relational_db.clone(), database.owner_identity);
 
