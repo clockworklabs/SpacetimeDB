@@ -113,7 +113,8 @@ fn default_init(ctx: &GenCtx, ty: &AlgebraicType) -> &'static str {
             if sum_type.as_option().is_some() || sum_type.is_simple_enum() {
                 ""
             } else {
-                unimplemented!()
+                // TODO: generate some proper default here (what would it be for tagged enums?).
+                " = null!"
             }
         }
         // For product types, we can just use the default constructor.
@@ -198,20 +199,7 @@ impl CsharpAutogen {
     }
 }
 
-pub fn autogen_csharp_sum(
-    /* will be used in future for tagged enum */ _ctx: &GenCtx,
-    name: &str,
-    sum_type: &SumType,
-    namespace: &str,
-) -> String {
-    if sum_type.is_simple_enum() {
-        autogen_csharp_enum(name, sum_type, namespace)
-    } else {
-        unimplemented!();
-    }
-}
-
-pub fn autogen_csharp_enum(name: &str, sum_type: &SumType, namespace: &str) -> String {
+pub fn autogen_csharp_sum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespace: &str) -> String {
     let mut output = CsharpAutogen::new(namespace, &[]);
 
     let mut sum_namespace = None;
@@ -237,17 +225,47 @@ pub fn autogen_csharp_enum(name: &str, sum_type: &SumType, namespace: &str) -> S
     }
 
     writeln!(output, "[SpacetimeDB.Type]");
-    writeln!(output, "public enum {sum_type_name}");
-    indented_block(&mut output, |output| {
-        for variant in &*sum_type.variants {
-            let variant_name = variant
-                .name
-                .as_ref()
-                .expect("All sum variants should have names!")
-                .replace("r#", "");
-            writeln!(output, "{variant_name},");
+
+    if sum_type.is_simple_enum() {
+        writeln!(output, "public enum {sum_type_name}");
+        indented_block(&mut output, |output| {
+            for variant in &*sum_type.variants {
+                let variant_name = variant
+                    .name
+                    .as_ref()
+                    .expect("All sum variants should have names!")
+                    .replace("r#", "");
+                writeln!(output, "{variant_name},");
+            }
+        });
+    } else {
+        write!(
+            output,
+            "public partial record {sum_type_name} : SpacetimeDB.TaggedEnum<("
+        );
+        {
+            indent_scope!(output);
+            for (i, variant) in sum_type.variants.iter().enumerate() {
+                if i != 0 {
+                    write!(output, ",");
+                }
+                writeln!(output);
+                if variant.is_unit() {
+                    write!(output, "SpacetimeDB.Unit");
+                } else {
+                    write!(output, "{}", ty_fmt(ctx, &variant.algebraic_type, namespace));
+                }
+                let variant_name = variant
+                    .name
+                    .as_ref()
+                    .expect("All sum variants should have names!")
+                    .replace("r#", "");
+                write!(output, " {variant_name}");
+            }
         }
-    });
+        writeln!(output);
+        writeln!(output, ")>;");
+    }
 
     if sum_namespace.is_some() {
         for _ in 0..2 {

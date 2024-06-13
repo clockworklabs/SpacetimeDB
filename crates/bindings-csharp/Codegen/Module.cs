@@ -29,21 +29,15 @@ public class Module : IIncrementalGenerator
             predicate: (node, ct) => true, // already covered by attribute restrictions
             transform: (context, ct) =>
             {
-                var table = (TypeDeclarationSyntax)context.TargetNode;
+                var tableSyntax = (TypeDeclarationSyntax)context.TargetNode;
+                var table = context.SemanticModel.GetDeclaredSymbol(tableSyntax)!;
 
-                var resolvedTable =
-                    (ITypeSymbol?)context.SemanticModel.GetDeclaredSymbol(table)
-                    ?? throw new System.Exception("Could not resolve table");
-
-                var fields = resolvedTable
-                    .GetMembers()
-                    .OfType<IFieldSymbol>()
-                    .Where(f => !f.IsStatic)
+                var fields = GetFields(table)
                     .Select(f =>
                     {
                         var indexKind = f.GetAttributes()
                             .Where(a =>
-                                a.AttributeClass?.ToDisplayString() == "SpacetimeDB.ColumnAttribute"
+                                a.AttributeClass?.ToString() == "SpacetimeDB.ColumnAttribute"
                             )
                             .Select(a => (ColumnAttrs)a.ConstructorArguments[0].Value!)
                             .SingleOrDefault();
@@ -72,16 +66,19 @@ public class Module : IIncrementalGenerator
                         }
 
                         var isEquatable =
-                            isInteger
-                            || f.Type.SpecialType switch
-                            {
-                                SpecialType.System_String or SpecialType.System_Boolean => true,
-                                SpecialType.None
-                                    => f.Type.ToString()
-                                        is "SpacetimeDB.Runtime.Address"
-                                            or "SpacetimeDB.Runtime.Identity",
-                                _ => false,
-                            };
+                            (
+                                isInteger
+                                || f.Type.SpecialType switch
+                                {
+                                    SpecialType.System_String or SpecialType.System_Boolean => true,
+                                    SpecialType.None
+                                        => f.Type.ToString()
+                                            is "SpacetimeDB.Runtime.Address"
+                                                or "SpacetimeDB.Runtime.Identity",
+                                    _ => false,
+                                }
+                            )
+                            && f.Type.NullableAnnotation != NullableAnnotation.Annotated;
 
                         if (indexKind.HasFlag(ColumnAttrs.Unique) && !isEquatable)
                         {
@@ -102,9 +99,9 @@ public class Module : IIncrementalGenerator
 
                 return new
                 {
-                    Scope = new Scope(table),
-                    Name = table.Identifier.Text,
-                    FullName = SymbolToName(context.SemanticModel.GetDeclaredSymbol(table)!),
+                    Scope = new Scope(tableSyntax),
+                    table.Name,
+                    FullName = SymbolToName(table),
                     Fields = fields,
                     Public = context
                         .Attributes.SelectMany(attr => attr.NamedArguments)

@@ -14,11 +14,9 @@ use energy_monitor::StandaloneEnergyMonitor;
 use openssl::ec::{EcGroup, EcKey};
 use openssl::nid::Nid;
 use openssl::pkey::PKey;
-use scopeguard::defer_on_success;
 use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
-use spacetimedb::db::db_metrics;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{DiskStorage, HostController, UpdateDatabaseResult};
@@ -151,9 +149,6 @@ fn get_key_path(env: &str) -> Option<PathBuf> {
 
 impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
-        defer_on_success! {
-            db_metrics::reset_counters();
-        }
         self.metrics_registry.gather()
     }
 

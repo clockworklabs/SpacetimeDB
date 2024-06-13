@@ -10,16 +10,16 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 public static class Utils
 {
+    private static readonly SymbolDisplayFormat SymbolFormat = SymbolDisplayFormat
+        .FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)
+        .AddMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType)
+        .AddMiscellaneousOptions(
+            SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier
+        );
+
     public static string SymbolToName(ISymbol symbol)
     {
-        return symbol.ToDisplayString(
-            SymbolDisplayFormat
-                .FullyQualifiedFormat.WithMemberOptions(
-                    SymbolDisplayMemberOptions.IncludeContainingType
-                )
-                .WithGenericsOptions(SymbolDisplayGenericsOptions.IncludeTypeParameters)
-                .WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)
-        );
+        return symbol.ToDisplayString(SymbolFormat);
     }
 
     public static void RegisterSourceOutputs(
@@ -49,15 +49,15 @@ public static class Utils
     public static string GetTypeInfo(ITypeSymbol type)
     {
         // We need to distinguish handle nullable reference types specially:
-        // compiler expands something like `int?` to `System.Nullable<int>` but with the nullable annotation set to `Annotated`
+        // compiler expands something like `int?` to `System.Nullable<int>` with the nullable annotation set to `Annotated`
         // while something like `string?` is expanded to `string` with the nullable annotation set to `Annotated`...
         // Beautiful design requires beautiful hacks.
         if (
             type.NullableAnnotation == NullableAnnotation.Annotated
-            && type.OriginalDefinition.ToString() != "System.Nullable<T>"
+            && type.OriginalDefinition.SpecialType != SpecialType.System_Nullable_T
         )
         {
-            // if we're here, then this is a nullable reference type like `string?`.
+            // If we're here, then this is a nullable reference type like `string?` and the original definition is `string`.
             type = type.WithNullableAnnotation(NullableAnnotation.None);
             return $"SpacetimeDB.BSATN.RefOption<{type}, {GetTypeInfo(type)}>";
         }
@@ -86,8 +86,7 @@ public static class Utils
                         )
                 },
             IArrayTypeSymbol { ElementType: var elementType }
-                => elementType is INamedTypeSymbol namedType
-                && namedType.SpecialType == SpecialType.System_Byte
+                => elementType.SpecialType == SpecialType.System_Byte
                     ? "SpacetimeDB.BSATN.ByteArray"
                     : $"SpacetimeDB.BSATN.Array<{elementType}, {GetTypeInfo(elementType)}>",
             _ => throw new InvalidOperationException($"Unsupported type {type}")
@@ -103,9 +102,7 @@ public static class Utils
             {
                 if (
                     !type.GetAttributes()
-                        .Any(a =>
-                            a.AttributeClass?.ToDisplayString() == "SpacetimeDB.TypeAttribute"
-                        )
+                        .Any(a => a.AttributeClass?.ToString() == "SpacetimeDB.TypeAttribute")
                 )
                 {
                     throw new InvalidOperationException(
@@ -135,6 +132,11 @@ public static class Utils
             }
             return result;
         }
+    }
+
+    public static IEnumerable<IFieldSymbol> GetFields(INamedTypeSymbol type)
+    {
+        return type.GetMembers().OfType<IFieldSymbol>().Where(f => !f.IsStatic);
     }
 
     // Borrowed & modified code for generating in-place extensions for partial structs/classes/etc. Source:

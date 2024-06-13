@@ -113,7 +113,8 @@ fn test_call_query_macro() {
 {"call": {"fn": "test", "args":[
     {"x":0, "y":2, "z":"Macro"},
     {"foo":"Foo"},
-    {"Foo": {} }
+    {"Foo": {} },
+    {"Baz": "buzz"}
 ]}}"#
                 .to_string();
             module.send(json).await.unwrap();
@@ -131,6 +132,7 @@ fn test_call_query_macro() {
                     "BEGIN",
                     r#"bar: "Foo""#,
                     "Foo",
+                    "buzz",
                     "Row count before delete: 1000",
                     r#"Inserted: TestE { id: 1, name: "Tyler" }"#,
                     "Row count after delete: 995",

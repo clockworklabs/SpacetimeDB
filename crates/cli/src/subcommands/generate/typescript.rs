@@ -453,7 +453,7 @@ pub fn autogen_typescript_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> S
                 ),
                 _ => writeln!(
                     output,
-                    "export const {variant_name} = (value: {a_type}): {variant_name} => {{ return {{ tag: \"{variant_name}\", value }} }};"
+                    "export const {variant_name} = (value: {a_type}): {variant_name} => ({{ tag: \"{variant_name}\", value }});"
                 ),
             };
         }

@@ -14,8 +14,6 @@ pub enum MetricType {
     IndexSeeks,
     KeysScanned,
     RowsFetched,
-    RowsInserted,
-    RowsDeleted,
 }
 
 #[derive(Default, Clone)]
@@ -24,8 +22,6 @@ struct BufferMetric {
     pub index_seeks: u64,
     pub keys_scanned: u64,
     pub rows_fetched: u64,
-    pub rows_inserted: u64,
-    pub rows_deleted: u64,
     pub cache_table_name: String,
 }
 
@@ -40,12 +36,6 @@ impl BufferMetric {
             }
             MetricType::RowsFetched => {
                 self.rows_fetched += val;
-            }
-            MetricType::RowsInserted => {
-                self.rows_inserted += val;
-            }
-            MetricType::RowsDeleted => {
-                self.rows_deleted += val;
             }
         }
     }
@@ -102,8 +92,6 @@ impl Metrics {
             flush_metric!(DB_METRICS.rdb_num_index_seeks, metric, index_seeks);
             flush_metric!(DB_METRICS.rdb_num_keys_scanned, metric, keys_scanned);
             flush_metric!(DB_METRICS.rdb_num_rows_fetched, metric, rows_fetched);
-            flush_metric!(DB_METRICS.rdb_num_rows_inserted, metric, rows_inserted);
-            flush_metric!(DB_METRICS.rdb_num_rows_deleted, metric, rows_deleted);
         });
     }
 }

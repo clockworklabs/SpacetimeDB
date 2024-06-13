@@ -19,7 +19,7 @@ use crate::{
         db_metrics::DB_METRICS,
     },
     error::TableError,
-    execution_context::{ExecutionContext, MetricType},
+    execution_context::ExecutionContext,
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;
@@ -408,12 +408,12 @@ impl CommittedState {
         let mut tx_data = TxData::default();
 
         // First, apply deletes. This will free up space in the committed tables.
-        self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables, ctx);
+        self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables);
 
         // Then, apply inserts. This will re-fill the holes freed by deletions
         // before allocating new pages.
 
-        self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store, ctx);
+        self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store);
 
         // If the TX will be logged, record its projected tx offset,
         // then increment the counter.
@@ -425,16 +425,9 @@ impl CommittedState {
         tx_data
     }
 
-    fn merge_apply_deletes(
-        &mut self,
-        tx_data: &mut TxData,
-        delete_tables: BTreeMap<TableId, DeleteTable>,
-        ctx: &ExecutionContext,
-    ) {
+    fn merge_apply_deletes(&mut self, tx_data: &mut TxData, delete_tables: BTreeMap<TableId, DeleteTable>) {
         for (table_id, row_ptrs) in delete_tables {
             if let Some((table, blob_store)) = self.get_table_and_blob_store(table_id) {
-                let db = &ctx.database();
-
                 let mut deletes = Vec::with_capacity(row_ptrs.len());
 
                 // Note: we maintain the invariant that the delete_tables
@@ -456,17 +449,6 @@ impl CommittedState {
                 if !deletes.is_empty() {
                     tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
                 }
-
-                // Bulk update rows-deleted metric and the table rows gauge.
-                ctx.metrics
-                    .write()
-                    .inc_by(table_id, MetricType::RowsDeleted, row_ptrs.len() as u64, || {
-                        table_name.to_string()
-                    });
-                DB_METRICS
-                    .rdb_num_table_rows
-                    .with_label_values(db, &table_id.into(), table_name)
-                    .sub(row_ptrs.len() as i64);
             } else if !row_ptrs.is_empty() {
                 panic!("Deletion for non-existent table {:?}... huh?", table_id);
             }
@@ -478,7 +460,6 @@ impl CommittedState {
         tx_data: &mut TxData,
         insert_tables: BTreeMap<TableId, Table>,
         tx_blob_store: impl BlobStore,
-        ctx: &ExecutionContext,
     ) {
         // TODO(perf): Consider moving whole pages from the `insert_tables` into the committed state,
         //             rather than copying individual rows out of them.
@@ -492,11 +473,6 @@ impl CommittedState {
             let (commit_table, commit_blob_store) =
                 self.get_table_and_blob_store_or_create(table_id, tx_table.get_schema());
 
-            // NOTE: if there is a schema change the table id will not change
-            // and that is what is important here so it doesn't matter if we
-            // do this before or after the schema update below.
-            let db = &ctx.database();
-
             // TODO(perf): Allocate with capacity?
             let mut inserts = vec![];
             // For each newly-inserted row, insert it into the committed state.
@@ -508,31 +484,12 @@ impl CommittedState {
 
                 inserts.push(pv);
             }
-            let num_ins = inserts.len();
 
             let table_name = &*commit_table.get_schema().table_name;
 
             if !inserts.is_empty() {
                 tx_data.set_inserts_for_table(table_id, table_name, inserts.into());
             }
-
-            // Now we know how many rows were inserted,
-            // so bulk update rows-inserted metric and the table rows gauge.
-            ctx.metrics
-                .write()
-                .inc_by(table_id, MetricType::RowsInserted, num_ins as u64, || {
-                    table_name.to_string()
-                });
-            DB_METRICS
-                .rdb_num_table_rows
-                .with_label_values(db, &table_id.into(), table_name)
-                .add(num_ins as i64);
-
-            let table_size = commit_table.bytes_occupied_overestimate();
-            DB_METRICS
-                .rdb_table_size
-                .with_label_values(db, &table_id.into(), table_name)
-                .set(table_size as i64);
 
             // Add all newly created indexes to the committed state.
             for (cols, mut index) in tx_table.indexes {
