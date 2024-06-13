@@ -21,7 +21,6 @@ pub struct TestB {
 pub enum TestC {
     Foo,
     Bar,
-    Baz(String),
 }
 
 #[spacetimedb(table(public))]
@@ -39,6 +38,14 @@ pub struct TestE {
     #[autoinc]
     id: u64,
     name: String,
+}
+
+#[derive(SpacetimeType)]
+#[sats(name = "Namespace.TestF")]
+pub enum TestF {
+    Foo,
+    Bar,
+    Baz(String),
 }
 
 // All tables are private by default.
@@ -93,7 +100,7 @@ pub fn repeating_test(ctx: ReducerContext, prev_time: Timestamp) {
 }
 
 #[spacetimedb(reducer)]
-pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC) -> anyhow::Result<()> {
+pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4: TestF) -> anyhow::Result<()> {
     log::info!("BEGIN");
     log::info!("sender: {:?}", ctx.sender);
     log::info!("timestamp: {:?}", ctx.timestamp);
@@ -102,7 +109,11 @@ pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC) -> an
     match arg3 {
         TestC::Foo => log::info!("Foo"),
         TestC::Bar => log::info!("Bar"),
-        TestC::Baz(string) => log::info!("{}", string),
+    }
+    match arg4 {
+        TestF::Foo => log::info!("Foo"),
+        TestF::Bar => log::info!("Bar"),
+        TestF::Baz(string) => log::info!("{}", string),
     }
     for i in 0..1000 {
         TestA::insert(TestA {
