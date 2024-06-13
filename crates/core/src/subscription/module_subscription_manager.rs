@@ -13,6 +13,7 @@ use spacetimedb_data_structures::map::{Entry, HashMap, HashSet, IntMap};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Clients are uniquely identified by their Identity and Address.
 /// Identity is insufficient because different Addresses can use the same Identity.
@@ -117,13 +118,14 @@ impl SubscriptionManager {
     #[tracing::instrument(skip_all)]
     pub fn eval_updates(
         &self,
+        ctx: &ExecutionContext,
         db: &RelationalDB,
         tx: &Tx,
         event: Arc<ModuleEvent>,
         sender_client: Option<&ClientConnectionSender>,
+        slow_query_threshold: Option<Duration>,
     ) {
         let tables = &event.status.database_update().unwrap().tables;
-        let slow = db.read_config().slow_query;
 
         // Put the main work on a rayon compute thread.
         rayon::scope(|_| {
@@ -140,13 +142,12 @@ impl SubscriptionManager {
             }
 
             let span = tracing::info_span!("eval_incr").entered();
-            let ctx = ExecutionContext::incremental_update(db.address(), slow);
             let tx = &tx.into();
             let eval = units
                 .par_iter()
                 .filter_map(|(&hash, tables)| {
                     let unit = self.queries.get(hash)?;
-                    unit.eval_incr(&ctx, db, tx, &unit.sql, tables.iter().copied())
+                    unit.eval_incr(ctx, db, tx, &unit.sql, tables.iter().copied(), slow_query_threshold)
                         .map(|table| (hash, table))
                 })
                 // If N clients are subscribed to a query,
@@ -245,7 +246,14 @@ impl SubscriptionManager {
             {
                 // Caller is not subscribed to any queries,
                 // but send a transaction update with an empty subscription update.
-                send_to_client(client, &event, SubscriptionUpdate::<DatabaseUpdate>::default());
+                send_to_client(
+                    client,
+                    &event,
+                    SubscriptionUpdate::<DatabaseUpdate> {
+                        request_id: event.request_id,
+                        ..Default::default()
+                    },
+                );
             }
 
             eval.into_iter().for_each(|(id, tables)| {
@@ -535,8 +543,10 @@ mod tests {
             timer: None,
         });
 
-        let ctx = ExecutionContext::incremental_update(db.address(), db.read_config().slow_query);
-        db.with_read_only(&ctx, |tx| subscriptions.eval_updates(&db, tx, event, Some(&client0)));
+        let ctx = ExecutionContext::incremental_update(db.address());
+        db.with_read_only(&ctx, |tx| {
+            subscriptions.eval_updates(&ctx, &db, tx, event, Some(&client0), None)
+        });
 
         tokio::runtime::Builder::new_current_thread()
             .enable_time()

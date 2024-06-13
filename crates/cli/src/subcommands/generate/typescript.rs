@@ -5,6 +5,7 @@ use std::ops::Deref;
 
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::db::def::TableSchema;
+use spacetimedb_lib::sats::product_type::IDENTITY_TAG;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
     SumTypeVariant,
@@ -264,7 +265,7 @@ fn convert_product_type<'a>(
                 elem.name
                     .to_owned()
                     .map(|s| {
-                        if &*s == "__identity_bytes" {
+                        if &*s == IDENTITY_TAG {
                             s.into()
                         } else {
                             typescript_field_name(s.deref().to_case(Case::Camel))
@@ -1124,6 +1125,6 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     output.into_inner()
 }
 
-pub fn autogen_typescript_globals(_ctx: &GenCtx, _items: &[GenItem]) -> Vec<Vec<(String, String)>> {
+pub fn autogen_typescript_globals(_ctx: &GenCtx, _items: &[GenItem]) -> Vec<(String, String)> {
     vec![] //TODO
 }

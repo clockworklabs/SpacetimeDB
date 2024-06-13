@@ -133,6 +133,9 @@ pub const SNAPSHOT_DIR_EXT: &str = "snapshot_dir";
 /// File extension of snapshot files, which contain BSATN-encoded [`Snapshot`]s preceeded by [`blake3::Hash`]es.
 pub const SNAPSHOT_FILE_EXT: &str = "snapshot_bsatn";
 
+/// File extension of snapshots which have been marked invalid by [`SnapshotRepository::invalidate_newer_snapshots`].
+pub const INVALID_SNAPSHOT_DIR_EXT: &str = "invalid_snapshot";
+
 #[derive(Serialize, Deserialize)]
 /// The hash and refcount of a single blob in the blob store.
 struct BlobEntry {
@@ -662,6 +665,15 @@ impl SnapshotRepository {
     /// so a subsequent [`Self::read_snapshot`] may fail.
     pub fn latest_snapshot_older_than(&self, upper_bound: TxOffset) -> Result<Option<TxOffset>, SnapshotError> {
         Ok(self
+            .all_snapshots()?
+            // Ignore `tx_offset`s greater than the current upper bound.
+            .filter(|tx_offset| *tx_offset <= upper_bound)
+            // Select the largest TxOffset.
+            .max())
+    }
+
+    pub fn all_snapshots(&self) -> Result<impl Iterator<Item = TxOffset>, SnapshotError> {
+        Ok(self
             .root
             // Item = Result<DirEntry>
             .read_dir()?
@@ -675,11 +687,7 @@ impl SnapshotRepository {
             .filter(|path| !Lockfile::lock_path(path).exists())
             // Parse each entry's TxOffset from the file name; ignore unparseable.
             // Item = TxOffset
-            .filter_map(|path| TxOffset::from_str_radix(path.file_stem()?.to_str()?, 10).ok())
-            // Ignore `tx_offset`s greater than the current upper bound.
-            .filter(|tx_offset| *tx_offset <= upper_bound)
-            // Select the largest TxOffset.
-            .max())
+            .filter_map(|path| TxOffset::from_str_radix(path.file_stem()?.to_str()?, 10).ok()))
     }
 
     /// Return the `TxOffset` of the highest-offset complete snapshot in the repository.
@@ -688,6 +696,34 @@ impl SnapshotRepository {
     /// so a subsequent [`Self::read_snapshot`] may fail.
     pub fn latest_snapshot(&self) -> Result<Option<TxOffset>, SnapshotError> {
         self.latest_snapshot_older_than(TxOffset::MAX)
+    }
+
+    /// Rename any snapshot newer than `upper_bound` with [`INVALID_SNAPSHOT_DIR_EXT`].
+    ///
+    /// When rebuilding a database, we will call this method
+    /// with the [`spacetimedb_durability::Durability::durable_tx_offset`] as the `upper_bound`
+    /// in order to prevent us from retaining snapshots which will be superseded by the new diverging history.
+    ///
+    /// Does not invalidate snapshots which are locked.
+    ///
+    /// This may overwrite previously-invalidated snapshots.
+    ///
+    /// If this method returns an error, some snapshots may have been invalidated, but not all will have been.
+    pub fn invalidate_newer_snapshots(&self, upper_bound: TxOffset) -> Result<(), SnapshotError> {
+        let newer_snapshots = self
+            .all_snapshots()?
+            .filter(|tx_offset| *tx_offset > upper_bound)
+            // Collect to a vec to avoid iterator invalidation,
+            // as the subsequent `for` loop will mutate the directory.
+            .collect::<Vec<TxOffset>>();
+
+        for newer_snapshot in newer_snapshots {
+            let path = self.snapshot_dir_path(newer_snapshot);
+            let invalid_path = path.with_extension(INVALID_SNAPSHOT_DIR_EXT);
+            log::info!("Renaming snapshot newer than {upper_bound} from {path:?} to {path:?}");
+            std::fs::rename(path, invalid_path)?;
+        }
+        Ok(())
     }
 }
 

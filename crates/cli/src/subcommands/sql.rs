@@ -141,7 +141,7 @@ fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<tabled::
         let row = from_json_seed(row.get(), SeedWrapper(ty))?;
         builder.push_record(
             ty.with_values(&row)
-                .map(|col_val| satn::PsqlWrapper(col_val).to_string()),
+                .map(|value| satn::PsqlWrapper { ty: ty.ty(), value }.to_string()),
         );
     }
 

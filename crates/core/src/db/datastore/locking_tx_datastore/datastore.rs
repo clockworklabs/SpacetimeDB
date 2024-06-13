@@ -10,14 +10,15 @@ use crate::{
     db::{
         datastore::{
             system_tables::{
-                Epoch, StModuleFields, StModuleRow, StTableFields, ST_MODULE_ID, ST_TABLES_ID, WASM_MODULE,
+                read_addr_from_col, read_bytes_from_col, read_hash_from_col, read_identity_from_col,
+                system_table_schema, ModuleKind, StClientsRow, StModuleFields, StModuleRow, StTableFields,
+                ST_CLIENTS_ID, ST_MODULE_ID, ST_TABLES_ID,
             },
             traits::{
-                DataRow, IsolationLevel, MutProgrammable, MutTx, MutTxDatastore, Programmable, RowTypeForTable, Tx,
-                TxData, TxDatastore,
+                DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, RowTypeForTable, Tx, TxData, TxDatastore,
             },
         },
-        db_metrics::{DB_METRICS, MAX_TX_CPU_TIME},
+        db_metrics::DB_METRICS,
     },
     error::{DBError, TableError},
     execution_context::ExecutionContext,
@@ -33,9 +34,10 @@ use spacetimedb_sats::db::{
     def::{IndexDef, SequenceDef, TableDef, TableSchema},
 };
 use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductValue};
+use spacetimedb_snapshot::ReconstructedSnapshot;
 use spacetimedb_table::{indexes::RowPointer, table::RowRef};
 use std::time::{Duration, Instant};
-use std::{borrow::Cow, collections::HashSet, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, DBError>;
@@ -53,7 +55,7 @@ pub type Result<T> = std::result::Result<T, DBError>;
 #[derive(Clone)]
 pub struct Locking {
     /// The state of the database up to the point of the last committed transaction.
-    committed_state: Arc<RwLock<CommittedState>>,
+    pub(crate) committed_state: Arc<RwLock<CommittedState>>,
     /// The state of sequence generation in this database.
     sequence_state: Arc<Mutex<SequencesState>>,
     /// The address of this database.
@@ -125,8 +127,96 @@ impl Locking {
             database_address: self.database_address,
             committed_state: self.committed_state.clone(),
             progress: RefCell::new(progress),
-            connected_clients: RefCell::new(HashSet::new()),
         }
+    }
+
+    /// Construct a new [`Locking`] datastore containing the state stored in `snapshot`.
+    ///
+    /// - Construct all the tables referenced by `snapshot`, computing their schemas
+    ///   either from known system table schemas or from `st_table` and friends.
+    /// - Populate those tables with all rows in `snapshot`.
+    /// - Construct a [`HashMapBlobStore`] containing all the large blobs referenced by `snapshot`,
+    ///   with reference counts specified in `snapshot`.
+    /// - Do [`CommittedState::reset_system_table_schemas`] to fix-up autoinc IDs in the system tables,
+    ///   to ensure those schemas match what [`Self::bootstrap`] would install.
+    /// - Notably, **do not** construct indexes or sequences.
+    ///   This should be done by [`Self::rebuild_state_after_replay`],
+    ///   after replaying the suffix of the commitlog.
+    pub fn restore_from_snapshot(snapshot: ReconstructedSnapshot) -> Result<Self> {
+        let ReconstructedSnapshot {
+            database_address,
+            tx_offset,
+            blob_store,
+            tables,
+            ..
+        } = snapshot;
+
+        let datastore = Self::new(database_address);
+        let mut committed_state = datastore.committed_state.write_arc();
+        committed_state.blob_store = blob_store;
+
+        let ctx = ExecutionContext::internal(datastore.database_address);
+
+        // Note that `tables` is a `BTreeMap`, and so iterates in increasing order.
+        // This means that we will instantiate and populate the system tables before any user tables.
+        for (table_id, pages) in tables {
+            let schema = match system_table_schema(table_id) {
+                Some(schema) => Arc::new(schema),
+                // In this case, `schema_for_table` will never see a cached schema,
+                // as the committed state is newly constructed and we have not accessed this schema yet.
+                // As such, this call will compute and save the schema from `st_table` and friends.
+                None => committed_state.schema_for_table(&ctx, table_id)?,
+            };
+            let (table, blob_store) = committed_state.get_table_and_blob_store_or_create(table_id, &schema);
+            unsafe {
+                // Safety:
+                // - The snapshot is uncorrupted because reconstructing it verified its hashes.
+                // - The schema in `table` is either derived from the st_table and st_column,
+                //   which were restored from the snapshot,
+                //   or it is a known schema for a system table.
+                // - We trust that the snapshot was consistent when created,
+                //   so the layout used in the `pages` must be consistent with the schema.
+                table.set_pages(pages, blob_store);
+            }
+
+            // Set the `rdb_num_table_rows` metric for the table.
+            // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
+            // and therefore has performance implications and must not be disabled.
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(&database_address, &table_id.0, &schema.table_name)
+                .set(table.row_count as i64);
+
+            // Also set the `rdb_table_size` metric for the table.
+            let table_size = table.bytes_occupied_overestimate();
+            DB_METRICS
+                .rdb_table_size
+                .with_label_values(&database_address, &table_id.into(), &schema.table_name)
+                .set(table_size as i64);
+        }
+
+        // Fix up autoinc IDs in the cached system table schemas.
+        committed_state.reset_system_table_schemas(database_address)?;
+
+        // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
+        committed_state.next_tx_offset = tx_offset + 1;
+
+        Ok(datastore)
+    }
+
+    /// Returns a list over all the currently connected clients,
+    /// reading from the `st_clients` system table.
+    pub fn connected_clients<'a>(
+        &'a self,
+        ctx: &'a ExecutionContext,
+        tx: &'a TxId,
+    ) -> Result<impl Iterator<Item = Result<(Identity, Address)>> + 'a> {
+        let iter = self.iter_tx(ctx, tx, ST_CLIENTS_ID)?.map(|row_ref| {
+            let row = StClientsRow::try_from(row_ref)?;
+            Ok((row.identity, row.address))
+        });
+
+        Ok(iter)
     }
 
     pub(crate) fn alter_table_access_mut_tx(&self, tx: &mut MutTxId, name: Box<str>, access: StAccess) -> Result<()> {
@@ -221,6 +311,20 @@ impl TxDatastore for Locking {
                 self.schema_for_table_tx(tx, table_id)
             })
             .collect()
+    }
+
+    fn metadata(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Metadata>> {
+        self.iter_tx(ctx, tx, ST_MODULE_ID)?
+            .next()
+            .map(metadata_from_row)
+            .transpose()
+    }
+
+    fn program_bytes(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Box<[u8]>>> {
+        self.iter_tx(ctx, tx, ST_MODULE_ID)?
+            .next()
+            .map(|row_ref| read_bytes_from_col(row_ref, StModuleFields::ProgramBytes))
+            .transpose()
     }
 }
 
@@ -400,6 +504,43 @@ impl MutTxDatastore for Locking {
     fn table_id_exists_mut_tx(&self, tx: &Self::MutTx, table_id: &TableId) -> bool {
         tx.table_name(*table_id).is_some()
     }
+
+    fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>> {
+        let ctx = ExecutionContext::internal(self.database_address);
+        tx.iter(&ctx, ST_MODULE_ID)?.next().map(metadata_from_row).transpose()
+    }
+
+    fn update_program(
+        &self,
+        tx: &mut Self::MutTx,
+        program_kind: ModuleKind,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> Result<()> {
+        let ctx = ExecutionContext::internal(self.database_address);
+        let old = tx
+            .iter(&ctx, ST_MODULE_ID)?
+            .next()
+            .map(|row| {
+                let ptr = row.pointer();
+                let row = StModuleRow::try_from(row)?;
+                Ok::<_, DBError>((ptr, row))
+            })
+            .transpose()?;
+        match old {
+            Some((ptr, mut row)) => {
+                row.program_kind = program_kind;
+                row.program_hash = program_hash;
+                row.program_bytes = program_bytes;
+
+                tx.delete(ST_MODULE_ID, ptr)?;
+                tx.insert(ST_MODULE_ID, &mut row.into(), self.database_address)
+                    .map(drop)
+            }
+
+            None => Err(anyhow!("database {} improperly initialized: no metadata", self.database_address).into()),
+        }
+    }
 }
 
 pub(super) fn record_metrics(ctx: &ExecutionContext, tx_timer: Instant, lock_wait_time: Duration, committed: bool) {
@@ -425,22 +566,6 @@ pub(super) fn record_metrics(ctx: &ExecutionContext, tx_timer: Instant, lock_wai
         .rdb_txn_elapsed_time_sec
         .with_label_values(workload, db, reducer)
         .observe(elapsed_time);
-
-    let mut guard = MAX_TX_CPU_TIME.lock().unwrap();
-    let max_cpu_time = *guard
-        .entry((*db, *workload, reducer.to_owned()))
-        .and_modify(|max| {
-            if cpu_time > *max {
-                *max = cpu_time;
-            }
-        })
-        .or_insert_with(|| cpu_time);
-
-    drop(guard);
-    DB_METRICS
-        .rdb_txn_cpu_time_sec_max
-        .with_label_values(workload, db, reducer)
-        .set(max_cpu_time);
 }
 
 impl MutTx for Locking {
@@ -524,64 +649,6 @@ impl Locking {
     }
 }
 
-impl Programmable for Locking {
-    fn program_hash(&self, tx: &TxId) -> Result<Option<spacetimedb_sats::hash::Hash>> {
-        tx.iter(&ExecutionContext::internal(self.database_address), ST_MODULE_ID)?
-            .next()
-            .map(|row| StModuleRow::try_from(row).map(|st| st.program_hash))
-            .transpose()
-    }
-}
-
-impl MutProgrammable for Locking {
-    type FencingToken = u128;
-
-    fn set_program_hash(&self, tx: &mut MutTxId, fence: Self::FencingToken, hash: Hash) -> Result<()> {
-        let ctx = ExecutionContext::internal(self.database_address);
-        let mut iter = tx.iter(&ctx, ST_MODULE_ID)?;
-        if let Some(row_ref) = iter.next() {
-            let epoch = row_ref.read_col::<u128>(StModuleFields::Epoch)?;
-            if fence <= epoch {
-                return Err(anyhow!("stale fencing token: {}, storage is at epoch: {}", fence, epoch).into());
-            }
-
-            // Note the borrow checker requires that we explictly drop the iterator.
-            // That is, before we delete and insert.
-            // This is because datastore iterators write to the metric store when dropped.
-            // Hence if we don't explicitly drop here,
-            // there will be another immutable borrow of self after the two mutable borrows below.
-
-            tx.delete(ST_MODULE_ID, row_ref.pointer())?;
-            tx.insert(
-                ST_MODULE_ID,
-                &mut ProductValue::from(&StModuleRow {
-                    program_hash: hash,
-                    kind: WASM_MODULE,
-                    epoch: Epoch(fence),
-                }),
-                self.database_address,
-            )?;
-            return Ok(());
-        }
-
-        // Note the borrow checker requires that we explictly drop the iterator before we insert.
-        // This is because datastore iterators write to the metric store when dropped.
-        // Hence if we don't explicitly drop here,
-        // there will be another immutable borrow of self after the mutable borrow of the insert.
-
-        tx.insert(
-            ST_MODULE_ID,
-            &mut ProductValue::from(&StModuleRow {
-                program_hash: hash,
-                kind: WASM_MODULE,
-                epoch: Epoch(fence),
-            }),
-            self.database_address,
-        )?;
-        Ok(())
-    }
-}
-
 #[derive(Debug, Error)]
 pub enum ReplayError {
     #[error("Expected tx offset {expected}, encountered {encountered}")]
@@ -600,17 +667,6 @@ pub struct Replay<F> {
     database_address: Address,
     committed_state: Arc<RwLock<CommittedState>>,
     progress: RefCell<F>,
-    /// Tracks the connect / disconnect calls recorded in the transaction history.
-    ///
-    /// If non-empty after a replay, the remaining entries were not gracefully
-    /// disconnected. A disconnect call should be performed for each.
-    connected_clients: RefCell<HashSet<(Identity, Address)>>,
-}
-
-impl<F> Replay<F> {
-    pub fn into_connected_clients(self) -> HashSet<(Identity, Address)> {
-        self.connected_clients.into_inner()
-    }
 }
 
 impl<F> Replay<F> {
@@ -620,9 +676,12 @@ impl<F> Replay<F> {
             database_address: &self.database_address,
             committed_state: &mut committed_state,
             progress: &mut *self.progress.borrow_mut(),
-            connected_clients: &mut self.connected_clients.borrow_mut(),
         };
         f(&mut visitor)
+    }
+
+    pub(crate) fn next_tx_offset(&self) -> u64 {
+        self.committed_state.read_arc().next_tx_offset
     }
 }
 
@@ -722,7 +781,6 @@ struct ReplayVisitor<'a, F> {
     database_address: &'a Address,
     committed_state: &'a mut CommittedState,
     progress: &'a mut F,
-    connected_clients: &'a mut HashSet<(Identity, Address)>,
 }
 
 impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, F> {
@@ -833,29 +891,16 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
 
         Ok(())
     }
+}
 
-    fn visit_inputs(&mut self, inputs: &txdata::Inputs) -> std::result::Result<(), Self::Error> {
-        let decode_caller = || {
-            let buf = &mut inputs.reducer_args.as_ref();
-            let caller_identity: Identity = bsatn::from_reader(buf).context("Could not decode caller identity")?;
-            let caller_address: Address = bsatn::from_reader(buf).context("Could not decode caller address")?;
-            anyhow::Ok((caller_identity, caller_address))
-        };
-        if let Some(action) = inputs.reducer_name.strip_prefix("__identity_") {
-            let caller = decode_caller()?;
-            match action {
-                "connected__" => {
-                    self.connected_clients.insert(caller);
-                }
-                "disconnected__" => {
-                    self.connected_clients.remove(&caller);
-                }
-                _ => {}
-            }
-        }
-
-        Ok(())
-    }
+/// Construct a [`Metadata`] from the given [`RowRef`],
+/// reading only the columns necessary to construct the value.
+fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
+    Ok(Metadata {
+        database_address: read_addr_from_col(row, StModuleFields::DatabaseAddress)?,
+        owner_identity: read_identity_from_col(row, StModuleFields::OwnerIdentity)?,
+        program_hash: read_hash_from_col(row, StModuleFields::ProgramHash)?,
+    })
 }
 
 #[cfg(test)]
@@ -869,8 +914,8 @@ mod tests {
     use crate::db::datastore::Result;
     use crate::error::{DBError, IndexError};
     use itertools::Itertools;
+    use spacetimedb_lib::address::Address;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_lib::{address::Address, identity::Identity};
     use spacetimedb_primitives::{col_list, ColId, Constraints};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::{
@@ -1277,12 +1322,14 @@ mod tests {
             ColRow { table: 4, pos: 3, name: "table_id", ty: AlgebraicType::U32 },
             ColRow { table: 4, pos: 4, name: "columns", ty: AlgebraicType::array(AlgebraicType::U32) },
 
-            ColRow { table: 5, pos: 0, name: "program_hash", ty: AlgebraicType::array(AlgebraicType::U8) },
-            ColRow { table: 5, pos: 1, name: "kind", ty: AlgebraicType::U8 },
-            ColRow { table: 5, pos: 2, name: "epoch", ty: AlgebraicType::U128 },
+            ColRow { table: 5, pos: 0, name: "database_address", ty: AlgebraicType::bytes() },
+            ColRow { table: 5, pos: 1, name: "owner_identity", ty: AlgebraicType::bytes() },
+            ColRow { table: 5, pos: 2, name: "program_kind", ty: AlgebraicType::U8 },
+            ColRow { table: 5, pos: 3, name: "program_hash", ty: AlgebraicType::bytes() },
+            ColRow { table: 5, pos: 4, name: "program_bytes", ty: AlgebraicType::bytes() },
 
-            ColRow { table: 6, pos: 0, name: "identity", ty: Identity::get_type() },
-            ColRow { table: 6, pos: 1, name: "address", ty: Address::get_type() },
+            ColRow { table: 6, pos: 0, name: "identity", ty: AlgebraicType::bytes() },
+            ColRow { table: 6, pos: 1, name: "address", ty: AlgebraicType::bytes() },
 
             ColRow { table: 7, pos: 0, name: "name", ty: AlgebraicType::String },
             ColRow { table: 7, pos: 1, name: "value", ty: StVarValue::type_of() },

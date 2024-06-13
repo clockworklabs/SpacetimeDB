@@ -383,14 +383,18 @@ pub trait Module: Send + Sync + 'static {
 pub trait ModuleInstance: Send + 'static {
     fn trapped(&self) -> bool;
 
-    // TODO(kim): The `fence` arg below is to thread through the fencing token
-    // (see [`crate::db::datastore::traits::MutProgrammable`]). This trait
-    // should probably be generic over the type of token, but that turns out a
-    // bit unpleasant at the moment. So we just use the widest possible integer.
+    fn init_database(
+        &mut self,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> anyhow::Result<Option<ReducerCallResult>>;
 
-    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<Option<ReducerCallResult>>;
-
-    fn update_database(&mut self, fence: u128) -> anyhow::Result<UpdateDatabaseResult>;
+    fn update_database(
+        &mut self,
+        caller_address: Option<Address>,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> anyhow::Result<UpdateDatabaseResult>;
 
     fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult;
 }
@@ -425,13 +429,22 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
     fn trapped(&self) -> bool {
         self.inst.trapped()
     }
-    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<Option<ReducerCallResult>> {
-        let ret = self.inst.init_database(fence, args);
+    fn init_database(
+        &mut self,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> anyhow::Result<Option<ReducerCallResult>> {
+        let ret = self.inst.init_database(program_hash, program_bytes);
         self.check_trap();
         ret
     }
-    fn update_database(&mut self, fence: u128) -> anyhow::Result<UpdateDatabaseResult> {
-        let ret = self.inst.update_database(fence);
+    fn update_database(
+        &mut self,
+        caller_address: Option<Address>,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        let ret = self.inst.update_database(caller_address, program_hash, program_bytes);
         self.check_trap();
         ret
     }
@@ -635,16 +648,20 @@ impl ModuleHost {
                 .reducer_wait_time
                 .with_label_values(&self.info.address, reducer)
                 .start_timer();
+            log::debug!("get instance");
             self.inner.get_instance(self.info.address).await?
         };
 
-        let result = tokio::task::spawn_blocking(move || f(&mut *inst))
-            .await
-            .unwrap_or_else(|e| {
-                log::warn!("reducer `{reducer}` panicked");
-                (self.on_panic)();
-                std::panic::resume_unwind(e.into_panic())
-            });
+        let result = tokio::task::spawn_blocking(move || {
+            log::debug!("call");
+            f(&mut *inst)
+        })
+        .await
+        .unwrap_or_else(|e| {
+            log::warn!("reducer `{reducer}` panicked");
+            (self.on_panic)();
+            std::panic::resume_unwind(e.into_panic())
+        });
         Ok(result)
     }
 
@@ -862,22 +879,27 @@ impl ModuleHost {
 
     pub async fn init_database(
         &self,
-        fence: u128,
-        args: ReducerArgs,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
     ) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
-        let args = match self.catalog().get_reducer("__init__") {
-            Some(schema) => args.into_tuple(schema)?,
-            _ => ArgsTuple::default(),
-        };
-        self.call("<init_database>", move |inst| inst.init_database(fence, args))
-            .await?
-            .map_err(InitDatabaseError::Other)
+        self.call("<init_database>", move |inst| {
+            inst.init_database(program_hash, program_bytes)
+        })
+        .await?
+        .map_err(InitDatabaseError::Other)
     }
 
-    pub async fn update_database(&self, fence: u128) -> Result<UpdateDatabaseResult, anyhow::Error> {
-        self.call("<update_database>", move |inst| inst.update_database(fence))
-            .await?
-            .map_err(Into::into)
+    pub async fn update_database(
+        &self,
+        caller_address: Option<Address>,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        self.call("<update_database>", move |inst| {
+            inst.update_database(caller_address, program_hash, program_bytes)
+        })
+        .await?
+        .map_err(Into::into)
     }
 
     pub async fn exit(&self) {

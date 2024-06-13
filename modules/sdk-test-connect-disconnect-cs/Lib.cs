@@ -3,13 +3,13 @@ using static SpacetimeDB.Runtime;
 
 static partial class Module
 {
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct Connected
     {
         public Identity identity;
     }
 
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct Disconnected
     {
         public Identity identity;

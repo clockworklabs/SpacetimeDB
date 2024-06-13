@@ -81,6 +81,9 @@ jobs:
       - name: Run cargo test
         run: cargo test --all
 
+      - name: C# SDK tests
+        run: dotnet test crates/bindings-csharp
+
   lints:
     name: Lints
     runs-on: spacetimedb-runner
