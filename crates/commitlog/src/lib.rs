@@ -1,17 +1,6 @@
-use std::{
-    io,
-    num::NonZeroU16,
-    path::PathBuf,
-    sync::{Arc, RwLock},
-    time::Duration,
-};
+use std::{io, num::NonZeroU16, path::PathBuf, sync::RwLock};
 
 use log::trace;
-use tokio::{
-    sync::watch,
-    task::spawn_blocking,
-    time::{interval, MissedTickBehavior},
-};
 
 mod commit;
 mod commitlog;
@@ -111,12 +100,16 @@ impl<T> Commitlog<T> {
     /// Returns the maximum transaction offset which is considered durable after
     /// this method returns successfully. The offset is `None` if the log hasn't
     /// been flushed to disk yet.
-    pub fn sync(&self) -> io::Result<Option<u64>> {
-        let inner = self.inner.read().unwrap();
+    ///
+    /// # Panics
+    ///
+    /// This method panics if syncing fails irrecoverably.
+    pub fn sync(&self) -> Option<u64> {
+        let mut inner = self.inner.write().unwrap();
         trace!("sync commitlog");
-        inner.sync()?;
+        inner.sync();
 
-        Ok(inner.max_committed_offset())
+        inner.max_committed_offset()
     }
 
     /// Write all outstanding transaction records to disk.
@@ -141,11 +134,19 @@ impl<T> Commitlog<T> {
     ///
     /// Equivalent to calling [`Self::flush`] followed by [`Self::sync`], but
     /// without releasing the write lock in between.
+    ///
+    /// # Errors
+    ///
+    /// An error is returned if writing to disk fails due to an I/O error.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if syncing fails irrecoverably.
     pub fn flush_and_sync(&self) -> io::Result<Option<u64>> {
         let mut inner = self.inner.write().unwrap();
         trace!("flush and sync commitlog");
         inner.commit()?;
-        inner.sync()?;
+        inner.sync();
 
         Ok(inner.max_committed_offset())
     }
@@ -364,37 +365,6 @@ impl<T: Encode> Commitlog<T> {
         D::Error: From<error::Traversal>,
     {
         self.inner.read().unwrap().fold_transactions_from(offset, de)
-    }
-}
-
-impl<T: Send + Sync + 'static> Commitlog<T> {
-    /// Call [`Self::flush_and_sync`] periodically.
-    ///
-    /// Returns a [`watch::Receiver`] yielding the maximum durable transaction
-    /// offset after each invocation of [`Self::flush_and_sync`]. The item type
-    /// is a `Result`, so as to allow the caller to be notified of I/O errors.
-    ///
-    /// The interval loop terminates when all receivers have been dropped.
-    /// Note that this does not happen promptly.
-    pub fn flush_and_sync_every(self: Arc<Self>, period: Duration) -> watch::Receiver<io::Result<Option<u64>>> {
-        let (tx, rx) = watch::channel(Ok(None));
-        let mut interval = interval(period);
-        interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
-
-        tokio::spawn(async move {
-            loop {
-                interval.tick().await;
-                let this = self.clone();
-                let offset = spawn_blocking(move || this.flush_and_sync()).await?;
-                if tx.send(offset).is_err() {
-                    break;
-                }
-            }
-
-            Ok::<(), tokio::task::JoinError>(())
-        });
-
-        rx
     }
 }
 

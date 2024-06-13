@@ -31,10 +31,15 @@ blake3_pure = ["blake3/pure"]
 [dependencies]
 spacetimedb-data-structures.workspace = true
 spacetimedb-primitives.workspace = true
-spacetimedb-sats.workspace = true
+spacetimedb-sats = { workspace = true, features = ["blake3"] }
+# All the dependencies we need are in `sats`,
+# but the `Serialize` and `Deserialize` derive macros refer to `lib` explicitly,
+# so we need to depend on `lib` in order to use them.
+spacetimedb-lib.workspace = true
 
 ahash.workspace = true
 blake3.workspace = true
+bytemuck.workspace = true
 decorum.workspace = true
 derive_more.workspace = true
 enum-as-inner.workspace = true

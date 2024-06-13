@@ -22,9 +22,4 @@ impl TableType for VecBool {
     type ReducerEvent = super::ReducerEvent;
 }
 
-impl VecBool {
-    #[allow(unused)]
-    pub fn filter_by_b(b: Vec<bool>) -> TableIter<Self> {
-        Self::filter(|row| row.b == b)
-    }
-}
+impl VecBool {}

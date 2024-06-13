@@ -5,6 +5,7 @@ use std::sync::{MutexGuard, PoisonError};
 
 use hex::FromHexError;
 use spacetimedb_sats::AlgebraicType;
+use spacetimedb_snapshot::SnapshotError;
 use spacetimedb_table::read_column;
 use spacetimedb_table::table::{self, UniqueConstraintViolation};
 use thiserror::Error;
@@ -177,9 +178,6 @@ pub enum DBError {
     DecodeHex(#[from] FromHexError),
     #[error("DatabaseError: {0}.")]
     Database(#[from] DatabaseError),
-    #[cfg(feature = "odb_rocksdb")]
-    #[error("RocksDbError: {0}.")]
-    RocksDbError(#[from] rocksdb::Error),
     #[error("SledError: {0}.")]
     SledDbError(#[from] sled::Error),
     #[error("Mutex was poisoned acquiring lock on MessageLog: {0}")]
@@ -202,7 +200,16 @@ pub enum DBError {
     #[error("Error replaying the commit log: {0}")]
     LogReplay(#[from] LogReplayError),
     #[error(transparent)]
+    // Box the inner [`SnapshotError`] to keep Clippy quiet about large `Err` variants.
+    Snapshot(#[from] Box<SnapshotError>),
+    #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+impl From<SnapshotError> for DBError {
+    fn from(e: SnapshotError) -> Self {
+        DBError::Snapshot(Box::new(e))
+    }
 }
 
 impl DBError {
@@ -323,6 +330,8 @@ pub enum NodesError {
     SystemName(Box<str>),
     #[error("internal db error: {0}")]
     Internal(#[source] Box<DBError>),
+    #[error(transparent)]
+    BadQuery(#[from] RelationError),
     #[error("invalid index type: {0}")]
     BadIndexType(u8),
 }

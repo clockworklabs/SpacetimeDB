@@ -25,13 +25,4 @@ impl TableType for TableHoldsTable {
     type ReducerEvent = super::ReducerEvent;
 }
 
-impl TableHoldsTable {
-    #[allow(unused)]
-    pub fn filter_by_a(a: OneU8) -> TableIter<Self> {
-        Self::filter(|row| row.a == a)
-    }
-    #[allow(unused)]
-    pub fn filter_by_b(b: VecU8) -> TableIter<Self> {
-        Self::filter(|row| row.b == b)
-    }
-}
+impl TableHoldsTable {}

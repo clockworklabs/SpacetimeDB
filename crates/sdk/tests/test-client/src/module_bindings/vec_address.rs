@@ -22,9 +22,4 @@ impl TableType for VecAddress {
     type ReducerEvent = super::ReducerEvent;
 }
 
-impl VecAddress {
-    #[allow(unused)]
-    pub fn filter_by_a(a: Vec<Address>) -> TableIter<Self> {
-        Self::filter(|row| row.a == a)
-    }
-}
+impl VecAddress {}

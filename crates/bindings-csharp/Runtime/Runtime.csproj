@@ -5,9 +5,8 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <AssemblyName>SpacetimeDB.Runtime</AssemblyName>
-    <AssemblyVersion>0.8.2</AssemblyVersion>
+    <AssemblyVersion>0.10.0</AssemblyVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -27,7 +26,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../Codegen/Codegen.csproj" OutputItemType="Analyzer" />
+    <ProjectReference Include="../BSATN.Runtime/BSATN.Runtime.csproj" />
+    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

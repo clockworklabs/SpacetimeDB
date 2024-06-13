@@ -1,6 +1,6 @@
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
-use spacetimedb_sats::bsatn::ser::BsatnError;
+use spacetimedb_lib::bsatn::ser::BsatnError;
 use spacetimedb_table::table::{RowRef, UniqueConstraintViolation};
 use spacetimedb_vm::relation::RelValue;
 use std::ops::DerefMut;
@@ -19,9 +19,9 @@ use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::{ColId, ColListBuilder, TableId};
 use spacetimedb_sats::db::def::{IndexDef, IndexType};
-use spacetimedb_sats::relation::{FieldExpr, FieldName};
+use spacetimedb_sats::relation::FieldName;
 use spacetimedb_sats::Typespace;
-use spacetimedb_vm::expr::{ColumnOp, NoInMemUsed, QueryExpr};
+use spacetimedb_vm::expr::{FieldExpr, FieldOp, NoInMemUsed, QueryExpr};
 
 #[derive(Clone)]
 pub struct InstanceEnv {
@@ -43,21 +43,10 @@ struct ChunkedWriter {
 }
 
 impl ChunkedWriter {
-    fn write_row_ref_to_scratch(&mut self, row: RowRef<'_>) -> Result<(), BsatnError> {
-        row.to_bsatn_extend(&mut self.scratch_space)
-    }
-
-    fn write_rel_value_to_scratch(&mut self, row: &RelValue<'_>) -> Result<(), BsatnError> {
-        row.to_bsatn_extend(&mut self.scratch_space)
-    }
-
     /// Flushes the data collected in the scratch space if it's larger than our
     /// chunking threshold.
     pub fn flush(&mut self) {
-        // For now, just send buffers over a certain fixed size.
-        const ITER_CHUNK_SIZE: usize = 64 * 1024;
-
-        if self.scratch_space.len() > ITER_CHUNK_SIZE {
+        if self.scratch_space.len() > spacetimedb_primitives::ROW_ITER_CHUNK_SIZE {
             // We intentionally clone here so that our scratch space is not
             // recreated with zero capacity (via `Vec::new`), but instead can
             // be `.clear()`ed in-place and reused.
@@ -79,6 +68,31 @@ impl ChunkedWriter {
             self.chunks.push(self.scratch_space.into());
         }
         self.chunks
+    }
+
+    pub fn collect_iter(iter: impl Iterator<Item = impl ToBsatnExtend>) -> Vec<Box<[u8]>> {
+        let mut chunked_writer = Self::default();
+        for item in iter {
+            // Write the item directly to the BSATN `chunked_writer` buffer.
+            item.to_bsatn_extend(&mut chunked_writer.scratch_space).unwrap();
+            // Flush at item boundaries.
+            chunked_writer.flush();
+        }
+        chunked_writer.into_chunks()
+    }
+}
+
+trait ToBsatnExtend {
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError>;
+}
+impl ToBsatnExtend for RowRef<'_> {
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+        self.to_bsatn_extend(buf)
+    }
+}
+impl ToBsatnExtend for RelValue<'_> {
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+        self.to_bsatn_extend(buf)
     }
 }
 
@@ -271,13 +285,13 @@ impl InstanceEnv {
     ///
     /// Matching is defined by decoding of `value` to an `AlgebraicValue`
     /// according to the column's schema and then `Ord for AlgebraicValue`.
-    pub fn iter_by_col_eq(
+    pub fn iter_by_col_eq_chunks(
         &self,
         ctx: &ExecutionContext,
         table_id: TableId,
         col_id: ColId,
         value: &[u8],
-    ) -> Result<Vec<u8>, NodesError> {
+    ) -> Result<Vec<Box<[u8]>>, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
@@ -285,31 +299,17 @@ impl InstanceEnv {
         let value = &stdb.decode_column(tx, table_id, col_id, value)?;
 
         // Find all rows in the table where the column data matches `value`.
-        // Concatenate and return these rows using bsatn encoding.
-        let results = stdb.iter_by_col_eq_mut(ctx, tx, table_id, col_id, value)?;
-        let mut bytes = Vec::new();
-        for result in results {
-            // Write the ref directly to the BSATN `bytes` buffer.
-            result.to_bsatn_extend(&mut bytes).unwrap();
-        }
-        Ok(bytes)
+        let chunks = ChunkedWriter::collect_iter(stdb.iter_by_col_eq_mut(ctx, tx, table_id, col_id, value)?);
+        Ok(chunks)
     }
 
     #[tracing::instrument(skip_all)]
     pub fn iter_chunks(&self, ctx: &ExecutionContext, table_id: TableId) -> Result<Vec<Box<[u8]>>, NodesError> {
-        let mut chunked_writer = ChunkedWriter::default();
-
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.tx.get()?;
 
-        for row in stdb.iter_mut(ctx, tx, table_id)? {
-            // Write the ref directly to the BSATN `chunked_writer` buffer.
-            chunked_writer.write_row_ref_to_scratch(row).unwrap();
-            // Flush at row boundaries.
-            chunked_writer.flush();
-        }
-
-        Ok(chunked_writer.into_chunks())
+        let chunks = ChunkedWriter::collect_iter(stdb.iter_mut(ctx, tx, table_id)?);
+        Ok(chunks)
     }
 
     pub fn iter_filtered_chunks(
@@ -320,27 +320,27 @@ impl InstanceEnv {
     ) -> Result<Vec<Box<[u8]>>, NodesError> {
         use spacetimedb_lib::filter;
 
-        fn filter_to_column_op(table_id: TableId, filter: filter::Expr) -> ColumnOp {
+        fn filter_to_column_op(table_id: TableId, filter: filter::Expr) -> FieldOp {
             match filter {
                 filter::Expr::Cmp(filter::Cmp {
                     op,
                     args: CmpArgs { lhs_field, rhs },
-                }) => ColumnOp::Cmp {
+                }) => FieldOp::Cmp {
                     op: OpQuery::Cmp(op),
-                    lhs: Box::new(ColumnOp::Field(FieldExpr::Name(FieldName::new(
+                    lhs: Box::new(FieldOp::Field(FieldExpr::Name(FieldName::new(
                         table_id,
                         lhs_field.into(),
                     )))),
-                    rhs: Box::new(ColumnOp::Field(match rhs {
+                    rhs: Box::new(FieldOp::Field(match rhs {
                         filter::Rhs::Field(rhs_field) => FieldExpr::Name(FieldName::new(table_id, rhs_field.into())),
                         filter::Rhs::Value(rhs_value) => FieldExpr::Value(rhs_value),
                     })),
                 },
-                filter::Expr::Logic(filter::Logic { lhs, op, rhs }) => ColumnOp::Cmp {
-                    op: OpQuery::Logic(op),
-                    lhs: Box::new(filter_to_column_op(table_id, *lhs)),
-                    rhs: Box::new(filter_to_column_op(table_id, *rhs)),
-                },
+                filter::Expr::Logic(filter::Logic { lhs, op, rhs }) => FieldOp::new(
+                    OpQuery::Logic(op),
+                    filter_to_column_op(table_id, *lhs),
+                    filter_to_column_op(table_id, *rhs),
+                ),
                 filter::Expr::Unary(_) => todo!("unary operations are not yet supported"),
             }
         }
@@ -363,7 +363,7 @@ impl InstanceEnv {
 
         // TODO(Centril): consider caching from `filter: &[u8] -> query: QueryExpr`.
         let query = QueryExpr::new(schema.as_ref())
-            .with_select(filter_to_column_op(table_id, filter))
+            .with_select(filter_to_column_op(table_id, filter))?
             .optimize(&|table_id, table_name| stdb.row_count(table_id, table_name));
 
         // TODO(Centril): Conditionally dump the `query` to a file and compare against integration test.
@@ -371,15 +371,12 @@ impl InstanceEnv {
 
         let tx: TxMode = tx.into();
         // SQL queries can never reference `MemTable`s, so pass in an empty set.
-        let mut query = build_query(ctx, stdb, &tx, &query, &mut NoInMemUsed)?;
+        let mut query = build_query(ctx, stdb, &tx, &query, &mut NoInMemUsed);
 
         // write all rows and flush at row boundaries.
-        let mut chunked_writer = ChunkedWriter::default();
-        while let Some(row) = query.next()? {
-            chunked_writer.write_rel_value_to_scratch(&row).unwrap();
-            chunked_writer.flush();
-        }
-        Ok(chunked_writer.into_chunks())
+        let query_iter = std::iter::from_fn(|| query.next());
+        let chunks = ChunkedWriter::collect_iter(query_iter);
+        Ok(chunks)
     }
 }
 

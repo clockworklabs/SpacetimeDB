@@ -29,70 +29,83 @@ public class Module : IIncrementalGenerator
             predicate: (node, ct) => true, // already covered by attribute restrictions
             transform: (context, ct) =>
             {
-                var table = (TypeDeclarationSyntax)context.TargetNode;
+                var tableSyntax = (TypeDeclarationSyntax)context.TargetNode;
+                var table = context.SemanticModel.GetDeclaredSymbol(tableSyntax)!;
 
-                var resolvedTable =
-                    (ITypeSymbol?)context.SemanticModel.GetDeclaredSymbol(table)
-                    ?? throw new System.Exception("Could not resolve table");
-
-                var fields = resolvedTable
-                    .GetMembers()
-                    .OfType<IFieldSymbol>()
-                    .Where(f => !f.IsStatic)
+                var fields = GetFields(table)
                     .Select(f =>
                     {
                         var indexKind = f.GetAttributes()
                             .Where(a =>
-                                a.AttributeClass?.ToDisplayString() == "SpacetimeDB.ColumnAttribute"
+                                a.AttributeClass?.ToString() == "SpacetimeDB.ColumnAttribute"
                             )
                             .Select(a => (ColumnAttrs)a.ConstructorArguments[0].Value!)
                             .SingleOrDefault();
 
-                        if (indexKind.HasFlag(ColumnAttrs.AutoInc))
+                        var isInteger = f.Type.SpecialType switch
                         {
-                            var isValidForAutoInc = f.Type.SpecialType switch
-                            {
-                                SpecialType.System_Byte
-                                or SpecialType.System_SByte
-                                or SpecialType.System_Int16
-                                or SpecialType.System_UInt16
-                                or SpecialType.System_Int32
-                                or SpecialType.System_UInt32
-                                or SpecialType.System_Int64
-                                or SpecialType.System_UInt64
-                                    => true,
-                                SpecialType.None
-                                    => f.Type.ToString() switch
-                                    {
-                                        "System.Int128" or "System.UInt128" => true,
-                                        _ => false
-                                    },
-                                _ => false
-                            };
+                            SpecialType.System_Byte
+                            or SpecialType.System_SByte
+                            or SpecialType.System_Int16
+                            or SpecialType.System_UInt16
+                            or SpecialType.System_Int32
+                            or SpecialType.System_UInt32
+                            or SpecialType.System_Int64
+                            or SpecialType.System_UInt64
+                                => true,
+                            SpecialType.None
+                                => f.Type.ToString() is "System.Int128" or "System.UInt128",
+                            _ => false
+                        };
 
-                            if (!isValidForAutoInc)
-                            {
-                                throw new System.Exception(
-                                    $"Type {f.Type} is not valid for AutoInc or Identity as it's not an integer."
-                                );
-                            }
+                        if (indexKind.HasFlag(ColumnAttrs.AutoInc) && !isInteger)
+                        {
+                            throw new System.Exception(
+                                $"{f.Type} {f.Name} is not valid for AutoInc or Identity as it's not an integer."
+                            );
+                        }
+
+                        var isEquatable =
+                            (
+                                isInteger
+                                || f.Type.SpecialType switch
+                                {
+                                    SpecialType.System_String or SpecialType.System_Boolean => true,
+                                    SpecialType.None
+                                        => f.Type.ToString()
+                                            is "SpacetimeDB.Runtime.Address"
+                                                or "SpacetimeDB.Runtime.Identity",
+                                    _ => false,
+                                }
+                            )
+                            && f.Type.NullableAnnotation != NullableAnnotation.Annotated;
+
+                        if (indexKind.HasFlag(ColumnAttrs.Unique) && !isEquatable)
+                        {
+                            throw new System.Exception(
+                                $"{f.Type} {f.Name} is not valid for Identity, PrimaryKey or PrimaryKeyAuto as it's not an equatable primitive."
+                            );
                         }
 
                         return (
-                            Name: f.Name,
+                            f.Name,
                             Type: SymbolToName(f.Type),
                             TypeInfo: GetTypeInfo(f.Type),
-                            IndexKind: indexKind
+                            IndexKind: indexKind,
+                            IsEquatable: isEquatable
                         );
                     })
                     .ToArray();
 
                 return new
                 {
-                    Scope = new Scope(table),
-                    Name = table.Identifier.Text,
-                    FullName = SymbolToName(context.SemanticModel.GetDeclaredSymbol(table)!),
+                    Scope = new Scope(tableSyntax),
+                    table.Name,
+                    FullName = SymbolToName(table),
                     Fields = fields,
+                    Public = context
+                        .Attributes.SelectMany(attr => attr.NamedArguments)
+                        .Any(pair => pair.Key == "Public" && pair.Value.Value is true)
                 };
             }
         );
@@ -112,74 +125,71 @@ public class Module : IIncrementalGenerator
 
                             public static IEnumerable<{t.Name}> Iter() =>
                                 new SpacetimeDB.Runtime.RawTableIter(tableId.Value)
-                                .SelectMany(GetSatsTypeInfo().ReadBytes);
+                                .Parse<{t.Name}>();
 
-                            private static readonly Lazy<KeyValuePair<string, SpacetimeDB.SATS.TypeInfo<object?>>[]> fieldTypeInfos = new (() => new KeyValuePair<string, SpacetimeDB.SATS.TypeInfo<object?>>[] {{
-                                {string.Join("\n", t.Fields.Select(f => $"new (nameof({f.Name}), {f.TypeInfo}.EraseType()),"))}
-                            }});
-
-                            public static SpacetimeDB.Module.TableDesc MakeTableDesc() => new (
+                            public static SpacetimeDB.Module.TableDesc MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
                                 new (
                                     nameof({t.Name}),
                                     new SpacetimeDB.Module.ColumnDefWithAttrs[] {{ {string.Join(",", t.Fields.Select(f => $@"
                                         new (
-                                            new SpacetimeDB.Module.ColumnDef(nameof({f.Name}), {f.TypeInfo}.AlgebraicType),
+                                            new SpacetimeDB.Module.ColumnDef(nameof({f.Name}), BSATN.{f.Name}.GetAlgebraicType(registrar)),
                                             SpacetimeDB.Module.ColumnAttrs.{f.IndexKind}
                                         )
-                                    "))} }}
+                                    "))} }},
+                                    {(t.Public ? "true" : "false")}
                                 ),
-                                (SpacetimeDB.SATS.AlgebraicType.Ref){t.Name}.GetSatsTypeInfo().AlgebraicType
+                                (SpacetimeDB.BSATN.AlgebraicType.Ref) new BSATN().GetAlgebraicType(registrar)
                             );
 
+                            private static readonly Lazy<KeyValuePair<string, Action<BinaryWriter, object?>>[]> fieldTypeInfos = new (() => new KeyValuePair<string, Action<BinaryWriter, object?>>[] {{
+                                {string.Join("\n", t.Fields.Select(f => $"new (nameof({f.Name}), (w, v) => BSATN.{f.Name}.Write(w, ({f.Type}) v!)),"))}
+                            }});
+
                             public static IEnumerable<{t.Name}> Query(System.Linq.Expressions.Expression<Func<{t.Name}, bool>> filter) =>
-                                new SpacetimeDB.Runtime.RawTableIter(tableId.Value, SpacetimeDB.Filter.Filter.Compile<{t.Name}>(fieldTypeInfos.Value, filter))
-                                .SelectMany(GetSatsTypeInfo().ReadBytes);
+                                new SpacetimeDB.Runtime.RawTableIterFiltered(tableId.Value, SpacetimeDB.Filter.Filter.Compile<{t.Name}>(fieldTypeInfos.Value, filter))
+                                .Parse<{t.Name}>();
 
                             public void Insert() {{
-                                var typeInfo = GetSatsTypeInfo();
-                                var bytes = typeInfo.ToBytes(this);
-                                SpacetimeDB.Runtime.Insert(tableId.Value, bytes);
+                                var bytes = SpacetimeDB.Runtime.Insert(tableId.Value, this);
                                 // bytes should contain modified value now with autoinc fields updated
                                 {(autoIncFields.Any() ? $@"
-                                    var newInstance = typeInfo.ReadBytes(bytes).SingleOrDefault();
-
-                                    {string.Join("\n", autoIncFields.Select(f => $"this.{f} = newInstance.{f};"))}
+                                    using var stream = new System.IO.MemoryStream(bytes);
+                                    using var reader = new System.IO.BinaryReader(stream);
+                                    ReadFields(reader);
                                 " : "")}
                             }}
                         ";
 
                     foreach (
-                        var (f, index) in t.Fields.Select(
-                            (f, i) => (f, $"new SpacetimeDB.RawBindings.ColId({i})")
-                        )
+                        var (f, i) in t.Fields.Select((field, i) => (field, i))
+                            .Where(pair => pair.field.IsEquatable)
                     )
                     {
+                        var index = $"new SpacetimeDB.RawBindings.ColId({i})";
+
+                        extensions +=
+                            $@"
+                                public static IEnumerable<{t.Name}> FilterBy{f.Name}({f.Type} {f.Name}) =>
+                                    new SpacetimeDB.Runtime.RawTableIterByColEq(tableId.Value, {index}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name}))
+                                    .Parse<{t.Name}>();
+                            ";
+
                         if (f.IndexKind.HasFlag(ColumnAttrs.Unique))
                         {
                             extensions +=
                                 $@"
                                     public static {t.Name}? FindBy{f.Name}({f.Type} {f.Name}) =>
-                                        GetSatsTypeInfo().ReadBytes(
-                                            SpacetimeDB.Runtime.IterByColEq(tableId.Value, {index}, {f.TypeInfo}.ToBytes({f.Name}))
-                                        )
+                                        FilterBy{f.Name}({f.Name})
                                         .Cast<{t.Name}?>()
                                         .SingleOrDefault();
 
                                     public static bool DeleteBy{f.Name}({f.Type} {f.Name}) =>
-                                        SpacetimeDB.Runtime.DeleteByColEq(tableId.Value, {index}, {f.TypeInfo}.ToBytes({f.Name})) > 0;
+                                        SpacetimeDB.Runtime.DeleteByColEq(tableId.Value, {index}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name})) > 0;
 
                                     public static bool UpdateBy{f.Name}({f.Type} {f.Name}, {t.Name} value) =>
-                                        SpacetimeDB.Runtime.UpdateByColEq(tableId.Value, {index}, {f.TypeInfo}.ToBytes({f.Name}), GetSatsTypeInfo().ToBytes(value));
+                                        SpacetimeDB.Runtime.UpdateByColEq(tableId.Value, {index}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name}), value);
                                 ";
                         }
-
-                        extensions +=
-                            $@"
-                                public static IEnumerable<{t.Name}> FilterBy{f.Name}({f.Type} {f.Name}) =>
-                                    GetSatsTypeInfo().ReadBytes(
-                                        SpacetimeDB.Runtime.IterByColEq(tableId.Value, {index}, {f.TypeInfo}.ToBytes({f.Name}))
-                                    );
-                            ";
                     }
 
                     return new KeyValuePair<string, string>(
@@ -239,12 +249,12 @@ public class Module : IIncrementalGenerator
                         r.Name,
                         Class: $@"
                             class {r.Name}: IReducer {{
-                                {string.Join("\n", r.Args.Where(a => !a.IsContextArg).Select(a => $"SpacetimeDB.SATS.TypeInfo<{a.Type}> {a.Name} = {GetTypeInfo(a.Type)};"))}
+                                {string.Join("\n", r.Args.Where(a => !a.IsContextArg).Select(a => $"{GetTypeInfo(a.Type)} {a.Name} = new();"))}
 
-                                SpacetimeDB.Module.ReducerDef IReducer.MakeReducerDef() {{
+                                SpacetimeDB.Module.ReducerDef IReducer.MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) {{
                                     return new (
                                         ""{r.ExportName}""
-                                        {string.Join("", r.Args.Where(a => !a.IsContextArg).Select(a => $",\nnew SpacetimeDB.SATS.AggregateElement(nameof({a.Name}), {a.Name}.AlgebraicType)"))}
+                                        {string.Join("", r.Args.Where(a => !a.IsContextArg).Select(a => $",\nnew SpacetimeDB.BSATN.AggregateElement(nameof({a.Name}), {a.Name}.GetAlgebraicType(registrar))"))}
                                     );
                                 }}
 
@@ -294,11 +304,11 @@ public class Module : IIncrementalGenerator
                 [UnmanagedCallersOnly(EntryPoint = ""__preinit__10_init_csharp"")]
 #else
                 // Prevent trimming of FFI exports that are invoked from C and not visible to C# trimmer.
-                [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(FFI))]
+                [DynamicDependency(DynamicallyAccessedMemberTypes.PublicMethods, typeof(FFI))]
 #endif
                 public static void Main() {{
                     {string.Join("\n", addReducers.Select(r => $"FFI.RegisterReducer(new {r.Name}());"))}
-                    {string.Join("\n", tableNames.Select(t => $"FFI.RegisterTable({t}.MakeTableDesc());"))}
+                    {string.Join("\n", tableNames.Select(t => $"FFI.RegisterTable({t}.MakeTableDesc(FFI.TypeRegistrar));"))}
                 }}
 
 // Exports only work from the main assembly, so we need to generate forwarding methods.
@@ -331,7 +341,7 @@ public class Module : IIncrementalGenerator
                             public static SpacetimeDB.Runtime.ScheduleToken Schedule{r.Name}(DateTimeOffset time{string.Join("", r.Args.Where(a => !a.IsContextArg).Select(a => $", {a.Type} {a.Name}"))}) {{
                                 using var stream = new MemoryStream();
                                 using var writer = new BinaryWriter(stream);
-                                {string.Join("\n", r.Args.Where(a => !a.IsContextArg).Select(a => $"{GetTypeInfo(a.Type)}.Write(writer, {a.Name});"))}
+                                {string.Join("\n", r.Args.Where(a => !a.IsContextArg).Select(a => $"new {GetTypeInfo(a.Type)}().Write(writer, {a.Name});"))}
                                 return new(nameof({r.Name}), stream.ToArray(), time);
                             }}
                         "

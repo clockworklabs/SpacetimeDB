@@ -16,7 +16,7 @@ bench = false
 
 [dependencies]
 spacetimedb-data-structures.workspace = true
-spacetimedb-lib = { workspace = true, features = ["serde"] }
+spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"] }
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-commitlog.workspace = true
 spacetimedb-durability.workspace = true
@@ -25,6 +25,7 @@ spacetimedb-primitives.workspace = true
 spacetimedb-sats = { workspace = true, features = ["serde"] }
 spacetimedb-table.workspace = true
 spacetimedb-vm.workspace = true
+spacetimedb-snapshot.workspace = true
 
 anyhow = { workspace = true, features = ["backtrace"] }
 arrayvec.workspace = true
@@ -45,6 +46,7 @@ enum-map.workspace = true
 flate2.workspace = true
 fs2.workspace = true
 futures.workspace = true
+hashbrown = { workspace = true, features = ["rayon", "serde"] }
 hex.workspace = true
 hostname.workspace = true
 hyper.workspace = true
@@ -96,16 +98,12 @@ url.workspace = true
 urlencoding.workspace = true
 uuid.workspace = true
 wasmtime.workspace = true
-# Rocksdb ostorage backend, linked only if "rocksdb" feature enabled.
-rocksdb = { workspace = true, optional = true }
 
 [features]
 # Print a warning when doing an unindexed `iter_by_col_range` on a large table.
 unindexed_iter_by_col_range_warn = []
 # Optional storage engines.
-odb_rocksdb = ["dep:rocksdb"]
-odb_sled = []
-default = ["odb_sled", "unindexed_iter_by_col_range_warn"]
+default = ["unindexed_iter_by_col_range_warn"]
 # Enable test helpers and utils
 test = []
 
@@ -113,7 +111,6 @@ test = []
 spacetimedb-lib = { path = "../lib", features = ["proptest"] }
 spacetimedb-sats = { path = "../sats", features = ["proptest"] }
 
-rusqlite.workspace = true
 criterion.workspace = true
 # Also as dev-dependencies for use in _this_ crate's tests.
 proptest.workspace = true

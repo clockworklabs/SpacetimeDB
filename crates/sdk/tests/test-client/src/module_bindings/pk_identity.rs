@@ -32,7 +32,11 @@ impl TableWithPrimaryKey for PkIdentity {
 
 impl PkIdentity {
     #[allow(unused)]
-    pub fn filter_by_i(i: Identity) -> Option<Self> {
+    pub fn filter_by_i(i: Identity) -> TableIter<Self> {
+        Self::filter(|row| row.i == i)
+    }
+    #[allow(unused)]
+    pub fn find_by_i(i: Identity) -> Option<Self> {
         Self::find(|row| row.i == i)
     }
     #[allow(unused)]

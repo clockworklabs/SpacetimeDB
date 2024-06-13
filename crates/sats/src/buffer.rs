@@ -264,6 +264,7 @@ impl<'de> BufReader<'de> for &'de [u8] {
 }
 
 /// A cursor based [`BufReader<'de>`] implementation.
+#[derive(Debug)]
 pub struct Cursor<I> {
     /// The underlying input read from.
     pub buf: I,
@@ -283,13 +284,12 @@ impl<I> Cursor<I> {
 impl<'de, I: AsRef<[u8]>> BufReader<'de> for &'de Cursor<I> {
     fn get_slice(&mut self, size: usize) -> Result<&'de [u8], DecodeError> {
         // "Read" the slice `buf[pos..size]`.
-        let ret = self.buf.as_ref()[self.pos.get()..]
-            .get(..size)
-            .ok_or_else(|| DecodeError::BufferLength {
-                for_type: "Cursor".into(),
-                expected: (self.pos.get()..size).len(),
-                given: size,
-            })?;
+        let buf = &self.buf.as_ref()[self.pos.get()..];
+        let ret = buf.get(..size).ok_or_else(|| DecodeError::BufferLength {
+            for_type: "Cursor".into(),
+            expected: size,
+            given: buf.len(),
+        })?;
 
         // Advance the cursor by `size` bytes.
         self.pos.set(self.pos.get() + size);

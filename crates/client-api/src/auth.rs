@@ -71,6 +71,12 @@ impl SpacetimeCreds {
             Err(e) => Err(e),
         };
         if let Ok(Query(creds)) = Query::<Self>::try_from_uri(&parts.uri) {
+            // TODO STABILITY: do we want to have the `?token=` query param just be the jwt, instead of this?
+            let creds_header: HeaderValue = format!("Basic {}", creds.token)
+                .try_into()
+                .map_err(|_| headers::Error::invalid())?;
+            let creds = <SpacetimeCreds as authorization::Credentials>::decode(&creds_header)
+                .ok_or_else(headers::Error::invalid)?;
             return Ok(Some(creds));
         }
         res

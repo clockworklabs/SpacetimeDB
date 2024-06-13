@@ -6,10 +6,8 @@ use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::host::module_host::DatabaseTableUpdate;
 use spacetimedb::subscription::query::compile_read_only_query;
 use spacetimedb::subscription::subscription::ExecutionSet;
-use spacetimedb::util::slow::SlowQueryConfig;
 use spacetimedb_bench::database::BenchDatabase as _;
 use spacetimedb_bench::spacetime_raw::SpacetimeRaw;
-use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductValue};
 
@@ -101,12 +99,11 @@ fn eval(c: &mut Criterion) {
 
     let bench_eval = |c: &mut Criterion, name, sql| {
         c.bench_function(name, |b| {
-            let auth = AuthCtx::for_testing();
             let tx = raw.db.begin_tx();
-            let query = compile_read_only_query(&raw.db, &tx, &auth, sql).unwrap();
+            let query = compile_read_only_query(&raw.db, &tx, sql).unwrap();
             let query: ExecutionSet = query.into();
-            let ctx = &ExecutionContext::subscribe(raw.db.address(), SlowQueryConfig::default());
-            b.iter(|| drop(black_box(query.eval(ctx, Protocol::Binary, &raw.db, &tx).unwrap())))
+            let ctx = &ExecutionContext::subscribe(raw.db.address());
+            b.iter(|| drop(black_box(query.eval(ctx, Protocol::Binary, &raw.db, &tx, None))))
         });
     };
 
@@ -128,7 +125,7 @@ fn eval(c: &mut Criterion) {
     );
     bench_eval(c, "full-join", &name);
 
-    let ctx_incr = &ExecutionContext::incremental_update(raw.db.address(), SlowQueryConfig::default());
+    let ctx_incr = &ExecutionContext::incremental_update(raw.db.address());
 
     // To profile this benchmark for 30s
     // samply record -r 10000000 cargo bench --bench=subscription --profile=profiling -- incr-select --exact --profile-time=30
@@ -136,17 +133,13 @@ fn eval(c: &mut Criterion) {
         // A passthru executed independently of the database.
         let select_lhs = "select * from footprint";
         let select_rhs = "select * from location";
-        let auth = AuthCtx::for_testing();
         let tx = &raw.db.begin_tx();
-        let query_lhs = compile_read_only_query(&raw.db, tx, &auth, select_lhs).unwrap();
-        let query_rhs = compile_read_only_query(&raw.db, tx, &auth, select_rhs).unwrap();
+        let query_lhs = compile_read_only_query(&raw.db, tx, select_lhs).unwrap();
+        let query_rhs = compile_read_only_query(&raw.db, tx, select_rhs).unwrap();
         let query = ExecutionSet::from_iter(query_lhs.into_iter().chain(query_rhs));
         let tx = &tx.into();
 
-        b.iter(|| {
-            let out = query.eval_incr(ctx_incr, &raw.db, tx, &update).unwrap();
-            black_box(out);
-        })
+        b.iter(|| drop(black_box(query.eval_incr(ctx_incr, &raw.db, tx, &update, None))))
     });
 
     // To profile this benchmark for 30s
@@ -159,16 +152,12 @@ fn eval(c: &mut Criterion) {
             from footprint join location on footprint.entity_id = location.entity_id \
             where location.chunk_index = {chunk_index}"
         );
-        let auth = AuthCtx::for_testing();
         let tx = &raw.db.begin_tx();
-        let query = compile_read_only_query(&raw.db, tx, &auth, &join).unwrap();
+        let query = compile_read_only_query(&raw.db, tx, &join).unwrap();
         let query: ExecutionSet = query.into();
         let tx = &tx.into();
 
-        b.iter(|| {
-            let out = query.eval_incr(ctx_incr, &raw.db, tx, &update).unwrap();
-            black_box(out);
-        })
+        b.iter(|| drop(black_box(query.eval_incr(ctx_incr, &raw.db, tx, &update, None))));
     });
 
     // To profile this benchmark for 30s

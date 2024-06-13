@@ -1,0 +1,20 @@
+[package]
+name = "spacetimedb-snapshot"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file = "LICENSE"
+description = "Low-level interfaces for capturing and restoring snapshots of database states"
+
+[dependencies]
+spacetimedb-table.workspace = true
+spacetimedb-durability.workspace = true
+spacetimedb-lib.workspace = true
+spacetimedb-sats = { workspace = true, features = ["blake3"] }
+spacetimedb-primitives.workspace = true
+spacetimedb-fs-utils.workspace = true
+
+blake3.workspace = true
+hex.workspace = true
+log.workspace = true
+thiserror.workspace = true

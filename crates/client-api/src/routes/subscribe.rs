@@ -1,18 +1,21 @@
+use std::collections::VecDeque;
 use std::mem;
-use std::pin::pin;
+use std::pin::{pin, Pin};
 use std::time::Duration;
 
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
 use axum::Extension;
 use axum_extra::TypedHeader;
-use futures::{FutureExt, SinkExt, StreamExt};
+use futures::future::MaybeDone;
+use futures::{Future, FutureExt, SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
 use scopeguard::ScopeGuard;
 use serde::Deserialize;
 use spacetimedb::client::messages::{IdentityTokenMessage, SerializableMessage, ServerMessage};
 use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, MessageHandleError, Protocol};
-use spacetimedb::util::{also_poll, future_queue};
+use spacetimedb::host::NoSuchModule;
+use spacetimedb::util::also_poll;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::Address;
@@ -93,18 +96,10 @@ where
     let identity_token = auth.creds.token().to_owned();
 
     let host = ctx.host_controller();
-    let module = match host.get_module_host(instance_id) {
-        Ok(m) => m,
-        Err(_) => {
-            // TODO(kim): probably wrong -- check if instance node id matches ours
-            log::debug!("creating fresh module host");
-            let dbic = ctx
-                .load_module_host_context(database, instance_id)
-                .await
-                .map_err(log_and_500)?;
-            host.spawn_module_host(dbic).await.map_err(log_and_500)?
-        }
-    };
+    let module_rx = host
+        .watch_maybe_launch_module_host(database, instance_id)
+        .await
+        .map_err(log_and_500)?;
 
     let client_id = ClientActorId {
         identity: auth.identity,
@@ -136,7 +131,7 @@ where
         }
 
         let actor = |client, sendrx| ws_client_actor(client, ws, sendrx);
-        let client = match ClientConnection::spawn(client_id, protocol, instance_id, module, actor).await {
+        let client = match ClientConnection::spawn(client_id, protocol, instance_id, module_rx, actor).await {
             Ok(s) => s,
             Err(e) => {
                 log::warn!("ModuleHost died while we were connecting: {e:#}");
@@ -166,17 +161,25 @@ const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);
 
 async fn ws_client_actor(client: ClientConnection, ws: WebSocketStream, sendrx: mpsc::Receiver<SerializableMessage>) {
     // ensure that even if this task gets cancelled, we always cleanup the connection
-    let client = scopeguard::guard(client, |client| {
+    let mut client = scopeguard::guard(client, |client| {
         tokio::spawn(client.disconnect());
     });
 
-    ws_client_actor_inner(&client, ws, sendrx).await;
+    ws_client_actor_inner(&mut client, ws, sendrx).await;
 
     ScopeGuard::into_inner(client).disconnect().await;
 }
 
+async fn make_progress<Fut: Future>(fut: &mut Pin<&mut MaybeDone<Fut>>) {
+    if let MaybeDone::Gone = **fut {
+        // nothing to do
+    } else {
+        fut.await
+    }
+}
+
 async fn ws_client_actor_inner(
-    client: &ClientConnection,
+    client: &mut ClientConnection,
     mut ws: WebSocketStream,
     mut sendrx: mpsc::Receiver<SerializableMessage>,
 ) {
@@ -196,7 +199,8 @@ async fn ws_client_actor_inner(
     //       `select!` for examples of how to do this.
     //
     // TODO: do we want this to have a fixed capacity? or should it be unbounded
-    let mut handle_queue = pin!(future_queue(|(message, timer)| client.handle_message(message, timer)));
+    let mut message_queue = VecDeque::<(DataMessage, Instant)>::new();
+    let mut current_message = pin!(MaybeDone::Gone);
 
     let mut closed = false;
     let mut rx_buf = Vec::new();
@@ -206,13 +210,25 @@ async fn ws_client_actor_inner(
             Message(ClientMessage),
             HandleResult(Result<(), MessageHandleError>),
         }
+        if let MaybeDone::Gone = *current_message {
+            if let Some((message, timer)) = message_queue.pop_front() {
+                let client = client.clone();
+                let fut = async move { client.handle_message(message, timer).await };
+                current_message.set(MaybeDone::Future(fut));
+            }
+        }
         let message = tokio::select! {
             // NOTE: all of the futures for these branches **must** be cancel safe. do not
             //       change this if you don't know what that means.
 
             // If we have a result from handling a past message to report,
             // grab it to handle in the next `match`.
-            Some(res) = handle_queue.next() => Item::HandleResult(res),
+            Some(res) = async {
+                make_progress(&mut current_message).await;
+                current_message.as_mut().take_output()
+            } => {
+                Item::HandleResult(res)
+            }
 
             // If we've received an incoming message,
             // grab it to handle in the next `match`.
@@ -248,7 +264,7 @@ async fn ws_client_actor_inner(
                     };
                     // Flush the websocket while continuing to poll the `handle_queue`,
                     // to avoid deadlocks or delays due to enqueued futures holding resources.
-                    let send_all = also_poll(send_all, handle_queue.make_progress());
+                    let send_all = also_poll(send_all, make_progress(&mut current_message));
                     let t1 = Instant::now();
                     if let Err(error) = send_all.await {
                         log::warn!("Websocket send error: {error}")
@@ -261,18 +277,23 @@ async fn ws_client_actor_inner(
                 continue;
             }
 
-            // If the module has exited, close the websocket.
-            () = client.module.exited(), if !closed => {
-                // Send a close frame while continuing to poll the `handle_queue`,
-                // to avoid deadlocks or delays due to enqueued futures holding resources.
-                let close = also_poll(
-                    ws.close(Some(CloseFrame { code: CloseCode::Away, reason: "module exited".into() })),
-                    handle_queue.make_progress(),
-                );
-                if let Err(e) = close.await {
-                    log::warn!("error closing: {e:#}")
+            res = client.watch_module_host(), if !closed => {
+                match res {
+                    Ok(()) => {}
+                    // If the module has exited, close the websocket.
+                    Err(NoSuchModule) => {
+                        // Send a close frame while continuing to poll the `handle_queue`,
+                        // to avoid deadlocks or delays due to enqueued futures holding resources.
+                        let close = also_poll(
+                            ws.close(Some(CloseFrame { code: CloseCode::Away, reason: "module exited".into() })),
+                            make_progress(&mut current_message),
+                        );
+                        if let Err(e) = close.await {
+                            log::warn!("error closing: {e:#}")
+                        }
+                        closed = true;
+                    }
                 }
-                closed = true;
                 continue;
             }
 
@@ -282,7 +303,7 @@ async fn ws_client_actor_inner(
                 if mem::take(&mut got_pong) {
                     // Send a ping message while continuing to poll the `handle_queue`,
                     // to avoid deadlocks or delays due to enqueued futures holding resources.
-                    if let Err(e) = also_poll(ws.send(WsMessage::Ping(Vec::new())), handle_queue.make_progress()).await {
+                    if let Err(e) = also_poll(ws.send(WsMessage::Ping(Vec::new())), make_progress(&mut current_message)).await {
                         log::warn!("error sending ping: {e:#}");
                     }
                     continue;
@@ -303,7 +324,7 @@ async fn ws_client_actor_inner(
         match message {
             Item::Message(ClientMessage::Message(message)) => {
                 let timer = Instant::now();
-                handle_queue.as_mut().push((message, timer))
+                message_queue.push_back((message, timer))
             }
             Item::HandleResult(res) => {
                 if let Err(e) = res {

@@ -1,31 +1,33 @@
 use super::{
     committed_state::{CommittedIndexIter, CommittedState},
-    datastore::Result,
+    datastore::{record_metrics, Result},
     sequence::{Sequence, SequencesState},
     state_view::{IndexSeekIterMutTxId, Iter, IterByColRange, ScanIterByColRange, StateView},
+    tx::TxId,
     tx_state::TxState,
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::db::datastore::traits::RowTypeForTable;
 use crate::db::{
     datastore::{
         system_tables::{
-            table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields,
-            StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMNS_ID,
-            ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
+            table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StFields as _,
+            StIndexFields, StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable,
+            ST_COLUMNS_ID, ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
         },
-        traits::TxData,
+        traits::{RowTypeForTable, TxData},
     },
     db_metrics::table_num_rows,
 };
 use crate::{
-    address::Address,
     error::{DBError, IndexError, SequenceError, TableError},
     execution_context::ExecutionContext,
 };
+use core::ops::RangeBounds;
+use spacetimedb_lib::address::Address;
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{
     db::{
+        auth::StAccess,
         def::{
             ConstraintDef, ConstraintSchema, IndexDef, IndexSchema, SequenceDef, SequenceSchema, TableDef, TableSchema,
             SEQUENCE_PREALLOCATION_AMOUNT,
@@ -35,12 +37,10 @@ use spacetimedb_sats::{
     AlgebraicValue, ProductType, ProductValue,
 };
 use spacetimedb_table::{
-    btree_index::BTreeIndex,
     indexes::{RowPointer, SquashedOffset},
     table::{InsertError, RowRef, Table},
 };
 use std::{
-    ops::RangeBounds,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -51,12 +51,10 @@ use std::{
 /// handling can lead to deadlocks. Therefore, it is strongly recommended to use
 /// `Locking::begin_mut_tx()` for instantiation to ensure safe acquisition of locks.
 pub struct MutTxId {
-    pub(crate) tx_state: TxState,
-    pub(crate) committed_state_write_lock: SharedWriteGuard<CommittedState>,
-    pub(crate) sequence_state_lock: SharedMutexGuard<SequencesState>,
-    #[allow(unused)]
-    pub(crate) lock_wait_time: Duration,
-    #[allow(unused)]
+    pub(super) tx_state: TxState,
+    pub(super) committed_state_write_lock: SharedWriteGuard<CommittedState>,
+    pub(super) sequence_state_lock: SharedMutexGuard<SequencesState>,
+    pub(super) lock_wait_time: Duration,
     pub(crate) timer: Instant,
 }
 
@@ -69,7 +67,7 @@ impl MutTxId {
         database_address: Address,
     ) -> Result<()> {
         let ctx = ExecutionContext::internal(database_address);
-        let rows = self.iter_by_col_eq(&ctx, &table_id, col_pos, value)?;
+        let rows = self.iter_by_col_eq(&ctx, table_id, col_pos, value)?;
         let ptrs_to_delete = rows.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>();
         if ptrs_to_delete.is_empty() {
             return Err(TableError::IdNotFound(SystemTable::st_columns, col_pos.0).into());
@@ -239,18 +237,30 @@ impl MutTxId {
 
     pub fn rename_table(&mut self, table_id: TableId, new_name: &str, database_address: Address) -> Result<()> {
         let ctx = ExecutionContext::internal(database_address);
+        // Update the table's name in st_tables.
+        self.update_st_table_row(&ctx, database_address, table_id, |st| st.table_name = new_name.into())
+    }
 
+    fn update_st_table_row(
+        &mut self,
+        ctx: &ExecutionContext,
+        database_address: Address,
+        table_id: TableId,
+        updater: impl FnOnce(&mut StTableRow<Box<str>>),
+    ) -> Result<()> {
+        // Fetch the row.
         let st_table_ref = self
-            .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableId, &table_id.into())?
+            .iter_by_col_eq(ctx, ST_TABLES_ID, StTableFields::TableId, &table_id.into())?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
-        let mut st = StTableRow::try_from(st_table_ref)?;
-        let st_table_ptr = st_table_ref.pointer();
+        let mut row = StTableRow::try_from(st_table_ref)?;
+        let ptr = st_table_ref.pointer();
 
-        self.delete(ST_TABLES_ID, st_table_ptr)?;
-        // Update the table's name in st_tables.
-        st.table_name = new_name.into();
-        self.insert(ST_TABLES_ID, &mut st.into(), database_address)?;
+        // Delete the row, run updates, and insert again.
+        self.delete(ST_TABLES_ID, ptr)?;
+        updater(&mut row);
+        self.insert(ST_TABLES_ID, &mut row.into(), database_address)?;
+
         Ok(())
     }
 
@@ -258,14 +268,40 @@ impl MutTxId {
         let ctx = ExecutionContext::internal(database_address);
         let table_name = &table_name.into();
         let row = self
-            .iter_by_col_eq(&ctx, &ST_TABLES_ID, StTableFields::TableName, table_name)?
+            .iter_by_col_eq(&ctx, ST_TABLES_ID, StTableFields::TableName, table_name)?
             .next();
         Ok(row.map(|row| row.read_col(StTableFields::TableId).unwrap()))
     }
 
     pub fn table_name_from_id<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Option<Box<str>>> {
-        self.iter_by_col_eq(ctx, &ST_TABLES_ID, StTableFields::TableId, &table_id.into())
+        self.iter_by_col_eq(ctx, ST_TABLES_ID, StTableFields::TableId, &table_id.into())
             .map(|mut iter| iter.next().map(|row| row.read_col(StTableFields::TableName).unwrap()))
+    }
+
+    /// Set the table access of `table_id` to `access`.
+    pub(crate) fn alter_table_access(
+        &mut self,
+        database_address: Address,
+        table_id: TableId,
+        access: StAccess,
+    ) -> Result<()> {
+        let ctx = ExecutionContext::internal(database_address);
+
+        // Write to the table in the tx state.
+        let (table, _) = if let Some(pair) = self.tx_state.get_table_and_blob_store(table_id) {
+            pair
+        } else {
+            let schema = self.schema_for_table(&ctx, table_id)?;
+            self.tx_state
+                .insert_tables
+                .insert(table_id, Table::new(schema, SquashedOffset::TX_STATE));
+            self.tx_state.get_table_and_blob_store(table_id).unwrap()
+        };
+        table.with_mut_schema(|s| s.table_access = access);
+
+        // Update system tables.
+        self.update_st_table_row(&ctx, database_address, table_id, |st| st.table_access = access)?;
+        Ok(())
     }
 
     pub fn create_index(&mut self, table_id: TableId, index: IndexDef, database_address: Address) -> Result<IndexId> {
@@ -275,7 +311,7 @@ impl MutTxId {
             table_id,
             index.columns
         );
-        if self.table_exists(&table_id).is_none() {
+        if self.table_name(table_id).is_none() {
             return Err(TableError::IdNotFoundState(table_id).into());
         }
 
@@ -320,17 +356,11 @@ impl MutTxId {
             let schema = self.schema_for_table(&ctx, table_id)?;
             self.tx_state
                 .insert_tables
-                .insert(index.table_id, Table::new(schema, SquashedOffset::TX_STATE));
+                .insert(table_id, Table::new(schema, SquashedOffset::TX_STATE));
             self.tx_state.get_table_and_blob_store(table_id).unwrap()
         };
 
-        let mut insert_index = BTreeIndex::new(
-            index.index_id,
-            table.row_layout(),
-            &index.columns,
-            index.is_unique,
-            index.index_name.clone(),
-        )?;
+        let mut insert_index = table.new_index(index.index_id, &index.columns, index.is_unique)?;
         insert_index.build_from_rows(&index.columns, table.scan_rows(blob_store))?;
 
         // NOTE: Also add all the rows in the already committed table to the index.
@@ -365,7 +395,7 @@ impl MutTxId {
         let ctx = ExecutionContext::internal(database_address);
 
         let st_index_ref = self
-            .iter_by_col_eq(&ctx, &ST_INDEXES_ID, StIndexFields::IndexId, &index_id.into())?
+            .iter_by_col_eq(&ctx, ST_INDEXES_ID, StIndexFields::IndexId, &index_id.into())?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_indexes, index_id.into()))?;
         let table_id = st_index_ref.read_col(StIndexFields::TableId)?;
@@ -404,7 +434,7 @@ impl MutTxId {
     pub fn index_id_from_name(&self, index_name: &str, database_address: Address) -> Result<Option<IndexId>> {
         let ctx = ExecutionContext::internal(database_address);
         let name = &<Box<str>>::from(index_name).into();
-        self.iter_by_col_eq(&ctx, &ST_INDEXES_ID, StIndexFields::IndexName, name)
+        self.iter_by_col_eq(&ctx, ST_INDEXES_ID, StIndexFields::IndexName, name)
             .map(|mut iter| iter.next().map(|row| row.read_col(StIndexFields::IndexId).unwrap()))
     }
 
@@ -424,7 +454,7 @@ impl MutTxId {
         // If we're out of allocations, then update the sequence row in st_sequences to allocate a fresh batch of sequences.
         let ctx = ExecutionContext::internal(database_address);
         let old_seq_row_ref = self
-            .iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, StSequenceFields::SequenceId, &seq_id.into())?
+            .iter_by_col_eq(&ctx, ST_SEQUENCES_ID, StSequenceFields::SequenceId, &seq_id.into())?
             .last()
             .unwrap();
         let old_seq_row_ptr = old_seq_row_ref.pointer();
@@ -497,12 +527,7 @@ impl MutTxId {
         let ctx = ExecutionContext::internal(database_address);
 
         let st_sequence_ref = self
-            .iter_by_col_eq(
-                &ctx,
-                &ST_SEQUENCES_ID,
-                StSequenceFields::SequenceId,
-                &sequence_id.into(),
-            )?
+            .iter_by_col_eq(&ctx, ST_SEQUENCES_ID, StSequenceFields::SequenceId, &sequence_id.into())?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_sequence, sequence_id.into()))?;
         let table_id = st_sequence_ref.read_col(StSequenceFields::TableId)?;
@@ -525,7 +550,7 @@ impl MutTxId {
     pub fn sequence_id_from_name(&self, seq_name: &str, database_address: Address) -> Result<Option<SequenceId>> {
         let ctx = ExecutionContext::internal(database_address);
         let name = &<Box<str>>::from(seq_name).into();
-        self.iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, StSequenceFields::SequenceName, name)
+        self.iter_by_col_eq(&ctx, ST_SEQUENCES_ID, StSequenceFields::SequenceName, name)
             .map(|mut iter| {
                 iter.next()
                     .map(|row| row.read_col(StSequenceFields::SequenceId).unwrap())
@@ -597,7 +622,7 @@ impl MutTxId {
         let st_constraint_ref = self
             .iter_by_col_eq(
                 &ctx,
-                &ST_CONSTRAINTS_ID,
+                ST_CONSTRAINTS_ID,
                 StConstraintFields::ConstraintId,
                 &constraint_id.into(),
             )?
@@ -624,7 +649,7 @@ impl MutTxId {
     ) -> Result<Option<ConstraintId>> {
         self.iter_by_col_eq(
             &ExecutionContext::internal(database_address),
-            &ST_CONSTRAINTS_ID,
+            ST_CONSTRAINTS_ID,
             StConstraintFields::ConstraintName,
             &<Box<str>>::from(constraint_name).into(),
         )
@@ -652,7 +677,7 @@ impl MutTxId {
     // and has not been passed to `self.delete`
     // is sufficient to demonstrate that a call to `self.get` is safe.
     pub fn get(&self, table_id: TableId, row_ptr: RowPointer) -> Result<Option<RowRef<'_>>> {
-        if self.table_exists(&table_id).is_none() {
+        if self.table_name(table_id).is_none() {
             return Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into());
         }
         Ok(match row_ptr.squashed_offset() {
@@ -686,17 +711,66 @@ impl MutTxId {
             tx_state,
             ..
         } = self;
-        committed_state_write_lock.merge(tx_state, ctx)
+        let tx_data = committed_state_write_lock.merge(tx_state, ctx);
+        // Record metrics for the transaction at the very end,
+        // right before we drop and release the lock.
+        record_metrics(
+            ctx,
+            self.timer,
+            self.lock_wait_time,
+            false,
+            Some(&tx_data),
+            Some(&committed_state_write_lock),
+        );
+        tx_data
     }
 
-    pub fn rollback(self) {
-        // TODO: Check that no sequences exceed their allocation after the rollback.
+    pub fn commit_downgrade(self, ctx: &ExecutionContext) -> (TxData, TxId) {
+        let Self {
+            mut committed_state_write_lock,
+            tx_state,
+            ..
+        } = self;
+        let tx_data = committed_state_write_lock.merge(tx_state, ctx);
+        // Record metrics for the transaction at the very end,
+        // right before we drop and release the lock.
+        record_metrics(
+            ctx,
+            self.timer,
+            self.lock_wait_time,
+            false,
+            Some(&tx_data),
+            Some(&committed_state_write_lock),
+        );
+        let tx = TxId {
+            committed_state_shared_lock: SharedWriteGuard::downgrade(committed_state_write_lock),
+            lock_wait_time: Duration::ZERO,
+            timer: Instant::now(),
+        };
+        (tx_data, tx)
+    }
+
+    pub fn rollback(self, ctx: &ExecutionContext) {
+        // Record metrics for the transaction at the very end,
+        // right before we drop and release the lock.
+        record_metrics(ctx, self.timer, self.lock_wait_time, false, None, None);
+    }
+
+    pub fn rollback_downgrade(self, ctx: &ExecutionContext) -> TxId {
+        // Record metrics for the transaction at the very end,
+        // right before we drop and release the lock.
+        record_metrics(ctx, self.timer, self.lock_wait_time, false, None, None);
+        TxId {
+            committed_state_shared_lock: SharedWriteGuard::downgrade(self.committed_state_write_lock),
+            lock_wait_time: Duration::ZERO,
+            timer: Instant::now(),
+        }
     }
 }
 
 /// Either a row just inserted to a table or a row that already existed in some table.
 #[derive(Clone, Copy)]
-pub enum RowRefInsertion<'a> {
+pub(super) enum RowRefInsertion<'a> {
     /// The row was just inserted.
     Inserted(RowRef<'a>),
     /// The row already existed.
@@ -713,7 +787,7 @@ impl RowRefInsertion<'_> {
 }
 
 impl MutTxId {
-    pub fn insert(
+    pub(super) fn insert(
         &mut self,
         table_id: TableId,
         row: &mut ProductValue,
@@ -731,7 +805,7 @@ impl MutTxId {
             .iter()
             .filter(|seq| row.elements[usize::from(seq.col_pos)].is_numeric_zero())
         {
-            for seq_row in self.iter_by_col_eq(&ctx, &ST_SEQUENCES_ID, StSequenceFields::TableId, &table_id.into())? {
+            for seq_row in self.iter_by_col_eq(&ctx, ST_SEQUENCES_ID, StSequenceFields::TableId, &table_id.into())? {
                 let seq_col_pos: ColId = seq_row.read_col(StSequenceFields::ColPos)?;
                 if seq_col_pos == seq.col_pos {
                     let seq_id = seq_row.read_col(StSequenceFields::SequenceId)?;
@@ -760,7 +834,7 @@ impl MutTxId {
         self.insert_row_internal(table_id, row)
     }
 
-    pub fn insert_row_internal(&mut self, table_id: TableId, row: &ProductValue) -> Result<RowRefInsertion<'_>> {
+    pub(super) fn insert_row_internal(&mut self, table_id: TableId, row: &ProductValue) -> Result<RowRefInsertion<'_>> {
         let commit_table = self.committed_state_write_lock.get_table(table_id);
 
         // Check for constraint violations as early as possible,
@@ -854,7 +928,7 @@ impl MutTxId {
         }
     }
 
-    pub fn delete(&mut self, table_id: TableId, row_pointer: RowPointer) -> Result<bool> {
+    pub(super) fn delete(&mut self, table_id: TableId, row_pointer: RowPointer) -> Result<bool> {
         match row_pointer.squashed_offset() {
             // For newly-inserted rows,
             // just delete them from the insert tables
@@ -877,7 +951,7 @@ impl MutTxId {
         }
     }
 
-    pub fn delete_by_row_value(&mut self, table_id: TableId, rel: &ProductValue) -> Result<bool> {
+    pub(super) fn delete_by_row_value(&mut self, table_id: TableId, rel: &ProductValue) -> Result<bool> {
         // Four cases here:
         // - Table exists in both tx_state and committed_state.
         //   - Temporary insert into tx_state.
@@ -913,7 +987,7 @@ impl MutTxId {
                 "Table::insert_internal_allow_duplicates returned error of unexpected variant: {:?}",
                 e
             ),
-            Ok(row_ref) => {
+            Ok((row_ref, _)) => {
                 let hash = row_ref.row_hash();
                 let ptr = row_ref.pointer();
 
@@ -955,26 +1029,22 @@ impl MutTxId {
 }
 
 impl StateView for MutTxId {
-    fn get_schema(&self, table_id: &TableId) -> Option<&Arc<TableSchema>> {
-        if let Some(row_type) = self
-            .tx_state
+    fn get_schema(&self, table_id: TableId) -> Option<&Arc<TableSchema>> {
+        // TODO(bikeshedding, docs): should this also check if the schema is in the system tables,
+        // but the table hasn't been constructed yet?
+        // If not, document why.
+        self.tx_state
             .insert_tables
-            .get(table_id)
-            .map(|table| table.get_schema())
-        {
-            return Some(row_type);
-        }
-        self.committed_state_write_lock
-            .tables
-            .get(table_id)
+            .get(&table_id)
+            .or_else(|| self.committed_state_write_lock.tables.get(&table_id))
             .map(|table| table.get_schema())
     }
 
-    fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: &TableId) -> Result<Iter<'a>> {
-        if let Some(table_name) = self.table_exists(table_id) {
+    fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Iter<'a>> {
+        if let Some(table_name) = self.table_name(table_id) {
             return Ok(Iter::new(
                 ctx,
-                *table_id,
+                table_id,
                 table_name,
                 Some(&self.tx_state),
                 &self.committed_state_write_lock,
@@ -983,23 +1053,10 @@ impl StateView for MutTxId {
         Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
     }
 
-    fn table_exists(&self, table_id: &TableId) -> Option<&str> {
-        // TODO(bikeshedding, docs): should this also check if the schema is in the system tables,
-        // but the table hasn't been constructed yet?
-        // If not, document why.
-        if let Some(table) = self.tx_state.insert_tables.get(table_id) {
-            Some(&table.schema.table_name)
-        } else if let Some(table) = self.committed_state_write_lock.tables.get(table_id) {
-            Some(&table.schema.table_name)
-        } else {
-            None
-        }
-    }
-
     fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
         &'a self,
         ctx: &'a ExecutionContext,
-        table_id: &TableId,
+        table_id: TableId,
         cols: ColList,
         range: R,
     ) -> Result<IterByColRange<'a, R>> {
@@ -1014,31 +1071,31 @@ impl StateView for MutTxId {
         // TODO(george): It's unclear that we truly support dynamically creating an index
         // yet. In particular, I don't know if creating an index in a transaction and
         // rolling it back will leave the index in place.
-        if let Some(inserted_rows) = self.tx_state.index_seek(*table_id, &cols, &range) {
+        if let Some(inserted_rows) = self.tx_state.index_seek(table_id, &cols, &range) {
             // The current transaction has modified this table, and the table is indexed.
             Ok(IterByColRange::Index(IndexSeekIterMutTxId {
                 ctx,
-                table_id: *table_id,
+                table_id,
                 tx_state: &self.tx_state,
                 inserted_rows,
-                committed_rows: self.committed_state_write_lock.index_seek(*table_id, &cols, &range),
+                committed_rows: self.committed_state_write_lock.index_seek(table_id, &cols, &range),
                 committed_state: &self.committed_state_write_lock,
                 num_committed_rows_fetched: 0,
             }))
         } else {
             // Either the current transaction has not modified this table, or the table is not
             // indexed.
-            match self.committed_state_write_lock.index_seek(*table_id, &cols, &range) {
+            match self.committed_state_write_lock.index_seek(table_id, &cols, &range) {
                 Some(committed_rows) => Ok(IterByColRange::CommittedIndex(CommittedIndexIter::new(
                     ctx,
-                    *table_id,
+                    table_id,
                     Some(&self.tx_state),
                     &self.committed_state_write_lock,
                     committed_rows,
                 ))),
                 None => {
                     #[cfg(feature = "unindexed_iter_by_col_range_warn")]
-                    match self.schema_for_table(ctx, *table_id) {
+                    match self.schema_for_table(ctx, table_id) {
                         // TODO(ux): log these warnings to the module logs rather than host logs.
                         Err(e) => log::error!(
                             "iter_by_col_range on unindexed column, but got error from `schema_for_table` during diagnostics: {e:?}",
@@ -1047,7 +1104,7 @@ impl StateView for MutTxId {
                             const TOO_MANY_ROWS_FOR_SCAN: u64 = 1000;
 
                             let table_name = &schema.table_name;
-                            let num_rows = table_num_rows(ctx.database(), *table_id, table_name);
+                            let num_rows = table_num_rows(ctx.database(), table_id, table_name);
 
                             if num_rows >= TOO_MANY_ROWS_FOR_SCAN {
                                 let col_names = cols.iter()

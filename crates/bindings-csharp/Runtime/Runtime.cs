@@ -3,11 +3,13 @@ namespace SpacetimeDB;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
-using SpacetimeDB.SATS;
+using SpacetimeDB.BSATN;
 using static System.Text.Encoding;
 
-public static class Runtime
+public static partial class Runtime
 {
     [SpacetimeDB.Type]
     public enum IndexType : byte
@@ -24,54 +26,48 @@ public static class Runtime
         return result;
     }
 
-    private class BufferIter : IEnumerator<byte[]>, IDisposable
+    private class RowIter(RawBindings.RowIter handle) : IEnumerator<byte[]>, IDisposable
     {
-        private RawBindings.BufferIter handle;
+        private byte[] buffer = new byte[0x20_000];
         public byte[] Current { get; private set; } = [];
 
         object IEnumerator.Current => Current;
 
-        public BufferIter(RawBindings.TableId table_id, byte[]? filterBytes)
-        {
-            if (filterBytes is null)
-            {
-                RawBindings._iter_start(table_id, out handle);
-            }
-            else
-            {
-                RawBindings._iter_start_filtered(
-                    table_id,
-                    filterBytes,
-                    (uint)filterBytes.Length,
-                    out handle
-                );
-            }
-        }
-
         public bool MoveNext()
         {
-            RawBindings._iter_next(handle, out var nextBuf);
-            if (nextBuf.Equals(RawBindings.Buffer.INVALID))
+            uint buffer_len;
+            while (true)
             {
-                return false;
+                buffer_len = (uint)buffer.Length;
+                try
+                {
+                    RawBindings._iter_advance(handle, buffer, ref buffer_len);
+                }
+                catch (RawBindings.BufferTooSmallException)
+                {
+                    buffer = new byte[buffer_len];
+                    continue;
+                }
+                break;
             }
-            Current = nextBuf.Consume();
-            return true;
+            Current = new byte[buffer_len];
+            Array.Copy(buffer, 0, Current, 0, buffer_len);
+            return buffer_len != 0;
         }
 
         public void Dispose()
         {
-            if (!handle.Equals(RawBindings.BufferIter.INVALID))
+            if (!handle.Equals(RawBindings.RowIter.INVALID))
             {
                 RawBindings._iter_drop(handle);
-                handle = RawBindings.BufferIter.INVALID;
-                // Avoid running ~BufferIter if Dispose was executed successfully.
+                handle = RawBindings.RowIter.INVALID;
+                // Avoid running ~RowIter if Dispose was executed successfully.
                 GC.SuppressFinalize(this);
             }
         }
 
         // Free unmanaged resource just in case user hasn't disposed for some reason.
-        ~BufferIter()
+        ~RowIter()
         {
             // we already guard against double-free in Dispose.
             Dispose();
@@ -83,21 +79,62 @@ public static class Runtime
         }
     }
 
-    public class RawTableIter(RawBindings.TableId tableId, byte[]? filterBytes = null)
-        : IEnumerable<byte[]>
+    public abstract class RawTableIterBase : IEnumerable<byte[]>
     {
-        private readonly RawBindings.TableId tableId = tableId;
-        private readonly byte[]? filterBytes = filterBytes;
+        protected abstract void IterStart(out RawBindings.RowIter handle);
 
         public IEnumerator<byte[]> GetEnumerator()
         {
-            return new BufferIter(tableId, filterBytes);
+            IterStart(out var handle);
+            return new RowIter(handle);
         }
 
-        IEnumerator IEnumerable.GetEnumerator()
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        private static IEnumerable<T> ParseChunk<T>(byte[] chunk)
+            where T : IStructuralReadWrite, new()
         {
-            return GetEnumerator();
+            using var stream = new MemoryStream(chunk);
+            using var reader = new BinaryReader(stream);
+            while (stream.Position < stream.Length)
+            {
+                yield return IStructuralReadWrite.Read<T>(reader);
+            }
         }
+
+        public IEnumerable<T> Parse<T>()
+            where T : IStructuralReadWrite, new()
+        {
+            return this.SelectMany(ParseChunk<T>);
+        }
+    }
+
+    public class RawTableIter(RawBindings.TableId tableId) : RawTableIterBase
+    {
+        protected override void IterStart(out RawBindings.RowIter handle) =>
+            RawBindings._iter_start(tableId, out handle);
+    }
+
+    public class RawTableIterFiltered(RawBindings.TableId tableId, byte[] filterBytes)
+        : RawTableIterBase
+    {
+        protected override void IterStart(out RawBindings.RowIter handle) =>
+            RawBindings._iter_start_filtered(
+                tableId,
+                filterBytes,
+                (uint)filterBytes.Length,
+                out handle
+            );
+    }
+
+    public class RawTableIterByColEq(
+        RawBindings.TableId tableId,
+        RawBindings.ColId colId,
+        byte[] value
+    ) : RawTableIterBase
+    {
+        protected override void IterStart(out RawBindings.RowIter handle) =>
+            RawBindings._iter_by_col_eq(tableId, colId, value, (uint)value.Length, out handle);
     }
 
     public enum LogLevel : byte
@@ -134,12 +171,11 @@ public static class Runtime
         );
     }
 
-    public struct Identity(byte[] bytes) : IEquatable<Identity>
+    public readonly struct Identity(byte[] bytes) : IEquatable<Identity>
     {
         private readonly byte[] bytes = bytes;
 
-        public bool Equals(Identity other) =>
-            StructuralComparisons.StructuralEqualityComparer.Equals(bytes, other.bytes);
+        public bool Equals(Identity other) => bytes.SequenceEqual(other.bytes);
 
         public override bool Equals(object? obj) => obj is Identity other && Equals(other);
 
@@ -152,32 +188,30 @@ public static class Runtime
 
         public override string ToString() => BitConverter.ToString(bytes);
 
-        private static SpacetimeDB.SATS.TypeInfo<Identity> satsTypeInfo =
-            new(
-                // We need to set type info to inlined identity type as `generate` CLI currently can't recognise type references for built-ins.
-                new SpacetimeDB.SATS.AlgebraicType.Product(
-                    [
-                        new(
-                            "__identity_bytes",
-                            SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.AlgebraicType
-                        )
-                    ]
-                ),
-                reader => new(SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.Read(reader)),
-                (writer, value) =>
-                    SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.Write(writer, value.bytes)
-            );
+        // We need to implement this manually because `spacetime generate` only
+        // recognises inline product type with special field name and
+        // not types registered on ModuleDef (which is what [SpacetimeDB.Type] does).
+        public readonly struct BSATN : IReadWrite<Identity>
+        {
+            public Identity Read(BinaryReader reader) => new(ByteArray.Instance.Read(reader));
 
-        public static SpacetimeDB.SATS.TypeInfo<Identity> GetSatsTypeInfo() => satsTypeInfo;
+            public void Write(BinaryWriter writer, Identity value) =>
+                ByteArray.Instance.Write(writer, value.bytes);
+
+            public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
+                new AlgebraicType.Product(
+                    // Special name recognised by STDB generator.
+                    [new("__identity_bytes", ByteArray.Instance.GetAlgebraicType(registrar))]
+                );
+        }
     }
 
-    public struct Address(byte[] bytes) : IEquatable<Address>
+    public readonly struct Address(byte[] bytes) : IEquatable<Address>
     {
         private readonly byte[] bytes = bytes;
         public static readonly Address Zero = new(new byte[16]);
 
-        public bool Equals(Address other) =>
-            StructuralComparisons.StructuralEqualityComparer.Equals(bytes, other.bytes);
+        public bool Equals(Address other) => bytes.SequenceEqual(other.bytes);
 
         public override bool Equals(object? obj) => obj is Address other && Equals(other);
 
@@ -190,30 +224,22 @@ public static class Runtime
 
         public override string ToString() => BitConverter.ToString(bytes);
 
-        private static SpacetimeDB.SATS.TypeInfo<Address> satsTypeInfo =
-            new(
-                // We need to set type info to inlined address type as `generate` CLI currently can't recognise type references for built-ins.
-                new SpacetimeDB.SATS.AlgebraicType.Product(
-                    [
-                        new(
-                            "__address_bytes",
-                            SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.AlgebraicType
-                        )
-                    ]
-                ),
-                // Concern: We use this "packed" representation (as Bytes)
-                //          in the caller_id field of reducer arguments,
-                //          but in table rows,
-                //          we send the "unpacked" representation as a product value.
-                //          It's possible that these happen to be identical
-                //          because BSATN is minimally self-describing,
-                //          but that doesn't seem like something we should count on.
-                reader => new(SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.Read(reader)),
-                (writer, value) =>
-                    SpacetimeDB.SATS.BuiltinType.BytesTypeInfo.Write(writer, value.bytes)
-            );
+        // We need to implement this manually because `spacetime generate` only
+        // recognises inline product type with special field name and
+        // not types registered on ModuleDef (which is what [SpacetimeDB.Type] does).
+        public readonly struct BSATN : IReadWrite<Address>
+        {
+            public Address Read(BinaryReader reader) => new(ByteArray.Instance.Read(reader));
 
-        public static SpacetimeDB.SATS.TypeInfo<Address> GetSatsTypeInfo() => satsTypeInfo;
+            public void Write(BinaryWriter writer, Address value) =>
+                ByteArray.Instance.Write(writer, value.bytes);
+
+            public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
+                new AlgebraicType.Product(
+                    // Special name recognised by STDB generator.
+                    [new("__address_bytes", ByteArray.Instance.GetAlgebraicType(registrar))]
+                );
+        }
     }
 
     public class ReducerContext
@@ -260,9 +286,12 @@ public static class Runtime
         return out_;
     }
 
-    public static void Insert(RawBindings.TableId tableId, byte[] row)
+    public static byte[] Insert<T>(RawBindings.TableId tableId, T row)
+        where T : IStructuralReadWrite
     {
-        RawBindings._insert(tableId, row, (uint)row.Length);
+        var bytes = IStructuralReadWrite.ToBytes(row);
+        RawBindings._insert(tableId, bytes, (uint)bytes.Length);
+        return bytes;
     }
 
     public static uint DeleteByColEq(
@@ -275,12 +304,13 @@ public static class Runtime
         return out_;
     }
 
-    public static bool UpdateByColEq(
+    public static bool UpdateByColEq<T>(
         RawBindings.TableId tableId,
         RawBindings.ColId colId,
         byte[] value,
-        byte[] row
+        T row
     )
+        where T : IStructuralReadWrite
     {
         // Just like in Rust bindings, updating is just deleting and inserting for now.
         if (DeleteByColEq(tableId, colId, value) > 0)
@@ -292,15 +322,5 @@ public static class Runtime
         {
             return false;
         }
-    }
-
-    public static byte[] IterByColEq(
-        RawBindings.TableId tableId,
-        RawBindings.ColId colId,
-        byte[] value
-    )
-    {
-        RawBindings._iter_by_col_eq(tableId, colId, value, (uint)value.Length, out var buf);
-        return buf.Consume();
     }
 }

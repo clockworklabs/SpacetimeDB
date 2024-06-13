@@ -56,6 +56,7 @@ built_in_into!(f32, F32);
 built_in_into!(f64, F64);
 built_in_into!(&str, String);
 built_in_into!(&[u8], Bytes);
+built_in_into!(Box<[u8]>, Bytes);
 
 macro_rules! system_id {
     ($name:ident) => {

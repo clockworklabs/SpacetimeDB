@@ -8,6 +8,10 @@ pub use nohash_hasher::IsEnabled as ValidAsIdentityHash;
 /// which is valid for any key type that can be converted to a `u64` without truncation.
 pub type IntMap<K, V> = HashMap<K, V, BuildNoHashHasher<K>>;
 
+/// A version of [`HashSet<K>`] using the identity hash function,
+/// which is valid for any key type that can be converted to a `u64` without truncation.
+pub type IntSet<K> = HashSet<K, BuildNoHashHasher<K>>;
+
 pub trait HashCollectionExt {
     /// Returns a new collection with default capacity, using `S::default()` to build the hasher.
     fn new() -> Self;

@@ -1,9 +1,8 @@
 use core::hash::{Hash, Hasher};
 use spacetimedb_sats::bsatn::ser::BsatnError;
 use spacetimedb_sats::db::auth::StAccess;
-use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::product_value::ProductValue;
-use spacetimedb_sats::relation::{FieldExpr, FieldExprRef, FieldName, Header, Relation, RowCount};
+use spacetimedb_sats::relation::{ColExpr, ColExprRef, Header};
 use spacetimedb_sats::{bsatn, impl_serialize, AlgebraicValue};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;
@@ -14,7 +13,7 @@ use std::sync::Arc;
 /// a reference to an inserted row,
 /// or an ephemeral row constructed during query execution.
 ///
-/// A `RelValue` is the type generated/consumed by a [Relation] operator.
+/// A `RelValue` is the type generated/consumed by queries.
 #[derive(Debug, Clone)]
 pub enum RelValue<'a> {
     /// A reference to a row in a table.
@@ -116,34 +115,22 @@ impl<'a> RelValue<'a> {
         }
     }
 
-    pub fn get<'b>(
-        &'a self,
-        col: FieldExprRef<'a>,
-        header: &'b Header,
-    ) -> Result<Cow<'a, AlgebraicValue>, RelationError> {
-        let val = match col {
-            FieldExprRef::Name(col) => {
-                let pos = header.column_pos_or_err(col)?.idx();
-                self.read_column(pos)
-                    .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, col))?
-            }
-            FieldExprRef::Value(x) => Cow::Borrowed(x),
-        };
-
-        Ok(val)
-    }
-
-    pub fn project(&self, cols: &[FieldExprRef<'_>], header: &'a Header) -> Result<ProductValue, RelationError> {
-        let mut elements = Vec::with_capacity(cols.len());
-        for col in cols {
-            elements.push(self.get(*col, header)?.into_owned());
+    /// Returns a column either at the index specified in `col`,
+    /// or the column is the value that `col` holds.
+    ///
+    /// Panics if, for `ColExprRef::Col(col)`, the `col` is out of bounds of `self`.
+    pub fn get(&'a self, col: ColExprRef<'a>) -> Cow<'a, AlgebraicValue> {
+        match col {
+            ColExprRef::Col(col) => self.read_column(col.idx()).unwrap(),
+            ColExprRef::Value(x) => Cow::Borrowed(x),
         }
-        Ok(elements.into())
     }
 
     /// Reads or takes the column at `col`.
     /// Calling this method consumes the column at `col` for a `RelValue::Projection`,
     /// so it should not be called again for the same input.
+    ///
+    /// Panics if `col` is out of bounds of `self`.
     pub fn read_or_take_column(&mut self, col: usize) -> Option<AlgebraicValue> {
         match self {
             Self::Row(row_ref) => AlgebraicValue::read_column(*row_ref, col).ok(),
@@ -152,20 +139,17 @@ impl<'a> RelValue<'a> {
         }
     }
 
-    pub fn project_owned(mut self, cols: &[FieldExpr], header: &Header) -> Result<ProductValue, RelationError> {
-        let mut elements = Vec::with_capacity(cols.len());
-        for col in cols {
-            let val = match col {
-                FieldExpr::Name(col) => {
-                    let pos = header.column_pos_or_err(*col)?.idx();
-                    self.read_or_take_column(pos)
-                        .ok_or_else(|| RelationError::FieldNotFoundAtPos(pos, *col))?
-                }
-                FieldExpr::Value(x) => x.clone(),
-            };
-            elements.push(val);
-        }
-        Ok(elements.into())
+    /// Turns `cols` into a product
+    /// where a value in `cols` is taken directly from it and indices are taken from `self`.
+    ///
+    /// Panics on an index that is out of bounds of `self`.
+    pub fn project_owned(mut self, cols: &[ColExpr]) -> ProductValue {
+        cols.iter()
+            .map(|col| match col {
+                ColExpr::Col(col) => self.read_or_take_column(col.idx()).unwrap(),
+                ColExpr::Value(x) => x.clone(),
+            })
+            .collect()
     }
 
     /// BSATN-encode the row referred to by `self` into `buf`,
@@ -213,19 +197,5 @@ impl MemTable {
             data: data.into_iter().collect(),
             table_access: StAccess::Public,
         }
-    }
-
-    pub fn get_field_pos(&self, pos: usize) -> Option<&FieldName> {
-        self.head.fields.get(pos).map(|x| &x.field)
-    }
-}
-
-impl Relation for MemTable {
-    fn head(&self) -> &Arc<Header> {
-        &self.head
-    }
-
-    fn row_count(&self) -> RowCount {
-        RowCount::exact(self.data.len())
     }
 }

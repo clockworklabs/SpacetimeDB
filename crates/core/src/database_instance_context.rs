@@ -1,8 +1,8 @@
 use super::database_logger::DatabaseLogger;
 use crate::db::relational_db::RelationalDB;
-use crate::db::{Config, Storage};
 use crate::error::DBError;
 use crate::messages::control_db::Database;
+use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use std::io;
 use std::ops::Deref;
 use std::path::PathBuf;
@@ -10,40 +10,17 @@ use std::sync::Arc;
 
 pub type Result<T> = anyhow::Result<T>;
 
+/// A "live" database.
 #[derive(Clone)]
 pub struct DatabaseInstanceContext {
     pub database: Database,
     pub database_instance_id: u64,
     pub logger: Arc<DatabaseLogger>,
+    pub subscriptions: ModuleSubscriptions,
     pub relational_db: Arc<RelationalDB>,
 }
 
 impl DatabaseInstanceContext {
-    pub fn from_database(
-        config: Config,
-        database: Database,
-        instance_id: u64,
-        root_db_path: PathBuf,
-        rt: tokio::runtime::Handle,
-    ) -> Result<Self> {
-        let mut db_path = root_db_path;
-        db_path.extend([&*database.address.to_hex(), &*instance_id.to_string()]);
-        db_path.push("database");
-
-        let log_path = DatabaseLogger::filepath(&database.address, instance_id);
-        let relational_db = match config.storage {
-            Storage::Memory => RelationalDB::open(db_path, database.address, None)?,
-            Storage::Disk => RelationalDB::local(db_path, rt, database.address)?,
-        };
-
-        Ok(Self {
-            database,
-            database_instance_id: instance_id,
-            logger: Arc::new(DatabaseLogger::open(log_path)),
-            relational_db: Arc::new(relational_db),
-        })
-    }
-
     pub fn scheduler_db_path(&self, root_db_path: PathBuf) -> PathBuf {
         let mut scheduler_db_path = root_db_path;
         scheduler_db_path.extend([&*self.address.to_hex(), &*self.database_instance_id.to_string()]);
@@ -60,7 +37,7 @@ impl DatabaseInstanceContext {
 
     /// The size of the log file.
     pub fn log_file_size(&self) -> std::result::Result<u64, DBError> {
-        self.logger.size()
+        Ok(self.logger.size()?)
     }
 
     /// Obtain an array which can be summed to obtain the total disk usage.
@@ -84,8 +61,8 @@ impl Deref for DatabaseInstanceContext {
 
 #[derive(Copy, Clone, Default)]
 pub struct TotalDiskUsage {
-    durability: Option<u64>,
-    logs: Option<u64>,
+    pub durability: Option<u64>,
+    pub logs: Option<u64>,
 }
 
 impl TotalDiskUsage {

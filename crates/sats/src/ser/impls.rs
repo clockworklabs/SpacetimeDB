@@ -238,3 +238,6 @@ impl_serialize!([] ColList, (self, ser) => {
        }
        arr.end()
 });
+
+#[cfg(feature = "blake3")]
+impl_serialize!([] blake3::Hash, (self, ser) => self.as_bytes().serialize(ser));

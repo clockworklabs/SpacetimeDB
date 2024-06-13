@@ -7,12 +7,10 @@ use http::StatusCode;
 use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
-use spacetimedb::database_instance_context_controller::DatabaseInstanceContextController;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
 use spacetimedb::host::{HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance, IdentityEmail, Node};
-use spacetimedb::module_host_context::ModuleHostContext;
+use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, IdentityEmail, Node};
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, Tld};
 use spacetimedb_client_api_messages::recovery::RecoveryCode;
@@ -26,11 +24,9 @@ pub mod util;
 ///
 /// Types returned here should be considered internal state and **never** be
 /// surfaced to the API.
-#[async_trait]
 pub trait NodeDelegate: Send + Sync {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily>;
-    fn database_instance_context_controller(&self) -> &DatabaseInstanceContextController;
-    fn host_controller(&self) -> &Arc<HostController>;
+    fn host_controller(&self) -> &HostController;
     fn client_actor_index(&self) -> &ClientActorIndex;
     fn sendgrid_controller(&self) -> Option<&SendGridController>;
 
@@ -44,16 +40,6 @@ pub trait NodeDelegate: Send + Sync {
 
     /// Return a JWT encoding key for signing credentials.
     fn private_key(&self) -> &EncodingKey;
-
-    /// Load the [`ModuleHostContext`] for instance `instance_id` of
-    /// [`Database`] `db`.
-    ///
-    /// This method is defined as `async`, as that obliges the implementer to
-    /// ensure that any necessary blocking I/O is made async-safe. In other
-    /// words, it is the responsibility of the implementation to make use of
-    /// `spawn_blocking` or `block_in_place` as appropriate, while the
-    /// `client-api` assumes that `await`ing the method never blocks.
-    async fn load_module_host_context(&self, db: Database, instance_id: u64) -> anyhow::Result<ModuleHostContext>;
 }
 
 /// Parameters for publishing a database.
@@ -68,6 +54,8 @@ pub struct DatabaseDef {
     pub program_bytes: Vec<u8>,
     /// The desired number of replicas the database shall have.
     pub num_replicas: u32,
+    /// The host type of the supplied program.
+    pub host_type: HostType,
 }
 
 /// API of the SpacetimeDB control plane.
@@ -276,17 +264,12 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
     }
 }
 
-#[async_trait]
 impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         (**self).gather_metrics()
     }
 
-    fn database_instance_context_controller(&self) -> &DatabaseInstanceContextController {
-        (**self).database_instance_context_controller()
-    }
-
-    fn host_controller(&self) -> &Arc<HostController> {
+    fn host_controller(&self) -> &HostController {
         (**self).host_controller()
     }
 
@@ -308,10 +291,6 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
 
     fn sendgrid_controller(&self) -> Option<&SendGridController> {
         (**self).sendgrid_controller()
-    }
-
-    async fn load_module_host_context(&self, db: Database, instance_id: u64) -> anyhow::Result<ModuleHostContext> {
-        (**self).load_module_host_context(db, instance_id).await
     }
 }
 

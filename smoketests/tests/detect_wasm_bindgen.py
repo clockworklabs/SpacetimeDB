@@ -23,3 +23,22 @@ extern "C" {
         output = self.spacetime("build", "--project-path", self.project_path, full_output=True, check=False)
         self.assertTrue(output.returncode)
         self.assertIn("wasm-bindgen detected", output.stderr)
+
+class Getrandom(Smoketest):
+    AUTOPUBLISH = False
+    MODULE_CODE = """
+use spacetimedb::{log, spacetimedb};
+
+#[spacetimedb(reducer)]
+pub fn test() {
+    log::info!("Hello! {}", rand::random::<u8>());
+}
+"""
+    EXTRA_DEPS = 'rand = "0.8"'
+
+    def test_detect_getrandom(self):
+        """Ensure that spacetime build properly catches getrandom"""
+
+        output = self.spacetime("build", "--project-path", self.project_path, full_output=True, check=False)
+        self.assertTrue(output.returncode)
+        self.assertIn("getrandom usage detected", output.stderr)

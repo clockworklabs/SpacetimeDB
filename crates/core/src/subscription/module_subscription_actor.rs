@@ -4,23 +4,30 @@ use super::query::compile_read_only_query;
 use super::subscription::ExecutionSet;
 use crate::client::messages::{SubscriptionUpdate, SubscriptionUpdateMessage, TransactionUpdateMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
-use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::datastore::system_tables::StVarTable;
+use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::protobuf::client_api::Subscribe;
+use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
+use spacetimedb_vm::errors::ErrorVm;
+use spacetimedb_vm::expr::AuthAccess;
+use std::time::Duration;
 use std::{sync::Arc, time::Instant};
 
 type Subscriptions = Arc<RwLock<SubscriptionManager>>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ModuleSubscriptions {
     relational_db: Arc<RelationalDB>,
-    pub subscriptions: Subscriptions,
+    /// If taking a lock (tx) on the db at the same time, ALWAYS lock the db first.
+    /// You will deadlock otherwise.
+    subscriptions: Subscriptions,
     owner_identity: Identity,
 }
 
@@ -44,26 +51,39 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(), DBError> {
-        let ctx = ExecutionContext::subscribe(
-            self.relational_db.address(),
-            self.relational_db.read_config().slow_query,
-        );
+        let ctx = ExecutionContext::subscribe(self.relational_db.address());
         let tx = scopeguard::guard(self.relational_db.begin_tx(), |tx| {
             self.relational_db.release_tx(&ctx, tx);
         });
-        // check for backward comp.
         let request_id = subscription.request_id;
         let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
         let mut queries = vec![];
 
         let guard = self.subscriptions.read();
 
-        for sql in subscription.query_strings {
-            let hash = QueryHash::from_string(&sql);
+        for sql in subscription
+            .query_strings
+            .iter()
+            .map(|sql| super::query::WHITESPACE.replace_all(sql, " "))
+        {
+            let sql = sql.trim();
+            if sql == super::query::SUBSCRIBE_TO_ALL_QUERY {
+                queries.extend(
+                    super::subscription::get_all(&self.relational_db, &tx, &auth)?
+                        .into_iter()
+                        .map(|query| {
+                            let hash = QueryHash::from_string(&query.sql);
+                            ExecutionUnit::new(query, hash).map(Arc::new)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                );
+                continue;
+            }
+            let hash = QueryHash::from_string(sql);
             if let Some(unit) = guard.query(&hash) {
                 queries.push(unit);
             } else {
-                let mut compiled = compile_read_only_query(&self.relational_db, &tx, &auth, &sql)?;
+                let mut compiled = compile_read_only_query(&self.relational_db, &tx, sql)?;
                 if compiled.len() > 1 {
                     return Result::Err(
                         SubscriptionError::Unsupported(String::from("Multiple statements in subscription query"))
@@ -77,12 +97,22 @@ impl ModuleSubscriptions {
         drop(guard);
 
         let execution_set: ExecutionSet = queries.into();
-        let database_update = execution_set.eval(&ctx, sender.protocol, &self.relational_db, &tx)?;
 
-        WORKER_METRICS
-            .initial_subscription_evals
-            .with_label_values(&self.relational_db.address())
-            .inc();
+        execution_set
+            .check_auth(auth.owner, auth.caller)
+            .map_err(ErrorVm::Auth)?;
+
+        check_row_limit(
+            &execution_set,
+            &ctx,
+            &self.relational_db,
+            &tx,
+            |execution_set, tx| execution_set.row_estimate(tx),
+            &auth,
+        )?;
+
+        let slow_query_threshold = StVarTable::sub_limit(&ctx, &self.relational_db, &tx)?.map(Duration::from_millis);
+        let database_update = execution_set.eval(&ctx, sender.protocol, &self.relational_db, &tx, slow_query_threshold);
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
@@ -125,25 +155,41 @@ impl ModuleSubscriptions {
             .set(subscriptions.num_queries() as i64);
     }
 
-    /// Broadcast a ModuleEvent to all interested subscribers.
-    ///
-    /// It's recommended to take a read lock on `subscriptions` field *before* you commit
-    /// the transaction that will give you the event you pass here, to prevent a race condition
-    /// where a just-added subscriber receives the same update twice.
-    pub async fn broadcast_event(
+    /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
+    pub fn commit_and_broadcast_event(
         &self,
         client: Option<&ClientConnectionSender>,
-        subscriptions: &SubscriptionManager,
-        event: Arc<ModuleEvent>,
-    ) {
-        match event.status {
+        mut event: ModuleEvent,
+        ctx: &ExecutionContext,
+        tx: MutTx,
+    ) -> Result<Result<Arc<ModuleEvent>, WriteConflict>, DBError> {
+        // Take a read lock on `subscriptions` before committing tx
+        // else it can result in subscriber receiving duplicate updates.
+        let subscriptions = self.subscriptions.read();
+        let stdb = &self.relational_db;
+
+        let read_tx = match &mut event.status {
+            EventStatus::Committed(db_update) => {
+                let Some((tx_data, read_tx)) = stdb.commit_tx_downgrade(ctx, tx)? else {
+                    return Ok(Err(WriteConflict));
+                };
+                *db_update = DatabaseUpdate::from_writes(&tx_data);
+                read_tx
+            }
+            EventStatus::Failed(_) | EventStatus::OutOfEnergy => stdb.rollback_mut_tx_downgrade(ctx, tx),
+        };
+        let event = Arc::new(event);
+
+        match &event.status {
             EventStatus::Committed(_) => {
-                tokio::task::block_in_place(|| self.broadcast_commit_event(subscriptions, event))
+                let ctx = ExecutionContext::incremental_update(stdb.address());
+                let slow_query_threshold = StVarTable::incr_limit(&ctx, stdb, &read_tx)?.map(Duration::from_millis);
+                subscriptions.eval_updates(&ctx, stdb, &read_tx, event.clone(), client, slow_query_threshold)
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = client {
                     let message = TransactionUpdateMessage::<DatabaseUpdate> {
-                        event,
+                        event: event.clone(),
                         database_update: <_>::default(),
                     };
                     let _ = client.send_message(message);
@@ -153,44 +199,46 @@ impl ModuleSubscriptions {
             }
             EventStatus::OutOfEnergy => {} // ?
         }
-    }
 
-    /// A blocking version of [`broadcast_event`][Self::broadcast_event].
-    pub fn blocking_broadcast_event(
-        &self,
-        client: Option<&ClientConnectionSender>,
-        subscriptions: &SubscriptionManager,
-        event: Arc<ModuleEvent>,
-    ) {
-        tokio::runtime::Handle::current().block_on(self.broadcast_event(client, subscriptions, event))
-    }
-
-    /// Broadcast the commit event to all interested subscribers.
-    ///
-    /// This function is blocking, even though it returns a future. The returned future resolves
-    /// once all updates have been successfully added to the subscribers' send queues (i.e. after
-    /// it resolves, it's guaranteed that if you call `subscriber.send(x)` the client will receive
-    /// x after they receive this subscription update).
-    fn broadcast_commit_event(&self, subscriptions: &SubscriptionManager, event: Arc<ModuleEvent>) {
-        subscriptions.eval_updates(&self.relational_db, event)
+        Ok(Ok(event))
     }
 }
 
+pub struct WriteConflict;
+
 #[cfg(test)]
 mod tests {
-    use super::ModuleSubscriptions;
+    use super::{AssertTxFn, ModuleSubscriptions};
     use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
     use crate::db::relational_db::tests_utils::TestDB;
+    use crate::db::relational_db::RelationalDB;
+    use crate::error::DBError;
     use crate::execution_context::ExecutionContext;
     use spacetimedb_client_api_messages::client_api::Subscribe;
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
+    use spacetimedb_sats::db::auth::StAccess;
+    use spacetimedb_sats::db::error::AuthError;
     use spacetimedb_sats::product;
+    use spacetimedb_vm::errors::ErrorVm;
     use std::time::Instant;
     use std::{sync::Arc, time::Duration};
     use tokio::sync::mpsc;
 
-    #[test]
+    fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
+        let owner = Identity::from_byte_array([1; 32]);
+        let client = ClientActorId::for_test(Identity::ZERO);
+        let sender = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let module_subscriptions = ModuleSubscriptions::new(db.clone(), owner);
+
+        let subscribe = Subscribe {
+            query_strings: [sql.into()].into(),
+            request_id: 0,
+        };
+        module_subscriptions.add_subscriber(sender, subscribe, Instant::now(), assert)
+    }
+
     /// Asserts that a subscription holds a tx handle for the entire length of its evaluation.
+    #[test]
     fn test_tx_subscription_ordering() -> ResultTest<()> {
         let test_db = TestDB::durable()?;
 
@@ -203,24 +251,14 @@ mod tests {
             db.insert(tx, table_id, product!(1_u8))
         })?;
 
-        let id = Identity::ZERO;
-        let client = ClientActorId::for_test(id);
-        let sender = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
-        let module_subscriptions = ModuleSubscriptions::new(db.clone(), id);
-
         let (send, mut recv) = mpsc::unbounded_channel();
 
-        // Subscribing to T should return a single row
+        // Subscribing to T should return a single row.
+        let db2 = db.clone();
         let query_handle = runtime.spawn_blocking(move || {
-            let db = module_subscriptions.relational_db.clone();
-            let query_strings = vec!["select * from T".into()];
-            module_subscriptions.add_subscriber(
-                sender,
-                Subscribe {
-                    query_strings,
-                    request_id: 0,
-                },
-                Instant::now(),
+            add_subscriber(
+                db.clone(),
+                "select * from T",
                 Some(Arc::new(move |tx: &_| {
                     // Wake up writer thread after starting the reader tx
                     let _ = send.send(());
@@ -238,8 +276,8 @@ mod tests {
         // Write a second row to T concurrently with the reader thread
         let write_handle = runtime.spawn(async move {
             let _ = recv.recv().await;
-            db.with_auto_commit(&ExecutionContext::default(), |tx| {
-                db.insert(tx, table_id, product!(2_u8))
+            db2.with_auto_commit(&ExecutionContext::default(), |tx| {
+                db2.insert(tx, table_id, product!(2_u8))
             })
         });
 
@@ -247,6 +285,43 @@ mod tests {
         runtime.block_on(query_handle)??;
 
         test_db.close()?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn subs_cannot_access_private_tables() -> ResultTest<()> {
+        let test_db = TestDB::durable()?;
+        let db = Arc::new(test_db.db.clone());
+
+        // Create a public table.
+        let indexes = &[(0.into(), "a")];
+        let cols = &[("a", AlgebraicType::U8)];
+        let _ = db.create_table_for_test("public", cols, indexes)?;
+
+        // Create a private table.
+        let _ = db.create_table_for_test_with_access("private", cols, indexes, StAccess::Private)?;
+
+        // We can subscribe to a public table.
+        let subscribe = |sql| add_subscriber(db.clone(), sql, None);
+        assert!(subscribe("SELECT * FROM public").is_ok());
+
+        // We cannot subscribe when a private table is mentioned,
+        // not even when in a join where the projection doesn't mention the table,
+        // as the mere fact of joining can leak information from the private table.
+        for sql in [
+            "SELECT * FROM private",
+            // Even if the query will return no rows, we still reject it.
+            "SELECT * FROM private WHERE 1 = 0",
+            "SELECT private.* FROM private",
+            "SELECT public.* FROM public JOIN private ON public.a = private.a WHERE private.a = 1",
+            "SELECT private.* FROM private JOIN public ON private.a = public.a WHERE public.a = 1",
+        ] {
+            assert!(matches!(
+                subscribe(sql).unwrap_err(),
+                DBError::Vm(ErrorVm::Auth(AuthError::TablePrivate { .. }))
+            ));
+        }
 
         Ok(())
     }
