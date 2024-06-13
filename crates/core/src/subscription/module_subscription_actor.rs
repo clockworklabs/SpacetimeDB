@@ -114,11 +114,6 @@ impl ModuleSubscriptions {
         let slow_query_threshold = StVarTable::sub_limit(&ctx, &self.relational_db, &tx)?.map(Duration::from_millis);
         let database_update = execution_set.eval(&ctx, sender.protocol, &self.relational_db, &tx, slow_query_threshold);
 
-        WORKER_METRICS
-            .initial_subscription_evals
-            .with_label_values(&self.relational_db.address())
-            .inc();
-
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
         // but that should not pose an issue.
