@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches};
-use futures::{SinkExt, TryStreamExt};
+use futures::{Sink, SinkExt, TryStream, TryStreamExt};
 use http::header;
 use http::uri::Scheme;
 use serde_json::value::RawValue;
@@ -32,7 +32,7 @@ pub fn cli() -> clap::Command {
                 .help("The SQL query to execute"),
         )
         .arg(
-            Arg::new("num")
+            Arg::new("num-updates")
                 .required(false)
                 .short('n')
                 .action(ArgAction::Set)
@@ -57,7 +57,7 @@ pub fn cli() -> clap::Command {
                 .required(false)
                 .long("print-initial-update")
                 .action(ArgAction::SetTrue)
-                .help("Print the initial update for the queries when it"),
+                .help("Print the initial update for the queries."),
         )
         .arg(
             Arg::new("identity")
@@ -178,7 +178,7 @@ enum ServerMessage<'a> {
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let queries = args.get_many::<String>("query").unwrap();
-    let num = args.get_one::<u32>("num").copied();
+    let num = args.get_one::<u32>("num-updates").copied();
     let timeout = args.get_one::<u32>("timeout").copied();
     let print_initial_update = args.get_flag("print_initial_update");
 
@@ -209,58 +209,9 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let (mut ws, _) = tokio_tungstenite::connect_async(req).await?;
 
     let task = async {
-        // Send the initial subscription request.
-        let msg = ClientMessage::Subscribe {
-            query_strings: queries.cloned().collect(),
-        };
-        ws.send(serde_json::to_string(&msg).unwrap().into()).await?;
-
-        let mut stdout = tokio::io::stdout();
-        // Wait for the first initial update reply and print it if requested.
-        while let Some(msg) = ws.try_next().await? {
-            let Some(msg) = parse_msg_json(&msg) else { continue };
-            match msg {
-                ServerMessage::SubscriptionUpdate(sub) => {
-                    if print_initial_update {
-                        let output = serde_json::to_string(&sub.reformat(&module_def)?)? + "\n";
-                        stdout.write_all(output.as_bytes()).await?;
-                        // println
-                    }
-                    break;
-                }
-                ServerMessage::TransactionUpdate { event, .. } => {
-                    if event.message.is_empty() {
-                        anyhow::bail!("received transaction update before initial subscription?")
-                    }
-                    anyhow::bail!(event.message)
-                }
-                ServerMessage::Unknown => continue,
-            }
-        }
-
-        let mut num_updates = 0;
-        loop {
-            if num.is_some_and(|num| num_updates >= num) {
-                // needs_shutdown: true
-                break Ok(true);
-            }
-            let Some(msg) = ws.try_next().await? else {
-                eprintln!("disconnected by server");
-                break Ok(false);
-            };
-            let Some(msg) = parse_msg_json(&msg) else { continue };
-            match msg {
-                ServerMessage::SubscriptionUpdate(_) => anyhow::bail!("received a second initial subscription update?"),
-                ServerMessage::TransactionUpdate {
-                    subscription_update, ..
-                } => {
-                    let output = serde_json::to_string(&subscription_update.reformat(&module_def)?)? + "\n";
-                    stdout.write_all(output.as_bytes()).await?;
-                    num_updates += 1;
-                }
-                ServerMessage::Unknown => continue,
-            }
-        }
+        subscribe(&mut ws, queries.cloned().collect()).await?;
+        await_initial_update(&mut ws, print_initial_update.then_some(&module_def)).await?;
+        consume_transaction_updates(&mut ws, num, &module_def).await
     };
 
     let needs_shutdown = if let Some(timeout) = timeout {
@@ -278,4 +229,79 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     }
 
     Ok(())
+}
+
+/// Send the subscribe message.
+async fn subscribe<S>(ws: &mut S, query_strings: Vec<String>) -> Result<(), S::Error>
+where
+    S: Sink<WsMessage> + Unpin,
+{
+    let msg = serde_json::to_string(&ClientMessage::Subscribe { query_strings }).unwrap();
+    ws.send(msg.into()).await
+}
+
+/// Await the initial [`ServerMessage::SubscriptionUpdate`].
+/// If `module_def` is `Some`, print a JSON representation to stdout.
+async fn await_initial_update<S>(ws: &mut S, module_def: Option<&ModuleDef>) -> anyhow::Result<()>
+where
+    S: TryStream<Ok = WsMessage> + Unpin,
+    S::Error: std::error::Error + Send + Sync + 'static,
+{
+    while let Some(msg) = ws.try_next().await? {
+        let Some(msg) = parse_msg_json(&msg) else { continue };
+        match msg {
+            ServerMessage::SubscriptionUpdate(sub) => {
+                if let Some(module_def) = module_def {
+                    let output = serde_json::to_string(&sub.reformat(module_def)?)? + "\n";
+                    tokio::io::stdout().write_all(output.as_bytes()).await?
+                }
+                break;
+            }
+            ServerMessage::TransactionUpdate { event, .. } => {
+                let mut message = event.message;
+                if message.is_empty() {
+                    message.push_str("protocol error: received transaction update before initial subscription update");
+                }
+                anyhow::bail!(message)
+            }
+            ServerMessage::Unknown => continue,
+        }
+    }
+
+    Ok(())
+}
+
+/// Print `num` [`ServerMessage::TransactionUpdate`] messages as JSON.
+/// If `num` is `None`, keep going indefinitely.
+async fn consume_transaction_updates<S>(ws: &mut S, num: Option<u32>, module_def: &ModuleDef) -> anyhow::Result<bool>
+where
+    S: TryStream<Ok = WsMessage> + Unpin,
+    S::Error: std::error::Error + Send + Sync + 'static,
+{
+    let mut stdout = tokio::io::stdout();
+    let mut num_received = 0;
+    loop {
+        if num.is_some_and(|n| num_received >= n) {
+            break Ok(true);
+        }
+        let Some(msg) = ws.try_next().await? else {
+            eprintln!("disconnected by server");
+            break Ok(false);
+        };
+
+        let Some(msg) = parse_msg_json(&msg) else { continue };
+        match msg {
+            ServerMessage::SubscriptionUpdate(_) => {
+                anyhow::bail!("protocol error: received a second initial subscription update")
+            }
+            ServerMessage::TransactionUpdate {
+                subscription_update, ..
+            } => {
+                let output = serde_json::to_string(&subscription_update.reformat(module_def)?)? + "\n";
+                stdout.write_all(output.as_bytes()).await?;
+                num_received += 1;
+            }
+            ServerMessage::Unknown => continue,
+        }
+    }
 }

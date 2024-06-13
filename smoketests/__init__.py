@@ -226,7 +226,7 @@ class Smoketest(unittest.TestCase):
 
         env = os.environ.copy()
         env["SPACETIME_CONFIG_FILE"] = str(self.config_path)
-        args = [SPACETIME_BIN, "subscribe", self.address, "-n", str(n), "--print-initial-update", "--", *queries]
+        args = [SPACETIME_BIN, "subscribe", self.address, "-t", "60", "-n", str(n), "--print-initial-update", "--", *queries]
         fake_args = ["spacetime", *args[1:]]
         log_cmd(fake_args)
 
