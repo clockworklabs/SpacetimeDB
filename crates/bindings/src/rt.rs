@@ -395,20 +395,14 @@ pub fn register_reftype<T: SpacetimeType>() {
 pub fn register_table<T: TableType>() {
     register_describer(|module| {
         let data = *T::make_type(module).as_ref().unwrap();
-        let columns = module
+        let columns: Vec<ColumnDef> = module
             .module
             .typespace
             .with_type(&data)
             .resolve_refs()
-            .and_then(|x| {
-                if let Ok(x) = x.into_product() {
-                    let cols: Vec<ColumnDef> = x.into();
-                    Some(cols)
-                } else {
-                    None
-                }
-            })
-            .expect("Fail to retrieve the columns from the module");
+            .and_then(|x| x.into_product().ok())
+            .expect("Fail to retrieve the columns from the module")
+            .into();
 
         let indexes: Vec<_> = T::INDEXES.iter().copied().map(Into::into).collect();
         //WARNING: The definition  of table assumes the # of constraints == # of columns elsewhere `T::COLUMN_ATTRS` is queried
