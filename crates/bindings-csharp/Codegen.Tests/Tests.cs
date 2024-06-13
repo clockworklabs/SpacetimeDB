@@ -2,59 +2,25 @@ namespace Codegen.Tests;
 
 using System.Collections.Immutable;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.Text;
-using VerifyTests;
 using Xunit;
 
-public static class GeneratorSnapshotTests
+public class GeneratorSnapshotTests
 {
     // Note that we can't use assembly path here because it will be put in some deep nested folder.
     // Instead, to get the test project directory, we can use the `CallerFilePath` attribute which will magically give us path to the current file.
     private static string GetProjectDir([CallerFilePath] string path = "") =>
         Path.GetDirectoryName(path)!;
 
-    private static readonly CSharpCompilation SampleCompilation;
+    private readonly CSharpCompilation sampleCompilation;
+    private readonly CSharpCompilation modifiedCompilation;
 
-    static GeneratorSnapshotTests()
+    public GeneratorSnapshotTests()
     {
-        // Default diff order is weird and causes new lines to look like deleted and old as inserted.
-        Environment.SetEnvironmentVariable("DiffEngine_TargetOnLeft", "true");
-        // Store snapshots in a separate directory.
-        UseProjectRelativeDirectory("snapshots");
-        VerifySourceGenerators.Initialize();
-        // Format code for more readable snapshots and to avoid diffs on whitespace changes.
-        VerifierSettings.AddScrubber(
-            "cs",
-            (sb) =>
-            {
-                var unformattedCode = sb.ToString();
-                sb.Clear();
-                var result = CSharpier.CodeFormatter.Format(
-                    unformattedCode,
-                    new() { IncludeGenerated = true, EndOfLine = CSharpier.EndOfLine.LF }
-                );
-                if (result.CompilationErrors.Any())
-                {
-                    sb.AppendLine("// Generated code produced compilation errors:");
-                    foreach (var diag in result.CompilationErrors)
-                    {
-                        sb.Append("// ").AppendLine(diag.ToString());
-                    }
-                    sb.AppendLine();
-                }
-                sb.Append(result.Code);
-            },
-            ScrubberLocation.Last
-        );
-
         var projectDir = GetProjectDir();
-        using var sampleSource = File.OpenRead($"{projectDir}/Sample.cs");
-
         var stdbAssemblies = ImmutableArray
             .Create("BSATN.Runtime", "Runtime")
             .Select(name => $"{projectDir}/../{name}/bin/Debug/net8.0/SpacetimeDB.{name}.dll");
@@ -64,7 +30,7 @@ public static class GeneratorSnapshotTests
             .Create("System.Private.CoreLib", "System.Runtime")
             .Select(name => $"{dotNetDir}/{name}.dll");
 
-        SampleCompilation = CSharpCompilation.Create(
+        var baseCompilation = CSharpCompilation.Create(
             assemblyName: "Sample",
             references: Enumerable
                 .Concat(dotNetAssemblies, stdbAssemblies)
@@ -72,8 +38,16 @@ public static class GeneratorSnapshotTests
             options: new(
                 OutputKind.NetModule,
                 nullableContextOptions: NullableContextOptions.Enable
-            ),
-            syntaxTrees: [CSharpSyntaxTree.ParseText(SourceText.From(sampleSource))]
+            )
+        );
+
+        var sampleCode = File.ReadAllText($"{projectDir}/Sample.cs");
+        sampleCompilation = baseCompilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(sampleCode));
+
+        // Add a comment to the end of each line to make the code modified with no functional changes.
+        var modifiedCode = sampleCode.ReplaceLineEndings($"// Modified{Environment.NewLine}");
+        modifiedCompilation = baseCompilation.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText(modifiedCode)
         );
     }
 
@@ -82,7 +56,7 @@ public static class GeneratorSnapshotTests
     [Theory]
     [InlineData(typeof(SpacetimeDB.Codegen.Module))]
     [InlineData(typeof(SpacetimeDB.Codegen.Type))]
-    public static Task VerifyDriver(Type generatorType)
+    public async Task VerifyDriver(Type generatorType)
     {
         var generator = (IIncrementalGenerator)Activator.CreateInstance(generatorType)!;
         var driver = CSharpGeneratorDriver.Create(
@@ -93,14 +67,18 @@ public static class GeneratorSnapshotTests
             )
         );
         // Store the new driver instance - it contains the results and the cache.
-        var genDriver = driver.RunGenerators(SampleCompilation);
-        // Run again with a new compilation to see if the cache is working.
-        var regenDriver = genDriver.RunGenerators(SampleCompilation.Clone());
+        var driverAfterGen = driver.RunGenerators(sampleCompilation);
 
-        var regenSteps = regenDriver
+        // Verify the generated code against the snapshots.
+        await Verify(driverAfterGen).UseFileName(generatorType.Name);
+
+        // Run again with a driver containing the cache and a trivially modified code to verify that the cache is working.
+        var driverAfterRegen = driverAfterGen.RunGenerators(modifiedCompilation);
+
+        var regenSteps = driverAfterRegen
             .GetRunResult()
-            .Results[0]
-            .TrackedSteps.Where(step => step.Key.StartsWith("SpacetimeDB."))
+            .Results.SelectMany(result => result.TrackedSteps)
+            .Where(step => step.Key.StartsWith("SpacetimeDB."))
             .SelectMany(step =>
                 step.Value.SelectMany(value => value.Outputs)
                     .Select(output => new StepOutput(step.Key, output.Reason, output.Value))
@@ -117,7 +95,5 @@ public static class GeneratorSnapshotTests
                     is not (IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged)
             )
         );
-
-        return Verify(genDriver).UseFileName(generatorType.Name);
     }
 }
