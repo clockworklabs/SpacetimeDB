@@ -9,13 +9,13 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static Utils;
 
-readonly record struct VariableDeclaration
+readonly record struct MemberDeclaration
 {
     public readonly string Name;
     public readonly string Type;
     public readonly string TypeInfo;
 
-    public VariableDeclaration(string name, ITypeSymbol typeSymbol)
+    public MemberDeclaration(string name, ITypeSymbol typeSymbol)
     {
         Name = name;
         Type = SymbolToName(typeSymbol);
@@ -29,7 +29,7 @@ record TypeDeclaration
     public readonly string ShortName;
     public readonly string FullName;
     public readonly bool IsTaggedEnum;
-    public readonly EquatableArray<VariableDeclaration> Members;
+    public readonly EquatableArray<MemberDeclaration> Members;
 
     public TypeDeclaration(
         TypeDeclarationSyntax typeSyntax,
@@ -43,7 +43,7 @@ record TypeDeclaration
         FullName = SymbolToName(type);
         IsTaggedEnum = isTaggedEnum;
         Members = new(
-            members.Select(v => new VariableDeclaration(v.Name, v.Type)).ToImmutableArray()
+            members.Select(v => new MemberDeclaration(v.Name, v.Type)).ToImmutableArray()
         );
     }
 }
@@ -155,9 +155,8 @@ public class Type : IIncrementalGenerator
 
                     var typeDesc = "";
 
-                    var bsatnDecls = type.Members.Select(m => (m.Name, m.TypeInfo)).ToImmutableArray();
-
-                    var fieldNames = bsatnDecls.Select(m => m.Name).ToImmutableArray();
+                    var bsatnDecls = type.Members.Select(m => (m.Name, m.TypeInfo));
+                    var fieldNames = type.Members.Select(m => m.Name);
 
                     if (type.IsTaggedEnum)
                     {
@@ -173,8 +172,7 @@ public class Type : IIncrementalGenerator
                             }}
                         ";
 
-                        bsatnDecls.Insert(
-                            0,
+                        bsatnDecls = bsatnDecls.Prepend(
                             (Name: "__enumTag", TypeInfo: "SpacetimeDB.BSATN.Enum<@enum>")
                         );
 

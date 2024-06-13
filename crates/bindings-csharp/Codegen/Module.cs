@@ -25,10 +25,10 @@ readonly record struct ColumnDeclaration
     public readonly string Name;
     public readonly string Type;
     public readonly string TypeInfo;
-    public readonly ColumnAttrs IndexKind;
+    public readonly ColumnAttrs Attrs;
     public readonly bool IsEquatable;
 
-    public ColumnDeclaration(string name, ITypeSymbol type, ColumnAttrs indexKind)
+    public ColumnDeclaration(string name, ITypeSymbol type, ColumnAttrs attrs)
     {
         var isInteger = type.SpecialType switch
         {
@@ -45,7 +45,7 @@ readonly record struct ColumnDeclaration
             _ => false
         };
 
-        if (indexKind.HasFlag(ColumnAttrs.AutoInc) && !isInteger)
+        if (attrs.HasFlag(ColumnAttrs.AutoInc) && !isInteger)
         {
             throw new System.Exception(
                 $"{type} {name} is not valid for AutoInc or Identity as it's not an integer."
@@ -67,7 +67,7 @@ readonly record struct ColumnDeclaration
             )
             && type.NullableAnnotation != NullableAnnotation.Annotated;
 
-        if (indexKind.HasFlag(ColumnAttrs.Unique) && !IsEquatable)
+        if (attrs.HasFlag(ColumnAttrs.Unique) && !IsEquatable)
         {
             throw new System.Exception(
                 $"{type} {name} is not valid for Identity, PrimaryKey or PrimaryKeyAuto as it's not an equatable primitive."
@@ -77,30 +77,30 @@ readonly record struct ColumnDeclaration
         Name = name;
         Type = SymbolToName(type);
         TypeInfo = GetTypeInfo(type);
-        IndexKind = indexKind;
+        Attrs = attrs;
     }
 }
 
 record TableDeclaration
 {
     public readonly Scope Scope;
-    public readonly string Name;
+    public readonly string ShortName;
     public readonly string FullName;
     public readonly EquatableArray<ColumnDeclaration> Fields;
-    public readonly bool Public;
+    public readonly bool IsPublic;
 
     public TableDeclaration(
         TypeDeclarationSyntax tableSyntax,
         INamedTypeSymbol table,
-        IEnumerable<ColumnDeclaration> columns,
+        IEnumerable<ColumnDeclaration> fields,
         bool isPublic
     )
     {
         Scope = new Scope(tableSyntax);
-        Name = table.Name;
+        ShortName = table.Name;
         FullName = SymbolToName(table);
-        Fields = new EquatableArray<ColumnDeclaration>(columns.ToImmutableArray());
-        Public = isPublic;
+        Fields = new EquatableArray<ColumnDeclaration>(fields.ToImmutableArray());
+        IsPublic = isPublic;
     }
 }
 
@@ -144,6 +144,9 @@ record ReducerDeclaration
         );
         Scope = new Scope(methodSyntax.Parent as MemberDeclarationSyntax);
     }
+
+    public IEnumerable<ReducerParamDeclaration> GetNonContextArgs() =>
+        Args.Where(a => !a.IsContextArg);
 }
 
 [Generator]
@@ -187,29 +190,27 @@ public class Module : IIncrementalGenerator
             .Select(
                 (t, ct) =>
                 {
-                    var autoIncFields = t.Fields.Where(f =>
-                        f.IndexKind.HasFlag(ColumnAttrs.AutoInc)
-                    )
+                    var autoIncFields = t.Fields.Where(f => f.Attrs.HasFlag(ColumnAttrs.AutoInc))
                         .Select(f => f.Name);
 
                     var extensions =
                         $@"
-                            private static readonly Lazy<SpacetimeDB.RawBindings.TableId> tableId = new (() => SpacetimeDB.Runtime.GetTableId(nameof({t.Name})));
+                            private static readonly Lazy<SpacetimeDB.RawBindings.TableId> tableId = new (() => SpacetimeDB.Runtime.GetTableId(nameof({t.ShortName})));
 
-                            public static IEnumerable<{t.Name}> Iter() =>
+                            public static IEnumerable<{t.ShortName}> Iter() =>
                                 new SpacetimeDB.Runtime.RawTableIter(tableId.Value)
-                                .Parse<{t.Name}>();
+                                .Parse<{t.ShortName}>();
 
                             public static SpacetimeDB.Module.TableDesc MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
                                 new (
-                                    nameof({t.Name}),
+                                    nameof({t.ShortName}),
                                     new SpacetimeDB.Module.ColumnDefWithAttrs[] {{ {string.Join(",", t.Fields.Select(f => $@"
                                         new (
                                             new SpacetimeDB.Module.ColumnDef(nameof({f.Name}), BSATN.{f.Name}.GetAlgebraicType(registrar)),
-                                            SpacetimeDB.Module.ColumnAttrs.{f.IndexKind}
+                                            SpacetimeDB.Module.ColumnAttrs.{f.Attrs}
                                         )
                                     "))} }},
-                                    {(t.Public ? "true" : "false")}
+                                    {(t.IsPublic ? "true" : "false")}
                                 ),
                                 (SpacetimeDB.BSATN.AlgebraicType.Ref) new BSATN().GetAlgebraicType(registrar)
                             );
@@ -218,9 +219,9 @@ public class Module : IIncrementalGenerator
                                 {string.Join("\n", t.Fields.Select(f => $"new (nameof({f.Name}), (w, v) => BSATN.{f.Name}.Write(w, ({f.Type}) v!)),"))}
                             }});
 
-                            public static IEnumerable<{t.Name}> Query(System.Linq.Expressions.Expression<Func<{t.Name}, bool>> filter) =>
-                                new SpacetimeDB.Runtime.RawTableIterFiltered(tableId.Value, SpacetimeDB.Filter.Filter.Compile<{t.Name}>(fieldTypeInfos.Value, filter))
-                                .Parse<{t.Name}>();
+                            public static IEnumerable<{t.ShortName}> Query(System.Linq.Expressions.Expression<Func<{t.ShortName}, bool>> filter) =>
+                                new SpacetimeDB.Runtime.RawTableIterFiltered(tableId.Value, SpacetimeDB.Filter.Filter.Compile<{t.ShortName}>(fieldTypeInfos.Value, filter))
+                                .Parse<{t.ShortName}>();
 
                             public void Insert() {{
                                 var bytes = SpacetimeDB.Runtime.Insert(tableId.Value, this);
@@ -242,24 +243,24 @@ public class Module : IIncrementalGenerator
 
                         extensions +=
                             $@"
-                                public static IEnumerable<{t.Name}> FilterBy{f.Name}({f.Type} {f.Name}) =>
+                                public static IEnumerable<{t.ShortName}> FilterBy{f.Name}({f.Type} {f.Name}) =>
                                     new SpacetimeDB.Runtime.RawTableIterByColEq(tableId.Value, {index}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name}))
-                                    .Parse<{t.Name}>();
+                                    .Parse<{t.ShortName}>();
                             ";
 
-                        if (f.IndexKind.HasFlag(ColumnAttrs.Unique))
+                        if (f.Attrs.HasFlag(ColumnAttrs.Unique))
                         {
                             extensions +=
                                 $@"
-                                    public static {t.Name}? FindBy{f.Name}({f.Type} {f.Name}) =>
+                                    public static {t.ShortName}? FindBy{f.Name}({f.Type} {f.Name}) =>
                                         FilterBy{f.Name}({f.Name})
-                                        .Cast<{t.Name}?>()
+                                        .Cast<{t.ShortName}?>()
                                         .SingleOrDefault();
 
                                     public static bool DeleteBy{f.Name}({f.Type} {f.Name}) =>
                                         SpacetimeDB.Runtime.DeleteByColEq(tableId.Value, {index}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name})) > 0;
 
-                                    public static bool UpdateBy{f.Name}({f.Type} {f.Name}, {t.Name} value) =>
+                                    public static bool UpdateBy{f.Name}({f.Type} {f.Name}, {t.ShortName} value) =>
                                         SpacetimeDB.Runtime.UpdateByColEq(tableId.Value, {index}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name}), value);
                                 ";
                         }
@@ -310,12 +311,12 @@ public class Module : IIncrementalGenerator
                         r.Name,
                         Class: $@"
                             class {r.Name}: IReducer {{
-                                {string.Join("\n", r.Args.Where(a => !a.IsContextArg).Select(a => $"{a.TypeInfo} {a.Name} = new();"))}
+                                {string.Join("\n", r.GetNonContextArgs().Select(a => $"{a.TypeInfo} {a.Name} = new();"))}
 
                                 SpacetimeDB.Module.ReducerDef IReducer.MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) {{
                                     return new (
                                         ""{r.ExportName}""
-                                        {string.Join("", r.Args.Where(a => !a.IsContextArg).Select(a => $",\nnew SpacetimeDB.BSATN.AggregateElement(nameof({a.Name}), {a.Name}.GetAlgebraicType(registrar))"))}
+                                        {string.Join("", r.GetNonContextArgs().Select(a => $",\nnew SpacetimeDB.BSATN.AggregateElement(nameof({a.Name}), {a.Name}.GetAlgebraicType(registrar))"))}
                                     );
                                 }}
 
@@ -400,10 +401,10 @@ public class Module : IIncrementalGenerator
                         r.FullName,
                         r.Scope.GenerateExtensions(
                             $@"
-                            public static SpacetimeDB.Runtime.ScheduleToken Schedule{r.Name}(DateTimeOffset time{string.Join("", r.Args.Where(a => !a.IsContextArg).Select(a => $", {a.Type} {a.Name}"))}) {{
+                            public static SpacetimeDB.Runtime.ScheduleToken Schedule{r.Name}(DateTimeOffset time{string.Join("", r.GetNonContextArgs().Select(a => $", {a.Type} {a.Name}"))}) {{
                                 using var stream = new MemoryStream();
                                 using var writer = new BinaryWriter(stream);
-                                {string.Join("\n", r.Args.Where(a => !a.IsContextArg).Select(a => $"new {a.TypeInfo}().Write(writer, {a.Name});"))}
+                                {string.Join("\n", r.GetNonContextArgs().Select(a => $"new {a.TypeInfo}().Write(writer, {a.Name});"))}
                                 return new(nameof({r.Name}), stream.ToArray(), time);
                             }}
                         "

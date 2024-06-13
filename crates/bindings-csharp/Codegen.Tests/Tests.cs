@@ -15,7 +15,8 @@ public static class GeneratorSnapshotTests
 {
     // Note that we can't use assembly path here because it will be put in some deep nested folder.
     // Instead, to get the test project directory, we can use the `CallerFilePath` attribute which will magically give us path to the current file.
-    private static string GetProjectDir([CallerFilePath] string path = "") => Path.GetDirectoryName(path)!;
+    private static string GetProjectDir([CallerFilePath] string path = "") =>
+        Path.GetDirectoryName(path)!;
 
     private static readonly CSharpCompilation SampleCompilation;
 
@@ -55,23 +56,23 @@ public static class GeneratorSnapshotTests
         using var sampleSource = File.OpenRead($"{projectDir}/Sample.cs");
 
         var stdbAssemblies = ImmutableArray
-                    .Create("BSATN.Runtime", "Runtime")
-                    .Select(name => $"{projectDir}/../{name}/bin/Debug/net8.0/SpacetimeDB.{name}.dll");
+            .Create("BSATN.Runtime", "Runtime")
+            .Select(name => $"{projectDir}/../{name}/bin/Debug/net8.0/SpacetimeDB.{name}.dll");
 
         var dotNetDir = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
         var dotNetAssemblies = ImmutableArray
-                    .Create("System.Private.CoreLib", "System.Runtime")
-                    .Select(name => $"{dotNetDir}/{name}.dll");
+            .Create("System.Private.CoreLib", "System.Runtime")
+            .Select(name => $"{dotNetDir}/{name}.dll");
 
         SampleCompilation = CSharpCompilation.Create(
             assemblyName: "Sample",
             references: Enumerable
-                .Concat(
-                    dotNetAssemblies,
-                    stdbAssemblies
-                )
+                .Concat(dotNetAssemblies, stdbAssemblies)
                 .Select(assemblyPath => MetadataReference.CreateFromFile(assemblyPath)),
-            options: new(OutputKind.NetModule, nullableContextOptions: NullableContextOptions.Enable),
+            options: new(
+                OutputKind.NetModule,
+                nullableContextOptions: NullableContextOptions.Enable
+            ),
             syntaxTrees: [CSharpSyntaxTree.ParseText(SourceText.From(sampleSource))]
         );
     }
