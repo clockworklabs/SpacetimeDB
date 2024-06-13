@@ -176,29 +176,46 @@ export namespace Namespace.testC {
 		])),
 			new SumTypeVariant("Bar", AlgebraicType.createProductType([
 		])),
+			new SumTypeVariant("Baz", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
 		]);
 	}
 
 	export function serialize(value: Namespace.testC): object {
-		const result: {[key: string]: any} = {};
-		result[value.tag] = [];
-		return result;
+		switch(value.tag) {
+			case "Foo":
+				return { "Foo": [] };
+			case "Bar":
+				return { "Bar": [] };
+			case "Baz":
+				return { "Baz": value.value };
+			default:
+				throw("unreachable");
+		}
 	}
 
 	export type Foo = { tag: "Foo", value: undefined };
 	export const Foo = { tag: "Foo", value: undefined };
 	export type Bar = { tag: "Bar", value: undefined };
 	export const Bar = { tag: "Bar", value: undefined };
+	export type Baz = { tag: "Baz", value: string };
+	export const Baz = (value: string): Baz => ({ tag: "Baz", value });
 
 	export function fromValue(value: AlgebraicValue): Namespace.testC {
 		let sumValue = value.asSumValue();
-		let tag = sumValue.tag;
-		let variant = Namespace.testC.getAlgebraicType().sum.variants[tag];
-		return { tag: variant.name, value: undefined } as Namespace.testC;
+		switch(sumValue.tag) {
+			case 0:
+				return { tag: "Foo", value: undefined };
+			case 1:
+				return { tag: "Bar", value: undefined };
+			case 2:
+				return { tag: "Baz", value: sumValue.value.asString() };
+			default:
+				throw("unreachable");
+		}
 	}
 }
 
-export type Namespace.testC = Namespace.testC.Foo | Namespace.testC.Bar;
+export type Namespace.testC = Namespace.testC.Foo | Namespace.testC.Bar | Namespace.testC.Baz;
 export default Namespace.testC;
 '''
 "pk_multi_identity.ts" = '''

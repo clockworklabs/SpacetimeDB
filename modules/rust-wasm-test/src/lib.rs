@@ -19,9 +19,9 @@ pub struct TestB {
 #[derive(SpacetimeType)]
 #[sats(name = "Namespace.TestC")]
 pub enum TestC {
-    // Foo(String),
     Foo,
     Bar,
+    Baz(String),
 }
 
 #[spacetimedb(table(public))]
@@ -100,9 +100,9 @@ pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC) -> an
     log::info!("bar: {:?}", arg2.foo);
 
     match arg3 {
-        // TestC::Foo(string) => log::info!("{}", string),
         TestC::Foo => log::info!("Foo"),
         TestC::Bar => log::info!("Bar"),
+        TestC::Baz(string) => log::info!("{}", string),
     }
     for i in 0..1000 {
         TestA::insert(TestA {

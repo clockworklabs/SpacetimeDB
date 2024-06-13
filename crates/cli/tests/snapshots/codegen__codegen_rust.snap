@@ -433,6 +433,7 @@ pub enum Namespace.testC {
 
 	Bar,
 
+	Baz(String),
 }
 '''
 "pk_multi_identity.rs" = '''

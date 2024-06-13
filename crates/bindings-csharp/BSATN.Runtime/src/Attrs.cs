@@ -15,6 +15,6 @@ namespace SpacetimeDB
 
     // This could be an interface, but using `record` forces C# to check that it can
     // only be applied on types that are records themselves.
-    public record TaggedEnum<Variants>
+    public abstract record TaggedEnum<Variants>
         where Variants : struct, ITuple { }
 }

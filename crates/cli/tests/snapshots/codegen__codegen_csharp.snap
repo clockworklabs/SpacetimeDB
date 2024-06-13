@@ -194,11 +194,11 @@ namespace SpacetimeDB
 		public partial class Types
 		{
 			[SpacetimeDB.Type]
-			public enum TestC
-			{
-				Foo,
-				Bar,
-			}
+			public partial record TestC : SpacetimeDB.TaggedEnum<(
+				SpacetimeDB.Unit Foo,
+				SpacetimeDB.Unit Bar,
+				string Baz
+			)>;
 		}
 	}
 }
@@ -513,7 +513,7 @@ namespace SpacetimeDB
 	public partial class TestD : SpacetimeDB.DatabaseTable<TestD, SpacetimeDB.ReducerEvent>
 	{
 		[DataMember(Name = "test_c")]
-		public SpacetimeDB.Namespace.Types.TestC? TestC;
+		public SpacetimeDB.Namespace.TestC? TestC;
 
 
 	}
@@ -598,15 +598,15 @@ namespace SpacetimeDB
 
 		public SpacetimeDB.TestA Arg = new();
 		public SpacetimeDB.TestB Arg2 = new();
-		public SpacetimeDB.Namespace.Types.TestC Arg3;
+		public SpacetimeDB.Namespace.TestC Arg3 = null!;
 	}
 
 	public static partial class Reducer
 	{
-		public delegate void TestHandler(ReducerEvent reducerEvent, SpacetimeDB.TestA arg, SpacetimeDB.TestB arg2, SpacetimeDB.Namespace.Types.TestC arg3);
+		public delegate void TestHandler(ReducerEvent reducerEvent, SpacetimeDB.TestA arg, SpacetimeDB.TestB arg2, SpacetimeDB.Namespace.TestC arg3);
 		public static event TestHandler? OnTestEvent;
 
-		public static void Test(SpacetimeDB.TestA arg, SpacetimeDB.TestB arg2, SpacetimeDB.Namespace.Types.TestC arg3)
+		public static void Test(SpacetimeDB.TestA arg, SpacetimeDB.TestB arg2, SpacetimeDB.Namespace.TestC arg3)
 		{
 			SpacetimeDBClient.instance.InternalCallReducer(new TestArgsStruct { Arg = arg, Arg2 = arg2, Arg3 = arg3 });
 		}
