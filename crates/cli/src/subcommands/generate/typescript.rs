@@ -305,7 +305,7 @@ fn serialize_type<'a>(
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
         AlgebraicType::Product(prod) => {
-            if prod.is_identity() {
+            if prod.is_identity() || prod.is_address() {
                 write!(f, "Array.from({value}.toUint8Array())")
             } else {
                 unimplemented!()
