@@ -17,8 +17,8 @@
     <PackageIcon>logo.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/clockworklabs/spacetimedb-csharp-sdk</RepositoryUrl>
-    <AssemblyVersion>0.8.0</AssemblyVersion>
-    <Version>0.9.2</Version>
+    <AssemblyVersion>0.10.0</AssemblyVersion>
+    <Version>$(AssemblyVersion)</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,7 +29,7 @@
 
   <ItemGroup>
     <PackageReference Include="Google.Protobuf" Version="3.23.3" />
-    <ProjectReference Include="../SpacetimeDB/crates/bindings-csharp/BSATN.Runtime/BSATN.Runtime.csproj" />
+    <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="0.10.*" />
   </ItemGroup>
 
   <ItemGroup>
