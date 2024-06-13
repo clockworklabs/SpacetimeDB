@@ -274,15 +274,15 @@ impl WasmInstanceEnv {
             let args = mem.deref_slice(args, args_len)?.to_vec();
 
             // Schedule it!
-            let ScheduledReducerId(id) =
-                env.instance_env
-                    .schedule(name, args, Timestamp(time))
-                    .map_err(|e| match e {
-                        ScheduleError::DelayTooLong(_) => anyhow!("requested delay is too long"),
-                        ScheduleError::IdTransactionError(_) => {
-                            anyhow!("transaction to acquire ScheduleReducerId failed")
-                        }
-                    })?;
+            let ScheduledReducerId(id) = env
+                .instance_env
+                .schedule(name, args, Timestamp::from_microseconds(time))
+                .map_err(|e| match e {
+                    ScheduleError::DelayTooLong(_) => anyhow!("requested delay is too long"),
+                    ScheduleError::IdTransactionError(_) => {
+                        anyhow!("transaction to acquire ScheduleReducerId failed")
+                    }
+                })?;
             Ok(id)
         })
         .map(|_| ())

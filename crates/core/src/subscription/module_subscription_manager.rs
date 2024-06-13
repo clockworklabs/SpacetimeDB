@@ -7,6 +7,7 @@ use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, ModuleEvent,
 use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use arrayvec::ArrayVec;
+use bytes::Bytes;
 use itertools::Either;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_data_structures::map::{Entry, HashMap, HashSet, IntMap};
@@ -162,7 +163,7 @@ impl SubscriptionManager {
                     // but we only fill `ops_bin` and `ops_json` at most once.
                     // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
                     // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
-                    let mut ops_bin: Option<(Vec<ws::BsatnBytes>, Vec<ws::BsatnBytes>)> = None;
+                    let mut ops_bin: Option<(Vec<Bytes>, Vec<Bytes>)> = None;
                     let mut ops_json: Option<Vec<TableRowOperationJson>> = None;
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
                         let ops = match self.clients[id].protocol {

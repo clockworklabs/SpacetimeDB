@@ -98,13 +98,13 @@ impl<T: TableType> TableCache<T> {
         table_update: ws_messages::TableUpdate,
     ) {
         for row in table_update.deletes {
-            if let Some(value) = Self::decode_row(&row.0) {
-                self.delete(callbacks, row.0, value)
+            if let Some(value) = Self::decode_row(&row) {
+                self.delete(callbacks, row, value)
             }
         }
         for row in table_update.inserts {
-            if let Some(value) = Self::decode_row(&row.0) {
-                self.insert(callbacks, row.0, value)
+            if let Some(value) = Self::decode_row(&row) {
+                self.insert(callbacks, row, value)
             }
         }
     }
@@ -202,7 +202,7 @@ impl<T: TableType> TableCache<T> {
             );
         }
 
-        for ws_messages::BsatnBytes(row_bytes) in new_subs.inserts {
+        for row_bytes in new_subs.inserts {
             match diff.entry(row_bytes) {
                 spacetimedb_data_structures::map::Entry::Vacant(v) => {
                     if let Some(row) = Self::decode_row(v.key()) {
@@ -323,7 +323,7 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
 
         // Traverse the `table_update` to construct a diff, merging duplicated `Insert`
         // and `Delete` into `Update`.
-        for ws_messages::BsatnBytes(row_bytes) in table_update.deletes {
+        for row_bytes in table_update.deletes {
             if let Some(value) = Self::decode_row(&row_bytes) {
                 let diff_entry = DiffEntry::Delete(row_bytes, value);
                 let pk: T::PrimaryKey = <T::PrimaryKey as Clone>::clone(primary_key(&diff_entry));
@@ -332,7 +332,7 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
                 diff.insert(pk, new_entry);
             }
         }
-        for ws_messages::BsatnBytes(row_bytes) in table_update.inserts {
+        for row_bytes in table_update.inserts {
             if let Some(value) = Self::decode_row(&row_bytes) {
                 let diff_entry = DiffEntry::Insert(row_bytes, value);
                 let pk: T::PrimaryKey = <T::PrimaryKey as Clone>::clone(primary_key(&diff_entry));

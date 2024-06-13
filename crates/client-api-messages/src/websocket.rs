@@ -27,7 +27,7 @@ use crate::timestamp::Timestamp;
 /// Parametric over the reducer argument type to enable [`ClientMessage::map_args`].
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
-pub enum ClientMessage<Args = BsatnBytes> {
+pub enum ClientMessage<Args = Bytes> {
     /// Request a reducer run.
     CallReducer(CallReducer<Args>),
     /// Register SQL queries on which to receive updates.
@@ -59,12 +59,12 @@ impl<Args> ClientMessage<Args> {
 /// Parametric over the argument type to enable [`ClientMessage::map_args`].
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
-pub struct CallReducer<Args = BsatnBytes> {
+pub struct CallReducer<Args = Bytes> {
     /// The name of the reducer to call.
     pub reducer: String,
     /// The arguments to the reducer.
     ///
-    /// In the wire format, this will be a [`BsatnBytes`], encoded according to the reducer's argument schema.
+    /// In the wire format, this will be a [`Bytes`], BSATN encoded according to the reducer's argument schema.
     pub args: Args,
     /// An identifier for a client request.
     ///
@@ -196,7 +196,7 @@ pub struct ReducerCallInfo {
     /// The numerical id of the reducer that was called.
     pub reducer_id: u32,
     /// The arguments to the reducer, encoded as BSATN according to the reducer's argument schema.
-    pub args: BsatnBytes,
+    pub args: Bytes,
     /// An identifier for a client request
     pub request_id: u32,
 }
@@ -251,23 +251,12 @@ pub struct TableUpdate {
     /// Rows are encoded as BSATN according to the table's schema.
     ///
     /// Always empty when in an [`InitialSubscription`].
-    pub deletes: Vec<BsatnBytes>,
+    pub deletes: Vec<Bytes>,
     /// When in a [`TransactionUpdate`], the matching rows of this table inserted by the transaction.
     /// When in an [`InitialSubscription`], the matching rows of this table in the entire committed state.
     ///
     /// Rows are encoded as BSATN according to the table's schema.
-    pub inserts: Vec<BsatnBytes>,
-}
-
-/// BSATN-encoded bytes of either a row in a table, or the arguments to a reducer.
-#[derive(SpacetimeType, Debug, Clone, derive_more::From)]
-#[sats(crate = spacetimedb_lib, transparent)]
-pub struct BsatnBytes(pub Bytes);
-
-impl From<Vec<u8>> for BsatnBytes {
-    fn from(b: Vec<u8>) -> Self {
-        BsatnBytes(b.into())
-    }
+    pub inserts: Vec<Bytes>,
 }
 
 /// A response to a [`OneOffQuery`].
@@ -296,5 +285,5 @@ pub struct OneOffTable {
     /// The name of the table.
     pub table_name: String,
     /// The set of rows which matched the query, encoded as BSATN according to the table's schema.
-    pub rows: Vec<BsatnBytes>,
+    pub rows: Vec<Bytes>,
 }

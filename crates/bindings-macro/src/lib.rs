@@ -48,9 +48,6 @@ mod sym {
     /// Matches `sats`.
     pub const SATS: Symbol = Symbol("sats");
 
-    /// Matches `transparent`.
-    pub const TRANSPARENT: Symbol = Symbol("transparent");
-
     /// Matches `unique`.
     pub const UNIQUE: Symbol = Symbol("unique");
 
@@ -540,9 +537,9 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     };
 
     for (i, field) in fields.iter().enumerate() {
-        let col_num: u8 = i.try_into().map_err(|_| {
-            syn::Error::new_spanned(&field.member, "too many columns; the most a table can have is 256")
-        })?;
+        let col_num: u8 = i
+            .try_into()
+            .map_err(|_| syn::Error::new_spanned(field.ident, "too many columns; the most a table can have is 256"))?;
 
         let mut col_attr = ColumnAttribute::UNSET;
         for attr in field.original_attrs {
@@ -567,7 +564,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         if col_attr.contains(ColumnAttribute::AUTO_INC)
             && !matches!(field.ty, syn::Type::Path(p) if is_integer_type(&p.path))
         {
-            return Err(syn::Error::new_spanned(&field.member, "An `autoinc` or `identity` column must be one of the integer types: u8, i8, u16, i16, u32, i32, u64, i64, u128, i128"));
+            return Err(syn::Error::new_spanned(field.ident, "An `autoinc` or `identity` column must be one of the integer types: u8, i8, u16, i16, u32, i32, u64, i64, u128, i128"));
         }
 
         let column = Column {
@@ -594,7 +591,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
             .map(|ident| {
                 let col = columns
                     .iter()
-                    .find(|col| col.field.ident() == Some(ident))
+                    .find(|col| col.field.ident == Some(ident))
                     .ok_or_else(|| syn::Error::new(ident.span(), "not a column of the table"))?;
                 Ok(col.index)
             })
@@ -620,7 +617,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         let column_index = unique.index;
         let vis = unique.field.vis;
         let column_type = unique.field.ty;
-        let column_ident = unique.field.ident().unwrap();
+        let column_ident = unique.field.ident.unwrap();
 
         let filter_func_ident = format_ident!("filter_by_{}", column_ident);
         let update_func_ident = format_ident!("update_by_{}", column_ident);
@@ -649,7 +646,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
 
     let non_primary_filter_func = nonunique_columns.into_iter().filter_map(|column| {
         let vis = column.field.vis;
-        let column_ident = column.field.ident().unwrap();
+        let column_ident = column.field.ident.unwrap();
         let column_type = column.field.ty;
         let column_index = column.index;
 
@@ -746,7 +743,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         }
     };
 
-    let field_names = fields.iter().map(|f| &f.member).collect::<Vec<_>>();
+    let field_names = fields.iter().map(|f| f.ident.unwrap()).collect::<Vec<_>>();
     let field_types = fields.iter().map(|f| f.ty).collect::<Vec<_>>();
 
     let col_num = 0u8..;

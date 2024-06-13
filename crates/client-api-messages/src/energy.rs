@@ -8,20 +8,22 @@ use std::time::Duration;
 /// a reducer invocation. We will likely refer to this unit as an "eV".
 ///
 #[derive(SpacetimeType, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Add, Sub, AddAssign, SubAssign)]
-#[sats(crate = spacetimedb_sats, transparent)]
-pub struct EnergyQuanta(u128);
+#[sats(crate = spacetimedb_sats)]
+pub struct EnergyQuanta {
+    pub quanta: u128,
+}
 
 impl EnergyQuanta {
-    pub const ZERO: Self = EnergyQuanta(0);
+    pub const ZERO: Self = EnergyQuanta { quanta: 0 };
 
     #[inline]
-    pub fn new(v: u128) -> Self {
-        Self(v)
+    pub fn new(quanta: u128) -> Self {
+        Self { quanta }
     }
 
     #[inline]
     pub fn get(&self) -> u128 {
-        self.0
+        self.quanta
     }
 
     pub fn from_disk_usage(bytes_stored: u64, storage_period: Duration) -> Self {
@@ -32,13 +34,13 @@ impl EnergyQuanta {
         // enough values, so instead we expand the multiplication to (b * trunc(dur) + b * frac(dur)),
         // in a way that preserves integer precision despite a division
         let energy = bytes_stored * sec + (bytes_stored * nsec) / 1_000_000_000;
-        Self(energy)
+        Self::new(energy)
     }
 }
 
 impl fmt::Display for EnergyQuanta {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)?;
+        self.quanta.fmt(f)?;
         f.write_str("eV")
     }
 }
@@ -83,19 +85,19 @@ impl EnergyBalance {
     }
 
     pub fn checked_add_energy(self, energy: EnergyQuanta) -> Option<Self> {
-        self.0.checked_add_unsigned(energy.0).map(Self)
+        self.0.checked_add_unsigned(energy.get()).map(Self)
     }
 
     pub fn saturating_add_energy(&self, energy: EnergyQuanta) -> Self {
-        Self(self.0.saturating_add_unsigned(energy.0))
+        Self(self.0.saturating_add_unsigned(energy.get()))
     }
 
     pub fn checked_sub_energy(self, energy: EnergyQuanta) -> Option<Self> {
-        self.0.checked_sub_unsigned(energy.0).map(Self)
+        self.0.checked_sub_unsigned(energy.get()).map(Self)
     }
 
     pub fn saturating_sub_energy(&self, energy: EnergyQuanta) -> Self {
-        Self(self.0.saturating_sub_unsigned(energy.0))
+        Self(self.0.saturating_sub_unsigned(energy.get()))
     }
 }
 
@@ -136,13 +138,13 @@ impl ReducerBudget {
 
     /// Convert from [`EnergyQuanta`]. Returns `None` if `energy` is too large to be represented.
     pub fn from_energy(energy: EnergyQuanta) -> Option<Self> {
-        energy.0.try_into().ok().map(Self)
+        energy.get().try_into().ok().map(Self)
     }
 }
 
 impl From<ReducerBudget> for EnergyQuanta {
     fn from(value: ReducerBudget) -> Self {
-        EnergyQuanta(value.0.into())
+        EnergyQuanta::new(value.0.into())
     }
 }
 

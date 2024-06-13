@@ -698,7 +698,7 @@ impl ReducerCallbacks {
         } = event;
         let status = Status::from_update_status(status);
         let address = (caller_address != Address::zero()).then_some(caller_address);
-        match bsatn::from_slice::<R>(&reducer_call.args.0) {
+        match bsatn::from_slice::<R>(&reducer_call.args) {
             Err(e) => {
                 log::error!("Error while deserializing reducer args from FunctionCall: {:?}", e);
                 None

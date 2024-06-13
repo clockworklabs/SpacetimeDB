@@ -129,7 +129,7 @@ impl<U: Into<ws::DatabaseUpdate> + Into<Vec<TableUpdateJson>>> ServerMessage for
         };
 
         let event = EventJson {
-            timestamp: event.timestamp.0,
+            timestamp: event.timestamp.microseconds,
             status: status_str.to_string(),
             caller_identity: event.caller_identity,
             function_call: FunctionCallJson {
