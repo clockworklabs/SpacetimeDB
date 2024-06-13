@@ -13,32 +13,32 @@ metrics_group!(
         #[labels(db: Address, table_id: u32, table_name: str)]
         pub rdb_num_table_rows: IntGaugeVec,
 
-        #[name = spacetime_num_rows_inserted_cumulative]
+        #[name = spacetime_num_rows_inserted_total]
         #[help = "The cumulative number of rows inserted into a table"]
         #[labels(txn_type: WorkloadType, db: Address, reducer_or_query: str, table_id: u32, table_name: str)]
         pub rdb_num_rows_inserted: IntCounterVec,
 
-        #[name = spacetime_num_rows_deleted_cumulative]
+        #[name = spacetime_num_rows_deleted_total]
         #[help = "The cumulative number of rows deleted from a table"]
         #[labels(txn_type: WorkloadType, db: Address, reducer_or_query: str, table_id: u32, table_name: str)]
         pub rdb_num_rows_deleted: IntCounterVec,
 
-        #[name = spacetime_num_rows_fetched_cumulative]
+        #[name = spacetime_num_rows_fetched_total]
         #[help = "The cumulative number of rows fetched from a table"]
         #[labels(txn_type: WorkloadType, db: Address, reducer_or_query: str, table_id: u32, table_name: str)]
         pub rdb_num_rows_fetched: IntCounterVec,
 
-        #[name = spacetime_num_index_keys_scanned_cumulative]
+        #[name = spacetime_num_index_keys_scanned_total]
         #[help = "The cumulative number of keys scanned from an index"]
         #[labels(txn_type: WorkloadType, db: Address, reducer_or_query: str, table_id: u32, table_name: str)]
         pub rdb_num_keys_scanned: IntCounterVec,
 
-        #[name = spacetime_num_index_seeks_cumulative]
+        #[name = spacetime_num_index_seeks_total]
         #[help = "The cumulative number of index seeks"]
         #[labels(txn_type: WorkloadType, db: Address, reducer_or_query: str, table_id: u32, table_name: str)]
         pub rdb_num_index_seeks: IntCounterVec,
 
-        #[name = spacetime_num_txns_cumulative]
+        #[name = spacetime_num_txns_total]
         #[help = "The cumulative number of transactions, including both commits and rollbacks"]
         #[labels(txn_type: WorkloadType, db: Address, reducer: str, committed: bool)]
         pub rdb_num_txns: IntCounterVec,

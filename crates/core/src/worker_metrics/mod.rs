@@ -12,8 +12,8 @@ metrics_group!(
         #[labels(database_address: Address)]
         pub connected_clients: IntGaugeVec,
 
-        #[name = spacetime_websocket_requests]
-        #[help = "Number of websocket request messages"]
+        #[name = spacetime_websocket_requests_total]
+        #[help = "The cumulative number of websocket request messages"]
         #[labels(instance_id: u64, protocol: str)]
         pub websocket_requests: IntCounterVec,
 
@@ -22,8 +22,8 @@ metrics_group!(
         #[labels(instance_id: u64, protocol: str)]
         pub websocket_request_msg_size: HistogramVec,
 
-        #[name = spacetime_websocket_sent]
-        #[help = "Number of websocket messages sent to client"]
+        #[name = spacetime_websocket_sent_total]
+        #[help = "The cumulative number of websocket messages sent to client"]
         #[labels(identity: Identity)]
         pub websocket_sent: IntCounterVec,
 
@@ -51,7 +51,7 @@ metrics_group!(
         )]
         pub reducer_wait_time: HistogramVec,
 
-        #[name = spacetime_worker_wasm_instance_errors_cumulative]
+        #[name = spacetime_worker_wasm_instance_errors_total]
         #[help = "The number of fatal WASM instance errors, such as reducer panics."]
         #[labels(identity: Identity, module_hash: Hash, database_address: Address, reducer_symbol: str)]
         pub wasm_instance_errors: IntCounterVec,
