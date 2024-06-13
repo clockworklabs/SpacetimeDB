@@ -41,6 +41,16 @@ pub struct ProtocolDatabaseUpdate {
     pub tables: Either<Vec<TableUpdate>, Vec<TableUpdateJson>>,
 }
 
+impl ProtocolDatabaseUpdate {
+    /// The number of rows in the payload
+    pub fn num_rows(&self) -> usize {
+        match &self.tables {
+            Either::Left(updates) => updates.iter().map(|t| t.table_row_operations.len()).sum(),
+            Either::Right(updates) => updates.iter().map(|t| t.table_row_operations.len()).sum(),
+        }
+    }
+}
+
 impl From<ProtocolDatabaseUpdate> for Vec<TableUpdate> {
     fn from(update: ProtocolDatabaseUpdate) -> Self {
         update.tables.unwrap_left()
@@ -95,6 +105,11 @@ impl DatabaseUpdate {
         DatabaseUpdate {
             tables: map.into_values().collect(),
         }
+    }
+
+    /// The number of rows in the payload
+    pub fn num_rows(&self) -> usize {
+        self.tables.iter().map(|t| t.inserts.len() + t.deletes.len()).sum()
     }
 }
 

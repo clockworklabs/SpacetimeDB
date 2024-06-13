@@ -22,15 +22,35 @@ metrics_group!(
         #[labels(instance_id: u64, protocol: str)]
         pub websocket_request_msg_size: HistogramVec,
 
-        #[name = spacetime_websocket_sent_total]
-        #[help = "The cumulative number of websocket messages sent to client"]
-        #[labels(identity: Identity)]
-        pub websocket_sent: IntCounterVec,
-
-        #[name = spacetime_websocket_sent_msg_size]
+        #[name = spacetime_websocket_sent_msg_size_bytes]
         #[help = "The size of messages sent to connected sessions"]
-        #[labels(identity: Identity)]
+        #[labels(db: Address, workload: WorkloadType)]
+        // Prometheus histograms have default buckets,
+        // which broadly speaking,
+        // are tailored to measure the response time of a network service.
+        //
+        // Therefore we define specific buckets for this metric,
+        // since it has a different unit and a different distribution.
+        //
+        // In particular incremental update payloads could be smaller than 1KB,
+        // whereas initial subscription payloads could exceed 10MB.
+        #[buckets(100, 500, 1e3, 10e3, 100e3, 500e3, 1e6, 5e6, 10e6, 25e6, 50e6, 75e6, 100e6, 500e6)]
         pub websocket_sent_msg_size: HistogramVec,
+
+        #[name = spacetime_websocket_sent_num_rows]
+        #[help = "The number of rows sent to connected sessions"]
+        #[labels(db: Address, workload: WorkloadType)]
+        // Prometheus histograms have default buckets,
+        // which broadly speaking,
+        // are tailored to measure the response time of a network service.
+        //
+        // Therefore we define specific buckets for this metric,
+        // since it has a different unit and a different distribution.
+        //
+        // In particular incremental updates could have fewer than 10 rows,
+        // whereas initial subscriptions could exceed 100K rows.
+        #[buckets(5, 10, 50, 100, 500, 1e3, 5e3, 10e3, 50e3, 100e3, 250e3, 500e3, 750e3, 1e6, 5e6)]
+        pub websocket_sent_num_rows: HistogramVec,
 
         #[name = spacetime_worker_instance_operation_queue_length]
         #[help = "Length of the wait queue for access to a module instance."]
