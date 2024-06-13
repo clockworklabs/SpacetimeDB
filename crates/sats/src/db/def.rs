@@ -1080,66 +1080,53 @@ impl TableDef {
     ///
     /// It looks into [Self::constraints] for possible duplicates and remove them from the result
     pub fn generated_indexes(&self) -> impl Iterator<Item = IndexDef> + '_ {
-        self.constraints.iter().filter_map(|x| {
-            if x.constraints.has_indexed() {
+        self.constraints
+            .iter()
+            // We are only interested in constraints implying an index.
+            .filter(|x| x.constraints.has_indexed())
+            // Create the `IndexDef`.
+            .map(|x| {
                 let is_unique = x.constraints.has_unique();
-                let idx = IndexDef::for_column(&self.table_name, &x.constraint_name, x.columns.clone(), is_unique);
-                if self
-                    .indexes
-                    .binary_search_by(|x| x.index_name.cmp(&idx.index_name))
-                    .is_ok()
-                {
-                    return None;
-                }
-                Some(idx)
-            } else {
-                None
-            }
-        })
+                IndexDef::for_column(&self.table_name, &x.constraint_name, x.columns.clone(), is_unique)
+            })
+            // Only keep those we don't yet have in the list of indices (checked by name).
+            .filter(|idx| self.indexes.iter().all(|x| x.index_name != idx.index_name))
     }
 
     /// Get an iterator deriving [SequenceDef] from the constraints that require them like `IDENTITY`.
     ///
     /// It looks into [Self::constraints] for possible duplicates and remove them from the result
     pub fn generated_sequences(&self) -> impl Iterator<Item = SequenceDef> + '_ {
-        self.constraints.iter().filter_map(|x| {
-            if x.constraints.has_autoinc() {
-                let col_id = x.columns.head();
-
-                let seq = SequenceDef::for_column(&self.table_name, &x.constraint_name, col_id);
-                if self
-                    .sequences
-                    .binary_search_by(|x| x.sequence_name.cmp(&seq.sequence_name))
-                    .is_ok()
-                {
-                    return None;
-                }
-                Some(seq)
-            } else {
-                None
-            }
-        })
+        self.constraints
+            .iter()
+            // We are only interested in constraints implying a sequence.
+            .filter(|x| x.constraints.has_autoinc())
+            // Create the `SequenceDef`.
+            .map(|x| SequenceDef::for_column(&self.table_name, &x.constraint_name, x.columns.head()))
+            // Only keep those we don't yet have in the list of sequences (checked by name).
+            .filter(|seq| self.sequences.iter().all(|x| x.sequence_name != seq.sequence_name))
     }
 
     /// Get an iterator deriving [ConstraintDef] from the indexes that require them like `UNIQUE`.
     ///
     /// It looks into [Self::constraints] for possible duplicates and remove them from the result
     pub fn generated_constraints(&self) -> impl Iterator<Item = ConstraintDef> + '_ {
+        // Collect the set of all col-lists with a constraint.
         let cols: HashSet<_> = self
             .constraints
             .iter()
-            .filter_map(|x| {
-                if x.constraints.kind() != ConstraintKind::UNSET {
-                    Some(&x.columns)
-                } else {
-                    None
-                }
-            })
+            .filter(|x| x.constraints.kind() != ConstraintKind::UNSET)
+            .map(|x| &x.columns)
             .collect();
 
-        self.indexes.iter().filter_map(move |idx| {
-            if !cols.contains(&idx.columns) {
-                Some(ConstraintDef::for_column(
+        // Those indices that are not present in the constraints above
+        // have constraints generated for them.
+        // When `idx.is_unique`, a unique constraint is generated rather than an indexed one.
+        self.indexes
+            .iter()
+            .filter(move |idx| !cols.contains(&idx.columns))
+            .map(|idx| {
+                ConstraintDef::for_column(
                     &self.table_name,
                     &idx.index_name,
                     if idx.is_unique {
@@ -1148,11 +1135,8 @@ impl TableDef {
                         Constraints::indexed()
                     },
                     idx.columns.clone(),
-                ))
-            } else {
-                None
-            }
-        })
+                )
+            })
     }
 
     /// Create a new [TableSchema] from [Self] and a `table id`.
