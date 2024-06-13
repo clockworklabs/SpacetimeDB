@@ -2,6 +2,7 @@ use serial_test::serial;
 use spacetimedb_testing::modules::{
     CompilationMode, CompiledModule, LogLevel, LoggerRecord, ModuleHandle, DEFAULT_CONFIG, IN_MEMORY_CONFIG,
 };
+use std::time::{Duration, Instant};
 
 fn init() {
     let _ = env_logger::builder()
@@ -184,6 +185,72 @@ fn test_index_scans() {
             assert!(timing(&logs[1]));
             assert!(timing(&logs[2]));
             // assert!(timing(&logs[3]));
+        },
+    );
+}
+
+async fn bench_call<'a>(module: &ModuleHandle, call: &str, count: &u32) -> Duration {
+    let json = format!(r#"{{"call": {{"fn": "{call}", "args": [{count}]}}}}"#);
+
+    let now = Instant::now();
+
+    module.send(json).await.unwrap();
+
+    now.elapsed()
+}
+
+#[allow(clippy::disallowed_macros)]
+async fn _run_bench_db(module: ModuleHandle, benches: &[(&str, u32, &str)]) {
+    let expect: Vec<_> = benches.iter().map(|x| x.2.to_string()).collect();
+    let mut timings = Vec::with_capacity(benches.len());
+    for (name, count, _) in benches {
+        let elapsed = bench_call(&module, name, count).await;
+        timings.push((name, count, elapsed));
+    }
+
+    assert_eq!(read_logs(&module).await, expect);
+
+    for (name, rows, elapsed) in timings {
+        println!("RUN {name:<30} x {rows:>10} rows: {elapsed:>20.3?}");
+    }
+}
+
+#[test]
+#[serial]
+fn test_calling_bench_db_circles() {
+    CompiledModule::compile("benchmarks", CompilationMode::Release).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            #[rustfmt::skip]
+            let benches = [
+                ("insert_bulk_food", 50, "INSERT FOOD: 50"),
+                ("insert_bulk_entity", 50, "INSERT ENTITY: 50"),
+                ("insert_bulk_circle", 500, "INSERT CIRCLE: 500"),
+                ("cross_join_circle_food", 50 * 500, "CROSS JOIN CIRCLE FOOD: 25000, processed: 2500"),
+                ("cross_join_all", 50 * 50 * 500, "CROSS JOIN ALL: 1250000, processed: 1250000"),
+            ];
+            _run_bench_db(module, &benches).await
+        },
+    );
+}
+
+#[test]
+#[serial]
+fn test_calling_bench_db_ia_loop() {
+    CompiledModule::compile("benchmarks", CompilationMode::Release).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            #[rustfmt::skip]
+                let benches = [
+                ("insert_bulk_position", 20_000, "INSERT POSITION: 20000"),
+                ("insert_bulk_velocity", 10_000, "INSERT VELOCITY: 10000"),
+                ("update_position_all", 20_000, "UPDATE POSITION ALL: 20000, processed: 20000"),
+                ("update_position_with_velocity", 10_000, "UPDATE POSITION BY VELOCITY: 10000, processed: 10000"),
+                ("insert_world", 5_000, "INSERT WORLD PLAYERS: 5000"),
+                ("game_loop_enemy_ia", 5_000, "ENEMY IA LOOP PLAYERS: 5000, processed: 2500"),
+            ];
+
+            _run_bench_db(module, &benches).await
         },
     );
 }
