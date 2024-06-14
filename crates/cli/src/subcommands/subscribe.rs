@@ -121,13 +121,13 @@ fn reformat_update(msg: ws::DatabaseUpdate, schema: &ModuleDef) -> anyhow::Resul
                 .into_iter()
                 .map(reformat_row)
                 .collect::<anyhow::Result<Vec<_>>>()
-                .unwrap();
+                ?;
             let inserts = upd
                 .inserts
                 .into_iter()
                 .map(reformat_row)
                 .collect::<anyhow::Result<Vec<_>>>()
-                .unwrap();
+                ?;
 
             Ok((upd.table_name, SubscriptionTable { deletes, inserts }))
         })
@@ -146,12 +146,12 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let timeout = args.get_one::<u32>("timeout").copied();
     let print_initial_update = args.get_flag("print_initial_update");
 
-    let conn = parse_req(config, args).await.unwrap();
+    let conn = parse_req(config, args).await?;
     let api = ClientApi::new(conn);
-    let module_def = api.module_def().await.unwrap();
+    let module_def = api.module_def().await?;
 
     // Change the URI scheme from `http(s)` to `ws(s)`.
-    let mut uri = http::Uri::try_from(api.con.db_uri("subscribe")).unwrap().into_parts();
+    let mut uri = http::Uri::try_from(api.con.db_uri("subscribe"))?.into_parts();
     uri.scheme = uri.scheme.map(|s| {
         if s == Scheme::HTTP {
             "ws".parse().unwrap()
@@ -163,35 +163,35 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     });
 
     // Create the websocket request.
-    let mut req = http::Uri::from_parts(uri).unwrap().into_client_request().unwrap();
+    let mut req = http::Uri::from_parts(uri)?.into_client_request()?;
     req.headers_mut().insert(header::SEC_WEBSOCKET_PROTOCOL, TEXT_PROTOCOL);
     //  Add the authorization header, if any.
     if let Some(auth_header) = &api.con.auth_header {
         req.headers_mut()
-            .insert(header::AUTHORIZATION, auth_header.try_into().unwrap());
+            .insert(header::AUTHORIZATION, auth_header.try_into()?);
     }
-    let (mut ws, _) = tokio_tungstenite::connect_async(req).await.unwrap();
+    let (mut ws, _) = tokio_tungstenite::connect_async(req).await?;
 
     let task = async {
-        subscribe(&mut ws, queries.cloned().collect()).await.unwrap();
+        subscribe(&mut ws, queries.cloned().collect()).await?;
         await_initial_update(&mut ws, print_initial_update.then_some(&module_def))
             .await
-            .unwrap();
+            ?;
         consume_transaction_updates(&mut ws, num, &module_def).await
     };
 
     let needs_shutdown = if let Some(timeout) = timeout {
         let timeout = Duration::from_secs(timeout.into());
         match tokio::time::timeout(timeout, task).await {
-            Ok(res) => res.unwrap(),
+            Ok(res) => res?,
             Err(_elapsed) => true,
         }
     } else {
-        task.await.unwrap()
+        task.await?
     };
 
     if needs_shutdown {
-        ws.close(None).await.unwrap();
+        ws.close(None).await?;
     }
 
     Ok(())
@@ -219,14 +219,14 @@ where
     S: TryStream<Ok = WsMessage> + Unpin,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
-    while let Some(msg) = ws.try_next().await.unwrap() {
+    while let Some(msg) = ws.try_next().await? {
         let Some(msg) = parse_msg_json(&msg) else { continue };
         match msg {
             ws::ServerMessage::InitialSubscription(sub) => {
                 if let Some(module_def) = module_def {
-                    let formatted = reformat_update(sub.database_update, module_def).unwrap();
-                    let output = serde_json::to_string(&formatted).unwrap() + "\n";
-                    tokio::io::stdout().write_all(output.as_bytes()).await.unwrap()
+                    let formatted = reformat_update(sub.database_update, module_def)?;
+                    let output = serde_json::to_string(&formatted)? + "\n";
+                    tokio::io::stdout().write_all(output.as_bytes()).await?
                 }
                 break;
             }
@@ -257,7 +257,7 @@ where
         if num.is_some_and(|n| num_received >= n) {
             break Ok(true);
         }
-        let Some(msg) = ws.try_next().await.unwrap() else {
+        let Some(msg) = ws.try_next().await? else {
             eprintln!("disconnected by server");
             break Ok(false);
         };
@@ -271,8 +271,8 @@ where
                 status: ws::UpdateStatus::Committed(update),
                 ..
             }) => {
-                let output = serde_json::to_string(&reformat_update(update, module_def).unwrap()).unwrap() + "\n";
-                stdout.write_all(output.as_bytes()).await.unwrap();
+                let output = serde_json::to_string(&reformat_update(update, module_def)?)? + "\n";
+                stdout.write_all(output.as_bytes()).await?;
                 num_received += 1;
             }
             _ => continue,
