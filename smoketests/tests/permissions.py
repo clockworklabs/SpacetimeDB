@@ -114,7 +114,7 @@ pub fn do_thing() {
             self.spacetime("sql", self.address, "select * from Secret")
 
         with self.assertRaises(Exception):
-            self.subscribe("SELECT * FROM Secret", n=1)
+            self.subscribe("SELECT * FROM Secret", n=0)
 
         sub = self.subscribe("SELECT * FROM *", n=1)
         self.call("do_thing", anon=True)
