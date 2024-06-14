@@ -37,6 +37,7 @@ use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::sats::WithTypespace;
+use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::ProductTypeElement;
 
 pub(crate) struct DomainParsingRejection;
@@ -303,15 +304,28 @@ where
 pub struct CatalogParams {
     name_or_address: NameOrAddress,
 }
+#[derive(Deserialize)]
+pub struct CatalogQueryParams {
+    expand: Option<bool>,
+    #[serde(default)]
+    module_def: bool,
+}
 pub async fn catalog<S>(
     State(worker_ctx): State<S>,
     Path(CatalogParams { name_or_address }): Path<CatalogParams>,
-    Query(DescribeQueryParams { expand }): Query<DescribeQueryParams>,
+    Query(CatalogQueryParams { expand, module_def }): Query<CatalogQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse>
 where
     S: ControlStateDelegate + NodeDelegate,
 {
+    if module_def && expand.is_some() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "expand and module_def cannot both be specified",
+        )
+            .into());
+    }
     let address = name_or_address.resolve(&worker_ctx).await?.into();
     let database = worker_ctx_find_database(&worker_ctx, &address)
         .await?
@@ -325,16 +339,21 @@ where
         .get_or_launch_module_host(database, instance_id)
         .await
         .map_err(log_and_500)?;
-    let catalog = module.catalog();
-    let expand = expand.unwrap_or(false);
-    let response_catalog: HashMap<_, _> = catalog
-        .iter()
-        .map(|(name, entity)| (name, entity_description_json(entity, expand)))
-        .collect();
-    let response_json = json!({
-        "entities": response_catalog,
-        "typespace": catalog.typespace().types,
-    });
+
+    let response_json = if module_def {
+        serde_json::to_value(SerializeWrapper::from_ref(&module.info().module_def)).map_err(log_and_500)?
+    } else {
+        let catalog = module.catalog();
+        let expand = expand.unwrap_or(false);
+        let response_catalog: HashMap<_, _> = catalog
+            .iter()
+            .map(|(name, entity)| (name, entity_description_json(entity, expand)))
+            .collect();
+        json!({
+            "entities": response_catalog,
+            "typespace": catalog.typespace().types,
+        })
+    };
 
     Ok((
         StatusCode::OK,

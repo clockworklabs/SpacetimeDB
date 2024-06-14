@@ -63,9 +63,7 @@ impl Lockfile {
     /// Returns the path of a lockfile for the file `file_path`,
     /// without actually acquiring the lock.
     pub fn lock_path(file_path: &Path) -> PathBuf {
-        let mut path = file_path.to_path_buf();
-        path.set_extension("lock");
-        path
+        file_path.with_extension("lock")
     }
 
     fn release_internal(path: &Path) -> Result<(), LockfileError> {
