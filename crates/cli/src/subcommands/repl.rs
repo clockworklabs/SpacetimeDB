@@ -1,5 +1,6 @@
 use crate::api::{ClientApi, Connection};
-use crate::sql::run_sql;
+use crate::format::OutputFormat;
+use crate::sql::{run_sql, RenderOpts};
 use colored::*;
 use dirs::home_dir;
 use std::env::temp_dir;
@@ -58,6 +59,11 @@ pub async fn exec(con: Connection) -> Result<(), anyhow::Error> {
 └──────────────────────────────────────────────────────────┘",
     );
 
+    let render_opts = RenderOpts {
+        fmt: OutputFormat::Table,
+        with_timing: true,
+        with_row_count: true,
+    };
     let api = ClientApi::new(con);
 
     loop {
@@ -71,7 +77,7 @@ pub async fn exec(con: Connection) -> Result<(), anyhow::Error> {
                 sql => {
                     rl.add_history_entry(sql).ok();
 
-                    if let Err(err) = run_sql(api.sql(), sql, true).await {
+                    if let Err(err) = run_sql(api.sql(), sql, render_opts).await {
                         eprintln!("{}", err.to_string().red())
                     }
                 }

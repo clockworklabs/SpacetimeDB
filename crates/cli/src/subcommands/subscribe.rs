@@ -1,3 +1,4 @@
+use std::iter;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -5,15 +6,22 @@ use clap::{value_parser, Arg, ArgAction, ArgMatches};
 use futures::{Sink, SinkExt, TryStream, TryStreamExt};
 use http::header;
 use http::uri::Scheme;
+use serde::de::DeserializeSeed;
 use serde_json::value::RawValue;
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_lib::{sats, ModuleDef};
+use spacetimedb_lib::de::serde::SeedWrapper;
+use spacetimedb_lib::de::ProductVisitor;
+use spacetimedb_lib::ser::serde::SerializeWrapper;
+use spacetimedb_lib::{sats::satn, ModuleDef};
 use spacetimedb_standalone::TEXT_PROTOCOL;
-use tokio::io::AsyncWriteExt;
+use tabled::settings::panel::Footer;
+use tabled::settings::Style;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 use crate::api::ClientApi;
+use crate::format::{self, OutputFormat};
 use crate::sql::parse_req;
 use crate::Config;
 
@@ -58,6 +66,14 @@ pub fn cli() -> clap::Command {
                 .long("print-initial-update")
                 .action(ArgAction::SetTrue)
                 .help("Print the initial update for the queries."),
+        )
+        .arg(
+            Arg::new("output-format")
+                .long("output-format")
+                .short('o')
+                .value_parser(value_parser!(OutputFormat))
+                .default_value("json")
+                .help("How to format the subscription updates."),
         )
         .arg(
             Arg::new("identity")
@@ -127,30 +143,222 @@ struct SubscriptionUpdateJson<'a> {
 }
 
 impl SubscriptionUpdateJson<'_> {
-    fn reformat(self, schema: &ModuleDef) -> anyhow::Result<HashMap<String, SubscriptionTable>> {
-        self.table_updates
+    /// Render the update to `out`, resolving row types using `schema`, and
+    /// formatting the output according to `fmt`.
+    async fn render(self, out: impl AsyncWrite + Unpin, schema: &ModuleDef, fmt: OutputFormat) -> anyhow::Result<()> {
+        use OutputFormat::*;
+
+        match fmt {
+            Json => self.render_json(out, schema).await,
+            Table => self.render_tabled(out, schema).await,
+            Csv => self.render_csv(out, schema).await,
+        }
+    }
+
+    /// Renders the update as a JSON object, delimited as [`json-seq`].
+    ///
+    /// `json-seq` can be decoded by `jq --seq` in a streaming fashion.
+    ///
+    /// # Example
+    ///
+    /// A query `SELECT * FROM Message` against the `quickstart-chat` application
+    /// may yield the following updates (without `--print-initial-update`):
+    ///
+    /// ```json
+    /// {"Message":{"deletes":[],"inserts":[{"sender":{"__identity_bytes":"aba52919637a60eb336e76eed40843653bfb3d9d94881d78ab13dda56363b993"},"sent":1718614904711241,"text":"hallo"}]}}
+    /// {"Message":{"deletes":[],"inserts":[{"sender":{"__identity_bytes":"aba52919637a60eb336e76eed40843653bfb3d9d94881d78ab13dda56363b993"},"sent":1718614913023180,"text":"wie geht's"}]}}
+    /// {"Message":{"deletes":[],"inserts":[{"sender":{"__identity_bytes":"aba52919637a60eb336e76eed40843653bfb3d9d94881d78ab13dda56363b993"},"sent":1718614919407019,"text":":ghost:"}]}}/
+    /// ```
+    ///
+    /// [json-seq]: https://datatracker.ietf.org/doc/html/rfc7464
+    async fn render_json(self, mut out: impl AsyncWrite + Unpin, schema: &ModuleDef) -> anyhow::Result<()> {
+        let tables: HashMap<Box<str>, SubscriptionTable> = self
+            .table_updates
             .into_iter()
             .map(|upd| {
                 let table_schema = schema
                     .tables
                     .iter()
                     .find(|tbl| tbl.schema.table_name == upd.table_name)
-                    .context("table not found in schema")?;
+                    .with_context(|| format!("table `{}` not found in schema", upd.table_name))?;
                 let mut deletes = Vec::new();
                 let mut inserts = Vec::new();
                 let table_ty = schema.typespace.resolve(table_schema.data);
                 for op in upd.table_row_operations {
-                    let row = serde::de::DeserializeSeed::deserialize(sats::de::serde::SeedWrapper(table_ty), op.row)?;
+                    let row = DeserializeSeed::deserialize(SeedWrapper(table_ty), op.row)?;
                     let row = table_ty.with_value(&row);
-                    let row = serde_json::to_value(sats::ser::serde::SerializeWrapper::from_ref(&row))?;
+                    let row = serde_json::to_value(SerializeWrapper::from_ref(&row))?;
                     match op.op {
                         Op::Delete => deletes.push(row),
                         Op::Insert => inserts.push(row),
                     }
                 }
-                Ok((upd.table_name.into(), SubscriptionTable { deletes, inserts }))
+                Ok((upd.table_name.clone(), SubscriptionTable { deletes, inserts }))
             })
-            .collect()
+            .collect::<anyhow::Result<_>>()?;
+
+        format::write_json_seq(&mut out, &tables).await?;
+        out.flush().await?;
+
+        Ok(())
+    }
+
+    /// Renders the update as ASCII tables similar in style to `psql`.
+    ///
+    /// For each database table in the update, a separate ASCII table is drawn.
+    ///
+    /// The first column of each table indicates the operation which was
+    /// performed on the row: 'I' for insert, or 'D' for delete.
+    /// The table footer indicates the table name and how many deletes and
+    /// inserts where in the update, respectively.
+    ///
+    /// # Example
+    ///
+    /// A query `SELECT * FROM *` agains the `quickstart-chat` application may
+    /// yield the following updates (without `--print-initial-update`):
+    ///
+    /// ```text
+    ///    | sender                                                             | sent             | text
+    /// ---+--------------------------------------------------------------------+------------------+---------
+    ///  I | 0xaba52919637a60eb336e76eed40843653bfb3d9d94881d78ab13dda56363b993 | 1718615094012264 | "hallo"
+    ///  Table: Message, Deletes: 0, Inserts: 1
+    ///
+    ///    | identity                                                           | name        | online
+    /// ---+--------------------------------------------------------------------+-------------+--------
+    ///  D | 0xaba52919637a60eb336e76eed40843653bfb3d9d94881d78ab13dda56363b993 | (none = ()) | true
+    ///  I | 0xaba52919637a60eb336e76eed40843653bfb3d9d94881d78ab13dda56363b993 | (none = ()) | false
+    ///  Table: User, Deletes: 1, Inserts: 1
+    ///  ```
+    async fn render_tabled(self, mut out: impl AsyncWrite + Unpin, schema: &ModuleDef) -> anyhow::Result<()> {
+        for TableUpdateJson {
+            table_name,
+            table_row_operations,
+        } in self.table_updates
+        {
+            let table_schema = schema
+                .tables
+                .iter()
+                .find(|tbl| tbl.schema.table_name == table_name)
+                .with_context(|| format!("table `{table_name}` not found in schema"))?;
+            let table_ty = schema
+                .typespace
+                .resolve(table_schema.data)
+                .map(|t| t.as_product().unwrap());
+
+            let mut builder = {
+                let rows = table_row_operations.len();
+                let cols = table_ty.product_len() + 1;
+                tabled::builder::Builder::with_capacity(rows, cols)
+            };
+            builder.push_record(
+                iter::once("").chain(
+                    table_schema
+                        .schema
+                        .columns
+                        .iter()
+                        .map(|col_def| col_def.col_name.as_ref()),
+                ),
+            );
+
+            let mut deletes = 0;
+            let mut inserts = 0;
+            for TableRowOperationJson { op, row } in table_row_operations {
+                let op = match op {
+                    Op::Delete => {
+                        deletes += 1;
+                        "D"
+                    }
+                    Op::Insert => {
+                        inserts += 1;
+                        "I"
+                    }
+                };
+                let row = DeserializeSeed::deserialize(SeedWrapper(table_ty), row)?;
+                let record = iter::once(op.into()).chain(table_ty.with_values(&row).map(|value| {
+                    satn::PsqlWrapper {
+                        ty: table_ty.ty(),
+                        value,
+                    }
+                    .to_string()
+                }));
+                builder.push_record(record);
+            }
+            let mut rendered_table = builder
+                .build()
+                .with(Style::psql())
+                .with(Footer::new(format!(
+                    "Table: {}, Deletes: {}, Inserts: {}",
+                    table_name, deletes, inserts,
+                )))
+                .to_string();
+            rendered_table.push_str("\n\n");
+            out.write_all(rendered_table.as_bytes()).await?;
+        }
+        out.flush().await?;
+
+        Ok(())
+    }
+
+    /// Renders the update in CSV format.
+    ///
+    /// The first column on each line is the table name, followed by the
+    /// operation ('I' for insert, or 'D' for delete), followed by the row as
+    /// returned by the query.
+    ///
+    /// # Example
+    ///
+    /// A query `SELECT * FROM *` agains the `quickstart-chat` application may
+    /// yield the following updates (without `--print-initial-update`):
+    ///
+    /// ```text
+    /// Message,I,0xaba52919637a60eb336e76eed40843653bfb3d9d94881d78ab13dda56363b993,1718615221730361,hallo
+    /// User,D,0xaba52919637a60eb336e76eed40843653bfb3d9d94881d78ab13dda56363b993,(none = ()),true
+    /// User,I,0xaba52919637a60eb336e76eed40843653bfb3d9d94881d78ab13dda56363b993,(none = ()),false
+    /// ```
+    async fn render_csv(self, mut out: impl AsyncWrite + Unpin, schema: &ModuleDef) -> anyhow::Result<()> {
+        for TableUpdateJson {
+            table_name,
+            table_row_operations,
+        } in self.table_updates
+        {
+            let mut csv = csv_async::AsyncWriter::from_writer(&mut out);
+            let table_schema = schema
+                .tables
+                .iter()
+                .find(|tbl| tbl.schema.table_name == table_name)
+                .with_context(|| format!("table `{table_name}` not found in schema"))?;
+            let table_ty = schema
+                .typespace
+                .resolve(table_schema.data)
+                .map(|t| t.as_product().unwrap());
+
+            for TableRowOperationJson { op, row } in table_row_operations {
+                let op = match op {
+                    Op::Delete => "D",
+                    Op::Insert => "I",
+                };
+                let row = DeserializeSeed::deserialize(SeedWrapper(table_ty), row)?;
+
+                csv.write_field(table_name.as_ref()).await?;
+                csv.write_field(op).await?;
+                for value in table_ty.with_values(&row) {
+                    let fmt = satn::PsqlWrapper {
+                        ty: table_ty.ty(),
+                        value,
+                    }
+                    .to_string();
+                    // Remove quotes around string values to prevent quoting.
+                    csv.write_field(fmt.trim_matches('"')).await?;
+                }
+                // Terminate record.
+                csv.write_record(None::<&[u8]>).await?;
+            }
+
+            csv.flush().await?;
+        }
+
+        out.flush().await?;
+        Ok(())
     }
 }
 
@@ -181,6 +389,10 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let num = args.get_one::<u32>("num-updates").copied();
     let timeout = args.get_one::<u32>("timeout").copied();
     let print_initial_update = args.get_flag("print_initial_update");
+    let fmt = args
+        .get_one::<OutputFormat>("output-format")
+        .copied()
+        .unwrap_or(OutputFormat::Json);
 
     let conn = parse_req(config, args).await?;
     let api = ClientApi::new(conn);
@@ -210,8 +422,8 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let task = async {
         subscribe(&mut ws, queries.cloned().collect()).await?;
-        await_initial_update(&mut ws, print_initial_update.then_some(&module_def)).await?;
-        consume_transaction_updates(&mut ws, num, &module_def).await
+        await_initial_update(&mut ws, print_initial_update.then_some((&module_def, fmt))).await?;
+        consume_transaction_updates(&mut ws, num, &module_def, fmt).await
     };
 
     let needs_shutdown = if let Some(timeout) = timeout {
@@ -241,8 +453,9 @@ where
 }
 
 /// Await the initial [`ServerMessage::SubscriptionUpdate`].
-/// If `module_def` is `Some`, print a JSON representation to stdout.
-async fn await_initial_update<S>(ws: &mut S, module_def: Option<&ModuleDef>) -> anyhow::Result<()>
+/// If `print` is `Some`, the update is printed to stdout according to the
+/// contained schema and output format.
+async fn await_initial_update<S>(ws: &mut S, print: Option<(&ModuleDef, OutputFormat)>) -> anyhow::Result<()>
 where
     S: TryStream<Ok = WsMessage> + Unpin,
     S::Error: std::error::Error + Send + Sync + 'static,
@@ -251,9 +464,8 @@ where
         let Some(msg) = parse_msg_json(&msg) else { continue };
         match msg {
             ServerMessage::SubscriptionUpdate(sub) => {
-                if let Some(module_def) = module_def {
-                    let output = serde_json::to_string(&sub.reformat(module_def)?)? + "\n";
-                    tokio::io::stdout().write_all(output.as_bytes()).await?
+                if let Some((schema, fmt)) = print {
+                    sub.render(tokio::io::stdout(), schema, fmt).await?;
                 }
                 break;
             }
@@ -273,12 +485,17 @@ where
 
 /// Print `num` [`ServerMessage::TransactionUpdate`] messages as JSON.
 /// If `num` is `None`, keep going indefinitely.
-async fn consume_transaction_updates<S>(ws: &mut S, num: Option<u32>, module_def: &ModuleDef) -> anyhow::Result<bool>
+/// Received updates are printed to stdout according to `schema` and `fmt`.
+async fn consume_transaction_updates<S>(
+    ws: &mut S,
+    num: Option<u32>,
+    schema: &ModuleDef,
+    fmt: OutputFormat,
+) -> anyhow::Result<bool>
 where
     S: TryStream<Ok = WsMessage> + Unpin,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
-    let mut stdout = tokio::io::stdout();
     let mut num_received = 0;
     loop {
         if num.is_some_and(|n| num_received >= n) {
@@ -297,8 +514,7 @@ where
             ServerMessage::TransactionUpdate {
                 subscription_update, ..
             } => {
-                let output = serde_json::to_string(&subscription_update.reformat(module_def)?)? + "\n";
-                stdout.write_all(output.as_bytes()).await?;
+                subscription_update.render(tokio::io::stdout(), schema, fmt).await?;
                 num_received += 1;
             }
             ServerMessage::Unknown => continue,
