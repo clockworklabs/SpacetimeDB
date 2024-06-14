@@ -22,7 +22,7 @@ static partial class Module
     // `[SpacetimeDB.Table]` registers a struct or a class as a SpacetimeDB table.
     //
     // It generates methods to insert, filter, update, and delete rows of the given type in the table.
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct Person
     {
         // `[SpacetimeDB.Column]` allows to specify column attributes / constraints such as
@@ -172,11 +172,15 @@ if (option.IsSome)
 ### Tables
 
 `[SpacetimeDB.Table]` attribute can be used on any `struct` or `class` to mark it as a SpacetimeDB table. It will register a table in the database with the given name and fields as well as will generate C# methods to insert, filter, update, and delete rows of the given type.
+By default, tables are **private**. This means that they are only readable by the table owner, and by server module code.
+Adding `[SpacetimeDB.Table(Public = true))]` annotation makes a table public. **Public** tables are readable by all users, but can still only be modified by your server module code.
+
+_Coming soon: We plan to add much more robust access controls than just public or private. Stay tuned!_
 
 It implies `[SpacetimeDB.Type]`, so you must not specify both attributes on the same type.
 
 ```csharp
-[SpacetimeDB.Table]
+[SpacetimeDB.Table(Public = true)]
 public partial struct Person
 {
     [SpacetimeDB.Column(ColumnAttrs.Unique | ColumnAttrs.AutoInc)]

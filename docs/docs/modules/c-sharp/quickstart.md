@@ -7,6 +7,10 @@ A SpacetimeDB module is code that gets compiled to WebAssembly and is uploaded t
 Each SpacetimeDB module defines a set of tables and a set of reducers.
 
 Each table is defined as a C# `class` annotated with `[SpacetimeDB.Table]`, where an instance represents a row, and each field represents a column.
+By default, tables are **private**. This means that they are only readable by the table owner, and by server module code.
+The `[SpacetimeDB.Table(Public = true))]` annotation makes a table public. **Public** tables are readable by all users, but can still only be modified by your server module code.
+
+_Coming soon: We plan to add much more robust access controls than just public or private tables. Stay tuned!_
 
 A reducer is a function which traverses and updates the database. Each reducer call runs in its own transaction, and its updates to the database are only committed if the reducer returns successfully. In C#, reducers are defined as functions annotated with `[SpacetimeDB.Reducer]`. If an exception is thrown, the reducer call fails, the database is not updated, and a failed message is reported to the client.
 
@@ -84,7 +88,7 @@ For each `User`, we'll store their `Identity`, an optional name they can set to 
 In `server/Lib.cs`, add the definition of the table `User` to the `Module` class:
 
 ```csharp
-[SpacetimeDB.Table]
+[SpacetimeDB.Table(Public = true)]
 public partial class User
 {
     [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
@@ -99,7 +103,7 @@ For each `Message`, we'll store the `Identity` of the user who sent it, the `Tim
 In `server/Lib.cs`, add the definition of the table `Message` to the `Module` class:
 
 ```csharp
-[SpacetimeDB.Table]
+[SpacetimeDB.Table(Public = true)]
 public partial class Message
 {
     public Identity Sender;
