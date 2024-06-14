@@ -40,15 +40,24 @@ metrics_group!(
         #[name = spacetime_worker_instance_operation_queue_length_histogram]
         #[help = "Length of the wait queue for access to a module instance."]
         #[labels(database_address: Address)]
-        #[buckets(0, 10, 25, 50, 75, 100, 150, 200, 250, 300, 350, 400, 450, 500, 1000)]
+        // Prometheus histograms have default buckets,
+        // which broadly speaking,
+        // are tailored to measure the response time of a network service.
+        // Hence we need to define specific buckets for queue length.
+        #[buckets(0, 1, 2, 5, 10, 25, 50, 75, 100, 200, 300, 400, 500, 1000)]
         pub instance_queue_length_histogram: HistogramVec,
 
         #[name = spacetime_reducer_wait_time_sec]
         #[help = "The amount of time (in seconds) a reducer spends in the queue waiting to run"]
         #[labels(db: Address, reducer: str)]
-        #[buckets(
-            1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
-        )]
+        // Prometheus histograms have default buckets,
+        // which broadly speaking,
+        // are tailored to measure the response time of a network service.
+        //
+        // However we expect a different value distribution for this metric.
+        // In particular the smallest bucket value is 5ms by default.
+        // But we expect many wait times to be on the order of microseconds.
+        #[buckets(100e-6, 500e-6, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10)]
         pub reducer_wait_time: HistogramVec,
 
         #[name = spacetime_worker_wasm_instance_errors_total]
