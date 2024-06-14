@@ -169,7 +169,7 @@ impl SubscriptionManager {
                                 ops_bin.get_or_insert_with(|| delta.updates.to_protocol(Protocol::Binary)).clone()
                             }
                             Protocol::Text => {
-                                ops_json.get_or_insert_with(|| delta.updates.to_protocol(Protocol::Binary)).clone()
+                                ops_json.get_or_insert_with(|| delta.updates.to_protocol(Protocol::Text)).clone()
                             }
                         };
                         (id, table_id, table_name.clone(), ops)

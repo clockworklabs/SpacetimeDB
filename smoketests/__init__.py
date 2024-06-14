@@ -10,6 +10,7 @@ import string
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 import logging
 
@@ -96,11 +97,13 @@ def extract_field(cmd_output, field_name):
     field, = extract_fields(cmd_output, field_name)
     return field
 
+def log_cmd(args):
+    logging.debug(f"$ {' '.join(str(arg) for arg in args)}")
+
+
 def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=None, log=True, **kwargs):
     if log:
-        cmd = args[0] if cmd_name is None else cmd_name
-
-        logging.debug(f"$ {cmd} {' '.join(str(arg) for arg in args[1:])}")
+        log_cmd(args if cmd_name is None else [cmd_name, *args[1:]])
 
     needs_close = False
     if not capture_stderr:
@@ -170,9 +173,10 @@ class Smoketest(unittest.TestCase):
         if not hasattr(self, "address"):
             raise Exception("Cannot use this function without publishing a module")
 
-    def call(self, reducer, *args):
+    def call(self, reducer, *args, anon=False):
         self._check_published()
-        self.spacetime("call", "--", self.address, reducer, *map(json.dumps, args))
+        anon = ["-a"] if anon else []
+        self.spacetime("call", *anon, "--", self.address, reducer, *map(json.dumps, args))
 
     def logs(self, n):
         return [log["message"] for log in self.log_records(n)]
@@ -215,6 +219,36 @@ class Smoketest(unittest.TestCase):
         self.spacetime("identity", "import", identity, token)
         if default:
             self.spacetime("identity", "set-default", identity)
+
+    def subscribe(self, *queries, n):
+        self._check_published()
+        assert isinstance(n, int)
+
+        env = os.environ.copy()
+        env["SPACETIME_CONFIG_FILE"] = str(self.config_path)
+        args = [SPACETIME_BIN, "subscribe", self.address, "-t", "60", "-n", str(n), "--print-initial-update", "--", *queries]
+        fake_args = ["spacetime", *args[1:]]
+        log_cmd(fake_args)
+
+        proc = subprocess.Popen(args, encoding="utf8", stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+
+        def stderr_task():
+            sys.stderr.writelines(proc.stderr)
+        threading.Thread(target=stderr_task).start()
+
+        print("initial update:", proc.stdout.readline())
+        if proc.poll() is not None:
+            if proc.returncode:
+                raise subprocess.CalledProcessError(proc.returncode, fake_args)
+            return lambda timeout=None: []
+
+        def run():
+            updates = list(map(json.loads, proc.stdout))
+            code = proc.wait()
+            if code:
+                raise subprocess.CalledProcessError(code, fake_args)
+            return updates
+        return ReturnThread(run).join
 
     @classmethod
     def write_module_code(cls, module_code):
@@ -263,3 +297,26 @@ class Smoketest(unittest.TestCase):
             result = cm.__enter__()
             cls.addClassCleanup(cm.__exit__, None, None, None)
             return result
+
+
+class ReturnThread:
+    def __init__(self, target):
+        self._target = target
+        self._exception = None
+        self._thread = threading.Thread(target=self._task)
+        self._thread.start()
+
+    def _task(self):
+        try:
+            self._result = self._target()
+        except BaseException as e:
+            self._exception = e
+        finally:
+            del self._target
+
+    def join(self, timeout=None):
+        self._thread.join(timeout)
+        if self._exception is not None:
+            raise self._exception
+        return self._result
+

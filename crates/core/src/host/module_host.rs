@@ -27,7 +27,7 @@ use indexmap::IndexMap;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, IntMap};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
-use spacetimedb_lib::{Address, ReducerDef, TableDesc};
+use spacetimedb_lib::{Address, ModuleDef, ReducerDef, TableDesc};
 use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_sats::{algebraic_value, ProductValue, Typespace, WithTypespace};
 use spacetimedb_vm::relation::{MemTable, RelValue};
@@ -212,6 +212,7 @@ pub struct ModuleEvent {
 
 #[derive(Debug)]
 pub struct ModuleInfo {
+    pub module_def: ModuleDef,
     pub identity: Identity,
     pub address: Address,
     pub module_hash: Hash,

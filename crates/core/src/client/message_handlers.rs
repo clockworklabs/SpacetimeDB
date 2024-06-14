@@ -6,11 +6,11 @@ use crate::execution_context::WorkloadType;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::{ReducerArgs, ReducerId, Timestamp};
 use crate::identity::Identity;
-use crate::messages::websocket::{self as ws, CallReducer, ClientMessage, OneOffQuery, Subscribe};
+use crate::messages::websocket::{self as ws, CallReducer, ClientMessage, OneOffQuery};
 use crate::worker_metrics::WORKER_METRICS;
-use base64::Engine;
 use bytes::Bytes;
 use bytestring::ByteString;
+use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::{bsatn, Address};
 use super::messages::{ToProtocol, TransactionUpdateMessage};
@@ -49,9 +49,9 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
         DataMessage::Text(message) => {
             let message = ByteString::from(message);
             // TODO: update json clients and use the ws version
-            // serde_json::from_str::<ClientMessage<&serde_json::value::RawValue>>(&message)?
-            //     .map_args(|args| ReducerArgs::Json(message.slice_ref(args.get())))
-            decode_json_message(message)?
+            serde_json::from_str::<DeserializeWrapper<ClientMessage<&str>>>(&message)?
+                .0
+                .map_args(|args| ReducerArgs::Json(message.slice_ref(args)))
         }
         DataMessage::Binary(message_buf) => {
             let message_buf = Bytes::from(message_buf);
@@ -110,59 +110,6 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
     Ok(())
 }
 
-fn decode_json_message(message: ByteString) -> Result<ClientMessage<ReducerArgs>, MessageHandleError> {
-    let msg = match serde_json::from_str::<RawJsonMessage<'_>>(&message)? {
-        RawJsonMessage::Call { func, args, request_id } => ClientMessage::CallReducer(CallReducer {
-            reducer: func.into_owned(),
-            args: ReducerArgs::Json(message.slice_ref(args.get())),
-            request_id,
-        }),
-        RawJsonMessage::Subscribe {
-            query_strings,
-            request_id,
-        } => ClientMessage::Subscribe(Subscribe {
-            query_strings,
-            request_id,
-        }),
-        RawJsonMessage::OneOffQuery {
-            query_string,
-            message_id,
-        } => ClientMessage::OneOffQuery(OneOffQuery {
-            message_id: base64::engine::general_purpose::STANDARD.decode(&message_id[..])?,
-            query_string: query_string.into_owned(),
-        }),
-    };
-    Ok(msg)
-}
-
-#[derive(serde::Deserialize)]
-enum RawJsonMessage<'a> {
-    #[serde(rename = "call")]
-    Call {
-        #[serde(borrow, rename = "fn")]
-        func: std::borrow::Cow<'a, str>,
-        args: &'a serde_json::value::RawValue,
-        #[serde(default)]
-        request_id: u32,
-    },
-    #[serde(rename = "subscribe")]
-    Subscribe {
-        query_strings: Vec<String>,
-        #[serde(default)]
-        request_id: u32,
-    },
-    #[serde(rename = "one_off_query")]
-    OneOffQuery {
-        #[serde(borrow)]
-        query_string: std::borrow::Cow<'a, str>,
-
-        /// A base64-encoded string of bytes.
-        #[serde(borrow)]
-        message_id: std::borrow::Cow<'a, str>,
-    },
-}
-
-/// An error that arises from executing a message.
 #[derive(thiserror::Error, Debug)]
 #[error("error executing message (reducer: {reducer:?}) (err: {err:?})")]
 pub struct MessageExecutionError {
@@ -201,45 +148,5 @@ impl ToProtocol for MessageExecutionError {
             event: Arc::new(self.into_event()),
             database_update: Default::default(),
         }.to_protocol(protocol)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::RawJsonMessage;
-
-    #[test]
-    fn parse_one_off_query() {
-        let message = r#"{ "one_off_query": { "message_id": "ywS3WFquDECZQ0UdLZN1IA==", "query_string": "SELECT * FROM User WHERE name != 'bananas'" } }"#;
-        let parsed = serde_json::from_str::<RawJsonMessage>(message).unwrap();
-
-        if let RawJsonMessage::OneOffQuery {
-            query_string: query,
-            message_id,
-        } = parsed
-        {
-            assert_eq!(query, "SELECT * FROM User WHERE name != 'bananas'");
-            assert_eq!(message_id, "ywS3WFquDECZQ0UdLZN1IA==");
-        } else {
-            panic!("wrong variant")
-        }
-    }
-
-    #[test]
-    fn parse_function_call() {
-        let message = r#"{ "call": { "fn": "reducer_name", "request_id": 2, "args": "{}" } }"#;
-        let parsed = serde_json::from_str::<RawJsonMessage>(message).unwrap();
-
-        if let RawJsonMessage::Call {
-            request_id,
-            func,
-            args: _,
-        } = parsed
-        {
-            assert_eq!(request_id, 2);
-            assert_eq!(func, "reducer_name");
-        } else {
-            panic!("wrong variant")
-        }
     }
 }

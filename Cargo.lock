@@ -4141,6 +4141,7 @@ version = "0.10.0"
 dependencies = [
  "anyhow",
  "base64 0.21.4",
+ "bytes",
  "cargo_metadata",
  "chrono",
  "clap 4.4.6",
@@ -4151,6 +4152,7 @@ dependencies = [
  "email_address",
  "flate2",
  "futures",
+ "http",
  "indicatif",
  "insta",
  "is-terminal",
@@ -4179,6 +4181,7 @@ dependencies = [
  "termcolor",
  "thiserror",
  "tokio",
+ "tokio-tungstenite",
  "toml 0.8.2",
  "wasmbin",
  "wasmtime",

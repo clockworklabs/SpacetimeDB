@@ -9,12 +9,6 @@
     <AssemblyName>SpacetimeDB.BSATN.Codegen</AssemblyName>
     <AssemblyVersion>0.10.0</AssemblyVersion>
     <IncludeBuildOutput>false</IncludeBuildOutput>
-    <!--
-      We don't want to publish this package to NuGet to reduce maintenance cost
-      as well as shenanigans with transitive deps in source generators. (https://github.com/dotnet/roslyn/issues/43903)
-      Instead, we put its DLL directly in Unity SDK and include it in SpacetimeDB.Codegen for regular C# consumers
-    -->
-    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <PropertyGroup>

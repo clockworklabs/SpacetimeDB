@@ -154,6 +154,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let desc = instance.extract_descriptions()?;
         let desc: ModuleDef = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
         desc.validate_reducers()?;
+        let orig_module_def = desc.clone();
         let ModuleDef {
             mut typespace,
             mut tables,
@@ -182,6 +183,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let reducers = ReducersMap(reducers.into_iter().map(|x| (x.name.clone(), x)).collect());
 
         let info = Arc::new(ModuleInfo {
+            module_def: orig_module_def,
             identity: database_instance_context.owner_identity,
             address: database_instance_context.address,
             module_hash,
