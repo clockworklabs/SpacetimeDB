@@ -83,7 +83,10 @@ impl DatabaseUpdate {
 impl ToProtocol for DatabaseUpdate {
     type Encoded = ws::DatabaseUpdate;
     fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
-        self.tables.into_iter().map(|table| table.to_protocol(protocol)).collect()
+        self.tables
+            .into_iter()
+            .map(|table| table.to_protocol(protocol))
+            .collect()
     }
 }
 
@@ -146,14 +149,8 @@ impl UpdatesRelValue<'_> {
 
     pub fn to_protocol(&self, protocol: Protocol) -> (Vec<Bytes>, Vec<Bytes>) {
         (
-            self.deletes
-                .iter()
-                .map(|row| encode_row(row, protocol))
-                .collect(),
-            self.inserts
-                .iter()
-                .map(|row| encode_row(row, protocol))
-                .collect(),
+            self.deletes.iter().map(|row| encode_row(row, protocol)).collect(),
+            self.inserts.iter().map(|row| encode_row(row, protocol)).collect(),
         )
     }
 }

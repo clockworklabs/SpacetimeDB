@@ -165,12 +165,12 @@ impl SubscriptionManager {
                     let mut ops_json: Option<(Vec<Bytes>, Vec<Bytes>)> = None;
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
                         let ops = match self.clients[id].protocol {
-                            Protocol::Binary => {
-                                ops_bin.get_or_insert_with(|| delta.updates.to_protocol(Protocol::Binary)).clone()
-                            }
-                            Protocol::Text => {
-                                ops_json.get_or_insert_with(|| delta.updates.to_protocol(Protocol::Text)).clone()
-                            }
+                            Protocol::Binary => ops_bin
+                                .get_or_insert_with(|| delta.updates.to_protocol(Protocol::Binary))
+                                .clone(),
+                            Protocol::Text => ops_json
+                                .get_or_insert_with(|| delta.updates.to_protocol(Protocol::Text))
+                                .clone(),
                         };
                         (id, table_id, table_name.clone(), ops)
                     })
@@ -209,7 +209,7 @@ impl SubscriptionManager {
                     HashMap::<&Id, ws::DatabaseUpdate>::new(),
                     |mut updates, ((id, _), update)| {
                         let entry = updates.entry(id);
-                        entry.or_insert_with(|| ws::DatabaseUpdate::default()).tables.push(update);
+                        entry.or_default().tables.push(update);
                         updates
                     },
                 );

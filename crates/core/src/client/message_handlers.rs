@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use super::messages::{ToProtocol, TransactionUpdateMessage};
+use super::{ClientConnection, DataMessage};
 use crate::energy::EnergyQuanta;
 use crate::execution_context::WorkloadType;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
@@ -13,8 +15,6 @@ use bytestring::ByteString;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::{bsatn, Address};
-use super::messages::{ToProtocol, TransactionUpdateMessage};
-use super::{ClientConnection, DataMessage};
 
 #[derive(thiserror::Error, Debug)]
 pub enum MessageHandleError {
@@ -147,6 +147,7 @@ impl ToProtocol for MessageExecutionError {
         TransactionUpdateMessage::<DatabaseUpdate> {
             event: Arc::new(self.into_event()),
             database_update: Default::default(),
-        }.to_protocol(protocol)
+        }
+        .to_protocol(protocol)
     }
 }

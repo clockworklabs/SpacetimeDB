@@ -1,21 +1,20 @@
-use std::time::Duration;
 use anyhow::Context;
 use bytes::Bytes;
 use clap::{value_parser, Arg, ArgAction, ArgMatches};
 use futures::{Sink, SinkExt, TryStream, TryStreamExt};
 use http::header;
 use http::uri::Scheme;
-use serde_json::value::RawValue;
 use serde_json::Value;
+use spacetimedb_client_api_messages::websocket as ws;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::de::serde::{DeserializeWrapper, SeedWrapper};
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::ModuleDef;
 use spacetimedb_standalone::TEXT_PROTOCOL;
+use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
-use spacetimedb_client_api_messages::websocket as ws;
 
 use crate::api::ClientApi;
 use crate::sql::parse_req;
@@ -99,27 +98,40 @@ fn parse_msg_json(msg: &WsMessage) -> Option<ws::ServerMessage> {
 }
 
 fn reformat_update(msg: ws::DatabaseUpdate, schema: &ModuleDef) -> anyhow::Result<HashMap<String, SubscriptionTable>> {
-    msg.tables.into_iter().map(|upd| {
-        let table_schema = schema
-            .tables
-            .iter()
-            .find(|tbl| tbl.schema.table_name.as_ref() == &upd.table_name)
-            .context("table not found in schema")?;
-        let table_ty = schema.typespace.resolve(table_schema.data);
+    msg.tables
+        .into_iter()
+        .map(|upd| {
+            let table_schema = schema
+                .tables
+                .iter()
+                .find(|tbl| tbl.schema.table_name.as_ref() == upd.table_name)
+                .context("table not found in schema")?;
+            let table_ty = schema.typespace.resolve(table_schema.data);
 
-        let reformat_row = |row: Bytes| {
-            let row = serde_json::from_slice::<Value>(&row)?;
-            let row = serde::de::DeserializeSeed::deserialize(SeedWrapper(table_ty), row)?;
-            let row = table_ty.with_value(&row);
-            let row = serde_json::to_value(SerializeWrapper::from_ref(&row))?;
-            Ok(row)   
-        };
-        
-        let deletes = upd.deletes.into_iter().map(reformat_row).collect::<anyhow::Result<Vec<_>>>().unwrap();
-        let inserts = upd.inserts.into_iter().map(reformat_row).collect::<anyhow::Result<Vec<_>>>().unwrap();
-        
-        Ok((upd.table_name.into(), SubscriptionTable { deletes, inserts }))
-    }).collect()
+            let reformat_row = |row: Bytes| {
+                let row = serde_json::from_slice::<Value>(&row)?;
+                let row = serde::de::DeserializeSeed::deserialize(SeedWrapper(table_ty), row)?;
+                let row = table_ty.with_value(&row);
+                let row = serde_json::to_value(SerializeWrapper::from_ref(&row))?;
+                Ok(row)
+            };
+
+            let deletes = upd
+                .deletes
+                .into_iter()
+                .map(reformat_row)
+                .collect::<anyhow::Result<Vec<_>>>()
+                .unwrap();
+            let inserts = upd
+                .inserts
+                .into_iter()
+                .map(reformat_row)
+                .collect::<anyhow::Result<Vec<_>>>()
+                .unwrap();
+
+            Ok((upd.table_name, SubscriptionTable { deletes, inserts }))
+        })
+        .collect()
 }
 
 #[derive(serde::Serialize, Debug)]
@@ -162,7 +174,9 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 
     let task = async {
         subscribe(&mut ws, queries.cloned().collect()).await.unwrap();
-        await_initial_update(&mut ws, print_initial_update.then_some(&module_def)).await.unwrap();
+        await_initial_update(&mut ws, print_initial_update.then_some(&module_def))
+            .await
+            .unwrap();
         consume_transaction_updates(&mut ws, num, &module_def).await
     };
 
@@ -188,12 +202,13 @@ async fn subscribe<S>(ws: &mut S, query_strings: Vec<String>) -> Result<(), S::E
 where
     S: Sink<WsMessage> + Unpin,
 {
-    let msg = serde_json::to_string(&SerializeWrapper::new(
-        ws::ClientMessage::<()>::Subscribe(ws::Subscribe {
+    let msg = serde_json::to_string(&SerializeWrapper::new(ws::ClientMessage::<()>::Subscribe(
+        ws::Subscribe {
             query_strings,
             request_id: 0,
-        })
-    )).unwrap();
+        },
+    )))
+    .unwrap();
     ws.send(msg.into()).await
 }
 
@@ -253,7 +268,8 @@ where
                 anyhow::bail!("protocol error: received a second initial subscription update")
             }
             ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate {
-                status: ws::UpdateStatus::Committed(update), ..
+                status: ws::UpdateStatus::Committed(update),
+                ..
             }) => {
                 let output = serde_json::to_string(&reformat_update(update, module_def).unwrap()).unwrap() + "\n";
                 stdout.write_all(output.as_bytes()).await.unwrap();
