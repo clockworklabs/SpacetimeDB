@@ -209,6 +209,9 @@ async fn ws_client_actor_inner(
 
     let mut closed = false;
     let mut rx_buf = Vec::new();
+
+    let addr = client.module.info().address;
+
     loop {
         rx_buf.clear();
         enum Item {
@@ -257,10 +260,24 @@ async fn ws_client_actor_inner(
                     log::info!("dropping messages due to ws already being closed: {:?}", &rx_buf[..n]);
                 } else {
                     let send_all = async {
-                        let id = client.id.identity;
-                        for msg in rx_buf.drain(..n).map(|msg| datamsg_to_wsmsg(msg.serialize(client.protocol))) {
-                            WORKER_METRICS.websocket_sent.with_label_values(&id).inc();
-                            WORKER_METRICS.websocket_sent_msg_size.with_label_values(&id).observe(msg.len() as f64);
+                        for msg in rx_buf.drain(..n) {
+                            let workload = msg.workload();
+                            let num_rows = msg.num_rows();
+
+                            let msg = datamsg_to_wsmsg(msg.serialize(client.protocol));
+
+                            // These metrics should be updated together,
+                            // or not at all.
+                            if let (Some(workload), Some(num_rows)) = (workload, num_rows) {
+                                WORKER_METRICS
+                                    .websocket_sent_num_rows
+                                    .with_label_values(&addr, &workload)
+                                    .observe(num_rows as f64);
+                                WORKER_METRICS
+                                    .websocket_sent_msg_size
+                                    .with_label_values(&addr, &workload)
+                                    .observe(msg.len() as f64);
+                            }
                             // feed() buffers the message, but does not necessarily send it
                             ws.feed(msg).await?;
                         }
