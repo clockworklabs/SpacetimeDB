@@ -27,8 +27,7 @@ use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdateRelValue, ProtocolDatabaseUpdate, UpdatesRelValue};
-use crate::json::client_api::TableUpdateJson;
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdateRelValue, UpdatesRelValue};
 use crate::messages::websocket as ws;
 use crate::vm::{build_query, TxMode};
 use anyhow::Context;
@@ -523,44 +522,13 @@ impl ExecutionSet {
         db: &RelationalDB,
         tx: &Tx,
         slow_query_threshold: Option<Duration>,
-    ) -> ProtocolDatabaseUpdate {
-        let tables = match protocol {
-            Protocol::Binary => Either::Left(self.eval_binary(ctx, db, tx, slow_query_threshold)),
-            Protocol::Text => Either::Right(self.eval_json(ctx, db, tx, slow_query_threshold)),
-        };
-        ProtocolDatabaseUpdate { tables }
-    }
-
-    #[tracing::instrument(skip_all)]
-    fn eval_json(
-        &self,
-        ctx: &ExecutionContext,
-        db: &RelationalDB,
-        tx: &Tx,
-        slow_query_threshold: Option<Duration>,
-    ) -> Vec<TableUpdateJson> {
-        // evaluate each of the execution units in this ExecutionSet in parallel
-        self.exec_units
-            // if you need eval to run single-threaded for debugging, change this to .iter()
-            .par_iter()
-            .filter_map(|unit| unit.eval_json(ctx, db, tx, &unit.sql, slow_query_threshold))
-            .collect()
-    }
-
-    #[tracing::instrument(skip_all)]
-    fn eval_binary(
-        &self,
-        ctx: &ExecutionContext,
-        db: &RelationalDB,
-        tx: &Tx,
-        slow_query_threshold: Option<Duration>,
     ) -> ws::DatabaseUpdate {
         // evaluate each of the execution units in this ExecutionSet in parallel
         let tables = self
             .exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
-            .filter_map(|unit| unit.eval_binary(ctx, db, tx, &unit.sql, slow_query_threshold))
+            .filter_map(|unit| unit.eval(ctx, db, tx, &unit.sql, slow_query_threshold, protocol))
             .collect();
         ws::DatabaseUpdate { tables }
     }

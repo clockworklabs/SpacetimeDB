@@ -3,12 +3,10 @@ use crate::client::messages::{SerializableMessage, SubscriptionUpdate, Transacti
 use crate::client::{ClientConnectionSender, Protocol};
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, ModuleEvent, ProtocolDatabaseUpdate};
-use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, ModuleEvent};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use arrayvec::ArrayVec;
 use bytes::Bytes;
-use itertools::Either;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_data_structures::map::{Entry, HashMap, HashSet, IntMap};
 use spacetimedb_lib::{Address, Identity};
@@ -164,14 +162,14 @@ impl SubscriptionManager {
                     // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
                     // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
                     let mut ops_bin: Option<(Vec<Bytes>, Vec<Bytes>)> = None;
-                    let mut ops_json: Option<Vec<TableRowOperationJson>> = None;
+                    let mut ops_json: Option<(Vec<Bytes>, Vec<Bytes>)> = None;
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
                         let ops = match self.clients[id].protocol {
                             Protocol::Binary => {
-                                Either::Left(ops_bin.get_or_insert_with(|| delta.updates.to_bsatn()).clone())
+                                ops_bin.get_or_insert_with(|| delta.updates.to_protocol(Protocol::Binary)).clone()
                             }
                             Protocol::Text => {
-                                Either::Right(ops_json.get_or_insert_with(|| delta.updates.to_json()).clone())
+                                ops_json.get_or_insert_with(|| delta.updates.to_protocol(Protocol::Binary)).clone()
                             }
                         };
                         (id, table_id, table_name.clone(), ops)
@@ -182,34 +180,22 @@ impl SubscriptionManager {
                 // For each subscriber, aggregate all the updates for the same table.
                 // That is, we build a map `(subscriber_id, table_id) -> updates`.
                 // A particular subscriber uses only one protocol,
-                // so we'll have either `TableUpdate` (`Protocol::Binary`)
-                // or `TableUpdateJson` (`Protocol::Text`).
+                // so their `TableUpdate` will contain either JSON (`Protocol::Text`)
+                // or BSATN (`Protocol::Binary`).
                 .fold(
-                    HashMap::<(&Id, TableId), Either<TableUpdate, TableUpdateJson>>::new(),
-                    |mut tables, (id, table_id, table_name, ops)| {
+                    HashMap::<(&Id, TableId), TableUpdate>::new(),
+                    |mut tables, (id, table_id, table_name, (deletes, inserts))| {
                         match tables.entry((id, table_id)) {
-                            Entry::Occupied(mut entry) => match ops {
-                                Either::Left((deletes, inserts)) => {
-                                    let tbl_upd = entry.get_mut().as_mut().unwrap_left();
-                                    tbl_upd.deletes.extend(deletes);
-                                    tbl_upd.inserts.extend(inserts);
-                                }
-                                Either::Right(ops) => {
-                                    entry.get_mut().as_mut().unwrap_right().table_row_operations.extend(ops)
-                                }
-                            },
-                            Entry::Vacant(entry) => drop(entry.insert(match ops {
-                                Either::Left((deletes, inserts)) => Either::Left(TableUpdate {
-                                    table_id,
-                                    table_name: table_name.into(),
-                                    deletes,
-                                    inserts,
-                                }),
-                                Either::Right(ops) => Either::Right(TableUpdateJson {
-                                    table_id: table_id.into(),
-                                    table_name,
-                                    table_row_operations: ops,
-                                }),
+                            Entry::Occupied(mut entry) => {
+                                let tbl_upd = entry.get_mut();
+                                tbl_upd.deletes.extend(deletes);
+                                tbl_upd.inserts.extend(inserts);
+                            }
+                            Entry::Vacant(entry) => drop(entry.insert(TableUpdate {
+                                table_id,
+                                table_name: table_name.into(),
+                                deletes,
+                                inserts,
                             })),
                         }
                         tables
@@ -220,23 +206,10 @@ impl SubscriptionManager {
                 // So before sending the updates to each client,
                 // we must stitch together the `TableUpdate*`s into an aggregated list.
                 .fold(
-                    HashMap::<&Id, Either<ws::DatabaseUpdate, Vec<TableUpdateJson>>>::new(),
+                    HashMap::<&Id, ws::DatabaseUpdate>::new(),
                     |mut updates, ((id, _), update)| {
                         let entry = updates.entry(id);
-                        match update {
-                            Either::Left(update) => entry
-                                .or_insert_with(|| Either::Left(ws::DatabaseUpdate::default()))
-                                .as_mut()
-                                .unwrap_left()
-                                .tables
-                                .push(update),
-
-                            Either::Right(update) => entry
-                                .or_insert_with(|| Either::Right(Vec::new()))
-                                .as_mut()
-                                .unwrap_right()
-                                .push(update),
-                        }
+                        entry.or_insert_with(|| ws::DatabaseUpdate::default()).tables.push(update);
                         updates
                     },
                 );
@@ -263,7 +236,7 @@ impl SubscriptionManager {
 
             eval.into_iter().for_each(|(id, tables)| {
                 let database_update = SubscriptionUpdate {
-                    database_update: ProtocolDatabaseUpdate { tables },
+                    database_update: tables,
                     request_id: event.request_id,
                     timer: event.timer,
                 };

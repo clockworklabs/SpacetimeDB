@@ -1,6 +1,7 @@
 use super::wasm_common::{CLIENT_CONNECTED_DUNDER, CLIENT_DISCONNECTED_DUNDER};
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
-use crate::client::{ClientActorId, ClientConnectionSender};
+use crate::client::messages::{encode_row, ToProtocol};
+use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -12,7 +13,6 @@ use crate::error::DBError;
 use crate::execution_context::{ExecutionContext, ReducerContext};
 use crate::hash::Hash;
 use crate::identity::Identity;
-use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
 use crate::messages::control_db::Database;
 use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::sql;
@@ -21,13 +21,11 @@ use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::Context;
 use bytes::Bytes;
-use derive_more::{From, Into};
+use derive_more::From;
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
-use itertools::{Either, Itertools};
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, IntMap};
-use spacetimedb_lib::bsatn;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::{Address, ReducerDef, TableDesc};
 use spacetimedb_primitives::{col_list, TableId};
@@ -36,23 +34,6 @@ use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::fmt;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
-
-#[derive(Debug, Clone, From, Into)]
-pub struct ProtocolDatabaseUpdate {
-    pub tables: Either<ws::DatabaseUpdate, Vec<TableUpdateJson>>,
-}
-
-impl From<ProtocolDatabaseUpdate> for ws::DatabaseUpdate {
-    fn from(update: ProtocolDatabaseUpdate) -> Self {
-        update.tables.unwrap_left()
-    }
-}
-
-impl From<ProtocolDatabaseUpdate> for Vec<TableUpdateJson> {
-    fn from(update: ProtocolDatabaseUpdate) -> Self {
-        update.tables.unwrap_right()
-    }
-}
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
@@ -99,16 +80,10 @@ impl DatabaseUpdate {
     }
 }
 
-impl From<DatabaseUpdate> for ws::DatabaseUpdate {
-    fn from(update: DatabaseUpdate) -> Self {
-        let tables = update.tables.into_iter().map_into().collect();
-        ws::DatabaseUpdate { tables }
-    }
-}
-
-impl From<DatabaseUpdate> for Vec<TableUpdateJson> {
-    fn from(update: DatabaseUpdate) -> Self {
-        update.tables.into_iter().map_into().collect()
+impl ToProtocol for DatabaseUpdate {
+    type Encoded = ws::DatabaseUpdate;
+    fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
+        self.tables.into_iter().map(|table| table.to_protocol(protocol)).collect()
     }
 }
 
@@ -123,42 +98,16 @@ pub struct DatabaseTableUpdate {
     pub deletes: Arc<[ProductValue]>,
 }
 
-impl From<DatabaseTableUpdate> for TableUpdate {
-    fn from(table: DatabaseTableUpdate) -> Self {
-        let deletes = table
-            .deletes
-            .iter()
-            .map(|pv| bsatn::to_vec(pv).unwrap().into())
-            .collect();
-        let inserts = table
-            .inserts
-            .iter()
-            .map(|pv| bsatn::to_vec(pv).unwrap().into())
-            .collect();
-        Self {
-            table_id: table.table_id,
-            table_name: table.table_name.into(),
+impl ToProtocol for DatabaseTableUpdate {
+    type Encoded = TableUpdate;
+    fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
+        let deletes = self.deletes.iter().map(|row| encode_row(row, protocol)).collect();
+        let inserts = self.inserts.iter().map(|row| encode_row(row, protocol)).collect();
+        TableUpdate {
+            table_id: self.table_id,
+            table_name: self.table_name.to_string(),
             deletes,
             inserts,
-        }
-    }
-}
-
-impl From<DatabaseTableUpdate> for TableUpdateJson {
-    fn from(table: DatabaseTableUpdate) -> Self {
-        let deletes = table
-            .deletes
-            .iter()
-            .map(|r| product_to_table_row_op_json(r.clone(), OpType::Delete));
-        let inserts = table
-            .inserts
-            .iter()
-            .map(|r| product_to_table_row_op_json(r.clone(), OpType::Insert));
-        let table_row_operations = deletes.chain(inserts).map_into().collect();
-        Self {
-            table_id: table.table_id.into(),
-            table_name: table.table_name,
-            table_row_operations,
         }
     }
 }
@@ -195,22 +144,15 @@ impl UpdatesRelValue<'_> {
             .chain(self.inserts.iter().map(|row| (OpType::Insert, row)))
     }
 
-    pub fn to_json(&self) -> Vec<TableRowOperationJson> {
-        self.iter()
-            .map(|(op, row)| rel_value_to_table_row_op_json(row.clone(), op))
-            .collect()
-    }
-
-    pub fn to_bsatn(&self) -> (Vec<Bytes>, Vec<Bytes>) {
-        let mut scratch = Vec::new();
+    pub fn to_protocol(&self, protocol: Protocol) -> (Vec<Bytes>, Vec<Bytes>) {
         (
             self.deletes
                 .iter()
-                .map(|row| rel_value_to_table_row(&mut scratch, row))
+                .map(|row| encode_row(row, protocol))
                 .collect(),
             self.inserts
                 .iter()
-                .map(|row| rel_value_to_table_row(&mut scratch, row))
+                .map(|row| encode_row(row, protocol))
                 .collect(),
         )
     }
@@ -230,35 +172,6 @@ impl From<&UpdatesRelValue<'_>> for Vec<ProductValue> {
 pub enum OpType {
     Delete = 0,
     Insert = 1,
-}
-
-impl OpType {
-    /// Converts the type to its JSON representation.
-    fn as_json_str(self) -> &'static str {
-        match self {
-            Self::Delete => "delete",
-            Self::Insert => "insert",
-        }
-    }
-}
-
-/// Annotate `row` with `op` as a `TableRowOperationJson`.
-pub(crate) fn rel_value_to_table_row_op_json(row: RelValue<'_>, op: OpType) -> TableRowOperationJson {
-    product_to_table_row_op_json(row.into_product_value(), op)
-}
-
-/// Annotate `row` BSATN-encoded with `op` as a `TableRowOperation`.
-pub(crate) fn rel_value_to_table_row(scratch: &mut Vec<u8>, row: &RelValue<'_>) -> Bytes {
-    row.to_bsatn_extend(scratch).unwrap();
-    let row = scratch.clone();
-    scratch.clear();
-    row.into()
-}
-
-fn product_to_table_row_op_json(row: ProductValue, op: OpType) -> TableRowOperationJson {
-    let op = op.as_json_str().into();
-    let row = row.elements.into();
-    TableRowOperationJson { op, row }
 }
 
 #[derive(Debug, Clone)]

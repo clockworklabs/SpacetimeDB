@@ -1,67 +1,71 @@
-use base64::Engine;
 use brotli::CompressorReader;
+use bytes::Bytes;
 use derive_more::From;
 use spacetimedb_lib::identity::RequestId;
+use spacetimedb_lib::ser::serde::SerializeWrapper;
+use spacetimedb_lib::ser::Serialize;
 use spacetimedb_vm::relation::MemTable;
 use std::io::Read;
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ProtocolDatabaseUpdate};
-use crate::json::client_api::{
-    EventJson, FunctionCallJson, IdentityTokenJson, MessageJson, OneOffQueryResponseJson, OneOffTableJson,
-    SubscriptionUpdateJson, TableUpdateJson, TransactionUpdateJson,
-};
+use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::messages::websocket as ws;
 use spacetimedb_lib::{bsatn, Address};
 
 use super::message_handlers::MessageExecutionError;
 use super::{DataMessage, Protocol};
 
-/// A message sent from the server to the client. Because clients can request either text or binary messages,
-/// a server message needs to be encodable as either.
-pub trait ServerMessage: Sized {
-    fn serialize(self, protocol: Protocol) -> DataMessage {
-        match protocol {
-            Protocol::Text => self.serialize_text().to_json().into(),
-            Protocol::Binary => {
-                let msg_bytes = bsatn::to_vec(&self.serialize_binary()).unwrap();
-                let reader = &mut &msg_bytes[..];
+pub trait ToProtocol {
+    type Encoded;
+    /// Convert `self` into a [`Self::Encoded`] where rows and arguments are encoded with `protocol`.
+    fn to_protocol(self, protocol: Protocol) -> Self::Encoded;
+}
 
-                // TODO(perf): Compression should depend on message size and type.
-                //
-                // SubscriptionUpdate messages will typically be quite large,
-                // while TransactionUpdate messages will typically be quite small.
-                //
-                // If we are optimizing for SubscriptionUpdates,
-                // we want a large buffer.
-                // But if we are optimizing for TransactionUpdates,
-                // we probably want to skip compression altogether.
-                //
-                // For now we choose a reasonable middle ground,
-                // which is to compress everything using a 32KB buffer.
-                const BUFFER_SIZE: usize = 32 * 1024;
-                // Again we are optimizing for compression speed,
-                // so we choose the lowest (fastest) level of compression.
-                // Experiments on internal workloads have shown compression ratios between 7:1 and 10:1
-                // for large `SubscriptionUpdate` messages at this level.
-                const COMPRESSION_LEVEL: u32 = 1;
-                // The default value for an internal compression parameter.
-                // See `BrotliEncoderParams` for more details.
-                const LG_WIN: u32 = 22;
+/// Serialize `msg` into a [`DataMessage`] containing a [`ws::ServerMessage`].
+///
+/// If `protocol` is [`Protocol::Binary`], the message will be compressed by this method.
+pub fn serialize(msg: impl ToProtocol<Encoded = ws::ServerMessage>, protocol: Protocol) -> DataMessage {
+    match protocol {
+        Protocol::Text => {
+            let msg = msg.to_protocol(protocol);
+            serde_json::to_string(&SerializeWrapper::new(msg)).unwrap().into()
+        }
+        Protocol::Binary => {
+            let msg_bytes = bsatn::to_vec(&msg.to_protocol(protocol)).unwrap();
+            let reader = &mut &msg_bytes[..];
 
-                let mut encoder = CompressorReader::new(reader, BUFFER_SIZE, COMPRESSION_LEVEL, LG_WIN);
+            // TODO(perf): Compression should depend on message size and type.
+            //
+            // SubscriptionUpdate messages will typically be quite large,
+            // while TransactionUpdate messages will typically be quite small.
+            //
+            // If we are optimizing for SubscriptionUpdates,
+            // we want a large buffer.
+            // But if we are optimizing for TransactionUpdates,
+            // we probably want to skip compression altogether.
+            //
+            // For now we choose a reasonable middle ground,
+            // which is to compress everything using a 32KB buffer.
+            const BUFFER_SIZE: usize = 32 * 1024;
+            // Again we are optimizing for compression speed,
+            // so we choose the lowest (fastest) level of compression.
+            // Experiments on internal workloads have shown compression ratios between 7:1 and 10:1
+            // for large `SubscriptionUpdate` messages at this level.
+            const COMPRESSION_LEVEL: u32 = 1;
+            // The default value for an internal compression parameter.
+            // See `BrotliEncoderParams` for more details.
+            const LG_WIN: u32 = 22;
 
-                let mut out = Vec::new();
-                encoder
-                    .read_to_end(&mut out)
-                    .expect("Failed to Brotli compress `SubscriptionUpdateMessage`");
-                out.into()
-            }
+            let mut encoder = CompressorReader::new(reader, BUFFER_SIZE, COMPRESSION_LEVEL, LG_WIN);
+
+            let mut out = Vec::new();
+            encoder
+                .read_to_end(&mut out)
+                .expect("Failed to Brotli compress `SubscriptionUpdateMessage`");
+            out.into()
         }
     }
-    fn serialize_text(self) -> MessageJson;
-    fn serialize_binary(self) -> ws::ServerMessage;
 }
 
 #[derive(Debug, From)]
@@ -71,44 +75,35 @@ pub enum SerializableMessage {
     Identity(IdentityTokenMessage),
     Subscribe(SubscriptionUpdateMessage),
     DatabaseUpdate(TransactionUpdateMessage<DatabaseUpdate>),
-    ProtocolUpdate(TransactionUpdateMessage<ProtocolDatabaseUpdate>),
+    ProtocolUpdate(TransactionUpdateMessage<ws::DatabaseUpdate>),
 }
 
-impl ServerMessage for SerializableMessage {
-    fn serialize_text(self) -> MessageJson {
-        match self {
-            SerializableMessage::Query(msg) => msg.serialize_text(),
-            SerializableMessage::Error(msg) => msg.serialize_text(),
-            SerializableMessage::Identity(msg) => msg.serialize_text(),
-            SerializableMessage::Subscribe(msg) => msg.serialize_text(),
-            SerializableMessage::DatabaseUpdate(msg) => msg.serialize_text(),
-            SerializableMessage::ProtocolUpdate(msg) => msg.serialize_text(),
-        }
+impl ToProtocol for ws::DatabaseUpdate {
+    type Encoded = ws::DatabaseUpdate;
+    fn to_protocol(self, _: Protocol) -> Self::Encoded {
+        self
     }
+}
 
-    fn serialize_binary(self) -> ws::ServerMessage {
+impl ToProtocol for SerializableMessage {
+    type Encoded = ws::ServerMessage;
+    fn to_protocol(self, protocol: Protocol) -> ws::ServerMessage {
         match self {
-            SerializableMessage::Query(msg) => msg.serialize_binary(),
-            SerializableMessage::Error(msg) => msg.serialize_binary(),
-            SerializableMessage::Identity(msg) => msg.serialize_binary(),
-            SerializableMessage::Subscribe(msg) => msg.serialize_binary(),
-            SerializableMessage::DatabaseUpdate(msg) => msg.serialize_binary(),
-            SerializableMessage::ProtocolUpdate(msg) => msg.serialize_binary(),
+            SerializableMessage::Query(msg) => msg.to_protocol(protocol),
+            SerializableMessage::Error(msg) => msg.to_protocol(protocol),
+            SerializableMessage::Identity(msg) => msg.to_protocol(protocol),
+            SerializableMessage::Subscribe(msg) => msg.to_protocol(protocol),
+            SerializableMessage::DatabaseUpdate(msg) => msg.to_protocol(protocol),
+            SerializableMessage::ProtocolUpdate(msg) => msg.to_protocol(protocol),
         }
     }
 }
 
 pub type IdentityTokenMessage = ws::IdentityToken;
 
-impl ServerMessage for IdentityTokenMessage {
-    fn serialize_text(self) -> MessageJson {
-        MessageJson::IdentityToken(IdentityTokenJson {
-            identity: self.identity,
-            token: self.token,
-            address: self.address,
-        })
-    }
-    fn serialize_binary(self) -> ws::ServerMessage {
+impl ToProtocol for IdentityTokenMessage {
+    type Encoded = ws::ServerMessage;
+    fn to_protocol(self, _: Protocol) -> ws::ServerMessage {
         ws::ServerMessage::IdentityToken(self)
     }
 }
@@ -119,42 +114,29 @@ pub struct TransactionUpdateMessage<U> {
     pub database_update: SubscriptionUpdate<U>,
 }
 
-impl<U: Into<ws::DatabaseUpdate> + Into<Vec<TableUpdateJson>>> ServerMessage for TransactionUpdateMessage<U> {
-    fn serialize_text(self) -> MessageJson {
-        let Self { event, database_update } = self;
-        let (status_str, errmsg) = match &event.status {
-            EventStatus::Committed(_) => ("committed", String::new()),
-            EventStatus::Failed(errmsg) => ("failed", errmsg.clone()),
-            EventStatus::OutOfEnergy => ("out_of_energy", String::new()),
-        };
-
-        let event = EventJson {
-            timestamp: event.timestamp.microseconds,
-            status: status_str.to_string(),
-            caller_identity: event.caller_identity,
-            function_call: FunctionCallJson {
-                reducer: event.function_call.reducer.to_owned(),
-                args: event.function_call.args.get_json().clone(),
-                request_id: database_update.request_id.unwrap_or(0),
-            },
-            energy_quanta_used: event.energy_quanta_used.get(),
-            message: errmsg,
-            caller_address: event.caller_address.unwrap_or(Address::__DUMMY),
-        };
-
-        let subscription_update = database_update.into_json();
-        MessageJson::TransactionUpdate(TransactionUpdateJson {
-            event,
-            subscription_update,
-        })
+pub(crate) fn encode_row<Row: Serialize>(row: &Row, protocol: Protocol) -> Bytes {
+    match protocol {
+        Protocol::Binary => bsatn::to_vec(row).unwrap().into(),
+        Protocol::Text => serde_json::to_string(&SerializeWrapper::new(row)).unwrap().into(),
     }
+}
 
-    fn serialize_binary(self) -> ws::ServerMessage {
+impl<U: ToProtocol<Encoded = ws::DatabaseUpdate>> ToProtocol for TransactionUpdateMessage<U> {
+    type Encoded = ws::ServerMessage;
+
+    fn to_protocol(self, protocol: Protocol) -> ws::ServerMessage {
         let Self { event, database_update } = self;
         let status = match &event.status {
-            EventStatus::Committed(_) => ws::UpdateStatus::Committed(database_update.database_update.into()),
+            EventStatus::Committed(_) => {
+                ws::UpdateStatus::Committed(database_update.database_update.to_protocol(protocol))
+            }
             EventStatus::Failed(errmsg) => ws::UpdateStatus::Failed(errmsg.clone()),
             EventStatus::OutOfEnergy => ws::UpdateStatus::OutOfEnergy,
+        };
+
+        let args = match protocol {
+            Protocol::Binary => event.function_call.args.get_bsatn().clone(),
+            Protocol::Text => event.function_call.args.get_json().clone().into_bytes(),
         };
 
         let tx_update = ws::TransactionUpdate {
@@ -164,7 +146,7 @@ impl<U: Into<ws::DatabaseUpdate> + Into<Vec<TableUpdateJson>>> ServerMessage for
             reducer_call: ws::ReducerCallInfo {
                 reducer_name: event.function_call.reducer.to_owned(),
                 reducer_id: event.function_call.reducer_id.into(),
-                args: event.function_call.args.get_bsatn().clone().into(),
+                args,
                 request_id: database_update.request_id.unwrap_or(0),
             },
             energy_quanta_used: event.energy_quanta_used,
@@ -178,18 +160,15 @@ impl<U: Into<ws::DatabaseUpdate> + Into<Vec<TableUpdateJson>>> ServerMessage for
 
 #[derive(Debug)]
 pub struct SubscriptionUpdateMessage {
-    pub subscription_update: SubscriptionUpdate<ProtocolDatabaseUpdate>,
+    pub subscription_update: SubscriptionUpdate<ws::DatabaseUpdate>,
 }
 
-impl ServerMessage for SubscriptionUpdateMessage {
-    fn serialize_text(self) -> MessageJson {
-        MessageJson::SubscriptionUpdate(self.subscription_update.into_json())
-    }
-
-    fn serialize_binary(self) -> ws::ServerMessage {
+impl ToProtocol for SubscriptionUpdateMessage {
+    type Encoded = ws::ServerMessage;
+    fn to_protocol(self, protocol: Protocol) -> ws::ServerMessage {
         let upd = self.subscription_update;
         ws::ServerMessage::InitialSubscription(ws::InitialSubscription {
-            database_update: upd.database_update.into(),
+            database_update: upd.database_update.to_protocol(protocol),
             request_id: upd.request_id.unwrap_or(0),
             total_host_execution_duration_micros: upd.timer.map_or(0, |t| t.elapsed().as_micros() as u64),
         })
@@ -203,16 +182,6 @@ pub struct SubscriptionUpdate<U> {
     pub timer: Option<Instant>,
 }
 
-impl<T: Into<Vec<TableUpdateJson>>> SubscriptionUpdate<T> {
-    fn into_json(self) -> SubscriptionUpdateJson {
-        SubscriptionUpdateJson {
-            table_updates: self.database_update.into(),
-            request_id: self.request_id.unwrap_or(0),
-            total_host_execution_duration_micros: self.timer.map_or(0, |t| t.elapsed().as_micros() as u64),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct OneOffQueryResponseMessage {
     pub message_id: Vec<u8>,
@@ -221,37 +190,24 @@ pub struct OneOffQueryResponseMessage {
     pub total_host_execution_duration: u64,
 }
 
-impl ServerMessage for OneOffQueryResponseMessage {
-    fn serialize_text(self) -> MessageJson {
-        MessageJson::OneOffQueryResponse(OneOffQueryResponseJson {
-            message_id_base64: base64::engine::general_purpose::STANDARD.encode(self.message_id),
-            error: self.error,
-            result: self
-                .results
-                .into_iter()
-                .map(|table| OneOffTableJson {
-                    table_name: table.head.table_name.clone().into(),
-                    rows: table.data,
-                })
-                .collect(),
-        })
+fn memtable_to_protocol(table: MemTable, protocol: Protocol) -> ws::OneOffTable {
+    ws::OneOffTable {
+        table_name: table.head.table_name.clone().into(),
+        rows: table.data.into_iter().map(|row| encode_row(&row, protocol)).collect(),
     }
+}
 
-    fn serialize_binary(self) -> ws::ServerMessage {
+impl ToProtocol for OneOffQueryResponseMessage {
+    type Encoded = ws::ServerMessage;
+
+    fn to_protocol(self, protocol: Protocol) -> ws::ServerMessage {
         ws::ServerMessage::OneOffQueryResponse(ws::OneOffQueryResponse {
             message_id: self.message_id,
             error: self.error,
             tables: self
                 .results
                 .into_iter()
-                .map(|table| ws::OneOffTable {
-                    table_name: table.head.table_name.clone().into(),
-                    rows: table
-                        .data
-                        .into_iter()
-                        .map(|row| bsatn::to_vec(&row).unwrap().into())
-                        .collect(),
-                })
+                .map(|table| memtable_to_protocol(table, protocol))
                 .collect(),
             total_host_execution_duration_micros: self.total_host_execution_duration,
         })

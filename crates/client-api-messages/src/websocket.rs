@@ -64,7 +64,8 @@ pub struct CallReducer<Args = Bytes> {
     pub reducer: String,
     /// The arguments to the reducer.
     ///
-    /// In the wire format, this will be a [`Bytes`], BSATN encoded according to the reducer's argument schema.
+    /// In the wire format, this will be a [`Bytes`], BSATN or JSON encoded according to the reducer's argument schema
+    /// and the enclosing message format.
     pub args: Args,
     /// An identifier for a client request.
     ///
@@ -195,7 +196,8 @@ pub struct ReducerCallInfo {
     pub reducer_name: String,
     /// The numerical id of the reducer that was called.
     pub reducer_id: u32,
-    /// The arguments to the reducer, encoded as BSATN according to the reducer's argument schema.
+    /// The arguments to the reducer, encoded as BSATN or JSON according to the reducer's argument schema
+    /// and the client's requested protocol.
     pub args: Bytes,
     /// An identifier for a client request
     pub request_id: u32,
@@ -248,14 +250,16 @@ pub struct TableUpdate {
     pub table_name: String,
     /// When in a [`TransactionUpdate`], the matching rows of this table deleted by the transaction.
     ///
-    /// Rows are encoded as BSATN according to the table's schema.
+    /// Rows are encoded as BSATN or JSON according to the table's schema
+    /// and the client's requested protocol.
     ///
     /// Always empty when in an [`InitialSubscription`].
     pub deletes: Vec<Bytes>,
     /// When in a [`TransactionUpdate`], the matching rows of this table inserted by the transaction.
     /// When in an [`InitialSubscription`], the matching rows of this table in the entire committed state.
     ///
-    /// Rows are encoded as BSATN according to the table's schema.
+    /// Rows are encoded as BSATN or JSON according to the table's schema
+    /// and the client's requested protocol.
     pub inserts: Vec<Bytes>,
 }
 
@@ -284,6 +288,7 @@ pub struct OneOffQueryResponse {
 pub struct OneOffTable {
     /// The name of the table.
     pub table_name: String,
-    /// The set of rows which matched the query, encoded as BSATN according to the table's schema.
+    /// The set of rows which matched the query, encoded as BSATN or JSON according to the table's schema
+    /// and the client's requested protocol.
     pub rows: Vec<Bytes>,
 }

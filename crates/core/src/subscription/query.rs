@@ -295,7 +295,7 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval(ctx, Protocol::Binary, db, tx, None).tables.unwrap_left().tables;
+        let result = s.eval(ctx, Protocol::Binary, db, tx, None).tables;
         assert_eq!(
             result.len(),
             total_tables,

@@ -1,15 +1,13 @@
 use super::query::{self, Supported};
 use super::subscription::{IncrementalJoin, SupportedQuery};
+use crate::client::messages::encode_row;
+use crate::client::Protocol;
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
 use crate::execution_context::ExecutionContext;
-use crate::host::module_host::{
-    rel_value_to_table_row, rel_value_to_table_row_op_json, DatabaseTableUpdate, DatabaseTableUpdateRelValue, OpType,
-    UpdatesRelValue,
-};
-use crate::json::client_api::TableUpdateJson;
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateRelValue, UpdatesRelValue};
 use crate::messages::websocket::TableUpdate;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
@@ -205,42 +203,21 @@ impl ExecutionUnit {
 
     /// Evaluate this execution unit against the database using the json format.
     #[tracing::instrument(skip_all)]
-    pub fn eval_json(
+    pub fn eval(
         &self,
         ctx: &ExecutionContext,
         db: &RelationalDB,
         tx: &Tx,
         sql: &str,
         slow_query_threshold: Option<Duration>,
-    ) -> Option<TableUpdateJson> {
-        let table_row_operations =
-            Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, slow_query_threshold, |row| {
-                rel_value_to_table_row_op_json(row, OpType::Insert)
-            });
-        (!table_row_operations.is_empty()).then(|| TableUpdateJson {
-            table_id: self.return_table().into(),
-            table_name: self.return_name(),
-            table_row_operations,
-        })
-    }
-
-    /// Evaluate this execution unit against the database using the binary format.
-    #[tracing::instrument(skip_all)]
-    pub fn eval_binary(
-        &self,
-        ctx: &ExecutionContext,
-        db: &RelationalDB,
-        tx: &Tx,
-        sql: &str,
-        slow_query_threshold: Option<Duration>,
+        protocol: Protocol,
     ) -> Option<TableUpdate> {
-        let mut scratch = Vec::new();
         let inserts = Self::eval_query_expr(ctx, db, tx, &self.eval_plan, sql, slow_query_threshold, |row| {
-            rel_value_to_table_row(&mut scratch, &row)
+            encode_row(&row, protocol)
         });
         (!inserts.is_empty()).then(|| TableUpdate {
             table_id: self.return_table(),
-            table_name: self.return_name().into(),
+            table_name: self.return_name().to_string(),
             deletes: vec![],
             inserts,
         })

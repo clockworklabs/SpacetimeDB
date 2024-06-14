@@ -11,7 +11,7 @@ use futures::{Future, FutureExt, SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
 use scopeguard::ScopeGuard;
 use serde::Deserialize;
-use spacetimedb::client::messages::{IdentityTokenMessage, SerializableMessage, ServerMessage};
+use spacetimedb::client::messages::{IdentityTokenMessage, SerializableMessage, serialize};
 use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, MessageHandleError, Protocol};
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::also_poll;
@@ -258,7 +258,7 @@ async fn ws_client_actor_inner(
                 } else {
                     let send_all = async {
                         let id = client.id.identity;
-                        for msg in rx_buf.drain(..n).map(|msg| datamsg_to_wsmsg(msg.serialize(client.protocol))) {
+                        for msg in rx_buf.drain(..n).map(|msg| datamsg_to_wsmsg(serialize(msg, client.protocol))) {
                             WORKER_METRICS.websocket_sent.with_label_values(&id).inc();
                             WORKER_METRICS.websocket_sent_msg_size.with_label_values(&id).observe(msg.len() as f64);
                             // feed() buffers the message, but does not necessarily send it
@@ -335,7 +335,7 @@ async fn ws_client_actor_inner(
                 if let Err(e) = res {
                     if let MessageHandleError::Execution(err) = e {
                         log::error!("{err:#}");
-                        let msg = err.serialize(client.protocol);
+                        let msg = serialize(err, client.protocol);
                         if let Err(error) = ws.send(datamsg_to_wsmsg(msg)).await {
                             log::warn!("Websocket send error: {error}")
                         }

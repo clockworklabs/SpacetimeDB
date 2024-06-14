@@ -13,8 +13,7 @@ use bytes::Bytes;
 use bytestring::ByteString;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::{bsatn, Address};
-
-use super::messages::{ServerMessage, TransactionUpdateMessage};
+use super::messages::{ToProtocol, TransactionUpdateMessage};
 use super::{ClientConnection, DataMessage};
 
 #[derive(thiserror::Error, Debug)]
@@ -195,21 +194,13 @@ impl MessageExecutionError {
     }
 }
 
-impl ServerMessage for MessageExecutionError {
-    fn serialize_text(self) -> crate::json::client_api::MessageJson {
+impl ToProtocol for MessageExecutionError {
+    type Encoded = ws::ServerMessage;
+    fn to_protocol(self, protocol: super::Protocol) -> Self::Encoded {
         TransactionUpdateMessage::<DatabaseUpdate> {
             event: Arc::new(self.into_event()),
             database_update: Default::default(),
-        }
-        .serialize_text()
-    }
-
-    fn serialize_binary(self) -> ws::ServerMessage {
-        TransactionUpdateMessage::<DatabaseUpdate> {
-            event: Arc::new(self.into_event()),
-            database_update: Default::default(),
-        }
-        .serialize_binary()
+        }.to_protocol(protocol)
     }
 }
 
