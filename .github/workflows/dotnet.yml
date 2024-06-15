@@ -16,9 +16,11 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 7.0.x
-    - name: Build client example
-      run: dotnet build -warnaserror
-      working-directory: examples/quickstart/client
+    - name: Restore dependencies
+      run: dotnet restore
+    - name: Build everything
+      run: dotnet build --no-restore -warnaserror
+    - name: Run tests
+      run: dotnet test --no-build
     - name: Verify formatting
-      run: dotnet format --check client.sln
-      working-directory: examples/quickstart/client
+      run: dotnet format --no-restore --verify-no-changes SpacetimeDB.ClientSDK.sln
