@@ -141,6 +141,8 @@ namespace SpacetimeDB
         private readonly BlockingCollection<PreProcessedMessage> _preProcessedNetworkMessages =
             new(new ConcurrentQueue<PreProcessedMessage>());
 
+        internal bool HasPreProcessedMessage => _preProcessedNetworkMessages.Count > 0;
+
         private readonly CancellationTokenSource _preProcessCancellationTokenSource = new();
         private CancellationToken _preProcessCancellationToken => _preProcessCancellationTokenSource.Token;
 
@@ -598,7 +600,8 @@ namespace SpacetimeDB
             }
         }
 
-        private void OnMessageReceived(byte[] bytes, DateTime timestamp) =>
+        // Note: this method is called from unit tests.
+        internal void OnMessageReceived(byte[] bytes, DateTime timestamp) =>
             _messageQueue.Add(new UnprocessedMessage { bytes = bytes, timestamp = timestamp });
 
         public void InternalCallReducer<T>(T args)

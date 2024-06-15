@@ -1,0 +1,565 @@
+﻿{
+  Events: {
+    OnIdentityReceived: {
+      identity: (identity of A),
+      address: Guid_1
+    },
+    OnInsertUser: {
+      user: {
+        identity: (identity of A),
+        online: true
+      }
+    },
+    OnUpdateUser: {
+      oldUser: {
+        identity: (identity of A),
+        online: true
+      },
+      newUser: {
+        identity: (identity of A),
+        name: A,
+        online: true
+      },
+      reducerEvent: {
+        Args: {
+          Name: A
+        },
+        Timestamp: 1718468803659084,
+        Identity: (identity of A),
+        CallerAddress: Guid_1,
+        ErrMessage: 
+      }
+    },
+    OnEvent: {
+      Timestamp: 1718468803659084,
+      CallerIdentity: (identity of A),
+      FunctionCall: {
+        Reducer: set_name,
+        ArgBytes: 0100000041,
+        RequestId: 1,
+        CallInfo: {
+          Args: {
+            Name: A
+          },
+          Timestamp: 1718468803659084,
+          Identity: (identity of A),
+          CallerAddress: Guid_1,
+          ErrMessage: 
+        }
+      },
+      Message: ,
+      EnergyQuantaUsed: 4345615,
+      HostExecutionDurationMicros: 146,
+      CallerAddress: Guid_1
+    },
+    OnSetName: {
+      Args: {
+        Name: A
+      },
+      Timestamp: 1718468803659084,
+      Identity: (identity of A),
+      CallerAddress: Guid_1,
+      ErrMessage: 
+    },
+    OnInsertMessage: {
+      message: {
+        sender: (identity of A),
+        sent: 1718468812745975,
+        text: Hello, world!
+      },
+      reducerEvent: {
+        Args: {
+          Text: Hello, world!
+        },
+        Timestamp: 1718468812745975,
+        Identity: (identity of A),
+        CallerAddress: Guid_1,
+        ErrMessage: 
+      }
+    },
+    OnEvent: {
+      Timestamp: 1718468812745975,
+      CallerIdentity: (identity of A),
+      FunctionCall: {
+        Reducer: send_message,
+        ArgBytes: 0D00000048656C6C6F2C20776F726C6421,
+        RequestId: 2,
+        CallInfo: {
+          Args: {
+            Text: Hello, world!
+          },
+          Timestamp: 1718468812745975,
+          Identity: (identity of A),
+          CallerAddress: Guid_1,
+          ErrMessage: 
+        }
+      },
+      Message: ,
+      EnergyQuantaUsed: 2955615,
+      HostExecutionDurationMicros: 42,
+      CallerAddress: Guid_1
+    },
+    OnSendMessage: {
+      Args: {
+        Text: Hello, world!
+      },
+      Timestamp: 1718468812745975,
+      Identity: (identity of A),
+      CallerAddress: Guid_1,
+      ErrMessage: 
+    },
+    LogException: Unknown reducer __identity_connected__ (Parameter 'Reducer'),
+    OnInsertUser: {
+      user: {
+        identity: (identity of B),
+        online: true
+      }
+    },
+    OnEvent: {
+      Timestamp: 1718468879237990,
+      CallerIdentity: (identity of B),
+      FunctionCall: {
+        Reducer: __identity_connected__,
+        ArgBytes: 
+      },
+      Message: ,
+      EnergyQuantaUsed: 1957615,
+      HostExecutionDurationMicros: 70,
+      CallerAddress: Guid_2
+    },
+    OnIdentityReceived: {
+      identity: (identity of B),
+      address: Guid_2
+    },
+    OnUpdateUser: {
+      oldUser: {
+        identity: (identity of B),
+        online: true
+      },
+      newUser: {
+        identity: (identity of B),
+        name: B,
+        online: true
+      },
+      reducerEvent: {
+        Args: {
+          Name: B
+        },
+        Timestamp: 1718468882638019,
+        Identity: (identity of B),
+        CallerAddress: Guid_2,
+        ErrMessage: 
+      }
+    },
+    OnEvent: {
+      Timestamp: 1718468882638019,
+      CallerIdentity: (identity of B),
+      FunctionCall: {
+        Reducer: set_name,
+        ArgBytes: 0100000042,
+        RequestId: 1,
+        CallInfo: {
+          Args: {
+            Name: B
+          },
+          Timestamp: 1718468882638019,
+          Identity: (identity of B),
+          CallerAddress: Guid_2,
+          ErrMessage: 
+        }
+      },
+      Message: ,
+      EnergyQuantaUsed: 4268615,
+      HostExecutionDurationMicros: 77,
+      CallerAddress: Guid_2
+    },
+    OnSetName: {
+      Args: {
+        Name: B
+      },
+      Timestamp: 1718468882638019,
+      Identity: (identity of B),
+      CallerAddress: Guid_2,
+      ErrMessage: 
+    },
+    LogWarning: Deleting value that we don't have (no cached value available),
+    OnEvent: {
+      Timestamp: 1718468882638019,
+      CallerIdentity: (identity of B),
+      FunctionCall: {
+        Reducer: set_name,
+        ArgBytes: 0100000042,
+        RequestId: 1,
+        CallInfo: {
+          Args: {
+            Name: B
+          },
+          Timestamp: 1718468882638019,
+          Identity: (identity of B),
+          CallerAddress: Guid_2,
+          ErrMessage: 
+        }
+      },
+      Message: ,
+      EnergyQuantaUsed: 4268615,
+      HostExecutionDurationMicros: 77,
+      CallerAddress: Guid_2
+    },
+    OnSetName: {
+      Args: {
+        Name: B
+      },
+      Timestamp: 1718468882638019,
+      Identity: (identity of B),
+      CallerAddress: Guid_2,
+      ErrMessage: 
+    },
+    OnInsertMessage: {
+      message: {
+        sender: (identity of B),
+        sent: 1718468885695988,
+        text: Hello, A!
+      },
+      reducerEvent: {
+        Args: {
+          Text: Hello, A!
+        },
+        Timestamp: 1718468885695988,
+        Identity: (identity of B),
+        CallerAddress: Guid_2,
+        ErrMessage: 
+      }
+    },
+    OnEvent: {
+      Timestamp: 1718468885695988,
+      CallerIdentity: (identity of B),
+      FunctionCall: {
+        Reducer: send_message,
+        ArgBytes: 0900000048656C6C6F2C204121,
+        RequestId: 2,
+        CallInfo: {
+          Args: {
+            Text: Hello, A!
+          },
+          Timestamp: 1718468885695988,
+          Identity: (identity of B),
+          CallerAddress: Guid_2,
+          ErrMessage: 
+        }
+      },
+      Message: ,
+      EnergyQuantaUsed: 2677615,
+      HostExecutionDurationMicros: 46,
+      CallerAddress: Guid_2
+    },
+    OnSendMessage: {
+      Args: {
+        Text: Hello, A!
+      },
+      Timestamp: 1718468885695988,
+      Identity: (identity of B),
+      CallerAddress: Guid_2,
+      ErrMessage: 
+    },
+    OnEvent: {
+      Timestamp: 1718468885695988,
+      CallerIdentity: (identity of B),
+      FunctionCall: {
+        Reducer: send_message,
+        ArgBytes: 0900000048656C6C6F2C204121,
+        RequestId: 2,
+        CallInfo: {
+          Args: {
+            Text: Hello, A!
+          },
+          Timestamp: 1718468885695988,
+          Identity: (identity of B),
+          CallerAddress: Guid_2,
+          ErrMessage: 
+        }
+      },
+      Message: ,
+      EnergyQuantaUsed: 2677615,
+      HostExecutionDurationMicros: 46,
+      CallerAddress: Guid_2
+    },
+    OnSendMessage: {
+      Args: {
+        Text: Hello, A!
+      },
+      Timestamp: 1718468885695988,
+      Identity: (identity of B),
+      CallerAddress: Guid_2,
+      ErrMessage: 
+    },
+    OnInsertMessage: {
+      message: {
+        sender: (identity of A),
+        sent: 1718468889369867,
+        text: Hello, B!
+      },
+      reducerEvent: {
+        Args: {
+          Text: Hello, B!
+        },
+        Timestamp: 1718468889369867,
+        Identity: (identity of A),
+        CallerAddress: Guid_1,
+        ErrMessage: 
+      }
+    },
+    OnEvent: {
+      Timestamp: 1718468889369867,
+      CallerIdentity: (identity of A),
+      FunctionCall: {
+        Reducer: send_message,
+        ArgBytes: 0900000048656C6C6F2C204221,
+        RequestId: 3,
+        CallInfo: {
+          Args: {
+            Text: Hello, B!
+          },
+          Timestamp: 1718468889369867,
+          Identity: (identity of A),
+          CallerAddress: Guid_1,
+          ErrMessage: 
+        }
+      },
+      Message: ,
+      EnergyQuantaUsed: 2677615,
+      HostExecutionDurationMicros: 30,
+      CallerAddress: Guid_1
+    },
+    OnSendMessage: {
+      Args: {
+        Text: Hello, B!
+      },
+      Timestamp: 1718468889369867,
+      Identity: (identity of A),
+      CallerAddress: Guid_1,
+      ErrMessage: 
+    },
+    OnEvent: {
+      Timestamp: 1718468889369867,
+      CallerIdentity: (identity of A),
+      FunctionCall: {
+        Reducer: send_message,
+        ArgBytes: 0900000048656C6C6F2C204221,
+        RequestId: 3,
+        CallInfo: {
+          Args: {
+            Text: Hello, B!
+          },
+          Timestamp: 1718468889369867,
+          Identity: (identity of A),
+          CallerAddress: Guid_1,
+          ErrMessage: 
+        }
+      },
+      Message: ,
+      EnergyQuantaUsed: 2677615,
+      HostExecutionDurationMicros: 30,
+      CallerAddress: Guid_1
+    },
+    OnSendMessage: {
+      Args: {
+        Text: Hello, B!
+      },
+      Timestamp: 1718468889369867,
+      Identity: (identity of A),
+      CallerAddress: Guid_1,
+      ErrMessage: 
+    },
+    OnInsertMessage: {
+      message: {
+        sender: (identity of A),
+        sent: 1718468899752265,
+        text: Goodbye
+      },
+      reducerEvent: {
+        Args: {
+          Text: Goodbye
+        },
+        Timestamp: 1718468899752265,
+        Identity: (identity of A),
+        CallerAddress: Guid_1,
+        ErrMessage: 
+      }
+    },
+    OnEvent: {
+      Timestamp: 1718468899752265,
+      CallerIdentity: (identity of A),
+      FunctionCall: {
+        Reducer: send_message,
+        ArgBytes: 07000000476F6F64627965,
+        RequestId: 4,
+        CallInfo: {
+          Args: {
+            Text: Goodbye
+          },
+          Timestamp: 1718468899752265,
+          Identity: (identity of A),
+          CallerAddress: Guid_1,
+          ErrMessage: 
+        }
+      },
+      Message: ,
+      EnergyQuantaUsed: 2680615,
+      HostExecutionDurationMicros: 56,
+      CallerAddress: Guid_1
+    },
+    OnSendMessage: {
+      Args: {
+        Text: Goodbye
+      },
+      Timestamp: 1718468899752265,
+      Identity: (identity of A),
+      CallerAddress: Guid_1,
+      ErrMessage: 
+    },
+    OnEvent: {
+      Timestamp: 1718468899752265,
+      CallerIdentity: (identity of A),
+      FunctionCall: {
+        Reducer: send_message,
+        ArgBytes: 07000000476F6F64627965,
+        RequestId: 4,
+        CallInfo: {
+          Args: {
+            Text: Goodbye
+          },
+          Timestamp: 1718468899752265,
+          Identity: (identity of A),
+          CallerAddress: Guid_1,
+          ErrMessage: 
+        }
+      },
+      Message: ,
+      EnergyQuantaUsed: 2680615,
+      HostExecutionDurationMicros: 56,
+      CallerAddress: Guid_1
+    },
+    OnSendMessage: {
+      Args: {
+        Text: Goodbye
+      },
+      Timestamp: 1718468899752265,
+      Identity: (identity of A),
+      CallerAddress: Guid_1,
+      ErrMessage: 
+    },
+    LogException: Unknown reducer __identity_disconnected__ (Parameter 'Reducer'),
+    OnUpdateUser: {
+      oldUser: {
+        identity: (identity of A),
+        name: A,
+        online: true
+      },
+      newUser: {
+        identity: (identity of A),
+        name: A,
+        online: false
+      }
+    },
+    OnEvent: {
+      Timestamp: 1718468902123791,
+      CallerIdentity: (identity of A),
+      FunctionCall: {
+        Reducer: __identity_disconnected__,
+        ArgBytes: 
+      },
+      Message: ,
+      EnergyQuantaUsed: 3595615,
+      HostExecutionDurationMicros: 63,
+      CallerAddress: Guid_1
+    },
+    OnInsertMessage: {
+      message: {
+        sender: (identity of B),
+        sent: 1718468904806316,
+        text: Goodbye
+      },
+      reducerEvent: {
+        Args: {
+          Text: Goodbye
+        },
+        Timestamp: 1718468904806316,
+        Identity: (identity of B),
+        CallerAddress: Guid_2,
+        ErrMessage: 
+      }
+    },
+    OnEvent: {
+      Timestamp: 1718468904806316,
+      CallerIdentity: (identity of B),
+      FunctionCall: {
+        Reducer: send_message,
+        ArgBytes: 07000000476F6F64627965,
+        RequestId: 3,
+        CallInfo: {
+          Args: {
+            Text: Goodbye
+          },
+          Timestamp: 1718468904806316,
+          Identity: (identity of B),
+          CallerAddress: Guid_2,
+          ErrMessage: 
+        }
+      },
+      Message: ,
+      EnergyQuantaUsed: 2680615,
+      HostExecutionDurationMicros: 41,
+      CallerAddress: Guid_2
+    },
+    OnSendMessage: {
+      Args: {
+        Text: Goodbye
+      },
+      Timestamp: 1718468904806316,
+      Identity: (identity of B),
+      CallerAddress: Guid_2,
+      ErrMessage: 
+    }
+  },
+  FinalSnapshot: {
+    User: [
+      {
+        identity: (identity of A),
+        name: A,
+        online: false
+      },
+      {
+        identity: (identity of B),
+        name: B,
+        online: true
+      }
+    ],
+    Message: [
+      {
+        sender: (identity of A),
+        sent: 1718468812745975,
+        text: Hello, world!
+      },
+      {
+        sender: (identity of B),
+        sent: 1718468885695988,
+        text: Hello, A!
+      },
+      {
+        sender: (identity of A),
+        sent: 1718468889369867,
+        text: Hello, B!
+      },
+      {
+        sender: (identity of A),
+        sent: 1718468899752265,
+        text: Goodbye
+      },
+      {
+        sender: (identity of B),
+        sent: 1718468904806316,
+        text: Goodbye
+      }
+    ]
+  }
+}

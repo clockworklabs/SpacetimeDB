@@ -5,15 +5,13 @@
     <TargetFramework>net7.0</TargetFramework>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="../../../SpacetimeDB.ClientSDK.csproj" />
     <PackageReference Include="SpacetimeDB.BSATN.Codegen" Version="0.10.*" OutputItemType="Analyzer" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="module_bindings\" />
   </ItemGroup>
 
 </Project>
