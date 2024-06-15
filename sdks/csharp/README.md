@@ -114,9 +114,11 @@ The client cache is a local cache of the data that the client has received from 
 
 When you run the CLI generate command, SpacetimeDB will automatically generate a class for each table in your database. These classes are generated in the `SpacetimeDB.Types` namespace. Each class contains a set of static methods that allow you to query the client cache. The following methods are available:
 
-- `FilterByCOLUMN`: Filters the table by the specified column value.
-- `Iter`: Returns an iterator over the table.
-- `Count`: Returns the number of rows in the table.
+- `int Count()`: Returns the number of rows in the table.
+- `IEnumerable<TableRow> Iter()`: Returns an iterator over the table.
+- `IEnumerable<TableRow> FilterByCOLUMN(ColumnValue)`: Filters the table by the specified column value.
+- `TableRow? FindByCOLUMN(ColumnValue)`: Finds a single item by the specifed column value.
+- `IEnumerable<TableRow> Query(Func<TableRow, bool>)`: Filters the table with the specified predicate.
 
 ### Calling Reducers
 
