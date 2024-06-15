@@ -436,7 +436,7 @@ namespace SpacetimeDB
                 // TODO: Reimplement updates when we add support for primary keys
                 var update = dbOps[i];
 
-                if (update.delete is {} delete)
+                if (update.delete is { } delete)
                 {
                     if (update.table.DeleteEntry(delete.bytes))
                     {
@@ -449,7 +449,7 @@ namespace SpacetimeDB
                     }
                 }
 
-                if (update.insert is {} insert)
+                if (update.insert is { } insert)
                 {
                     if (update.table.InsertEntry(insert.bytes, insert.value))
                     {
@@ -544,7 +544,7 @@ namespace SpacetimeDB
                         Logger.LogException(e);
                     }
 
-                    if (transactionEvent.FunctionCall.CallInfo is not {} reducerEvent)
+                    if (transactionEvent.FunctionCall.CallInfo is not { } reducerEvent)
                     {
                         // If we are here, an error about unknown reducer should have already been logged, so nothing to do.
                         break;
