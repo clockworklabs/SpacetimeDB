@@ -4,30 +4,40 @@ using System.Runtime.CompilerServices;
 using Google.Protobuf;
 using SpacetimeDB.Types;
 
-public static class VerifyInit
+class ByteStringConverter : WriteOnlyJsonConverter<ByteString>
 {
-    class ByteStringConverter : WriteOnlyJsonConverter<ByteString>
+    public override void Write(VerifyJsonWriter writer, ByteString value)
     {
-        public override void Write(VerifyJsonWriter writer, ByteString value)
+        writer.WriteValue(Convert.ToHexString(value.Span));
+    }
+}
+
+// A converter that scrubs identity to a stable string.
+public class IdentityConverter(Identity? myIdentity) : WriteOnlyJsonConverter<Identity>
+{
+    public override void Write(VerifyJsonWriter writer, Identity value)
+    {
+        if (value == myIdentity)
         {
-            writer.WriteValue(Convert.ToHexString(value.Span));
+            writer.WriteValue("(identity of A)");
+        }
+        else
+        {
+            writer.WriteValue("(identity of B)");
         }
     }
+}
 
-    class IdentityOrAddressConverter : WriteOnlyJsonConverter
+class AddressConverter : WriteOnlyJsonConverter<Address>
+{
+    public override void Write(VerifyJsonWriter writer, Address value)
     {
-        public override bool CanConvert(Type objectType)
-        {
-            objectType = Nullable.GetUnderlyingType(objectType) ?? objectType;
-            return objectType == typeof(Identity) || objectType == typeof(Address);
-        }
-
-        public override void Write(VerifyJsonWriter writer, object value)
-        {
-            writer.WriteValue(value.ToString());
-        }
+        writer.WriteValue(value.ToString());
     }
+}
 
+static class VerifyInit
+{
     [ModuleInitializer]
     public static void Init()
     {
@@ -35,7 +45,7 @@ public static class VerifyInit
 
         VerifierSettings.AddExtraSettings(settings =>
             settings.Converters.AddRange(
-                [new ByteStringConverter(), new IdentityOrAddressConverter()]
+                [new ByteStringConverter(), new AddressConverter()]
             )
         );
 
