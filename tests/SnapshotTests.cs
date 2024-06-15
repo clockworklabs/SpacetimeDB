@@ -111,13 +111,15 @@ public class SnapshotTests
             // Start tracking requests in the stats handler so that those request IDs can later be found.
             switch (message)
             {
-                case {
+                case
+                {
                     TypeCase: ClientApi.Message.TypeOneofCase.SubscriptionUpdate,
                     SubscriptionUpdate: var subscriptionUpdate
                 }:
                     client.stats.SubscriptionRequestTracker.StartTrackingRequest($"sample#{i}");
                     break;
-                case {
+                case
+                {
                     TypeCase: ClientApi.Message.TypeOneofCase.TransactionUpdate,
                     TransactionUpdate: var transactionUpdate
                 }:
