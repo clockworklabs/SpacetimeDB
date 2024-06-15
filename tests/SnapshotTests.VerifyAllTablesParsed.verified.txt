@@ -380,5 +380,29 @@
         text: Goodbye!
       }
     ]
+  },
+  Stats: {
+    ReducerRequestTracker: {
+      sampleCount: 3,
+      requestsAwaitingResponse: 5,
+      Min: sample#4,
+      Max: sample#2
+    },
+    OneOffRequestTracker: {},
+    SubscriptionRequestTracker: {
+      sampleCount: 1,
+      Min: sample#1,
+      Max: sample#1
+    },
+    AllReducersTracker: {
+      sampleCount: 8,
+      Min: reducer=send_message,
+      Max: reducer=set_name
+    },
+    ParseMessageTracker: {
+      sampleCount: 9,
+      Min: type=TransactionUpdate,reducer=send_message,
+      Max: type=SubscriptionUpdate
+    }
   }
 }

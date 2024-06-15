@@ -26,11 +26,6 @@ public class SnapshotTests
 
         public void LogWarning(string message)
         {
-            // We don't start tracking in test simulation, so those warnings are expected.
-            if (message.StartsWith("Failed to finish tracking"))
-            {
-                return;
-            }
             events.Add("LogWarning", message);
         }
 
@@ -95,18 +90,40 @@ public class SnapshotTests
     [Fact]
     public async Task VerifyAllTablesParsed()
     {
-        var settings = new JsonSerializerSettings
+        var events = new Events();
+
+        Logger.Current = new TestLogger(events);
+
+        var client = SpacetimeDBClient.instance;
+
+        var jsonSettings = new JsonSerializerSettings
         {
             Converters = [new ByteStringReaderConverter()]
         };
 
         // We store the dump in JSON-NL format for simplicity (it's just `ClientApi.Message.toString()`) and readability.
         var sampleDumpParsed = File.ReadLines(Path.Combine(GetTestDir(), "sample-dump.jsonl"))
-            .Select(line => JsonConvert.DeserializeObject<ClientApi.Message>(line, settings));
+            .Select(line => JsonConvert.DeserializeObject<ClientApi.Message>(line, jsonSettings));
 
         // But for proper testing we need to convert it back to raw binary messages as if it was received over network.
-        var sampleDumpBinary = sampleDumpParsed.Select(message =>
+        var sampleDumpBinary = sampleDumpParsed.Select((message, i) =>
         {
+            // Start tracking requests in the stats handler so that those request IDs can later be found.
+            switch (message)
+            {
+                case {
+                    TypeCase: ClientApi.Message.TypeOneofCase.SubscriptionUpdate,
+                    SubscriptionUpdate: var subscriptionUpdate
+                }:
+                    client.stats.SubscriptionRequestTracker.StartTrackingRequest($"sample#{i}");
+                    break;
+                case {
+                    TypeCase: ClientApi.Message.TypeOneofCase.TransactionUpdate,
+                    TransactionUpdate: var transactionUpdate
+                }:
+                    client.stats.ReducerRequestTracker.StartTrackingRequest($"sample#{i}");
+                    break;
+            }
             using var output = new MemoryStream();
             using (var brotli = new BrotliStream(output, CompressionMode.Compress))
             {
@@ -114,12 +131,6 @@ public class SnapshotTests
             }
             return output.ToArray();
         });
-
-        var events = new Events();
-
-        Logger.Current = new TestLogger(events);
-
-        var client = SpacetimeDBClient.instance;
 
         Identity? myIdentity = null;
 
@@ -178,12 +189,17 @@ public class SnapshotTests
                     {
                         User = User.Iter().ToList(),
                         Message = Message.Iter().ToList()
-                    }
+                    },
+                    Stats = client.stats
                 }
             )
             .AddExtraSettings(settings =>
                 settings.Converters.AddRange(
-                    [new EventsConverter(), new IdentityConverter(myIdentity)]
+                    [
+                        new EventsConverter(),
+                        new IdentityConverter(myIdentity),
+                        new NetworkRequestTrackerConverter()
+                    ]
                 )
             )
             .ScrubMember<ClientApi.Event>(_ => _.CallerIdentity);

@@ -36,6 +36,34 @@ class AddressConverter : WriteOnlyJsonConverter<Address>
     }
 }
 
+class NetworkRequestTrackerConverter : WriteOnlyJsonConverter<NetworkRequestTracker>
+{
+    public override void Write(VerifyJsonWriter writer, NetworkRequestTracker value)
+    {
+        writer.WriteStartObject();
+
+        var sampleCount = value.GetSampleCount();
+        if (sampleCount > 0)
+        {
+            writer.WriteMember(value, sampleCount, nameof(sampleCount));
+        }
+
+        var requestsAwaitingResponse = value.GetRequestsAwaitingResponse();
+        if (requestsAwaitingResponse > 0)
+        {
+            writer.WriteMember(value, requestsAwaitingResponse, nameof(requestsAwaitingResponse));
+        }
+
+        if (value.GetMinMaxTimes(int.MaxValue) is { Min.Metadata: var Min, Max.Metadata: var Max })
+        {
+            writer.WriteMember(value, Min, nameof(Min));
+            writer.WriteMember(value, Max, nameof(Max));
+        }
+
+        writer.WriteEndObject();
+    }
+}
+
 static class VerifyInit
 {
     [ModuleInitializer]
