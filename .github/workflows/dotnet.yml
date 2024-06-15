@@ -17,5 +17,8 @@ jobs:
       with:
         dotnet-version: 7.0.x
     - name: Build client example
-      run: dotnet build
+      run: dotnet build -warnaserror
+      working-directory: examples/quickstart/client
+    - name: Verify formatting
+      run: dotnet format --check client.sln
       working-directory: examples/quickstart/client

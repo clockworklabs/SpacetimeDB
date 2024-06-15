@@ -18,11 +18,11 @@ namespace SpacetimeDB
         }
 
         public class TableCache<T> : ITableCache
-            where T: IDatabaseTable, IStructuralReadWrite, new()
+            where T : IDatabaseTable, IStructuralReadWrite, new()
         {
             public Type ClientTableType => typeof(T);
 
-            public static readonly Dictionary<byte[], T> Entries = new (ByteArrayComparer.Instance);
+            public static readonly Dictionary<byte[], T> Entries = new(ByteArrayComparer.Instance);
 
             /// <summary>
             /// Inserts the value into the table. There can be no existing value with the provided BSATN bytes.
@@ -59,7 +59,7 @@ namespace SpacetimeDB
         private readonly Dictionary<string, ITableCache> tables = new();
 
         public void AddTable<T>()
-            where T: IDatabaseTable, IStructuralReadWrite, new()
+            where T : IDatabaseTable, IStructuralReadWrite, new()
         {
             string name = typeof(T).Name;
 

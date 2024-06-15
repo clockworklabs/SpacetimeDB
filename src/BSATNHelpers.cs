@@ -45,7 +45,7 @@ namespace SpacetimeDB
             // Our stream is read-only.
             public override bool CanWrite => false;
             public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-            public override void Flush() {}
+            public override void Flush() { }
             public override void SetLength(long value) => throw new NotSupportedException();
         }
 
