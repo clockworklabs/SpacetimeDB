@@ -26,7 +26,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" PrivateAssets="all" OutputItemType="analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" PrivateAssets="all" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
