@@ -113,6 +113,7 @@ impl Locking {
         // `build_missing_tables` must be called before indexes.
         // Honestly this should maybe just be one big procedure.
         // See John Carmack's philosophy on this.
+        committed_state.reschema_tables()?;
         committed_state.build_missing_tables()?;
         committed_state.build_indexes()?;
         committed_state.build_sequence_state(&mut sequence_state)?;
@@ -414,11 +415,13 @@ impl MutTxDatastore for Locking {
     }
 
     fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTx, constraint_id: ConstraintId) -> Result<()> {
-        tx.drop_constraint(constraint_id, self.database_address)
+        let ctx = &ExecutionContext::internal(self.database_address);
+        tx.drop_constraint(ctx, constraint_id)
     }
 
     fn constraint_id_from_name(&self, tx: &Self::MutTx, constraint_name: &str) -> Result<Option<ConstraintId>> {
-        tx.constraint_id_from_name(constraint_name, self.database_address)
+        let ctx = &ExecutionContext::internal(self.database_address);
+        tx.constraint_id_from_name(ctx, constraint_name)
     }
 
     fn iter_mut_tx<'a>(

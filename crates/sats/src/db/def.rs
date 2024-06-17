@@ -460,6 +460,17 @@ impl From<ConstraintSchema> for ConstraintDef {
     }
 }
 
+/// Concatenate the column names from the `columns`
+///
+/// WARNING: If the `ColId` not exist, is skipped.
+/// TODO(Tyler): This should return an error and not allow this to be constructed
+/// if there is an invalid `ColId`
+fn generate_cols_name<'a>(columns: &ColList, col_name: impl Fn(ColId) -> Option<&'a str>) -> String {
+    let mut column_name = Vec::with_capacity(columns.len() as usize);
+    column_name.extend(columns.iter().filter_map(col_name));
+    column_name.join("_")
+}
+
 /// A data structure representing the schema of a database table.
 ///
 /// This struct holds information about the table, including its identifier,
@@ -575,6 +586,15 @@ impl TableSchema {
     /// Removes the given `index_id`
     pub fn remove_constraint(&mut self, constraint_id: ConstraintId) {
         self.constraints.retain(|x| x.constraint_id != constraint_id)
+    }
+
+    /// Concatenate the column names from the `columns`
+    ///
+    /// WARNING: If the `ColId` not exist, is skipped.
+    /// TODO(Tyler): This should return an error and not allow this to be constructed
+    /// if there is an invalid `ColId`
+    pub fn generate_cols_name(&self, columns: &ColList) -> String {
+        generate_cols_name(columns, |p| self.get_column(p.idx()).map(|c| &*c.col_name))
     }
 
     /// Check if the specified `field` exists in this [TableSchema].
@@ -996,14 +1016,7 @@ impl TableDef {
     /// TODO(Tyler): This should return an error and not allow this to be constructed
     /// if there is an invalid `ColId`
     fn generate_cols_name(&self, columns: &ColList) -> String {
-        let mut column_name = Vec::with_capacity(columns.len() as usize);
-        for col_pos in columns.iter() {
-            if let Some(col) = self.get_column(col_pos.idx()) {
-                column_name.push(&*col.col_name)
-            }
-        }
-
-        column_name.join("_")
+        generate_cols_name(columns, |p| self.get_column(p.idx()).map(|c| &*c.col_name))
     }
 
     /// Generate a [ConstraintDef] using the supplied `columns`.
