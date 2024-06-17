@@ -27,6 +27,7 @@
     <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="0.10.*" />
 
     <InternalsVisibleTo Include="tests" />
+    <InternalsVisibleTo Include="bitcraftbench" />
   </ItemGroup>
 
   <ItemGroup>

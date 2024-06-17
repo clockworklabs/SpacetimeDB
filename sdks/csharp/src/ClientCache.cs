@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -7,7 +7,7 @@ using Google.Protobuf;
 
 namespace SpacetimeDB
 {
-    public class ClientCache
+    internal class ClientCache
     {
         public interface ITableCache : IEnumerable<KeyValuePair<byte[], IDatabaseTable>>
         {
@@ -15,6 +15,7 @@ namespace SpacetimeDB
             bool InsertEntry(byte[] rowBytes, IDatabaseTable value);
             bool DeleteEntry(byte[] rowBytes);
             IDatabaseTable DecodeValue(ByteString bytes);
+            void Clear();
         }
 
         public class TableCache<T> : ITableCache
@@ -54,6 +55,8 @@ namespace SpacetimeDB
             public IEnumerator<KeyValuePair<byte[], IDatabaseTable>> GetEnumerator() => Entries.Select(kv => new KeyValuePair<byte[], IDatabaseTable>(kv.Key, kv.Value)).GetEnumerator();
 
             IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+            void ITableCache.Clear() => Entries.Clear();
         }
 
         private readonly Dictionary<string, ITableCache> tables = new();

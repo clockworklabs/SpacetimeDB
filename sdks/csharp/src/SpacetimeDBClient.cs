@@ -87,7 +87,7 @@ namespace SpacetimeDB
 
         private SpacetimeDB.WebSocket webSocket;
         private bool connectionClosed;
-        protected readonly ClientCache clientDB = new();
+        internal readonly ClientCache clientDB = new();
 
         protected abstract ReducerEvent ReducerEventFromDbEvent(ClientApi.Event dbEvent);
 
@@ -371,9 +371,10 @@ namespace SpacetimeDB
 
         public void Close()
         {
+            // log.Close();
             isClosing = true;
             connectionClosed = true;
-            webSocket.Close();
+            // webSocket.Close();
             _preProcessCancellationTokenSource.Cancel();
         }
 
@@ -600,9 +601,15 @@ namespace SpacetimeDB
             }
         }
 
+        // private readonly BinaryWriter log = new(File.OpenWrite("bitcraft.bin"));
+
         // Note: this method is called from unit tests.
-        internal void OnMessageReceived(byte[] bytes, DateTime timestamp) =>
+        internal void OnMessageReceived(byte[] bytes, DateTime timestamp)
+        {
+            // log.Write(bytes.Length);
+            // log.Write(bytes);
             _messageQueue.Add(new UnprocessedMessage { bytes = bytes, timestamp = timestamp });
+        }
 
         public void InternalCallReducer<T>(T args)
             where T : IReducerArgsBase, new()

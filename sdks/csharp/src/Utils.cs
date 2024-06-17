@@ -2,12 +2,10 @@
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
-#if UNITY_5_3_OR_NEWER
 namespace System.Runtime.CompilerServices
 {
-    public static class IsExternalInit {}
+    static class IsExternalInit {}
 }
-#endif
 
 namespace SpacetimeDB
 {
