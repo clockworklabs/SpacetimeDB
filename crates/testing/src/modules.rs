@@ -56,7 +56,8 @@ impl ModuleHandle {
             args: EncodedValue::Text(args.into()),
             request_id: 0,
         });
-        self.send(serde_json::to_string(&SerializeWrapper::new(message)).unwrap()).await
+        self.send(serde_json::to_string(&SerializeWrapper::new(message)).unwrap())
+            .await
     }
 
     pub async fn call_reducer_binary(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {

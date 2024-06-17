@@ -122,14 +122,12 @@ fn reformat_update(msg: ws::DatabaseUpdate, schema: &ModuleDef) -> anyhow::Resul
                 .deletes
                 .into_iter()
                 .map(reformat_row)
-                .collect::<anyhow::Result<Vec<_>>>()
-                ?;
+                .collect::<anyhow::Result<Vec<_>>>()?;
             let inserts = upd
                 .inserts
                 .into_iter()
                 .map(reformat_row)
-                .collect::<anyhow::Result<Vec<_>>>()
-                ?;
+                .collect::<anyhow::Result<Vec<_>>>()?;
 
             Ok((upd.table_name, SubscriptionTable { deletes, inserts }))
         })
@@ -169,16 +167,13 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     req.headers_mut().insert(header::SEC_WEBSOCKET_PROTOCOL, TEXT_PROTOCOL);
     //  Add the authorization header, if any.
     if let Some(auth_header) = &api.con.auth_header {
-        req.headers_mut()
-            .insert(header::AUTHORIZATION, auth_header.try_into()?);
+        req.headers_mut().insert(header::AUTHORIZATION, auth_header.try_into()?);
     }
     let (mut ws, _) = tokio_tungstenite::connect_async(req).await?;
 
     let task = async {
         subscribe(&mut ws, queries.cloned().collect()).await?;
-        await_initial_update(&mut ws, print_initial_update.then_some(&module_def))
-            .await
-            ?;
+        await_initial_update(&mut ws, print_initial_update.then_some(&module_def)).await?;
         consume_transaction_updates(&mut ws, num, &module_def).await
     };
 

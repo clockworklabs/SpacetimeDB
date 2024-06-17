@@ -1,9 +1,12 @@
 use serial_test::serial;
-use spacetimedb_lib::sats::{product, SumValue, AlgebraicValue};
+use spacetimedb_lib::sats::{product, AlgebraicValue, SumValue};
 use spacetimedb_testing::modules::{
     CompilationMode, CompiledModule, LogLevel, LoggerRecord, ModuleHandle, DEFAULT_CONFIG, IN_MEMORY_CONFIG,
 };
-use std::{future::Future, time::{Duration, Instant}};
+use std::{
+    future::Future,
+    time::{Duration, Instant},
+};
 
 fn init() {
     let _ = env_logger::builder()
@@ -43,16 +46,22 @@ fn test_calling_a_reducer_in_module(module_name: &'static str) {
     CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
-            let json = r#"{"CallReducer": {"reducer": "add", "args": { "Text": "[\"Tyrion\", 24]" }, "request_id": 0 }}"#.to_string();
+            let json =
+                r#"{"CallReducer": {"reducer": "add", "args": { "Text": "[\"Tyrion\", 24]" }, "request_id": 0 }}"#
+                    .to_string();
             module.send(json).await.unwrap();
 
-            let json = r#"{"CallReducer": {"reducer": "add", "args": { "Text": "[\"Cersei\", 31]" }, "request_id": 1 }}"#.to_string();
+            let json =
+                r#"{"CallReducer": {"reducer": "add", "args": { "Text": "[\"Cersei\", 31]" }, "request_id": 1 }}"#
+                    .to_string();
             module.send(json).await.unwrap();
 
-            let json = r#"{"CallReducer": {"reducer": "say_hello", "args": { "Text": "[]" }, "request_id": 2 }}"#.to_string();
+            let json =
+                r#"{"CallReducer": {"reducer": "say_hello", "args": { "Text": "[]" }, "request_id": 2 }}"#.to_string();
             module.send(json).await.unwrap();
 
-            let json = r#"{"CallReducer": {"reducer": "list_over_age", "args": { "Text": "[30]" }, "request_id": 3 }}"#.to_string();
+            let json = r#"{"CallReducer": {"reducer": "list_over_age", "args": { "Text": "[30]" }, "request_id": 3 }}"#
+                .to_string();
             module.send(json).await.unwrap();
 
             assert_eq!(
@@ -89,7 +98,10 @@ fn test_calling_a_reducer_with_private_table() {
     CompiledModule::compile("rust-wasm-test", CompilationMode::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
-            module.call_reducer_json("add_private", product!["Tyrion"]).await.unwrap();
+            module
+                .call_reducer_json("add_private", product!["Tyrion"])
+                .await
+                .unwrap();
             module.call_reducer_json("query_private", product![]).await.unwrap();
 
             let logs = read_logs(&module)
@@ -160,10 +172,9 @@ fn test_call_query_macro_with_caller<F: Future<Output = ()>>(caller: impl FnOnce
 #[serial]
 fn test_call_query_macro() {
     // Hand-written JSON. This will fail if the JSON encoding of `ClientMessage` changes.
-    test_call_query_macro_with_caller(
-        |module| async move {
-            // Note that JSON doesn't allow multiline strings, so the encoded args string must be on one line!
-            let json = r#"
+    test_call_query_macro_with_caller(|module| async move {
+        // Note that JSON doesn't allow multiline strings, so the encoded args string must be on one line!
+        let json = r#"
 { "CallReducer": {
   "reducer": "test",
   "args": { "Text":
@@ -171,17 +182,23 @@ fn test_call_query_macro() {
   },
   "request_id": 0
 } }"#
-                .to_string();
-            module.send(json).await.unwrap();
-        });
+            .to_string();
+        module.send(json).await.unwrap();
+    });
 
     // JSON via the `Serialize` path.
     test_call_query_macro_with_caller(|module| async move {
         let args = product![
             product![0u32, 2u32, AlgebraicValue::String("Macro".into())],
             product![AlgebraicValue::String("Foo".into())],
-            SumValue { tag: 0, value: Box::new(AlgebraicValue::unit()) },
-            SumValue { tag: 2, value: Box::new(AlgebraicValue::String("buzz".into())) },
+            SumValue {
+                tag: 0,
+                value: Box::new(AlgebraicValue::unit())
+            },
+            SumValue {
+                tag: 2,
+                value: Box::new(AlgebraicValue::String("buzz".into()))
+            },
         ];
         module.call_reducer_json("test", args).await.unwrap();
     });
@@ -191,8 +208,14 @@ fn test_call_query_macro() {
         let args = product![
             product![0u32, 2u32, AlgebraicValue::String("Macro".into())],
             product![AlgebraicValue::String("Foo".into())],
-            SumValue { tag: 0, value: Box::new(AlgebraicValue::unit()) },
-            SumValue { tag: 2, value: Box::new(AlgebraicValue::String("buzz".into())) },
+            SumValue {
+                tag: 0,
+                value: Box::new(AlgebraicValue::unit())
+            },
+            SumValue {
+                tag: 2,
+                value: Box::new(AlgebraicValue::String("buzz".into()))
+            },
         ];
         module.call_reducer_binary("test", args).await.unwrap();
     });
@@ -208,13 +231,25 @@ fn test_index_scans() {
     CompiledModule::compile("perf-test", CompilationMode::Release).with_module_async(
         IN_MEMORY_CONFIG,
         |module| async move {
-            module.call_reducer_json("load_location_table", product![]).await.unwrap();
+            module
+                .call_reducer_json("load_location_table", product![])
+                .await
+                .unwrap();
 
-            module.call_reducer_json("test_index_scan_on_id", product![]).await.unwrap();
+            module
+                .call_reducer_json("test_index_scan_on_id", product![])
+                .await
+                .unwrap();
 
-            module.call_reducer_json("test_index_scan_on_chunk", product![]).await.unwrap();
+            module
+                .call_reducer_json("test_index_scan_on_chunk", product![])
+                .await
+                .unwrap();
 
-            module.call_reducer_json("test_index_scan_on_x_z_dimension", product![]).await.unwrap();
+            module
+                .call_reducer_json("test_index_scan_on_x_z_dimension", product![])
+                .await
+                .unwrap();
 
             // TODO(1011): Uncomment once multi-column prefix scans are supported
             // let json = r#"{"call": {"fn": "test_index_scan_on_x_z", "args": []}}"#;
@@ -236,7 +271,8 @@ fn test_index_scans() {
 }
 
 async fn bench_call<'a>(module: &ModuleHandle, call: &str, count: &u32) -> Duration {
-    let json = format!(r#"{{"CallReducer": {{"reducer": "{call}", "args": {{ "Text": "[{count}]" }}, "request_id": 0 }}}}"#);
+    let json =
+        format!(r#"{{"CallReducer": {{"reducer": "{call}", "args": {{ "Text": "[{count}]" }}, "request_id": 0 }}}}"#);
 
     let now = Instant::now();
 

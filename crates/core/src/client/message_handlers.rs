@@ -57,13 +57,15 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
         DataMessage::Text(message) => {
             let message = ByteString::from(message);
             // TODO: update json clients and use the ws version
-            serde_json::from_str::<DeserializeWrapper<ClientMessage>>(&message).unwrap()
+            serde_json::from_str::<DeserializeWrapper<ClientMessage>>(&message)
+                .unwrap()
                 .0
                 .map_args(parse_args)
         }
         DataMessage::Binary(message_buf) => {
             let message_buf = Bytes::from(message_buf);
-            bsatn::from_slice::<ClientMessage>(&message_buf).unwrap()
+            bsatn::from_slice::<ClientMessage>(&message_buf)
+                .unwrap()
                 .map_args(parse_args)
         }
     };
@@ -114,7 +116,8 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
         caller_identity: client.id.identity,
         caller_address: Some(client.id.address),
         err,
-    }).unwrap();
+    })
+    .unwrap();
     Ok(())
 }
 
