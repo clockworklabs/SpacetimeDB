@@ -12,6 +12,7 @@ use crate::messages::websocket::{self as ws, CallReducer, ClientMessage, OneOffQ
 use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
 use bytestring::ByteString;
+use spacetimedb_client_api_messages::websocket::EncodedValue;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::{bsatn, Address};
@@ -45,18 +46,25 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
         .with_label_values(&client.database_instance_id, message_kind)
         .inc();
 
+    let parse_args = |args: EncodedValue| -> ReducerArgs {
+        match args {
+            EncodedValue::Binary(args) => ReducerArgs::Bsatn(args),
+            EncodedValue::Text(args) => ReducerArgs::Json(args),
+        }
+    };
+
     let message = match message {
         DataMessage::Text(message) => {
             let message = ByteString::from(message);
             // TODO: update json clients and use the ws version
-            serde_json::from_str::<DeserializeWrapper<ClientMessage<&str>>>(&message)?
+            serde_json::from_str::<DeserializeWrapper<ClientMessage>>(&message).unwrap()
                 .0
-                .map_args(|args| ReducerArgs::Json(message.slice_ref(args)))
+                .map_args(parse_args)
         }
         DataMessage::Binary(message_buf) => {
             let message_buf = Bytes::from(message_buf);
-            bsatn::from_slice::<ClientMessage<&[u8]>>(&message_buf)?
-                .map_args(|args| ReducerArgs::Bsatn(message_buf.slice_ref(args)))
+            bsatn::from_slice::<ClientMessage>(&message_buf).unwrap()
+                .map_args(parse_args)
         }
     };
 
@@ -106,7 +114,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
         caller_identity: client.id.identity,
         caller_address: Some(client.id.address),
         err,
-    })?;
+    }).unwrap();
     Ok(())
 }
 

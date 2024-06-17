@@ -11,6 +11,7 @@ use crate::ws_messages;
 use anyhow::{Context, Result};
 use futures::stream::StreamExt;
 use futures_channel::mpsc;
+use spacetimedb_client_api_messages::websocket::EncodedValue;
 use spacetimedb_sats::bsatn;
 use std::sync::{Arc, Mutex};
 use tokio::runtime::{self, Builder, Runtime};
@@ -365,7 +366,7 @@ impl BackgroundDbConnection {
     pub(crate) fn invoke_reducer<R: Reducer>(&self, reducer: R) -> Result<()> {
         self.send_message(ws_messages::ClientMessage::CallReducer(ws_messages::CallReducer {
             reducer: R::REDUCER_NAME.to_string(),
-            args: bsatn::to_vec(&reducer).expect("Serializing reducer failed").into(),
+            args: EncodedValue::Binary(bsatn::to_vec(&reducer).expect("Serializing reducer failed").into()),
             request_id: 0,
         }))
         .with_context(|| format!("Invoking reducer {}", R::REDUCER_NAME))

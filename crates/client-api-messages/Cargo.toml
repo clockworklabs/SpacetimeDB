@@ -8,10 +8,12 @@ description = "Types for the SpacetimeDB client API messages"
 [dependencies]
 spacetimedb-lib = { workspace = true, features = ["serde"] }
 spacetimedb-primitives.workspace = true
-spacetimedb-sats.workspace = true
+spacetimedb-sats = { workspace = true, features = ["bytestring"] }
 
 bytes.workspace = true
+bytestring.workspace = true
 chrono = { workspace = true, features = ["serde"] }
+enum-as-inner.workspace = true
 serde = { workspace = true, features = ["derive"] }
 strum.workspace = true
 thiserror.workspace = true

@@ -243,3 +243,6 @@ impl_serialize!([] ColList, (self, ser) => {
 impl_serialize!([] blake3::Hash, (self, ser) => self.as_bytes().serialize(ser));
 
 impl_serialize!([] bytes::Bytes, (self, ser) => ser.serialize_bytes(self));
+
+#[cfg(feature = "bytestring")]
+impl_serialize!([] bytestring::ByteString, (self, ser) => ser.serialize_str(self));

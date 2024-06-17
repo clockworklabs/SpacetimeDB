@@ -15,6 +15,12 @@ proptest = ["dep:proptest", "dep:proptest-derive"]
 # Used by `spacetimedb_table`,
 # which serializes and deserializes Blake3 hashes during snapshotting.
 blake3 = ["dep:blake3"]
+# Impls `Serialize`, `Deserialize` and `SpacetimeType` for `ByteString`.
+# Used by `spacetimedb_client_api_messages`,
+# which encodes rows and reducer arguments as `ByteString`s containing JSON.
+# Feature-gated because `bytestring` depends on `serde`,
+# which we don't want in `spacetimedb_bindings`.
+bytestring = ["dep:bytestring"]
 metrics_impls = ["dep:spacetimedb-metrics"]
 
 [dependencies]
@@ -26,6 +32,7 @@ spacetimedb-metrics = { workspace = true, optional = true }
 arrayvec.workspace = true
 bitflags.workspace = true
 bytes.workspace = true
+bytestring = { workspace = true, optional = true }
 decorum.workspace = true
 derive_more.workspace = true
 enum-as-inner.workspace = true

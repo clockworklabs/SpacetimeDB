@@ -304,7 +304,12 @@ mod tests {
 
         let result = result
             .into_iter()
-            .flat_map(|x| x.deletes.into_iter().chain(x.inserts))
+            .flat_map(|x| {
+                x.deletes
+                    .into_iter()
+                    .map(|row| row.into_binary().unwrap())
+                    .chain(x.inserts.into_iter().map(|row| row.into_binary().unwrap()))
+            })
             .sorted()
             .collect_vec();
 

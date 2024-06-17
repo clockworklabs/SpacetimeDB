@@ -1,6 +1,6 @@
 use brotli::CompressorReader;
-use bytes::Bytes;
 use derive_more::From;
+use spacetimedb_client_api_messages::websocket::EncodedValue;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::ser::Serialize;
@@ -114,10 +114,10 @@ pub struct TransactionUpdateMessage<U> {
     pub database_update: SubscriptionUpdate<U>,
 }
 
-pub(crate) fn encode_row<Row: Serialize>(row: &Row, protocol: Protocol) -> Bytes {
+pub(crate) fn encode_row<Row: Serialize>(row: &Row, protocol: Protocol) -> EncodedValue {
     match protocol {
-        Protocol::Binary => bsatn::to_vec(row).unwrap().into(),
-        Protocol::Text => serde_json::to_string(&SerializeWrapper::new(row)).unwrap().into(),
+        Protocol::Binary => EncodedValue::Binary(bsatn::to_vec(row).unwrap().into()),
+        Protocol::Text => EncodedValue::Text(serde_json::to_string(&SerializeWrapper::new(row)).unwrap().into()),
     }
 }
 
@@ -135,8 +135,8 @@ impl<U: ToProtocol<Encoded = ws::DatabaseUpdate>> ToProtocol for TransactionUpda
         };
 
         let args = match protocol {
-            Protocol::Binary => event.function_call.args.get_bsatn().clone(),
-            Protocol::Text => event.function_call.args.get_json().clone().into_bytes(),
+            Protocol::Binary => EncodedValue::Binary(event.function_call.args.get_bsatn().clone()),
+            Protocol::Text => EncodedValue::Text(event.function_call.args.get_json().clone()),
         };
 
         let tx_update = ws::TransactionUpdate {

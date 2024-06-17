@@ -15,6 +15,8 @@
 //! rather than using an external mirror of this schema.
 
 use bytes::Bytes;
+use bytestring::ByteString;
+use enum_as_inner::EnumAsInner;
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::SpacetimeType;
@@ -27,7 +29,7 @@ use crate::timestamp::Timestamp;
 /// Parametric over the reducer argument type to enable [`ClientMessage::map_args`].
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
-pub enum ClientMessage<Args = Bytes> {
+pub enum ClientMessage<Args = EncodedValue> {
     /// Request a reducer run.
     CallReducer(CallReducer<Args>),
     /// Register SQL queries on which to receive updates.
@@ -59,7 +61,7 @@ impl<Args> ClientMessage<Args> {
 /// Parametric over the argument type to enable [`ClientMessage::map_args`].
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
-pub struct CallReducer<Args = Bytes> {
+pub struct CallReducer<Args = EncodedValue> {
     /// The name of the reducer to call.
     pub reducer: String,
     /// The arguments to the reducer.
@@ -198,7 +200,7 @@ pub struct ReducerCallInfo {
     pub reducer_id: u32,
     /// The arguments to the reducer, encoded as BSATN or JSON according to the reducer's argument schema
     /// and the client's requested protocol.
-    pub args: Bytes,
+    pub args: EncodedValue,
     /// An identifier for a client request
     pub request_id: u32,
 }
@@ -254,13 +256,13 @@ pub struct TableUpdate {
     /// and the client's requested protocol.
     ///
     /// Always empty when in an [`InitialSubscription`].
-    pub deletes: Vec<Bytes>,
+    pub deletes: Vec<EncodedValue>,
     /// When in a [`TransactionUpdate`], the matching rows of this table inserted by the transaction.
     /// When in an [`InitialSubscription`], the matching rows of this table in the entire committed state.
     ///
     /// Rows are encoded as BSATN or JSON according to the table's schema
     /// and the client's requested protocol.
-    pub inserts: Vec<Bytes>,
+    pub inserts: Vec<EncodedValue>,
 }
 
 /// A response to a [`OneOffQuery`].
@@ -290,5 +292,25 @@ pub struct OneOffTable {
     pub table_name: String,
     /// The set of rows which matched the query, encoded as BSATN or JSON according to the table's schema
     /// and the client's requested protocol.
-    pub rows: Vec<Bytes>,
+    pub rows: Vec<EncodedValue>,
+}
+
+/// An [`AlgebraicValue`] encoded as either BSATN or JSON.
+///
+/// This is kind of a hack. We'd like for [`ClientMessage`] and [`ServerMessage`] to be
+/// generic over a [`Value`] parameter, with the binary WebSocket protocol using `ServerMessage<Bytes>`,
+/// and the text protocol using `ServerMessage<ByteString>` (and the same for `ClientMessage`),
+/// but our codegen in the CLI's `spacetime generate` cannot properly handle generic types.
+/// Instead, we use this enum to signal a thing that may be either JSON or BSATN.
+/// The server always sends the same format as the enclosing protocol,
+/// but clients are allowed to send `EncodedValue::Binary` within a JSON message or vice versa.
+// TODO(perf): In JSON, skip encoding the tag - serialize this as a string when it's `Text`,
+// and as a `[u8]` when it's `Binary`.
+#[derive(SpacetimeType, Debug, Clone, EnumAsInner)]
+#[sats(crate = spacetimedb_lib)]
+pub enum EncodedValue {
+    /// An [`AlgebraicValue`] encoded as BSATN.
+    Binary(Bytes),
+    /// An [`AlgebraicValue`] encoded as JSON.
+    Text(ByteString),
 }

@@ -274,3 +274,6 @@ impl_st!([] spacetimedb_primitives::IndexId, _ts => AlgebraicType::U32);
 impl_st!([] spacetimedb_primitives::SequenceId, _ts => AlgebraicType::U32);
 
 impl_st!([] bytes::Bytes, _ts => AlgebraicType::bytes());
+
+#[cfg(feature = "bytestring")]
+impl_st!([] bytestring::ByteString, _ts => AlgebraicType::String);

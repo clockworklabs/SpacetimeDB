@@ -25,6 +25,7 @@ use derive_more::From;
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
 use smallvec::SmallVec;
+use spacetimedb_client_api_messages::websocket::EncodedValue;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, IntMap};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::{Address, ModuleDef, ReducerDef, TableDesc};
@@ -147,7 +148,7 @@ impl UpdatesRelValue<'_> {
             .chain(self.inserts.iter().map(|row| (OpType::Insert, row)))
     }
 
-    pub fn to_protocol(&self, protocol: Protocol) -> (Vec<Bytes>, Vec<Bytes>) {
+    pub fn to_protocol(&self, protocol: Protocol) -> (Vec<EncodedValue>, Vec<EncodedValue>) {
         (
             self.deletes.iter().map(|row| encode_row(row, protocol)).collect(),
             self.inserts.iter().map(|row| encode_row(row, protocol)).collect(),

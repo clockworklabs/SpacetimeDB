@@ -628,3 +628,6 @@ impl_deserialize!([] blake3::Hash, de => <[u8; blake3::OUT_LEN]>::deserialize(de
 
 // TODO(perf): integrate Bytes with Deserializer to reducer copying
 impl_deserialize!([] bytes::Bytes, de => <Vec<u8>>::deserialize(de).map(Into::into));
+
+#[cfg(feature = "bytestring")]
+impl_deserialize!([] bytestring::ByteString, de => <String>::deserialize(de).map(Into::into));

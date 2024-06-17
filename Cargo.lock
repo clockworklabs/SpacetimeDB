@@ -4231,8 +4231,10 @@ name = "spacetimedb-client-api-messages"
 version = "0.10.0"
 dependencies = [
  "bytes",
+ "bytestring",
  "chrono",
  "derive_more",
+ "enum-as-inner",
  "hex",
  "itertools 0.12.0",
  "proptest",
@@ -4451,6 +4453,7 @@ dependencies = [
  "bitflags 2.4.1",
  "blake3",
  "bytes",
+ "bytestring",
  "decorum",
  "derive_more",
  "enum-as-inner",

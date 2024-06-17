@@ -1,11 +1,10 @@
 use anyhow::Context;
-use bytes::Bytes;
 use clap::{value_parser, Arg, ArgAction, ArgMatches};
 use futures::{Sink, SinkExt, TryStream, TryStreamExt};
 use http::header;
 use http::uri::Scheme;
 use serde_json::Value;
-use spacetimedb_client_api_messages::websocket as ws;
+use spacetimedb_client_api_messages::websocket::{self as ws, EncodedValue};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::de::serde::{DeserializeWrapper, SeedWrapper};
 use spacetimedb_lib::ser::serde::SerializeWrapper;
@@ -108,8 +107,11 @@ fn reformat_update(msg: ws::DatabaseUpdate, schema: &ModuleDef) -> anyhow::Resul
                 .context("table not found in schema")?;
             let table_ty = schema.typespace.resolve(table_schema.data);
 
-            let reformat_row = |row: Bytes| {
-                let row = serde_json::from_slice::<Value>(&row)?;
+            let reformat_row = |row: EncodedValue| {
+                let EncodedValue::Text(row) = row else {
+                    anyhow::bail!("Expected row in text format but found {row:?}");
+                };
+                let row = serde_json::from_str::<Value>(&row)?;
                 let row = serde::de::DeserializeSeed::deserialize(SeedWrapper(table_ty), row)?;
                 let row = table_ty.with_value(&row);
                 let row = serde_json::to_value(SerializeWrapper::from_ref(&row))?;

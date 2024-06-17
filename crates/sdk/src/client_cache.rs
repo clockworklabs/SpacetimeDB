@@ -98,11 +98,13 @@ impl<T: TableType> TableCache<T> {
         table_update: ws_messages::TableUpdate,
     ) {
         for row in table_update.deletes {
+            let row = row.into_binary().unwrap();
             if let Some(value) = Self::decode_row(&row) {
                 self.delete(callbacks, row, value)
             }
         }
         for row in table_update.inserts {
+            let row = row.into_binary().unwrap();
             if let Some(value) = Self::decode_row(&row) {
                 self.insert(callbacks, row, value)
             }
@@ -202,7 +204,8 @@ impl<T: TableType> TableCache<T> {
             );
         }
 
-        for row_bytes in new_subs.inserts {
+        for row in new_subs.inserts {
+            let row_bytes = row.into_binary().unwrap();
             match diff.entry(row_bytes) {
                 spacetimedb_data_structures::map::Entry::Vacant(v) => {
                     if let Some(row) = Self::decode_row(v.key()) {
@@ -323,7 +326,8 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
 
         // Traverse the `table_update` to construct a diff, merging duplicated `Insert`
         // and `Delete` into `Update`.
-        for row_bytes in table_update.deletes {
+        for row in table_update.deletes {
+            let row_bytes = row.into_binary().unwrap();
             if let Some(value) = Self::decode_row(&row_bytes) {
                 let diff_entry = DiffEntry::Delete(row_bytes, value);
                 let pk: T::PrimaryKey = <T::PrimaryKey as Clone>::clone(primary_key(&diff_entry));
@@ -332,7 +336,8 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
                 diff.insert(pk, new_entry);
             }
         }
-        for row_bytes in table_update.inserts {
+        for row in table_update.inserts {
+            let row_bytes = row.into_binary().unwrap();
             if let Some(value) = Self::decode_row(&row_bytes) {
                 let diff_entry = DiffEntry::Insert(row_bytes, value);
                 let pk: T::PrimaryKey = <T::PrimaryKey as Clone>::clone(primary_key(&diff_entry));
