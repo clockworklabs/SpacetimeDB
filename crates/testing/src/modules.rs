@@ -71,8 +71,7 @@ impl ModuleHandle {
 
     pub async fn send(&self, message: impl Into<DataMessage>) -> anyhow::Result<()> {
         let timer = Instant::now();
-        self.client.handle_message(message, timer).await.unwrap();
-        Ok(())
+        self.client.handle_message(message, timer).await.map_err(Into::into)
     }
 
     pub async fn read_log(&self, size: Option<u32>) -> String {
