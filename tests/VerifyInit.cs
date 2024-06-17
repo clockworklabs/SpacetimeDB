@@ -13,18 +13,20 @@ class ByteStringConverter : WriteOnlyJsonConverter<ByteString>
 }
 
 // A converter that scrubs identity to a stable string.
-public class IdentityConverter(Identity? myIdentity) : WriteOnlyJsonConverter<Identity>
+class IdentityConverter : WriteOnlyJsonConverter<Identity>
 {
+    private static readonly List<Identity> seenIdentities = [];
+
     public override void Write(VerifyJsonWriter writer, Identity value)
     {
-        if (value == myIdentity)
+        var index = seenIdentities.IndexOf(value);
+        if (index == -1)
         {
-            writer.WriteValue("(identity of A)");
+            index = seenIdentities.Count;
+            seenIdentities.Add(value);
         }
-        else
-        {
-            writer.WriteValue("(identity of B)");
-        }
+
+        writer.WriteValue($"Identity_{index + 1}");
     }
 }
 
@@ -32,6 +34,7 @@ class AddressConverter : WriteOnlyJsonConverter<Address>
 {
     public override void Write(VerifyJsonWriter writer, Address value)
     {
+        // Addresses are GUIDs, which Verify scrubs automatically.
         writer.WriteValue(value.ToString());
     }
 }
@@ -73,7 +76,7 @@ static class VerifyInit
 
         VerifierSettings.AddExtraSettings(settings =>
             settings.Converters.AddRange(
-                [new ByteStringConverter(), new AddressConverter()]
+                [new ByteStringConverter(), new IdentityConverter(), new AddressConverter()]
             )
         );
 
