@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <Sdk Name="ViHo.PackAsAnalyzer" Version="1.0.1" />
+
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <LangVersion>latest</LangVersion>
@@ -21,13 +23,19 @@
     <PackageIcon>logo.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDBLibCSharp</RepositoryUrl>
+    <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDB</RepositoryUrl>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Note: BSATN.Codegen is included in the BSATN.Runtime NuGet package. -->
     <ProjectReference Include="../BSATN.Runtime/BSATN.Runtime.csproj" />
-    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" PrivateAssets="all" />
+    <!-- ...But we also need BSATN.Codegen to transform `[SpacetimeDB.Type]` usages in source of Runtime itself. -->
+    <!-- For that, it has to be included as an explicit private dependency. -->
+    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" PrivateAssets="all" OutputItemType="analyzer" ReferenceOutputAssembly="false" />
+    <!-- Codegen package must be built before this one so that it's included in NuGet Runtime package, but we don't depend on it. -->
+    <!-- (*not* with OutputItemType=analyzer because we don't want to use that source generator on source of Runtime itself) -->
+    <ProjectReference Include="../Codegen/Codegen.csproj" PrivateAssets="all" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -41,6 +49,8 @@
     <None Include="build/" Pack="true" PackagePath="build" />
     <None Include="bindings.c" Pack="true" PackagePath="" />
     <None Include="driver.h" Pack="true" PackagePath="" />
+    <!-- We want all users who depends on Runtime to automatically get the Roslyn codegen component as well. -->
+    <None Include="../Codegen/bin/$(Configuration)/netstandard2.0/SpacetimeDB.Codegen.dll" Pack="true" PackagePath="analyzers/dotnet/cs" />
   </ItemGroup>
 
   <ItemGroup>

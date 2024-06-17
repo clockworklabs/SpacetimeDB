@@ -9,6 +9,8 @@
     <AssemblyName>SpacetimeDB.Codegen</AssemblyName>
     <AssemblyVersion>0.10.0</AssemblyVersion>
     <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!-- We're going to include this analyzer in the Runtime package instead of publishing separately. -->
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -23,38 +25,24 @@
     <PackageIcon>logo.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDBLibCSharp</RepositoryUrl>
+    <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDB</RepositoryUrl>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" PrivateAssets="all" />
+    <!-- This analyzer uses some shared helpers from the BSATN.Codegen one, so include it as a regular dependency -->
+    <!-- (*not* with OutputItemType=analyzer because we don't want to use that source generator on source of Codegen itself) -->
+    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.5.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.1" PrivateAssets="all" />
   </ItemGroup>
 
+  <!-- Local project references (used by SpacetimeDB/modules/*-cs) don't use NuGet resolution. -->
+  <!-- We need a different hack to include BSATN.Codegen as a transitive analyzer dependency. https://github.com/dotnet/roslyn/issues/47275#issuecomment-685482999 -->
   <ItemGroup>
-    <None Include="../logo.png" Pack="true" PackagePath="" />
-    <None Include="README.md" Pack="true" PackagePath="" />
-    <None Include="../LICENSE" Pack="true" PackagePath="" />
-    <!-- source generators need to be put in a specific folder -->
-    <!-- see https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.cookbook.md#package-a-generator-as-a-nuget-package -->
-    <None Include="$(OutputPath)/$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
-    <!-- We want BSATN.Codegen to be an internal dependency shipped in the same package as Codegen itself. -->
-    <None Include="$(OutputPath)/SpacetimeDB.BSATN.Codegen.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <TargetPathWithTargetPlatformMoniker Include="$(ProjectDir)/$(OutputPath)/SpacetimeDB.BSATN.Codegen.dll" IncludeRuntimeDependency="false" />
   </ItemGroup>
-
-  <!-- <None Include /> hack above only works for NuGet packages, but not for local project references. So here we need another one... -->
-  <PropertyGroup>
-    <GetTargetPathDependsOn>$(GetTargetPathDependsOn);GetDependencyTargetPaths</GetTargetPathDependsOn>
-  </PropertyGroup>
-
-  <Target Name="GetDependencyTargetPaths">
-    <ItemGroup>
-      <TargetPathWithTargetPlatformMoniker Include="$(ProjectDir)/$(OutputPath)/SpacetimeDB.BSATN.Codegen.dll" IncludeRuntimeDependency="false" />
-    </ItemGroup>
-  </Target>
 
 </Project>

@@ -26,13 +26,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" PrivateAssets="all" />
+    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" PrivateAssets="all" OutputItemType="analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="../logo.png" Pack="true" PackagePath="" />
     <None Include="../Runtime/README.md" Pack="true" PackagePath="" />
     <None Include="../LICENSE" Pack="true" PackagePath="" />
+    <!-- We want all users who depends on BSATN.Runtime to automatically get the Roslyn codegen component as well. -->
+    <None Include="../BSATN.Codegen/bin/$(Configuration)/netstandard2.0/SpacetimeDB.BSATN.Codegen.dll" Pack="true" PackagePath="analyzers/dotnet/cs" />
   </ItemGroup>
 
   <ItemGroup>

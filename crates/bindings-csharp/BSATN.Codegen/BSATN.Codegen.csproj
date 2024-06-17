@@ -9,6 +9,8 @@
     <AssemblyName>SpacetimeDB.BSATN.Codegen</AssemblyName>
     <AssemblyVersion>0.10.0</AssemblyVersion>
     <IncludeBuildOutput>false</IncludeBuildOutput>
+    <!-- We're going to include this analyzer in the Runtime package instead of publishing separately. -->
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -29,13 +31,6 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.1" PrivateAssets="all" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="../logo.png" Pack="true" PackagePath="" />
-    <None Include="../Codegen/README.md" Pack="true" PackagePath="" />
-    <None Include="../LICENSE" Pack="true" PackagePath="" />
-    <None Include="$(OutputPath)/$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
   </ItemGroup>
 
   <ItemGroup>
