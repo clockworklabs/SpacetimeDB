@@ -392,7 +392,7 @@ fn st_clients_schema() -> TableSchema {
         ],
     )
     .with_type(StTableType::System)
-    .with_column_index(col_list![StClientsFields::Identity, StClientsFields::Address], true)
+    .with_index(col_list![StClientsFields::Identity, StClientsFields::Address], true)
     .into_schema(ST_CLIENTS_ID)
 }
 

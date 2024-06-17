@@ -1,0 +1,19 @@
+[package]
+name = "spacetimedb-schema"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+description = "SpacetimeDB schema definitions and validation"
+
+[features]
+
+[dependencies]
+spacetimedb-sats.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-data-structures.workspace = true
+
+itertools.workspace = true
+lazy_static.workspace = true
+thiserror.workspace = true
+unicode-ident.workspace = true
+unicode-normalization.workspace = true

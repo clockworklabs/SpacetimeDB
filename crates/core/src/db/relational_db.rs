@@ -857,7 +857,7 @@ impl RelationalDB {
         idx_cols: ColList,
     ) -> Result<TableId, DBError> {
         let schema = TableDef::new(name.into(), Self::col_def_for_test(schema))
-            .with_column_index(idx_cols, false)
+            .with_index(idx_cols, false)
             .with_type(StTableType::User)
             .with_access(StAccess::Public);
 
