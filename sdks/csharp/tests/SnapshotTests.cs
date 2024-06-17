@@ -17,6 +17,19 @@ public class SnapshotTests
         }
     }
 
+    class EventsConverter : WriteOnlyJsonConverter<Events>
+    {
+        public override void Write(VerifyJsonWriter writer, Events events)
+        {
+            writer.WriteStartObject();
+            foreach (var (name, value) in events)
+            {
+                writer.WriteMember(events, value, name);
+            }
+            writer.WriteEndObject();
+        }
+    }
+
     class TestLogger(Events events) : ISpacetimeDBLogger
     {
         public void Log(string message)
@@ -37,19 +50,6 @@ public class SnapshotTests
         public void LogException(Exception e)
         {
             events.Add("LogException", e.Message);
-        }
-    }
-
-    class EventsConverter : WriteOnlyJsonConverter<Events>
-    {
-        public override void Write(VerifyJsonWriter writer, Events events)
-        {
-            writer.WriteStartObject();
-            foreach (var (name, value) in events)
-            {
-                writer.WriteMember(events, value, name);
-            }
-            writer.WriteEndObject();
         }
     }
 
@@ -112,13 +112,15 @@ public class SnapshotTests
                 // Start tracking requests in the stats handler so that those request IDs can later be found.
                 switch (message)
                 {
-                    case {
+                    case
+                    {
                         TypeCase: ClientApi.Message.TypeOneofCase.SubscriptionUpdate,
                         SubscriptionUpdate: var subscriptionUpdate
                     }:
                         client.stats.SubscriptionRequestTracker.StartTrackingRequest($"sample#{i}");
                         break;
-                    case {
+                    case
+                    {
                         TypeCase: ClientApi.Message.TypeOneofCase.TransactionUpdate,
                         TransactionUpdate: var transactionUpdate
                     }:
@@ -190,11 +192,7 @@ public class SnapshotTests
                     Stats = client.stats
                 }
             )
-            .AddExtraSettings(settings =>
-                settings.Converters.AddRange(
-                    [new EventsConverter(), new NetworkRequestTrackerConverter()]
-                )
-            )
+            .AddExtraSettings(settings => settings.Converters.AddRange([new EventsConverter()]))
             .ScrubMember<ClientApi.Event>(_ => _.CallerIdentity);
     }
 }
