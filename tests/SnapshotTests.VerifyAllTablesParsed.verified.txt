@@ -1,19 +1,19 @@
 ﻿{
   Events: {
     OnIdentityReceived: {
-      identity: (identity of A),
+      identity: Identity_1,
       address: Guid_1
     },
     OnInsertUser: {
       user: {
-        identity: (identity of A),
+        identity: Identity_1,
         online: true
       }
     },
     LogException: Unknown reducer __identity_connected__ (Parameter 'Reducer'),
     OnInsertUser: {
       user: {
-        identity: (identity of B),
+        identity: Identity_2,
         online: true
       }
     },
@@ -31,11 +31,11 @@
     },
     OnUpdateUser: {
       oldUser: {
-        identity: (identity of A),
+        identity: Identity_1,
         online: true
       },
       newUser: {
-        identity: (identity of A),
+        identity: Identity_1,
         name: A,
         online: true
       },
@@ -44,7 +44,7 @@
           Name: A
         },
         Timestamp: 1718487768057579,
-        Identity: (identity of A),
+        Identity: Identity_1,
         CallerAddress: Guid_1,
         ErrMessage: 
       }
@@ -61,7 +61,7 @@
             Name: A
           },
           Timestamp: 1718487768057579,
-          Identity: (identity of A),
+          Identity: Identity_1,
           CallerAddress: Guid_1,
           ErrMessage: 
         }
@@ -76,13 +76,13 @@
         Name: A
       },
       Timestamp: 1718487768057579,
-      Identity: (identity of A),
+      Identity: Identity_1,
       CallerAddress: Guid_1,
       ErrMessage: 
     },
     OnInsertMessage: {
       message: {
-        sender: (identity of B),
+        sender: Identity_2,
         sent: 1718487775346381,
         text: Hello, A!
       },
@@ -91,7 +91,7 @@
           Text: Hello, A!
         },
         Timestamp: 1718487775346381,
-        Identity: (identity of B),
+        Identity: Identity_2,
         CallerAddress: Guid_2,
         ErrMessage: 
       }
@@ -108,7 +108,7 @@
             Text: Hello, A!
           },
           Timestamp: 1718487775346381,
-          Identity: (identity of B),
+          Identity: Identity_2,
           CallerAddress: Guid_2,
           ErrMessage: 
         }
@@ -123,17 +123,17 @@
         Text: Hello, A!
       },
       Timestamp: 1718487775346381,
-      Identity: (identity of B),
+      Identity: Identity_2,
       CallerAddress: Guid_2,
       ErrMessage: 
     },
     OnUpdateUser: {
       oldUser: {
-        identity: (identity of B),
+        identity: Identity_2,
         online: true
       },
       newUser: {
-        identity: (identity of B),
+        identity: Identity_2,
         name: B,
         online: true
       },
@@ -142,7 +142,7 @@
           Name: B
         },
         Timestamp: 1718487777307855,
-        Identity: (identity of B),
+        Identity: Identity_2,
         CallerAddress: Guid_2,
         ErrMessage: 
       }
@@ -159,7 +159,7 @@
             Name: B
           },
           Timestamp: 1718487777307855,
-          Identity: (identity of B),
+          Identity: Identity_2,
           CallerAddress: Guid_2,
           ErrMessage: 
         }
@@ -174,13 +174,13 @@
         Name: B
       },
       Timestamp: 1718487777307855,
-      Identity: (identity of B),
+      Identity: Identity_2,
       CallerAddress: Guid_2,
       ErrMessage: 
     },
     OnInsertMessage: {
       message: {
-        sender: (identity of A),
+        sender: Identity_1,
         sent: 1718487783175083,
         text: Hello, B!
       },
@@ -189,7 +189,7 @@
           Text: Hello, B!
         },
         Timestamp: 1718487783175083,
-        Identity: (identity of A),
+        Identity: Identity_1,
         CallerAddress: Guid_1,
         ErrMessage: 
       }
@@ -206,7 +206,7 @@
             Text: Hello, B!
           },
           Timestamp: 1718487783175083,
-          Identity: (identity of A),
+          Identity: Identity_1,
           CallerAddress: Guid_1,
           ErrMessage: 
         }
@@ -221,13 +221,13 @@
         Text: Hello, B!
       },
       Timestamp: 1718487783175083,
-      Identity: (identity of A),
+      Identity: Identity_1,
       CallerAddress: Guid_1,
       ErrMessage: 
     },
     OnInsertMessage: {
       message: {
-        sender: (identity of B),
+        sender: Identity_2,
         sent: 1718487787645364,
         text: Goodbye!
       },
@@ -236,7 +236,7 @@
           Text: Goodbye!
         },
         Timestamp: 1718487787645364,
-        Identity: (identity of B),
+        Identity: Identity_2,
         CallerAddress: Guid_2,
         ErrMessage: 
       }
@@ -253,7 +253,7 @@
             Text: Goodbye!
           },
           Timestamp: 1718487787645364,
-          Identity: (identity of B),
+          Identity: Identity_2,
           CallerAddress: Guid_2,
           ErrMessage: 
         }
@@ -268,19 +268,19 @@
         Text: Goodbye!
       },
       Timestamp: 1718487787645364,
-      Identity: (identity of B),
+      Identity: Identity_2,
       CallerAddress: Guid_2,
       ErrMessage: 
     },
     LogException: Unknown reducer __identity_disconnected__ (Parameter 'Reducer'),
     OnUpdateUser: {
       oldUser: {
-        identity: (identity of B),
+        identity: Identity_2,
         name: B,
         online: true
       },
       newUser: {
-        identity: (identity of B),
+        identity: Identity_2,
         name: B,
         online: false
       }
@@ -299,7 +299,7 @@
     },
     OnInsertMessage: {
       message: {
-        sender: (identity of A),
+        sender: Identity_1,
         sent: 1718487794937841,
         text: Goodbye!
       },
@@ -308,7 +308,7 @@
           Text: Goodbye!
         },
         Timestamp: 1718487794937841,
-        Identity: (identity of A),
+        Identity: Identity_1,
         CallerAddress: Guid_1,
         ErrMessage: 
       }
@@ -325,7 +325,7 @@
             Text: Goodbye!
           },
           Timestamp: 1718487794937841,
-          Identity: (identity of A),
+          Identity: Identity_1,
           CallerAddress: Guid_1,
           ErrMessage: 
         }
@@ -340,7 +340,7 @@
         Text: Goodbye!
       },
       Timestamp: 1718487794937841,
-      Identity: (identity of A),
+      Identity: Identity_1,
       CallerAddress: Guid_1,
       ErrMessage: 
     }
@@ -348,34 +348,34 @@
   FinalSnapshot: {
     User: [
       {
-        identity: (identity of A),
+        identity: Identity_1,
         name: A,
         online: true
       },
       {
-        identity: (identity of B),
+        identity: Identity_2,
         name: B,
         online: false
       }
     ],
     Message: [
       {
-        sender: (identity of B),
+        sender: Identity_2,
         sent: 1718487775346381,
         text: Hello, A!
       },
       {
-        sender: (identity of A),
+        sender: Identity_1,
         sent: 1718487783175083,
         text: Hello, B!
       },
       {
-        sender: (identity of B),
+        sender: Identity_2,
         sent: 1718487787645364,
         text: Goodbye!
       },
       {
-        sender: (identity of A),
+        sender: Identity_1,
         sent: 1718487794937841,
         text: Goodbye!
       }
