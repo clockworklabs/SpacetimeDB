@@ -323,4 +323,7 @@ public static partial class Runtime
             return false;
         }
     }
+
+    // An instance of `System.Random` that is reseeded by each reducer's timestamp.
+    public static Random Random { get; internal set; } = new();
 }
