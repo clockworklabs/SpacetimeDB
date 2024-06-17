@@ -41,7 +41,7 @@ class CreateProject(unittest.TestCase):
                 with open(csproj, "w") as f:
                     f.write(contents)
 
-                run_cmd("dotnet", "build", cwd=tmpdir, capture_stderr=True)
+                run_cmd("dotnet", "publish", cwd=tmpdir, capture_stderr=True)
 
         except subprocess.CalledProcessError as e:
             print(e)
