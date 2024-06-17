@@ -269,7 +269,7 @@ mod tests {
         let tx = &tx.into();
 
         let update = update.tables.iter().collect::<Vec<_>>();
-        let result = s.eval_incr(ctx, db, tx, &update, None).of;
+        let result = s.eval_incr(ctx, db, tx, &update, None);
 
         assert_eq!(
             result.tables.len(),
@@ -362,7 +362,7 @@ mod tests {
         let tx = (&tx).into();
 
         let update = update.tables.iter().collect::<Vec<_>>();
-        let result = query.eval_incr(ctx, &db, &tx, &update, None).of;
+        let result = query.eval_incr(ctx, &db, &tx, &update, None);
 
         assert_eq!(result.tables.len(), 1);
 
@@ -719,7 +719,7 @@ mod tests {
             let tx = (&*tx).into();
 
             let update = update.tables.iter().collect::<Vec<_>>();
-            let result = query.eval_incr(ctx, db, &tx, &update, None).of;
+            let result = query.eval_incr(ctx, db, &tx, &update, None);
 
             let tables = result
                 .tables

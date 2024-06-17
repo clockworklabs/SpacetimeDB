@@ -33,7 +33,6 @@ use crate::util::const_unwrap;
 use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
 use spacetimedb_sats::db::def::TableDef;
-use spacetimedb_sats::energy::QueryTimer;
 
 use super::*;
 
@@ -282,22 +281,22 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         log::debug!("One-off query: {query}");
         // Don't need the `slow query` logger on compilation
         db.with_read_only(&ExecutionContext::sql(db.address()), |tx| {
-            let mut timer = QueryTimer::default();
+            let mut ctx_query = QueryContext::new(
+                self.database_instance_context.subscriptions.energy_monitor.clone(),
+                self.database_instance_context.database_instance_id,
+                self.database_instance_context.database.owner_identity,
+            );
             let ast = sql::compiler::compile_sql(db, tx, &query)?;
 
-            let result = sql::execute::execute_sql_tx(
-                QueryContext::new(&self.database_instance_context),
-                &mut timer,
+            sql::execute::execute_sql_tx(
+                &self.database_instance_context.relational_db,
+                &mut ctx_query,
                 tx,
                 &query,
                 ast,
                 auth,
             )
-            .and_then(|res| Ok(res.context("One-off queries are not allowed to modify the database")?));
-
-            timer.finish_execution();
-
-            result
+            .and_then(|res| Ok(res.context("One-off queries are not allowed to modify the database")?))
         })
     }
 

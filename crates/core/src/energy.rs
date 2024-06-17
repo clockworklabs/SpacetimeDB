@@ -179,7 +179,7 @@ pub trait EnergyMonitor: Send + Sync + 'static {
         execution_duration: Duration,
     );
     fn record_disk_usage(&self, database: &Database, instance_id: u64, disk_usage: u64, period: Duration);
-    fn record_query_energy(&self, database: &Database, instance_id: u64, cpu_usage: Duration);
+    fn record_query_energy(&self, owner_identity: Identity, instance_id: u64, cpu_usage: Duration);
 }
 
 #[derive(Default)]
@@ -200,5 +200,5 @@ impl EnergyMonitor for NullEnergyMonitor {
 
     fn record_disk_usage(&self, _database: &Database, _instance_id: u64, _disk_usage: u64, _period: Duration) {}
 
-    fn record_query_energy(&self, _database: &Database, _instance_id: u64, _cpu_usage: Duration) {}
+    fn record_query_energy(&self, _owner_identity: Identity, _instance_id: u64, _cpu_usage: Duration) {}
 }

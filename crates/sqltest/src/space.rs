@@ -1,5 +1,6 @@
 use crate::db::DBRunner;
 use async_trait::async_trait;
+use spacetimedb::db::query_context::QueryContext;
 use spacetimedb::db::relational_db::tests_utils::TestDB;
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
@@ -9,7 +10,6 @@ use spacetimedb::subscription::module_subscription_actor::ModuleSubscriptions;
 use spacetimedb::Identity;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_sats::algebraic_value::Packed;
-use spacetimedb_sats::energy::QueryTimer;
 use spacetimedb_sats::meta_type::MetaType;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, BuiltinType};
@@ -82,7 +82,14 @@ impl SpaceDb {
             let ast = compile_sql(&self.conn, tx, sql)?;
 
             let subs = ModuleSubscriptions::for_testing(Arc::new(self.conn.db.clone()), Identity::ZERO);
-            let result = execute_sql(&self.conn, &mut QueryTimer::default(), sql, ast, self.auth, Some(&subs))?;
+            let result = execute_sql(
+                &self.conn,
+                &QueryContext::from_subscriptions(&subs),
+                sql,
+                ast,
+                self.auth,
+                Some(&subs),
+            )?;
 
             //remove comments to see which SQL worked. Can't collect it outside from lack of a hook in the external `sqllogictest` crate... :(
             //append_file(&std::path::PathBuf::from(".ok.sql"), sql)?;

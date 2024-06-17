@@ -31,7 +31,7 @@ pub struct ModuleSubscriptions {
     /// If taking a lock (tx) on the db at the same time, ALWAYS lock the db first.
     /// You will deadlock otherwise.
     subscriptions: Subscriptions,
-    owner_identity: Identity,
+    pub(crate) owner_identity: Identity,
     pub(crate) energy_monitor: Arc<dyn EnergyMonitor>,
     database: Database,
     pub database_instance_id: u64,
@@ -98,7 +98,7 @@ impl ModuleSubscriptions {
         let mut queries = vec![];
 
         let guard = self.subscriptions.read();
-        let mut query_timer = QueryTimer::default();
+        let query_timer = QueryTimer::default();
 
         for sql in subscription
             .query_strings
@@ -153,9 +153,11 @@ impl ModuleSubscriptions {
         let slow_query_threshold = StVarTable::sub_limit(&ctx, &self.relational_db, &tx)?.map(Duration::from_millis);
         let database_update = execution_set.eval(&ctx, sender.protocol, &self.relational_db, &tx, slow_query_threshold);
 
-        query_timer.finish_execution();
-        self.energy_monitor
-            .record_query_energy(&self.database, self.database_instance_id, query_timer.total());
+        self.energy_monitor.record_query_energy(
+            self.database.owner_identity,
+            self.database_instance_id,
+            query_timer.total(),
+        );
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
