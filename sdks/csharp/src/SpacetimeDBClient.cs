@@ -18,23 +18,10 @@ namespace SpacetimeDB
     public abstract class SpacetimeDBClientBase<ReducerEvent>
         where ReducerEvent : ReducerEventBase
     {
-        struct DbValue
-        {
-            public IDatabaseTable value;
-            public byte[] bytes;
-
-            public DbValue(IDatabaseTable value, byte[] bytes)
-            {
-                this.value = value;
-                this.bytes = bytes;
-            }
-        }
-
         struct DbOp
         {
-            public ClientCache.ITableCache table;
-            public DbValue? delete;
-            public DbValue? insert;
+            public ClientCache.IDbValue? delete;
+            public ClientCache.IDbValue? insert;
         }
 
         /// <summary>
@@ -219,15 +206,8 @@ namespace SpacetimeDB
                                     continue;
                                 }
 
-
-                                var obj = table.DecodeValue(row.Row);
-                                var op = new DbOp
-                                {
-                                    table = table,
-                                    insert = new(obj, rowBytes),
-                                };
-
-                                dbOps.Add(op);
+                                var insert = table.DecodeValue(rowBytes);
+                                dbOps.Add(new DbOp { insert = insert });
                             }
                         }
 
@@ -249,11 +229,9 @@ namespace SpacetimeDB
                             {
                                 var rowBytes = row.Row.ToByteArray();
 
-                                var obj = table.DecodeValue(row.Row);
+                                var dbValue = table.DecodeValue(rowBytes);
 
-                                var op = new DbOp { table = table };
-
-                                var dbValue = new DbValue(obj, rowBytes);
+                                var op = new DbOp();
 
                                 if (row.Op == TableRowOperation.Types.OperationType.Insert)
                                 {
@@ -264,7 +242,7 @@ namespace SpacetimeDB
                                     op.delete = dbValue;
                                 }
 
-                                if (obj is IDatabaseTableWithPrimaryKey objWithPk)
+                                if (dbValue.Value is IDatabaseTableWithPrimaryKey objWithPk)
                                 {
                                     // Compound key that we use for lookup.
                                     // Consists of type of the table (for faster comparison that string names) + actual primary key of the row.
@@ -283,7 +261,6 @@ namespace SpacetimeDB
 
                                         op = new DbOp
                                         {
-                                            table = insertOp.table,
                                             delete = deleteOp.delete,
                                             insert = insertOp.insert,
                                         };
@@ -353,15 +330,11 @@ namespace SpacetimeDB
                         continue;
                     }
 
-                    foreach (var (rowBytes, oldValue) in table.Where(kv => !hashSet.Contains(kv.Key)))
+                    foreach (var delete in table.Where(kv => !hashSet.Contains(kv.Bytes)))
                     {
-                        processed.dbOps.Add(new DbOp
-                        {
-                            table = table,
-                            // This is a row that we had before, but we do not have it now.
-                            // This must have been a delete.
-                            delete = new(oldValue, rowBytes),
-                        });
+                        // This is a row that we had before, but we do not have it now.
+                        // This must have been a delete.
+                        processed.dbOps.Add(new DbOp { delete = delete });
                     }
                 }
             }
@@ -420,7 +393,7 @@ namespace SpacetimeDB
             // First trigger OnBeforeDelete
             foreach (var update in dbOps)
             {
-                if (update is { delete: { value: var oldValue }, insert: null })
+                if (update is { delete: { Value: var oldValue }, insert: null })
                 {
                     try
                     {
@@ -439,30 +412,16 @@ namespace SpacetimeDB
                 // TODO: Reimplement updates when we add support for primary keys
                 var update = dbOps[i];
 
-                if (update.delete is { } delete)
+                if (update.delete is { } delete && !delete.DeleteEntry())
                 {
-                    if (update.table.DeleteEntry(delete.bytes))
-                    {
-                        delete.value.InternalOnValueDeleted();
-                    }
-                    else
-                    {
-                        update.delete = null;
-                        dbOps[i] = update;
-                    }
+                    update.delete = null;
+                    dbOps[i] = update;
                 }
 
-                if (update.insert is { } insert)
+                if (update.insert is { } insert && !insert.InsertEntry())
                 {
-                    if (update.table.InsertEntry(insert.bytes, insert.value))
-                    {
-                        insert.value.InternalOnValueInserted();
-                    }
-                    else
-                    {
-                        update.insert = null;
-                        dbOps[i] = update;
-                    }
+                    update.insert = null;
+                    dbOps[i] = update;
                 }
             }
 
@@ -473,7 +432,7 @@ namespace SpacetimeDB
                 {
                     switch (dbOp)
                     {
-                        case { insert: { value: var newValue }, delete: { value: var oldValue } }:
+                        case { insert: { Value: var newValue }, delete: { Value: var oldValue } }:
                             {
                                 // If we matched an update, these values must have primary keys.
                                 var newValue_ = (IDatabaseTableWithPrimaryKey)newValue;
@@ -482,11 +441,11 @@ namespace SpacetimeDB
                                 break;
                             }
 
-                        case { insert: { value: var newValue } }:
+                        case { insert: { Value: var newValue } }:
                             newValue.OnInsertEvent(transactionEvent);
                             break;
 
-                        case { delete: { value: var oldValue } }:
+                        case { delete: { Value: var oldValue } }:
                             oldValue.OnDeleteEvent(transactionEvent);
                             break;
                     }

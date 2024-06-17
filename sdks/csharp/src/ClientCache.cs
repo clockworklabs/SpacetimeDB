@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,50 +9,63 @@ namespace SpacetimeDB
 {
     internal class ClientCache
     {
-        public interface ITableCache : IEnumerable<KeyValuePair<byte[], IDatabaseTable>>
+        public interface IDbValue
+        {
+            bool InsertEntry();
+            bool DeleteEntry();
+            IDatabaseTable Value { get; }
+            byte[] Bytes { get; }
+        }
+
+        public interface ITableCache : IEnumerable<IDbValue>
         {
             Type ClientTableType { get; }
-            bool InsertEntry(byte[] rowBytes, IDatabaseTable value);
-            bool DeleteEntry(byte[] rowBytes);
-            IDatabaseTable DecodeValue(ByteString bytes);
+            IDbValue DecodeValue(byte[] bytes);
             void Clear();
         }
 
         public class TableCache<T> : ITableCache
             where T : IDatabaseTable, IStructuralReadWrite, new()
         {
+            public record DbValue(byte[] Bytes, T Value) : IDbValue
+            {
+                IDatabaseTable IDbValue.Value => Value;
+
+                public DbValue(byte[] bytes) : this(bytes, BSATNHelpers.FromBytes<T>(bytes))
+                {
+                }
+
+                public bool InsertEntry()
+                {
+                    if (Entries.TryAdd(Bytes, Value))
+                    {
+                        Value.InternalOnValueInserted();
+                        return true;
+                    }
+                    return false;
+                }
+
+                public bool DeleteEntry()
+                {
+                    if (Entries.Remove(Bytes))
+                    {
+                        Value.InternalOnValueDeleted();
+                        return true;
+                    }
+
+                    Logger.LogWarning("Deleting value that we don't have (no cached value available)");
+                    return false;
+                }
+            }
+
             public Type ClientTableType => typeof(T);
 
             public static readonly Dictionary<byte[], T> Entries = new(ByteArrayComparer.Instance);
 
-            /// <summary>
-            /// Inserts the value into the table. There can be no existing value with the provided BSATN bytes.
-            /// </summary>
-            /// <param name="rowBytes">The BSATN encoded bytes of the row to retrieve.</param>
-            /// <param name="value">The parsed row encoded by the <paramref>rowBytes</paramref>.</param>
-            /// <returns>True if the row was inserted, false if the row wasn't inserted because it was a duplicate.</returns>
-            public bool InsertEntry(byte[] rowBytes, IDatabaseTable value) => Entries.TryAdd(rowBytes, (T)value);
-
-            /// <summary>
-            /// Deletes a value from the table.
-            /// </summary>
-            /// <param name="rowBytes">The BSATN encoded bytes of the row to remove.</param>
-            /// <returns>True if and only if the value was previously resident and has been deleted.</returns>
-            public bool DeleteEntry(byte[] rowBytes)
-            {
-                if (Entries.Remove(rowBytes))
-                {
-                    return true;
-                }
-
-                Logger.LogWarning("Deleting value that we don't have (no cached value available)");
-                return false;
-            }
-
             // The function to use for decoding a type value.
-            public IDatabaseTable DecodeValue(ByteString bytes) => BSATNHelpers.FromProtoBytes<T>(bytes);
+            public IDbValue DecodeValue(byte[] bytes) => new DbValue(bytes);
 
-            public IEnumerator<KeyValuePair<byte[], IDatabaseTable>> GetEnumerator() => Entries.Select(kv => new KeyValuePair<byte[], IDatabaseTable>(kv.Key, kv.Value)).GetEnumerator();
+            public IEnumerator<IDbValue> GetEnumerator() => Entries.Select(pair => new DbValue(pair.Key, pair.Value)).GetEnumerator();
 
             IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 

@@ -49,6 +49,13 @@ namespace SpacetimeDB
             public override void SetLength(long value) => throw new NotSupportedException();
         }
 
+        public static T FromBytes<T>(byte[] bytes)
+            where T : IStructuralReadWrite, new()
+        {
+            using var stream = new MemoryStream(bytes);
+            return FromStream<T>(stream);
+        }
+
         public static T FromProtoBytes<T>(ByteString bytes)
             where T : IStructuralReadWrite, new()
         {
