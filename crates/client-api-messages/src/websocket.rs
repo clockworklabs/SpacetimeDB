@@ -231,6 +231,10 @@ impl DatabaseUpdate {
     pub fn is_empty(&self) -> bool {
         self.tables.is_empty()
     }
+
+    pub fn num_rows(&self) -> usize {
+        self.tables.iter().map(|t| t.num_rows()).sum()
+    }
 }
 
 impl FromIterator<TableUpdate> for DatabaseUpdate {
@@ -263,6 +267,12 @@ pub struct TableUpdate {
     /// Rows are encoded as BSATN or JSON according to the table's schema
     /// and the client's requested protocol.
     pub inserts: Vec<EncodedValue>,
+}
+
+impl TableUpdate {
+    fn num_rows(&self) -> usize {
+        self.deletes.len() + self.inserts.len()
+    }
 }
 
 /// A response to a [`OneOffQuery`].

@@ -79,6 +79,11 @@ impl DatabaseUpdate {
             tables: map.into_values().collect(),
         }
     }
+
+    /// The number of rows in the payload
+    pub fn num_rows(&self) -> usize {
+        self.tables.iter().map(|t| t.inserts.len() + t.deletes.len()).sum()
+    }
 }
 
 impl ToProtocol for DatabaseUpdate {

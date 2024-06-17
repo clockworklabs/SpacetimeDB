@@ -4287,6 +4287,7 @@ dependencies = [
  "derive_more",
  "dirs",
  "email_address",
+ "enum-as-inner",
  "enum-map",
  "env_logger",
  "flate2",

@@ -46,17 +46,27 @@ metrics_group!(
         #[name = spacetime_txn_elapsed_time_sec]
         #[help = "The total elapsed (wall) time of a transaction (in seconds)"]
         #[labels(txn_type: WorkloadType, db: Address, reducer: str)]
-        #[buckets(
-            1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
-        )]
+        // Prometheus histograms have default buckets,
+        // which broadly speaking,
+        // are tailored to measure the response time of a network service.
+        //
+        // However we expect a different value distribution for OLTP workloads.
+        // In particular the smallest bucket value is 5ms by default.
+        // But we expect many transactions to be on the order of microseconds.
+        #[buckets(10e-6, 50e-6, 100e-6, 500e-6, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10)]
         pub rdb_txn_elapsed_time_sec: HistogramVec,
 
         #[name = spacetime_txn_cpu_time_sec]
         #[help = "The time spent executing a transaction (in seconds), excluding time spent waiting to acquire database locks"]
         #[labels(txn_type: WorkloadType, db: Address, reducer: str)]
-        #[buckets(
-            1e-6, 5e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0
-        )]
+        // Prometheus histograms have default buckets,
+        // which broadly speaking,
+        // are tailored to measure the response time of a network service.
+        //
+        // However we expect a different value distribution for OLTP workloads.
+        // In particular the smallest bucket value is 5ms by default.
+        // But we expect many transactions to be on the order of microseconds.
+        #[buckets(10e-6, 50e-6, 100e-6, 500e-6, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10)]
         pub rdb_txn_cpu_time_sec: HistogramVec,
 
         #[name = spacetime_message_log_size_bytes]
