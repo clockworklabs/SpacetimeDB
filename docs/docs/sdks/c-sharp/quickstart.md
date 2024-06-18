@@ -89,9 +89,6 @@ void Main()
 {
     AuthToken.Init(".spacetime_csharp_quickstart");
 
-    // create the client, pass in a logger to see debug messages
-    SpacetimeDBClient.CreateInstance(new ConsoleLogger());
-
     RegisterCallbacks();
 
     // spawn a thread to call process updates and process commands
