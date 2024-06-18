@@ -23,7 +23,7 @@ class CreateProject(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmpdir:
                 spacetime("init", "--lang=csharp", tmpdir)
 
-                packed_projects = ["Codegen", "BSATN.Runtime", "Runtime"]
+                packed_projects = ["BSATN.Runtime", "Runtime"]
                 restore_sources = [str(bindings / project / "bin" / "Release") for project in packed_projects]
                 # note that nuget URL comes last, which ensures local sources should override it.
                 restore_sources.append("https://api.nuget.org/v3/index.json")
@@ -41,7 +41,7 @@ class CreateProject(unittest.TestCase):
                 with open(csproj, "w") as f:
                     f.write(contents)
 
-                run_cmd("dotnet", "build", cwd=tmpdir, capture_stderr=True)
+                run_cmd("dotnet", "publish", cwd=tmpdir, capture_stderr=True)
 
         except subprocess.CalledProcessError as e:
             print(e)

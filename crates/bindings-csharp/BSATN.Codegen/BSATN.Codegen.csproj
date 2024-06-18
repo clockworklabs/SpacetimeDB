@@ -1,41 +1,27 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
-    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-    <IsRoslynComponent>true</IsRoslynComponent>
-    <LangVersion>latest</LangVersion>
-    <Nullable>enable</Nullable>
     <AssemblyName>SpacetimeDB.BSATN.Codegen</AssemblyName>
-    <AssemblyVersion>0.10.0</AssemblyVersion>
-    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <Version>0.10.0</Version>
+    <Title>SpacetimeDB BSATN Codegen</Title>
+    <Description>The SpacetimeDB BSATN Codegen implements the Roslyn incremental generators for BSATN serialization/deserialization in C#.</Description>
   </PropertyGroup>
 
   <PropertyGroup>
-    <Version>$(AssemblyVersion)</Version>
-    <Title>SpacetimeDB BSATN Codegen</Title>
-    <Authors>RReverser</Authors>
-    <Company>Clockwork Labs</Company>
-    <Product>SpacetimeDB</Product>
-    <Description>The SpacetimeDB BSATN Codegen implements the Roslyn incremental generators for BSATN serialization/deserialization in C#.</Description>
-    <Copyright>2023</Copyright>
-    <PackageProjectUrl>https://spacetimedb.com/</PackageProjectUrl>
-    <PackageIcon>logo.png</PackageIcon>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDB</RepositoryUrl>
-    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <!-- We're going to include this analyzer in the Runtime package instead of publishing separately. -->
+    <IsPackable>false</IsPackable>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.1" PrivateAssets="all" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="../logo.png" Pack="true" PackagePath="" />
-    <None Include="../Codegen/README.md" Pack="true" PackagePath="" />
-    <None Include="../LICENSE" Pack="true" PackagePath="" />
-    <None Include="$(OutputPath)/$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
   </ItemGroup>
 
   <ItemGroup>
