@@ -291,7 +291,7 @@ impl MutTxId {
         let (table, bs) = if let Some(pair) = self.tx_state.get_table_and_blob_store(table_id) {
             pair
         } else {
-            let schema = self.schema_for_table(&ctx, table_id)?;
+            let schema = self.schema_for_table(ctx, table_id)?;
             self.tx_state
                 .insert_tables
                 .insert(table_id, Table::new(schema, SquashedOffset::TX_STATE));
@@ -311,7 +311,8 @@ impl MutTxId {
 
         // Write to the table in the tx state.
         self.with_insert_tables(&ctx, table_id, |table, _| {
-            Ok(table.with_mut_schema(|s| s.table_access = access))
+            table.with_mut_schema(|s| s.table_access = access);
+            Ok(())
         })?;
 
         // Update system tables.
@@ -660,7 +661,7 @@ impl MutTxId {
         // Delete row in `st_constraint`.
         let st_constraint_ref = self
             .iter_by_col_eq(
-                &ctx,
+                ctx,
                 ST_CONSTRAINTS_ID,
                 StConstraintFields::ConstraintId,
                 &constraint_id.into(),
