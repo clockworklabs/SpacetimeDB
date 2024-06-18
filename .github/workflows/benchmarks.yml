@@ -93,6 +93,8 @@ jobs:
         run: echo "0" | sudo tee /sys/devices/system/cpu/cpufreq/boost
 
       - name: Branch; run bench
+        env:
+          RUST_BACKTRACE: 1
         run: |
           if [[ $PR_NUMBER ]]; then
             BASELINE_NAME=branch
