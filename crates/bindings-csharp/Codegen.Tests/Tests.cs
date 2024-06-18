@@ -2,95 +2,98 @@ namespace Codegen.Tests;
 
 using System.Collections.Immutable;
 using System.Linq;
-using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.Text;
-using VerifyTests;
 using Xunit;
 
-public static class GeneratorSnapshotTests
+public class GeneratorSnapshotTests
 {
-    static GeneratorSnapshotTests()
+    // Note that we can't use assembly path here because it will be put in some deep nested folder.
+    // Instead, to get the test project directory, we can use the `CallerFilePath` attribute which will magically give us path to the current file.
+    private static string GetProjectDir([CallerFilePath] string path = "") =>
+        Path.GetDirectoryName(path)!;
+
+    private readonly CSharpCompilation sampleCompilation;
+    private readonly CSharpCompilation modifiedCompilation;
+
+    public GeneratorSnapshotTests()
     {
-        // Default diff order is weird and causes new lines to look like deleted and old as inserted.
-        Environment.SetEnvironmentVariable("DiffEngine_TargetOnLeft", "true");
-        // Store snapshots in a separate directory.
-        UseProjectRelativeDirectory("snapshots");
-        VerifySourceGenerators.Initialize();
-        // Format code for more readable snapshots and to avoid diffs on whitespace changes.
-        VerifierSettings.AddScrubber(
-            "cs",
-            (sb) =>
-            {
-                var unformattedCode = sb.ToString();
-                sb.Clear();
-                var result = CSharpier.CodeFormatter.Format(
-                    unformattedCode,
-                    new() { IncludeGenerated = true, EndOfLine = CSharpier.EndOfLine.LF }
-                );
-                if (result.CompilationErrors.Any())
-                {
-                    sb.AppendLine("// Generated code produced compilation errors:");
-                    foreach (var diag in result.CompilationErrors)
-                    {
-                        sb.Append("// ").AppendLine(diag.ToString());
-                    }
-                    sb.AppendLine();
-                }
-                sb.Append(result.Code);
-            },
-            ScrubberLocation.Last
+        var projectDir = GetProjectDir();
+        var stdbAssemblies = ImmutableArray
+            .Create("BSATN.Runtime", "Runtime")
+            .Select(name => $"{projectDir}/../{name}/bin/Debug/net8.0/SpacetimeDB.{name}.dll");
+
+        var dotNetDir = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
+        var dotNetAssemblies = ImmutableArray
+            .Create("System.Private.CoreLib", "System.Runtime")
+            .Select(name => $"{dotNetDir}/{name}.dll");
+
+        var baseCompilation = CSharpCompilation.Create(
+            assemblyName: "Sample",
+            references: Enumerable
+                .Concat(dotNetAssemblies, stdbAssemblies)
+                .Select(assemblyPath => MetadataReference.CreateFromFile(assemblyPath)),
+            options: new(
+                OutputKind.NetModule,
+                nullableContextOptions: NullableContextOptions.Enable
+            )
+        );
+
+        var sampleCode = File.ReadAllText($"{projectDir}/Sample.cs");
+        sampleCompilation = baseCompilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(sampleCode));
+
+        // Add a comment to the end of each line to make the code modified with no functional changes.
+        var modifiedCode = sampleCode.ReplaceLineEndings($"// Modified{Environment.NewLine}");
+        modifiedCompilation = baseCompilation.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText(modifiedCode)
         );
     }
 
-    private static readonly string DotNetDir = Path.GetDirectoryName(
-        typeof(object).Assembly.Location
-    )!;
-
-    private static readonly ImmutableArray<PortableExecutableReference> CompilationReferences =
-        Enumerable
-            .Concat(
-                ImmutableArray
-                    .Create("System.Private.CoreLib", "System.Runtime")
-                    .Select(assemblyName => Path.Join(DotNetDir, $"{assemblyName}.dll")),
-                ImmutableArray
-                    .Create(
-                        // For `SpacetimeDB.BSATN.Runtime`.
-                        typeof(SpacetimeDB.TypeAttribute),
-                        // For `SpacetimeDB.Runtime`.
-                        typeof(SpacetimeDB.TableAttribute)
-                    )
-                    .Select(type => type.Assembly.Location)
-            )
-            .Select(assemblyPath => MetadataReference.CreateFromFile(assemblyPath))
-            .ToImmutableArray();
-
-    private static readonly CSharpCompilationOptions CompilationOptions =
-        new(OutputKind.ConsoleApplication, nullableContextOptions: NullableContextOptions.Enable);
-
-    private static readonly SyntaxTree SampleSource = CSharpSyntaxTree.ParseText(
-        SourceText.From(Assembly.GetExecutingAssembly().GetManifestResourceStream("Sample.cs")!)
-    );
+    record struct StepOutput(string Key, IncrementalStepRunReason Reason, object Value);
 
     [Theory]
     [InlineData(typeof(SpacetimeDB.Codegen.Module))]
     [InlineData(typeof(SpacetimeDB.Codegen.Type))]
-    public static Task VerifyDriver(Type generatorType)
+    public async Task VerifyDriver(Type generatorType)
     {
-        var compilation = CSharpCompilation.Create(
-            assemblyName: generatorType.Name,
-            references: CompilationReferences,
-            options: CompilationOptions,
-            syntaxTrees: [SampleSource]
-        );
-
         var generator = (IIncrementalGenerator)Activator.CreateInstance(generatorType)!;
-        var driver = CSharpGeneratorDriver.Create(generator);
+        var driver = CSharpGeneratorDriver.Create(
+            [generator.AsSourceGenerator()],
+            driverOptions: new(
+                disabledOutputs: IncrementalGeneratorOutputKind.None,
+                trackIncrementalGeneratorSteps: true
+            )
+        );
         // Store the new driver instance - it contains the results and the cache.
-        var genDriver = driver.RunGenerators(compilation);
+        var driverAfterGen = driver.RunGenerators(sampleCompilation);
 
-        return Verify(genDriver).UseFileName(generatorType.Name);
+        // Verify the generated code against the snapshots.
+        await Verify(driverAfterGen).UseFileName(generatorType.Name);
+
+        // Run again with a driver containing the cache and a trivially modified code to verify that the cache is working.
+        var driverAfterRegen = driverAfterGen.RunGenerators(modifiedCompilation);
+
+        var regenSteps = driverAfterRegen
+            .GetRunResult()
+            .Results.SelectMany(result => result.TrackedSteps)
+            .Where(step => step.Key.StartsWith("SpacetimeDB."))
+            .SelectMany(step =>
+                step.Value.SelectMany(value => value.Outputs)
+                    .Select(output => new StepOutput(step.Key, output.Reason, output.Value))
+            )
+            .ToImmutableArray();
+
+        // Ensure that we have tracked steps at all.
+        Assert.NotEmpty(regenSteps);
+
+        // Ensure that all steps were cached.
+        Assert.Empty(
+            regenSteps.Where(step =>
+                step.Reason
+                    is not (IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged)
+            )
+        );
     }
 }
