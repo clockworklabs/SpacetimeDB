@@ -20,10 +20,10 @@
 
   <ItemGroup>
     <ProjectReference Include="../Codegen/Codegen.csproj" />
-    <ProjectReference Include="../Runtime/Runtime.csproj" />
-
+    <!-- we only need to make sure that Runtime is (re)built before we run tests, but we don't need the DLL in the test itself -->
+    <ProjectReference Include="../Runtime/Runtime.csproj" ReferenceOutputAssembly="false" />
+    <!-- sample code should not be part of the test compilation -->
     <Compile Remove="Sample.cs" />
-    <EmbeddedResource Include="Sample.cs" LogicalName="Sample.cs" />
   </ItemGroup>
 
 </Project>
