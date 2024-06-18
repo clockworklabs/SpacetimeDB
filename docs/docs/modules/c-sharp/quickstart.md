@@ -64,10 +64,7 @@ using SpacetimeDB.Module;
 using static SpacetimeDB.Runtime;
 ```
 
-- `System.Runtime.CompilerServices` 
-- `SpacetimeDB.Module` 
-  - Contains the special attributes we'll use to define our module. 
-  - Allows us to use the `ModuleInitializer` attribute, which we'll use to register our `OnConnect` and `OnDisconnect` callbacks.
+- `SpacetimeDB.Module` contains the special attributes we'll use to define tables and reducers in our module.
 - `SpacetimeDB.Runtime` contains the raw API bindings SpacetimeDB uses to communicate with the database.
 
 We also need to create our static module class which all of the module code will live in. In `server/Lib.cs`, add:
@@ -239,7 +236,7 @@ public static void OnConnect(ReducerContext ReducerContext)
 
 Similarly, whenever a client disconnects, the module will execute the `OnDisconnect` event if it's registered with `ReducerKind.Disconnect`. We'll use it to un-set the `Online` status of the `User` for the disconnected client.
 
-Add the following code after the `OnConnect` lambda:
+Add the following code after the `OnConnect` handler:
 
 ```csharp
 [SpacetimeDB.Reducer(ReducerKind.Disconnect)]
