@@ -62,7 +62,7 @@ pub struct Append<T> {
 pub struct ChecksumMismatch;
 
 #[derive(Debug, Error)]
-pub enum SegmentMetadata {
+pub(crate) enum SegmentMetadata {
     #[error("invalid commit encountered")]
     InvalidCommit {
         sofar: segment::Metadata,

@@ -301,7 +301,7 @@ impl Metadata {
     ///
     /// This traverses the entire segment, consuming thre `reader.
     /// Doing so is necessary to determine the `max_tx_offset` and `size_in_bytes`.
-    pub fn extract<R: io::Read>(min_tx_offset: u64, mut reader: R) -> Result<Self, error::SegmentMetadata> {
+    pub(crate) fn extract<R: io::Read>(min_tx_offset: u64, mut reader: R) -> Result<Self, error::SegmentMetadata> {
         let header = Header::decode(&mut reader)?;
         Self::with_header(min_tx_offset, header, reader)
     }

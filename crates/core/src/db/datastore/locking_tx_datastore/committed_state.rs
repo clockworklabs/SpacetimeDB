@@ -42,6 +42,11 @@ use spacetimedb_table::{
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+/// Contains the live, in-memory snapshot of a database. This structure
+/// is exposed in order to support tools wanting to process the commit
+/// logs directly. For normal usage, see the RelationalDB struct instead.
+///
+/// NOTE: unstable API, this may change at any point in the future.
 #[derive(Default)]
 pub struct CommittedState {
     pub(crate) next_tx_offset: u64,
