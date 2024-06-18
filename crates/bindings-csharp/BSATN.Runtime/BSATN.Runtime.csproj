@@ -1,17 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
-    <LangVersion>9</LangVersion>
-    <Nullable>enable</Nullable>
     <AssemblyName>SpacetimeDB.BSATN.Runtime</AssemblyName>
     <Version>0.10.0</Version>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Title>SpacetimeDB BSATN Runtime</Title>
+    <Description>The SpacetimeDB BSATN Runtime implements APIs for BSATN serialization/deserialization in C#.</Description>
   </PropertyGroup>
 
   <PropertyGroup>
-    <Title>SpacetimeDB BSATN Runtime</Title>
-    <Description>The SpacetimeDB BSATN Runtime implements APIs for BSATN serialization/deserialization in C#.</Description>
+    <!-- Note: the source code of this package is used in Unity too, which is limited to C# 9 and .NET Standard 2.1. -->
+    <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
+    <LangVersion>9</LangVersion>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>

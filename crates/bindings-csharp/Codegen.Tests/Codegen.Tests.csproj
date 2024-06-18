@@ -1,12 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-
-    <IsPackable>false</IsPackable>
-    <IsTestProject>true</IsTestProject>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,7 +23,10 @@
   <ItemGroup>
     <ProjectReference Include="../Codegen/Codegen.csproj" />
     <ProjectReference Include="../Runtime/Runtime.csproj" />
+  </ItemGroup>
 
+  <!-- the sample code should not be part of the test project's compilation -->
+  <ItemGroup>
     <Compile Remove="Sample.cs" />
     <EmbeddedResource Include="Sample.cs" LogicalName="Sample.cs" />
   </ItemGroup>
