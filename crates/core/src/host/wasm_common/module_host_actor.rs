@@ -264,7 +264,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
     }
 
     fn close(self) {
-        self.scheduler.close()
+        //self.scheduler.close()
     }
 
     #[tracing::instrument(skip_all)]
@@ -491,6 +491,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     /// the outcome of the call.
     #[tracing::instrument(skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
+        println!("enter tx");
         let CallReducerParams {
             timestamp,
             caller_identity,
@@ -531,7 +532,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             timestamp,
             arg_bytes: args.get_bsatn().clone(),
         };
-
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable));
         let _guard = WORKER_METRICS
             .reducer_plus_query_duration

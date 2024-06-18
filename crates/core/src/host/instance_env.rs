@@ -1,6 +1,7 @@
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
 use spacetimedb_lib::bsatn::ser::BsatnError;
+use spacetimedb_table::layout::row_size_for_type;
 use spacetimedb_table::table::{RowRef, UniqueConstraintViolation};
 use spacetimedb_vm::relation::RelValue;
 use std::ops::DerefMut;
@@ -106,20 +107,9 @@ impl InstanceEnv {
         }
     }
 
-    #[tracing::instrument(skip_all, fields(reducer=reducer))]
-    pub fn schedule(
-        &self,
-        reducer: String,
-        args: Vec<u8>,
-        time: Timestamp,
-    ) -> Result<ScheduledReducerId, ScheduleError> {
-       self.scheduler.schedule(reducer, args, time);
-       todo!()
-    }
-
     #[tracing::instrument(skip_all)]
     pub fn cancel_reducer(&self, id: ScheduledReducerId) {
-        self.scheduler.cancel(id)
+        // self.scheduler.cancel(id)
     }
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
@@ -157,6 +147,10 @@ impl InstanceEnv {
                     }
                 }
             })?;
+
+        if stdb.is_scheuled_table(ctx, tx, table_id) {
+            self.scheduler.schedule(table_id, ret.clone());
+        }
 
         Ok(ret)
     }

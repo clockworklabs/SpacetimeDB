@@ -794,16 +794,19 @@ impl ModuleHost {
         let caller_address = caller_address.unwrap_or(Address::__DUMMY);
 
         self.call(reducer_name, move |inst| {
-            inst.call_reducer(None, CallReducerParams {
-                timestamp: Timestamp::now(),
-                caller_identity,
-                caller_address,
-                client,
-                request_id,
-                timer,
-                reducer_id,
-                args,
-            })
+            inst.call_reducer(
+                tx,
+                CallReducerParams {
+                    timestamp: Timestamp::now(),
+                    caller_identity,
+                    caller_address,
+                    client,
+                    request_id,
+                    timer,
+                    reducer_id,
+                    args,
+                },
+            )
         })
         .await
         .map_err(Into::into)

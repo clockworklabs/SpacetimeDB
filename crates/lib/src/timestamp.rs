@@ -1,9 +1,7 @@
+use spacetimedb_sats::{impl_deserialize, impl_serialize, AlgebraicType};
 use std::time::SystemTime;
 
-use spacetimedb_sats::{impl_deserialize, impl_serialize, AlgebraicType};
-
-#[derive(Copy, Clone, PartialEq, Eq, Debug, serde::Serialize)]
-#[serde(transparent)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(transparent)]
 pub struct Timestamp(pub u64);
 

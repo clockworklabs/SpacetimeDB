@@ -13,7 +13,7 @@ use crate::host::wasm_common::{
     TimingSpanIdx, TimingSpanSet,
 };
 use crate::host::AbiCall;
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use spacetimedb_primitives::errno;
 use wasmtime::{AsContext, Caller, StoreContextMut};
 

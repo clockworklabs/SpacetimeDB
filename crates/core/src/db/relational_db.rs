@@ -1,3 +1,4 @@
+use super::datastore::locking_tx_datastore::state_view::StateView as _;
 use super::datastore::traits::{
     IsolationLevel, MutProgrammable, MutTx as _, MutTxDatastore, Programmable, RowTypeForTable, Tx as _, TxDatastore,
 };
@@ -270,6 +271,11 @@ impl RelationalDB {
     pub fn get_all_tables(&self, tx: &Tx) -> Result<Vec<Arc<TableSchema>>, DBError> {
         self.inner
             .get_all_tables_tx(&ExecutionContext::internal(self.address), tx)
+    }
+
+    pub fn is_scheuled_table(&self, ctx: &ExecutionContext, tx: &mut MutTx, table_id: TableId) -> bool {
+        tx.schema_for_table(ctx, table_id)
+            .is_ok_and(|schema| schema.scheduled.is_some())
     }
 
     pub fn decode_column(

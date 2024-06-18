@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_sats::{
     algebraic_value::de::{ValueDeserializeError, ValueDeserializer},
-    db::error::TypeError,
     de::Deserialize as _,
     impl_deserialize, impl_serialize, impl_st, AlgebraicType, AlgebraicValue,
 };
@@ -39,6 +38,13 @@ pub enum ScheduleAt {
 impl ScheduleAt {
     pub fn get_type() -> AlgebraicType {
         AlgebraicType::sum([Timestamp::get_type(), Duration::get_type()])
+    }
+
+    pub fn to_duration_from_now(&self) -> std::time::Duration {
+        match self {
+            ScheduleAt::Time(time) => time.to_duration_from_now(),
+            ScheduleAt::Interval(dur) => (*dur).into(),
+        }
     }
 }
 
