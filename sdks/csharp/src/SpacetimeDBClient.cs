@@ -158,8 +158,6 @@ namespace SpacetimeDB
 
                 // This is all of the inserts
                 Dictionary<System.Type, HashSet<ReadOnlyMemory<byte>>>? subscriptionInserts = null;
-                // All row updates that have a primary key, this contains inserts, deletes and updates
-                var primaryKeyChanges = new Dictionary<(System.Type tableType, object primaryKeyValue), DbOp>();
 
                 HashSet<ReadOnlyMemory<byte>> GetInsertHashSet(System.Type tableType, int tableSize)
                 {
@@ -213,6 +211,8 @@ namespace SpacetimeDB
                         break;
 
                     case { TypeCase: Message.TypeOneofCase.TransactionUpdate, TransactionUpdate: var transactionUpdate }:
+                        // All row updates that have a primary key, this contains inserts, deletes and updates
+                        var primaryKeyChanges = new Dictionary<(System.Type tableType, object primaryKeyValue), DbOp>();
                         // First apply all of the state
                         foreach (var update in transactionUpdate.SubscriptionUpdate.TableUpdates)
                         {
