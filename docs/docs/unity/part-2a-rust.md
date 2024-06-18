@@ -114,7 +114,7 @@ pub fn create_player(ctx: ReducerContext, username: String) -> Result<(), String
     let owner_id = ctx.sender;
 
     // Make sure we don't already have a player with this identity
-    if PlayerComponent::filter_by_owner_id(&owner_id).is_some() {
+    if PlayerComponent::find_by_owner_id(&owner_id).is_some() {
         log::info!("Player already exists");
         return Err("Player already exists".to_string());
     }
@@ -157,7 +157,7 @@ SpacetimeDB gives you the ability to define custom reducers that automatically t
 - `connect` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `sender` value of the `ReducerContext`.
 - `disconnect` - Called when a user disconnects from the SpacetimeDB module.
 
-Next, we are going to write a custom `Init` reducer that inserts the default message of the day into our `Config` table. The `Config` table only ever contains a single row with version 0, which we retrieve using `Config.FilterByVersion(0)`.
+Next, we are going to write a custom `Init` reducer that inserts the default message of the day into our `Config` table.
 
 **Append to the bottom of lib.rs:**
 
@@ -196,7 +196,7 @@ pub fn client_disconnected(ctx: ReducerContext) {
 // This helper function gets the PlayerComponent, sets the logged
 // in variable and updates the PlayerComponent table row.
 pub fn update_player_login_state(ctx: ReducerContext, logged_in: bool) {
-    if let Some(player) = PlayerComponent::filter_by_owner_id(&ctx.sender) {
+    if let Some(player) = PlayerComponent::find_by_owner_id(&ctx.sender) {
         // We clone the PlayerComponent so we can edit it and pass it back.
         let mut player = player.clone();
         player.logged_in = logged_in;
@@ -222,8 +222,8 @@ pub fn update_player_position(
 ) -> Result<(), String> {
     // First, look up the player using the sender identity, then use that
     // entity_id to retrieve and update the EntityComponent
-    if let Some(player) = PlayerComponent::filter_by_owner_id(&ctx.sender) {
-        if let Some(mut entity) = EntityComponent::filter_by_entity_id(&player.entity_id) {
+    if let Some(player) = PlayerComponent::find_by_owner_id(&ctx.sender) {
+        if let Some(mut entity) = EntityComponent::find_by_entity_id(&player.entity_id) {
             entity.position = position;
             entity.direction = direction;
             entity.moving = moving;
@@ -286,7 +286,7 @@ Now we need to add a reducer to handle inserting new chat messages.
 // Adds a chat entry to the ChatMessage table
 #[spacetimedb(reducer)]
 pub fn send_chat_message(ctx: ReducerContext, text: String) -> Result<(), String> {
-    if let Some(player) = PlayerComponent::filter_by_owner_id(&ctx.sender) {
+    if let Some(player) = PlayerComponent::find_by_owner_id(&ctx.sender) {
         // Now that we have the player we can insert the chat message using the player entity id.
         ChatMessage::insert(ChatMessage {
             // this column auto-increments so we can set it to 0

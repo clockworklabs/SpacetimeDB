@@ -103,7 +103,7 @@ pub struct Config {
 ```rust
 #[spacetimedb(reducer, repeat = 1000ms)]
 pub fn resource_spawner_agent(_ctx: ReducerContext, _prev_time: Timestamp) -> Result<(), String> {
-    let config = Config::filter_by_version(&0).unwrap();
+    let config = Config::find_by_version(&0).unwrap();
 
     // Retrieve the maximum number of nodes we want to spawn from the Config table
     let num_resource_nodes = config.num_resource_nodes as usize;
@@ -247,7 +247,7 @@ To get the position and the rotation of the node, we look up the `StaticLocation
         {
             case ResourceNodeType.Iron:
                 var iron = Instantiate(IronPrefab);
-                StaticLocationComponent loc = StaticLocationComponent.FilterByEntityId(insertedValue.EntityId);
+                StaticLocationComponent loc = StaticLocationComponent.FindByEntityId(insertedValue.EntityId);
                 Vector3 nodePos = new Vector3(loc.Location.X, 0.0f, loc.Location.Z);
                 iron.transform.position = new Vector3(nodePos.x, MathUtil.GetTerrainHeight(nodePos), nodePos.z);
                 iron.transform.rotation = Quaternion.Euler(0.0f, loc.Rotation, 0.0f);

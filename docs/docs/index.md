@@ -111,7 +111,7 @@ spacetime publish
 ```
 
 5. How do I create a Unity game with SpacetimeDB?
-   Follow our [Unity Project](/docs/unity-project) guide!
+   Follow our [Unity Project](/docs/unity-tutorial) guide!
 
 TL;DR in an empty directory:
 

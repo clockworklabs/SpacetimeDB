@@ -117,7 +117,7 @@ Subscribing to tables tells SpacetimeDB what rows we want in our local client ca
 
 **Local Client Cache**
 
-The "local client cache" is a client-side view of the database defined by the supplied queries to the `Subscribe` function. It contains the requested data which allows efficient access without unnecessary server queries. Accessing data from the client cache is done using the auto-generated iter and filter_by functions for each table, and it ensures that update and event callbacks are limited to the subscribed rows.
+The "local client cache" is a client-side view of the database defined by the supplied queries to the `Subscribe` function. It contains the requested data which allows efficient access without unnecessary server queries. Accessing data from the client cache is done using the auto-generated `Iter`, `FilterBy`, and `FindBy` functions for each table, and it ensures that update and event callbacks are limited to the subscribed rows.
 
 ---
 
@@ -131,7 +131,7 @@ void OnSubscriptionApplied()
     // If we don't have any data for our player, then we are creating a
     // new one. Let's show the username dialog, which will then call the
     // create player reducer
-    var player = PlayerComponent.FilterByOwnerId(local_identity);
+    var player = PlayerComponent.FindByOwnerId(local_identity);
     if (player == null)
     {
        // Show username selection
@@ -139,7 +139,7 @@ void OnSubscriptionApplied()
     }
 
     // Show the Message of the Day in our Config table of the Client Cache
-    UIChatController.instance.OnChatMessageReceived("Message of the Day: " + Config.FilterByVersion(0).MessageOfTheDay);
+    UIChatController.instance.OnChatMessageReceived("Message of the Day: " + Config.FindByVersion(0).MessageOfTheDay);
 
     // Now that we've done this work we can unregister this callback
     SpacetimeDBClient.instance.onSubscriptionApplied -= OnSubscriptionApplied;
@@ -200,7 +200,7 @@ public class RemotePlayer : MonoBehaviour
         canvas.worldCamera = Camera.main;
 
         // Get the username from the PlayerComponent for this object and set it in the UI
-        PlayerComponent? playerComp = PlayerComponent.FilterByEntityId(EntityId).FirstOrDefault();
+        PlayerComponent? playerComp = PlayerComponent.FindByEntityId(EntityId);
         if (playerComp is null)
         {
             string inputUsername = UsernameElement.Text;
@@ -208,13 +208,13 @@ public class RemotePlayer : MonoBehaviour
             Reducer.CreatePlayer(inputUsername);
 
             // Try again, optimistically assuming success for simplicity
-            PlayerComponent? playerComp = PlayerComponent.FilterByEntityId(EntityId).FirstOrDefault();
+            PlayerComponent? playerComp = PlayerComponent.FindByEntityId(EntityId);
         }
 
         Username = playerComp.Username;
 
         // Get the last location for this player and set the initial position
-        EntityComponent entity = EntityComponent.FilterByEntityId(EntityId);
+        EntityComponent entity = EntityComponent.FindByEntityId(EntityId);
         transform.position = new Vector3(entity.Position.X, entity.Position.Y, entity.Position.Z);
 
         // Register for a callback that is called when the client gets an
@@ -271,7 +271,7 @@ private void PlayerComponent_OnInsert(PlayerComponent obj, ReducerEvent callInfo
         var remotePlayer = Instantiate(PlayerPrefab);
 
         // Lookup and apply the position for this new player
-        var entity = EntityComponent.FilterByEntityId(obj.EntityId);
+        var entity = EntityComponent.FindByEntityId(obj.EntityId);
         var position = new Vector3(entity.Position.X, entity.Position.Y, entity.Position.Z);
         remotePlayer.transform.position = position;
 
@@ -382,7 +382,7 @@ private void OnPlayerComponentChanged(PlayerComponent obj)
                 var remotePlayer = Instantiate(PlayerPrefab);
 
                 // Lookup and apply the position for this new player
-                var entity = EntityComponent.FilterByEntityId(obj.EntityId);
+                var entity = EntityComponent.FindByEntityId(obj.EntityId);
                 var position = new Vector3(entity.Position.X, entity.Position.Y, entity.Position.Z);
                 remotePlayer.transform.position = position;
 
@@ -448,7 +448,7 @@ Now we write the `OnSendChatMessageEvent` function. We can find the `PlayerCompo
 ```csharp
 private void OnSendChatMessageEvent(ReducerEvent dbEvent, string message)
 {
-    var player = PlayerComponent.FilterByOwnerId(dbEvent.Identity);
+    var player = PlayerComponent.FindByOwnerId(dbEvent.Identity);
     if (player != null)
     {
         UIChatController.instance.OnChatMessageReceived(player.Username + ": " + message);

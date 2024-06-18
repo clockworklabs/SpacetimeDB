@@ -176,7 +176,7 @@ struct Person {
 fn give_player_item(player_id: u64, item_id: u64) -> Result<(), GameErr> {
     // Notice how the exact name of the filter function derives from
     // the name of the field of the struct.
-    let mut item = Item::filter_by_item_id(id).ok_or(GameErr::InvalidId)?;
+    let mut item = Item::find_by_item_id(id).ok_or(GameErr::InvalidId)?;
     item.owner = Some(player_id);
     Item::update_by_id(id,  item);
     Ok(())
@@ -424,7 +424,7 @@ The name of the filter method just corresponds to the column name.
 ```rust
 #[spacetimedb(reducer)]
 fn filtering(id: u64) {
-    match Person::filter_by_id(&id) {
+    match Person::find_by_id(&id) {
         Some(person) => println!("Found {person}"),
         None => println!("No person with id {id}"),
     }
@@ -436,7 +436,7 @@ Our `Person` table also has a column for age. Unlike IDs, ages aren't unique. Fi
 ```rust
 #[spacetimedb(reducer)]
 fn filtering_non_unique() {
-    for person in Person::filter_by_age(&21) {
+    for person in Person::find_by_age(&21) {
         println!("{person} has turned 21");
     }
 }

@@ -172,7 +172,7 @@ SpacetimeDB gives you the ability to define custom reducers that automatically t
 - `Connect` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `Sender` value of the `ReducerContext`.
 - `Disconnect` - Called when a user disconnects from the SpacetimeDB module.
 
-Next, we are going to write a custom `Init` reducer that inserts the default message of the day into our `Config` table. The `Config` table only ever contains a single row with version 0, which we retrieve using `Config.FilterByVersion(0)`.
+Next, we are going to write a custom `Init` reducer that inserts the default message of the day into our `Config` table.
 
 **Append to the bottom of lib.cs:**
 

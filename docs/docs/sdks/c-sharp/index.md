@@ -19,11 +19,12 @@ The SpacetimeDB client C# for Rust contains all the tools you need to build nati
   - [Query subscriptions & one-time actions](#subscribe-to-queries)
     - [Method `SpacetimeDBClient.Subscribe`](#method-spacetimedbclientsubscribe)
     - [Event `SpacetimeDBClient.onSubscriptionApplied`](#event-spacetimedbclientonsubscriptionapplied)
-    - [Method `SpacetimeDBClient.OneOffQuery`](#event-spacetimedbclientoneoffquery)
+    - [Method `SpacetimeDBClient.OneOffQuery`](#method-spacetimedbclientoneoffquery)
   - [View rows of subscribed tables](#view-rows-of-subscribed-tables)
     - [Class `{TABLE}`](#class-table)
       - [Static Method `{TABLE}.Iter`](#static-method-tableiter)
       - [Static Method `{TABLE}.FilterBy{COLUMN}`](#static-method-tablefilterbycolumn)
+      - [Static Method `{TABLE}.FindBy{COLUMN}`](#static-method-tablefindbycolumn)
       - [Static Method `{TABLE}.Count`](#static-method-tablecount)
       - [Static Event `{TABLE}.OnInsert`](#static-event-tableoninsert)
       - [Static Event `{TABLE}.OnBeforeDelete`](#static-event-tableonbeforedelete)
@@ -171,7 +172,7 @@ class SpacetimeDBClient {
 }
 ```
 
-+Called when we receive an auth token, [`Identity`](#class-identity) and [`Address`](#class-address) from the server. The [`Identity`](#class-identity) serves as a unique public identifier for a user of the database. It can be for several purposes, such as filtering rows in a database for the rows created by a particular user. The auth token is a private access token that allows us to assume an identity. The [`Address`](#class-address) is opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#class-identity).
+Called when we receive an auth token, [`Identity`](#class-identity) and [`Address`](#class-address) from the server. The [`Identity`](#class-identity) serves as a unique public identifier for a user of the database. It can be for several purposes, such as filtering rows in a database for the rows created by a particular user. The auth token is a private access token that allows us to assume an identity. The [`Address`](#class-address) is opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#class-identity).
 
 To store the auth token to the filesystem, use the static method [`AuthToken.SaveToken`](#static-method-authtokensavetoken). You may also want to store the returned [`Identity`](#class-identity) in a local variable.
 
@@ -224,11 +225,11 @@ class SpacetimeDBClient {
 
 Subscribe to a set of queries, to be notified when rows which match those queries are altered.
 
-`Subscribe` will return an error if called before establishing a connection with the [`SpacetimeDBClient.Connect`](#method-connect) function. In that case, the queries are not registered.
+`Subscribe` will return an error if called before establishing a connection with the [`SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect) function. In that case, the queries are not registered.
 
 The `Subscribe` method does not return data directly. `spacetime generate` will generate classes [`SpacetimeDB.Types.{TABLE}`](#class-table) for each table in your module. These classes are used to reecive information from the database. See the section [View Rows of Subscribed Tables](#view-rows-of-subscribed-tables) for more information.
 
-A new call to `Subscribe` will remove all previous subscriptions and replace them with the new `queries`. If any rows matched the previous subscribed queries but do not match the new queries, those rows will be removed from the client cache, and [`{TABLE}.OnDelete`](#event-tableondelete) callbacks will be invoked for them.
+A new call to `Subscribe` will remove all previous subscriptions and replace them with the new `queries`. If any rows matched the previous subscribed queries but do not match the new queries, those rows will be removed from the client cache, and [`{TABLE}.OnDelete`](#static-event-tableoninsert) callbacks will be invoked for them.
 
 ```cs
 using SpacetimeDB;
@@ -290,7 +291,7 @@ void Main()
 }
 ```
 
-### Method [`OneTimeQuery`](#method-spacetimedbclientsubscribe)
+### Method [`SpacetimeDBClient.OneOffQuery`]
 
 You may not want to subscribe to a query, but instead want to run a query once and receive the results immediately via a `Task` result:
 
@@ -317,6 +318,7 @@ Static Methods:
 
 - [`{TABLE}.Iter()`](#static-method-tableiter) iterates all subscribed rows in the client cache.
 - [`{TABLE}.FilterBy{COLUMN}(value)`](#static-method-tablefilterbycolumn) filters subscribed rows in the client cache by a column value.
+- [`{TABLE}.FindBy{COLUMN}(value)`](#static-method-tablefindbycolumn) finds a subscribed row in the client cache by a unique column value.
 - [`{TABLE}.Count()`](#static-method-tablecount) counts the number of subscribed rows in the client cache.
 
 Static Events:
@@ -334,7 +336,7 @@ Note that it is not possible to directly insert into the database from the clien
 namespace SpacetimeDB.Types {
 
 class TABLE {
-    public static System.Collections.Generic.IEnumerable<TABLE> Iter();
+    public static IEnumerable<TABLE> Iter();
 }
 
 }
@@ -342,7 +344,7 @@ class TABLE {
 
 Iterate over all the subscribed rows in the table. This method is only available after [`SpacetimeDBClient.onSubscriptionApplied`](#event-spacetimedbclientonsubscriptionapplied) has occurred.
 
-When iterating over rows and filtering for those containing a particular column, [`TableType::filter`](#method-filter) will be more efficient, so prefer it when possible.
+When iterating over rows and filtering for those containing a particular column, [`{TABLE}.FilterBy{COLUMN}`](#static-method-tablefilterbycolumn) and [`{TABLE}.FindBy{COLUMN}`](#static-method-tablefindbycolumn) will be more efficient, so prefer those when possible.
 
 ```cs
 using SpacetimeDB;
@@ -366,22 +368,32 @@ SpacetimeDBClient.instance.connect(/* ... */);
 namespace SpacetimeDB.Types {
 
 class TABLE {
-    // If the column has no #[unique] or #[primarykey] constraint
-    public static System.Collections.Generic.IEnumerable<TABLE> FilterBySender(COLUMNTYPE value);
-
-    // If the column has a #[unique] or #[primarykey] constraint
-    public static TABLE? FilterBySender(COLUMNTYPE value);
+    public static IEnumerable<TABLE> FilterBySender(COLUMNTYPE value);
 }
 
 }
 ```
 
-For each column of a table, `spacetime generate` generates a static method on the [table class](#class-table) to filter or seek subscribed rows where that column matches a requested value. These methods are named `filterBy{COLUMN}`, where `{COLUMN}` is the column name converted to `PascalCase`.
+For each column of a table, `spacetime generate` generates a static method on the [table class](#class-table) to filter subscribed rows where that column matches a requested value.
 
-The method's return type depends on the column's attributes:
+These methods are named `filterBy{COLUMN}`, where `{COLUMN}` is the column name converted to `PascalCase`. The method's return type is an `IEnumerable` over the [table class](#class-table).
 
-- For unique columns, including those annotated `#[unique]` and `#[primarykey]`, the `filterBy{COLUMN}` method returns a `{TABLE}?`, where `{TABLE}` is the [table class](#class-table).
-- For non-unique columns, the `filter_by` method returns an `IEnumerator<{TABLE}>`.
+#### Static Method `{TABLE}.FindBy{COLUMN}`
+
+```cs
+namespace SpacetimeDB.Types {
+
+class TABLE {
+    // If the column has a #[unique] or #[primarykey] constraint
+    public static TABLE? FindBySender(COLUMNTYPE value);
+}
+
+}
+```
+
+For each unique column of a table (those annotated `#[unique]` or `#[primarykey]`), `spacetime generate` generates a static method on the [table class](#class-table) to seek a subscribed row where that column matches a requested value.
+
+These methods are named `findBy{COLUMN}`, where `{COLUMN}` is the column name converted to `PascalCase`. Those methods return a single instance of the [table class](#class-table) if a row is found, or `null` if no row matches the query.
 
 #### Static Method `{TABLE}.Count`
 
@@ -856,7 +868,6 @@ A unique public identifier for a user of a database.
 
 Columns of type `Identity` inside a module will be represented in the C# SDK as properties of type `byte[]`. `Identity` is essentially just a wrapper around `byte[]`, and you can use the `Bytes` property to get a `byte[]` that can be used to filter tables and so on.
 
-### Class `Identity`
 ```cs
 namespace SpacetimeDB 
 {
