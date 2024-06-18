@@ -11,7 +11,6 @@ The SpacetimeDB client C# for Rust contains all the tools you need to build nati
     - [Using Unity](#using-unity)
   - [Generate module bindings](#generate-module-bindings)
   - [Initialization](#initialization)
-    - [Static Method `SpacetimeDBClient.CreateInstance`](#static-method-spacetimedbclientcreateinstance)
     - [Property `SpacetimeDBClient.instance`](#property-spacetimedbclientinstance)
     - [Class `NetworkManager`](#class-networkmanager)
     - [Method `SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect)
@@ -84,32 +83,6 @@ Replace `PATH-TO-MODULE-DIRECTORY` with the path to your SpacetimeDB module.
 
 ## Initialization
 
-### Static Method `SpacetimeDBClient.CreateInstance`
-
-```cs
-namespace SpacetimeDB {
-
-public class SpacetimeDBClient {
-    public static void CreateInstance(ISpacetimeDBLogger loggerToUse);
-}
-
-}
-```
-
-Create a global SpacetimeDBClient instance, accessible via [`SpacetimeDBClient.instance`](#property-spacetimedbclientinstance)
-
-| Argument      | Type                                                  | Meaning                           |
-| ------------- | ----------------------------------------------------- | --------------------------------- |
-| `loggerToUse` | [`ISpacetimeDBLogger`](#interface-ispacetimedblogger) | The logger to use to log messages |
-
-There is a provided logger called [`ConsoleLogger`](#class-consolelogger) which logs to `System.Console`, and can be used as follows:
-
-```cs
-using SpacetimeDB;
-using SpacetimeDB.Types;
-SpacetimeDBClient.CreateInstance(new ConsoleLogger());
-```
-
 ### Property `SpacetimeDBClient.instance`
 
 ```cs
@@ -130,7 +103,7 @@ The Unity SpacetimeDB SDK relies on there being a `NetworkManager` somewhere in 
 
 ![Unity-AddNetworkManager](/images/unity-tutorial/Unity-AddNetworkManager.JPG)
 
-This component will handle calling [`SpacetimeDBClient.CreateInstance`](#static-method-spacetimedbclientcreateinstance) for you, but will not call [`SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect), you still need to handle that yourself. See the [Unity Quickstart](./UnityQuickStart) and [Unity Tutorial](./UnityTutorialPart1) for more information.
+This component will handle updating and closing the [`SpacetimeDBClient.instance`](#property-spacetimedbclientinstance) for you, but will not call [`SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect), you still need to handle that yourself. See the [Unity Quickstart](./UnityQuickStart) and [Unity Tutorial](./UnityTutorialPart1) for more information.
 
 ### Method `SpacetimeDBClient.Connect`
 
@@ -264,7 +237,6 @@ using SpacetimeDB.Types;
 void Main()
 {
     AuthToken.Init();
-    SpacetimeDBClient.CreateInstance(new ConsoleLogger());
 
     SpacetimeDBClient.instance.onConnect += OnConnect;
 
@@ -903,17 +875,11 @@ An opaque identifier for a client connection to a database, intended to differen
 
 ## Customizing logging
 
-The SpacetimeDB C# SDK performs internal logging. Instances of [`ISpacetimeDBLogger`](#interface-ispacetimedblogger) can be passed to [`SpacetimeDBClient.CreateInstance`](#static-method-spacetimedbclientcreateinstance) to customize how SDK logs are delivered to your application.
+The SpacetimeDB C# SDK performs internal logging.
 
-This is set up automatically for you if you use Unity-- adding a [`NetworkManager`](#class-networkmanager) component to your unity scene will automatically initialize the `SpacetimeDBClient` with a [`UnityDebugLogger`](#class-unitydebuglogger).
+A default logger is set up automatically for you - a [`ConsoleLogger`](#class-consolelogger) for C# projects and  [`UnityDebugLogger`](#class-unitydebuglogger) for Unity projects.
 
-Outside of unity, all you need to do is the following:
-
-```cs
-using SpacetimeDB;
-using SpacetimeDB.Types;
-SpacetimeDBClient.CreateInstance(new ConsoleLogger());
-```
+If you want to redirect SDK logs elsewhere, you can inherit from the [`ISpacetimeDBLogger`](#interface-ispacetimedblogger) and assign an instance of your class to the `SpacetimeDB.Logger.Current` static property.
 
 ### Interface `ISpacetimeDBLogger`
 
