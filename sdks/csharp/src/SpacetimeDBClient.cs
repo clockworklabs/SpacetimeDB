@@ -125,8 +125,7 @@ namespace SpacetimeDB
         private readonly BlockingCollection<UnprocessedMessage> _messageQueue =
             new(new ConcurrentQueue<UnprocessedMessage>());
 
-        private readonly BlockingCollection<PreProcessedMessage> _preProcessedNetworkMessages =
-            new(new ConcurrentQueue<PreProcessedMessage>());
+        private readonly ConcurrentQueue<PreProcessedMessage> _preProcessedNetworkMessages = new();
 
         internal bool HasPreProcessedMessage => _preProcessedNetworkMessages.Count > 0;
 
@@ -141,7 +140,7 @@ namespace SpacetimeDB
                 {
                     var message = _messageQueue.Take(_preProcessCancellationToken);
                     var preprocessedMessage = PreProcessMessage(message);
-                    _preProcessedNetworkMessages.Add(preprocessedMessage, _preProcessCancellationToken);
+                    _preProcessedNetworkMessages.Enqueue(preprocessedMessage);
                 }
                 catch (OperationCanceledException)
                 {
@@ -671,7 +670,7 @@ namespace SpacetimeDB
         public void Update()
         {
             webSocket.Update();
-            while (_preProcessedNetworkMessages.TryTake(out var preProcessedMessage))
+            while (_preProcessedNetworkMessages.TryDequeue(out var preProcessedMessage))
             {
                 OnMessageProcessComplete(preProcessedMessage);
             }
