@@ -47,7 +47,7 @@ pub fn add() {
 }
 """
 
-    JOIN_QUERY = "select T1.* from T1 join T2 on T1.id = T2.id where T2.id = 1_001"
+    JOIN_QUERY = "select T1.* from T1 join T2 on T1.id = T2.id where T2.id = 1001"
 
     def test_add_then_remove_index(self):
         """
@@ -72,7 +72,7 @@ pub fn add() {
         self.publish_module(name, clear = False)
         sub = self.subscribe(self.JOIN_QUERY, n = 1)
         self.call("add", anon = True)
-        self.assertEqual(sub(), [{'T1': {'deletes': [], 'inserts': [{'id': '1001'}]}}])
+        self.assertEqual(sub(), [{'T1': {'deletes': [], 'inserts': [{'id': 1001}]}}])
 
         # Publish the unindexed version again, removing the index.
         # The initial subscription should be rejected again.

@@ -282,7 +282,7 @@ impl MutTxId {
     }
 
     /// Retrieves or creates the insert tx table for `table_id`.
-    fn get_insert_table_mut(
+    fn get_or_create_insert_table_mut(
         &mut self,
         table_id: TableId,
     ) -> Result<(&mut Table, &mut dyn BlobStore, Option<&Table>, &HashMapBlobStore)> {
@@ -303,7 +303,7 @@ impl MutTxId {
         access: StAccess,
     ) -> Result<()> {
         // Write to the table in the tx state.
-        let (table, ..) = self.get_insert_table_mut(table_id)?;
+        let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
         table.with_mut_schema(|s| s.table_access = access);
 
         // Update system tables.
@@ -351,7 +351,7 @@ impl MutTxId {
         index.index_id = index_id;
 
         // Add the index to the transaction's insert table.
-        let (table, blob_store, commit_table, commit_blob_store) = self.get_insert_table_mut(table_id)?;
+        let (table, blob_store, commit_table, commit_blob_store) = self.get_or_create_insert_table_mut(table_id)?;
         // Create and build the index.
         let mut insert_index = table.new_index(index.index_id, &index.columns, is_unique)?;
         insert_index.build_from_rows(&index.columns, table.scan_rows(blob_store))?;
@@ -443,7 +443,7 @@ impl MutTxId {
 
         // Remove the index in the transaction's insert table.
         // By altering the insert table, this gets moved over to the committed state on merge.
-        let (table, ..) = self.get_insert_table_mut(table_id)?;
+        let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
         if let Some(col) = table
             .indexes
             .iter()
@@ -624,7 +624,7 @@ impl MutTxId {
         let existed = matches!(constraint_row, RowRefInsertion::Existed(_));
         // TODO: Can we return early here?
 
-        let (table, ..) = self.get_insert_table_mut(table_id)?;
+        let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
         let mut constraint = ConstraintSchema::from_def(table_id, constraint);
         constraint.constraint_id = constraint_id;
         // This won't clone-write when creating a table but likely to otherwise.
@@ -661,7 +661,7 @@ impl MutTxId {
         self.delete(ST_CONSTRAINTS_ID, st_constraint_ref.pointer())?;
 
         // Remove constraint in transaction's insert table.
-        let (table, ..) = self.get_insert_table_mut(table_id)?;
+        let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
         // This likely will do a clone-write as over time?
         // The schema might have found other referents.
         table.with_mut_schema(|s| s.remove_constraint(constraint_id));
