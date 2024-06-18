@@ -17,13 +17,13 @@ namespace SpacetimeDB
         // There is CommunityToolkit.HighPerformance that provides this,
         // but it's not compatible with Unity as it relies on .NET intrinsics,
         // so we need to implement our own.
-        class ProtoStream : Stream
+        class ReadOnlyMemoryStream : Stream
         {
             private readonly ReadOnlyMemory<byte> memory;
 
-            public ProtoStream(ByteString input)
+            public ReadOnlyMemoryStream(ReadOnlyMemory<byte> input)
             {
-                memory = input.Memory;
+                memory = input;
             }
 
             public override long Position { get; set; }
@@ -32,7 +32,7 @@ namespace SpacetimeDB
             public override bool CanRead => true;
             public override int Read(byte[] buffer, int offset, int count)
             {
-                memory.Slice((int)Position, count).CopyTo(buffer.AsMemory(offset));
+                memory.Span.Slice((int)Position, count).CopyTo(buffer.AsSpan(offset));
                 Position += count;
                 return count;
             }
@@ -49,18 +49,17 @@ namespace SpacetimeDB
             public override void SetLength(long value) => throw new NotSupportedException();
         }
 
-        public static T FromBytes<T>(byte[] bytes)
+        public static T FromBytes<T>(ReadOnlyMemory<byte> bytes)
             where T : IStructuralReadWrite, new()
         {
-            using var stream = new MemoryStream(bytes);
+            using var stream = new ReadOnlyMemoryStream(bytes);
             return FromStream<T>(stream);
         }
 
         public static T FromProtoBytes<T>(ByteString bytes)
             where T : IStructuralReadWrite, new()
         {
-            using var stream = new ProtoStream(bytes);
-            return FromStream<T>(stream);
+            return FromBytes<T>(bytes.Memory);
         }
 
         public static ByteString ToProtoBytes<T>(this T value)

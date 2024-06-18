@@ -119,7 +119,7 @@ namespace SpacetimeDB
         struct PreProcessedMessage
         {
             public ProcessedMessage processed;
-            public Dictionary<System.Type, HashSet<byte[]>>? subscriptionInserts;
+            public Dictionary<System.Type, HashSet<ReadOnlyMemory<byte>>>? subscriptionInserts;
         }
 
         private readonly BlockingCollection<UnprocessedMessage> _messageQueue =
@@ -158,15 +158,15 @@ namespace SpacetimeDB
                 var message = Message.Parser.ParseFrom(decompressedStream);
 
                 // This is all of the inserts
-                Dictionary<System.Type, HashSet<byte[]>>? subscriptionInserts = null;
+                Dictionary<System.Type, HashSet<ReadOnlyMemory<byte>>>? subscriptionInserts = null;
                 // All row updates that have a primary key, this contains inserts, deletes and updates
                 var primaryKeyChanges = new Dictionary<(System.Type tableType, object primaryKeyValue), DbOp>();
 
-                HashSet<byte[]> GetInsertHashSet(System.Type tableType, int tableSize)
+                HashSet<ReadOnlyMemory<byte>> GetInsertHashSet(System.Type tableType, int tableSize)
                 {
                     if (!subscriptionInserts.TryGetValue(tableType, out var hashSet))
                     {
-                        hashSet = new HashSet<byte[]>(capacity: tableSize, comparer: ByteArrayComparer.Instance);
+                        hashSet = new(capacity: tableSize, comparer: ByteArrayComparer.Instance);
                         subscriptionInserts[tableType] = hashSet;
                     }
 
@@ -192,7 +192,7 @@ namespace SpacetimeDB
 
                             foreach (var row in update.TableRowOperations)
                             {
-                                var rowBytes = row.Row.ToByteArray();
+                                var rowBytes = row.Row.Memory;
 
                                 if (row.Op != TableRowOperation.Types.OperationType.Insert)
                                 {
@@ -227,7 +227,7 @@ namespace SpacetimeDB
 
                             foreach (var row in update.TableRowOperations)
                             {
-                                var rowBytes = row.Row.ToByteArray();
+                                var rowBytes = row.Row.Memory;
 
                                 var dbValue = table.DecodeValue(rowBytes);
 

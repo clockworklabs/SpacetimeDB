@@ -14,24 +14,24 @@ namespace SpacetimeDB
             bool InsertEntry();
             bool DeleteEntry();
             IDatabaseTable Value { get; }
-            byte[] Bytes { get; }
+            ReadOnlyMemory<byte> Bytes { get; }
         }
 
         public interface ITableCache : IEnumerable<IDbValue>
         {
             Type ClientTableType { get; }
-            IDbValue DecodeValue(byte[] bytes);
+            IDbValue DecodeValue(ReadOnlyMemory<byte> bytes);
             void Clear();
         }
 
         public class TableCache<T> : ITableCache
             where T : IDatabaseTable, IStructuralReadWrite, new()
         {
-            public record DbValue(byte[] Bytes, T Value) : IDbValue
+            public record DbValue(ReadOnlyMemory<byte> Bytes, T Value) : IDbValue
             {
                 IDatabaseTable IDbValue.Value => Value;
 
-                public DbValue(byte[] bytes) : this(bytes, BSATNHelpers.FromBytes<T>(bytes))
+                public DbValue(ReadOnlyMemory<byte> bytes) : this(bytes, BSATNHelpers.FromBytes<T>(bytes))
                 {
                 }
 
@@ -60,10 +60,10 @@ namespace SpacetimeDB
 
             public Type ClientTableType => typeof(T);
 
-            public static readonly Dictionary<byte[], T> Entries = new(ByteArrayComparer.Instance);
+            public static readonly Dictionary<ReadOnlyMemory<byte>, T> Entries = new(ByteArrayComparer.Instance);
 
             // The function to use for decoding a type value.
-            public IDbValue DecodeValue(byte[] bytes) => new DbValue(bytes);
+            public IDbValue DecodeValue(ReadOnlyMemory<byte> bytes) => new DbValue(bytes);
 
             public IEnumerator<IDbValue> GetEnumerator() => Entries.Select(pair => new DbValue(pair.Key, pair.Value)).GetEnumerator();
 
