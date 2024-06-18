@@ -19,10 +19,10 @@
     <ProjectReference Include="../BSATN.Runtime/BSATN.Runtime.csproj" />
     <!-- ...But we also need BSATN.Codegen to transform `[SpacetimeDB.Type]` usages in source of Runtime itself. -->
     <!-- For that, it has to be included as an explicit private dependency. -->
-    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" PrivateAssets="all" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <!-- Codegen package must be built before this one so that it's included in NuGet Runtime package, but we don't depend on it. -->
     <!-- (*not* with OutputItemType=analyzer because we don't want to use that source generator on source of Runtime itself) -->
-    <ProjectReference Include="../Codegen/Codegen.csproj" PrivateAssets="all" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../Codegen/Codegen.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
