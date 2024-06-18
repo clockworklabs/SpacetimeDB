@@ -119,7 +119,7 @@ namespace SpacetimeDB
         struct PreProcessedMessage
         {
             public ProcessedMessage processed;
-            public Dictionary<System.Type, HashSet<ReadOnlyMemory<byte>>>? subscriptionInserts;
+            public Dictionary<System.Type, HashSet<ClientCache.IDbValue>>? subscriptionInserts;
         }
 
         private readonly BlockingCollection<UnprocessedMessage> _messageQueue =
@@ -157,13 +157,13 @@ namespace SpacetimeDB
                 var message = Message.Parser.ParseFrom(decompressedStream);
 
                 // This is all of the inserts
-                Dictionary<System.Type, HashSet<ReadOnlyMemory<byte>>>? subscriptionInserts = null;
+                Dictionary<System.Type, HashSet<ClientCache.IDbValue>>? subscriptionInserts = null;
 
-                HashSet<ReadOnlyMemory<byte>> GetInsertHashSet(System.Type tableType, int tableSize)
+                HashSet<ClientCache.IDbValue> GetInsertHashSet(System.Type tableType, int tableSize)
                 {
                     if (!subscriptionInserts.TryGetValue(tableType, out var hashSet))
                     {
-                        hashSet = new(capacity: tableSize, comparer: ByteArrayComparer.Instance);
+                        hashSet = new(capacity: tableSize);
                         subscriptionInserts[tableType] = hashSet;
                     }
 
@@ -197,13 +197,14 @@ namespace SpacetimeDB
                                     continue;
                                 }
 
-                                if (!hashSet.Add(rowBytes))
+                                var insert = table.DecodeValue(rowBytes);
+
+                                if (!hashSet.Add(insert))
                                 {
                                     // Ignore duplicate inserts in the same subscription update.
                                     continue;
                                 }
 
-                                var insert = table.DecodeValue(rowBytes);
                                 dbOps.Add(new DbOp { insert = insert });
                             }
                         }
@@ -329,7 +330,7 @@ namespace SpacetimeDB
                         continue;
                     }
 
-                    foreach (var delete in table.Where(kv => !hashSet.Contains(kv.Bytes)))
+                    foreach (var delete in table.GetEntries().Where(kv => !hashSet.Contains(kv)))
                     {
                         // This is a row that we had before, but we do not have it now.
                         // This must have been a delete.
