@@ -254,11 +254,11 @@ public static void Add(string name, int age)
 }
 ```
 
-If a reducer has an argument with a type `DbEventArgs` (`SpacetimeDB.Runtime.DbEventArgs`), it will be provided with event details such as the sender identity (`SpacetimeDB.Runtime.Identity`), sender address (`SpacetimeDB.Runtime.Address?`) and the time (`DateTimeOffset`) of the invocation:
+If a reducer has an argument with a type `ReducerContext` (`SpacetimeDB.Runtime.ReducerContext`), it will be provided with event details such as the sender identity (`SpacetimeDB.Runtime.Identity`), sender address (`SpacetimeDB.Runtime.Address?`) and the time (`DateTimeOffset`) of the invocation:
 
 ```csharp
 [SpacetimeDB.Reducer]
-public static void PrintInfo(DbEventArgs e)
+public static void PrintInfo(ReducerContext e)
 {
     Log($"Sender identity: {e.Sender}");
     Log($"Sender address: {e.Address}");
@@ -268,7 +268,7 @@ public static void PrintInfo(DbEventArgs e)
 
 `[SpacetimeDB.Reducer]` also generates a function to schedule the given reducer in the future.
 
-Since it's not possible to generate extension methods on existing methods, the codegen will instead add a `Schedule`-prefixed method colocated in the same namespace as the original method instead. The generated method will accept `DateTimeOffset` argument for the time when the reducer should be invoked, followed by all the arguments of the reducer itself, except those that have type `DbEventArgs`.
+Since it's not possible to generate extension methods on existing methods, the codegen will instead add a `Schedule`-prefixed method colocated in the same namespace as the original method instead. The generated method will accept `DateTimeOffset` argument for the time when the reducer should be invoked, followed by all the arguments of the reducer itself, except those that have type `ReducerContext`.
 
 ```csharp
 // Example reducer:
@@ -280,7 +280,7 @@ public static void ScheduleAdd(DateTimeOffset time, string name, int age) { ... 
 
 // Usage from another reducer:
 [SpacetimeDB.Reducer]
-public static void AddIn5Minutes(DbEventArgs e, string name, int age)
+public static void AddIn5Minutes(ReducerContext e, string name, int age)
 {
     // Note that we're using `e.Time` instead of `DateTimeOffset.Now` which is not allowed in modules.
     var scheduleToken = ScheduleAdd(e.Time.AddMinutes(5), name, age);
