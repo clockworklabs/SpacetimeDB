@@ -1,0 +1,19 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Authors>RReverser</Authors>
+    <Company>Clockwork Labs</Company>
+    <Product>SpacetimeDB</Product>
+    <Copyright>2024</Copyright>
+    <PackageProjectUrl>https://spacetimedb.com/</PackageProjectUrl>
+    <PackageIcon>logo.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDB</RepositoryUrl>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)/logo.png" Pack="true" PackagePath="" />
+    <None Include="$(MSBuildThisFileDirectory)/LICENSE" Pack="true" PackagePath="" />
+  </ItemGroup>
+</Project>

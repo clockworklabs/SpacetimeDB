@@ -5,24 +5,13 @@
     <LangVersion>9</LangVersion>
     <Nullable>enable</Nullable>
     <AssemblyName>SpacetimeDB.BSATN.Runtime</AssemblyName>
-    <AssemblyVersion>0.10.0</AssemblyVersion>
+    <Version>0.10.0</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <PropertyGroup>
-    <Version>$(AssemblyVersion)</Version>
-    <Title>SpacetimeDB Module Runtime</Title>
-    <Authors>RReverser</Authors>
-    <Company>Clockwork Labs</Company>
-    <Product>SpacetimeDB</Product>
-    <Description>The SpacetimeDB Runtime implements the database runtime bindings for writing SpacetimeDB modules in C#.</Description>
-    <Copyright>2023</Copyright>
-    <PackageProjectUrl>https://spacetimedb.com/</PackageProjectUrl>
-    <PackageIcon>logo.png</PackageIcon>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDBLibCSharp</RepositoryUrl>
-    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <Title>SpacetimeDB BSATN Runtime</Title>
+    <Description>The SpacetimeDB BSATN Runtime implements APIs for BSATN serialization/deserialization in C#.</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -30,9 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="../logo.png" Pack="true" PackagePath="" />
     <None Include="../Runtime/README.md" Pack="true" PackagePath="" />
-    <None Include="../LICENSE" Pack="true" PackagePath="" />
     <!-- We want all users who depends on BSATN.Runtime to automatically get the Roslyn codegen component as well. -->
     <None Include="../BSATN.Codegen/bin/$(Configuration)/netstandard2.0/SpacetimeDB.BSATN.Codegen.dll" Pack="true" PackagePath="analyzers/dotnet/cs" />
   </ItemGroup>

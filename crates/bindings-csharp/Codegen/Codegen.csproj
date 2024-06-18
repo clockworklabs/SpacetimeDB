@@ -7,26 +7,15 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <AssemblyName>SpacetimeDB.Codegen</AssemblyName>
-    <AssemblyVersion>0.10.0</AssemblyVersion>
+    <Version>0.10.0</Version>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <!-- We're going to include this analyzer in the Runtime package instead of publishing separately. -->
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <PropertyGroup>
-    <Version>$(AssemblyVersion)</Version>
     <Title>SpacetimeDB Module Codegen</Title>
-    <Authors>RReverser</Authors>
-    <Company>Clockwork Labs</Company>
-    <Product>SpacetimeDB</Product>
     <Description>The SpacetimeDB Codegen implements the Roslyn incremental generators for writing SpacetimeDB modules in C#.</Description>
-    <Copyright>2023</Copyright>
-    <PackageProjectUrl>https://spacetimedb.com/</PackageProjectUrl>
-    <PackageIcon>logo.png</PackageIcon>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDB</RepositoryUrl>
-    <PackageLicenseFile>LICENSE</PackageLicenseFile>
   </PropertyGroup>
 
   <ItemGroup>

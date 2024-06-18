@@ -5,24 +5,13 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <AssemblyName>SpacetimeDB.Runtime</AssemblyName>
-    <AssemblyVersion>0.10.0</AssemblyVersion>
+    <Version>0.10.0</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <PropertyGroup>
-    <Version>$(AssemblyVersion)</Version>
     <Title>SpacetimeDB Module Runtime</Title>
-    <Authors>RReverser</Authors>
-    <Company>Clockwork Labs</Company>
-    <Product>SpacetimeDB</Product>
     <Description>The SpacetimeDB Runtime implements the database runtime bindings for writing SpacetimeDB modules in C#.</Description>
-    <Copyright>2023</Copyright>
-    <PackageProjectUrl>https://spacetimedb.com/</PackageProjectUrl>
-    <PackageIcon>logo.png</PackageIcon>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDB</RepositoryUrl>
-    <PackageLicenseFile>LICENSE</PackageLicenseFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -41,9 +30,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="../logo.png" Pack="true" PackagePath="" />
     <None Include="README.md" Pack="true" PackagePath="" />
-    <None Include="../LICENSE" Pack="true" PackagePath="" />
     <None Include="build/" Pack="true" PackagePath="build" />
     <None Include="bindings.c" Pack="true" PackagePath="" />
     <None Include="driver.h" Pack="true" PackagePath="" />
