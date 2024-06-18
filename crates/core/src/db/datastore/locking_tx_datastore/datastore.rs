@@ -391,7 +391,7 @@ impl MutTxDatastore for Locking {
     }
 
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTx, index_id: IndexId) -> Result<()> {
-        tx.drop_index(index_id, self.database_address)
+        tx.drop_index(index_id, true, self.database_address)
     }
 
     fn index_id_from_name_mut_tx(&self, tx: &Self::MutTx, index_name: &str) -> Result<Option<IndexId>> {
@@ -1257,8 +1257,8 @@ mod tests {
                 IdxSchema { id: seq_start + 1, table, col: 1, name: "name_idx", unique: true },
             ]),
             map_array([
-                ConstraintRow { constraint_id: seq_start,     table_id: table, columns: col(0), constraints: Constraints::unique(), constraint_name: "ct_Foo_id_idx_unique" },
-                ConstraintRow { constraint_id: seq_start + 1, table_id: table, columns: col(1), constraints: Constraints::unique(), constraint_name: "ct_Foo_name_idx_unique" }
+                ConstraintRow { constraint_id: seq_start,     table_id: table, columns: col(0), constraints: Constraints::unique(), constraint_name: "ct_Foo_id_unique" },
+                ConstraintRow { constraint_id: seq_start + 1, table_id: table, columns: col(1), constraints: Constraints::unique(), constraint_name: "ct_Foo_name_unique" }
             ]),
              map_array([
                 SequenceRow { id: seq_start, table, col_pos: 0, name: "seq_Foo_id", start: 1 }
@@ -1750,16 +1750,17 @@ mod tests {
     fn test_create_index_pre_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
+
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
+
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let index_def = IndexDef::btree("age_idx".into(), ColId(2), true);
         datastore.create_index_mut_tx(&mut tx, table_id, index_def)?;
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
-
         let seq_start = FIRST_NON_SYSTEM_ID;
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
@@ -1785,7 +1786,7 @@ mod tests {
                 cols: _,
                 value: _,
             }))) => (),
-            _ => panic!("Expected an unique constraint violation error."),
+            e => panic!("Expected an unique constraint violation error but got {e:?}."),
         }
         #[rustfmt::skip]
         assert_eq!(all_rows(&datastore, &tx, table_id), vec![u32_str_u32(1, "Foo", 18)]);
