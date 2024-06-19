@@ -605,6 +605,13 @@ impl TableSchema {
         self.columns.iter().find(|x| &*x.col_name == col_name)
     }
 
+    /// Check if the `col_name` exist on this [TableSchema]
+    ///
+    /// Warning: It ignores the `table_name`
+    pub fn get_column_id_by_name(&self, col_name: &str) -> Option<usize> {
+        self.columns.iter().position(|x| &*x.col_name == col_name)
+    }
+
     /// Project the fields from the supplied `indexes`.
     pub fn project(&self, indexes: impl Iterator<Item = ColId>) -> Result<Vec<&ColumnSchema>, InvalidFieldError> {
         indexes
