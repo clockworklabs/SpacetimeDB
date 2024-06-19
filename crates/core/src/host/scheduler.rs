@@ -61,12 +61,6 @@ pub struct SchedulerStarter {
 }
 
 impl Scheduler {
-    //  pub fn dummy() -> Self {
-    //      let (tx, _) = mpsc::unbounded_channel();
-    //      let db = TestDB::durable().unwrap();
-    //      Self { tx, db: Arc::new(*db) }
-    //  }
-
     pub fn open(db: Arc<RelationalDB>) -> (Self, SchedulerStarter) {
         let (tx, rx) = mpsc::unbounded_channel();
         (Scheduler { tx, db: db.clone() }, SchedulerStarter { rx, db })
@@ -86,6 +80,7 @@ struct StModuleScheduleRow {
     schedule_id: u64,
     schedule_at: ScheduleAt,
 }
+
 const SCHEDULE_AT_FIELD: &str = "schedule_at";
 const SCHEDULE_ID_FIELD: &str = "schedule_id";
 
@@ -234,8 +229,9 @@ impl Scheduler {
     //     let _ = self.tx.send(MsgOrExit::Msg(SchedulerMessage::Cancel { id }));
     // }
 
-    // pub fn close(&self) {
-    //     let _ = self.tx.send(MsgOrExit::Exit);
+    pub fn close(&self) {
+        let _ = self.tx.send(MsgOrExit::Exit);
+    }
 }
 
 struct SchedulerActor {
@@ -322,24 +318,34 @@ impl SchedulerActor {
         let schedule_id = AlgebraicValue::from(id.schedule_id);
         let table_id = id.table_id;
 
-        // Find reducer name from `ST_SCHEDULED` table
-        let reducer_entry = db
-            .iter_by_col_eq_mut(&ctx, &tx, ST_SCHEDULED_ID, 0, &AlgebraicValue::from(table_id))?
-            .next()
-            .ok_or(anyhow!("scheduled table entry not exist in st_scheduled"))?;
-        let reducer_name = reducer_entry.read_col::<Box<str>>(1)?;
+        let schedule_id_pos = db
+            .schema_for_table_mut(&tx, table_id)?
+            .get_column_id_by_name(SCHEDULE_ID_FIELD)
+            .ok_or(anyhow!("SCHEDULE_ID_FIELD not found"))?;
 
         // Check if expired schedule exists in the relational_db
         let schedule_row = db
-            .iter_by_col_eq_mut(&ctx, &tx, table_id, 3, &schedule_id)?
+            .iter_by_col_eq_mut(&ctx, &tx, table_id, schedule_id_pos, &schedule_id)?
             .next()
             .ok_or(anyhow!("scheduler not found ins rdb"))?;
 
+        // Find reducer name from `ST_SCHEDULED` table
+        let st_scheduled_row = db
+            .iter_by_col_eq_mut(
+                &ctx,
+                &tx,
+                ST_SCHEDULED_ID,
+                StScheduledRow::<&str>::table_id_col_pos(),
+                &AlgebraicValue::from(table_id),
+            )?
+            .next()
+            .ok_or(anyhow!("scheduled table entry not exist in st_scheduled"))?;
+
+        let reducer_name = st_scheduled_row.read_col::<Box<str>>(StScheduledRow::<&str>::reducer_name_col_pos())?;
         let schedule = get_schedule_mut(tx, db, table_id, &schedule_row)?;
 
         let reducer_args_av = &schedule_row.to_product_value();
         let reducer_arg_bsatn = bsatn::to_vec(&reducer_args_av)?;
-        println!("reducer arg - {:?} ==== {:?}", reducer_args_av, reducer_arg_bsatn);
 
         let mut is_repeated = false;
         if let ScheduleAt::Interval(dur) = schedule.schedule_at {
@@ -370,8 +376,13 @@ fn delete_schedule_from_table(id: ScheduledReducerId, db: &RelationalDB) -> Resu
     let schedule_id = AlgebraicValue::from(id.schedule_id);
     let table_id = id.table_id;
 
+    let schedule_id_pos = db
+        .schema_for_table_mut(&tx, table_id)?
+        .get_column_id_by_name(SCHEDULE_ID_FIELD)
+        .ok_or(anyhow!("SCHEDULE_ID_FIELD not found"))?;
+
     let schedule_row = db
-        .iter_by_col_eq_mut(&ctx, &tx, table_id, 3, &schedule_id)?
+        .iter_by_col_eq_mut(&ctx, &tx, table_id, schedule_id_pos, &schedule_id)?
         .next()
         .ok_or(anyhow!("scheduler not found in rdb"))?;
 
@@ -423,3 +434,4 @@ fn get_schedule_mut(
 
     StModuleScheduleRow::from_row_ref(*row_ref, schedule_id_pos.into(), schedule_at_pos.into())
 }
+

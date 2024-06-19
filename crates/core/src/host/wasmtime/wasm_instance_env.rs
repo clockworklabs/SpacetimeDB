@@ -5,7 +5,6 @@ use std::time::Instant;
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::execution_context::ExecutionContext;
-use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::wasm_common::instrumentation;
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
 use crate::host::wasm_common::{

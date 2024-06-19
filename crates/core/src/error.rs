@@ -11,6 +11,7 @@ use thiserror::Error;
 
 use crate::client::ClientActorId;
 use crate::db::datastore::system_tables::SystemTable;
+use crate::host::scheduler::ScheduleError;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::*;
@@ -322,6 +323,8 @@ pub enum NodesError {
     Internal(#[source] Box<DBError>),
     #[error("invalid index type: {0}")]
     BadIndexType(u8),
+    #[error("Failed to scheduled timer: {0}")]
+    ScheduleError(#[source] ScheduleError),
 }
 
 impl From<DBError> for NodesError {

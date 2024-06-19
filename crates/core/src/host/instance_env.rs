@@ -1,13 +1,12 @@
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
 use spacetimedb_lib::bsatn::ser::BsatnError;
-use spacetimedb_table::layout::row_size_for_type;
 use spacetimedb_table::table::{RowRef, UniqueConstraintViolation};
 use spacetimedb_vm::relation::RelValue;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
-use super::scheduler::{ScheduleError, ScheduledReducerId, Scheduler};
+use super::scheduler::Scheduler;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -17,7 +16,6 @@ use crate::vm::{build_query, TxMode};
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::ProductValue;
-use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::{ColId, ColListBuilder, TableId};
 use spacetimedb_sats::db::def::{IndexDef, IndexType};
 use spacetimedb_sats::relation::{FieldExpr, FieldName};
@@ -107,11 +105,6 @@ impl InstanceEnv {
         }
     }
 
-    #[tracing::instrument(skip_all)]
-    pub fn cancel_reducer(&self, id: ScheduledReducerId) {
-        // self.scheduler.cancel(id)
-    }
-
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         self.tx.get()
     }
@@ -149,7 +142,9 @@ impl InstanceEnv {
             })?;
 
         if stdb.is_scheuled_table(ctx, tx, table_id) {
-            self.scheduler.schedule(table_id, ret.clone());
+            self.scheduler
+                .schedule(table_id, ret.clone())
+                .map_err(|e| NodesError::ScheduleError(e))?;
         }
 
         Ok(ret)

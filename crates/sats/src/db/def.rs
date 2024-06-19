@@ -608,8 +608,11 @@ impl TableSchema {
     /// Check if the `col_name` exist on this [TableSchema]
     ///
     /// Warning: It ignores the `table_name`
-    pub fn get_column_id_by_name(&self, col_name: &str) -> Option<usize> {
-        self.columns.iter().position(|x| &*x.col_name == col_name)
+    pub fn get_column_id_by_name(&self, col_name: &str) -> Option<ColId> {
+        self.columns
+            .iter()
+            .position(|x| &*x.col_name == col_name)
+            .map(|x| x.into())
     }
 
     /// Project the fields from the supplied `indexes`.

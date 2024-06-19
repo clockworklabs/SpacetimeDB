@@ -743,6 +743,16 @@ pub struct StScheduledRow<ReducerName: AsRef<str>> {
     pub(crate) reducer_name: ReducerName,
 }
 
+impl<T: AsRef<str>> StScheduledRow<T> {
+    pub fn table_id_col_pos() -> ColId {
+        StScheduledFields::TableId.col_id()
+    }
+
+    pub fn reducer_name_col_pos() -> ColId {
+        StScheduledFields::ReducerName.col_id()
+    }
+}
+
 impl TryFrom<RowRef<'_>> for StScheduledRow<Box<str>> {
     type Error = DBError;
     fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
