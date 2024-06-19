@@ -235,9 +235,11 @@ public class Type : IIncrementalGenerator
                                 {write}
                             }}
 
-                            public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) => registrar.RegisterType<{type.ShortName}>(typeRef => new SpacetimeDB.BSATN.AlgebraicType.{typeKind}(new SpacetimeDB.BSATN.AggregateElement[] {{
+                            public static SpacetimeDB.BSATN.AlgebraicType.Ref GetAlgebraicTypeRef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => registrar.RegisterType<{type.ShortName}>(typeRef => new SpacetimeDB.BSATN.AlgebraicType.{typeKind}(new SpacetimeDB.BSATN.AggregateElement[] {{
                                 {string.Join(",\n", fieldNames.Select(name => $"new(nameof({name}), {name}.GetAlgebraicType(registrar))"))}
                             }}));
+
+                            public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) => GetAlgebraicTypeRef(registrar);
                         }}
                     ";
 

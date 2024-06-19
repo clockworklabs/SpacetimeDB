@@ -2,16 +2,19 @@ namespace SpacetimeDB;
 
 using System;
 using System.Collections;
+using System.Collections.Frozen;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using SpacetimeDB.BSATN;
+using SpacetimeDB.Module;
 using static System.Text.Encoding;
 
 public static partial class Runtime
 {
-    [SpacetimeDB.Type]
+    [Type]
     public enum IndexType : byte
     {
         BTree,
@@ -79,7 +82,7 @@ public static partial class Runtime
         }
     }
 
-    public abstract class RawTableIterBase : IEnumerable<byte[]>
+    private abstract class RawTableIterBase : IEnumerable<byte[]>
     {
         protected abstract void IterStart(out RawBindings.RowIter handle);
 
@@ -109,13 +112,13 @@ public static partial class Runtime
         }
     }
 
-    public class RawTableIter(RawBindings.TableId tableId) : RawTableIterBase
+    private class RawTableIter(RawBindings.TableId tableId) : RawTableIterBase
     {
         protected override void IterStart(out RawBindings.RowIter handle) =>
             RawBindings._iter_start(tableId, out handle);
     }
 
-    public class RawTableIterFiltered(RawBindings.TableId tableId, byte[] filterBytes)
+    private class RawTableIterFiltered(RawBindings.TableId tableId, byte[] filterBytes)
         : RawTableIterBase
     {
         protected override void IterStart(out RawBindings.RowIter handle) =>
@@ -127,7 +130,7 @@ public static partial class Runtime
             );
     }
 
-    public class RawTableIterByColEq(
+    private class RawTableIterByColEq(
         RawBindings.TableId tableId,
         RawBindings.ColId colId,
         byte[] value
@@ -135,6 +138,140 @@ public static partial class Runtime
     {
         protected override void IterStart(out RawBindings.RowIter handle) =>
             RawBindings._iter_by_col_eq(tableId, colId, value, (uint)value.Length, out handle);
+    }
+
+    public interface IQueryField
+    {
+        public RawBindings.ColId ColId { get; }
+        public string Name { get; }
+        public ColumnAttrs ColumnAttrs { get; }
+        AlgebraicType GetAlgebraicType(ITypeRegistrar registrar);
+        void Write(BinaryWriter writer, object? value);
+    }
+
+    public interface IDatabaseTable<T> : IStructuralReadWrite
+        where T : IDatabaseTable<T>, new()
+    {
+        protected static abstract AlgebraicType.Ref GetAlgebraicTypeRef(ITypeRegistrar registrar);
+        protected static abstract bool IsPublic { get; }
+        protected internal static abstract IQueryField[] QueryFields { get; }
+
+        internal static TableDesc MakeTableDesc(ITypeRegistrar registrar) =>
+            new(
+                new(
+                    typeof(T).Name,
+                    T.QueryFields.Select(f => new ColumnDefWithAttrs(
+                        new(f.Name, f.GetAlgebraicType(registrar)),
+                        f.ColumnAttrs
+                    ))
+                        .ToArray(),
+                    T.IsPublic
+                ),
+                T.GetAlgebraicTypeRef(registrar)
+            );
+    }
+
+    public abstract class DatabaseTable<T>
+        where T : DatabaseTable<T>, IDatabaseTable<T>, new()
+    {
+        // Note: this needs to be Lazy because we shouldn't accidentally invoke get_table_id during startup, when module isn't ready.
+        private static readonly Lazy<RawBindings.TableId> tableIdLazy =
+            new(() =>
+            {
+                var name_bytes = UTF8.GetBytes(typeof(T).Name);
+                RawBindings._get_table_id(name_bytes, (uint)name_bytes.Length, out var out_);
+                return out_;
+            });
+
+        private static RawBindings.TableId TableId => tableIdLazy.Value;
+
+        public static IEnumerable<T> Iter() => new RawTableIter(TableId).Parse<T>();
+
+        public static IEnumerable<T> Query(
+            System.Linq.Expressions.Expression<Func<T, bool>> filter
+        ) =>
+            new RawTableIterFiltered(
+                TableId,
+                Filter.Filter.Compile(T.QueryFields, filter)
+            ).Parse<T>();
+
+        private static readonly bool HasAutoIncFields = T.QueryFields.Any(f =>
+            f.ColumnAttrs.HasFlag(ColumnAttrs.AutoInc)
+        );
+
+        public void Insert()
+        {
+            var row = (T)this;
+            var stream = new MemoryStream();
+            var writer = new BinaryWriter(stream);
+            row.WriteFields(writer);
+            // Note: this gets an oversized buffer, we must send only the actual written length.
+            var bytes = stream.GetBuffer();
+            RawBindings._insert(TableId, bytes, (uint)stream.Position);
+            // If we had autoinc fields, we need to parse the row back to update them.
+            if (HasAutoIncFields)
+            {
+                // Reuse the same stream.
+                stream.Seek(0, SeekOrigin.Begin);
+                var reader = new BinaryReader(stream);
+                row.ReadFields(reader);
+            }
+        }
+
+        public record DatabaseColumn<Col, TColRW>(
+            RawBindings.ColId ColId,
+            string Name,
+            ColumnAttrs ColumnAttrs
+        ) : IQueryField
+            where TColRW : IReadWrite<Col>, new()
+        {
+            private static readonly TColRW ColRW = new();
+
+            public readonly ref struct WithValueRef(DatabaseColumn<Col, TColRW> column, Col value)
+            {
+                private readonly RawBindings.ColId ColId => column.ColId;
+                private readonly byte[] Value = IStructuralReadWrite.ToBytes(ColRW, value);
+
+                public IEnumerable<T> FilterBy() =>
+                    new RawTableIterByColEq(TableId, ColId, Value).Parse<T>();
+
+                public T? FindBy() => FilterBy().Cast<T?>().SingleOrDefault();
+
+                public bool DeleteBy()
+                {
+                    RawBindings._delete_by_col_eq(
+                        TableId,
+                        ColId,
+                        Value,
+                        (uint)Value.Length,
+                        out var out_
+                    );
+                    return out_ > 0;
+                }
+
+                public bool UpdateBy(T row)
+                {
+                    // Just like in Rust bindings, updating is just deleting and inserting for now.
+                    if (DeleteBy())
+                    {
+                        row.Insert();
+                        return true;
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            public WithValueRef WithValue(Col value) => new(this, value);
+
+            public void Write(BinaryWriter writer, object? value) =>
+                ColRW.Write(writer, (Col)value!);
+
+            public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
+                ColRW.GetAlgebraicType(registrar);
+        }
     }
 
     public enum LogLevel : byte
@@ -209,7 +346,8 @@ public static partial class Runtime
     public readonly struct Address(byte[] bytes) : IEquatable<Address>
     {
         private readonly byte[] bytes = bytes;
-        public static readonly Address Zero = new(new byte[16]);
+
+        public static Address? From(byte[] bytes) => bytes.All(b => b == 0) ? null : new(bytes);
 
         public bool Equals(Address other) => bytes.SequenceEqual(other.bytes);
 
@@ -242,20 +380,13 @@ public static partial class Runtime
         }
     }
 
-    public class ReducerContext
+    public class ReducerContext(byte[] senderIdentity, byte[] senderAddress, ulong timestamp_us)
     {
-        public readonly Identity Sender;
-        public readonly DateTimeOffset Time;
-        public readonly Address? Address;
-
-        public ReducerContext(byte[] senderIdentity, byte[] senderAddress, ulong timestamp_us)
-        {
-            Sender = new Identity(senderIdentity);
-            var addr = new Address(senderAddress);
-            Address = addr == Runtime.Address.Zero ? null : addr;
-            // timestamp is in microseconds; the easiest way to convert those w/o losing precision is to get Unix origin and add ticks which are 0.1ms each.
-            Time = DateTimeOffset.UnixEpoch.AddTicks(10 * (long)timestamp_us);
-        }
+        public readonly Identity Sender = new(senderIdentity);
+        public readonly DateTimeOffset Time = DateTimeOffset.UnixEpoch.AddTicks(
+            10 * (long)timestamp_us
+        );
+        public readonly Address? Address = Runtime.Address.From(senderAddress);
     }
 
     public class ScheduleToken
@@ -277,50 +408,5 @@ public static partial class Runtime
         }
 
         public void Cancel() => RawBindings._cancel_reducer(handle);
-    }
-
-    public static RawBindings.TableId GetTableId(string name)
-    {
-        var name_bytes = UTF8.GetBytes(name);
-        RawBindings._get_table_id(name_bytes, (uint)name_bytes.Length, out var out_);
-        return out_;
-    }
-
-    public static byte[] Insert<T>(RawBindings.TableId tableId, T row)
-        where T : IStructuralReadWrite
-    {
-        var bytes = IStructuralReadWrite.ToBytes(row);
-        RawBindings._insert(tableId, bytes, (uint)bytes.Length);
-        return bytes;
-    }
-
-    public static uint DeleteByColEq(
-        RawBindings.TableId tableId,
-        RawBindings.ColId colId,
-        byte[] value
-    )
-    {
-        RawBindings._delete_by_col_eq(tableId, colId, value, (uint)value.Length, out var out_);
-        return out_;
-    }
-
-    public static bool UpdateByColEq<T>(
-        RawBindings.TableId tableId,
-        RawBindings.ColId colId,
-        byte[] value,
-        T row
-    )
-        where T : IStructuralReadWrite
-    {
-        // Just like in Rust bindings, updating is just deleting and inserting for now.
-        if (DeleteByColEq(tableId, colId, value) > 0)
-        {
-            Insert(tableId, row);
-            return true;
-        }
-        else
-        {
-            return false;
-        }
     }
 }

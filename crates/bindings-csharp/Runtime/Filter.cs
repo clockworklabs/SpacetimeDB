@@ -79,17 +79,10 @@ partial struct Unary(OpUnary op, Expr arg)
 [SpacetimeDB.Type]
 partial record Expr : SpacetimeDB.TaggedEnum<(Cmp Cmp, Logic Logic, Unary Unary)>;
 
-public class Filter
+public class Filter(Runtime.IQueryField[] fieldTypeInfos)
 {
-    private readonly KeyValuePair<string, Action<BinaryWriter, object?>>[] fieldTypeInfos;
-
-    private Filter(KeyValuePair<string, Action<BinaryWriter, object?>>[] fieldTypeInfos)
-    {
-        this.fieldTypeInfos = fieldTypeInfos;
-    }
-
     public static byte[] Compile<T>(
-        KeyValuePair<string, Action<BinaryWriter, object?>>[] fieldTypeInfos,
+        Runtime.IQueryField[] fieldTypeInfos,
         Expression<Func<T, bool>> rowFilter
     )
     {
@@ -110,7 +103,7 @@ public class Filter
                 Member.Name: var memberName,
                 Type: var type
             }
-                => ((byte)Array.FindIndex(fieldTypeInfos, pair => pair.Key == memberName), type),
+                => ((byte)Array.FindIndex(fieldTypeInfos, pair => pair.Name == memberName), type),
             _
                 => throw new NotSupportedException(
                     "expected table field access in the left-hand side of a comparison"
@@ -130,8 +123,8 @@ public class Filter
 
         var rhs = ExprAsRhs(expr.Right);
         rhs = Convert.ChangeType(rhs, type);
-        var rhsWrite = fieldTypeInfos[lhsFieldIndex].Value;
-        var erasedRhs = new ErasedValue((writer) => rhsWrite(writer, rhs));
+        var rhsField = fieldTypeInfos[lhsFieldIndex];
+        var erasedRhs = new ErasedValue((writer) => rhsField.Write(writer, rhs));
 
         var args = new CmpArgs(lhsFieldIndex, new Rhs.Value(erasedRhs));
 

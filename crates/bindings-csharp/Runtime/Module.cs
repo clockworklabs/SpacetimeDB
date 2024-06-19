@@ -199,15 +199,18 @@ public static class FFI
     private static readonly List<IReducer> reducers = [];
     public static readonly TypeRegistrar TypeRegistrar = new();
 
-    public static void RegisterReducer(IReducer reducer)
+    public static void RegisterReducer<T>()
+        where T : IReducer, new()
     {
+        var reducer = new T();
         reducers.Add(reducer);
         TypeRegistrar.Module.Reducers.Add(reducer.MakeReducerDef(TypeRegistrar));
     }
 
-    public static void RegisterTable(TableDesc tableDesc)
+    public static void RegisterTable<T>()
+        where T : Runtime.IDatabaseTable<T>, new()
     {
-        TypeRegistrar.Module.Tables.Add(tableDesc);
+        TypeRegistrar.Module.Tables.Add(Runtime.IDatabaseTable<T>.MakeTableDesc(TypeRegistrar));
     }
 
     public static RawBindings.Buffer __describe_module__()
