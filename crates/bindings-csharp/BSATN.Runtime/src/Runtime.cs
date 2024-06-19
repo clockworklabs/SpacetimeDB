@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace SpacetimeDB.BSATN
@@ -75,14 +73,11 @@ namespace SpacetimeDB.BSATN
             writer.Write(Convert.ToByte(Validate(value)));
 
         public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-            registrar.RegisterType<T>(
-                (_) =>
-                    new AlgebraicType.Sum(
-                        Enum.GetNames(typeof(T))
-                            .Select(name => new AggregateElement(name, AlgebraicType.Unit))
-                            .ToArray()
-                    )
-            );
+            registrar.RegisterType<T>(_ => new AlgebraicType.Sum(
+                Enum.GetNames(typeof(T))
+                    .Select(name => new AggregateElement(name, AlgebraicType.Unit))
+                    .ToArray()
+            ));
     }
 
     public readonly struct RefOption<Inner, InnerRW> : IReadWrite<Inner?>

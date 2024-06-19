@@ -1,9 +1,5 @@
 namespace SpacetimeDB.Module;
 
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using SpacetimeDB.BSATN;
 
 [SpacetimeDB.Type]
@@ -146,7 +142,7 @@ public static class ReducerKind
 public interface IReducer
 {
     SpacetimeDB.Module.ReducerDef MakeReducerDef(ITypeRegistrar registrar);
-    void Invoke(System.IO.BinaryReader reader, Runtime.ReducerContext args);
+    void Invoke(System.IO.BinaryReader reader, Runtime.ReducerContext ctx);
 }
 
 public struct TypeRegistrar() : ITypeRegistrar
@@ -199,8 +195,10 @@ public static class FFI
     private static readonly List<IReducer> reducers = [];
     public static readonly TypeRegistrar TypeRegistrar = new();
 
-    public static void RegisterReducer(IReducer reducer)
+    public static void RegisterReducer<R>()
+        where R : IReducer, new()
     {
+        var reducer = new R();
         reducers.Add(reducer);
         TypeRegistrar.Module.Reducers.Add(reducer.MakeReducerDef(TypeRegistrar));
     }

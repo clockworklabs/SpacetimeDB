@@ -1,6 +1,5 @@
 ﻿namespace SpacetimeDB;
 
-using System;
 using SpacetimeDB.Module;
 
 [AttributeUsage(AttributeTargets.Method, Inherited = false, AllowMultiple = false)]
