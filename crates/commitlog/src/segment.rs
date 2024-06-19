@@ -231,7 +231,7 @@ impl<R: io::Read> Reader<R> {
     }
 
     #[cfg(test)]
-    pub fn metadata(self) -> Result<Metadata, error::SegmentMetadata> {
+    pub(crate) fn metadata(self) -> Result<Metadata, error::SegmentMetadata> {
         Metadata::with_header(self.min_tx_offset, self.header, io::BufReader::new(self.inner))
     }
 }
