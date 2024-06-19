@@ -15,7 +15,7 @@ use crate::{db, host};
 use anyhow::{anyhow, bail, ensure, Context};
 use async_trait::async_trait;
 use durability::EmptyHistory;
-use log::{debug, info, trace, warn};
+use log::{info, trace, warn};
 use parking_lot::Mutex;
 use serde::Serialize;
 use spacetimedb_data_structures::map::IntMap;
@@ -580,7 +580,6 @@ async fn make_module_host(
 }
 
 async fn load_program(storage: &ProgramStorage, hash: Hash) -> anyhow::Result<Box<[u8]>> {
-    debug!("lookup program {}", hash);
     storage
         .lookup(hash)
         .await?
@@ -596,6 +595,7 @@ async fn launch_module(
     relational_db: Arc<RelationalDB>,
     energy_monitor: Arc<dyn EnergyMonitor>,
 ) -> anyhow::Result<(Arc<DatabaseInstanceContext>, ModuleHost, Scheduler, SchedulerStarter)> {
+    let address = database.address;
     let program_hash = database.initial_program;
     let host_type = database.host_type;
 
@@ -614,7 +614,7 @@ async fn launch_module(
     )
     .await?;
 
-    debug!("launch done");
+    trace!("launched database {} with program {}", address, program_hash);
 
     Ok((dbic, module_host, scheduler, scheduler_starter))
 }
@@ -827,7 +827,7 @@ impl Host {
             (program_hash, program_bytes),
         )
         .await?;
-        debug!("update result: {update_result:?}");
+        trace!("update result: {update_result:?}");
         if update_result.is_ok() {
             scheduler_starter.start(&module)?;
             let old_module = self.module.send_replace(module);

@@ -663,20 +663,16 @@ impl ModuleHost {
                 .reducer_wait_time
                 .with_label_values(&self.info.address, reducer)
                 .start_timer();
-            log::debug!("get instance");
             self.inner.get_instance(self.info.address).await?
         };
 
-        let result = tokio::task::spawn_blocking(move || {
-            log::debug!("call");
-            f(&mut *inst)
-        })
-        .await
-        .unwrap_or_else(|e| {
-            log::warn!("reducer `{reducer}` panicked");
-            (self.on_panic)();
-            std::panic::resume_unwind(e.into_panic())
-        });
+        let result = tokio::task::spawn_blocking(move || f(&mut *inst))
+            .await
+            .unwrap_or_else(|e| {
+                log::warn!("reducer `{reducer}` panicked");
+                (self.on_panic)();
+                std::panic::resume_unwind(e.into_panic())
+            });
         Ok(result)
     }
 
