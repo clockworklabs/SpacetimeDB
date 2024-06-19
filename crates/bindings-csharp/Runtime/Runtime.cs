@@ -1,10 +1,6 @@
 namespace SpacetimeDB;
 
-using System;
 using System.Collections;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Runtime.CompilerServices;
 using SpacetimeDB.BSATN;
 using static System.Text.Encoding;
@@ -262,15 +258,16 @@ public static partial class Runtime
     {
         private readonly RawBindings.ScheduleToken handle;
 
-        public ScheduleToken(string name, byte[] args, DateTimeOffset time)
+        public ScheduleToken(string name, MemoryStream args, DateTimeOffset time)
         {
             var name_bytes = UTF8.GetBytes(name);
+            var args_bytes = args.ToArray();
 
             RawBindings._schedule_reducer(
                 name_bytes,
                 (uint)name_bytes.Length,
-                args,
-                (uint)args.Length,
+                args_bytes,
+                (uint)args_bytes.Length,
                 (ulong)((time - DateTimeOffset.UnixEpoch).Ticks / 10),
                 out handle
             );

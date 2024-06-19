@@ -1,8 +1,5 @@
 namespace SpacetimeDB.Filter;
 
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Linq.Expressions;
 using SpacetimeDB.BSATN;
 
@@ -131,7 +128,7 @@ public class Filter
         var rhs = ExprAsRhs(expr.Right);
         rhs = Convert.ChangeType(rhs, type);
         var rhsWrite = fieldTypeInfos[lhsFieldIndex].Value;
-        var erasedRhs = new ErasedValue((writer) => rhsWrite(writer, rhs));
+        var erasedRhs = new ErasedValue(writer => rhsWrite(writer, rhs));
 
         var args = new CmpArgs(lhsFieldIndex, new Rhs.Value(erasedRhs));
 

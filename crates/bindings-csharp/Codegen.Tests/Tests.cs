@@ -1,12 +1,9 @@
 namespace Codegen.Tests;
 
 using System.Collections.Immutable;
-using System.Linq;
 using System.Runtime.CompilerServices;
-using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Xunit;
 
 public class GeneratorSnapshotTests
 {

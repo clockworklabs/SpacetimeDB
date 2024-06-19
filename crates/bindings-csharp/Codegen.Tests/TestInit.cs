@@ -16,7 +16,7 @@ static class TestInit
         // Format code for more readable snapshots and to avoid diffs on whitespace changes.
         VerifierSettings.AddScrubber(
             "cs",
-            (sb) =>
+            sb =>
             {
                 var unformattedCode = sb.ToString();
                 sb.Clear();
