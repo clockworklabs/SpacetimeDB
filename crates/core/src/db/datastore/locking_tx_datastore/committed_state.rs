@@ -321,6 +321,22 @@ impl CommittedState {
         Ok(())
     }
 
+    /// After replaying all old transactions,
+    /// inserts and deletes into the system tables
+    /// might not be reflected in the schemas of the built tables.
+    /// So we must re-schema every built table.
+    pub(super) fn reschema_tables(&mut self) -> Result<()> {
+        // For already built tables, we need to reschema them to account for constraints et al.
+        let mut schemas = Vec::with_capacity(self.tables.len());
+        for table_id in self.tables.keys().copied() {
+            schemas.push(self.schema_for_table_raw(&ExecutionContext::default(), table_id)?);
+        }
+        for (table, schema) in self.tables.values_mut().zip(schemas) {
+            table.with_mut_schema(|s| *s = schema);
+        }
+        Ok(())
+    }
+
     /// After replaying all old transactions, tables which have rows will
     /// have been created in memory, but tables with no rows will not have
     /// been created. This function ensures that they are created.
