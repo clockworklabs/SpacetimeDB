@@ -20,7 +20,7 @@ impl Timestamp {
     pub fn to_duration_from_now(self) -> std::time::Duration {
         self.to_systemtime()
             .duration_since(SystemTime::now())
-            .unwrap_or(std::time::Duration::default())
+            .unwrap_or_default()
     }
     pub fn get_type() -> AlgebraicType {
         AlgebraicType::U64

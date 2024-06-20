@@ -490,7 +490,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     /// the outcome of the call.
     #[tracing::instrument(skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
-        println!("enter tx");
         let CallReducerParams {
             timestamp,
             caller_identity,

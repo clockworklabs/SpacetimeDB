@@ -111,11 +111,11 @@ impl SchedulerStarter {
         let ctx = &ExecutionContext::internal(self.db.address());
         let tx = self.db.begin_tx();
         // Find all Scheduled tables
-        for row in self.db.iter(&ctx, &tx, ST_SCHEDULED_ID)? {
+        for row in self.db.iter(ctx, &tx, ST_SCHEDULED_ID)? {
             let scheduled_table = StScheduledRow::try_from(row).expect("Error reading scheduled table row");
             let table_id = scheduled_table.table_id;
             // Insert each entry (row) of scheduled tables in DelayQueue
-            for row_ref in self.db.iter(&ctx, &tx, table_id)? {
+            for row_ref in self.db.iter(ctx, &tx, table_id)? {
                 let schedule = get_schedule(&tx, &self.db, table_id, &row_ref)?;
                 let duration = schedule.schedule_at.to_duration_from_now();
                 queue.insert(
@@ -319,13 +319,13 @@ impl SchedulerActor {
         let table_id = id.table_id;
 
         let schedule_id_pos = db
-            .schema_for_table_mut(&tx, table_id)?
+            .schema_for_table_mut(tx, table_id)?
             .get_column_id_by_name(SCHEDULE_ID_FIELD)
             .ok_or(anyhow!("SCHEDULE_ID_FIELD not found"))?;
 
         // Check if expired schedule exists in the relational_db
         let schedule_row = db
-            .iter_by_col_eq_mut(&ctx, &tx, table_id, schedule_id_pos, &schedule_id)?
+            .iter_by_col_eq_mut(&ctx, tx, table_id, schedule_id_pos, &schedule_id)?
             .next()
             .ok_or(anyhow!("scheduler not found ins rdb"))?;
 
@@ -333,7 +333,7 @@ impl SchedulerActor {
         let st_scheduled_row = db
             .iter_by_col_eq_mut(
                 &ctx,
-                &tx,
+                tx,
                 ST_SCHEDULED_ID,
                 StScheduledRow::<&str>::table_id_col_pos(),
                 &AlgebraicValue::from(table_id),
@@ -404,16 +404,16 @@ fn get_schedule(
     row_ref: &RowRef,
 ) -> anyhow::Result<StModuleScheduleRow> {
     let schedule_id_pos = db
-        .schema_for_table(&tx, table_id)?
+        .schema_for_table(tx, table_id)?
         .get_column_id_by_name(SCHEDULE_ID_FIELD)
         .ok_or(anyhow!("SCHEDULE_ID_FIELD not found"))?;
 
     let schedule_at_pos = db
-        .schema_for_table(&tx, table_id)?
+        .schema_for_table(tx, table_id)?
         .get_column_id_by_name(SCHEDULE_AT_FIELD)
         .ok_or(anyhow!("SCHEDULE_AT_FIELD not found"))?;
 
-    StModuleScheduleRow::from_row_ref(*row_ref, schedule_id_pos.into(), schedule_at_pos.into())
+    StModuleScheduleRow::from_row_ref(*row_ref, schedule_id_pos, schedule_at_pos)
 }
 
 fn get_schedule_mut(
@@ -432,6 +432,5 @@ fn get_schedule_mut(
         .get_column_id_by_name(SCHEDULE_AT_FIELD)
         .ok_or(anyhow!("SCHEDULE_AT_FIELD not found"))?;
 
-    StModuleScheduleRow::from_row_ref(*row_ref, schedule_id_pos.into(), schedule_at_pos.into())
+    StModuleScheduleRow::from_row_ref(*row_ref, schedule_id_pos, schedule_at_pos)
 }
-

@@ -1,5 +1,5 @@
-use super::datastore::locking_tx_datastore::state_view::StateView as _;
 use super::datastore::locking_tx_datastore::committed_state::CommittedState;
+use super::datastore::locking_tx_datastore::state_view::StateView as _;
 use super::datastore::system_tables::ST_MODULE_ID;
 use super::datastore::traits::{
     IsolationLevel, Metadata, MutTx as _, MutTxDatastore, RowTypeForTable, Tx as _, TxDatastore,

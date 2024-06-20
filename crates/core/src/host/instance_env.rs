@@ -144,7 +144,7 @@ impl InstanceEnv {
         if stdb.is_scheuled_table(ctx, tx, table_id) {
             self.scheduler
                 .schedule(table_id, ret.clone())
-                .map_err(|e| NodesError::ScheduleError(e))?;
+                .map_err(NodesError::ScheduleError)?;
         }
 
         Ok(ret)

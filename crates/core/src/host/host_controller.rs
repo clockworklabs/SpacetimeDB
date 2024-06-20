@@ -586,7 +586,6 @@ async fn load_program(storage: &ProgramStorage, hash: Hash) -> anyhow::Result<Bo
 }
 
 async fn launch_module(
-    root_dir: &Path,
     database: Database,
     instance_id: u64,
     program_bytes: Box<[u8]>,
@@ -722,7 +721,6 @@ impl Host {
             // Launch module with program from existing database.
             Some(program_bytes) => {
                 launch_module(
-                    root_dir,
                     database,
                     instance_id,
                     program_bytes,
@@ -739,7 +737,6 @@ impl Host {
                 let program_hash = database.initial_program;
                 let program_bytes = load_program(&program_storage, program_hash).await?;
                 let res = launch_module(
-                    root_dir,
                     database,
                     instance_id,
                     program_bytes.clone(),
