@@ -1,5 +1,7 @@
+use crate::from_hex_pad;
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_sats::hex::HexString;
+use spacetimedb_sats::product_type::IDENTITY_TAG;
 use spacetimedb_sats::{hash, impl_st, AlgebraicType, AlgebraicValue, ProductValue};
 use std::{fmt, str::FromStr};
 
@@ -35,6 +37,7 @@ pub struct Identity {
 
 impl_st!([] Identity, _ts => Identity::get_type());
 
+#[cfg(feature = "metrics_impls")]
 impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Identity {
     fn as_prometheus_str(&self) -> impl AsRef<str> + '_ {
         self.to_hex()
@@ -64,7 +67,7 @@ impl Identity {
     }
 
     pub fn get_type() -> AlgebraicType {
-        AlgebraicType::product([("__identity_bytes", AlgebraicType::bytes())])
+        AlgebraicType::product([(IDENTITY_TAG, AlgebraicType::bytes())])
     }
 
     /// Returns a borrowed view of the byte array defining this `Identity`.
@@ -113,7 +116,7 @@ impl hex::FromHex for Identity {
     type Error = hex::FromHexError;
 
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
-        let data = hex::FromHex::from_hex(hex)?;
+        let data = from_hex_pad(hex)?;
         Ok(Identity { __identity_bytes: data })
     }
 }

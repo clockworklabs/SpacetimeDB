@@ -1,6 +1,8 @@
 use super::datastore::locking_tx_datastore::state_view::StateView as _;
+use super::datastore::locking_tx_datastore::committed_state::CommittedState;
+use super::datastore::system_tables::ST_MODULE_ID;
 use super::datastore::traits::{
-    IsolationLevel, MutProgrammable, MutTx as _, MutTxDatastore, Programmable, RowTypeForTable, Tx as _, TxDatastore,
+    IsolationLevel, Metadata, MutTx as _, MutTxDatastore, RowTypeForTable, Tx as _, TxDatastore,
 };
 use super::datastore::{
     locking_tx_datastore::{
@@ -11,14 +13,18 @@ use super::datastore::{
 };
 use super::db_metrics::DB_METRICS;
 use super::relational_operators::Relation;
-use crate::config::DatabaseConfig;
+use crate::db::datastore::system_tables::{StModuleRow, WASM_MODULE};
 use crate::error::{DBError, DatabaseError, TableError};
-use crate::execution_context::{ExecutionContext, ReducerContext};
-use crate::util::slow::SlowQueryConfig;
+use crate::execution_context::ExecutionContext;
+use crate::messages::control_db::HostType;
+use crate::util::spawn_rayon;
+use anyhow::anyhow;
 use fs2::FileExt;
+use futures::channel::mpsc;
+use futures::StreamExt;
 use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
-use spacetimedb_durability::{self as durability, Durability};
+use spacetimedb_durability::{self as durability, Durability, TxOffset};
 use spacetimedb_lib::address::Address;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
@@ -26,11 +32,12 @@ use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{ColumnDef, IndexDef, SequenceDef, TableDef, TableSchema};
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_snapshot::{SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
-use spacetimedb_vm::errors::ErrorVm;
 use std::borrow::Cow;
 use std::collections::HashSet;
-use std::fs::{create_dir_all, File};
+use std::fmt;
+use std::fs::{self, File};
 use std::io;
 use std::ops::RangeBounds;
 use std::path::Path;
@@ -48,33 +55,114 @@ type RowCountFn = Arc<dyn Fn(TableId, &str) -> i64 + Send + Sync>;
 /// It is not part of the [`Durability`] trait because it must report disk
 /// usage of the local instance only, even if exclusively remote durability is
 /// configured or the database is in follower state.
-type DiskSizeFn = Arc<dyn Fn() -> io::Result<u64> + Send + Sync>;
+pub type DiskSizeFn = Arc<dyn Fn() -> io::Result<u64> + Send + Sync>;
 
 pub type Txdata = commitlog::payload::Txdata<ProductValue>;
 
-/// Clients for which a connect reducer call was found in the [`History`], but
-/// no corresponding disconnect.
+/// The set of clients considered connected to the database.
+///
+/// A client is considered connected if there exists a corresponding row in the
+/// `st_clients` system table.
+///
+/// If rows exist in `st_clients` upon [`RelationalDB::open`], the database was
+/// not shut down gracefully. Such "dangling" clients should be removed by
+/// calling [`crate::host::ModuleHost::call_identity_connected_disconnected`]
+/// for each entry in [`ConnectedClients`].
 pub type ConnectedClients = HashSet<(Identity, Address)>;
 
 #[derive(Clone)]
 pub struct RelationalDB {
-    // TODO(cloutiertyler): This should not be public
-    pub(crate) inner: Locking,
-    durability: Option<Arc<dyn Durability<TxData = Txdata>>>,
     address: Address,
+    owner_identity: Identity,
+
+    inner: Locking,
+    durability: Option<Arc<dyn Durability<TxData = Txdata>>>,
+    snapshot_worker: Option<Arc<SnapshotWorker>>,
 
     row_count_fn: RowCountFn,
-    /// Function to determine the durable size on disk. `Some` if `durability`
-    /// is `Some`, `None` otherwise.
+    /// Function to determine the durable size on disk.
+    /// `Some` if `durability` is `Some`, `None` otherwise.
     disk_size_fn: Option<DiskSizeFn>,
-
-    config: Arc<RwLock<DatabaseConfig>>,
 
     // DO NOT ADD FIELDS AFTER THIS.
     // By default, fields are dropped in declaration order.
     // We want to release the file lock last.
-    _lock: Arc<File>,
+    _lock: LockFile,
 }
+
+struct SnapshotWorker {
+    _handle: tokio::task::JoinHandle<()>,
+    /// Send end of the [`Self::snapshot_loop`]'s `trigger` receiver.
+    ///
+    /// Send a message along this queue to request that the `snapshot_loop` asynchronously capture a snapshot.
+    request_snapshot: mpsc::UnboundedSender<()>,
+}
+
+impl SnapshotWorker {
+    fn new(committed_state: Arc<RwLock<CommittedState>>, repo: Arc<SnapshotRepository>) -> Self {
+        let (request_snapshot, trigger) = mpsc::unbounded();
+        let handle = tokio::spawn(Self::snapshot_loop(trigger, committed_state, repo));
+        SnapshotWorker {
+            _handle: handle,
+            request_snapshot,
+        }
+    }
+
+    /// The snapshot loop takes a snapshot after each `trigger` message received.
+    async fn snapshot_loop(
+        mut trigger: mpsc::UnboundedReceiver<()>,
+        committed_state: Arc<RwLock<CommittedState>>,
+        repo: Arc<SnapshotRepository>,
+    ) {
+        while let Some(()) = trigger.next().await {
+            let committed_state = committed_state.clone();
+            let repo = repo.clone();
+            tokio::task::spawn_blocking(move || Self::take_snapshot(&committed_state, &repo))
+                .await
+                .unwrap();
+        }
+    }
+
+    fn take_snapshot(committed_state: &RwLock<CommittedState>, snapshot_repo: &SnapshotRepository) {
+        let mut committed_state = committed_state.write();
+        let Some(tx_offset) = committed_state.next_tx_offset.checked_sub(1) else {
+            log::info!("SnapshotWorker::take_snapshot: refusing to take snapshot at tx_offset -1");
+            return;
+        };
+        log::info!(
+            "Capturing snapshot of database {:?} at TX offset {}",
+            snapshot_repo.database_address(),
+            tx_offset,
+        );
+
+        let start_time = std::time::Instant::now();
+
+        let CommittedState {
+            ref mut tables,
+            ref blob_store,
+            ..
+        } = *committed_state;
+
+        if let Err(e) = snapshot_repo.create_snapshot(tables.values_mut(), blob_store, tx_offset) {
+            log::error!(
+                "Error capturing snapshot of database {:?}: {e:?}",
+                snapshot_repo.database_address()
+            );
+        } else {
+            log::info!(
+                "Captured snapshot of database {:?} at TX offset {} in {:?}",
+                snapshot_repo.database_address(),
+                tx_offset,
+                start_time.elapsed()
+            );
+        }
+    }
+}
+
+/// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
+// TODO(config): Allow DBs to specify how frequently to snapshot.
+// TODO(bikeshedding): Snapshot based on number of bytes written to commitlog, not tx offsets.
+const SNAPSHOT_FREQUENCY: u64 = 1_000_000;
 
 impl std::fmt::Debug for RelationalDB {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -83,139 +171,302 @@ impl std::fmt::Debug for RelationalDB {
 }
 
 impl RelationalDB {
-    /// Open a database with local durability.
-    ///
-    /// This is a convenience constructor which initializes the database with
-    /// the [`spacetimedb_durability::Local`] durability implementation.
-    ///
-    /// The commitlog is expected to be located in the `clog` directory relative
-    /// to `root`. If there already exists data in the log, it is replayed into
-    /// the database's state via [`Self::apply`].
-    ///
-    /// The [`tokio::runtime::Handle`] is used to spawn background tasks which
-    /// take care of flushing and syncing the log.
-    ///
-    /// Alongside `Self`, the set of clients who were connected as of the most
-    /// recent transaction is returned as a [`ConnectedClients`].
-    /// `__disconnect__` should be called for each entry.
-    pub fn local(
-        root: impl AsRef<Path>,
-        rt: tokio::runtime::Handle,
+    fn new(
+        lock: LockFile,
         address: Address,
-    ) -> Result<(Self, ConnectedClients), DBError> {
-        let log_dir = root.as_ref().join("clog");
-        create_dir_all(&log_dir)?;
-        let durability = durability::Local::open(
-            log_dir,
-            rt,
-            durability::local::Options {
-                commitlog: commitlog::Options {
-                    max_records_in_commit: 1.try_into().unwrap(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        )
-        .map(Arc::new)?;
-        let disk_size_fn = Arc::new({
-            let durability = durability.clone();
-            move || durability.size_on_disk()
-        });
-
-        Self::open(root, address, Some((durability.clone(), disk_size_fn)))?.apply(durability)
-    }
-
-    /// Open a database with root directory `root` and the provided [`Durability`]
-    /// implementation.
-    ///
-    /// Note that this **does not** replay existing state, [`Self::apply`] must
-    /// be called explicitly if this is desired.
-    pub fn open(
-        root: impl AsRef<Path>,
-        address: Address,
+        owner_identity: Identity,
+        inner: Locking,
         durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
-    ) -> Result<Self, DBError> {
-        create_dir_all(&root)?;
-
-        let lock = File::create(root.as_ref().join("db.lock"))?;
-        lock.try_lock_exclusive()
-            .map_err(|e| DatabaseError::DatabasedOpened(root.as_ref().to_path_buf(), e.into()))?;
-
-        let (durability, disk_size_fn) = durability.map(|(a, b)| (Some(a), Some(b))).unwrap_or_default();
-        let inner = Locking::bootstrap(address)?;
-        let row_count_fn: RowCountFn = Arc::new(move |table_id, table_name| {
-            DB_METRICS
-                .rdb_num_table_rows
-                .with_label_values(&address, &table_id.into(), table_name)
-                .get()
-        });
-
-        Ok(Self {
+        snapshot_repo: Option<Arc<SnapshotRepository>>,
+    ) -> Self {
+        let (durability, disk_size_fn) = durability.unzip();
+        let snapshot_worker =
+            snapshot_repo.map(|repo| Arc::new(SnapshotWorker::new(inner.committed_state.clone(), repo.clone())));
+        Self {
             inner,
             durability,
-            address,
+            snapshot_worker,
 
-            row_count_fn,
+            address,
+            owner_identity,
+
+            row_count_fn: default_row_count_fn(address),
             disk_size_fn,
 
-            _lock: Arc::new(lock),
-            config: Arc::new(RwLock::new(DatabaseConfig::new(SlowQueryConfig::with_defaults(), None))),
-        })
+            _lock: lock,
+        }
     }
 
-    /// Replay ("fold") the provided [`spacetimedb_durability::History`] onto
-    /// the database state.
+    /// Open a database, which may or may not already exist.
+    ///
+    /// # Initialization
+    ///
+    /// When this method returns, the internal state of the database has been
+    /// initialized with nothing written to disk (regardless of the `durability`
+    /// setting).
+    ///
+    /// This allows to hand over a pointer to the database to a [`ModuleHost`][ModuleHost]
+    /// for initialization, which will call [`Self::set_initialized`],
+    /// initializing the database's [`Metadata`] transactionally.
+    ///
+    /// If, however, a non-empty `history` was supplied, [`Metadata`] will
+    /// already be be set. In this case, i.e. if either [`Self::metadata`] or
+    /// [`Self::program_bytes`] return a `Some` value, [`Self::set_initialized`]
+    /// should _not_ be called.
+    ///
+    /// Sometimes, one may want to obtain a database without a module (e.g. for
+    /// testing). In this case, **always** call [`Self::set_initialized`],
+    /// supplying a zero `program_hash` and empty `program_bytes`.
+    ///
+    /// # Parameters
+    ///
+    /// - `root`
+    ///
+    ///   The database directory. Does not need to exist.
+    ///
+    ///   Note that, even if no `durability` is supplied, the directory will be
+    ///   created and equipped with an advisory lock file.
+    ///
+    /// - `address`
+    ///
+    ///   The [`Address`] of the database.
+    ///
+    ///   An error is returned if the database already exists, but has a
+    ///   different address.
+    ///   If it is a new database, the address is stored in the database's
+    ///   system tables upon calling [`Self::set_initialized`].
+    ///
+    /// - `owner_identity`
+    ///
+    ///   The [`Identity`] of the database's owner.
+    ///
+    ///   An error is returned if the database already exists, but has a
+    ///   different owner.
+    ///   If it is a new database, the identity is stored in the database's
+    ///   system tables upon calling [`Self::set_initialized`].
+    ///
+    /// - `history`
+    ///
+    ///   The [`durability::History`] to restore the database from.
+    ///
+    ///   If using local durability, this must be a pointer to the same object.
+    ///   [`durability::EmptyHistory`] can be used to start from an empty history.
+    ///
+    /// - `durability`
+    ///
+    ///   The [`Durability`] implementation to use, along with a [`DiskSizeFn`]
+    ///   reporting its size on disk. The [`DiskSizeFn`] must report zero if
+    ///   this database is a follower instance.
+    ///
+    ///   `None` may be passed to obtain an in-memory only database.
+    ///
+    /// - `snapshot_repo`
+    ///
+    ///   The [`SnapshotRepository`] which stores snapshots of this database.
+    ///   This is only meaningful if `history` and `durability` are also supplied.
+    ///   If restoring from an existing database, the `snapshot_repo` must
+    ///   store views of the same sequence of TXes as the `history`.
+    ///
+    /// # Return values
+    ///
+    /// Alongside `Self`, [`ConnectedClients`] is returned, which is the set of
+    /// clients considered connected at the given snapshot and `history`.
+    ///
+    /// If [`ConnectedClients`] is non-empty, the database did not shut down
+    /// gracefully. The caller is responsible for disconnecting the clients.
+    ///
+    /// [ModuleHost]: crate::host::module_host::ModuleHost
+    pub fn open(
+        root: &Path,
+        address: Address,
+        owner_identity: Identity,
+        history: impl durability::History<TxData = Txdata>,
+        durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
+        snapshot_repo: Option<Arc<SnapshotRepository>>,
+    ) -> Result<(Self, ConnectedClients), DBError> {
+        log::trace!("[{}] DATABASE: OPEN", address);
+
+        let lock = LockFile::lock(root)?;
+
+        // Check the latest durable TX and restore from a snapshot no newer than it,
+        // so that you drop TXes which were committed but not durable before the restart.
+        // TODO: delete or mark as invalid snapshots newer than this.
+        let durable_tx_offset = durability
+            .as_ref()
+            .map(|pair| pair.0.clone())
+            .as_deref()
+            .and_then(|durability| durability.durable_tx_offset());
+
+        log::info!("[{address}] DATABASE: durable_tx_offset is {durable_tx_offset:?}");
+        let inner = Self::restore_from_snapshot_or_bootstrap(address, snapshot_repo.as_deref(), durable_tx_offset)?;
+
+        apply_history(&inner, address, history)?;
+        let db = Self::new(lock, address, owner_identity, inner, durability, snapshot_repo);
+
+        if let Some(meta) = db.metadata()? {
+            if meta.database_address != address {
+                return Err(anyhow!("mismatched database address: {} != {}", meta.database_address, address).into());
+            }
+            if meta.owner_identity != owner_identity {
+                return Err(anyhow!(
+                    "mismatched owner identity: {} != {}",
+                    meta.owner_identity,
+                    owner_identity
+                )
+                .into());
+            }
+        };
+        let connected_clients = db.connected_clients()?;
+
+        Ok((db, connected_clients))
+    }
+
+    /// Mark the database as initialized with the given module parameters.
+    ///
+    /// Records the database's address, owner and module parameters in the
+    /// system tables. The transactional context is supplied by the caller.
+    ///
+    /// It is an error to call this method on an alread-initialized database.
+    ///
+    /// See [`Self::open`] for further information.
+    pub fn set_initialized(
+        &self,
+        tx: &mut MutTx,
+        host_type: HostType,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> Result<(), DBError> {
+        log::trace!(
+            "[{}] DATABASE: set initialized owner={} program_hash={}",
+            self.address,
+            self.owner_identity,
+            program_hash
+        );
+
+        // Probably a bug: the database is already initialized.
+        // Ignore if it would be a no-op.
+        if let Some(meta) = self.inner.metadata_mut_tx(tx)? {
+            if program_hash == meta.program_hash
+                && self.address == meta.database_address
+                && self.owner_identity == meta.owner_identity
+            {
+                return Ok(());
+            }
+            return Err(anyhow!("database {} already initialized", self.address).into());
+        }
+        let row = StModuleRow {
+            database_address: self.address,
+            owner_identity: self.owner_identity,
+
+            program_kind: match host_type {
+                HostType::Wasm => WASM_MODULE,
+            },
+            program_hash,
+            program_bytes,
+        };
+        self.insert(tx, ST_MODULE_ID, row.into()).map(drop)
+    }
+
+    /// Obtain the [`Metadata`] of this database.
+    ///
+    /// `None` if the database is not yet fully initialized.
+    pub fn metadata(&self) -> Result<Option<Metadata>, DBError> {
+        let ctx = ExecutionContext::internal(self.address);
+        self.with_read_only(&ctx, |tx| self.inner.metadata(&ctx, tx))
+    }
+
+    /// Obtain the raw bytes of the module associated with this database.
+    ///
+    /// `None` if the database is not yet fully initialized.
+    /// Note that a `Some` result may yield an empty slice.
+    pub fn program_bytes(&self) -> Result<Option<Box<[u8]>>, DBError> {
+        let ctx = ExecutionContext::internal(self.address);
+        self.with_read_only(&ctx, |tx| self.inner.program_bytes(&ctx, tx))
+    }
+
+    /// Read the set of clients currently connected to the database.
+    pub fn connected_clients(&self) -> Result<ConnectedClients, DBError> {
+        let ctx = ExecutionContext::internal(self.address);
+        self.with_read_only(&ctx, |tx| self.inner.connected_clients(&ctx, tx)?.collect())
+    }
+
+    /// Update the module associated with this database.
+    ///
+    /// The caller must ensure that:
+    ///
+    /// - `program_hash` is the [`Hash`] over `program_bytes`.
+    /// - `program_bytes` is a valid module acc. to `host_type`.
+    /// - the schema updates contained in the module have been applied within
+    ///   the transactional context `tx`.
+    /// - the `__init__` reducer contained in the module has been executed
+    ///   within the transactional context `tx`.
+    pub fn update_program(
+        &self,
+        tx: &mut MutTx,
+        host_type: HostType,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> Result<(), DBError> {
+        let program_kind = match host_type {
+            HostType::Wasm => WASM_MODULE,
+        };
+        self.inner.update_program(tx, program_kind, program_hash, program_bytes)
+    }
+
+    fn restore_from_snapshot_or_bootstrap(
+        address: Address,
+        snapshot_repo: Option<&SnapshotRepository>,
+        durable_tx_offset: Option<TxOffset>,
+    ) -> Result<Locking, DBError> {
+        if let Some(snapshot_repo) = snapshot_repo {
+            if let Some(durable_tx_offset) = durable_tx_offset {
+                // Don't restore from a snapshot newer than the `durable_tx_offset`,
+                // so that you drop TXes which were committed but not durable before the restart.
+                if let Some(tx_offset) = snapshot_repo.latest_snapshot_older_than(durable_tx_offset)? {
+                    // Mark any newer snapshots as invalid, as the new history will diverge from their state.
+                    snapshot_repo.invalidate_newer_snapshots(durable_tx_offset)?;
+                    log::info!("[{address}] DATABASE: restoring snapshot of tx_offset {tx_offset}");
+                    let start = std::time::Instant::now();
+                    let snapshot = snapshot_repo.read_snapshot(tx_offset)?;
+                    log::info!(
+                        "[{address}] DATABASE: read snapshot of tx_offset {tx_offset} in {:?}",
+                        start.elapsed(),
+                    );
+                    if snapshot.database_address != address {
+                        // TODO: return a proper typed error
+                        return Err(anyhow::anyhow!(
+                            "Snapshot has incorrect database_address: expected {address} but found {}",
+                            snapshot.database_address,
+                        )
+                        .into());
+                    }
+                    let start = std::time::Instant::now();
+                    let res = Locking::restore_from_snapshot(snapshot);
+                    log::info!(
+                        "[{address}] DATABASE: restored from snapshot of tx_offset {tx_offset} in {:?}",
+                        start.elapsed(),
+                    );
+                    return res;
+                }
+            }
+            log::info!("[{address}] DATABASE: no snapshot on disk");
+        }
+
+        Locking::bootstrap(address)
+    }
+
+    /// Apply the provided [`spacetimedb_durability::History`] onto the database
+    /// state.
     ///
     /// Consumes `self` in order to ensure exclusive access, and to prevent use
     /// of the database in case of an incomplete replay.
     /// This restriction may be lifted in the future to allow for "live" followers.
-    ///
-    /// Alongside `Self`, the set of clients who were connected as of the most
-    /// recent transaction is returned as a [`ConnectedClients`].
-    /// `__disconnect__` should be called for each entry.
-    pub fn apply<T>(self, history: T) -> Result<(Self, ConnectedClients), DBError>
+    pub fn apply<T>(self, history: T) -> Result<Self, DBError>
     where
         T: durability::History<TxData = Txdata>,
     {
-        log::info!("[{}] DATABASE: applying transaction history...", self.address);
-
-        // TODO: Revisit once we actually replay history suffixes, ie. starting
-        // from an offset larger than the history's min offset.
-        // TODO: We may want to require that a `tokio::runtime::Handle` is
-        // always supplied when constructing a `RelationalDB`. This would allow
-        // to spawn a timer task here which just prints the progress periodically
-        // in case the history is finite but very long.
-        let max_tx_offset = history.max_tx_offset();
-        let mut last_logged_percentage = 0;
-        let progress = |tx_offset: u64| {
-            if let Some(max_tx_offset) = max_tx_offset {
-                let percentage = f64::floor((tx_offset as f64 / max_tx_offset as f64) * 100.0) as i32;
-                if percentage > last_logged_percentage && percentage % 10 == 0 {
-                    log::info!(
-                        "[{}] Loaded {}% ({}/{})",
-                        self.address,
-                        percentage,
-                        tx_offset,
-                        max_tx_offset
-                    );
-                    last_logged_percentage = percentage;
-                }
-            // Print _something_ even if we don't know what's still ahead.
-            } else if tx_offset % 10_000 == 0 {
-                log::info!("[{}] Loading transaction {}", self.address, tx_offset);
-            }
-        };
-
-        let mut replay = self.inner.replay(progress);
-        history
-            .fold_transactions_from(0, &mut replay)
-            .map_err(anyhow::Error::from)?;
-        log::info!("[{}] DATABASE: applied transaction history", self.address);
-        self.inner.rebuild_state_after_replay()?;
-        log::info!("[{}] DATABASE: rebuilt state after replay", self.address);
-        let connected_clients = replay.into_connected_clients();
-
-        Ok((self, connected_clients))
+        apply_history(&self.inner, self.address, history)?;
+        Ok(self)
     }
 
     /// Returns an approximate row count for a particular table.
@@ -309,13 +560,17 @@ impl RelationalDB {
     #[tracing::instrument(skip_all)]
     pub fn begin_mut_tx(&self, isolation_level: IsolationLevel) -> MutTx {
         log::trace!("BEGIN MUT TX");
-        self.inner.begin_mut_tx(isolation_level)
+        let r = self.inner.begin_mut_tx(isolation_level);
+        log::trace!("ACQUIRED MUT TX");
+        r
     }
 
     #[tracing::instrument(skip_all)]
     pub fn begin_tx(&self) -> Tx {
         log::trace!("BEGIN TX");
-        self.inner.begin_tx()
+        let r = self.inner.begin_tx();
+        log::trace!("ACQUIRED TX");
+        r
     }
 
     #[tracing::instrument(skip_all)]
@@ -332,7 +587,7 @@ impl RelationalDB {
 
     #[tracing::instrument(skip_all)]
     pub fn release_tx(&self, ctx: &ExecutionContext, tx: Tx) {
-        log::trace!("ROLLBACK TX");
+        log::trace!("RELEASE TX");
         self.inner.release_tx(ctx, tx)
     }
 
@@ -344,6 +599,8 @@ impl RelationalDB {
         let Some(tx_data) = self.inner.commit_mut_tx(ctx, tx)? else {
             return Ok(None);
         };
+
+        self.maybe_do_snapshot(&tx_data);
 
         if let Some(durability) = &self.durability {
             Self::do_durability(&**durability, ctx, &tx_data)
@@ -360,6 +617,8 @@ impl RelationalDB {
             return Ok(None);
         };
 
+        self.maybe_do_snapshot(&tx_data);
+
         if let Some(durability) = &self.durability {
             Self::do_durability(&**durability, ctx, &tx_data)
         }
@@ -367,63 +626,83 @@ impl RelationalDB {
         Ok(Some((tx_data, tx)))
     }
 
+    /// If `(tx_data, ctx)` should be appended to the commitlog, do so.
+    ///
+    /// Note that by this stage,
+    /// [`crate::db::datastore::locking_tx_datastore::committed_state::tx_consumes_offset`]
+    /// has already decided based on the reducer and operations whether the transaction should be appended;
+    /// this method is responsible only for reading its decision out of the `tx_data`
+    /// and calling `durability.append_tx`.
     fn do_durability(durability: &dyn Durability<TxData = Txdata>, ctx: &ExecutionContext, tx_data: &TxData) {
         use commitlog::payload::{
             txdata::{Mutations, Ops},
             Txdata,
         };
 
-        let inserts: Box<_> = tx_data
-            .inserts()
-            .map(|(table_id, rowdata)| Ops {
-                table_id: *table_id,
-                rowdata: rowdata.clone(),
-            })
-            .collect();
-        let deletes: Box<_> = tx_data
-            .deletes()
-            .map(|(table_id, rowdata)| Ops {
-                table_id: *table_id,
-                rowdata: rowdata.clone(),
-            })
-            .collect();
+        if tx_data.tx_offset().is_some() {
+            let inserts: Box<_> = tx_data
+                .inserts()
+                .map(|(table_id, rowdata)| Ops {
+                    table_id: *table_id,
+                    rowdata: rowdata.clone(),
+                })
+                .collect();
+            let deletes: Box<_> = tx_data
+                .deletes()
+                .map(|(table_id, rowdata)| Ops {
+                    table_id: *table_id,
+                    rowdata: rowdata.clone(),
+                })
+                .collect();
 
-        // Avoid appending transactions to the commitlog which don't modify
-        // any tables.
-        //
-        // An exception ar connect / disconnect calls, which we always want
-        // paired in the log, so as to be able to disconnect clients
-        // automatically after a server crash. See:
-        // [`crate::host::ModuleHost::call_identity_connected_disconnected`]
-        //
-        // Note that this may change in the future: some analytics and/or
-        // timetravel queries may benefit from seeing all inputs, even if
-        // the database state did not change.
-        let is_noop = || inserts.is_empty() && deletes.is_empty();
-        let is_connect_disconnect = |ctx: &ReducerContext| {
-            matches!(
-                ctx.name.strip_prefix("__identity_"),
-                Some("connected__" | "disconnected__")
-            )
-        };
-        let inputs = ctx
-            .reducer_context()
-            .and_then(|rcx| (!is_noop() || is_connect_disconnect(rcx)).then(|| rcx.into()));
+            let inputs = ctx.reducer_context().map(|rcx| rcx.into());
 
-        let txdata = Txdata {
-            inputs,
-            outputs: None,
-            mutations: Some(Mutations {
-                inserts,
-                deletes,
-                truncates: [].into(),
-            }),
-        };
+            let txdata = Txdata {
+                inputs,
+                outputs: None,
+                mutations: Some(Mutations {
+                    inserts,
+                    deletes,
+                    truncates: [].into(),
+                }),
+            };
 
-        if !txdata.is_empty() {
             log::trace!("append {txdata:?}");
             // TODO: Should measure queuing time + actual write
             durability.append_tx(txdata);
+        } else {
+            debug_assert!(tx_data.inserts().all(|(_, inserted_rows)| inserted_rows.is_empty()));
+            debug_assert!(tx_data.deletes().all(|(_, deleted_rows)| deleted_rows.is_empty()));
+            debug_assert!(!matches!(
+                ctx.reducer_context().map(|rcx| rcx.name.strip_prefix("__identity_")),
+                Some(Some("connected__" | "disconnected__"))
+            ));
+        }
+    }
+
+    /// Decide based on the `committed_state.next_tx_offset`
+    /// whether to request that the [`SnapshotWorker`] in `self` capture a snapshot of the database.
+    ///
+    /// Actual snapshotting happens asynchronously in a Tokio worker.
+    ///
+    /// Snapshotting must happen independent of the durable TX offset known by the [`Durability`]
+    /// because capturing a snapshot requires access to the committed state,
+    /// which in the general case may advance beyond the durable TX offset,
+    /// as our durability is an asynchronous write-behind log.
+    /// An alternate implementation might keep a second materialized [`CommittedState`]
+    /// which followed the durable TX offset rather than the committed-not-yet-durable state,
+    /// in which case we would be able to snapshot only TXes known to be durable.
+    /// In this implementation, we snapshot the existing [`CommittedState`]
+    /// which stores the committed-not-yet-durable state.
+    /// This requires a small amount of additional logic when restoring from a snapshot
+    /// to ensure we don't restore a snapshot more recent than the durable TX offset.
+    fn maybe_do_snapshot(&self, tx_data: &TxData) {
+        if let Some(snapshot_worker) = &self.snapshot_worker {
+            if let Some(tx_offset) = tx_data.tx_offset() {
+                if tx_offset % SNAPSHOT_FREQUENCY == 0 {
+                    snapshot_worker.request_snapshot.unbounded_send(()).unwrap();
+                }
+            }
         }
     }
 
@@ -492,9 +771,9 @@ impl RelationalDB {
     where
         F: FnOnce(&mut Tx) -> T,
     {
-        let mut tx = self.inner.begin_tx();
+        let mut tx = self.begin_tx();
         let res = f(&mut tx);
-        self.inner.release_tx(ctx, tx);
+        self.release_tx(ctx, tx);
         res
     }
 
@@ -524,6 +803,10 @@ impl RelationalDB {
             }
             Ok(a) => Ok((tx, a)),
         }
+    }
+
+    pub(crate) fn alter_table_access(&self, tx: &mut MutTx, name: Box<str>, access: StAccess) -> Result<(), DBError> {
+        self.inner.alter_table_access_mut_tx(tx, name, access)
     }
 }
 
@@ -670,14 +953,9 @@ impl RelationalDB {
         let table = self.inner.schema_for_table_mut_tx(tx, table_id)?;
 
         let unique_index = table.indexes.iter().find(|x| &x.columns == cols).map(|x| x.is_unique);
-        let attr = Constraints::unset();
-
+        let mut attr = Constraints::unset();
         if let Some(is_unique) = unique_index {
-            attr.push(if is_unique {
-                Constraints::unique()
-            } else {
-                Constraints::indexed()
-            });
+            attr = attr.push(Constraints::from_is_unique(is_unique));
         }
         Ok(attr)
     }
@@ -840,46 +1118,137 @@ impl RelationalDB {
     pub fn drop_constraint(&self, tx: &mut MutTx, constraint_id: ConstraintId) -> Result<(), DBError> {
         self.inner.drop_constraint_mut_tx(tx, constraint_id)
     }
+}
 
-    /// Retrieve the [`Hash`] of the program (SpacetimeDB module) currently
-    /// associated with the database.
-    ///
-    /// A `None` result indicates that the database is not fully initialized
-    /// yet.
-    pub fn program_hash(&self, tx: &Tx) -> Result<Option<Hash>, DBError> {
-        self.inner.program_hash(tx)
-    }
+#[allow(unused)]
+#[derive(Clone)]
+struct LockFile {
+    path: Arc<Path>,
+    lock: Arc<File>,
+}
 
-    /// Update the [`Hash`] of the program (SpacetimeDB module) currently
-    /// associated with the database.
-    ///
-    /// The operation runs within the transactional context `tx`.
-    ///
-    /// The fencing token `fence` must be greater than in any previous
-    /// invocations of this method, and is typically obtained from a locking
-    /// service.
-    ///
-    /// The method **MUST** be called within the transaction context which
-    /// ensures that any lifecycle reducers (`init`, `update`) are invoked. That
-    /// is, an impl of [`crate::host::ModuleInstance`].
-    pub(crate) fn set_program_hash(&self, tx: &mut MutTx, fence: u128, hash: Hash) -> Result<(), DBError> {
-        self.inner.set_program_hash(tx, fence, hash)
-    }
+impl LockFile {
+    pub fn lock(root: impl AsRef<Path>) -> Result<Self, DBError> {
+        fs::create_dir_all(&root)?;
+        let path = root.as_ref().join("db.lock");
+        let lock = File::create(&path)?;
+        lock.try_lock_exclusive()
+            .map_err(|e| DatabaseError::DatabasedOpened(root.as_ref().to_path_buf(), e.into()))?;
 
-    /// Set a runtime configurations setting of the database
-    pub(crate) fn set_config(&self, key: &str, value: AlgebraicValue) -> Result<(), ErrorVm> {
-        self.config.write().set_config(key, value)
+        Ok(Self {
+            path: path.into(),
+            lock: lock.into(),
+        })
     }
-    /// Read the runtime configurations settings of the database
-    pub(crate) fn read_config(&self) -> DatabaseConfig {
-        *self.config.read()
+}
+
+impl fmt::Debug for LockFile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LockFile").field("path", &self.path).finish()
     }
+}
+
+fn apply_history<H>(datastore: &Locking, address: Address, history: H) -> Result<(), DBError>
+where
+    H: durability::History<TxData = Txdata>,
+{
+    log::info!("[{}] DATABASE: applying transaction history...", address);
+
+    // TODO: Revisit once we actually replay history suffixes, ie. starting
+    // from an offset larger than the history's min offset.
+    // TODO: We may want to require that a `tokio::runtime::Handle` is
+    // always supplied when constructing a `RelationalDB`. This would allow
+    // to spawn a timer task here which just prints the progress periodically
+    // in case the history is finite but very long.
+    let max_tx_offset = history.max_tx_offset();
+    let mut last_logged_percentage = 0;
+    let progress = |tx_offset: u64| {
+        if let Some(max_tx_offset) = max_tx_offset {
+            let percentage = f64::floor((tx_offset as f64 / max_tx_offset as f64) * 100.0) as i32;
+            if percentage > last_logged_percentage && percentage % 10 == 0 {
+                log::info!("[{}] Loaded {}% ({}/{})", address, percentage, tx_offset, max_tx_offset);
+                last_logged_percentage = percentage;
+            }
+        // Print _something_ even if we don't know what's still ahead.
+        } else if tx_offset % 10_000 == 0 {
+            log::info!("[{}] Loading transaction {}", address, tx_offset);
+        }
+    };
+
+    let mut replay = datastore.replay(progress);
+    let start = replay.next_tx_offset();
+    history
+        .fold_transactions_from(start, &mut replay)
+        .map_err(anyhow::Error::from)?;
+    log::info!("[{}] DATABASE: applied transaction history", address);
+    datastore.rebuild_state_after_replay()?;
+    log::info!("[{}] DATABASE: rebuilt state after replay", address);
+
+    Ok(())
+}
+
+/// Initialize local durability with the default parameters.
+///
+/// Also returned is a [`DiskSizeFn`] as required by [`RelationalDB::open`].
+///
+/// Note that this operation can be expensive, as it needs to traverse a suffix
+/// of the commitlog.
+pub async fn local_durability(db_path: &Path) -> io::Result<(Arc<durability::Local<ProductValue>>, DiskSizeFn)> {
+    let commitlog_dir = db_path.join("clog");
+    tokio::fs::create_dir_all(&commitlog_dir).await?;
+    let rt = tokio::runtime::Handle::current();
+    // TODO: Should this better be spawn_blocking?
+    let local = spawn_rayon(move || {
+        durability::Local::open(
+            commitlog_dir,
+            rt,
+            durability::local::Options {
+                commitlog: commitlog::Options {
+                    max_records_in_commit: 1.try_into().unwrap(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+    })
+    .await
+    .map(Arc::new)?;
+    let disk_size_fn = Arc::new({
+        let durability = local.clone();
+        move || durability.size_on_disk()
+    });
+
+    Ok((local, disk_size_fn))
+}
+
+/// Open a [`SnapshotRepository`] at `db_path/snapshots`,
+/// configured to store snapshots of the database `database_address`/`database_instance_id`.
+pub fn open_snapshot_repo(
+    db_path: &Path,
+    database_address: Address,
+    database_instance_id: u64,
+) -> Result<Arc<SnapshotRepository>, Box<SnapshotError>> {
+    let snapshot_dir = db_path.join("snapshots");
+    std::fs::create_dir_all(&snapshot_dir).map_err(|e| Box::new(SnapshotError::from(e)))?;
+    SnapshotRepository::open(snapshot_dir, database_address, database_instance_id)
+        .map(Arc::new)
+        .map_err(Box::new)
+}
+
+fn default_row_count_fn(address: Address) -> RowCountFn {
+    Arc::new(move |table_id, table_name| {
+        DB_METRICS
+            .rdb_num_table_rows
+            .with_label_values(&address, &table_id.into(), table_name)
+            .get()
+    })
 }
 
 #[cfg(any(test, feature = "test"))]
 pub mod tests_utils {
     use super::*;
     use core::ops::Deref;
+    use durability::EmptyHistory;
     use tempfile::TempDir;
 
     /// A [`RelationalDB`] in a temporary directory.
@@ -909,7 +1278,8 @@ pub mod tests_utils {
     }
 
     impl TestDB {
-        pub const ADDRESS: Address = Address::zero();
+        pub const ADDRESS: Address = Address::ZERO;
+        pub const OWNER: Identity = Identity::ZERO;
 
         /// Create a [`TestDB`] which does not store data on disk.
         pub fn in_memory() -> Result<Self, DBError> {
@@ -931,6 +1301,8 @@ pub mod tests_utils {
         pub fn durable() -> Result<Self, DBError> {
             let dir = TempDir::with_prefix("stdb_test")?;
             let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
+            // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
+            let _rt = rt.enter();
             let (db, handle) = Self::durable_internal(dir.path(), rt.handle().clone())?;
             let durable = DurableState { handle, rt };
 
@@ -952,6 +1324,8 @@ pub mod tests_utils {
                     Arc::into_inner(handle).expect("`drop(self.db)` should have dropped all references to durability");
                 rt.block_on(handle.close())?;
 
+                // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
+                let _rt = rt.enter();
                 let (db, handle) = Self::durable_internal(self.tmp_dir.path(), rt.handle().clone())?;
                 let durable = DurableState { handle, rt };
 
@@ -1020,42 +1394,36 @@ pub mod tests_utils {
         }
 
         fn in_memory_internal(root: &Path) -> Result<RelationalDB, DBError> {
-            Ok(RelationalDB::open(root, Self::ADDRESS, None)?.with_row_count(Self::row_count_fn()))
+            Self::open_db(root, EmptyHistory::new(), None, None)
         }
 
         fn durable_internal(
             root: &Path,
             rt: tokio::runtime::Handle,
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
-            let log_dir = root.join("clog");
-            create_dir_all(&log_dir)?;
+            let (local, disk_size_fn) = rt.block_on(local_durability(root))?;
+            let history = local.clone();
+            let durability = local.clone() as Arc<dyn Durability<TxData = Txdata>>;
+            let snapshot_repo = open_snapshot_repo(root, Address::default(), 0)?;
+            let db = Self::open_db(root, history, Some((durability, disk_size_fn)), Some(snapshot_repo))?;
 
-            let handle = durability::Local::open(
-                log_dir,
-                rt,
-                durability::local::Options {
-                    commitlog: commitlog::Options {
-                        max_records_in_commit: 1.try_into().unwrap(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-            )
-            .map(Arc::new)?;
-            let disk_size_fn = Arc::new({
-                let handle = handle.clone();
-                move || handle.size_on_disk()
-            });
+            Ok((db, local))
+        }
 
-            let (db, connected_clients) = {
-                let db = RelationalDB::open(root, Self::ADDRESS, Some((handle.clone(), disk_size_fn)))?;
-                db.apply(handle.clone())?
-            };
-            // TODO: Should we be able to handle the non-empty case?
-            // `RelationalDB` cannot exist on its own then.
+        fn open_db(
+            root: &Path,
+            history: impl durability::History<TxData = Txdata>,
+            durability: Option<(Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)>,
+            snapshot_repo: Option<Arc<SnapshotRepository>>,
+        ) -> Result<RelationalDB, DBError> {
+            let (db, connected_clients) =
+                RelationalDB::open(root, Self::ADDRESS, Self::OWNER, history, durability, snapshot_repo)?;
             debug_assert!(connected_clients.is_empty());
-
-            Ok((db.with_row_count(Self::row_count_fn()), handle))
+            let db = db.with_row_count(Self::row_count_fn());
+            db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
+                db.set_initialized(tx, HostType::Wasm, Hash::ZERO, [].into())
+            })?;
+            Ok(db)
         }
 
         // NOTE: This is important to make compiler tests work.
@@ -1092,6 +1460,7 @@ mod tests {
     use bytes::Bytes;
     use commitlog::payload::txdata;
     use commitlog::Commitlog;
+    use durability::EmptyHistory;
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
@@ -1158,7 +1527,14 @@ mod tests {
         stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
         stdb.commit_tx(&ExecutionContext::default(), tx)?;
 
-        match RelationalDB::local(stdb.path(), stdb.runtime().unwrap().clone(), Address::zero()) {
+        match RelationalDB::open(
+            stdb.path(),
+            Address::ZERO,
+            Identity::ZERO,
+            EmptyHistory::new(),
+            None,
+            None,
+        ) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
             }
@@ -1792,7 +2168,7 @@ mod tests {
             let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
             stdb.insert(&mut tx, table_id, product!(AlgebraicValue::I32(-42)))
                 .expect("failed to insert row");
-            stdb.commit_tx(&ExecutionContext::sql(stdb.address(), Default::default()), tx)
+            stdb.commit_tx(&ExecutionContext::sql(stdb.address()), tx)
                 .expect("failed to commit tx");
         }
 
@@ -1832,6 +2208,14 @@ mod tests {
                 bail!("unexpected delete for table: {table_id}")
             }
 
+            fn skip_row<'a, R: BufReader<'a>>(
+                &mut self,
+                table_id: TableId,
+                _reader: &mut R,
+            ) -> Result<(), Self::Error> {
+                bail!("unexpected skip for table: {table_id}")
+            }
+
             fn visit_inputs(&mut self, inputs: &txdata::Inputs) -> Result<(), Self::Error> {
                 log::debug!("visit_inputs: {inputs:?}");
                 self.inputs.push(inputs.clone());
@@ -1864,6 +2248,15 @@ mod tests {
                 reader: &mut R,
             ) -> Result<Self::Record, Self::Error> {
                 txdata::decode_record_fn(&mut *self.0.borrow_mut(), version, tx_offset, reader)
+            }
+
+            fn skip_record<'a, R: BufReader<'a>>(
+                &self,
+                version: u8,
+                _tx_offset: u64,
+                reader: &mut R,
+            ) -> Result<(), Self::Error> {
+                txdata::skip_record_fn(&mut *self.0.borrow_mut(), version, reader)
             }
         }
 
@@ -1901,9 +2294,13 @@ mod tests {
         let inputs = Rc::into_inner(inputs).unwrap().into_inner();
         log::debug!("collected inputs: {:?}", inputs.inputs);
 
-        // We should've seen three transactions --
-        // the empty one should've been ignored/
-        assert_eq!(inputs.num_txs, 3);
+        // We should've seen four transactions:
+        //
+        // - the internal tx which initializes `st_module`
+        // - three non-empty transactions here
+        //
+        // The empty transaction should've been ignored.
+        assert_eq!(inputs.num_txs, 4);
         // Two of the transactions should yield inputs.
         assert_eq!(inputs.inputs.len(), 2);
 

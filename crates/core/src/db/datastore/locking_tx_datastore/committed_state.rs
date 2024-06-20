@@ -8,18 +8,14 @@ use crate::{
     db::{
         datastore::{
             system_tables::{
-                system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableFields, StTableRow,
-                SystemTable, ST_CLIENTS_ID, ST_CLIENT_IDX, ST_COLUMNS_ID, ST_COLUMNS_IDX, ST_COLUMNS_NAME,
-                ST_CONSTRAINTS_ID, ST_CONSTRAINTS_IDX, ST_CONSTRAINTS_NAME, ST_INDEXES_ID, ST_INDEXES_IDX,
-                ST_INDEXES_NAME, ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE, ST_SCHEDULED_ID,
-                ST_SCHEDULED_IDX, ST_SEQUENCES_ID, ST_SEQUENCES_IDX, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_IDX,
+                system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_CLIENTS_ID, ST_CLIENT_IDX, ST_COLUMNS_ID, ST_COLUMNS_IDX, ST_COLUMNS_NAME, ST_CONSTRAINTS_ID, ST_CONSTRAINTS_IDX, ST_CONSTRAINTS_NAME, ST_INDEXES_ID, ST_INDEXES_IDX, ST_INDEXES_NAME, ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE, ST_SCHEDULED_ID, ST_SCHEDULED_IDX, ST_SEQUENCES_ID, ST_SEQUENCES_IDX, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_IDX, ST_VAR_ID, ST_VAR_IDX
             },
             traits::TxData,
         },
         db_metrics::DB_METRICS,
     },
     error::TableError,
-    execution_context::{ExecutionContext, MetricType},
+    execution_context::ExecutionContext,
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;
@@ -43,10 +39,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 #[derive(Default)]
-pub(super) struct CommittedState {
-    pub(super) next_tx_offset: u64,
-    pub(super) tables: IntMap<TableId, Table>,
-    pub(super) blob_store: HashMapBlobStore,
+pub(crate) struct CommittedState {
+    pub(crate) next_tx_offset: u64,
+    pub(crate) tables: IntMap<TableId, Table>,
+    pub(crate) blob_store: HashMapBlobStore,
 }
 
 impl StateView for CommittedState {
@@ -97,7 +93,7 @@ fn ignore_duplicate_insert_error<T>(res: std::result::Result<T, InsertError>) ->
 }
 
 impl CommittedState {
-    pub fn bootstrap_system_tables(&mut self, database_address: Address) -> Result<()> {
+    pub(super) fn bootstrap_system_tables(&mut self, database_address: Address) -> Result<()> {
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
         let with_label_values = |table_id: TableId, table_name: &str| {
@@ -204,6 +200,8 @@ impl CommittedState {
 
         self.create_table(ST_CLIENTS_ID, schemas[ST_CLIENT_IDX].clone());
 
+        self.create_table(ST_VAR_ID, schemas[ST_VAR_IDX].clone());
+
         self.create_table(ST_SCHEDULED_ID, schemas[ST_SCHEDULED_IDX].clone());
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store) =
@@ -234,20 +232,30 @@ impl CommittedState {
             with_label_values(ST_SEQUENCES_ID, ST_SEQUENCES_NAME).inc();
         }
 
+        self.reset_system_table_schemas(database_address)?;
+
+        Ok(())
+    }
+
+    /// Compute the system table schemas from the system tables,
+    /// and store those schemas in the in-memory [`Table`] structures.
+    ///
+    /// Necessary during bootstrap because system tables include autoinc IDs
+    /// for objects like indexes and constraints
+    /// which are computed at insert-time,
+    /// and therefore not included in the hardcoded schemas.
+    pub(super) fn reset_system_table_schemas(&mut self, database_address: Address) -> Result<()> {
         // Re-read the schema with the correct ids...
         let ctx = ExecutionContext::internal(database_address);
-        for table_id in ref_schemas.map(|s| s.table_id) {
-            let schema = self.schema_for_table_raw(&ctx, table_id)?;
-            self.tables
-                .get_mut(&table_id)
-                .unwrap()
-                .with_mut_schema(|ts| *ts = schema);
+        for schema in system_tables() {
+            self.tables.get_mut(&schema.table_id).unwrap().schema =
+                Arc::new(self.schema_for_table_raw(&ctx, schema.table_id)?);
         }
 
         Ok(())
     }
 
-    pub fn replay_delete_by_rel(&mut self, table_id: TableId, rel: &ProductValue) -> Result<()> {
+    pub(super) fn replay_delete_by_rel(&mut self, table_id: TableId, rel: &ProductValue) -> Result<()> {
         let table = self
             .tables
             .get_mut(&table_id)
@@ -261,13 +269,18 @@ impl CommittedState {
         Ok(())
     }
 
-    pub fn replay_insert(&mut self, table_id: TableId, schema: &Arc<TableSchema>, row: &ProductValue) -> Result<()> {
+    pub(super) fn replay_insert(
+        &mut self,
+        table_id: TableId,
+        schema: &Arc<TableSchema>,
+        row: &ProductValue,
+    ) -> Result<()> {
         let (table, blob_store) = self.get_table_and_blob_store_or_create(table_id, schema);
         table.insert_internal(blob_store, row).map_err(TableError::Insert)?;
         Ok(())
     }
 
-    pub fn build_sequence_state(&mut self, sequence_state: &mut SequencesState) -> Result<()> {
+    pub(super) fn build_sequence_state(&mut self, sequence_state: &mut SequencesState) -> Result<()> {
         let st_sequences = self.tables.get(&ST_SEQUENCES_ID).unwrap();
         for row_ref in st_sequences.scan_rows(&self.blob_store) {
             let sequence = StSequenceRow::try_from(row_ref)?;
@@ -289,7 +302,7 @@ impl CommittedState {
         Ok(())
     }
 
-    pub fn build_indexes(&mut self) -> Result<()> {
+    pub(super) fn build_indexes(&mut self) -> Result<()> {
         let st_indexes = self.tables.get(&ST_INDEXES_ID).unwrap();
         let rows = st_indexes
             .scan_rows(&self.blob_store)
@@ -305,10 +318,26 @@ impl CommittedState {
         Ok(())
     }
 
+    /// After replaying all old transactions,
+    /// inserts and deletes into the system tables
+    /// might not be reflected in the schemas of the built tables.
+    /// So we must re-schema every built table.
+    pub(super) fn reschema_tables(&mut self) -> Result<()> {
+        // For already built tables, we need to reschema them to account for constraints et al.
+        let mut schemas = Vec::with_capacity(self.tables.len());
+        for table_id in self.tables.keys().copied() {
+            schemas.push(self.schema_for_table_raw(&ExecutionContext::default(), table_id)?);
+        }
+        for (table, schema) in self.tables.values_mut().zip(schemas) {
+            table.with_mut_schema(|s| *s = schema);
+        }
+        Ok(())
+    }
+
     /// After replaying all old transactions, tables which have rows will
     /// have been created in memory, but tables with no rows will not have
     /// been created. This function ensures that they are created.
-    pub fn build_missing_tables(&mut self) -> Result<()> {
+    pub(super) fn build_missing_tables(&mut self) -> Result<()> {
         // Find all ids of tables that are in `st_tables` but haven't been built.
         let table_ids = self
             .get_table(ST_TABLES_ID)
@@ -326,7 +355,7 @@ impl CommittedState {
         Ok(())
     }
 
-    pub fn index_seek<'a>(
+    pub(super) fn index_seek<'a>(
         &'a self,
         table_id: TableId,
         cols: &ColList,
@@ -348,7 +377,7 @@ impl CommittedState {
     // with `table_id`
     // within the current transaction (i.e. without an intervening call to self.merge)
     // is sufficient to demonstrate that a call to `self.get` is safe.
-    pub fn get(&self, table_id: TableId, row_ptr: RowPointer) -> RowRef<'_> {
+    pub(super) fn get(&self, table_id: TableId, row_ptr: RowPointer) -> RowRef<'_> {
         debug_assert!(
             row_ptr.squashed_offset().is_committed_state(),
             "Cannot get TX_STATE RowPointer from CommittedState.",
@@ -361,32 +390,57 @@ impl CommittedState {
         table.get_row_ref(&self.blob_store, row_ptr).unwrap()
     }
 
-    pub fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
+    /// True if the transaction `(tx_data, ctx)` will be written to the commitlog,
+    /// and therefore consumes a value from `self.next_tx_offset`.
+    ///
+    /// A TX is written to the logs if any of the following holds:
+    /// - The TX inserted at least one row.
+    /// - The TX deleted at least one row.
+    /// - The TX was the result of the reducers `__identity_connected__` or `__identity_disconnected__`.
+    fn tx_consumes_offset(&self, tx_data: &TxData, ctx: &ExecutionContext) -> bool {
+        // Avoid appending transactions to the commitlog which don't modify
+        // any tables.
+        //
+        // An exception are connect / disconnect calls, which we always want
+        // paired in the log, so as to be able to disconnect clients
+        // automatically after a server crash. See:
+        // [`crate::host::ModuleHost::call_identity_connected_disconnected`]
+        //
+        // Note that this may change in the future: some analytics and/or
+        // timetravel queries may benefit from seeing all inputs, even if
+        // the database state did not change.
+        tx_data.inserts().any(|(_, inserted_rows)| !inserted_rows.is_empty())
+            || tx_data.deletes().any(|(_, deleted_rows)| !deleted_rows.is_empty())
+            || matches!(
+                ctx.reducer_context().map(|rcx| rcx.name.strip_prefix("__identity_")),
+                Some(Some("connected__" | "disconnected__"))
+            )
+    }
+
+    pub(super) fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
         let mut tx_data = TxData::default();
 
-        self.next_tx_offset += 1;
-
         // First, apply deletes. This will free up space in the committed tables.
-        self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables, ctx);
+        self.merge_apply_deletes(&mut tx_data, tx_state.delete_tables);
 
         // Then, apply inserts. This will re-fill the holes freed by deletions
         // before allocating new pages.
 
-        self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store, ctx);
+        self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store);
+
+        // If the TX will be logged, record its projected tx offset,
+        // then increment the counter.
+        if self.tx_consumes_offset(&tx_data, ctx) {
+            tx_data.set_tx_offset(self.next_tx_offset);
+            self.next_tx_offset += 1;
+        }
 
         tx_data
     }
 
-    fn merge_apply_deletes(
-        &mut self,
-        tx_data: &mut TxData,
-        delete_tables: BTreeMap<TableId, DeleteTable>,
-        ctx: &ExecutionContext,
-    ) {
+    fn merge_apply_deletes(&mut self, tx_data: &mut TxData, delete_tables: BTreeMap<TableId, DeleteTable>) {
         for (table_id, row_ptrs) in delete_tables {
             if let Some((table, blob_store)) = self.get_table_and_blob_store(table_id) {
-                let db = &ctx.database();
-
                 let mut deletes = Vec::with_capacity(row_ptrs.len());
 
                 // Note: we maintain the invariant that the delete_tables
@@ -408,17 +462,6 @@ impl CommittedState {
                 if !deletes.is_empty() {
                     tx_data.set_deletes_for_table(table_id, table_name, deletes.into());
                 }
-
-                // Bulk update rows-deleted metric and the table rows gauge.
-                ctx.metrics
-                    .write()
-                    .inc_by(table_id, MetricType::RowsDeleted, row_ptrs.len() as u64, || {
-                        table_name.to_string()
-                    });
-                DB_METRICS
-                    .rdb_num_table_rows
-                    .with_label_values(db, &table_id.into(), table_name)
-                    .sub(row_ptrs.len() as i64);
             } else if !row_ptrs.is_empty() {
                 panic!("Deletion for non-existent table {:?}... huh?", table_id);
             }
@@ -430,7 +473,6 @@ impl CommittedState {
         tx_data: &mut TxData,
         insert_tables: BTreeMap<TableId, Table>,
         tx_blob_store: impl BlobStore,
-        ctx: &ExecutionContext,
     ) {
         // TODO(perf): Consider moving whole pages from the `insert_tables` into the committed state,
         //             rather than copying individual rows out of them.
@@ -444,11 +486,6 @@ impl CommittedState {
             let (commit_table, commit_blob_store) =
                 self.get_table_and_blob_store_or_create(table_id, tx_table.get_schema());
 
-            // NOTE: if there is a schema change the table id will not change
-            // and that is what is important here so it doesn't matter if we
-            // do this before or after the schema update below.
-            let db = &ctx.database();
-
             // TODO(perf): Allocate with capacity?
             let mut inserts = vec![];
             // For each newly-inserted row, insert it into the committed state.
@@ -460,31 +497,12 @@ impl CommittedState {
 
                 inserts.push(pv);
             }
-            let num_ins = inserts.len();
 
             let table_name = &*commit_table.get_schema().table_name;
 
             if !inserts.is_empty() {
                 tx_data.set_inserts_for_table(table_id, table_name, inserts.into());
             }
-
-            // Now we know how many rows were inserted,
-            // so bulk update rows-inserted metric and the table rows gauge.
-            ctx.metrics
-                .write()
-                .inc_by(table_id, MetricType::RowsInserted, num_ins as u64, || {
-                    table_name.to_string()
-                });
-            DB_METRICS
-                .rdb_num_table_rows
-                .with_label_values(db, &table_id.into(), table_name)
-                .add(num_ins as i64);
-
-            let table_size = commit_table.bytes_occupied_overestimate();
-            DB_METRICS
-                .rdb_table_size
-                .with_label_values(db, &table_id.into(), table_name)
-                .set(table_size as i64);
 
             // Add all newly created indexes to the committed state.
             for (cols, mut index) in tx_table.indexes {
@@ -501,15 +519,15 @@ impl CommittedState {
         }
     }
 
-    pub fn get_table(&self, table_id: TableId) -> Option<&Table> {
+    pub(super) fn get_table(&self, table_id: TableId) -> Option<&Table> {
         self.tables.get(&table_id)
     }
 
-    pub fn get_table_mut(&mut self, table_id: TableId) -> Option<&mut Table> {
+    pub(super) fn get_table_mut(&mut self, table_id: TableId) -> Option<&mut Table> {
         self.tables.get_mut(&table_id)
     }
 
-    pub fn get_table_and_blob_store(&mut self, table_id: TableId) -> Option<(&mut Table, &mut dyn BlobStore)> {
+    pub(super) fn get_table_and_blob_store(&mut self, table_id: TableId) -> Option<(&mut Table, &mut dyn BlobStore)> {
         self.tables
             .get_mut(&table_id)
             .map(|tbl| (tbl, &mut self.blob_store as &mut dyn BlobStore))
@@ -523,7 +541,7 @@ impl CommittedState {
         self.tables.insert(table_id, Self::make_table(schema));
     }
 
-    pub fn get_table_and_blob_store_or_create<'this>(
+    pub(super) fn get_table_and_blob_store_or_create<'this>(
         &'this mut self,
         table_id: TableId,
         schema: &Arc<TableSchema>,

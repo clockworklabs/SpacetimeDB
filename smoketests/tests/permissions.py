@@ -76,21 +76,31 @@ class PrivateTablePermissions(Smoketest):
 use spacetimedb::spacetimedb;
 
 #[spacetimedb(table)]
-#[sats(name = "_Secret")]
 pub struct Secret {
     answer: u8,
+}
+
+#[spacetimedb(table(public))]
+pub struct CommonKnowledge {
+    thing: String,
 }
 
 #[spacetimedb(init)]
 pub fn init() {
     Secret::insert(Secret { answer: 42 });
 }
+
+#[spacetimedb(reducer)]
+pub fn do_thing() {
+    Secret::insert(Secret { answer: 20 });
+    CommonKnowledge::insert(CommonKnowledge { thing: "howdy".to_owned() });
+}
 """
 
     def test_private_table(self):
         """Ensure that a private table can only be queried by the database owner"""
 
-        out = self.spacetime("sql", self.address, "select * from _Secret")
+        out = self.spacetime("sql", self.address, "select * from Secret")
         self.assertMultiLineEqual(out, """\
  answer 
 --------
@@ -101,7 +111,14 @@ pub fn init() {
         self.new_identity(email=None)
 
         with self.assertRaises(Exception):
-            self.spacetime("sql", self.address, "select * from _Secret")
+            self.spacetime("sql", self.address, "select * from Secret")
+
+        with self.assertRaises(Exception):
+            self.subscribe("SELECT * FROM Secret", n=0)
+
+        sub = self.subscribe("SELECT * FROM *", n=1)
+        self.call("do_thing", anon=True)
+        self.assertEqual(sub(), [{'CommonKnowledge': {'deletes': [], 'inserts': [{'thing': 'howdy'}]}}])
 
 
 class LifecycleReducers(Smoketest):

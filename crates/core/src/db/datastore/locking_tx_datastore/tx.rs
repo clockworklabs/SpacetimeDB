@@ -56,7 +56,7 @@ impl StateView for TxId {
 
 impl TxId {
     pub(super) fn release(self, ctx: &ExecutionContext) {
-        record_metrics(ctx, self.timer, self.lock_wait_time, true);
+        record_metrics(ctx, self.timer, self.lock_wait_time, true, None, None);
     }
 
     pub(crate) fn get_row_count(&self, table_id: TableId) -> Option<u64> {

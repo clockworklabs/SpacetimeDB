@@ -16,7 +16,7 @@ bench = false
 
 [dependencies]
 spacetimedb-data-structures.workspace = true
-spacetimedb-lib = { workspace = true, features = ["serde"] }
+spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"] }
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-commitlog.workspace = true
 spacetimedb-durability.workspace = true
@@ -25,6 +25,7 @@ spacetimedb-primitives.workspace = true
 spacetimedb-sats = { workspace = true, features = ["serde"] }
 spacetimedb-table.workspace = true
 spacetimedb-vm.workspace = true
+spacetimedb-snapshot.workspace = true
 
 anyhow = { workspace = true, features = ["backtrace"] }
 arrayvec.workspace = true
@@ -41,10 +42,12 @@ crossbeam-channel.workspace = true
 derive_more.workspace = true
 dirs.workspace = true
 email_address.workspace = true
+enum-as-inner.workspace = true
 enum-map.workspace = true
 flate2.workspace = true
 fs2.workspace = true
 futures.workspace = true
+hashbrown = { workspace = true, features = ["rayon", "serde"] }
 hex.workspace = true
 hostname.workspace = true
 hyper.workspace = true

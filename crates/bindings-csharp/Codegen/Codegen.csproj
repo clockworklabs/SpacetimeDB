@@ -1,42 +1,39 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
-    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-    <IsRoslynComponent>true</IsRoslynComponent>
-    <LangVersion>latest</LangVersion>
-    <Nullable>enable</Nullable>
     <AssemblyName>SpacetimeDB.Codegen</AssemblyName>
-    <AssemblyVersion>0.9.3</AssemblyVersion>
+    <Version>0.10.0</Version>
+    <Title>SpacetimeDB Module Codegen</Title>
+    <Description>The SpacetimeDB Codegen implements the Roslyn incremental generators for writing SpacetimeDB modules in C#.</Description>
   </PropertyGroup>
 
   <PropertyGroup>
-    <Version>$(AssemblyVersion)</Version>
-    <Title>SpacetimeDB Module Codegen</Title>
-    <Authors>RReverser</Authors>
-    <Company>Clockwork Labs</Company>
-    <Product>SpacetimeDB</Product>
-    <Description>The SpacetimeDB Codegen implements the Roslyn incremental generators for writing SpacetimeDB modules in C#.</Description>
-    <Copyright>2023</Copyright>
-    <PackageProjectUrl>https://spacetimedb.com/</PackageProjectUrl>
-    <PackageIcon>logo.png</PackageIcon>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/clockworklabs/SpacetimeDBLibCSharp</RepositoryUrl>
-    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <!-- We're going to include this analyzer in the Runtime package instead of publishing separately. -->
+    <IsPackable>false</IsPackable>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.5.0" PrivateAssets="all" />
+    <!-- This analyzer uses some shared helpers from the BSATN.Codegen one, so include it as a regular dependency -->
+    <!-- (*not* with OutputItemType=analyzer because we don't want to use that source generator on source of Codegen itself) -->
+    <ProjectReference Include="../BSATN.Codegen/BSATN.Codegen.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="../logo.png" Pack="true" PackagePath="" />
-    <None Include="README.md" Pack="true" PackagePath="" />
-    <None Include="../LICENSE" Pack="true" PackagePath="" />
-    <!-- source generators need to be put in a specific folder -->
-    <!-- see https://github.com/dotnet/roslyn/blob/main/docs/features/source-generators.cookbook.md#package-a-generator-as-a-nuget-package -->
-    <None Include="$(OutputPath)/$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.1" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Local project references (used by SpacetimeDB/modules/*-cs) don't use NuGet resolution. -->
+  <!-- We need a different hack to include BSATN.Codegen as a transitive analyzer dependency. https://github.com/dotnet/roslyn/issues/47275#issuecomment-685482999 -->
+  <ItemGroup>
+    <TargetPathWithTargetPlatformMoniker Include="$(ProjectDir)/$(OutputPath)/SpacetimeDB.BSATN.Codegen.dll" IncludeRuntimeDependency="false" />
   </ItemGroup>
 
 </Project>

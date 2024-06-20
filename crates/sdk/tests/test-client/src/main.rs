@@ -174,6 +174,13 @@ fn assert_all_tables_empty() -> anyhow::Result<()> {
     assert_table_empty::<VecEveryPrimitiveStruct>()?;
     assert_table_empty::<VecEveryVecStruct>()?;
 
+    assert_table_empty::<OptionI32>()?;
+    assert_table_empty::<OptionString>()?;
+    assert_table_empty::<OptionIdentity>()?;
+    assert_table_empty::<OptionSimpleEnum>()?;
+    assert_table_empty::<OptionEveryPrimitiveStruct>()?;
+    assert_table_empty::<OptionVecOptionI32>()?;
+
     assert_table_empty::<UniqueU8>()?;
     assert_table_empty::<UniqueU16>()?;
     assert_table_empty::<UniqueU32>()?;
@@ -263,6 +270,12 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM VecByteStruct;",
     "SELECT * FROM VecEveryPrimitiveStruct;",
     "SELECT * FROM VecEveryVecStruct;",
+    "SELECT * FROM OptionI32;",
+    "SELECT * FROM OptionString;",
+    "SELECT * FROM OptionIdentity;",
+    "SELECT * FROM OptionSimpleEnum;",
+    "SELECT * FROM OptionEveryPrimitiveStruct;",
+    "SELECT * FROM OptionVecOptionI32;",
     "SELECT * FROM UniqueU8;",
     "SELECT * FROM UniqueU16;",
     "SELECT * FROM UniqueU32;",
@@ -838,6 +851,48 @@ fn exec_insert_vec() {
     test_counter.wait_for_all();
 }
 
+fn every_primitive_struct() -> EveryPrimitiveStruct {
+    EveryPrimitiveStruct {
+        a: 0,
+        b: 1,
+        c: 2,
+        d: 3,
+        e: 4,
+        f: -1,
+        g: -2,
+        h: -3,
+        i: -4,
+        j: -5,
+        k: false,
+        l: 1.0,
+        m: -1.0,
+        n: "string".to_string(),
+        o: identity().unwrap(),
+        p: address().unwrap(),
+    }
+}
+
+fn every_vec_struct() -> EveryVecStruct {
+    EveryVecStruct {
+        a: vec![],
+        b: vec![1],
+        c: vec![2, 2],
+        d: vec![3, 3, 3],
+        e: vec![4, 4, 4, 4],
+        f: vec![-1],
+        g: vec![-2, -2],
+        h: vec![-3, -3, -3],
+        i: vec![-4, -4, -4, -4],
+        j: vec![-5, -5, -5, -5, -5],
+        k: vec![false, true, true, false],
+        l: vec![0.0, -1.0, 1.0, -2.0, 2.0],
+        m: vec![0.0, -0.5, 0.5, -1.5, 1.5],
+        n: ["vec", "of", "strings"].into_iter().map(str::to_string).collect(),
+        o: vec![identity().unwrap()],
+        p: vec![address().unwrap()],
+    }
+}
+
 /// This tests that we can serialize and deserialize structs in various contexts.
 fn exec_insert_struct() {
     let test_counter = TestCounter::new();
@@ -854,93 +909,31 @@ fn exec_insert_struct() {
         once_on_subscription_applied(move || {
             insert_one::<OneUnitStruct>(&test_counter, UnitStruct {});
             insert_one::<OneByteStruct>(&test_counter, ByteStruct { b: 0 });
-            insert_one::<OneEveryPrimitiveStruct>(
-                &test_counter,
-                EveryPrimitiveStruct {
-                    a: 0,
-                    b: 1,
-                    c: 2,
-                    d: 3,
-                    e: 4,
-                    f: -1,
-                    g: -2,
-                    h: -3,
-                    i: -4,
-                    j: -5,
-                    k: false,
-                    l: 1.0,
-                    m: -1.0,
-                    n: "string".to_string(),
-                    o: identity().unwrap(),
-                    p: address().unwrap(),
-                },
-            );
-            insert_one::<OneEveryVecStruct>(
-                &test_counter,
-                EveryVecStruct {
-                    a: vec![],
-                    b: vec![1],
-                    c: vec![2, 2],
-                    d: vec![3, 3, 3],
-                    e: vec![4, 4, 4, 4],
-                    f: vec![-1],
-                    g: vec![-2, -2],
-                    h: vec![-3, -3, -3],
-                    i: vec![-4, -4, -4, -4],
-                    j: vec![-5, -5, -5, -5, -5],
-                    k: vec![false, true, true, false],
-                    l: vec![0.0, -1.0, 1.0, -2.0, 2.0],
-                    m: vec![0.0, -0.5, 0.5, -1.5, 1.5],
-                    n: ["vec", "of", "strings"].into_iter().map(str::to_string).collect(),
-                    o: vec![identity().unwrap()],
-                    p: vec![address().unwrap()],
-                },
-            );
+            insert_one::<OneEveryPrimitiveStruct>(&test_counter, every_primitive_struct());
+            insert_one::<OneEveryVecStruct>(&test_counter, every_vec_struct());
 
             insert_one::<VecUnitStruct>(&test_counter, vec![UnitStruct {}]);
             insert_one::<VecByteStruct>(&test_counter, vec![ByteStruct { b: 0 }]);
-            insert_one::<VecEveryPrimitiveStruct>(
-                &test_counter,
-                vec![EveryPrimitiveStruct {
-                    a: 0,
-                    b: 1,
-                    c: 2,
-                    d: 3,
-                    e: 4,
-                    f: -1,
-                    g: -2,
-                    h: -3,
-                    i: -4,
-                    j: -5,
-                    k: false,
-                    l: 1.0,
-                    m: -1.0,
-                    n: "string".to_string(),
-                    o: identity().unwrap(),
-                    p: address().unwrap(),
-                }],
-            );
-            insert_one::<VecEveryVecStruct>(
-                &test_counter,
-                vec![EveryVecStruct {
-                    a: vec![],
-                    b: vec![1],
-                    c: vec![2, 2],
-                    d: vec![3, 3, 3],
-                    e: vec![4, 4, 4, 4],
-                    f: vec![-1],
-                    g: vec![-2, -2],
-                    h: vec![-3, -3, -3],
-                    i: vec![-4, -4, -4, -4],
-                    j: vec![-5, -5, -5, -5, -5],
-                    k: vec![false, true, true, false],
-                    l: vec![0.0, -1.0, 1.0, -2.0, 2.0],
-                    m: vec![0.0, -0.5, 0.5, -1.5, 1.5],
-                    n: ["vec", "of", "strings"].into_iter().map(str::to_string).collect(),
-                    o: vec![identity().unwrap()],
-                    p: vec![address().unwrap()],
-                }],
-            );
+            insert_one::<VecEveryPrimitiveStruct>(&test_counter, vec![every_primitive_struct()]);
+            insert_one::<VecEveryVecStruct>(&test_counter, vec![every_vec_struct()]);
+
+            insert_one::<OptionI32>(&test_counter, Some(0));
+            insert_one::<OptionI32>(&test_counter, None);
+
+            insert_one::<OptionString>(&test_counter, Some("string".to_string()));
+            insert_one::<OptionString>(&test_counter, None);
+
+            insert_one::<OptionIdentity>(&test_counter, Some(identity().unwrap()));
+            insert_one::<OptionIdentity>(&test_counter, None);
+
+            insert_one::<OptionSimpleEnum>(&test_counter, Some(SimpleEnum::Zero));
+            insert_one::<OptionSimpleEnum>(&test_counter, None);
+
+            insert_one::<OptionEveryPrimitiveStruct>(&test_counter, Some(every_primitive_struct()));
+            insert_one::<OptionEveryPrimitiveStruct>(&test_counter, None);
+
+            insert_one::<OptionVecOptionI32>(&test_counter, Some(vec![Some(0), None]));
+            insert_one::<OptionVecOptionI32>(&test_counter, None);
 
             sub_applied_nothing_result(assert_all_tables_empty());
         });
@@ -1076,45 +1069,6 @@ fn exec_insert_long_table() {
         let test_counter = test_counter.clone();
         let mut large_table_result = Some(test_counter.add_test("insert-large-table"));
         once_on_subscription_applied(move || {
-            let every_primitive_struct = EveryPrimitiveStruct {
-                a: 0,
-                b: 1,
-                c: 2,
-                d: 3,
-                e: 4,
-                f: 0,
-                g: -1,
-                h: -2,
-                i: -3,
-                j: -4,
-                k: false,
-                l: 0.0,
-                m: 1.0,
-                n: "string".to_string(),
-                o: identity().unwrap(),
-                p: address().unwrap(),
-            };
-            let every_vec_struct = EveryVecStruct {
-                a: vec![0],
-                b: vec![1],
-                c: vec![2],
-                d: vec![3],
-                e: vec![4],
-                f: vec![0],
-                g: vec![-1],
-                h: vec![-2],
-                i: vec![-3],
-                j: vec![-4],
-                k: vec![false],
-                l: vec![0.0],
-                m: vec![1.0],
-                n: vec!["string".to_string()],
-                o: vec![identity().unwrap()],
-                p: vec![address().unwrap()],
-            };
-
-            let every_primitive_dup = every_primitive_struct.clone();
-            let every_vec_dup = every_vec_struct.clone();
             LargeTable::on_insert(move |row, reducer_event| {
                 if large_table_result.is_some() {
                     let run_tests = || {
@@ -1136,8 +1090,8 @@ fn exec_insert_long_table() {
                         assert_eq_or_bail!(row.p, EnumWithPayload::Bool(false));
                         assert_eq_or_bail!(row.q, UnitStruct {});
                         assert_eq_or_bail!(row.r, ByteStruct { b: 0b10101010 });
-                        assert_eq_or_bail!(row.s, every_primitive_struct);
-                        assert_eq_or_bail!(row.t, every_vec_struct);
+                        assert_eq_or_bail!(row.s, every_primitive_struct());
+                        assert_eq_or_bail!(row.t, every_vec_struct());
                         if !matches!(reducer_event, Some(ReducerEvent::InsertLargeTable(_))) {
                             anyhow::bail!(
                                 "Unexpected reducer event: expeced InsertLargeTable but found {:?}",
@@ -1168,8 +1122,8 @@ fn exec_insert_long_table() {
                 EnumWithPayload::Bool(false),
                 UnitStruct {},
                 ByteStruct { b: 0b10101010 },
-                every_primitive_dup,
-                every_vec_dup,
+                every_primitive_struct(),
+                every_vec_struct(),
             );
 
             sub_applied_nothing_result(assert_all_tables_empty())

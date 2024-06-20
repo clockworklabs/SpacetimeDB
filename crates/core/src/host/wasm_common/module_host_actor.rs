@@ -1,12 +1,13 @@
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use bytes::Bytes;
+use once_cell::unsync::Lazy;
 use std::sync::Arc;
 use std::time::Duration;
 
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, Address, ModuleDef, ModuleValidationError, TableDesc, Timestamp};
-use spacetimedb_vm::expr::CrudExpr;
+use spacetimedb_sats::hash::Hash;
 
 use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
@@ -23,7 +24,7 @@ use crate::host::module_host::{
 };
 use crate::host::{ArgsTuple, EntityDef, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler};
 use crate::identity::Identity;
-use crate::messages::control_db::Database;
+use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::sql;
 use crate::subscription::module_subscription_actor::WriteConflict;
@@ -155,6 +156,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let desc = instance.extract_descriptions()?;
         let desc: ModuleDef = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
         desc.validate_reducers()?;
+        let orig_module_def = desc.clone();
         let ModuleDef {
             mut typespace,
             mut tables,
@@ -183,7 +185,8 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let reducers = ReducersMap(reducers.into_iter().map(|x| (x.name.clone(), x)).collect());
 
         let info = Arc::new(ModuleInfo {
-            identity: database_instance_context.identity,
+            module_def: orig_module_def,
+            identity: database_instance_context.owner_identity,
             address: database_instance_context.address,
             module_hash,
             typespace,
@@ -274,24 +277,14 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         query: String,
     ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError> {
         let db = &self.database_instance_context.relational_db;
-        let auth = AuthCtx::new(self.database_instance_context.identity, caller_identity);
+        let auth = AuthCtx::new(self.database_instance_context.owner_identity, caller_identity);
         log::debug!("One-off query: {query}");
         // Don't need the `slow query` logger on compilation
-        let ctx = &ExecutionContext::sql(db.address(), db.read_config().slow_query);
-        let compiled: Vec<_> = db.with_read_only(ctx, |tx| {
+        db.with_read_only(&ExecutionContext::sql(db.address()), |tx| {
             let ast = sql::compiler::compile_sql(db, tx, &query)?;
-            ast.into_iter()
-                .map(|expr| {
-                    if matches!(expr, CrudExpr::Query { .. }) {
-                        Ok(expr)
-                    } else {
-                        Err(anyhow!("One-off queries are not allowed to modify the database"))
-                    }
-                })
-                .collect::<Result<_, _>>()
-        })?;
-
-        sql::execute::execute_sql(db, &query, compiled, auth)
+            sql::execute::execute_sql_tx(db, tx, &query, ast, auth)
+                .and_then(|res| Ok(res.context("One-off queries are not allowed to modify the database")?))
+        })
     }
 
     fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
@@ -344,8 +337,13 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         self.trapped
     }
 
-    #[tracing::instrument(skip(self, args), fields(db_id = self.instance.instance_env().dbic.id))]
-    fn init_database(&mut self, fence: u128, args: ArgsTuple) -> anyhow::Result<Option<ReducerCallResult>> {
+    #[tracing::instrument(skip_all, fields(db_id = self.instance.instance_env().dbic.id))]
+    fn init_database(
+        &mut self,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> anyhow::Result<Option<ReducerCallResult>> {
+        log::debug!("init database");
         let timestamp = Timestamp::now();
         let stdb = &*self.database_instance_context().relational_db;
         let ctx = ExecutionContext::internal(stdb.address());
@@ -359,9 +357,9 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                     stdb.create_table(tx, schema)
                         .with_context(|| format!("failed to create table {table_name}"))?;
                 }
-                // Set the module hash. Morally, this should be done _after_ calling
-                // the `init` reducer, but that consumes our transaction context.
-                stdb.set_program_hash(tx, fence, self.info.module_hash)?;
+
+                stdb.set_initialized(tx, HostType::Wasm, program_hash, program_bytes)?;
+
                 anyhow::Ok(())
             })
             .inspect_err(|e| log::error!("{e:?}"))?;
@@ -378,7 +376,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 // the init/update reducer will receive it as the caller address.
                 // This is useful for bootstrapping the control DB in SpacetimeDB-cloud.
                 let Database {
-                    identity: caller_identity,
+                    owner_identity: caller_identity,
                     publisher_address: caller_address,
                     ..
                 } = self.database_instance_context().database;
@@ -393,7 +391,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                         request_id: None,
                         timer: None,
                         reducer_id,
-                        args,
+                        args: ArgsTuple::nullary(),
                     },
                 ))
             }
@@ -405,22 +403,24 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     }
 
     #[tracing::instrument(skip_all)]
-    fn update_database(&mut self, fence: u128) -> Result<UpdateDatabaseResult, anyhow::Error> {
+    fn update_database(
+        &mut self,
+        caller_address: Option<Address>,
+        program_hash: Hash,
+        program_bytes: Box<[u8]>,
+    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         let timestamp = Timestamp::now();
 
         let proposed_tables = get_tabledefs(&self.info).collect::<anyhow::Result<Vec<_>>>()?;
 
         let stdb = &*self.database_instance_context().relational_db;
-        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let ctx = Lazy::new(|| ExecutionContext::internal(stdb.address()));
 
-        let res = crate::db::update::update_database(
-            stdb,
-            tx,
-            proposed_tables,
-            fence,
-            self.info.module_hash,
-            self.system_logger(),
-        )?;
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let (tx, _) = stdb.with_auto_rollback(&ctx, tx, |tx| {
+            stdb.update_program(tx, HostType::Wasm, program_hash, program_bytes)
+        })?;
+        let res = crate::db::update::update_database(stdb, tx, proposed_tables, self.system_logger())?;
         let tx = match res {
             Ok(tx) => tx,
             Err(e) => return Ok(Err(e)),
@@ -428,7 +428,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
         let update_result = match self.info.reducers.lookup_id(UPDATE_DUNDER) {
             None => {
-                stdb.commit_tx(&ExecutionContext::internal(stdb.address()), tx)?;
+                stdb.commit_tx(&ctx, tx)?;
                 None
             }
 
@@ -438,8 +438,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 // the init/update reducer will receive it as the caller address.
                 // This is useful for bootstrapping the control DB in SpacetimeDB-cloud.
                 let Database {
-                    identity: caller_identity,
-                    publisher_address: caller_address,
+                    owner_identity: caller_identity,
                     ..
                 } = self.database_instance_context().database;
                 let res = self.call_reducer_with_tx(

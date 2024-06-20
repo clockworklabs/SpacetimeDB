@@ -4,6 +4,9 @@ use crate::meta_type::MetaType;
 use crate::{de::Deserialize, ser::Serialize};
 use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, ValueWithType, WithTypespace};
 
+pub const IDENTITY_TAG: &str = "__identity_bytes";
+pub const ADDRESS_TAG: &str = "__address_bytes";
+
 /// A structural product type  of the factors given by `elements`.
 ///
 /// This is also known as `struct` and `tuple` in many languages,
@@ -56,14 +59,18 @@ impl ProductType {
 
     /// Returns whether this is the special case of `spacetimedb_lib::Identity`.
     pub fn is_identity(&self) -> bool {
-        self.is_bytes_newtype("__identity_bytes")
+        self.is_bytes_newtype(IDENTITY_TAG)
     }
 
     /// Returns whether this is the special case of `spacetimedb_lib::Address`.
     pub fn is_address(&self) -> bool {
-        self.is_bytes_newtype("__address_bytes")
+        self.is_bytes_newtype(ADDRESS_TAG)
     }
 
+    /// Returns whether this is a special known `tag`, currently `Address` or `Identity`.
+    pub fn is_special_tag(tag_name: &str) -> bool {
+        tag_name == IDENTITY_TAG || tag_name == ADDRESS_TAG
+    }
     /// Returns whether this is a special known type, currently `Address` or `Identity`.
     pub fn is_special(&self) -> bool {
         self.is_identity() || self.is_address()

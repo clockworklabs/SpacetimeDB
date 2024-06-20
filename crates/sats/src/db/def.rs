@@ -460,6 +460,17 @@ impl From<ConstraintSchema> for ConstraintDef {
     }
 }
 
+/// Concatenate the column names from the `columns`
+///
+/// WARNING: If the `ColId` not exist, is skipped.
+/// TODO(Tyler): This should return an error and not allow this to be constructed
+/// if there is an invalid `ColId`
+fn generate_cols_name<'a>(columns: &ColList, col_name: impl Fn(ColId) -> Option<&'a str>) -> String {
+    let mut column_name = Vec::with_capacity(columns.len() as usize);
+    column_name.extend(columns.iter().filter_map(col_name));
+    column_name.join("_")
+}
+
 /// A data structure representing the schema of a database table.
 ///
 /// This struct holds information about the table, including its identifier,
@@ -578,6 +589,15 @@ impl TableSchema {
     /// Removes the given `index_id`
     pub fn remove_constraint(&mut self, constraint_id: ConstraintId) {
         self.constraints.retain(|x| x.constraint_id != constraint_id)
+    }
+
+    /// Concatenate the column names from the `columns`
+    ///
+    /// WARNING: If the `ColId` not exist, is skipped.
+    /// TODO(Tyler): This should return an error and not allow this to be constructed
+    /// if there is an invalid `ColId`
+    pub fn generate_cols_name(&self, columns: &ColList) -> String {
+        generate_cols_name(columns, |p| self.get_column(p.idx()).map(|c| &*c.col_name))
     }
 
     /// Check if the specified `field` exists in this [TableSchema].
@@ -1012,28 +1032,18 @@ impl TableDef {
     /// TODO(Tyler): This should return an error and not allow this to be constructed
     /// if there is an invalid `ColId`
     fn generate_cols_name(&self, columns: &ColList) -> String {
-        let mut column_name = Vec::with_capacity(columns.len() as usize);
-        for col_pos in columns.iter() {
-            if let Some(col) = self.get_column(col_pos.idx()) {
-                column_name.push(&*col.col_name)
-            }
-        }
-
-        column_name.join("_")
+        generate_cols_name(columns, |p| self.get_column(p.idx()).map(|c| &*c.col_name))
     }
 
     /// Generate a [ConstraintDef] using the supplied `columns`.
-    pub fn with_column_constraint(self, kind: Constraints, columns: impl Into<ColList>) -> Self {
-        let mut x = self;
-        let columns = columns.into();
+    pub fn with_column_constraint(mut self, kind: Constraints, columns: impl Into<ColList>) -> Self {
+        self.constraints.push(self.gen_constraint_def(kind, columns));
+        self
+    }
 
-        x.constraints.push(ConstraintDef::for_column(
-            &x.table_name,
-            &x.generate_cols_name(&columns),
-            kind,
-            columns,
-        ));
-        x
+    fn gen_constraint_def(&self, kind: Constraints, columns: impl Into<ColList>) -> ConstraintDef {
+        let columns = columns.into();
+        ConstraintDef::for_column(&self.table_name, &self.generate_cols_name(&columns), kind, columns)
     }
 
     /// Set the indexes for the table and return a new `TableDef` instance with the updated indexes.
@@ -1096,79 +1106,52 @@ impl TableDef {
     ///
     /// It looks into [Self::constraints] for possible duplicates and remove them from the result
     pub fn generated_indexes(&self) -> impl Iterator<Item = IndexDef> + '_ {
-        self.constraints.iter().filter_map(|x| {
-            if x.constraints.has_indexed() {
+        self.constraints
+            .iter()
+            // We are only interested in constraints implying an index.
+            .filter(|x| x.constraints.has_indexed())
+            // Create the `IndexDef`.
+            .map(|x| {
                 let is_unique = x.constraints.has_unique();
-                let idx = IndexDef::for_column(&self.table_name, &x.constraint_name, x.columns.clone(), is_unique);
-                if self
-                    .indexes
-                    .binary_search_by(|x| x.index_name.cmp(&idx.index_name))
-                    .is_ok()
-                {
-                    return None;
-                }
-                Some(idx)
-            } else {
-                None
-            }
-        })
+                IndexDef::for_column(&self.table_name, &x.constraint_name, x.columns.clone(), is_unique)
+            })
+            // Only keep those we don't yet have in the list of indices (checked by name).
+            .filter(|idx| self.indexes.iter().all(|x| x.index_name != idx.index_name))
     }
 
     /// Get an iterator deriving [SequenceDef] from the constraints that require them like `IDENTITY`.
     ///
     /// It looks into [Self::constraints] for possible duplicates and remove them from the result
     pub fn generated_sequences(&self) -> impl Iterator<Item = SequenceDef> + '_ {
-        self.constraints.iter().filter_map(|x| {
-            if x.constraints.has_autoinc() {
-                let col_id = x.columns.head();
-
-                let seq = SequenceDef::for_column(&self.table_name, &x.constraint_name, col_id);
-                if self
-                    .sequences
-                    .binary_search_by(|x| x.sequence_name.cmp(&seq.sequence_name))
-                    .is_ok()
-                {
-                    return None;
-                }
-                Some(seq)
-            } else {
-                None
-            }
-        })
+        self.constraints
+            .iter()
+            // We are only interested in constraints implying a sequence.
+            .filter(|x| x.constraints.has_autoinc())
+            // Create the `SequenceDef`.
+            .map(|x| SequenceDef::for_column(&self.table_name, &x.constraint_name, x.columns.head()))
+            // Only keep those we don't yet have in the list of sequences (checked by name).
+            .filter(|seq| self.sequences.iter().all(|x| x.sequence_name != seq.sequence_name))
     }
 
     /// Get an iterator deriving [ConstraintDef] from the indexes that require them like `UNIQUE`.
     ///
     /// It looks into [Self::constraints] for possible duplicates and remove them from the result
     pub fn generated_constraints(&self) -> impl Iterator<Item = ConstraintDef> + '_ {
+        // Collect the set of all col-lists with a constraint.
         let cols: HashSet<_> = self
             .constraints
             .iter()
-            .filter_map(|x| {
-                if x.constraints.kind() != ConstraintKind::UNSET {
-                    Some(&x.columns)
-                } else {
-                    None
-                }
-            })
+            .filter(|x| x.constraints.kind() != ConstraintKind::UNSET)
+            .map(|x| &x.columns)
             .collect();
 
-        self.indexes.iter().filter_map(move |idx| {
-            if !cols.contains(&idx.columns) {
-                Some(ConstraintDef::for_column(
-                    &self.table_name,
-                    &idx.index_name,
-                    if idx.is_unique {
-                        Constraints::unique()
-                    } else {
-                        Constraints::indexed()
-                    },
-                    idx.columns.clone(),
-                ))
-            } else {
-                None
-            }
-        })
+        // Those indices that are not present in the constraints above
+        // have constraints generated for them.
+        // When `idx.is_unique`, a unique constraint is generated rather than an indexed one.
+        self.indexes
+            .iter()
+            .filter(move |idx| !cols.contains(&idx.columns))
+            .map(|idx| self.gen_constraint_def(Constraints::from_is_unique(idx.is_unique), idx.columns.clone()))
     }
 
     /// Create a new [TableSchema] from [Self] and a `table id`.
@@ -1305,7 +1288,7 @@ mod tests {
                 ),
                 ConstraintSchema::from_def(
                     TableId(0),
-                    ConstraintDef::new("ct_test_name_non_unique_indexed".into(), Constraints::indexed(), ColId(1))
+                    ConstraintDef::new("ct_test_name_indexed".into(), Constraints::indexed(), ColId(1))
                 ),
             ]
         );
@@ -1502,7 +1485,7 @@ mod tests {
                     ty: DefType::Index,
                 },
                 SchemaError::ColumnsNotFound {
-                    name: "ct_test__non_unique_indexed".into(),
+                    name: "ct_test__indexed".into(),
                     table: "test".into(),
                     columns: vec![ColId(1003)],
                     ty: DefType::Constraint,

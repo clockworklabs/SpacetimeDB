@@ -24,6 +24,7 @@ spacetimedb-data-structures.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-standalone = { workspace = true, optional = true }
 spacetimedb-client-api-messages.workspace = true
+spacetimedb-fs-utils.workspace = true
 
 anyhow.workspace = true
 base64.workspace = true
@@ -37,6 +38,7 @@ duct.workspace = true
 email_address.workspace = true
 futures.workspace = true
 flate2.workspace = true
+http.workspace = true
 is-terminal.workspace = true
 itertools.workspace = true
 indicatif.workspace = true
@@ -56,6 +58,7 @@ tempfile.workspace = true
 termcolor.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-tungstenite.workspace = true
 toml.workspace = true
 wasmbin.workspace = true
 wasmtime.workspace = true

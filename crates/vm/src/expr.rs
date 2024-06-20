@@ -1,19 +1,22 @@
-use crate::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
+use crate::errors::{ErrorKind, ErrorLang};
 use crate::operator::{OpCmp, OpLogic, OpQuery};
 use crate::relation::{MemTable, RelValue};
 use arrayvec::ArrayVec;
 use core::slice::from_ref;
 use derive_more::From;
-use smallvec::{smallvec, SmallVec};
-use spacetimedb_data_structures::map::{HashMap, HashSet};
-use spacetimedb_lib::Identity;
+use itertools::Itertools;
+use smallvec::SmallVec;
+use spacetimedb_data_structures::map::{HashSet, IntMap};
+use spacetimedb_lib::{AlgebraicType, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::def::{TableDef, TableSchema};
-use spacetimedb_sats::db::error::AuthError;
-use spacetimedb_sats::relation::{DbTable, FieldExpr, FieldName, Header, Relation, RowCount};
+use spacetimedb_sats::db::error::{AuthError, RelationError};
+use spacetimedb_sats::relation::{ColExpr, DbTable, FieldName, Header};
+use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::ProductValue;
+use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
@@ -27,21 +30,51 @@ pub trait AuthAccess {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
-pub enum ColumnOp {
+pub enum FieldExpr {
+    Name(FieldName),
+    Value(AlgebraicValue),
+}
+
+impl FieldExpr {
+    pub fn strip_table(self) -> ColExpr {
+        match self {
+            Self::Name(field) => ColExpr::Col(field.col),
+            Self::Value(value) => ColExpr::Value(value),
+        }
+    }
+
+    pub fn name_to_col(self, head: &Header) -> Result<ColExpr, RelationError> {
+        match self {
+            Self::Value(val) => Ok(ColExpr::Value(val)),
+            Self::Name(field) => head.column_pos_or_err(field).map(ColExpr::Col),
+        }
+    }
+}
+
+impl fmt::Display for FieldExpr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FieldExpr::Name(x) => write!(f, "{x}"),
+            FieldExpr::Value(x) => write!(f, "{}", x.to_satn()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
+pub enum FieldOp {
     #[from]
     Field(FieldExpr),
     Cmp {
         op: OpQuery,
-        lhs: Box<ColumnOp>,
-        rhs: Box<ColumnOp>,
+        lhs: Box<FieldOp>,
+        rhs: Box<FieldOp>,
     },
 }
 
-type ColumnOpFlat = SmallVec<[ColumnOp; 1]>;
-type ColumnOpRefFlat<'a> = SmallVec<[&'a ColumnOp; 1]>;
+type FieldOpFlat = SmallVec<[FieldOp; 1]>;
 
-impl ColumnOp {
-    pub fn new(op: OpQuery, lhs: ColumnOp, rhs: ColumnOp) -> Self {
+impl FieldOp {
+    pub fn new(op: OpQuery, lhs: Self, rhs: Self) -> Self {
         Self::Cmp {
             op,
             lhs: Box::new(lhs),
@@ -52,126 +85,19 @@ impl ColumnOp {
     pub fn cmp(field: impl Into<FieldName>, op: OpCmp, value: impl Into<AlgebraicValue>) -> Self {
         Self::new(
             OpQuery::Cmp(op),
-            ColumnOp::Field(FieldExpr::Name(field.into())),
-            ColumnOp::Field(FieldExpr::Value(value.into())),
+            Self::Field(FieldExpr::Name(field.into())),
+            Self::Field(FieldExpr::Value(value.into())),
         )
     }
 
-    /// Returns a new op where `lhs` and `rhs` are logically AND-ed together.
-    fn and(lhs: ColumnOp, rhs: ColumnOp) -> Self {
-        Self::new(OpQuery::Logic(OpLogic::And), lhs, rhs)
-    }
-
-    /// Returns an op where `col_i op value_i` are all `AND`ed together.
-    fn and_cmp(op: OpCmp, head: &Header, cols: &ColList, value: AlgebraicValue) -> Self {
-        let eq = |(col, value): (ColId, _)| {
-            let field = head.fields[col.idx()].field;
-            Self::cmp(field, op, value)
-        };
-
-        // For singleton constraints, the `value` must be used directly.
-        if cols.is_singleton() {
-            return eq((cols.head(), value));
-        }
-
-        // Otherwise, pair column ids and product fields together.
-        cols.iter()
-            .zip(value.into_product().unwrap())
-            .map(eq)
-            .reduce(Self::and)
-            .unwrap()
-    }
-
-    /// Returns an op where `cols` must be within bounds.
-    /// This handles both the case of single-col bounds and multi-col bounds.
-    fn from_op_col_bounds(
-        head: &Header,
-        cols: &ColList,
-        bounds: (Bound<AlgebraicValue>, Bound<AlgebraicValue>),
-    ) -> Self {
-        let (cmp, value) = match bounds {
-            // Equality; field <= value && field >= value <=> field = value
-            (Bound::Included(a), Bound::Included(b)) if a == b => (OpCmp::Eq, a),
-            // Inclusive lower bound => field >= value
-            (Bound::Included(value), Bound::Unbounded) => (OpCmp::GtEq, value),
-            // Exclusive lower bound => field > value
-            (Bound::Excluded(value), Bound::Unbounded) => (OpCmp::Gt, value),
-            // Inclusive upper bound => field <= value
-            (Bound::Unbounded, Bound::Included(value)) => (OpCmp::LtEq, value),
-            // Exclusive upper bound => field < value
-            (Bound::Unbounded, Bound::Excluded(value)) => (OpCmp::Lt, value),
-            (Bound::Unbounded, Bound::Unbounded) => unreachable!(),
-            (lower_bound, upper_bound) => {
-                let lhs = Self::from_op_col_bounds(head, cols, (lower_bound, Bound::Unbounded));
-                let rhs = Self::from_op_col_bounds(head, cols, (Bound::Unbounded, upper_bound));
-                return ColumnOp::and(lhs, rhs);
-            }
-        };
-        ColumnOp::and_cmp(cmp, head, cols, value)
-    }
-
-    fn reduce(&self, row: &RelValue<'_>, value: &ColumnOp, header: &Header) -> Result<AlgebraicValue, ErrorLang> {
-        match value {
-            ColumnOp::Field(field) => Ok(row.get(field.borrowed(), header)?.into_owned()),
-            ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs, header)?.into()),
-        }
-    }
-
-    fn reduce_bool(&self, row: &RelValue<'_>, value: &ColumnOp, header: &Header) -> Result<bool, ErrorLang> {
-        match value {
-            ColumnOp::Field(field) => {
-                let field = row.get(field.borrowed(), header)?;
-
-                match field.as_bool() {
-                    Some(b) => Ok(*b),
-                    None => Err(ErrorType::FieldBool(field.into_owned()).into()),
-                }
-            }
-            ColumnOp::Cmp { op, lhs, rhs } => Ok(self.compare_bin_op(row, *op, lhs, rhs, header)?),
-        }
-    }
-
-    fn compare_bin_op(
-        &self,
-        row: &RelValue<'_>,
-        op: OpQuery,
-        lhs: &ColumnOp,
-        rhs: &ColumnOp,
-        header: &Header,
-    ) -> Result<bool, ErrorVm> {
-        match op {
-            OpQuery::Cmp(op) => {
-                let lhs = self.reduce(row, lhs, header)?;
-                let rhs = self.reduce(row, rhs, header)?;
-
-                Ok(match op {
-                    OpCmp::Eq => lhs == rhs,
-                    OpCmp::NotEq => lhs != rhs,
-                    OpCmp::Lt => lhs < rhs,
-                    OpCmp::LtEq => lhs <= rhs,
-                    OpCmp::Gt => lhs > rhs,
-                    OpCmp::GtEq => lhs >= rhs,
-                })
-            }
-            OpQuery::Logic(op) => {
-                let lhs = self.reduce_bool(row, lhs, header)?;
-                let rhs = self.reduce_bool(row, rhs, header)?;
-
-                Ok(match op {
-                    OpLogic::And => lhs && rhs,
-                    OpLogic::Or => lhs || rhs,
-                })
-            }
-        }
-    }
-
-    pub fn compare(&self, row: &RelValue<'_>, header: &Header) -> Result<bool, ErrorVm> {
+    pub fn names_to_cols(self, head: &Header) -> Result<ColumnOp, RelationError> {
         match self {
-            ColumnOp::Field(field) => {
-                let lhs = row.get(field.borrowed(), header)?;
-                Ok(*lhs.as_bool().unwrap())
+            Self::Field(field) => field.name_to_col(head).map(ColumnOp::from),
+            Self::Cmp { op, lhs, rhs } => {
+                let lhs = lhs.names_to_cols(head)?;
+                let rhs = rhs.names_to_cols(head)?;
+                Ok(ColumnOp::new(op, lhs, rhs))
             }
-            ColumnOp::Cmp { op, lhs, rhs } => self.compare_bin_op(row, *op, lhs, rhs, header),
         }
     }
 
@@ -182,10 +108,10 @@ impl ColumnOp {
     /// This helps with splitting the kinds of `queries`,
     /// that *could* be answered by a `index`,
     /// from the ones that need to be executed with a `scan`.
-    pub fn flatten_ands(self) -> ColumnOpFlat {
-        fn fill_vec(buf: &mut ColumnOpFlat, op: ColumnOp) {
+    pub fn flatten_ands(self) -> FieldOpFlat {
+        fn fill_vec(buf: &mut FieldOpFlat, op: FieldOp) {
             match op {
-                ColumnOp::Cmp {
+                FieldOp::Cmp {
                     op: OpQuery::Logic(OpLogic::And),
                     lhs,
                     rhs,
@@ -200,63 +126,252 @@ impl ColumnOp {
         fill_vec(&mut buf, self);
         buf
     }
-
-    /// Flattens a nested conjunction of AND expressions.
-    ///
-    /// For example, `a = 1 AND b = 2 AND c = 3` becomes `[a = 1, b = 2, c = 3]`.
-    ///
-    /// This helps with splitting the kinds of `queries`,
-    /// that *could* be answered by a `index`,
-    /// from the ones that need to be executed with a `scan`.
-    pub fn flatten_ands_ref(&self) -> ColumnOpRefFlat<'_> {
-        fn fill_vec<'a>(buf: &mut ColumnOpRefFlat<'a>, op: &'a ColumnOp) {
-            match op {
-                ColumnOp::Cmp {
-                    op: OpQuery::Logic(OpLogic::And),
-                    lhs,
-                    rhs,
-                } => {
-                    fill_vec(buf, lhs);
-                    fill_vec(buf, rhs);
-                }
-                op => buf.push(op),
-            }
-        }
-        let mut buf = SmallVec::new();
-        fill_vec(&mut buf, self);
-        buf
-    }
 }
 
-impl fmt::Display for ColumnOp {
+impl fmt::Display for FieldOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ColumnOp::Field(x) => {
+            Self::Field(x) => {
                 write!(f, "{}", x)
             }
-            ColumnOp::Cmp { op, lhs, rhs } => {
+            Self::Cmp { op, lhs, rhs } => {
                 write!(f, "{} {} {}", lhs, op, rhs)
             }
         }
     }
 }
 
-impl From<FieldName> for ColumnOp {
-    fn from(value: FieldName) -> Self {
-        ColumnOp::Field(value.into())
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
+pub enum ColumnOp {
+    /// The value is the the column at `to_index(col)` in the row, i.e., `row.read_column(to_index(col))`.
+    #[from]
+    Col(ColId),
+    /// The value is the embedded value.
+    #[from]
+    Val(AlgebraicValue),
+    /// The value is `eval_cmp(cmp, row.read_column(to_index(lhs)), rhs)`.
+    /// This is an optimized version of `Cmp`, avoiding one depth of nesting.
+    ColCmpVal {
+        lhs: ColId,
+        cmp: OpCmp,
+        rhs: AlgebraicValue,
+    },
+    /// The value is `eval_cmp(cmp, eval(row, lhs), eval(row, rhs))`.
+    Cmp {
+        lhs: Box<ColumnOp>,
+        cmp: OpCmp,
+        rhs: Box<ColumnOp>,
+    },
+    /// Let `conds = eval(row, operands_i)`.
+    /// For `op = OpLogic::And`, the value is `all(conds)`.
+    /// For `op = OpLogic::Or`, the value is `any(conds)`.
+    Log { op: OpLogic, operands: Box<[ColumnOp]> },
+}
+
+impl ColumnOp {
+    pub fn new(op: OpQuery, lhs: Self, rhs: Self) -> Self {
+        match op {
+            OpQuery::Cmp(cmp) => match (lhs, rhs) {
+                (ColumnOp::Col(lhs), ColumnOp::Val(rhs)) => Self::cmp(lhs, cmp, rhs),
+                (lhs, rhs) => Self::Cmp {
+                    lhs: Box::new(lhs),
+                    cmp,
+                    rhs: Box::new(rhs),
+                },
+            },
+            OpQuery::Logic(op) => Self::Log {
+                op,
+                operands: [lhs, rhs].into(),
+            },
+        }
+    }
+
+    pub fn cmp(col: impl Into<ColId>, cmp: OpCmp, val: impl Into<AlgebraicValue>) -> Self {
+        let lhs = col.into();
+        let rhs = val.into();
+        Self::ColCmpVal { lhs, cmp, rhs }
+    }
+
+    /// Returns a new op where `lhs` and `rhs` are logically AND-ed together.
+    fn and(lhs: Self, rhs: Self) -> Self {
+        let ands = |operands| {
+            let op = OpLogic::And;
+            Self::Log { op, operands }
+        };
+
+        match (lhs, rhs) {
+            // Merge a pair of ⋀ into a single ⋀.
+            (
+                Self::Log {
+                    op: OpLogic::And,
+                    operands: lhs,
+                },
+                Self::Log {
+                    op: OpLogic::And,
+                    operands: rhs,
+                },
+            ) => {
+                let mut operands = Vec::from(lhs);
+                operands.append(&mut Vec::from(rhs));
+                ands(operands.into())
+            }
+            // Merge ⋀ with a single operand.
+            (
+                Self::Log {
+                    op: OpLogic::And,
+                    operands: lhs,
+                },
+                rhs,
+            ) => {
+                let mut operands = Vec::from(lhs);
+                operands.push(rhs);
+                ands(operands.into())
+            }
+            // And together lhs and rhs.
+            (lhs, rhs) => ands([lhs, rhs].into()),
+        }
+    }
+
+    /// Returns an op where `col_i op value_i` are all `AND`ed together.
+    fn and_cmp(op: OpCmp, cols: &ColList, value: AlgebraicValue) -> Self {
+        let cmp = |(col, value): (ColId, _)| Self::cmp(col, op, value);
+
+        // For singleton constraints, the `value` must be used directly.
+        if cols.is_singleton() {
+            return cmp((cols.head(), value));
+        }
+
+        // Otherwise, pair column ids and product fields together.
+        let operands = cols.iter().zip(value.into_product().unwrap()).map(cmp).collect();
+        Self::Log {
+            op: OpLogic::And,
+            operands,
+        }
+    }
+
+    /// Returns an op where `cols` must be within bounds.
+    /// This handles both the case of single-col bounds and multi-col bounds.
+    fn from_op_col_bounds(cols: &ColList, bounds: (Bound<AlgebraicValue>, Bound<AlgebraicValue>)) -> Self {
+        let (cmp, value) = match bounds {
+            // Equality; field <= value && field >= value <=> field = value
+            (Bound::Included(a), Bound::Included(b)) if a == b => (OpCmp::Eq, a),
+            // Inclusive lower bound => field >= value
+            (Bound::Included(value), Bound::Unbounded) => (OpCmp::GtEq, value),
+            // Exclusive lower bound => field > value
+            (Bound::Excluded(value), Bound::Unbounded) => (OpCmp::Gt, value),
+            // Inclusive upper bound => field <= value
+            (Bound::Unbounded, Bound::Included(value)) => (OpCmp::LtEq, value),
+            // Exclusive upper bound => field < value
+            (Bound::Unbounded, Bound::Excluded(value)) => (OpCmp::Lt, value),
+            (Bound::Unbounded, Bound::Unbounded) => unreachable!(),
+            (lower_bound, upper_bound) => {
+                let lhs = Self::from_op_col_bounds(cols, (lower_bound, Bound::Unbounded));
+                let rhs = Self::from_op_col_bounds(cols, (Bound::Unbounded, upper_bound));
+                return ColumnOp::and(lhs, rhs);
+            }
+        };
+        ColumnOp::and_cmp(cmp, cols, value)
+    }
+
+    /// Converts `self` to the lhs `ColId` and the `OpCmp` if this is a comparison.
+    fn as_col_cmp(&self) -> Option<(ColId, OpCmp)> {
+        match self {
+            Self::ColCmpVal { lhs, cmp, rhs: _ } => Some((*lhs, *cmp)),
+            Self::Cmp { lhs, cmp, rhs: _ } => match &**lhs {
+                ColumnOp::Col(col) => Some((*col, *cmp)),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Evaluate `self` where `ColId`s are translated to values by indexing into `row`.
+    fn eval<'a>(&'a self, row: &'a RelValue<'_>) -> Cow<'a, AlgebraicValue> {
+        let into = |b| Cow::Owned(AlgebraicValue::Bool(b));
+
+        match self {
+            Self::Col(col) => row.read_column(col.idx()).unwrap(),
+            Self::Val(val) => Cow::Borrowed(val),
+            Self::ColCmpVal { lhs, cmp, rhs } => into(Self::eval_cmp_col_val(row, *cmp, *lhs, rhs)),
+            Self::Cmp { lhs, cmp, rhs } => into(Self::eval_cmp(row, *cmp, lhs, rhs)),
+            Self::Log { op, operands } => into(Self::eval_log(row, *op, operands)),
+        }
+    }
+
+    /// Evaluate `self` to a `bool` where `ColId`s are translated to values by indexing into `row`.
+    pub fn eval_bool(&self, row: &RelValue<'_>) -> bool {
+        match self {
+            Self::Col(col) => *row.read_column(col.idx()).unwrap().as_bool().unwrap(),
+            Self::Val(val) => *val.as_bool().unwrap(),
+            Self::ColCmpVal { lhs, cmp, rhs } => Self::eval_cmp_col_val(row, *cmp, *lhs, rhs),
+            Self::Cmp { lhs, cmp, rhs } => Self::eval_cmp(row, *cmp, lhs, rhs),
+            Self::Log { op, operands } => Self::eval_log(row, *op, operands),
+        }
+    }
+
+    /// Evaluates `lhs cmp rhs` according to `Ord for AlgebraicValue`.
+    fn eval_op_cmp(cmp: OpCmp, lhs: &AlgebraicValue, rhs: &AlgebraicValue) -> bool {
+        match cmp {
+            OpCmp::Eq => lhs == rhs,
+            OpCmp::NotEq => lhs != rhs,
+            OpCmp::Lt => lhs < rhs,
+            OpCmp::LtEq => lhs <= rhs,
+            OpCmp::Gt => lhs > rhs,
+            OpCmp::GtEq => lhs >= rhs,
+        }
+    }
+
+    /// Evaluates `lhs` to an [`AlgebraicValue`] and runs the comparison `lhs_av op rhs`.
+    fn eval_cmp_col_val(row: &RelValue<'_>, cmp: OpCmp, lhs: ColId, rhs: &AlgebraicValue) -> bool {
+        let lhs = row.read_column(lhs.idx()).unwrap();
+        Self::eval_op_cmp(cmp, &lhs, rhs)
+    }
+
+    /// Evaluates `lhs` and `rhs` to [`AlgebraicValue`]s
+    /// and then runs the comparison `cmp` on them,
+    /// returning the final `bool` result.
+    fn eval_cmp(row: &RelValue<'_>, cmp: OpCmp, lhs: &Self, rhs: &Self) -> bool {
+        let lhs = lhs.eval(row);
+        let rhs = rhs.eval(row);
+        Self::eval_op_cmp(cmp, &lhs, &rhs)
+    }
+
+    /// Evaluates if
+    /// - `op = OpLogic::And` the conjunctions (`⋀`) of `opers`
+    /// - `op = OpLogic::Or` the disjunctions (`⋁`) of `opers`
+    fn eval_log(row: &RelValue<'_>, op: OpLogic, opers: &[ColumnOp]) -> bool {
+        match op {
+            OpLogic::And => opers.iter().all(|o| o.eval_bool(row)),
+            OpLogic::Or => opers.iter().any(|o| o.eval_bool(row)),
+        }
     }
 }
 
-impl From<AlgebraicValue> for ColumnOp {
-    fn from(value: AlgebraicValue) -> Self {
-        ColumnOp::Field(value.into())
+impl fmt::Display for ColumnOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Col(col) => write!(f, "{col}"),
+            Self::Val(val) => write!(f, "{}", val.to_satn()),
+            Self::ColCmpVal { lhs, cmp, rhs } => write!(f, "{lhs} {cmp} {}", rhs.to_satn()),
+            Self::Cmp { cmp, lhs, rhs } => write!(f, "{lhs} {cmp} {rhs}"),
+            Self::Log { op, operands } => write!(f, "{}", operands.iter().format((*op).into())),
+        }
+    }
+}
+
+impl From<ColExpr> for ColumnOp {
+    fn from(ce: ColExpr) -> Self {
+        match ce {
+            ColExpr::Col(c) => c.into(),
+            ColExpr::Value(v) => v.into(),
+        }
     }
 }
 
 impl From<Query> for Option<ColumnOp> {
     fn from(value: Query) -> Self {
         match value {
-            Query::IndexScan(op) => Some(ColumnOp::from_op_col_bounds(&op.table.head, &op.columns, op.bounds)),
+            Query::IndexScan(op) => Some(ColumnOp::from_op_col_bounds(&op.columns, op.bounds)),
             Query::Select(op) => Some(op),
             _ => None,
         }
@@ -412,9 +527,8 @@ impl<const N: usize> SourceSet<Vec<ProductValue>, N> {
     /// Insert a [`MemTable`] into this `SourceSet` so it can be used in a query plan,
     /// and return a [`SourceExpr`] which can be embedded in that plan.
     pub fn add_mem_table(&mut self, table: MemTable) -> SourceExpr {
-        let len = table.data.len();
         let id = self.add(table.data);
-        SourceExpr::from_mem_table(table.head, table.table_access, len, id)
+        SourceExpr::from_mem_table(table.head, table.table_access, id)
     }
 }
 
@@ -434,7 +548,6 @@ pub enum SourceExpr {
         header: Arc<Header>,
         table_type: StTableType,
         table_access: StAccess,
-        row_count: RowCount,
     },
     /// A plan for a database table. Because [`DbTable`] is small and efficiently cloneable,
     /// no indirection into a [`SourceSet`] is required.
@@ -487,13 +600,12 @@ impl SourceExpr {
         matches!(self, SourceExpr::DbTable(_))
     }
 
-    pub fn from_mem_table(header: Arc<Header>, table_access: StAccess, row_count: usize, id: SourceId) -> Self {
+    pub fn from_mem_table(header: Arc<Header>, table_access: StAccess, id: SourceId) -> Self {
         SourceExpr::InMemory {
             source_id: id,
             header,
             table_type: StTableType::User,
             table_access,
-            row_count: RowCount::exact(row_count),
         }
     }
 
@@ -519,19 +631,6 @@ impl SourceExpr {
     }
 }
 
-impl Relation for SourceExpr {
-    fn head(&self) -> &Arc<Header> {
-        self.head()
-    }
-
-    fn row_count(&self) -> RowCount {
-        match self {
-            SourceExpr::InMemory { row_count, .. } => *row_count,
-            SourceExpr::DbTable(_) => RowCount::unknown(),
-        }
-    }
-}
-
 impl From<&TableSchema> for SourceExpr {
     fn from(value: &TableSchema) -> Self {
         SourceExpr::DbTable(value.into())
@@ -544,7 +643,7 @@ impl From<&TableSchema> for SourceExpr {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct IndexJoin {
     pub probe_side: QueryExpr,
-    pub probe_field: FieldName,
+    pub probe_col: ColId,
     pub index_side: SourceExpr,
     pub index_select: Option<ColumnOp>,
     pub index_col: ColId,
@@ -581,7 +680,7 @@ impl IndexJoin {
             .probe_side
             .source
             .head()
-            .has_constraint(self.probe_field, Constraints::indexed())
+            .has_constraint(self.probe_col, Constraints::indexed())
         {
             return self;
         }
@@ -590,14 +689,10 @@ impl IndexJoin {
             .probe_side
             .query
             .iter()
-            .all(|op| matches!(op, Query::Select(_)) || matches!(op, Query::IndexScan(_)))
+            .all(|op| matches!(op, Query::Select(_) | Query::IndexScan(_)))
         {
             return self;
         }
-        // The compiler ensures the following unwrap is safe.
-        // The existence of this column has already been verified,
-        // during construction of the index join.
-        let probe_column = self.probe_side.source.head().column_pos(self.probe_field).unwrap();
         match self.index_side.get_db_table() {
             // If the size of the indexed table is sufficiently large,
             // do not reorder.
@@ -608,8 +703,6 @@ impl IndexJoin {
             // If this is a delta table, we must reorder.
             // If this is a sufficiently small physical table, we should reorder.
             _ => {
-                // For the same reason the compiler also ensures this unwrap is safe.
-                let index_field = self.index_side.head().fields[self.index_col.idx()].field;
                 // Merge all selections from the original probe side into a single predicate.
                 // This includes an index scan if present.
                 let predicate = self
@@ -632,13 +725,13 @@ impl IndexJoin {
                     // Plus any selections from the original index probe.
                     probe_side,
                     // The new probe field is the previous index field.
-                    probe_field: index_field,
+                    probe_col: self.index_col,
                     // The original probe table is now the table that is being probed.
                     index_side: self.probe_side.source,
                     // Any selections from the original probe side are pulled above the index lookup.
                     index_select: predicate,
                     // The new index field is the previous probe field.
-                    index_col: probe_column,
+                    index_col: self.probe_col,
                     // Because we have swapped the original index and probe sides of the join,
                     // the new index join needs to return rows from the opposite side.
                     return_index_rows: !self.return_index_rows,
@@ -652,14 +745,12 @@ impl IndexJoin {
     // In particular when there are updates to both the left and right tables.
     // In other words, when an index join has two delta tables.
     pub fn to_inner_join(self) -> QueryExpr {
-        let col_idx = self.index_side.head().fields[self.index_col.idx()].field;
-
         if self.return_index_rows {
-            let (col_lhs, col_rhs) = (col_idx, self.probe_field);
+            let (col_lhs, col_rhs) = (self.index_col, self.probe_col);
             let rhs = self.probe_side;
 
             let source = self.index_side;
-            let inner_join = Query::JoinInner(JoinExpr::new(rhs, col_lhs, col_rhs, true));
+            let inner_join = Query::JoinInner(JoinExpr::new(rhs, col_lhs, col_rhs, None));
             let query = if let Some(predicate) = self.index_select {
                 vec![predicate.into(), inner_join]
             } else {
@@ -667,7 +758,7 @@ impl IndexJoin {
             };
             QueryExpr { source, query }
         } else {
-            let (col_lhs, col_rhs) = (self.probe_field, col_idx);
+            let (col_lhs, col_rhs) = (self.probe_col, self.index_col);
             let mut rhs: QueryExpr = self.index_side.into();
 
             if let Some(predicate) = self.index_select {
@@ -675,7 +766,7 @@ impl IndexJoin {
             }
 
             let source = self.probe_side.source;
-            let inner_join = Query::JoinInner(JoinExpr::new(rhs, col_lhs, col_rhs, true));
+            let inner_join = Query::JoinInner(JoinExpr::new(rhs, col_lhs, col_rhs, None));
             let query = vec![inner_join];
             QueryExpr { source, query }
         }
@@ -685,22 +776,22 @@ impl IndexJoin {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct JoinExpr {
     pub rhs: QueryExpr,
-    pub col_lhs: FieldName,
-    pub col_rhs: FieldName,
-    /// If true, this is a left semi-join, returning rows only from the source table,
+    pub col_lhs: ColId,
+    pub col_rhs: ColId,
+    /// If None, this is a left semi-join, returning rows only from the source table,
     /// using the `rhs` as a filter.
     ///
-    /// If false, this is an inner join, returning the concatenation of the matching rows.
-    pub semi: bool,
+    /// If Some(_), this is an inner join, returning the concatenation of the matching rows.
+    pub inner: Option<Arc<Header>>,
 }
 
 impl JoinExpr {
-    pub fn new(rhs: QueryExpr, col_lhs: FieldName, col_rhs: FieldName, semi: bool) -> Self {
+    pub fn new(rhs: QueryExpr, col_lhs: ColId, col_rhs: ColId, inner: Option<Arc<Header>>) -> Self {
         Self {
             rhs,
             col_lhs,
             col_rhs,
-            semi,
+            inner,
         }
     }
 }
@@ -733,22 +824,21 @@ pub enum CrudExpr {
     },
     Update {
         delete: QueryExpr,
-        assignments: HashMap<FieldName, FieldExpr>,
+        assignments: IntMap<ColId, ColExpr>,
     },
     Delete {
         query: QueryExpr,
     },
     CreateTable {
-        table: TableDef,
+        table: Box<TableDef>,
     },
     Drop {
         name: String,
         kind: DbType,
-        table_access: StAccess,
     },
     SetVar {
         name: String,
-        value: AlgebraicValue,
+        literal: String,
     },
     ReadVar {
         name: String,
@@ -787,6 +877,16 @@ impl IndexScan {
     }
 }
 
+/// A projection operation in a query.
+#[derive(Debug, Clone, Eq, PartialEq, From, Hash)]
+pub struct ProjectExpr {
+    pub cols: Vec<ColExpr>,
+    // The table id for a qualified wildcard project, if any.
+    // If present, further optimizations are possible.
+    pub wildcard_table: Option<TableId>,
+    pub header_after: Arc<Header>,
+}
+
 // An individual operation in a query.
 #[derive(Debug, Clone, Eq, PartialEq, From, Hash)]
 pub enum Query {
@@ -800,9 +900,7 @@ pub enum Query {
     // If it could it would have already been transformed into an IndexScan.
     Select(ColumnOp),
     // Projects a set of columns.
-    // The second argument is the table id for a qualified wildcard project.
-    // If present, further optimizations are possible.
-    Project(Vec<FieldExpr>, Option<TableId>),
+    Project(ProjectExpr),
     // A join of two relations (base or intermediate) based on equality.
     // Equivalent to a Nested Loop Join.
     // Its operands my use indexes but the join itself does not.
@@ -882,34 +980,34 @@ fn make_index_arg(cmp: OpCmp, columns: &ColList, value: AlgebraicValue) -> Index
 }
 
 #[derive(Debug)]
-struct FieldValue<'a> {
+struct ColValue<'a> {
     parent: &'a ColumnOp,
+    col: ColId,
     cmp: OpCmp,
-    field: FieldName,
     value: &'a AlgebraicValue,
 }
 
-impl<'a> FieldValue<'a> {
-    pub fn new(parent: &'a ColumnOp, cmp: OpCmp, field: FieldName, value: &'a AlgebraicValue) -> Self {
+impl<'a> ColValue<'a> {
+    pub fn new(parent: &'a ColumnOp, col: ColId, cmp: OpCmp, value: &'a AlgebraicValue) -> Self {
         Self {
             parent,
+            col,
             cmp,
-            field,
             value,
         }
     }
 }
 
 type IndexColumnOpSink<'a> = SmallVec<[IndexColumnOp<'a>; 1]>;
-type FieldsIndexed = HashSet<(FieldName, OpCmp)>;
+type ColsIndexed = HashSet<(ColId, OpCmp)>;
 
-/// Pick the best indices that can serve the constraints in `fields`
+/// Pick the best indices that can serve the constraints in `op`
 /// where the indices are taken from `header`.
 ///
 /// This function is designed to handle complex scenarios when selecting the optimal index for a query.
 /// The scenarios include:
 ///
-/// - Combinations of multi- and single-column indexes that could refer to the same field.
+/// - Combinations of multi- and single-column indexes that could refer to the same column.
 ///   For example, the table could have indexes `[a]` and `[a, b]]`
 ///   and a user could query for `WHERE a = 1 AND b = 2 AND a = 3`.
 ///
@@ -928,7 +1026,7 @@ type FieldsIndexed = HashSet<(FieldName, OpCmp)>;
 ///
 /// - A vector of `ScanOrIndex` representing the selected `index` OR `scan` operations.
 ///
-/// - A HashSet of `(FieldName, OpCmp)` representing the fields
+/// - A HashSet of `(ColId, OpCmp)` representing the columns
 ///   and operators that can be served by an index.
 ///
 ///   This is required to remove the redundant operation on e.g.,
@@ -952,9 +1050,9 @@ type FieldsIndexed = HashSet<(FieldName, OpCmp)>;
 /// would give us two separate `IndexScan`s.
 /// However, the upper layers of `QueryExpr` building will convert both of those into `Select`s.
 fn select_best_index<'a>(
-    fields_indexed: &mut FieldsIndexed,
+    cols_indexed: &mut ColsIndexed,
     header: &'a Header,
-    ops: &[&'a ColumnOp],
+    op: &'a ColumnOp,
 ) -> IndexColumnOpSink<'a> {
     // Collect and sort indices by their lengths, with longest first.
     // We do this so that multi-col indices are used first, as they are more efficient.
@@ -969,17 +1067,17 @@ fn select_best_index<'a>(
 
     let mut found: IndexColumnOpSink = IndexColumnOpSink::new();
 
-    // Collect fields into a multi-map `(col_id, cmp) -> [field]`.
+    // Collect fields into a multi-map `(col_id, cmp) -> [col value]`.
     // This gives us `log(N)` seek + deletion.
     // TODO(Centril): Consider https://docs.rs/small-map/0.1.3/small_map/enum.SmallMap.html
-    let mut fields_map = BTreeMap::<_, SmallVec<[_; 1]>>::new();
-    extract_fields(ops, header, &mut fields_map, &mut found);
+    let mut col_map = BTreeMap::<_, SmallVec<[_; 1]>>::new();
+    extract_cols(op, &mut col_map, &mut found);
 
     // Go through each index,
-    // consuming all field constraints that can be served by an index.
+    // consuming all column constraints that can be served by an index.
     for col_list in indices {
-        // (1) No fields left? We're done.
-        if fields_map.is_empty() {
+        // (1) No columns left? We're done.
+        if col_map.is_empty() {
             break;
         }
 
@@ -990,11 +1088,9 @@ fn select_best_index<'a>(
             for cmp in [OpCmp::Eq, OpCmp::Lt, OpCmp::LtEq, OpCmp::Gt, OpCmp::GtEq] {
                 // For a single column index,
                 // we want to avoid the `ProductValue` indirection of below.
-                for FieldValue { cmp, value, field, .. } in
-                    fields_map.remove(&(col_list.head(), cmp)).into_iter().flatten()
-                {
+                for ColValue { cmp, value, col, .. } in col_map.remove(&(col_list.head(), cmp)).into_iter().flatten() {
                     found.push(make_index_arg(cmp, col_list, value.clone()));
-                    fields_indexed.insert((field, cmp));
+                    cols_indexed.insert((col, cmp));
                 }
             }
         } else {
@@ -1010,7 +1106,7 @@ fn select_best_index<'a>(
             // Compute the minimum number of `=` constraints that every column in the index has.
             let mut min_all_cols_num_eq = col_list
                 .iter()
-                .map(|col| fields_map.get(&(col, cmp)).map_or(0, |fs| fs.len()))
+                .map(|col| col_map.get(&(col, cmp)).map_or(0, |fs| fs.len()))
                 .min()
                 .unwrap_or_default();
 
@@ -1020,10 +1116,10 @@ fn select_best_index<'a>(
                 let mut elems = Vec::with_capacity(col_list.len() as usize);
                 for col in col_list.iter() {
                     // Cannot panic as `min_all_cols_num_eq > 0`.
-                    let field = pop_multimap(&mut fields_map, (col, cmp)).unwrap();
-                    fields_indexed.insert((field.field, cmp));
-                    // Add the field value to the product value.
-                    elems.push(field.value.clone());
+                    let col_val = pop_multimap(&mut col_map, (col, cmp)).unwrap();
+                    cols_indexed.insert((col_val.col, cmp));
+                    // Add the column value to the product value.
+                    elems.push(col_val.value.clone());
                 }
                 // Construct the index scan.
                 let value = AlgebraicValue::product(elems);
@@ -1035,7 +1131,7 @@ fn select_best_index<'a>(
 
     // The remaining constraints must be served by a scan.
     found.extend(
-        fields_map
+        col_map
             .into_iter()
             .flat_map(|(_, fs)| fs)
             .map(|f| IndexColumnOp::Scan(f.parent)),
@@ -1058,102 +1154,39 @@ fn pop_multimap<K: Ord, V, const N: usize>(map: &mut BTreeMap<K, SmallVec<[V; N]
     val
 }
 
-/// Extracts `name = val` when `lhs` is a field that exists and `rhs` is a value.
-fn ext_field_val<'a>(
-    header: &'a Header,
-    lhs: &'a ColumnOp,
-    rhs: &'a ColumnOp,
-) -> Option<(ColId, FieldName, &'a AlgebraicValue)> {
-    if let (ColumnOp::Field(FieldExpr::Name(name)), ColumnOp::Field(FieldExpr::Value(val))) = (lhs, rhs) {
-        return header.field_name(*name).map(|(id, col)| (id, col, val));
-    }
-    None
-}
-
-/// Extracts `name = val` when `op` is `name = val` and `name` exists.
-fn ext_cmp_field_val<'a>(
-    header: &'a Header,
-    op: &'a ColumnOp,
-) -> Option<(&'a OpCmp, ColId, FieldName, &'a AlgebraicValue)> {
-    match op {
-        ColumnOp::Cmp {
-            op: OpQuery::Cmp(op),
-            lhs,
-            rhs,
-        } => ext_field_val(header, lhs, rhs).map(|(id, f, v)| (op, id, f, v)),
-        _ => None,
-    }
-}
-
-/// Extracts a list of `field = val` constraints that *could* be answered by an index
-/// and populates those into `fields_map`.
-/// The [`ColumnOp`]s that don't fit `field = val`
+/// Extracts a list of `col = val` constraints that *could* be answered by an index
+/// and populates those into `col_map`.
+/// The [`ColumnOp`]s that don't fit `col = val`
 /// are made into [`IndexColumnOp::Scan`]s immediately which are added to `found`.
-fn extract_fields<'a>(
-    ops: &[&'a ColumnOp],
-    header: &'a Header,
-    fields_map: &mut BTreeMap<(ColId, OpCmp), SmallVec<[FieldValue<'a>; 1]>>,
+fn extract_cols<'a>(
+    op: &'a ColumnOp,
+    col_map: &mut BTreeMap<(ColId, OpCmp), SmallVec<[ColValue<'a>; 1]>>,
     found: &mut IndexColumnOpSink<'a>,
 ) {
-    let mut add_field = |parent, op, field_col, field, val| {
-        let fv = FieldValue::new(parent, op, field, val);
-        fields_map.entry((field_col, op)).or_default().push(fv);
+    let mut add_field = |parent, op, col, val| {
+        let fv = ColValue::new(parent, col, op, val);
+        col_map.entry((col, op)).or_default().push(fv);
     };
 
-    for op in ops {
-        match op {
-            ColumnOp::Cmp {
-                op: OpQuery::Cmp(cmp),
-                lhs,
-                rhs,
-            } => {
-                if let Some((field_col, field, val)) = ext_field_val(header, lhs, rhs) {
-                    // `lhs` must be a field that exists and `rhs` must be a value.
-                    add_field(op, *cmp, field_col, field, val);
-                    continue;
-                }
+    match op {
+        ColumnOp::Cmp { cmp, lhs, rhs } => {
+            if let (ColumnOp::Col(col), ColumnOp::Val(val)) = (&**lhs, &**rhs) {
+                // `lhs` must be a field that exists and `rhs` must be a value.
+                add_field(op, *cmp, *col, val);
             }
-            ColumnOp::Cmp {
-                op: OpQuery::Logic(OpLogic::And),
-                lhs,
-                rhs,
-            } => {
-                if let Some((op_lhs, col_lhs_id, col_lhs, val_lhs)) = ext_cmp_field_val(header, lhs) {
-                    if let Some((op_rhs, col_rhs_id, col_rhs, val_rhs)) = ext_cmp_field_val(header, rhs) {
-                        // Both lhs and rhs columns must exist.
-                        add_field(op, *op_lhs, col_lhs_id, col_lhs, val_lhs);
-                        add_field(op, *op_rhs, col_rhs_id, col_rhs, val_rhs);
-                        continue;
-                    }
-                }
-            }
-            ColumnOp::Cmp {
-                op: OpQuery::Logic(OpLogic::Or),
-                ..
-            }
-            | ColumnOp::Field(_) => {}
         }
-
-        found.push(IndexColumnOp::Scan(op));
-    }
-}
-
-/// Sargable stands for Search ARGument ABLE.
-/// A sargable predicate is one that can be answered using an index.
-fn find_sargable_ops<'a>(
-    fields_indexed: &mut FieldsIndexed,
-    header: &'a Header,
-    op: &'a ColumnOp,
-) -> SmallVec<[IndexColumnOp<'a>; 1]> {
-    let mut ops_flat = op.flatten_ands_ref();
-    if ops_flat.len() == 1 {
-        match ops_flat.swap_remove(0) {
-            // Special case; fast path for a single field.
-            op @ ColumnOp::Field(_) => smallvec![IndexColumnOp::Scan(op)],
-            op => select_best_index(fields_indexed, header, &[op]),
+        ColumnOp::ColCmpVal { lhs, cmp, rhs } => add_field(op, *cmp, *lhs, rhs),
+        ColumnOp::Log {
+            op: OpLogic::And,
+            operands,
+        } => {
+            for oper in operands.iter() {
+                extract_cols(oper, col_map, found);
+            }
         }
-    } else {
-        select_best_index(fields_indexed, header, &ops_flat)
+        ColumnOp::Log { op: OpLogic::Or, .. } | ColumnOp::Col(_) | ColumnOp::Val(_) => {
+            found.push(IndexColumnOp::Scan(op));
+        }
     }
 }
 
@@ -1191,11 +1224,33 @@ impl QueryExpr {
         self.query.iter().try_for_each(|q| q.walk_sources(on_source))
     }
 
+    /// Returns the last [`Header`] of this query.
+    ///
+    /// Starts the scan from the back to the front,
+    /// looking for query operations that change the `Header`.
+    /// These are `JoinInner` and `Project`.
+    /// If there are no operations that alter the `Header`,
+    /// this falls back to the origin `self.source.head()`.
+    pub fn head(&self) -> &Arc<Header> {
+        self.query
+            .iter()
+            .rev()
+            .find_map(|op| match op {
+                Query::Select(_) => None,
+                Query::IndexScan(scan) => Some(&scan.table.head),
+                Query::IndexJoin(join) if join.return_index_rows => Some(join.index_side.head()),
+                Query::IndexJoin(join) => Some(join.probe_side.head()),
+                Query::Project(proj) => Some(&proj.header_after),
+                Query::JoinInner(join) => join.inner.as_ref(),
+            })
+            .unwrap_or_else(|| self.source.head())
+    }
+
     /// Does this query read from a given table?
     pub fn reads_from_table(&self, id: &TableId) -> bool {
         self.source.table_id() == Some(*id)
             || self.query.iter().any(|q| match q {
-                Query::Select(_) | Query::Project(_, _) => false,
+                Query::Select(_) | Query::Project(..) => false,
                 Query::IndexScan(scan) => scan.table.table_id == *id,
                 Query::JoinInner(join) => join.rhs.reads_from_table(id),
                 Query::IndexJoin(join) => {
@@ -1235,26 +1290,26 @@ impl QueryExpr {
                 rhs,
                 col_lhs,
                 col_rhs,
-                semi,
+                inner: semi,
             }) => {
                 self.query.push(Query::JoinInner(JoinExpr {
                     rhs: rhs.with_index_eq(table, columns, value),
                     col_lhs,
                     col_rhs,
-                    semi,
+                    inner: semi,
                 }));
                 self
             }
             // merge with a preceding select
             Query::Select(filter) => {
-                let op = ColumnOp::and_cmp(OpCmp::Eq, &table.head, &columns, value);
+                let op = ColumnOp::and_cmp(OpCmp::Eq, &columns, value);
                 self.query.push(Query::Select(ColumnOp::and(filter, op)));
                 self
             }
             // else generate a new select
             query => {
                 self.query.push(query);
-                let op = ColumnOp::and_cmp(OpCmp::Eq, &table.head, &columns, value);
+                let op = ColumnOp::and_cmp(OpCmp::Eq, &columns, value);
                 self.query.push(Query::Select(op));
                 self
             }
@@ -1296,13 +1351,13 @@ impl QueryExpr {
                 rhs,
                 col_lhs,
                 col_rhs,
-                semi,
+                inner: semi,
             }) => {
                 self.query.push(Query::JoinInner(JoinExpr {
                     rhs: rhs.with_index_lower_bound(table, columns, value, inclusive),
                     col_lhs,
                     col_rhs,
-                    semi,
+                    inner: semi,
                 }));
                 self
             }
@@ -1345,7 +1400,7 @@ impl QueryExpr {
             // merge with a preceding select
             Query::Select(filter) => {
                 let bounds = (Self::bound(value, inclusive), Bound::Unbounded);
-                let op = ColumnOp::from_op_col_bounds(&table.head, &columns, bounds);
+                let op = ColumnOp::from_op_col_bounds(&columns, bounds);
                 self.query.push(Query::Select(ColumnOp::and(filter, op)));
                 self
             }
@@ -1353,7 +1408,7 @@ impl QueryExpr {
             query => {
                 self.query.push(query);
                 let bounds = (Self::bound(value, inclusive), Bound::Unbounded);
-                let op = ColumnOp::from_op_col_bounds(&table.head, &columns, bounds);
+                let op = ColumnOp::from_op_col_bounds(&columns, bounds);
                 self.query.push(Query::Select(op));
                 self
             }
@@ -1398,13 +1453,13 @@ impl QueryExpr {
                 rhs,
                 col_lhs,
                 col_rhs,
-                semi,
+                inner: semi,
             }) => {
                 self.query.push(Query::JoinInner(JoinExpr {
                     rhs: rhs.with_index_upper_bound(table, columns, value, inclusive),
                     col_lhs,
                     col_rhs,
-                    semi,
+                    inner: semi,
                 }));
                 self
             }
@@ -1447,7 +1502,7 @@ impl QueryExpr {
             // merge with a preceding select
             Query::Select(filter) => {
                 let bounds = (Bound::Unbounded, Self::bound(value, inclusive));
-                let op = ColumnOp::from_op_col_bounds(&table.head, &columns, bounds);
+                let op = ColumnOp::from_op_col_bounds(&columns, bounds);
                 self.query.push(Query::Select(ColumnOp::and(filter, op)));
                 self
             }
@@ -1455,100 +1510,217 @@ impl QueryExpr {
             query => {
                 self.query.push(query);
                 let bounds = (Bound::Unbounded, Self::bound(value, inclusive));
-                let op = ColumnOp::from_op_col_bounds(&table.head, &columns, bounds);
+                let op = ColumnOp::from_op_col_bounds(&columns, bounds);
                 self.query.push(Query::Select(op));
                 self
             }
         }
     }
 
-    pub fn with_select<O>(mut self, op: O) -> Self
+    pub fn with_select<O>(mut self, op: O) -> Result<Self, RelationError>
     where
-        O: Into<ColumnOp>,
+        O: Into<FieldOp>,
     {
+        let op = op.into();
         let Some(query) = self.query.pop() else {
-            self.query.push(Query::Select(op.into()));
-            return self;
+            return self.add_base_select(op);
         };
 
-        match (query, op.into()) {
+        match (query, op) {
             (
                 Query::JoinInner(JoinExpr {
                     rhs,
                     col_lhs,
                     col_rhs,
-                    semi,
+                    inner,
                 }),
-                ColumnOp::Cmp {
+                FieldOp::Cmp {
                     op: OpQuery::Cmp(cmp),
                     lhs: field,
                     rhs: value,
                 },
             ) => match (*field, *value) {
-                (ColumnOp::Field(FieldExpr::Name(field)), ColumnOp::Field(FieldExpr::Value(value)))
+                (FieldOp::Field(FieldExpr::Name(field)), FieldOp::Field(FieldExpr::Value(value)))
                 // Field is from lhs, so push onto join's left arg
-                if self.source.head().column_pos(field).is_some() =>
+                if self.head().column_pos(field).is_some() =>
                     {
-                        self = self.with_select(ColumnOp::cmp(field, cmp, value));
-                        self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs, semi}));
-                        self
+                        // No typing restrictions on `field cmp value`,
+                        // and there are no binary operators to recurse into.
+                        self = self.with_select(FieldOp::cmp(field, cmp, value))?;
+                        self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs, inner }));
+                        Ok(self)
                     }
-                (ColumnOp::Field(FieldExpr::Name(field)), ColumnOp::Field(FieldExpr::Value(value)))
+                (FieldOp::Field(FieldExpr::Name(field)), FieldOp::Field(FieldExpr::Value(value)))
                 // Field is from rhs, so push onto join's right arg
-                if rhs.source.head().column_pos(field).is_some() =>
+                if rhs.head().column_pos(field).is_some() =>
                     {
+                        // No typing restrictions on `field cmp value`,
+                        // and there are no binary operators to recurse into.
+                        let rhs = rhs.with_select(FieldOp::cmp(field, cmp, value))?;
                         self.query.push(Query::JoinInner(JoinExpr {
-                            rhs: rhs.with_select(ColumnOp::cmp(field, cmp, value)),
+                            rhs,
                             col_lhs,
                             col_rhs,
-                            semi,
+                            inner,
                         }));
-                        self
+                        Ok(self)
                     }
                 (field, value) => {
-                    self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs, semi, }));
-                    self.query.push(Query::Select(ColumnOp::new(OpQuery::Cmp(cmp), field, value)));
-                    self
+                    self.query.push(Query::JoinInner(JoinExpr { rhs, col_lhs, col_rhs, inner, }));
+
+                    // As we have `field op value` we need not demand `bool`,
+                    // but we must still recuse into each side.
+                    self.check_field_op_logics(&field)?;
+                    self.check_field_op_logics(&value)?;
+                    // Convert to `ColumnOp`.
+                    let col = field.names_to_cols(self.head()).unwrap();
+                    let value = value.names_to_cols(self.head()).unwrap();
+                    // Add `col op value` filter to query.
+                    self.query.push(Query::Select(ColumnOp::new(OpQuery::Cmp(cmp), col, value)));
+                    Ok(self)
                 }
             },
-            (Query::Select(filter), op) => {
-                self.query.push(Query::Select(ColumnOp::and(filter, op)));
-                self
+            // We have a previous filter `lhs`, so join with `rhs` forming `lhs AND rhs`.
+            (Query::Select(lhs), rhs) => {
+                // Type check `rhs`, demanding `bool`.
+                self.check_field_op(&rhs)?;
+                // Convert to `ColumnOp`.
+                let rhs = rhs.names_to_cols(self.head()).unwrap();
+                // Add `lhs AND op` to query.
+                self.query.push(Query::Select(ColumnOp::and(lhs, rhs)));
+                Ok(self)
             }
+            // No previous filter, so add a base one.
             (query, op) => {
                 self.query.push(query);
-                self.query.push(Query::Select(op));
-                self
+                self.add_base_select(op)
             }
         }
     }
 
-    pub fn with_select_cmp<LHS, RHS, O>(self, op: O, lhs: LHS, rhs: RHS) -> Self
+    /// Add a base `Select` query that filters according to `op`.
+    /// The `op` is checked to produce a `bool` value.
+    fn add_base_select(mut self, op: FieldOp) -> Result<Self, RelationError> {
+        // Type check the filter, demanding `bool`.
+        self.check_field_op(&op)?;
+        // Convert to `ColumnOp`.
+        let op = op.names_to_cols(self.head()).unwrap();
+        // Add the filter.
+        self.query.push(Query::Select(op));
+        Ok(self)
+    }
+
+    /// Type checks a `FieldOp` with respect to `self`,
+    /// ensuring that query evaluation cannot get stuck or panic due to `reduce_bool`.
+    fn check_field_op(&self, op: &FieldOp) -> Result<(), RelationError> {
+        use OpQuery::*;
+        match op {
+            // `lhs` and `rhs` must both be typed at `bool`.
+            FieldOp::Cmp { op: Logic(_), lhs, rhs } => {
+                self.check_field_op(lhs)?;
+                self.check_field_op(rhs)?;
+                Ok(())
+            }
+            // `lhs` and `rhs` have no typing restrictions.
+            // The result of `lhs op rhs` will always be a `bool`
+            // either by `Eq` or `Ord` on `AlgebraicValue` (see `ColumnOp::compare_bin_op`).
+            // However, we still have to recurse into `lhs` and `rhs`
+            // in case we have e.g., `a == (b == c)`.
+            FieldOp::Cmp { op: Cmp(_), lhs, rhs } => {
+                self.check_field_op_logics(lhs)?;
+                self.check_field_op_logics(rhs)?;
+                Ok(())
+            }
+            FieldOp::Field(FieldExpr::Value(AlgebraicValue::Bool(_))) => Ok(()),
+            FieldOp::Field(FieldExpr::Value(v)) => Err(RelationError::NotBoolValue { val: v.clone() }),
+            FieldOp::Field(FieldExpr::Name(field)) => {
+                let field = *field;
+                let head = self.head();
+                let col_id = head.column_pos_or_err(field)?;
+                let col_ty = &head.fields[col_id.idx()].algebraic_type;
+                match col_ty {
+                    &AlgebraicType::Bool => Ok(()),
+                    ty => Err(RelationError::NotBoolType { field, ty: ty.clone() }),
+                }
+            }
+        }
+    }
+
+    /// Traverses `op`, checking any logical operators for bool-typed operands.
+    fn check_field_op_logics(&self, op: &FieldOp) -> Result<(), RelationError> {
+        use OpQuery::*;
+        match op {
+            FieldOp::Field(_) => Ok(()),
+            FieldOp::Cmp { op: Cmp(_), lhs, rhs } => {
+                self.check_field_op_logics(lhs)?;
+                self.check_field_op_logics(rhs)?;
+                Ok(())
+            }
+            FieldOp::Cmp { op: Logic(_), lhs, rhs } => {
+                self.check_field_op(lhs)?;
+                self.check_field_op(rhs)?;
+                Ok(())
+            }
+        }
+    }
+
+    pub fn with_select_cmp<LHS, RHS, O>(self, op: O, lhs: LHS, rhs: RHS) -> Result<Self, RelationError>
     where
         LHS: Into<FieldExpr>,
         RHS: Into<FieldExpr>,
         O: Into<OpQuery>,
     {
-        let op = ColumnOp::new(op.into(), ColumnOp::Field(lhs.into()), ColumnOp::Field(rhs.into()));
+        let op = FieldOp::new(op.into(), FieldOp::Field(lhs.into()), FieldOp::Field(rhs.into()));
         self.with_select(op)
     }
 
     // Appends a project operation to the query operator pipeline.
     // The `wildcard_table_id` represents a projection of the form `table.*`.
     // This is used to determine if an inner join can be rewritten as an index join.
-    pub fn with_project(self, cols: &[FieldExpr], wildcard_table_id: Option<TableId>) -> Self {
-        let mut x = self;
-        if !cols.is_empty() {
-            x.query.push(Query::Project(cols.into(), wildcard_table_id));
+    pub fn with_project(
+        mut self,
+        fields: Vec<FieldExpr>,
+        wildcard_table: Option<TableId>,
+    ) -> Result<Self, RelationError> {
+        if !fields.is_empty() {
+            let header_before = self.head();
+
+            // Translate the field expressions to column expressions.
+            let mut cols = Vec::with_capacity(fields.len());
+            for field in fields {
+                cols.push(field.name_to_col(header_before)?);
+            }
+
+            // Project the header.
+            // We'll store that so subsequent operations use that as a base.
+            let header_after = Arc::new(header_before.project(&cols)?);
+
+            // Add the projection.
+            self.query.push(Query::Project(ProjectExpr {
+                cols,
+                wildcard_table,
+                header_after,
+            }));
         }
-        x
+        Ok(self)
     }
 
-    pub fn with_join_inner(self, with: impl Into<QueryExpr>, lhs: FieldName, rhs: FieldName, semi: bool) -> Self {
-        let mut x = self;
-        x.query
-            .push(Query::JoinInner(JoinExpr::new(with.into(), lhs, rhs, semi)));
-        x
+    pub fn with_join_inner_raw(
+        mut self,
+        q_rhs: QueryExpr,
+        c_lhs: ColId,
+        c_rhs: ColId,
+        inner: Option<Arc<Header>>,
+    ) -> Self {
+        self.query
+            .push(Query::JoinInner(JoinExpr::new(q_rhs, c_lhs, c_rhs, inner)));
+        self
+    }
+
+    pub fn with_join_inner(self, q_rhs: impl Into<QueryExpr>, c_lhs: ColId, c_rhs: ColId, semi: bool) -> Self {
+        let q_rhs = q_rhs.into();
+        let inner = (!semi).then(|| Arc::new(self.head().extend(q_rhs.head())));
+        self.with_join_inner_raw(q_rhs, c_lhs, c_rhs, inner)
     }
 
     fn bound(value: AlgebraicValue, inclusive: bool) -> Bound<AlgebraicValue> {
@@ -1607,13 +1779,7 @@ impl QueryExpr {
             // No first (0th) expr to be the join; bail.
             return QueryExpr { source, query: vec![] };
         };
-        let Query::JoinInner(JoinExpr {
-            rhs,
-            col_lhs,
-            col_rhs,
-            semi: false,
-        }) = join_candidate
-        else {
+        let Query::JoinInner(join) = join_candidate else {
             // First (0th) expr is not an inner join. Bail.
             return QueryExpr {
                 source,
@@ -1625,57 +1791,28 @@ impl QueryExpr {
             // No second (1st) expr to be the project. Bail.
             return QueryExpr {
                 source,
-                query: vec![Query::JoinInner(JoinExpr {
-                    rhs,
-                    col_lhs,
-                    col_rhs,
-                    semi: false,
-                })],
-            };
-        };
-        let Query::Project(cols, Some(wildcard_table_id)) = project_candidate else {
-            // Second (1st) expr is not a wildcard projection. Bail.
-            return QueryExpr {
-                source,
-                query: itertools::chain![
-                    Some(Query::JoinInner(JoinExpr {
-                        rhs,
-                        col_lhs,
-                        col_rhs,
-                        semi: false
-                    })),
-                    Some(project_candidate),
-                    exprs
-                ]
-                .collect(),
+                query: vec![Query::JoinInner(join)],
             };
         };
 
-        if wildcard_table_id != source_table_id {
+        let Query::Project(proj) = project_candidate else {
+            // Second (1st) expr is not a wildcard projection. Bail.
+            return QueryExpr {
+                source,
+                query: itertools::chain![Some(Query::JoinInner(join)), Some(project_candidate), exprs].collect(),
+            };
+        };
+
+        if proj.wildcard_table != Some(source_table_id) {
             // Projection is selecting the RHS table. Bail.
             return QueryExpr {
                 source,
-                query: itertools::chain![
-                    Some(Query::JoinInner(JoinExpr {
-                        rhs,
-                        col_lhs,
-                        col_rhs,
-                        semi: false
-                    })),
-                    Some(Query::Project(cols, Some(wildcard_table_id))),
-                    exprs
-                ]
-                .collect(),
+                query: itertools::chain![Some(Query::JoinInner(join)), Some(Query::Project(proj)), exprs].collect(),
             };
         };
 
         // All conditions met; return a semijoin.
-        let semijoin = JoinExpr {
-            rhs,
-            col_lhs,
-            col_rhs,
-            semi: true,
-        };
+        let semijoin = JoinExpr { inner: None, ..join };
 
         QueryExpr {
             source,
@@ -1706,38 +1843,25 @@ impl QueryExpr {
         let join = query.query.pop().unwrap();
 
         match join {
-            Query::JoinInner(JoinExpr {
-                rhs: probe_side,
-                col_lhs: index_field,
-                col_rhs: probe_field,
-                semi: true,
-            }) => {
-                if !probe_side.query.is_empty() {
+            Query::JoinInner(join @ JoinExpr { inner: None, .. }) => {
+                if !join.rhs.query.is_empty() {
                     // An applicable join must have an index defined on the correct field.
-                    if let Some(index_col) = source.head().column_pos(index_field) {
-                        if source.head().has_constraint(index_field, Constraints::indexed()) {
-                            let index_join = IndexJoin {
-                                probe_side,
-                                probe_field,
-                                index_side: source.clone(),
-                                index_select: None,
-                                index_col,
-                                return_index_rows: true,
-                            };
-                            let query = [Query::IndexJoin(index_join)].into();
-                            return QueryExpr { source, query };
-                        }
+                    if source.head().has_constraint(join.col_lhs, Constraints::indexed()) {
+                        let index_join = IndexJoin {
+                            probe_side: join.rhs,
+                            probe_col: join.col_rhs,
+                            index_side: source.clone(),
+                            index_select: None,
+                            index_col: join.col_lhs,
+                            return_index_rows: true,
+                        };
+                        let query = [Query::IndexJoin(index_join)].into();
+                        return QueryExpr { source, query };
                     }
                 }
-                let join = Query::JoinInner(JoinExpr {
-                    rhs: probe_side,
-                    col_lhs: index_field,
-                    col_rhs: probe_field,
-                    semi: true,
-                });
                 QueryExpr {
                     source,
-                    query: vec![join],
+                    query: vec![Query::JoinInner(join)],
                 }
             }
             first => QueryExpr {
@@ -1753,59 +1877,52 @@ impl QueryExpr {
         // Find the first sargable condition and short-circuit.
         let mut fields_found = HashSet::new();
         for schema in tables {
-            for op in find_sargable_ops(&mut fields_found, schema.head(), &op) {
-                match &op {
-                    IndexColumnOp::Index(_) | IndexColumnOp::Scan(ColumnOp::Field(_)) => {}
+            for op in select_best_index(&mut fields_found, schema.head(), &op) {
+                if let IndexColumnOp::Scan(op) = &op {
                     // Remove a duplicated/redundant operation on the same `field` and `op`
-                    // like `[ScanOrIndex::Index(a = 1), ScanOrIndex::Index(a = 1), ScanOrIndex::Scan(a = 1)]`
-                    IndexColumnOp::Scan(ColumnOp::Cmp { op, lhs, rhs: _ }) => {
-                        if let (ColumnOp::Field(FieldExpr::Name(col)), OpQuery::Cmp(cmp)) = (&**lhs, op) {
-                            if !fields_found.insert((*col, *cmp)) {
-                                continue;
-                            }
-                        }
+                    // like `[Index(a = 1), Index(a = 1), Scan(a = 1)]`
+                    if op.as_col_cmp().is_some_and(|cc| !fields_found.insert(cc)) {
+                        continue;
                     }
                 }
 
                 match op {
-                    IndexColumnOp::Index(idx) => match idx {
-                        // Found sargable equality condition for one of the table schemas.
-                        IndexArgument::Eq { columns, value } => {
-                            // `unwrap`  here is infallible because `is_sargable(schema, op)` implies `schema.is_db_table`
-                            // for any `op`.
-                            q = q.with_index_eq(schema.get_db_table().unwrap().clone(), columns.clone(), value);
-                        }
-                        // Found sargable range condition for one of the table schemas.
-                        IndexArgument::LowerBound {
-                            columns,
-                            value,
-                            inclusive,
-                        } => {
-                            // `unwrap`  here is infallible because `is_sargable(schema, op)` implies `schema.is_db_table`
-                            // for any `op`.
-                            q = q.with_index_lower_bound(
-                                schema.get_db_table().unwrap().clone(),
-                                columns.clone(),
+                    // A sargable condition for on one of the table schemas,
+                    // either an equality or range condition.
+                    IndexColumnOp::Index(idx) => {
+                        let table = schema
+                            .get_db_table()
+                            .expect("find_sargable_ops(schema, op) implies `schema.is_db_table()`")
+                            .clone();
+
+                        q = match idx {
+                            IndexArgument::Eq { columns, value } => q.with_index_eq(table, columns.clone(), value),
+                            IndexArgument::LowerBound {
+                                columns,
                                 value,
                                 inclusive,
-                            );
-                        }
-                        // Found sargable range condition for one of the table schemas.
-                        IndexArgument::UpperBound {
-                            columns,
-                            value,
-                            inclusive,
-                        } => {
-                            q = q.with_index_upper_bound(
-                                schema.get_db_table().unwrap().clone(),
-                                columns.clone(),
+                            } => q.with_index_lower_bound(table, columns.clone(), value, inclusive),
+                            IndexArgument::UpperBound {
+                                columns,
                                 value,
                                 inclusive,
-                            );
-                        }
-                    },
+                            } => q.with_index_upper_bound(table, columns.clone(), value, inclusive),
+                        };
+                    }
                     // Filter condition cannot be answered using an index.
-                    IndexColumnOp::Scan(scan) => q = q.with_select(scan.clone()),
+                    IndexColumnOp::Scan(rhs) => {
+                        let rhs = rhs.clone();
+                        let op = match q.query.pop() {
+                            // Merge condition into any pre-existing `Select`.
+                            Some(Query::Select(lhs)) => ColumnOp::and(lhs, rhs),
+                            None => rhs,
+                            Some(other) => {
+                                q.query.push(other);
+                                rhs
+                            }
+                        };
+                        q.query.push(Query::Select(op));
+                    }
                 }
             }
         }
@@ -1832,7 +1949,7 @@ impl QueryExpr {
                     q = Self::optimize_select(q, op, from_ref(&self.source));
                 }
                 Query::JoinInner(join) => {
-                    q = q.with_join_inner(join.rhs.optimize(row_count), join.col_lhs, join.col_rhs, join.semi);
+                    q = q.with_join_inner_raw(join.rhs.optimize(row_count), join.col_lhs, join.col_rhs, join.inner);
                 }
                 _ => q.query.push(query),
             };
@@ -1886,7 +2003,8 @@ impl fmt::Display for Query {
             Query::Select(q) => {
                 write!(f, "select {q}")
             }
-            Query::Project(q, _) => {
+            Query::Project(proj) => {
+                let q = &proj.cols;
                 write!(f, "project")?;
                 if !q.is_empty() {
                     write!(f, " ")?;
@@ -1943,13 +2061,21 @@ impl AuthAccess for CrudExpr {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct Update {
+    pub table_id: TableId,
+    pub table_name: Box<str>,
+    pub inserts: Vec<ProductValue>,
+    pub deletes: Vec<ProductValue>,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Code {
     Value(AlgebraicValue),
     Table(MemTable),
     Halt(ErrorLang),
     Block(Vec<Code>),
     Crud(CrudExpr),
-    Pass,
+    Pass(Option<Update>),
 }
 
 impl fmt::Display for Code {
@@ -1970,7 +2096,7 @@ pub enum CodeResult {
     Table(MemTable),
     Block(Vec<CodeResult>),
     Halt(ErrorLang),
-    Pass,
+    Pass(Option<Update>),
 }
 
 impl From<Code> for CodeResult {
@@ -1981,12 +2107,12 @@ impl From<Code> for CodeResult {
             Code::Halt(x) => Self::Halt(x),
             Code::Block(x) => {
                 if x.is_empty() {
-                    Self::Pass
+                    Self::Pass(None)
                 } else {
                     Self::Block(x.into_iter().map(CodeResult::from).collect())
                 }
             }
-            Code::Pass => Self::Pass,
+            Code::Pass(x) => Self::Pass(x),
             x => Self::Halt(ErrorLang::new(
                 ErrorKind::Compiler,
                 Some(&format!("Invalid result: {x}")),
@@ -2018,7 +2144,6 @@ mod tests {
                     fields: vec![],
                     constraints: Default::default(),
                 }),
-                row_count: RowCount::unknown(),
                 table_type: StTableType::User,
                 table_access: StAccess::Private,
             },
@@ -2048,7 +2173,7 @@ mod tests {
             }),
             Query::IndexJoin(IndexJoin {
                 probe_side: mem_table.clone().into(),
-                probe_field: FieldName::new(mem_table.head().table_id, 0.into()),
+                probe_col: 0.into(),
                 index_side: SourceExpr::DbTable(DbTable {
                     head: Arc::new(Header {
                         table_id: db_table.head().table_id,
@@ -2065,10 +2190,10 @@ mod tests {
                 return_index_rows: true,
             }),
             Query::JoinInner(JoinExpr {
-                col_rhs: FieldName::new(mem_table.head().table_id, 1.into()),
+                col_rhs: 1.into(),
                 rhs: mem_table.into(),
-                col_lhs: FieldName::new(db_table.head().table_id, 1.into()),
-                semi: false,
+                col_lhs: 1.into(),
+                inner: None,
             }),
         ]
     }
@@ -2113,7 +2238,6 @@ mod tests {
         SourceExpr::InMemory {
             source_id: SourceId(0),
             header: Arc::new(head),
-            row_count: RowCount::unknown(),
             table_access,
             table_type: StTableType::User,
         }
@@ -2132,16 +2256,15 @@ mod tests {
             &[(0, AlgebraicType::U8, false), (1, AlgebraicType::U8, true)],
         );
 
-        let index_field = index_side.head().fields[1].field;
-        let probe_field = probe_side.head().fields[1].field;
-        let select_field = FieldName::new(index_side.head().table_id, 0.into());
-        let index_select = ColumnOp::cmp(select_field, OpCmp::Eq, 0u8);
+        let index_col = 1.into();
+        let probe_col = 1.into();
+        let index_select = ColumnOp::cmp(0, OpCmp::Eq, 0u8);
         let join = IndexJoin {
             probe_side: probe_side.clone().into(),
-            probe_field,
+            probe_col,
             index_side: index_side.clone(),
             index_select: Some(index_select.clone()),
-            index_col: 1.into(),
+            index_col,
             return_index_rows: false,
         };
 
@@ -2154,8 +2277,8 @@ mod tests {
             panic!("expected an inner join, but got {:#?}", expr.query[0]);
         };
 
-        assert_eq!(join.col_lhs, probe_field);
-        assert_eq!(join.col_rhs, index_field);
+        assert_eq!(join.col_lhs, probe_col);
+        assert_eq!(join.col_rhs, index_col);
         assert_eq!(
             join.rhs,
             QueryExpr {
@@ -2163,22 +2286,21 @@ mod tests {
                 query: vec![index_select.into()]
             }
         );
-        assert!(join.semi);
+        assert_eq!(join.inner, None);
     }
 
-    fn setup_best_index() -> (Header, [FieldName; 5], [AlgebraicValue; 5]) {
+    fn setup_best_index() -> (Header, [ColId; 5], [AlgebraicValue; 5]) {
         let table_id = 0.into();
 
         let vals = [1, 2, 3, 4, 5].map(AlgebraicValue::U64);
         let col_ids = [0, 1, 2, 3, 4].map(ColId);
         let [a, b, c, d, _] = col_ids;
-        let fields = col_ids.map(|c| FieldName::new(table_id, c));
-        let cols = fields.map(|f| Column::new(f, AlgebraicType::I8));
+        let columns = col_ids.map(|c| Column::new(FieldName::new(table_id, c), AlgebraicType::I8));
 
         let head1 = Header::new(
             table_id,
             "t1".into(),
-            cols.to_vec(),
+            columns.to_vec(),
             vec![
                 // Index a
                 (a.into(), Constraints::primary_key()),
@@ -2191,34 +2313,19 @@ mod tests {
             ],
         );
 
-        (head1, fields, vals)
+        (head1, col_ids, vals)
     }
 
-    fn make_field_value<'a>(
-        arena: &'a Arena<ColumnOp>,
-        (cmp, field, value): (OpCmp, FieldName, &'a AlgebraicValue),
-    ) -> FieldValue<'a> {
-        let from_expr = |expr| Box::new(ColumnOp::Field(expr));
-        let op = ColumnOp::Cmp {
-            op: OpQuery::Cmp(cmp),
-            lhs: from_expr(FieldExpr::Name(field)),
-            rhs: from_expr(FieldExpr::Value(value.clone())),
-        };
-        let parent = arena.alloc(op);
-        FieldValue::new(parent, cmp, field, value)
+    fn make_field_value((cmp, col, value): (OpCmp, ColId, &AlgebraicValue)) -> ColumnOp {
+        ColumnOp::cmp(col, cmp, value.clone())
     }
 
-    fn scan_eq<'a>(arena: &'a Arena<ColumnOp>, field: FieldName, val: &'a AlgebraicValue) -> IndexColumnOp<'a> {
-        scan(arena, OpCmp::Eq, field, val)
+    fn scan_eq<'a>(arena: &'a Arena<ColumnOp>, col: ColId, val: &'a AlgebraicValue) -> IndexColumnOp<'a> {
+        scan(arena, OpCmp::Eq, col, val)
     }
 
-    fn scan<'a>(
-        arena: &'a Arena<ColumnOp>,
-        cmp: OpCmp,
-        field: FieldName,
-        val: &'a AlgebraicValue,
-    ) -> IndexColumnOp<'a> {
-        IndexColumnOp::Scan(make_field_value(arena, (cmp, field, val)).parent)
+    fn scan<'a>(arena: &'a Arena<ColumnOp>, cmp: OpCmp, col: ColId, val: &'a AlgebraicValue) -> IndexColumnOp<'a> {
+        IndexColumnOp::Scan(arena.alloc(make_field_value((cmp, col, val))))
     }
 
     #[test]
@@ -2232,9 +2339,10 @@ mod tests {
             let fields = fields
                 .iter()
                 .copied()
-                .map(|(col, val): (FieldName, _)| make_field_value(&arena, (OpCmp::Eq, col, val)).parent)
-                .collect::<Vec<_>>();
-            select_best_index(&mut <_>::default(), &head1, &fields)
+                .map(|(col, val): (ColId, _)| make_field_value((OpCmp::Eq, col, val)))
+                .reduce(ColumnOp::and)
+                .unwrap();
+            select_best_index(&mut <_>::default(), &head1, arena.alloc(fields))
         };
 
         let col_list_arena = Arena::new();
@@ -2248,19 +2356,19 @@ mod tests {
 
         assert_eq!(
             select_best_index(&[(col_a, &val_a)]),
-            [idx_eq(col_a.col.into(), val_a.clone())].into(),
+            [idx_eq(col_a.into(), val_a.clone())].into(),
         );
 
         assert_eq!(
             select_best_index(&[(col_b, &val_b)]),
-            [idx_eq(col_b.col.into(), val_b.clone())].into(),
+            [idx_eq(col_b.into(), val_b.clone())].into(),
         );
 
         // Check for permutation
         assert_eq!(
             select_best_index(&[(col_b, &val_b), (col_c, &val_c)]),
             [idx_eq(
-                col_list![col_b.col, col_c.col],
+                col_list![col_b, col_c],
                 product![val_b.clone(), val_c.clone()].into()
             )]
             .into(),
@@ -2269,7 +2377,7 @@ mod tests {
         assert_eq!(
             select_best_index(&[(col_c, &val_c), (col_b, &val_b)]),
             [idx_eq(
-                col_list![col_b.col, col_c.col],
+                col_list![col_b, col_c],
                 product![val_b.clone(), val_c.clone()].into()
             )]
             .into(),
@@ -2279,7 +2387,7 @@ mod tests {
         assert_eq!(
             select_best_index(&[(col_a, &val_a), (col_b, &val_b), (col_c, &val_c), (col_d, &val_d)]),
             [idx_eq(
-                col_list![col_a.col, col_b.col, col_c.col, col_d.col],
+                col_list![col_a, col_b, col_c, col_d],
                 product![val_a.clone(), val_b.clone(), val_c.clone(), val_d.clone()].into(),
             )]
             .into(),
@@ -2288,7 +2396,7 @@ mod tests {
         assert_eq!(
             select_best_index(&[(col_b, &val_b), (col_a, &val_a), (col_d, &val_d), (col_c, &val_c)]),
             [idx_eq(
-                col_list![col_a.col, col_b.col, col_c.col, col_d.col],
+                col_list![col_a, col_b, col_c, col_d],
                 product![val_a.clone(), val_b.clone(), val_c.clone(), val_d.clone()].into(),
             )]
             .into()
@@ -2298,8 +2406,8 @@ mod tests {
         assert_eq!(
             select_best_index(&[(col_b, &val_b), (col_a, &val_a), (col_e, &val_e), (col_d, &val_d)]),
             [
-                idx_eq(col_a.col.into(), val_a.clone()),
-                idx_eq(col_b.col.into(), val_b.clone()),
+                idx_eq(col_a.into(), val_a.clone()),
+                idx_eq(col_b.into(), val_b.clone()),
                 scan_eq(&arena, col_d, &val_d),
                 scan_eq(&arena, col_e, &val_e),
             ]
@@ -2309,10 +2417,7 @@ mod tests {
         assert_eq!(
             select_best_index(&[(col_b, &val_b), (col_c, &val_c), (col_d, &val_d)]),
             [
-                idx_eq(
-                    col_list![col_b.col, col_c.col],
-                    product![val_b.clone(), val_c.clone()].into(),
-                ),
+                idx_eq(col_list![col_b, col_c], product![val_b.clone(), val_c.clone()].into(),),
                 scan_eq(&arena, col_d, &val_d),
             ]
             .into()
@@ -2323,21 +2428,18 @@ mod tests {
     fn best_index_range() {
         let arena = Arena::new();
 
-        let (head1, fields, vals) = setup_best_index();
-        let [col_a, col_b, col_c, col_d, _] = fields;
+        let (head1, cols, vals) = setup_best_index();
+        let [col_a, col_b, col_c, col_d, _] = cols;
         let [val_a, val_b, val_c, val_d, _] = vals;
 
-        let select_best_index = |fields: &[_]| {
-            let fields = fields
-                .iter()
-                .map(|x| make_field_value(&arena, *x).parent)
-                .collect::<Vec<_>>();
-            select_best_index(&mut <_>::default(), &head1, &fields)
+        let select_best_index = |cols: &[_]| {
+            let fields = cols.iter().map(|x| make_field_value(*x)).reduce(ColumnOp::and).unwrap();
+            select_best_index(&mut <_>::default(), &head1, arena.alloc(fields))
         };
 
         let col_list_arena = Arena::new();
-        let idx = |cmp, cols: &[FieldName], val: &AlgebraicValue| {
-            let columns = cols.iter().map(|c| c.col).collect::<ColListBuilder>().build().unwrap();
+        let idx = |cmp, cols: &[ColId], val: &AlgebraicValue| {
+            let columns = cols.iter().copied().collect::<ColListBuilder>().build().unwrap();
             let columns = col_list_arena.alloc(columns);
             make_index_arg(cmp, columns, val.clone())
         };
@@ -2483,7 +2585,7 @@ mod tests {
             .with_access(StAccess::Public)
             .with_type(StTableType::System); // hah!
 
-        let crud = CrudExpr::CreateTable { table };
+        let crud = CrudExpr::CreateTable { table: Box::new(table) };
         assert_owner_required(crud);
     }
 
@@ -2492,7 +2594,6 @@ mod tests {
         let crud = CrudExpr::Drop {
             name: "etcpasswd".into(),
             kind: DbType::Table,
-            table_access: StAccess::Public,
         };
         assert_owner_required(crud);
     }
@@ -2519,16 +2620,14 @@ mod tests {
         let rhs_source = SourceExpr::from(&rhs);
 
         let q = QueryExpr::new(lhs_source.clone())
-            .with_join_inner(
-                rhs_source.clone(),
-                FieldName::new(lhs.table_id, 0.into()),
-                FieldName::new(rhs.table_id, 0.into()),
-                false,
-            )
+            .with_join_inner(rhs_source.clone(), 0.into(), 0.into(), false)
             .with_project(
-                &[0, 1].map(|c| FieldExpr::Name(FieldName::new(lhs.table_id, c.into()))),
+                [0, 1]
+                    .map(|c| FieldExpr::Name(FieldName::new(lhs.table_id, c.into())))
+                    .into(),
                 Some(TableId(0)),
-            );
+            )
+            .unwrap();
         let q = q.optimize(&|_, _| 0);
 
         assert_eq!(q.source, lhs_source, "Optimized query should read from lhs");
@@ -2539,8 +2638,8 @@ mod tests {
             "Optimized query should have a single member, a semijoin"
         );
         match &q.query[0] {
-            Query::JoinInner(JoinExpr { rhs, semi, .. }) => {
-                assert!(semi, "Optimized query should be a semijoin");
+            Query::JoinInner(JoinExpr { rhs, inner: semi, .. }) => {
+                assert_eq!(semi, &None, "Optimized query should be a semijoin");
                 assert_eq!(rhs.source, rhs_source, "Optimized query should filter with rhs");
                 assert!(
                     rhs.query.is_empty(),
@@ -2572,12 +2671,7 @@ mod tests {
         let lhs_source = SourceExpr::from(&lhs);
         let rhs_source = SourceExpr::from(&rhs);
 
-        let q = QueryExpr::new(lhs_source.clone()).with_join_inner(
-            rhs_source.clone(),
-            FieldName::new(lhs.table_id, 0.into()),
-            FieldName::new(rhs.table_id, 0.into()),
-            false,
-        );
+        let q = QueryExpr::new(lhs_source.clone()).with_join_inner(rhs_source.clone(), 0.into(), 0.into(), false);
         let optimized = q.clone().optimize(&|_, _| 0);
         assert_eq!(q, optimized);
     }
@@ -2589,14 +2683,14 @@ mod tests {
             TableId(0),
             TableDef::new(
                 "lhs".into(),
-                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String]).into(),
+                ProductType::from([AlgebraicType::I32, AlgebraicType::String]).into(),
             ),
         );
         let rhs = TableSchema::from_def(
             TableId(1),
             TableDef::new(
                 "rhs".into(),
-                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64]).into(),
+                ProductType::from([AlgebraicType::I32, AlgebraicType::I64]).into(),
             ),
         );
 
@@ -2604,16 +2698,14 @@ mod tests {
         let rhs_source = SourceExpr::from(&rhs);
 
         let q = QueryExpr::new(lhs_source.clone())
-            .with_join_inner(
-                rhs_source.clone(),
-                FieldName::new(lhs.table_id, 0.into()),
-                FieldName::new(rhs.table_id, 0.into()),
-                false,
-            )
+            .with_join_inner(rhs_source.clone(), 0.into(), 0.into(), false)
             .with_project(
-                &[0, 1].map(|c| FieldExpr::Name(FieldName::new(rhs.table_id, c.into()))),
+                [0, 1]
+                    .map(|c| FieldExpr::Name(FieldName::new(rhs.table_id, c.into())))
+                    .into(),
                 Some(TableId(1)),
-            );
+            )
+            .unwrap();
         let optimized = q.clone().optimize(&|_, _| 0);
         assert_eq!(q, optimized);
     }

@@ -1,13 +1,22 @@
+use std::time::Duration;
+
 use super::compiler::compile_sql;
 use crate::db::datastore::locking_tx_datastore::state_view::StateView;
+use crate::db::datastore::system_tables::StVarTable;
+use crate::db::datastore::traits::IsolationLevel;
 use crate::db::relational_db::{RelationalDB, Tx};
+use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::execution_context::ExecutionContext;
+use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
+use crate::host::ArgsTuple;
+use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{DbProgram, TxMode};
+use itertools::Either;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::FieldName;
-use spacetimedb_lib::{ProductType, ProductValue};
+use spacetimedb_lib::{ProductType, ProductValue, Timestamp};
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use spacetimedb_vm::relation::MemTable;
@@ -20,24 +29,57 @@ pub struct StmtResult {
 // TODO(cloutiertyler): we could do this the swift parsing way in which
 // we always generate a plan, but it may contain errors
 
-pub(crate) fn collect_result(result: &mut Vec<MemTable>, r: CodeResult) -> Result<(), DBError> {
+pub(crate) fn collect_result(
+    result: &mut Vec<MemTable>,
+    updates: &mut Vec<DatabaseTableUpdate>,
+    r: CodeResult,
+) -> Result<(), DBError> {
     match r {
         CodeResult::Value(_) => {}
         CodeResult::Table(x) => result.push(x),
         CodeResult::Block(lines) => {
             for x in lines {
-                collect_result(result, x)?;
+                collect_result(result, updates, x)?;
             }
         }
         CodeResult::Halt(err) => return Err(DBError::VmUser(err)),
-        CodeResult::Pass => {}
+        CodeResult::Pass(x) => match x {
+            None => {}
+            Some(update) => {
+                updates.push(DatabaseTableUpdate {
+                    table_name: update.table_name,
+                    table_id: update.table_id,
+                    inserts: update.inserts.into(),
+                    deletes: update.deletes.into(),
+                });
+            }
+        },
     }
 
     Ok(())
 }
 
 pub fn ctx_sql(db: &RelationalDB) -> ExecutionContext {
-    ExecutionContext::sql(db.address(), db.read_config().slow_query)
+    ExecutionContext::sql(db.address())
+}
+
+fn execute(
+    p: &mut DbProgram<'_, '_>,
+    ast: Vec<CrudExpr>,
+    sql: &str,
+    updates: &mut Vec<DatabaseTableUpdate>,
+) -> Result<Vec<MemTable>, DBError> {
+    let slow_query_threshold = if let TxMode::Tx(tx) = p.tx {
+        StVarTable::query_limit(p.ctx, p.db, tx)?.map(Duration::from_millis)
+    } else {
+        None
+    };
+    let _slow_query_logger = SlowQueryLogger::new(sql, slow_query_threshold, p.ctx.workload()).log_guard();
+    let mut result = Vec::with_capacity(ast.len());
+    let query = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
+    // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
+    collect_result(&mut result, updates, run_ast(p, query, [].into()).into())?;
+    Ok(result)
 }
 
 /// Run the compiled `SQL` expression inside the `vm` created by [DbProgram]
@@ -45,35 +87,121 @@ pub fn ctx_sql(db: &RelationalDB) -> ExecutionContext {
 /// Evaluates `ast` and accordingly triggers mutable or read tx to execute
 ///
 /// Also, in case the execution takes more than x, log it as `slow query`
-pub fn execute_sql(db: &RelationalDB, sql: &str, ast: Vec<CrudExpr>, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
-    fn execute(p: &mut DbProgram<'_, '_>, ast: Vec<CrudExpr>) -> Result<Vec<MemTable>, DBError> {
-        let mut result = Vec::with_capacity(ast.len());
-        let query = Expr::Block(ast.into_iter().map(|x| Expr::Crud(Box::new(x))).collect());
-        // SQL queries can never reference `MemTable`s, so pass an empty `SourceSet`.
-        collect_result(&mut result, run_ast(p, query, [].into()).into())?;
-        Ok(result)
+pub fn execute_sql(
+    db: &RelationalDB,
+    sql: &str,
+    ast: Vec<CrudExpr>,
+    auth: AuthCtx,
+    subs: Option<&ModuleSubscriptions>,
+) -> Result<Vec<MemTable>, DBError> {
+    let ctx = ctx_sql(db);
+    if CrudExpr::is_reads(&ast) {
+        let mut updates = Vec::new();
+        db.with_read_only(&ctx, |tx| {
+            execute(
+                &mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth),
+                ast,
+                sql,
+                &mut updates,
+            )
+        })
+    } else if subs.is_none() {
+        let mut updates = Vec::new();
+        db.with_auto_commit(&ctx, |mut_tx| {
+            execute(
+                &mut DbProgram::new(&ctx, db, &mut mut_tx.into(), auth),
+                ast,
+                sql,
+                &mut updates,
+            )
+        })
+    } else {
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+        let mut updates = Vec::with_capacity(ast.len());
+        let res = execute(
+            &mut DbProgram::new(&ctx, db, &mut (&mut tx).into(), auth),
+            ast,
+            sql,
+            &mut updates,
+        );
+        if res.is_ok() && !updates.is_empty() {
+            let event = ModuleEvent {
+                timestamp: Timestamp::now(),
+                caller_identity: auth.caller,
+                caller_address: None,
+                function_call: ModuleFunctionCall {
+                    reducer: String::new(),
+                    args: ArgsTuple::default(),
+                },
+                status: EventStatus::Committed(DatabaseUpdate { tables: updates }),
+                energy_quanta_used: EnergyQuanta::ZERO,
+                host_execution_duration: Duration::ZERO,
+                request_id: None,
+                timer: None,
+            };
+            match subs.unwrap().commit_and_broadcast_event(None, event, &ctx, tx).unwrap() {
+                Ok(_) => res,
+                Err(WriteConflict) => todo!("See module_host_actor::call_reducer_with_tx"),
+            }
+        } else {
+            db.finish_tx(&ctx, tx, res)
+        }
+    }
+}
+
+/// Like [`execute_sql`], but for providing your own `tx`.
+///
+/// Returns None if you pass a mutable query with an immutable tx.
+pub fn execute_sql_tx<'a>(
+    db: &RelationalDB,
+    tx: impl Into<TxMode<'a>>,
+    sql: &str,
+    ast: Vec<CrudExpr>,
+    auth: AuthCtx,
+) -> Result<Option<Vec<MemTable>>, DBError> {
+    let mut tx = tx.into();
+
+    if matches!(tx, TxMode::Tx(_)) && !CrudExpr::is_reads(&ast) {
+        return Ok(None);
     }
 
     let ctx = ctx_sql(db);
-    let slow_logger = SlowQueryLogger::query(&ctx, sql);
-    let result = if CrudExpr::is_reads(&ast) {
-        db.with_read_only(&ctx, |tx| {
-            execute(&mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth), ast)
-        })
-    } else {
-        db.with_auto_commit(&ctx, |mut_tx| {
-            execute(&mut DbProgram::new(&ctx, db, &mut mut_tx.into(), auth), ast)
-        })
-    }?;
-    slow_logger.log();
-
-    Ok(result)
+    let mut updates = Vec::new(); // No subscription updates in this path, because it requires owning the tx.
+    execute(&mut DbProgram::new(&ctx, db, &mut tx, auth), ast, sql, &mut updates).map(Some)
 }
 
 /// Run the `SQL` string using the `auth` credentials
-pub fn run(db: &RelationalDB, sql_text: &str, auth: AuthCtx) -> Result<Vec<MemTable>, DBError> {
-    let ast = db.with_read_only(&ctx_sql(db), |tx| compile_sql(db, tx, sql_text))?;
-    execute_sql(db, sql_text, ast, auth)
+pub fn run(
+    db: &RelationalDB,
+    sql_text: &str,
+    auth: AuthCtx,
+    subs: Option<&ModuleSubscriptions>,
+) -> Result<Vec<MemTable>, DBError> {
+    let ctx = ctx_sql(db);
+    let result = db.with_read_only(&ctx, |tx| {
+        let ast = compile_sql(db, tx, sql_text)?;
+        if CrudExpr::is_reads(&ast) {
+            let mut updates = Vec::new();
+            let result = execute(
+                &mut DbProgram::new(&ctx, db, &mut TxMode::Tx(tx), auth),
+                ast,
+                sql_text,
+                &mut updates,
+            )?;
+            Ok::<_, DBError>(Either::Left(result))
+        } else {
+            // hehe. right. write.
+            Ok(Either::Right(ast))
+        }
+    })?;
+    match result {
+        Either::Left(result) => Ok(result),
+        // TODO: this should perhaps be an upgradable_read upgrade? or we should try
+        //       and figure out if we can detect the mutablility of the query before we take
+        //       the tx? once we have migrations we probably don't want to have stale
+        //       sql queries after a database schema have been updated.
+        Either::Right(ast) => execute_sql(db, sql_text, ast, auth, subs),
+    }
 }
 
 /// Translates a `FieldName` to the field's name.
@@ -93,15 +221,28 @@ pub(crate) mod tests {
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::vm::tests::create_table_with_rows;
     use spacetimedb_lib::error::{ResultTest, TestError};
+    use spacetimedb_lib::relation::ColExpr;
+    use spacetimedb_lib::Identity;
     use spacetimedb_primitives::{col_list, ColId};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::relation::Header;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use spacetimedb_vm::eval::test_helpers::{create_game_data, mem_table, mem_table_without_table_name};
+    use std::sync::Arc;
+
+    pub(crate) fn execute_for_testing(
+        db: &RelationalDB,
+        sql_text: &str,
+        q: Vec<CrudExpr>,
+    ) -> Result<Vec<MemTable>, DBError> {
+        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
+        execute_sql(db, sql_text, q, AuthCtx::for_testing(), Some(&subs))
+    }
 
     /// Short-cut for simplify test execution
     pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<MemTable>, DBError> {
-        run(db, sql_text, AuthCtx::for_testing())
+        let subs = ModuleSubscriptions::new(Arc::new(db.clone()), Identity::ZERO);
+        run(db, sql_text, AuthCtx::for_testing(), Some(&subs))
     }
 
     fn create_data(total_rows: u64) -> ResultTest<(TestDB, MemTable)> {
@@ -113,7 +254,7 @@ pub(crate) mod tests {
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
 
         let schema = stdb.with_auto_commit(&ExecutionContext::default(), |tx| {
-            create_table_with_rows(&stdb, tx, "inventory", head.clone(), &rows)
+            create_table_with_rows(&stdb, tx, "inventory", head.clone(), &rows, StAccess::Public)
         })?;
         let header = Header::from(&*schema).into();
 
@@ -248,8 +389,7 @@ pub(crate) mod tests {
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
         // The expected result.
-        let col = table.head.fields[0].field;
-        let inv = table.head.project(&[col]).unwrap();
+        let inv = table.head.project(&[ColExpr::Col(0.into())]).unwrap();
 
         let row = product![1u64];
         let input = MemTable::new(inv.into(), table.table_access, vec![row]);
@@ -272,8 +412,7 @@ pub(crate) mod tests {
         let result = result.first().unwrap().clone();
 
         // The expected result.
-        let col = table.head.fields[0].field;
-        let inv = table.head.project(&[col]).unwrap();
+        let inv = table.head.project(&[ColExpr::Col(0.into())]).unwrap();
 
         let row = product![1u64];
         let input = MemTable::new(inv.into(), table.table_access, vec![row]);
@@ -299,8 +438,7 @@ pub(crate) mod tests {
         let mut result = result.first().unwrap().clone();
         result.data.sort();
         //The expected result
-        let col = table.head.fields[0].field;
-        let inv = table.head.project(&[col]).unwrap();
+        let inv = table.head.project(&[ColExpr::Col(0.into())]).unwrap();
 
         let input = MemTable::new(inv.into(), table.table_access, vec![product![1u64], product![2u64]]);
 
@@ -325,8 +463,7 @@ pub(crate) mod tests {
         let mut result = result.first().unwrap().clone();
         result.data.sort();
         // The expected result.
-        let col = table.head.fields[0].field;
-        let inv = table.head.project(&[col]).unwrap();
+        let inv = table.head.project(&[ColExpr::Col(0.into())]).unwrap();
 
         let input = MemTable::new(inv.into(), table.table_access, vec![product![1u64], product![2u64]]);
 
@@ -345,9 +482,16 @@ pub(crate) mod tests {
         let db = TestDB::durable()?;
 
         let (p_schema, inv_schema) = db.with_auto_commit::<_, _, TestError>(&ExecutionContext::default(), |tx| {
-            let i = create_table_with_rows(&db, tx, "Inventory", data.inv_ty, &data.inv.data)?;
-            let p = create_table_with_rows(&db, tx, "Player", data.player_ty, &data.player.data)?;
-            create_table_with_rows(&db, tx, "Location", data.location_ty, &data.location.data)?;
+            let i = create_table_with_rows(&db, tx, "Inventory", data.inv_ty, &data.inv.data, StAccess::Public)?;
+            let p = create_table_with_rows(&db, tx, "Player", data.player_ty, &data.player.data, StAccess::Public)?;
+            create_table_with_rows(
+                &db,
+                tx,
+                "Location",
+                data.location_ty,
+                &data.location.data,
+                StAccess::Public,
+            )?;
             Ok((p, i))
         })?;
 
@@ -736,6 +880,46 @@ SELECT * FROM inventory",
 
         let result = result.first().unwrap().clone();
         assert_eq!(result.data, []);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_row_limit() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+
+        let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
+        db.with_auto_commit(&ExecutionContext::default(), |tx| -> Result<_, DBError> {
+            for i in 0..5u8 {
+                db.insert(tx, table_id, product!(i))?;
+            }
+            Ok(())
+        })?;
+
+        let server = Identity::from_hashing_bytes("server");
+        let client = Identity::from_hashing_bytes("client");
+
+        let internal_auth = AuthCtx::new(server, server);
+        let external_auth = AuthCtx::new(server, client);
+
+        // No row limit, both queries pass.
+        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_ok());
+
+        // Set row limit.
+        assert!(run(&db, "SET row_limit = 4", internal_auth, None).is_ok());
+
+        // External query fails.
+        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_err());
+
+        // Increase row limit.
+        assert!(run(&db, "DELETE FROM st_var WHERE name = 'row_limit'", internal_auth, None).is_ok());
+        assert!(run(&db, "SET row_limit = 5", internal_auth, None).is_ok());
+
+        // Both queries pass.
+        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_ok());
 
         Ok(())
     }

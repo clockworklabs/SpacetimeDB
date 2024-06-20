@@ -43,6 +43,13 @@ pub trait Visitor {
         reader: &mut R,
     ) -> Result<Self::Row, Self::Error>;
 
+    /// Called to skip over rows from `reader` within a [`Mutations`] of a TX that should not be folded.
+    ///
+    /// Takes `&mut self` because schema lookups may need mutable access to the visitor
+    /// in order to memoize the computed schema.
+    /// This method should not store or use the row in any way.
+    fn skip_row<'a, R: BufReader<'a>>(&mut self, table_id: TableId, reader: &mut R) -> Result<(), Self::Error>;
+
     /// Called for each [`TableId`] encountered in the `truncates` section of
     /// a [`Mutations`].
     ///
@@ -205,6 +212,34 @@ impl<T: Encode> Txdata<T> {
 
         Ok(())
     }
+
+    pub fn skip<'a, V, R>(visitor: &mut V, reader: &mut R) -> Result<(), V::Error>
+    where
+        V: Visitor<Row = T>,
+        R: BufReader<'a>,
+    {
+        let flags = Flags::from_bits_retain(reader.get_u8()?);
+
+        // If the flags indicate that the payload contains `Inputs`,
+        // try to decode them.
+        if flags.contains(Flags::HAVE_INPUTS) {
+            Inputs::decode(reader)?;
+        }
+
+        // If the flags indicate that the payload contains `Outputs`,
+        // try to decode them.
+        if flags.contains(Flags::HAVE_OUTPUTS) {
+            Outputs::decode(reader)?;
+        }
+
+        // If the flags indicate that the payload contains `Mutations`,
+        // try to consume them (i.e. decode but don't allocate).
+        if flags.contains(Flags::HAVE_MUTATIONS) {
+            Mutations::skip(visitor, reader)?;
+        }
+
+        Ok(())
+    }
 }
 
 /// The inputs of a transaction, i.e. the name and arguments of a reducer call.
@@ -320,6 +355,41 @@ impl<T: Encode> Mutations<T> {
         for TableId(table_id) in self.truncates.iter() {
             buf.put_u32(*table_id);
         }
+    }
+
+    pub fn skip<'a, V, R>(visitor: &mut V, reader: &mut R) -> Result<(), V::Error>
+    where
+        V: Visitor<Row = T>,
+        R: BufReader<'a>,
+    {
+        // Skip the 'insert' operations.
+        // The row data of a single 'insert' operation is decoded by the visitor.
+        let n = decode_varint(reader)?;
+        for _ in 0..n {
+            let table_id = reader.get_u32().map(TableId)?;
+            let m = decode_varint(reader)?;
+            for _ in 0..m {
+                visitor.skip_row(table_id, reader)?;
+            }
+        }
+
+        // Do the same for the `delete` operations.
+        let n = decode_varint(reader)?;
+        for _ in 0..n {
+            let table_id = reader.get_u32().map(TableId)?;
+            let m = decode_varint(reader)?;
+            for _ in 0..m {
+                visitor.skip_row(table_id, reader)?;
+            }
+        }
+
+        // Skip the truncates. This does not require involvement from the visitor.
+        let n = decode_varint(reader)?;
+        for _ in 0..n {
+            reader.get_u32()?;
+        }
+
+        Ok(())
     }
 
     /// Decode `Self` from the given buffer.
@@ -460,6 +530,25 @@ pub enum DecoderError<V> {
     Traverse(#[from] error::Traversal),
 }
 
+/// A free standing implementation of [`crate::Decoder::skip_record`]
+/// specifically for `Txdata<ProductValue>`.
+pub fn skip_record_fn<'a, V, R>(visitor: &mut V, version: u8, reader: &mut R) -> Result<(), DecoderError<V::Error>>
+where
+    V: Visitor,
+    V::Row: Encode,
+    R: BufReader<'a>,
+{
+    if version > Txdata::<V::Row>::VERSION {
+        return Err(DecoderError::UnsupportedVersion {
+            supported: Txdata::<V::Row>::VERSION,
+            given: version,
+        });
+    }
+    Txdata::skip(visitor, reader).map_err(DecoderError::Visitor)?;
+
+    Ok(())
+}
+
 /// A free standing implementation of [`crate::Decoder::decode_record`], which
 /// drives the supplied [`Visitor`].
 ///
@@ -597,6 +686,11 @@ mod tests {
             reader: &mut R,
         ) -> Result<Self::Row, Self::Error> {
             ProductValue::decode(&SOME_PV_TY, reader)
+        }
+
+        fn skip_row<'a, R: BufReader<'a>>(&mut self, _table_id: TableId, reader: &mut R) -> Result<(), Self::Error> {
+            ProductValue::decode(&SOME_PV_TY, reader)?;
+            Ok(())
         }
     }
 

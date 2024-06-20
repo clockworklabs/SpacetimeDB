@@ -37,11 +37,7 @@ jobs:
       - name: Start containers
         run: docker compose up -d
       - name: Run smoketests
-        run: python -m smoketests --docker -x zz_docker
-      # These cannot run in parallel, even though the script tries to handle it
-      # TODO: Fix flaky tests https://github.com/clockworklabs/SpacetimeDB/issues/630
-      # - name: Run restarting smoketests
-      #   run: python -m smoketests --docker zz_docker
+        run: python -m smoketests --docker
       - name: Stop containers
         if: always()
         run: docker compose down
@@ -80,6 +76,9 @@ jobs:
 
       - name: Run cargo test
         run: cargo test --all
+
+      - name: C# SDK tests
+        run: dotnet test crates/bindings-csharp
 
   lints:
     name: Lints

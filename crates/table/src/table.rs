@@ -1,3 +1,5 @@
+use crate::var_len::VarLenMembers;
+
 use super::{
     bflatn_from::serialize_row_from_page,
     bflatn_to::write_row_to_pages,
@@ -45,8 +47,6 @@ pub struct BlobNumBytes(usize);
 pub struct Table {
     /// Page manager and row layout grouped together, for `RowRef` purposes.
     inner: TableInner,
-    /// The visitor program for `row_layout`.
-    visitor_prog: VarLenVisitorProgram,
     /// Maps `RowHash -> [RowPointer]` where a [`RowPointer`] points into `pages`.
     pointer_map: PointerMap,
     /// The indices associated with a set of columns of the table.
@@ -79,6 +79,10 @@ pub(crate) struct TableInner {
     /// A [`StaticBsatnLayout`] for fast BFLATN -> BSATN serialization,
     /// if the [`RowTypeLayout`] has a static BSATN length and layout.
     static_bsatn_layout: Option<StaticBsatnLayout>,
+    /// The visitor program for `row_layout`.
+    ///
+    /// Must be in the `TableInner` so that [`RowRef::blob_store_bytes`] can use it.
+    visitor_prog: VarLenVisitorProgram,
     /// The page manager that holds rows
     /// including both their fixed and variable components.
     pages: Pages,
@@ -240,7 +244,7 @@ impl Table {
             unsafe {
                 self.inner
                     .pages
-                    .delete_row(&self.visitor_prog, self.row_size(), ptr, blob_store)
+                    .delete_row(&self.inner.visitor_prog, self.row_size(), ptr, blob_store)
             };
             return Err(InsertError::Duplicate(existing_row));
         }
@@ -270,7 +274,7 @@ impl Table {
         let (ptr, blob_bytes) = unsafe {
             write_row_to_pages(
                 &mut self.inner.pages,
-                &self.visitor_prog,
+                &self.inner.visitor_prog,
                 blob_store,
                 &self.inner.row_layout,
                 row,
@@ -379,7 +383,7 @@ impl Table {
         unsafe {
             self.inner
                 .pages
-                .delete_row(&self.visitor_prog, self.row_size(), ptr, blob_store)
+                .delete_row(&self.inner.visitor_prog, self.row_size(), ptr, blob_store)
         }
     }
 
@@ -580,7 +584,7 @@ impl Table {
         let schema = self.schema.clone();
         let layout = self.row_layout().clone();
         let sbl = self.static_bsatn_layout().cloned();
-        let visitor = self.visitor_prog.clone();
+        let visitor = self.inner.visitor_prog.clone();
         let mut new =
             Table::new_with_indexes_capacity(schema, layout, sbl, visitor, squashed_offset, self.indexes.len());
 
@@ -599,6 +603,25 @@ impl Table {
     /// For more details, refer to the documentation of `self.blob_store_bytes`.
     pub fn bytes_occupied_overestimate(&self) -> usize {
         (self.num_pages() * PAGE_DATA_SIZE) + (self.blob_store_bytes.0)
+    }
+
+    /// Reset the internal storage of `self` to be `pages`.
+    ///
+    /// This recomputes the pointer map based on the `pages`,
+    /// but does not recompute indexes.
+    ///
+    /// Used when restoring from a snapshot.
+    ///
+    /// # Safety
+    ///
+    /// The schema of rows stored in the `pages` must exactly match `self.schema` and `self.inner.row_layout`.
+    pub unsafe fn set_pages(&mut self, pages: Vec<Box<Page>>, blob_store: &dyn BlobStore) {
+        self.inner.pages.set_contents(pages, self.inner.row_layout.size());
+
+        // Recompute table metadata based on the new pages.
+        // Compute the row count first, in case later computations want to use it as a capacity to pre-allocate.
+        self.compute_row_count(blob_store);
+        self.rebuild_pointer_map(blob_store);
     }
 }
 
@@ -775,6 +798,33 @@ impl<'a> RowRef<'a> {
             // Use the slower, but more general, `bsatn_from` serializer to write the row.
             bsatn::to_writer(buf, self)
         }
+    }
+
+    /// Return the number of bytes in the blob store to which this object holds a reference.
+    ///
+    /// Used to compute the table's `blob_store_bytes` when reconstructing a snapshot.
+    ///
+    /// Even within a single row, this is a conservative overestimate,
+    /// as a row may contain multiple references to the same large blob.
+    /// This seems unlikely to occur in practice.
+    fn blob_store_bytes(&self) -> usize {
+        let row_data = self.get_row_data();
+        let (page, _) = self.page_and_offset();
+        // SAFETY:
+        // - Existence of a `RowRef` treated as proof
+        //   of the row's validity and type information's correctness.
+        unsafe { self.table.visitor_prog.visit_var_len(row_data) }
+            .filter(|vlr| vlr.is_large_blob())
+            .map(|vlr| {
+                // SAFETY:
+                // - Because `vlr.is_large_blob`, it points to exactly one granule.
+                let granule = unsafe { page.iter_var_len_object(vlr.first_granule) }.next().unwrap();
+                let blob_hash = granule.blob_hash();
+                let blob = self.blob_store.retrieve_blob(&blob_hash).unwrap();
+
+                blob.len()
+            })
+            .sum()
     }
 }
 
@@ -985,9 +1035,9 @@ impl Table {
             inner: TableInner {
                 row_layout,
                 static_bsatn_layout,
+                visitor_prog,
                 pages: Pages::default(),
             },
-            visitor_prog,
             schema,
             indexes: HashMap::with_capacity(indexes_capacity),
             pointer_map: PointerMap::default(),
@@ -1036,6 +1086,16 @@ impl Table {
         &self.inner.pages
     }
 
+    /// Iterates over each [`Page`] in this table, ensuring that its hash is computed before yielding it.
+    ///
+    /// Used when capturing a snapshot.
+    pub fn iter_pages_with_hashes(&mut self) -> impl Iterator<Item = (blake3::Hash, &Page)> {
+        self.inner.pages.iter_mut().map(|page| {
+            let hash = page.save_or_get_content_hash();
+            (hash, &**page)
+        })
+    }
+
     /// Returns the number of pages storing the physical rows of this table.
     fn num_pages(&self) -> usize {
         self.inner.pages.len()
@@ -1044,6 +1104,37 @@ impl Table {
     /// Returns the [`StaticBsatnLayout`] for this table,
     pub(crate) fn static_bsatn_layout(&self) -> Option<&StaticBsatnLayout> {
         self.inner.static_bsatn_layout.as_ref()
+    }
+
+    /// Rebuild the [`PointerMap`] by iterating over all the rows in `self` and inserting them.
+    ///
+    /// Called when restoring from a snapshot after installing the pages,
+    /// but after computing the row count,
+    /// since snapshots do not save the pointer map..
+    fn rebuild_pointer_map(&mut self, blob_store: &dyn BlobStore) {
+        // TODO(perf): Pre-allocate `PointerMap.map` with capacity `self.row_count`.
+        // Alternatively, do this at the same time as `compute_row_count`.
+        let ptrs = self
+            .scan_rows(blob_store)
+            .map(|row_ref| (row_ref.row_hash(), row_ref.pointer()))
+            .collect::<PointerMap>();
+        self.pointer_map = ptrs;
+    }
+
+    /// Compute and store `self.row_count` and `self.blob_store_bytes`
+    /// by iterating over all the rows in `self` and counting them.
+    ///
+    /// Called when restoring from a snapshot after installing the pages,
+    /// since snapshots do not save this metadata.
+    fn compute_row_count(&mut self, blob_store: &dyn BlobStore) {
+        let mut row_count = 0;
+        let mut blob_store_bytes = 0;
+        for row in self.scan_rows(blob_store) {
+            row_count += 1;
+            blob_store_bytes += row.blob_store_bytes();
+        }
+        self.row_count = row_count as u64;
+        self.blob_store_bytes = blob_store_bytes.into();
     }
 }
 

@@ -27,7 +27,7 @@ use spacetimedb::host::ReducerOutcome;
 use spacetimedb::host::UpdateDatabaseSuccess;
 use spacetimedb::identity::Identity;
 use spacetimedb::json::client_api::StmtResultJson;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance};
+use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType};
 use spacetimedb::sql;
 use spacetimedb::sql::execute::{ctx_sql, translate_col};
 use spacetimedb_client_api_messages::name::{self, DnsLookupResponse, DomainName, PublishOp, PublishResult};
@@ -36,6 +36,7 @@ use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::sats::WithTypespace;
+use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::ProductTypeElement;
 
 pub(crate) struct DomainParsingRejection;
@@ -79,7 +80,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         log::error!("Could not find database: {}", address.to_hex());
         (StatusCode::NOT_FOUND, "No such database.")
     })?;
-    let identity = database.identity;
+    let identity = database.owner_identity;
     let database_instance = worker_ctx
         .get_leader_database_instance_by_database(database.id)
         .ok_or((
@@ -318,15 +319,28 @@ where
 pub struct CatalogParams {
     name_or_address: NameOrAddress,
 }
+#[derive(Deserialize)]
+pub struct CatalogQueryParams {
+    expand: Option<bool>,
+    #[serde(default)]
+    module_def: bool,
+}
 pub async fn catalog<S>(
     State(worker_ctx): State<S>,
     Path(CatalogParams { name_or_address }): Path<CatalogParams>,
-    Query(DescribeQueryParams { expand }): Query<DescribeQueryParams>,
+    Query(CatalogQueryParams { expand, module_def }): Query<CatalogQueryParams>,
     auth: SpacetimeAuthHeader,
 ) -> axum::response::Result<impl IntoResponse>
 where
     S: ControlStateDelegate + NodeDelegate,
 {
+    if module_def && expand.is_some() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "expand and module_def cannot both be specified",
+        )
+            .into());
+    }
     let address = name_or_address.resolve(&worker_ctx).await?.into();
     let database = worker_ctx_find_database(&worker_ctx, &address)
         .await?
@@ -340,16 +354,21 @@ where
         .get_or_launch_module_host(database, instance_id)
         .await
         .map_err(log_and_500)?;
-    let catalog = module.catalog();
-    let expand = expand.unwrap_or(false);
-    let response_catalog: HashMap<_, _> = catalog
-        .iter()
-        .map(|(name, entity)| (name, entity_description_json(entity, expand)))
-        .collect();
-    let response_json = json!({
-        "entities": response_catalog,
-        "typespace": catalog.typespace().types,
-    });
+
+    let response_json = if module_def {
+        serde_json::to_value(SerializeWrapper::from_ref(&module.info().module_def)).map_err(log_and_500)?
+    } else {
+        let catalog = module.catalog();
+        let expand = expand.unwrap_or(false);
+        let response_catalog: HashMap<_, _> = catalog
+            .iter()
+            .map(|(name, entity)| (name, entity_description_json(entity, expand)))
+            .collect();
+        json!({
+            "entities": response_catalog,
+            "typespace": catalog.typespace().types,
+        })
+    };
 
     Ok((
         StatusCode::OK,
@@ -378,10 +397,9 @@ pub async fn info<S: ControlStateDelegate>(
     let host_type: &str = database.host_type.as_ref();
     let response_json = json!({
         "address": database.address,
-        "identity": database.identity,
+        "owner_identity": database.owner_identity,
         "host_type": host_type,
-        "num_replicas": database.num_replicas,
-        "program_bytes_address": database.program_bytes_address,
+        "initial_program": database.initial_program,
     });
     Ok((StatusCode::OK, axum::Json(response_json)))
 }
@@ -425,12 +443,12 @@ where
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
-    if database.identity != auth.identity {
+    if database.owner_identity != auth.identity {
         return Err((
             StatusCode::BAD_REQUEST,
             format!(
                 "Identity does not own database, expected: {} got: {}",
-                database.identity.to_hex(),
+                database.owner_identity.to_hex(),
                 auth.identity.to_hex()
             ),
         )
@@ -521,7 +539,7 @@ where
         .await?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
-    let auth = AuthCtx::new(database.identity, auth.identity);
+    let auth = AuthCtx::new(database.owner_identity, auth.identity);
     log::debug!("auth: {auth:?}");
     let database_instance = worker_ctx
         .get_leader_database_instance_by_database(database.id)
@@ -531,21 +549,26 @@ where
         ))?;
     let instance_id = database_instance.id;
 
-    let json = worker_ctx
-        .host_controller()
+    let host = worker_ctx.host_controller();
+    let module_host = host
+        .get_or_launch_module_host(database.clone(), instance_id)
+        .await
+        .map_err(log_and_500)?;
+    let json = host
         .using_database(
             database,
             instance_id,
             move |db| -> axum::response::Result<_, (StatusCode, String)> {
                 tracing::info!(sql = body);
-                let results = sql::execute::run(db, &body, auth).map_err(|e| {
-                    log::warn!("{}", e);
-                    if let Some(auth_err) = e.get_auth_error() {
-                        (StatusCode::UNAUTHORIZED, auth_err.to_string())
-                    } else {
-                        (StatusCode::BAD_REQUEST, e.to_string())
-                    }
-                })?;
+                let results =
+                    sql::execute::run(db, &body, auth, Some(&module_host.info().subscriptions)).map_err(|e| {
+                        log::warn!("{}", e);
+                        if let Some(auth_err) = e.get_auth_error() {
+                            (StatusCode::UNAUTHORIZED, auth_err.to_string())
+                        } else {
+                            (StatusCode::BAD_REQUEST, e.to_string())
+                        }
+                    })?;
 
                 let json = db.with_read_only(&ctx_sql(db), |tx| {
                     results
@@ -751,6 +774,12 @@ pub struct PublishDatabaseQueryParams {
     client_address: Option<AddressForUrl>,
 }
 
+impl PublishDatabaseQueryParams {
+    pub fn name_or_address(&self) -> Option<&NameOrAddress> {
+        self.name_or_address.as_ref()
+    }
+}
+
 pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     State(ctx): State<S>,
     Path(PublishDatabaseParams {}): Path<PublishDatabaseParams>,
@@ -815,6 +844,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
                 address: db_addr,
                 program_bytes: body.into(),
                 num_replicas: 1,
+                host_type: HostType::Wasm,
             },
         )
         .await
@@ -888,7 +918,7 @@ pub async fn set_name<S: ControlStateDelegate>(
         .map_err(log_and_500)?
         .ok_or((StatusCode::NOT_FOUND, "No such database."))?;
 
-    if database.identity != auth.identity {
+    if database.owner_identity != auth.identity {
         return Err((StatusCode::UNAUTHORIZED, "Identity does not own database.").into());
     }
 

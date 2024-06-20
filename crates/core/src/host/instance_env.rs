@@ -18,9 +18,9 @@ use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::{ColId, ColListBuilder, TableId};
 use spacetimedb_sats::db::def::{IndexDef, IndexType};
-use spacetimedb_sats::relation::{FieldExpr, FieldName};
+use spacetimedb_sats::relation::FieldName;
 use spacetimedb_sats::Typespace;
-use spacetimedb_vm::expr::{ColumnOp, NoInMemUsed, QueryExpr};
+use spacetimedb_vm::expr::{FieldExpr, FieldOp, NoInMemUsed, QueryExpr};
 
 #[derive(Clone)]
 pub struct InstanceEnv {
@@ -310,27 +310,27 @@ impl InstanceEnv {
     ) -> Result<Vec<Box<[u8]>>, NodesError> {
         use spacetimedb_lib::filter;
 
-        fn filter_to_column_op(table_id: TableId, filter: filter::Expr) -> ColumnOp {
+        fn filter_to_column_op(table_id: TableId, filter: filter::Expr) -> FieldOp {
             match filter {
                 filter::Expr::Cmp(filter::Cmp {
                     op,
                     args: CmpArgs { lhs_field, rhs },
-                }) => ColumnOp::Cmp {
+                }) => FieldOp::Cmp {
                     op: OpQuery::Cmp(op),
-                    lhs: Box::new(ColumnOp::Field(FieldExpr::Name(FieldName::new(
+                    lhs: Box::new(FieldOp::Field(FieldExpr::Name(FieldName::new(
                         table_id,
                         lhs_field.into(),
                     )))),
-                    rhs: Box::new(ColumnOp::Field(match rhs {
+                    rhs: Box::new(FieldOp::Field(match rhs {
                         filter::Rhs::Field(rhs_field) => FieldExpr::Name(FieldName::new(table_id, rhs_field.into())),
                         filter::Rhs::Value(rhs_value) => FieldExpr::Value(rhs_value),
                     })),
                 },
-                filter::Expr::Logic(filter::Logic { lhs, op, rhs }) => ColumnOp::Cmp {
-                    op: OpQuery::Logic(op),
-                    lhs: Box::new(filter_to_column_op(table_id, *lhs)),
-                    rhs: Box::new(filter_to_column_op(table_id, *rhs)),
-                },
+                filter::Expr::Logic(filter::Logic { lhs, op, rhs }) => FieldOp::new(
+                    OpQuery::Logic(op),
+                    filter_to_column_op(table_id, *lhs),
+                    filter_to_column_op(table_id, *rhs),
+                ),
                 filter::Expr::Unary(_) => todo!("unary operations are not yet supported"),
             }
         }
@@ -353,7 +353,7 @@ impl InstanceEnv {
 
         // TODO(Centril): consider caching from `filter: &[u8] -> query: QueryExpr`.
         let query = QueryExpr::new(schema.as_ref())
-            .with_select(filter_to_column_op(table_id, filter))
+            .with_select(filter_to_column_op(table_id, filter))?
             .optimize(&|table_id, table_name| stdb.row_count(table_id, table_name));
 
         // TODO(Centril): Conditionally dump the `query` to a file and compare against integration test.
@@ -361,11 +361,11 @@ impl InstanceEnv {
 
         let tx: TxMode = tx.into();
         // SQL queries can never reference `MemTable`s, so pass in an empty set.
-        let mut query = build_query(ctx, stdb, &tx, &query, &mut NoInMemUsed)?;
+        let mut query = build_query(ctx, stdb, &tx, &query, &mut NoInMemUsed);
 
         // write all rows and flush at row boundaries.
-        let query_iter = std::iter::from_fn(|| query.next().transpose());
-        let chunks = itertools::process_results(query_iter, |it| ChunkedWriter::collect_iter(it))?;
+        let query_iter = std::iter::from_fn(|| query.next());
+        let chunks = ChunkedWriter::collect_iter(query_iter);
         Ok(chunks)
     }
 }

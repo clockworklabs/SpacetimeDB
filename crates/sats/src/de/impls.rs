@@ -622,3 +622,6 @@ impl_deserialize!([] spacetimedb_primitives::ColList, de => {
     let col_list = de.deserialize_array(ColListVisitor)?;
     col_list.build().map_err(|_| crate::de::Error::custom("invalid empty ColList".to_string()))
 });
+
+#[cfg(feature = "blake3")]
+impl_deserialize!([] blake3::Hash, de => <[u8; blake3::OUT_LEN]>::deserialize(de).map(blake3::Hash::from_bytes));

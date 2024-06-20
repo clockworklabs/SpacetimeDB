@@ -80,6 +80,11 @@ pub trait Decoder {
     ) -> Result<(), Self::Error> {
         self.decode_record(version, tx_offset, reader).map(drop)
     }
+
+    /// Advance `reader` past the next [`Self::Record`], without returning it
+    /// or including it in a fold.
+    fn skip_record<'a, R: BufReader<'a>>(&self, version: u8, tx_offset: u64, reader: &mut R)
+        -> Result<(), Self::Error>;
 }
 
 impl<const N: usize> Encode for [u8; N] {
@@ -111,5 +116,15 @@ impl<const N: usize> Decoder for ArrayDecoder<N> {
         reader: &mut R,
     ) -> Result<Self::Record, Self::Error> {
         Ok(reader.get_array()?)
+    }
+
+    fn skip_record<'a, R: BufReader<'a>>(
+        &self,
+        version: u8,
+        tx_offset: u64,
+        reader: &mut R,
+    ) -> Result<(), Self::Error> {
+        self.decode_record(version, tx_offset, reader)?;
+        Ok(())
     }
 }
