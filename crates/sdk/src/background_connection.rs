@@ -110,8 +110,8 @@ fn update_client_cache(
 ) -> ClientCacheView {
     let mut cache_lock = client_cache.lock().expect("ClientCache Mutex is poisoned");
     let cache_arc = cache_lock.as_mut().unwrap();
-    // If there are no other references to cache_arc, we can mutate it. Otherwise,
-    // Arc::make_mut will clone it.
+    // If there are no other references to `cache_arc`, we can mutate it. Otherwise,
+    // `Arc::make_mut` will clone it.
     let new_state = Arc::make_mut(cache_arc);
     // Advance `new_state` to hold any changes.
     update(new_state);
@@ -358,6 +358,7 @@ impl BackgroundDbConnection {
     pub(crate) fn subscribe_owned(&self, queries: Vec<String>) -> Result<()> {
         self.send_message(ws_messages::ClientMessage::Subscribe(ws_messages::Subscribe {
             query_strings: queries,
+            // TODO: generate a useful `request_id`. This will interact with future changes to the SDK's API.
             request_id: 0,
         }))
         .with_context(|| "Subscribing to new queries")

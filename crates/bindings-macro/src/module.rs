@@ -251,20 +251,6 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
 
     add_type_bounds(&mut de_generics, &deserialize_t);
 
-    for param in &de_generics.params {
-        let syn::GenericParam::Type(param) = param else {
-            continue;
-        };
-        let param_name = &param.ident;
-        let where_clause = de_generics.where_clause.get_or_insert_with(|| syn::WhereClause {
-            where_token: Default::default(),
-            predicates: Default::default(),
-        });
-        where_clause
-            .predicates
-            .push(syn::parse_quote!(#param_name: #deserialize_t));
-    }
-
     for lp in de_generics.lifetimes_mut() {
         lp.bounds.push(de_lifetime.clone());
     }

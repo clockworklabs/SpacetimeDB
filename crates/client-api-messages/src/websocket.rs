@@ -246,6 +246,9 @@ impl FromIterator<TableUpdate> for DatabaseUpdate {
 }
 
 /// Part of a [`DatabaseUpdate`] received by client from database for alterations to a single table.
+// TODO(perf): Revise WS schema for BSATN to store a single concatenated `Bytes` as `inserts`/`deletes`,
+// rather than a separate `Bytes` for each row.
+// Possibly JSON stores a single `ByteString` list of rows, or just concatenates them the same.
 #[derive(SpacetimeType, Debug, Clone)]
 #[sats(crate = spacetimedb_lib)]
 pub struct TableUpdate {
@@ -284,7 +287,7 @@ impl TableUpdate {
 #[sats(crate = spacetimedb_lib)]
 pub struct OneOffQueryResponse {
     pub message_id: Vec<u8>,
-    /// If query compilation or evalaution errored, an error message.
+    /// If query compilation or evaluation errored, an error message.
     pub error: Option<String>,
 
     /// If query compilation and evaluation succeeded, a set of resulting rows, grouped by table.
@@ -316,6 +319,8 @@ pub struct OneOffTable {
 /// but clients are allowed to send `EncodedValue::Binary` within a JSON message or vice versa.
 // TODO(perf): In JSON, skip encoding the tag - serialize this as a string when it's `Text`,
 // and as a `[u8]` when it's `Binary`.
+// TODO(perf): Fix codegen of generic types to eliminate the need for this enum.
+// TODO(perf): Hoist this tag higher in the hierarchy of messages.
 #[derive(SpacetimeType, Debug, Clone, EnumAsInner)]
 #[sats(crate = spacetimedb_lib)]
 pub enum EncodedValue {

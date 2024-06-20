@@ -2,6 +2,7 @@ use std::any::TypeId;
 use std::collections::{btree_map, BTreeMap};
 
 use anyhow::Context;
+use sats::typespace::TypespaceBuilder;
 use spacetimedb_sats::db::def::TableDef;
 use spacetimedb_sats::{impl_serialize, WithTypespace};
 
@@ -198,7 +199,7 @@ pub struct ModuleDefBuilder {
 
 impl ModuleDefBuilder {
     pub fn add_type<T: SpacetimeType>(&mut self) -> AlgebraicType {
-        sats::typespace::TypespaceBuilder::add_type::<T>(self)
+        TypespaceBuilder::add_type::<T>(self)
     }
 
     pub fn add_table(&mut self, table: TableDesc) {
@@ -226,7 +227,7 @@ impl ModuleDefBuilder {
     }
 }
 
-impl sats::typespace::TypespaceBuilder for ModuleDefBuilder {
+impl TypespaceBuilder for ModuleDefBuilder {
     fn add(
         &mut self,
         typeid: TypeId,

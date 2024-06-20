@@ -2,6 +2,11 @@ use std::time::{Duration, SystemTime};
 
 use spacetimedb_sats::SpacetimeType;
 
+/// A timestamp, as a number of microseconds since the UNIX epoch.
+// Ideally this should be a transparent newtype,
+// incl. `serde(transparent)` and some future `sats(transparent)` marker.
+// Because `sats(transparent)` is not currently designed or implemented (as of 2024-06-20),
+// we define this as a regular struct, which serializes as a `ProductValue`.
 #[derive(SpacetimeType, Copy, Clone, PartialEq, Eq, Debug, serde::Serialize)]
 #[sats(crate = spacetimedb_sats)]
 pub struct Timestamp {

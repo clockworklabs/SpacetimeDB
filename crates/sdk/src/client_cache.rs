@@ -9,7 +9,8 @@ use anymap::{
 };
 use bytes::Bytes;
 use im::HashMap;
-use spacetimedb_data_structures::map::HashMap as StdHashMap;
+use spacetimedb_client_api_messages::websocket::EncodedValue;
+use spacetimedb_data_structures::map::{Entry, HashMap as StdHashMap};
 use spacetimedb_sats::bsatn;
 use std::sync::Arc;
 
@@ -207,14 +208,14 @@ impl<T: TableType> TableCache<T> {
         for row in new_subs.inserts {
             let row_bytes = row.into_binary().unwrap();
             match diff.entry(row_bytes) {
-                spacetimedb_data_structures::map::Entry::Vacant(v) => {
+                Entry::Vacant(v) => {
                     if let Some(row) = Self::decode_row(v.key()) {
                         log::trace!("Initializing table {:?}: got new row {:?}.", T::TABLE_NAME, row);
                         v.insert(diffentry_insert(row));
                     }
                 }
 
-                spacetimedb_data_structures::map::Entry::Occupied(mut o) => {
+                Entry::Occupied(mut o) => {
                     let entry = o.get_mut();
                     match entry.kind {
                         DiffEntryKind::Insert | DiffEntryKind::NoChange => {
@@ -326,26 +327,25 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
 
         // Traverse the `table_update` to construct a diff, merging duplicated `Insert`
         // and `Delete` into `Update`.
-        for row in table_update.deletes {
-            let row_bytes = row.into_binary().unwrap();
-            if let Some(value) = Self::decode_row(&row_bytes) {
-                let diff_entry = DiffEntry::Delete(row_bytes, value);
-                let pk: T::PrimaryKey = <T::PrimaryKey as Clone>::clone(primary_key(&diff_entry));
-                let existing_entry = diff.remove(&pk);
-                let new_entry = merge_diff_entries(diff_entry, existing_entry);
-                diff.insert(pk, new_entry);
+        fn traverse_rows<T: TableWithPrimaryKey>(
+            mut diff_ctor: impl FnMut(Bytes, T) -> DiffEntry<T>,
+            rows: Vec<EncodedValue>,
+            diff: &mut StdHashMap<T::PrimaryKey, DiffEntry<T>>,
+        ) {
+            for row in rows {
+                let row_bytes = row.into_binary().unwrap();
+                if let Some(value) = TableCache::decode_row(&row_bytes) {
+                    let diff_entry = diff_ctor(row_bytes, value);
+                    let pk: T::PrimaryKey = <T::PrimaryKey as Clone>::clone(primary_key(&diff_entry));
+                    let existing_entry = diff.remove(&pk);
+                    let new_entry = merge_diff_entries(diff_entry, existing_entry);
+                    diff.insert(pk, new_entry);
+                }
             }
         }
-        for row in table_update.inserts {
-            let row_bytes = row.into_binary().unwrap();
-            if let Some(value) = Self::decode_row(&row_bytes) {
-                let diff_entry = DiffEntry::Insert(row_bytes, value);
-                let pk: T::PrimaryKey = <T::PrimaryKey as Clone>::clone(primary_key(&diff_entry));
-                let existing_entry = diff.remove(&pk);
-                let new_entry = merge_diff_entries(diff_entry, existing_entry);
-                diff.insert(pk, new_entry);
-            }
-        }
+
+        traverse_rows(DiffEntry::Delete, table_update.deletes, &mut diff);
+        traverse_rows(DiffEntry::Insert, table_update.inserts, &mut diff);
 
         // Apply the `diff`.
         for diff_entry in diff.into_values() {

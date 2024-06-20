@@ -30,7 +30,8 @@ pub mod typespace;
 #[cfg(any(test, feature = "proptest"))]
 pub mod proptest;
 
-/// for macro stuff
+/// Allows the macros in [`spacetimedb_bindings_macro`] to accept `crate = spacetimedb_sats`,
+/// which will then emit `$krate::sats`.
 #[doc(hidden)]
 pub use crate as sats;
 

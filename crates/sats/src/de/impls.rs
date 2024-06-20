@@ -626,7 +626,7 @@ impl_deserialize!([] spacetimedb_primitives::ColList, de => {
 #[cfg(feature = "blake3")]
 impl_deserialize!([] blake3::Hash, de => <[u8; blake3::OUT_LEN]>::deserialize(de).map(blake3::Hash::from_bytes));
 
-// TODO(perf): integrate Bytes with Deserializer to reducer copying
+// TODO(perf): integrate Bytes with Deserializer to reduce copying
 impl_deserialize!([] bytes::Bytes, de => <Vec<u8>>::deserialize(de).map(Into::into));
 
 #[cfg(feature = "bytestring")]

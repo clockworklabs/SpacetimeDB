@@ -1,22 +1,27 @@
 use brotli::CompressorReader;
 use derive_more::From;
 use spacetimedb_client_api_messages::websocket::EncodedValue;
+use spacetimedb_lib::bsatn::ser::BsatnError;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::ser::Serialize;
-use spacetimedb_vm::relation::MemTable;
+use spacetimedb_table::table::RowRef;
+use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::io::Read;
 use std::sync::Arc;
 use std::time::Instant;
 
 use crate::execution_context::WorkloadType;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
+use crate::host::ArgsTuple;
 use crate::messages::websocket as ws;
-use spacetimedb_lib::{bsatn, Address};
+use spacetimedb_lib::{bsatn, Address, ProductValue};
 
 use super::message_handlers::MessageExecutionError;
 use super::{DataMessage, Protocol};
 
+/// A server-to-client message which can be encoded according to a [`Protocol`],
+/// resulting in a [`ToProtocol::Encoded`] message.
 pub trait ToProtocol {
     type Encoded;
     /// Convert `self` into a [`Self::Encoded`] where rows and arguments are encoded with `protocol`.
@@ -27,13 +32,11 @@ pub trait ToProtocol {
 ///
 /// If `protocol` is [`Protocol::Binary`], the message will be compressed by this method.
 pub fn serialize(msg: impl ToProtocol<Encoded = ws::ServerMessage>, protocol: Protocol) -> DataMessage {
+    let msg = msg.to_protocol(protocol);
     match protocol {
-        Protocol::Text => {
-            let msg = msg.to_protocol(protocol);
-            serde_json::to_string(&SerializeWrapper::new(msg)).unwrap().into()
-        }
+        Protocol::Text => serde_json::to_string(&SerializeWrapper::new(msg)).unwrap().into(),
         Protocol::Binary => {
-            let msg_bytes = bsatn::to_vec(&msg.to_protocol(protocol)).unwrap();
+            let msg_bytes = bsatn::to_vec(&msg).unwrap();
             let reader = &mut &msg_bytes[..];
 
             // TODO(perf): Compression should depend on message size and type.
@@ -148,10 +151,75 @@ impl TransactionUpdateMessage<ws::DatabaseUpdate> {
     }
 }
 
-pub(crate) fn encode_row<Row: Serialize>(row: &Row, protocol: Protocol) -> EncodedValue {
+/// Types that can be encoded to BSATN.
+///
+/// Implementations of this trait may be more efficient than directly calling [`bsatn::to_vec`].
+/// In particular, for [`RowRef`], this method will use a [`StaticBsatnLayout`] if one is available,
+/// avoiding expensive runtime type dispatch.
+pub trait ToBsatn {
+    /// BSATN-encode the row referred to by `self` into a freshly-allocated `Vec<u8>`.
+    fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError>;
+
+    /// BSATN-encode the row referred to by `self` into `buf`,
+    /// pushing `self`'s bytes onto the end of `buf`, similar to [`Vec::extend`].
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError>;
+}
+
+impl ToBsatn for RowRef<'_> {
+    fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
+        self.to_bsatn_vec()
+    }
+
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+        self.to_bsatn_extend(buf)
+    }
+}
+
+impl ToBsatn for ProductValue {
+    fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
+        bsatn::to_vec(self)
+    }
+
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+        bsatn::to_writer(buf, self)
+    }
+}
+
+impl ToBsatn for RelValue<'_> {
+    fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
+        match self {
+            RelValue::Row(this) => this.to_bsatn_vec(),
+            RelValue::Projection(this) => this.to_bsatn_vec(),
+            RelValue::ProjRef(this) => this.to_bsatn_vec(),
+        }
+    }
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+        match self {
+            RelValue::Row(this) => this.to_bsatn_extend(buf),
+            RelValue::Projection(this) => this.to_bsatn_extend(buf),
+            RelValue::ProjRef(this) => this.to_bsatn_extend(buf),
+        }
+    }
+}
+
+// TODO(perf): Revise WS schema for BSATN to store a single concatenated `Bytes` as `inserts`/`deletes`,
+// rather than a separate `Bytes` for each row.
+// Possibly JSON stores a single `ByteString` list of rows, or just concatenates them the same.
+// Revise this function to append into a given sink.
+pub(crate) fn encode_row<Row: Serialize + ToBsatn>(row: &Row, protocol: Protocol) -> EncodedValue {
     match protocol {
-        Protocol::Binary => EncodedValue::Binary(bsatn::to_vec(row).unwrap().into()),
+        Protocol::Binary => EncodedValue::Binary(row.to_bsatn_vec().unwrap().into()),
         Protocol::Text => EncodedValue::Text(serde_json::to_string(&SerializeWrapper::new(row)).unwrap().into()),
+    }
+}
+
+impl ToProtocol for ArgsTuple {
+    type Encoded = EncodedValue;
+    fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
+        match protocol {
+            Protocol::Binary => EncodedValue::Binary(self.get_bsatn().clone()),
+            Protocol::Text => EncodedValue::Text(self.get_json().clone()),
+        }
     }
 }
 
@@ -168,10 +236,7 @@ impl<U: ToProtocol<Encoded = ws::DatabaseUpdate>> ToProtocol for TransactionUpda
             EventStatus::OutOfEnergy => ws::UpdateStatus::OutOfEnergy,
         };
 
-        let args = match protocol {
-            Protocol::Binary => EncodedValue::Binary(event.function_call.args.get_bsatn().clone()),
-            Protocol::Text => EncodedValue::Text(event.function_call.args.get_json().clone()),
-        };
+        let args = event.function_call.args.clone().to_protocol(protocol);
 
         let tx_update = ws::TransactionUpdate {
             timestamp: event.timestamp,

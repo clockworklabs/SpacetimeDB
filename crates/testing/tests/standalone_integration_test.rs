@@ -1,5 +1,5 @@
 use serial_test::serial;
-use spacetimedb_lib::sats::{product, AlgebraicValue, SumValue};
+use spacetimedb_lib::sats::{product, AlgebraicValue};
 use spacetimedb_testing::modules::{
     CompilationMode, CompiledModule, LogLevel, LoggerRecord, ModuleHandle, DEFAULT_CONFIG, IN_MEMORY_CONFIG,
 };
@@ -186,38 +186,22 @@ fn test_call_query_macro() {
         module.send(json).await.unwrap();
     });
 
+    let args_pv = product![
+        product![0u32, 2u32, "Macro"],
+        product!["Foo"],
+        AlgebraicValue::sum(0, AlgebraicValue::unit()),
+        AlgebraicValue::sum(2, AlgebraicValue::String("buzz".into())),
+    ];
+    let args_pv_clone = args_pv.clone();
+
     // JSON via the `Serialize` path.
     test_call_query_macro_with_caller(|module| async move {
-        let args = product![
-            product![0u32, 2u32, AlgebraicValue::String("Macro".into())],
-            product![AlgebraicValue::String("Foo".into())],
-            SumValue {
-                tag: 0,
-                value: Box::new(AlgebraicValue::unit())
-            },
-            SumValue {
-                tag: 2,
-                value: Box::new(AlgebraicValue::String("buzz".into()))
-            },
-        ];
-        module.call_reducer_json("test", args).await.unwrap();
+        module.call_reducer_json("test", args_pv).await.unwrap();
     });
 
     // BSATN via the `Serialize` path.
     test_call_query_macro_with_caller(|module| async move {
-        let args = product![
-            product![0u32, 2u32, AlgebraicValue::String("Macro".into())],
-            product![AlgebraicValue::String("Foo".into())],
-            SumValue {
-                tag: 0,
-                value: Box::new(AlgebraicValue::unit())
-            },
-            SumValue {
-                tag: 2,
-                value: Box::new(AlgebraicValue::String("buzz".into()))
-            },
-        ];
-        module.call_reducer_binary("test", args).await.unwrap();
+        module.call_reducer_binary("test", args_pv_clone).await.unwrap();
     });
 }
 
