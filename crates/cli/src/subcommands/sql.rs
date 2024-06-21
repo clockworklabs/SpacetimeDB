@@ -170,7 +170,7 @@ impl Output<'_> {
                 .collect::<Vec<_>>();
             let rows = rows
                 .into_iter()
-                .map(|row| col_names.iter().zip(Vec::from(row.elements)).collect::<HashMap<_, _>>())
+                .map(|row| col_names.iter().zip(row).collect::<HashMap<_, _>>())
                 .collect::<Vec<_>>();
 
             format::write_json_seq(&mut out, &json!({"rows": rows})).await?;
@@ -208,6 +208,7 @@ impl Output<'_> {
         with_timing: bool,
         with_row_count: bool,
     ) -> anyhow::Result<()> {
+        // Print only `OK for empty tables as it's likely a command like `INSERT`.
         if self.stmt_results.is_empty() {
             if with_timing {
                 out.write_all(self.fmt_timing().as_bytes()).await?;

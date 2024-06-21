@@ -247,6 +247,7 @@ impl SubscriptionUpdateJson<'_> {
 
             let mut builder = {
                 let rows = table_row_operations.len();
+                // We need to make space for the `I / D` column.
                 let cols = table_ty.product_len() + 1;
                 tabled::builder::Builder::with_capacity(rows, cols)
             };

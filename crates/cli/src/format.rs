@@ -16,7 +16,7 @@ impl clap::ValueEnum for OutputFormat {
         &[Self::Json, Self::Table, Self::Csv]
     }
 
-    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+    fn to_possible_value(&self) -> Option<PossibleValue> {
         Some(match self {
             Self::Json => PossibleValue::new("json").help("Render output as JSON"),
             Self::Table => PossibleValue::new("table").help("Render output in an ASCII table format"),
