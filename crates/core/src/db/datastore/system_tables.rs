@@ -452,6 +452,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_MODULE_ID => Some(st_module_schema()),
         ST_CLIENTS_ID => Some(st_clients_schema()),
         ST_VAR_ID => Some(st_var_schema()),
+        ST_SCHEDULED_ID => Some(st_scheduled_schema()),
         _ => None,
     }
 }
