@@ -19,8 +19,9 @@ use spacetimedb_sats::db::def::IndexDef;
 use spacetimedb_sats::db::error::{LibError, RelationError, SchemaErrors};
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::relation::FieldName;
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_vm::errors::{ErrorKind, ErrorLang, ErrorVm};
+use spacetimedb_vm::errors::{ErrorKind, ErrorLang, ErrorType, ErrorVm};
 use spacetimedb_vm::expr::Crud;
 
 #[derive(Error, Debug)]
@@ -108,6 +109,8 @@ pub enum PlanError {
     TableNotFoundQualified { expect: String },
     #[error("Unknown field: `{field}` not found in the table(s): `{tables:?}`")]
     UnknownField { field: String, tables: Vec<Box<str>> },
+    #[error("Unknown field name: `{field}` not found in the table(s): `{tables:?}`")]
+    UnknownFieldName { field: FieldName, tables: Vec<Box<str>> },
     #[error("Field(s): `{fields:?}` not found in the table(s): `{tables:?}`")]
     UnknownFields { fields: Vec<String>, tables: Vec<Box<str>> },
     #[error("Ambiguous field: `{field}`. Also found in {found:?}")]
@@ -120,6 +123,8 @@ pub enum PlanError {
     Relation(#[from] RelationError),
     #[error("{0}")]
     VmError(#[from] ErrorVm),
+    #[error("{0}")]
+    TypeCheck(#[from] ErrorType),
 }
 
 #[derive(Error, Debug)]

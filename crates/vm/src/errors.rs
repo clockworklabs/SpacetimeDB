@@ -3,7 +3,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use std::fmt;
 use thiserror::Error;
 
-use crate::expr::SourceId;
+use crate::expr::{FieldOp, SourceId};
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
@@ -18,6 +18,21 @@ pub enum ConfigError {
 pub enum ErrorType {
     #[error("Error Parsing `{value}` into type [{ty}]: {err}")]
     Parse { value: String, ty: String, err: String },
+    #[error("Type Mismatch: `{lhs}: {expect:?}` != `{rhs}: {given:?}`")]
+    TypeMismatchCmp {
+        lhs: FieldOp,
+        rhs: FieldOp,
+        expect: Option<AlgebraicType>,
+        given: Option<AlgebraicType>,
+    },
+    #[error("Type Mismatch Join: `{lhs}: {expect:?}` != `{rhs}: {given:?}`")]
+    TypeMismatchJoin {
+        table: Box<str>,
+        lhs: Box<str>,
+        rhs: Box<str>,
+        expect: AlgebraicType,
+        given: AlgebraicType,
+    },
 }
 
 /// Vm Errors

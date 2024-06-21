@@ -90,6 +90,14 @@ impl SumType {
             None
         }
     }
+
+    /// Returns the sum type variant using tag position
+    pub fn get_variant_by_tag(&self, tag: u8) -> Option<(u8, &SumTypeVariant)> {
+        self.variants
+            .iter()
+            .enumerate()
+            .find_map(|(pos, x)| if pos as u8 == tag { Some((tag, x)) } else { None })
+    }
 }
 
 impl From<Box<[SumTypeVariant]>> for SumType {

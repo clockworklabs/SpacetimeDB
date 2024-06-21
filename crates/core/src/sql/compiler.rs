@@ -1,6 +1,7 @@
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
+use crate::sql::type_check::TypeCheck;
 use core::ops::Deref;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_primitives::ColId;
@@ -205,6 +206,8 @@ fn compile_create_table(table: Box<TableDef>) -> CrudExpr {
 
 /// Compiles a `SQL` clause
 fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, PlanError> {
+    statement.type_check()?;
+
     let q = match statement {
         SqlAst::Select {
             from,
@@ -1073,6 +1076,51 @@ mod tests {
         db.create_table_for_test("A", &[("x", AlgebraicType::U64)], &[])?;
         db.create_table_for_test("B", &[("y", AlgebraicType::U64)], &[])?;
         assert!(compile_sql(&db, &db.begin_tx(), "select * from B join A on B.y = A.x").is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn compile_type_check() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+        db.create_table_for_test(
+            "PlayerState",
+            &[("entity_id", AlgebraicType::U64)],
+            &[(0.into(), "entity_id")],
+        )?;
+        db.create_table_for_test(
+            "EnemyState",
+            &[("entity_id", AlgebraicType::I8)],
+            &[(0.into(), "entity_id")],
+        )?;
+        db.create_table_for_test(
+            "FriendState",
+            &[("entity_id", AlgebraicType::U64)],
+            &[(0.into(), "entity_id")],
+        )?;
+        let sql = "SELECT * FROM PlayerState WHERE entity_id = '161853'";
+
+        // Should fail with type mismatch for selections and joins.
+        //
+        // TODO: Type check other operations deferred for the new query engine.
+
+        assert_eq!(
+            compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
+            Err("SqlError: Type Mismatch: `table#4097.col#0: Some(Builtin(U64))` != `\"161853\": Some(Builtin(String))`, executing: `SELECT * FROM PlayerState WHERE entity_id = '161853'`".into())
+        );
+
+        let sql = "SELECT * FROM PlayerState JOIN EnemyState ON PlayerState.entity_id = EnemyState.entity_id";
+
+        assert_eq!(
+            compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
+            Err("SqlError: Type Mismatch Join: `entity_id: Builtin(U64)` != `entity_id: Builtin(I8)`, executing: `SELECT * FROM PlayerState JOIN EnemyState ON PlayerState.entity_id = EnemyState.entity_id`".into())
+        );
+
+        let sql = "SELECT * FROM PlayerState JOIN FriendState ON PlayerState.entity_id = FriendState.entity_id WHERE PlayerState.entity_id = '161853'";
+
+        assert_eq!(
+            compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
+            Err("SqlError: Type Mismatch: `table#4097.col#0: Some(Builtin(U64))` != `\"161853\": Some(Builtin(String))`, executing: `SELECT * FROM PlayerState JOIN FriendState ON PlayerState.entity_id = FriendState.entity_id WHERE PlayerState.entity_id = '161853'`".into())
+        );
         Ok(())
     }
 }
