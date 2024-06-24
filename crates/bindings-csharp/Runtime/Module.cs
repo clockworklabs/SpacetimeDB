@@ -1,9 +1,5 @@
 namespace SpacetimeDB.Module;
 
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using SpacetimeDB.BSATN;
 
 [SpacetimeDB.Type]
