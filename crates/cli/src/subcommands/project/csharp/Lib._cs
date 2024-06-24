@@ -1,5 +1,4 @@
 using SpacetimeDB;
-using static SpacetimeDB.Runtime;
 
 static partial class Module
 {
@@ -17,7 +16,7 @@ static partial class Module
     {
         var person = new Person { Name = name, Age = age };
         person.Insert();
-        Log($"Inserted {person.Name} under #{person.Id}");
+        Runtime.Log($"Inserted {person.Name} under #{person.Id}");
     }
 
     [SpacetimeDB.Reducer]
@@ -25,8 +24,8 @@ static partial class Module
     {
         foreach (var person in Person.Iter())
         {
-            Log($"Hello, {person.Name}!");
+            Runtime.Log($"Hello, {person.Name}!");
         }
-        Log("Hello, World!");
+        Runtime.Log("Hello, World!");
     }
 }

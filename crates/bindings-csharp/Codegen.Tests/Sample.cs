@@ -5,7 +5,6 @@ global using global::System.IO;
 global using global::System.Linq;
 // Our own code.
 using SpacetimeDB;
-using static SpacetimeDB.Runtime;
 
 [SpacetimeDB.Type]
 public partial struct CustomStruct
