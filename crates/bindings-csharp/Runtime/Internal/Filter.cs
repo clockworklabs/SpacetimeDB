@@ -1,6 +1,7 @@
 namespace SpacetimeDB.Internal;
 
 using System.Linq.Expressions;
+using System.Reflection;
 using SpacetimeDB.BSATN;
 
 public partial class Filter
@@ -95,19 +96,13 @@ public partial class Filter
         return IStructuralReadWrite.ToBytes(new Expr.BSATN(), expr);
     }
 
-    (byte, Type) ExprAsTableField(Expression expr) =>
+    FieldInfo ExprAsTableField(Expression expr) =>
         expr switch
         {
             // LINQ inserts spurious conversions in comparisons, so we need to unwrap them
             UnaryExpression { NodeType: ExpressionType.Convert, Operand: var arg }
                 => ExprAsTableField(arg),
-            MemberExpression
-            {
-                Expression: ParameterExpression,
-                Member.Name: var memberName,
-                Type: var type
-            }
-                => ((byte)Array.FindIndex(fieldTypeInfos, pair => pair.Key == memberName), type),
+            MemberExpression { Expression: ParameterExpression, Member: FieldInfo field } => field,
             _
                 => throw new NotSupportedException(
                     "expected table field access in the left-hand side of a comparison"
@@ -123,12 +118,14 @@ public partial class Filter
 
     Cmp HandleCmp(BinaryExpression expr)
     {
-        var (lhsFieldIndex, type) = ExprAsTableField(expr.Left);
+        var field = ExprAsTableField(expr.Left);
+        var lhsFieldIndex = (byte)Array.FindIndex(fieldTypeInfos, x => x.Key == field.Name);
 
         var rhs = ExprAsRhs(expr.Right);
-        rhs = Convert.ChangeType(rhs, type);
-        var rhsWrite = fieldTypeInfos[lhsFieldIndex].Value;
-        var erasedRhs = new ErasedValue((writer) => rhsWrite(writer, rhs));
+        rhs = Convert.ChangeType(rhs, field.FieldType);
+        var erasedRhs = new ErasedValue(
+            (writer) => fieldTypeInfos[lhsFieldIndex].Value(writer, rhs)
+        );
 
         var args = new CmpArgs(lhsFieldIndex, new Rhs.Value(erasedRhs));
 
