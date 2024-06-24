@@ -189,15 +189,13 @@ public class Module : IIncrementalGenerator
                     var autoIncFields = t.Fields.Where(f => f.Attrs.HasFlag(ColumnAttrs.AutoInc))
                         .Select(f => f.Name);
 
+                    var iTable = $"SpacetimeDB.Internal.ITable<{t.ShortName}>";
+
                     var extensions =
                         $@"
-                            private static readonly Lazy<SpacetimeDB.Internal.FFI.TableId> tableId = new (() => SpacetimeDB.Runtime.GetTableId(nameof({t.ShortName})));
+                            static bool {iTable}.HasAutoIncFields => {autoIncFields.Any().ToString().ToLower()};
 
-                            public static IEnumerable<{t.ShortName}> Iter() =>
-                                new SpacetimeDB.Runtime.RawTableIter(tableId.Value)
-                                .Parse<{t.ShortName}>();
-
-                            public static SpacetimeDB.Internal.Module.TableDesc MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
+                            static SpacetimeDB.Internal.Module.TableDesc {iTable}.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
                                 new (
                                     nameof({t.ShortName}),
                                     new SpacetimeDB.Internal.Module.ColumnDefWithAttrs[] {{ {string.Join(",", t.Fields.Select(f => $@"
@@ -206,28 +204,18 @@ public class Module : IIncrementalGenerator
                                             SpacetimeDB.ColumnAttrs.{f.Attrs}
                                         )
                                     "))} }},
-                                    {(t.IsPublic ? "true" : "false")}
+                                    {t.IsPublic.ToString().ToLower()}
                                 ),
                                 (SpacetimeDB.BSATN.AlgebraicType.Ref) new BSATN().GetAlgebraicType(registrar)
                             );
 
-                            private static readonly Lazy<KeyValuePair<string, Action<BinaryWriter, object?>>[]> fieldTypeInfos = new (() => new KeyValuePair<string, Action<BinaryWriter, object?>>[] {{
+                            static SpacetimeDB.Internal.Filter {iTable}.CreateFilter() => new([
                                 {string.Join("\n", t.Fields.Select(f => $"new (nameof({f.Name}), (w, v) => BSATN.{f.Name}.Write(w, ({f.Type}) v!)),"))}
-                            }});
+                            ]);
 
-                            public static IEnumerable<{t.ShortName}> Query(System.Linq.Expressions.Expression<Func<{t.ShortName}, bool>> filter) =>
-                                new SpacetimeDB.Runtime.RawTableIterFiltered(tableId.Value, SpacetimeDB.Internal.Filter.Compile<{t.ShortName}>(fieldTypeInfos.Value, filter))
-                                .Parse<{t.ShortName}>();
-
-                            public void Insert() {{
-                                var bytes = SpacetimeDB.Runtime.Insert(tableId.Value, this);
-                                // bytes should contain modified value now with autoinc fields updated
-                                {(autoIncFields.Any() ? $@"
-                                    using var stream = new System.IO.MemoryStream(bytes);
-                                    using var reader = new System.IO.BinaryReader(stream);
-                                    ReadFields(reader);
-                                " : "")}
-                            }}
+                            public static IEnumerable<{t.ShortName}> Iter() => {iTable}.Iter();
+                            public static IEnumerable<{t.ShortName}> Query(System.Linq.Expressions.Expression<Func<{t.ShortName}, bool>> predicate) => {iTable}.Query(predicate);
+                            public void Insert() => {iTable}.Insert(this);
                         ";
 
                     foreach (
@@ -238,8 +226,7 @@ public class Module : IIncrementalGenerator
                         extensions +=
                             $@"
                                 public static IEnumerable<{t.ShortName}> FilterBy{f.Name}({f.Type} {f.Name}) =>
-                                    new SpacetimeDB.Runtime.RawTableIterByColEq(tableId.Value, {i}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name}))
-                                    .Parse<{t.ShortName}>();
+                                    {iTable}.ColEq.Where({i}, {f.Name}, BSATN.{f.Name}).Iter();
                             ";
 
                         if (f.Attrs.HasFlag(ColumnAttrs.Unique))
@@ -252,17 +239,17 @@ public class Module : IIncrementalGenerator
                                         .SingleOrDefault();
 
                                     public static bool DeleteBy{f.Name}({f.Type} {f.Name}) =>
-                                        SpacetimeDB.Runtime.DeleteByColEq(tableId.Value, {i}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name})) > 0;
+                                        {iTable}.ColEq.Where({i}, {f.Name}, BSATN.{f.Name}).Delete();
 
-                                    public static bool UpdateBy{f.Name}({f.Type} {f.Name}, {t.ShortName} value) =>
-                                        SpacetimeDB.Runtime.UpdateByColEq(tableId.Value, {i}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name}), value);
+                                    public static bool UpdateBy{f.Name}({f.Type} {f.Name}, {t.ShortName} @this) =>
+                                        {iTable}.ColEq.Where({i}, {f.Name}, BSATN.{f.Name}).Update(@this);
                                 ";
                         }
                     }
 
                     return new KeyValuePair<string, string>(
                         t.FullName,
-                        t.Scope.GenerateExtensions(extensions)
+                        t.Scope.GenerateExtensions(extensions, iTable)
                     );
                 }
             )
@@ -365,7 +352,7 @@ public class Module : IIncrementalGenerator
 #endif
                 public static void Main() {{
                     {string.Join("\n", addReducers.Select(r => $"FFI.RegisterReducer(new {r.Name}());"))}
-                    {string.Join("\n", tableNames.Select(t => $"FFI.RegisterTable({t}.MakeTableDesc(FFI.TypeRegistrar));"))}
+                    {string.Join("\n", tableNames.Select(t => $"FFI.RegisterTable<{t}>();"))}
                 }}
 
 // Exports only work from the main assembly, so we need to generate forwarding methods.

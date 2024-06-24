@@ -4,15 +4,15 @@ using System.Linq.Expressions;
 using System.Reflection;
 using SpacetimeDB.BSATN;
 
-public partial class Filter
+public partial class Filter(KeyValuePair<string, Action<BinaryWriter, object?>>[] fieldTypeInfos)
 {
-    readonly record struct ErasedValue(Action<BinaryWriter> write)
+    readonly record struct ErasedValue(Action<BinaryWriter> Write)
     {
-        public readonly struct BSATN : SpacetimeDB.BSATN.IReadWrite<ErasedValue>
+        public readonly struct BSATN : IReadWrite<ErasedValue>
         {
             public ErasedValue Read(BinaryReader reader) => throw new NotSupportedException();
 
-            public void Write(BinaryWriter writer, ErasedValue value) => value.write(writer);
+            public void Write(BinaryWriter writer, ErasedValue value) => value.Write(writer);
 
             public AlgebraicType GetAlgebraicType(ITypeRegistrar _) =>
                 throw new NotSupportedException();
@@ -79,24 +79,13 @@ public partial class Filter
     [SpacetimeDB.Type]
     partial record Expr : SpacetimeDB.TaggedEnum<(Cmp Cmp, Logic Logic, Unary Unary)>;
 
-    private readonly KeyValuePair<string, Action<BinaryWriter, object?>>[] fieldTypeInfos;
-
-    private Filter(KeyValuePair<string, Action<BinaryWriter, object?>>[] fieldTypeInfos)
+    public byte[] Compile<T>(Expression<Func<T, bool>> query)
     {
-        this.fieldTypeInfos = fieldTypeInfos;
-    }
-
-    public static byte[] Compile<T>(
-        KeyValuePair<string, Action<BinaryWriter, object?>>[] fieldTypeInfos,
-        Expression<Func<T, bool>> rowFilter
-    )
-    {
-        var filter = new Filter(fieldTypeInfos);
-        var expr = filter.HandleExpr(rowFilter.Body);
+        var expr = HandleExpr(query.Body);
         return IStructuralReadWrite.ToBytes(new Expr.BSATN(), expr);
     }
 
-    FieldInfo ExprAsTableField(Expression expr) =>
+    static FieldInfo ExprAsTableField(Expression expr) =>
         expr switch
         {
             // LINQ inserts spurious conversions in comparisons, so we need to unwrap them
@@ -176,7 +165,7 @@ public partial class Filter
             _ => throw new NotSupportedException("unsupported expression")
         };
 
-    Expr HandleUnary(UnaryExpression expr)
+    Expr.Unary HandleUnary(UnaryExpression expr)
     {
         var arg = HandleExpr(expr.Operand);
 
@@ -186,7 +175,7 @@ public partial class Filter
             _ => throw new NotSupportedException("unsupported unary operation")
         };
 
-        return new Expr.Unary(new Unary(op, arg));
+        return new(new Unary(op, arg));
     }
 
     Expr HandleExpr(Expression expr) =>

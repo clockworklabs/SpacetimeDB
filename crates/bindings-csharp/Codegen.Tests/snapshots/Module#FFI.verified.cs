@@ -71,8 +71,8 @@ static class ModuleRegistration
     {
         FFI.RegisterReducer(new InsertData());
         FFI.RegisterReducer(new InsertData2());
-        FFI.RegisterTable(PrivateTable.MakeTableDesc(FFI.TypeRegistrar));
-        FFI.RegisterTable(PublicTable.MakeTableDesc(FFI.TypeRegistrar));
+        FFI.RegisterTable<PrivateTable>();
+        FFI.RegisterTable<PublicTable>();
     }
 
     // Exports only work from the main assembly, so we need to generate forwarding methods.

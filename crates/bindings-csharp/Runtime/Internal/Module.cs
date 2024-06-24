@@ -175,9 +175,10 @@ public static class FFI
         TypeRegistrar.Module.Reducers.Add(reducer.MakeReducerDef(TypeRegistrar));
     }
 
-    public static void RegisterTable(TableDesc tableDesc)
+    public static void RegisterTable<T>()
+        where T : ITable<T>, new()
     {
-        TypeRegistrar.Module.Tables.Add(tableDesc);
+        TypeRegistrar.Module.Tables.Add(T.MakeTableDesc(TypeRegistrar));
     }
 
     public static SpacetimeDB.Internal.FFI.Buffer __describe_module__()

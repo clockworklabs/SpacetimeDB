@@ -1,8 +1,6 @@
 namespace SpacetimeDB;
 
-using System.Collections;
 using System.Runtime.CompilerServices;
-using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
 using static System.Text.Encoding;
 
@@ -21,108 +19,6 @@ public static partial class Runtime
         var result = new byte[len];
         FFI._buffer_consume(buffer, result, len);
         return result;
-    }
-
-    private class RowIter(FFI.RowIter handle) : IEnumerator<byte[]>, IDisposable
-    {
-        private byte[] buffer = new byte[0x20_000];
-        public byte[] Current { get; private set; } = [];
-
-        object IEnumerator.Current => Current;
-
-        public bool MoveNext()
-        {
-            uint buffer_len;
-            while (true)
-            {
-                buffer_len = (uint)buffer.Length;
-                try
-                {
-                    FFI._iter_advance(handle, buffer, ref buffer_len);
-                }
-                catch (BufferTooSmallException)
-                {
-                    buffer = new byte[buffer_len];
-                    continue;
-                }
-                break;
-            }
-            Current = new byte[buffer_len];
-            Array.Copy(buffer, 0, Current, 0, buffer_len);
-            return buffer_len != 0;
-        }
-
-        public void Dispose()
-        {
-            if (!handle.Equals(FFI.RowIter.INVALID))
-            {
-                FFI._iter_drop(handle);
-                handle = FFI.RowIter.INVALID;
-                // Avoid running ~RowIter if Dispose was executed successfully.
-                GC.SuppressFinalize(this);
-            }
-        }
-
-        // Free unmanaged resource just in case user hasn't disposed for some reason.
-        ~RowIter()
-        {
-            // we already guard against double-free in Dispose.
-            Dispose();
-        }
-
-        public void Reset()
-        {
-            throw new NotImplementedException();
-        }
-    }
-
-    public abstract class RawTableIterBase : IEnumerable<byte[]>
-    {
-        protected abstract void IterStart(out FFI.RowIter handle);
-
-        public IEnumerator<byte[]> GetEnumerator()
-        {
-            IterStart(out var handle);
-            return new RowIter(handle);
-        }
-
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
-
-        private static IEnumerable<T> ParseChunk<T>(byte[] chunk)
-            where T : IStructuralReadWrite, new()
-        {
-            using var stream = new MemoryStream(chunk);
-            using var reader = new BinaryReader(stream);
-            while (stream.Position < stream.Length)
-            {
-                yield return IStructuralReadWrite.Read<T>(reader);
-            }
-        }
-
-        public IEnumerable<T> Parse<T>()
-            where T : IStructuralReadWrite, new()
-        {
-            return this.SelectMany(ParseChunk<T>);
-        }
-    }
-
-    public class RawTableIter(FFI.TableId tableId) : RawTableIterBase
-    {
-        protected override void IterStart(out FFI.RowIter handle) =>
-            FFI._iter_start(tableId, out handle);
-    }
-
-    public class RawTableIterFiltered(FFI.TableId tableId, byte[] filterBytes) : RawTableIterBase
-    {
-        protected override void IterStart(out FFI.RowIter handle) =>
-            FFI._iter_start_filtered(tableId, filterBytes, (uint)filterBytes.Length, out handle);
-    }
-
-    public class RawTableIterByColEq(FFI.TableId tableId, uint colId, byte[] value)
-        : RawTableIterBase
-    {
-        protected override void IterStart(out FFI.RowIter handle) =>
-            FFI._iter_by_col_eq(tableId, new(colId), value, (uint)value.Length, out handle);
     }
 
     public enum LogLevel : byte
@@ -193,42 +89,6 @@ public static partial class Runtime
         }
 
         public void Cancel() => FFI._cancel_reducer(handle);
-    }
-
-    public static FFI.TableId GetTableId(string name)
-    {
-        var name_bytes = UTF8.GetBytes(name);
-        FFI._get_table_id(name_bytes, (uint)name_bytes.Length, out var out_);
-        return out_;
-    }
-
-    public static byte[] Insert<T>(FFI.TableId tableId, T row)
-        where T : IStructuralReadWrite
-    {
-        var bytes = IStructuralReadWrite.ToBytes(row);
-        FFI._insert(tableId, bytes, (uint)bytes.Length);
-        return bytes;
-    }
-
-    public static uint DeleteByColEq(FFI.TableId tableId, uint colId, byte[] value)
-    {
-        FFI._delete_by_col_eq(tableId, new(colId), value, (uint)value.Length, out var out_);
-        return out_;
-    }
-
-    public static bool UpdateByColEq<T>(FFI.TableId tableId, uint colId, byte[] value, T row)
-        where T : IStructuralReadWrite
-    {
-        // Just like in Rust bindings, updating is just deleting and inserting for now.
-        if (DeleteByColEq(tableId, colId, value) > 0)
-        {
-            Insert(tableId, row);
-            return true;
-        }
-        else
-        {
-            return false;
-        }
     }
 
     // An instance of `System.Random` that is reseeded by each reducer's timestamp.
