@@ -831,6 +831,7 @@ impl Host {
         .await?;
         trace!("update result: {update_result:?}");
         if update_result.is_ok() {
+            self.scheduler = scheduler;
             scheduler_starter.start(&module)?;
             let old_module = self.module.send_replace(module);
             old_module.exit().await;
