@@ -1,4 +1,4 @@
-namespace SpacetimeDB.Module;
+namespace SpacetimeDB.Internal.Module;
 
 using SpacetimeDB.BSATN;
 
@@ -118,30 +118,9 @@ public partial struct ModuleDef()
     internal List<MiscModuleExport> MiscExports = [];
 }
 
-[System.Flags]
-public enum ColumnAttrs : byte
-{
-    UnSet = 0b0000,
-    Indexed = 0b0001,
-    AutoInc = 0b0010,
-    Unique = Indexed | 0b0100,
-    Identity = Unique | AutoInc,
-    PrimaryKey = Unique | 0b1000,
-    PrimaryKeyAuto = PrimaryKey | AutoInc,
-    PrimaryKeyIdentity = PrimaryKey | Identity,
-}
-
-public static class ReducerKind
-{
-    public const string Init = "__init__";
-    public const string Update = "__update__";
-    public const string Connect = "__identity_connected__";
-    public const string Disconnect = "__identity_disconnected__";
-}
-
 public interface IReducer
 {
-    SpacetimeDB.Module.ReducerDef MakeReducerDef(ITypeRegistrar registrar);
+    SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(ITypeRegistrar registrar);
     void Invoke(System.IO.BinaryReader reader, Runtime.ReducerContext args);
 }
 

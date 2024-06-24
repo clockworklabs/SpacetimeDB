@@ -6,7 +6,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using SpacetimeDB.Module;
+using SpacetimeDB.Internal.Module;
 using static SpacetimeDB.Internal.FFI;
 using static SpacetimeDB.Runtime;
 using Buffer = SpacetimeDB.Internal.FFI.Buffer;
@@ -17,7 +17,7 @@ static class ModuleRegistration
     {
         PublicTable.BSATN data = new();
 
-        SpacetimeDB.Module.ReducerDef IReducer.MakeReducerDef(
+        SpacetimeDB.Internal.Module.ReducerDef IReducer.MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         )
         {
@@ -40,7 +40,7 @@ static class ModuleRegistration
     {
         PublicTable.BSATN data = new();
 
-        SpacetimeDB.Module.ReducerDef IReducer.MakeReducerDef(
+        SpacetimeDB.Internal.Module.ReducerDef IReducer.MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         )
         {

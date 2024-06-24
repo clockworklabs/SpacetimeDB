@@ -199,13 +199,13 @@ public class Module : IIncrementalGenerator
                                 new SpacetimeDB.Runtime.RawTableIter(tableId.Value)
                                 .Parse<{t.ShortName}>();
 
-                            public static SpacetimeDB.Module.TableDesc MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
+                            public static SpacetimeDB.Internal.Module.TableDesc MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
                                 new (
                                     nameof({t.ShortName}),
-                                    new SpacetimeDB.Module.ColumnDefWithAttrs[] {{ {string.Join(",", t.Fields.Select(f => $@"
+                                    new SpacetimeDB.Internal.Module.ColumnDefWithAttrs[] {{ {string.Join(",", t.Fields.Select(f => $@"
                                         new (
-                                            new SpacetimeDB.Module.ColumnDef(nameof({f.Name}), BSATN.{f.Name}.GetAlgebraicType(registrar)),
-                                            SpacetimeDB.Module.ColumnAttrs.{f.Attrs}
+                                            new (nameof({f.Name}), BSATN.{f.Name}.GetAlgebraicType(registrar)),
+                                            SpacetimeDB.ColumnAttrs.{f.Attrs}
                                         )
                                     "))} }},
                                     {(t.IsPublic ? "true" : "false")}
@@ -311,7 +311,7 @@ public class Module : IIncrementalGenerator
                             class {r.Name}: IReducer {{
                                 {string.Join("\n", r.GetNonContextArgs().Select(a => $"{a.TypeInfo} {a.Name} = new();"))}
 
-                                SpacetimeDB.Module.ReducerDef IReducer.MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) {{
+                                SpacetimeDB.Internal.Module.ReducerDef IReducer.MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) {{
                                     return new (
                                         ""{r.ExportName}""
                                         {string.Join("", r.GetNonContextArgs().Select(a => $",\nnew SpacetimeDB.BSATN.AggregateElement(nameof({a.Name}), {a.Name}.GetAlgebraicType(registrar))"))}
@@ -348,7 +348,7 @@ public class Module : IIncrementalGenerator
             #nullable enable
 
             using static SpacetimeDB.Internal.FFI;
-            using SpacetimeDB.Module;
+            using SpacetimeDB.Internal.Module;
             using System.Runtime.CompilerServices;
             using System.Runtime.InteropServices;
             using static SpacetimeDB.Runtime;

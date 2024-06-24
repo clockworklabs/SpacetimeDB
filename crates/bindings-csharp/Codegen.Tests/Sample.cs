@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using SpacetimeDB.Module;
+using SpacetimeDB;
 using static SpacetimeDB.Runtime;
 
 [SpacetimeDB.Type]

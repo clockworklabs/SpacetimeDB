@@ -98,7 +98,7 @@ PREINIT(10, startup) {
   _start();
 
   ffi_class = mono_wasm_assembly_find_class(
-      mono_wasm_assembly_load("SpacetimeDB.Runtime.dll"), "SpacetimeDB.Module",
+      mono_wasm_assembly_load("SpacetimeDB.Runtime.dll"), "SpacetimeDB.Internal.Module",
       "FFI");
   assert(ffi_class && "FFI class not found");
 }

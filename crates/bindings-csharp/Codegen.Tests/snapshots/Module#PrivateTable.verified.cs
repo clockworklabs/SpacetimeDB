@@ -11,11 +11,15 @@ partial class PrivateTable
     public static IEnumerable<PrivateTable> Iter() =>
         new SpacetimeDB.Runtime.RawTableIter(tableId.Value).Parse<PrivateTable>();
 
-    public static SpacetimeDB.Module.TableDesc MakeTableDesc(
+    public static SpacetimeDB.Internal.Module.TableDesc MakeTableDesc(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new(
-            new(nameof(PrivateTable), new SpacetimeDB.Module.ColumnDefWithAttrs[] { }, false),
+            new(
+                nameof(PrivateTable),
+                new SpacetimeDB.Internal.Module.ColumnDefWithAttrs[] { },
+                false
+            ),
             (SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)
         );
 
