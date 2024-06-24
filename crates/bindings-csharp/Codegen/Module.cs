@@ -112,7 +112,7 @@ readonly record struct ReducerParamDeclaration
         Name = name;
         Type = SymbolToName(type);
         TypeInfo = GetTypeInfo(type);
-        IsContextArg = Type == "SpacetimeDB.Runtime.ReducerContext";
+        IsContextArg = Type == "SpacetimeDB.ReducerContext";
     }
 }
 
@@ -291,17 +291,17 @@ public class Module : IIncrementalGenerator
                     (
                         r.Name,
                         Class: $@"
-                            class {r.Name}: IReducer {{
-                                {string.Join("\n", r.GetNonContextArgs().Select(a => $"{a.TypeInfo} {a.Name} = new();"))}
+                            class {r.Name}: SpacetimeDB.Internal.IReducer {{
+                                {string.Join("\n", r.GetNonContextArgs().Select(a => $"private static {a.TypeInfo} {a.Name} = new();"))}
 
-                                SpacetimeDB.Internal.Module.ReducerDef IReducer.MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) {{
+                                public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) {{
                                     return new (
                                         ""{r.ExportName}""
                                         {string.Join("", r.GetNonContextArgs().Select(a => $",\nnew SpacetimeDB.BSATN.AggregateElement(nameof({a.Name}), {a.Name}.GetAlgebraicType(registrar))"))}
                                     );
                                 }}
 
-                                void IReducer.Invoke(BinaryReader reader, SpacetimeDB.Runtime.ReducerContext ctx) {{
+                                public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx) {{
                                     {r.FullName}({string.Join(", ", r.Args.Select(a => a.IsContextArg ? "ctx" : $"{a.Name}.Read(reader)"))});
                                 }}
                             }}
@@ -351,7 +351,7 @@ public class Module : IIncrementalGenerator
                 [DynamicDependency(DynamicallyAccessedMemberTypes.PublicMethods, typeof(FFI))]
 #endif
                 public static void Main() {{
-                    {string.Join("\n", addReducers.Select(r => $"FFI.RegisterReducer(new {r.Name}());"))}
+                    {string.Join("\n", addReducers.Select(r => $"FFI.RegisterReducer<{r.Name}>();"))}
                     {string.Join("\n", tableNames.Select(t => $"FFI.RegisterTable<{t}>();"))}
                 }}
 
@@ -382,11 +382,11 @@ public class Module : IIncrementalGenerator
                         r.FullName,
                         r.Scope.GenerateExtensions(
                             $@"
-                            public static SpacetimeDB.Runtime.ScheduleToken Schedule{r.Name}(DateTimeOffset time{string.Join("", r.GetNonContextArgs().Select(a => $", {a.Type} {a.Name}"))}) {{
+                            public static SpacetimeDB.ScheduleToken Schedule{r.Name}(DateTimeOffset time{string.Join("", r.GetNonContextArgs().Select(a => $", {a.Type} {a.Name}"))}) {{
                                 using var stream = new MemoryStream();
                                 using var writer = new BinaryWriter(stream);
                                 {string.Join("\n", r.GetNonContextArgs().Select(a => $"new {a.TypeInfo}().Write(writer, {a.Name});"))}
-                                return new(nameof({r.Name}), stream.ToArray(), time);
+                                return SpacetimeDB.Internal.IReducer.Schedule(""{r.ExportName}"", stream, time);
                             }}
                         "
                         )

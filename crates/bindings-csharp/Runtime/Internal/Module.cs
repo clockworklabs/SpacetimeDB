@@ -109,14 +109,8 @@ public partial struct ModuleDef()
 {
     internal List<AlgebraicType> Types = [];
     public List<TableDesc> Tables = [];
-    public List<ReducerDef> Reducers = [];
+    internal List<ReducerDef> Reducers = [];
     internal List<MiscModuleExport> MiscExports = [];
-}
-
-public interface IReducer
-{
-    SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(ITypeRegistrar registrar);
-    void Invoke(System.IO.BinaryReader reader, Runtime.ReducerContext args);
 }
 
 public struct TypeRegistrar() : ITypeRegistrar
@@ -169,8 +163,10 @@ public static class FFI
     private static readonly List<IReducer> reducers = [];
     public static readonly TypeRegistrar TypeRegistrar = new();
 
-    public static void RegisterReducer(IReducer reducer)
+    public static void RegisterReducer<R>()
+        where R : IReducer, new()
     {
+        var reducer = new R();
         reducers.Add(reducer);
         TypeRegistrar.Module.Reducers.Add(reducer.MakeReducerDef(TypeRegistrar));
     }

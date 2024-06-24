@@ -13,11 +13,11 @@ using Buffer = SpacetimeDB.Internal.FFI.Buffer;
 
 static class ModuleRegistration
 {
-    class InsertData : IReducer
+    class InsertData : SpacetimeDB.Internal.IReducer
     {
-        PublicTable.BSATN data = new();
+        private static PublicTable.BSATN data = new();
 
-        SpacetimeDB.Internal.Module.ReducerDef IReducer.MakeReducerDef(
+        public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         )
         {
@@ -30,17 +30,17 @@ static class ModuleRegistration
             );
         }
 
-        void IReducer.Invoke(BinaryReader reader, SpacetimeDB.Runtime.ReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
         {
             Reducers.InsertData(data.Read(reader));
         }
     }
 
-    class InsertData2 : IReducer
+    class InsertData2 : SpacetimeDB.Internal.IReducer
     {
-        PublicTable.BSATN data = new();
+        private static PublicTable.BSATN data = new();
 
-        SpacetimeDB.Internal.Module.ReducerDef IReducer.MakeReducerDef(
+        public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         )
         {
@@ -53,7 +53,7 @@ static class ModuleRegistration
             );
         }
 
-        void IReducer.Invoke(BinaryReader reader, SpacetimeDB.Runtime.ReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
         {
             Test.NestingNamespaces.AndClasses.InsertData2(ctx, data.Read(reader));
         }
@@ -69,8 +69,8 @@ static class ModuleRegistration
 #endif
     public static void Main()
     {
-        FFI.RegisterReducer(new InsertData());
-        FFI.RegisterReducer(new InsertData2());
+        FFI.RegisterReducer<InsertData>();
+        FFI.RegisterReducer<InsertData2>();
         FFI.RegisterTable<PrivateTable>();
         FFI.RegisterTable<PublicTable>();
     }
