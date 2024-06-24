@@ -57,9 +57,7 @@ readonly record struct ColumnDeclaration
                 {
                     SpecialType.System_String or SpecialType.System_Boolean => true,
                     SpecialType.None
-                        => type.ToString()
-                            is "SpacetimeDB.Runtime.Address"
-                                or "SpacetimeDB.Runtime.Identity",
+                        => type.ToString() is "SpacetimeDB.Address" or "SpacetimeDB.Identity",
                     _ => false,
                 }
             )

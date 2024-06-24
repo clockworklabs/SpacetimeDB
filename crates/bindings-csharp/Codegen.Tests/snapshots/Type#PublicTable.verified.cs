@@ -82,8 +82,8 @@ partial class PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
         internal static readonly SpacetimeDB.BSATN.F32 FloatField = new();
         internal static readonly SpacetimeDB.BSATN.F64 DoubleField = new();
         internal static readonly SpacetimeDB.BSATN.String StringField = new();
-        internal static readonly SpacetimeDB.Runtime.Identity.BSATN IdentityField = new();
-        internal static readonly SpacetimeDB.Runtime.Address.BSATN AddressField = new();
+        internal static readonly SpacetimeDB.Identity.BSATN IdentityField = new();
+        internal static readonly SpacetimeDB.Address.BSATN AddressField = new();
         internal static readonly CustomStruct.BSATN CustomStructField = new();
         internal static readonly CustomClass.BSATN CustomClassField = new();
         internal static readonly SpacetimeDB.BSATN.Enum<CustomEnum> CustomEnumField = new();

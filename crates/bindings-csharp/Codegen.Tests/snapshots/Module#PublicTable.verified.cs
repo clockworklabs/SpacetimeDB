@@ -184,11 +184,11 @@ partial class PublicTable
                     new(nameof(StringField), (w, v) => BSATN.StringField.Write(w, (string)v!)),
                     new(
                         nameof(IdentityField),
-                        (w, v) => BSATN.IdentityField.Write(w, (SpacetimeDB.Runtime.Identity)v!)
+                        (w, v) => BSATN.IdentityField.Write(w, (SpacetimeDB.Identity)v!)
                     ),
                     new(
                         nameof(AddressField),
-                        (w, v) => BSATN.AddressField.Write(w, (SpacetimeDB.Runtime.Address)v!)
+                        (w, v) => BSATN.AddressField.Write(w, (SpacetimeDB.Address)v!)
                     ),
                     new(
                         nameof(CustomStructField),
@@ -369,7 +369,7 @@ partial class PublicTable
         ).Parse<PublicTable>();
 
     public static IEnumerable<PublicTable> FilterByIdentityField(
-        SpacetimeDB.Runtime.Identity IdentityField
+        SpacetimeDB.Identity IdentityField
     ) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
@@ -377,9 +377,7 @@ partial class PublicTable
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.IdentityField, IdentityField)
         ).Parse<PublicTable>();
 
-    public static IEnumerable<PublicTable> FilterByAddressField(
-        SpacetimeDB.Runtime.Address AddressField
-    ) =>
+    public static IEnumerable<PublicTable> FilterByAddressField(SpacetimeDB.Address AddressField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
             new SpacetimeDB.Internal.FFI.ColId(16),

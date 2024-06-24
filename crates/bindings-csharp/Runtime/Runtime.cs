@@ -159,77 +159,6 @@ public static partial class Runtime
         );
     }
 
-    public readonly struct Identity(byte[] bytes) : IEquatable<Identity>
-    {
-        private readonly byte[] bytes = bytes;
-
-        public bool Equals(Identity other) => bytes.SequenceEqual(other.bytes);
-
-        public override bool Equals(object? obj) => obj is Identity other && Equals(other);
-
-        public static bool operator ==(Identity left, Identity right) => left.Equals(right);
-
-        public static bool operator !=(Identity left, Identity right) => !left.Equals(right);
-
-        public override int GetHashCode() =>
-            StructuralComparisons.StructuralEqualityComparer.GetHashCode(bytes);
-
-        public override string ToString() => BitConverter.ToString(bytes);
-
-        // We need to implement this manually because `spacetime generate` only
-        // recognises inline product type with special field name and
-        // not types registered on ModuleDef (which is what [SpacetimeDB.Type] does).
-        public readonly struct BSATN : IReadWrite<Identity>
-        {
-            public Identity Read(BinaryReader reader) => new(ByteArray.Instance.Read(reader));
-
-            public void Write(BinaryWriter writer, Identity value) =>
-                ByteArray.Instance.Write(writer, value.bytes);
-
-            public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-                new AlgebraicType.Product(
-                    // Special name recognised by STDB generator.
-                    [new("__identity_bytes", ByteArray.Instance.GetAlgebraicType(registrar))]
-                );
-        }
-    }
-
-    public readonly struct Address(byte[] bytes) : IEquatable<Address>
-    {
-        private readonly byte[] bytes = bytes;
-        public static readonly Address Zero = new(new byte[16]);
-
-        public bool Equals(Address other) => bytes.SequenceEqual(other.bytes);
-
-        public override bool Equals(object? obj) => obj is Address other && Equals(other);
-
-        public static bool operator ==(Address left, Address right) => left.Equals(right);
-
-        public static bool operator !=(Address left, Address right) => !left.Equals(right);
-
-        public override int GetHashCode() =>
-            StructuralComparisons.StructuralEqualityComparer.GetHashCode(bytes);
-
-        public override string ToString() => BitConverter.ToString(bytes);
-
-        // We need to implement this manually because `spacetime generate` only
-        // recognises inline product type with special field name and
-        // not types registered on ModuleDef (which is what [SpacetimeDB.Type] does).
-        public readonly struct BSATN : IReadWrite<Address>
-        {
-            public Address Read(BinaryReader reader) => new(ByteArray.Instance.Read(reader));
-
-            public void Write(BinaryWriter writer, Address value) =>
-                ByteArray.Instance.Write(writer, value.bytes);
-
-            public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-                new AlgebraicType.Product(
-                    // Special name recognised by STDB generator.
-                    [new("__address_bytes", ByteArray.Instance.GetAlgebraicType(registrar))]
-                );
-        }
-    }
-
     public class ReducerContext
     {
         public readonly Identity Sender;
@@ -239,8 +168,7 @@ public static partial class Runtime
         public ReducerContext(byte[] senderIdentity, byte[] senderAddress, ulong timestamp_us)
         {
             Sender = new Identity(senderIdentity);
-            var addr = new Address(senderAddress);
-            Address = addr == Runtime.Address.Zero ? null : addr;
+            Address = Address.From(senderAddress);
             // timestamp is in microseconds; the easiest way to convert those w/o losing precision is to get Unix origin and add ticks which are 0.1ms each.
             Time = DateTimeOffset.UnixEpoch.AddTicks(10 * (long)timestamp_us);
         }
