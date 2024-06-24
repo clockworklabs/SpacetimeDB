@@ -212,8 +212,7 @@ public static partial class FFI
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _iter_advance(
         RowIter iter_handle,
-        // [MarshalUsing(CountElementName = nameof(dst_len))] [Out] byte[] dst,
-        byte[] buffer,
+        [MarshalUsing(CountElementName = nameof(buffer_len))] [Out] byte[] buffer,
         ref uint buffer_len
     );
 
