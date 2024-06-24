@@ -6,10 +6,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using SpacetimeDB.Internal.Module;
-using static SpacetimeDB.Internal.FFI;
-using static SpacetimeDB.Runtime;
-using Buffer = SpacetimeDB.Internal.FFI.Buffer;
 
 static class ModuleRegistration
 {
@@ -65,28 +61,39 @@ static class ModuleRegistration
     [UnmanagedCallersOnly(EntryPoint = "__preinit__10_init_csharp")]
 #else
     // Prevent trimming of FFI exports that are invoked from C and not visible to C# trimmer.
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicMethods, typeof(FFI))]
+    [DynamicDependency(
+        DynamicallyAccessedMemberTypes.PublicMethods,
+        typeof(SpacetimeDB.Internal.Module)
+    )]
 #endif
     public static void Main()
     {
-        FFI.RegisterReducer<InsertData>();
-        FFI.RegisterReducer<InsertData2>();
-        FFI.RegisterTable<PrivateTable>();
-        FFI.RegisterTable<PublicTable>();
+        SpacetimeDB.Internal.Module.RegisterReducer<InsertData>();
+        SpacetimeDB.Internal.Module.RegisterReducer<InsertData2>();
+        SpacetimeDB.Internal.Module.RegisterTable<PrivateTable>();
+        SpacetimeDB.Internal.Module.RegisterTable<PublicTable>();
     }
 
     // Exports only work from the main assembly, so we need to generate forwarding methods.
 #if EXPERIMENTAL_WASM_AOT
     [UnmanagedCallersOnly(EntryPoint = "__describe_module__")]
-    public static Buffer __describe_module__() => FFI.__describe_module__();
+    public static SpacetimeDB.Internal.Buffer __describe_module__() =>
+        SpacetimeDB.Internal.Module.__describe_module__();
 
     [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
-    public static Buffer __call_reducer__(
+    public static SpacetimeDB.Internal.Buffer __call_reducer__(
         uint id,
-        Buffer caller_identity,
-        Buffer caller_address,
+        SpacetimeDB.Internal.Buffer caller_identity,
+        SpacetimeDB.Internal.Buffer caller_address,
         ulong timestamp,
-        Buffer args
-    ) => FFI.__call_reducer__(id, caller_identity, caller_address, timestamp, args);
+        SpacetimeDB.Internal.Buffer args
+    ) =>
+        SpacetimeDB.Internal.Module.__call_reducer__(
+            id,
+            caller_identity,
+            caller_address,
+            timestamp,
+            args
+        );
 #endif
 }

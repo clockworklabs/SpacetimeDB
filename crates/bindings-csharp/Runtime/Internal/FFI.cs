@@ -3,7 +3,30 @@ namespace SpacetimeDB.Internal;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 
-public static partial class FFI
+// This type is outside of the hidden `FFI` class because for now we need to do some public
+// forwarding in the codegen for `__describe_module__` and `__call_reducer__` exports which both
+// use this type.
+[StructLayout(LayoutKind.Sequential)]
+[NativeMarshalling(typeof(Marshaller))]
+public readonly record struct Buffer(uint Handle)
+{
+    public static readonly Buffer INVALID = new(uint.MaxValue);
+
+    // We need custom marshaller for `Buffer` because we return it by value
+    // instead of passing an `out` reference, and C# currently doesn't match
+    // the common Wasm C ABI in that a struct with a single field is supposed
+    // to have the same ABI as the field itself.
+    [CustomMarshaller(typeof(Buffer), MarshalMode.Default, typeof(Marshaller))]
+    internal static class Marshaller
+    {
+        public static Buffer ConvertToManaged(uint buf_handle) => new(buf_handle);
+
+        public static uint ConvertToUnmanaged(Buffer buf) => buf.Handle;
+    }
+}
+
+#pragma warning disable IDE1006 // Naming Styles - Not applicable to FFI stuff.
+internal static partial class FFI
 {
     // For now this must match the name of the `.c` file (`bindings.c`).
     // In the future C# will allow to specify Wasm import namespace in
@@ -88,25 +111,6 @@ public static partial class FFI
     public readonly struct ScheduleToken
     {
         private readonly ulong schedule_token;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    [NativeMarshalling(typeof(Marshaller))]
-    public readonly record struct Buffer(uint Handle)
-    {
-        public static readonly Buffer INVALID = new(uint.MaxValue);
-
-        // We need custom marshaller for `Buffer` because we return it by value
-        // instead of passing an `out` reference, and C# currently doesn't match
-        // the common Wasm C ABI in that a struct with a single field is supposed
-        // to have the same ABI as the field itself.
-        [CustomMarshaller(typeof(Buffer), MarshalMode.Default, typeof(Marshaller))]
-        internal static class Marshaller
-        {
-            public static Buffer ConvertToManaged(uint buf_handle) => new(buf_handle);
-
-            public static uint ConvertToUnmanaged(Buffer buf) => buf.Handle;
-        }
     }
 
     [StructLayout(LayoutKind.Sequential)]
