@@ -28,10 +28,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Linq.Expression.Optimizer" Version="1.0.15" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="" />
     <None Include="build/" Pack="true" PackagePath="build" />
     <None Include="bindings.c" Pack="true" PackagePath="" />
