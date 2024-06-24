@@ -7,7 +7,7 @@ namespace Test.NestingNamespaces
 {
     partial class AndClasses
     {
-        public static SpacetimeDB.Runtime.ScheduleToken ScheduleInsertData2(
+        public static SpacetimeDB.ScheduleToken ScheduleInsertData2(
             DateTimeOffset time,
             PublicTable data
         )
@@ -15,7 +15,11 @@ namespace Test.NestingNamespaces
             using var stream = new MemoryStream();
             using var writer = new BinaryWriter(stream);
             new PublicTable.BSATN().Write(writer, data);
-            return new(nameof(InsertData2), stream.ToArray(), time);
+            return SpacetimeDB.Internal.IReducer.Schedule(
+                "test_custom_name_and_reducer_ctx",
+                stream,
+                time
+            );
         }
     } // AndClasses
 } // namespace
