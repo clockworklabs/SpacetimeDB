@@ -5,7 +5,7 @@
 
 partial class PrivateTable
 {
-    private static readonly Lazy<SpacetimeDB.RawBindings.TableId> tableId =
+    private static readonly Lazy<SpacetimeDB.Internal.FFI.TableId> tableId =
         new(() => SpacetimeDB.Runtime.GetTableId(nameof(PrivateTable)));
 
     public static IEnumerable<PrivateTable> Iter() =>

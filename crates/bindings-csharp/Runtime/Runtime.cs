@@ -3,6 +3,7 @@ namespace SpacetimeDB;
 using System.Collections;
 using System.Runtime.CompilerServices;
 using SpacetimeDB.BSATN;
+using SpacetimeDB.Internal;
 using static System.Text.Encoding;
 
 public static partial class Runtime
@@ -14,15 +15,15 @@ public static partial class Runtime
         Hash,
     }
 
-    internal static byte[] Consume(this RawBindings.Buffer buffer)
+    internal static byte[] Consume(this FFI.Buffer buffer)
     {
-        var len = RawBindings._buffer_len(buffer);
+        var len = FFI._buffer_len(buffer);
         var result = new byte[len];
-        RawBindings._buffer_consume(buffer, result, len);
+        FFI._buffer_consume(buffer, result, len);
         return result;
     }
 
-    private class RowIter(RawBindings.RowIter handle) : IEnumerator<byte[]>, IDisposable
+    private class RowIter(FFI.RowIter handle) : IEnumerator<byte[]>, IDisposable
     {
         private byte[] buffer = new byte[0x20_000];
         public byte[] Current { get; private set; } = [];
@@ -37,9 +38,9 @@ public static partial class Runtime
                 buffer_len = (uint)buffer.Length;
                 try
                 {
-                    RawBindings._iter_advance(handle, buffer, ref buffer_len);
+                    FFI._iter_advance(handle, buffer, ref buffer_len);
                 }
-                catch (RawBindings.BufferTooSmallException)
+                catch (FFI.BufferTooSmallException)
                 {
                     buffer = new byte[buffer_len];
                     continue;
@@ -53,10 +54,10 @@ public static partial class Runtime
 
         public void Dispose()
         {
-            if (!handle.Equals(RawBindings.RowIter.INVALID))
+            if (!handle.Equals(FFI.RowIter.INVALID))
             {
-                RawBindings._iter_drop(handle);
-                handle = RawBindings.RowIter.INVALID;
+                FFI._iter_drop(handle);
+                handle = FFI.RowIter.INVALID;
                 // Avoid running ~RowIter if Dispose was executed successfully.
                 GC.SuppressFinalize(this);
             }
@@ -77,7 +78,7 @@ public static partial class Runtime
 
     public abstract class RawTableIterBase : IEnumerable<byte[]>
     {
-        protected abstract void IterStart(out RawBindings.RowIter handle);
+        protected abstract void IterStart(out FFI.RowIter handle);
 
         public IEnumerator<byte[]> GetEnumerator()
         {
@@ -105,32 +106,23 @@ public static partial class Runtime
         }
     }
 
-    public class RawTableIter(RawBindings.TableId tableId) : RawTableIterBase
+    public class RawTableIter(FFI.TableId tableId) : RawTableIterBase
     {
-        protected override void IterStart(out RawBindings.RowIter handle) =>
-            RawBindings._iter_start(tableId, out handle);
+        protected override void IterStart(out FFI.RowIter handle) =>
+            FFI._iter_start(tableId, out handle);
     }
 
-    public class RawTableIterFiltered(RawBindings.TableId tableId, byte[] filterBytes)
+    public class RawTableIterFiltered(FFI.TableId tableId, byte[] filterBytes) : RawTableIterBase
+    {
+        protected override void IterStart(out FFI.RowIter handle) =>
+            FFI._iter_start_filtered(tableId, filterBytes, (uint)filterBytes.Length, out handle);
+    }
+
+    public class RawTableIterByColEq(FFI.TableId tableId, FFI.ColId colId, byte[] value)
         : RawTableIterBase
     {
-        protected override void IterStart(out RawBindings.RowIter handle) =>
-            RawBindings._iter_start_filtered(
-                tableId,
-                filterBytes,
-                (uint)filterBytes.Length,
-                out handle
-            );
-    }
-
-    public class RawTableIterByColEq(
-        RawBindings.TableId tableId,
-        RawBindings.ColId colId,
-        byte[] value
-    ) : RawTableIterBase
-    {
-        protected override void IterStart(out RawBindings.RowIter handle) =>
-            RawBindings._iter_by_col_eq(tableId, colId, value, (uint)value.Length, out handle);
+        protected override void IterStart(out FFI.RowIter handle) =>
+            FFI._iter_by_col_eq(tableId, colId, value, (uint)value.Length, out handle);
     }
 
     public enum LogLevel : byte
@@ -155,7 +147,7 @@ public static partial class Runtime
         var filename_bytes = UTF8.GetBytes(filename);
         var text_bytes = UTF8.GetBytes(text);
 
-        RawBindings._console_log(
+        FFI._console_log(
             (byte)level,
             target_bytes,
             (uint)target_bytes.Length,
@@ -256,13 +248,13 @@ public static partial class Runtime
 
     public class ScheduleToken
     {
-        private readonly RawBindings.ScheduleToken handle;
+        private readonly FFI.ScheduleToken handle;
 
         public ScheduleToken(string name, byte[] args, DateTimeOffset time)
         {
             var name_bytes = UTF8.GetBytes(name);
 
-            RawBindings._schedule_reducer(
+            FFI._schedule_reducer(
                 name_bytes,
                 (uint)name_bytes.Length,
                 args,
@@ -272,40 +264,31 @@ public static partial class Runtime
             );
         }
 
-        public void Cancel() => RawBindings._cancel_reducer(handle);
+        public void Cancel() => FFI._cancel_reducer(handle);
     }
 
-    public static RawBindings.TableId GetTableId(string name)
+    public static FFI.TableId GetTableId(string name)
     {
         var name_bytes = UTF8.GetBytes(name);
-        RawBindings._get_table_id(name_bytes, (uint)name_bytes.Length, out var out_);
+        FFI._get_table_id(name_bytes, (uint)name_bytes.Length, out var out_);
         return out_;
     }
 
-    public static byte[] Insert<T>(RawBindings.TableId tableId, T row)
+    public static byte[] Insert<T>(FFI.TableId tableId, T row)
         where T : IStructuralReadWrite
     {
         var bytes = IStructuralReadWrite.ToBytes(row);
-        RawBindings._insert(tableId, bytes, (uint)bytes.Length);
+        FFI._insert(tableId, bytes, (uint)bytes.Length);
         return bytes;
     }
 
-    public static uint DeleteByColEq(
-        RawBindings.TableId tableId,
-        RawBindings.ColId colId,
-        byte[] value
-    )
+    public static uint DeleteByColEq(FFI.TableId tableId, FFI.ColId colId, byte[] value)
     {
-        RawBindings._delete_by_col_eq(tableId, colId, value, (uint)value.Length, out var out_);
+        FFI._delete_by_col_eq(tableId, colId, value, (uint)value.Length, out var out_);
         return out_;
     }
 
-    public static bool UpdateByColEq<T>(
-        RawBindings.TableId tableId,
-        RawBindings.ColId colId,
-        byte[] value,
-        T row
-    )
+    public static bool UpdateByColEq<T>(FFI.TableId tableId, FFI.ColId colId, byte[] value, T row)
         where T : IStructuralReadWrite
     {
         // Just like in Rust bindings, updating is just deleting and inserting for now.

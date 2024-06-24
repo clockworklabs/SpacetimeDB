@@ -7,7 +7,7 @@ public partial struct IndexDef(
     string name,
     Runtime.IndexType type,
     bool isUnique,
-    RawBindings.ColId[] columnIds
+    SpacetimeDB.Internal.FFI.ColId[] columnIds
 )
 {
     string IndexName = name;
@@ -206,29 +206,29 @@ public static class FFI
         TypeRegistrar.Module.Tables.Add(tableDesc);
     }
 
-    public static RawBindings.Buffer __describe_module__()
+    public static SpacetimeDB.Internal.FFI.Buffer __describe_module__()
     {
         // replace `module` with a temporary internal module that will register ModuleDef, AlgebraicType and other internal types
         // during the ModuleDef.GetSatsTypeInfo() instead of exposing them via user's module.
         try
         {
             var moduleBytes = IStructuralReadWrite.ToBytes(TypeRegistrar.Module);
-            var res = RawBindings._buffer_alloc(moduleBytes, (uint)moduleBytes.Length);
+            var res = SpacetimeDB.Internal.FFI._buffer_alloc(moduleBytes, (uint)moduleBytes.Length);
             return res;
         }
         catch (Exception e)
         {
             Runtime.Log($"Error while describing the module: {e}", Runtime.LogLevel.Error);
-            return RawBindings.Buffer.INVALID;
+            return SpacetimeDB.Internal.FFI.Buffer.INVALID;
         }
     }
 
-    public static RawBindings.Buffer __call_reducer__(
+    public static SpacetimeDB.Internal.FFI.Buffer __call_reducer__(
         uint id,
-        RawBindings.Buffer caller_identity,
-        RawBindings.Buffer caller_address,
+        SpacetimeDB.Internal.FFI.Buffer caller_identity,
+        SpacetimeDB.Internal.FFI.Buffer caller_address,
         ulong timestamp,
-        RawBindings.Buffer args
+        SpacetimeDB.Internal.FFI.Buffer args
     )
     {
         try
@@ -245,13 +245,13 @@ public static class FFI
                 throw new Exception("Unrecognised extra bytes in the reducer arguments");
             }
             return /* no exception */
-            RawBindings.Buffer.INVALID;
+            SpacetimeDB.Internal.FFI.Buffer.INVALID;
         }
         catch (Exception e)
         {
             var error_str = e.ToString();
             var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
-            return RawBindings._buffer_alloc(error_bytes, (uint)error_bytes.Length);
+            return SpacetimeDB.Internal.FFI._buffer_alloc(error_bytes, (uint)error_bytes.Length);
         }
     }
 }

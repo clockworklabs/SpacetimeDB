@@ -1,9 +1,9 @@
-namespace SpacetimeDB;
+namespace SpacetimeDB.Internal;
 
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 
-public static partial class RawBindings
+public static partial class FFI
 {
     // For now this must match the name of the `.c` file (`bindings.c`).
     // In the future C# will allow to specify Wasm import namespace in
