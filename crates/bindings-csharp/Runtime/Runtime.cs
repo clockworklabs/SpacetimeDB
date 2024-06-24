@@ -30,21 +30,6 @@ public class ScheduleToken
 
 public static class Runtime
 {
-    [SpacetimeDB.Type]
-    public enum IndexType : byte
-    {
-        BTree,
-        Hash,
-    }
-
-    internal static byte[] Consume(this FFI.Buffer buffer)
-    {
-        var len = FFI._buffer_len(buffer);
-        var result = new byte[len];
-        FFI._buffer_consume(buffer, result, len);
-        return result;
-    }
-
     public enum LogLevel : byte
     {
         Error,

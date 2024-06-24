@@ -3,11 +3,18 @@ namespace SpacetimeDB.Internal.Module;
 using SpacetimeDB.BSATN;
 
 [SpacetimeDB.Type]
-public partial struct IndexDef(string name, Runtime.IndexType type, bool isUnique, uint[] columnIds)
+public enum IndexType : byte
+{
+    BTree,
+    Hash,
+}
+
+[SpacetimeDB.Type]
+public partial struct IndexDef(string name, IndexType type, bool isUnique, uint[] columnIds)
 {
     string IndexName = name;
     bool IsUnique = isUnique;
-    Runtime.IndexType Type = type;
+    IndexType Type = type;
     uint[] ColumnIds = columnIds;
 }
 
@@ -175,6 +182,14 @@ public static class FFI
         where T : ITable<T>, new()
     {
         TypeRegistrar.Module.Tables.Add(T.MakeTableDesc(TypeRegistrar));
+    }
+
+    private static byte[] Consume(this SpacetimeDB.Internal.FFI.Buffer buffer)
+    {
+        var len = SpacetimeDB.Internal.FFI._buffer_len(buffer);
+        var result = new byte[len];
+        SpacetimeDB.Internal.FFI._buffer_consume(buffer, result, len);
+        return result;
     }
 
     public static SpacetimeDB.Internal.FFI.Buffer __describe_module__()
