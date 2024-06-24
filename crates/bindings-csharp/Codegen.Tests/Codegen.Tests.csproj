@@ -10,6 +10,7 @@
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <RootNamespace>SpacetimeDB.Codegen.Tests</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

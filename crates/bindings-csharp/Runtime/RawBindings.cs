@@ -1,6 +1,5 @@
 namespace SpacetimeDB;
 
-using System;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 

@@ -1,4 +1,4 @@
-namespace Codegen.Tests;
+namespace SpacetimeDB.Codegen.Tests;
 
 using System.Collections.Immutable;
 using System.Runtime.CompilerServices;
@@ -53,7 +53,7 @@ public class GeneratorSnapshotTests
     [Theory]
     [InlineData(typeof(SpacetimeDB.Codegen.Module))]
     [InlineData(typeof(SpacetimeDB.Codegen.Type))]
-    public async Task VerifyDriver(Type generatorType)
+    public async Task VerifyDriver(System.Type generatorType)
     {
         var generator = (IIncrementalGenerator)Activator.CreateInstance(generatorType)!;
         var driver = CSharpGeneratorDriver.Create(

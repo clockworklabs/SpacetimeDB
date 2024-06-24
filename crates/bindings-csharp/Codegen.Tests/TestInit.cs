@@ -1,4 +1,4 @@
-namespace Codegen.Tests;
+namespace SpacetimeDB.Codegen.Tests;
 
 using System.Runtime.CompilerServices;
 

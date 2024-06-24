@@ -12,6 +12,7 @@
     <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
     <LangVersion>9</LangVersion>
     <Nullable>enable</Nullable>
+    <RootNamespace>SpacetimeDB.BSATN</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

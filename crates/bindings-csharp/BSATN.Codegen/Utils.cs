@@ -1,4 +1,4 @@
-namespace SpacetimeDB;
+namespace SpacetimeDB.Codegen;
 
 using System.Collections;
 using System.Collections.Immutable;
