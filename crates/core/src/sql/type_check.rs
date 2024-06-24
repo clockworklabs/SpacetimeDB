@@ -9,7 +9,7 @@ use spacetimedb_vm::errors::ErrorType;
 use spacetimedb_vm::expr::{FieldExpr, FieldOp};
 
 fn find_field_name(from: &From, field: FieldName) -> Result<&ColumnSchema, PlanError> {
-    from.find_field_name(field).ok_or(PlanError::UnknownFieldName {
+    from.find_field_name(field).ok_or_else(|| PlanError::UnknownFieldName {
         field,
         tables: from.iter_tables().map(|t| t.table_name.clone()).collect(),
     })
@@ -42,7 +42,7 @@ fn type_check(of: &QueryFragment<FieldOp>) -> Result<Option<AlgebraicType>, Plan
                 let ty_rhs = type_check(&QueryFragment { from: of.from, q: rhs })?;
 
                 // The `SumType` returns `None` on `type_of` so we need to check against the value
-                if let (Some(AlgebraicType::Sum(ty_lhs)), _) = (&ty_lhs, &ty_rhs) {
+                if let Some(AlgebraicType::Sum(ty_lhs)) = &ty_lhs {
                     // We can use in `sql` coercion from string to sum type: `tag = 'name'`
                     if let FieldOp::Field(FieldExpr::Value(x)) = rhs.as_ref() {
                         if let Some(x) = x.as_string() {
