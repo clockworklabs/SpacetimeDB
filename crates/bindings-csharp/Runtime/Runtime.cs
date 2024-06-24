@@ -118,11 +118,11 @@ public static partial class Runtime
             FFI._iter_start_filtered(tableId, filterBytes, (uint)filterBytes.Length, out handle);
     }
 
-    public class RawTableIterByColEq(FFI.TableId tableId, FFI.ColId colId, byte[] value)
+    public class RawTableIterByColEq(FFI.TableId tableId, uint colId, byte[] value)
         : RawTableIterBase
     {
         protected override void IterStart(out FFI.RowIter handle) =>
-            FFI._iter_by_col_eq(tableId, colId, value, (uint)value.Length, out handle);
+            FFI._iter_by_col_eq(tableId, new(colId), value, (uint)value.Length, out handle);
     }
 
     public enum LogLevel : byte
@@ -210,13 +210,13 @@ public static partial class Runtime
         return bytes;
     }
 
-    public static uint DeleteByColEq(FFI.TableId tableId, FFI.ColId colId, byte[] value)
+    public static uint DeleteByColEq(FFI.TableId tableId, uint colId, byte[] value)
     {
-        FFI._delete_by_col_eq(tableId, colId, value, (uint)value.Length, out var out_);
+        FFI._delete_by_col_eq(tableId, new(colId), value, (uint)value.Length, out var out_);
         return out_;
     }
 
-    public static bool UpdateByColEq<T>(FFI.TableId tableId, FFI.ColId colId, byte[] value, T row)
+    public static bool UpdateByColEq<T>(FFI.TableId tableId, uint colId, byte[] value, T row)
         where T : IStructuralReadWrite
     {
         // Just like in Rust bindings, updating is just deleting and inserting for now.

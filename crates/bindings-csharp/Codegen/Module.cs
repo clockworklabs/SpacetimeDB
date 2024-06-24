@@ -235,12 +235,10 @@ public class Module : IIncrementalGenerator
                             .Where(pair => pair.field.IsEquatable)
                     )
                     {
-                        var index = $"new SpacetimeDB.Internal.FFI.ColId({i})";
-
                         extensions +=
                             $@"
                                 public static IEnumerable<{t.ShortName}> FilterBy{f.Name}({f.Type} {f.Name}) =>
-                                    new SpacetimeDB.Runtime.RawTableIterByColEq(tableId.Value, {index}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name}))
+                                    new SpacetimeDB.Runtime.RawTableIterByColEq(tableId.Value, {i}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name}))
                                     .Parse<{t.ShortName}>();
                             ";
 
@@ -254,10 +252,10 @@ public class Module : IIncrementalGenerator
                                         .SingleOrDefault();
 
                                     public static bool DeleteBy{f.Name}({f.Type} {f.Name}) =>
-                                        SpacetimeDB.Runtime.DeleteByColEq(tableId.Value, {index}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name})) > 0;
+                                        SpacetimeDB.Runtime.DeleteByColEq(tableId.Value, {i}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name})) > 0;
 
                                     public static bool UpdateBy{f.Name}({f.Type} {f.Name}, {t.ShortName} value) =>
-                                        SpacetimeDB.Runtime.UpdateByColEq(tableId.Value, {index}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name}), value);
+                                        SpacetimeDB.Runtime.UpdateByColEq(tableId.Value, {i}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name}), value);
                                 ";
                         }
                     }

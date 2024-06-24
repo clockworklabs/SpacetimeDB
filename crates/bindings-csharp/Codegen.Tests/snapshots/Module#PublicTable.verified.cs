@@ -262,7 +262,7 @@ partial struct PublicTable
     public static IEnumerable<PublicTable> FilterById(int Id) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
-            new SpacetimeDB.Internal.FFI.ColId(0),
+            0,
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.Id, Id)
         ).Parse<PublicTable>();
 
@@ -272,14 +272,14 @@ partial struct PublicTable
     public static bool DeleteById(int Id) =>
         SpacetimeDB.Runtime.DeleteByColEq(
             tableId.Value,
-            new SpacetimeDB.Internal.FFI.ColId(0),
+            0,
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.Id, Id)
         ) > 0;
 
     public static bool UpdateById(int Id, PublicTable value) =>
         SpacetimeDB.Runtime.UpdateByColEq(
             tableId.Value,
-            new SpacetimeDB.Internal.FFI.ColId(0),
+            0,
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.Id, Id),
             value
         );
@@ -287,84 +287,84 @@ partial struct PublicTable
     public static IEnumerable<PublicTable> FilterByByteField(byte ByteField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
-            new SpacetimeDB.Internal.FFI.ColId(1),
+            1,
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.ByteField, ByteField)
         ).Parse<PublicTable>();
 
     public static IEnumerable<PublicTable> FilterByUshortField(ushort UshortField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
-            new SpacetimeDB.Internal.FFI.ColId(2),
+            2,
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.UshortField, UshortField)
         ).Parse<PublicTable>();
 
     public static IEnumerable<PublicTable> FilterByUintField(uint UintField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
-            new SpacetimeDB.Internal.FFI.ColId(3),
+            3,
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.UintField, UintField)
         ).Parse<PublicTable>();
 
     public static IEnumerable<PublicTable> FilterByUlongField(ulong UlongField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
-            new SpacetimeDB.Internal.FFI.ColId(4),
+            4,
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.UlongField, UlongField)
         ).Parse<PublicTable>();
 
     public static IEnumerable<PublicTable> FilterByUint128Field(System.UInt128 Uint128Field) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
-            new SpacetimeDB.Internal.FFI.ColId(5),
+            5,
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.Uint128Field, Uint128Field)
         ).Parse<PublicTable>();
 
     public static IEnumerable<PublicTable> FilterBySbyteField(sbyte SbyteField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
-            new SpacetimeDB.Internal.FFI.ColId(6),
+            6,
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.SbyteField, SbyteField)
         ).Parse<PublicTable>();
 
     public static IEnumerable<PublicTable> FilterByShortField(short ShortField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
-            new SpacetimeDB.Internal.FFI.ColId(7),
+            7,
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.ShortField, ShortField)
         ).Parse<PublicTable>();
 
     public static IEnumerable<PublicTable> FilterByIntField(int IntField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
-            new SpacetimeDB.Internal.FFI.ColId(8),
+            8,
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.IntField, IntField)
         ).Parse<PublicTable>();
 
     public static IEnumerable<PublicTable> FilterByLongField(long LongField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
-            new SpacetimeDB.Internal.FFI.ColId(9),
+            9,
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.LongField, LongField)
         ).Parse<PublicTable>();
 
     public static IEnumerable<PublicTable> FilterByInt128Field(System.Int128 Int128Field) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
-            new SpacetimeDB.Internal.FFI.ColId(10),
+            10,
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.Int128Field, Int128Field)
         ).Parse<PublicTable>();
 
     public static IEnumerable<PublicTable> FilterByBoolField(bool BoolField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
-            new SpacetimeDB.Internal.FFI.ColId(11),
+            11,
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.BoolField, BoolField)
         ).Parse<PublicTable>();
 
     public static IEnumerable<PublicTable> FilterByStringField(string StringField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
-            new SpacetimeDB.Internal.FFI.ColId(14),
+            14,
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.StringField, StringField)
         ).Parse<PublicTable>();
 
@@ -373,14 +373,14 @@ partial struct PublicTable
     ) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
-            new SpacetimeDB.Internal.FFI.ColId(15),
+            15,
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.IdentityField, IdentityField)
         ).Parse<PublicTable>();
 
     public static IEnumerable<PublicTable> FilterByAddressField(SpacetimeDB.Address AddressField) =>
         new SpacetimeDB.Runtime.RawTableIterByColEq(
             tableId.Value,
-            new SpacetimeDB.Internal.FFI.ColId(16),
+            16,
             SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.AddressField, AddressField)
         ).Parse<PublicTable>();
 } // PublicTable

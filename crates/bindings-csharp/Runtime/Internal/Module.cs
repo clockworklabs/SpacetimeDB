@@ -3,17 +3,12 @@ namespace SpacetimeDB.Internal.Module;
 using SpacetimeDB.BSATN;
 
 [SpacetimeDB.Type]
-public partial struct IndexDef(
-    string name,
-    Runtime.IndexType type,
-    bool isUnique,
-    SpacetimeDB.Internal.FFI.ColId[] columnIds
-)
+public partial struct IndexDef(string name, Runtime.IndexType type, bool isUnique, uint[] columnIds)
 {
     string IndexName = name;
     bool IsUnique = isUnique;
     Runtime.IndexType Type = type;
-    uint[] ColumnIds = columnIds.Select(id => (uint)id).ToArray();
+    uint[] ColumnIds = columnIds;
 }
 
 [SpacetimeDB.Type]
