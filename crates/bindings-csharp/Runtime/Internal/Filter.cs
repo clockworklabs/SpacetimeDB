@@ -1,83 +1,83 @@
-namespace SpacetimeDB.Filter;
+namespace SpacetimeDB.Internal;
 
 using System.Linq.Expressions;
 using SpacetimeDB.BSATN;
 
-readonly record struct ErasedValue(Action<BinaryWriter> write)
+public partial class Filter
 {
-    public readonly struct BSATN : SpacetimeDB.BSATN.IReadWrite<ErasedValue>
+    readonly record struct ErasedValue(Action<BinaryWriter> write)
     {
-        public ErasedValue Read(BinaryReader reader) => throw new NotSupportedException();
+        public readonly struct BSATN : SpacetimeDB.BSATN.IReadWrite<ErasedValue>
+        {
+            public ErasedValue Read(BinaryReader reader) => throw new NotSupportedException();
 
-        public void Write(BinaryWriter writer, ErasedValue value) => value.write(writer);
+            public void Write(BinaryWriter writer, ErasedValue value) => value.write(writer);
 
-        public AlgebraicType GetAlgebraicType(ITypeRegistrar _) =>
-            throw new NotSupportedException();
+            public AlgebraicType GetAlgebraicType(ITypeRegistrar _) =>
+                throw new NotSupportedException();
+        }
     }
-}
 
-[SpacetimeDB.Type]
-partial record Rhs : SpacetimeDB.TaggedEnum<(ErasedValue Value, byte Field)>;
+    [SpacetimeDB.Type]
+    partial record Rhs : SpacetimeDB.TaggedEnum<(ErasedValue Value, byte Field)>;
 
-[SpacetimeDB.Type]
-partial struct CmpArgs(byte lhsField, Rhs rhs)
-{
-    public byte LhsField = lhsField;
-    public Rhs Rhs = rhs;
-}
+    [SpacetimeDB.Type]
+    partial struct CmpArgs(byte lhsField, Rhs rhs)
+    {
+        public byte LhsField = lhsField;
+        public Rhs Rhs = rhs;
+    }
 
-[SpacetimeDB.Type]
-enum OpCmp
-{
-    Eq,
-    NotEq,
-    Lt,
-    LtEq,
-    Gt,
-    GtEq,
-}
+    [SpacetimeDB.Type]
+    enum OpCmp
+    {
+        Eq,
+        NotEq,
+        Lt,
+        LtEq,
+        Gt,
+        GtEq,
+    }
 
-[SpacetimeDB.Type]
-partial struct Cmp(OpCmp op, CmpArgs args)
-{
-    public OpCmp op = op;
-    public CmpArgs args = args;
-}
+    [SpacetimeDB.Type]
+    partial struct Cmp(OpCmp op, CmpArgs args)
+    {
+        public OpCmp op = op;
+        public CmpArgs args = args;
+    }
 
-[SpacetimeDB.Type]
-enum OpLogic
-{
-    And,
-    Or,
-}
+    [SpacetimeDB.Type]
+    enum OpLogic
+    {
+        And,
+        Or,
+    }
 
-[SpacetimeDB.Type]
-partial struct Logic(Expr lhs, OpLogic op, Expr rhs)
-{
-    public Expr lhs = lhs;
+    [SpacetimeDB.Type]
+    partial struct Logic(Expr lhs, OpLogic op, Expr rhs)
+    {
+        public Expr lhs = lhs;
 
-    public OpLogic op = op;
-    public Expr rhs = rhs;
-}
+        public OpLogic op = op;
+        public Expr rhs = rhs;
+    }
 
-[SpacetimeDB.Type]
-enum OpUnary
-{
-    Not,
-}
+    [SpacetimeDB.Type]
+    enum OpUnary
+    {
+        Not,
+    }
 
-[SpacetimeDB.Type]
-partial struct Unary(OpUnary op, Expr arg)
-{
-    public OpUnary op = op;
-    public Expr arg = arg;
-}
+    [SpacetimeDB.Type]
+    partial struct Unary(OpUnary op, Expr arg)
+    {
+        public OpUnary op = op;
+        public Expr arg = arg;
+    }
 
-[SpacetimeDB.Type]
-partial record Expr : SpacetimeDB.TaggedEnum<(Cmp Cmp, Logic Logic, Unary Unary)>;
+    [SpacetimeDB.Type]
+    partial record Expr : SpacetimeDB.TaggedEnum<(Cmp Cmp, Logic Logic, Unary Unary)>;
 
-public class Filter
-{
     private readonly KeyValuePair<string, Action<BinaryWriter, object?>>[] fieldTypeInfos;
 
     private Filter(KeyValuePair<string, Action<BinaryWriter, object?>>[] fieldTypeInfos)

@@ -300,7 +300,7 @@ partial class PublicTable
     ) =>
         new SpacetimeDB.Runtime.RawTableIterFiltered(
             tableId.Value,
-            SpacetimeDB.Filter.Filter.Compile<PublicTable>(fieldTypeInfos.Value, filter)
+            SpacetimeDB.Internal.Filter.Compile<PublicTable>(fieldTypeInfos.Value, filter)
         ).Parse<PublicTable>();
 
     public void Insert()

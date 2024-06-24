@@ -218,7 +218,7 @@ public class Module : IIncrementalGenerator
                             }});
 
                             public static IEnumerable<{t.ShortName}> Query(System.Linq.Expressions.Expression<Func<{t.ShortName}, bool>> filter) =>
-                                new SpacetimeDB.Runtime.RawTableIterFiltered(tableId.Value, SpacetimeDB.Filter.Filter.Compile<{t.ShortName}>(fieldTypeInfos.Value, filter))
+                                new SpacetimeDB.Runtime.RawTableIterFiltered(tableId.Value, SpacetimeDB.Internal.Filter.Compile<{t.ShortName}>(fieldTypeInfos.Value, filter))
                                 .Parse<{t.ShortName}>();
 
                             public void Insert() {{

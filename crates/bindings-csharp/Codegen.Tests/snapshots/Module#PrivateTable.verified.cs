@@ -29,7 +29,7 @@ partial class PrivateTable
     ) =>
         new SpacetimeDB.Runtime.RawTableIterFiltered(
             tableId.Value,
-            SpacetimeDB.Filter.Filter.Compile<PrivateTable>(fieldTypeInfos.Value, filter)
+            SpacetimeDB.Internal.Filter.Compile<PrivateTable>(fieldTypeInfos.Value, filter)
         ).Parse<PrivateTable>();
 
     public void Insert()
