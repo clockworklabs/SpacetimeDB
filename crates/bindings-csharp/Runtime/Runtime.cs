@@ -40,7 +40,7 @@ public static partial class Runtime
                 {
                     FFI._iter_advance(handle, buffer, ref buffer_len);
                 }
-                catch (FFI.BufferTooSmallException)
+                catch (BufferTooSmallException)
                 {
                     buffer = new byte[buffer_len];
                     continue;

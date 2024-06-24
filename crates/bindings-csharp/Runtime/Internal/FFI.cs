@@ -16,6 +16,15 @@ public static partial class FFI
 #endif
     ;
 
+    public enum Errno : ushort
+    {
+        OK = 0,
+        NO_SUCH_TABLE = 1,
+        LOOKUP_NOT_FOUND = 2,
+        UNIQUE_ALREADY_EXISTS = 3,
+        BUFFER_TOO_SMALL = 4,
+    }
+
     // This custom marshaller takes care of checking the status code
     // returned from the host and throwing an exception if it's not 0.
     // The only reason it doesn't return `void` is because the C# compiler
@@ -28,68 +37,21 @@ public static partial class FFI
     )]
     static class StatusMarshaller
     {
-        public static CheckedStatus ConvertToManaged(ushort status)
+        public static CheckedStatus ConvertToManaged(Errno status)
         {
-            if (status != 0)
+            if (status == 0)
             {
-                throw status switch
-                {
-                    ERRNO_NO_SUCH_TABLE => new NoSuchTableException(),
-                    ERRNO_LOOKUP_NOT_FOUND => new LookupNotFoundException(),
-                    ERRNO_UNIQUE_ALREADY_EXISTS => new UniqueAlreadyExistsException(),
-                    ERRNO_BUFFER_TOO_SMALL => new BufferTooSmallException(),
-                    _ => new StdbException(status),
-                };
+                return default;
             }
-            return default;
+            throw status switch
+            {
+                Errno.NO_SUCH_TABLE => new NoSuchTableException(),
+                Errno.LOOKUP_NOT_FOUND => new LookupNotFoundException(),
+                Errno.UNIQUE_ALREADY_EXISTS => new UniqueAlreadyExistsException(),
+                Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
+                _ => new UnknownException(status),
+            };
         }
-    }
-
-    private const ushort ERRNO_NO_SUCH_TABLE = 1;
-    private const ushort ERRNO_LOOKUP_NOT_FOUND = 2;
-    private const ushort ERRNO_UNIQUE_ALREADY_EXISTS = 3;
-    private const ushort ERRNO_BUFFER_TOO_SMALL = 4;
-
-    public class StdbException : Exception
-    {
-        public ushort Code { get; private set; }
-
-        internal StdbException(ushort code) => Code = code;
-
-        public override string Message => $"SpacetimeDB error code {Code}";
-    }
-
-    public class NoSuchTableException : StdbException
-    {
-        internal NoSuchTableException()
-            : base(ERRNO_NO_SUCH_TABLE) { }
-
-        public override string Message => "No such table";
-    }
-
-    public class LookupNotFoundException : StdbException
-    {
-        internal LookupNotFoundException()
-            : base(ERRNO_LOOKUP_NOT_FOUND) { }
-
-        public override string Message => "Value or range provided not found in table";
-    }
-
-    public class UniqueAlreadyExistsException : StdbException
-    {
-        internal UniqueAlreadyExistsException()
-            : base(ERRNO_UNIQUE_ALREADY_EXISTS) { }
-
-        public override string Message => "Value with given unique identifier already exists";
-    }
-
-    public class BufferTooSmallException : StdbException
-    {
-        internal BufferTooSmallException()
-            : base(ERRNO_BUFFER_TOO_SMALL) { }
-
-        public override string Message =>
-            "The provided buffer is not large enough to store the data";
     }
 
     [NativeMarshalling(typeof(StatusMarshaller))]
