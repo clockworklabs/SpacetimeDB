@@ -24,7 +24,13 @@ public class GeneratorSnapshotTests
 
         var dotNetDir = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
         var dotNetAssemblies = ImmutableArray
-            .Create("System.Private.CoreLib", "System.Runtime")
+            .Create(
+                "System.Private.CoreLib",
+                "System.Runtime",
+                "System.Collections",
+                "System.Linq",
+                "System.Linq.Expressions"
+            )
             .Select(name => $"{dotNetDir}/{name}.dll");
 
         var baseCompilation = CSharpCompilation.Create(
@@ -39,7 +45,9 @@ public class GeneratorSnapshotTests
         );
 
         var sampleCode = File.ReadAllText($"{projectDir}/Sample.cs");
-        sampleCompilation = baseCompilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(sampleCode));
+        sampleCompilation = baseCompilation.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText(sampleCode, path: "Sample.cs")
+        );
 
         // Add a comment to the end of each line to make the code modified with no functional changes.
         var modifiedCode = sampleCode.ReplaceLineEndings($"// Modified{Environment.NewLine}");
@@ -50,24 +58,22 @@ public class GeneratorSnapshotTests
 
     record struct StepOutput(string Key, IncrementalStepRunReason Reason, object Value);
 
-    [Theory]
-    [InlineData(typeof(SpacetimeDB.Codegen.Module))]
-    [InlineData(typeof(SpacetimeDB.Codegen.Type))]
-    public async Task VerifyDriver(System.Type generatorType)
+    async Task<SyntaxTree[]> RunAndCheckGenerator<G>()
+        where G : IIncrementalGenerator, new()
     {
-        var generator = (IIncrementalGenerator)Activator.CreateInstance(generatorType)!;
         var driver = CSharpGeneratorDriver.Create(
-            [generator.AsSourceGenerator()],
+            [new G().AsSourceGenerator()],
             driverOptions: new(
                 disabledOutputs: IncrementalGeneratorOutputKind.None,
                 trackIncrementalGeneratorSteps: true
             )
         );
+
         // Store the new driver instance - it contains the results and the cache.
         var driverAfterGen = driver.RunGenerators(sampleCompilation);
 
         // Verify the generated code against the snapshots.
-        await Verify(driverAfterGen).UseFileName(generatorType.Name);
+        await Verify(driverAfterGen).UseFileName(typeof(G).Name);
 
         // Run again with a driver containing the cache and a trivially modified code to verify that the cache is working.
         var driverAfterRegen = driverAfterGen.RunGenerators(modifiedCompilation);
@@ -90,6 +96,41 @@ public class GeneratorSnapshotTests
             regenSteps.Where(step =>
                 step.Reason
                     is not (IncrementalStepRunReason.Cached or IncrementalStepRunReason.Unchanged)
+            )
+        );
+
+        return driverAfterGen
+            .GetRunResult()
+            .Results.SelectMany(result => result.GeneratedSources)
+            .Select(source => CSharpSyntaxTree.ParseText(source.SourceText, path: source.HintName))
+            .ToArray();
+    }
+
+    [Fact]
+    public async Task VerifyDriver()
+    {
+        var compilationAfterAllGen = (
+            await Task.WhenAll(
+                RunAndCheckGenerator<SpacetimeDB.Codegen.Type>(),
+                RunAndCheckGenerator<SpacetimeDB.Codegen.Module>()
+            )
+        ).Aggregate(
+            sampleCompilation,
+            (compilation, sources) => compilation.AddSyntaxTrees(sources)
+        );
+
+        // Verify that the resulting code together with generated sources can be compiled.
+        var emitResult = compilationAfterAllGen.Emit(Stream.Null);
+        Assert.True(
+            emitResult.Success,
+            string.Join(
+                "\n",
+                emitResult.Diagnostics.Select(d =>
+                {
+                    var loc = d.Location.GetLineSpan();
+                    var locStart = loc.StartLinePosition;
+                    return $"{loc.Path}:{locStart.Line}:{locStart.Character}: {d.GetMessage()}";
+                })
             )
         );
     }
