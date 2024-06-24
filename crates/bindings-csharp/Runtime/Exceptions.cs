@@ -1,6 +1,5 @@
 namespace SpacetimeDB;
 
-using System;
 using SpacetimeDB.Internal;
 
 public abstract class StdbException : Exception
@@ -30,9 +29,9 @@ public class BufferTooSmallException : StdbException
 
 public class UnknownException : StdbException
 {
-    private readonly FFI.Errno code;
+    private readonly FFI.CheckedStatus.Errno code;
 
-    internal UnknownException(FFI.Errno code) => this.code = code;
+    internal UnknownException(FFI.CheckedStatus.Errno code) => this.code = code;
 
     public override string Message => $"SpacetimeDB error code {code}";
 }

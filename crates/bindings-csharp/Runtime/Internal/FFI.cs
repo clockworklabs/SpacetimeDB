@@ -16,46 +16,47 @@ public static partial class FFI
 #endif
     ;
 
-    public enum Errno : ushort
+    [NativeMarshalling(typeof(Marshaller))]
+    public struct CheckedStatus
     {
-        OK = 0,
-        NO_SUCH_TABLE = 1,
-        LOOKUP_NOT_FOUND = 2,
-        UNIQUE_ALREADY_EXISTS = 3,
-        BUFFER_TOO_SMALL = 4,
-    }
-
-    // This custom marshaller takes care of checking the status code
-    // returned from the host and throwing an exception if it's not 0.
-    // The only reason it doesn't return `void` is because the C# compiler
-    // doesn't treat `void` as a real type and doesn't allow it to be returned
-    // from custom marshallers, so we resort to an empty struct instead.
-    [CustomMarshaller(
-        typeof(CheckedStatus),
-        MarshalMode.ManagedToUnmanagedOut,
-        typeof(StatusMarshaller)
-    )]
-    static class StatusMarshaller
-    {
-        public static CheckedStatus ConvertToManaged(Errno status)
+        public enum Errno : ushort
         {
-            if (status == 0)
+            OK = 0,
+            NO_SUCH_TABLE = 1,
+            LOOKUP_NOT_FOUND = 2,
+            UNIQUE_ALREADY_EXISTS = 3,
+            BUFFER_TOO_SMALL = 4,
+        }
+
+        // This custom marshaller takes care of checking the status code
+        // returned from the host and throwing an exception if it's not 0.
+        // The only reason it doesn't return `void` is because the C# compiler
+        // doesn't treat `void` as a real type and doesn't allow it to be returned
+        // from custom marshallers, so we resort to an empty struct instead.
+        [CustomMarshaller(
+            typeof(CheckedStatus),
+            MarshalMode.ManagedToUnmanagedOut,
+            typeof(Marshaller)
+        )]
+        internal static class Marshaller
+        {
+            public static CheckedStatus ConvertToManaged(Errno status)
             {
-                return default;
+                if (status == 0)
+                {
+                    return default;
+                }
+                throw status switch
+                {
+                    Errno.NO_SUCH_TABLE => new NoSuchTableException(),
+                    Errno.LOOKUP_NOT_FOUND => new LookupNotFoundException(),
+                    Errno.UNIQUE_ALREADY_EXISTS => new UniqueAlreadyExistsException(),
+                    Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
+                    _ => new UnknownException(status),
+                };
             }
-            throw status switch
-            {
-                Errno.NO_SUCH_TABLE => new NoSuchTableException(),
-                Errno.LOOKUP_NOT_FOUND => new LookupNotFoundException(),
-                Errno.UNIQUE_ALREADY_EXISTS => new UniqueAlreadyExistsException(),
-                Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
-                _ => new UnknownException(status),
-            };
         }
     }
-
-    [NativeMarshalling(typeof(StatusMarshaller))]
-    public struct CheckedStatus;
 
     [StructLayout(LayoutKind.Sequential)]
     public readonly struct TableId
@@ -89,23 +90,23 @@ public static partial class FFI
         private readonly ulong schedule_token;
     }
 
-    // We need custom marshaller for `Buffer` because we return it by value
-    // instead of passing an `out` reference, and C# currently doesn't match
-    // the common Wasm C ABI in that a struct with a single field is supposed
-    // to have the same ABI as the field itself.
-    [CustomMarshaller(typeof(Buffer), MarshalMode.Default, typeof(BufferMarshaller))]
-    static class BufferMarshaller
-    {
-        public static Buffer ConvertToManaged(uint buf_handle) => new(buf_handle);
-
-        public static uint ConvertToUnmanaged(Buffer buf) => buf.Handle;
-    }
-
     [StructLayout(LayoutKind.Sequential)]
-    [NativeMarshalling(typeof(BufferMarshaller))]
+    [NativeMarshalling(typeof(Marshaller))]
     public readonly record struct Buffer(uint Handle)
     {
         public static readonly Buffer INVALID = new(uint.MaxValue);
+
+        // We need custom marshaller for `Buffer` because we return it by value
+        // instead of passing an `out` reference, and C# currently doesn't match
+        // the common Wasm C ABI in that a struct with a single field is supposed
+        // to have the same ABI as the field itself.
+        [CustomMarshaller(typeof(Buffer), MarshalMode.Default, typeof(Marshaller))]
+        internal static class Marshaller
+        {
+            public static Buffer ConvertToManaged(uint buf_handle) => new(buf_handle);
+
+            public static uint ConvertToUnmanaged(Buffer buf) => buf.Handle;
+        }
     }
 
     [StructLayout(LayoutKind.Sequential)]
