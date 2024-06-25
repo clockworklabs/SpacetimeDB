@@ -106,7 +106,7 @@ pub fn spacetimedb(macro_args: proc_macro::TokenStream, item: proc_macro::TokenS
 /// On `item`, route the macro `input` to the various interpretations.
 fn route_input(input: MacroInput, item: TokenStream) -> syn::Result<TokenStream> {
     match input {
-        MacroInput::Table(public, scheduled) => spacetimedb_table(item, public, scheduled),
+        MacroInput::Table{public, scheduled} => spacetimedb_table(item, public, scheduled),
         MacroInput::Init => spacetimedb_init(item),
         MacroInput::Reducer(Some(span)) => Err(syn::Error::new(span, "`repeat` support has been removed")),
         MacroInput::Reducer(None) => spacetimedb_reducer(item),
@@ -129,7 +129,10 @@ fn duration_totokens(dur: Duration) -> TokenStream {
 
 /// Defines the input space of the `spacetimedb` macro.
 enum MacroInput {
-    Table(Option<Span>, Option<Ident>),
+    Table {
+        public: Option<Span>,
+        scheduled: Option<Ident>,
+    },
     Init,
     Reducer(Option<Span>),
     Connect,
@@ -200,16 +203,13 @@ impl syn::parse::Parse for MacroInput {
                             let in_parens;
                             syn::parenthesized!(in_parens in input);
                             let in_parens = &in_parens;
-
                             scheduled = Some(in_parens.parse::<Ident>()?);
-
-                            //scheduled = Some(in_parens.span());
                         }
                     });
                     Ok(())
                 })?;
 
-                Self::Table(public, scheduled)
+                Self::Table{public, scheduled}
             }
             kw::init => Self::Init,
             kw::reducer => {
@@ -457,6 +457,30 @@ struct Column<'a> {
     attr: ColumnAttribute,
 }
 
+fn spacetimedb_table(item: TokenStream, public: Option<Span>, scheduled: Option<Ident>) -> syn::Result<TokenStream> {
+    let public = public.map(|span| quote_spanned!(span => #[sats(public)]));
+
+    let output = if let Some(reducer) = scheduled {
+        let mut modified_item = syn::parse2::<DeriveInput>(item)?;
+        add_scheduled_fields(&mut modified_item)?;
+        let reducer_name = reducer.to_string();
+        quote! {
+            #[derive(spacetimedb::TableType)]
+            #public
+            #[sats(scheduled=#reducer_name)]
+            #modified_item
+        }
+    } else {
+        quote! {
+            #[derive(spacetimedb::TableType)]
+            #public
+            #item
+        }
+    };
+    Ok(output)
+}
+
+// add scheduled_id and scheduled_at fields to the struct
 fn add_scheduled_fields(item: &mut DeriveInput) -> syn::Result<()> {
     match &mut item.data {
         syn::Data::Struct(ref mut struct_data) => match &mut struct_data.fields {
@@ -480,32 +504,11 @@ fn add_scheduled_fields(item: &mut DeriveInput) -> syn::Result<()> {
     Ok(())
 }
 
-// fn verify_reducer_signature(item: &DeriveInput) -> syn::Result<()> {
+// fn reducer_type_check(item: &DeriveInput) -> syn::Result<(), syn::Error> {
 //     let errmsg = "reducer should have at least 2 arguments: (identity: Identity, timestamp: u64, ...)";
 //     let ([arg1, arg2], args) = validate_reducer_args(&item.sig, errmsg)?;
 
 // }
-
-fn spacetimedb_table(item: TokenStream, public: Option<Span>, scheduled: Option<Ident>) -> syn::Result<TokenStream> {
-    let public = public.map(|span| quote_spanned!(span => #[sats(public)]));
-    let mut item = syn::parse2::<DeriveInput>(item)?;
-    let mut scheduled_sats = None;
-    if scheduled.is_some() {
-        //    verify_reducer_signature(&item)?
-        add_scheduled_fields(&mut item)?;
-        scheduled_sats = scheduled.map(|reducer| {
-            let reducer_name = reducer.to_string();
-            quote!(#[sats(scheduled=#reducer_name)])
-        });
-    }
-
-    Ok(quote! {
-        #[derive(spacetimedb::TableType)]
-        #public
-        #scheduled_sats
-        #item
-    })
-}
 
 /// Generates code for treating this type as a table.
 ///
