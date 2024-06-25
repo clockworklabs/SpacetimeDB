@@ -6,7 +6,7 @@ use spacetimedb_vm::relation::RelValue;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
-use super::scheduler::Scheduler;
+use super::scheduler::{get_schedule_from_pv, Scheduler};
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -141,9 +141,10 @@ impl InstanceEnv {
                 }
             })?;
 
-        if stdb.is_scheuled_table(ctx, tx, table_id) {
+        if stdb.is_scheuled_table(ctx, tx, table_id)? {
+            let (schedule_id, schedule_at) = get_schedule_from_pv(tx, &stdb, table_id, &ret).unwrap();
             self.scheduler
-                .schedule(table_id, ret.clone())
+                .schedule(table_id, schedule_id, schedule_at)
                 .map_err(NodesError::ScheduleError)?;
         }
 

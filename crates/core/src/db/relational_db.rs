@@ -524,9 +524,14 @@ impl RelationalDB {
             .get_all_tables_tx(&ExecutionContext::internal(self.address), tx)
     }
 
-    pub fn is_scheuled_table(&self, ctx: &ExecutionContext, tx: &mut MutTx, table_id: TableId) -> bool {
+    pub fn is_scheuled_table(
+        &self,
+        ctx: &ExecutionContext,
+        tx: &mut MutTx,
+        table_id: TableId,
+    ) -> Result<bool, DBError> {
         tx.schema_for_table(ctx, table_id)
-            .is_ok_and(|schema| schema.scheduled.is_some())
+            .map(|schema| schema.scheduled.is_some())
     }
 
     pub fn decode_column(

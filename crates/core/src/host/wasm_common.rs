@@ -359,7 +359,6 @@ macro_rules! abi_funcs {
             "spacetime_8.0"::buffer_alloc,
             "spacetime_8.0"::buffer_consume,
             "spacetime_8.0"::buffer_len,
-            // "spacetime_8.0"::cancel_reducer,
             "spacetime_8.0"::console_log,
             "spacetime_8.0"::create_index,
             "spacetime_8.0"::delete_by_col_eq,
@@ -371,7 +370,6 @@ macro_rules! abi_funcs {
             "spacetime_8.0"::iter_advance,
             "spacetime_8.0"::iter_start,
             "spacetime_8.0"::iter_start_filtered,
-            // "spacetime_8.0"::schedule_reducer,
             "spacetime_8.0"::span_end,
             "spacetime_8.0"::span_start,
         }

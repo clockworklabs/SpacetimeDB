@@ -6,12 +6,9 @@ use futures::StreamExt;
 use rustc_hash::FxHashMap;
 use sled::transaction::TransactionError;
 use spacetimedb_lib::bsatn::ser::BsatnError;
-use spacetimedb_lib::de::Deserialize;
 use spacetimedb_lib::scheduler::ScheduleAt;
-use spacetimedb_lib::ser::Serialize;
-use spacetimedb_lib::{bsatn, AlgebraicValue, ProductValue};
-use spacetimedb_primitives::{ColId, TableId};
-use spacetimedb_sats::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
+use spacetimedb_primitives::TableId;
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_table::table::RowRef;
 use tokio::sync::mpsc;
 use tokio_util::time::delay_queue::Expired;
@@ -19,19 +16,19 @@ use tokio_util::time::{delay_queue, DelayQueue};
 
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::system_tables::{StScheduledRow, ST_SCHEDULED_ID};
+use crate::db::datastore::system_tables::{StFields, StScheduledFields, StScheduledRow, ST_SCHEDULED_ID};
 use crate::db::datastore::traits::IsolationLevel;
 use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
 
 use super::module_host::WeakModuleHost;
-use super::{ModuleHost, ReducerArgs};
+use super::{ModuleHost, ReducerArgs, ReducerCallError};
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct ScheduledReducerId {
-    /// Scheduled Table id, this should have a entry in `ST_SCHEDULED`
+    /// The ID of the table whose rows hold the scheduled reducers.
     table_id: TableId,
-    /// Refer to a particular schedule (row) in scheduled table
+    /// The particular schedule row in the reducer scheduling table referred to by `self.table_id`.
     schedule_id: u64,
 }
 
@@ -75,33 +72,8 @@ impl Scheduler {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
-struct StModuleScheduleRow {
-    schedule_id: u64,
-    schedule_at: ScheduleAt,
-}
-
-const SCHEDULE_AT_FIELD: &str = "schedule_at";
-const SCHEDULE_ID_FIELD: &str = "schedule_id";
-
-impl StModuleScheduleRow {
-    fn from_row_ref(row: RowRef<'_>, schedule_id_pos: ColId, schedule_at_pos: ColId) -> Result<Self, anyhow::Error> {
-        Ok(StModuleScheduleRow {
-            schedule_id: row.read_col(schedule_id_pos)?,
-            schedule_at: row
-                .read_col::<AlgebraicValue>(schedule_at_pos)?
-                .try_into()
-                .map_err(|_| anyhow!("Error reading schedule_at"))?,
-        })
-    }
-}
-
-impl TryFrom<AlgebraicValue> for StModuleScheduleRow {
-    type Error = ValueDeserializeError;
-    fn try_from(value: AlgebraicValue) -> Result<Self, Self::Error> {
-        StModuleScheduleRow::deserialize(ValueDeserializer::new(value))
-    }
-}
+const SCHEDULED_AT_FIELD: &str = "scheduled_at";
+const SCHEDULED_ID_FIELD: &str = "scheduled_id";
 
 impl SchedulerStarter {
     // TODO(cloutiertyler): This whole start dance is scuffed, but I don't have
@@ -111,20 +83,17 @@ impl SchedulerStarter {
         let ctx = &ExecutionContext::internal(self.db.address());
         let tx = self.db.begin_tx();
         // Find all Scheduled tables
-        for row in self.db.iter(ctx, &tx, ST_SCHEDULED_ID)? {
-            let scheduled_table = StScheduledRow::try_from(row).expect("Error reading scheduled table row");
+        for st_scheduled_row in self.db.iter(ctx, &tx, ST_SCHEDULED_ID)? {
+            let scheduled_table =
+                StScheduledRow::try_from(st_scheduled_row).expect("Error reading stscheduled table row");
             let table_id = scheduled_table.table_id;
-            // Insert each entry (row) of scheduled tables in DelayQueue
-            for row_ref in self.db.iter(ctx, &tx, table_id)? {
-                let schedule = get_schedule(&tx, &self.db, table_id, &row_ref)?;
-                let duration = schedule.schedule_at.to_duration_from_now();
-                queue.insert(
-                    ScheduledReducerId {
-                        table_id,
-                        schedule_id: schedule.schedule_id,
-                    },
-                    duration,
-                );
+            // Insert each entry (row) in the scheduled table into `queue`.
+            for scheduled_row in self.db.iter(ctx, &tx, table_id)? {
+                let schedule_id = get_schedule_id(&tx, &self.db, table_id, &scheduled_row)?;
+                let schedule_at = get_schedule_at(&tx, &self.db, table_id, &scheduled_row)?;
+                let duration = schedule_at.to_duration_from_now();
+                println!("duration: {:?}", duration);
+                queue.insert(ScheduledReducerId { table_id, schedule_id }, duration);
             }
         }
 
@@ -185,7 +154,7 @@ pub enum ScheduleError {
 }
 
 impl Scheduler {
-    pub fn schedule(&self, table_id: TableId, row: ProductValue) -> Result<ScheduledReducerId, ScheduleError> {
+    pub fn schedule(&self, table_id: TableId, schedule_id: u64, schedule_at: ScheduleAt) -> Result<(), ScheduleError> {
         // Check that `at` is within `tokio_utils::time::DelayQueue`'s accepted time-range.
         //
         // `DelayQueue` uses a sliding window,
@@ -208,26 +177,20 @@ impl Scheduler {
         // rather than `SystemTime`,
         // but we don't currently have a meaningful way
         // to convert a `Timestamp` into an `Instant`.
-        let StModuleScheduleRow {
-            schedule_id,
-            schedule_at,
-        } = StModuleScheduleRow::try_from(AlgebraicValue::from(row)).map_err(|_| ScheduleError::DecodingError())?;
         let delay = schedule_at.to_duration_from_now();
         if delay >= MAX_SCHEDULE_DELAY {
             return Err(ScheduleError::DelayTooLong(delay));
         }
 
-        let id = ScheduledReducerId { table_id, schedule_id };
         // if the actor has exited, it's fine to ignore; it means that the host actor calling
         // schedule will exit soon as well, and it'll be scheduled to run when the module host restarts
-        let _ = self
-            .tx
-            .send(MsgOrExit::Msg(SchedulerMessage::Schedule { id, at: schedule_at }));
-        Ok(id)
+        let _ = self.tx.send(MsgOrExit::Msg(SchedulerMessage::Schedule {
+            id: ScheduledReducerId { table_id, schedule_id },
+            at: schedule_at,
+        }));
+
+        Ok(())
     }
-    // pub fn cancel(&self, id: ScheduledReducerId) {
-    //     let _ = self.tx.send(MsgOrExit::Msg(SchedulerMessage::Cancel { id }));
-    // }
 
     pub fn close(&self) {
         let _ = self.tx.send(MsgOrExit::Exit);
@@ -273,164 +236,212 @@ impl SchedulerActor {
 
         if let Some(module_host) = self.module_host.upgrade() {
             let db = module_host.dbic().relational_db.clone();
+            let ctx = ExecutionContext::internal(db.address());
             let tx = db.begin_mut_tx(IsolationLevel::Serializable);
             let identity = module_host.info().identity;
-            match self.proccess_schedule(id, &db, &tx) {
-                Ok((reducer, is_repeated)) => {
-                    let _ = tokio::spawn(async move {
-                        let res = module_host
-                            .call_reducer(
-                                Some(tx),
-                                identity,
-                                None,
-                                None,
-                                None,
-                                None,
-                                &reducer.reducer,
-                                ReducerArgs::Bsatn(reducer.bsatn_args.into()),
-                            )
+
+            match get_schedule_row_mut(&ctx, &tx, &db, id.table_id, id.schedule_id) {
+                Ok(schedule_row) => {
+                    match self.proccess_schedule(&ctx, &tx, &db, id, &schedule_row) {
+                        Ok((reducer, is_repeated)) => {
+                            let _ = tokio::spawn(async move {
+                                let res = module_host
+                                    .call_reducer(
+                                        Some(tx),
+                                        identity,
+                                        None,
+                                        None,
+                                        None,
+                                        None,
+                                        &reducer.reducer,
+                                        ReducerArgs::Bsatn(reducer.bsatn_args.into()),
+                                    )
+                                    .await;
+
+                                // if we didn't actually call the reducer because the module exited, leave
+                                // the ScheduledReducer in the database for when the module restarts
+                                // Or if the schedule is to be repeated, do not remove it
+                                if matches!(res, Err(ReducerCallError::NoSuchModule(_))) && !is_repeated {
+                                    if let Err(e) = delete_schedule_from_table(id, &db) {
+                                        log::error!("error deletinng scheduled reducer: {e:#}");
+                                    }
+                                }
+
+                                if let Err(e) = res {
+                                    log::error!("invoking scheduled reducer failed: {e:#}");
+                                };
+                            })
                             .await;
-                        // Delete the entry from table if it is not repeated schedule in new tx
-                        if !is_repeated {
-                            let _ = delete_schedule_from_table(id, &db);
                         }
-                        if let Err(e) = res {
-                            log::error!("invoking scheduled reducer failed: {e:#}");
-                        };
-                    })
-                    .await;
+                        Err(e) => {
+                            log::error!("proccessing scheduled reducer failed: {e:#}");
+                        }
+                    }
                 }
-                Err(e) => {
-                    log::error!("invoking scheduled reducer failed: {e:#}");
+                Err(_) => {
+                    // if the row is not found, it means the schedule is cancelled by the user
+                    log::info!(
+                        "table row corresponding to yeild scheduler id not found: tableid {}, schedulerId {}",
+                        id.table_id,
+                        id.schedule_id
+                    );
                 }
             }
         }
     }
 
+    /// generate `ScheduledReducer` for given `ScheduledReducerId`
     fn proccess_schedule(
         &mut self,
-        id: ScheduledReducerId,
-        db: &RelationalDB,
+        ctx: &ExecutionContext,
         tx: &MutTxId,
+        db: &RelationalDB,
+        id: ScheduledReducerId,
+        schedule_row: &RowRef<'_>,
     ) -> Result<(ScheduledReducer, bool), anyhow::Error> {
-        let ctx = ExecutionContext::internal(db.address());
+        let ScheduledReducerId { schedule_id, table_id } = id;
 
-        let schedule_id = AlgebraicValue::from(id.schedule_id);
-        let table_id = id.table_id;
-
-        let schedule_id_pos = db
-            .schema_for_table_mut(tx, table_id)?
-            .get_column_id_by_name(SCHEDULE_ID_FIELD)
-            .ok_or(anyhow!("SCHEDULE_ID_FIELD not found"))?;
-
-        // Check if expired schedule exists in the relational_db
-        let schedule_row = db
-            .iter_by_col_eq_mut(&ctx, tx, table_id, schedule_id_pos, &schedule_id)?
-            .next()
-            .ok_or(anyhow!("scheduler not found ins rdb"))?;
-
-        // Find reducer name from `ST_SCHEDULED` table
+        // get reducer name from `ST_SCHEDULED` table
+        let table_id_col = StScheduledFields::TableId.col_id();
+        let reducer_name_col = StScheduledFields::ReducerName.col_id();
         let st_scheduled_row = db
-            .iter_by_col_eq_mut(
-                &ctx,
-                tx,
-                ST_SCHEDULED_ID,
-                StScheduledRow::<&str>::table_id_col_pos(),
-                &AlgebraicValue::from(table_id),
-            )?
+            .iter_by_col_eq_mut(ctx, tx, ST_SCHEDULED_ID, table_id_col, &table_id.into())?
             .next()
-            .ok_or(anyhow!("scheduled table entry not exist in st_scheduled"))?;
-
-        let reducer_name = st_scheduled_row.read_col::<Box<str>>(StScheduledRow::<&str>::reducer_name_col_pos())?;
-        let schedule = get_schedule_mut(tx, db, table_id, &schedule_row)?;
-
-        let reducer_args_av = &schedule_row.to_product_value();
-        let reducer_arg_bsatn = bsatn::to_vec(&reducer_args_av)?;
-
-        let mut is_repeated = false;
-        if let ScheduleAt::Interval(dur) = schedule.schedule_at {
-            is_repeated = true;
-            self.queue.insert(
-                ScheduledReducerId {
-                    table_id,
-                    schedule_id: id.schedule_id,
-                },
-                dur.into(),
-            );
-        }
+            .ok_or(anyhow!("scheduled table entry doesn't exist in `st_scheduled`"))?;
+        let reducer_name = st_scheduled_row.read_col::<Box<str>>(reducer_name_col)?;
+        let reducer_arg_bsatn = schedule_row.to_bsatn_vec()?;
 
         Ok((
             ScheduledReducer {
                 reducer: reducer_name,
                 bsatn_args: reducer_arg_bsatn,
             },
-            is_repeated,
+            self.handle_repeated_schedule(tx, db, table_id, schedule_id, &schedule_row)?,
         ))
+    }
+
+    /// Handle repeated schedule by adding it back to queue
+    /// return true if it is repeated schedule
+    fn handle_repeated_schedule(
+        &mut self,
+        tx: &MutTxId,
+        db: &RelationalDB,
+        table_id: TableId,
+        schedule_id: u64,
+        schedule_row: &RowRef<'_>,
+    ) -> Result<bool, anyhow::Error> {
+        let schedule_at = get_schedule_at_mut(tx, db, table_id, schedule_row)?;
+
+        if let ScheduleAt::Interval(dur) = schedule_at {
+            self.queue
+                .insert(ScheduledReducerId { table_id, schedule_id }, dur.into());
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 }
 
+/// Helper to delete schedule from table once they are executed.
 fn delete_schedule_from_table(id: ScheduledReducerId, db: &RelationalDB) -> Result<(), anyhow::Error> {
     let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
     let ctx = ExecutionContext::internal(db.address());
-
-    let schedule_id = AlgebraicValue::from(id.schedule_id);
-    let table_id = id.table_id;
-
-    let schedule_id_pos = db
-        .schema_for_table_mut(&tx, table_id)?
-        .get_column_id_by_name(SCHEDULE_ID_FIELD)
-        .ok_or(anyhow!("SCHEDULE_ID_FIELD not found"))?;
-
-    let schedule_row = db
-        .iter_by_col_eq_mut(&ctx, &tx, table_id, schedule_id_pos, &schedule_id)?
-        .next()
-        .ok_or(anyhow!("scheduler not found in rdb"))?;
-
+    let ScheduledReducerId { schedule_id, table_id } = id;
+    let schedule_row = get_schedule_row_mut(&ctx, &tx, db, table_id, schedule_id)?;
     let row_ptr = schedule_row.pointer();
-
-    let schedule_at = get_schedule_mut(&tx, db, table_id, &schedule_row)?.schedule_at;
-
-    if let ScheduleAt::Time(_) = schedule_at {
-        db.delete(&mut tx, table_id, [row_ptr]);
-    }
+    db.delete(&mut tx, table_id, [row_ptr]);
     tx.commit(&ctx);
     Ok(())
 }
 
-fn get_schedule(
-    tx: &TxId,
-    db: &RelationalDB,
-    table_id: TableId,
-    row_ref: &RowRef,
-) -> anyhow::Result<StModuleScheduleRow> {
+/// Helper to get schedule_id from schedule_row with `TxId`
+fn get_schedule_id(tx: &TxId, db: &RelationalDB, table_id: TableId, schedule_row: &RowRef<'_>) -> anyhow::Result<u64> {
     let schedule_id_pos = db
         .schema_for_table(tx, table_id)?
-        .get_column_id_by_name(SCHEDULE_ID_FIELD)
+        .get_column_id_by_name(SCHEDULED_ID_FIELD)
         .ok_or(anyhow!("SCHEDULE_ID_FIELD not found"))?;
 
-    let schedule_at_pos = db
-        .schema_for_table(tx, table_id)?
-        .get_column_id_by_name(SCHEDULE_AT_FIELD)
-        .ok_or(anyhow!("SCHEDULE_AT_FIELD not found"))?;
-
-    StModuleScheduleRow::from_row_ref(*row_ref, schedule_id_pos, schedule_at_pos)
+    schedule_row
+        .read_col::<u64>(schedule_id_pos)?
+        .try_into()
+        .map_err(|_| anyhow!("Error reading schedule_at"))
 }
 
-fn get_schedule_mut(
+/// Helper to get schedule_row with `MutTxId`
+fn get_schedule_row_mut<'a, 'b>(
+    ctx: &'a ExecutionContext,
+    tx: &'a MutTxId,
+    db: &'a RelationalDB,
+    table_id: TableId,
+    schedule_id: u64,
+) -> anyhow::Result<RowRef<'a>> {
+    let schedule_id_pos = db
+        .schema_for_table_mut(tx, table_id)?
+        .get_column_id_by_name(SCHEDULED_ID_FIELD)
+        .ok_or(anyhow!("SCHEDULE_ID_FIELD not found"))?;
+
+    db.iter_by_col_eq_mut(&ctx, &tx, table_id, schedule_id_pos, &schedule_id.into())?
+        .next()
+        .ok_or(anyhow!("scheduler not found in rdb"))
+}
+
+pub fn get_schedule_from_pv(
     tx: &MutTxId,
     db: &RelationalDB,
     table_id: TableId,
-    row_ref: &RowRef,
-) -> anyhow::Result<StModuleScheduleRow> {
-    let schedule_id_pos = db
-        .schema_for_table_mut(tx, table_id)?
-        .get_column_id_by_name(SCHEDULE_ID_FIELD)
-        .ok_or(anyhow!("SCHEDULE_ID_FIELD not found"))?;
+    row: &ProductValue,
+) -> anyhow::Result<(u64, ScheduleAt)> {
+    let row_ty = db.row_schema_for_table(tx, table_id)?;
+    let schedule_id_col_pos = row_ty
+        .elements
+        .iter()
+        .position(|element| element.name == Some(SCHEDULED_ID_FIELD.into()))
+        .ok_or(anyhow!("schedule_id not found"))?;
 
+    let schedule_at_col_pos = row_ty
+        .elements
+        .iter()
+        .position(|element| element.name == Some(SCHEDULED_AT_FIELD.into()))
+        .ok_or(anyhow!("schedule_at not found"))?;
+
+    let schedule_id = row.field_as_u64(schedule_id_col_pos, SCHEDULED_ID_FIELD.into())?;
+    let schedule_at = ScheduleAt::try_from(row.get_field(schedule_at_col_pos, SCHEDULED_ID_FIELD.into())?.clone())
+        .map_err(|_| anyhow!("Error reading schedule_at"))?;
+    Ok((schedule_id, schedule_at))
+}
+
+/// Helper to get schedule_at from schedule_row with `TxId`
+fn get_schedule_at(
+    tx: &TxId,
+    db: &RelationalDB,
+    table_id: TableId,
+    schedule_row: &RowRef<'_>,
+) -> anyhow::Result<ScheduleAt> {
     let schedule_at_pos = db
-        .schema_for_table_mut(tx, table_id)?
-        .get_column_id_by_name(SCHEDULE_AT_FIELD)
+        .schema_for_table(tx, table_id)?
+        .get_column_id_by_name(SCHEDULED_AT_FIELD)
         .ok_or(anyhow!("SCHEDULE_AT_FIELD not found"))?;
 
-    StModuleScheduleRow::from_row_ref(*row_ref, schedule_id_pos, schedule_at_pos)
+    schedule_row
+        .read_col::<AlgebraicValue>(schedule_at_pos)?
+        .try_into()
+        .map_err(|_| anyhow!("Error reading schedule_at"))
+}
+
+/// Helper to get schedule_at from schedule_row with `MutTxId`
+fn get_schedule_at_mut(
+    tx: &MutTxId,
+    db: &RelationalDB,
+    table_id: TableId,
+    schedule_row: &RowRef<'_>,
+) -> anyhow::Result<ScheduleAt> {
+    let schedule_at_pos = db
+        .schema_for_table_mut(tx, table_id)?
+        .get_column_id_by_name(SCHEDULED_AT_FIELD)
+        .ok_or(anyhow!("SCHEDULE_AT_FIELD not found"))?;
+
+    schedule_row
+        .read_col::<AlgebraicValue>(schedule_at_pos)?
+        .try_into()
+        .map_err(|_| anyhow!("Error reading schedule_at"))
 }

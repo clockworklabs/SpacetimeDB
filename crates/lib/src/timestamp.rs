@@ -1,5 +1,5 @@
 use spacetimedb_sats::{impl_deserialize, impl_serialize, AlgebraicType};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(transparent)]
@@ -15,9 +15,9 @@ impl Timestamp {
         Self(dur.as_micros() as u64)
     }
     pub fn to_systemtime(self) -> SystemTime {
-        SystemTime::UNIX_EPOCH + std::time::Duration::from_micros(self.0)
+        SystemTime::UNIX_EPOCH + Duration::from_micros(self.0)
     }
-    pub fn to_duration_from_now(self) -> std::time::Duration {
+    pub fn to_duration_from_now(self) -> Duration {
         self.to_systemtime()
             .duration_since(SystemTime::now())
             .unwrap_or_default()
