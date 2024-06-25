@@ -215,7 +215,7 @@ pub async fn exec(args: &ArgMatches) -> anyhow::Result<()> {
 
     let ctx = StandaloneEnv::init(config).await?;
 
-    let service = router().with_state(ctx);
+    let service = router(ctx);
 
     let tcp = TcpListener::bind(listen_addr).await?;
     socket2::SockRef::from(&tcp).set_nodelay(true)?;
