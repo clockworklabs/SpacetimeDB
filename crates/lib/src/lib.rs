@@ -20,7 +20,7 @@ pub mod version;
 
 pub use address::Address;
 pub use identity::Identity;
-pub use scheduler::Duration;
+pub use scheduler::{Duration, ScheduleAt};
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
 pub use spacetimedb_sats::relation;
 pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
