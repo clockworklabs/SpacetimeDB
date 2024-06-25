@@ -439,9 +439,9 @@ pub fn register_table<T: TableType>() {
             .with_access(T::TABLE_ACCESS)
             .with_constraints(constraints)
             .with_sequences(sequences)
-            .with_indexes(indexes);
+            .with_indexes(indexes)
+            .with_scheduled(T::SCHEDULED_REDUCER_NAME.map(Into::into));
         let schema = TableDesc { schema, data };
-
         module.module.tables.push(schema)
     })
 }

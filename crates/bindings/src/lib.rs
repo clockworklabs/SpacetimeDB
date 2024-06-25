@@ -337,6 +337,8 @@ pub trait TableType: SpacetimeType + DeserializeOwned + Serialize {
     const TABLE_ACCESS: StAccess;
     const COLUMN_ATTRS: &'static [ColumnAttribute];
     const INDEXES: &'static [IndexDesc<'static>];
+    const SCHEDULED_REDUCER_NAME: Option<&'static str> = None;
+
     type InsertResult: sealed::InsertResult<T = Self>;
 
     /// Returns the ID of this table.

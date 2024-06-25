@@ -18,11 +18,11 @@ use quote::{format_ident, quote, quote_spanned, TokenStreamExt};
 use spacetimedb_primitives::ColumnAttribute;
 use std::collections::HashMap;
 use std::time::Duration;
-use syn::parse::{Parse, ParseStream};
+use syn::parse::{Parse, ParseStream, Parser as _};
 use syn::spanned::Spanned;
 use syn::{
-    parse_quote, token, BinOp, Expr, ExprBinary, ExprLit, ExprUnary, FnArg, Ident, ItemFn, ItemStruct, Member, Path,
-    Token, Type, TypePath, UnOp,
+    parse_quote, token, BinOp, DeriveInput, Expr, ExprBinary, ExprLit, ExprUnary, FnArg, Ident, ItemFn, ItemStruct,
+    Member, Path, Token, Type, TypePath, UnOp,
 };
 
 mod sym {
@@ -47,6 +47,9 @@ mod sym {
 
     /// Matches `sats`.
     pub const SATS: Symbol = Symbol("sats");
+
+    // Matches `scheduled="String"`.
+    pub const SCHEDULED: Symbol = Symbol("scheduled");
 
     /// Matches `unique`.
     pub const UNIQUE: Symbol = Symbol("unique");
@@ -103,7 +106,7 @@ pub fn spacetimedb(macro_args: proc_macro::TokenStream, item: proc_macro::TokenS
 /// On `item`, route the macro `input` to the various interpretations.
 fn route_input(input: MacroInput, item: TokenStream) -> syn::Result<TokenStream> {
     match input {
-        MacroInput::Table(public) => spacetimedb_table(item, public),
+        MacroInput::Table(public, scheduled) => spacetimedb_table(item, public, scheduled),
         MacroInput::Init => spacetimedb_init(item),
         MacroInput::Reducer(Some(span)) => Err(syn::Error::new(span, "`repeat` support has been removed")),
         MacroInput::Reducer(None) => spacetimedb_reducer(item),
@@ -126,7 +129,7 @@ fn duration_totokens(dur: Duration) -> TokenStream {
 
 /// Defines the input space of the `spacetimedb` macro.
 enum MacroInput {
-    Table(Option<Span>),
+    Table(Option<Span>, Option<Ident>),
     Init,
     Reducer(Option<Span>),
     Connect,
@@ -189,7 +192,24 @@ impl syn::parse::Parse for MacroInput {
                         kw::private => {}
                     })
                 }
-                Self::Table(public)
+
+                let mut scheduled = None;
+                comma_then_comma_delimited(input, || {
+                    match_tok!(match input {
+                        kw::scheduled => {
+                            let in_parens;
+                            syn::parenthesized!(in_parens in input);
+                            let in_parens = &in_parens;
+
+                            scheduled = Some(in_parens.parse::<Ident>()?);
+
+                            //scheduled = Some(in_parens.span());
+                        }
+                    });
+                    Ok(())
+                })?;
+
+                Self::Table(public, scheduled)
             }
             kw::init => Self::Init,
             kw::reducer => {
@@ -279,6 +299,7 @@ mod kw {
     syn::custom_keyword!(public);
     syn::custom_keyword!(repeat);
     syn::custom_keyword!(update);
+    syn::custom_keyword!(scheduled);
 }
 
 /// Generates a reducer in place of `item`.
@@ -436,12 +457,52 @@ struct Column<'a> {
     attr: ColumnAttribute,
 }
 
-fn spacetimedb_table(item: TokenStream, public: Option<Span>) -> syn::Result<TokenStream> {
+fn add_scheduled_fields(item: &mut DeriveInput) -> syn::Result<()> {
+    match &mut item.data {
+        syn::Data::Struct(ref mut struct_data) => match &mut struct_data.fields {
+            syn::Fields::Named(fields) => {
+                fields.named.extend([
+                    syn::Field::parse_named.parse2(quote! {#[autoinc]
+                    pub scheduled_id: u64 })?,
+                    syn::Field::parse_named
+                        .parse2(quote! { pub scheduled_at: spacetimedb::spacetimedb_lib::ScheduleAt })?,
+                ]);
+            }
+            _ => (),
+        },
+        _ => {
+            return Err(syn::Error::new(
+                item.span(),
+                "scheduled macro has to be used with structs ",
+            ))
+        }
+    }
+    Ok(())
+}
+
+// fn verify_reducer_signature(item: &DeriveInput) -> syn::Result<()> {
+//     let errmsg = "reducer should have at least 2 arguments: (identity: Identity, timestamp: u64, ...)";
+//     let ([arg1, arg2], args) = validate_reducer_args(&item.sig, errmsg)?;
+
+// }
+
+fn spacetimedb_table(item: TokenStream, public: Option<Span>, scheduled: Option<Ident>) -> syn::Result<TokenStream> {
     let public = public.map(|span| quote_spanned!(span => #[sats(public)]));
+    let mut item = syn::parse2::<DeriveInput>(item)?;
+    let mut scheduled_sats = None;
+    if scheduled.is_some() {
+        //    verify_reducer_signature(&item)?
+        add_scheduled_fields(&mut item)?;
+        scheduled_sats = scheduled.map(|reducer| {
+            let reducer_name = reducer.to_string();
+            quote!(#[sats(scheduled=#reducer_name)])
+        });
+    }
 
     Ok(quote! {
         #[derive(spacetimedb::TableType)]
         #public
+        #scheduled_sats
         #item
     })
 }
@@ -721,10 +782,19 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
             Span::call_site(),
         )
     });
+
+    let scheduled_constant = match sats_ty.scheduled {
+        Some(reducer_name) => quote!(const SCHEDULED_REDUCER_NAME: Option<&'static str> = Some(#reducer_name);),
+        None => quote!(
+            const SCHEDULED_REDUCER_NAME: Option<&'static str> = None;
+        ),
+    };
+
     let tabletype_impl = quote! {
         impl spacetimedb::TableType for #original_struct_ident {
             const TABLE_NAME: &'static str = #table_name;
             const TABLE_ACCESS: spacetimedb::sats::db::auth::StAccess = #table_access;
+            #scheduled_constant
             const COLUMN_ATTRS: &'static [spacetimedb::sats::db::attr::ColumnAttribute] = &[
                 #(spacetimedb::sats::db::attr::ColumnAttribute::#column_attrs),*
             ];
