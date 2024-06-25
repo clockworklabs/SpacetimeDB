@@ -1,0 +1,14 @@
+﻿{
+  Diagnostics: [
+    {
+      Id: STDB0006,
+      Title: [SpacetimeDB.Reducer] methods must return void,
+      Severity: Error,
+      WarningLevel: 0,
+      Location: : (21,7)-(21,10),
+      MessageFormat: Reducer method {0} returns {1} instead of void.,
+      Message: Reducer method ReducerWithNonVoidReturnType returns int instead of void.,
+      Category: SpacetimeDB
+    }
+  ]
+}

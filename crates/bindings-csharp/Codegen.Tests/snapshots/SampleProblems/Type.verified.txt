@@ -1,0 +1,54 @@
+﻿{
+  Diagnostics: [
+    {
+      Id: STDB0001,
+      Title: [SpacetimeDB.Type] enums cannot have explicit values,
+      Severity: Error,
+      WarningLevel: 0,
+      Location: : (10,14)-(10,17),
+      MessageFormat: {0}.{1} has an explicit value {2} which is not allowed in SpacetimeDB enums.,
+      Message: EnumWithExplicitValues.EnumVariant1 has an explicit value 1 which is not allowed in SpacetimeDB enums.,
+      Category: SpacetimeDB
+    },
+    {
+      Id: STDB0001,
+      Title: [SpacetimeDB.Type] enums cannot have explicit values,
+      Severity: Error,
+      WarningLevel: 0,
+      Location: : (11,14)-(11,17),
+      MessageFormat: {0}.{1} has an explicit value {2} which is not allowed in SpacetimeDB enums.,
+      Message: EnumWithExplicitValues.EnumVariant2 has an explicit value 2 which is not allowed in SpacetimeDB enums.,
+      Category: SpacetimeDB
+    },
+    {
+      Id: STDB0002,
+      Title: [SpacetimeDB.Type] enums are limited to 256 variants,
+      Severity: Error,
+      WarningLevel: 0,
+      Location: : (23,0)-(283,1),
+      MessageFormat: {0} has {1} variants which is more than the allowed 256 variants for SpacetimeDB enums.,
+      Message: EnumWithTooManyVariants has 257 variants which is more than the allowed 256 variants for SpacetimeDB enums.,
+      Category: SpacetimeDB
+    },
+    {
+      Id: STDB0004,
+      Title: Tagged enums cannot have instance fields,
+      Severity: Error,
+      WarningLevel: 0,
+      Location: : (17,12)-(17,36),
+      MessageFormat: {0}.{1} is an instance field, which are not permitted inside SpacetimeDB tagged enums.,
+      Message: TaggedEnumNotTupleLiteral.ForbiddenTaggedEnumField is an instance field, which are not permitted inside SpacetimeDB tagged enums.,
+      Category: SpacetimeDB
+    },
+    {
+      Id: STDB0005,
+      Title: Type parameters are not yet supported,
+      Severity: Error,
+      WarningLevel: 0,
+      Location: : (15,47)-(15,91),
+      MessageFormat: Type parameters {0} are not supported in SpacetimeDB types.,
+      Message: Type parameters <TForbiddenTypeParam1, TForbiddenTypeParam2> are not supported in SpacetimeDB types.,
+      Category: SpacetimeDB
+    }
+  ]
+}

@@ -12,10 +12,7 @@ public class GeneratorSnapshotTests
     private static string GetProjectDir([CallerFilePath] string path = "") =>
         Path.GetDirectoryName(path)!;
 
-    private readonly CSharpCompilation sampleCompilation;
-    private readonly CSharpCompilation modifiedCompilation;
-
-    public GeneratorSnapshotTests()
+    public static (CSharpCompilation, CSharpCompilation) ReadSample(string name)
     {
         var projectDir = GetProjectDir();
         var stdbAssemblies = ImmutableArray
@@ -28,7 +25,7 @@ public class GeneratorSnapshotTests
             .Select(name => $"{dotNetDir}/{name}.dll");
 
         var baseCompilation = CSharpCompilation.Create(
-            assemblyName: "Sample",
+            assemblyName: name,
             references: Enumerable
                 .Concat(dotNetAssemblies, stdbAssemblies)
                 .Select(assemblyPath => MetadataReference.CreateFromFile(assemblyPath)),
@@ -38,23 +35,29 @@ public class GeneratorSnapshotTests
             )
         );
 
-        var sampleCode = File.ReadAllText($"{projectDir}/Sample.cs");
-        sampleCompilation = baseCompilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(sampleCode));
+        var sampleCode = File.ReadAllText($"{projectDir}/{name}.cs");
+        var sampleCompilation = baseCompilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(sampleCode));
 
         // Add a comment to the end of each line to make the code modified with no functional changes.
         var modifiedCode = sampleCode.ReplaceLineEndings($"// Modified{Environment.NewLine}");
-        modifiedCompilation = baseCompilation.AddSyntaxTrees(
+        var modifiedCompilation = baseCompilation.AddSyntaxTrees(
             CSharpSyntaxTree.ParseText(modifiedCode)
         );
+
+        return (sampleCompilation, modifiedCompilation);
     }
 
     record struct StepOutput(string Key, IncrementalStepRunReason Reason, object Value);
 
     [Theory]
-    [InlineData(typeof(SpacetimeDB.Codegen.Module))]
-    [InlineData(typeof(SpacetimeDB.Codegen.Type))]
-    public async Task VerifyDriver(Type generatorType)
+    [InlineData(typeof(SpacetimeDB.Codegen.Module), "Sample")]
+    [InlineData(typeof(SpacetimeDB.Codegen.Type), "Sample")]
+    [InlineData(typeof(SpacetimeDB.Codegen.Module), "SampleProblems")]
+    [InlineData(typeof(SpacetimeDB.Codegen.Type), "SampleProblems")]
+    public async Task VerifyDriver(Type generatorType, string sampleName)
     {
+        var (sampleCompilation, modifiedCompilation) = ReadSample(sampleName);
+
         var generator = (IIncrementalGenerator)Activator.CreateInstance(generatorType)!;
         var driver = CSharpGeneratorDriver.Create(
             [generator.AsSourceGenerator()],
@@ -67,7 +70,7 @@ public class GeneratorSnapshotTests
         var driverAfterGen = driver.RunGenerators(sampleCompilation);
 
         // Verify the generated code against the snapshots.
-        await Verify(driverAfterGen).UseFileName(generatorType.Name);
+        await Verify(driverAfterGen).UseDirectory($"snapshots/{sampleName}").UseFileName(generatorType.Name);
 
         // Run again with a driver containing the cache and a trivially modified code to verify that the cache is working.
         var driverAfterRegen = driverAfterGen.RunGenerators(modifiedCompilation);

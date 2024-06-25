@@ -1,6 +1,7 @@
 namespace Codegen.Tests;
 
 using System.Runtime.CompilerServices;
+using Microsoft.CodeAnalysis;
 
 // Global Verify setup for all tests we might have.
 static class TestInit
