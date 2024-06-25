@@ -106,7 +106,7 @@ pub fn spacetimedb(macro_args: proc_macro::TokenStream, item: proc_macro::TokenS
 /// On `item`, route the macro `input` to the various interpretations.
 fn route_input(input: MacroInput, item: TokenStream) -> syn::Result<TokenStream> {
     match input {
-        MacroInput::Table{public, scheduled} => spacetimedb_table(item, public, scheduled),
+        MacroInput::Table { public, scheduled } => spacetimedb_table(item, public, scheduled),
         MacroInput::Init => spacetimedb_init(item),
         MacroInput::Reducer(Some(span)) => Err(syn::Error::new(span, "`repeat` support has been removed")),
         MacroInput::Reducer(None) => spacetimedb_reducer(item),
@@ -209,7 +209,7 @@ impl syn::parse::Parse for MacroInput {
                     Ok(())
                 })?;
 
-                Self::Table{public, scheduled}
+                Self::Table { public, scheduled }
             }
             kw::init => Self::Init,
             kw::reducer => {
@@ -461,14 +461,16 @@ fn spacetimedb_table(item: TokenStream, public: Option<Span>, scheduled: Option<
     let public = public.map(|span| quote_spanned!(span => #[sats(public)]));
 
     let output = if let Some(reducer) = scheduled {
-        let mut modified_item = syn::parse2::<DeriveInput>(item)?;
-        add_scheduled_fields(&mut modified_item)?;
         let reducer_name = reducer.to_string();
+        let mut modified_item = syn::parse2::<DeriveInput>(item)?;
+        let type_check = reducer_type_check(&modified_item, &reducer)?;
+        add_scheduled_fields(&mut modified_item)?;
         quote! {
             #[derive(spacetimedb::TableType)]
             #public
             #[sats(scheduled=#reducer_name)]
             #modified_item
+            #type_check
         }
     } else {
         quote! {
@@ -486,7 +488,7 @@ fn add_scheduled_fields(item: &mut DeriveInput) -> syn::Result<()> {
         syn::Data::Struct(ref mut struct_data) => match &mut struct_data.fields {
             syn::Fields::Named(fields) => {
                 fields.named.extend([
-                    syn::Field::parse_named.parse2(quote! {#[autoinc]
+                    syn::Field::parse_named.parse2(quote! {#[primarykey]
                     pub scheduled_id: u64 })?,
                     syn::Field::parse_named
                         .parse2(quote! { pub scheduled_at: spacetimedb::spacetimedb_lib::ScheduleAt })?,
@@ -504,11 +506,14 @@ fn add_scheduled_fields(item: &mut DeriveInput) -> syn::Result<()> {
     Ok(())
 }
 
-// fn reducer_type_check(item: &DeriveInput) -> syn::Result<(), syn::Error> {
-//     let errmsg = "reducer should have at least 2 arguments: (identity: Identity, timestamp: u64, ...)";
-//     let ([arg1, arg2], args) = validate_reducer_args(&item.sig, errmsg)?;
-
-// }
+fn reducer_type_check(item: &DeriveInput, reducer_name: &Ident) -> syn::Result<TokenStream> {
+    let struct_name = &item.ident;
+    Ok(quote! {
+        fn check_type(ctx: spacetimedb::ReducerContext, obj: #struct_name) {
+            let _ = #reducer_name(ctx, obj);
+        }
+    })
+}
 
 /// Generates code for treating this type as a table.
 ///

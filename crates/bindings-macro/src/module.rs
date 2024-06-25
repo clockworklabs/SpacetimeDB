@@ -114,7 +114,6 @@ pub(crate) fn extract_sats_type<'a>(
                 let value = meta.value()?;
                 let v = value.parse::<LitStr>()?;
                 scheduled = Some(v.value());
-                println!("scheduled redu {:?}", scheduled);
             } else {
                 return Err(meta.error("unknown sats attribute"));
             }
