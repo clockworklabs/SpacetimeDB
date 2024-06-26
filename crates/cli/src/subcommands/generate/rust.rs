@@ -71,6 +71,9 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
         AlgebraicType::Product(p) if p.is_address() => {
             write!(out, "Address")?;
         }
+        AlgebraicType::Product(p) if p.is_schedule_at() => {
+            write!(out, "ScheduleAt")?;
+        }
         AlgebraicType::Product(ProductType { elements }) => {
             print_comma_sep_braced(out, elements, |out: &mut W, elem: &ProductTypeElement| {
                 if let Some(name) = &elem.name {
@@ -171,7 +174,7 @@ const ALLOW_UNUSED_IMPORTS: &str = "#![allow(unused_imports)]";
 
 const SPACETIMEDB_IMPORTS: &[&str] = &[
     "use spacetimedb_sdk::{",
-    "\tAddress,",
+    "\tAddress, ScheduleAt,",
     "\tsats::{ser::Serialize, de::Deserialize},",
     "\ttable::{TableType, TableIter, TableWithPrimaryKey},",
     "\treducer::{Reducer, ReducerCallbackId, Status},",

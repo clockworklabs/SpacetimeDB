@@ -4,7 +4,9 @@ use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_sats::{
     algebraic_value::de::{ValueDeserializeError, ValueDeserializer},
     de::Deserialize as _,
-    impl_deserialize, impl_serialize, impl_st, AlgebraicType, AlgebraicValue,
+    impl_deserialize, impl_serialize, impl_st,
+    product_type::SCHEDULE_AT_TAG,
+    AlgebraicType, AlgebraicValue,
 };
 
 use crate::Timestamp;
@@ -42,7 +44,10 @@ pub enum ScheduleAt {
 
 impl ScheduleAt {
     pub fn get_type() -> AlgebraicType {
-        AlgebraicType::sum([Timestamp::get_type(), Duration::get_type()])
+        AlgebraicType::product([(
+            SCHEDULE_AT_TAG,
+            AlgebraicType::sum([Timestamp::get_type(), Duration::get_type()]),
+        )])
     }
 
     /// Converts the `ScheduleAt` to a `std::time::Duration` from now.
