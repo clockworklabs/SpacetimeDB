@@ -5,7 +5,7 @@
     <LangVersion>9</LangVersion>
     <Nullable>enable</Nullable>
     <AssemblyName>SpacetimeDB.BSATN.Runtime</AssemblyName>
-    <AssemblyVersion>0.10.0</AssemblyVersion>
+    <AssemblyVersion>0.10.1</AssemblyVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 

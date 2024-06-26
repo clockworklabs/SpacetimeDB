@@ -7,7 +7,7 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <AssemblyName>SpacetimeDB.BSATN.Codegen</AssemblyName>
-    <AssemblyVersion>0.10.0</AssemblyVersion>
+    <AssemblyVersion>0.10.1</AssemblyVersion>
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <!--
       We don't want to publish this package to NuGet to reduce maintenance cost
