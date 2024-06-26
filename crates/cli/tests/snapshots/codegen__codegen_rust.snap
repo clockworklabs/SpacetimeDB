@@ -1,5 +1,6 @@
 ---
 source: crates/cli/tests/codegen.rs
+assertion_line: 31
 expression: outfiles
 ---
 "add_player_reducer.rs" = '''
@@ -7,7 +8,7 @@ expression: outfiles
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
-	Address,
+	Address, ScheduleAt,
 	sats::{ser::Serialize, de::Deserialize},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
@@ -76,7 +77,7 @@ pub fn remove_on_add_player(id: ReducerCallbackId<AddPlayerArgs>) {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
-	Address,
+	Address, ScheduleAt,
 	sats::{ser::Serialize, de::Deserialize},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
@@ -145,7 +146,7 @@ pub fn remove_on_add_private(id: ReducerCallbackId<AddPrivateArgs>) {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
-	Address,
+	Address, ScheduleAt,
 	sats::{ser::Serialize, de::Deserialize},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
@@ -214,7 +215,7 @@ pub fn remove_on_delete_player(id: ReducerCallbackId<DeletePlayerArgs>) {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
-	Address,
+	Address, ScheduleAt,
 	sats::{ser::Serialize, de::Deserialize},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
@@ -283,7 +284,7 @@ pub fn remove_on_delete_players_by_name(id: ReducerCallbackId<DeletePlayersByNam
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
-	Address,
+	Address, ScheduleAt,
 	sats::{ser::Serialize, de::Deserialize},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
@@ -420,7 +421,7 @@ where
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
-	Address,
+	Address, ScheduleAt,
 	sats::{ser::Serialize, de::Deserialize},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
@@ -442,7 +443,7 @@ pub enum Namespace.testC {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
-	Address,
+	Address, ScheduleAt,
 	sats::{ser::Serialize, de::Deserialize},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
@@ -465,7 +466,7 @@ pub enum Namespace.testF {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
-	Address,
+	Address, ScheduleAt,
 	sats::{ser::Serialize, de::Deserialize},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
@@ -516,7 +517,7 @@ impl PkMultiIdentity {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
-	Address,
+	Address, ScheduleAt,
 	sats::{ser::Serialize, de::Deserialize},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
@@ -553,7 +554,7 @@ impl Point {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
-	Address,
+	Address, ScheduleAt,
 	sats::{ser::Serialize, de::Deserialize},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
@@ -585,7 +586,7 @@ impl Private {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
-	Address,
+	Address, ScheduleAt,
 	sats::{ser::Serialize, de::Deserialize},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
@@ -647,7 +648,7 @@ pub fn remove_on_query_private(id: ReducerCallbackId<QueryPrivateArgs>) {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
-	Address,
+	Address, ScheduleAt,
 	sats::{ser::Serialize, de::Deserialize},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
@@ -716,7 +717,7 @@ pub fn remove_on_repeating_test(id: ReducerCallbackId<RepeatingTestArgs>) {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
-	Address,
+	Address, ScheduleAt,
 	sats::{ser::Serialize, de::Deserialize},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
@@ -758,7 +759,7 @@ impl TestA {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
-	Address,
+	Address, ScheduleAt,
 	sats::{ser::Serialize, de::Deserialize},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
@@ -777,7 +778,7 @@ pub struct TestB {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
-	Address,
+	Address, ScheduleAt,
 	sats::{ser::Serialize, de::Deserialize},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
@@ -806,7 +807,7 @@ impl TestD {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
-	Address,
+	Address, ScheduleAt,
 	sats::{ser::Serialize, de::Deserialize},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
@@ -853,7 +854,7 @@ impl TestE {
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
-	Address,
+	Address, ScheduleAt,
 	sats::{ser::Serialize, de::Deserialize},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
