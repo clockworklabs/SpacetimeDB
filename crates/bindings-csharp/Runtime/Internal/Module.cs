@@ -65,7 +65,12 @@ public static partial class Module
     }
 
     [SpacetimeDB.Type]
-    public partial struct TableDef(string tableName, ColumnDefWithAttrs[] columns, bool isPublic)
+    public partial struct TableDef(
+        string tableName,
+        ColumnDefWithAttrs[] columns,
+        bool isPublic,
+        string? scheduledReducer
+    )
     {
         string TableName = tableName;
         ColumnDef[] Columns = columns.Select(col => col.ColumnDef).ToArray();
@@ -87,6 +92,8 @@ public static partial class Module
 
         // "public" | "private"
         string TableAccess = isPublic ? "public" : "private";
+
+        string? ScheduledReducer = scheduledReducer;
     }
 
     [SpacetimeDB.Type]

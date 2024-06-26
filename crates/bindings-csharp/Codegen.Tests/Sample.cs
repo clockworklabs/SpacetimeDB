@@ -99,3 +99,31 @@ namespace Test
         }
     }
 }
+
+public static partial class Timers
+{
+    [SpacetimeDB.Table(Scheduled = nameof(SendScheduledMessage))]
+    public partial struct SendMessageTimer
+    {
+        public string Text;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void SendScheduledMessage(SendMessageTimer arg)
+    {
+        // verify that fields were auto-added
+        ulong id = arg.ScheduledId;
+        SpacetimeDB.ScheduleAt scheduleAt = arg.ScheduledAt;
+        string text = arg.Text;
+    }
+
+    [SpacetimeDB.Reducer(ReducerKind.Init)]
+    public static void Init(ReducerContext ctx)
+    {
+        new SendMessageTimer
+        {
+            Text = "bot sending a message",
+            ScheduledAt = new ScheduleAt.Time(ctx.Time.AddSeconds(10))
+        }.Insert();
+    }
+}
