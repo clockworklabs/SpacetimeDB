@@ -92,7 +92,6 @@ impl SchedulerStarter {
                 let schedule_id = get_schedule_id(&tx, &self.db, table_id, &scheduled_row)?;
                 let schedule_at = get_schedule_at(&tx, &self.db, table_id, &scheduled_row)?;
                 let duration = schedule_at.to_duration_from_now();
-                println!("duration: {:?}", duration);
                 queue.insert(ScheduledReducerId { table_id, schedule_id }, duration);
             }
         }
@@ -316,7 +315,7 @@ impl SchedulerActor {
                 reducer: reducer_name,
                 bsatn_args: reducer_arg_bsatn,
             },
-            self.handle_repeated_schedule(tx, db, table_id, schedule_id, &schedule_row)?,
+            self.handle_repeated_schedule(tx, db, table_id, schedule_id, schedule_row)?,
         ))
     }
 
@@ -362,13 +361,12 @@ fn get_schedule_id(tx: &TxId, db: &RelationalDB, table_id: TableId, schedule_row
         .ok_or(anyhow!("SCHEDULE_ID_FIELD not found"))?;
 
     schedule_row
-        .read_col::<u64>(schedule_id_pos)?
-        .try_into()
+        .read_col::<u64>(schedule_id_pos)
         .map_err(|_| anyhow!("Error reading schedule_at"))
 }
 
 /// Helper to get schedule_row with `MutTxId`
-fn get_schedule_row_mut<'a, 'b>(
+fn get_schedule_row_mut<'a>(
     ctx: &'a ExecutionContext,
     tx: &'a MutTxId,
     db: &'a RelationalDB,
@@ -380,7 +378,7 @@ fn get_schedule_row_mut<'a, 'b>(
         .get_column_id_by_name(SCHEDULED_ID_FIELD)
         .ok_or(anyhow!("SCHEDULE_ID_FIELD not found"))?;
 
-    db.iter_by_col_eq_mut(&ctx, &tx, table_id, schedule_id_pos, &schedule_id.into())?
+    db.iter_by_col_eq_mut(ctx, tx, table_id, schedule_id_pos, &schedule_id.into())?
         .next()
         .ok_or(anyhow!("scheduler not found in rdb"))
 }
