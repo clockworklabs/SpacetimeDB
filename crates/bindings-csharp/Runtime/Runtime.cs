@@ -23,15 +23,6 @@ public class ReducerContext
     }
 }
 
-public class ScheduleToken
-{
-    private readonly FFI.ScheduleToken handle;
-
-    internal ScheduleToken(FFI.ScheduleToken handle) => this.handle = handle;
-
-    public void Cancel() => FFI._cancel_reducer(handle);
-}
-
 // [SpacetimeDB.Type] - we have custom representation of time in microseconds, so implementing BSATN manually
 public abstract partial record ScheduleAt
     : SpacetimeDB.TaggedEnum<(DateTimeOffset Time, TimeSpan Interval)>

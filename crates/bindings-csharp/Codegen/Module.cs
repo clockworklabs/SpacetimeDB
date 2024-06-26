@@ -312,7 +312,7 @@ public class Module : IIncrementalGenerator
 
         var tableNames = tables.Select((t, ct) => t.FullName).Collect();
 
-        var reducers = context
+        var addReducers = context
             .SyntaxProvider.ForAttributeWithMetadataName(
                 fullyQualifiedMetadataName: "SpacetimeDB.ReducerAttribute",
                 predicate: (node, ct) => true, // already covered by attribute restrictions
@@ -337,9 +337,7 @@ public class Module : IIncrementalGenerator
                     return new ReducerDeclaration(methodSyntax, method, exportName);
                 }
             )
-            .WithTrackingName("SpacetimeDB.Reducer.Parse");
-
-        var addReducers = reducers
+            .WithTrackingName("SpacetimeDB.Reducer.Parse")
             .Select(
                 (r, ct) =>
                     (
@@ -423,25 +421,5 @@ public class Module : IIncrementalGenerator
                 );
             }
         );
-
-        reducers
-            .Select(
-                (r, ct) =>
-                    new KeyValuePair<string, string>(
-                        r.FullName,
-                        r.Scope.GenerateExtensions(
-                            $@"
-                            public static SpacetimeDB.ScheduleToken Schedule{r.Name}(DateTimeOffset time{string.Join("", r.GetNonContextArgs().Select(a => $", {a.Type} {a.Name}"))}) {{
-                                using var stream = new MemoryStream();
-                                using var writer = new BinaryWriter(stream);
-                                {string.Join("\n", r.GetNonContextArgs().Select(a => $"new {a.TypeInfo}().Write(writer, {a.Name});"))}
-                                return SpacetimeDB.Internal.IReducer.Schedule(""{r.ExportName}"", stream, time);
-                            }}
-                        "
-                        )
-                    )
-            )
-            .WithTrackingName("SpacetimeDB.Reducer.GenerateSchedule")
-            .RegisterSourceOutputs(context);
     }
 }

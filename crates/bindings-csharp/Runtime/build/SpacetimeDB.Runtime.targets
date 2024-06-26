@@ -14,8 +14,6 @@
     <WasmImport Include="$(SpacetimeNamespace)!_iter_start_filtered" />
     <WasmImport Include="$(SpacetimeNamespace)!_iter_next" />
     <WasmImport Include="$(SpacetimeNamespace)!_iter_drop" />
-    <WasmImport Include="$(SpacetimeNamespace)!_schedule_reducer" />
-    <WasmImport Include="$(SpacetimeNamespace)!_cancel_reducer" />
     <WasmImport Include="$(SpacetimeNamespace)!_buffer_len" />
     <WasmImport Include="$(SpacetimeNamespace)!_buffer_consume" />
     <WasmImport Include="$(SpacetimeNamespace)!_buffer_alloc" />

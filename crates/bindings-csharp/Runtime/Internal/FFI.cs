@@ -108,12 +108,6 @@ internal static partial class FFI
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public readonly struct ScheduleToken
-    {
-        private readonly ulong schedule_token;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
     public readonly record struct RowIter(uint Handle)
     {
         public static readonly RowIter INVALID = new(uint.MaxValue);
@@ -197,19 +191,6 @@ internal static partial class FFI
         [In] byte[] message,
         uint message_len
     );
-
-    [LibraryImport(StdbNamespace)]
-    public static partial void _schedule_reducer(
-        [In] byte[] name,
-        uint name_len,
-        [In] byte[] args,
-        uint args_len,
-        ulong time,
-        out ScheduleToken out_
-    );
-
-    [LibraryImport(StdbNamespace)]
-    public static partial void _cancel_reducer(ScheduleToken schedule_token_handle);
 
     [LibraryImport(StdbNamespace)]
     public static partial uint _buffer_len(Buffer buf_handle);
