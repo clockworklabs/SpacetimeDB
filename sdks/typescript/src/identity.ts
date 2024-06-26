@@ -18,6 +18,10 @@ function uint8ArrayToHexString(array: Uint8Array): string {
 export class Identity {
   private data: string;
 
+  public get __identity_bytes() {
+    return this.toUint8Array();
+  }
+
   /**
    * Creates a new `Identity`.
    */

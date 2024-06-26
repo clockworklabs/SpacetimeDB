@@ -4,6 +4,10 @@
 export class Address {
   private data: Uint8Array;
 
+  public get __address_bytes() {
+    return this.toUint8Array();
+  }
+
   /**
    * Creates a new `Address`.
    */
@@ -15,8 +19,7 @@ export class Address {
     return this.data.every((b) => b == 0);
   }
 
-  static nullIfZero(data: Uint8Array): Address | null {
-    let addr = new Address(data);
+  static nullIfZero(addr: Address): Address | null {
     if (addr.isZero()) {
       return null;
     } else {

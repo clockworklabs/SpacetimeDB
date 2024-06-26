@@ -2,7 +2,7 @@ import { EventEmitter } from "events";
 import { AlgebraicValue, DatabaseTable } from "./spacetimedb";
 import OperationsMap from "./operations_map";
 import { ReducerEvent } from "./reducer_event";
-import { BinaryAdapter, JSONAdapter } from "./algebraic_value";
+import { BinaryAdapter } from "./algebraic_value";
 import BinaryReader from "./binary_reader";
 
 class DBOp {
@@ -25,7 +25,7 @@ export class TableOperation {
    */
   public type: "insert" | "delete";
   public rowPk: string;
-  public row: Uint8Array | any;
+  public row: Uint8Array;
 
   constructor(type: "insert" | "delete", rowPk: string, row: Uint8Array | any) {
     this.type = type;
@@ -83,17 +83,13 @@ export class Table {
   }
 
   applyOperations = (
-    protocol: "binary" | "json",
     operations: TableOperation[],
     reducerEvent: ReducerEvent | undefined
   ) => {
     let dbOps: DBOp[] = [];
     for (let operation of operations) {
       const pk: string = operation.rowPk;
-      const adapter =
-        protocol === "binary"
-          ? new BinaryAdapter(new BinaryReader(operation.row))
-          : new JSONAdapter(operation.row);
+      const adapter = new BinaryAdapter(new BinaryReader(operation.row));
       const entry = AlgebraicValue.deserialize(
         this.entityClass.getAlgebraicType(),
         adapter

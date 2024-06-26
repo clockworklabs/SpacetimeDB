@@ -1,10 +1,15 @@
 import { SpacetimeDBClient, ReducerEvent } from "../src/spacetimedb";
+import { BinarySerializer } from "../src/serializer";
 import { Identity } from "../src/identity";
+import { Address } from "../src/address";
+import { AlgebraicType, BuiltinType } from "../src/algebraic_type";
 import WebsocketTestAdapter from "../src/websocket_test_adapter";
 import Player from "./types/player";
 import User from "./types/user";
 import Point from "./types/point";
 import CreatePlayerReducer from "./types/create_player_reducer";
+import * as ws from "../src/client_api";
+import { parseValue } from "../src/algebraic_value";
 import { __SPACETIMEDB__ } from "../src/spacetimedb";
 import { ClientDB } from "../src/client_db";
 
@@ -19,18 +24,40 @@ beforeEach(() => {
   __SPACETIMEDB__.spacetimeDBClient = undefined;
 });
 
+function encodePlayer(value: Player): ws.EncodedValue {
+  const encoder = new BinarySerializer();
+  encoder.write(Player.getAlgebraicType(), value);
+  return ws.EncodedValue.Binary(encoder.args());
+}
+
+function encodeUser(value: User): ws.EncodedValue {
+  const encoder = new BinarySerializer();
+  encoder.write(User.getAlgebraicType(), value);
+  return ws.EncodedValue.Binary(encoder.args());
+}
+
+function encodeCreatePlayerArgs(
+  name: string,
+  location: Point
+): ws.EncodedValue {
+  const encoder = new BinarySerializer();
+  encoder.write(
+    AlgebraicType.createPrimitiveType(BuiltinType.Type.String),
+    name
+  );
+  encoder.write(Point.getAlgebraicType(), location);
+  return ws.EncodedValue.Binary(encoder.args());
+}
+
 describe("SpacetimeDBClient", () => {
   test("auto subscribe on connect", async () => {
     const client = new SpacetimeDBClient(
       "ws://127.0.0.1:1234",
       "db",
-      undefined,
-      "json"
+      undefined
     );
     const wsAdapter = new WebsocketTestAdapter();
-    client._setCreateWSFn((_url: string, _protocol: string) => {
-      return wsAdapter;
-    });
+    client._setCreateWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter));
 
     client.subscribe("SELECT * FROM Player");
     client.subscribe(["SELECT * FROM Position", "SELECT * FROM Coin"]);
@@ -42,28 +69,27 @@ describe("SpacetimeDBClient", () => {
     const messages = wsAdapter.messageQueue;
     expect(messages.length).toBe(1);
 
-    const message: object = JSON.parse(messages[0]);
-    expect(message).toHaveProperty("subscribe");
+    const message: ws.ClientMessage = parseValue(ws.ClientMessage, messages[0]);
+    expect(message).toHaveProperty("tag", "Subscribe");
+
+    const subscribeMessage = message.value as ws.Subscribe;
 
     const expected = [
       "SELECT * FROM Player",
       "SELECT * FROM Position",
       "SELECT * FROM Coin",
     ];
-    expect(message["subscribe"]["query_strings"]).toEqual(expected);
+    expect(subscribeMessage.queryStrings).toEqual(expected);
   });
 
   test("call onConnect callback after getting an identity", async () => {
     const client = new SpacetimeDBClient(
       "ws://127.0.0.1:1234",
       "db",
-      undefined,
-      "json"
+      undefined
     );
     const wsAdapter = new WebsocketTestAdapter();
-    client._setCreateWSFn((_url: string, _protocol: string) => {
-      return wsAdapter;
-    });
+    client._setCreateWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter));
 
     let called = false;
     client.onConnect(() => {
@@ -73,15 +99,14 @@ describe("SpacetimeDBClient", () => {
     await client.connect();
 
     wsAdapter.acceptConnection();
-    const tokenMessage = {
-      data: {
-        IdentityToken: {
-          identity: "an-identity",
-          token: "a-token",
-          address: "00FF00",
-        },
-      },
-    };
+
+    const tokenMessage = ws.ServerMessage.IdentityToken(
+      new ws.IdentityToken(
+        new Identity("an-identity"),
+        "a-token",
+        Address.random()
+      )
+    );
     wsAdapter.sendToClient(tokenMessage);
 
     expect(called).toBeTruthy();
@@ -91,13 +116,10 @@ describe("SpacetimeDBClient", () => {
     const client = new SpacetimeDBClient(
       "ws://127.0.0.1:1234",
       "db",
-      undefined,
-      "json"
+      undefined
     );
     const wsAdapter = new WebsocketTestAdapter();
-    client._setCreateWSFn((_url: string, _protocol: string) => {
-      return wsAdapter;
-    });
+    client._setCreateWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter));
 
     let called = false;
     client.onConnect(() => {
@@ -107,15 +129,13 @@ describe("SpacetimeDBClient", () => {
     await client.connect();
     wsAdapter.acceptConnection();
 
-    const tokenMessage = {
-      data: {
-        IdentityToken: {
-          identity: "an-identity",
-          token: "a-token",
-          address: "00FF00",
-        },
-      },
-    };
+    const tokenMessage = ws.ServerMessage.IdentityToken(
+      new ws.IdentityToken(
+        new Identity("an-identity"),
+        "a-token",
+        Address.random()
+      )
+    );
     wsAdapter.sendToClient(tokenMessage);
 
     type Insert = { player: Player; reducerEvent: ReducerEvent | undefined };
@@ -139,77 +159,70 @@ describe("SpacetimeDBClient", () => {
       }
     );
 
-    const subscriptionMessage = {
-      SubscriptionUpdate: {
-        table_updates: [
-          {
-            table_id: 35,
-            table_name: "Player",
-            table_row_operations: [
-              {
-                op: "insert",
-                row: ["player-1", "drogus", [0, 0]],
-              },
-            ],
-          },
-        ],
-      },
-    };
-    wsAdapter.sendToClient({ data: subscriptionMessage });
+    const subscriptionMessage = ws.ServerMessage.InitialSubscription(
+      new ws.InitialSubscription(
+        new ws.DatabaseUpdate([
+          new ws.TableUpdate(
+            35,
+            "Player",
+            [],
+            [encodePlayer(new Player("player-1", "drogus", new Point(0, 0)))]
+          ),
+        ]),
+        0,
+        BigInt(0)
+      )
+    );
+    wsAdapter.sendToClient(subscriptionMessage);
 
     expect(inserts).toHaveLength(1);
     expect(inserts[0].player.ownerId).toBe("player-1");
     expect(inserts[0].reducerEvent).toBe(undefined);
 
-    const transactionUpdate = {
-      TransactionUpdate: {
-        event: {
-          timestamp: 1681391805281203,
-          status: "committed",
-          caller_identity: "00FF01",
-          caller_address: "00FF00",
-          function_call: {
-            reducer: "create_player",
-            args: '["A Player",[0.2, 0.3]]',
-          },
-          energy_quanta_used: 33841000,
-          message: "a message",
-        },
-        subscription_update: {
-          table_updates: [
-            {
-              table_id: 35,
-              table_name: "Player",
-              table_row_operations: [
-                {
-                  op: "insert",
-                  row: ["player-2", "drogus", [0, 0]],
-                },
-              ],
-            },
-          ],
-        },
-      },
-    };
-    wsAdapter.sendToClient({ data: transactionUpdate });
+    const transactionUpdate = ws.ServerMessage.TransactionUpdate(
+      new ws.TransactionUpdate(
+        ws.UpdateStatus.Committed(
+          new ws.DatabaseUpdate([
+            new ws.TableUpdate(
+              35,
+              "Player",
+              [],
+              [encodePlayer(new Player("player-2", "drogus", new Point(2, 3)))]
+            ),
+          ])
+        ),
+        new ws.Timestamp(BigInt(1681391805281203)),
+        Identity.fromString("00ff01"),
+        Address.random(),
+        new ws.ReducerCallInfo(
+          "create_player",
+          0,
+          encodeCreatePlayerArgs("A Player", new Point(2, 3)),
+          0
+        ),
+        new ws.EnergyQuanta(BigInt(33841000)),
+        BigInt(1234567890)
+      )
+    );
+    wsAdapter.sendToClient(transactionUpdate);
 
     expect(inserts).toHaveLength(2);
     expect(inserts[1].player.ownerId).toBe("player-2");
     expect(inserts[1].reducerEvent?.reducerName).toBe("create_player");
     expect(inserts[1].reducerEvent?.status).toBe("committed");
-    expect(inserts[1].reducerEvent?.message).toBe("a message");
+    expect(inserts[1].reducerEvent?.message).toBe("");
     expect(inserts[1].reducerEvent?.callerIdentity).toEqual(
-      Identity.fromString("00FF01")
+      Identity.fromString("00ff01")
     );
     expect(inserts[1].reducerEvent?.args).toEqual([
       "A Player",
-      new Point(0.2, 0.3),
+      new Point(2, 3),
     ]);
 
     expect(reducerCallbackLog).toHaveLength(1);
 
     expect(reducerCallbackLog[0]["reducerEvent"]["callerIdentity"]).toEqual(
-      Identity.fromString("00FF01")
+      Identity.fromString("00ff01")
     );
   });
 
@@ -217,13 +230,10 @@ describe("SpacetimeDBClient", () => {
     const client = new SpacetimeDBClient(
       "ws://127.0.0.1:1234",
       "db",
-      undefined,
-      "json"
+      undefined
     );
     const wsAdapter = new WebsocketTestAdapter();
-    client._setCreateWSFn((_url: string, _protocol: string) => {
-      return wsAdapter;
-    });
+    client._setCreateWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter));
 
     let called = false;
     client.onConnect(() => {
@@ -233,15 +243,13 @@ describe("SpacetimeDBClient", () => {
     await client.connect();
     wsAdapter.acceptConnection();
 
-    const tokenMessage = {
-      data: {
-        IdentityToken: {
-          identity: "an-identity",
-          token: "a-token",
-          address: "00FF00",
-        },
-      },
-    };
+    const tokenMessage = ws.ServerMessage.IdentityToken(
+      new ws.IdentityToken(
+        new Identity("an-identity"),
+        "a-token",
+        Address.random()
+      )
+    );
     wsAdapter.sendToClient(tokenMessage);
 
     const updates: { oldPlayer: Player; newPlayer: Player }[] = [];
@@ -252,67 +260,57 @@ describe("SpacetimeDBClient", () => {
       });
     });
 
-    const subscriptionMessage = {
-      SubscriptionUpdate: {
-        table_updates: [
-          {
-            table_id: 35,
-            table_name: "Player",
-            table_row_operations: [
-              {
-                op: "delete",
-                row: ["player-1", "drogus", [0, 0]],
-              },
-              {
-                op: "insert",
-                row: ["player-1", "mr.drogus", [0, 0]],
-              },
-            ],
-          },
-        ],
-      },
-    };
-    wsAdapter.sendToClient({ data: subscriptionMessage });
+    const subscriptionMessage = ws.ServerMessage.InitialSubscription(
+      new ws.InitialSubscription(
+        new ws.DatabaseUpdate([
+          new ws.TableUpdate(
+            35,
+            "Player",
+            // FIXME: this test is evil: an initial subscription can never contain deletes or updates.
+            [encodePlayer(new Player("player-1", "drogus", new Point(0, 0)))],
+            [encodePlayer(new Player("player-1", "mr.drogus", new Point(0, 0)))]
+          ),
+        ]),
+        0,
+        BigInt(1234567890)
+      )
+    );
+    wsAdapter.sendToClient(subscriptionMessage);
 
     expect(updates).toHaveLength(1);
     expect(updates[0]["oldPlayer"].name).toBe("drogus");
     expect(updates[0]["newPlayer"].name).toBe("mr.drogus");
 
-    const transactionUpdate = {
-      TransactionUpdate: {
-        event: {
-          timestamp: 1681391805281203,
-          status: "committed",
-          caller_identity: "00FF01",
-          caller_address: "00FF00",
-          function_call: {
-            reducer: "create_player",
-            args: '["A Player",[0.2, 0.3]]',
-          },
-          energy_quanta_used: 33841000,
-          message: "",
-        },
-        subscription_update: {
-          table_updates: [
-            {
-              table_id: 35,
-              table_name: "Player",
-              table_row_operations: [
-                {
-                  op: "delete",
-                  row: ["player-2", "Jaime", [0, 0]],
-                },
-                {
-                  op: "insert",
-                  row: ["player-2", "Kingslayer", [0, 0]],
-                },
-              ],
-            },
-          ],
-        },
-      },
-    };
-    wsAdapter.sendToClient({ data: transactionUpdate });
+    const transactionUpdate = ws.ServerMessage.TransactionUpdate(
+      new ws.TransactionUpdate(
+        ws.UpdateStatus.Committed(
+          new ws.DatabaseUpdate([
+            new ws.TableUpdate(
+              35,
+              "Player",
+              [encodePlayer(new Player("player-2", "Jaime", new Point(0, 0)))],
+              [
+                encodePlayer(
+                  new Player("player-2", "Kingslayer", new Point(0, 0))
+                ),
+              ]
+            ),
+          ])
+        ),
+        new ws.Timestamp(BigInt(1681391805281203)),
+        new Identity("00ff01"),
+        Address.random(),
+        new ws.ReducerCallInfo(
+          "create_player",
+          0,
+          encodeCreatePlayerArgs("A Player", new Point(2, 3)),
+          0
+        ),
+        new ws.EnergyQuanta(BigInt(33841000)),
+        BigInt(1234567890)
+      )
+    );
+    wsAdapter.sendToClient(transactionUpdate);
 
     expect(updates).toHaveLength(2);
     expect(updates[1]["oldPlayer"].name).toBe("Jaime");
@@ -323,13 +321,10 @@ describe("SpacetimeDBClient", () => {
     const client = new SpacetimeDBClient(
       "ws://127.0.0.1:1234",
       "db",
-      undefined,
-      "json"
+      undefined
     );
     const wsAdapter = new WebsocketTestAdapter();
-    client._setCreateWSFn((_url: string, _protocol: string) => {
-      return wsAdapter;
-    });
+    client._setCreateWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter));
 
     await client.connect();
     wsAdapter.acceptConnection();
@@ -346,37 +341,32 @@ describe("SpacetimeDBClient", () => {
       callbackLog.push("CreatePlayerReducer");
     });
 
-    const transactionUpdate = {
-      TransactionUpdate: {
-        event: {
-          timestamp: 1681391805281203,
-          status: "committed",
-          caller_identity: "00FF01",
-          caller_address: "00FF00",
-          function_call: {
-            reducer: "create_player",
-            args: '["A Player",[0.2, 0.3]]',
-          },
-          energy_quanta_used: 33841000,
-          message: "a message",
-        },
-        subscription_update: {
-          table_updates: [
-            {
-              table_id: 35,
-              table_name: "Player",
-              table_row_operations: [
-                {
-                  op: "insert",
-                  row: ["player-2", "foo", [0, 0]],
-                },
-              ],
-            },
-          ],
-        },
-      },
-    };
-    wsAdapter.sendToClient({ data: transactionUpdate });
+    const transactionUpdate = ws.ServerMessage.TransactionUpdate(
+      new ws.TransactionUpdate(
+        ws.UpdateStatus.Committed(
+          new ws.DatabaseUpdate([
+            new ws.TableUpdate(
+              35,
+              "Player",
+              [],
+              [encodePlayer(new Player("player-2", "foo", new Point(0, 0)))]
+            ),
+          ])
+        ),
+        new ws.Timestamp(BigInt(1681391805281203)),
+        new Identity("00ff01"),
+        Address.random(),
+        new ws.ReducerCallInfo(
+          "create_player",
+          0,
+          encodeCreatePlayerArgs("A Player", new Point(2, 3)),
+          0
+        ),
+        new ws.EnergyQuanta(BigInt(33841000)),
+        BigInt(1234567890)
+      )
+    );
+    wsAdapter.sendToClient(transactionUpdate);
 
     expect(callbackLog).toEqual(["Player", "CreatePlayerReducer"]);
   });
@@ -385,13 +375,10 @@ describe("SpacetimeDBClient", () => {
     const client = new SpacetimeDBClient(
       "ws://127.0.0.1:1234",
       "db",
-      undefined,
-      "json"
+      undefined
     );
     const wsAdapter = new WebsocketTestAdapter();
-    client._setCreateWSFn((_url: string, _protocol: string) => {
-      return wsAdapter;
-    });
+    client._setCreateWSFn(wsAdapter.createWebSocketFn.bind(wsAdapter));
 
     let called = false;
     client.onConnect(() => {
@@ -401,15 +388,13 @@ describe("SpacetimeDBClient", () => {
     await client.connect();
     wsAdapter.acceptConnection();
 
-    const tokenMessage = {
-      data: {
-        IdentityToken: {
-          identity: "an-identity",
-          token: "a-token",
-          address: "00FF00",
-        },
-      },
-    };
+    const tokenMessage = ws.ServerMessage.IdentityToken(
+      new ws.IdentityToken(
+        new Identity("an-identity"),
+        "a-token",
+        Address.random()
+      )
+    );
     wsAdapter.sendToClient(tokenMessage);
 
     const updates: { oldUser: User; newUser: User }[] = [];
@@ -420,79 +405,91 @@ describe("SpacetimeDBClient", () => {
       });
     });
 
-    const subscriptionMessage = {
-      SubscriptionUpdate: {
-        table_updates: [
-          {
-            table_id: 35,
-            table_name: "User",
-            table_row_operations: [
-              {
-                op: "delete",
-                row: [
-                  "41db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008",
-                  "drogus",
-                ],
-              },
-              {
-                op: "insert",
-                row: [
-                  "41db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008",
-                  "mr.drogus",
-                ],
-              },
+    const subscriptionMessage = ws.ServerMessage.InitialSubscription(
+      new ws.InitialSubscription(
+        new ws.DatabaseUpdate([
+          new ws.TableUpdate(
+            35,
+            "User",
+            // pgoldman 2024-06-25: This is weird, `InitialSubscription`s aren't supposed to contain deletes or updates.
+            [
+              encodeUser(
+                new User(
+                  new Identity(
+                    "41db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008"
+                  ),
+                  "drogus"
+                )
+              ),
             ],
-          },
-        ],
-      },
-    };
-    wsAdapter.sendToClient({ data: subscriptionMessage });
+            [
+              encodeUser(
+                new User(
+                  new Identity(
+                    "41db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008"
+                  ),
+                  "mr.drogus"
+                )
+              ),
+            ]
+          ),
+        ]),
+        0,
+        BigInt(1234567890)
+      )
+    );
+
+    wsAdapter.sendToClient(subscriptionMessage);
 
     expect(updates).toHaveLength(1);
     expect(updates[0]["oldUser"].username).toBe("drogus");
     expect(updates[0]["newUser"].username).toBe("mr.drogus");
 
-    const transactionUpdate = {
-      TransactionUpdate: {
-        event: {
-          timestamp: 1681391805281203,
-          status: "committed",
-          caller_identity: "00FF01",
-          caller_address: "00FF00",
-          function_call: {
-            reducer: "create_player",
-            args: '["A User",[0.2, 0.3]]',
-          },
-          energy_quanta_used: 33841000,
-          message: "",
-        },
-        subscription_update: {
-          table_updates: [
-            {
-              table_id: 35,
-              table_name: "User",
-              table_row_operations: [
-                {
-                  op: "delete",
-                  row: [
-                    "11db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008",
-                    "jaime",
-                  ],
-                },
-                {
-                  op: "insert",
-                  row: [
-                    "11db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008",
-                    "kingslayer",
-                  ],
-                },
+    const transactionUpdate = ws.ServerMessage.TransactionUpdate(
+      new ws.TransactionUpdate(
+        ws.UpdateStatus.Committed(
+          new ws.DatabaseUpdate([
+            new ws.TableUpdate(
+              35,
+              "User",
+              [
+                encodeUser(
+                  new User(
+                    new Identity(
+                      "11db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008"
+                    ),
+                    "jaime"
+                  )
+                ),
               ],
-            },
-          ],
-        },
-      },
-    };
-    wsAdapter.sendToClient({ data: transactionUpdate });
+              [
+                encodeUser(
+                  new User(
+                    new Identity(
+                      "11db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008"
+                    ),
+                    "kingslayer"
+                  )
+                ),
+              ]
+            ),
+          ])
+        ),
+        new ws.Timestamp(BigInt(1681391805281203)),
+        new Identity("00ff01"),
+        Address.random(),
+        new ws.ReducerCallInfo(
+          "create_player",
+          0,
+          encodeCreatePlayerArgs("A Player", new Point(2, 3)),
+          0
+        ),
+        new ws.EnergyQuanta(BigInt(33841000)),
+        BigInt(1234567890)
+      )
+    );
+
+    wsAdapter.sendToClient(transactionUpdate);
 
     expect(updates).toHaveLength(2);
     expect(updates[1]["oldUser"].username).toBe("jaime");
@@ -503,8 +500,7 @@ describe("SpacetimeDBClient", () => {
     const client = new SpacetimeDBClient(
       "ws://127.0.0.1:1234",
       "db",
-      undefined,
-      "json"
+      undefined
     );
     const db = client.db;
     const user1 = new User(new Identity("bobs-idenitty"), "bob");

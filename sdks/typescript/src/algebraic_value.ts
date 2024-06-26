@@ -12,25 +12,6 @@ export interface ReducerArgsAdapter {
   next: () => ValueAdapter;
 }
 
-export class JSONReducerArgsAdapter {
-  args: any[];
-  index: number = 0;
-
-  constructor(args: any[]) {
-    this.args = args;
-  }
-
-  next(): ValueAdapter {
-    if (this.index >= this.args.length) {
-      throw "Number of arguments in the reducer is larger than what we got from the server";
-    }
-
-    const adapter = new JSONAdapter(this.args[this.index]);
-    this.index += 1;
-    return adapter;
-  }
-}
-
 export class BinaryReducerArgsAdapter {
   adapter: BinaryAdapter;
 
@@ -178,126 +159,6 @@ export class BinaryAdapter implements ValueAdapter {
   }
   readF64(): number {
     return this.reader.readF64();
-  }
-}
-
-export class JSONAdapter implements ValueAdapter {
-  private value: any;
-
-  constructor(value: any) {
-    this.value = value;
-  }
-
-  callMethod<K extends keyof ValueAdapter>(methodName: K): any {
-    return (this[methodName] as Function)();
-  }
-
-  readUInt8Array(): Uint8Array {
-    return Uint8Array.from(
-      this.value.match(/.{1,2}/g).map((byte: string) => parseInt(byte, 16))
-    );
-  }
-
-  readArray(type: AlgebraicType): AlgebraicValue[] {
-    let result: AlgebraicValue[] = [];
-    for (let el of this.value) {
-      result.push(AlgebraicValue.deserialize(type, new JSONAdapter(el)));
-    }
-
-    return result;
-  }
-
-  readMap(
-    _keyType: AlgebraicType,
-    _valueType: AlgebraicType
-  ): Map<AlgebraicValue, AlgebraicValue> {
-    let result: Map<AlgebraicValue, AlgebraicValue> = new Map();
-    // for (let i = 0; i < this.value.length; i++) {
-    //   const key = AlgebraicValue.deserialize(
-    //     keyType,
-    //     new JSONAdapter()
-    //   );
-    //   const value = AlgebraicValue.deserialize(
-    //     valueType,
-    //     this
-    //   );
-    //   result.set(key, value);
-    // }
-    //
-    return result;
-  }
-
-  readString(): string {
-    return this.value;
-  }
-
-  readSum(type: SumType): SumValue {
-    let tag = parseInt(Object.keys(this.value)[0]);
-    let variant = type.variants[tag];
-    let enumValue = Object.values(this.value)[0];
-    let sumValue = AlgebraicValue.deserialize(
-      variant.algebraicType,
-      new JSONAdapter(enumValue)
-    );
-    return new SumValue(tag, sumValue);
-  }
-
-  readProduct(type: ProductType): ProductValue {
-    let elements: AlgebraicValue[] = [];
-
-    for (let i in type.elements) {
-      let element = type.elements[i];
-      elements.push(
-        AlgebraicValue.deserialize(
-          element.algebraicType,
-          new JSONAdapter(this.value[i])
-        )
-      );
-    }
-    return new ProductValue(elements);
-  }
-
-  readBool(): boolean {
-    return this.value;
-  }
-  readByte(): number {
-    return this.value;
-  }
-  readI8(): number {
-    return this.value;
-  }
-  readU8(): number {
-    return this.value;
-  }
-  readI16(): number {
-    return this.value;
-  }
-  readU16(): number {
-    return this.value;
-  }
-  readI32(): number {
-    return this.value;
-  }
-  readU32(): number {
-    return this.value;
-  }
-  readI64(): bigint {
-    return this.value;
-  }
-  readU64(): bigint {
-    return this.value;
-  }
-  readU128(): bigint {
-    return this.value;
-  }
-  readI128(): bigint {
-    return this.value;
-  }
-  readF32(): number {
-    return this.value;
-  }
-  readF64(): number {
-    return this.value;
   }
 }
 
@@ -549,4 +410,19 @@ export class AlgebraicValue {
       throw "AlgebraicValue is not a BuiltinValue and a string was requested";
     }
   }
+}
+
+export interface ParseableType<ParsedType> {
+  getAlgebraicType: () => AlgebraicType;
+  fromValue: (value: AlgebraicValue) => ParsedType;
+}
+
+export function parseValue<ParsedType>(
+  ty: ParseableType<ParsedType>,
+  src: Uint8Array
+): ParsedType {
+  const algebraicType = ty.getAlgebraicType();
+  const adapter = new BinaryAdapter(new BinaryReader(src));
+  const algebraicValue = AlgebraicValue.deserialize(algebraicType, adapter);
+  return ty.fromValue(algebraicValue);
 }
