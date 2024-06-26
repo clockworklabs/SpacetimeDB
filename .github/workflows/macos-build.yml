@@ -31,7 +31,9 @@ jobs:
       - name: Compile Aarch64
         run: |
           cargo build --release -p spacetimedb-cli --target=aarch64-apple-darwin
-          dd if=target/aarch64-apple-darwin/release/spacetime of=build/spacetime conv=noerror,sync  
+          # dd is used to avoid incompatibilities between BSD tar vs. GNU tar
+          dd if=target/aarch64-apple-darwin/release/spacetime of=build/spacetime conv=noerror,sync
+          chmod +x build/spacetime
           cd build && tar -czf spacetime.darwin-arm64.tar.gz spacetime
           rm spacetime
 
