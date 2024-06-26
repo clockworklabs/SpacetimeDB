@@ -267,7 +267,7 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
     }
 
     fn close(self) {
-        //self.scheduler.close()
+        self.scheduler.close()
     }
 
     #[tracing::instrument(skip_all)]

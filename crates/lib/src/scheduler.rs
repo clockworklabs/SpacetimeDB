@@ -29,9 +29,14 @@ impl_st!([] Duration, _ts => Duration::get_type());
 impl_deserialize!([] Duration, de => u64::deserialize(de).map(Self));
 impl_serialize!([] Duration, (self, ser) => self.0.serialize(ser));
 
+/// `ScheduleAt` represents a column in scheduled table.
+/// It can be either a specific time or a regular interval
+/// at which scheduled reducer should execute.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum ScheduleAt {
+    /// A specific time to which the reducer is scheduled.
     Time(Timestamp),
+    /// A regular interval at which the repeated reducer is scheduled.
     Interval(Duration),
 }
 
@@ -40,6 +45,7 @@ impl ScheduleAt {
         AlgebraicType::sum([Timestamp::get_type(), Duration::get_type()])
     }
 
+    /// Converts the `ScheduleAt` to a `std::time::Duration` from now.
     pub fn to_duration_from_now(&self) -> std::time::Duration {
         match self {
             ScheduleAt::Time(time) => time.to_duration_from_now(),
