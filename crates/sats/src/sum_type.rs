@@ -93,7 +93,7 @@ impl SumType {
 
     /// Returns the sum type variant with the given `tag`.
     pub fn get_variant_by_tag(&self, tag: u8) -> Option<&SumTypeVariant> {
-        self.variants.get(&tag as usize)
+        self.variants.get(tag as usize)
     }
 }
 
