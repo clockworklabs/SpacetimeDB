@@ -123,7 +123,7 @@ public static partial class Timers
         new SendMessageTimer
         {
             Text = "bot sending a message",
-            ScheduledAt = new ScheduleAt.Time(ctx.Time.AddSeconds(10))
+            ScheduledAt = ctx.Time.AddSeconds(10)
         }.Insert();
     }
 }

@@ -32,6 +32,10 @@ public abstract partial record ScheduleAt
 
     public sealed record Interval(TimeSpan Interval_) : ScheduleAt;
 
+    public static implicit operator ScheduleAt(DateTimeOffset time) => new Time(time);
+
+    public static implicit operator ScheduleAt(TimeSpan interval) => new Interval(interval);
+
     public readonly partial struct BSATN : IReadWrite<ScheduleAt>
     {
         [SpacetimeDB.Type]
