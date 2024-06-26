@@ -738,6 +738,8 @@ namespace SpacetimeDB
 				"repeating_test" => BSATNHelpers.FromProtoBytes<RepeatingTestArgsStruct>(argBytes),
 				"test" => BSATNHelpers.FromProtoBytes<TestArgsStruct>(argBytes),
 				"<none>" => null,
+				"__identity_disconnected__" => null,
+				"" => null,
 				var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
 			};
 			return new ReducerEvent(dbEvent, args);
