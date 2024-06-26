@@ -22,6 +22,7 @@ public sealed class ReducerAttribute(string? name = null) : Attribute
 public sealed class TableAttribute : Attribute
 {
     public bool Public { get; init; }
+    public string? Scheduled { get; init; }
 }
 
 [Flags]

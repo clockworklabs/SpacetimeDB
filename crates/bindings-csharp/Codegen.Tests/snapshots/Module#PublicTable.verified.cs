@@ -144,7 +144,8 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
                         SpacetimeDB.ColumnAttrs.UnSet
                     )
                 },
-                false
+                false,
+                null
             ),
             (SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)
         );

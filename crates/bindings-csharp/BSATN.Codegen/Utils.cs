@@ -111,11 +111,11 @@ public static class Utils
 
         static string GetTypeInfoForNamedType(INamedTypeSymbol type)
         {
-            if (type.TypeKind == TypeKind.Error)
+            if (type.TypeKind == Microsoft.CodeAnalysis.TypeKind.Error)
             {
                 throw new InvalidOperationException($"Could not resolve type {type}");
             }
-            if (type.TypeKind == TypeKind.Enum)
+            if (type.TypeKind == Microsoft.CodeAnalysis.TypeKind.Enum)
             {
                 if (
                     !type.GetAttributes()
@@ -199,7 +199,11 @@ public static class Utils
 
         public readonly record struct TypeScope(string Keyword, string Name, string Constraints);
 
-        public string GenerateExtensions(string contents, string? interface_ = null)
+        public string GenerateExtensions(
+            string contents,
+            string? interface_ = null,
+            string? extraAttrs = null
+        )
         {
             var sb = new StringBuilder();
 
@@ -223,6 +227,11 @@ public static class Utils
             // Loop through the full parent type hiearchy, starting with the outermost.
             foreach (var (i, typeScope) in typeScopes.Select((ts, i) => (i, ts)).Reverse())
             {
+                if (i == 0 && extraAttrs is not null)
+                {
+                    sb.AppendLine(extraAttrs);
+                }
+
                 sb.Append("partial ")
                     .Append(typeScope.Keyword) // e.g. class/struct/record
                     .Append(' ')

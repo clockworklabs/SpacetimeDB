@@ -14,7 +14,8 @@ partial class PrivateTable : SpacetimeDB.Internal.ITable<PrivateTable>
             new(
                 nameof(PrivateTable),
                 new SpacetimeDB.Internal.Module.ColumnDefWithAttrs[] { },
-                false
+                false,
+                null
             ),
             (SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)
         );
