@@ -1067,6 +1067,10 @@ mod tests {
         let sql = "select * from enum where a = 'Player'";
         let result = run_for_testing(&db, sql)?;
         assert_eq!(result[0].data, vec![product![AlgebraicValue::enum_simple(0)]]);
+
+        let sql = "select * from enum where 'Player' = a";
+        let result = run_for_testing(&db, sql)?;
+        assert_eq!(result[0].data, vec![product![AlgebraicValue::enum_simple(0)]]);
         Ok(())
     }
 
@@ -1105,22 +1109,36 @@ mod tests {
 
         assert_eq!(
             compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
-            Err("SqlError: Type Mismatch: `table#4097.col#0: Some(Builtin(U64))` != `\"161853\": Some(Builtin(String))`, executing: `SELECT * FROM PlayerState WHERE entity_id = '161853'`".into())
+            Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` != `String(\"161853\"): String`, executing: `SELECT * FROM PlayerState WHERE entity_id = '161853'`".into())
         );
 
         let sql = "SELECT * FROM PlayerState JOIN EnemyState ON PlayerState.entity_id = EnemyState.entity_id";
 
         assert_eq!(
             compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
-            Err("SqlError: Type Mismatch Join: `entity_id: Builtin(U64)` != `entity_id: Builtin(I8)`, executing: `SELECT * FROM PlayerState JOIN EnemyState ON PlayerState.entity_id = EnemyState.entity_id`".into())
+            Err("SqlError: Type Mismatch Join: `PlayerState.entity_id: U64` != `EnemyState.entity_id: I8`, executing: `SELECT * FROM PlayerState JOIN EnemyState ON PlayerState.entity_id = EnemyState.entity_id`".into())
         );
 
         let sql = "SELECT * FROM PlayerState JOIN FriendState ON PlayerState.entity_id = FriendState.entity_id WHERE PlayerState.entity_id = '161853'";
 
         assert_eq!(
             compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
-            Err("SqlError: Type Mismatch: `table#4097.col#0: Some(Builtin(U64))` != `\"161853\": Some(Builtin(String))`, executing: `SELECT * FROM PlayerState JOIN FriendState ON PlayerState.entity_id = FriendState.entity_id WHERE PlayerState.entity_id = '161853'`".into())
+            Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` != `String(\"161853\"): String`, executing: `SELECT * FROM PlayerState JOIN FriendState ON PlayerState.entity_id = FriendState.entity_id WHERE PlayerState.entity_id = '161853'`".into())
         );
+
+        // Check we can still compile the query if we remove the type mismatch and have multiple logical operations.
+        let sql = "SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id = 2 AND entity_id = 3 OR entity_id = 4 OR entity_id = 5";
+
+        assert!(compile_sql(&db, &db.begin_tx(), sql).is_ok());
+
+        // Now verify when we have a type mismatch in the middle of the logical operations.
+        let sql = "SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id";
+
+        assert_eq!(
+            compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
+            Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64 == U64(1): U64` and `PlayerState.entity_id: U64`, both sides must be an `Bool` expression, executing: `SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id`".into())
+        );
+
         Ok(())
     }
 }

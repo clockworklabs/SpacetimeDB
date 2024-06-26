@@ -1,9 +1,10 @@
+use spacetimedb_lib::operator::OpLogic;
 use spacetimedb_sats::db::error::{AuthError, RelationError};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use std::fmt;
 use thiserror::Error;
 
-use crate::expr::{FieldOp, SourceId};
+use crate::expr::SourceId;
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
@@ -18,20 +19,16 @@ pub enum ConfigError {
 pub enum ErrorType {
     #[error("Error Parsing `{value}` into type [{ty}]: {err}")]
     Parse { value: String, ty: String, err: String },
-    #[error("Type Mismatch: `{lhs}: {expect:?}` != `{rhs}: {given:?}`")]
-    TypeMismatchCmp {
-        lhs: FieldOp,
-        rhs: FieldOp,
-        expect: Option<AlgebraicType>,
-        given: Option<AlgebraicType>,
-    },
-    #[error("Type Mismatch Join: `{lhs}: {expect:?}` != `{rhs}: {given:?}`")]
-    TypeMismatchJoin {
-        table: Box<str>,
-        lhs: Box<str>,
-        rhs: Box<str>,
-        expect: AlgebraicType,
-        given: AlgebraicType,
+    #[error("Type Mismatch Join: `{lhs}` != `{rhs}`")]
+    TypeMismatchJoin { lhs: String, rhs: String },
+    #[error("Type Mismatch: `{lhs}` != `{rhs}`")]
+    TypeMismatch { lhs: String, rhs: String },
+    #[error("Type Mismatch: `{lhs}` {op} `{rhs}`, both sides must be an `{expected}` expression")]
+    TypeMismatchLogic {
+        op: OpLogic,
+        lhs: String,
+        rhs: String,
+        expected: String,
     },
 }
 
