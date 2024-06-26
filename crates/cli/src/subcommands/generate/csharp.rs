@@ -694,6 +694,9 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
                     );
                 }
                 writeln!(output, "\"<none>\" => null,");
+                writeln!(output, "\"__identity_connected__\" => null,");
+                writeln!(output, "\"__identity_disconnected__\" => null,");
+                writeln!(output, "\"\" => null,"); //Transaction from CLI command
                 writeln!(
                     output,
                     r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
