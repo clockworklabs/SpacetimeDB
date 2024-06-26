@@ -360,7 +360,7 @@ public class Module : IIncrementalGenerator
                     uint id,
                     SpacetimeDB.Internal.Buffer caller_identity,
                     SpacetimeDB.Internal.Buffer caller_address,
-                    ulong timestamp,
+                    SpacetimeDB.Internal.DateTimeOffsetRepr timestamp,
                     SpacetimeDB.Internal.Buffer args
                 ) => SpacetimeDB.Internal.Module.__call_reducer__(id, caller_identity, caller_address, timestamp, args);
 #endif

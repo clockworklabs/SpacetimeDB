@@ -236,18 +236,22 @@ public static partial class Module
         uint id,
         Buffer caller_identity,
         Buffer caller_address,
-        ulong timestamp,
+        DateTimeOffsetRepr timestamp,
         Buffer args
     )
     {
         try
         {
-            Runtime.Random = new((int)timestamp);
+            Runtime.Random = new((int)timestamp.MicrosecondsSinceEpoch);
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
             reducers[(int)id].Invoke(
                 reader,
-                new(caller_identity.Consume(), caller_address.Consume(), timestamp)
+                new(
+                    Identity.From(caller_identity.Consume()),
+                    Address.From(caller_address.Consume()),
+                    timestamp.ToStd()
+                )
             );
             if (stream.Position != stream.Length)
             {
