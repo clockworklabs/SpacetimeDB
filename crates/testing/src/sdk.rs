@@ -135,10 +135,10 @@ macro_rules! memoized {
 fn compile_module(module: &str) -> String {
     let module = module.to_owned();
 
-    memoized!(|module: String| -> String {
-        let module = CompiledModule::compile(module, CompilationMode::Debug);
+    //memoized!(|module: String| -> String {
+        let module = CompiledModule::compile(&module, CompilationMode::Debug);
         module.path().to_str().unwrap().to_owned()
-    })
+    //})
 }
 
 // Note: this function does not memoize because we want each test to publish the same
@@ -190,8 +190,8 @@ fn publish_module(wasm_file: &str) -> String {
 fn generate_bindings(language: &str, wasm_file: &str, client_project: &str, generate_subdir: &str) {
     let generate_dir = format!("{client_project}/{generate_subdir}");
 
-    memoized!(|generate_dir: String| -> () {
-        create_dir_all(generate_dir).expect("Error creating generate subdir");
+    //memoized!(|generate_dir: String| -> () {
+        create_dir_all(&generate_dir).expect("Error creating generate subdir");
         invoke_cli(&[
             "generate",
             "--debug",
@@ -201,9 +201,9 @@ fn generate_bindings(language: &str, wasm_file: &str, client_project: &str, gene
             "--wasm-file",
             wasm_file,
             "--out-dir",
-            generate_dir,
+            &generate_dir,
         ]);
-    })
+    //})
 }
 
 fn split_command_string(command: &str) -> (&str, Vec<&str>) {
