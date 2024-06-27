@@ -321,7 +321,7 @@ public static void AddIn5Minutes(ReducerContext e, string name, int age)
 
 #### Special reducers
 
-These are two special kinds of reducers that can be used to respond to module lifecycle events. They're stored in the `SpacetimeDB.Module.ReducerKind` class and can be used as an argument to the `[SpacetimeDB.Reducer]` attribute:
+These are four special kinds of reducers that can be used to respond to module lifecycle events. They're stored in the `SpacetimeDB.Module.ReducerKind` class and can be used as an argument to the `[SpacetimeDB.Reducer]` attribute:
 
 - `ReducerKind.Init` - this reducer will be invoked when the module is first published.
 - `ReducerKind.Update` - this reducer will be invoked when the module is updated.
@@ -337,4 +337,21 @@ public static void Init()
 {
     Log("...and we're live!");
 }
-```
+
+[SpacetimeDB.Reducer(ReducerKind.Update)]
+public static void Update()
+{
+    Log("Update get!");
+}
+
+[SpacetimeDB.Reducer(ReducerKind.Connect)]
+public static void OnConnect(DbEventArgs ctx)
+{
+    Log($"{ctx.Sender} has connected from {ctx.Address}!");
+}
+
+[SpacetimeDB.Reducer(ReducerKind.Disconnect)]
+public static void OnDisconnect(DbEventArgs ctx)
+{
+    Log($"{ctx.Sender} has disconnected.");
+}```
