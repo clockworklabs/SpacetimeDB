@@ -28,6 +28,12 @@ impl From<Duration> for std::time::Duration {
     }
 }
 
+impl From<std::time::Duration> for Duration  {
+    fn from(value: std::time::Duration) -> Self {
+        Self(value.as_micros() as u64)
+    }
+}
+
 impl_st!([] Duration, _ts => Duration::get_type());
 impl_deserialize!([] Duration, de => u64::deserialize(de).map(Self));
 impl_serialize!([] Duration, (self, ser) => self.0.serialize(ser));
