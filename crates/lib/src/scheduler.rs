@@ -5,7 +5,7 @@ use spacetimedb_sats::{
     algebraic_value::de::{ValueDeserializeError, ValueDeserializer},
     de::Deserialize as _,
     impl_deserialize, impl_serialize, impl_st,
-    product_type::SCHEDULE_AT_TAG,
+    typespace::TypespaceBuilder,
     AlgebraicType, AlgebraicValue,
 };
 
@@ -28,7 +28,7 @@ impl From<Duration> for std::time::Duration {
     }
 }
 
-impl From<std::time::Duration> for Duration  {
+impl From<std::time::Duration> for Duration {
     fn from(value: std::time::Duration) -> Self {
         Self(value.as_micros() as u64)
     }
@@ -52,11 +52,20 @@ pub enum ScheduleAt {
 }
 
 impl ScheduleAt {
-    pub fn get_type() -> AlgebraicType {
-        AlgebraicType::product([(
-            SCHEDULE_AT_TAG,
-            AlgebraicType::sum([Timestamp::get_type(), Duration::get_type()]),
-        )])
+    // Todo: convert it to macro, to be re-used by other types like `Address` and `Identity`
+    fn make_type<S: TypespaceBuilder>(_ts: &mut S) -> AlgebraicType {
+        TypespaceBuilder::add(
+            _ts,
+            {
+                struct __Marker;
+                core::any::TypeId::of::<__Marker>()
+            },
+            Some("ScheduleAt"),
+            |__typespace| ScheduleAt::get_type(),
+        )
+    }
+    fn get_type() -> AlgebraicType {
+        AlgebraicType::sum([("Time", Timestamp::get_type()), ("Duration", Duration::get_type())])
     }
 
     /// Converts the `ScheduleAt` to a `std::time::Duration` from now.
@@ -75,4 +84,18 @@ impl TryFrom<AlgebraicValue> for ScheduleAt {
     }
 }
 
-impl_st!([] ScheduleAt, _ts => ScheduleAt::get_type());
+impl_st!([] ScheduleAt, _ts => ScheduleAt::make_type(_ts));
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spacetimedb_sats::bsatn;
+
+    #[test]
+    fn test_bsatn_roundtrip() {
+        let schedule_at = ScheduleAt::Interval(Duration(10000));
+        let ser = bsatn::to_vec(&schedule_at).unwrap();
+        let de = bsatn::from_slice(&ser).unwrap();
+        assert_eq!(schedule_at, de);
+    }
+}

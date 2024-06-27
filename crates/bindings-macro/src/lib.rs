@@ -465,12 +465,24 @@ fn spacetimedb_table(item: TokenStream, public: Option<Span>, scheduled: Option<
         let mut modified_item = syn::parse2::<DeriveInput>(item)?;
         let type_check = reducer_type_check(&modified_item, &reducer)?;
         add_scheduled_fields(&mut modified_item)?;
+        let ref_register = quote! {
+            const _: () = {
+                #[export_name = "__preinit__20_register_describer_ScheduleAt"]
+                extern "C" fn __register_describer() {
+                    spacetimedb::rt::register_reftype::<ScheduleAt>()
+                }
+            };
+        };
+
         quote! {
             #[derive(spacetimedb::TableType)]
             #public
             #[sats(scheduled=#reducer_name)]
             #modified_item
             #type_check
+            #ref_register
+
+
         }
     } else {
         quote! {

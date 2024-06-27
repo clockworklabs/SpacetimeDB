@@ -13,14 +13,14 @@ fn init() {
         scheduled_id: 0,
         scheduled_at: ScheduleAt::Interval(duration!(100ms).into()),
     });
-    // ScheuledReducerArgs::delete_by_scheduled_id(&schedule.unwrap().scheduled_id);
+    ScheuledReducerArgs::delete_by_scheduled_id(&schedule.unwrap().scheduled_id);
 
-    // let schedule = ScheuledReducerArgs::insert(ScheuledReducerArgs {
-    //     num: 2,
-    //     scheduled_id: 0,
-    //     scheduled_at: ScheduleAt::Interval(duration!(1000ms).into()),
-    // });
-    // do_cancel(schedule.unwrap().scheduled_id);
+    let schedule = ScheuledReducerArgs::insert(ScheuledReducerArgs {
+         num: 2,
+         scheduled_id: 0,
+         scheduled_at: ScheduleAt::Interval(duration!(1000ms).into()),
+     });
+     do_cancel(schedule.unwrap().scheduled_id);
 }
 
 #[spacetimedb(table(public), scheduled(reducer))]
