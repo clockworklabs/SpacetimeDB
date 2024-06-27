@@ -1,5 +1,3 @@
-// TODO(jgilles): move this to its own crate!
-
 use crate::error::SchemaErrors;
 use crate::identifier::Identifier;
 use spacetimedb_data_structures::map::HashMap;

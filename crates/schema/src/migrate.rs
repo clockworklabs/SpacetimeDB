@@ -1,5 +1,3 @@
-// TODO(jgilles): move this to its own crate!
-
 use std::fmt;
 
 use crate::{def::*, identifier::Identifier};

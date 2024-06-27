@@ -1,5 +1,3 @@
-// TODO(jgilles): move this to its own crate!
-
 use crate::error::IdentifierError;
 use spacetimedb_sats::{de, ser};
 use std::fmt::{self, Debug, Display};

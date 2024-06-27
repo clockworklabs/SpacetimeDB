@@ -1,5 +1,3 @@
-// TODO(jgilles): move this to its own crate!
-
 use itertools::Itertools;
 use spacetimedb_data_structures::map::{HashMap, HashSet};
 

@@ -1,5 +1,3 @@
-// TODO(jgilles): migrate this out of sats?
-
 use crate::def::*;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
