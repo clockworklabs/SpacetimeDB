@@ -98,6 +98,7 @@ spacetimedb-lib = { path = "crates/lib", default-features = false, version = "0.
 spacetimedb-metrics = { path = "crates/metrics", version = "0.10.1" }
 spacetimedb-primitives = { path = "crates/primitives", version = "0.10.1" }
 spacetimedb-sats = { path = "crates/sats", version = "0.10.1" }
+spacetimedb-schema = { path = "crates/schema", version = "0.10.1" }
 spacetimedb-standalone = { path = "crates/standalone", version = "0.10.1" }
 spacetimedb-table = { path = "crates/table", version = "0.10.1" }
 spacetimedb-vm = { path = "crates/vm", version = "0.10.1" }
