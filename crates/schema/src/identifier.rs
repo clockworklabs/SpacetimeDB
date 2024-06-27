@@ -32,6 +32,9 @@ pub struct Identifier {
 
 impl Identifier {
     /// Validates that the input string is a valid identifier.
+    ///
+    /// TODO(jgilles): modify this to also canonicalize the input string.
+    /// This will require careful reworking of codegen in a lot of places.
     pub fn new(name: &str) -> Result<Self, IdentifierError> {
         if name.is_empty() {
             return Err(IdentifierError::Empty {});

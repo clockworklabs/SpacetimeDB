@@ -1,10 +1,12 @@
 use crate::def::*;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
+use spacetimedb_sats::db::column_ordering::is_sorted_by;
 use spacetimedb_sats::db::raw_def::IndexType;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::relation::{Column, DbTable, FieldName, Header};
 use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 const PROBABLY_UNALLOCATED: u32 = u32::MAX;
@@ -30,18 +32,8 @@ impl SequenceSchema {
     /// # Arguments
     ///
     /// * `table_id` - The ID of the table associated with the sequence.
+    /// * `table_def` - The [TableDef] to derive the schema from.
     /// * `sequence` - The [SequenceDef] to derive the schema from.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use spacetimedb_sats::db::def::*;
-    ///
-    /// let sequence_def = SequenceDef::for_column("my_table".into(), "my_sequence".into(), 1.into());
-    /// let schema = SequenceSchema::from_def(42.into(), sequence_def);
-    ///
-    /// assert_eq!(schema.table_id, 42.into());
-    /// ```
     pub fn from_def(table_id: TableId, table_def: &TableDef, sequence: &SequenceDef) -> Self {
         Self {
             sequence_id: SequenceId(PROBABLY_UNALLOCATED), // Will be replaced later when created
@@ -64,16 +56,30 @@ pub struct IndexSchema {
     pub index_id: IndexId,
     pub table_id: TableId,
     pub index_type: IndexType,
+    pub is_unique: bool,
     pub columns: ColList,
 }
 
 impl IndexSchema {
     /// Constructs an [IndexSchema] from a given [IndexDef] and `table_id`.
+    ///
+    /// Tagged with "unique" if there is a unique constraint on these columns on the `TableDef`.
     pub fn from_def(table_id: TableId, table_def: &TableDef, index: &IndexDef) -> Self {
+        let sorted_column_names = {
+            let mut sorted_column_names = index.column_names.clone();
+            sorted_column_names.sort();
+            sorted_column_names
+        };
+        let is_unique = table_def
+            .unique_constraints
+            .iter()
+            .any(|unique_constraint| unique_constraint.column_names == sorted_column_names);
+
         IndexSchema {
             index_id: IndexId(PROBABLY_UNALLOCATED), // Set to 0 as it may be assigned later.
             table_id,
             index_type: index.index_type,
+            is_unique,
             columns: table_def
                 .get_column_list(&index.column_names)
                 .expect("malformed validated def?"),
@@ -170,6 +176,9 @@ pub struct TableSchema {
 }
 
 impl TableSchema {
+    /// Construct a new TableSchema.
+    ///
+    /// Does NOT generate indexes for constraints! You will need to do this manually.
     #[allow(clippy::too_many_arguments, clippy::boxed_local)]
     pub fn new(
         table_id: TableId,
@@ -318,39 +327,112 @@ impl TableSchema {
 
     /// Create a new [TableSchema] from a [TableDef] and a `table_id`.
     ///
+    /// This generates an index for each unique constraint on the table (if there is not already
+    /// an index on the same columns.)
+    ///
     /// # Parameters
     ///
     /// - `table_id`: The unique identifier for the table.
-    /// - `def`: The `TableDef` containing the schema information.
-    pub fn from_def(table_id: TableId, def: &TableDef) -> Self {
-        TableSchema::new(
-            table_id,
-            def.table_name.trim().into(),
-            def.columns
+    /// - `database_def`: The `DatabaseDef` containing the schema information.
+    /// - `table_def`: The specific `TableDef` within the `DatabaseDef` we are interested in.
+    pub fn from_def(table_id: TableId, _database_def: &DatabaseDef, table_def: &TableDef) -> Self {
+        // this is somewhat redundant as the DatabaseDef already has a row type for the table.
+        // it might have references though, so just recreate it for now.
+        let row_type = ProductType::new(
+            table_def
+                .columns
                 .iter()
-                .map(|col_def| ColumnSchema::from_def(table_id, def, col_def))
-                .collect(),
-            def.indexes
-                .iter()
-                .map(|index_def| IndexSchema::from_def(table_id, def, index_def))
-                .collect(),
-            def.unique_constraints
-                .iter()
-                .map(|unique_constraint_def| {
-                    TableConstraintSchema::Unique(UniqueConstraintSchema::from_def(
-                        table_id,
-                        def,
-                        unique_constraint_def,
-                    ))
+                .map(|c| ProductTypeElement {
+                    name: Some((&*c.col_name).into()),
+                    algebraic_type: c.col_type.clone(),
                 })
                 .collect(),
-            def.sequences
+        );
+
+        let table_name = (&*table_def.table_name).into();
+        let columns = table_def
+            .columns
+            .iter()
+            .map(|col_def| ColumnSchema::from_def(table_id, table_def, col_def))
+            .collect();
+
+        let constraints = table_def
+            .unique_constraints
+            .iter()
+            .map(|unique_constraint_def| {
+                TableConstraintSchema::Unique(UniqueConstraintSchema::from_def(
+                    table_id,
+                    table_def,
+                    unique_constraint_def,
+                ))
+            })
+            .collect();
+
+        let sequences = table_def
+            .sequences
+            .iter()
+            .map(|sequence_def| SequenceSchema::from_def(table_id, table_def, sequence_def))
+            .collect();
+
+        let indexes: Vec<_> = table_def
+            .indexes
+            .iter()
+            .map(|index_def| IndexSchema::from_def(table_id, table_def, index_def))
+            .collect();
+
+        let generated_indexes = {
+            let mut generated_indexes = vec![];
+
+            let indexes_by_sorted_columns = table_def
+                .indexes
                 .iter()
-                .map(|sequence_def| SequenceSchema::from_def(table_id, def, sequence_def))
-                .collect(),
-            def.table_type,
-            def.table_access,
-        )
+                .enumerate()
+                .map(|(i, index_def)| {
+                    let mut sorted_column_names = index_def.column_names.clone();
+                    sorted_column_names.sort();
+                    (sorted_column_names, &indexes[i])
+                })
+                .collect::<BTreeMap<_, _>>();
+
+            for unique_constraint in &table_def.unique_constraints {
+                assert!(
+                    is_sorted_by(&unique_constraint.column_names, |a, b| a.cmp(b)),
+                    "malformed validated def"
+                );
+
+                if let Some(index) = indexes_by_sorted_columns.get(&unique_constraint.column_names) {
+                    // IndexSchema::from_def should have marked the relevant index as unique.
+                    assert!(index.is_unique, "unique constraint corresponds to existing index, created IndexSchema should have been tagged as unique");
+                    continue;
+                }
+
+                generated_indexes.push(IndexSchema {
+                    index_id: IndexId(PROBABLY_UNALLOCATED), // Set to 0 as it may be assigned later.
+                    table_id,
+                    index_type: IndexType::BTree,
+                    is_unique: true,
+                    columns: table_def
+                        .get_column_list(&unique_constraint.column_names)
+                        .expect("malformed validated def?"),
+                })
+            }
+
+            generated_indexes
+        };
+
+        let indexes = indexes.into_iter().chain(generated_indexes).collect();
+
+        Self {
+            table_id,
+            table_name,
+            columns,
+            indexes,
+            constraints,
+            sequences,
+            table_type: table_def.table_type,
+            table_access: table_def.table_access,
+            row_type,
+        }
     }
 }
 
@@ -397,5 +479,43 @@ impl From<&TableSchema> for Header {
             .collect();
 
         Header::new(value.table_id, value.table_name.clone(), fields, unique_constraints)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::def::DatabaseDef;
+    use spacetimedb_sats::db::raw_def::*;
+
+    #[test]
+    fn generated_indexes() {
+        let def: DatabaseDef = RawDatabaseDef::new()
+            .with_table_and_product_type(
+                RawTableDef::new(
+                    "Bananas".into(),
+                    vec![
+                        RawColumnDef::new("a", AlgebraicType::U64),
+                        RawColumnDef::new("b", AlgebraicType::U32),
+                    ],
+                )
+                // this constraint has a matching index, which should be used
+                .with_unique_constraint(&["a"])
+                .with_index(&["a"], IndexType::BTree)
+                // this constraint has no matching index, so one should be generated
+                .with_unique_constraint(&["b"]),
+            )
+            .try_into()
+            .unwrap();
+
+        let table_schema = TableSchema::from_def(TableId(0), &def, def.tables.values().next().unwrap());
+
+        assert_eq!(table_schema.indexes.len(), 2);
+
+        assert_eq!(table_schema.indexes[0].columns, ColList::new(ColId(0)));
+        assert!(table_schema.indexes[0].is_unique);
+
+        assert_eq!(table_schema.indexes[1].columns, ColList::new(ColId(1)));
+        assert!(table_schema.indexes[1].is_unique);
     }
 }

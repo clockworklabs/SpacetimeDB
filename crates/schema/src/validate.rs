@@ -269,6 +269,9 @@ fn validate_unique_constraint(
         &unique_constraint.column_names,
     );
 
+    // TODO: consider applying standard functional dependency rules here to determine
+    // if this constraint is invalid.
+
     if let Some(mut column_names) = column_names {
         if contains_duplicates(&column_names) {
             errors.0.push(SchemaError::UniqueConstraintDefDuplicateColumnName {
