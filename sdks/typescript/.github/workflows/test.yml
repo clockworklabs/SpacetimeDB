@@ -15,7 +15,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v2
         with:
-          node-version: lts
+          node-version: lts/*
 
       - name: Cache Yarn dependencies
         uses: actions/cache@v2
