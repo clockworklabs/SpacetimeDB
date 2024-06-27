@@ -71,9 +71,6 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
         AlgebraicType::Product(p) if p.is_address() => {
             write!(out, "Address")?;
         }
-        AlgebraicType::Product(p) if p.is_schedule_at() => {
-            write!(out, "ScheduleAt")?;
-        }
         AlgebraicType::Product(ProductType { elements }) => {
             print_comma_sep_braced(out, elements, |out: &mut W, elem: &ProductTypeElement| {
                 if let Some(name) = &elem.name {

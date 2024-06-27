@@ -6,7 +6,6 @@ use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, ValueWithType, Wi
 
 pub const IDENTITY_TAG: &str = "__identity_bytes";
 pub const ADDRESS_TAG: &str = "__address_bytes";
-pub const SCHEDULE_AT_TAG: &str = "__schedule_at";
 
 /// A structural product type  of the factors given by `elements`.
 ///
@@ -68,23 +67,13 @@ impl ProductType {
         self.is_bytes_newtype(ADDRESS_TAG)
     }
 
-    pub fn is_schedule_at(&self) -> bool {
-        match &*self.elements {
-            [ProductTypeElement {
-                name: Some(name),
-                algebraic_type,
-            }] => &**name == SCHEDULE_AT_TAG && algebraic_type.is_sum(),
-            _ => false,
-        }
-    }
-
     /// Returns whether this is a special known `tag`, currently `Address` or `Identity`.
     pub fn is_special_tag(tag_name: &str) -> bool {
-        tag_name == IDENTITY_TAG || tag_name == ADDRESS_TAG || tag_name == SCHEDULE_AT_TAG
+        tag_name == IDENTITY_TAG || tag_name == ADDRESS_TAG
     }
     /// Returns whether this is a special known type, currently `Address` or `Identity`.
     pub fn is_special(&self) -> bool {
-        self.is_identity() || self.is_address() || self.is_schedule_at()
+        self.is_identity() || self.is_address()
     }
 }
 

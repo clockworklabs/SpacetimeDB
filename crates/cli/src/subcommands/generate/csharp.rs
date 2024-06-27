@@ -435,8 +435,6 @@ fn autogen_csharp_access_funcs_for_struct(
                     "SpacetimeDB.Identity"
                 } else if product.is_address() {
                     "SpacetimeDB.Address"
-                } else if product.is_schedule_at() {
-                    "SpacetimeDB.ScheduleAt"
                 } else {
                     continue;
                 }

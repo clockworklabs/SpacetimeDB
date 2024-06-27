@@ -1,4 +1,4 @@
-use spacetimedb_sats::{impl_deserialize, impl_serialize, AlgebraicType};
+use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
 use std::time::{Duration, SystemTime};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -29,3 +29,4 @@ impl Timestamp {
 
 impl_deserialize!([] Timestamp, de => u64::deserialize(de).map(Self));
 impl_serialize!([] Timestamp, (self, ser) => self.0.serialize(ser));
+impl_st!([] Timestamp, _ts => Timestamp::get_type());
