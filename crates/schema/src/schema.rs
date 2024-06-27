@@ -7,6 +7,8 @@ use spacetimedb_sats::relation::{Column, DbTable, FieldName, Header};
 use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement};
 use std::sync::Arc;
 
+const PROBABLY_UNALLOCATED: u32 = u32::MAX;
+
 /// Represents a schema definition for a database sequence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SequenceSchema {
@@ -22,8 +24,8 @@ pub struct SequenceSchema {
 }
 
 impl SequenceSchema {
-    /*
     /// Creates a new [SequenceSchema] instance from a [SequenceDef] and a `table_id`.
+    /// The `SchemaId` is set to a dummy value.
     ///
     /// # Arguments
     ///
@@ -40,11 +42,13 @@ impl SequenceSchema {
     ///
     /// assert_eq!(schema.table_id, 42.into());
     /// ```
-    pub fn from_def(table_id: TableId, sequence: SequenceDef) -> Self {
+    pub fn from_def(table_id: TableId, table_def: &TableDef, sequence: &SequenceDef) -> Self {
         Self {
-            sequence_id: SequenceId(0), // Will be replaced later when created
+            sequence_id: SequenceId(PROBABLY_UNALLOCATED), // Will be replaced later when created
             table_id,
-            col_pos: sequence.col_pos,
+            col_pos: table_def
+                .get_column_id(&sequence.column_name)
+                .expect("malformed validated def?"),
             increment: 1,
             start: sequence.start.unwrap_or(1),
             min_value: sequence.min_value.unwrap_or(1),
@@ -52,7 +56,6 @@ impl SequenceSchema {
             allocated: SEQUENCE_PREALLOCATION_AMOUNT,
         }
     }
-    */
 }
 
 /// A struct representing the schema of a database index.
@@ -65,17 +68,17 @@ pub struct IndexSchema {
 }
 
 impl IndexSchema {
-    /*
     /// Constructs an [IndexSchema] from a given [IndexDef] and `table_id`.
-    pub fn from_def(table_id: TableId, index: IndexDef) -> Self {
+    pub fn from_def(table_id: TableId, table_def: &TableDef, index: &IndexDef) -> Self {
         IndexSchema {
-            index_id: IndexId(0), // Set to 0 as it may be assigned later.
+            index_id: IndexId(PROBABLY_UNALLOCATED), // Set to 0 as it may be assigned later.
             table_id,
             index_type: index.index_type,
-            columns: index.columns,
+            columns: table_def
+                .get_column_list(&index.column_names)
+                .expect("malformed validated def?"),
         }
     }
-    */
 }
 
 /// A struct representing the schema of a database column.
@@ -96,12 +99,14 @@ impl ColumnSchema {
     /// * `table_id`: Identifier of the table to which the column belongs.
     /// * `col_pos`: Position of the column within the table.
     /// * `column`: The `ColumnDef` containing column information.
-    pub fn from_def(table_id: TableId, col_pos: ColId, column: ColumnDef) -> Self {
+    pub fn from_def(table_id: TableId, table_def: &TableDef, column_def: &ColumnDef) -> Self {
         ColumnSchema {
             table_id,
-            col_pos,
-            col_name: column.col_name.trim().into(),
-            col_type: column.col_type,
+            col_pos: table_def
+                .get_column_id(&column_def.col_name)
+                .expect("malformed validated def?"),
+            col_name: (&*column_def.col_name).into(),
+            col_type: column_def.col_type.clone(),
         }
     }
 }
@@ -111,6 +116,39 @@ pub struct UniqueConstraintSchema {
     pub constraint_id: ConstraintId,
     pub table_id: TableId,
     pub columns: ColList,
+}
+
+impl UniqueConstraintSchema {
+    pub fn from_def(table_id: TableId, table_def: &TableDef, constraint: &UniqueConstraintDef) -> Self {
+        UniqueConstraintSchema {
+            constraint_id: ConstraintId(PROBABLY_UNALLOCATED), // Set to 0 as it may be assigned later.
+            table_id,
+            columns: table_def
+                .get_column_list(&constraint.column_names)
+                .expect("malformed validated def?"),
+        }
+    }
+}
+
+/// Some kind of constraint on the table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TableConstraintSchema {
+    Unique(UniqueConstraintSchema),
+}
+
+impl TableConstraintSchema {
+    pub fn constraint_id(&self) -> ConstraintId {
+        match self {
+            TableConstraintSchema::Unique(x) => x.constraint_id,
+        }
+    }
+
+    pub fn table_id(&self) -> TableId {
+        match self {
+            TableConstraintSchema::Unique(x) => x.table_id,
+        }
+    }
 }
 
 /// A data structure representing the schema of a database table.
@@ -123,7 +161,7 @@ pub struct TableSchema {
     pub table_name: Box<str>,
     columns: Vec<ColumnSchema>,
     pub indexes: Vec<IndexSchema>,
-    pub unique_constraints: Vec<UniqueConstraintSchema>,
+    pub constraints: Vec<TableConstraintSchema>,
     pub sequences: Vec<SequenceSchema>,
     pub table_type: StTableType,
     pub table_access: StAccess,
@@ -134,17 +172,15 @@ pub struct TableSchema {
 impl TableSchema {
     #[allow(clippy::too_many_arguments, clippy::boxed_local)]
     pub fn new(
-        _table_id: TableId,
-        _table_name: Box<str>,
-        _columns: Vec<ColumnSchema>,
-        _indexes: Vec<IndexSchema>,
-        _constraints: Vec<UniqueConstraintSchema>,
-        _sequences: Vec<SequenceSchema>,
-        _table_type: StTableType,
-        _table_access: StAccess,
+        table_id: TableId,
+        table_name: Box<str>,
+        columns: Vec<ColumnSchema>,
+        indexes: Vec<IndexSchema>,
+        constraints: Vec<TableConstraintSchema>,
+        sequences: Vec<SequenceSchema>,
+        table_type: StTableType,
+        table_access: StAccess,
     ) -> Self {
-        unimplemented!()
-        /*
         let row_type = ProductType::new(
             columns
                 .iter()
@@ -166,7 +202,6 @@ impl TableSchema {
             table_access,
             row_type,
         }
-        */
     }
 
     pub fn into_columns(self) -> Vec<ColumnSchema> {
@@ -182,7 +217,7 @@ impl TableSchema {
     pub fn clear_adjacent_schemas(&mut self) {
         self.indexes.clear();
         self.sequences.clear();
-        self.unique_constraints.clear();
+        self.constraints.clear();
     }
 
     // Crud operation on adjacent schemas
@@ -215,7 +250,6 @@ impl TableSchema {
         self.indexes.retain(|x| x.index_id != index_id)
     }
 
-    /*
     /// Add OR replace the [ConstraintSchema]
     pub fn update_constraint(&mut self, of: TableConstraintSchema) {
         if let Some(x) = self
@@ -233,7 +267,6 @@ impl TableSchema {
     pub fn remove_constraint(&mut self, constraint_id: ConstraintId) {
         self.constraints.retain(|x| x.constraint_id() != constraint_id)
     }
-    */
 
     /// Check if the specified `field` exists in this [TableSchema].
     ///
@@ -288,45 +321,36 @@ impl TableSchema {
     /// # Parameters
     ///
     /// - `table_id`: The unique identifier for the table.
-    /// - `schema`: The `TableDef` containing the schema information.
-    pub fn from_def(_table_id: TableId, _schema: TableDef) -> Self {
-        unimplemented!()
-
-        /*
+    /// - `def`: The `TableDef` containing the schema information.
+    pub fn from_def(table_id: TableId, def: &TableDef) -> Self {
         TableSchema::new(
             table_id,
-            schema.table_name.trim().into(),
-            schema
-                .columns
-                .into_iter()
-                .enumerate()
-                .map(|(col_pos, x)| ColumnSchema::from_def(table_id, col_pos.into(), x))
+            def.table_name.trim().into(),
+            def.columns
+                .iter()
+                .map(|col_def| ColumnSchema::from_def(table_id, def, col_def))
                 .collect(),
-            schema
-                .indexes
-                .into_iter()
-                .chain(indexes)
-                .sorted_by_key(|x| x.columns.clone())
-                .map(|x| IndexSchema::from_def(table_id, x))
+            def.indexes
+                .iter()
+                .map(|index_def| IndexSchema::from_def(table_id, def, index_def))
                 .collect(),
-            schema
-                .constraints
-                .into_iter()
-                .chain(constraints)
-                .sorted()
-                .map(|x| TableConstraintSchema::from_def(table_id, x))
+            def.unique_constraints
+                .iter()
+                .map(|unique_constraint_def| {
+                    TableConstraintSchema::Unique(UniqueConstraintSchema::from_def(
+                        table_id,
+                        def,
+                        unique_constraint_def,
+                    ))
+                })
                 .collect(),
-            schema
-                .sequences
-                .into_iter()
-                .chain(sequences)
-                .sorted_by_key(|x| x.col_pos)
-                .map(|x| SequenceSchema::from_def(table_id, x))
+            def.sequences
+                .iter()
+                .map(|sequence_def| SequenceSchema::from_def(table_id, def, sequence_def))
                 .collect(),
-            schema.table_type,
-            schema.table_access,
+            def.table_type,
+            def.table_access,
         )
-        */
     }
 }
 
@@ -364,7 +388,13 @@ impl From<&TableSchema> for Header {
             .map(|x| Column::new(FieldName::new(value.table_id, x.col_pos), x.col_type.clone()))
             .collect();
 
-        let unique_constraints = value.unique_constraints.iter().map(|x| x.columns.clone()).collect();
+        let unique_constraints = value
+            .constraints
+            .iter()
+            .map(|x| match x {
+                TableConstraintSchema::Unique(x) => x.columns.clone(),
+            })
+            .collect();
 
         Header::new(value.table_id, value.table_name.clone(), fields, unique_constraints)
     }

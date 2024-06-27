@@ -1,6 +1,7 @@
 use crate::error::SchemaErrors;
 use crate::identifier::Identifier;
 use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_primitives::{ColId, ColList, ColListBuilder};
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
 use spacetimedb_sats::db::raw_def::*;
 use spacetimedb_sats::relation::FieldName;
@@ -136,6 +137,30 @@ impl TableDef {
     /// Warning: It ignores the `table_name`
     pub fn get_column_by_name(&self, col_name: &str) -> Option<&ColumnDef> {
         self.columns.iter().find(|x| &*x.col_name == col_name)
+    }
+
+    /// Get the `ColId` corresponding to a particular column name.
+    ///
+    /// This column ID is not stable across migrations and should be used carefully in migration code.
+    pub fn get_column_id(&self, col_name: &Identifier) -> Option<ColId> {
+        self.columns
+            .iter()
+            .position(|x| &x.col_name == col_name)
+            .map(|id| ColId(id as u32))
+    }
+
+    pub fn get_column_list(&self, columns: &[Identifier]) -> Option<ColList> {
+        if columns.is_empty() {
+            return None;
+        }
+
+        let mut col_list = ColListBuilder::new();
+        for col in columns {
+            let col_id = self.get_column_id(col)?;
+            // INCORRECT(jgilles): this erases ordering information!!
+            col_list.push(col_id);
+        }
+        Some(col_list.build().expect("non-empty by previous check"))
     }
 }
 
