@@ -7,10 +7,12 @@ use std::time::Duration;
 use tokio::fs::File;
 use tonic::transport::{Certificate, Channel, Endpoint, Uri};
 use tracing_appender::rolling;
+use tracing_core::{Metadata, Subscriber};
 use tracing_flame::FlameLayer;
 use tracing_subscriber::fmt::writer::BoxMakeWriter;
 use tracing_subscriber::fmt::writer::MakeWriterExt;
-use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::layer::Context;
+use tracing_subscriber::layer::{Filter, SubscriberExt};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{reload, EnvFilter};
 
@@ -48,6 +50,18 @@ use tonic::transport::channel::ClientTlsConfig;
 use tracing::{error, span};
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::Registry;
+
+struct EventTracesFilter;
+
+impl<S> Filter<S> for EventTracesFilter
+where
+    S: Subscriber,
+{
+    fn enabled(&self, metadata: &Metadata<'_>, ctx: &Context<'_, S>) -> bool {
+        // Check if the span has the 'event_trace' field set to true
+        metadata.fields().iter().any(|field| field.name() == "event_trace")
+    }
+}
 
 async fn configure_tracing() {
     let mut metadata = tonic::metadata::MetadataMap::new();
@@ -135,9 +149,9 @@ async fn configure_tracing() {
     // Is important for `tracy_layer` to be before `fmt_layer` to not print ascii codes...
     let subscriber = tracing_subscriber::Registry::default()
         .with(tracy_layer)
+        .with(telemetry_layer)
         .with(fmt_layer)
-        .with(flame_layer)
-        .with(telemetry_layer);
+        .with(flame_layer);
 
     if cfg!(debug_assertions) {
         let (reload_layer, reload_handle) = tracing_subscriber::reload::Layer::new(env_filter_layer);

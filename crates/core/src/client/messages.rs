@@ -58,6 +58,20 @@ pub struct TransactionUpdateMessage<'a, U> {
     pub event: &'a ModuleEvent,
     pub database_update: SubscriptionUpdate<U>,
 }
+use opentelemetry::global::{self, ObjectSafeSpan};
+use opentelemetry::trace::{TraceContextExt, Tracer};
+
+fn get_current_trace_id() -> Option<String> {
+    let tracer = opentelemetry::global::tracer("example-tracer");
+    let current_span = tracer.span_builder("example-span").start(&tracer);
+    let span_context = current_span.span_context();
+
+    if span_context.is_valid() {
+        Some(span_context.trace_id().to_string())
+    } else {
+        None
+    }
+}
 
 impl<U: Into<Vec<TableUpdate>> + Into<Vec<TableUpdateJson>>> ServerMessage for TransactionUpdateMessage<'_, U> {
     fn serialize_text(self) -> MessageJson {
