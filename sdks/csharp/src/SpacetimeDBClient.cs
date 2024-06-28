@@ -79,6 +79,7 @@ namespace SpacetimeDB
         /// Invoked when an event message is received or at the end of a transaction update.
         /// </summary>
         public event Action<TransactionUpdate>? onEvent;
+        public event Action<OneOffQueryResponse>? onResult;
 
         public readonly Address clientAddress = Address.Random();
         public Identity clientIdentity { get; private set; }
@@ -599,17 +600,17 @@ namespace SpacetimeDB
                         Logger.LogException(e);
                     }
                     break;
-                /*case { TypeCase: Message.TypeOneofCase.Event, Event: var event_ }:
+                case ServerMessage.OneOffQueryResponse(var event_):
                     try
                     {
-                        onEvent?.Invoke(event_);
+                        onResult?.Invoke(event_);
                     }
                     catch (Exception e)
                     {
                         Logger.LogException(e);
                     }
 
-                    break;*/
+                    break;
                 default:
                     throw new InvalidOperationException();
             }
