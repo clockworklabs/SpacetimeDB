@@ -11,6 +11,7 @@ use spacetimedb_sats::{
 
 use crate::Timestamp;
 
+/// A span of time, in number of microseconds.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
 #[repr(transparent)]
 pub struct Duration(pub u64);
@@ -31,9 +32,11 @@ impl_st!([] Duration, _ts => Duration::get_type());
 impl_deserialize!([] Duration, de => u64::deserialize(de).map(Self));
 impl_serialize!([] Duration, (self, ser) => self.0.serialize(ser));
 
-/// `ScheduleAt` represents a column in scheduled table.
-/// It can be either a specific time or a regular interval
-/// at which scheduled reducer should execute.
+/// When a scheduled reducer should execute,
+/// either at a specific point in time,
+/// or at regular intervals for repeating schedules.
+///
+/// Stored in reducer-scheduling tables as a column.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum ScheduleAt {
     /// A specific time to which the reducer is scheduled.

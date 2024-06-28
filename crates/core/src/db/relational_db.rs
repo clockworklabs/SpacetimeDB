@@ -524,7 +524,7 @@ impl RelationalDB {
             .get_all_tables_tx(&ExecutionContext::internal(self.address), tx)
     }
 
-    pub fn is_scheuled_table(
+    pub fn is_scheduled_table(
         &self,
         ctx: &ExecutionContext,
         tx: &mut MutTx,

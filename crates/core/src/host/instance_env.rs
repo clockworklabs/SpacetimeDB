@@ -141,7 +141,7 @@ impl InstanceEnv {
                 }
             })?;
 
-        if stdb.is_scheuled_table(ctx, tx, table_id)? {
+        if stdb.is_scheduled_table(ctx, tx, table_id)? {
             let (schedule_id, schedule_at) = get_schedule_from_pv(tx, stdb, table_id, &ret)
                 .map_err(|e| NodesError::ScheduleError(ScheduleError::DecodingError(e)))?;
             self.scheduler

@@ -903,7 +903,7 @@ impl ModuleHost {
                 Ok(Some(params)) => Ok(inst.call_reducer(Some(tx), params)),
                 Ok(None) => Err(ReducerCallError::ScheduleReducerNotFound),
                 Err(err) => Err(ReducerCallError::Args(InvalidReducerArguments {
-                    err: err.into(),
+                    err: err,
                     reducer: REDUCER.into(),
                 })),
             }
