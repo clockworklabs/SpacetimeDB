@@ -312,8 +312,8 @@ fn autogen_csharp_product_table_common(
         ],
     );
 
-    writeln!(output, "[SpacetimeDB.Type]");
     writeln!(output, "[DataContract]");
+    writeln!(output, "[SpacetimeDB.Type]");
     write!(output, "public partial class {name}");
     if let Some(schema) = &schema {
         write!(
@@ -328,7 +328,9 @@ fn autogen_csharp_product_table_common(
     }
     writeln!(output);
     indented_block(&mut output, |output| {
-        for field in &*product_type.elements {
+        let num_fields = product_type.elements.len();
+        for i in 0..num_fields {
+            let field = &product_type.elements[i];
             let field_name = field
                 .name
                 .as_ref()
@@ -343,11 +345,14 @@ fn autogen_csharp_product_table_common(
                 field_name.to_case(Case::Pascal),
                 default_init(ctx, &field.algebraic_type)
             );
+            if i + 1 != num_fields {
+                writeln!(output);
+            }
         }
-        writeln!(output);
 
         // If this is a table, we want to generate event accessor and indexes
         if let Some(schema) = &schema {
+            writeln!(output);
             let constraints = schema.column_constraints();
             let mut unique_indexes = Vec::new();
             // Declare custom index dictionaries
@@ -647,7 +652,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
         );
         writeln!(
             output,
-            "public ReducerEvent(ClientApi.Event dbEvent, IReducerArgs? args) : base(dbEvent) => Args = args;"
+            "public ReducerEvent(TransactionUpdate update, IReducerArgs? args) : base(update) => Args = args;"
         );
         writeln!(output);
         // Properties for reducer args
@@ -694,18 +699,18 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
 
         writeln!(
             output,
-            "protected override ReducerEvent ReducerEventFromDbEvent(ClientApi.Event dbEvent)"
+            "protected override ReducerEvent ReducerEventFromDbEvent(TransactionUpdate update)"
         );
         indented_block(output, |output| {
-            writeln!(output, "var argBytes = dbEvent.FunctionCall.ArgBytes;");
-            writeln!(output, "IReducerArgs? args = dbEvent.FunctionCall.Reducer switch {{");
+            writeln!(output, "var encodedArgs = update.ReducerCall.Args;");
+            writeln!(output, "IReducerArgs? args = update.ReducerCall.ReducerName switch {{");
             {
                 indent_scope!(output);
                 for (reducer, reducer_name) in std::iter::zip(&reducers, &reducer_names) {
                     let reducer_str_name = &reducer.name;
                     writeln!(
                         output,
-                        "\"{reducer_str_name}\" => BSATNHelpers.FromProtoBytes<{reducer_name}ArgsStruct>(argBytes),"
+                        "\"{reducer_str_name}\" => BSATNHelpers.Decode<{reducer_name}ArgsStruct>(encodedArgs),"
                     );
                 }
                 writeln!(output, "\"<none>\" => null,");
@@ -715,7 +720,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
                 );
             }
             writeln!(output, "}};");
-            writeln!(output, "return new ReducerEvent(dbEvent, args);");
+            writeln!(output, "return new ReducerEvent(update, args);");
         });
     });
 
