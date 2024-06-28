@@ -1054,10 +1054,9 @@ impl TableDef {
     }
 
     /// Set the reducer name for scheduled tables and return updated `TableDef`.
-    pub fn with_scheduled(self, scheduled: Option<Box<str>>) -> Self {
-        let mut x = self;
-        x.scheduled = scheduled;
-        x
+    pub fn with_scheduled(mut self, scheduled: Option<Box<str>>) -> Self {
+        self.scheduled = scheduled;
+        self
     }
 
     /// Generate a [IndexDef] using the supplied `columns`.

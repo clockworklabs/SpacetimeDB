@@ -48,7 +48,7 @@ mod sym {
     /// Matches `sats`.
     pub const SATS: Symbol = Symbol("sats");
 
-    // Matches `scheduled="String"`.
+    // Matches `String`.
     pub const SCHEDULED: Symbol = Symbol("scheduled");
 
     /// Matches `unique`.
@@ -200,6 +200,9 @@ impl syn::parse::Parse for MacroInput {
                 comma_then_comma_delimited(input, || {
                     match_tok!(match input {
                         kw::scheduled => {
+                            if scheduled.is_some() {
+                                return Err(syn::Error::new(input.span(), "duplicate scheduled attribute"));
+                            }
                             let in_parens;
                             syn::parenthesized!(in_parens in input);
                             let in_parens = &in_parens;
@@ -436,29 +439,7 @@ fn spacetimedb_table(item: TokenStream, public: Option<Span>, scheduled: Option<
     let public = public.map(|span| quote_spanned!(span => #[sats(public)]));
 
     let output = if let Some(reducer) = scheduled {
-        let reducer_name = reducer.to_string();
-        let mut modified_item = syn::parse2::<DeriveInput>(item)?;
-        let type_check = reducer_type_check(&modified_item, &reducer)?;
-        add_scheduled_fields(&mut modified_item)?;
-        let ref_register = quote! {
-            const _: () = {
-                #[export_name = "__preinit__20_register_describer_ScheduleAt"]
-                extern "C" fn __register_describer() {
-                    spacetimedb::rt::register_reftype::<ScheduleAt>()
-                }
-            };
-        };
-
-        quote! {
-            #[derive(spacetimedb::TableType)]
-            #public
-            #[sats(scheduled=#reducer_name)]
-            #modified_item
-            #type_check
-            #ref_register
-
-
-        }
+        schedule_table(item, reducer, public)?
     } else {
         quote! {
             #[derive(spacetimedb::TableType)]
@@ -469,6 +450,32 @@ fn spacetimedb_table(item: TokenStream, public: Option<Span>, scheduled: Option<
     Ok(output)
 }
 
+fn schedule_table(item: TokenStream, reducer: Ident, public: Option<TokenStream>) -> syn::Result<TokenStream> {
+    let reducer_name = reducer.to_string();
+    let mut modified_item = syn::parse2::<DeriveInput>(item)?;
+    let type_check = reducer_type_check(&modified_item, &reducer)?;
+    add_scheduled_fields(&mut modified_item)?;
+    // codegen call all the `__preinit`s to add it to module Typespace
+    // codegen does not try to replace ref types with their product types.
+    // hence known types get registered as ref types.
+    let ref_register = quote! {
+        const _: () = {
+            #[export_name = "__preinit__20_register_describer_ScheduleAt"]
+            extern "C" fn __register_describer() {
+                spacetimedb::rt::register_reftype::<ScheduleAt>()
+            }
+        };
+    };
+
+    Ok(quote! {
+        #[derive(spacetimedb::TableType)]
+        #public
+        #[sats(scheduled = #reducer_name)]
+        #modified_item
+        #type_check
+        #ref_register
+    })
+}
 // add scheduled_id and scheduled_at fields to the struct
 fn add_scheduled_fields(item: &mut DeriveInput) -> syn::Result<()> {
     match &mut item.data {
@@ -476,6 +483,7 @@ fn add_scheduled_fields(item: &mut DeriveInput) -> syn::Result<()> {
             if let syn::Fields::Named(fields) = &mut struct_data.fields {
                 fields.named.extend([
                     syn::Field::parse_named.parse2(quote! {#[primarykey]
+                    #[autoinc]
                     pub scheduled_id: u64 })?,
                     syn::Field::parse_named
                         .parse2(quote! { pub scheduled_at: spacetimedb::spacetimedb_lib::ScheduleAt })?,
@@ -492,6 +500,9 @@ fn add_scheduled_fields(item: &mut DeriveInput) -> syn::Result<()> {
     Ok(())
 }
 
+/// Check if the Identifier provided in `scheduled()` is a valid reducer
+
+/// generate a function that tried to call reducer passing `ReducerContext`
 fn reducer_type_check(item: &DeriveInput, reducer_name: &Ident) -> syn::Result<TokenStream> {
     let struct_name = &item.ident;
     Ok(quote! {
@@ -778,17 +789,15 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     });
 
     let scheduled_constant = match sats_ty.scheduled {
-        Some(reducer_name) => quote!(const SCHEDULED_REDUCER_NAME: Option<&'static str> = Some(#reducer_name);),
-        None => quote!(
-            const SCHEDULED_REDUCER_NAME: Option<&'static str> = None;
-        ),
+        Some(reducer_name) => quote!(Some(#reducer_name)),
+        None => quote!(None),
     };
 
     let tabletype_impl = quote! {
         impl spacetimedb::TableType for #original_struct_ident {
             const TABLE_NAME: &'static str = #table_name;
             const TABLE_ACCESS: spacetimedb::sats::db::auth::StAccess = #table_access;
-            #scheduled_constant
+            const SCHEDULED_REDUCER_NAME: Option<&'static str> =  #scheduled_constant;
             const COLUMN_ATTRS: &'static [spacetimedb::sats::db::attr::ColumnAttribute] = &[
                 #(spacetimedb::sats::db::attr::ColumnAttribute::#column_attrs),*
             ];
