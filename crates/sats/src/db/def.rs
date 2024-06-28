@@ -967,6 +967,7 @@ pub struct TableDef {
     pub sequences: Vec<SequenceDef>,
     pub table_type: StTableType,
     pub table_access: StAccess,
+    scheduled: Option<Box<str>>,
 }
 
 impl TableDef {
@@ -986,6 +987,7 @@ impl TableDef {
             sequences: vec![],
             table_type: StTableType::User,
             table_access: StAccess::Public,
+            scheduled: None,
         }
     }
 
@@ -1172,6 +1174,7 @@ impl From<TableSchema> for TableDef {
             sequences: value.sequences.into_iter().map(Into::into).collect(),
             table_type: value.table_type,
             table_access: value.table_access,
+            scheduled: None,
         }
     }
 }
