@@ -6,6 +6,7 @@
 
 using System;
 using SpacetimeDB;
+using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB.Types
 {
@@ -32,7 +33,7 @@ namespace SpacetimeDB.Types
 		public ReducerType Reducer => Args?.ReducerType ?? ReducerType.None;
 
 		public ReducerEvent(IReducerArgs? args) : base() => Args = args;
-		public ReducerEvent(ClientApi.Event dbEvent, IReducerArgs? args) : base(dbEvent) => Args = args;
+		public ReducerEvent(TransactionUpdate dbEvent, IReducerArgs? args) : base(dbEvent) => Args = args;
 
 		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
 		public SendMessageArgsStruct SendMessageArgs => (SendMessageArgsStruct)Args!;
@@ -52,16 +53,16 @@ namespace SpacetimeDB.Types
 
 		public static readonly SpacetimeDBClient instance = new();
 
-		protected override ReducerEvent ReducerEventFromDbEvent(ClientApi.Event dbEvent)
+		protected override ReducerEvent ReducerEventFromDbEvent(TransactionUpdate update)
 		{
-			var argBytes = dbEvent.FunctionCall.ArgBytes;
-			IReducerArgs? args = dbEvent.FunctionCall.Reducer switch {
-				"send_message" => BSATNHelpers.FromProtoBytes<SendMessageArgsStruct>(argBytes),
-				"set_name" => BSATNHelpers.FromProtoBytes<SetNameArgsStruct>(argBytes),
+			var argBytes = update.ReducerCall.Args;
+			IReducerArgs? args = update.ReducerCall.ReducerName switch {
+				"send_message" => BSATNHelpers.Decode<SendMessageArgsStruct>(argBytes),
+				"set_name" => BSATNHelpers.Decode<SetNameArgsStruct>(argBytes),
 				"<none>" => null,
 				var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
 			};
-			return new ReducerEvent(dbEvent, args);
+			return new ReducerEvent(update, args);
 		}
 	}
 }

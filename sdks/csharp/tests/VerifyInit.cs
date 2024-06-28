@@ -1,18 +1,17 @@
 namespace SpacetimeDB.Tests;
 
 using System.Runtime.CompilerServices;
-using Google.Protobuf;
 using SpacetimeDB.Types;
 
 static class VerifyInit
 {
-    class ByteStringConverter : WriteOnlyJsonConverter<ByteString>
+    /*class ByteStringConverter : WriteOnlyJsonConverter<ByteString>
     {
         public override void Write(VerifyJsonWriter writer, ByteString value)
         {
             writer.WriteValue(Convert.ToHexString(value.Span));
         }
-    }
+    }*/
 
     // A converter that scrubs identity to a stable string.
     class IdentityConverter : WriteOnlyJsonConverter<Identity>
@@ -84,7 +83,7 @@ static class VerifyInit
         VerifierSettings.AddExtraSettings(settings =>
             settings.Converters.AddRange(
                 [
-                    new ByteStringConverter(),
+                    //new ByteStringConverter(),
                     new IdentityConverter(),
                     new AddressConverter(),
                     new NetworkRequestTrackerConverter()

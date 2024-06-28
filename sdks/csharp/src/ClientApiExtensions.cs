@@ -1,7 +1,7 @@
-﻿namespace ClientApi
+﻿namespace SpacetimeDB.ClientApi
 {
-    public partial class FunctionCall
+    public partial class ReducerCallInfo
     {
-        public SpacetimeDB.ReducerEventBase? CallInfo { get; set; }
+        internal ReducerEventBase? ReducerEvent { get; set; }
     }
 }

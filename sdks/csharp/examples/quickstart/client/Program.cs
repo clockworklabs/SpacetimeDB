@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using SpacetimeDB;
+using SpacetimeDB.ClientApi;
 using SpacetimeDB.Types;
 
 // our local client SpacetimeDB identity
@@ -97,7 +98,7 @@ void Message_OnInsert(Message insertedValue, ReducerEvent? dbEvent)
 
 void Reducer_OnSetNameEvent(ReducerEvent reducerEvent, string name)
 {
-    if (reducerEvent.Identity == local_identity && reducerEvent.Status == ClientApi.Event.Types.Status.Failed)
+    if (reducerEvent.Identity == local_identity && reducerEvent.Status is UpdateStatus.Failed)
     {
         Console.Write($"Failed to change name to {name}");
     }
@@ -105,7 +106,7 @@ void Reducer_OnSetNameEvent(ReducerEvent reducerEvent, string name)
 
 void Reducer_OnSendMessageEvent(ReducerEvent reducerEvent, string text)
 {
-    if (reducerEvent.Identity == local_identity && reducerEvent.Status == ClientApi.Event.Types.Status.Failed)
+    if (reducerEvent.Identity == local_identity && reducerEvent.Status is UpdateStatus.Failed)
     {
         Console.Write($"Failed to send message {text}");
     }

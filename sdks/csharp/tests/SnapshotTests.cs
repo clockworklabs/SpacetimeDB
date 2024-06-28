@@ -1,9 +1,9 @@
 namespace SpacetimeDB.Tests;
+using SpacetimeDB.ClientApi;
 
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using Argon;
-using Google.Protobuf;
 using SpacetimeDB.Types;
 using Xunit;
 
@@ -52,7 +52,7 @@ public class SnapshotTests
             events.Add("LogException", e.Message);
         }
     }
-
+/*
     class ByteStringReaderConverter : JsonConverter<ByteString>
     {
         public override ByteString ReadJson(
@@ -82,7 +82,7 @@ public class SnapshotTests
         {
             throw new NotImplementedException();
         }
-    }
+    }*/
 
     private static string GetTestDir([CallerFilePath] string testFilePath = "") =>
         Path.GetDirectoryName(testFilePath)!;
@@ -98,12 +98,12 @@ public class SnapshotTests
 
         var jsonSettings = new JsonSerializerSettings
         {
-            Converters = [new ByteStringReaderConverter()]
+            //Converters = [new ByteStringReaderConverter()]
         };
 
         // We store the dump in JSON-NL format for simplicity (it's just `ClientApi.Message.toString()`) and readability.
         var sampleDumpParsed = File.ReadLines(Path.Combine(GetTestDir(), "sample-dump.jsonl"))
-            .Select(line => JsonConvert.DeserializeObject<ClientApi.Message>(line, jsonSettings));
+            .Select(line => JsonConvert.DeserializeObject<ClientApi.ServerMessage>(line, jsonSettings));
 
         // But for proper testing we need to convert it back to raw binary messages as if it was received over network.
         var sampleDumpBinary = sampleDumpParsed.Select(
@@ -112,25 +112,18 @@ public class SnapshotTests
                 // Start tracking requests in the stats handler so that those request IDs can later be found.
                 switch (message)
                 {
-                    case
-                    {
-                        TypeCase: ClientApi.Message.TypeOneofCase.SubscriptionUpdate,
-                        SubscriptionUpdate: var subscriptionUpdate
-                    }:
+                    case ClientApi.ServerMessage.InitialSubscription(var _):
                         client.stats.SubscriptionRequestTracker.StartTrackingRequest($"sample#{i}");
                         break;
-                    case
-                    {
-                        TypeCase: ClientApi.Message.TypeOneofCase.TransactionUpdate,
-                        TransactionUpdate: var transactionUpdate
-                    }:
+                    case ClientApi.ServerMessage.TransactionUpdate(var _):
                         client.stats.ReducerRequestTracker.StartTrackingRequest($"sample#{i}");
                         break;
                 }
                 using var output = new MemoryStream();
                 using (var brotli = new BrotliStream(output, CompressionMode.Compress))
                 {
-                    message.WriteTo(brotli);
+                    using var w = new BinaryWriter(brotli);
+                    new ServerMessage.BSATN().Write(w, message);
                 }
                 return output.ToArray();
             }
@@ -193,6 +186,6 @@ public class SnapshotTests
                 }
             )
             .AddExtraSettings(settings => settings.Converters.AddRange([new EventsConverter()]))
-            .ScrubMember<ClientApi.Event>(_ => _.CallerIdentity);
+            .ScrubMember<ClientApi.TransactionUpdate>(x => x.CallerIdentity);
     }
 }
