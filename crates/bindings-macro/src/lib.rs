@@ -315,22 +315,17 @@ fn spacetimedb_reducer(item: TokenStream) -> syn::Result<TokenStream> {
         ));
     }
 
-    gen_reducer(original_function, &reducer_name, ReducerExtra::Schedule)
+    gen_reducer(original_function, &reducer_name)
 }
 
 /// Generates the special `__init__` "reducer" in place of `item`.
 fn spacetimedb_init(item: TokenStream) -> syn::Result<TokenStream> {
     let original_function = syn::parse2::<ItemFn>(item)?;
 
-    gen_reducer(original_function, "__init__", ReducerExtra::None)
+    gen_reducer(original_function, "__init__")
 }
 
-enum ReducerExtra {
-    None,
-    Schedule,
-}
-
-fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtra) -> syn::Result<TokenStream> {
+fn gen_reducer(original_function: ItemFn, reducer_name: &str) -> syn::Result<TokenStream> {
     let func_name = &original_function.sig.ident;
     let vis = &original_function.vis;
 
@@ -386,25 +381,6 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
 
     let register_describer_symbol = format!("__preinit__20_register_describer_{reducer_name}");
 
-    let mut extra_impls = TokenStream::new();
-
-    if !matches!(extra, ReducerExtra::None) {
-        let arg_names = typed_args
-            .iter()
-            .enumerate()
-            .map(|(i, arg)| match &*arg.pat {
-                syn::Pat::Ident(pat) => pat.ident.clone(),
-                _ => format_ident!("__arg{}", i),
-            })
-            .collect::<Vec<_>>();
-
-        extra_impls.extend(quote!(impl #func_name {
-            pub fn schedule(__time: spacetimedb::Timestamp #(, #arg_names: #arg_tys)*) -> spacetimedb::ScheduleToken<#func_name> {
-                spacetimedb::rt::schedule(__time, (#(#arg_names,)*))
-            }
-        }));
-    }
-
     let generated_function = quote! {
         fn __reducer(
             __sender: spacetimedb::sys::Buffer,
@@ -445,7 +421,6 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str, extra: ReducerExtr
                 __reducer
             };
         }
-        #extra_impls
         #original_function
     })
 }
@@ -950,7 +925,7 @@ fn spacetimedb_index(
 
 fn spacetimedb_special_reducer(name: &str, item: TokenStream) -> syn::Result<TokenStream> {
     let original_function = syn::parse2::<ItemFn>(item)?;
-    gen_reducer(original_function, name, ReducerExtra::None)
+    gen_reducer(original_function, name)
 }
 
 #[proc_macro]
