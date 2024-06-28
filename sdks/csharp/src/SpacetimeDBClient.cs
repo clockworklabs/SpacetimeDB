@@ -145,68 +145,6 @@ namespace SpacetimeDB
         private readonly CancellationTokenSource _preProcessCancellationTokenSource = new();
         private CancellationToken _preProcessCancellationToken => _preProcessCancellationTokenSource.Token;
 
-        struct PreProcessContext {
-            public ClientCache clientDB;
-
-            public List<DbOp> dbOps;
-
-            // This is all of the inserts
-            public Dictionary<Type, HashSet<byte[]>>? subscriptionInserts;
-
-            // All row updates that have a primary key, this contains inserts, deletes and updates
-            public Dictionary<(Type tableType, object primaryKeyValue), DbOp> primaryKeyChanges;
-
-            public string tableName;
-            public ClientCache.ITableCache table;
-
-            public HashSet<byte[]> GetInsertHashSet(Type tableType, int tableSize) {
-                if (!subscriptionInserts!.TryGetValue(tableType, out var hashSet)) {
-                    hashSet = new HashSet<byte[]>(capacity: tableSize, comparer: ByteArrayComparer.Instance);
-                    subscriptionInserts[tableType] = hashSet;
-                }
-
-                return hashSet;
-            }
-
-            public bool Setup(TableUpdate update) {
-                var updatedTable = clientDB.GetTable(update.TableName);
-                if (updatedTable == null) {
-                    Logger.LogError($"Unknown table name: {update.TableName}");
-                    return false;
-                }
-                table = updatedTable;
-                tableName = update.TableName;
-                return true;
-            }
-
-            public void HandleUpdate(in DbOp op, in DbValue val) {
-                if (val is IDatabaseTableWithPrimaryKey objWithPk) {
-                    // Compound key that we use for lookup.
-                    // Consists of type of the table (for faster comparison that string names) + actual primary key of the row.
-                    var key = (table.ClientTableType, objWithPk.GetPrimaryKeyValue());
-
-                    if (primaryKeyChanges.TryGetValue(key, out var oldOp)) {
-                        if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null)) {
-                            Logger.LogWarning($"Update with the same primary key was applied multiple times! tableName={tableName}");
-                            // TODO(jdetter): Is this a correctable error? This would be a major error on the
-                            // SpacetimeDB side.
-                            return;
-                        }
-
-                        var (insertOp, deleteOp) = op.insert is not null ? (op, oldOp) : (oldOp, op);
-                        primaryKeyChanges[key] = new DbOp {
-                            table = insertOp.table,
-                            delete = deleteOp.delete,
-                            insert = insertOp.insert,
-                        };
-                    }
-                }
-                else {
-                    dbOps.Add(op);
-                }
-            }
-        }
-
         static DbValue Decode(ClientCache.ITableCache table, EncodedValue value) => value switch {
             EncodedValue.Binary(var bin) => new DbValue(table.DecodeValue(bin), bin),
             EncodedValue.Text(var text) => throw new InvalidOperationException("TODO?"),
@@ -228,24 +166,41 @@ namespace SpacetimeDB
 
             PreProcessedMessage PreProcessMessage(UnprocessedMessage unprocessed)
             {
+                var dbOps = new List<DbOp>();
                 using var compressedStream = new MemoryStream(unprocessed.bytes);
                 using var decompressedStream = new BrotliStream(compressedStream, CompressionMode.Decompress);
                 using var binaryReader = new BinaryReader(decompressedStream);
                 var message = new ServerMessage.BSATN().Read(binaryReader);
-                var ctx = new PreProcessContext {
-                    clientDB = clientDB,
-                    dbOps = new()
-                };
+
+                // This is all of the inserts
+                Dictionary<System.Type, HashSet<byte[]>>? subscriptionInserts = null;
+                // All row updates that have a primary key, this contains inserts, deletes and updates
+                var primaryKeyChanges = new Dictionary<(System.Type tableType, object primaryKeyValue), DbOp>();
+
+                HashSet<byte[]> GetInsertHashSet(System.Type tableType, int tableSize)
+                {
+                    if (!subscriptionInserts.TryGetValue(tableType, out var hashSet))
+                    {
+                        hashSet = new HashSet<byte[]>(capacity: tableSize, comparer: ByteArrayComparer.Instance);
+                        subscriptionInserts[tableType] = hashSet;
+                    }
+
+                    return hashSet;
+                }
 
                 switch (message)
                 {
                     case ServerMessage.InitialSubscription(var initialSubscription):
-                        ctx.subscriptionInserts = new(capacity: initialSubscription.DatabaseUpdate.Tables.Sum(a => a.Inserts.Count));
+                        subscriptionInserts = new(capacity: initialSubscription.DatabaseUpdate.Tables.Sum(a => a.Inserts.Count));
 
                         // First apply all of the state
                         foreach (var update in initialSubscription.DatabaseUpdate.Tables)
                         {
-                            if (!ctx.Setup(update)) {
+                            var tableName = update.TableName;
+                            var table = clientDB.GetTable(tableName);
+                            if (table == null)
+                            {
+                                Logger.LogError($"Unknown table name: {tableName}");
                                 continue;
                             }
 
@@ -254,7 +209,7 @@ namespace SpacetimeDB
                                 Logger.LogWarning("Non-insert during a subscription update!");
                             }
 
-                            var hashSet = ctx.GetInsertHashSet(ctx.table!.ClientTableType, initialSubscription.DatabaseUpdate.Tables.Count);
+                            var hashSet = GetInsertHashSet(table.ClientTableType, initialSubscription.DatabaseUpdate.Tables.Count);
 
                             foreach (var row in update.Inserts)
                             {
@@ -265,13 +220,13 @@ namespace SpacetimeDB
                                             continue;
                                         }
 
-                                        var obj = ctx.table.DecodeValue(bin);
+                                        var obj = table.DecodeValue(bin);
                                         var op = new DbOp {
-                                            table = ctx.table,
+                                            table = table,
                                             insert = new(obj, bin),
                                         };
 
-                                        ctx.dbOps.Add(op);
+                                        dbOps.Add(op);
                                         break;
 
                                     case EncodedValue.Text(var txt):
@@ -285,7 +240,7 @@ namespace SpacetimeDB
                     case ServerMessage.TransactionUpdate(var transactionUpdate):
                         switch (transactionUpdate.Status) {
                             case UpdateStatus.Committed(var committed):
-                                ctx.primaryKeyChanges = new();
+                                primaryKeyChanges = new();
 
                                 // First apply all of the state
                                 foreach (var update in committed.Tables) {
@@ -298,17 +253,65 @@ namespace SpacetimeDB
 
                                     foreach (var row in update.Inserts) {
                                         var op = new DbOp { table = table, insert = Decode(table, row) };
-                                        ctx.HandleUpdate(op, op.insert.Value);
+
+                                        if (op.insert.Value is IDatabaseTableWithPrimaryKey objWithPk) {
+                                            // Compound key that we use for lookup.
+                                            // Consists of type of the table (for faster comparison that string names) + actual primary key of the row.
+                                            var key = (table.ClientTableType, objWithPk.GetPrimaryKeyValue());
+
+                                            if (primaryKeyChanges.TryGetValue(key, out var oldOp)) {
+                                                if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null)) {
+                                                    Logger.LogWarning($"Update with the same primary key was applied multiple times! tableName={tableName}");
+                                                    // TODO(jdetter): Is this a correctable error? This would be a major error on the
+                                                    // SpacetimeDB side.
+                                                    continue;
+                                                }
+
+                                                var (insertOp, deleteOp) = op.insert is not null ? (op, oldOp) : (oldOp, op);
+                                                primaryKeyChanges[key] = new DbOp {
+                                                    table = insertOp.table,
+                                                    delete = deleteOp.delete,
+                                                    insert = insertOp.insert,
+                                                };
+                                            }
+                                        }
+                                        else {
+                                            dbOps.Add(op);
+                                        }
                                     }
 
                                     foreach (var row in update.Deletes) {
                                         var op = new DbOp { table = table, delete = Decode(table, row) };
-                                        ctx.HandleUpdate(op, op.delete.Value);
+
+                                        if (op.delete.Value is IDatabaseTableWithPrimaryKey objWithPk) {
+                                            // Compound key that we use for lookup.
+                                            // Consists of type of the table (for faster comparison that string names) + actual primary key of the row.
+                                            var key = (table.ClientTableType, objWithPk.GetPrimaryKeyValue());
+
+                                            if (primaryKeyChanges.TryGetValue(key, out var oldOp)) {
+                                                if ((op.insert is not null && oldOp.insert is not null) || (op.delete is not null && oldOp.delete is not null)) {
+                                                    Logger.LogWarning($"Update with the same primary key was applied multiple times! tableName={tableName}");
+                                                    // TODO(jdetter): Is this a correctable error? This would be a major error on the
+                                                    // SpacetimeDB side.
+                                                    continue;
+                                                }
+
+                                                var (insertOp, deleteOp) = op.insert is not null ? (op, oldOp) : (oldOp, op);
+                                                primaryKeyChanges[key] = new DbOp {
+                                                    table = insertOp.table,
+                                                    delete = deleteOp.delete,
+                                                    insert = insertOp.insert,
+                                                };
+                                            }
+                                        }
+                                        else {
+                                            dbOps.Add(op);
+                                        }
                                     }
                                 }
 
                                 // Combine primary key updates and non-primary key updates
-                                ctx.dbOps.AddRange(ctx.primaryKeyChanges.Values);
+                                dbOps.AddRange(primaryKeyChanges.Values);
 
                                 // Convert the generic event arguments in to a domain specific event object
                                 try {
@@ -347,8 +350,8 @@ namespace SpacetimeDB
                 // Logger.LogWarning($"Total Updates preprocessed: {totalUpdateCount}");
                 return new PreProcessedMessage
                 {
-                    processed = new ProcessedMessage { message = message, dbOps = ctx.dbOps, timestamp = unprocessed.timestamp },
-                    subscriptionInserts = ctx.subscriptionInserts,
+                    processed = new ProcessedMessage { message = message, dbOps = dbOps, timestamp = unprocessed.timestamp },
+                    subscriptionInserts = subscriptionInserts,
                 };
             }
         }
