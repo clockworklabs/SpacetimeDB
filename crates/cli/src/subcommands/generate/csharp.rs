@@ -306,14 +306,15 @@ fn autogen_csharp_product_table_common(
     let mut output = CsharpAutogen::new(
         namespace,
         &[
+            "SpacetimeDB.ClientApi",
             "System.Collections.Generic",
             "System.Linq",
             "System.Runtime.Serialization",
         ],
     );
 
-    writeln!(output, "[DataContract]");
     writeln!(output, "[SpacetimeDB.Type]");
+    writeln!(output, "[DataContract]");
     write!(output, "public partial class {name}");
     if let Some(schema) = &schema {
         write!(
