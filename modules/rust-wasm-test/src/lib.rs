@@ -1,7 +1,7 @@
 #![allow(clippy::disallowed_names)]
 use spacetimedb::sats::db::auth::StAccess;
-use spacetimedb::spacetimedb_lib::{self, bsatn};
-use spacetimedb::{query, spacetimedb, Deserialize, ReducerContext, SpacetimeType, TableType, Timestamp};
+use spacetimedb::spacetimedb_lib::{self, bsatn, ScheduleAt};
+use spacetimedb::{duration, query, spacetimedb, Deserialize, ReducerContext, SpacetimeType, TableType, Timestamp};
 
 #[spacetimedb(table)]
 #[spacetimedb(index(btree, name = "foo", x))]
@@ -80,9 +80,19 @@ pub type TestAlias = TestA;
 // #[spacetimedb(migrate)]
 // pub fn migrate() {}
 
+#[spacetimedb(table, scheduled(repeating_test))]
+pub struct RepeatingTestArg {
+    prev_time: Timestamp,
+
+}
+
 #[spacetimedb(init)]
 pub fn init() {
-    spacetimedb::schedule!("1000ms", repeating_test(_, Timestamp::now()));
+    let _ = RepeatingTestArg::insert(RepeatingTestArg {
+        prev_time: Timestamp::now(),
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Interval(duration!("1000ms").into()),
+    });
 }
 
 #[spacetimedb(update)]
@@ -91,12 +101,9 @@ pub fn update() {
 }
 
 #[spacetimedb(reducer)]
-pub fn repeating_test(ctx: ReducerContext, prev_time: Timestamp) {
-    let delta_time = prev_time.elapsed();
+pub fn repeating_test(ctx: ReducerContext, arg: RepeatingTestArg) {
+    let delta_time = arg.prev_time.elapsed();
     log::trace!("Timestamp: {:?}, Delta time: {:?}", ctx.timestamp, delta_time);
-
-    // Reschedule ourselves.
-    spacetimedb::schedule!("1000ms", repeating_test(_, Timestamp::now()));
 }
 
 #[spacetimedb(reducer)]
