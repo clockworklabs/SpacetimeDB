@@ -329,9 +329,7 @@ fn autogen_csharp_product_table_common(
     }
     writeln!(output);
     indented_block(&mut output, |output| {
-        let num_fields = product_type.elements.len();
-        for i in 0..num_fields {
-            let field = &product_type.elements[i];
+        for field in &*product_type.elements {
             let field_name = field
                 .name
                 .as_ref()
@@ -346,14 +344,11 @@ fn autogen_csharp_product_table_common(
                 field_name.to_case(Case::Pascal),
                 default_init(ctx, &field.algebraic_type)
             );
-            if i + 1 != num_fields {
-                writeln!(output);
-            }
         }
+        writeln!(output);
 
         // If this is a table, we want to generate event accessor and indexes
         if let Some(schema) = &schema {
-            writeln!(output);
             let constraints = schema.column_constraints();
             let mut unique_indexes = Vec::new();
             // Declare custom index dictionaries
