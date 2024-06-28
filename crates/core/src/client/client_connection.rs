@@ -233,7 +233,6 @@ impl ClientConnection {
     ) -> Result<ReducerCallResult, ReducerCallError> {
         self.module
             .call_reducer(
-                None,
                 self.id.identity,
                 Some(self.id.address),
                 Some(self.sender()),

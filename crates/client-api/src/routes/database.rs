@@ -107,16 +107,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
         return Err((StatusCode::NOT_FOUND, format!("{:#}", anyhow::anyhow!(e))).into());
     }
     let result = match module
-        .call_reducer(
-            None,
-            caller_identity,
-            Some(client_address),
-            None,
-            None,
-            None,
-            &reducer,
-            args,
-        )
+        .call_reducer(caller_identity, Some(client_address), None, None, None, &reducer, args)
         .await
     {
         Ok(rcr) => Ok(rcr),
@@ -126,7 +117,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
                     log::debug!("Attempt to call reducer with invalid arguments");
                     StatusCode::BAD_REQUEST
                 }
-                ReducerCallError::NoSuchModule(_) => StatusCode::NOT_FOUND,
+                ReducerCallError::NoSuchModule(_) | ReducerCallError::ScheduleReducerNotFound => StatusCode::NOT_FOUND,
                 ReducerCallError::NoSuchReducer => {
                     log::debug!("Attempt to call non-existent reducer {}", reducer);
                     StatusCode::NOT_FOUND
