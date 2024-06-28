@@ -83,7 +83,6 @@ pub type TestAlias = TestA;
 #[spacetimedb(table, scheduled(repeating_test))]
 pub struct RepeatingTestArg {
     prev_time: Timestamp,
-
 }
 
 #[spacetimedb(init)]

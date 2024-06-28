@@ -146,7 +146,6 @@ pub trait Args<'de>: Sized {
     fn schema<I: ReducerInfo>(typespace: &mut impl TypespaceBuilder) -> ReducerDef;
 }
 
-
 /// A trait of types representing the result of executing a reducer.
 pub trait ReducerResult {
     /// Convert the result into form where there is no value
