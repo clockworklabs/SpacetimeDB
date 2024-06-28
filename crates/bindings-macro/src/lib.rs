@@ -497,8 +497,8 @@ fn spacetimedb_table(item: TokenStream, public: Option<Span>, scheduled: Option<
 // add scheduled_id and scheduled_at fields to the struct
 fn add_scheduled_fields(item: &mut DeriveInput) -> syn::Result<()> {
     match &mut item.data {
-        syn::Data::Struct(ref mut struct_data) => match &mut struct_data.fields {
-            syn::Fields::Named(fields) => {
+        syn::Data::Struct(ref mut struct_data) => {
+            if let syn::Fields::Named(fields) = &mut struct_data.fields {
                 fields.named.extend([
                     syn::Field::parse_named.parse2(quote! {#[primarykey]
                     pub scheduled_id: u64 })?,
@@ -506,8 +506,7 @@ fn add_scheduled_fields(item: &mut DeriveInput) -> syn::Result<()> {
                         .parse2(quote! { pub scheduled_at: spacetimedb::spacetimedb_lib::ScheduleAt })?,
                 ]);
             }
-            _ => (),
-        },
+        }
         _ => {
             return Err(syn::Error::new(
                 item.span(),
