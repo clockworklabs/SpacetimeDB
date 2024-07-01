@@ -251,49 +251,55 @@ export class SpacetimeDBClient {
         }
       } else if (message instanceof TransactionUpdateMessage) {
         const reducerName = message.event.reducerName;
-        const reducer: any | undefined = reducerName
-          ? SpacetimeDBClient.getReducerClass(reducerName)
-          : undefined;
 
-        let reducerEvent: ReducerEvent | undefined;
-        let reducerArgs: any;
-        if (reducer && message.event.status === "committed") {
-          let adapter: ReducerArgsAdapter = new BinaryReducerArgsAdapter(
-            new BinaryAdapter(
-              new BinaryReader(message.event.args as Uint8Array)
-            )
+        if (reducerName == "<none>") {
+          let errorMessage = message.event.message;
+          console.error(`Received an error from the database: ${errorMessage}`);
+        } else {
+          const reducer: any | undefined = reducerName
+            ? SpacetimeDBClient.getReducerClass(reducerName)
+            : undefined;
+
+          let reducerEvent: ReducerEvent | undefined;
+          let reducerArgs: any;
+          if (reducer && message.event.status === "committed") {
+            let adapter: ReducerArgsAdapter = new BinaryReducerArgsAdapter(
+              new BinaryAdapter(
+                new BinaryReader(message.event.args as Uint8Array)
+              )
+            );
+
+            reducerArgs = reducer.deserializeArgs(adapter);
+          }
+
+          reducerEvent = new ReducerEvent(
+            message.event.identity,
+            message.event.address,
+            message.event.originalReducerName,
+            message.event.status,
+            message.event.message,
+            reducerArgs
           );
 
-          reducerArgs = reducer.deserializeArgs(adapter);
-        }
+          for (let tableUpdate of message.tableUpdates) {
+            const tableName = tableUpdate.tableName;
+            const entityClass = SpacetimeDBClient.getTableClass(tableName);
+            const table = this.db.getOrCreateTable(
+              tableUpdate.tableName,
+              undefined,
+              entityClass
+            );
 
-        reducerEvent = new ReducerEvent(
-          message.event.identity,
-          message.event.address,
-          message.event.originalReducerName,
-          message.event.status,
-          message.event.message,
-          reducerArgs
-        );
+            table.applyOperations(tableUpdate.operations, reducerEvent);
+          }
 
-        for (let tableUpdate of message.tableUpdates) {
-          const tableName = tableUpdate.tableName;
-          const entityClass = SpacetimeDBClient.getTableClass(tableName);
-          const table = this.db.getOrCreateTable(
-            tableUpdate.tableName,
-            undefined,
-            entityClass
-          );
-
-          table.applyOperations(tableUpdate.operations, reducerEvent);
-        }
-
-        if (reducer) {
-          this.emitter.emit(
-            "reducer:" + reducerName,
-            reducerEvent,
-            ...(reducerArgs || [])
-          );
+          if (reducer) {
+            this.emitter.emit(
+              "reducer:" + reducerName,
+              reducerEvent,
+              ...(reducerArgs || [])
+            );
+          }
         }
       } else if (message instanceof IdentityTokenMessage) {
         this.identity = message.identity;
