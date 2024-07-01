@@ -16,7 +16,8 @@ macro_rules! declare_tests {
         $(
             #[test]
             fn $name() {
-                let outfiles: HashMap<_, _> = generate::generate(compiled_module(), generate::Language::$lang, "SpacetimeDB")
+                let module = generate::extract_descriptions(compiled_module()).unwrap();
+                let outfiles: HashMap<_, _> = generate::generate(module, generate::Language::$lang, "SpacetimeDB")
                     .unwrap()
                     .into_iter()
                     .collect();

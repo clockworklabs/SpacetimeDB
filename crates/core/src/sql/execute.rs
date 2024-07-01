@@ -131,6 +131,7 @@ pub fn execute_sql(
                 caller_address: None,
                 function_call: ModuleFunctionCall {
                     reducer: String::new(),
+                    reducer_id: u32::MAX.into(),
                     args: ArgsTuple::default(),
                 },
                 status: EventStatus::Committed(DatabaseUpdate { tables: updates }),

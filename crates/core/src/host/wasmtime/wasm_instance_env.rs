@@ -6,7 +6,6 @@ use std::time::Instant;
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::execution_context::ExecutionContext;
 use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
-use crate::host::timestamp::Timestamp;
 use crate::host::wasm_common::instrumentation;
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
 use crate::host::wasm_common::{
@@ -14,6 +13,7 @@ use crate::host::wasm_common::{
     TimingSpanIdx, TimingSpanSet,
 };
 use crate::host::AbiCall;
+use crate::host::Timestamp;
 use anyhow::{anyhow, Context};
 use spacetimedb_primitives::errno;
 use wasmtime::{AsContext, Caller, StoreContextMut};
@@ -274,15 +274,15 @@ impl WasmInstanceEnv {
             let args = mem.deref_slice(args, args_len)?.to_vec();
 
             // Schedule it!
-            let ScheduledReducerId(id) =
-                env.instance_env
-                    .schedule(name, args, Timestamp(time))
-                    .map_err(|e| match e {
-                        ScheduleError::DelayTooLong(_) => anyhow!("requested delay is too long"),
-                        ScheduleError::IdTransactionError(_) => {
-                            anyhow!("transaction to acquire ScheduleReducerId failed")
-                        }
-                    })?;
+            let ScheduledReducerId(id) = env
+                .instance_env
+                .schedule(name, args, Timestamp::from_microseconds(time))
+                .map_err(|e| match e {
+                    ScheduleError::DelayTooLong(_) => anyhow!("requested delay is too long"),
+                    ScheduleError::IdTransactionError(_) => {
+                        anyhow!("transaction to acquire ScheduleReducerId failed")
+                    }
+                })?;
             Ok(id)
         })
         .map(|_| ())

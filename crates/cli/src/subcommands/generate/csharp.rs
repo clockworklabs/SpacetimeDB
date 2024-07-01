@@ -30,10 +30,7 @@ fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
         BuiltinType::U32 => "uint",
         BuiltinType::I64 => "long",
         BuiltinType::U64 => "ulong",
-        // BuiltinType::I128 => "int128", Not a supported type in csharp
-        // BuiltinType::U128 => "uint128", Not a supported type in csharp
-        BuiltinType::I128 => panic!("i128 not supported for csharp"),
-        BuiltinType::U128 => panic!("i128 not supported for csharp"),
+        BuiltinType::I128 | BuiltinType::U128 => "System.Numerics.BigInteger",
         BuiltinType::String => "string",
         BuiltinType::F32 => "float",
         BuiltinType::F64 => "double",

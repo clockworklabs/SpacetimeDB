@@ -1,13 +1,12 @@
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
-use spacetimedb_lib::bsatn::ser::BsatnError;
-use spacetimedb_table::table::{RowRef, UniqueConstraintViolation};
-use spacetimedb_vm::relation::RelValue;
+use spacetimedb_table::table::UniqueConstraintViolation;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
 use super::scheduler::{ScheduleError, ScheduledReducerId, Scheduler};
-use super::timestamp::Timestamp;
+use super::Timestamp;
+use crate::client::messages::ToBsatn;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -70,7 +69,7 @@ impl ChunkedWriter {
         self.chunks
     }
 
-    pub fn collect_iter(iter: impl Iterator<Item = impl ToBsatnExtend>) -> Vec<Box<[u8]>> {
+    pub fn collect_iter(iter: impl Iterator<Item = impl ToBsatn>) -> Vec<Box<[u8]>> {
         let mut chunked_writer = Self::default();
         for item in iter {
             // Write the item directly to the BSATN `chunked_writer` buffer.
@@ -79,20 +78,6 @@ impl ChunkedWriter {
             chunked_writer.flush();
         }
         chunked_writer.into_chunks()
-    }
-}
-
-trait ToBsatnExtend {
-    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError>;
-}
-impl ToBsatnExtend for RowRef<'_> {
-    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
-        self.to_bsatn_extend(buf)
-    }
-}
-impl ToBsatnExtend for RelValue<'_> {
-    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
-        self.to_bsatn_extend(buf)
     }
 }
 

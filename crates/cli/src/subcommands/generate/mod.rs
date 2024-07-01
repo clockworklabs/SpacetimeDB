@@ -5,10 +5,11 @@ use std::io::Write;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
-use clap::Arg;
 use clap::ArgAction::SetTrue;
+use clap::{Arg, ArgGroup};
 use convert_case::{Case, Casing};
 use duct::cmd;
+use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::sats::{AlgebraicType, Typespace};
 use spacetimedb_lib::MODULE_ABI_MAJOR_VERSION;
 use spacetimedb_lib::{bsatn, MiscModuleExport, ModuleDef, ReducerDef, TableDesc, TypeAlias};
@@ -28,12 +29,14 @@ const INDENT: &str = "\t";
 pub fn cli() -> clap::Command {
     clap::Command::new("generate")
         .about("Generate client files for a spacetime module.")
+        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --wasm-file <PATH>]")
+        .group(ArgGroup::new("source").required(true))
         .arg(
             Arg::new("wasm_file")
                 .value_parser(clap::value_parser!(PathBuf))
                 .long("wasm-file")
                 .short('w')
-                .conflicts_with("project_path")
+                .group("source")
                 .help("The system path (absolute or relative) to the wasm file we should inspect"),
         )
         .arg(
@@ -42,7 +45,17 @@ pub fn cli() -> clap::Command {
                 .default_value(".")
                 .long("project-path")
                 .short('p')
-                .help("The system path (absolute or relative) to the project you would like to inspect")
+                .group("source")
+                .help("The system path (absolute or relative) to the project you would like to inspect"),
+        )
+        .arg(
+            Arg::new("json_module")
+                .hide(true)
+                .num_args(0..=1)
+                .value_parser(clap::value_parser!(PathBuf))
+                .long("json-module")
+                .group("source")
+                .help("Generate from a ModuleDef encoded as json"),
         )
         .arg(
             Arg::new("out_dir")
@@ -75,14 +88,17 @@ pub fn cli() -> clap::Command {
                 .action(SetTrue)
                 .env("SPACETIME_SKIP_CLIPPY")
                 .value_parser(clap::builder::FalseyValueParser::new())
-                .help("Skips running clippy on the module before generating (intended to speed up local iteration, not recommended for CI)"),
+                .help(
+                    "Skips running clippy on the module before generating \
+                     (intended to speed up local iteration, not recommended \
+                     for CI)",
+                ),
         )
-        .arg(
-            Arg::new("delete_files")
-                .long("delete-files")
-                .action(SetTrue)
-                .help("Delete outdated generated files whose definitions have been removed from the module. Prompts before deleting unless --force is supplied."),
-        )
+        .arg(Arg::new("delete_files").long("delete-files").action(SetTrue).help(
+            "Delete outdated generated files whose definitions have been \
+             removed from the module. Prompts before deleting unless --force is \
+             supplied.",
+        ))
         .arg(
             Arg::new("force")
                 .long("force")
@@ -90,19 +106,17 @@ pub fn cli() -> clap::Command {
                 .requires("delete_files")
                 .help("delete-files without prompting first. Useful for scripts."),
         )
-        .arg(
-            Arg::new("debug")
-                .long("debug")
-                .short('d')
-                .action(SetTrue)
-                .help("Builds the module using debug instead of release (intended to speed up local iteration, not recommended for CI)"),
-        )
+        .arg(Arg::new("debug").long("debug").short('d').action(SetTrue).help(
+            "Builds the module using debug instead of release (intended to \
+             speed up local iteration, not recommended for CI)",
+        ))
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
 pub fn exec(_config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let wasm_file = args.get_one::<PathBuf>("wasm_file").cloned();
+    let json_module = args.get_many::<PathBuf>("json_module");
     let out_dir = args.get_one::<PathBuf>("out_dir").unwrap();
     let lang = *args.get_one::<Language>("lang").unwrap();
     let namespace = args.get_one::<String>("namespace").unwrap();
@@ -111,21 +125,31 @@ pub fn exec(_config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
     let delete_files = args.get_flag("delete_files");
     let force = args.get_flag("force");
 
-    let wasm_file = if !project_path.is_dir() && project_path.extension().map_or(false, |ext| ext == "wasm") {
-        println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
-        println!("removed in a future release. Please use --wasm-file instead.");
-        project_path.clone()
-    } else if let Some(path) = wasm_file {
-        println!("Skipping build. Instead we are inspecting {}", path.display());
-        path.clone()
+    let module = if let Some(mut json_module) = json_module {
+        let DeserializeWrapper(module) = if let Some(path) = json_module.next() {
+            serde_json::from_slice(&std::fs::read(path)?)?
+        } else {
+            serde_json::from_reader(std::io::stdin().lock())?
+        };
+        module
     } else {
-        crate::tasks::build(project_path, skip_clippy, build_debug)?
+        let wasm_path = if !project_path.is_dir() && project_path.extension().map_or(false, |ext| ext == "wasm") {
+            println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
+            println!("removed in a future release. Please use --wasm-file instead.");
+            project_path.clone()
+        } else if let Some(path) = wasm_file {
+            println!("Skipping build. Instead we are inspecting {}", path.display());
+            path.clone()
+        } else {
+            crate::tasks::build(project_path, skip_clippy, build_debug)?
+        };
+        extract_descriptions(&wasm_path)?
     };
 
     fs::create_dir_all(out_dir)?;
 
     let mut paths = vec![];
-    for (fname, code) in generate(&wasm_file, lang, namespace.as_str())? {
+    for (fname, code) in generate(module, lang, namespace.as_str())? {
         let fname = Path::new(&fname);
         // If a generator asks for a file in a subdirectory, create the subdirectory first.
         if let Some(parent) = fname.parent().filter(|p| !p.as_os_str().is_empty()) {
@@ -217,8 +241,7 @@ pub struct GenCtx {
     names: Vec<Option<String>>,
 }
 
-pub fn generate<'a>(wasm_file: &'a Path, lang: Language, namespace: &'a str) -> anyhow::Result<Vec<(String, String)>> {
-    let module = extract_descriptions(wasm_file)?;
+pub fn generate(module: ModuleDef, lang: Language, namespace: &str) -> anyhow::Result<Vec<(String, String)>> {
     let (ctx, items) = extract_from_moduledef(module);
     let items: Vec<GenItem> = items.collect();
     let mut files: Vec<(String, String)> = items
@@ -408,7 +431,7 @@ impl GenItem {
     }
 }
 
-fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
+pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
     let engine = wasmtime::Engine::default();
     let t = std::time::Instant::now();
     let module = wasmtime::Module::from_file(&engine, wasm_file)?;

@@ -13,8 +13,6 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
 
-RUN apt-get update && apt-get install -y protobuf-compiler
-
 RUN cargo binstall -y cargo-watch@8.4.0
 RUN cargo binstall -y flamegraph@0.6.2
 

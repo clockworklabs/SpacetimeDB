@@ -8,38 +8,7 @@ use spacetimedb_sats::bsatn;
 // TODO: impl ser/de for `Identity`, `Token`, `Credentials` so that clients can stash them
 //       to disk and use them to re-connect.
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
-/// A unique public identifier for a client connected to a database.
-pub struct Identity {
-    __identity_bytes: Vec<u8>,
-}
-
-impl Identity {
-    /// Get a reference to the bytes of this identity.
-    ///
-    /// This may be useful for saving the bytes to disk in order to reconnect
-    /// with the same identity, though client authors are encouraged
-    /// to use the BSATN `Serialize` and `Deserialize` traits
-    /// rather than saving bytes directly.
-    ///
-    /// Due to a current limitation in Spacetime's handling of tables which store identities,
-    /// filter methods for fields defined by the module to have type `Identity`
-    /// accept bytes, rather than an `Identity` structure.
-    /// As such, it is necessary to do e.g.
-    /// `MyTable::filter_by_identity(some_identity.bytes().to_owned())`.
-    pub fn bytes(&self) -> &[u8] {
-        &self.__identity_bytes
-    }
-
-    /// Construct an `Identity` containing the `bytes`.
-    ///
-    /// This method does not verify that `bytes` represents a valid identity.
-    pub fn from_bytes(bytes: Vec<u8>) -> Self {
-        Self {
-            __identity_bytes: bytes,
-        }
-    }
-}
+pub use spacetimedb_lib::Identity;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 /// A private access token for a client connected to a database.

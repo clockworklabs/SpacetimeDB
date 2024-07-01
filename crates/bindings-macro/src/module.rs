@@ -24,6 +24,7 @@ pub(crate) enum SatsTypeData<'a> {
     Sum(Vec<SatsVariant<'a>>),
 }
 
+#[derive(Clone)]
 pub(crate) struct SatsField<'a> {
     pub ident: Option<&'a syn::Ident>,
     pub vis: &'a syn::Visibility,
@@ -138,6 +139,7 @@ pub(crate) fn ensure_no_public(ty: &SatsType<'_>, mut ts: TokenStream) -> TokenS
 pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenStream {
     let ty_name = &ty.name;
     let name = &ty.ident;
+    let krate = &ty.krate;
 
     let typ = match &ty.data {
         SatsTypeData::Product(fields) => {
@@ -149,13 +151,13 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
                 let ty = field.ty;
                 quote!((
                     #field_name,
-                    <#ty as spacetimedb::SpacetimeType>::make_type(__typespace),
+                    <#ty as #krate::SpacetimeType>::make_type(__typespace)
                 ))
             });
             let len = fields.len();
             quote!(
-                spacetimedb::sats::AlgebraicType::product::<
-                    [(Option<&str>, spacetimedb::sats::AlgebraicType); #len]
+                #krate::sats::AlgebraicType::product::<
+                    [(Option<&str>, #krate::sats::AlgebraicType); #len]
                 >(
                     [#(#fields),*]
                 )
@@ -171,13 +173,13 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
                 let ty = var.ty.unwrap_or(&unit);
                 quote!((
                     #variant_name,
-                    <#ty as spacetimedb::SpacetimeType>::make_type(__typespace),
+                    <#ty as #krate::SpacetimeType>::make_type(__typespace)
                 ))
             });
             let len = variants.len();
             quote!(
-                spacetimedb::sats::AlgebraicType::sum::<
-                    [(&str, spacetimedb::sats::AlgebraicType); #len]
+                #krate::sats::AlgebraicType::sum::<
+                    [(&str, #krate::sats::AlgebraicType); #len]
                 >(
                     [#(#variants),*]
                 )
@@ -186,27 +188,54 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
         } // syn::Data::Union(u) => return Err(syn::Error::new(u.union_token.span, "unions not supported")),
     };
 
-    let (impl_generics, ty_generics, where_clause) = ty.generics.split_for_impl();
+    let mut sats_generics = ty.generics.clone();
+    // the 'static here is an unfortunate restriction from TypeId :(
+    add_type_bounds(&mut sats_generics, &quote!(#krate::SpacetimeType + 'static));
+    let (impl_generics, ty_generics, where_clause) = sats_generics.split_for_impl();
+
+    // TypeId::of() requires all the lifetimes to be 'static
+    let mut typeid_generics = sats_generics.clone();
+    let static_lt = syn::Lifetime::new("'static", Span::call_site());
+    for param in &mut typeid_generics.params {
+        if let syn::GenericParam::Lifetime(param) = param {
+            param.lifetime = static_lt.clone();
+        }
+    }
+    let (_, typeid_ty_generics, _) = typeid_generics.split_for_impl();
+
     let ty_name = if gen_type_alias {
         quote!(Some(#ty_name))
     } else {
         quote!(None)
     };
     quote! {
-        #[allow(clippy::all)]
-        const _: () = {
-            impl #impl_generics spacetimedb::SpacetimeType for #name #ty_generics #where_clause {
-                fn make_type<S: spacetimedb::sats::typespace::TypespaceBuilder>(__typespace: &mut S) -> spacetimedb::sats::AlgebraicType {
-                    spacetimedb::sats::typespace::TypespaceBuilder::add(
-                        __typespace,
-                        // is this correct? ignoring generics and stuff?
-                        { struct __Marker; core::any::TypeId::of::<__Marker>() },
-                        #ty_name,
-                        |__typespace| #typ,
-                    )
-                }
+        #[automatically_derived]
+        impl #impl_generics #krate::SpacetimeType for #name #ty_generics #where_clause {
+            fn make_type<S: #krate::sats::typespace::TypespaceBuilder>(__typespace: &mut S) -> #krate::sats::AlgebraicType {
+                #krate::sats::typespace::TypespaceBuilder::add(
+                    __typespace,
+                    core::any::TypeId::of::<#name #typeid_ty_generics>(),
+                    #ty_name,
+                    |__typespace| #typ,
+                )
             }
+        }
+    }
+}
+
+fn add_type_bounds(generics: &mut syn::Generics, trait_bound: &TokenStream) {
+    for param in &generics.params {
+        let syn::GenericParam::Type(param) = param else {
+            continue;
         };
+        let param_name = &param.ident;
+        let where_clause = generics.where_clause.get_or_insert_with(|| syn::WhereClause {
+            where_token: Default::default(),
+            predicates: Default::default(),
+        });
+        where_clause
+            .predicates
+            .push(syn::parse_quote!(#param_name: #trait_bound));
     }
 }
 
@@ -215,8 +244,13 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
     let spacetimedb_lib = &ty.krate;
     let (impl_generics, ty_generics, where_clause) = ty.generics.split_for_impl();
 
-    let mut de_generics = ty.generics.clone();
     let de_lifetime = syn::Lifetime::new("'de", Span::call_site());
+    let deserialize_t = quote!(#spacetimedb_lib::de::Deserialize<#de_lifetime>);
+
+    let mut de_generics = ty.generics.clone();
+
+    add_type_bounds(&mut de_generics, &deserialize_t);
+
     for lp in de_generics.lifetimes_mut() {
         lp.bounds.push(de_lifetime.clone());
     }
@@ -228,7 +262,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
         .collect();
 
     de_generics.params.insert(0, de_lt_param.into());
-    let (de_impl_generics, _, _) = de_generics.split_for_impl();
+    let (de_impl_generics, _, de_where_clause) = de_generics.split_for_impl();
 
     let (iter_n, iter_n2, iter_n3) = (0usize.., 0usize.., 0usize..);
 
@@ -239,11 +273,12 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
             let field_names = fields.iter().map(|f| f.ident.unwrap()).collect::<Vec<_>>();
             let field_strings = fields.iter().map(|f| f.name.as_deref().unwrap()).collect::<Vec<_>>();
             let field_types = fields.iter().map(|f| &f.ty);
+            let field_types2 = field_types.clone();
             quote! {
                 #[allow(non_camel_case_types)]
                 #[allow(clippy::all)]
                 const _: () = {
-                    impl #de_impl_generics #spacetimedb_lib::de::Deserialize<'de> for #name #ty_generics #where_clause {
+                    impl #de_impl_generics #spacetimedb_lib::de::Deserialize<'de> for #name #ty_generics #de_where_clause {
                         fn deserialize<D: #spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                             deserializer.deserialize_product(__ProductVisitor {
                                 _marker: std::marker::PhantomData::<fn() -> #name #ty_generics>,
@@ -255,7 +290,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                         _marker: std::marker::PhantomData<fn() -> #name #ty_generics>,
                     }
 
-                    impl #de_impl_generics #spacetimedb_lib::de::ProductVisitor<'de> for __ProductVisitor #ty_generics #where_clause {
+                    impl #de_impl_generics #spacetimedb_lib::de::ProductVisitor<'de> for __ProductVisitor #ty_generics #de_where_clause {
                         type Output = #name #ty_generics;
 
                         fn product_name(&self) -> Option<&str> {
@@ -282,7 +317,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                                         if #field_names.is_some() {
                                             return Err(#spacetimedb_lib::de::Error::duplicate_field(#iter_n2, Some(#field_strings), &self))
                                         }
-                                        #field_names = Some(#spacetimedb_lib::de::NamedProductAccess::get_field_value(&mut __prod)?)
+                                        #field_names = Some(#spacetimedb_lib::de::NamedProductAccess::get_field_value::<#field_types2>(&mut __prod)?)
                                     })*
                                 }
                             }
@@ -293,7 +328,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                         }
                     }
 
-                    impl #de_impl_generics #spacetimedb_lib::de::FieldNameVisitor<'de> for __ProductVisitor #ty_generics #where_clause {
+                    impl #de_impl_generics #spacetimedb_lib::de::FieldNameVisitor<'de> for __ProductVisitor #ty_generics #de_where_clause {
                         type Output = __ProductFieldIdent;
 
                         fn field_names(&self, names: &mut dyn #spacetimedb_lib::de::ValidNames) {
@@ -337,7 +372,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
             quote! {
                 #[allow(clippy::all)]
                 const _: () = {
-                    impl #de_impl_generics #spacetimedb_lib::de::Deserialize<'de> for #name #ty_generics #where_clause {
+                    impl #de_impl_generics #spacetimedb_lib::de::Deserialize<'de> for #name #ty_generics #de_where_clause {
                         fn deserialize<D: #spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                             deserializer.deserialize_sum(__SumVisitor {
                                 _marker: std::marker::PhantomData::<fn() -> #name #ty_generics>,
@@ -349,7 +384,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                         _marker: std::marker::PhantomData<fn() -> #name #ty_generics>,
                     }
 
-                    impl #de_impl_generics #spacetimedb_lib::de::SumVisitor<'de> for __SumVisitor #ty_generics #where_clause {
+                    impl #de_impl_generics #spacetimedb_lib::de::SumVisitor<'de> for __SumVisitor #ty_generics #de_where_clause {
                         type Output = #name #ty_generics;
 
                         fn sum_name(&self) -> Option<&str> {
@@ -369,7 +404,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                         #(#variant_idents,)*
                     }
 
-                    impl #impl_generics #spacetimedb_lib::de::VariantVisitor for __SumVisitor #ty_generics #where_clause {
+                    impl #de_impl_generics #spacetimedb_lib::de::VariantVisitor for __SumVisitor #ty_generics #de_where_clause {
                         type Output = __Variant;
 
                         fn variant_names(&self, names: &mut dyn #spacetimedb_lib::de::ValidNames) {
@@ -398,10 +433,17 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
 pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
     let spacetimedb_lib = &ty.krate;
     let name = &ty.ident;
-    let (impl_generics, ty_generics, where_clause) = ty.generics.split_for_impl();
+
+    let mut generics = ty.generics.clone();
+
+    let serialize_t = quote!(#spacetimedb_lib::ser::Serialize);
+    add_type_bounds(&mut generics, &serialize_t);
+
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
     let body = match &ty.data {
         SatsTypeData::Product(fields) => {
-            let fieldnames = fields.iter().map(|field| field.ident.as_ref().unwrap());
+            let fieldnames = fields.iter().map(|field| field.ident.unwrap());
             let tys = fields.iter().map(|f| &f.ty);
             let fieldnamestrings = fields.iter().map(|field| field.name.as_ref().unwrap());
             let nfields = fields.len();

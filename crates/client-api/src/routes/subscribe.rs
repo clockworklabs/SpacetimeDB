@@ -12,7 +12,7 @@ use futures::{Future, FutureExt, SinkExt, StreamExt};
 use http::{HeaderValue, StatusCode};
 use scopeguard::ScopeGuard;
 use serde::Deserialize;
-use spacetimedb::client::messages::{IdentityTokenMessage, SerializableMessage, ServerMessage};
+use spacetimedb::client::messages::{serialize, IdentityTokenMessage, SerializableMessage};
 use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, MessageHandleError, Protocol};
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::also_poll;
@@ -146,7 +146,7 @@ where
         // message.
         let message = IdentityTokenMessage {
             identity: auth.identity,
-            identity_token,
+            token: identity_token,
             address: client_address,
         };
         if let Err(e) = client.send_message(message) {
@@ -259,7 +259,7 @@ async fn ws_client_actor_inner(
                             let workload = msg.workload();
                             let num_rows = msg.num_rows();
 
-                            let msg = datamsg_to_wsmsg(msg.serialize(client.protocol));
+                            let msg = datamsg_to_wsmsg(serialize(msg, client.protocol));
 
                             // These metrics should be updated together,
                             // or not at all.
@@ -347,7 +347,7 @@ async fn ws_client_actor_inner(
                 if let Err(e) = res {
                     if let MessageHandleError::Execution(err) = e {
                         log::error!("{err:#}");
-                        let msg = err.serialize(client.protocol);
+                        let msg = serialize(err, client.protocol);
                         if let Err(error) = ws.send(datamsg_to_wsmsg(msg)).await {
                             log::warn!("Websocket send error: {error}")
                         }

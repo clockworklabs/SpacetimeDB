@@ -2,7 +2,7 @@ use std::fmt;
 use std::marker::PhantomData;
 
 use super::Deserializer;
-use ::serde::de as serde;
+use serde::de as serde;
 
 /// Converts any [`serde::Deserializer`] to a SATS [`Deserializer`]
 /// so that Serde's data formats can be reused.

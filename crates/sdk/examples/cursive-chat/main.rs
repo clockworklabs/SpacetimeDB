@@ -172,12 +172,7 @@ fn on_user_inserted(send: UiSend) -> impl FnMut(&User, Option<&ReducerEvent>) + 
 fn user_name_or_identity(user: &User) -> String {
     user.name
         .clone()
-        .unwrap_or_else(|| identity_leading_hex(&user.identity))
-}
-
-/// A 16-digit hexadecimal identifier for users who haven't set a name yet.
-fn identity_leading_hex(id: &Identity) -> String {
-    hex::encode(&id.bytes()[0..8])
+        .unwrap_or_else(|| user.identity.to_abbreviated_hex().to_string())
 }
 
 // ## Notify about updated users
@@ -466,11 +461,6 @@ fn user_input_loop(siv: CursiveRunnable, mut recv: UiRecv) {
     }
 }
 
-/// A full 64-bit hexadecimal identifier, to be used as a Cursive view name.
-fn identity_hex(id: &Identity) -> String {
-    hex::encode(id.bytes())
-}
-
 /// Update past messages sent by `identity` to change their sender name to `new_name`.
 fn rename_message_senders(identity: &Identity, new_name: &str, siv: &mut CursiveRunner<CursiveRunnable>) -> bool {
     // Like in the main UI loop, we'll track if anything has changed in the UI,
@@ -480,7 +470,7 @@ fn rename_message_senders(identity: &Identity, new_name: &str, siv: &mut Cursive
     siv.call_on_name(MESSAGES_VIEW_NAME, |messages: &mut LinearLayout| {
         // For each message sent by `identity`,
         messages.call_on_all(
-            &cursive::view::Selector::Name(&identity_hex(identity)),
+            &cursive::view::Selector::Name(&identity.to_hex()),
             |message: &mut LinearLayout| {
                 needs_update = true;
                 // change the sender to the new name.
@@ -513,7 +503,7 @@ fn process_ui_message(siv: &mut CursiveRunner<CursiveRunnable>, message: UiMessa
                     TextView::new(name)
                         // Tag their entry in the online users view with their identity,
                         // so we can find it later in the `UserDisconnected` and `SetName` branches.
-                        .with_name(identity_hex(&identity)),
+                        .with_name(identity.to_hex().to_string()),
                 );
                 true
             })
@@ -524,7 +514,7 @@ fn process_ui_message(siv: &mut CursiveRunner<CursiveRunnable>, message: UiMessa
             siv.call_on_name(ONLINE_USERS_VIEW_NAME, |online_users: &mut LinearLayout| {
                 online_users
                     // Look up their entry in the online users view by their identity.
-                    .find_child_from_name(&identity_hex(&identity))
+                    .find_child_from_name(&identity.to_hex())
                     .map(|idx| {
                         online_users.remove_child(idx);
                         true
@@ -548,7 +538,7 @@ fn process_ui_message(siv: &mut CursiveRunner<CursiveRunnable>, message: UiMessa
         UiMessage::SetName { identity, new_name } => {
             siv.call_on_name(ONLINE_USERS_VIEW_NAME, |online_users: &mut LinearLayout| {
                 // Look up their entry in the online users view by their identity.
-                online_users.call_on_name(&identity_hex(&identity), |view: &mut TextView| {
+                online_users.call_on_name(&identity.to_hex(), |view: &mut TextView| {
                     view.set_content(new_name.clone());
                 });
             });
@@ -575,7 +565,7 @@ fn process_ui_message(siv: &mut CursiveRunner<CursiveRunnable>, message: UiMessa
                     .child(TextView::new(text))
                     // Tag the message with the sender's identity,
                     // so that `rename_message_senders` can find it.
-                    .with_name(identity_hex(&sender_identity)),
+                    .with_name(sender_identity.to_hex().to_string()),
             );
             true
         }),

@@ -84,7 +84,7 @@ impl SchedulerStarter {
             let (k, v) = entry?;
             let get_u64 = |b: &[u8]| u64::from_le_bytes(b.try_into().unwrap());
             let id = ScheduledReducerId(get_u64(&k));
-            let at = Timestamp(get_u64(&v[..8]));
+            let at = Timestamp::from_microseconds(get_u64(&v[..8]));
             queue.insert(id, at.to_duration_from_now());
         }
 

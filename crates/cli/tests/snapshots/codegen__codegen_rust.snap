@@ -291,7 +291,7 @@ pub fn remove_on_delete_players_by_name(id: ReducerCallbackId<DeletePlayersByNam
 	spacetimedb_lib,
 	anyhow::{Result, anyhow},
 };
-use spacetimedb_sdk::client_api_messages::{TableUpdate, Event};
+use spacetimedb_sdk::ws_messages::{TableUpdate, TransactionUpdate};
 use spacetimedb_sdk::client_cache::{ClientCache, RowCallbackReminders};
 use spacetimedb_sdk::identity::Credentials;
 use spacetimedb_sdk::callbacks::{DbCallbacks, ReducerCallbacks};
@@ -301,8 +301,8 @@ use spacetimedb_sdk::spacetime_module::SpacetimeModule;
 use std::sync::Arc;
 
 pub mod namespace.test_c;
-pub mod namespace.test_f;
 pub mod test_b;
+pub mod namespace.test_f;
 pub mod pk_multi_identity;
 pub mod point;
 pub mod private;
@@ -318,8 +318,8 @@ pub mod repeating_test_reducer;
 pub mod test_reducer;
 
 pub use namespace.test_c::*;
-pub use namespace.test_f::*;
 pub use test_b::*;
+pub use namespace.test_f::*;
 pub use pk_multi_identity::*;
 pub use point::*;
 pub use private::*;
@@ -369,12 +369,10 @@ fn invoke_row_callbacks(&self, reminders: &mut RowCallbackReminders, worker: &mu
 		reminders.invoke_callbacks::<test_d::TestD>(worker, &reducer_event, state);
 		reminders.invoke_callbacks::<test_e::TestE>(worker, &reducer_event, state);
 }
-fn handle_event(&self, event: Event, _reducer_callbacks: &mut ReducerCallbacks, _state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {
-		let Some(function_call) = &event.function_call else {
-						spacetimedb_sdk::log::warn!("Received Event with None function_call"); return None;
-};
+fn handle_event(&self, event: TransactionUpdate, _reducer_callbacks: &mut ReducerCallbacks, _state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {
+				let reducer_call = &event.reducer_call;
 		#[allow(clippy::match_single_binding)]
-match &function_call.reducer[..] {
+match &reducer_call.reducer_name[..] {
 						"add_player" => _reducer_callbacks.handle_event_of_type::<add_player_reducer::AddPlayerArgs, ReducerEvent>(event, _state, ReducerEvent::AddPlayer),
 			"add_private" => _reducer_callbacks.handle_event_of_type::<add_private_reducer::AddPrivateArgs, ReducerEvent>(event, _state, ReducerEvent::AddPrivate),
 			"delete_player" => _reducer_callbacks.handle_event_of_type::<delete_player_reducer::DeletePlayerArgs, ReducerEvent>(event, _state, ReducerEvent::DeletePlayer),

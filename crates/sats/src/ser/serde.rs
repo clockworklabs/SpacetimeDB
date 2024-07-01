@@ -3,7 +3,7 @@ use crate::{
     algebraic_value::ser::ValueSerializer,
     ser::{self, Serializer},
 };
-use ::serde::ser as serde;
+use serde::ser as serde;
 use std::fmt;
 
 /// Converts any [`serde::Serializer`] to a SATS [`Serializer`]
@@ -111,7 +111,7 @@ impl<S: serde::Serializer> Serializer for SerdeSerializer<S> {
         value: &T,
     ) -> Result<Self::Ok, Self::Error> {
         // can't use serialize_variant cause we're too dynamic :(
-        use ::serde::ser::SerializeMap;
+        use serde::SerializeMap;
         let mut map = self.ser.serialize_map(Some(1)).map_err(SerdeError)?;
         let value = SerializeWrapper::from_ref(value);
         if let Some(name) = name {

@@ -205,6 +205,13 @@ pub trait TypespaceBuilder {
         name: Option<&'static str>,
         make_ty: impl FnOnce(&mut Self) -> AlgebraicType,
     ) -> AlgebraicType;
+
+    fn add_type<T: SpacetimeType>(&mut self) -> AlgebraicType
+    where
+        Self: Sized,
+    {
+        T::make_type(self)
+    }
 }
 
 /// Implements [`SpacetimeType`] for a type in a simplified manner.
@@ -260,3 +267,13 @@ impl_st!([] (), _ts => AlgebraicType::unit());
 impl_st!([] &str, _ts => AlgebraicType::String);
 impl_st!([T: SpacetimeType] Vec<T>, ts => AlgebraicType::array(T::make_type(ts)));
 impl_st!([T: SpacetimeType] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));
+
+impl_st!([] spacetimedb_primitives::ColId, _ts => AlgebraicType::U32);
+impl_st!([] spacetimedb_primitives::TableId, _ts => AlgebraicType::U32);
+impl_st!([] spacetimedb_primitives::IndexId, _ts => AlgebraicType::U32);
+impl_st!([] spacetimedb_primitives::SequenceId, _ts => AlgebraicType::U32);
+
+impl_st!([] bytes::Bytes, _ts => AlgebraicType::bytes());
+
+#[cfg(feature = "bytestring")]
+impl_st!([] bytestring::ByteString, _ts => AlgebraicType::String);

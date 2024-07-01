@@ -3,12 +3,12 @@
 
 #![allow(unused_imports)]
 use spacetimedb_sdk::callbacks::{DbCallbacks, ReducerCallbacks};
-use spacetimedb_sdk::client_api_messages::{Event, TableUpdate};
 use spacetimedb_sdk::client_cache::{ClientCache, RowCallbackReminders};
 use spacetimedb_sdk::global_connection::with_connection_mut;
 use spacetimedb_sdk::identity::Credentials;
 use spacetimedb_sdk::reducer::AnyReducerEvent;
 use spacetimedb_sdk::spacetime_module::SpacetimeModule;
+use spacetimedb_sdk::ws_messages::{TableUpdate, TransactionUpdate};
 use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,
@@ -62,16 +62,13 @@ impl SpacetimeModule for Module {
     }
     fn handle_event(
         &self,
-        event: Event,
+        event: TransactionUpdate,
         _reducer_callbacks: &mut ReducerCallbacks,
         _state: Arc<ClientCache>,
     ) -> Option<Arc<AnyReducerEvent>> {
-        let Some(function_call) = &event.function_call else {
-            spacetimedb_sdk::log::warn!("Received Event with None function_call");
-            return None;
-        };
+        let reducer_call = &event.reducer_call;
         #[allow(clippy::match_single_binding)]
-        match &function_call.reducer[..] {
+        match &reducer_call.reducer_name[..] {
             unknown => {
                 spacetimedb_sdk::log::error!("Event on an unknown reducer: {:?}", unknown);
                 None
