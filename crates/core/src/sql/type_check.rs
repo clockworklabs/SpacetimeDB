@@ -10,7 +10,7 @@ use spacetimedb_vm::errors::ErrorType;
 use spacetimedb_vm::expr::{FieldExpr, FieldOp};
 use std::fmt;
 
-fn find_field_name(from: &From, field: FieldName) -> Result<(Box<str>, &ColumnSchema), PlanError> {
+fn find_field_name(from: &From, field: FieldName) -> Result<(&str, &ColumnSchema), PlanError> {
     from.find_field_name(field).ok_or_else(|| PlanError::UnknownFieldName {
         field,
         tables: from.iter_tables().map(|t| t.table_name.clone()).collect(),
@@ -18,39 +18,34 @@ fn find_field_name(from: &From, field: FieldName) -> Result<(Box<str>, &ColumnSc
 }
 
 #[derive(Debug)]
-pub enum Typed {
+enum Typed<'a> {
     Field {
-        table: Box<str>,
-        field: Box<str>,
+        table: &'a str,
+        field: &'a str,
         ty: Option<AlgebraicType>,
     },
     Value {
-        value: AlgebraicValue,
+        value: &'a AlgebraicValue,
         ty: Option<AlgebraicType>,
     },
     Cmp {
         op: OpQuery,
-        lhs: Box<Typed>,
-        rhs: Box<Typed>,
-        ty: AlgebraicType,
+        lhs: Box<Typed<'a>>,
+        rhs: Box<Typed<'a>>,
     },
 }
 
 impl Typed {
     pub fn ty(&self) -> Option<&AlgebraicType> {
         match self {
-            Typed::Field { ty, .. } => ty.as_ref(),
-            Typed::Value { ty, .. } => ty.as_ref(),
-            Typed::Cmp { ty, .. } => Some(ty),
+            Typed::Field { ty, .. } | Typed::Value { ty, .. } => ty.as_ref(),
+            Typed::Cmp { .. } => Some(&AlgebraicType::Bool),
         }
     }
 
     pub fn set_ty(&mut self, ty: Option<AlgebraicType>) {
         match self {
-            Typed::Field { ty: ty_lhs, .. } => {
-                *ty_lhs = ty;
-            }
-            Typed::Value { ty: ty_lhs, .. } => {
+            Typed::Field { ty: ty_lhs, .. } | Typed::Value { ty: ty_lhs, .. } => *ty_lhs = ty,
                 *ty_lhs = ty;
             }
             Typed::Cmp { .. } => {}
@@ -112,8 +107,7 @@ fn resolve_type(field: &FieldExpr, ty: Option<AlgebraicType>) -> Result<Option<A
         }
     }
 
-    if let Some(AlgebraicType::Product(_)) = &ty {
-        if let FieldExpr::Value(val) = field {
+    if let (Some(AlgebraicType::Product(_)), FieldExpr::Value(val)) = (&ty, field) {
             if val.as_bytes().is_some() {
                 return Ok(Some(AlgebraicType::bytes()));
             }
@@ -124,14 +118,13 @@ fn resolve_type(field: &FieldExpr, ty: Option<AlgebraicType>) -> Result<Option<A
 
 fn check_both(op: OpQuery, lhs: &Typed, rhs: &Typed) -> Result<(), PlanError> {
     if lhs.ty() != rhs.ty() {
+        let lhs = lhs.to_string();
+        let rhs = rhs.to_string();
         Err(match op {
-            OpQuery::Cmp(_) => ErrorType::TypeMismatch {
-                lhs: lhs.to_string(),
-                rhs: rhs.to_string(),
-            },
+            OpQuery::Cmp(_) => ErrorType::TypeMismatch { lhs, rhs, },
             OpQuery::Logic(op) => ErrorType::TypeMismatchLogic {
-                lhs: lhs.to_string(),
-                rhs: rhs.to_string(),
+                lhs,
+                rhs,
                 op,
                 expected: fmt_algebraic_type(&AlgebraicType::Bool).to_string(),
             },
@@ -142,9 +135,9 @@ fn check_both(op: OpQuery, lhs: &Typed, rhs: &Typed) -> Result<(), PlanError> {
     }
 }
 
-/// Patch the type of the field if the type is a `Identity`, `Address` or `Enum`
+/// Patch the type of the field if the type is an `Identity`, `Address` or `Enum`
 fn patch_type(lhs: &FieldOp, ty_lhs: &mut Typed, ty_rhs: &Typed) -> Result<(), PlanError> {
-    if let FieldOp::Field(f) = lhs {
+    if let FieldOp::Field(lhs_field) = lhs {
         if let Some(ty) = ty_rhs.ty() {
             if ty.is_sum() || ty.as_product().map_or(false, |x| x.is_special()) {
                 ty_lhs.set_ty(resolve_type(f, Some(ty.clone()))?);
