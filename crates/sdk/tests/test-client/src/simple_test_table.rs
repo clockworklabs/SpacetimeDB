@@ -356,7 +356,7 @@ impl_simple_test_table! {
     }
     OptionVecOptionI32 {
         Contents = Option<Vec<Option<i32>>>;
-        field_name = v;
+        field_name = n;
         insert_reducer = insert_option_vec_option_i_32;
         insert_reducer_event = InsertOptionVecOptionI32;
     }
