@@ -1,11 +1,6 @@
-use std::{
-    fs::File,
-    io::{self, BufWriter, Write as _},
-    num::NonZeroU16,
-    ops::Range,
-};
+use std::{fs::File, io, num::NonZeroU16, ops::Range};
 
-use log::debug;
+use log::{debug, warn};
 
 use crate::{
     commit::{self, Commit, StoredCommit},
@@ -38,7 +33,8 @@ impl Header {
 
     pub fn decode<R: io::Read>(mut read: R) -> io::Result<Self> {
         let mut buf = [0; Self::LEN];
-        read.read_exact(&mut buf)?;
+        read.read_exact(&mut buf)
+            .inspect_err(|e| warn!("failed to read segment header: {e}"))?;
 
         if !buf.starts_with(&MAGIC) {
             return Err(io::Error::new(
@@ -77,7 +73,7 @@ impl Default for Header {
 #[derive(Debug)]
 pub struct Writer<W: io::Write> {
     pub(crate) commit: Commit,
-    pub(crate) inner: BufWriter<W>,
+    pub(crate) inner: W,
 
     pub(crate) min_tx_offset: u64,
     pub(crate) bytes_written: u64,
@@ -92,7 +88,7 @@ impl<W: io::Write> Writer<W> {
     /// after the method returns, the argument is returned in an `Err` and not
     /// appended to this writer's buffer.
     ///
-    /// Otherwise, the `record` is encoded and and stored in the buffer.
+    /// Otherwise, the `record` is encoded and stored in the buffer.
     ///
     /// An `Err` result indicates that [`Self::commit`] should be called in
     /// order to flush the buffered records to persistent storage.
@@ -148,9 +144,18 @@ impl<W: io::Write> Writer<W> {
     }
 }
 
+/// Abstraction over file operations `fsync`, `fdatasync` and `ftruncate`.
+///
+/// This is mainly an internal trait used for testing.
 pub trait FileLike {
     fn fsync(&self) -> io::Result<()>;
-    fn ftruncate(&self, size: u64) -> io::Result<()>;
+
+    fn fdatasync(&self) -> io::Result<()> {
+        self.fsync()
+    }
+
+    // Nb. `&mut self` to allow impl for `Vec`
+    fn ftruncate(&mut self, size: u64) -> io::Result<()>;
 }
 
 impl FileLike for File {
@@ -158,18 +163,23 @@ impl FileLike for File {
         self.sync_all()
     }
 
-    fn ftruncate(&self, size: u64) -> io::Result<()> {
+    fn fdatasync(&self) -> io::Result<()> {
+        self.sync_data()
+    }
+
+    fn ftruncate(&mut self, size: u64) -> io::Result<()> {
         self.set_len(size)
     }
 }
 
-impl<W: io::Write + FileLike> FileLike for BufWriter<W> {
+impl FileLike for Vec<u8> {
     fn fsync(&self) -> io::Result<()> {
-        self.get_ref().fsync()
+        Ok(())
     }
 
-    fn ftruncate(&self, size: u64) -> io::Result<()> {
-        self.get_ref().ftruncate(size)
+    fn ftruncate(&mut self, size: u64) -> io::Result<()> {
+        self.resize(size as usize, 0);
+        Ok(())
     }
 }
 
@@ -178,7 +188,11 @@ impl<W: io::Write + FileLike> FileLike for Writer<W> {
         self.inner.fsync()
     }
 
-    fn ftruncate(&self, size: u64) -> io::Result<()> {
+    fn fdatasync(&self) -> io::Result<()> {
+        self.inner.fdatasync()
+    }
+
+    fn ftruncate(&mut self, size: u64) -> io::Result<()> {
         self.inner.ftruncate(size)
     }
 }
@@ -192,7 +206,8 @@ pub struct Reader<R> {
 
 impl<R: io::Read> Reader<R> {
     pub fn new(max_log_format_version: u8, min_tx_offset: u64, mut inner: R) -> io::Result<Self> {
-        let header = Header::decode(&mut inner)?;
+        let header = Header::decode(&mut inner).inspect_err(|e| warn!("error reading segment header: {e}"))?;
+        debug!("segment::{header:?}");
         header
             .ensure_compatible(max_log_format_version, Commit::CHECKSUM_ALGORITHM)
             .map_err(|msg| io::Error::new(io::ErrorKind::InvalidData, msg))?;
@@ -209,7 +224,7 @@ impl<R: io::Read> Reader<R> {
     pub fn commits(self) -> Commits<R> {
         Commits {
             header: self.header,
-            reader: io::BufReader::new(self.inner),
+            reader: self.inner,
         }
     }
 
@@ -250,7 +265,7 @@ pub struct Transaction<T> {
 
 pub struct Commits<R> {
     pub header: Header,
-    reader: io::BufReader<R>,
+    reader: R,
 }
 
 impl<R: io::Read> Iterator for Commits<R> {
@@ -302,7 +317,13 @@ impl Metadata {
     /// This traverses the entire segment, consuming thre `reader.
     /// Doing so is necessary to determine the `max_tx_offset` and `size_in_bytes`.
     pub fn extract<R: io::Read>(min_tx_offset: u64, mut reader: R) -> Result<Self, error::SegmentMetadata> {
-        let header = Header::decode(&mut reader)?;
+        let header = Header::decode(&mut reader).inspect_err(|e| warn!("failed to decode segment header: {e}"))?;
+        debug!("segment::{header:?}");
+
+        header
+            .ensure_compatible(DEFAULT_LOG_FORMAT_VERSION, Commit::CHECKSUM_ALGORITHM)
+            .map_err(|msg| io::Error::new(io::ErrorKind::InvalidData, msg))?;
+
         Self::with_header(min_tx_offset, header, reader)
     }
 
@@ -360,7 +381,7 @@ mod tests {
     use std::num::NonZeroU16;
 
     use super::*;
-    use crate::{payload::ArrayDecoder, repo, Options};
+    use crate::{dio::PagedWriter, payload::ArrayDecoder, repo, Options};
     use itertools::Itertools;
     use proptest::prelude::*;
 
@@ -382,11 +403,13 @@ mod tests {
     fn write_read_roundtrip() {
         let repo = repo::Memory::default();
 
-        let mut writer = repo::create_segment_writer(&repo, Options::default(), 0).unwrap();
-        writer.append([0; 32]).unwrap();
-        writer.append([1; 32]).unwrap();
-        writer.append([2; 32]).unwrap();
-        writer.commit().unwrap();
+        {
+            let mut writer = repo::create_segment_writer(&repo, Options::default(), 0).unwrap();
+            writer.append([0; 32]).unwrap();
+            writer.append([1; 32]).unwrap();
+            writer.append([2; 32]).unwrap();
+            writer.commit().unwrap();
+        }
 
         let reader = repo::open_segment_reader(&repo, DEFAULT_LOG_FORMAT_VERSION, 0).unwrap();
         let header = reader.header;
@@ -505,7 +528,7 @@ mod tests {
         fn max_records_in_commit(max_records_in_commit in any::<NonZeroU16>()) {
             let mut writer = Writer {
                 commit: Commit::default(),
-                inner: BufWriter::new(Vec::new()),
+                inner: PagedWriter::new(Vec::new()),
 
                 min_tx_offset: 0,
                 bytes_written: 0,
@@ -533,7 +556,7 @@ mod tests {
     fn next_tx_offset() {
         let mut writer = Writer {
             commit: Commit::default(),
-            inner: BufWriter::new(Vec::new()),
+            inner: PagedWriter::new(Vec::new()),
 
             min_tx_offset: 0,
             bytes_written: 0,

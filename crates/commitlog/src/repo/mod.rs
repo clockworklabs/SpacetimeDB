@@ -1,15 +1,16 @@
-use std::{io, u64};
+use std::io::{self, Read, Seek as _};
 
 use log::{debug, warn};
 
 use crate::{
     commit::Commit,
+    dio::{PagedReader, PagedWriter, WriteAt, BLOCK_SIZE},
     error,
-    segment::{FileLike, Header, Metadata, Reader, Writer},
+    segment::{self, FileLike},
     Options,
 };
 
-pub(crate) mod fs;
+pub mod fs;
 #[cfg(test)]
 pub mod mem;
 
@@ -23,7 +24,7 @@ pub use mem::Memory;
 /// representation.
 pub trait Repo: Clone {
     /// The type of log segments managed by this repo, which must behave like a file.
-    type Segment: io::Read + io::Write + FileLike;
+    type Segment: io::Read + io::Write + io::Seek + WriteAt + FileLike;
 
     /// Create a new segment with the minimum transaction offset `offset`.
     ///
@@ -50,10 +51,13 @@ pub trait Repo: Clone {
     /// Return [`io::ErrorKind::NotFound`] if no such segment exists.
     fn remove_segment(&self, offset: u64) -> io::Result<()>;
 
-    /// Traverse all segments in this repository and return list of their
+    /// Traverse all segments in this repository and return a list of their
     /// offsets, sorted in ascending order.
     fn existing_offsets(&self) -> io::Result<Vec<u64>>;
 }
+
+pub type SegmentWriter<T> = segment::Writer<PagedWriter<T>>;
+pub type SegmentReader<T> = segment::Reader<PagedReader<T>>;
 
 /// Create a new segment [`Writer`] with `offset`.
 ///
@@ -61,25 +65,27 @@ pub trait Repo: Clone {
 /// `log_format_version`.
 ///
 /// If the segment already exists, [`io::ErrorKind::AlreadyExists`] is returned.
-pub fn create_segment_writer<R: Repo>(repo: &R, opts: Options, offset: u64) -> io::Result<Writer<R::Segment>> {
-    let mut storage = repo.create_segment(offset)?;
-    Header {
+pub fn create_segment_writer<R: Repo>(repo: &R, opts: Options, offset: u64) -> io::Result<SegmentWriter<R::Segment>> {
+    let mut storage = repo.create_segment(offset).map(PagedWriter::new)?;
+
+    // Eagerly write the header.
+    segment::Header {
         log_format_version: opts.log_format_version,
         checksum_algorithm: Commit::CHECKSUM_ALGORITHM,
     }
     .write(&mut storage)?;
-    storage.fsync()?;
+    storage.sync_all()?;
 
-    Ok(Writer {
+    Ok(segment::Writer {
         commit: Commit {
             min_tx_offset: offset,
             n: 0,
             records: Vec::new(),
         },
-        inner: io::BufWriter::new(storage),
+        inner: storage,
 
         min_tx_offset: offset,
-        bytes_written: Header::LEN as u64,
+        bytes_written: segment::Header::LEN as u64,
 
         max_records_in_commit: opts.max_records_in_commit,
     })
@@ -104,32 +110,82 @@ pub fn resume_segment_writer<R: Repo>(
     repo: &R,
     opts: Options,
     offset: u64,
-) -> io::Result<Result<Writer<R::Segment>, Metadata>> {
-    let mut storage = repo.open_segment(offset)?;
-    let Metadata {
-        header,
-        tx_range,
-        size_in_bytes,
-    } = match Metadata::extract(offset, &mut storage) {
+) -> io::Result<Result<SegmentWriter<R::Segment>, segment::Metadata>> {
+    let mut storage = repo.open_segment(offset).map(PagedReader::new)?;
+    let meta = match segment::Metadata::extract(offset, &mut storage) {
         Err(error::SegmentMetadata::InvalidCommit { sofar, source }) => {
             warn!("invalid commit in segment {offset}: {source}");
             debug!("sofar={sofar:?}");
             return Ok(Err(sofar));
         }
-        Err(error::SegmentMetadata::Io(e)) => return Err(e),
+        Err(error::SegmentMetadata::Io(e)) => {
+            warn!("metadata I/O error: {e}");
+            return Err(e);
+        }
         Ok(meta) => meta,
     };
-    header
+    // Force creation of a fresh segment if the version is outdated.
+    if meta.header.log_format_version < opts.log_format_version {
+        return Ok(Err(meta));
+    }
+    // Error if the version is newer than what we know.
+    meta.header
         .ensure_compatible(opts.log_format_version, Commit::CHECKSUM_ALGORITHM)
         .map_err(|msg| io::Error::new(io::ErrorKind::InvalidData, msg))?;
 
-    Ok(Ok(Writer {
+    debug!("resume segment {offset} from: segment::{meta:?}");
+
+    let segment::Metadata {
+        header: _,
+        tx_range,
+        size_in_bytes,
+    } = meta;
+
+    // To avoid padding in the middle of a segment, we may need to rewrite
+    // the last block on the next flush. Below adjusts the file position and
+    // page buffer contents for that.
+    let (mut file, mut page, filled) = storage.into_raw_parts();
+    let mut file_pos = file.stream_position()?;
+    debug!("read: file_pos={} pos={} filled={}", file_pos, page.pos(), filled);
+    // `filled` is zero if we hit EOF after consuming a full commit.
+    //
+    // This does not mean `file_pos` is on a block boundary, because the file
+    // may not contain padding due to truncation or because it was written
+    // without O_DIRECT.
+    if filled > 0 {
+        // Set the file position to the start of the last block.
+        file_pos = size_in_bytes
+            .next_multiple_of(BLOCK_SIZE as u64)
+            .saturating_sub(BLOCK_SIZE as u64);
+        // Move the last block (with padding) to the start of the buffer.
+        let last_block = page.pos().next_multiple_of(BLOCK_SIZE).saturating_sub(BLOCK_SIZE)..filled;
+        page.buf_mut().copy_within(last_block, 0);
+        // Set the buffer position to the bytes consumed without padding.
+        let data_bytes = (size_in_bytes - file_pos) as usize;
+        page.set_pos(data_bytes);
+    } else {
+        debug_assert_eq!(page.pos(), 0);
+        // If we didn't read a full block, rewind to the previous block
+        // and re-read the remaining data into the page buffer.
+        if file_pos % BLOCK_SIZE as u64 != 0 {
+            file_pos = size_in_bytes
+                .next_multiple_of(BLOCK_SIZE as u64)
+                .saturating_sub(BLOCK_SIZE as u64);
+            let n = file.read(&mut page.buf_mut()[..BLOCK_SIZE])?;
+            page.set_pos(n);
+        }
+    }
+    debug!("adjusted: file_pos={file_pos} pos={}", page.pos());
+
+    let writer = PagedWriter::from_raw_parts(file, file_pos, page);
+
+    Ok(Ok(segment::Writer {
         commit: Commit {
             min_tx_offset: tx_range.end,
             n: 0,
             records: Vec::new(),
         },
-        inner: io::BufWriter::new(storage),
+        inner: writer,
 
         min_tx_offset: tx_range.start,
         bytes_written: size_in_bytes,
@@ -147,8 +203,8 @@ pub fn open_segment_reader<R: Repo>(
     repo: &R,
     max_log_format_version: u8,
     offset: u64,
-) -> io::Result<Reader<R::Segment>> {
+) -> io::Result<SegmentReader<R::Segment>> {
     debug!("open segment reader at {offset}");
-    let storage = repo.open_segment(offset)?;
-    Reader::new(max_log_format_version, offset, storage)
+    let storage = repo.open_segment(offset).map(PagedReader::new)?;
+    segment::Reader::new(max_log_format_version, offset, storage)
 }

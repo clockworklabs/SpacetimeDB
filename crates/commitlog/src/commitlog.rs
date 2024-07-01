@@ -5,10 +5,11 @@ use log::{debug, info, trace, warn};
 
 use crate::{
     commit::StoredCommit,
+    dio::PagedReader,
     error,
     payload::Decoder,
-    repo::{self, Repo},
-    segment::{self, FileLike, Transaction, Writer},
+    repo::{self, Repo, SegmentReader, SegmentWriter},
+    segment::{self, FileLike, Transaction},
     Commit, Encode, Options,
 };
 
@@ -22,7 +23,7 @@ pub struct Generic<R: Repo, T> {
     ///
     /// If we squint, all segments in a log are a non-empty linked list, the
     /// head of which is the segment open for writing.
-    pub(crate) head: Writer<R::Segment>,
+    pub(crate) head: SegmentWriter<R::Segment>,
     /// The tail of the non-empty list of segments.
     ///
     /// We only retain the min transaction offset of each, from which the
@@ -126,8 +127,8 @@ impl<R: Repo, T> Generic<R, T> {
     /// to the log and forcing the user to re-read the state from disk.
     pub fn sync(&mut self) {
         self.panicked = true;
-        if let Err(e) = self.head.fsync() {
-            panic!("Failed to fsync segment: {e}");
+        if let Err(e) = self.head.inner.sync_all() {
+            panic!("Failed to fsync segment {}: {}", self.head.min_tx_offset(), e);
         }
         self.panicked = false;
     }
@@ -230,7 +231,7 @@ impl<R: Repo, T> Generic<R, T> {
                 } else {
                     let byte_offset = segment::Header::LEN as u64 + bytes_read;
                     debug!("truncating segment {segment} to {offset} at {byte_offset}");
-                    let file = self.repo.open_segment(segment)?;
+                    let mut file = self.repo.open_segment(segment)?;
                     file.ftruncate(byte_offset)?;
                     // Some filesystems require fsync after ftruncate.
                     file.fsync()?;
@@ -249,7 +250,7 @@ impl<R: Repo, T> Generic<R, T> {
     /// appropriate. It is not appropriate to sync after a write error, as that
     /// is likely to return an error as well: the `Commit` will be written to
     /// the new segment anyway.
-    fn start_new_segment(&mut self) -> io::Result<&mut Writer<R::Segment>> {
+    fn start_new_segment(&mut self) -> io::Result<&mut SegmentWriter<R::Segment>> {
         debug!(
             "starting new segment offset={} prev-offset={}",
             self.head.next_tx_offset(),
@@ -416,7 +417,7 @@ pub struct Segments<R> {
 }
 
 impl<R: Repo> Iterator for Segments<R> {
-    type Item = io::Result<segment::Reader<R::Segment>>;
+    type Item = io::Result<SegmentReader<R::Segment>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let off = self.offs.next()?;
@@ -471,7 +472,7 @@ impl CommitInfo {
 }
 
 pub struct Commits<R: Repo> {
-    inner: Option<segment::Commits<R::Segment>>,
+    inner: Option<segment::Commits<PagedReader<R::Segment>>>,
     segments: Segments<R>,
     last_commit: CommitInfo,
     last_error: Option<error::Traversal>,
@@ -618,7 +619,7 @@ mod tests {
     use super::*;
     use crate::{
         payload::{ArrayDecodeError, ArrayDecoder},
-        tests::helpers::{fill_log, mem_log},
+        tests::helpers::{enable_logging, fill_log, mem_log},
     };
 
     #[test]
@@ -831,16 +832,20 @@ mod tests {
 
     #[test]
     fn traverse_empty() {
+        enable_logging();
+
         let log = mem_log::<[u8; 32]>(32);
 
-        assert_eq!(0, log.commits_from(0).count());
-        assert_eq!(0, log.commits_from(42).count());
-        assert_eq!(0, log.transactions_from(0, &ArrayDecoder).count());
-        assert_eq!(0, log.transactions_from(42, &ArrayDecoder).count());
+        assert_eq!(0, log.commits_from(0).map(Result::unwrap).count());
+        assert_eq!(0, log.commits_from(42).map(Result::unwrap).count());
+        assert_eq!(0, log.transactions_from(0, &ArrayDecoder).map(Result::unwrap).count());
+        assert_eq!(0, log.transactions_from(42, &ArrayDecoder).map(Result::unwrap).count());
     }
 
     #[test]
     fn reset_hard() {
+        enable_logging();
+
         let mut log = mem_log::<[u8; 32]>(128);
         fill_log(&mut log, 50, (1..=10).cycle());
 
@@ -850,6 +855,8 @@ mod tests {
 
     #[test]
     fn reset_to_offset() {
+        enable_logging();
+
         let mut log = mem_log::<[u8; 32]>(128);
         let total_txs = fill_log(&mut log, 50, repeat(1)) as u64;
 
@@ -861,12 +868,14 @@ mod tests {
                     .map(Result::unwrap)
                     .last()
                     .unwrap()
-                    .offset
+                    .offset,
+                "last tx offset should be equal to reset offset",
             );
             // We're counting from zero, so offset + 1 is the # of txs.
             assert_eq!(
                 offset + 1,
-                log.transactions_from(0, &ArrayDecoder).map(Result::unwrap).count() as u64
+                log.transactions_from(0, &ArrayDecoder).map(Result::unwrap).count() as u64,
+                "number of txs should be reset offset + 1",
             );
         }
     }
@@ -907,8 +916,11 @@ mod tests {
 
     #[test]
     fn reopen() {
+        enable_logging();
+
         let mut log = mem_log::<[u8; 32]>(1024);
         let mut total_txs = fill_log(&mut log, 100, (1..=10).cycle());
+        log.sync();
         assert_eq!(
             total_txs,
             log.transactions_from(0, &ArrayDecoder).map(Result::unwrap).count()
@@ -923,6 +935,7 @@ mod tests {
         )
         .unwrap();
         total_txs += fill_log(&mut log, 100, (1..=10).cycle());
+        log.sync();
 
         assert_eq!(
             total_txs,

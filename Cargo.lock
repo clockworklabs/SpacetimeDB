@@ -4332,10 +4332,13 @@ dependencies = [
 name = "spacetimedb-commitlog"
 version = "0.10.1"
 dependencies = [
+ "anyhow",
  "bitflags 2.4.1",
  "crc32c",
+ "criterion",
  "env_logger",
  "itertools 0.12.0",
+ "libc",
  "log",
  "once_cell",
  "proptest",
@@ -4346,6 +4349,7 @@ dependencies = [
  "spacetimedb-sats",
  "tempfile",
  "thiserror",
+ "winapi",
 ]
 
 [[package]]

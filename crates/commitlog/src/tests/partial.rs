@@ -8,7 +8,9 @@ use std::{
 use log::debug;
 
 use crate::{
-    commitlog, error, payload,
+    commitlog,
+    dio::WriteAt,
+    error, payload,
     repo::{self, Repo},
     segment::FileLike,
     tests::helpers::enable_logging,
@@ -19,7 +21,7 @@ use crate::{
 fn traversal() {
     enable_logging();
 
-    let mut log = open_log::<[u8; 32]>(ShortMem::new(800));
+    let mut log = open_log::<[u8; 32]>(ShortMem::new(5120));
     let total_commits = 100;
     let total_txs = fill_log_enospc(&mut log, total_commits, (1..=10).cycle());
 
@@ -143,7 +145,7 @@ fn open_log<T>(repo: ShortMem) -> commitlog::Generic<ShortMem, T> {
     commitlog::Generic::open(
         repo,
         Options {
-            max_segment_size: 1024,
+            max_segment_size: 8192,
             ..Options::default()
         },
     )
@@ -165,8 +167,23 @@ impl FileLike for ShortSegment {
         self.inner.fsync()
     }
 
-    fn ftruncate(&self, size: u64) -> std::io::Result<()> {
+    fn ftruncate(&mut self, size: u64) -> std::io::Result<()> {
         self.inner.ftruncate(size)
+    }
+}
+
+impl WriteAt for ShortSegment {
+    fn write_at(&mut self, buf: &[u8], offset: u64) -> io::Result<usize> {
+        let pos = self.stream_position()?;
+        self.seek(SeekFrom::Start(offset))?;
+        let n = self.write(buf)?;
+        self.seek(SeekFrom::Start(pos))?;
+
+        Ok(n)
+    }
+
+    fn write_all_at(&mut self, buf: &[u8], offset: u64) -> io::Result<()> {
+        self.write_at(buf, offset).map(drop)
     }
 }
 

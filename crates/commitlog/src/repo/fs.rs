@@ -1,4 +1,6 @@
+use std::fs::OpenOptions;
 use std::io;
+use std::path::Path;
 use std::{
     fs::{self, File},
     path::PathBuf,
@@ -20,28 +22,59 @@ pub fn segment_file_name(offset: u64) -> String {
 // TODO
 //
 // - should use advisory locks?
-//
-// Experiment:
-//
-// - O_DIRECT | O_DSYNC
-// - preallocation of disk space
-// - io_uring
-//
+
+/// Options for [`Fs`].
+#[derive(Clone, Copy, Debug)]
+pub struct Options {
+    /// Use `O_DIRECT` or platform equivalent.
+    ///
+    /// Setting this to true will make reads and writes bypass the OS's page
+    /// cache and access the storage devices directly.
+    ///
+    /// Default: true
+    pub direct_io: bool,
+    /// Use `O_DSYNC` or plaform equivalent.
+    ///
+    /// Setting this to true will make writes behave as if followed by a
+    /// call to `fdatasync(2)`.
+    ///
+    /// Note that this has a performance impact, and that `fsync(2)` may still
+    /// be required to guarantee durability.
+    ///
+    /// Has no effect on macOS.
+    ///
+    /// Default: false
+    pub sync_io: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            direct_io: false,
+            sync_io: false,
+        }
+    }
+}
 
 /// A commitlog repository [`Repo`] which stores commits in ordinary files on
 /// disk.
 #[derive(Clone, Debug)]
 pub struct Fs {
     /// The base directory within which segment files will be stored.
-    root: PathBuf,
+    pub root: PathBuf,
+    /// Options.
+    pub opts: Options,
 }
 
 impl Fs {
     /// Create a commitlog repository which stores segments in the directory `root`.
     ///
     /// `root` must name an extant, accessible, writeable directory.
-    pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+    pub fn new(root: impl Into<PathBuf>, opts: Options) -> Self {
+        Self {
+            root: root.into(),
+            opts,
+        }
     }
 
     /// Get the filename for a segment starting with `offset` within this
@@ -67,27 +100,31 @@ impl Repo for Fs {
     type Segment = File;
 
     fn create_segment(&self, offset: u64) -> io::Result<Self::Segment> {
-        File::options()
-            .read(true)
-            .append(true)
-            .create_new(true)
-            .open(self.segment_path(offset))
-            .or_else(|e| {
-                if e.kind() == io::ErrorKind::AlreadyExists {
-                    debug!("segment {offset} already exists");
-                    let file = self.open_segment(offset)?;
-                    if file.metadata()?.len() == 0 {
-                        debug!("segment {offset} is empty");
-                        return Ok(file);
-                    }
+        open(
+            self.segment_path(offset),
+            File::options().read(true).write(true).create_new(true),
+            self.opts,
+        )
+        .or_else(|e| {
+            if e.kind() == io::ErrorKind::AlreadyExists {
+                debug!("segment {offset} already exists");
+                let file = self.open_segment(offset)?;
+                if file.metadata()?.len() == 0 {
+                    debug!("segment {offset} is empty");
+                    return Ok(file);
                 }
+            }
 
-                Err(e)
-            })
+            Err(e)
+        })
     }
 
     fn open_segment(&self, offset: u64) -> io::Result<Self::Segment> {
-        File::options().read(true).append(true).open(self.segment_path(offset))
+        open(
+            self.segment_path(offset),
+            File::options().read(true).write(true),
+            self.opts,
+        )
     }
 
     fn remove_segment(&self, offset: u64) -> io::Result<()> {
@@ -117,4 +154,70 @@ impl Repo for Fs {
 
         Ok(segments)
     }
+}
+
+pub fn open(
+    path: impl AsRef<Path>,
+    opts: &mut OpenOptions,
+    Options { direct_io, sync_io }: Options,
+) -> io::Result<File> {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut flags = 0;
+        if direct_io {
+            flags |= libc::O_DIRECT;
+        }
+        if sync_io {
+            flags |= libc::O_DSYNC;
+        }
+        opts.custom_flags(flags);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        use winapi::um::winbase::*;
+
+        // For reference:
+        //
+        // FILE_FLAG_NO_BUFFERING: https://docs.microsoft.com/en-us/windows/win32/fileio/file-buffering
+        // FILE_FLAG_WRITE_THROUGH: https://docs.microsoft.com/en-us/windows/win32/fileio/file-caching
+        let mut flags = 0;
+        if direct_io {
+            flags |= FILE_FLAG_NO_BUFFERING;
+        }
+        if sync_io {
+            flags |= FILE_FLAG_WRITE_THROUGH;
+        }
+        opts.custom_flags(flags);
+    }
+
+    let file = opts.open(path)?;
+
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS, O_DIRECT may or may not be defined, its functional
+        // equivalent is the F_NOCACHE fcntl. It may be necessary to set
+        // F_PREALLOCATE as well[1].
+        //
+        // O_DSYNC is considered non-functional[2]. It is not clear if
+        // an equivalent exists, the F_FULLFSYNC fcntl seems to be a
+        // oneshot equivalent to just calling `fsync(2)`.
+        //
+        // [1]: https://forums.developer.apple.com/forums/thread/25464
+        // [2]: https://x.com/jorandirkgreef/status/1532314169604726784
+
+        use libc::{fcntl, F_NOCACHE};
+        use std::os::fd::AsRawFd;
+
+        let fd = file.as_raw_fd();
+        if direct_io {
+            let ret = unsafe { fcntl(fd, F_NOCACHE, 1) };
+            if ret != 0 {
+                return Err(io::Error::from_raw_os_error(ret));
+            }
+        }
+    }
+
+    Ok(file)
 }
