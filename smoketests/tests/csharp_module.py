@@ -23,7 +23,7 @@ class CreateProject(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmpdir:
                 spacetime("init", "--lang=csharp", tmpdir)
 
-                packed_projects = ["BSATN.Runtime", "Runtime"]
+                packed_projects = ["Codegen", "BSATN.Runtime", "Runtime"]
                 restore_sources = [str(bindings / project / "bin" / "Release") for project in packed_projects]
                 # note that nuget URL comes last, which ensures local sources should override it.
                 restore_sources.append("https://api.nuget.org/v3/index.json")
