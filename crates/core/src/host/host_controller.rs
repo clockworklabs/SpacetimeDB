@@ -77,7 +77,7 @@ pub struct HostController {
     /// The [`ProgramStorage`] to query when instantiating a module.
     program_storage: ProgramStorage,
     /// The [`EnergyMonitor`] used by this controller.
-    energy_monitor: Arc<dyn EnergyMonitor>,
+    pub energy_monitor: Arc<dyn EnergyMonitor>,
 }
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone, Serialize, Debug)]
@@ -548,10 +548,17 @@ async fn make_dbic(
     database: Database,
     instance_id: u64,
     relational_db: Arc<RelationalDB>,
+    energy_monitor: Arc<dyn EnergyMonitor>,
 ) -> anyhow::Result<DatabaseInstanceContext> {
     let log_path = DatabaseLogger::filepath(&database.address, instance_id);
     let logger = tokio::task::block_in_place(|| Arc::new(DatabaseLogger::open(log_path)));
-    let subscriptions = ModuleSubscriptions::new(relational_db.clone(), database.owner_identity);
+    let subscriptions = ModuleSubscriptions::new(
+        relational_db.clone(),
+        database.owner_identity,
+        energy_monitor,
+        database.clone(),
+        instance_id,
+    );
 
     Ok(DatabaseInstanceContext {
         database,
@@ -601,7 +608,9 @@ async fn launch_module(
     let program_hash = database.initial_program;
     let host_type = database.host_type;
 
-    let dbic = make_dbic(database, instance_id, relational_db).await.map(Arc::new)?;
+    let dbic = make_dbic(database, instance_id, relational_db, energy_monitor.clone())
+        .await
+        .map(Arc::new)?;
     let (scheduler, scheduler_starter) = Scheduler::open(dbic.scheduler_db_path(root_dir.to_path_buf()))?;
     let module_host = make_module_host(
         host_type,

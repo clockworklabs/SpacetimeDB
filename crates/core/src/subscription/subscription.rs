@@ -572,6 +572,7 @@ impl ExecutionSet {
         database_update: &'a [&'a DatabaseTableUpdate],
         slow_query_threshold: Option<Duration>,
     ) -> DatabaseUpdateRelValue<'a> {
+        // TODO: This is called only for bench & testing, so not recording energy.
         let mut tables = Vec::new();
         for unit in &self.exec_units {
             if let Some(table) = unit.eval_incr(
@@ -585,6 +586,7 @@ impl ExecutionSet {
                 tables.push(table);
             }
         }
+
         DatabaseUpdateRelValue { tables }
     }
 

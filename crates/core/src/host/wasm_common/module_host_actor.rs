@@ -15,6 +15,7 @@ use crate::database_logger::{LogLevel, Record, SystemLogger};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::system_tables::{StClientsRow, ST_CLIENTS_ID};
 use crate::db::datastore::traits::IsolationLevel;
+use crate::db::query_context::QueryContext;
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use crate::execution_context::{self, ExecutionContext, ReducerContext};
 use crate::host::instance_env::InstanceEnv;
@@ -86,7 +87,6 @@ pub(crate) struct WasmModuleHostActor<T: WasmModule> {
     scheduler: Scheduler,
     func_names: Arc<FuncNames>,
     info: Arc<ModuleInfo>,
-    energy_monitor: Arc<dyn EnergyMonitor>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -134,7 +134,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             scheduler,
             program_bytes: _,
             program_hash: module_hash,
-            energy_monitor,
+            energy_monitor: _,
         } = mcc;
         log::trace!(
             "Making new module host actor for database {}",
@@ -204,7 +204,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             info,
             database_instance_context,
             scheduler,
-            energy_monitor,
         };
         module.initial_instance = Some(Box::new(module.make_from_instance(instance)));
 
@@ -217,7 +216,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         WasmModuleInstance {
             instance,
             info: self.info.clone(),
-            energy_monitor: self.energy_monitor.clone(),
+            energy_monitor: self.database_instance_context.subscriptions.energy_monitor.clone(),
             trapped: false,
         }
     }
@@ -277,13 +276,27 @@ impl<T: WasmModule> Module for WasmModuleHostActor<T> {
         query: String,
     ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError> {
         let db = &self.database_instance_context.relational_db;
+
         let auth = AuthCtx::new(self.database_instance_context.owner_identity, caller_identity);
         log::debug!("One-off query: {query}");
         // Don't need the `slow query` logger on compilation
         db.with_read_only(&ExecutionContext::sql(db.address()), |tx| {
+            let mut ctx_query = QueryContext::new(
+                self.database_instance_context.subscriptions.energy_monitor.clone(),
+                self.database_instance_context.database_instance_id,
+                self.database_instance_context.database.owner_identity,
+            );
             let ast = sql::compiler::compile_sql(db, tx, &query)?;
-            sql::execute::execute_sql_tx(db, tx, &query, ast, auth)
-                .and_then(|res| Ok(res.context("One-off queries are not allowed to modify the database")?))
+
+            sql::execute::execute_sql_tx(
+                &self.database_instance_context.relational_db,
+                &mut ctx_query,
+                tx,
+                &query,
+                ast,
+                auth,
+            )
+            .and_then(|res| Ok(res.context("One-off queries are not allowed to modify the database")?))
         })
     }
 
