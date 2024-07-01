@@ -149,7 +149,7 @@ fn init() {
 
 #[spacetimedb(reducer)]
 pub fn my_repeating_reducer(prev: Timestamp) {
-    println!("Invoked: ts={:?}, delta={:?}", Timestamp::now(), prev.elapsed());
+  println!("Invoked: ts={:?}, delta={:?}", Timestamp::now(), prev.elapsed());
     spacetimedb::schedule!("100ms", my_repeating_reducer(Timestamp::now()));
 }
 """
@@ -161,3 +161,79 @@ pub fn my_repeating_reducer(prev: Timestamp) {
         time.sleep(4)
         new_lines = sum(1 for line in self.logs(100) if "Invoked" in line)
         self.assertLess(lines, new_lines)
+
+
+class HotswapModule(Smoketest):
+    AUTOPUBLISH = False
+
+    MODULE_CODE = """
+use spacetimedb::spacetimedb;
+
+#[spacetimedb(table)]
+pub struct Person {
+    #[primarykey]
+    #[autoinc]
+    id: u64,
+    name: String,
+}
+
+#[spacetimedb(reducer)]
+pub fn add_person(name: String) {
+    Person::insert(Person { id: 0, name }).ok();
+}
+"""
+
+    MODULE_CODE_B = """
+use spacetimedb::spacetimedb;
+
+#[spacetimedb(table)]
+pub struct Person {
+    #[primarykey]
+    #[autoinc]
+    id: u64,
+    name: String,
+}
+
+#[spacetimedb(reducer)]
+pub fn add_person(name: String) {
+    Person::insert(Person { id: 0, name }).ok();
+}
+
+#[spacetimedb(table)]
+pub struct Pet {
+    #[primarykey]
+    species: String,
+}
+
+#[spacetimedb(reducer)]
+pub fn add_pet(species: String) {
+    Pet::insert(Pet { species }).ok();
+}
+"""
+
+    def test_hotswap_module(self):
+        """Tests hotswapping of modules."""
+
+        # Publish MODULE_CODE and subscribe to all
+        name = random_string()
+        self.publish_module(name, clear=False)
+        sub = self.subscribe("SELECT * FROM *", n=2)
+
+        # Trigger event on the subscription
+        self.call("add_person", "Horst")
+
+        # Update the module
+        self.write_module_code(self.MODULE_CODE_B)
+        self.publish_module(name, clear=False)
+
+        # Assert that the module was updated
+        self.call("add_pet", "Turtle")
+        # And trigger another event on the subscription
+        self.call("add_person", "Cindy")
+
+        # Note that 'SELECT * FROM *' does NOT get refreshed to include the
+        # new table (this is a known limitation).
+        self.assertEqual(sub(), [
+            {'Person': {'deletes': [], 'inserts': [{'id': 1, 'name': 'Horst'}]}},
+            {'Person': {'deletes': [], 'inserts': [{'id': 2, 'name': 'Cindy'}]}}
+        ])
