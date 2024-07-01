@@ -15,6 +15,18 @@ pub(crate) fn with_timestamp_set<R>(ts: Timestamp, f: impl FnOnce() -> R) -> R {
 }
 
 /// A timestamp measured as micro seconds since the UNIX epoch.
+///
+/// ```rust
+/// use spacetimedb::Timestamp;
+/// use chrono::{Utc, NaiveDate, DateTime};
+///
+/// let dt = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap().and_hms_micro_opt(0, 0, 1, 444).unwrap().and_utc();
+/// assert_eq!(dt.timestamp_micros(), 1_000_444);
+/// let t:Timestamp = dt.into();
+/// assert_eq!(t.into_micros_since_epoch(), 1_000_444);
+/// let td:Option<DateTime<Utc>> = t.into();
+/// assert_eq!(dt,td.unwrap());
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Timestamp {
     /// The number of micro seconds since the UNIX epoch.
@@ -96,6 +108,18 @@ impl Sub<Duration> for Timestamp {
     fn sub(self, rhs: Duration) -> Self::Output {
         self.checked_sub(rhs)
             .expect("underflow when subtracting duration from timestamp")
+    }
+}
+
+impl From<chrono::DateTime<chrono::Utc>> for Timestamp {
+    fn from(value: chrono::DateTime<chrono::Utc>) -> Self {
+        Self::from_micros_since_epoch(value.timestamp_micros() as u64)
+    }
+}
+
+impl From<Timestamp> for Option<chrono::DateTime<chrono::Utc>> {
+    fn from(value: Timestamp) -> Self {
+        chrono::NaiveDateTime::from_timestamp_micros(value.micros_since_epoch as i64).map(|x| x.and_utc())
     }
 }
 
