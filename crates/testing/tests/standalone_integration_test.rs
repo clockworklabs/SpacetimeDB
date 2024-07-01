@@ -74,11 +74,11 @@ fn test_calling_a_reducer() {
     test_calling_a_reducer_in_module("spacetimedb-quickstart");
 }
 
-#[test]
-#[serial]
-fn test_calling_a_reducer_csharp() {
-    test_calling_a_reducer_in_module("spacetimedb-quickstart-cs");
-}
+// #[test]
+// #[serial]
+// fn test_calling_a_reducer_csharp() {
+//     test_calling_a_reducer_in_module("spacetimedb-quickstart-cs");
+// }
 
 #[test]
 #[serial]

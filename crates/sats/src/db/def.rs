@@ -1053,6 +1053,12 @@ impl TableDef {
         x
     }
 
+    /// Set the reducer name for scheduled tables and return updated `TableDef`.
+    pub fn with_scheduled(mut self, scheduled: Option<Box<str>>) -> Self {
+        self.scheduled = scheduled;
+        self
+    }
+
     /// Generate a [IndexDef] using the supplied `columns`.
     pub fn with_column_index(self, columns: impl Into<ColList>, is_unique: bool) -> Self {
         let mut x = self;
