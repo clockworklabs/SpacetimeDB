@@ -1,7 +1,6 @@
 on:
   push:
     branches:
-      - master
       - jgilles/bottest3
   workflow_dispatch:
     inputs:
