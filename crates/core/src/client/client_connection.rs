@@ -13,6 +13,7 @@ use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
 use futures::prelude::*;
 use spacetimedb_lib::identity::RequestId;
+use tokio::sync::mpsc::Receiver;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 
@@ -40,8 +41,13 @@ pub enum ClientSendError {
 }
 
 impl ClientConnectionSender {
-    pub fn dummy_with_channel(id: ClientActorId, protocol: Protocol) -> (Self, mpsc::Receiver<SerializableMessage>) {
-        let (sendtx, rx) = mpsc::channel(1);
+    /// Build a `ClientConnectionSender` for testing and benchmarks with the specified `buffer_size` for the channel
+    pub fn dummy_buffer(
+        id: ClientActorId,
+        protocol: Protocol,
+        buffer_size: usize,
+    ) -> (Self, Receiver<SerializableMessage>) {
+        let (sendtx, rx) = mpsc::channel(buffer_size);
         // just make something up, it doesn't need to be attached to a real task
         let abort_handle = match tokio::runtime::Handle::try_current() {
             Ok(h) => h.spawn(async {}).abort_handle(),
@@ -59,6 +65,12 @@ impl ClientConnectionSender {
         )
     }
 
+    /// Build a `ClientConnectionSender` for testing and benchmarks with a buffer_size` of `1` for the channel
+    pub fn dummy_with_channel(id: ClientActorId, protocol: Protocol) -> (Self, mpsc::Receiver<SerializableMessage>) {
+        Self::dummy_buffer(id, protocol, 1)
+    }
+
+    /// Build a `ClientConnectionSender` for testing and benchmarks with a buffer_size` of `1`  for the channel, dropping the Receiver
     pub fn dummy(id: ClientActorId, protocol: Protocol) -> Self {
         Self::dummy_with_channel(id, protocol).0
     }
