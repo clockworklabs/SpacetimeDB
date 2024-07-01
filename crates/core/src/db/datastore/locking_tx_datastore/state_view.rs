@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 // StateView trait, is designed to define the behavior of viewing internal datastore states.
 // Currently, it applies to: CommittedState, MutTxId, and TxId.
-pub(crate) trait StateView {
+pub trait StateView {
     fn get_schema(&self, table_id: TableId) -> Option<&Arc<TableSchema>>;
 
     fn table_id_from_name(&self, table_name: &str, database_address: Address) -> Result<Option<TableId>> {

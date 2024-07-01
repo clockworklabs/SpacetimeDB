@@ -28,6 +28,9 @@ impl Segment {
     pub fn len(&self) -> usize {
         self.buf.read().unwrap().len()
     }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl From<SharedBytes> for Segment {
