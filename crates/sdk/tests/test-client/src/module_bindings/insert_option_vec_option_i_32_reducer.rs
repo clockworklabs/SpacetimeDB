@@ -32,7 +32,7 @@ pub fn on_insert_option_vec_option_i_32(
 ) -> ReducerCallbackId<InsertOptionVecOptionI32Args> {
     InsertOptionVecOptionI32Args::on_reducer(move |__identity, __addr, __status, __args| {
         let InsertOptionVecOptionI32Args { n } = __args;
-        __callback(__identity, __addr, __status, v);
+        __callback(__identity, __addr, __status, n);
     })
 }
 
@@ -42,7 +42,7 @@ pub fn once_on_insert_option_vec_option_i_32(
 ) -> ReducerCallbackId<InsertOptionVecOptionI32Args> {
     InsertOptionVecOptionI32Args::once_on_reducer(move |__identity, __addr, __status, __args| {
         let InsertOptionVecOptionI32Args { n } = __args;
-        __callback(__identity, __addr, __status, v);
+        __callback(__identity, __addr, __status, n);
     })
 }
 
