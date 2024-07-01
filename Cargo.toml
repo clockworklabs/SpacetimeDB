@@ -77,31 +77,31 @@ inherits = "release"
 debug = true
 
 [workspace.package]
-version = "0.10.1"
+version = "0.11.0"
 edition = "2021"
 # update rust-toolchain.toml too!
 rust-version = "1.78.0"
 
 [workspace.dependencies]
-spacetimedb = { path = "crates/bindings", version = "0.10.1" }
-spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "0.10.1" }
-spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "0.10.1" }
-spacetimedb-cli = { path = "crates/cli", version = "0.10.1" }
-spacetimedb-client-api = { path = "crates/client-api", version = "0.10.1" }
-spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "0.10.1" }
-spacetimedb-commitlog = { path = "crates/commitlog", version = "0.10.1" }
-spacetimedb-core = { path = "crates/core", version = "0.10.1" }
-spacetimedb-data-structures = { path = "crates/data-structures", version = "0.10.1" }
-spacetimedb-durability = { path = "crates/durability", version = "0.10.1" }
-spacetimedb-lib = { path = "crates/lib", default-features = false, version = "0.10.1" }
-spacetimedb-metrics = { path = "crates/metrics", version = "0.10.1" }
-spacetimedb-primitives = { path = "crates/primitives", version = "0.10.1" }
-spacetimedb-sats = { path = "crates/sats", version = "0.10.1" }
-spacetimedb-standalone = { path = "crates/standalone", version = "0.10.1" }
-spacetimedb-table = { path = "crates/table", version = "0.10.1" }
-spacetimedb-vm = { path = "crates/vm", version = "0.10.1" }
-spacetimedb-fs-utils = { path = "crates/fs-utils", version = "0.10.1" }
-spacetimedb-snapshot = { path = "crates/snapshot", version = "0.10.1" }
+spacetimedb = { path = "crates/bindings", version = "0.11.0" }
+spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "0.11.0" }
+spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "0.11.0" }
+spacetimedb-cli = { path = "crates/cli", version = "0.11.0" }
+spacetimedb-client-api = { path = "crates/client-api", version = "0.11.0" }
+spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "0.11.0" }
+spacetimedb-commitlog = { path = "crates/commitlog", version = "0.11.0" }
+spacetimedb-core = { path = "crates/core", version = "0.11.0" }
+spacetimedb-data-structures = { path = "crates/data-structures", version = "0.11.0" }
+spacetimedb-durability = { path = "crates/durability", version = "0.11.0" }
+spacetimedb-lib = { path = "crates/lib", default-features = false, version = "0.11.0" }
+spacetimedb-metrics = { path = "crates/metrics", version = "0.11.0" }
+spacetimedb-primitives = { path = "crates/primitives", version = "0.11.0" }
+spacetimedb-sats = { path = "crates/sats", version = "0.11.0" }
+spacetimedb-standalone = { path = "crates/standalone", version = "0.11.0" }
+spacetimedb-table = { path = "crates/table", version = "0.11.0" }
+spacetimedb-vm = { path = "crates/vm", version = "0.11.0" }
+spacetimedb-fs-utils = { path = "crates/fs-utils", version = "0.11.0" }
+spacetimedb-snapshot = { path = "crates/snapshot", version = "0.11.0" }
 
 ahash = "0.8"
 anyhow = "1.0.68"
