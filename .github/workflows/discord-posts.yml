@@ -1,0 +1,21 @@
+name: Discord notifications
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  discordNotification:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    steps:
+      - name: Send Discord notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          curl -X POST -H 'Content-Type: application/json' -d '{
+            "content": "'"PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](${PR_URL})"'"
+          }' ${DISCORD_WEBHOOK_URL}
