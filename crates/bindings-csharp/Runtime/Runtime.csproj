@@ -10,8 +10,10 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>SpacetimeDB</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,10 +25,6 @@
     <!-- Codegen package must be built before this one so that it's included in NuGet Runtime package, but we don't depend on it. -->
     <!-- (*not* with OutputItemType=analyzer because we don't want to use that source generator on source of Runtime itself) -->
     <ProjectReference Include="../Codegen/Codegen.csproj" ReferenceOutputAssembly="false" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Linq.Expression.Optimizer" Version="1.0.15" />
   </ItemGroup>
 
   <ItemGroup>

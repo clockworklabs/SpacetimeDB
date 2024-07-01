@@ -1,8 +1,6 @@
 namespace SpacetimeDB.Codegen;
 
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -59,9 +57,7 @@ readonly record struct ColumnDeclaration
                 {
                     SpecialType.System_String or SpecialType.System_Boolean => true,
                     SpecialType.None
-                        => type.ToString()
-                            is "SpacetimeDB.Runtime.Address"
-                                or "SpacetimeDB.Runtime.Identity",
+                        => type.ToString() is "SpacetimeDB.Address" or "SpacetimeDB.Identity",
                     _ => false,
                 }
             )
@@ -116,7 +112,7 @@ readonly record struct ReducerParamDeclaration
         Name = name;
         Type = SymbolToName(type);
         TypeInfo = GetTypeInfo(type);
-        IsContextArg = Type == "SpacetimeDB.Runtime.ReducerContext";
+        IsContextArg = Type == "SpacetimeDB.ReducerContext";
     }
 }
 
@@ -193,45 +189,33 @@ public class Module : IIncrementalGenerator
                     var autoIncFields = t.Fields.Where(f => f.Attrs.HasFlag(ColumnAttrs.AutoInc))
                         .Select(f => f.Name);
 
+                    var iTable = $"SpacetimeDB.Internal.ITable<{t.ShortName}>";
+
                     var extensions =
                         $@"
-                            private static readonly Lazy<SpacetimeDB.RawBindings.TableId> tableId = new (() => SpacetimeDB.Runtime.GetTableId(nameof({t.ShortName})));
+                            static bool {iTable}.HasAutoIncFields => {autoIncFields.Any().ToString().ToLower()};
 
-                            public static IEnumerable<{t.ShortName}> Iter() =>
-                                new SpacetimeDB.Runtime.RawTableIter(tableId.Value)
-                                .Parse<{t.ShortName}>();
-
-                            public static SpacetimeDB.Module.TableDesc MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
+                            static SpacetimeDB.Internal.Module.TableDesc {iTable}.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
                                 new (
                                     nameof({t.ShortName}),
-                                    new SpacetimeDB.Module.ColumnDefWithAttrs[] {{ {string.Join(",", t.Fields.Select(f => $@"
+                                    new SpacetimeDB.Internal.Module.ColumnDefWithAttrs[] {{ {string.Join(",", t.Fields.Select(f => $@"
                                         new (
-                                            new SpacetimeDB.Module.ColumnDef(nameof({f.Name}), BSATN.{f.Name}.GetAlgebraicType(registrar)),
-                                            SpacetimeDB.Module.ColumnAttrs.{f.Attrs}
+                                            new (nameof({f.Name}), BSATN.{f.Name}.GetAlgebraicType(registrar)),
+                                            SpacetimeDB.ColumnAttrs.{f.Attrs}
                                         )
                                     "))} }},
-                                    {(t.IsPublic ? "true" : "false")}
+                                    {t.IsPublic.ToString().ToLower()}
                                 ),
                                 (SpacetimeDB.BSATN.AlgebraicType.Ref) new BSATN().GetAlgebraicType(registrar)
                             );
 
-                            private static readonly Lazy<KeyValuePair<string, Action<BinaryWriter, object?>>[]> fieldTypeInfos = new (() => new KeyValuePair<string, Action<BinaryWriter, object?>>[] {{
+                            static SpacetimeDB.Internal.Filter {iTable}.CreateFilter() => new([
                                 {string.Join("\n", t.Fields.Select(f => $"new (nameof({f.Name}), (w, v) => BSATN.{f.Name}.Write(w, ({f.Type}) v!)),"))}
-                            }});
+                            ]);
 
-                            public static IEnumerable<{t.ShortName}> Query(System.Linq.Expressions.Expression<Func<{t.ShortName}, bool>> filter) =>
-                                new SpacetimeDB.Runtime.RawTableIterFiltered(tableId.Value, SpacetimeDB.Filter.Filter.Compile<{t.ShortName}>(fieldTypeInfos.Value, filter))
-                                .Parse<{t.ShortName}>();
-
-                            public void Insert() {{
-                                var bytes = SpacetimeDB.Runtime.Insert(tableId.Value, this);
-                                // bytes should contain modified value now with autoinc fields updated
-                                {(autoIncFields.Any() ? $@"
-                                    using var stream = new System.IO.MemoryStream(bytes);
-                                    using var reader = new System.IO.BinaryReader(stream);
-                                    ReadFields(reader);
-                                " : "")}
-                            }}
+                            public static IEnumerable<{t.ShortName}> Iter() => {iTable}.Iter();
+                            public static IEnumerable<{t.ShortName}> Query(System.Linq.Expressions.Expression<Func<{t.ShortName}, bool>> predicate) => {iTable}.Query(predicate);
+                            public void Insert() => {iTable}.Insert(this);
                         ";
 
                     foreach (
@@ -239,13 +223,10 @@ public class Module : IIncrementalGenerator
                             .Where(pair => pair.field.IsEquatable)
                     )
                     {
-                        var index = $"new SpacetimeDB.RawBindings.ColId({i})";
-
                         extensions +=
                             $@"
                                 public static IEnumerable<{t.ShortName}> FilterBy{f.Name}({f.Type} {f.Name}) =>
-                                    new SpacetimeDB.Runtime.RawTableIterByColEq(tableId.Value, {index}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name}))
-                                    .Parse<{t.ShortName}>();
+                                    {iTable}.ColEq.Where({i}, {f.Name}, BSATN.{f.Name}).Iter();
                             ";
 
                         if (f.Attrs.HasFlag(ColumnAttrs.Unique))
@@ -258,17 +239,17 @@ public class Module : IIncrementalGenerator
                                         .SingleOrDefault();
 
                                     public static bool DeleteBy{f.Name}({f.Type} {f.Name}) =>
-                                        SpacetimeDB.Runtime.DeleteByColEq(tableId.Value, {index}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name})) > 0;
+                                        {iTable}.ColEq.Where({i}, {f.Name}, BSATN.{f.Name}).Delete();
 
-                                    public static bool UpdateBy{f.Name}({f.Type} {f.Name}, {t.ShortName} value) =>
-                                        SpacetimeDB.Runtime.UpdateByColEq(tableId.Value, {index}, SpacetimeDB.BSATN.IStructuralReadWrite.ToBytes(BSATN.{f.Name}, {f.Name}), value);
+                                    public static bool UpdateBy{f.Name}({f.Type} {f.Name}, {t.ShortName} @this) =>
+                                        {iTable}.ColEq.Where({i}, {f.Name}, BSATN.{f.Name}).Update(@this);
                                 ";
                         }
                     }
 
                     return new KeyValuePair<string, string>(
                         t.FullName,
-                        t.Scope.GenerateExtensions(extensions)
+                        t.Scope.GenerateExtensions(extensions, iTable)
                     );
                 }
             )
@@ -310,17 +291,17 @@ public class Module : IIncrementalGenerator
                     (
                         r.Name,
                         Class: $@"
-                            class {r.Name}: IReducer {{
-                                {string.Join("\n", r.GetNonContextArgs().Select(a => $"{a.TypeInfo} {a.Name} = new();"))}
+                            class {r.Name}: SpacetimeDB.Internal.IReducer {{
+                                {string.Join("\n", r.GetNonContextArgs().Select(a => $"private static {a.TypeInfo} {a.Name} = new();"))}
 
-                                SpacetimeDB.Module.ReducerDef IReducer.MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) {{
+                                public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) {{
                                     return new (
                                         ""{r.ExportName}""
                                         {string.Join("", r.GetNonContextArgs().Select(a => $",\nnew SpacetimeDB.BSATN.AggregateElement(nameof({a.Name}), {a.Name}.GetAlgebraicType(registrar))"))}
                                     );
                                 }}
 
-                                void IReducer.Invoke(BinaryReader reader, SpacetimeDB.Runtime.ReducerContext ctx) {{
+                                public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx) {{
                                     {r.FullName}({string.Join(", ", r.Args.Select(a => a.IsContextArg ? "ctx" : $"{a.Name}.Read(reader)"))});
                                 }}
                             }}
@@ -349,14 +330,9 @@ public class Module : IIncrementalGenerator
             // <auto-generated />
             #nullable enable
 
-            using static SpacetimeDB.RawBindings;
-            using SpacetimeDB.Module;
+            using System.Diagnostics.CodeAnalysis;
             using System.Runtime.CompilerServices;
             using System.Runtime.InteropServices;
-            using static SpacetimeDB.Runtime;
-            using System.Diagnostics.CodeAnalysis;
-
-            using Buffer = SpacetimeDB.RawBindings.Buffer;
 
             static class ModuleRegistration {{
                 {string.Join("\n", addReducers.Select(r => r.Class))}
@@ -367,26 +343,26 @@ public class Module : IIncrementalGenerator
                 [UnmanagedCallersOnly(EntryPoint = ""__preinit__10_init_csharp"")]
 #else
                 // Prevent trimming of FFI exports that are invoked from C and not visible to C# trimmer.
-                [DynamicDependency(DynamicallyAccessedMemberTypes.PublicMethods, typeof(FFI))]
+                [DynamicDependency(DynamicallyAccessedMemberTypes.PublicMethods, typeof(SpacetimeDB.Internal.Module))]
 #endif
                 public static void Main() {{
-                    {string.Join("\n", addReducers.Select(r => $"FFI.RegisterReducer(new {r.Name}());"))}
-                    {string.Join("\n", tableNames.Select(t => $"FFI.RegisterTable({t}.MakeTableDesc(FFI.TypeRegistrar));"))}
+                    {string.Join("\n", addReducers.Select(r => $"SpacetimeDB.Internal.Module.RegisterReducer<{r.Name}>();"))}
+                    {string.Join("\n", tableNames.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t}>();"))}
                 }}
 
 // Exports only work from the main assembly, so we need to generate forwarding methods.
 #if EXPERIMENTAL_WASM_AOT
                 [UnmanagedCallersOnly(EntryPoint = ""__describe_module__"")]
-                public static Buffer __describe_module__() => FFI.__describe_module__();
+                public static SpacetimeDB.Internal.Buffer __describe_module__() => SpacetimeDB.Internal.Module.__describe_module__();
 
                 [UnmanagedCallersOnly(EntryPoint = ""__call_reducer__"")]
-                public static Buffer __call_reducer__(
+                public static SpacetimeDB.Internal.Buffer __call_reducer__(
                     uint id,
-                    Buffer caller_identity,
-                    Buffer caller_address,
+                    SpacetimeDB.Internal.Buffer caller_identity,
+                    SpacetimeDB.Internal.Buffer caller_address,
                     ulong timestamp,
-                    Buffer args
-                ) => FFI.__call_reducer__(id, caller_identity, caller_address, timestamp, args);
+                    SpacetimeDB.Internal.Buffer args
+                ) => SpacetimeDB.Internal.Module.__call_reducer__(id, caller_identity, caller_address, timestamp, args);
 #endif
             }}
             "
@@ -401,11 +377,11 @@ public class Module : IIncrementalGenerator
                         r.FullName,
                         r.Scope.GenerateExtensions(
                             $@"
-                            public static SpacetimeDB.Runtime.ScheduleToken Schedule{r.Name}(DateTimeOffset time{string.Join("", r.GetNonContextArgs().Select(a => $", {a.Type} {a.Name}"))}) {{
+                            public static SpacetimeDB.ScheduleToken Schedule{r.Name}(DateTimeOffset time{string.Join("", r.GetNonContextArgs().Select(a => $", {a.Type} {a.Name}"))}) {{
                                 using var stream = new MemoryStream();
                                 using var writer = new BinaryWriter(stream);
                                 {string.Join("\n", r.GetNonContextArgs().Select(a => $"new {a.TypeInfo}().Write(writer, {a.Name});"))}
-                                return new(nameof({r.Name}), stream.ToArray(), time);
+                                return SpacetimeDB.Internal.IReducer.Schedule(""{r.ExportName}"", stream, time);
                             }}
                         "
                         )

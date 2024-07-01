@@ -5,7 +5,7 @@
 
 partial class Reducers
 {
-    public static SpacetimeDB.Runtime.ScheduleToken ScheduleInsertData(
+    public static SpacetimeDB.ScheduleToken ScheduleInsertData(
         DateTimeOffset time,
         PublicTable data
     )
@@ -13,6 +13,6 @@ partial class Reducers
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
         new PublicTable.BSATN().Write(writer, data);
-        return new(nameof(InsertData), stream.ToArray(), time);
+        return SpacetimeDB.Internal.IReducer.Schedule("InsertData", stream, time);
     }
 } // Reducers

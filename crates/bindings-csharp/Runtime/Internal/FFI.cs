@@ -1,10 +1,32 @@
-namespace SpacetimeDB;
+namespace SpacetimeDB.Internal;
 
-using System;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 
-public static partial class RawBindings
+// This type is outside of the hidden `FFI` class because for now we need to do some public
+// forwarding in the codegen for `__describe_module__` and `__call_reducer__` exports which both
+// use this type.
+[StructLayout(LayoutKind.Sequential)]
+[NativeMarshalling(typeof(Marshaller))]
+public readonly record struct Buffer(uint Handle)
+{
+    public static readonly Buffer INVALID = new(uint.MaxValue);
+
+    // We need custom marshaller for `Buffer` because we return it by value
+    // instead of passing an `out` reference, and C# currently doesn't match
+    // the common Wasm C ABI in that a struct with a single field is supposed
+    // to have the same ABI as the field itself.
+    [CustomMarshaller(typeof(Buffer), MarshalMode.Default, typeof(Marshaller))]
+    internal static class Marshaller
+    {
+        public static Buffer ConvertToManaged(uint buf_handle) => new(buf_handle);
+
+        public static uint ConvertToUnmanaged(Buffer buf) => buf.Handle;
+    }
+}
+
+#pragma warning disable IDE1006 // Naming Styles - Not applicable to FFI stuff.
+internal static partial class FFI
 {
     // For now this must match the name of the `.c` file (`bindings.c`).
     // In the future C# will allow to specify Wasm import namespace in
@@ -17,84 +39,47 @@ public static partial class RawBindings
 #endif
     ;
 
-    // This custom marshaller takes care of checking the status code
-    // returned from the host and throwing an exception if it's not 0.
-    // The only reason it doesn't return `void` is because the C# compiler
-    // doesn't treat `void` as a real type and doesn't allow it to be returned
-    // from custom marshallers, so we resort to an empty struct instead.
-    [CustomMarshaller(
-        typeof(CheckedStatus),
-        MarshalMode.ManagedToUnmanagedOut,
-        typeof(StatusMarshaller)
-    )]
-    static class StatusMarshaller
+    [NativeMarshalling(typeof(Marshaller))]
+    public struct CheckedStatus
     {
-        public static CheckedStatus ConvertToManaged(ushort status)
+        public enum Errno : ushort
         {
-            if (status != 0)
+            OK = 0,
+            NO_SUCH_TABLE = 1,
+            LOOKUP_NOT_FOUND = 2,
+            UNIQUE_ALREADY_EXISTS = 3,
+            BUFFER_TOO_SMALL = 4,
+        }
+
+        // This custom marshaller takes care of checking the status code
+        // returned from the host and throwing an exception if it's not 0.
+        // The only reason it doesn't return `void` is because the C# compiler
+        // doesn't treat `void` as a real type and doesn't allow it to be returned
+        // from custom marshallers, so we resort to an empty struct instead.
+        [CustomMarshaller(
+            typeof(CheckedStatus),
+            MarshalMode.ManagedToUnmanagedOut,
+            typeof(Marshaller)
+        )]
+        internal static class Marshaller
+        {
+            public static CheckedStatus ConvertToManaged(Errno status)
             {
+                if (status == 0)
+                {
+                    return default;
+                }
                 throw status switch
                 {
-                    ERRNO_NO_SUCH_TABLE => new NoSuchTableException(),
-                    ERRNO_LOOKUP_NOT_FOUND => new LookupNotFoundException(),
-                    ERRNO_UNIQUE_ALREADY_EXISTS => new UniqueAlreadyExistsException(),
-                    ERRNO_BUFFER_TOO_SMALL => new BufferTooSmallException(),
-                    _ => new StdbException(status),
+                    Errno.NO_SUCH_TABLE => new NoSuchTableException(),
+                    Errno.LOOKUP_NOT_FOUND => new LookupNotFoundException(),
+                    Errno.UNIQUE_ALREADY_EXISTS => new UniqueAlreadyExistsException(),
+                    Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
+                    _ => new UnknownException(status),
                 };
             }
-            return default;
         }
     }
-
-    private const ushort ERRNO_NO_SUCH_TABLE = 1;
-    private const ushort ERRNO_LOOKUP_NOT_FOUND = 2;
-    private const ushort ERRNO_UNIQUE_ALREADY_EXISTS = 3;
-    private const ushort ERRNO_BUFFER_TOO_SMALL = 4;
-
-    public class StdbException : Exception
-    {
-        public ushort Code { get; private set; }
-
-        internal StdbException(ushort code) => Code = code;
-
-        public override string Message => $"SpacetimeDB error code {Code}";
-    }
-
-    public class NoSuchTableException : StdbException
-    {
-        internal NoSuchTableException()
-            : base(ERRNO_NO_SUCH_TABLE) { }
-
-        public override string Message => "No such table";
-    }
-
-    public class LookupNotFoundException : StdbException
-    {
-        internal LookupNotFoundException()
-            : base(ERRNO_LOOKUP_NOT_FOUND) { }
-
-        public override string Message => "Value or range provided not found in table";
-    }
-
-    public class UniqueAlreadyExistsException : StdbException
-    {
-        internal UniqueAlreadyExistsException()
-            : base(ERRNO_UNIQUE_ALREADY_EXISTS) { }
-
-        public override string Message => "Value with given unique identifier already exists";
-    }
-
-    public class BufferTooSmallException : StdbException
-    {
-        internal BufferTooSmallException()
-            : base(ERRNO_BUFFER_TOO_SMALL) { }
-
-        public override string Message =>
-            "The provided buffer is not large enough to store the data";
-    }
-
-    [NativeMarshalling(typeof(StatusMarshaller))]
-    public struct CheckedStatus;
 
     [StructLayout(LayoutKind.Sequential)]
     public readonly struct TableId
@@ -126,25 +111,6 @@ public static partial class RawBindings
     public readonly struct ScheduleToken
     {
         private readonly ulong schedule_token;
-    }
-
-    // We need custom marshaller for `Buffer` because we return it by value
-    // instead of passing an `out` reference, and C# currently doesn't match
-    // the common Wasm C ABI in that a struct with a single field is supposed
-    // to have the same ABI as the field itself.
-    [CustomMarshaller(typeof(Buffer), MarshalMode.Default, typeof(BufferMarshaller))]
-    static class BufferMarshaller
-    {
-        public static Buffer ConvertToManaged(uint buf_handle) => new(buf_handle);
-
-        public static uint ConvertToUnmanaged(Buffer buf) => buf.Handle;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    [NativeMarshalling(typeof(BufferMarshaller))]
-    public readonly record struct Buffer(uint Handle)
-    {
-        public static readonly Buffer INVALID = new(uint.MaxValue);
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -213,8 +179,7 @@ public static partial class RawBindings
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _iter_advance(
         RowIter iter_handle,
-        // [MarshalUsing(CountElementName = nameof(dst_len))] [Out] byte[] dst,
-        byte[] buffer,
+        [MarshalUsing(CountElementName = nameof(buffer_len))] [Out] byte[] buffer,
         ref uint buffer_len
     );
 

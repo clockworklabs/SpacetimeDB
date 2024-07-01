@@ -1,116 +1,97 @@
-namespace SpacetimeDB.Filter;
+namespace SpacetimeDB.Internal;
 
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Linq.Expressions;
+using System.Reflection;
 using SpacetimeDB.BSATN;
 
-readonly record struct ErasedValue(Action<BinaryWriter> write)
+public partial class Filter(KeyValuePair<string, Action<BinaryWriter, object?>>[] fieldTypeInfos)
 {
-    public readonly struct BSATN : SpacetimeDB.BSATN.IReadWrite<ErasedValue>
+    readonly record struct ErasedValue(Action<BinaryWriter> Write)
     {
-        public ErasedValue Read(BinaryReader reader) => throw new NotSupportedException();
+        public readonly struct BSATN : IReadWrite<ErasedValue>
+        {
+            public ErasedValue Read(BinaryReader reader) => throw new NotSupportedException();
 
-        public void Write(BinaryWriter writer, ErasedValue value) => value.write(writer);
+            public void Write(BinaryWriter writer, ErasedValue value) => value.Write(writer);
 
-        public AlgebraicType GetAlgebraicType(ITypeRegistrar _) =>
-            throw new NotSupportedException();
-    }
-}
-
-[SpacetimeDB.Type]
-partial record Rhs : SpacetimeDB.TaggedEnum<(ErasedValue Value, byte Field)>;
-
-[SpacetimeDB.Type]
-partial struct CmpArgs(byte lhsField, Rhs rhs)
-{
-    public byte LhsField = lhsField;
-    public Rhs Rhs = rhs;
-}
-
-[SpacetimeDB.Type]
-enum OpCmp
-{
-    Eq,
-    NotEq,
-    Lt,
-    LtEq,
-    Gt,
-    GtEq,
-}
-
-[SpacetimeDB.Type]
-partial struct Cmp(OpCmp op, CmpArgs args)
-{
-    public OpCmp op = op;
-    public CmpArgs args = args;
-}
-
-[SpacetimeDB.Type]
-enum OpLogic
-{
-    And,
-    Or,
-}
-
-[SpacetimeDB.Type]
-partial struct Logic(Expr lhs, OpLogic op, Expr rhs)
-{
-    public Expr lhs = lhs;
-
-    public OpLogic op = op;
-    public Expr rhs = rhs;
-}
-
-[SpacetimeDB.Type]
-enum OpUnary
-{
-    Not,
-}
-
-[SpacetimeDB.Type]
-partial struct Unary(OpUnary op, Expr arg)
-{
-    public OpUnary op = op;
-    public Expr arg = arg;
-}
-
-[SpacetimeDB.Type]
-partial record Expr : SpacetimeDB.TaggedEnum<(Cmp Cmp, Logic Logic, Unary Unary)>;
-
-public class Filter
-{
-    private readonly KeyValuePair<string, Action<BinaryWriter, object?>>[] fieldTypeInfos;
-
-    private Filter(KeyValuePair<string, Action<BinaryWriter, object?>>[] fieldTypeInfos)
-    {
-        this.fieldTypeInfos = fieldTypeInfos;
+            public AlgebraicType GetAlgebraicType(ITypeRegistrar _) =>
+                throw new NotSupportedException();
+        }
     }
 
-    public static byte[] Compile<T>(
-        KeyValuePair<string, Action<BinaryWriter, object?>>[] fieldTypeInfos,
-        Expression<Func<T, bool>> rowFilter
-    )
+    [SpacetimeDB.Type]
+    partial record Rhs : SpacetimeDB.TaggedEnum<(ErasedValue Value, byte Field)>;
+
+    [SpacetimeDB.Type]
+    partial struct CmpArgs(byte lhsField, Rhs rhs)
     {
-        var filter = new Filter(fieldTypeInfos);
-        var expr = filter.HandleExpr(rowFilter.Body);
+        public byte LhsField = lhsField;
+        public Rhs Rhs = rhs;
+    }
+
+    [SpacetimeDB.Type]
+    enum OpCmp
+    {
+        Eq,
+        NotEq,
+        Lt,
+        LtEq,
+        Gt,
+        GtEq,
+    }
+
+    [SpacetimeDB.Type]
+    partial struct Cmp(OpCmp op, CmpArgs args)
+    {
+        public OpCmp op = op;
+        public CmpArgs args = args;
+    }
+
+    [SpacetimeDB.Type]
+    enum OpLogic
+    {
+        And,
+        Or,
+    }
+
+    [SpacetimeDB.Type]
+    partial struct Logic(Expr lhs, OpLogic op, Expr rhs)
+    {
+        public Expr lhs = lhs;
+
+        public OpLogic op = op;
+        public Expr rhs = rhs;
+    }
+
+    [SpacetimeDB.Type]
+    enum OpUnary
+    {
+        Not,
+    }
+
+    [SpacetimeDB.Type]
+    partial struct Unary(OpUnary op, Expr arg)
+    {
+        public OpUnary op = op;
+        public Expr arg = arg;
+    }
+
+    [SpacetimeDB.Type]
+    partial record Expr : SpacetimeDB.TaggedEnum<(Cmp Cmp, Logic Logic, Unary Unary)>;
+
+    public byte[] Compile<T>(Expression<Func<T, bool>> query)
+    {
+        var expr = HandleExpr(query.Body);
         return IStructuralReadWrite.ToBytes(new Expr.BSATN(), expr);
     }
 
-    (byte, Type) ExprAsTableField(Expression expr) =>
+    static FieldInfo ExprAsTableField(Expression expr) =>
         expr switch
         {
             // LINQ inserts spurious conversions in comparisons, so we need to unwrap them
             UnaryExpression { NodeType: ExpressionType.Convert, Operand: var arg }
                 => ExprAsTableField(arg),
-            MemberExpression
-            {
-                Expression: ParameterExpression,
-                Member.Name: var memberName,
-                Type: var type
-            }
-                => ((byte)Array.FindIndex(fieldTypeInfos, pair => pair.Key == memberName), type),
+            MemberExpression { Expression: ParameterExpression, Member: FieldInfo field } => field,
             _
                 => throw new NotSupportedException(
                     "expected table field access in the left-hand side of a comparison"
@@ -126,12 +107,14 @@ public class Filter
 
     Cmp HandleCmp(BinaryExpression expr)
     {
-        var (lhsFieldIndex, type) = ExprAsTableField(expr.Left);
+        var field = ExprAsTableField(expr.Left);
+        var lhsFieldIndex = (byte)Array.FindIndex(fieldTypeInfos, x => x.Key == field.Name);
 
         var rhs = ExprAsRhs(expr.Right);
-        rhs = Convert.ChangeType(rhs, type);
-        var rhsWrite = fieldTypeInfos[lhsFieldIndex].Value;
-        var erasedRhs = new ErasedValue((writer) => rhsWrite(writer, rhs));
+        rhs = Convert.ChangeType(rhs, field.FieldType);
+        var erasedRhs = new ErasedValue(
+            (writer) => fieldTypeInfos[lhsFieldIndex].Value(writer, rhs)
+        );
 
         var args = new CmpArgs(lhsFieldIndex, new Rhs.Value(erasedRhs));
 
@@ -182,7 +165,7 @@ public class Filter
             _ => throw new NotSupportedException("unsupported expression")
         };
 
-    Expr HandleUnary(UnaryExpression expr)
+    Expr.Unary HandleUnary(UnaryExpression expr)
     {
         var arg = HandleExpr(expr.Operand);
 
@@ -192,7 +175,7 @@ public class Filter
             _ => throw new NotSupportedException("unsupported unary operation")
         };
 
-        return new Expr.Unary(new Unary(op, arg));
+        return new(new Unary(op, arg));
     }
 
     Expr HandleExpr(Expression expr) =>

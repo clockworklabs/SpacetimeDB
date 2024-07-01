@@ -1,7 +1,10 @@
-using System;
-using System.Collections.Generic;
-using SpacetimeDB.Module;
-using static SpacetimeDB.Runtime;
+// Standard implicit usings.
+global using global::System;
+global using global::System.Collections.Generic;
+global using global::System.IO;
+global using global::System.Linq;
+// Our own code.
+using SpacetimeDB;
 
 [SpacetimeDB.Type]
 public partial struct CustomStruct
@@ -36,7 +39,7 @@ public partial record CustomTaggedEnum
 public partial class PrivateTable { }
 
 [SpacetimeDB.Table]
-public partial class PublicTable
+public partial struct PublicTable
 {
     [SpacetimeDB.Column(ColumnAttrs.PrimaryKeyAuto)]
     public int Id;
@@ -54,26 +57,31 @@ public partial class PublicTable
     public bool BoolField;
     public float FloatField;
     public double DoubleField;
-    public string StringField = "";
+    public string StringField;
     public Identity IdentityField;
     public Address AddressField;
     public CustomStruct CustomStructField;
     public CustomClass CustomClassField;
     public CustomEnum CustomEnumField;
-    public CustomTaggedEnum CustomTaggedEnumField = new CustomTaggedEnum.IntVariant(0);
-    public List<int> ListField = [];
-    public Dictionary<string, int> DictionaryField = [];
+    public CustomTaggedEnum CustomTaggedEnumField;
+    public List<int> ListField;
+    public Dictionary<string, int> DictionaryField;
     public int? NullableValueField;
     public string? NullableReferenceField;
-    public Dictionary<CustomEnum?, List<int?>?>? ComplexNestedField;
+    public Dictionary<CustomEnum, List<int?>?>? ComplexNestedField;
 }
 
-public static class Reducers
+public static partial class Reducers
 {
     [SpacetimeDB.Reducer]
-    static void InsertData(PublicTable data)
+    public static void InsertData(PublicTable data)
     {
         data.Insert();
+        Runtime.Log("New list");
+        foreach (var item in PublicTable.Iter())
+        {
+            Runtime.Log($"Item: {item.StringField}");
+        }
     }
 }
 
@@ -81,7 +89,7 @@ namespace Test
 {
     namespace NestingNamespaces
     {
-        public static class AndClasses
+        public static partial class AndClasses
         {
             [SpacetimeDB.Reducer("test_custom_name_and_reducer_ctx")]
             public static void InsertData2(ReducerContext ctx, PublicTable data)
