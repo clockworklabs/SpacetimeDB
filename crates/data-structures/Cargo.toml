@@ -3,6 +3,7 @@ name = "spacetimedb-data-structures"
 version.workspace = true
 edition.workspace = true
 license-file = "LICENSE"
+repository.workspace = true
 description = "Assorted data structures used in spacetimedb"
 
 [features]
