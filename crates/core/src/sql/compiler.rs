@@ -1,7 +1,7 @@
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
-use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
-use crate::sql::type_check::TypeCheck;
+use super::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
+use super::type_check::TypeCheck;
 use core::ops::Deref;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_primitives::ColId;
@@ -1138,7 +1138,13 @@ mod tests {
             compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
             Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64 == U64(1): U64` and `PlayerState.entity_id: U64`, both sides must be an `Bool` expression, executing: `SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id`".into())
         );
+        // Verify that all operands of `AND` must be `Bool`.
+        let sql = "SELECT * FROM PlayerState WHERE entity_id AND entity_id";
 
+        assert_eq!(
+            compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
+            Err(todo!())
+        );
         Ok(())
     }
 }

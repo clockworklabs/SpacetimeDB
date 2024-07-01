@@ -175,11 +175,13 @@ impl From {
         find_field(self.iter_tables(), f)
     }
 
-    /// Returns the field matching (`TableName`, [FieldName]) looking in `tables`.
-    pub(super) fn find_field_name(&self, f: FieldName) -> Option<(Box<str>, &ColumnSchema)> {
+    /// Returns the name of the table,
+    /// together with the column definition at position `field.col`,
+    /// for table `field.table_id`.
+    pub(super) fn find_field_name(&self, field: FieldName) -> Option<(&str, &ColumnSchema)> {
         self.iter_tables().find_map(|t| {
             if t.table_id == f.table() {
-                t.get_column_by_field(f).map(|c| (t.table_name.clone(), c))
+                t.get_column_by_field(f).map(|c| (&*t.table_name, c))
             } else {
                 None
             }
