@@ -647,7 +647,7 @@ trait IndexedRow: Row + Sized {
     }
     fn make_table_def() -> TableDef {
         TableDef::from_product(std::any::type_name::<Self>(), Self::row_type())
-            .with_column_index(Self::indexed_columns(), false)
+            .with_index(Self::indexed_columns(), false)
     }
     fn make_schema() -> TableSchema {
         TableSchema::from_def(TableId(0), Self::make_table_def())

@@ -2,5 +2,6 @@
 
 pub mod attr;
 pub mod auth;
-pub mod def;
+pub mod column_ordering;
 pub mod error;
+pub mod raw_def;

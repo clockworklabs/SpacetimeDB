@@ -1,14 +1,12 @@
 use crate::algebraic_value::AlgebraicValue;
 use crate::db::auth::{StAccess, StTableType};
-use crate::db::def::{ColumnSchema, TableSchema};
 use crate::db::error::{RelationError, TypeError};
 use crate::satn::Satn;
 use crate::{algebraic_type, AlgebraicType};
 use core::fmt;
 use core::hash::Hash;
 use derive_more::From;
-use itertools::Itertools;
-use spacetimedb_primitives::{ColId, ColList, ColListBuilder, Constraints, TableId};
+use spacetimedb_primitives::{ColId, ColList, ColListBuilder, TableId};
 use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -89,6 +87,8 @@ impl Column {
     }
 }
 
+/*
+// TODO(jgilles): move this somewhere
 impl From<ColumnSchema> for Column {
     fn from(schema: ColumnSchema) -> Self {
         Column {
@@ -100,15 +100,20 @@ impl From<ColumnSchema> for Column {
         }
     }
 }
+*/
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Header {
     pub table_id: TableId,
     pub table_name: Box<str>,
     pub fields: Vec<Column>,
-    pub constraints: Vec<(ColList, Constraints)>,
+    /// FIXME(jgilles): Specification needed: Headers can be projected. Which IDs are used after the headers are projected?
+    /// Are the IDs just indexes into `fields`, or are they an index into a `TableSchema`
+    pub unique_constraints: Vec<ColList>,
 }
 
+/*
+// TODO(jgilles): move this somewhere
 impl From<TableSchema> for Header {
     fn from(schema: TableSchema) -> Self {
         Header {
@@ -120,27 +125,23 @@ impl From<TableSchema> for Header {
                 .cloned()
                 .map(|schema| schema.into())
                 .collect_vec(),
-            constraints: schema
-                .constraints
-                .into_iter()
-                .map(|schema| (schema.columns, schema.constraints))
+            unique_constraints: schema
+                .unique_constraints
+                .iter()
+                .map(|constraint| constraint.columns.clone())
                 .collect_vec(),
         }
     }
 }
+*/
 
 impl Header {
-    pub fn new(
-        table_id: TableId,
-        table_name: Box<str>,
-        fields: Vec<Column>,
-        constraints: Vec<(ColList, Constraints)>,
-    ) -> Self {
+    pub fn new(table_id: TableId, table_name: Box<str>, fields: Vec<Column>, unique_constraints: Vec<ColList>) -> Self {
         Self {
             table_id,
             table_name,
             fields,
-            constraints,
+            unique_constraints,
         }
     }
 
@@ -155,7 +156,7 @@ impl Header {
             self.table_id,
             self.table_name.clone(),
             self.fields.clone(),
-            self.constraints.clone(),
+            self.unique_constraints.clone(),
         )
     }
 
@@ -173,21 +174,16 @@ impl Header {
         self.column_pos(col).map(|id| (id, self.fields[id.idx()].field))
     }
 
-    /// Copy the [Constraints] that are referenced in the list of `for_columns`
-    fn retain_constraints(&self, for_columns: &ColList) -> Vec<(ColList, Constraints)> {
+    /// Copy the UniqueConstraints that are referenced in the list of `for_columns`
+    /// FIXME(jgilles): see comment on `unique_constraints`.
+    fn retain_unique_constraints(&self, for_columns: &ColList) -> Vec<ColList> {
         // Copy the constraints of the selected columns and retain the multi-column ones...
-        self.constraints
+        self.unique_constraints
             .iter()
             // Keep constraints with a col list where at least one col is in `for_columns`.
-            .filter(|(cols, _)| cols.iter().any(|c| for_columns.contains(c)))
+            .filter(|cols| cols.iter().any(|c| for_columns.contains(c)))
             .cloned()
             .collect()
-    }
-
-    pub fn has_constraint(&self, field: ColId, constraint: Constraints) -> bool {
-        self.constraints
-            .iter()
-            .any(|(col, ct)| col.contains(field) && ct.contains(&constraint))
     }
 
     /// Project the [ColExpr]s & the [Constraints] that referenced them
@@ -211,31 +207,31 @@ impl Header {
             }
         }
 
-        let constraints = self.retain_constraints(&to_keep.build().unwrap());
+        let unique_constraints = self.retain_unique_constraints(&to_keep.build().unwrap());
 
-        Ok(Self::new(self.table_id, self.table_name.clone(), p, constraints))
+        Ok(Self::new(self.table_id, self.table_name.clone(), p, unique_constraints))
     }
 
     /// Adds the fields &  [Constraints] from `right` to this [`Header`],
     /// renaming duplicated fields with a counter like `a, a => a, a0`.
     pub fn extend(&self, right: &Self) -> Self {
         // Increase the positions of the columns in `right.constraints`, adding the count of fields on `left`
-        let mut constraints = self.constraints.clone();
+        let mut unique_constraints = self.unique_constraints.clone();
         let len_lhs = self.fields.len() as u32;
-        constraints.extend(right.constraints.iter().map(|(cols, c)| {
+        unique_constraints.extend(right.unique_constraints.iter().map(|cols| {
             let cols = cols
                 .iter()
                 .map(|col| ColId(col.0 + len_lhs))
                 .collect::<ColListBuilder>()
                 .build()
                 .unwrap();
-            (cols, *c)
+            cols
         }));
 
         let mut fields = self.fields.clone();
         fields.extend(right.fields.iter().cloned());
 
-        Self::new(self.table_id, self.table_name.clone(), fields, constraints)
+        Self::new(self.table_id, self.table_name.clone(), fields, unique_constraints)
     }
 }
 
@@ -289,10 +285,10 @@ mod tests {
         let pos_rhs = start_pos + 1;
 
         let ct = vec![
-            (ColId(pos_lhs).into(), Constraints::indexed()),
-            (ColId(pos_rhs).into(), Constraints::identity()),
-            (col_list![pos_lhs, pos_rhs], Constraints::primary_key()),
-            (col_list![pos_rhs, pos_lhs], Constraints::unique()),
+            ColId(pos_lhs).into(),
+            ColId(pos_rhs).into(),
+            col_list![pos_lhs, pos_rhs],
+            col_list![pos_rhs, pos_lhs],
         ];
 
         let id = id.into();
@@ -310,7 +306,7 @@ mod tests {
 
         let mut empty = head.clone_for_error();
         empty.fields.clear();
-        empty.constraints.clear();
+        empty.unique_constraints.clear();
         assert_eq!(empty, new);
 
         let all = head.clone_for_error();
@@ -319,13 +315,13 @@ mod tests {
 
         let mut first = head.clone_for_error();
         first.fields.pop();
-        first.constraints = first.retain_constraints(&a.into());
+        first.unique_constraints = first.retain_unique_constraints(&a.into());
         let new = head.project(&[a].map(ColExpr::Col)).unwrap();
         assert_eq!(first, new);
 
         let mut second = head.clone_for_error();
         second.fields.remove(0);
-        second.constraints = second.retain_constraints(&b.into());
+        second.unique_constraints = second.retain_unique_constraints(&b.into());
         let new = head.project(&[b].map(ColExpr::Col)).unwrap();
         assert_eq!(second, new);
     }

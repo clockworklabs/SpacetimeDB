@@ -1,11 +1,8 @@
-use crate::db::def::IndexType;
 use crate::product_value::InvalidFieldError;
 use crate::relation::{FieldName, Header};
 use crate::satn::Satn as _;
 use crate::{buffer, AlgebraicType, AlgebraicValue};
 use derive_more::Display;
-use spacetimedb_primitives::{ColId, ColList, TableId};
-use std::fmt;
 use std::string::FromUtf8Error;
 use thiserror::Error;
 
@@ -103,44 +100,4 @@ pub enum DefType {
     Index,
     Sequence,
     Constraint,
-}
-
-#[derive(thiserror::Error, Debug, PartialEq)]
-pub enum SchemaError {
-    #[error("Multiple primary columns defined for table: {table} columns: {pks:?}")]
-    MultiplePrimaryKeys { table: Box<str>, pks: Vec<String> },
-    #[error("table id `{table_id}` should have name")]
-    EmptyTableName { table_id: TableId },
-    #[error("{ty} {name} columns `{columns:?}` not found  in table `{table}`")]
-    ColumnsNotFound {
-        name: Box<str>,
-        table: Box<str>,
-        columns: Vec<ColId>,
-        ty: DefType,
-    },
-    #[error("table `{table}` {ty} should have name. {ty} id: {id}")]
-    EmptyName { table: Box<str>, ty: DefType, id: u32 },
-    #[error("table `{table}` have `Constraints::unset()` for columns: {columns:?}")]
-    ConstraintUnset {
-        table: Box<str>,
-        name: Box<str>,
-        columns: ColList,
-    },
-    #[error("Attempt to define a column with more than 1 auto_inc sequence: Table: `{table}`, Field: `{field}`")]
-    OneAutoInc { table: Box<str>, field: Box<str> },
-    #[error("Only Btree Indexes are supported: Table: `{table}`, Index: `{index}` is a `{index_type}`")]
-    OnlyBtree {
-        table: Box<str>,
-        index: Box<str>,
-        index_type: IndexType,
-    },
-}
-
-#[derive(thiserror::Error, Debug, PartialEq)]
-pub struct SchemaErrors(pub Vec<SchemaError>);
-
-impl fmt::Display for SchemaErrors {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_list().entries(self.0.iter()).finish()
-    }
 }

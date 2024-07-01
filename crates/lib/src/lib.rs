@@ -1,6 +1,4 @@
-use anyhow::Context;
-use spacetimedb_sats::db::def::TableDef;
-use spacetimedb_sats::{impl_serialize, WithTypespace};
+use spacetimedb_sats::impl_serialize;
 
 pub mod address;
 pub mod filter;
@@ -74,31 +72,6 @@ impl std::fmt::Display for VersionTuple {
 
 extern crate self as spacetimedb_lib;
 
-//WARNING: Change this structure(or any of their members) is an ABI change.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
-pub struct TableDesc {
-    pub schema: TableDef,
-    /// data should always point to a ProductType in the typespace
-    pub data: sats::AlgebraicTypeRef,
-}
-
-impl TableDesc {
-    pub fn into_table_def(table: WithTypespace<'_, TableDesc>) -> anyhow::Result<TableDef> {
-        let schema = table
-            .map(|t| &t.data)
-            .resolve_refs()
-            .context("recursive types not yet supported")?;
-        let schema = schema.into_product().ok().context("table not a product type?")?;
-        let table = table.ty();
-        anyhow::ensure!(
-            table.schema.columns.len() == schema.elements.len(),
-            "mismatched number of columns"
-        );
-
-        Ok(table.schema.clone())
-    }
-}
-
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
 pub struct ReducerDef {
     pub name: Box<str>,
@@ -170,8 +143,7 @@ impl_serialize!([] ReducerArgsWithSchema<'_>, (self, ser) => {
 //WARNING: Change this structure(or any of their members) is an ABI change.
 #[derive(Debug, Clone, Default, de::Deserialize, ser::Serialize)]
 pub struct ModuleDef {
-    pub typespace: sats::Typespace,
-    pub tables: Vec<TableDesc>,
+    pub database_def: sats::db::raw_def::RawDatabaseDef,
     pub reducers: Vec<ReducerDef>,
     pub misc_exports: Vec<MiscModuleExport>,
 }
