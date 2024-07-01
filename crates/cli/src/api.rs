@@ -2,8 +2,8 @@ use reqwest::{header, Client, RequestBuilder};
 use serde::Deserialize;
 use serde_json::value::RawValue;
 
-use spacetimedb_lib::de::serde::DeserializeWrapper;
-use spacetimedb_lib::sats::ProductType;
+use spacetimedb_lib::de::serde::{DeserializeWrapper, SeedWrapper};
+use spacetimedb_lib::sats::{ProductType, Typespace};
 use spacetimedb_lib::{Address, ModuleDef};
 
 static APP_USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"),);
@@ -68,6 +68,23 @@ pub struct StmtResultJson<'a> {
     pub schema: ProductType,
     #[serde(borrow)]
     pub rows: Vec<&'a RawValue>,
+}
+
+impl TryFrom<&StmtResultJson<'_>> for spacetimedb::json::client_api::StmtResultJson {
+    type Error = serde_json::Error;
+
+    fn try_from(StmtResultJson { schema, rows }: &StmtResultJson<'_>) -> Result<Self, Self::Error> {
+        let ty = Typespace::EMPTY.with_type(schema);
+        let rows = rows
+            .iter()
+            .map(|row| from_json_seed(row.get(), SeedWrapper(ty)))
+            .collect::<Result<_, _>>()?;
+
+        Ok(Self {
+            schema: schema.clone(),
+            rows,
+        })
+    }
 }
 
 pub fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(
