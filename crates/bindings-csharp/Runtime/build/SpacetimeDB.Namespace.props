@@ -1,0 +1,7 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <!-- This constant is in a separate file because it must be included both during compilation
+             of the Runtime package itself as well as by the end consumers. -->
+        <StdbNamespace>spacetime_8.0</StdbNamespace>
+    </PropertyGroup>
+</Project>
