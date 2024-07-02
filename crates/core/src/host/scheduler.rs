@@ -286,7 +286,7 @@ impl SchedulerActor {
         match res {
             // if we didn't actually call the reducer because the module exited or it was already deleted, leave
             // the ScheduledReducer in the database for when the module restarts
-            Ok(Err(ReducerCallError::NoSuchModule(_)) | Err(ReducerCallError::NoSuchReducer)) => {}
+            Ok(Err(ReducerCallError::NoSuchModule(_)) | Err(ReducerCallError::ScheduleReducerNotFound)) => {}
 
             // delete the scheduled reducer row if its not repeated reducer
             Ok(_) | Err(_) => {
