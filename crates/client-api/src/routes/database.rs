@@ -115,7 +115,7 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
                     log::debug!("Attempt to call reducer with invalid arguments");
                     StatusCode::BAD_REQUEST
                 }
-                ReducerCallError::NoSuchModule(_) => StatusCode::NOT_FOUND,
+                ReducerCallError::NoSuchModule(_) | ReducerCallError::ScheduleReducerNotFound => StatusCode::NOT_FOUND,
                 ReducerCallError::NoSuchReducer => {
                     log::debug!("Attempt to call non-existent reducer {}", reducer);
                     StatusCode::NOT_FOUND

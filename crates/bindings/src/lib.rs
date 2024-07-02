@@ -16,7 +16,6 @@ use crate::sats::db::attr::ColumnAttribute;
 use crate::sats::db::def::IndexType;
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
 use spacetimedb_lib::sats::db::auth::StAccess;
-use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, impl_st};
 use spacetimedb_lib::{bsatn, ProductType, ProductValue};
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -337,6 +336,8 @@ pub trait TableType: SpacetimeType + DeserializeOwned + Serialize {
     const TABLE_ACCESS: StAccess;
     const COLUMN_ATTRS: &'static [ColumnAttribute];
     const INDEXES: &'static [IndexDesc<'static>];
+    const SCHEDULED_REDUCER_NAME: Option<&'static str> = None;
+
     type InsertResult: sealed::InsertResult<T = Self>;
 
     /// Returns the ID of this table.
@@ -566,88 +567,6 @@ pub mod query {
             let mut cursor = &self.cursor;
             (cursor.remaining() != 0).then(|| bsatn::from_reader(&mut cursor).unwrap())
         }
-    }
-}
-
-#[macro_export]
-macro_rules! schedule {
-    // this errors on literals with time unit suffixes, e.g. 100ms
-    // I swear I saw a rustc tracking issue to allow :literal to match even an invalid suffix but I can't seem to find it
-    ($dur:literal, $($args:tt)*) => {
-        $crate::schedule!($crate::duration!($dur), $($args)*)
-    };
-    ($dur:expr, $($args:tt)*) => {
-        $crate::__schedule_impl!($crate::rt::schedule_in($dur), [] [$($args)*])
-    };
-}
-#[macro_export]
-macro_rules! schedule_at {
-    ($time:expr, $($args:tt)*) => {
-        $crate::__schedule_impl!($time, [] [$($args)*])
-    };
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! __schedule_impl {
-    ($time:expr, [$repeater:path] [($($args:tt)*)]) => {
-        $crate::__schedule_impl!(@process_args $time, $repeater, ($($args)*))
-    };
-    ($time:expr, [$($cur:tt)*] [$next:tt $($rest:tt)*]) => {
-        $crate::__schedule_impl!($time, [$($cur)* $next] [$($rest)*])
-    };
-    (@process_args $time:expr, $repeater:path, (_$(, $args:expr)* $(,)?)) => {
-        $crate::__schedule_impl!(@call $time, $repeater, $crate::ReducerContext::__dummy(), ($($args),*))
-    };
-    (@process_args $time:expr, $repeater:path, ($($args:expr),* $(,)?)) => {
-        $crate::__schedule_impl!(@call $time, $repeater, , ($($args),*))
-    };
-    (@call $time:expr, $repeater:path, $($ctx:expr)?, ($($args:expr),*)) => {
-        <$repeater>::schedule($time, $($ctx,)? $($args),*);
-    };
-}
-
-/// An identifier for the schedule to call reducer `R`.
-pub struct ScheduleToken<R = AnyReducer> {
-    id: u64,
-    _marker: PhantomData<R>,
-}
-
-impl<R> Clone for ScheduleToken<R> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<R> Copy for ScheduleToken<R> {}
-
-impl_serialize!([R] ScheduleToken<R>, (self, ser) => self.id.serialize(ser));
-impl_deserialize!([R] ScheduleToken<R>, de => u64::deserialize(de).map(Self::new));
-impl_st!([R] ScheduleToken<R>, _ts => spacetimedb_lib::AlgebraicType::U64);
-
-impl<R> ScheduleToken<R> {
-    /// Wrap the ID under which a reducer is scheduled in a [`ScheduleToken`].
-    #[inline]
-    fn new(id: u64) -> Self {
-        Self {
-            id,
-            _marker: PhantomData,
-        }
-    }
-
-    /// Erase the `R` type parameter from the token.
-    ///
-    /// In other words, forget what reducer this is for.
-    #[inline]
-    pub fn erase(self) -> ScheduleToken {
-        ScheduleToken::new(self.id)
-    }
-
-    /// Cancel this scheduled reducer.
-    ///
-    /// Cancelling the same ID again has no effect.
-    #[inline]
-    pub fn cancel(self) {
-        sys::cancel_reducer(self.id)
     }
 }
 

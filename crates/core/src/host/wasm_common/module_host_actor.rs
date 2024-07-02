@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, Address, ModuleDef, ModuleValidationError, TableDesc};
+use spacetimedb_lib::{bsatn, Address, ModuleDef, ModuleValidationError, TableDesc, Timestamp};
 use spacetimedb_sats::hash::Hash;
 
 use super::instrumentation::CallTimes;
@@ -22,7 +22,7 @@ use crate::host::module_host::{
     CallReducerParams, DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
     ModuleInstance, ReducersMap, UpdateDatabaseResult, UpdateDatabaseSuccess,
 };
-use crate::host::{ArgsTuple, EntityDef, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, Timestamp};
+use crate::host::{ArgsTuple, EntityDef, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler};
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
@@ -466,8 +466,8 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         }))
     }
 
-    fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
-        crate::callgrind_flag::invoke_allowing_callgrind(|| self.call_reducer_with_tx(None, params))
+    fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
+        crate::callgrind_flag::invoke_allowing_callgrind(|| self.call_reducer_with_tx(tx, params))
     }
 }
 
@@ -530,7 +530,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             timestamp,
             arg_bytes: args.get_bsatn().clone(),
         };
-
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable));
         let _guard = WORKER_METRICS
             .reducer_plus_query_duration

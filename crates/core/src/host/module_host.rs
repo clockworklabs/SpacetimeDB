@@ -1,11 +1,11 @@
 use super::wasm_common::{CLIENT_CONNECTED_DUNDER, CLIENT_DISCONNECTED_DUNDER};
-use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
+use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId};
 use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::LogLevel;
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::system_tables::{StClientsFields, StClientsRow, ST_CLIENTS_ID};
-use crate::db::datastore::traits::TxData;
+use crate::db::datastore::traits::{IsolationLevel, TxData};
 use crate::db::update::UpdateDatabaseError;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
@@ -28,7 +28,8 @@ use spacetimedb_client_api_messages::client_api::table_row_operation::OperationT
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, IntMap};
 use spacetimedb_lib::bsatn::to_vec;
 use spacetimedb_lib::identity::RequestId;
-use spacetimedb_lib::{Address, ModuleDef, ReducerDef, TableDesc};
+use spacetimedb_lib::ModuleDef;
+use spacetimedb_lib::{Address, ReducerDef, TableDesc, Timestamp};
 use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_sats::{algebraic_value, ProductValue, Typespace, WithTypespace};
 use spacetimedb_vm::relation::{MemTable, RelValue};
@@ -411,7 +412,7 @@ pub trait ModuleInstance: Send + 'static {
         program_bytes: Box<[u8]>,
     ) -> anyhow::Result<UpdateDatabaseResult>;
 
-    fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult;
+    fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult;
 }
 
 pub struct CallReducerParams {
@@ -463,8 +464,8 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
         self.check_trap();
         ret
     }
-    fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
-        let ret = self.inst.call_reducer(params);
+    fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
+        let ret = self.inst.call_reducer(tx, params);
         self.check_trap();
         ret
     }
@@ -472,7 +473,7 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
 
 #[derive(Clone)]
 pub struct ModuleHost {
-    info: Arc<ModuleInfo>,
+    pub info: Arc<ModuleInfo>,
     inner: Arc<dyn DynModuleHost>,
     /// Called whenever a reducer call on this host panics.
     on_panic: Arc<dyn Fn() + Send + Sync + 'static>,
@@ -617,6 +618,8 @@ pub enum ReducerCallError {
     NoSuchModule(#[from] NoSuchModule),
     #[error("no such reducer")]
     NoSuchReducer,
+    #[error("no such scheduled reducer")]
+    ScheduleReducerNotFound,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -821,16 +824,19 @@ impl ModuleHost {
         let caller_address = caller_address.unwrap_or(Address::__DUMMY);
 
         self.call(reducer_name, move |inst| {
-            inst.call_reducer(CallReducerParams {
-                timestamp: Timestamp::now(),
-                caller_identity,
-                caller_address,
-                client,
-                request_id,
-                timer,
-                reducer_id,
-                args,
-            })
+            inst.call_reducer(
+                None,
+                CallReducerParams {
+                    timestamp: Timestamp::now(),
+                    caller_identity,
+                    caller_address,
+                    client,
+                    request_id,
+                    timer,
+                    reducer_id,
+                    args,
+                },
+            )
         })
         .await
         .map_err(Into::into)
@@ -878,6 +884,33 @@ impl ModuleHost {
         }
 
         res
+    }
+
+    // Scheduled reducers require a different function here to call their reducer
+    // because their reducer arguments are stored in the database and need to be fetched
+    // within the same transaction as the reducer call.
+    pub async fn call_scheduled_reducer<F>(&self, call_reducer_params: F) -> Result<ReducerCallResult, ReducerCallError>
+    where
+        F: FnOnce(&MutTxId) -> anyhow::Result<Option<CallReducerParams>> + Send + 'static,
+    {
+        let db = self.inner.dbic().relational_db.clone();
+        // scheduled reducer name not fetched yet, anyway this is only for logging purpose
+        const REDUCER: &str = "scheduled_reducer";
+        self.call(REDUCER, move |inst: &mut dyn ModuleInstance| {
+            let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+
+            match call_reducer_params(&mut tx) {
+                Ok(Some(params)) => Ok(inst.call_reducer(Some(tx), params)),
+                Ok(None) => Err(ReducerCallError::ScheduleReducerNotFound),
+                Err(err) => Err(ReducerCallError::Args(InvalidReducerArguments {
+                    err,
+                    reducer: REDUCER.into(),
+                })),
+            }
+        })
+        .await
+        .unwrap_or_else(|e| Err(e.into()))
+        .map_err(Into::into)
     }
 
     pub fn catalog(&self) -> Catalog {
