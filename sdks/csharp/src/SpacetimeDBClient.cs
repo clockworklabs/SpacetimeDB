@@ -254,7 +254,7 @@ namespace SpacetimeDB
                                     foreach (var row in update.Inserts) {
                                         var op = new DbOp { table = table, insert = Decode(table, row) };
 
-                                        if (op.insert.Value is IDatabaseTableWithPrimaryKey objWithPk) {
+                                        if (op.insert.Value.value is IDatabaseTableWithPrimaryKey objWithPk) {
                                             // Compound key that we use for lookup.
                                             // Consists of type of the table (for faster comparison that string names) + actual primary key of the row.
                                             var key = (table.ClientTableType, objWithPk.GetPrimaryKeyValue());
@@ -268,12 +268,13 @@ namespace SpacetimeDB
                                                 }
 
                                                 var (insertOp, deleteOp) = op.insert is not null ? (op, oldOp) : (oldOp, op);
-                                                primaryKeyChanges[key] = new DbOp {
+                                                op = new DbOp {
                                                     table = insertOp.table,
                                                     delete = deleteOp.delete,
                                                     insert = insertOp.insert,
                                                 };
                                             }
+                                            primaryKeyChanges[key] = op;
                                         }
                                         else {
                                             dbOps.Add(op);
@@ -283,7 +284,7 @@ namespace SpacetimeDB
                                     foreach (var row in update.Deletes) {
                                         var op = new DbOp { table = table, delete = Decode(table, row) };
 
-                                        if (op.delete.Value is IDatabaseTableWithPrimaryKey objWithPk) {
+                                        if (op.delete.Value.value is IDatabaseTableWithPrimaryKey objWithPk) {
                                             // Compound key that we use for lookup.
                                             // Consists of type of the table (for faster comparison that string names) + actual primary key of the row.
                                             var key = (table.ClientTableType, objWithPk.GetPrimaryKeyValue());
@@ -297,12 +298,13 @@ namespace SpacetimeDB
                                                 }
 
                                                 var (insertOp, deleteOp) = op.insert is not null ? (op, oldOp) : (oldOp, op);
-                                                primaryKeyChanges[key] = new DbOp {
+                                                op = new DbOp {
                                                     table = insertOp.table,
                                                     delete = deleteOp.delete,
                                                     insert = insertOp.insert,
                                                 };
                                             }
+                                            primaryKeyChanges[key] = op;
                                         }
                                         else {
                                             dbOps.Add(op);
