@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use crate::energy::EnergyQuanta;
 use crate::execution_context::WorkloadType;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
-use crate::host::{ReducerArgs, Timestamp};
+use crate::host::ReducerArgs;
 use crate::identity::Identity;
 use crate::protobuf::client_api::{message, FunctionCall, Message, Subscribe};
 use crate::worker_metrics::WORKER_METRICS;
@@ -13,7 +13,7 @@ use bytes::Bytes;
 use bytestring::ByteString;
 use prost::Message as _;
 use spacetimedb_lib::identity::RequestId;
-use spacetimedb_lib::Address;
+use spacetimedb_lib::{Address, Timestamp};
 
 use super::messages::{ServerMessage, TransactionUpdateMessage};
 use super::{ClientConnection, DataMessage};

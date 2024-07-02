@@ -171,7 +171,7 @@ const ALLOW_UNUSED_IMPORTS: &str = "#![allow(unused_imports)]";
 
 const SPACETIMEDB_IMPORTS: &[&str] = &[
     "use spacetimedb_sdk::{",
-    "\tAddress,",
+    "\tAddress, ScheduleAt,",
     "\tsats::{ser::Serialize, de::Deserialize},",
     "\ttable::{TableType, TableIter, TableWithPrimaryKey},",
     "\treducer::{Reducer, ReducerCallbackId, Status},",

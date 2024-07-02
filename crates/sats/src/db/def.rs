@@ -485,6 +485,7 @@ pub struct TableSchema {
     pub sequences: Vec<SequenceSchema>,
     pub table_type: StTableType,
     pub table_access: StAccess,
+    pub scheduled: Option<Box<str>>,
     /// Cache for `row_type_for_table` in the data store.
     row_type: ProductType,
 }
@@ -500,6 +501,7 @@ impl TableSchema {
         sequences: Vec<SequenceSchema>,
         table_type: StTableType,
         table_access: StAccess,
+        scheduled: Option<Box<str>>,
     ) -> Self {
         let row_type = ProductType::new(
             columns
@@ -521,6 +523,7 @@ impl TableSchema {
             table_type,
             table_access,
             row_type,
+            scheduled,
         }
     }
 
@@ -622,6 +625,16 @@ impl TableSchema {
         self.columns.iter().find(|x| &*x.col_name == col_name)
     }
 
+    /// Check if the `col_name` exist on this [TableSchema]
+    ///
+    /// Warning: It ignores the `table_name`
+    pub fn get_column_id_by_name(&self, col_name: &str) -> Option<ColId> {
+        self.columns
+            .iter()
+            .position(|x| &*x.col_name == col_name)
+            .map(|x| x.into())
+    }
+
     /// Project the fields from the supplied `indexes`.
     pub fn project(&self, indexes: impl Iterator<Item = ColId>) -> Result<Vec<&ColumnSchema>, InvalidFieldError> {
         indexes
@@ -697,6 +710,7 @@ impl TableSchema {
                 .collect(),
             schema.table_type,
             schema.table_access,
+            schema.scheduled,
         )
     }
 
@@ -967,6 +981,7 @@ pub struct TableDef {
     pub sequences: Vec<SequenceDef>,
     pub table_type: StTableType,
     pub table_access: StAccess,
+    scheduled: Option<Box<str>>,
 }
 
 impl TableDef {
@@ -986,6 +1001,7 @@ impl TableDef {
             sequences: vec![],
             table_type: StTableType::User,
             table_access: StAccess::Public,
+            scheduled: None,
         }
     }
 
@@ -1035,6 +1051,12 @@ impl TableDef {
         let mut x = self;
         x.indexes = indexes;
         x
+    }
+
+    /// Set the reducer name for scheduled tables and return updated `TableDef`.
+    pub fn with_scheduled(mut self, scheduled: Option<Box<str>>) -> Self {
+        self.scheduled = scheduled;
+        self
     }
 
     /// Generate a [IndexDef] using the supplied `columns`.
@@ -1172,6 +1194,7 @@ impl From<TableSchema> for TableDef {
             sequences: value.sequences.into_iter().map(Into::into).collect(),
             table_type: value.table_type,
             table_access: value.table_access,
+            scheduled: value.scheduled,
         }
     }
 }

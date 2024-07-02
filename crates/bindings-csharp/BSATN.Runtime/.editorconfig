@@ -1,0 +1,4 @@
+[*.cs]
+# In this crate we're limited by C# 9 and can't use file-scoped namespaces.
+# With regular namespaces, usings outside the namespace look better.
+csharp_using_directive_placement = outside_namespace

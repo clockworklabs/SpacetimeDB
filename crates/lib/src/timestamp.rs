@@ -1,9 +1,7 @@
+use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
 use std::time::{Duration, SystemTime};
 
-use spacetimedb_sats::{impl_deserialize, impl_serialize};
-
-#[derive(Copy, Clone, PartialEq, Eq, Debug, serde::Serialize)]
-#[serde(transparent)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(transparent)]
 pub struct Timestamp(pub u64);
 
@@ -22,9 +20,13 @@ impl Timestamp {
     pub fn to_duration_from_now(self) -> Duration {
         self.to_systemtime()
             .duration_since(SystemTime::now())
-            .unwrap_or(Duration::ZERO)
+            .unwrap_or_default()
+    }
+    pub fn get_type() -> AlgebraicType {
+        AlgebraicType::U64
     }
 }
 
 impl_deserialize!([] Timestamp, de => u64::deserialize(de).map(Self));
 impl_serialize!([] Timestamp, (self, ser) => self.0.serialize(ser));
+impl_st!([] Timestamp, _ts => Timestamp::get_type());
