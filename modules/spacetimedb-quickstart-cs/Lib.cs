@@ -1,5 +1,4 @@
-using SpacetimeDB.Module;
-using static SpacetimeDB.Runtime;
+using SpacetimeDB;
 
 static partial class Module
 {
@@ -23,9 +22,9 @@ static partial class Module
     {
         foreach (var person in Person.Iter())
         {
-            Log($"Hello, {person.Name}!");
+            Runtime.Log($"Hello, {person.Name}!");
         }
-        Log("Hello, World!");
+        Runtime.Log("Hello, World!");
     }
 
     [SpacetimeDB.Reducer("list_over_age")]
@@ -33,7 +32,7 @@ static partial class Module
     {
         foreach (var person in Person.Query(person => person.Age >= age))
         {
-            Log($"{person.Name} has age {person.Age} >= {age}");
+            Runtime.Log($"{person.Name} has age {person.Age} >= {age}");
         }
     }
 }

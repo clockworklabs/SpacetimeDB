@@ -3,9 +3,6 @@ using System.Runtime.CompilerServices;
 
 namespace SpacetimeDB
 {
-    [SpacetimeDB.Type]
-    public readonly partial struct Unit { }
-
     [AttributeUsage(
         AttributeTargets.Struct | AttributeTargets.Class | AttributeTargets.Enum,
         Inherited = false,
