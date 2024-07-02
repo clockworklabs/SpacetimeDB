@@ -1,9 +1,6 @@
 namespace SpacetimeDB.Codegen;
 
-using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -23,25 +20,40 @@ readonly record struct MemberDeclaration
     }
 }
 
+abstract record TypeKind
+{
+    public record Product : TypeKind
+    {
+        public sealed override string ToString() => "Product";
+    }
+
+    public record Sum : TypeKind
+    {
+        public sealed override string ToString() => "Sum";
+    }
+
+    public record Table(bool IsScheduled) : Product;
+}
+
 record TypeDeclaration
 {
     public readonly Scope Scope;
     public readonly string ShortName;
     public readonly string FullName;
-    public readonly bool IsTaggedEnum;
+    public readonly TypeKind Kind;
     public readonly EquatableArray<MemberDeclaration> Members;
 
     public TypeDeclaration(
         TypeDeclarationSyntax typeSyntax,
         INamedTypeSymbol type,
-        bool isTaggedEnum,
+        TypeKind kind,
         IEnumerable<IFieldSymbol> members
     )
     {
         Scope = new(typeSyntax);
         ShortName = type.Name;
         FullName = SymbolToName(type);
-        IsTaggedEnum = isTaggedEnum;
+        Kind = kind;
         Members = new(
             members.Select(v => new MemberDeclaration(v.Name, v.Type)).ToImmutableArray()
         );
@@ -103,7 +115,12 @@ public class Type : IIncrementalGenerator
                     var typeSyntax = (TypeDeclarationSyntax)context.TargetNode;
                     var type = context.SemanticModel.GetDeclaredSymbol(typeSyntax, ct)!;
                     var fields = GetFields(type);
-                    var isTaggedEnum = false;
+                    var attr = context.Attributes.Single();
+
+                    TypeKind kind =
+                        attr.AttributeClass?.Name == "TableAttribute"
+                            ? new TypeKind.Table(attr.NamedArguments.Any(a => a.Key == "Scheduled"))
+                            : new TypeKind.Product();
 
                     // Check if type implements generic `SpacetimeDB.TaggedEnum<Variants>` and, if so, extract the `Variants` type.
                     if (
@@ -111,7 +128,12 @@ public class Type : IIncrementalGenerator
                         == "SpacetimeDB.TaggedEnum<Variants>"
                     )
                     {
-                        isTaggedEnum = true;
+                        if (kind is TypeKind.Table)
+                        {
+                            throw new InvalidOperationException("Tagged enums cannot be tables.");
+                        }
+
+                        kind = new TypeKind.Sum();
 
                         if (
                             type.BaseType.TypeArguments[0]
@@ -142,26 +164,42 @@ public class Type : IIncrementalGenerator
                         );
                     }
 
-                    return new TypeDeclaration(typeSyntax, type, isTaggedEnum, fields);
+                    return new TypeDeclaration(typeSyntax, type, kind, fields);
                 }
             )
             .WithTrackingName("SpacetimeDB.Type.Parse")
             .Select(
                 (type, ct) =>
                 {
-                    string typeKind,
-                        read,
+                    string read,
                         write;
 
                     var typeDesc = "";
 
                     var bsatnDecls = type.Members.Select(m => (m.Name, m.TypeInfo));
-                    var fieldNames = type.Members.Select(m => m.Name);
 
-                    if (type.IsTaggedEnum)
+                    if (type.Kind is TypeKind.Table { IsScheduled: true })
                     {
-                        typeKind = "Sum";
+                        // For scheduled tables, we append extra fields early in the pipeline,
+                        // both to the type itself and to the BSATN information, as if they
+                        // were part of the original declaration.
 
+                        typeDesc += """
+                            public ulong ScheduledId;
+                            public SpacetimeDB.ScheduleAt ScheduledAt;
+                            """;
+                        bsatnDecls = bsatnDecls.Concat(
+                            [
+                                (Name: "ScheduledId", TypeInfo: "SpacetimeDB.BSATN.U64"),
+                                (Name: "ScheduledAt", TypeInfo: "SpacetimeDB.ScheduleAt.BSATN")
+                            ]
+                        );
+                    }
+
+                    var fieldNames = bsatnDecls.Select(m => m.Name);
+
+                    if (type.Kind is TypeKind.Sum)
+                    {
                         typeDesc +=
                             $@"
                             private {type.ShortName}() {{ }}
@@ -204,8 +242,6 @@ public class Type : IIncrementalGenerator
                     }
                     else
                     {
-                        typeKind = "Product";
-
                         typeDesc +=
                             $@"
                             public void ReadFields(System.IO.BinaryReader reader) {{
@@ -235,7 +271,7 @@ public class Type : IIncrementalGenerator
                                 {write}
                             }}
 
-                            public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) => registrar.RegisterType<{type.ShortName}>(typeRef => new SpacetimeDB.BSATN.AlgebraicType.{typeKind}(new SpacetimeDB.BSATN.AggregateElement[] {{
+                            public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) => registrar.RegisterType<{type.ShortName}>(typeRef => new SpacetimeDB.BSATN.AlgebraicType.{type.Kind}(new SpacetimeDB.BSATN.AggregateElement[] {{
                                 {string.Join(",\n", fieldNames.Select(name => $"new(nameof({name}), {name}.GetAlgebraicType(registrar))"))}
                             }}));
                         }}
@@ -245,7 +281,16 @@ public class Type : IIncrementalGenerator
                         type.FullName,
                         type.Scope.GenerateExtensions(
                             typeDesc,
-                            type.IsTaggedEnum ? null : "SpacetimeDB.BSATN.IStructuralReadWrite"
+                            type.Kind is TypeKind.Product
+                                ? "SpacetimeDB.BSATN.IStructuralReadWrite"
+                                : null,
+                            // For scheduled tables we're adding extra fields and compiler will warn about undefined ordering.
+                            // We don't care about ordering as we generate BSATN ourselves and don't use those structs in FFI,
+                            // so we can safely suppress the warning by saying "yes, we're okay with an auto/arbitrary layout".
+                            type.Kind
+                                is TypeKind.Table { IsScheduled: true }
+                                ? "[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]"
+                                : null
                         )
                     );
                 }

@@ -6,18 +6,29 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using SpacetimeDB.Module;
-using static SpacetimeDB.RawBindings;
-using static SpacetimeDB.Runtime;
-using Buffer = SpacetimeDB.RawBindings.Buffer;
 
 static class ModuleRegistration
 {
-    class InsertData : IReducer
+    class Init : SpacetimeDB.Internal.IReducer
     {
-        PublicTable.BSATN data = new();
+        public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        )
+        {
+            return new("__init__");
+        }
 
-        SpacetimeDB.Module.ReducerDef IReducer.MakeReducerDef(
+        public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
+        {
+            Timers.Init(ctx);
+        }
+    }
+
+    class InsertData : SpacetimeDB.Internal.IReducer
+    {
+        private static PublicTable.BSATN data = new();
+
+        public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         )
         {
@@ -30,17 +41,17 @@ static class ModuleRegistration
             );
         }
 
-        void IReducer.Invoke(BinaryReader reader, SpacetimeDB.Runtime.ReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
         {
             Reducers.InsertData(data.Read(reader));
         }
     }
 
-    class InsertData2 : IReducer
+    class InsertData2 : SpacetimeDB.Internal.IReducer
     {
-        PublicTable.BSATN data = new();
+        private static PublicTable.BSATN data = new();
 
-        SpacetimeDB.Module.ReducerDef IReducer.MakeReducerDef(
+        public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         )
         {
@@ -53,9 +64,29 @@ static class ModuleRegistration
             );
         }
 
-        void IReducer.Invoke(BinaryReader reader, SpacetimeDB.Runtime.ReducerContext ctx)
+        public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
         {
             Test.NestingNamespaces.AndClasses.InsertData2(ctx, data.Read(reader));
+        }
+    }
+
+    class SendScheduledMessage : SpacetimeDB.Internal.IReducer
+    {
+        private static Timers.SendMessageTimer.BSATN arg = new();
+
+        public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        )
+        {
+            return new(
+                "SendScheduledMessage",
+                new SpacetimeDB.BSATN.AggregateElement(nameof(arg), arg.GetAlgebraicType(registrar))
+            );
+        }
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
+        {
+            Timers.SendScheduledMessage(arg.Read(reader));
         }
     }
 
@@ -65,28 +96,42 @@ static class ModuleRegistration
     [UnmanagedCallersOnly(EntryPoint = "__preinit__10_init_csharp")]
 #else
     // Prevent trimming of FFI exports that are invoked from C and not visible to C# trimmer.
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicMethods, typeof(FFI))]
+    [DynamicDependency(
+        DynamicallyAccessedMemberTypes.PublicMethods,
+        typeof(SpacetimeDB.Internal.Module)
+    )]
 #endif
     public static void Main()
     {
-        FFI.RegisterReducer(new InsertData());
-        FFI.RegisterReducer(new InsertData2());
-        FFI.RegisterTable(PrivateTable.MakeTableDesc(FFI.TypeRegistrar));
-        FFI.RegisterTable(PublicTable.MakeTableDesc(FFI.TypeRegistrar));
+        SpacetimeDB.Internal.Module.RegisterReducer<Init>();
+        SpacetimeDB.Internal.Module.RegisterReducer<InsertData>();
+        SpacetimeDB.Internal.Module.RegisterReducer<InsertData2>();
+        SpacetimeDB.Internal.Module.RegisterReducer<SendScheduledMessage>();
+        SpacetimeDB.Internal.Module.RegisterTable<PrivateTable>();
+        SpacetimeDB.Internal.Module.RegisterTable<PublicTable>();
+        SpacetimeDB.Internal.Module.RegisterTable<Timers.SendMessageTimer>();
     }
 
     // Exports only work from the main assembly, so we need to generate forwarding methods.
 #if EXPERIMENTAL_WASM_AOT
     [UnmanagedCallersOnly(EntryPoint = "__describe_module__")]
-    public static Buffer __describe_module__() => FFI.__describe_module__();
+    public static SpacetimeDB.Internal.Buffer __describe_module__() =>
+        SpacetimeDB.Internal.Module.__describe_module__();
 
     [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
-    public static Buffer __call_reducer__(
+    public static SpacetimeDB.Internal.Buffer __call_reducer__(
         uint id,
-        Buffer caller_identity,
-        Buffer caller_address,
-        ulong timestamp,
-        Buffer args
-    ) => FFI.__call_reducer__(id, caller_identity, caller_address, timestamp, args);
+        SpacetimeDB.Internal.Buffer caller_identity,
+        SpacetimeDB.Internal.Buffer caller_address,
+        SpacetimeDB.Internal.DateTimeOffsetRepr timestamp,
+        SpacetimeDB.Internal.Buffer args
+    ) =>
+        SpacetimeDB.Internal.Module.__call_reducer__(
+            id,
+            caller_identity,
+            caller_address,
+            timestamp,
+            args
+        );
 #endif
 }
