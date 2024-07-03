@@ -215,6 +215,16 @@ impl_pk_test_table! {
         update_reducer = update_pk_u_128;
         update_reducer_event = UpdatePkU128;
     }
+    PkU256 {
+        Key = u256;
+        key_field_name = n;
+        insert_reducer = insert_pk_u_256;
+        insert_reducer_event = InsertPkU256;
+        delete_reducer = delete_pk_u_256;
+        delete_reducer_event = DeletePkU256;
+        update_reducer = update_pk_u_256;
+        update_reducer_event = UpdatePkU256;
+    }
 
     PkI8 {
         Key = i8;
@@ -265,6 +275,16 @@ impl_pk_test_table! {
         delete_reducer_event = DeletePkI128;
         update_reducer = update_pk_i_128;
         update_reducer_event = UpdatePkI128;
+    }
+    PkI256 {
+        Key = i256;
+        key_field_name = n;
+        insert_reducer = insert_pk_i_256;
+        insert_reducer_event = InsertPkI256;
+        delete_reducer = delete_pk_i_256;
+        delete_reducer_event = DeletePkI256;
+        update_reducer = update_pk_i_256;
+        update_reducer_event = UpdatePkI256;
     }
 
     PkBool {

@@ -42,6 +42,8 @@ public partial record AlgebraicType
         Unit U64,
         Unit I128,
         Unit U128,
+        Unit I256,
+        Unit U256,
         Unit F32,
         Unit F64
     )>

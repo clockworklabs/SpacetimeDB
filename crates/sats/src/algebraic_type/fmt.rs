@@ -1,7 +1,7 @@
 use super::{AlgebraicType, ProductType, SumType};
 use crate::de::fmt_fn;
+use core::fmt::Display;
 use fmt_algebraic_type as fmt;
-use std::fmt::Display;
 
 /// Wraps the algebraic `ty` into a `Display`able.
 ///
@@ -30,6 +30,8 @@ pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + Display {
         AlgebraicType::U64 => write!(f, "U64"),
         AlgebraicType::I128 => write!(f, "I128"),
         AlgebraicType::U128 => write!(f, "U128"),
+        AlgebraicType::I256 => write!(f, "I256"),
+        AlgebraicType::U256 => write!(f, "U256"),
         AlgebraicType::F32 => write!(f, "F32"),
         AlgebraicType::F64 => write!(f, "F64"),
         AlgebraicType::String => write!(f, "String"),

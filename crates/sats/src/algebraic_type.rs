@@ -6,6 +6,7 @@ use crate::algebraic_value::ser::value_serialize;
 use crate::meta_type::MetaType;
 use crate::product_type::{ADDRESS_TAG, IDENTITY_TAG};
 use crate::{de::Deserialize, ser::Serialize, MapType};
+use crate::{i256, u256};
 use crate::{AlgebraicTypeRef, AlgebraicValue, ArrayType, ProductType, SumType, SumTypeVariant};
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
@@ -109,6 +110,10 @@ pub enum AlgebraicType {
     I128,
     /// The `U128` type. Values [`AlgebraicValue::U128(v)`](crate::AlgebraicValue::U128) will have this type.
     U128,
+    /// The `I256` type. Values [`AlgebraicValue::I256(v)`](crate::AlgebraicValue::I256) will have this type.
+    I256,
+    /// The `U256` type. Values [`AlgebraicValue::U256(v)`](crate::AlgebraicValue::U256) will have this type.
+    U256,
     /// The `F32` type. Values [`AlgebraicValue::F32(v)`](crate::AlgebraicValue::F32) will have this type.
     F32,
     /// The `F64` type. Values [`AlgebraicValue::F64(v)`](crate::AlgebraicValue::F64) will have this type.
@@ -140,6 +145,8 @@ impl MetaType for AlgebraicType {
             ("u64", AlgebraicType::unit()),
             ("i128", AlgebraicType::unit()),
             ("u128", AlgebraicType::unit()),
+            ("i256", AlgebraicType::unit()),
+            ("u256", AlgebraicType::unit()),
             ("f32", AlgebraicType::unit()),
             ("f64", AlgebraicType::unit()),
         ])
@@ -184,12 +191,18 @@ impl AlgebraicType {
 
     /// Returns whether the type is a signed integer type.
     pub fn is_signed(&self) -> bool {
-        matches!(self, Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::I128)
+        matches!(
+            self,
+            Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::I128 | Self::I256
+        )
     }
 
     /// Returns whether the type is an unsigned integer type.
     pub fn is_unsigned(&self) -> bool {
-        matches!(self, Self::U8 | Self::U16 | Self::U32 | Self::U64 | Self::U128)
+        matches!(
+            self,
+            Self::U8 | Self::U16 | Self::U32 | Self::U64 | Self::U128 | Self::U256
+        )
     }
 
     /// Returns whether this type is one of the integer types, e.g., `U64` and `I32`.
@@ -302,6 +315,8 @@ impl AlgebraicType {
             Self::U64 => Some(u64::MIN.into()),
             Self::I128 => Some(i128::MIN.into()),
             Self::U128 => Some(u128::MIN.into()),
+            Self::I256 => Some(i256::MIN.into()),
+            Self::U256 => Some(u256::MIN.into()),
             Self::F32 => Some(f32::MIN.into()),
             Self::F64 => Some(f64::MIN.into()),
             _ => None,
@@ -322,6 +337,8 @@ impl AlgebraicType {
             Self::U64 => Some(u64::MAX.into()),
             Self::I128 => Some(i128::MAX.into()),
             Self::U128 => Some(u128::MAX.into()),
+            Self::I256 => Some(i256::MAX.into()),
+            Self::U256 => Some(u256::MAX.into()),
             Self::F32 => Some(f32::MAX.into()),
             Self::F64 => Some(f64::MAX.into()),
             _ => None,
@@ -438,6 +455,7 @@ mod tests {
                 | i32: () | u32: () \
                 | i64: () | u64: () \
                 | i128: () | u128: () \
+                | i256: () | u256: () \
                 | f32: () | f64: ()\
             )",
             fmt_algebraic_type(&algebraic_type).to_string()
@@ -482,6 +500,7 @@ mod tests {
                 i32: { ty_: Product }, u32: { ty_: Product }, \
                 i64: { ty_: Product }, u64: { ty_: Product }, \
                 i128: { ty_: Product }, u128: { ty_: Product }, \
+                i256: { ty_: Product }, u256: { ty_: Product }, \
                 f32: { ty_: Product }, f64: { ty_: Product } \
             }",
             fmt_map(&algebraic_type).to_string()
@@ -580,6 +599,8 @@ mod tests {
                         (name = (some = \"u64\"), {unit}), \
                         (name = (some = \"i128\"), {unit}), \
                         (name = (some = \"u128\"), {unit}), \
+                        (name = (some = \"i256\"), {unit}), \
+                        (name = (some = \"u256\"), {unit}), \
                         (name = (some = \"f32\"), {unit}), \
                         (name = (some = \"f64\"), {unit})\
                     ]\

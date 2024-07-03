@@ -144,6 +144,8 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_>, ty: &AlgebraicTypeLayout, rhs: &Algebrai
         (&AlgebraicTypeLayout::U64, AlgebraicValue::U64(rhs)) => unsafe { eq_at(ctx, rhs) },
         (&AlgebraicTypeLayout::I128, AlgebraicValue::I128(rhs)) => unsafe { eq_at(ctx, rhs) },
         (&AlgebraicTypeLayout::U128, AlgebraicValue::U128(rhs)) => unsafe { eq_at(ctx, rhs) },
+        (&AlgebraicTypeLayout::I256, AlgebraicValue::I256(rhs)) => unsafe { eq_at(ctx, &**rhs) },
+        (&AlgebraicTypeLayout::U256, AlgebraicValue::U256(rhs)) => unsafe { eq_at(ctx, &**rhs) },
         (&AlgebraicTypeLayout::F32, AlgebraicValue::F32(rhs)) => unsafe { eq_at(ctx, rhs) },
         (&AlgebraicTypeLayout::F64, AlgebraicValue::F64(rhs)) => unsafe { eq_at(ctx, rhs) },
 

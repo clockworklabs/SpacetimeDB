@@ -26,7 +26,12 @@ fn scalar_or_string_to_ts(ty: &AlgebraicType) -> Option<(&str, &str)> {
         | AlgebraicType::U32
         | AlgebraicType::F32
         | AlgebraicType::F64 => ("number", "Number"),
-        AlgebraicType::I128 | AlgebraicType::U128 | AlgebraicType::I64 | AlgebraicType::U64 => ("BigInt", "BigInt"),
+        AlgebraicType::I64
+        | AlgebraicType::U64
+        | AlgebraicType::I128
+        | AlgebraicType::U128
+        | AlgebraicType::I256
+        | AlgebraicType::U256 => ("BigInt", "BigInt"),
         AlgebraicType::String => ("string", "String"),
         _ => return None,
     })

@@ -13,7 +13,7 @@ use crate::{bflatn_from::vlr_blob_bytes, blob_store::BlobStore, layout::VarLenTy
 use core::hash::{Hash as _, Hasher};
 use core::mem;
 use core::str;
-use spacetimedb_sats::{algebraic_value::ser::concat_byte_chunks_buf, bsatn::Deserializer, F32, F64};
+use spacetimedb_sats::{algebraic_value::ser::concat_byte_chunks_buf, bsatn::Deserializer, i256, u256, F32, F64};
 
 /// Hashes the row in `page` where the fixed part starts at `fixed_offset`
 /// and lasts `ty.size()` bytes. This region is typed at `ty`.
@@ -120,35 +120,21 @@ unsafe fn hash_value(
         // SAFETY (applies to app primitive types):
         // Per caller requirement, know `value` points to a valid `ty`.
         // Thus `&bytes[range_move(0..ty.size(), *curr_offset)]` points to init bytes
-        // and `ty.size()` corresponds exactly to `N = 1, 1, 1, 2, 2, 4, 4, 8, 8, 16, 16, 4, 8`.
+        // and `ty.size()` corresponds exactly to `N = 1, 1, 1, 2, 2, 4, 4, 8, 8, 16, 16, 32, 32, 4, 8`.
         &AlgebraicTypeLayout::Bool | &AlgebraicTypeLayout::U8 => {
-            hasher.write_u8(unsafe { read_from_bytes::<u8>(bytes, curr_offset) })
+            u8::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }).hash(hasher)
         }
-        &AlgebraicTypeLayout::I8 => hasher.write_i8(unsafe { read_from_bytes(bytes, curr_offset) }),
-        &AlgebraicTypeLayout::I16 => {
-            hasher.write_i16(i16::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }))
-        }
-        &AlgebraicTypeLayout::U16 => {
-            hasher.write_u16(u16::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }))
-        }
-        &AlgebraicTypeLayout::I32 => {
-            hasher.write_i32(i32::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }))
-        }
-        &AlgebraicTypeLayout::U32 => {
-            hasher.write_u32(u32::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }))
-        }
-        &AlgebraicTypeLayout::I64 => {
-            hasher.write_i64(i64::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }))
-        }
-        &AlgebraicTypeLayout::U64 => {
-            hasher.write_u64(u64::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }))
-        }
-        &AlgebraicTypeLayout::I128 => {
-            hasher.write_i128(i128::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }))
-        }
-        &AlgebraicTypeLayout::U128 => {
-            hasher.write_u128(u128::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }))
-        }
+        &AlgebraicTypeLayout::I8 => i8::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }).hash(hasher),
+        &AlgebraicTypeLayout::I16 => i16::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }).hash(hasher),
+        &AlgebraicTypeLayout::U16 => u16::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }).hash(hasher),
+        &AlgebraicTypeLayout::I32 => i32::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }).hash(hasher),
+        &AlgebraicTypeLayout::U32 => u32::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }).hash(hasher),
+        &AlgebraicTypeLayout::I64 => i64::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }).hash(hasher),
+        &AlgebraicTypeLayout::U64 => u64::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }).hash(hasher),
+        &AlgebraicTypeLayout::I128 => i128::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }).hash(hasher),
+        &AlgebraicTypeLayout::U128 => u128::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }).hash(hasher),
+        &AlgebraicTypeLayout::I256 => i256::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }).hash(hasher),
+        &AlgebraicTypeLayout::U256 => u256::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) }).hash(hasher),
         &AlgebraicTypeLayout::F32 => {
             F32::from(f32::from_le_bytes(unsafe { read_from_bytes(bytes, curr_offset) })).hash(hasher)
         }

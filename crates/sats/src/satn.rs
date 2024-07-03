@@ -1,12 +1,12 @@
-use derive_more::{From, Into};
-use std::fmt;
-use std::fmt::Write as _;
-
 use crate::{
     algebraic_value::ser::ValueSerializer,
     ser::{self, Serialize},
     ProductType,
 };
+use crate::{i256, u256};
+use core::fmt;
+use core::fmt::Write as _;
+use derive_more::{From, Into};
 
 /// An extension trait for [`Serialize`](ser::Serialize) providing formatting methods.
 pub trait Satn: ser::Serialize {
@@ -275,6 +275,9 @@ impl<'a, 'b> ser::Serializer for SatnFormatter<'a, 'b> {
     fn serialize_u128(mut self, v: u128) -> Result<Self::Ok, Self::Error> {
         write!(self, "{v}")
     }
+    fn serialize_u256(mut self, v: u256) -> Result<Self::Ok, Self::Error> {
+        write!(self, "{v}")
+    }
     fn serialize_i8(mut self, v: i8) -> Result<Self::Ok, Self::Error> {
         write!(self, "{v}")
     }
@@ -288,6 +291,9 @@ impl<'a, 'b> ser::Serializer for SatnFormatter<'a, 'b> {
         write!(self, "{v}")
     }
     fn serialize_i128(mut self, v: i128) -> Result<Self::Ok, Self::Error> {
+        write!(self, "{v}")
+    }
+    fn serialize_i256(mut self, v: i256) -> Result<Self::Ok, Self::Error> {
         write!(self, "{v}")
     }
     fn serialize_f32(mut self, v: f32) -> Result<Self::Ok, Self::Error> {
@@ -623,6 +629,9 @@ impl<'a, 'b> ser::Serializer for PsqlFormatter<'a, 'b> {
     fn serialize_u128(self, v: u128) -> Result<Self::Ok, Self::Error> {
         self.fmt.serialize_u128(v)
     }
+    fn serialize_u256(self, v: u256) -> Result<Self::Ok, Self::Error> {
+        self.fmt.serialize_u256(v)
+    }
     fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error> {
         self.fmt.serialize_i8(v)
     }
@@ -637,6 +646,9 @@ impl<'a, 'b> ser::Serializer for PsqlFormatter<'a, 'b> {
     }
     fn serialize_i128(self, v: i128) -> Result<Self::Ok, Self::Error> {
         self.fmt.serialize_i128(v)
+    }
+    fn serialize_i256(self, v: i256) -> Result<Self::Ok, Self::Error> {
+        self.fmt.serialize_i256(v)
     }
     fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
         self.fmt.serialize_f32(v)

@@ -2,6 +2,7 @@
 //!
 //! This notably excludes `Ref` types.
 
+use crate::{i256, u256};
 use crate::{
     AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ArrayValue, MapType, MapValue, ProductType, ProductValue, SumType,
     SumValue, Typespace, F32, F64,
@@ -35,6 +36,8 @@ fn generate_non_compound_algebraic_type() -> impl Strategy<Value = AlgebraicType
         Just(AlgebraicType::I64),
         Just(AlgebraicType::U128),
         Just(AlgebraicType::I128),
+        Just(AlgebraicType::U256),
+        Just(AlgebraicType::I256),
         Just(AlgebraicType::F32),
         Just(AlgebraicType::F64),
         Just(AlgebraicType::String),
@@ -86,6 +89,14 @@ fn generate_non_compound<Val: Arbitrary + Into<AlgebraicValue> + 'static>() -> B
     any::<Val>().prop_map(Into::into).boxed()
 }
 
+fn any_u256() -> impl Strategy<Value = u256> {
+    any::<(u128, u128)>().prop_map(|(hi, lo)| u256::from_words(hi, lo))
+}
+
+fn any_i256() -> impl Strategy<Value = i256> {
+    any::<(i128, i128)>().prop_map(|(hi, lo)| i256::from_words(hi, lo))
+}
+
 /// Generates an `AlgebraicValue` typed at `ty`.
 pub fn generate_algebraic_value(ty: AlgebraicType) -> impl Strategy<Value = AlgebraicValue> {
     match ty {
@@ -100,6 +111,8 @@ pub fn generate_algebraic_value(ty: AlgebraicType) -> impl Strategy<Value = Alge
         AlgebraicType::U64 => generate_non_compound::<u64>(),
         AlgebraicType::I128 => generate_non_compound::<i128>(),
         AlgebraicType::U128 => generate_non_compound::<u128>(),
+        AlgebraicType::I256 => any_i256().prop_map_into().boxed(),
+        AlgebraicType::U256 => any_u256().prop_map_into().boxed(),
         AlgebraicType::F32 => generate_non_compound::<f32>(),
         AlgebraicType::F64 => generate_non_compound::<f64>(),
         AlgebraicType::String => generate_non_compound::<Box<str>>(),
@@ -174,6 +187,8 @@ fn generate_array_value(ty: AlgebraicType) -> BoxedStrategy<ArrayValue> {
         AlgebraicType::U64 => generate_array_of(any::<u64>()),
         AlgebraicType::I128 => generate_array_of(any::<i128>()),
         AlgebraicType::U128 => generate_array_of(any::<u128>()),
+        AlgebraicType::I256 => generate_array_of(any_i256()),
+        AlgebraicType::U256 => generate_array_of(any_u256()),
         AlgebraicType::F32 => generate_array_of(any::<f32>().prop_map_into::<F32>()),
         AlgebraicType::F64 => generate_array_of(any::<f64>().prop_map_into::<F64>()),
         AlgebraicType::String => generate_array_of(any::<Box<str>>()),

@@ -120,6 +120,8 @@ impl AsyncDB for SpaceDb {
                         AlgebraicValue::U64(x) => x.to_string(),
                         AlgebraicValue::I128(Packed(x)) => x.to_string(),
                         AlgebraicValue::U128(Packed(x)) => x.to_string(),
+                        AlgebraicValue::I256(x) => x.to_string(),
+                        AlgebraicValue::U256(x) => x.to_string(),
                         AlgebraicValue::F32(x) => format!("{:?}", x.as_ref()),
                         AlgebraicValue::F64(x) => format!("{:?}", x.as_ref()),
                         AlgebraicValue::String(x) => format!("'{}'", x),

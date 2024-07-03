@@ -15,7 +15,9 @@ use super::{
     util::range_move,
     var_len::{VarLenGranule, VarLenMembers, VarLenRef},
 };
-use spacetimedb_sats::{bsatn::to_writer, buffer::BufWriter, AlgebraicType, AlgebraicValue, ProductValue, SumValue};
+use spacetimedb_sats::{
+    bsatn::to_writer, buffer::BufWriter, i256, u256, AlgebraicType, AlgebraicValue, ProductValue, SumValue,
+};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -209,6 +211,8 @@ impl BflatnSerializedRowBuffer<'_> {
             (&AlgebraicTypeLayout::U64, AlgebraicValue::U64(val)) => self.write_u64(*val),
             (&AlgebraicTypeLayout::I128, AlgebraicValue::I128(val)) => self.write_i128(val.0),
             (&AlgebraicTypeLayout::U128, AlgebraicValue::U128(val)) => self.write_u128(val.0),
+            (&AlgebraicTypeLayout::I256, AlgebraicValue::I256(val)) => self.write_i256(**val),
+            (&AlgebraicTypeLayout::U256, AlgebraicValue::U256(val)) => self.write_u256(**val),
             // Float types:
             (&AlgebraicTypeLayout::F32, AlgebraicValue::F32(val)) => self.write_f32((*val).into()),
             (&AlgebraicTypeLayout::F64, AlgebraicValue::F64(val)) => self.write_f64((*val).into()),
@@ -442,6 +446,16 @@ impl BflatnSerializedRowBuffer<'_> {
 
     /// Write an `i128` to the fixed buffer and advance the `curr_offset`.
     fn write_i128(&mut self, val: i128) {
+        self.write_bytes(&val.to_le_bytes());
+    }
+
+    /// Write a `u256` to the fixed buffer and advance the `curr_offset`.
+    fn write_u256(&mut self, val: u256) {
+        self.write_bytes(&val.to_le_bytes());
+    }
+
+    /// Write an `i256` to the fixed buffer and advance the `curr_offset`.
+    fn write_i256(&mut self, val: i256) {
         self.write_bytes(&val.to_le_bytes());
     }
 

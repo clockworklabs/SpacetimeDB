@@ -1,6 +1,11 @@
 use crate::module_bindings::*;
 use anyhow::anyhow;
-use spacetimedb_sdk::{identity::Identity, table::TableType, Address};
+use spacetimedb_sdk::{
+    identity::Identity,
+    sats::{i256, u256},
+    table::TableType,
+    Address,
+};
 use std::sync::Arc;
 use test_counter::TestCounter;
 
@@ -158,6 +163,14 @@ impl_unique_test_table! {
         delete_reducer = delete_unique_u_128;
         delete_reducer_event = DeleteUniqueU128;
     }
+    UniqueU256 {
+        Key = u256;
+        key_field_name = n;
+        insert_reducer = insert_unique_u_256;
+        insert_reducer_event = InsertUniqueU256;
+        delete_reducer = delete_unique_u_256;
+        delete_reducer_event = DeleteUniqueU256;
+    }
 
     UniqueI8 {
         Key = i8;
@@ -198,6 +211,14 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueI128;
         delete_reducer = delete_unique_i_128;
         delete_reducer_event = DeleteUniqueI128;
+    }
+    UniqueI256 {
+        Key = i256;
+        key_field_name = n;
+        insert_reducer = insert_unique_i_256;
+        insert_reducer_event = InsertUniqueI256;
+        delete_reducer = delete_unique_i_256;
+        delete_reducer_event = DeleteUniqueI256;
     }
 
     UniqueBool {

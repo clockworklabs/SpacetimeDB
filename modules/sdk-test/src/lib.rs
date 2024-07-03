@@ -7,7 +7,10 @@
 #![allow(clippy::too_many_arguments)]
 
 use anyhow::{Context, Result};
-use spacetimedb::{spacetimedb, Address, Identity, ReducerContext, SpacetimeType};
+use spacetimedb::{
+    sats::{i256, u256},
+    spacetimedb, Address, Identity, ReducerContext, SpacetimeType,
+};
 
 #[derive(SpacetimeType)]
 pub enum SimpleEnum {
@@ -23,11 +26,13 @@ pub enum EnumWithPayload {
     U32(u32),
     U64(u64),
     U128(u128),
+    U256(u256),
     I8(i8),
     I16(i16),
     I32(i32),
     I64(i64),
     I128(i128),
+    I256(i256),
     Bool(bool),
     F32(f32),
     F64(f64),
@@ -57,17 +62,19 @@ pub struct EveryPrimitiveStruct {
     c: u32,
     d: u64,
     e: u128,
-    f: i8,
-    g: i16,
-    h: i32,
-    i: i64,
-    j: i128,
-    k: bool,
-    l: f32,
-    m: f64,
-    n: String,
-    o: Identity,
-    p: Address,
+    f: u256,
+    g: i8,
+    h: i16,
+    i: i32,
+    j: i64,
+    k: i128,
+    l: i256,
+    m: bool,
+    n: f32,
+    o: f64,
+    p: String,
+    q: Identity,
+    r: Address,
 }
 
 #[derive(SpacetimeType)]
@@ -77,17 +84,19 @@ pub struct EveryVecStruct {
     c: Vec<u32>,
     d: Vec<u64>,
     e: Vec<u128>,
-    f: Vec<i8>,
-    g: Vec<i16>,
-    h: Vec<i32>,
-    i: Vec<i64>,
-    j: Vec<i128>,
-    k: Vec<bool>,
-    l: Vec<f32>,
-    m: Vec<f64>,
-    n: Vec<String>,
-    o: Vec<Identity>,
-    p: Vec<Address>,
+    f: Vec<u256>,
+    g: Vec<i8>,
+    h: Vec<i16>,
+    i: Vec<i32>,
+    j: Vec<i64>,
+    k: Vec<i128>,
+    l: Vec<i256>,
+    m: Vec<bool>,
+    n: Vec<f32>,
+    o: Vec<f64>,
+    p: Vec<String>,
+    q: Vec<Identity>,
+    r: Vec<Address>,
 }
 
 /// Defines one or more tables, and optionally reducers alongside them.
@@ -219,12 +228,14 @@ define_tables! {
     OneU32 { insert insert_one_u32 } n u32;
     OneU64 { insert insert_one_u64 } n u64;
     OneU128 { insert insert_one_u128 } n u128;
+    OneU256 { insert insert_one_u256 } n u256;
 
     OneI8 { insert insert_one_i8 } n i8;
     OneI16 { insert insert_one_i16 } n i16;
     OneI32 { insert insert_one_i32 } n i32;
     OneI64 { insert insert_one_i64 } n i64;
     OneI128 { insert insert_one_i128 } n i128;
+    OneI256 { insert insert_one_i256 } n i256;
 
     OneBool { insert insert_one_bool } b bool;
 
@@ -252,12 +263,14 @@ define_tables! {
     VecU32 { insert insert_vec_u32 } n Vec<u32>;
     VecU64 { insert insert_vec_u64 } n Vec<u64>;
     VecU128 { insert insert_vec_u128 } n Vec<u128>;
+    VecU256 { insert insert_vec_u256 } n Vec<u256>;
 
     VecI8 { insert insert_vec_i8 } n Vec<i8>;
     VecI16 { insert insert_vec_i16 } n Vec<i16>;
     VecI32 { insert insert_vec_i32 } n Vec<i32>;
     VecI64 { insert insert_vec_i64 } n Vec<i64>;
     VecI128 { insert insert_vec_i128 } n Vec<i128>;
+    VecI256 { insert insert_vec_i256 } n Vec<i256>;
 
     VecBool { insert insert_vec_bool } b Vec<bool>;
 
@@ -321,6 +334,12 @@ define_tables! {
         delete_by delete_unique_u128 = delete_by_n(n: u128),
     } #[unique] n u128, data i32;
 
+    UniqueU256 {
+        insert_or_panic insert_unique_u256,
+        update_by update_unique_u256 = update_by_n(n),
+        delete_by delete_unique_u256 = delete_by_n(n: u256),
+    } #[unique] n u256, data i32;
+
 
     UniqueI8 {
         insert_or_panic insert_unique_i8,
@@ -352,6 +371,12 @@ define_tables! {
         update_by update_unique_i128 = update_by_n(n),
         delete_by delete_unique_i128 = delete_by_n(n: i128),
     } #[unique] n i128, data i32;
+
+    UniqueI256 {
+        insert_or_panic insert_unique_i256,
+        update_by update_unique_i256 = update_by_n(n),
+        delete_by delete_unique_i256 = delete_by_n(n: i256),
+    } #[unique] n i256, data i32;
 
 
     UniqueBool {
@@ -412,6 +437,12 @@ define_tables! {
         delete_by delete_pk_u128 = delete_by_n(n: u128),
     } #[primarykey] n u128, data i32;
 
+    PkU256 {
+        insert_or_panic insert_pk_u256,
+        update_by update_pk_u256 = update_by_n(n),
+        delete_by delete_pk_u256 = delete_by_n(n: u256),
+    } #[primarykey] n u256, data i32;
+
     PkI8 {
         insert_or_panic insert_pk_i8,
         update_by update_pk_i8 = update_by_n(n),
@@ -441,6 +472,12 @@ define_tables! {
         update_by update_pk_i128 = update_by_n(n),
         delete_by delete_pk_i128 = delete_by_n(n: i128),
     } #[primarykey] n i128, data i32;
+
+    PkI256 {
+        insert_or_panic insert_pk_i256,
+        update_by update_pk_i256 = update_by_n(n),
+        delete_by delete_pk_i256 = delete_by_n(n: i256),
+    } #[primarykey] n i256, data i32;
 
     PkBool {
         insert_or_panic insert_pk_bool,
@@ -536,21 +573,23 @@ define_tables! {
     c u32,
     d u64,
     e u128,
-    f i8,
-    g i16,
-    h i32,
-    i i64,
-    j i128,
-    k bool,
-    l f32,
-    m f64,
-    n String,
-    o SimpleEnum,
-    p EnumWithPayload,
-    q UnitStruct,
-    r ByteStruct,
-    s EveryPrimitiveStruct,
-    t EveryVecStruct,
+    f u256,
+    g i8,
+    h i16,
+    i i32,
+    j i64,
+    k i128,
+    l i256,
+    m bool,
+    n f32,
+    o f64,
+    p String,
+    q SimpleEnum,
+    r EnumWithPayload,
+    s UnitStruct,
+    t ByteStruct,
+    u EveryPrimitiveStruct,
+    v EveryVecStruct,
     ;
 
     // A table which holds instances of other table structs.

@@ -7,6 +7,8 @@ use core::ops::{Bound, RangeBounds};
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 
+pub use ethnum::{i256, u256};
+
 /// Totally ordered [`f32`] allowing all IEEE-754 floating point values.
 pub type F32 = decorum::Total<f32>;
 
@@ -85,12 +87,20 @@ pub enum AlgebraicValue {
     U64(u64),
     /// An [`i128`] value of type [`AlgebraicType::I128`].
     ///
-    /// We box these up as they allow us to shrink `AlgebraicValue`.
+    /// We pack these to shrink `AlgebraicValue`.
     I128(Packed<i128>),
     /// A [`u128`] value of type [`AlgebraicType::U128`].
     ///
-    /// We box these up as they allow us to shrink `AlgebraicValue`.
+    /// We pack these to to shrink `AlgebraicValue`.
     U128(Packed<u128>),
+    /// An [`i256`] value of type [`AlgebraicType::I256`].
+    ///
+    /// We box these up to shrink `AlgebraicValue`.
+    I256(Box<i256>),
+    /// A [`u256`] value of type [`AlgebraicType::U256`].
+    ///
+    /// We pack these to shrink `AlgebraicValue`.
+    U256(Box<u256>),
     /// A totally ordered [`F32`] value of type [`AlgebraicType::F32`].
     ///
     /// All floating point values defined in IEEE-754 are supported.
@@ -115,18 +125,6 @@ pub enum AlgebraicValue {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(packed)]
 pub struct Packed<T>(pub T);
-
-impl From<u128> for AlgebraicValue {
-    fn from(value: u128) -> Self {
-        Self::U128(Packed(value))
-    }
-}
-
-impl From<i128> for AlgebraicValue {
-    fn from(value: i128) -> Self {
-        Self::I128(Packed(value))
-    }
-}
 
 impl<T> From<T> for Packed<T> {
     fn from(value: T) -> Self {
@@ -258,6 +256,8 @@ impl AlgebraicValue {
             Self::U64(_) => Some(AlgebraicType::U64),
             Self::I128(_) => Some(AlgebraicType::I128),
             Self::U128(_) => Some(AlgebraicType::U128),
+            Self::I256(_) => Some(AlgebraicType::I256),
+            Self::U256(_) => Some(AlgebraicType::U256),
             Self::F32(_) => Some(AlgebraicType::F32),
             Self::F64(_) => Some(AlgebraicType::F64),
             Self::String(_) => Some(AlgebraicType::String),
@@ -279,6 +279,8 @@ impl AlgebraicValue {
             Self::U64(x) => x == 0,
             Self::I128(x) => x.0 == 0,
             Self::U128(x) => x.0 == 0,
+            Self::I256(ref x) => **x == i256::ZERO,
+            Self::U256(ref x) => **x == u256::ZERO,
             Self::F32(x) => x == 0.0,
             Self::F64(x) => x == 0.0,
             _ => false,
@@ -301,7 +303,9 @@ impl AlgebraicValue {
             AlgebraicType::U64 => (sequence_value as u64).into(),
             AlgebraicType::I128 => sequence_value.into(),
             AlgebraicType::U128 => (sequence_value as u128).into(),
-            _ => panic!("`{ty:?}` is not an integer type"),
+            AlgebraicType::I256 => sequence_value.into(),
+            AlgebraicType::U256 => (sequence_value as u128).into(),
+            _ => panic!("`{ty:?}` is not a sequence integer type"),
         }
     }
 }

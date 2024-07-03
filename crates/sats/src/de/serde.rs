@@ -1,7 +1,7 @@
-use std::fmt;
-use std::marker::PhantomData;
-
 use super::Deserializer;
+use crate::{i256, u256};
+use core::fmt;
+use core::marker::PhantomData;
 use serde::de as serde;
 
 /// Converts any [`serde::Deserializer`] to a SATS [`Deserializer`]
@@ -79,6 +79,9 @@ impl<'de, D: serde::Deserializer<'de>> Deserializer<'de> for SerdeDeserializer<D
     fn deserialize_u128(self) -> Result<u128, Self::Error> {
         deserialize(self.de)
     }
+    fn deserialize_u256(self) -> Result<u256, Self::Error> {
+        deserialize(self.de)
+    }
     fn deserialize_i8(self) -> Result<i8, Self::Error> {
         deserialize(self.de)
     }
@@ -92,6 +95,9 @@ impl<'de, D: serde::Deserializer<'de>> Deserializer<'de> for SerdeDeserializer<D
         deserialize(self.de)
     }
     fn deserialize_i128(self) -> Result<i128, Self::Error> {
+        deserialize(self.de)
+    }
+    fn deserialize_i256(self) -> Result<i256, Self::Error> {
         deserialize(self.de)
     }
     fn deserialize_f32(self) -> Result<f32, Self::Error> {

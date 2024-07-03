@@ -1,11 +1,10 @@
-use spacetimedb_primitives::ColList;
-use std::collections::BTreeMap;
-
+use super::{Serialize, SerializeArray, SerializeMap, SerializeNamedProduct, SerializeSeqProduct, Serializer};
+use crate::{i256, u256};
 use crate::{
     AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType, F32, F64,
 };
-
-use super::{Serialize, SerializeArray, SerializeMap, SerializeNamedProduct, SerializeSeqProduct, Serializer};
+use spacetimedb_primitives::ColList;
+use std::collections::BTreeMap;
 
 /// Implements [`Serialize`] for a type in a simplified manner.
 ///
@@ -46,13 +45,18 @@ macro_rules! impl_prim {
 
 impl_serialize!([] (), (self, ser) => ser.serialize_seq_product(0)?.end());
 
+// `u8` is implemented below as we wish to provide different `__serialize_array` impl (see below).
 impl_prim! {
-    (bool, serialize_bool) /*(u8, serialize_u8)*/ (u16, serialize_u16)
-    (u32, serialize_u32) (u64, serialize_u64) (u128, serialize_u128) (i8, serialize_i8)
-    (i16, serialize_i16) (i32, serialize_i32) (i64, serialize_i64) (i128, serialize_i128)
+    (bool, serialize_bool)
+                       (u16, serialize_u16) (u32, serialize_u32) (u64, serialize_u64) (u128, serialize_u128) (u256, serialize_u256)
+    (i8, serialize_i8) (i16, serialize_i16) (i32, serialize_i32) (i64, serialize_i64) (i128, serialize_i128) (i256, serialize_i256)
     (f32, serialize_f32) (f64, serialize_f64) (str, serialize_str)
 }
 
+// TODO(Centril): this special case doesn't seem well motivated.
+// Consider generalizing this to apply to all primitive types
+// so that we can move this into `impl_prim!`.
+// This will make BSATN-serializing `[u32]` faster for example.
 impl Serialize for u8 {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_u8(*self)
@@ -105,6 +109,8 @@ impl_serialize!([] AlgebraicValue, (self, ser) => match self {
     Self::U64(v) => ser.serialize_u64(*v),
     Self::I128(v) => ser.serialize_i128(v.0),
     Self::U128(v) => ser.serialize_u128(v.0),
+    Self::I256(v) => ser.serialize_i256(**v),
+    Self::U256(v) => ser.serialize_u256(**v),
     Self::F32(v) => ser.serialize_f32((*v).into()),
     Self::F64(v) => ser.serialize_f64((*v).into()),
     // Self::Bytes(v) => ser.serialize_bytes(v),
@@ -132,6 +138,8 @@ impl_serialize!([] ArrayValue, (self, ser) => match self {
     Self::U64(v) => v.serialize(ser),
     Self::I128(v) => v.serialize(ser),
     Self::U128(v) => v.serialize(ser),
+    Self::I256(v) => v.serialize(ser),
+    Self::U256(v) => v.serialize(ser),
     Self::F32(v) => v.serialize(ser),
     Self::F64(v) => v.serialize(ser),
     Self::String(v) => v.serialize(ser),
@@ -161,6 +169,8 @@ impl_serialize!([] ValueWithType<'_, AlgebraicValue>, (self, ser) => {
             (AlgebraicValue::U64(v), AlgebraicType::U64) => ser.serialize_u64(*v),
             (AlgebraicValue::I128(v), AlgebraicType::I128) => ser.serialize_i128(v.0),
             (AlgebraicValue::U128(v), AlgebraicType::U128) => ser.serialize_u128(v.0),
+            (AlgebraicValue::I256(v), AlgebraicType::I256) => ser.serialize_i256(**v),
+            (AlgebraicValue::U256(v), AlgebraicType::U256) => ser.serialize_u256(**v),
             (AlgebraicValue::F32(v), AlgebraicType::F32) => ser.serialize_f32((*v).into()),
             (AlgebraicValue::F64(v), AlgebraicType::F64) => ser.serialize_f64((*v).into()),
             (AlgebraicValue::String(s), AlgebraicType::String) => ser.serialize_str(s),
@@ -209,6 +219,8 @@ impl_serialize!([] ValueWithType<'_, ArrayValue>, (self, ser) => match (self.val
     (ArrayValue::U64(v), AlgebraicType::U64) => v.serialize(ser),
     (ArrayValue::I128(v), AlgebraicType::I128) => v.serialize(ser),
     (ArrayValue::U128(v), AlgebraicType::U128) => v.serialize(ser),
+    (ArrayValue::I256(v), AlgebraicType::I256) => v.serialize(ser),
+    (ArrayValue::U256(v), AlgebraicType::U256) => v.serialize(ser),
     (ArrayValue::F32(v), AlgebraicType::F32) => v.serialize(ser),
     (ArrayValue::F64(v), AlgebraicType::F64) => v.serialize(ser),
     (ArrayValue::String(v), AlgebraicType::String) => v.serialize(ser),

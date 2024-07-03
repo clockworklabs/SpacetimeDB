@@ -58,6 +58,8 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
         AlgebraicType::U64 => write!(out, "u64")?,
         AlgebraicType::I128 => write!(out, "i128")?,
         AlgebraicType::U128 => write!(out, "u128")?,
+        AlgebraicType::I256 => write!(out, "i256")?,
+        AlgebraicType::U256 => write!(out, "u256")?,
         AlgebraicType::F32 => write!(out, "f32")?,
         AlgebraicType::F64 => write!(out, "f64")?,
         AlgebraicType::String => write!(out, "String")?,
@@ -151,7 +153,7 @@ const ALLOW_UNUSED_IMPORTS: &str = "#![allow(unused_imports)]";
 const SPACETIMEDB_IMPORTS: &[&str] = &[
     "use spacetimedb_sdk::{",
     "\tAddress, ScheduleAt,",
-    "\tsats::{ser::Serialize, de::Deserialize},",
+    "\tsats::{ser::Serialize, de::Deserialize, i256, u256},",
     "\ttable::{TableType, TableIter, TableWithPrimaryKey},",
     "\treducer::{Reducer, ReducerCallbackId, Status},",
     "\tidentity::Identity,",

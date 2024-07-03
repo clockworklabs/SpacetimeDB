@@ -561,6 +561,8 @@ fn is_integer_type(p: &Path) -> bool {
         matches!(
             i.to_string().as_str(),
             "u8" | "i8" | "u16" | "i16" | "u32" | "i32" | "u64" | "i64" | "u128" | "i128"
+             // These are not Rust int primitives but we still support them.
+            | "u256" | "i256"
         )
     })
 }
@@ -613,7 +615,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         if col_attr.contains(ColumnAttribute::AUTO_INC)
             && !matches!(field.ty, syn::Type::Path(p) if is_integer_type(&p.path))
         {
-            return Err(syn::Error::new_spanned(field.ident, "An `autoinc` or `identity` column must be one of the integer types: u8, i8, u16, i16, u32, i32, u64, i64, u128, i128"));
+            return Err(syn::Error::new_spanned(field.ident, "An `autoinc` or `identity` column must be one of the integer types: u8, i8, u16, i16, u32, i32, u64, i64, u128, i128, u256, i256"));
         }
 
         let column = Column {

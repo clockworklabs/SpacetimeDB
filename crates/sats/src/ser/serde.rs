@@ -3,8 +3,9 @@ use crate::{
     algebraic_value::ser::ValueSerializer,
     ser::{self, Serializer},
 };
+use crate::{i256, u256};
+use core::fmt;
 use serde::ser as serde;
-use std::fmt;
 
 /// Converts any [`serde::Serializer`] to a SATS [`Serializer`]
 /// so that Serde's data formats can be reused.
@@ -55,6 +56,9 @@ impl<S: serde::Serializer> Serializer for SerdeSerializer<S> {
     fn serialize_u128(self, v: u128) -> Result<Self::Ok, Self::Error> {
         self.ser.serialize_u128(v).map_err(SerdeError)
     }
+    fn serialize_u256(self, v: u256) -> Result<Self::Ok, Self::Error> {
+        serde::Serialize::serialize(&v, self.ser).map_err(SerdeError)
+    }
     fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error> {
         self.ser.serialize_i8(v).map_err(SerdeError)
     }
@@ -69,6 +73,9 @@ impl<S: serde::Serializer> Serializer for SerdeSerializer<S> {
     }
     fn serialize_i128(self, v: i128) -> Result<Self::Ok, Self::Error> {
         self.ser.serialize_i128(v).map_err(SerdeError)
+    }
+    fn serialize_i256(self, v: i256) -> Result<Self::Ok, Self::Error> {
+        serde::Serialize::serialize(&v, self.ser).map_err(SerdeError)
     }
     fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
         self.ser.serialize_f32(v).map_err(SerdeError)

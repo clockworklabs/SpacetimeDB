@@ -1,5 +1,5 @@
 use crate::{de::fmt_fn, AlgebraicType};
-use std::fmt;
+use core::fmt;
 
 /// Wraps an algebraic `ty` in a `Display` impl using a object/map JSON-like notation.
 pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + fmt::Display {
@@ -42,6 +42,8 @@ pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + fmt::Display {
         AlgebraicType::U64 => write!(f, "{{ ty_: U64 }}"),
         AlgebraicType::I128 => write!(f, "{{ ty_: I128 }}"),
         AlgebraicType::U128 => write!(f, "{{ ty_: U128 }}"),
+        AlgebraicType::I256 => write!(f, "{{ ty_: I256 }}"),
+        AlgebraicType::U256 => write!(f, "{{ ty_: U256 }}"),
         AlgebraicType::F32 => write!(f, "{{ ty_: F32 }}"),
         AlgebraicType::F64 => write!(f, "{{ ty_: F64 }}"),
         AlgebraicType::String => write!(f, "{{ ty_: String }}"),

@@ -5,3 +5,5 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc aaa05e16925268348653cb8c1945d820f2f8da931fd7ff9a895178d443e0e64f # shrinks to (ty, val) = (Builtin(Array(ArrayType { elem_ty: Builtin(U8) })), Array([]))
+cc f7d1b5754a5194cf0e82be30da1ea9469ba18ab1a813342baecf8127bc28dfdf # shrinks to (ty, val) = (Builtin(Array(ArrayType { elem_ty: Builtin(U256) })), Array([]))
+cc 1d08298a411c269c6d969f50e19c1022f00bc5e9cbf4600382aa00b200e1cd82 # shrinks to (ty, val) = (Builtin(Array(ArrayType { elem_ty: Builtin(U256) })), Array([]))
