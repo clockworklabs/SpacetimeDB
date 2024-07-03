@@ -1,7 +1,7 @@
 use super::util::fmt_fn;
 
 use convert_case::{Case, Casing};
-use spacetimedb_lib::sats::db::def::TableSchema;
+use spacetimedb_lib::db::def::TableSchema;
 use spacetimedb_lib::{
     sats::{AlgebraicTypeRef, ArrayType, BuiltinType, MapType},
     AlgebraicType, ProductType, ProductTypeElement, ReducerDef, SumType, TableDesc,

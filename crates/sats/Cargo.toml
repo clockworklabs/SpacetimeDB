@@ -25,7 +25,6 @@ metrics_impls = ["dep:spacetimedb-metrics"]
 
 [dependencies]
 spacetimedb-bindings-macro.workspace = true
-spacetimedb-data-structures.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-metrics = { workspace = true, optional = true }
 

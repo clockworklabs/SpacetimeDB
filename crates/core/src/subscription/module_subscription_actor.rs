@@ -215,9 +215,8 @@ mod tests {
     use crate::error::DBError;
     use crate::execution_context::ExecutionContext;
     use spacetimedb_client_api_messages::websocket::Subscribe;
+    use spacetimedb_lib::db::{auth::StAccess, error::AuthError};
     use spacetimedb_lib::{error::ResultTest, AlgebraicType, Identity};
-    use spacetimedb_sats::db::auth::StAccess;
-    use spacetimedb_sats::db::error::AuthError;
     use spacetimedb_sats::product;
     use spacetimedb_vm::errors::ErrorVm;
     use std::time::Instant;

@@ -13,11 +13,11 @@ use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, TableError};
 use crate::execution_context::ExecutionContext;
 use derive_more::From;
+use spacetimedb_lib::db::auth::{StAccess, StTableType};
+use spacetimedb_lib::db::def::*;
 use spacetimedb_lib::{Address, Identity, SumType};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
-use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{

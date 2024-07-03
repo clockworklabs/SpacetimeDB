@@ -9,6 +9,7 @@ use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgGroup};
 use convert_case::{Case, Casing};
 use duct::cmd;
+use spacetimedb_lib::db::def::ColumnDef;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::sats::{AlgebraicType, Typespace};
 use spacetimedb_lib::MODULE_ABI_MAJOR_VERSION;
@@ -275,7 +276,7 @@ pub fn extract_from_moduledef(module: ModuleDef) -> (GenCtx, impl Iterator<Item 
     let tables: Vec<_> = tables
         .into_iter()
         .map(|mut x| {
-            x.schema.columns = typespace[x.data].as_product().unwrap().clone().into();
+            x.schema.columns = ColumnDef::from_product_type(typespace[x.data].as_product().unwrap().clone());
             x
         })
         .collect();

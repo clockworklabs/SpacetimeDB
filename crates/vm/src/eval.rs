@@ -90,8 +90,8 @@ pub mod test_helpers {
     use crate::relation::MemTable;
     use core::hash::BuildHasher as _;
     use spacetimedb_data_structures::map::DefaultHashBuilder;
+    use spacetimedb_lib::relation::{Column, FieldName, Header};
     use spacetimedb_primitives::TableId;
-    use spacetimedb_sats::relation::{Column, FieldName, Header};
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, ProductType, ProductValue};
     use std::sync::Arc;
 
@@ -179,10 +179,10 @@ pub mod tests {
     use crate::expr::{CrudExpr, Query, QueryExpr, SourceExpr, SourceSet};
     use crate::iterators::RelIter;
     use crate::relation::MemTable;
+    use spacetimedb_lib::db::error::RelationError;
     use spacetimedb_lib::operator::{OpCmp, OpLogic};
+    use spacetimedb_lib::relation::{FieldName, Header};
     use spacetimedb_primitives::ColId;
-    use spacetimedb_sats::db::error::RelationError;
-    use spacetimedb_sats::relation::{FieldName, Header};
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
 
     /// From an original source of `result`s, applies `queries` and returns a final set of results.

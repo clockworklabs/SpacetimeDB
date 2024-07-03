@@ -4,9 +4,9 @@ use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
 use core::ops::Deref;
 use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_lib::db::def::TableSchema;
+use spacetimedb_lib::relation::{self, ColExpr, DbTable, FieldName, Header};
 use spacetimedb_primitives::ColId;
-use spacetimedb_sats::db::def::TableSchema;
-use spacetimedb_sats::relation::{self, ColExpr, DbTable, FieldName, Header};
 use spacetimedb_vm::expr::{CrudExpr, Expr, FieldExpr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
 use std::sync::Arc;
@@ -231,10 +231,10 @@ mod tests {
     use crate::execution_context::ExecutionContext;
     use crate::sql::execute::tests::run_for_testing;
     use crate::vm::tests::create_table_with_rows;
+    use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::{Address, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
-    use spacetimedb_sats::db::auth::StAccess;
     use spacetimedb_sats::{
         product, satn, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, Typespace, ValueWithType,
     };

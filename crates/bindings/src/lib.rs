@@ -12,10 +12,10 @@ pub mod rt;
 pub mod time_span;
 mod timestamp;
 
-use crate::sats::db::attr::ColumnAttribute;
-use crate::sats::db::def::IndexType;
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
-use spacetimedb_lib::sats::db::auth::StAccess;
+use spacetimedb_lib::db::attr::ColumnAttribute;
+use spacetimedb_lib::db::auth::StAccess;
+use spacetimedb_lib::db::def::IndexType;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, impl_st};
 use spacetimedb_lib::{bsatn, ProductType, ProductValue};
 use std::cell::RefCell;

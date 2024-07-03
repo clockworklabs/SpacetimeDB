@@ -1,7 +1,7 @@
 use super::datastore::locking_tx_datastore::{Iter, IterByColRange};
 use crate::error::DBError;
 use core::ops::RangeBounds;
-use spacetimedb_sats::relation::DbTable;
+use spacetimedb_lib::relation::DbTable;
 use spacetimedb_sats::AlgebraicValue;
 
 /// Common wrapper for relational iterators that work like cursors.

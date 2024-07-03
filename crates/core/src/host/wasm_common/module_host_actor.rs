@@ -29,7 +29,7 @@ use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::const_unwrap;
 use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
-use spacetimedb_sats::db::def::TableDef;
+use spacetimedb_lib::db::def::TableDef;
 
 use super::*;
 
