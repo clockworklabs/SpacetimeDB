@@ -24,9 +24,7 @@ class CreateProject(unittest.TestCase):
                 spacetime("init", "--lang=csharp", tmpdir)
 
                 packed_projects = ["BSATN.Runtime", "Runtime"]
-                restore_sources = [str(bindings / project / "bin" / "Release") for project in packed_projects]
-                # note that nuget URL comes last, which ensures local sources should override it.
-                restore_sources.append("https://api.nuget.org/v3/index.json")
+                restore_sources = [str(bindings / project) for project in packed_projects]
 
                 csproj = Path(tmpdir) / "StdbModule.csproj"
                 with open(csproj, "r") as f:
@@ -35,7 +33,7 @@ class CreateProject(unittest.TestCase):
                 contents = contents.replace(
                     "</PropertyGroup>",
                     # note that nuget URL comes last, which ensures local sources should override it.
-                    f"""<RestoreSources>{str.join(";", restore_sources)}</RestoreSources>
+                    f"""<RestoreAdditionalProjectSources>{str.join(";", restore_sources)}</RestoreAdditionalProjectSources>
 </PropertyGroup>""",
                 )
                 with open(csproj, "w") as f:
