@@ -17,6 +17,7 @@ class CreateProject(unittest.TestCase):
 
         try:
 
+            run_cmd("dotnet", "nuget", "locals", "all", "--clear", cwd=bindings, capture_stderr=True)
             run_cmd("dotnet", "workload", "install", "wasi-experimental")
             run_cmd("dotnet", "pack", cwd=bindings, capture_stderr=True)
 
