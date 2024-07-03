@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::{def::*, identifier::Identifier};
-use spacetimedb_sats::db::auth::StTableType;
+use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_sats::AlgebraicType;
 
 /// A plan for an automatic migration.
@@ -318,11 +318,11 @@ pub fn ponder_automigrate<'def>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use spacetimedb_sats::db::{auth::StAccess, raw_def::*};
+    use spacetimedb_lib::db::{auth::StAccess, raw_def::*};
 
     #[test]
     fn successful_auto_migration() {
-        let old_def: DatabaseDef = RawDatabaseDef::new()
+        let old_def: DatabaseDef = RawDatabaseDefV1::new()
             .with_table_and_product_type(
                 RawTableDef::new(
                     "Apples".into(),
@@ -334,17 +334,20 @@ mod tests {
                 )
                 .with_column_sequence("id")
                 .with_unique_constraint(&["id"])
-                .with_index(&["id"], IndexType::BTree)
-                .with_index(&["id", "name"], IndexType::BTree),
+                .with_index(&["id"], IndexType::BTree, None)
+                .with_index(&["id", "name"], IndexType::BTree, None),
             )
-            .with_table_and_product_type(RawTableDef::new(
-                "Bananas".into(),
-                vec![
-                    RawColumnDef::new("id".into(), AlgebraicType::U64),
-                    RawColumnDef::new("name".into(), AlgebraicType::String),
-                    RawColumnDef::new("count".into(), AlgebraicType::U16),
-                ],
-            ))
+            .with_table_and_product_type(
+                RawTableDef::new(
+                    "Bananas".into(),
+                    vec![
+                        RawColumnDef::new("id".into(), AlgebraicType::U64),
+                        RawColumnDef::new("name".into(), AlgebraicType::String),
+                        RawColumnDef::new("count".into(), AlgebraicType::U16),
+                    ],
+                )
+                .with_access(StAccess::Public), // change access
+            )
             .with_table_and_product_type(
                 RawTableDef::new(
                     "Deliveries".into(),
@@ -368,7 +371,7 @@ mod tests {
             .try_into()
             .expect("old_def should be a valid database definition");
 
-        let new_def: DatabaseDef = RawDatabaseDef::new()
+        let new_def: DatabaseDef = RawDatabaseDefV1::new()
             .with_table_and_product_type(
                 RawTableDef::new(
                     "Apples".into(),
@@ -380,9 +383,9 @@ mod tests {
                 )
                 // remove sequence
                 // remove unique constraint
-                .with_index(&["id"], IndexType::BTree)
+                .with_index(&["id"], IndexType::BTree, None)
                 // remove ["id", "name"] index
-                .with_index(&["name"], IndexType::BTree), // add index
+                .with_index(&["name"], IndexType::BTree, None), // add index
             )
             .with_table_and_product_type(
                 RawTableDef::new(
@@ -401,7 +404,7 @@ mod tests {
                     "Oranges".into(),
                     vec![RawColumnDef::new("id".into(), AlgebraicType::U64)],
                 )
-                .with_index(&["id"], IndexType::BTree)
+                .with_index(&["id"], IndexType::BTree, None)
                 .with_column_sequence("id")
                 .with_unique_constraint(&["id"]),
             ) // add one table with the works
@@ -480,7 +483,7 @@ mod tests {
 
     #[test]
     fn auto_migration_errors() {
-        let old_def: DatabaseDef = RawDatabaseDef::new()
+        let old_def: DatabaseDef = RawDatabaseDefV1::new()
             .with_table_and_product_type(
                 RawTableDef::new(
                     "Apples".into(),
@@ -503,7 +506,7 @@ mod tests {
             .try_into()
             .expect("old_def should be a valid database definition");
 
-        let new_def: DatabaseDef = RawDatabaseDef::new()
+        let new_def: DatabaseDef = RawDatabaseDefV1::new()
             .with_table_and_product_type(
                 RawTableDef::new(
                     "Apples".into(),

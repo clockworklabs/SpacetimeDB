@@ -1,10 +1,10 @@
 use crate::error::SchemaErrors;
 use crate::identifier::Identifier;
 use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_lib::db::auth::{StAccess, StTableType};
+use spacetimedb_lib::db::raw_def::*;
+use spacetimedb_lib::relation::FieldName;
 use spacetimedb_primitives::{ColId, ColList, ColListBuilder};
-use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::raw_def::*;
-use spacetimedb_sats::relation::FieldName;
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace};
 
@@ -25,7 +25,7 @@ pub struct DatabaseDef {
 impl DatabaseDef {
     /// Validate a RawDatabaseDef into a DatabaseDef.
     /// This also performs some canonicalization (identifier canonicalization, sorting lists of constraints, etc.)
-    pub fn validate(raw_def: &RawDatabaseDef) -> Result<DatabaseDef, SchemaErrors> {
+    pub fn validate(raw_def: &RawDatabaseDefV1) -> Result<DatabaseDef, SchemaErrors> {
         crate::validate::validate_database(raw_def)
     }
 
@@ -40,10 +40,10 @@ impl DatabaseDef {
     }
 }
 
-impl TryFrom<RawDatabaseDef> for DatabaseDef {
+impl TryFrom<RawDatabaseDefV1> for DatabaseDef {
     type Error = SchemaErrors;
 
-    fn try_from(value: RawDatabaseDef) -> Result<Self, Self::Error> {
+    fn try_from(value: RawDatabaseDefV1) -> Result<Self, Self::Error> {
         DatabaseDef::validate(&value)
     }
 }
@@ -64,28 +64,29 @@ pub struct SequenceDef {
 ///
 /// Cannot be created directly. Instead, add a [spacetimedb_sats::db::raw_def::RawIndexDef] to a [spacetimedb_sats::db::raw_def::RawDatabaseDef] and call [spacetimedb_sats::db::raw_def::RawDatabaseDef::validate].
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[non_exhaustive]
 pub struct IndexDef {
     /// The type of the index.
     pub index_type: IndexType,
     /// List of column positions that compose the index.
     pub column_names: Vec<Identifier>,
-    pub(crate) _private: (),
 }
 
 /// A struct representing the validated definition of a database column.
 ///
 /// Cannot be created directly. Instead, add a [spacetimedb_sats::db::raw_def::RawColumnDef] to a [spacetimedb_sats::db::raw_def::RawDatabaseDef] and call [spacetimedb_sats::db::raw_def::RawDatabaseDef::validate].
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[non_exhaustive]
 pub struct ColumnDef {
     /// The name of the column.
     pub col_name: Identifier,
     /// The type of the column.
     pub col_type: AlgebraicType,
-    pub(crate) _private: (),
 }
 
 /// Requires that the projection of the table onto these columns is an bijection.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[non_exhaustive]
 pub struct UniqueConstraintDef {
     pub column_names: Vec<Identifier>,
     pub(crate) _private: (),
@@ -105,6 +106,7 @@ pub struct UniqueConstraintDef {
 /// - The table's column types may refer only to types in the containing DatabaseDef's typespace.
 /// - The table's column names must be unique.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
+#[non_exhaustive]
 pub struct TableDef {
     pub table_name: Identifier,
     pub columns: Vec<ColumnDef>,

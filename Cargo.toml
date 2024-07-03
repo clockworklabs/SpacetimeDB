@@ -128,9 +128,15 @@ colored = "2.0.0"
 console = { version = "0.15.6" }
 convert_case = "0.6.0"
 crc32c = "0.6.4"
-criterion = { version = "0.5.1", features = ["async", "async_tokio", "html_reports"] }
+criterion = { version = "0.5.1", features = [
+  "async",
+  "async_tokio",
+  "html_reports",
+] }
 crossbeam-channel = "0.5"
-cursive = { version = "0.20", default-features = false, features = ["crossterm-backend"] }
+cursive = { version = "0.20", default-features = false, features = [
+  "crossterm-backend",
+] }
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 derive_more = "0.99"
 dirs = "5.0.1"
@@ -195,7 +201,7 @@ scoped-tls = "1.0.1"
 scopeguard = "1.1.0"
 second-stack = "0.3"
 sendgrid = "0.21"
-serde = "1.0.136"
+serde = { version = "1.0.136", features = ["derive"] }
 serde_json = { version = "1.0.87", features = ["raw_value"] }
 serde_path_to_error = "0.1.9"
 serde_with = { version = "3.3.0", features = ["base64", "hex"] }
@@ -212,7 +218,9 @@ sqllogictest-engines = "0.17"
 sqlparser = "0.38.0"
 strum = { version = "0.25.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }
-syntect = { version = "5.0.0", default-features = false, features = ["default-fancy"] }
+syntect = { version = "5.0.0", default-features = false, features = [
+  "default-fancy",
+] }
 tabled = "0.14.0"
 tar = "0.4"
 tempdir = "0.3.7"
@@ -241,7 +249,12 @@ walkdir = "2.2.5"
 wasmbin = "0.6"
 
 
-wasmtime = { version = "15", default-features = false, features = ["cranelift", "demangle", "addr2line", "cache"] }
+wasmtime = { version = "15", default-features = false, features = [
+  "cranelift",
+  "demangle",
+  "addr2line",
+  "cache",
+] }
 
 # We use the "ondemand" feature to allow connecting after the start,
 # and reconnecting, from the tracy client to the database.

@@ -1,15 +1,13 @@
 use crate::def::*;
+use spacetimedb_lib::db::auth::{StAccess, StTableType};
+use spacetimedb_lib::db::column_ordering::is_sorted_by;
+use spacetimedb_lib::db::raw_def::IndexType;
+use spacetimedb_lib::relation::{Column, DbTable, FieldName, Header};
 use spacetimedb_primitives::*;
-use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::column_ordering::is_sorted_by;
-use spacetimedb_sats::db::raw_def::IndexType;
 use spacetimedb_sats::product_value::InvalidFieldError;
-use spacetimedb_sats::relation::{Column, DbTable, FieldName, Header};
 use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement};
 use std::collections::BTreeMap;
 use std::sync::Arc;
-
-const PROBABLY_UNALLOCATED: u32 = u32::MAX;
 
 /// Represents a schema definition for a database sequence.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,14 +27,14 @@ impl SequenceSchema {
     /// Creates a new [SequenceSchema] instance from a [SequenceDef] and a `table_id`.
     /// The `SchemaId` is set to a dummy value.
     ///
-    /// # Arguments
+    /// # Parameters
     ///
     /// * `table_id` - The ID of the table associated with the sequence.
     /// * `table_def` - The [TableDef] to derive the schema from.
     /// * `sequence` - The [SequenceDef] to derive the schema from.
     pub fn from_def(table_id: TableId, table_def: &TableDef, sequence: &SequenceDef) -> Self {
         Self {
-            sequence_id: SequenceId(PROBABLY_UNALLOCATED), // Will be replaced later when created
+            sequence_id: SequenceId(PROBABLY_UNALLOCATED_ID), // should be updated later
             table_id,
             col_pos: table_def
                 .get_column_id(&sequence.column_name)
@@ -76,7 +74,7 @@ impl IndexSchema {
             .any(|unique_constraint| unique_constraint.column_names == sorted_column_names);
 
         IndexSchema {
-            index_id: IndexId(PROBABLY_UNALLOCATED), // Set to 0 as it may be assigned later.
+            index_id: IndexId(PROBABLY_UNALLOCATED_ID), // should be updated later
             table_id,
             index_type: index.index_type,
             is_unique,
@@ -100,7 +98,7 @@ pub struct ColumnSchema {
 impl ColumnSchema {
     /// Constructs a [ColumnSchema] from a given [ColumnDef] and `table_id`.
     ///
-    /// # Arguments
+    /// # Parameters
     ///
     /// * `table_id`: Identifier of the table to which the column belongs.
     /// * `col_pos`: Position of the column within the table.
@@ -117,6 +115,7 @@ impl ColumnSchema {
     }
 }
 
+/// Requires that the projection of the table onto these columns is an bijection.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UniqueConstraintSchema {
     pub constraint_id: ConstraintId,
@@ -125,9 +124,12 @@ pub struct UniqueConstraintSchema {
 }
 
 impl UniqueConstraintSchema {
+    /// Construct a UniqueConstraintSchema from a definition.
+    /// `table_id` identifies the table that the constraint is on.
+    /// `constraint_id` will be set to a dummy value that must be updated later.
     pub fn from_def(table_id: TableId, table_def: &TableDef, constraint: &UniqueConstraintDef) -> Self {
         UniqueConstraintSchema {
-            constraint_id: ConstraintId(PROBABLY_UNALLOCATED), // Set to 0 as it may be assigned later.
+            constraint_id: ConstraintId(PROBABLY_UNALLOCATED_ID), // should be updated later
             table_id,
             columns: table_def
                 .get_column_list(&constraint.column_names)
@@ -140,6 +142,7 @@ impl UniqueConstraintSchema {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TableConstraintSchema {
+    /// A unique constraint.
     Unique(UniqueConstraintSchema),
 }
 
@@ -190,15 +193,7 @@ impl TableSchema {
         table_type: StTableType,
         table_access: StAccess,
     ) -> Self {
-        let row_type = ProductType::new(
-            columns
-                .iter()
-                .map(|c| ProductTypeElement {
-                    name: Some(c.col_name.clone()),
-                    algebraic_type: c.col_type.clone(),
-                })
-                .collect(),
-        );
+        let row_type = ProductType::new(columns.iter().map(|c| (&*c.col_name, c.col_type.clone())).collect());
 
         Self {
             table_id,
@@ -217,13 +212,15 @@ impl TableSchema {
         self.columns
     }
 
-    /// IMPORTANT: Ban changes from outside so [Self::row_type] won't get invalidated.
+    /// Accesses the column definitions of the table immutably.
+    ///
+    /// Mutable accessors are deliberately not provided.
     pub fn columns(&self) -> &[ColumnSchema] {
         &self.columns
     }
 
-    /// Clear all the [Self::indexes], [Self::sequences] & [Self::constraints]
-    pub fn clear_adjacent_schemas(&mut self) {
+    /// Clears all the [Self::indexes], [Self::sequences] & [Self::constraints]
+    pub fn clear_indexes_sequences_constraints(&mut self) {
         self.indexes.clear();
         self.sequences.clear();
         self.constraints.clear();
@@ -277,15 +274,12 @@ impl TableSchema {
         self.constraints.retain(|x| x.constraint_id() != constraint_id)
     }
 
-    /// Check if the specified `field` exists in this [TableSchema].
-    ///
-    /// # Warning
-    ///
-    /// This function ignores the `table_id` when searching for a column.
-    pub fn get_column_by_field(&self, field: FieldName) -> Option<&ColumnSchema> {
+    /// Check if the specified `col` exists in this [TableSchema].
+    pub fn get_column_by_id(&self, col: ColId) -> Option<&ColumnSchema> {
         self.get_column(field.col.idx())
     }
 
+    /// Get a references to a sequence of columns.
     pub fn get_columns(&self, columns: &ColList) -> Vec<(ColId, Option<&ColumnSchema>)> {
         columns.iter().map(|col| (col, self.columns.get(col.idx()))).collect()
     }
@@ -305,7 +299,7 @@ impl TableSchema {
     /// Project the fields from the supplied `indexes`.
     pub fn project(&self, indexes: impl Iterator<Item = ColId>) -> Result<Vec<&ColumnSchema>, InvalidFieldError> {
         indexes
-            .map(|index| self.get_column(index.0 as usize).ok_or_else(|| index.into()))
+            .map(|index| self.get_column(index.idx()).ok_or_else(|| index.into()))
             .collect()
     }
 
@@ -342,10 +336,7 @@ impl TableSchema {
             table_def
                 .columns
                 .iter()
-                .map(|c| ProductTypeElement {
-                    name: Some((&*c.col_name).into()),
-                    algebraic_type: c.col_type.clone(),
-                })
+                .map(|c| (&*c.col_name, c.col_type.clone()))
                 .collect(),
         );
 
@@ -407,7 +398,7 @@ impl TableSchema {
                 }
 
                 generated_indexes.push(IndexSchema {
-                    index_id: IndexId(PROBABLY_UNALLOCATED), // Set to 0 as it may be assigned later.
+                    index_id: IndexId(PROBABLY_UNALLOCATED_ID), // should be assigned later
                     table_id,
                     index_type: IndexType::BTree,
                     is_unique: true,
@@ -486,11 +477,11 @@ impl From<&TableSchema> for Header {
 mod tests {
     use super::*;
     use crate::def::DatabaseDef;
-    use spacetimedb_sats::db::raw_def::*;
+    use spacetimedb_lib::db::raw_def::*;
 
     #[test]
     fn generated_indexes() {
-        let def: DatabaseDef = RawDatabaseDef::new()
+        let def: DatabaseDef = RawDatabaseDefV1::new()
             .with_table_and_product_type(
                 RawTableDef::new(
                     "Bananas".into(),
@@ -501,7 +492,7 @@ mod tests {
                 )
                 // this constraint has a matching index, which should be used
                 .with_unique_constraint(&["a"])
-                .with_index(&["a"], IndexType::BTree)
+                .with_index(&["a"], IndexType::BTree, None)
                 // this constraint has no matching index, so one should be generated
                 .with_unique_constraint(&["b"]),
             )

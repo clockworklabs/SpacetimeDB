@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::fmt::Debug;
 
-use crate::{AlgebraicType, BuiltinType, Typespace};
+use spacetimedb_sats::{AlgebraicType, BuiltinType, Typespace};
 
 /// Canonical ordering for fields of a Table.
 /// Does not currently apply to all AlgebraicTypes.

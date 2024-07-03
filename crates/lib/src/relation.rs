@@ -1,12 +1,12 @@
-use crate::algebraic_value::AlgebraicValue;
 use crate::db::auth::{StAccess, StTableType};
-use crate::db::error::{RelationError, TypeError};
-use crate::satn::Satn;
-use crate::{algebraic_type, AlgebraicType};
+use crate::error::{RelationError, TypeError};
 use core::fmt;
 use core::hash::Hash;
 use derive_more::From;
 use spacetimedb_primitives::{ColId, ColList, ColListBuilder, TableId};
+use spacetimedb_sats::algebraic_value::AlgebraicValue;
+use spacetimedb_sats::satn::Satn;
+use spacetimedb_sats::{algebraic_type, AlgebraicType};
 use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -110,6 +110,7 @@ pub struct Header {
     /// FIXME(jgilles): Specification needed: Headers can be projected. Which IDs are used after the headers are projected?
     /// Are the IDs just indexes into `fields`, or are they an index into a `TableSchema`
     pub unique_constraints: Vec<ColList>,
+    // FIXME(jgilles): we also need `indexed` constraints for backwards-compatibility.
 }
 
 /*

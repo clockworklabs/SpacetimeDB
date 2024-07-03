@@ -1,24 +1,23 @@
 use itertools::Itertools;
 use spacetimedb_data_structures::map::{HashMap, HashSet};
 
-use spacetimedb_sats::{
-    db::{
-        column_ordering::{canonical_column_ordering, is_sorted_by},
-        raw_def::{RawColumnDef, RawDatabaseDef, RawIndexDef, RawScheduleDef, RawSequenceDef, RawTableDef, IndexType, RawUniqueConstraintDef},
-    },
-    typespace::TypeRefError,
-    AlgebraicType, AlgebraicTypeRef, ProductType, SumType, Typespace,
-};
 use crate::{
-        def::{ColumnDef, DatabaseDef, DefLookup, IndexDef, ScheduleDef, SequenceDef, TableDef, UniqueConstraintDef},
-        error::{SchemaError, SchemaErrors},
-        identifier::Identifier,
+    def::{ColumnDef, DatabaseDef, DefLookup, IndexDef, ScheduleDef, SequenceDef, TableDef, UniqueConstraintDef},
+    error::{SchemaError, SchemaErrors},
+    identifier::Identifier,
 };
-
+use spacetimedb_lib::db::{
+    column_ordering::{canonical_column_ordering, is_sorted_by},
+    raw_def::{
+        IndexType, RawColumnDef, RawDatabaseDefV1, RawIndexDef, RawScheduleDef, RawSequenceDef, RawTableDef,
+        RawUniqueConstraintDef,
+    },
+};
+use spacetimedb_sats::{typespace::TypeRefError, AlgebraicType, AlgebraicTypeRef, ProductType, SumType, Typespace};
 
 /// Validate a schema.
-/// Re-exported as `RawDatabaseDef::validate`.
-pub(crate) fn validate_database(def: &RawDatabaseDef) -> Result<DatabaseDef, SchemaErrors> {
+/// Re-exported as `RawDatabaseDefV1::validate`.
+pub(crate) fn validate_database(def: &RawDatabaseDefV1) -> Result<DatabaseDef, SchemaErrors> {
     let mut errors = SchemaErrors(Vec::new());
 
     // Note: this is a general pattern used in this file.
@@ -35,7 +34,6 @@ pub(crate) fn validate_database(def: &RawDatabaseDef) -> Result<DatabaseDef, Sch
         // This is a postcondition of the validation functions.
         Ok(DatabaseDef {
             tables: tables.expect("No errors should mean validation succeeded"),
-            // we could add additional validation here, but I don't know what would be useful to check.
             typespace: def.typespace.clone(),
         })
     } else {
@@ -46,7 +44,7 @@ pub(crate) fn validate_database(def: &RawDatabaseDef) -> Result<DatabaseDef, Sch
 /// Validate a table.
 ///
 /// Returns None if and only if errors have been pushed to `errors`.
-fn validate_table(errors: &mut SchemaErrors, def: &RawDatabaseDef, table: &RawTableDef) -> Option<TableDef> {
+fn validate_table(errors: &mut SchemaErrors, def: &RawDatabaseDefV1, table: &RawTableDef) -> Option<TableDef> {
     let table_name = errors.unpack(
         Identifier::new(&table.table_name).map_err(|error| SchemaError::InvalidTableName {
             table: table.table_name.clone(),
@@ -54,7 +52,7 @@ fn validate_table(errors: &mut SchemaErrors, def: &RawDatabaseDef, table: &RawTa
         }),
     ); // we do NOT ? here, we continue, to collect all errors possible.
 
-    // We pass this specific thing to later validation steps.
+    // We pass `columns` to later validation steps.
     // That's because we need to look up *canonicalized* column names.
     let columns = table
         .columns
@@ -81,63 +79,18 @@ fn validate_table(errors: &mut SchemaErrors, def: &RawDatabaseDef, table: &RawTa
         .collect::<Option<Vec<SequenceDef>>>();
 
     // outer option: validation
-    // inner option: data is optional 
-    let schedule: Option<Option<ScheduleDef>> = 
+    // inner option: data is optional
+    let schedule: Option<Option<ScheduleDef>> =
     // what we really want here would be some sort of Option<Option<T>>.transpose(), but that doesn't seem to exist.
     if let Some(schedule) = &table.schedule {
         validate_schedule(errors, def, table, &columns, schedule).map(Some)
     } else {
         Some(None)
     };
-    
+
     if let Some(columns) = &columns {
-        let columns_sorted = is_sorted_by(columns, |c1, c2| {
-            canonical_column_ordering(
-                &def.typespace,
-                (&c1.col_name, &c1.col_type),
-                (&c2.col_name, &c2.col_type),
-            )
-        });
-
-        if !columns_sorted {
-            let mut correct = columns.clone();
-            correct.sort_by(|c1, c2| {
-                canonical_column_ordering(
-                    &def.typespace,
-                    (&c1.col_name, &c1.col_type),
-                    (&c2.col_name, &c2.col_type),
-                )
-            });
-            errors.0.push(SchemaError::TableColumnsNotOrdered {
-                table: table.table_name.clone(),
-                given: columns
-                    .iter()
-                    .map(|c| ((*c.col_name).into(), c.col_type.clone()))
-                    .collect(),
-                correct: correct
-                    .iter()
-                    .map(|c| ((*c.col_name).into(), c.col_type.clone()))
-                    .collect(),
-            });
-            return None;
-        }
-
-        if let Some(AlgebraicType::Product(product_type)) = def.typespace.get(table.product_type_ref) {
-            for (i, (product_type_element, column)) in product_type.elements.iter().zip(columns.iter()).enumerate() {
-                if product_type_element.name.as_deref() != Some(&*column.col_name) {
-                    errors.0.push(SchemaError::ProductTypeColumnMismatch {
-                        table: table.table_name.clone(),
-                        column_index: i,
-                    });
-                    return None;
-                }
-            }
-        } else {
-            errors.0.push(SchemaError::UninitializedProductTypeRef {
-                table: table.table_name.clone(),
-            });
-            return None;
-        }
+        validate_column_ordering(errors, def, table, columns)?;
+        validate_table_product_type(errors, def, table, columns)?;
     }
 
     if let (
@@ -174,12 +127,80 @@ fn validate_table(errors: &mut SchemaErrors, def: &RawDatabaseDef, table: &RawTa
     }
 }
 
+fn validate_column_ordering(
+    errors: &mut SchemaErrors,
+    def: &RawDatabaseDefV1,
+    table: &RawTableDef,
+    columns: &Vec<ColumnDef>,
+) -> Option<()> {
+    let columns_sorted = is_sorted_by(columns, |c1, c2| {
+        canonical_column_ordering(
+            &def.typespace,
+            (&c1.col_name, &c1.col_type),
+            (&c2.col_name, &c2.col_type),
+        )
+    });
+
+    if !columns_sorted {
+        let mut correct = columns.clone();
+        correct.sort_by(|c1, c2| {
+            canonical_column_ordering(
+                &def.typespace,
+                (&c1.col_name, &c1.col_type),
+                (&c2.col_name, &c2.col_type),
+            )
+        });
+        errors.0.push(SchemaError::TableColumnsNotOrdered {
+            table: table.table_name.clone(),
+            given: columns
+                .iter()
+                .map(|c| ((*c.col_name).into(), c.col_type.clone()))
+                .collect(),
+            correct: correct
+                .iter()
+                .map(|c| ((*c.col_name).into(), c.col_type.clone()))
+                .collect(),
+        });
+        // Table columns not being ordered invalidates the table, but this will not be caught
+        // by anything later on, so return early.
+        return None;
+    }
+    Some(())
+}
+
+fn validate_table_product_type(
+    errors: &mut SchemaErrors,
+    def: &RawDatabaseDefV1,
+    table: &RawTableDef,
+    columns: &Vec<ColumnDef>,
+) -> Option<()> {
+    if let Some(AlgebraicType::Product(product_type)) = def.typespace.get(table.product_type_ref) {
+        for (i, (product_type_element, column)) in product_type.elements.iter().zip(columns.iter()).enumerate() {
+            if product_type_element.name.as_deref() != Some(&*column.col_name)
+                || product_type_element.algebraic_type != column.col_type
+            {
+                errors.0.push(SchemaError::ProductTypeColumnMismatch {
+                    table: table.table_name.clone(),
+                    column_index: i,
+                });
+                return None;
+            }
+        }
+    } else {
+        errors.0.push(SchemaError::UninitializedProductTypeRef {
+            table: table.table_name.clone(),
+        });
+        return None;
+    }
+    Some(())
+}
+
 /// Validate a column.
 ///
 /// Returns None if and only if errors have been pushed to `errors`.
 fn validate_column(
     errors: &mut SchemaErrors,
-    def: &RawDatabaseDef,
+    def: &RawDatabaseDefV1,
     table: &RawTableDef,
     column: &RawColumnDef,
 ) -> Option<ColumnDef> {
@@ -201,15 +222,9 @@ fn validate_column(
         }),
     );
 
-    if let (Some(col_name), Some(col_type)) = (col_name, col_type) {
-        Some(ColumnDef {
-            col_name,
-            col_type,
-            _private: (),
-        })
-    } else {
-        None
-    }
+    col_name
+        .zip(col_type)
+        .map(|(col_name, col_type)| ColumnDef { col_name, col_type })
 }
 
 /// Validate an index.
@@ -217,29 +232,28 @@ fn validate_column(
 /// Returns None if and only if errors have been pushed to `errors`.
 fn validate_index(
     errors: &mut SchemaErrors,
-    def: &RawDatabaseDef,
+    def: &RawDatabaseDefV1,
     table: &RawTableDef,
     table_canonical_columns: &Option<Vec<ColumnDef>>,
     index: &RawIndexDef,
 ) -> Option<IndexDef> {
-    let column_names = validate_column_names(errors, def, table, table_canonical_columns, &index.column_names)
-        .and_then(|column_names| {
-            if contains_duplicates(&column_names) {
+    let column_names = validate_column_names(errors, def, table, table_canonical_columns, &index.column_names).filter(
+        |column_names| {
+            let has_dup = contains_duplicates(column_names);
+            if has_dup {
                 errors.0.push(SchemaError::IndexDefDuplicateColumnName {
                     table: table.table_name.clone(),
                     columns: column_names.iter().map(|id| (**id).into()).collect(),
                     index_type: index.index_type,
                 });
-                None
-            } else {
-                Some(column_names)
-            }
-        });
+            };
+            has_dup
+        },
+    );
     if let (IndexType::BTree, Some(column_names)) = (index.index_type, column_names) {
         Some(IndexDef {
             column_names,
             index_type: index.index_type,
-            _private: (),
         })
     } else {
         errors.0.push(SchemaError::OnlyBtree {
@@ -256,7 +270,7 @@ fn validate_index(
 /// Returns None if and only if errors have been pushed to `errors`.
 fn validate_unique_constraint(
     errors: &mut SchemaErrors,
-    def: &RawDatabaseDef,
+    def: &RawDatabaseDefV1,
     table: &RawTableDef,
     table_canonical_columns: &Option<Vec<ColumnDef>>,
     unique_constraint: &RawUniqueConstraintDef,
@@ -295,7 +309,7 @@ fn validate_unique_constraint(
 /// Returns None if and only if errors have been pushed to `errors`.
 fn validate_sequence(
     errors: &mut SchemaErrors,
-    def: &RawDatabaseDef,
+    def: &RawDatabaseDefV1,
     table: &RawTableDef,
     table_canonical_columns: &Option<Vec<ColumnDef>>,
     sequence: &RawSequenceDef,
@@ -303,48 +317,32 @@ fn validate_sequence(
     let column_name = validate_column_name(errors, table, table_canonical_columns, &sequence.column_name);
 
     // TODO(jgilles): validate that min_value <= start <= max_value
-    if let (Some(column_name), Some(table_canonical_columns)) = (column_name, table_canonical_columns) {
-        let column = table_canonical_columns
-            .iter()
-            .find(|column| column.col_name == column_name)
-            .expect("validate_column_name guarantees column is present");
+    let (column_name, table_canonical_columns) = column_name.zip(table_canonical_columns)?;
+    let column = table_canonical_columns
+        .iter()
+        .find(|column| column.col_name == column_name)
+        .expect("validate_column_name guarantees column is present");
 
-        fn is_valid(typespace: &Typespace, column_type: &AlgebraicType) -> bool {
-            match column_type {
-                &AlgebraicType::U8
-                | &AlgebraicType::U16
-                | &AlgebraicType::U32
-                | &AlgebraicType::U64
-                | &AlgebraicType::U128
-                | &AlgebraicType::I8
-                | &AlgebraicType::I16
-                | &AlgebraicType::I32
-                | &AlgebraicType::I64
-                | &AlgebraicType::I128 => true,
-                &AlgebraicType::Ref(ref_) => match typespace.get(ref_) {
-                    Some(t) => is_valid(typespace, t),
-                    None => false,
-                },
-                _ => false,
-            }
+    fn is_valid(typespace: &Typespace, column_type: &AlgebraicType) -> bool {
+        match column_type {
+            &AlgebraicType::Ref(ref_) => typespace.get(ref_).map_or(false, |t| is_valid(typespace, t)),
+            other => other.is_integer(),
         }
+    }
 
-        if is_valid(&def.typespace, &column.col_type) {
-            Some(SequenceDef {
-                column_name,
-                start: sequence.start,
-                min_value: sequence.min_value,
-                max_value: sequence.max_value,
-            })
-        } else {
-            errors.0.push(SchemaError::InvalidSequenceColumnType {
-                table: table.table_name.clone(),
-                column: sequence.column_name.clone(),
-                column_type: column.col_type.clone(),
-            });
-            None
-        }
+    if is_valid(&def.typespace, &column.col_type) {
+        Some(SequenceDef {
+            column_name,
+            start: sequence.start,
+            min_value: sequence.min_value,
+            max_value: sequence.max_value,
+        })
     } else {
+        errors.0.push(SchemaError::InvalidSequenceColumnType {
+            table: table.table_name.clone(),
+            column: sequence.column_name.clone(),
+            column_type: column.col_type.clone(),
+        });
         None
     }
 }
@@ -354,7 +352,7 @@ fn validate_sequence(
 /// Returns None if and only if errors have been pushed to `errors`.
 fn validate_schedule(
     errors: &mut SchemaErrors,
-    _def: &RawDatabaseDef,
+    _def: &RawDatabaseDefV1,
     table: &RawTableDef,
     table_canonical_columns: &Option<Vec<ColumnDef>>,
     schedule: &RawScheduleDef,
@@ -410,7 +408,7 @@ fn validate_column_name(
 /// Returns None if and only if errors have been pushed to `errors`.
 fn validate_column_names(
     errors: &mut SchemaErrors,
-    _def: &RawDatabaseDef,
+    _def: &RawDatabaseDefV1,
     table: &RawTableDef,
     table_canonical_columns: &Option<Vec<ColumnDef>>,
     column_names: &Vec<Box<str>>,
@@ -429,14 +427,9 @@ fn validate_column_names(
 }
 
 /// Check if an iterator contains duplicates.
-fn contains_duplicates<T: Eq + std::hash::Hash>(iter: impl IntoIterator<Item = T>) -> bool {
+fn contains_duplicates(iter: impl IntoIterator<Item: Eq + std::hash::Hash>) -> bool {
     let mut seen = HashSet::new();
-    for item in iter {
-        if !seen.insert(item) {
-            return true;
-        }
-    }
-    false
+    !iter.into_iter().all(|item| seen.insert(item))
 }
 
 /// This may eventually want to live somewhere else.
@@ -482,12 +475,28 @@ fn check_not_recursive_and_all_refs_valid(
     check(typespace, type_, &[]).map(|_| type_.clone())
 }
 
+fn check_equal_in_typespace(
+    typespace: &Typespace,
+    t1: &AlgebraicType,
+    t2: &AlgebraicType,
+) -> Result<bool, TypeRefError> {
+    // FIXME: BAD TEMP IMPL!
+    let mut typespace = typespace.clone();
+    let mut t1 = t1.clone();
+    let mut t2 = t2.clone();
+
+    typespace.inline_typerefs_in_type(&mut t1)?;
+    typespace.inline_typerefs_in_type(&mut t2)?;
+
+    Ok(t1 == t2)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::def::DatabaseDef;
     use crate::error::*;
     use crate::identifier::Identifier;
-    use spacetimedb_sats::db::raw_def::*;
+    use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_sats::typespace::TypeRefError;
     use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant};
 
@@ -504,22 +513,9 @@ mod tests {
 
     #[test]
     fn valid_definition() {
-        let mut def = RawDatabaseDef::new();
+        let mut def = RawDatabaseDefV1::new();
 
-        // TODO(jgilles): do we currently support this?
-        let product_type = AlgebraicType::Product(ProductType {
-            elements: vec![
-                ProductTypeElement {
-                    name: Some("a".into()),
-                    algebraic_type: AlgebraicType::U64,
-                },
-                ProductTypeElement {
-                    name: Some("b".into()),
-                    algebraic_type: AlgebraicType::String,
-                },
-            ]
-            .into_boxed_slice(),
-        });
+        let product_type = AlgebraicType::product([("a", AlgebraicType::U64), ("b", AlgebraicType::String)]);
 
         let sum_type = AlgebraicType::Sum(SumType {
             variants: vec![
@@ -544,8 +540,8 @@ mod tests {
         )
         .with_column_sequence("id")
         .with_unique_constraint(&["id"])
-        .with_index(&["id"], IndexType::BTree)
-        .with_index(&["id", "name"], IndexType::BTree);
+        .with_index(&["id"], IndexType::BTree, None)
+        .with_index(&["id", "name"], IndexType::BTree, None);
 
         let table_2 = RawTableDef::new(
             "Apples".into(),
@@ -556,14 +552,15 @@ mod tests {
                 RawColumnDef::new("type".into(), AlgebraicType::Ref(sum_type_ref)),
             ],
         );
-        
+
         let table_3 = RawTableDef::new(
             "Deliveries".into(),
             vec![
                 RawColumnDef::new("id".into(), AlgebraicType::U64),
                 RawColumnDef::new("at".into(), AlgebraicType::U16), // TODO(jgilles): make this a ScheduleAt enum
-            ]
-        ).with_schedule_def(RawScheduleDef {
+            ],
+        )
+        .with_schedule_def(RawScheduleDef {
             at_column: "at".into(),
             reducer_name: "check_deliveries".into(),
         });
@@ -617,8 +614,14 @@ mod tests {
         assert_eq!(delivery_def.columns[0].col_type, AlgebraicType::U64);
         assert_eq!(delivery_def.columns[1].col_name, Identifier::new("at").unwrap());
         assert_eq!(delivery_def.columns[1].col_type, AlgebraicType::U16);
-        assert_eq!(delivery_def.schedule.as_ref().unwrap().at_column, Identifier::new("at").unwrap());
-        assert_eq!(&delivery_def.schedule.as_ref().unwrap().reducer_name[..], "check_deliveries");
+        assert_eq!(
+            delivery_def.schedule.as_ref().unwrap().at_column,
+            Identifier::new("at").unwrap()
+        );
+        assert_eq!(
+            &delivery_def.schedule.as_ref().unwrap().reducer_name[..],
+            "check_deliveries"
+        );
 
         assert_eq!(def.typespace.types.len(), 2 + 3); // manually added 2 types, automatically initialized 2 types with add_table_and_product_type.
         assert_eq!(def.typespace.get(product_type_ref), Some(&product_type));
@@ -672,7 +675,7 @@ mod tests {
 
     #[test]
     fn invalid_product_type_ref() {
-        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDef::new()
+        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDefV1::new()
             // `with_table` does NOT initialize table.product_type_ref, which should result in an error.
             .with_table(
                 RawTableDef::new(
@@ -688,7 +691,7 @@ mod tests {
 
     #[test]
     fn not_canonically_ordered_columns() {
-        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDef::new()
+        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDefV1::new()
             .with_table_and_product_type(RawTableDef::new(
                 "Bananas".into(),
                 vec![
@@ -703,7 +706,7 @@ mod tests {
 
     #[test]
     fn invalid_table_name() {
-        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDef::new()
+        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDefV1::new()
             .with_table_and_product_type(RawTableDef::new("".into(), vec![]))
             .try_into();
         expect_error_matching!(result, SchemaError::InvalidTableName { .. });
@@ -711,7 +714,7 @@ mod tests {
 
     #[test]
     fn invalid_column_name() {
-        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDef::new()
+        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDefV1::new()
             .with_table_and_product_type(RawTableDef::new(
                 "Bananas".into(),
                 vec![RawColumnDef::new("".into(), AlgebraicType::U16)],
@@ -723,13 +726,13 @@ mod tests {
 
     #[test]
     fn invalid_index_column_ref() {
-        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDef::new()
+        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDefV1::new()
             .with_table_and_product_type(
                 RawTableDef::new(
                     "Bananas".into(),
                     vec![RawColumnDef::new("id".into(), AlgebraicType::U16)],
                 )
-                .with_index(&["nonexistent"], IndexType::BTree),
+                .with_index(&["nonexistent"], IndexType::BTree, None),
             )
             .try_into();
 
@@ -738,7 +741,7 @@ mod tests {
 
     #[test]
     fn invalid_unique_constraint_column_ref() {
-        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDef::new()
+        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDefV1::new()
             .with_table_and_product_type(
                 RawTableDef::new(
                     "Bananas".into(),
@@ -753,7 +756,7 @@ mod tests {
 
     #[test]
     fn invalid_sequence_column_ref() {
-        let result : Result<DatabaseDef, SchemaErrors>= RawDatabaseDef::new()
+        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDefV1::new()
             .with_table_and_product_type(
                 RawTableDef::new(
                     "Bananas".into(),
@@ -768,7 +771,7 @@ mod tests {
 
     #[test]
     fn invalid_index_column_duplicates() {
-        let result : Result<DatabaseDef, SchemaErrors>= RawDatabaseDef::new()
+        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDefV1::new()
             .with_table_and_product_type(
                 RawTableDef::new(
                     "Bananas".into(),
@@ -777,7 +780,7 @@ mod tests {
                         RawColumnDef::new("name".into(), AlgebraicType::String),
                     ],
                 )
-                .with_index(&["id", "id"], IndexType::BTree),
+                .with_index(&["id", "id"], IndexType::BTree, None),
             )
             .try_into();
 
@@ -786,7 +789,7 @@ mod tests {
 
     #[test]
     fn invalid_unique_constraint_column_duplicates() {
-        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDef::new()
+        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDefV1::new()
             .with_table_and_product_type(
                 RawTableDef::new(
                     "Bananas".into(),
@@ -805,7 +808,7 @@ mod tests {
     #[test]
     fn non_integral_sequence() {
         // wrong type
-        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDef::new()
+        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDefV1::new()
             .with_table_and_product_type(
                 RawTableDef::new(
                     "Bananas".into(),
@@ -818,20 +821,21 @@ mod tests {
         expect_error_matching!(result, SchemaError::InvalidSequenceColumnType { .. });
 
         // right type behind ref (is this possible?)
-        let mut def = RawDatabaseDef::new();
+        let mut def = RawDatabaseDefV1::new();
         let u32_ref = def.typespace.add(AlgebraicType::U32);
-        let _: DatabaseDef = def.with_table_and_product_type(
-            RawTableDef::new(
-                "Bananas".into(),
-                vec![RawColumnDef::new("id".into(), AlgebraicType::Ref(u32_ref))],
+        let _: DatabaseDef = def
+            .with_table_and_product_type(
+                RawTableDef::new(
+                    "Bananas".into(),
+                    vec![RawColumnDef::new("id".into(), AlgebraicType::Ref(u32_ref))],
+                )
+                .with_column_sequence("id"),
             )
-            .with_column_sequence("id"),
-        )
-        .try_into()
-        .unwrap();
+            .try_into()
+            .unwrap();
 
         // wrong type behind ref
-        let mut def = RawDatabaseDef::new();
+        let mut def = RawDatabaseDefV1::new();
         let u32_ref = def.typespace.add(AlgebraicType::String);
         let result: Result<DatabaseDef, SchemaErrors> = def
             .with_table_and_product_type(
@@ -847,7 +851,7 @@ mod tests {
 
     #[test]
     fn recursive_type_ref() {
-        let mut def = RawDatabaseDef::new();
+        let mut def = RawDatabaseDefV1::new();
 
         let product_type = AlgebraicType::Product(ProductType {
             elements: vec![
@@ -886,7 +890,7 @@ mod tests {
 
     #[test]
     fn invalid_type_ref() {
-        let result : Result<DatabaseDef, SchemaErrors>= RawDatabaseDef::new()
+        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDefV1::new()
             .with_table_and_product_type(
                 RawTableDef::new(
                     "Bananas".into(),
@@ -910,13 +914,13 @@ mod tests {
 
     #[test]
     fn only_btree_indexes() {
-        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDef::new()
+        let result: Result<DatabaseDef, SchemaErrors> = RawDatabaseDefV1::new()
             .with_table_and_product_type(
                 RawTableDef::new(
                     "Bananas".into(),
                     vec![RawColumnDef::new("id".into(), AlgebraicType::U16)],
                 )
-                .with_index(&["id"], IndexType::Hash),
+                .with_index(&["id"], IndexType::Hash, None),
             )
             .try_into();
 

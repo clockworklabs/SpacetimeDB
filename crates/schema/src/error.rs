@@ -1,11 +1,8 @@
 use std::fmt;
 
+use spacetimedb_lib::db::{error::DefType, raw_def::IndexType};
 use spacetimedb_primitives::ColList;
-use spacetimedb_sats::{
-    db::{error::DefType, raw_def::IndexType},
-    typespace::TypeRefError,
-    AlgebraicType,
-};
+use spacetimedb_sats::{typespace::TypeRefError, AlgebraicType};
 
 #[derive(thiserror::Error, Debug, PartialEq)]
 pub enum SchemaError {
@@ -66,6 +63,7 @@ pub enum SchemaError {
     UninitializedProductTypeRef { table: Box<str> },
     #[error("Table {table} has incorrect product type element at column {column_index}")]
     ProductTypeColumnMismatch { table: Box<str>, column_index: usize },
+    // TODO(jgilles): repeated index name error
 }
 
 #[derive(thiserror::Error, Debug, PartialEq)]

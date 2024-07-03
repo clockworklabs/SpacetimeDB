@@ -1,3 +1,5 @@
+//! Deprecated, to be removed.
+
 use crate::{de, impl_deserialize, impl_serialize};
 pub use spacetimedb_primitives::ColumnAttribute;
 
