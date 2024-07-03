@@ -26,8 +26,6 @@ class CreateProject(unittest.TestCase):
 
                 packed_projects = ["BSATN.Runtime", "Runtime"]
                 restore_sources = [str(bindings / project / "bin" / "Release") for project in packed_projects]
-                # note that nuget URL comes last, which ensures local sources should override it.
-                restore_sources.append("https://api.nuget.org/v3/index.json")
 
                 csproj = Path(tmpdir) / "StdbModule.csproj"
                 with open(csproj, "r") as f:
