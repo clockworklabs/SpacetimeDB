@@ -78,8 +78,7 @@ namespace SpacetimeDB
         /// <summary>
         /// Invoked when an event message is received or at the end of a transaction update.
         /// </summary>
-        public event Action<TransactionUpdate>? onEvent;
-        public event Action<OneOffQueryResponse>? onResult;
+        public event Action<ServerMessage>? onEvent;
 
         public readonly Address clientAddress = Address.Random();
         public Identity clientIdentity { get; private set; }
@@ -147,7 +146,7 @@ namespace SpacetimeDB
 
         static DbValue Decode(ClientCache.ITableCache table, EncodedValue value) => value switch {
             EncodedValue.Binary(var bin) => new DbValue(table.DecodeValue(bin), bin),
-            EncodedValue.Text(var text) => throw new InvalidOperationException("TODO?"),
+            EncodedValue.Text(var text) => throw new InvalidOperationException("JavaScript messages aren't supported."),
             _ => throw new InvalidOperationException(),
         };
 
@@ -230,7 +229,8 @@ namespace SpacetimeDB
                                         break;
 
                                     case EncodedValue.Text(var txt):
-                                        throw new InvalidOperationException("TODO?");
+                                        Logger.LogWarning("JavaScript messages are unsupported.");
+                                        break;
                                 }
                             }
                         }
@@ -326,6 +326,7 @@ namespace SpacetimeDB
                             case UpdateStatus.Failed(var failed):
                                 break;
                             case UpdateStatus.OutOfEnergy(var outOfEnergy):
+                                Logger.LogWarning("Failed to execute reducer: out of energy.");
                                 break;
                             default:
                                 throw new InvalidOperationException();
@@ -558,7 +559,7 @@ namespace SpacetimeDB
                     OnMessageProcessCompleteUpdate(transactionUpdate, dbOps);
                     try
                     {
-                        onEvent?.Invoke(transactionUpdate);
+                        onEvent?.Invoke(message);
                     }
                     catch (Exception e)
                     {
@@ -605,10 +606,10 @@ namespace SpacetimeDB
                         Logger.LogException(e);
                     }
                     break;
-                case ServerMessage.OneOffQueryResponse(var event_):
+                case ServerMessage.OneOffQueryResponse(var _):
                     try
                     {
-                        onResult?.Invoke(event_);
+                        onEvent?.Invoke(message);
                     }
                     catch (Exception e)
                     {
