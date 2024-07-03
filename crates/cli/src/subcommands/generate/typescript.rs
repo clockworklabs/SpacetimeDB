@@ -4,7 +4,7 @@ use std::fmt;
 use std::ops::Deref;
 
 use convert_case::{Case, Casing};
-use spacetimedb_lib::sats::db::def::TableSchema;
+use spacetimedb_lib::db::def::TableSchema;
 use spacetimedb_lib::sats::product_type::IDENTITY_TAG;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,

@@ -1,14 +1,14 @@
-use crate::algebraic_value::AlgebraicValue;
 use crate::db::auth::{StAccess, StTableType};
 use crate::db::def::{ColumnSchema, TableSchema};
 use crate::db::error::{RelationError, TypeError};
-use crate::satn::Satn;
-use crate::{algebraic_type, AlgebraicType};
 use core::fmt;
 use core::hash::Hash;
 use derive_more::From;
 use itertools::Itertools;
 use spacetimedb_primitives::{ColId, ColList, ColListBuilder, Constraints, TableId};
+use spacetimedb_sats::algebraic_value::AlgebraicValue;
+use spacetimedb_sats::satn::Satn;
+use spacetimedb_sats::{algebraic_type, AlgebraicType};
 use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]

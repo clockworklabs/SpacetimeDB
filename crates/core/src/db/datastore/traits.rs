@@ -8,9 +8,9 @@ use super::Result;
 use crate::db::datastore::system_tables::ST_TABLES_ID;
 use crate::execution_context::ExecutionContext;
 use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_lib::db::def::*;
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::*;
-use spacetimedb_sats::db::def::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 
@@ -478,8 +478,8 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
 
 #[cfg(test)]
 mod tests {
+    use spacetimedb_lib::db::def::ConstraintDef;
     use spacetimedb_primitives::{col_list, ColId, Constraints};
-    use spacetimedb_sats::db::def::ConstraintDef;
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType, Typespace};
 
     use super::{ColumnDef, IndexDef, TableDef};

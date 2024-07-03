@@ -5,7 +5,7 @@ use std::fmt::{self, Write};
 use std::ops::Deref;
 
 use convert_case::{Case, Casing};
-use spacetimedb_lib::sats::db::def::TableSchema;
+use spacetimedb_lib::db::def::TableSchema;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, SumType};
 use spacetimedb_lib::{ReducerDef, TableDesc};
 use spacetimedb_primitives::ColList;

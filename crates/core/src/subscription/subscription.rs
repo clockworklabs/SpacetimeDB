@@ -34,12 +34,12 @@ use anyhow::Context;
 use itertools::Either;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use spacetimedb_data_structures::map::HashSet;
+use spacetimedb_lib::db::auth::{StAccess, StTableType};
+use spacetimedb_lib::db::error::AuthError;
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::relation::DbTable;
 use spacetimedb_lib::{Identity, ProductValue};
 use spacetimedb_primitives::TableId;
-use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::error::AuthError;
-use spacetimedb_sats::relation::DbTable;
 use spacetimedb_vm::expr::{self, AuthAccess, IndexJoin, Query, QueryExpr, SourceExpr, SourceProvider, SourceSet};
 use spacetimedb_vm::rel_ops::RelOps;
 use spacetimedb_vm::relation::{MemTable, RelValue};
@@ -635,7 +635,7 @@ mod tests {
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::sql::compiler::compile_sql;
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_sats::relation::DbTable;
+    use spacetimedb_lib::relation::DbTable;
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_vm::expr::{CrudExpr, IndexJoin, Query, SourceExpr};
 

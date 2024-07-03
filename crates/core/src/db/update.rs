@@ -9,9 +9,9 @@ use enum_as_inner::EnumAsInner;
 use itertools::Itertools;
 use similar::{Algorithm, TextDiff};
 use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_lib::db::auth::StAccess;
+use spacetimedb_lib::db::def::{ConstraintSchema, IndexDef, IndexSchema, SequenceSchema, TableDef, TableSchema};
 use spacetimedb_primitives::{ConstraintKind, Constraints, IndexId};
-use spacetimedb_sats::db::auth::StAccess;
-use spacetimedb_sats::db::def::{ConstraintSchema, IndexDef, IndexSchema, SequenceSchema, TableDef, TableSchema};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -349,9 +349,9 @@ fn schema_compat_and_updates_hack(
 mod tests {
     use super::*;
     use anyhow::anyhow;
+    use spacetimedb_lib::db::auth::{StAccess, StTableType};
+    use spacetimedb_lib::db::def::{ColumnDef, ColumnSchema, IndexSchema, IndexType};
     use spacetimedb_primitives::{col_list, ColId, Constraints, IndexId, TableId};
-    use spacetimedb_sats::db::auth::{StAccess, StTableType};
-    use spacetimedb_sats::db::def::{ColumnDef, ColumnSchema, IndexSchema, IndexType};
     use spacetimedb_sats::AlgebraicType;
 
     #[test]

@@ -1,6 +1,6 @@
 use crate::relation::RelValue;
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_sats::relation::ColExpr;
+use spacetimedb_lib::relation::ColExpr;
 use spacetimedb_sats::AlgebraicValue;
 
 /// A trait for dealing with fallible iterators for the database.

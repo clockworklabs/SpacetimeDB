@@ -6,11 +6,11 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use sys::Buffer;
 
-use crate::sats::db::def::{ColumnDef, ConstraintDef, IndexDef, SequenceDef, TableDef};
 use crate::timestamp::with_timestamp_set;
 use crate::{sys, ReducerContext, SpacetimeType, TableType, Timestamp};
+use spacetimedb_lib::db::auth::StTableType;
+use spacetimedb_lib::db::def::{ColumnDef, ConstraintDef, IndexDef, SequenceDef, TableDef};
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
-use spacetimedb_lib::sats::db::auth::StTableType;
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
@@ -334,14 +334,15 @@ pub fn register_reftype<T: SpacetimeType>() {
 pub fn register_table<T: TableType>() {
     register_describer(|module| {
         let data = *T::make_type(&mut module.inner).as_ref().unwrap();
-        let columns: Vec<ColumnDef> = module
-            .inner
-            .typespace()
-            .with_type(&data)
-            .resolve_refs()
-            .and_then(|x| x.into_product().ok())
-            .expect("Fail to retrieve the columns from the module")
-            .into();
+        let columns: Vec<ColumnDef> = ColumnDef::from_product_type(
+            module
+                .inner
+                .typespace()
+                .with_type(&data)
+                .resolve_refs()
+                .and_then(|x| x.into_product().ok())
+                .expect("Fail to retrieve the columns from the module"),
+        );
 
         let indexes: Vec<_> = T::INDEXES.iter().copied().map(Into::into).collect();
         //WARNING: The definition  of table assumes the # of constraints == # of columns elsewhere `T::COLUMN_ATTRS` is queried

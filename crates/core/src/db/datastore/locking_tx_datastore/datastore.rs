@@ -27,12 +27,12 @@ use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
-use spacetimedb_lib::{Address, Identity};
-use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
-use spacetimedb_sats::db::{
+use spacetimedb_lib::db::{
     auth::StAccess,
     def::{IndexDef, SequenceDef, TableDef, TableSchema},
 };
+use spacetimedb_lib::{Address, Identity};
+use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductValue};
 use spacetimedb_snapshot::ReconstructedSnapshot;
 use spacetimedb_table::{
@@ -936,12 +936,10 @@ mod tests {
     use crate::error::{DBError, IndexError};
     use itertools::Itertools;
     use spacetimedb_lib::address::Address;
+    use spacetimedb_lib::db::auth::{StAccess, StTableType};
+    use spacetimedb_lib::db::def::{ColumnDef, ColumnSchema, ConstraintSchema, IndexSchema, IndexType, SequenceSchema};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_primitives::{col_list, ColId, Constraints};
-    use spacetimedb_sats::db::auth::{StAccess, StTableType};
-    use spacetimedb_sats::db::def::{
-        ColumnDef, ColumnSchema, ConstraintSchema, IndexSchema, IndexType, SequenceSchema,
-    };
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_table::table::UniqueConstraintViolation;
 

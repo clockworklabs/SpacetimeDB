@@ -26,6 +26,7 @@ spacetimedb-bindings-macro.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-metrics = { workspace = true, optional = true }
+spacetimedb-data-structures.workspace = true
 
 anyhow.workspace = true
 bitflags.workspace = true

@@ -222,12 +222,12 @@ pub(crate) mod tests {
     use crate::db::datastore::system_tables::{ST_TABLES_ID, ST_TABLES_NAME};
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::vm::tests::create_table_with_rows;
+    use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::relation::ColExpr;
+    use spacetimedb_lib::relation::Header;
     use spacetimedb_lib::Identity;
     use spacetimedb_primitives::{col_list, ColId};
-    use spacetimedb_sats::db::auth::{StAccess, StTableType};
-    use spacetimedb_sats::relation::Header;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use spacetimedb_vm::eval::test_helpers::{create_game_data, mem_table, mem_table_without_table_name};
     use std::sync::Arc;

@@ -1,8 +1,8 @@
 use core::hash::{Hash, Hasher};
+use spacetimedb_lib::db::auth::StAccess;
+use spacetimedb_lib::relation::{ColExpr, ColExprRef, Header};
 use spacetimedb_sats::bsatn::ser::BsatnError;
-use spacetimedb_sats::db::auth::StAccess;
 use spacetimedb_sats::product_value::ProductValue;
-use spacetimedb_sats::relation::{ColExpr, ColExprRef, Header};
 use spacetimedb_sats::{bsatn, impl_serialize, AlgebraicValue};
 use spacetimedb_table::read_column::ReadColumn;
 use spacetimedb_table::table::RowRef;

@@ -7,8 +7,8 @@ use criterion::{
 };
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use spacetimedb_lib::db::def::{TableDef, TableSchema};
 use spacetimedb_primitives::{ColList, IndexId, TableId};
-use spacetimedb_sats::db::def::{TableDef, TableSchema};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_table::blob_store::NullBlobStore;
 use spacetimedb_table::indexes::Byte;

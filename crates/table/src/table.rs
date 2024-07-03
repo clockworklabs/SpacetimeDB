@@ -23,11 +23,11 @@ use core::ops::RangeBounds;
 use core::{fmt, ptr};
 use derive_more::{Add, AddAssign, From, Sub};
 use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_lib::db::def::TableSchema;
 use spacetimedb_primitives::{ColId, ColList, IndexId};
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
     bsatn::{self, ser::BsatnError},
-    db::def::TableSchema,
     product_value::InvalidFieldError,
     satn::Satn,
     ser::{Serialize, Serializer},
@@ -1146,8 +1146,8 @@ pub(crate) mod test {
     use crate::var_len::VarLenGranule;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
+    use spacetimedb_lib::db::def::{ColumnDef, IndexDef, IndexType, TableDef};
     use spacetimedb_sats::bsatn::to_vec;
-    use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableDef};
     use spacetimedb_sats::proptest::generate_typed_row;
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
 

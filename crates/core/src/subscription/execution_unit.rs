@@ -11,10 +11,10 @@ use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateRelValue,
 use crate::messages::websocket::TableUpdate;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
+use spacetimedb_lib::db::error::AuthError;
+use spacetimedb_lib::relation::DbTable;
 use spacetimedb_lib::{Identity, ProductValue};
 use spacetimedb_primitives::TableId;
-use spacetimedb_sats::db::error::AuthError;
-use spacetimedb_sats::relation::DbTable;
 use spacetimedb_vm::eval::IterRows;
 use spacetimedb_vm::expr::{AuthAccess, NoInMemUsed, Query, QueryExpr, SourceExpr, SourceId};
 use spacetimedb_vm::rel_ops::RelOps;

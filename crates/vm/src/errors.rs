@@ -1,5 +1,5 @@
+use spacetimedb_lib::db::error::{AuthError, RelationError};
 use spacetimedb_lib::operator::OpLogic;
-use spacetimedb_sats::db::error::{AuthError, RelationError};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use std::fmt;
 use thiserror::Error;

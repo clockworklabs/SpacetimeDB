@@ -442,9 +442,9 @@ mod test {
     use proptest::prelude::*;
     use proptest::{collection::vec, test_runner::TestCaseResult};
     use spacetimedb_data_structures::map::HashMap;
+    use spacetimedb_lib::db::def::{TableDef, TableSchema};
     use spacetimedb_primitives::ColListBuilder;
     use spacetimedb_sats::{
-        db::def::{TableDef, TableSchema},
         product,
         proptest::{generate_product_value, generate_row_type},
         AlgebraicType, ProductType, ProductValue,

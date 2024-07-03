@@ -24,9 +24,8 @@ use crate::{
     execution_context::ExecutionContext,
 };
 use core::ops::RangeBounds;
-use spacetimedb_lib::address::Address;
-use spacetimedb_primitives::{ColId, ColList, ConstraintId, Constraints, IndexId, SequenceId, TableId};
-use spacetimedb_sats::{
+use spacetimedb_lib::{
+    address::Address,
     db::{
         auth::StAccess,
         def::{
@@ -35,8 +34,9 @@ use spacetimedb_sats::{
         },
         error::SchemaErrors,
     },
-    AlgebraicValue, ProductType, ProductValue,
 };
+use spacetimedb_primitives::{ColId, ColList, ConstraintId, Constraints, IndexId, SequenceId, TableId};
+use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
