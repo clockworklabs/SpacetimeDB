@@ -49,7 +49,7 @@ use spacetimedb::println;
 #[spacetimedb::table(index(btree, name = "name_idx", columns = [name]))]
 pub struct Person {
     #[primary_key]
-    #[autoinc]
+    #[auto_inc]
     id: u32,
     name: String,
 }
@@ -95,7 +95,7 @@ use spacetimedb::println;
 #[spacetimedb::table(index(btree, name = "name_idx", columns = [name]))]
 pub struct Person {
     #[primary_key]
-    #[autoinc]
+    #[auto_inc]
     id: u32,
     name: String,
 }

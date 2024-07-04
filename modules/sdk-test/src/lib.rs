@@ -129,7 +129,7 @@ pub struct EveryVecStruct {
 ///     update_by update_my_table = update_by_name(name),
 ///     delete_by delete_my_table = delete_by_name(name: String),
 /// } #[primary_key] name String,
-///   #[autoinc] #[unique] id u32,
+///   #[auto_inc] #[unique] id u32,
 ///   count i64;
 //
 // Internal rules are prefixed with @.

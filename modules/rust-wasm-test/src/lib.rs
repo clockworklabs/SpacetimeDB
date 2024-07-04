@@ -35,7 +35,7 @@ const _: () = assert!(matches!(TestD::TABLE_ACCESS, StAccess::Public));
 #[derive(Debug)]
 pub struct TestE {
     #[primary_key]
-    #[autoinc]
+    #[auto_inc]
     id: u64,
     name: String,
 }
@@ -71,7 +71,7 @@ struct PkMultiIdentity {
     #[primary_key]
     id: u32,
     #[unique]
-    #[autoinc]
+    #[auto_inc]
     other: u32,
 }
 pub type TestAlias = TestA;

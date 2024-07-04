@@ -45,7 +45,7 @@ mod sym {
         };
     }
 
-    symbol!(autoinc);
+    symbol!(auto_inc);
     symbol!(btree);
     symbol!(columns);
     symbol!(crate_, crate);
@@ -444,7 +444,7 @@ impl IndexArg {
 /// ```ignore
 /// #[spacetimedb::table(public, name = "Users")]
 /// pub struct User {
-///     #[autoinc]
+///     #[auto_inc]
 ///     #[primary_key]
 ///     pub id: u32,
 ///     #[unique]
@@ -478,7 +478,7 @@ impl IndexArg {
 ///
 /// # Column (field) attributes
 ///
-/// * `#[autoinc]`
+/// * `#[auto_inc]`
 ///
 ///    Creates a database sequence.
 ///
@@ -486,7 +486,7 @@ impl IndexArg {
 ///    the sequence is incremented, and this value is used instead.
 ///    Can only be used on numeric types and may be combined with indexes.
 ///
-///    Note that using `#[autoinc]` on a field does not also imply `#[primary_key]` or `#[unique]`.
+///    Note that using `#[auto_inc]` on a field does not also imply `#[primary_key]` or `#[unique]`.
 ///    If those semantics are desired, those attributes should also be used.
 ///
 /// * `#[unique]`
@@ -516,7 +516,7 @@ pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 }
 
 #[doc(hidden)]
-#[proc_macro_derive(__TableHelper, attributes(sats, unique, autoinc, primary_key, index))]
+#[proc_macro_derive(__TableHelper, attributes(sats, unique, auto_inc, primary_key, index))]
 pub fn table_helper(_input: StdTokenStream) -> StdTokenStream {
     Default::default()
 }
@@ -542,7 +542,7 @@ impl ColumnAttr {
         Ok(if ident == sym::unique {
             attr.meta.require_path_only()?;
             Some(ColumnAttr::Unique(ident.span()))
-        } else if ident == sym::autoinc {
+        } else if ident == sym::auto_inc {
             attr.meta.require_path_only()?;
             Some(ColumnAttr::Autoinc(ident.span()))
         } else if ident == sym::primary_key {
@@ -623,7 +623,7 @@ fn table_impl(mut args: TableArgs, item: syn::DeriveInput) -> syn::Result<TokenS
         if col_attr.contains(ColumnAttribute::AUTO_INC)
             && !matches!(field.ty, syn::Type::Path(p) if is_integer_type(&p.path))
         {
-            return Err(syn::Error::new(field.ident.unwrap().span(), "An `autoinc` or `identity` column must be one of the integer types: u8, i8, u16, i16, u32, i32, u64, i64, u128, i128"));
+            return Err(syn::Error::new(field.ident.unwrap().span(), "An `auto_inc` or `identity` column must be one of the integer types: u8, i8, u16, i16, u32, i32, u64, i64, u128, i128"));
         }
 
         let column = Column {

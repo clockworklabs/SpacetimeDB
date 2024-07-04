@@ -15,7 +15,7 @@ use spacetimedb::println;
 #[spacetimedb::table]
 pub struct Person {
     #[primary_key]
-    #[autoinc]
+    #[auto_inc]
     id: u64,
     name: String,
 }
@@ -57,7 +57,7 @@ cat > "${PROJECT_PATH}/src/lib.rs" <<EOF
 #[spacetimedb::table]
 pub struct Person {
     #[primary_key]
-    #[autoinc]
+    #[auto_inc]
     id: u64,
     name: String,
     age: u8,
@@ -76,7 +76,7 @@ use spacetimedb::println;
 #[spacetimedb::table]
 pub struct Person {
     #[primary_key]
-    #[autoinc]
+    #[auto_inc]
     id: u64,
     name: String,
 }

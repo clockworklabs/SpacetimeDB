@@ -13,7 +13,7 @@ pub struct Vector2 {
 
 #[spacetimedb::table]
 pub struct Entity {
-    #[autoinc]
+    #[auto_inc]
     #[primary_key]
     pub id: u32,
     pub position: Vector2,

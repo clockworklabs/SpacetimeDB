@@ -380,7 +380,7 @@ impl WasmInstanceEnv {
 
             // Insert the row into the DB. We get back the decoded version.
             // Then re-encode and write that back into WASM memory at `row`.
-            // We're doing this because of autoinc.
+            // We're doing this because of auto_inc.
             let ctx = env.reducer_context()?;
             let new_row = env.instance_env.insert(&ctx, table_id.into(), row_buffer)?;
             new_row.encode(&mut { row_buffer });

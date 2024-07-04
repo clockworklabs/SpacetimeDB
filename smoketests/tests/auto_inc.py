@@ -16,7 +16,7 @@ class IntTests:
 autoinc1_template = string.Template("""
 #[spacetimedb::table]
 pub struct Person_$KEY_TY {
-    #[autoinc]
+    #[auto_inc]
     key_col: $KEY_TY,
     name: String,
 }
@@ -39,8 +39,8 @@ pub fn say_hello_$KEY_TY() {
 
 
 class AutoincBasic(IntTests, Smoketest):
-    "This tests the autoinc functionality"
-    
+    "This tests the auto_inc functionality"
+
     MODULE_CODE = f"""
 #![allow(non_camel_case_types)]
 use spacetimedb::println;
@@ -63,7 +63,7 @@ use spacetimedb::println;
 autoinc2_template = string.Template("""
 #[spacetimedb::table]
 pub struct Person_$KEY_TY {
-    #[autoinc]
+    #[auto_inc]
     #[unique]
     key_col: $KEY_TY,
     #[unique]
@@ -114,4 +114,3 @@ use spacetimedb::println;
         self.assertIn("Hello, 2:Robert!", logs)
         self.assertIn("Hello, 1:Success!", logs)
         self.assertIn("Hello, World!", logs)
-
