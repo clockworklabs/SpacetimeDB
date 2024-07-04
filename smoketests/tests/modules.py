@@ -11,7 +11,7 @@ use spacetimedb::println;
 
 #[spacetimedb::table]
 pub struct Person {
-    #[primarykey]
+    #[primary_key]
     #[autoinc]
     id: u64,
     name: String,
@@ -33,7 +33,7 @@ pub fn say_hello() {
     MODULE_CODE_B = """
 #[spacetimedb::table]
 pub struct Person {
-    #[primarykey]
+    #[primary_key]
     #[autoinc]
     id: u64,
     name: String,
@@ -46,7 +46,7 @@ use spacetimedb::println;
 
 #[spacetimedb::table]
 pub struct Person {
-    #[primarykey]
+    #[primary_key]
     #[autoinc]
     id: u64,
     name: String,

@@ -2,7 +2,7 @@ use spacetimedb::{Identity, ReducerContext, Timestamp};
 
 #[spacetimedb::table(public)]
 pub struct User {
-    #[primarykey]
+    #[primary_key]
     identity: Identity,
     name: Option<String>,
     online: bool,

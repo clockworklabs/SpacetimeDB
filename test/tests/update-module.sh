@@ -14,7 +14,7 @@ use spacetimedb::println;
 
 #[spacetimedb::table]
 pub struct Person {
-    #[primarykey]
+    #[primary_key]
     #[autoinc]
     id: u64,
     name: String,
@@ -56,7 +56,7 @@ run_test cargo run publish --skip_clippy --project-path "$PROJECT_PATH" "$IDENT"
 cat > "${PROJECT_PATH}/src/lib.rs" <<EOF
 #[spacetimedb::table]
 pub struct Person {
-    #[primarykey]
+    #[primary_key]
     #[autoinc]
     id: u64,
     name: String,
@@ -75,7 +75,7 @@ use spacetimedb::println;
 
 #[spacetimedb::table]
 pub struct Person {
-    #[primarykey]
+    #[primary_key]
     #[autoinc]
     id: u64,
     name: String,

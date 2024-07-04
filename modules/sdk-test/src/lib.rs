@@ -128,7 +128,7 @@ pub struct EveryVecStruct {
 ///     insert_or_panic insert_my_table,
 ///     update_by update_my_table = update_by_name(name),
 ///     delete_by delete_my_table = delete_by_name(name: String),
-/// } #[primarykey] name String,
+/// } #[primary_key] name String,
 ///   #[autoinc] #[unique] id u32,
 ///   count i64;
 //
@@ -386,85 +386,85 @@ define_tables! {
         insert_or_panic insert_pk_u8,
         update_by update_pk_u8 = update_by_n(n),
         delete_by delete_pk_u8 = delete_by_n(n: u8),
-    } #[primarykey] n u8, data i32;
+    } #[primary_key] n u8, data i32;
 
     PkU16 {
         insert_or_panic insert_pk_u16,
         update_by update_pk_u16 = update_by_n(n),
         delete_by delete_pk_u16 = delete_by_n(n: u16),
-    } #[primarykey] n u16, data i32;
+    } #[primary_key] n u16, data i32;
 
     PkU32 {
         insert_or_panic insert_pk_u32,
         update_by update_pk_u32 = update_by_n(n),
         delete_by delete_pk_u32 = delete_by_n(n: u32),
-    } #[primarykey] n u32, data i32;
+    } #[primary_key] n u32, data i32;
 
     PkU64 {
         insert_or_panic insert_pk_u64,
         update_by update_pk_u64 = update_by_n(n),
         delete_by delete_pk_u64 = delete_by_n(n: u64),
-    } #[primarykey] n u64, data i32;
+    } #[primary_key] n u64, data i32;
 
     PkU128 {
         insert_or_panic insert_pk_u128,
         update_by update_pk_u128 = update_by_n(n),
         delete_by delete_pk_u128 = delete_by_n(n: u128),
-    } #[primarykey] n u128, data i32;
+    } #[primary_key] n u128, data i32;
 
     PkI8 {
         insert_or_panic insert_pk_i8,
         update_by update_pk_i8 = update_by_n(n),
         delete_by delete_pk_i8 = delete_by_n(n: i8),
-    } #[primarykey] n i8, data i32;
+    } #[primary_key] n i8, data i32;
 
     PkI16 {
         insert_or_panic insert_pk_i16,
         update_by update_pk_i16 = update_by_n(n),
         delete_by delete_pk_i16 = delete_by_n(n: i16),
-    } #[primarykey] n i16, data i32;
+    } #[primary_key] n i16, data i32;
 
     PkI32 {
         insert_or_panic insert_pk_i32,
         update_by update_pk_i32 = update_by_n(n),
         delete_by delete_pk_i32 = delete_by_n(n: i32),
-    } #[primarykey] n i32, data i32;
+    } #[primary_key] n i32, data i32;
 
     PkI64 {
         insert_or_panic insert_pk_i64,
         update_by update_pk_i64 = update_by_n(n),
         delete_by delete_pk_i64 = delete_by_n(n: i64),
-    } #[primarykey] n i64, data i32;
+    } #[primary_key] n i64, data i32;
 
     PkI128 {
         insert_or_panic insert_pk_i128,
         update_by update_pk_i128 = update_by_n(n),
         delete_by delete_pk_i128 = delete_by_n(n: i128),
-    } #[primarykey] n i128, data i32;
+    } #[primary_key] n i128, data i32;
 
     PkBool {
         insert_or_panic insert_pk_bool,
         update_by update_pk_bool = update_by_b(b),
         delete_by delete_pk_bool = delete_by_b(b: bool),
-    } #[primarykey] b bool, data i32;
+    } #[primary_key] b bool, data i32;
 
     PkString {
         insert_or_panic insert_pk_string,
         update_by update_pk_string = update_by_s(s),
         delete_by delete_pk_string = delete_by_s(s: String),
-    } #[primarykey] s String, data i32;
+    } #[primary_key] s String, data i32;
 
     PkIdentity {
         insert_or_panic insert_pk_identity,
         update_by update_pk_identity = update_by_i(i),
         delete_by delete_pk_identity = delete_by_i(i: Identity),
-    } #[primarykey] i Identity, data i32;
+    } #[primary_key] i Identity, data i32;
 
     PkAddress {
         insert_or_panic insert_pk_address,
         update_by update_pk_address = update_by_a(a),
         delete_by delete_pk_address = delete_by_a(a: Address),
-    } #[primarykey] a Address, data i32;
+    } #[primary_key] a Address, data i32;
 }
 
 #[spacetimedb::reducer]

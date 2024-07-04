@@ -2,7 +2,7 @@ use spacetimedb::{println, query};
 
 #[spacetimedb::table(public)]
 pub struct Person {
-    #[primarykey]
+    #[primary_key]
     #[autoinc]
     id: u32,
     name: String,

@@ -34,7 +34,7 @@ const _: () = assert!(matches!(TestD::TABLE_ACCESS, StAccess::Public));
 #[spacetimedb::table]
 #[derive(Debug)]
 pub struct TestE {
-    #[primarykey]
+    #[primary_key]
     #[autoinc]
     id: u64,
     name: String,
@@ -68,7 +68,7 @@ const _: () = assert!(matches!(Point::TABLE_ACCESS, StAccess::Private));
 // Test we can compile multiple constraints
 #[spacetimedb::table]
 struct PkMultiIdentity {
-    #[primarykey]
+    #[primary_key]
     id: u32,
     #[unique]
     #[autoinc]

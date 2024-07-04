@@ -3,7 +3,7 @@ use spacetimedb::{query, time_span::Span};
 #[spacetimedb::table(index(btree, name = "coordinates", columns = [x, z, dimension]))]
 #[derive(Debug, PartialEq, Eq)]
 pub struct Location {
-    #[primarykey]
+    #[primary_key]
     pub id: u64,
     #[index(btree)]
     pub chunk: u64,

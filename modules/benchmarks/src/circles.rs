@@ -14,7 +14,7 @@ pub struct Vector2 {
 #[spacetimedb::table]
 pub struct Entity {
     #[autoinc]
-    #[primarykey]
+    #[primary_key]
     pub id: u32,
     pub position: Vector2,
     pub mass: u32,
@@ -32,7 +32,7 @@ impl Entity {
 
 #[spacetimedb::table]
 pub struct Circle {
-    #[primarykey]
+    #[primary_key]
     pub entity_id: u32,
     #[index(btree)]
     pub player_id: u32,
@@ -55,7 +55,7 @@ impl Circle {
 
 #[spacetimedb::table]
 pub struct Food {
-    #[primarykey]
+    #[primary_key]
     pub entity_id: u32,
 }
 

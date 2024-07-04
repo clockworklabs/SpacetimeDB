@@ -8,7 +8,7 @@ use std::hash::{Hash, Hasher};
 
 #[spacetimedb::table]
 pub struct Velocity {
-    #[primarykey]
+    #[primary_key]
     pub entity_id: u32,
     pub x: f32,
     pub y: f32,
@@ -23,7 +23,7 @@ impl Velocity {
 
 #[spacetimedb::table]
 pub struct Position {
-    #[primarykey]
+    #[primary_key]
     pub entity_id: u32,
     pub x: f32,
     pub y: f32,
@@ -68,7 +68,7 @@ pub enum AgentAction {
 #[spacetimedb::table]
 #[derive(Clone)]
 pub struct GameEnemyAiAgentState {
-    #[primarykey]
+    #[primary_key]
     pub entity_id: u64,
     pub last_move_timestamps: Vec<u64>,
     pub next_action_timestamp: u64,
@@ -78,7 +78,7 @@ pub struct GameEnemyAiAgentState {
 #[spacetimedb::table]
 #[derive(Clone)]
 pub struct GameTargetableState {
-    #[primarykey]
+    #[primary_key]
     pub entity_id: u64,
     pub quad: i64,
 }
@@ -93,7 +93,7 @@ pub struct GameLiveTargetableState {
 
 #[spacetimedb::table]
 pub struct GameMobileEntityState {
-    #[primarykey]
+    #[primary_key]
     pub entity_id: u64,
 
     #[index(btree)]
@@ -105,7 +105,7 @@ pub struct GameMobileEntityState {
 #[spacetimedb::table]
 #[derive(Clone)]
 pub struct GameEnemyState {
-    #[primarykey]
+    #[primary_key]
     pub entity_id: u64,
     pub herd_id: i32,
 }
@@ -120,7 +120,7 @@ pub struct SmallHexTile {
 #[spacetimedb::table]
 #[derive(Clone, Debug)]
 pub struct GameHerdCache {
-    #[primarykey]
+    #[primary_key]
     pub id: i32,
     pub dimension_id: u32,
     pub current_population: i32,

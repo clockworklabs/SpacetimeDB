@@ -52,7 +52,7 @@ mod sym {
     symbol!(hash);
     symbol!(index);
     symbol!(name);
-    symbol!(primarykey);
+    symbol!(primary_key);
     symbol!(private);
     symbol!(public);
     symbol!(sats);
@@ -445,7 +445,7 @@ impl IndexArg {
 /// #[spacetimedb::table(public, name = "Users")]
 /// pub struct User {
 ///     #[autoinc]
-///     #[primarykey]
+///     #[primary_key]
 ///     pub id: u32,
 ///     #[unique]
 ///     pub username: String,
@@ -486,14 +486,14 @@ impl IndexArg {
 ///    the sequence is incremented, and this value is used instead.
 ///    Can only be used on numeric types and may be combined with indexes.
 ///
-///    Note that using `#[autoinc]` on a field does not also imply `#[primarykey]` or `#[unique]`.
+///    Note that using `#[autoinc]` on a field does not also imply `#[primary_key]` or `#[unique]`.
 ///    If those semantics are desired, those attributes should also be used.
 ///
 /// * `#[unique]`
 ///
 ///    Creates an index and unique constraint for the annotated field.
 ///
-/// * `#[primarykey]`
+/// * `#[primary_key]`
 ///
 ///    Similar to `#[unique]`, but generates additional CRUD methods.
 ///
@@ -516,7 +516,7 @@ pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
 }
 
 #[doc(hidden)]
-#[proc_macro_derive(__TableHelper, attributes(sats, unique, autoinc, primarykey, index))]
+#[proc_macro_derive(__TableHelper, attributes(sats, unique, autoinc, primary_key, index))]
 pub fn table_helper(_input: StdTokenStream) -> StdTokenStream {
     Default::default()
 }
@@ -545,7 +545,7 @@ impl ColumnAttr {
         } else if ident == sym::autoinc {
             attr.meta.require_path_only()?;
             Some(ColumnAttr::Autoinc(ident.span()))
-        } else if ident == sym::primarykey {
+        } else if ident == sym::primary_key {
             attr.meta.require_path_only()?;
             Some(ColumnAttr::Primarykey(ident.span()))
         } else {
