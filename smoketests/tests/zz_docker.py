@@ -46,7 +46,7 @@ class DockerRestartModule(Smoketest):
     MODULE_CODE = """
 use spacetimedb::println;
 
-#[spacetimedb::table(index(btree, name = "name_idx", columns = [name]))]
+#[spacetimedb::table(index(name = "name_idx", btree = [name]))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -92,7 +92,7 @@ class DockerRestartSql(Smoketest):
     MODULE_CODE = """
 use spacetimedb::println;
 
-#[spacetimedb::table(index(btree, name = "name_idx", columns = [name]))]
+#[spacetimedb::table(index(name = "name_idx", btree = [name]))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]

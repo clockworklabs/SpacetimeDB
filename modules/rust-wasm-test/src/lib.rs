@@ -56,7 +56,7 @@ pub struct Private {
     name: String,
 }
 
-#[spacetimedb::table(private, index(btree, name = "multi_column_index", columns = [x, y]))]
+#[spacetimedb::table(private, index(name = "multi_column_index", btree = [x, y]))]
 pub struct Point {
     x: i64,
     y: i64,

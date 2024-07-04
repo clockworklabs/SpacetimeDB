@@ -47,7 +47,6 @@ mod sym {
 
     symbol!(auto_inc);
     symbol!(btree);
-    symbol!(columns);
     symbol!(crate_, crate);
     symbol!(hash);
     symbol!(index);
@@ -333,8 +332,8 @@ struct TableArgs {
 }
 
 struct IndexArg {
-    kind: IndexType,
     name: Option<LitStr>,
+    kind: IndexType,
     columns: Vec<Ident>,
 }
 
@@ -374,37 +373,34 @@ impl TableArgs {
 
 impl IndexArg {
     fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
-        let mut kind = None;
         let mut name = None;
-        let mut columns = None;
+        let mut algo = None;
+
         meta.parse_nested_meta(|meta| {
+            let mut parse_algo = |ty| {
+                check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
+
+                let inner;
+                syn::bracketed!(inner in (*meta.value()?));
+                let cols = Punctuated::<Ident, Token![,]>::parse_terminated(&inner)?
+                    .into_iter()
+                    .collect();
+
+                algo = Some((ty, cols));
+                Ok(())
+            };
             match_meta!(match meta {
-                sym::btree => {
-                    check_duplicate_msg(&kind, &meta, "index type specified twice")?;
-                    kind = Some(IndexType::BTree);
-                }
-                sym::hash => {
-                    check_duplicate_msg(&kind, &meta, "index type specified twice")?;
-                    kind = Some(IndexType::Hash);
-                }
                 sym::name => {
                     check_duplicate(&name, &meta)?;
-                    let value = meta.value()?;
-                    name = Some(value.parse()?);
+                    name = Some(meta.value()?.parse()?);
+                    Ok(())
                 }
-                sym::columns => {
-                    check_duplicate(&columns, &meta)?;
-                    let value = meta.value()?;
-                    let inner;
-                    syn::bracketed!(inner in value);
-                    let cols = Punctuated::<Ident, Token![,]>::parse_terminated(&inner)?;
-                    columns = Some(cols.into_iter().collect());
-                }
-            });
-            Ok(())
+                sym::btree => parse_algo(IndexType::BTree),
+                sym::hash => parse_algo(IndexType::Hash),
+            })
         })?;
-        let kind = kind.ok_or_else(|| meta.error("must specify either `btree` or `hash` for index"))?;
-        let columns = columns.ok_or_else(|| meta.error("must specify columns = [col1, col2] for index"))?;
+        let (kind, columns) =
+            algo.ok_or_else(|| meta.error("missing index algorithm, e.g., `btree = [col1, col2]`"))?;
         Ok(IndexArg { kind, name, columns })
     }
 
@@ -412,17 +408,15 @@ impl IndexArg {
     fn parse_index_attr(field: &Ident, attr: &syn::Attribute) -> syn::Result<Self> {
         let mut kind = None;
         attr.parse_nested_meta(|meta| {
+            let mut check_algo = |ty| {
+                check_duplicate_msg(&kind, &meta, "index type specified twice")?;
+                kind = Some(ty);
+                Ok(())
+            };
             match_meta!(match meta {
-                sym::btree => {
-                    check_duplicate_msg(&kind, &meta, "index type specified twice")?;
-                    kind = Some(IndexType::BTree);
-                }
-                sym::hash => {
-                    check_duplicate_msg(&kind, &meta, "index type specified twice")?;
-                    kind = Some(IndexType::Hash);
-                }
-            });
-            Ok(())
+                sym::btree => check_algo(IndexType::BTree),
+                sym::hash => check_algo(IndexType::Hash),
+            })
         })?;
         let kind =
             kind.ok_or_else(|| syn::Error::new_spanned(&attr.meta, "must specify kind of index (`btree` or `hash`)"))?;
@@ -430,6 +424,22 @@ impl IndexArg {
             kind,
             name: None,
             columns: vec![field.clone()],
+        })
+    }
+
+    /// Returns the name the index will have
+    /// assuming the table is named `table_name`
+    /// and that the columns of the table are in `cols`.
+    fn normalized_name(&self, table_name: &str, cols: &[&Column]) -> String {
+        self.name.as_ref().map(|s| s.value()).unwrap_or_else(|| {
+            let mut parts = Vec::with_capacity(2 + cols.len());
+            parts.push(match self.kind {
+                IndexType::BTree => "btree",
+                IndexType::Hash => "hash",
+            });
+            parts.push(table_name);
+            parts.extend(cols.iter().map(|col| col.field.name.as_deref().unwrap()));
+            parts.join("_")
         })
     }
 }
@@ -465,7 +475,7 @@ impl IndexArg {
 ///    system; `pub struct` or `pub(crate) struct` do not affect the table visibility, only
 ///    the visibility of the items in your own source code.
 ///
-/// * `index(btree | hash, name = "...", columns = [a, b, c])`
+/// * `index(name = "...", btree | hash = [a, b, c])`
 ///
 ///    You can specify an index on 1 or more of the table's columns with the above syntax.
 ///    You can also just put `#[index(btree | hash)]` on the field itself if you only need
@@ -649,13 +659,7 @@ fn table_impl(mut args: TableArgs, item: syn::DeriveInput) -> syn::Result<TokenS
                 Ok(col)
             })
             .collect::<syn::Result<Vec<_>>>()?;
-        let name = index.name.map(|s| s.value()).unwrap_or_else(|| {
-            [&*table_name]
-                .into_iter()
-                .chain(cols.iter().map(|col| col.field.name.as_deref().unwrap()))
-                .collect::<Vec<_>>()
-                .join("_")
-        });
+        let name = index.normalized_name(&table_name, &cols);
         let col_ids = cols.iter().map(|col| col.index);
         let ty = index.kind;
         indexes.push(quote!(spacetimedb::IndexDesc {
