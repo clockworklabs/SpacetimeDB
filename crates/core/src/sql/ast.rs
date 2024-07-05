@@ -180,8 +180,8 @@ impl From {
     /// for table `field.table_id`.
     pub(super) fn find_field_name(&self, field: FieldName) -> Option<(&str, &ColumnSchema)> {
         self.iter_tables().find_map(|t| {
-            if t.table_id == f.table() {
-                t.get_column_by_field(f).map(|c| (&*t.table_name, c))
+            if t.table_id == field.table() {
+                t.get_column_by_field(field).map(|c| (&*t.table_name, c))
             } else {
                 None
             }

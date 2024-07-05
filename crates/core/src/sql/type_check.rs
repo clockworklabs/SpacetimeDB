@@ -35,7 +35,7 @@ enum Typed<'a> {
     },
 }
 
-impl Typed {
+impl Typed<'_> {
     pub fn ty(&self) -> Option<&AlgebraicType> {
         match self {
             Typed::Field { ty, .. } | Typed::Value { ty, .. } => ty.as_ref(),
@@ -45,7 +45,7 @@ impl Typed {
 
     pub fn set_ty(&mut self, ty: Option<AlgebraicType>) {
         match self {
-            Typed::Field { ty: ty_lhs, .. } | Typed::Value { ty: ty_lhs, .. } => *ty_lhs = ty,
+            Typed::Field { ty: ty_lhs, .. } | Typed::Value { ty: ty_lhs, .. } => {
                 *ty_lhs = ty;
             }
             Typed::Cmp { .. } => {}
@@ -53,7 +53,7 @@ impl Typed {
     }
 }
 
-impl fmt::Display for Typed {
+impl fmt::Display for Typed<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Typed::Field { table, field, ty } => {
@@ -108,9 +108,8 @@ fn resolve_type(field: &FieldExpr, ty: Option<AlgebraicType>) -> Result<Option<A
     }
 
     if let (Some(AlgebraicType::Product(_)), FieldExpr::Value(val)) = (&ty, field) {
-            if val.as_bytes().is_some() {
-                return Ok(Some(AlgebraicType::bytes()));
-            }
+        if val.as_bytes().is_some() {
+            return Ok(Some(AlgebraicType::bytes()));
         }
     }
     Ok(ty)
@@ -121,7 +120,7 @@ fn check_both(op: OpQuery, lhs: &Typed, rhs: &Typed) -> Result<(), PlanError> {
         let lhs = lhs.to_string();
         let rhs = rhs.to_string();
         Err(match op {
-            OpQuery::Cmp(_) => ErrorType::TypeMismatch { lhs, rhs, },
+            OpQuery::Cmp(_) => ErrorType::TypeMismatch { lhs, rhs },
             OpQuery::Logic(op) => ErrorType::TypeMismatchLogic {
                 lhs,
                 rhs,
@@ -140,14 +139,14 @@ fn patch_type(lhs: &FieldOp, ty_lhs: &mut Typed, ty_rhs: &Typed) -> Result<(), P
     if let FieldOp::Field(lhs_field) = lhs {
         if let Some(ty) = ty_rhs.ty() {
             if ty.is_sum() || ty.as_product().map_or(false, |x| x.is_special()) {
-                ty_lhs.set_ty(resolve_type(f, Some(ty.clone()))?);
+                ty_lhs.set_ty(resolve_type(lhs_field, Some(ty.clone()))?);
             }
         }
     }
     Ok(())
 }
 
-fn type_check(of: &QueryFragment<FieldOp>) -> Result<Typed, PlanError> {
+fn type_check(of: QueryFragment<FieldOp>) -> Result<Typed, PlanError> {
     match of.q {
         FieldOp::Field(expr) => match expr {
             FieldExpr::Name(x) => {
@@ -155,18 +154,18 @@ fn type_check(of: &QueryFragment<FieldOp>) -> Result<Typed, PlanError> {
 
                 Ok(Typed::Field {
                     table,
-                    field: col.col_name.clone(),
+                    field: &col.col_name,
                     ty: Some(col.col_type.clone()),
                 })
             }
-            FieldExpr::Value(x) => Ok(Typed::Value {
-                value: x.clone(),
-                ty: x.type_of(),
+            FieldExpr::Value(value) => Ok(Typed::Value {
+                value,
+                ty: value.type_of(),
             }),
         },
         FieldOp::Cmp { op, lhs, rhs } => {
-            let mut ty_lhs = type_check(&QueryFragment { from: of.from, q: lhs })?;
-            let mut ty_rhs = type_check(&QueryFragment { from: of.from, q: rhs })?;
+            let mut ty_lhs = type_check(QueryFragment { from: of.from, q: lhs })?;
+            let mut ty_rhs = type_check(QueryFragment { from: of.from, q: rhs })?;
 
             let op = match op {
                 OpQuery::Cmp(op) => (*op).into(),
@@ -187,7 +186,6 @@ fn type_check(of: &QueryFragment<FieldOp>) -> Result<Typed, PlanError> {
                 op,
                 lhs: Box::new(ty_lhs),
                 rhs: Box::new(ty_rhs),
-                ty: AlgebraicType::Bool,
             })
         }
     }
@@ -195,7 +193,7 @@ fn type_check(of: &QueryFragment<FieldOp>) -> Result<Typed, PlanError> {
 
 impl TypeCheck for QueryFragment<'_, Selection> {
     fn type_check(&self) -> Result<(), PlanError> {
-        type_check(&QueryFragment {
+        type_check(QueryFragment {
             from: self.from,
             q: &self.q.clause,
         })?;
@@ -217,13 +215,13 @@ impl TypeCheck for QueryFragment<'_, ()> {
                         return Err(ErrorType::TypeMismatchJoin {
                             lhs: Typed::Field {
                                 table: table_lhs,
-                                field: lhs.col_name.clone(),
+                                field: &lhs.col_name,
                                 ty: Some(ty_lhs),
                             }
                             .to_string(),
                             rhs: Typed::Field {
                                 table: table_rhs,
-                                field: rhs.col_name.clone(),
+                                field: &rhs.col_name,
                                 ty: Some(ty_rhs),
                             }
                             .to_string(),

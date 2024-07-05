@@ -1,7 +1,7 @@
-use crate::db::relational_db::RelationalDB;
-use crate::error::{DBError, PlanError};
 use super::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
 use super::type_check::TypeCheck;
+use crate::db::relational_db::RelationalDB;
+use crate::error::{DBError, PlanError};
 use core::ops::Deref;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_primitives::ColId;
@@ -1143,7 +1143,7 @@ mod tests {
 
         assert_eq!(
             compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
-            Err(todo!())
+            Err("SqlError: Relation Error: `Field `table#4097.col#0` was expected to be `bool` but is `(Builtin = (U64 = ()))``, executing: `SELECT * FROM PlayerState WHERE entity_id AND entity_id`".into())
         );
         Ok(())
     }
