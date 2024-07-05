@@ -125,6 +125,7 @@ namespace SpacetimeDB
             public ServerMessage message;
             public List<DbOp> dbOps;
             public DateTime timestamp;
+            public ReducerEvent? reducerEvent;
         }
 
         struct PreProcessedMessage
@@ -170,6 +171,8 @@ namespace SpacetimeDB
                 using var decompressedStream = new BrotliStream(compressedStream, CompressionMode.Decompress);
                 using var binaryReader = new BinaryReader(decompressedStream);
                 var message = new ServerMessage.BSATN().Read(binaryReader);
+
+                ReducerEvent? reducerEvent = null;
 
                 // This is all of the inserts
                 Dictionary<System.Type, HashSet<byte[]>>? subscriptionInserts = null;
@@ -317,7 +320,7 @@ namespace SpacetimeDB
 
                                 // Convert the generic event arguments in to a domain specific event object
                                 try {
-                                    transactionUpdate.ReducerCall.ReducerEvent = ReducerEventFromDbEvent(transactionUpdate);
+                                    reducerEvent = ReducerEventFromDbEvent(transactionUpdate);
                                 }
                                 catch (Exception e) {
                                     Logger.LogException(e);
@@ -353,7 +356,7 @@ namespace SpacetimeDB
                 // Logger.LogWarning($"Total Updates preprocessed: {totalUpdateCount}");
                 return new PreProcessedMessage
                 {
-                    processed = new ProcessedMessage { message = message, dbOps = dbOps, timestamp = unprocessed.timestamp },
+                    processed = new ProcessedMessage { message = message, dbOps = dbOps, timestamp = unprocessed.timestamp, reducerEvent = reducerEvent },
                     subscriptionInserts = subscriptionInserts,
                 };
             }
@@ -435,7 +438,7 @@ namespace SpacetimeDB
         }
 
 
-        private void OnMessageProcessCompleteUpdate(TransactionUpdate? transactionEvent, List<DbOp> dbOps)
+        private void OnMessageProcessCompleteUpdate(ReducerEvent? dbEvent, List<DbOp> dbOps)
         {
             // First trigger OnBeforeDelete
             foreach (var update in dbOps)
@@ -444,7 +447,7 @@ namespace SpacetimeDB
                 {
                     try
                     {
-                        oldValue.OnBeforeDeleteEvent(transactionEvent);
+                        oldValue.OnBeforeDeleteEvent(dbEvent!);
                     }
                     catch (Exception e)
                     {
@@ -498,16 +501,16 @@ namespace SpacetimeDB
                                 // If we matched an update, these values must have primary keys.
                                 var newValue_ = (IDatabaseTableWithPrimaryKey)newValue;
                                 var oldValue_ = (IDatabaseTableWithPrimaryKey)oldValue;
-                                oldValue_.OnUpdateEvent(newValue_, transactionEvent);
+                                oldValue_.OnUpdateEvent(newValue_, dbEvent);
                                 break;
                             }
 
                         case { insert: { value: var newValue } }:
-                            newValue.OnInsertEvent(transactionEvent);
+                            newValue.OnInsertEvent(dbEvent);
                             break;
 
                         case { delete: { value: var oldValue } }:
-                            oldValue.OnDeleteEvent(transactionEvent);
+                            oldValue.OnDeleteEvent(dbEvent);
                             break;
                     }
                 }
@@ -556,7 +559,7 @@ namespace SpacetimeDB
                             Logger.LogWarning($"Failed to finish tracking reducer request: {requestId}");
                         }
                     }
-                    OnMessageProcessCompleteUpdate(transactionUpdate, dbOps);
+                    OnMessageProcessCompleteUpdate(processed.reducerEvent, dbOps);
                     try
                     {
                         onEvent?.Invoke(message);
@@ -566,7 +569,7 @@ namespace SpacetimeDB
                         Logger.LogException(e);
                     }
 
-                    if (transactionUpdate.ReducerCall.ReducerEvent is not { } reducerEvent)
+                    if (processed.reducerEvent is not { } reducerEvent)
                     {
                         // If we are here, an error about unknown reducer should have already been logged, so nothing to do.
                         break;
@@ -586,7 +589,7 @@ namespace SpacetimeDB
                     {
                         try
                         {
-                            onUnhandledReducerError?.Invoke((ReducerEvent)reducerEvent);
+                            onUnhandledReducerError?.Invoke(reducerEvent);
                         }
                         catch (Exception e)
                         {

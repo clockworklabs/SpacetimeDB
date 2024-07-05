@@ -10,9 +10,9 @@ namespace SpacetimeDB
     {
         void InternalOnValueInserted();
         void InternalOnValueDeleted();
-        void OnInsertEvent(TransactionUpdate? update);
-        void OnBeforeDeleteEvent(TransactionUpdate? update);
-        void OnDeleteEvent(TransactionUpdate? update);
+        void OnInsertEvent(ReducerEventBase? update);
+        void OnBeforeDeleteEvent(ReducerEventBase? update);
+        void OnDeleteEvent(ReducerEventBase? update);
     }
 
     public abstract class DatabaseTable<T, ReducerEvent> : IDatabaseTable
@@ -44,25 +44,25 @@ namespace SpacetimeDB
         public static event DeleteEventHandler? OnBeforeDelete;
         public static event DeleteEventHandler? OnDelete;
 
-        public void OnInsertEvent(TransactionUpdate? update)
+        public void OnInsertEvent(ReducerEventBase? dbEvent)
         {
-            OnInsert?.Invoke((T)this, (ReducerEvent?)update?.ReducerCall.ReducerEvent);
+            OnInsert?.Invoke((T)this, (ReducerEvent?)dbEvent);
         }
 
-        public void OnBeforeDeleteEvent(TransactionUpdate? update)
+        public void OnBeforeDeleteEvent(ReducerEventBase? dbEvent)
         {
-            OnBeforeDelete?.Invoke((T)this, (ReducerEvent?)update?.ReducerCall.ReducerEvent);
+            OnBeforeDelete?.Invoke((T)this, (ReducerEvent?)dbEvent);
         }
 
-        public void OnDeleteEvent(TransactionUpdate? update)
+        public void OnDeleteEvent(ReducerEventBase? dbEvent)
         {
-            OnDelete?.Invoke((T)this, (ReducerEvent?)update?.ReducerCall.ReducerEvent);
+            OnDelete?.Invoke((T)this, (ReducerEvent?)dbEvent);
         }
     }
 
     public interface IDatabaseTableWithPrimaryKey : IDatabaseTable
     {
-        void OnUpdateEvent(IDatabaseTableWithPrimaryKey newValue, TransactionUpdate? update);
+        void OnUpdateEvent(IDatabaseTableWithPrimaryKey newValue, ReducerEventBase? update);
         object GetPrimaryKeyValue();
     }
 
@@ -75,9 +75,9 @@ namespace SpacetimeDB
         public delegate void UpdateEventHandler(T oldValue, T newValue, ReducerEvent? update);
         public static event UpdateEventHandler? OnUpdate;
 
-        public void OnUpdateEvent(IDatabaseTableWithPrimaryKey newValue, TransactionUpdate? update)
+        public void OnUpdateEvent(IDatabaseTableWithPrimaryKey newValue, ReducerEventBase? dbEvent)
         {
-            OnUpdate?.Invoke((T)this, (T)newValue, (ReducerEvent?)update?.ReducerCall.ReducerEvent);
+            OnUpdate?.Invoke((T)this, (T)newValue, (ReducerEvent?)dbEvent);
         }
     }
 }
