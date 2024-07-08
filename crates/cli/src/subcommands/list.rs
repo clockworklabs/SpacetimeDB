@@ -1,7 +1,7 @@
 use crate::common_args;
 use crate::Config;
 use anyhow::Context;
-use clap::{Arg, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use reqwest::StatusCode;
 use serde::Deserialize;
 use spacetimedb_lib::Address;
