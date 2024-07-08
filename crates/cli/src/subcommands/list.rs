@@ -14,7 +14,7 @@ pub fn cli() -> Command {
     Command::new("list")
         .about("Lists the databases attached to an identity")
         .arg(
-            Arg::new("identity")
+            common_args::identity()
                 .required(true)
                 .help("The identity to list databases for"),
         )

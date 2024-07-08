@@ -41,7 +41,7 @@ fn get_subcommands() -> Vec<Command> {
         Command::new("import")
             .about("Import an existing identity into your spacetime config")
             .arg(
-                Arg::new("identity")
+                common_args::identity()
                     .required(true)
                     .value_parser(clap::value_parser!(Identity))
                     .help("The identity string associated with the provided token"),
@@ -142,7 +142,7 @@ fn get_subcommands() -> Vec<Command> {
                     .required(true)
                     .help("The email associated with the identity that you would like to recover."),
             )
-            .arg(Arg::new("identity").required(true).help(
+            .arg(common_args::identity().required(true).help(
                 "The identity you would like to recover. This identity must be associated with the email provided.",
             ).value_parser(clap::value_parser!(Identity)))
             .arg(common_args::server()
@@ -152,7 +152,7 @@ fn get_subcommands() -> Vec<Command> {
             ,
         Command::new("remove")
             .about("Removes a saved identity from your spacetime config")
-            .arg(Arg::new("identity")
+            .arg(common_args::identity()
                 .help("The identity string or name to delete")
             )
             .arg(
@@ -179,13 +179,13 @@ fn get_subcommands() -> Vec<Command> {
             // TODO: project flag?
             ,
         Command::new("token").about("Print the token for an identity").arg(
-            Arg::new("identity")
+            common_args::identity()
                 .help("The identity string or name that we should print the token for")
                 .required(true),
         ),
         Command::new("set-default").about("Set the default identity for a server")
             .arg(
-                Arg::new("identity")
+                common_args::identity()
                     .help("The identity string or name that should become the new default identity")
                     .required(true),
             )
@@ -198,7 +198,7 @@ fn get_subcommands() -> Vec<Command> {
         Command::new("set-email")
             .about("Associates an email address with an identity")
             .arg(
-                Arg::new("identity")
+                common_args::identity()
                     .help("The identity string or name that should be associated with the email")
                     .required(true),
             )
@@ -221,7 +221,7 @@ fn get_subcommands() -> Vec<Command> {
                     .conflicts_with("server")
             ),
         Command::new("set-name").about("Set the name of an identity or rename an existing identity nickname").arg(
-            Arg::new("identity")
+            common_args::identity()
                 .help("The identity string or name to be named. If a name is supplied, the corresponding identity will be renamed.")
                 .required(true))
             .arg(Arg::new("name")
