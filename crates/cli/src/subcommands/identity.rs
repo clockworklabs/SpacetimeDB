@@ -27,222 +27,222 @@ pub fn cli() -> Command {
 }
 
 fn get_subcommands() -> Vec<Command> {
-    vec![
-        Command::new("find").about("Find an identity for an email")
-            .arg(
-                Arg::new("email")
-                    .required(true)
-                    .help("The email associated with the identity that you would like to find"),
-            )
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
-                    .help("The server to search for identities matching the email"),
-            ),
-        Command::new("import")
-            .about("Import an existing identity into your spacetime config")
-            .arg(
-                Arg::new("identity")
-                    .required(true)
-                    .value_parser(clap::value_parser!(Identity))
-                    .help("The identity string associated with the provided token"),
-            )
-            .arg(
-                Arg::new("token")
-                    .required(true)
-                    .help("The identity token to import. This is used for authenticating with SpacetimeDB"),
-            )
-            .arg(
-                Arg::new("name")
-                    .long("name")
-                    .short('n')
-                    .help("A name for the newly imported identity"),
-            )
-            // TODO: project flag?
-            ,
-        Command::new("init-default")
-            .about("Initialize a new default identity if it is missing from a server's config")
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
-                    .help("The nickname, host name or URL of the server for which to set the default identity"),
-            )
-            .arg(
-                Arg::new("name")
-                    .long("name")
-                    .short('n')
-                    .help("The name of the identity that should become the new default identity"),
-            )
-            .arg(
-                Arg::new("quiet")
-                    .long("quiet")
-                    .short('q')
-                    .action(ArgAction::SetTrue)
-                    .help("Runs command in silent mode"),
-            ),
-        Command::new("list").about("List saved identities which apply to a server")
-            .arg(
-                Arg::new("server")
-                    .short('s')
-                    .long("server")
-                    .help("The nickname, host name or URL of the server to list identities for")
-                    .conflicts_with("all")
-            )
-            .arg(
-                Arg::new("all")
-                    .short('a')
-                    .long("all")
-                    .help("List all stored identities, regardless of server")
-                    .action(ArgAction::SetTrue)
-                    .conflicts_with("server")
-            )
-            // TODO: project flag?
-            ,
-        Command::new("new")
-            .about("Creates a new identity")
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
-                    .help("The nickname, host name or URL of the server from which to request the identity"),
-            )
-            .arg(
-                Arg::new("no-save")
-                    .help("Don't save to local config, just create a new identity")
-                    .long("no-save")
-                    .action(ArgAction::SetTrue),
-            )
-            .arg(
-                Arg::new("name")
-                    .long("name")
-                    .short('n')
-                    .help("Nickname for this identity")
-                    .conflicts_with("no-save"),
-            )
-            .arg(
-                Arg::new("email")
-                    .long("email")
-                    .short('e')
-                    .help("Recovery email for this identity")
-                    .conflicts_with("no-email"),
-            )
-            .arg(
-                Arg::new("no-email")
-                    .long("no-email")
-                    .help("Creates an identity without a recovery email")
-                    .conflicts_with("email")
-                    .action(ArgAction::SetTrue),
-            )
-            .arg(
-                Arg::new("default")
-                    .help("Make the new identity the default for the server")
-                    .long("default")
-                    .short('d')
-                    .conflicts_with("no-save")
-                    .action(ArgAction::SetTrue),
-            ),
-        Command::new("recover")
-            .about("Recover an existing identity and import it into your local config")
-            .arg(
-                Arg::new("email")
-                    .required(true)
-                    .help("The email associated with the identity that you would like to recover."),
-            )
-            .arg(Arg::new("identity").required(true).help(
-                "The identity you would like to recover. This identity must be associated with the email provided.",
-            ).value_parser(clap::value_parser!(Identity)))
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
-                    .help("The server from which to request recovery codes"),
-            )
-            // TODO: project flag?
-            ,
-        Command::new("remove")
-            .about("Removes a saved identity from your spacetime config")
-            .arg(Arg::new("identity")
-                .help("The identity string or name to delete")
-            )
-            .arg(
-                Arg::new("all-server")
-                    .long("all-server")
-                    .short('s')
-                    .help("Remove all identities associated with a particular server")
-                    .conflicts_with_all(["identity", "all"])
-            )
-            .arg(
-                Arg::new("all")
-                    .long("all")
-                    .short('a')
-                    .help("Remove all identities from your spacetime config")
-                    .action(ArgAction::SetTrue)
-                    .conflicts_with_all(["identity", "all-server"])
-            ).arg(
-                Arg::new("force")
-                    .long("force")
-                    .help("Removes all identities without prompting (for CI usage)")
-                    .action(ArgAction::SetTrue)
-                    .conflicts_with("identity")
-            )
-            // TODO: project flag?
-            ,
-        Command::new("token").about("Print the token for an identity").arg(
-            Arg::new("identity")
-                .help("The identity string or name that we should print the token for")
-                .required(true),
-        ),
-        Command::new("set-default").about("Set the default identity for a server")
-            .arg(
-                Arg::new("identity")
-                    .help("The identity string or name that should become the new default identity")
-                    .required(true),
-            )
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
-                    .help("The server nickname, host name or URL of the server which should use this identity as a default")
-            )
-            // TODO: project flag?
-            ,
-        Command::new("set-email")
-            .about("Associates an email address with an identity")
-            .arg(
-                Arg::new("identity")
-                    .help("The identity string or name that should be associated with the email")
-                    .required(true),
-            )
-            .arg(
-                Arg::new("email")
-                    .help("The email that should be assigned to the provided identity")
-                    .required(true),
-            )
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
-                    .help("The server that should be informed of the email change")
-                    .conflicts_with("all-servers")
-            )
-            .arg(
-                Arg::new("all-servers")
-                    .long("all-servers")
-                    .short('a')
-                    .action(ArgAction::SetTrue)
-                    .help("Inform all known servers of the email change")
-                    .conflicts_with("server")
-            ),
-        Command::new("set-name").about("Set the name of an identity or rename an existing identity nickname").arg(
-            Arg::new("identity")
-                .help("The identity string or name to be named. If a name is supplied, the corresponding identity will be renamed.")
-                .required(true))
-            .arg(Arg::new("name")
-                .help("The new name for the identity")
-                .required(true)
-        ),
+    vec![ 
+        Command::new("find").about("Find an identity for an email") 
+            .arg( 
+                Arg::new("email") 
+                    .required(true) 
+                    .help("The email associated with the identity that you would like to find"), 
+            ) 
+            .arg( 
+                Arg::new("server") 
+                    .long("server") 
+                    .short('s') 
+                    .help("The server to search for identities matching the email"), 
+            ), 
+        Command::new("import") 
+            .about("Import an existing identity into your spacetime config") 
+            .arg( 
+                Arg::new("identity") 
+                    .required(true) 
+                    .value_parser(clap::value_parser!(Identity)) 
+                    .help("The identity string associated with the provided token"), 
+            ) 
+            .arg( 
+                Arg::new("token") 
+                    .required(true) 
+                    .help("The identity token to import. This is used for authenticating with SpacetimeDB"), 
+            ) 
+            .arg( 
+                Arg::new("name") 
+                    .long("name") 
+                    .short('n') 
+                    .help("A name for the newly imported identity"), 
+            ) 
+            // TODO: project flag? 
+            , 
+        Command::new("init-default") 
+            .about("Initialize a new default identity if it is missing from a server's config") 
+            .arg( 
+                Arg::new("server") 
+                    .long("server") 
+                    .short('s') 
+                    .help("The nickname, host name or URL of the server for which to set the default identity"), 
+            ) 
+            .arg( 
+                Arg::new("name") 
+                    .long("name") 
+                    .short('n') 
+                    .help("The name of the identity that should become the new default identity"), 
+            ) 
+            .arg( 
+                Arg::new("quiet") 
+                    .long("quiet") 
+                    .short('q') 
+                    .action(ArgAction::SetTrue) 
+                    .help("Runs command in silent mode"), 
+            ), 
+        Command::new("list").about("List saved identities which apply to a server") 
+            .arg( 
+                Arg::new("server") 
+                    .short('s') 
+                    .long("server") 
+                    .help("The nickname, host name or URL of the server to list identities for") 
+                    .conflicts_with("all") 
+            ) 
+            .arg( 
+                Arg::new("all") 
+                    .short('a') 
+                    .long("all") 
+                    .help("List all stored identities, regardless of server") 
+                    .action(ArgAction::SetTrue) 
+                    .conflicts_with("server") 
+            ) 
+            // TODO: project flag? 
+            , 
+        Command::new("new") 
+            .about("Creates a new identity") 
+            .arg( 
+                Arg::new("server") 
+                    .long("server") 
+                    .short('s') 
+                    .help("The nickname, host name or URL of the server from which to request the identity"), 
+            ) 
+            .arg( 
+                Arg::new("no-save") 
+                    .help("Don't save to local config, just create a new identity") 
+                    .long("no-save") 
+                    .action(ArgAction::SetTrue), 
+            ) 
+            .arg( 
+                Arg::new("name") 
+                    .long("name") 
+                    .short('n') 
+                    .help("Nickname for this identity") 
+                    .conflicts_with("no-save"), 
+            ) 
+            .arg( 
+                Arg::new("email") 
+                    .long("email") 
+                    .short('e') 
+                    .help("Recovery email for this identity") 
+                    .conflicts_with("no-email"), 
+            ) 
+            .arg( 
+                Arg::new("no-email") 
+                    .long("no-email") 
+                    .help("Creates an identity without a recovery email") 
+                    .conflicts_with("email") 
+                    .action(ArgAction::SetTrue), 
+            ) 
+            .arg( 
+                Arg::new("default") 
+                    .help("Make the new identity the default for the server") 
+                    .long("default") 
+                    .short('d') 
+                    .conflicts_with("no-save") 
+                    .action(ArgAction::SetTrue), 
+            ), 
+        Command::new("recover") 
+            .about("Recover an existing identity and import it into your local config") 
+            .arg( 
+                Arg::new("email") 
+                    .required(true) 
+                    .help("The email associated with the identity that you would like to recover."), 
+            ) 
+            .arg(Arg::new("identity").required(true).help( 
+                "The identity you would like to recover. This identity must be associated with the email provided.", 
+            ).value_parser(clap::value_parser!(Identity))) 
+            .arg( 
+                Arg::new("server") 
+                    .long("server") 
+                    .short('s') 
+                    .help("The server from which to request recovery codes"), 
+            ) 
+            // TODO: project flag? 
+            , 
+        Command::new("remove") 
+            .about("Removes a saved identity from your spacetime config") 
+            .arg(Arg::new("identity") 
+                .help("The identity string or name to delete") 
+            ) 
+            .arg( 
+                Arg::new("all-server") 
+                    .long("all-server") 
+                    .short('s') 
+                    .help("Remove all identities associated with a particular server") 
+                    .conflicts_with_all(["identity", "all"]) 
+            ) 
+            .arg( 
+                Arg::new("all") 
+                    .long("all") 
+                    .short('a') 
+                    .help("Remove all identities from your spacetime config") 
+                    .action(ArgAction::SetTrue) 
+                    .conflicts_with_all(["identity", "all-server"]) 
+            ).arg( 
+                Arg::new("force") 
+                    .long("force") 
+                    .help("Removes all identities without prompting (for CI usage)") 
+                    .action(ArgAction::SetTrue) 
+                    .conflicts_with("identity") 
+            ) 
+            // TODO: project flag? 
+            , 
+        Command::new("token").about("Print the token for an identity").arg( 
+            Arg::new("identity") 
+                .help("The identity string or name that we should print the token for") 
+                .required(true), 
+        ), 
+        Command::new("set-default").about("Set the default identity for a server") 
+            .arg( 
+                Arg::new("identity") 
+                    .help("The identity string or name that should become the new default identity") 
+                    .required(true), 
+            ) 
+            .arg( 
+                Arg::new("server") 
+                    .long("server") 
+                    .short('s') 
+                    .help("The server nickname, host name or URL of the server which should use this identity as a default") 
+            ) 
+            // TODO: project flag? 
+            , 
+        Command::new("set-email") 
+            .about("Associates an email address with an identity") 
+            .arg( 
+                Arg::new("identity") 
+                    .help("The identity string or name that should be associated with the email") 
+                    .required(true), 
+            ) 
+            .arg( 
+                Arg::new("email") 
+                    .help("The email that should be assigned to the provided identity") 
+                    .required(true), 
+            ) 
+            .arg( 
+                Arg::new("server") 
+                    .long("server") 
+                    .short('s') 
+                    .help("The server that should be informed of the email change") 
+                    .conflicts_with("all-servers") 
+            ) 
+            .arg( 
+                Arg::new("all-servers") 
+                    .long("all-servers") 
+                    .short('a') 
+                    .action(ArgAction::SetTrue) 
+                    .help("Inform all known servers of the email change") 
+                    .conflicts_with("server") 
+            ), 
+        Command::new("set-name").about("Set the name of an identity or rename an existing identity nickname").arg( 
+            Arg::new("identity") 
+                .help("The identity string or name to be named. If a name is supplied, the corresponding identity will be renamed.") 
+                .required(true)) 
+            .arg(Arg::new("name") 
+                .help("The new name for the identity") 
+                .required(true) 
+        ), 
     ]
 }
 
@@ -498,8 +498,8 @@ async fn exec_list(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
         let server_name = config.server_nick_or_host(server)?;
         let decoding_key = config.server_decoding_key(server).with_context(|| {
             format!(
-                "Cannot list identities for server without a saved fingerprint: {server_name}
-Fetch the server's fingerprint with:
+                "Cannot list identities for server without a saved fingerprint: {server_name} 
+Fetch the server's fingerprint with: 
 \tspacetime server fingerprint -s {server_name}"
             )
         })?;

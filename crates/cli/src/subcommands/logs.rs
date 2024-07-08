@@ -10,47 +10,47 @@ use termcolor::{Color, ColorSpec, WriteColor};
 use tokio::io::AsyncWriteExt;
 
 pub fn cli() -> clap::Command {
-    clap::Command::new("logs")
-        .about("Prints logs from a SpacetimeDB database")
-        .arg(
-            Arg::new("database")
-                .required(true)
-                .help("The domain or address of the database to print logs from"),
-        )
-        .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
-                .help("The nickname, host name or URL of the server hosting the database"),
-        )
-        .arg(
-            Arg::new("identity")
-                .long("identity")
-                .short('i')
-                .help("The identity to use for printing logs from this database"),
-        )
-        .arg(
-            Arg::new("num_lines")
-                .value_parser(clap::value_parser!(u32))
-                .help("The number of lines to print from the start of the log of this database")
-                .long_help("The number of lines to print from the start of the log of this database. If no num lines is provided, all lines will be returned."),
-        )
-        .arg(
-            Arg::new("follow")
-                .long("follow")
-                .short('f')
-                .required(false)
-                .action(ArgAction::SetTrue)
-                .help("A flag indicating whether or not to follow the logs")
-                .long_help("A flag that causes logs to not stop when end of the log file is reached, but rather to wait for additional data to be appended to the input."),
-        )
-        .arg(
-            Arg::new("json")
-                .long("json")
-                .required(false)
-                .action(ArgAction::SetTrue)
-                .help("Output raw json log records"),
-        )
+    clap::Command::new("logs") 
+        .about("Prints logs from a SpacetimeDB database") 
+        .arg( 
+            Arg::new("database") 
+                .required(true) 
+                .help("The domain or address of the database to print logs from"), 
+        ) 
+        .arg( 
+            Arg::new("server") 
+                .long("server") 
+                .short('s') 
+                .help("The nickname, host name or URL of the server hosting the database"), 
+        ) 
+        .arg( 
+            Arg::new("identity") 
+                .long("identity") 
+                .short('i') 
+                .help("The identity to use for printing logs from this database"), 
+        ) 
+        .arg( 
+            Arg::new("num_lines") 
+                .value_parser(clap::value_parser!(u32)) 
+                .help("The number of lines to print from the start of the log of this database") 
+                .long_help("The number of lines to print from the start of the log of this database. If no num lines is provided, all lines will be returned."), 
+        ) 
+        .arg( 
+            Arg::new("follow") 
+                .long("follow") 
+                .short('f') 
+                .required(false) 
+                .action(ArgAction::SetTrue) 
+                .help("A flag indicating whether or not to follow the logs") 
+                .long_help("A flag that causes logs to not stop when end of the log file is reached, but rather to wait for additional data to be appended to the input."), 
+        ) 
+        .arg( 
+            Arg::new("json") 
+                .long("json") 
+                .required(false) 
+                .action(ArgAction::SetTrue) 
+                .help("Output raw json log records"), 
+        ) 
         .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
 

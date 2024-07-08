@@ -218,9 +218,9 @@ pub async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyho
     } else {
         let fingerprint = spacetime_server_fingerprint(url).await.with_context(|| {
             format!(
-                "Unable to retrieve fingerprint for server: {url}
-Is the server running?
-Add a server without retrieving its fingerprint with:
+                "Unable to retrieve fingerprint for server: {url} 
+Is the server running? 
+Add a server without retrieving its fingerprint with: 
 \tspacetime server add {url} --no-fingerprint",
             )
         })?;

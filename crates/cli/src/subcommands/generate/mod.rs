@@ -26,77 +26,77 @@ mod util;
 const INDENT: &str = "\t";
 
 pub fn cli() -> clap::Command {
-    clap::Command::new("generate")
-        .about("Generate client files for a spacetime module.")
-        .arg(
-            Arg::new("wasm_file")
-                .value_parser(clap::value_parser!(PathBuf))
-                .long("wasm-file")
-                .short('w')
-                .conflicts_with("project_path")
-                .help("The system path (absolute or relative) to the wasm file we should inspect"),
-        )
-        .arg(
-            Arg::new("project_path")
-                .value_parser(clap::value_parser!(PathBuf))
-                .default_value(".")
-                .long("project-path")
-                .short('p')
-                .help("The system path (absolute or relative) to the project you would like to inspect")
-        )
-        .arg(
-            Arg::new("out_dir")
-                .value_parser(clap::value_parser!(PathBuf))
-                .required(true)
-                .long("out-dir")
-                .short('o')
-                .help("The system path (absolute or relative) to the generate output directory"),
-        )
-        .arg(
-            Arg::new("namespace")
-                .default_value("SpacetimeDB.Types")
-                .long("namespace")
-                .short('n')
-                .help("The namespace that should be used"),
-        )
-        .arg(
-            Arg::new("lang")
-                .required(true)
-                .long("lang")
-                .short('l')
-                .value_parser(clap::value_parser!(Language))
-                .help("The language to generate"),
-        )
-        .arg(
-            Arg::new("skip_clippy")
-                .long("skip_clippy")
-                .short('s')
-                .short('S')
-                .action(SetTrue)
-                .env("SPACETIME_SKIP_CLIPPY")
-                .value_parser(clap::builder::FalseyValueParser::new())
-                .help("Skips running clippy on the module before generating (intended to speed up local iteration, not recommended for CI)"),
-        )
-        .arg(
-            Arg::new("delete_files")
-                .long("delete-files")
-                .action(SetTrue)
-                .help("Delete outdated generated files whose definitions have been removed from the module. Prompts before deleting unless --force is supplied."),
-        )
-        .arg(
-            Arg::new("force")
-                .long("force")
-                .action(SetTrue)
-                .requires("delete_files")
-                .help("delete-files without prompting first. Useful for scripts."),
-        )
-        .arg(
-            Arg::new("debug")
-                .long("debug")
-                .short('d')
-                .action(SetTrue)
-                .help("Builds the module using debug instead of release (intended to speed up local iteration, not recommended for CI)"),
-        )
+    clap::Command::new("generate") 
+        .about("Generate client files for a spacetime module.") 
+        .arg( 
+            Arg::new("wasm_file") 
+                .value_parser(clap::value_parser!(PathBuf)) 
+                .long("wasm-file") 
+                .short('w') 
+                .conflicts_with("project_path") 
+                .help("The system path (absolute or relative) to the wasm file we should inspect"), 
+        ) 
+        .arg( 
+            Arg::new("project_path") 
+                .value_parser(clap::value_parser!(PathBuf)) 
+                .default_value(".") 
+                .long("project-path") 
+                .short('p') 
+                .help("The system path (absolute or relative) to the project you would like to inspect") 
+        ) 
+        .arg( 
+            Arg::new("out_dir") 
+                .value_parser(clap::value_parser!(PathBuf)) 
+                .required(true) 
+                .long("out-dir") 
+                .short('o') 
+                .help("The system path (absolute or relative) to the generate output directory"), 
+        ) 
+        .arg( 
+            Arg::new("namespace") 
+                .default_value("SpacetimeDB.Types") 
+                .long("namespace") 
+                .short('n') 
+                .help("The namespace that should be used"), 
+        ) 
+        .arg( 
+            Arg::new("lang") 
+                .required(true) 
+                .long("lang") 
+                .short('l') 
+                .value_parser(clap::value_parser!(Language)) 
+                .help("The language to generate"), 
+        ) 
+        .arg( 
+            Arg::new("skip_clippy") 
+                .long("skip_clippy") 
+                .short('s') 
+                .short('S') 
+                .action(SetTrue) 
+                .env("SPACETIME_SKIP_CLIPPY") 
+                .value_parser(clap::builder::FalseyValueParser::new()) 
+                .help("Skips running clippy on the module before generating (intended to speed up local iteration, not recommended for CI)"), 
+        ) 
+        .arg( 
+            Arg::new("delete_files") 
+                .long("delete-files") 
+                .action(SetTrue) 
+                .help("Delete outdated generated files whose definitions have been removed from the module. Prompts before deleting unless --force is supplied."), 
+        ) 
+        .arg( 
+            Arg::new("force") 
+                .long("force") 
+                .action(SetTrue) 
+                .requires("delete_files") 
+                .help("delete-files without prompting first. Useful for scripts."), 
+        ) 
+        .arg( 
+            Arg::new("debug") 
+                .long("debug") 
+                .short('d') 
+                .action(SetTrue) 
+                .help("Builds the module using debug instead of release (intended to speed up local iteration, not recommended for CI)"), 
+        ) 
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 

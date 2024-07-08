@@ -13,52 +13,52 @@ use crate::errors::error_for_status;
 use crate::util::{database_address, get_auth_header_only};
 
 pub fn cli() -> clap::Command {
-    clap::Command::new("sql")
-        .about("Runs a SQL query on the database.")
-        .arg(
-            Arg::new("database")
-                .required(true)
-                .help("The domain or address of the database you would like to query"),
-        )
-        .arg(
-            Arg::new("query")
-                .action(ArgAction::Set)
-                .required(true)
-                .conflicts_with("interactive")
-                .help("The SQL query to execute"),
-        )
-        .arg(Arg::new("interactive")
-                 .long("interactive")
-                 .action(ArgAction::SetTrue)
-                 .conflicts_with("query")
-                 .help("Runs an interactive command prompt for `SQL` expressions"),)
-        .group(
-            ArgGroup::new("mode")
-                .args(["interactive","query"])
-                .multiple(false)
-                .required(true)
-        )
-        .arg(
-            Arg::new("identity")
-                .long("identity")
-                .short('i')
-                .conflicts_with("anon_identity")
-                .help("The identity to use for querying the database")
-                .long_help("The identity to use for querying the database. If no identity is provided, the default one will be used."),
-        )
-        .arg(
-            Arg::new("anon_identity")
-                .long("anon-identity")
-                .short('a')
-                .conflicts_with("identity")
-                .action(ArgAction::SetTrue)
-                .help("If this flag is present, no identity will be provided when querying the database")
-        )
-        .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
-                .help("The nickname, host name or URL of the server hosting the database"),
+    clap::Command::new("sql") 
+        .about("Runs a SQL query on the database.") 
+        .arg( 
+            Arg::new("database") 
+                .required(true) 
+                .help("The domain or address of the database you would like to query"), 
+        ) 
+        .arg( 
+            Arg::new("query") 
+                .action(ArgAction::Set) 
+                .required(true) 
+                .conflicts_with("interactive") 
+                .help("The SQL query to execute"), 
+        ) 
+        .arg(Arg::new("interactive") 
+                 .long("interactive") 
+                 .action(ArgAction::SetTrue) 
+                 .conflicts_with("query") 
+                 .help("Runs an interactive command prompt for `SQL` expressions"),) 
+        .group( 
+            ArgGroup::new("mode") 
+                .args(["interactive","query"]) 
+                .multiple(false) 
+                .required(true) 
+        ) 
+        .arg( 
+            Arg::new("identity") 
+                .long("identity") 
+                .short('i') 
+                .conflicts_with("anon_identity") 
+                .help("The identity to use for querying the database") 
+                .long_help("The identity to use for querying the database. If no identity is provided, the default one will be used."), 
+        ) 
+        .arg( 
+            Arg::new("anon_identity") 
+                .long("anon-identity") 
+                .short('a') 
+                .conflicts_with("identity") 
+                .action(ArgAction::SetTrue) 
+                .help("If this flag is present, no identity will be provided when querying the database") 
+        ) 
+        .arg( 
+            Arg::new("server") 
+                .long("server") 
+                .short('s') 
+                .help("The nickname, host name or URL of the server hosting the database"), 
         )
 }
 

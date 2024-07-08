@@ -461,9 +461,9 @@ fn autogen_csharp_access_funcs_for_struct(
             writeln!(output);
         }
 
-        writeln!(
-            output,
-            "public static IEnumerable<{struct_name_pascal_case}> FilterBy{csharp_field_name_pascal}({csharp_field_type} value)"
+        writeln!( 
+            output, 
+            "public static IEnumerable<{struct_name_pascal_case}> FilterBy{csharp_field_name_pascal}({csharp_field_type} value)" 
         );
         indented_block(output, |output| {
             if is_unique {
@@ -543,9 +543,9 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     writeln!(output, "public static partial class Reducer");
     indented_block(&mut output, |output| {
         let delegate_separator = if !reducer.args.is_empty() { ", " } else { "" };
-        writeln!(
-            output,
-            "public delegate void {func_name_pascal_case}Handler(ReducerEvent reducerEvent{delegate_separator}{func_params});"
+        writeln!( 
+            output, 
+            "public delegate void {func_name_pascal_case}Handler(ReducerEvent reducerEvent{delegate_separator}{func_params});" 
         );
         writeln!(
             output,
@@ -556,16 +556,16 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
 
         writeln!(output, "public static void {func_name_pascal_case}({func_params})");
         indented_block(output, |output| {
-            writeln!(
-                output,
-                "SpacetimeDBClient.instance.InternalCallReducer(new {func_name_pascal_case}ArgsStruct {{ {field_inits} }});"
+            writeln!( 
+                output, 
+                "SpacetimeDBClient.instance.InternalCallReducer(new {func_name_pascal_case}ArgsStruct {{ {field_inits} }});" 
             );
         });
         writeln!(output);
 
-        writeln!(
-            output,
-            "public static bool On{func_name_pascal_case}(ReducerEvent reducerEvent, {func_name_pascal_case}ArgsStruct args)"
+        writeln!( 
+            output, 
+            "public static bool On{func_name_pascal_case}(ReducerEvent reducerEvent, {func_name_pascal_case}ArgsStruct args)" 
         );
         indented_block(output, |output| {
             writeln!(output, "if (On{func_name_pascal_case}Event == null) return false;");
