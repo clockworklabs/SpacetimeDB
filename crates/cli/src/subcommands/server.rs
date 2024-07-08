@@ -24,6 +24,8 @@ fn get_subcommands() -> Vec<Command> {
             .about("Set the default server for future operations")
             .arg(
                 Arg::new("server")
+                    .long("server")
+                    .short('s')
                     .help("The nickname, host name or URL of the new default server")
                     .required(true),
             ),
@@ -48,6 +50,8 @@ fn get_subcommands() -> Vec<Command> {
             .about("Remove a saved server configuration")
             .arg(
                 Arg::new("server")
+                    .long("server")
+                    .short('s')
                     .help("The nickname, host name or URL of the server to remove")
                     .required(true),
             )
@@ -69,8 +73,8 @@ fn get_subcommands() -> Vec<Command> {
             .about("Show or update a saved server's fingerprint")
             .arg(
                 Arg::new("server")
-                    .short('s')
                     .long("server")
+                    .short('s')
                     .help("The nickname, host name or URL of the server"),
             )
             .arg(
@@ -89,10 +93,20 @@ fn get_subcommands() -> Vec<Command> {
             ),
         Command::new("ping")
             .about("Checks to see if a SpacetimeDB host is online")
-            .arg(Arg::new("server").help("The nickname, host name or URL of the server to ping")),
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .short('s')
+                    .help("The nickname, host name or URL of the server to ping"),
+            ),
         Command::new("edit")
             .about("Update a saved server's nickname, host name or protocol")
-            .arg(Arg::new("server").help("The nickname, host name or URL of the server"))
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .short('s')
+                    .help("The nickname, host name or URL of the server"),
+            )
             .arg(
                 Arg::new("nickname")
                     .help("A new nickname to assign the server configuration")
