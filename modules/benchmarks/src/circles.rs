@@ -1,6 +1,6 @@
 //! STDB module used for benchmarks based on "realistic" workloads we are focusing in improving.
 use crate::Load;
-use spacetimedb::{log, spacetimedb, SpacetimeType, Timestamp};
+use spacetimedb::{log, SpacetimeType, Timestamp};
 use std::hint::black_box;
 
 #[derive(SpacetimeType, Debug, Clone, Copy)]
@@ -11,10 +11,10 @@ pub struct Vector2 {
 
 // ---------- schemas ----------
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Entity {
-    #[autoinc]
-    #[primarykey]
+    #[auto_inc]
+    #[primary_key]
     pub id: u32,
     pub position: Vector2,
     pub mass: u32,
@@ -30,11 +30,11 @@ impl Entity {
     }
 }
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "player_id_index", player_id))]
+#[spacetimedb::table]
 pub struct Circle {
-    #[primarykey]
+    #[primary_key]
     pub entity_id: u32,
+    #[index(btree)]
     pub player_id: u32,
     pub direction: Vector2,
     pub magnitude: f32,
@@ -53,9 +53,9 @@ impl Circle {
     }
 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table]
 pub struct Food {
-    #[primarykey]
+    #[primary_key]
     pub entity_id: u32,
 }
 
@@ -78,7 +78,7 @@ fn is_overlapping(entity1: &Entity, entity2: &Entity) -> bool {
 }
 
 // ---------- insert bulk ----------
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn insert_bulk_entity(count: u32) {
     for id in 0..count {
         Entity::insert(Entity::new(0, id as f32, (id + 5) as f32, id * 5)).unwrap();
@@ -86,7 +86,7 @@ pub fn insert_bulk_entity(count: u32) {
     log::info!("INSERT ENTITY: {count}");
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn insert_bulk_circle(count: u32) {
     for id in 0..count {
         Circle::insert(Circle::new(id, id, id as f32, (id + 5) as f32, (id * 5) as f32)).unwrap();
@@ -94,7 +94,7 @@ pub fn insert_bulk_circle(count: u32) {
     log::info!("INSERT CIRCLE: {count}");
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn insert_bulk_food(count: u32) {
     for id in 1..=count {
         Food::insert(Food::new(id)).unwrap();
@@ -106,7 +106,7 @@ pub fn insert_bulk_food(count: u32) {
 // ```
 // SELECT * FROM Circle, Entity, Food
 // ```
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn cross_join_all(expected: u32) {
     let mut count = 0;
     for _circle in Circle::iter() {
@@ -124,7 +124,7 @@ pub fn cross_join_all(expected: u32) {
 // ```
 // SELECT * FROM Circle JOIN ENTITY USING(entity_id), Food JOIN ENTITY USING(entity_id)
 // ```
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn cross_join_circle_food(expected: u32) {
     let mut count = 0;
     for circle in Circle::iter() {
@@ -143,7 +143,7 @@ pub fn cross_join_circle_food(expected: u32) {
     log::info!("CROSS JOIN CIRCLE FOOD: {expected}, processed: {count}");
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn init_game_circles(initial_load: u32) {
     let load = Load::new(initial_load);
 
@@ -152,7 +152,7 @@ pub fn init_game_circles(initial_load: u32) {
     insert_bulk_circle(load.small_table);
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn run_game_circles(initial_load: u32) {
     let load = Load::new(initial_load);
 

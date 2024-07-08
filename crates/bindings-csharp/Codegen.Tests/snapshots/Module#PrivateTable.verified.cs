@@ -35,6 +35,6 @@ partial class PrivateTable
     public void Insert()
     {
         var bytes = SpacetimeDB.Runtime.Insert(tableId.Value, this);
-        // bytes should contain modified value now with autoinc fields updated
+        // bytes should contain modified value now with auto_inc fields updated
     }
 } // PrivateTable

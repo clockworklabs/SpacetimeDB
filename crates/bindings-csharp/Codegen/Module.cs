@@ -225,7 +225,7 @@ public class Module : IIncrementalGenerator
 
                             public void Insert() {{
                                 var bytes = SpacetimeDB.Runtime.Insert(tableId.Value, this);
-                                // bytes should contain modified value now with autoinc fields updated
+                                // bytes should contain modified value now with auto_inc fields updated
                                 {(autoIncFields.Any() ? $@"
                                     using var stream = new System.IO.MemoryStream(bytes);
                                     using var reader = new System.IO.BinaryReader(stream);
