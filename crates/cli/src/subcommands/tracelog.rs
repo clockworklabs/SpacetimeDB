@@ -1,3 +1,4 @@
+use crate::common_args;
 use crate::config::Config;
 use crate::util::database_address;
 use clap::{Arg, ArgMatches};
@@ -20,30 +21,15 @@ fn get_energy_subcommands() -> Vec<clap::Command> {
             .about("Retrieve a copy of the trace log for a database, if tracing is turned on")
             .arg(Arg::new("database").required(true))
             .arg(Arg::new("outputfile").required(true).help("path to write tracelog to"))
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
-                    .help("The nickname, host name or URL of the server running tracing"),
-            ),
+            .arg(common_args::server().help("The nickname, host name or URL of the server running tracing")),
         clap::Command::new("stop")
             .about("Stop tracing on a given database")
             .arg(Arg::new("database").required(true))
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
-                    .help("The nickname, host name or URL of the server running tracing"),
-            ),
+            .arg(common_args::server().help("The nickname, host name or URL of the server running tracing")),
         clap::Command::new("replay")
             .about("Replay a tracelog on a temporary fresh DB instance on the server")
             .arg(Arg::new("tracefile").required(true).help("path to read tracelog from"))
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
-                    .help("The nickname, host name or URL of the server running tracing"),
-            ),
+            .arg(common_args::server().help("The nickname, host name or URL of the server running tracing")),
     ]
 }
 

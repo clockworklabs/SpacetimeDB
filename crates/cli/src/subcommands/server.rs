@@ -1,4 +1,5 @@
 use crate::{
+    common_args,
     util::{host_or_url_to_host_and_protocol, spacetime_server_fingerprint, y_or_n, VALID_PROTOCOLS},
     Config,
 };
@@ -67,12 +68,7 @@ fn get_subcommands() -> Vec<Command> {
             ),
         Command::new("fingerprint")
             .about("Show or update a saved server's fingerprint")
-            .arg(
-                Arg::new("server")
-                    .short('s')
-                    .long("server")
-                    .help("The nickname, host name or URL of the server"),
-            )
+            .arg(common_args::server().help("The nickname, host name or URL of the server"))
             .arg(
                 Arg::new("force")
                     .help("Save changes to the server's configuration without confirming")
