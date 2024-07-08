@@ -28,7 +28,6 @@ pub fn cli() -> clap::Command {
                 .help("The name of the reducer to call"),
         )
         .arg(Arg::new("arguments").help("arguments formatted as JSON").num_args(1..))
-        .arg(common_args::server())
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(
             common_args::identity()
