@@ -18,7 +18,7 @@ pub fn cli() -> Command {
                 .required(true)
                 .help("The identity to list databases for"),
         )
-        .arg(common_args::server())
+        .arg(common_args::server().help("The nickname, host name or URL of the server from which to list databases"))
 }
 
 #[derive(Deserialize)]

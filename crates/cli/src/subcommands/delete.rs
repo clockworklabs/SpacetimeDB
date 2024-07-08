@@ -11,10 +11,15 @@ pub fn cli() -> clap::Command {
                 .required(true)
                 .help("The domain or address of the database to delete"),
         )
-        .arg(common_args::identity().long_help(
-            "The identity to use for deleting this database. If no identity is provided, the default one will be used.",
-        ))
-        .arg(common_args::server())
+        .arg(
+            common_args::identity()
+                .help("The identity to use for deleting this database")
+                .long_help("The identity to use for deleting this database. If no identity is provided, the default one will be used."),
+        )
+        .arg(
+            common_args::server()
+                .help("The nickname, host name or URL of the server hosting the database")
+        )
         .after_help("Run `spacetime help delete` for more detailed information.\n")
 }
 

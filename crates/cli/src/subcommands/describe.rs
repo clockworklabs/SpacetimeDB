@@ -21,16 +21,14 @@ pub fn cli() -> clap::Command {
                 .requires("entity_type")
                 .help("The name of the entity to describe"),
         )
+        .arg(Arg::new("brief").long("brief").short('b').action(SetTrue)
+            .help("If this flag is present, a brief description shall be returned"))
         .arg(
-            Arg::new("brief")
-                .long("brief")
-                .short('b')
-                .action(SetTrue)
-                .help("If this flag is present, a brief description shall be returned"),
+            common_args::identity()
+                .conflicts_with("anon_identity")
+                .help("The identity to use to describe the entity")
+                .long_help("The identity to use to describe the entity. If no identity is provided, the default one will be used."),
         )
-        .arg(common_args::identity().conflicts_with("anon_identity").long_help(
-            "The identity to use to describe the entity. If no identity is provided, the default one will be used.",
-        ))
         .arg(
             Arg::new("anon_identity")
                 .long("anon-identity")
@@ -39,7 +37,10 @@ pub fn cli() -> clap::Command {
                 .action(SetTrue)
                 .help("If this flag is present, no identity will be provided when describing the database"),
         )
-        .arg(common_args::server())
+        .arg(
+            common_args::server()
+                .help("The nickname, host name or URL of the server hosting the database"),
+        )
         .after_help("Run `spacetime help describe` for more detailed information.\n")
 }
 

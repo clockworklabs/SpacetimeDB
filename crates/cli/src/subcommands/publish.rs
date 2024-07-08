@@ -89,7 +89,9 @@ pub fn cli() -> clap::Command {
             Arg::new("name|address")
                 .help("A valid domain or address for this database"),
         )
-        .arg(common_args::server())
+        .arg(common_args::server()
+                .help("The nickname, domain name or URL of the server to host the database."),
+        )
         .arg(
             Arg::new("force")
                 .long("force")

@@ -35,7 +35,9 @@ fn get_subcommands() -> Vec<Command> {
                     .required(true)
                     .help("The email associated with the identity that you would like to find"),
             )
-            .arg(common_args::server()),
+            .arg(common_args::server()
+                    .help("The server to search for identities matching the email"),
+            ),
         Command::new("import")
             .about("Import an existing identity into your spacetime config")
             .arg(
@@ -79,6 +81,7 @@ fn get_subcommands() -> Vec<Command> {
         Command::new("list").about("List saved identities which apply to a server")
             .arg(
                 common_args::server()
+                    .help("The nickname, host name or URL of the server to list identities for")
                     .conflicts_with("all")
             )
             .arg(
@@ -142,7 +145,9 @@ fn get_subcommands() -> Vec<Command> {
             .arg(Arg::new("identity").required(true).help(
                 "The identity you would like to recover. This identity must be associated with the email provided.",
             ).value_parser(clap::value_parser!(Identity)))
-            .arg(common_args::server())
+            .arg(common_args::server()
+                    .help("The server from which to request recovery codes"),
+            )
             // TODO: project flag?
             ,
         Command::new("remove")

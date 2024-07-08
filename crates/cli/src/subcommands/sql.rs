@@ -28,31 +28,34 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("interactive")
                 .help("The SQL query to execute"),
         )
-        .arg(
-            Arg::new("interactive")
-                .long("interactive")
-                .action(ArgAction::SetTrue)
-                .conflicts_with("query")
-                .help("Runs an interactive command prompt for `SQL` expressions"),
-        )
+        .arg(Arg::new("interactive")
+                 .long("interactive")
+                 .action(ArgAction::SetTrue)
+                 .conflicts_with("query")
+                 .help("Runs an interactive command prompt for `SQL` expressions"),)
         .group(
             ArgGroup::new("mode")
-                .args(["interactive", "query"])
+                .args(["interactive","query"])
                 .multiple(false)
-                .required(true),
+                .required(true)
         )
-        .arg(common_args::identity().conflicts_with("anon_identity").long_help(
-            "The identity to use for querying the database. If no identity is provided, the default one will be used.",
-        ))
+        .arg(
+            common_args::identity()
+                .conflicts_with("anon_identity")
+                .help("The identity to use for querying the database")
+                .long_help("The identity to use for querying the database. If no identity is provided, the default one will be used."),
+        )
         .arg(
             Arg::new("anon_identity")
                 .long("anon-identity")
                 .short('a')
                 .conflicts_with("identity")
                 .action(ArgAction::SetTrue)
-                .help("If this flag is present, no identity will be provided when querying the database"),
+                .help("If this flag is present, no identity will be provided when querying the database")
         )
-        .arg(common_args::server())
+        .arg(common_args::server()
+                .help("The nickname, host name or URL of the server hosting the database"),
+        )
 }
 
 pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<Connection, anyhow::Error> {

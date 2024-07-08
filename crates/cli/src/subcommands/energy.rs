@@ -24,7 +24,10 @@ fn get_energy_subcommands() -> Vec<clap::Command> {
                     "The identity to check the balance for. If no identity is provided, the default one will be used.",
                 ),
             )
-            .arg(common_args::server()),
+            .arg(
+                common_args::server()
+                    .help("The nickname, host name or URL of the server from which to request balance information"),
+            ),
         clap::Command::new("set-balance")
             .about("Update the current budget balance for a database")
             .arg(
