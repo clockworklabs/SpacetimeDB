@@ -267,8 +267,10 @@ mod tests {
     ) -> ResultTest<()> {
         let ctx = &ExecutionContext::incremental_update(db.address());
         let tx = &tx.into();
+
         let update = update.tables.iter().collect::<Vec<_>>();
         let result = s.eval_incr(ctx, db, tx, &update, None);
+
         assert_eq!(
             result.tables.len(),
             total_tables,
@@ -358,6 +360,7 @@ mod tests {
 
         let ctx = &ExecutionContext::incremental_update(db.address());
         let tx = (&tx).into();
+
         let update = update.tables.iter().collect::<Vec<_>>();
         let result = query.eval_incr(ctx, &db, &tx, &update, None);
 
@@ -496,6 +499,7 @@ mod tests {
 
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (1, 1181485940, 1633678837, 1158301365, 132191327);
         insert into EnemyState (entity_id, herd_id, status, type, direction) values (2, 2017368418, 194072456, 34423057, 1296770410);";
+
         run_for_testing(&db, sql_insert)?;
 
         let sql_query = "\
@@ -713,8 +717,10 @@ mod tests {
         let update = DatabaseUpdate { tables };
         db.with_read_only(ctx, |tx| {
             let tx = (&*tx).into();
+
             let update = update.tables.iter().collect::<Vec<_>>();
             let result = query.eval_incr(ctx, db, &tx, &update, None);
+
             let tables = result
                 .tables
                 .into_iter()
