@@ -21,21 +21,21 @@ static SQL_SYNTAX: &str = include_str!("../../tools/sublime/SpacetimeDBSQL.subli
 static SYNTAX_NAME: &str = "SQL (SpacetimeDB)";
 
 static AUTO_COMPLETE: &str = "\
-true 
-false 
-select 
-from 
-insert 
-into 
-values 
-update, 
-delete, 
-create, 
-where 
-join 
-sort by 
-.exit 
-.clear 
+true
+false
+select
+from
+insert
+into
+values
+update,
+delete,
+create,
+where
+join
+sort by
+.exit
+.clear
 ";
 
 pub async fn exec(con: Connection) -> Result<(), anyhow::Error> {
@@ -49,12 +49,12 @@ pub async fn exec(con: Connection) -> Result<(), anyhow::Error> {
 
     println!(
         "\
-┌──────────────────────────────────────────────────────────┐ 
-│ .exit: Exit the REPL                                     │ 
-│ .clear: Clear the Screen                                 │ 
-│                                                          │ 
-│ Give us feedback in our Discord server:                  │ 
-│    https://discord.gg/w2DVqNZXdN                         │ 
+┌──────────────────────────────────────────────────────────┐
+│ .exit: Exit the REPL                                     │
+│ .clear: Clear the Screen                                 │
+│                                                          │
+│ Give us feedback in our Discord server:                  │
+│    https://discord.gg/w2DVqNZXdN                         │
 └──────────────────────────────────────────────────────────┘",
     );
 

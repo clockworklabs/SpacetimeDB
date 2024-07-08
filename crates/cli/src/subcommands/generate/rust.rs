@@ -871,56 +871,56 @@ fn print_spacetime_module_struct_defn(ctx: &GenCtx, out: &mut Indenter, items: &
 /// which dispatches on the table name in a `TableUpdate` message
 /// to call an appropriate method on the `ClientCache`.
 fn print_handle_table_update_defn(_ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
-    out.delimited_block( 
-        "fn handle_table_update(&self, table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {", 
-        |out| { 
-            writeln!(out, "let table_name = &table_update.table_name[..];"); 
-            out.delimited_block( 
-                "match table_name {", 
-                |out| { 
-                    for table in iter_table_items(items) { 
-                        let table = table.schema.clone().into_schema(0.into()).validated().unwrap(); 
-                        writeln!( 
-                            out, 
-                            "{:?} => client_cache.{}::<{}::{}>(callbacks, table_update),", 
-                            table.table_name, 
-                            if find_primary_key_column_index(&table).is_some() { 
-                                "handle_table_update_with_primary_key" 
-                            } else { 
-                                "handle_table_update_no_primary_key" 
-                            }, 
-                            table.table_name.deref().to_case(Case::Snake), 
-                            table.table_name.deref().to_case(Case::Pascal), 
-                        ); 
-                    } 
-                    writeln!( 
-                        out, 
-                        "_ => spacetimedb_sdk::log::error!(\"TableRowOperation on unknown table {{:?}}\", table_name)," 
-                    ); 
-                }, 
-                "}\n", 
-            ); 
-        }, 
-        "}\n", 
+    out.delimited_block(
+        "fn handle_table_update(&self, table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
+        |out| {
+            writeln!(out, "let table_name = &table_update.table_name[..];");
+            out.delimited_block(
+                "match table_name {",
+                |out| {
+                    for table in iter_table_items(items) {
+                        let table = table.schema.clone().into_schema(0.into()).validated().unwrap();
+                        writeln!(
+                            out,
+                            "{:?} => client_cache.{}::<{}::{}>(callbacks, table_update),",
+                            table.table_name,
+                            if find_primary_key_column_index(&table).is_some() {
+                                "handle_table_update_with_primary_key"
+                            } else {
+                                "handle_table_update_no_primary_key"
+                            },
+                            table.table_name.deref().to_case(Case::Snake),
+                            table.table_name.deref().to_case(Case::Pascal),
+                        );
+                    }
+                    writeln!(
+                        out,
+                        "_ => spacetimedb_sdk::log::error!(\"TableRowOperation on unknown table {{:?}}\", table_name),"
+                    );
+                },
+                "}\n",
+            );
+        },
+        "}\n",
     );
 }
 
 /// Define the `invoke_row_callbacks` function,
 /// which does `RowCallbackReminders::invoke_callbacks` on each table type defined in the `items`.
 fn print_invoke_row_callbacks_defn(out: &mut Indenter, items: &[GenItem]) {
-    out.delimited_block( 
-        "fn invoke_row_callbacks(&self, reminders: &mut RowCallbackReminders, worker: &mut DbCallbacks, reducer_event: Option<Arc<AnyReducerEvent>>, state: &Arc<ClientCache>) {", 
-        |out| { 
-            for table in iter_table_items(items) { 
-                writeln!( 
-                    out, 
-                    "reminders.invoke_callbacks::<{}::{}>(worker, &reducer_event, state);", 
-                    table.schema.table_name.deref().to_case(Case::Snake), 
-                    table.schema.table_name.deref().to_case(Case::Pascal), 
-                ); 
-            } 
-        }, 
-        "}\n", 
+    out.delimited_block(
+        "fn invoke_row_callbacks(&self, reminders: &mut RowCallbackReminders, worker: &mut DbCallbacks, reducer_event: Option<Arc<AnyReducerEvent>>, state: &Arc<ClientCache>) {",
+        |out| {
+            for table in iter_table_items(items) {
+                writeln!(
+                    out,
+                    "reminders.invoke_callbacks::<{}::{}>(worker, &reducer_event, state);",
+                    table.schema.table_name.deref().to_case(Case::Snake),
+                    table.schema.table_name.deref().to_case(Case::Pascal),
+                );
+            }
+        },
+        "}\n",
     );
 }
 
@@ -928,31 +928,31 @@ fn print_invoke_row_callbacks_defn(out: &mut Indenter, items: &[GenItem]) {
 /// which dispatches on the table name in a `TableUpdate`
 /// to invoke `ClientCache::handle_resubscribe_for_type` with an appropriate type arg.
 fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
-    out.delimited_block( 
-        "fn handle_resubscribe(&self, new_subs: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {", 
-        |out| { 
-            writeln!(out, "let table_name = &new_subs.table_name[..];"); 
-            out.delimited_block( 
-                "match table_name {", 
-                |out| { 
-                    for table in iter_table_items(items) { 
-                        writeln!( 
-                            out, 
-                            "{:?} => client_cache.handle_resubscribe_for_type::<{}::{}>(callbacks, new_subs),", 
-                            table.schema.table_name, 
-                            table.schema.table_name.deref().to_case(Case::Snake), 
-                            table.schema.table_name.deref().to_case(Case::Pascal), 
-                        ); 
-                    } 
-                    writeln!( 
-                        out, 
-                        "_ => spacetimedb_sdk::log::error!(\"TableRowOperation on unknown table {{:?}}\", table_name)," 
-                    ); 
-                }, 
-                "}\n", 
-            ); 
-        }, 
-        "}\n" 
+    out.delimited_block(
+        "fn handle_resubscribe(&self, new_subs: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
+        |out| {
+            writeln!(out, "let table_name = &new_subs.table_name[..];");
+            out.delimited_block(
+                "match table_name {",
+                |out| {
+                    for table in iter_table_items(items) {
+                        writeln!(
+                            out,
+                            "{:?} => client_cache.handle_resubscribe_for_type::<{}::{}>(callbacks, new_subs),",
+                            table.schema.table_name,
+                            table.schema.table_name.deref().to_case(Case::Snake),
+                            table.schema.table_name.deref().to_case(Case::Pascal),
+                        );
+                    }
+                    writeln!(
+                        out,
+                        "_ => spacetimedb_sdk::log::error!(\"TableRowOperation on unknown table {{:?}}\", table_name),"
+                    );
+                },
+                "}\n",
+            );
+        },
+        "}\n"
     );
 }
 
@@ -960,44 +960,44 @@ fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
 /// which dispatches on the reducer name in an `Event`
 /// to `ReducerCallbacks::handle_event_of_type` with an appropriate type argument.
 fn print_handle_event_defn(out: &mut Indenter, items: &[GenItem]) {
-    out.delimited_block( 
-        "fn handle_event(&self, event: Event, _reducer_callbacks: &mut ReducerCallbacks, _state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {", 
-        |out| { 
-            out.delimited_block( 
-                "let Some(function_call) = &event.function_call else {", 
-                |out| writeln!(out, "spacetimedb_sdk::log::warn!(\"Received Event with None function_call\"); return None;"), 
-                "};\n", 
-            ); 
- 
-            // If the module defines no reducers, 
-            // we'll generate a single match arm, the fallthrough. 
-            // Clippy doesn't like this, as it could be a `let` binding, 
-            // but we're not going to add logic to handle that case, 
-            // so just quiet the lint. 
-            writeln!(out, "#[allow(clippy::match_single_binding)]"); 
- 
-            out.delimited_block( 
-                "match &function_call.reducer[..] {", 
-                |out| { 
-                    for reducer in iter_reducer_items(items) { 
-                        writeln!( 
-                            out, 
-                            "{:?} => _reducer_callbacks.handle_event_of_type::<{}::{}, ReducerEvent>(event, _state, ReducerEvent::{}),", 
-                            reducer.name, 
-                            reducer_module_name(reducer), 
-                            reducer_type_name(reducer), 
-                            reducer_variant_name(reducer), 
-                        ); 
-                    } 
-                    writeln!( 
-                        out, 
-                        "unknown => {{ spacetimedb_sdk::log::error!(\"Event on an unknown reducer: {{:?}}\", unknown); None }}" 
-                    ); 
-                }, 
-                "}\n", 
-            ); 
-        }, 
-        "}\n", 
+    out.delimited_block(
+        "fn handle_event(&self, event: Event, _reducer_callbacks: &mut ReducerCallbacks, _state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {",
+        |out| {
+            out.delimited_block(
+                "let Some(function_call) = &event.function_call else {",
+                |out| writeln!(out, "spacetimedb_sdk::log::warn!(\"Received Event with None function_call\"); return None;"),
+                "};\n",
+            );
+
+            // If the module defines no reducers,
+            // we'll generate a single match arm, the fallthrough.
+            // Clippy doesn't like this, as it could be a `let` binding,
+            // but we're not going to add logic to handle that case,
+            // so just quiet the lint.
+            writeln!(out, "#[allow(clippy::match_single_binding)]");
+
+            out.delimited_block(
+                "match &function_call.reducer[..] {",
+                |out| {
+                    for reducer in iter_reducer_items(items) {
+                        writeln!(
+                            out,
+                            "{:?} => _reducer_callbacks.handle_event_of_type::<{}::{}, ReducerEvent>(event, _state, ReducerEvent::{}),",
+                            reducer.name,
+                            reducer_module_name(reducer),
+                            reducer_type_name(reducer),
+                            reducer_variant_name(reducer),
+                        );
+                    }
+                    writeln!(
+                        out,
+                        "unknown => {{ spacetimedb_sdk::log::error!(\"Event on an unknown reducer: {{:?}}\", unknown); None }}"
+                    );
+                },
+                "}\n",
+            );
+        },
+        "}\n",
     );
 }
 
@@ -1017,24 +1017,24 @@ fn print_connect_docstring(out: &mut Indenter) {
 /// which passes all the autogenerated dispatch functions to `BackgroundDbConnection::connect`.
 fn print_connect_defn(out: &mut Indenter) {
     print_connect_docstring(out);
-    out.delimited_block( 
-        "pub fn connect<IntoUri>(spacetimedb_uri: IntoUri, db_name: &str, credentials: Option<Credentials>) -> Result<()> 
-where 
-\tIntoUri: TryInto<spacetimedb_sdk::http::Uri>, 
-\t<IntoUri as TryInto<spacetimedb_sdk::http::Uri>>::Error: std::error::Error + Send + Sync + 'static, 
-{", 
-        |out| out.delimited_block( 
-            "with_connection_mut(|connection| {", 
-            |out| { 
-                writeln!( 
-                    out, 
-                    "connection.connect(spacetimedb_uri, db_name, credentials, Arc::new(Module))?;" 
-                ); 
-                writeln!(out, "Ok(())"); 
-            }, 
-            "})\n", 
-        ), 
-        "}\n", 
+    out.delimited_block(
+        "pub fn connect<IntoUri>(spacetimedb_uri: IntoUri, db_name: &str, credentials: Option<Credentials>) -> Result<()>
+where
+\tIntoUri: TryInto<spacetimedb_sdk::http::Uri>,
+\t<IntoUri as TryInto<spacetimedb_sdk::http::Uri>>::Error: std::error::Error + Send + Sync + 'static,
+{",
+        |out| out.delimited_block(
+            "with_connection_mut(|connection| {",
+            |out| {
+                writeln!(
+                    out,
+                    "connection.connect(spacetimedb_uri, db_name, credentials, Arc::new(Module))?;"
+                );
+                writeln!(out, "Ok(())");
+            },
+            "})\n",
+        ),
+        "}\n",
     );
 }
 

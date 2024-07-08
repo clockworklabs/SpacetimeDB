@@ -4,31 +4,31 @@ use clap::{Arg, ArgMatches};
 use std::path::PathBuf;
 
 pub fn cli() -> clap::Command {
-    clap::Command::new("build") 
-        .about("Builds a spacetime module.") 
-        .arg( 
-            Arg::new("project_path") 
-                .long("project-path") 
-                .short('p') 
-                .value_parser(clap::value_parser!(PathBuf)) 
-                .default_value(".") 
-                .help("The system path (absolute or relative) to the project you would like to build") 
-        ) 
-        .arg( 
-            Arg::new("skip_clippy") 
-                .long("skip_clippy") 
-                .short('S') 
-                .action(SetTrue) 
-                .env("SPACETIME_SKIP_CLIPPY") 
-                .value_parser(clap::builder::FalseyValueParser::new()) 
-                .help("Skips running clippy on the module before building (intended to speed up local iteration, not recommended for CI)"), 
-        ) 
-        .arg( 
-            Arg::new("debug") 
-                .long("debug") 
-                .short('d') 
-                .action(SetTrue) 
-                .help("Builds the module using debug instead of release (intended to speed up local iteration, not recommended for CI)"), 
+    clap::Command::new("build")
+        .about("Builds a spacetime module.")
+        .arg(
+            Arg::new("project_path")
+                .long("project-path")
+                .short('p')
+                .value_parser(clap::value_parser!(PathBuf))
+                .default_value(".")
+                .help("The system path (absolute or relative) to the project you would like to build")
+        )
+        .arg(
+            Arg::new("skip_clippy")
+                .long("skip_clippy")
+                .short('S')
+                .action(SetTrue)
+                .env("SPACETIME_SKIP_CLIPPY")
+                .value_parser(clap::builder::FalseyValueParser::new())
+                .help("Skips running clippy on the module before building (intended to speed up local iteration, not recommended for CI)"),
+        )
+        .arg(
+            Arg::new("debug")
+                .long("debug")
+                .short('d')
+                .action(SetTrue)
+                .help("Builds the module using debug instead of release (intended to speed up local iteration, not recommended for CI)"),
         )
 }
 

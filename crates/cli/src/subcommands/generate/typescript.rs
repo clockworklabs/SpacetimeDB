@@ -144,63 +144,63 @@ fn convert_type<'a>(
         AlgebraicType::Sum(sum_type) => {
             if let Some(inner_ty) = sum_type.as_option() {
                 use AlgebraicType::Builtin;
-                match inner_ty { 
-                    Builtin(ty) => match ty { 
-                        BuiltinType::Bool 
-                        | BuiltinType::I8 
-                        | BuiltinType::U8 
-                        | BuiltinType::I16 
-                        | BuiltinType::U16 
-                        | BuiltinType::I32 
-                        | BuiltinType::U32 
-                        | BuiltinType::I64 
-                        | BuiltinType::U64 
-                        | BuiltinType::I128 
-                        | BuiltinType::U128 
-                        | BuiltinType::F32 
-                        | BuiltinType::F64 => write!( 
-                            f, 
-                            "{}.asSumValue().tag == 1 ? null : {}.asSumValue().value{}", 
-                            value, 
-                            value, 
-                            &convert_type(ctx, vecnest, inner_ty, "", ref_prefix), 
-                        ), 
-                        _ => fmt::Display::fmt( 
-                            &convert_type( 
-                                ctx, 
-                                vecnest, 
-                                inner_ty, 
-                                format_args!("{value}.asSumValue().tag == 1 ? null : {value}.asSumValue().value"), 
-                                ref_prefix 
-                            ), 
-                            f, 
-                        ), 
-                    }, 
-                    AlgebraicType::Ref(_) => fmt::Display::fmt( 
-                        &format!( 
-                            "function() {{ const value = {}.asSumValue().tag == 1 ? null : {}.asSumValue().value; return value ? {} : null; }}()", 
-                            value, 
-                            value, 
-                            convert_type( 
-                                ctx, 
-                                vecnest, 
-                                inner_ty, 
-                                "value", 
-                                ref_prefix 
-                            ) 
-                        ), 
-                        f, 
-                    ), 
-                    _ => fmt::Display::fmt( 
-                        &convert_type( 
-                            ctx, 
-                            vecnest, 
-                            inner_ty, 
-                            format_args!("{value}.asSumValue().tag == 1 ? null : {value}.asSumValue().value"), 
-                            ref_prefix 
-                        ), 
-                        f, 
-                    ), 
+                match inner_ty {
+                    Builtin(ty) => match ty {
+                        BuiltinType::Bool
+                        | BuiltinType::I8
+                        | BuiltinType::U8
+                        | BuiltinType::I16
+                        | BuiltinType::U16
+                        | BuiltinType::I32
+                        | BuiltinType::U32
+                        | BuiltinType::I64
+                        | BuiltinType::U64
+                        | BuiltinType::I128
+                        | BuiltinType::U128
+                        | BuiltinType::F32
+                        | BuiltinType::F64 => write!(
+                            f,
+                            "{}.asSumValue().tag == 1 ? null : {}.asSumValue().value{}",
+                            value,
+                            value,
+                            &convert_type(ctx, vecnest, inner_ty, "", ref_prefix),
+                        ),
+                        _ => fmt::Display::fmt(
+                            &convert_type(
+                                ctx,
+                                vecnest,
+                                inner_ty,
+                                format_args!("{value}.asSumValue().tag == 1 ? null : {value}.asSumValue().value"),
+                                ref_prefix
+                            ),
+                            f,
+                        ),
+                    },
+                    AlgebraicType::Ref(_) => fmt::Display::fmt(
+                        &format!(
+                            "function() {{ const value = {}.asSumValue().tag == 1 ? null : {}.asSumValue().value; return value ? {} : null; }}()",
+                            value,
+                            value,
+                            convert_type(
+                                ctx,
+                                vecnest,
+                                inner_ty,
+                                "value",
+                                ref_prefix
+                            )
+                        ),
+                        f,
+                    ),
+                    _ => fmt::Display::fmt(
+                        &convert_type(
+                            ctx,
+                            vecnest,
+                            inner_ty,
+                            format_args!("{value}.asSumValue().tag == 1 ? null : {value}.asSumValue().value"),
+                            ref_prefix
+                        ),
+                        f,
+                    ),
                 }
             } else {
                 unimplemented!()
@@ -446,15 +446,15 @@ pub fn autogen_typescript_sum(ctx: &GenCtx, name: &str, sum_type: &SumType) -> S
 
             // export an object or a function representing an enum value, so people
             // can pass it as an argument
-            match variant.algebraic_type { 
-                AlgebraicType::Product(_) => writeln!( 
-                    output, 
-                    "export const {variant_name} = {{ tag: \"{variant_name}\", value: undefined }};" 
-                ), 
-                _ => writeln!( 
-                    output, 
-                    "export const {variant_name} = (value: {a_type}): {variant_name} => ({{ tag: \"{variant_name}\", value }});" 
-                ), 
+            match variant.algebraic_type {
+                AlgebraicType::Product(_) => writeln!(
+                    output,
+                    "export const {variant_name} = {{ tag: \"{variant_name}\", value: undefined }};"
+                ),
+                _ => writeln!(
+                    output,
+                    "export const {variant_name} = (value: {a_type}): {variant_name} => ({{ tag: \"{variant_name}\", value }});"
+                ),
             };
         }
 
@@ -884,9 +884,9 @@ fn autogen_typescript_access_funcs_for_struct(
             },
         };
 
-        writeln!( 
-            output, 
-            "public static *filterBy{typescript_field_name_pascal}(value: {typescript_field_type}): IterableIterator<{struct_name_pascal_case}>" 
+        writeln!(
+            output,
+            "public static *filterBy{typescript_field_name_pascal}(value: {typescript_field_type}): IterableIterator<{struct_name_pascal_case}>"
         );
 
         writeln!(output, "{{");
@@ -919,9 +919,9 @@ fn autogen_typescript_access_funcs_for_struct(
         writeln!(output);
 
         if is_unique {
-            writeln!( 
-                output, 
-                "public static findBy{typescript_field_name_pascal}(value: {typescript_field_type}): {struct_name_pascal_case} | undefined" 
+            writeln!(
+                output,
+                "public static findBy{typescript_field_name_pascal}(value: {typescript_field_type}): {struct_name_pascal_case} | undefined"
             );
 
             writeln!(output, "{{");

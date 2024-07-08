@@ -22,58 +22,58 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
 }
 
 fn get_subcommands() -> Vec<Command> {
-    vec![ 
-        Command::new("register-tld") 
-            .about("Registers a new top level domain") 
-            .arg( 
-                Arg::new("tld") 
-                    .required(true) 
-                    .help("The top level domain that you would like to register"), 
-            ) 
-            .arg(Arg::new("identity").long("identity").short('i').help( 
-                "The identity that should own this tld. If no identity is specified, then the default identity is used", 
-            )) 
-            .arg( 
-                Arg::new("server") 
-                    .long("server") 
-                    .short('s') 
-                    .help("The nickname, host name or URL of the server on which to register the domain"), 
-            ) 
-            .after_help("Run `spacetime dns register-tld --help` for more detailed information.\n"), 
-        Command::new("lookup") 
-            .about("Resolves a domain to a database address") 
-            .arg(Arg::new("domain").required(true).help("The name of the domain to lookup")) 
-            .arg( 
-                Arg::new("server") 
-                    .long("server") 
-                    .short('s') 
-                    .help("The nickname, host name or URL of the server on which to look up the domain name"), 
-            ) 
-            .after_help("Run `spacetime dns lookup --help` for more detailed information"), 
-        Command::new("reverse-lookup") 
-            .about("Returns the domains for the provided database address") 
-            .arg(Arg::new("address").required(true).help("The address you would like to find all of the known domains for")) 
-            .arg( 
-                Arg::new("server") 
-                    .long("server") 
-                    .short('s') 
-                    .help("The nickname, host name or URL of the server on which to look up the address"), 
-            ) 
-            .after_help("Run `spacetime dns reverse-lookup --help` for more detailed information.\n"), 
-        Command::new("set-name") 
-            .about("Sets the domain of the database") 
-            .arg(Arg::new("domain").required(true).help("The domain you would like to assign or create")) 
-            .arg(Arg::new("address").required(true).help("The database address to assign to the domain")) 
-            .arg(Arg::new("identity").long("identity").short('i').long_help( 
-                "The identity that owns the tld for this domain. If no identity is specified, the default identity is used.", 
-            ).help("The identity that owns the tld for this domain")) 
-            .arg( 
-                Arg::new("server") 
-                    .long("server") 
-                    .short('s') 
-                    .help("The nickname, host name or URL of the server on which to set the name"), 
-            ) 
-            .after_help("Run `spacetime dns set-name --help` for more detailed information.\n"), 
+    vec![
+        Command::new("register-tld")
+            .about("Registers a new top level domain")
+            .arg(
+                Arg::new("tld")
+                    .required(true)
+                    .help("The top level domain that you would like to register"),
+            )
+            .arg(Arg::new("identity").long("identity").short('i').help(
+                "The identity that should own this tld. If no identity is specified, then the default identity is used",
+            ))
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .short('s')
+                    .help("The nickname, host name or URL of the server on which to register the domain"),
+            )
+            .after_help("Run `spacetime dns register-tld --help` for more detailed information.\n"),
+        Command::new("lookup")
+            .about("Resolves a domain to a database address")
+            .arg(Arg::new("domain").required(true).help("The name of the domain to lookup"))
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .short('s')
+                    .help("The nickname, host name or URL of the server on which to look up the domain name"),
+            )
+            .after_help("Run `spacetime dns lookup --help` for more detailed information"),
+        Command::new("reverse-lookup")
+            .about("Returns the domains for the provided database address")
+            .arg(Arg::new("address").required(true).help("The address you would like to find all of the known domains for"))
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .short('s')
+                    .help("The nickname, host name or URL of the server on which to look up the address"),
+            )
+            .after_help("Run `spacetime dns reverse-lookup --help` for more detailed information.\n"),
+        Command::new("set-name")
+            .about("Sets the domain of the database")
+            .arg(Arg::new("domain").required(true).help("The domain you would like to assign or create"))
+            .arg(Arg::new("address").required(true).help("The database address to assign to the domain"))
+            .arg(Arg::new("identity").long("identity").short('i').long_help(
+                "The identity that owns the tld for this domain. If no identity is specified, the default identity is used.",
+            ).help("The identity that owns the tld for this domain"))
+            .arg(
+                Arg::new("server")
+                    .long("server")
+                    .short('s')
+                    .help("The nickname, host name or URL of the server on which to set the name"),
+            )
+            .after_help("Run `spacetime dns set-name --help` for more detailed information.\n"),
     ]
 }
 

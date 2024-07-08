@@ -14,94 +14,94 @@ use crate::util::unauth_error_context;
 use crate::util::{add_auth_header_opt, get_auth_header};
 
 pub fn cli() -> clap::Command {
-    clap::Command::new("publish") 
-        .about("Create and update a SpacetimeDB database") 
-        .arg( 
-            Arg::new("host_type") 
-                .long("host-type") 
-                .short('t') 
-                .value_parser(["wasm"]) 
-                .default_value("wasm") 
-                .help("The type of host that should be for hosting this module"), 
-        ) 
-        .arg( 
-            Arg::new("clear_database") 
-                .long("clear-database") 
-                .short('c') 
-                .action(SetTrue) 
-                .requires("name|address") 
-                .help("When publishing to an existing address, first DESTROY all data associated with the module"), 
-        ) 
-        .arg( 
-            Arg::new("project_path") 
-                .value_parser(clap::value_parser!(PathBuf)) 
-                .default_value(".") 
-                .long("project-path") 
-                .short('p') 
-                .help("The system path (absolute or relative) to the module project") 
-        ) 
-        .arg( 
-            Arg::new("wasm_file") 
-                .value_parser(clap::value_parser!(PathBuf)) 
-                .long("wasm-file") 
-                .short('w') 
-                .conflicts_with("project_path") 
-                .help("The system path (absolute or relative) to the wasm file we should publish, instead of building the project."), 
-        ) 
-        .arg( 
-            Arg::new("trace_log") 
-                .long("trace_log") 
-                .help("Turn on diagnostic/performance tracing for this project") 
-                .action(SetTrue), 
-        ) 
-        .arg( 
-            Arg::new("identity") 
-                .long("identity") 
-                .short('i') 
-                .help("The identity that should own the database") 
-                .long_help("The identity that should own the database. If no identity is provided, your default identity will be used.") 
-                .required(false) 
-                .conflicts_with("anon_identity") 
-        ) 
-        .arg( 
-            Arg::new("anon_identity") 
-                .long("anon-identity") 
-                .short('a') 
-                .action(SetTrue) 
-                .help("Instruct SpacetimeDB to allocate a new identity to own this database"), 
-        ) 
-        .arg( 
-            Arg::new("skip_clippy") 
-                .long("skip_clippy") 
-                .short('S') 
-                .action(SetTrue) 
-                .env("SPACETIME_SKIP_CLIPPY") 
-                .value_parser(clap::builder::FalseyValueParser::new()) 
-                .help("Skips running clippy on the module before publishing (intended to speed up local iteration, not recommended for CI)"), 
-        ) 
-        .arg( 
-            Arg::new("debug") 
-                .long("debug") 
-                .short('d') 
-                .action(SetTrue) 
-                .help("Builds the module using debug instead of release (intended to speed up local iteration, not recommended for CI)"), 
-        ) 
-        .arg( 
-            Arg::new("name|address") 
-                .help("A valid domain or address for this database"), 
-        ) 
-        .arg( 
-            Arg::new("server") 
-                .long("server") 
-                .short('s') 
-                .help("The nickname, domain name or URL of the server to host the database."), 
-        ) 
-        .arg( 
-            Arg::new("force") 
-                .long("force") 
-                .action(SetTrue) 
-                .help("DANGEROUS - Proceed with all actions without waiting for user confirmation") 
-        ) 
+    clap::Command::new("publish")
+        .about("Create and update a SpacetimeDB database")
+        .arg(
+            Arg::new("host_type")
+                .long("host-type")
+                .short('t')
+                .value_parser(["wasm"])
+                .default_value("wasm")
+                .help("The type of host that should be for hosting this module"),
+        )
+        .arg(
+            Arg::new("clear_database")
+                .long("clear-database")
+                .short('c')
+                .action(SetTrue)
+                .requires("name|address")
+                .help("When publishing to an existing address, first DESTROY all data associated with the module"),
+        )
+        .arg(
+            Arg::new("project_path")
+                .value_parser(clap::value_parser!(PathBuf))
+                .default_value(".")
+                .long("project-path")
+                .short('p')
+                .help("The system path (absolute or relative) to the module project")
+        )
+        .arg(
+            Arg::new("wasm_file")
+                .value_parser(clap::value_parser!(PathBuf))
+                .long("wasm-file")
+                .short('w')
+                .conflicts_with("project_path")
+                .help("The system path (absolute or relative) to the wasm file we should publish, instead of building the project."),
+        )
+        .arg(
+            Arg::new("trace_log")
+                .long("trace_log")
+                .help("Turn on diagnostic/performance tracing for this project")
+                .action(SetTrue),
+        )
+        .arg(
+            Arg::new("identity")
+                .long("identity")
+                .short('i')
+                .help("The identity that should own the database")
+                .long_help("The identity that should own the database. If no identity is provided, your default identity will be used.")
+                .required(false)
+                .conflicts_with("anon_identity")
+        )
+        .arg(
+            Arg::new("anon_identity")
+                .long("anon-identity")
+                .short('a')
+                .action(SetTrue)
+                .help("Instruct SpacetimeDB to allocate a new identity to own this database"),
+        )
+        .arg(
+            Arg::new("skip_clippy")
+                .long("skip_clippy")
+                .short('S')
+                .action(SetTrue)
+                .env("SPACETIME_SKIP_CLIPPY")
+                .value_parser(clap::builder::FalseyValueParser::new())
+                .help("Skips running clippy on the module before publishing (intended to speed up local iteration, not recommended for CI)"),
+        )
+        .arg(
+            Arg::new("debug")
+                .long("debug")
+                .short('d')
+                .action(SetTrue)
+                .help("Builds the module using debug instead of release (intended to speed up local iteration, not recommended for CI)"),
+        )
+        .arg(
+            Arg::new("name|address")
+                .help("A valid domain or address for this database"),
+        )
+        .arg(
+            Arg::new("server")
+                .long("server")
+                .short('s')
+                .help("The nickname, domain name or URL of the server to host the database."),
+        )
+        .arg(
+            Arg::new("force")
+                .long("force")
+                .action(SetTrue)
+                .help("DANGEROUS - Proceed with all actions without waiting for user confirmation")
+        )
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
@@ -248,13 +248,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                     // we should perhaps generate fun names like 'green-fire-dragon' instead
                     let suggested_tld: String = identity.to_hex().chars().take(12).collect();
                     if let Some(sub_domain) = domain.sub_domain() {
-                        Err(anyhow::anyhow!( 
+                        Err(anyhow::anyhow!(
                             "The top level domain {} is not registered to the identity you provided.\n\
                         We suggest you publish to a domain that starts with a TLD owned by you, or publish to a new domain like:\n\
-                        \tspacetime publish {}/{}\n", 
-                            domain.tld(), 
-                            suggested_tld, 
-                            sub_domain 
+                        \tspacetime publish {}/{}\n",
+                            domain.tld(),
+                            suggested_tld,
+                            sub_domain
                         ))
                     } else {
                         Err(anyhow::anyhow!(

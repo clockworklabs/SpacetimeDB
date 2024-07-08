@@ -119,9 +119,9 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
     // Create the project path, or make sure the target project path is empty.
     if project_path.exists() {
         if !project_path.is_dir() {
-            return Err(anyhow::anyhow!( 
-                "Path {} exists but is not a directory. A new SpacetimeDB project must be initialized in an empty directory.", 
-                project_path.display() 
+            return Err(anyhow::anyhow!(
+                "Path {} exists but is not a directory. A new SpacetimeDB project must be initialized in an empty directory.",
+                project_path.display()
             ));
         }
 

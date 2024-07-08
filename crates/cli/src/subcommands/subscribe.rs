@@ -48,7 +48,7 @@ pub fn cli() -> clap::Command {
                 .value_parser(value_parser!(u32))
                 .help(
                     "The timeout, in seconds, after which to disconnect and stop receiving \
-                     subscription messages. If `-n` is specified, it will stop after whichever 
+                     subscription messages. If `-n` is specified, it will stop after whichever
                      one comes first.",
                 ),
         )
