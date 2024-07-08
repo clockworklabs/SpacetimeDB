@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 70b4e531ebb215f2a8efd7d316970aa75d0ec8d555411bd73d1c63c33d8ea1ed # shrinks to cols = [ColId(19), ColId(0)]
+cc 4f5950efc2ad78c3b31cc3f50158d88c10da3229fabdca6ce3e6ceab665e19c8 # shrinks to cols = [ColId(39), ColId(39)]

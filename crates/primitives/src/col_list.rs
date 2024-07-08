@@ -61,7 +61,7 @@ impl ColListBuilder {
 
     /// Push a [`ColId`] to the list.
     pub fn push(&mut self, col: ColId) {
-        self.list.push(col);
+        self.list.push_maybe_first(col);
     }
 
     /// Build the [`ColList`] or error if it would have been empty.
@@ -124,7 +124,7 @@ impl ColList {
     /// As long `col` is below `62`, this will not allocate.
     pub fn new(col: ColId) -> Self {
         let mut list = Self::from_inline(0);
-        list.push(col);
+        list.push_inner(col, true);
         list
     }
 
@@ -169,10 +169,18 @@ impl ColList {
 
     /// Returns the last of the list.
     pub fn last(&self) -> ColId {
+        // SAFETY: There's always at least one element in the list when this is called.
+        unsafe { self.last_inner().unwrap_unchecked() }
+    }
+
+    /// Returns the last of the list.
+    ///
+    /// This can be used internally
+    /// where we wish to break the invariant that there's at least one element in the list.
+    fn last_inner(&self) -> Option<ColId> {
         match self.as_inline() {
             Ok(inline) => inline.last(),
-            // SAFETY: There's always at least one element in the list when this is called.
-            Err(heap) => unsafe { *heap.last().unwrap_unchecked() },
+            Err(heap) => heap.last().copied(),
         }
     }
 
@@ -219,10 +227,26 @@ impl ColList {
 
     /// Push `col` onto the list.
     ///
-    /// If `col >= 63` or if this list was already heap allocated, it will now be heap allocated.
+    /// If `col >= 63` or `col <= last_col`, the list will become heap allocated if not already.
     pub fn push(&mut self, col: ColId) {
+        self.push_inner(col, self.last() < col);
+    }
+
+    /// Push `col` onto the list.
+    ///
+    /// If `col >= 63` or `col <= last_col`, the list will become heap allocated if not already.
+    fn push_maybe_first(&mut self, col: ColId) {
+        self.push_inner(col, self.last_inner().map_or(true, |l| l < col));
+    }
+
+    /// Push `col` onto the list.
+    ///
+    /// If `col >= 63` or `!preserves_set_order`,
+    /// the list will become heap allocated if not already.
+    #[inline]
+    fn push_inner(&mut self, col: ColId, preserves_set_order: bool) {
         let val = u32::from(col) as u64;
-        match (val < Self::FIRST_HEAP_COL, self.as_inline_mut()) {
+        match (val < Self::FIRST_HEAP_COL && preserves_set_order, self.as_inline_mut()) {
             (true, Ok(inline)) => inline.0 |= 1 << (val + 1),
             // Converts the list to its non-inline heap form.
             // This is unlikely to happen.
@@ -354,8 +378,8 @@ impl ColListInline {
     }
 
     /// Returns the last element of the list.
-    fn last(&self) -> ColId {
-        ColId(u64::BITS - 1 - self.undo_mark().leading_zeros())
+    fn last(&self) -> Option<ColId> {
+        (u64::BITS - self.undo_mark().leading_zeros()).checked_sub(1).map(ColId)
     }
 
     /// Returns the length of the list.
@@ -558,29 +582,28 @@ mod tests {
             let [head, tail @ ..] = &*cols else { unreachable!() };
 
             let mut list = ColList::new(*head);
-            prop_assert!(list.is_inline());
+            let mut is_inline = list.is_inline();
+            prop_assert!(is_inline);
             prop_assert!(!list.is_empty());
             prop_assert_eq!(list.len(), 1);
             prop_assert_eq!(list.head(), *head);
             prop_assert_eq!(list.last(), *head);
             prop_assert_eq!(list.iter().collect::<Vec<_>>(), [*head]);
 
+
             for col in tail {
-                let new_head = list.head().min(*col);
+                is_inline &= list.last() < *col;
                 list.push(*col);
 
-                prop_assert!(list.is_inline());
+                prop_assert_eq!(is_inline, list.is_inline());
                 prop_assert!(!list.is_empty());
-                prop_assert_eq!(list.head(), new_head);
+                prop_assert_eq!(list.head(), *head);
+                prop_assert_eq!(list.last(), *col);
                 prop_assert_eq!(list.last(), list.iter().last().unwrap());
                 prop_assert!(contains(&list, col));
             }
 
             prop_assert_eq!(&list.clone(), &list);
-
-            let mut cols = cols;
-            cols.sort();
-            cols.dedup();
             prop_assert_eq!(list.iter().collect::<Vec<_>>(), cols);
         }
 
