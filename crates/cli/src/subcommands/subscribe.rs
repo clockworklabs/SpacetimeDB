@@ -14,6 +14,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 use crate::api::ClientApi;
+use crate::common_args;
 use crate::sql::parse_req;
 use crate::Config;
 
@@ -59,17 +60,10 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("Print the initial update for the queries."),
         )
-        .arg(
-            Arg::new("identity")
-                .long("identity")
-                .short('i')
-                .conflicts_with("anon_identity")
-                .help("The identity to use for querying the database")
-                .long_help(
-                    "The identity to use for querying the database. \
+        .arg(common_args::identity().conflicts_with("anon_identity").long_help(
+            "The identity to use for querying the database. \
                      If no identity is provided, the default one will be used.",
-                ),
-        )
+        ))
         .arg(
             Arg::new("anon_identity")
                 .long("anon-identity")
@@ -78,12 +72,7 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("If this flag is present, no identity will be provided when querying the database"),
         )
-        .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
-                .help("The nickname, host name or URL of the server hosting the database"),
-        )
+        .arg(common_args::server())
 }
 
 #[derive(serde::Serialize)]

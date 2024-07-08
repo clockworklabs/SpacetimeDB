@@ -9,6 +9,7 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
+use crate::common_args;
 use crate::config::Config;
 use crate::util::unauth_error_context;
 use crate::util::{add_auth_header_opt, get_auth_header};
@@ -55,9 +56,7 @@ pub fn cli() -> clap::Command {
                 .action(SetTrue),
         )
         .arg(
-            Arg::new("identity")
-                .long("identity")
-                .short('i')
+            common_args::identity()
                 .help("The identity that should own the database")
                 .long_help("The identity that should own the database. If no identity is provided, your default identity will be used.")
                 .required(false)
@@ -90,12 +89,7 @@ pub fn cli() -> clap::Command {
             Arg::new("name|address")
                 .help("A valid domain or address for this database"),
         )
-        .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
-                .help("The nickname, domain name or URL of the server to host the database."),
-        )
+        .arg(common_args::server())
         .arg(
             Arg::new("force")
                 .long("force")

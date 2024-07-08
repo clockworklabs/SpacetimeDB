@@ -1,3 +1,4 @@
+use crate::common_args;
 use crate::config::Config;
 use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
 use clap::{Arg, ArgAction::SetTrue, ArgMatches};
@@ -20,16 +21,16 @@ pub fn cli() -> clap::Command {
                 .requires("entity_type")
                 .help("The name of the entity to describe"),
         )
-        .arg(Arg::new("brief").long("brief").short('b').action(SetTrue)
-            .help("If this flag is present, a brief description shall be returned"))
         .arg(
-            Arg::new("identity")
-                .long("identity")
-                .short('i')
-                .conflicts_with("anon_identity")
-                .help("The identity to use to describe the entity")
-                .long_help("The identity to use to describe the entity. If no identity is provided, the default one will be used."),
+            Arg::new("brief")
+                .long("brief")
+                .short('b')
+                .action(SetTrue)
+                .help("If this flag is present, a brief description shall be returned"),
         )
+        .arg(common_args::identity().conflicts_with("anon_identity").long_help(
+            "The identity to use to describe the entity. If no identity is provided, the default one will be used.",
+        ))
         .arg(
             Arg::new("anon_identity")
                 .long("anon-identity")
@@ -38,12 +39,7 @@ pub fn cli() -> clap::Command {
                 .action(SetTrue)
                 .help("If this flag is present, no identity will be provided when describing the database"),
         )
-        .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
-                .help("The nickname, host name or URL of the server hosting the database"),
-        )
+        .arg(common_args::server())
         .after_help("Run `spacetime help describe` for more detailed information.\n")
 }
 
