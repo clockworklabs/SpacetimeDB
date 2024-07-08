@@ -1,3 +1,4 @@
+use crate::common_args;
 use crate::config::Config;
 use crate::edit_distance::{edit_distance, find_best_match_for_name};
 use crate::generate::rust::{write_arglist_no_delimiters, write_type};
@@ -27,16 +28,9 @@ pub fn cli() -> clap::Command {
                 .help("The name of the reducer to call"),
         )
         .arg(Arg::new("arguments").help("arguments formatted as JSON").num_args(1..))
+        .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
         .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
-                .help("The nickname, host name or URL of the server hosting the database"),
-        )
-        .arg(
-            Arg::new("identity")
-                .long("identity")
-                .short('i')
+            common_args::identity()
                 .conflicts_with("anon_identity")
                 .help("The identity to use for the call"),
         )

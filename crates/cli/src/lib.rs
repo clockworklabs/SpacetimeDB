@@ -1,4 +1,5 @@
 pub mod api;
+mod common_args;
 mod config;
 mod edit_distance;
 mod errors;

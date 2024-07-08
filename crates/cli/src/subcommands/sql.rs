@@ -1,6 +1,7 @@
 use std::time::Instant;
 
 use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson};
+use crate::common_args;
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches};
 use itertools::Itertools;
 use reqwest::RequestBuilder;
@@ -39,9 +40,7 @@ pub fn cli() -> clap::Command {
                 .required(true)
         )
         .arg(
-            Arg::new("identity")
-                .long("identity")
-                .short('i')
+            common_args::identity()
                 .conflicts_with("anon_identity")
                 .help("The identity to use for querying the database")
                 .long_help("The identity to use for querying the database. If no identity is provided, the default one will be used."),
@@ -54,10 +53,7 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("If this flag is present, no identity will be provided when querying the database")
         )
-        .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
+        .arg(common_args::server()
                 .help("The nickname, host name or URL of the server hosting the database"),
         )
 }
