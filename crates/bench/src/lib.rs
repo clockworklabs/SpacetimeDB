@@ -108,8 +108,8 @@ mod tests {
         basic_invariants::<SpacetimeRaw, u32_u64_u64>(IndexStrategy::BTreeEachColumn, true).unwrap();
     }
 
-    #[tokio::test]
-    async fn test_basic_invariants_spacetime_module() {
+    #[test]
+    fn test_basic_invariants_spacetime_module() {
         // note: there can only be one #[test] invoking spacetime module stuff.
         // #[test]s run concurrently and they fight over lockfiles.
         // so, run the sub-tests here in sequence.

@@ -18,17 +18,6 @@ impl StAccess {
             Self::Private => "private",
         }
     }
-
-    /// Select the appropriated [Self] for the name.
-    ///
-    /// A name that start with '_' like '_sample' is [Self::Private]
-    pub fn for_name(of: &str) -> Self {
-        if of.starts_with('_') {
-            Self::Private
-        } else {
-            Self::Public
-        }
-    }
 }
 
 impl<'a> TryFrom<&'a str> for StAccess {

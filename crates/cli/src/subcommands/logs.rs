@@ -114,7 +114,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let query_parms = LogsParams { num_lines, follow };
 
     let host_url = config.get_host_url(server)?;
-    config.release_lock();
 
     let builder = reqwest::Client::new().get(format!("{}/database/logs/{}", host_url, address));
     let builder = add_auth_header_opt(builder, &auth_header);

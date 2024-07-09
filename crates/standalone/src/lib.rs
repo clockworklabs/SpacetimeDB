@@ -14,16 +14,14 @@ use energy_monitor::StandaloneEnergyMonitor;
 use openssl::ec::{EcGroup, EcKey};
 use openssl::nid::Nid;
 use openssl::pkey::PKey;
-use scopeguard::defer_on_success;
 use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
-use spacetimedb::db::db_metrics;
 use spacetimedb::db::{db_metrics::DB_METRICS, Config};
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta};
-use spacetimedb::host::{DiskStorage, HostController, ProgramStorage, UpdateDatabaseResult};
+use spacetimedb::host::{DiskStorage, HostController, UpdateDatabaseResult};
 use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType, IdentityEmail, Node};
+use spacetimedb::messages::control_db::{Database, DatabaseInstance, IdentityEmail, Node};
 use spacetimedb::sendgrid_controller::SendGridController;
 use spacetimedb::stdb_path;
 use spacetimedb::worker_metrics::WORKER_METRICS;
@@ -33,6 +31,8 @@ use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
 
 pub struct StandaloneEnv {
     control_db: ControlDb,
@@ -54,7 +54,7 @@ impl StandaloneEnv {
         let host_controller = HostController::new(
             stdb_path("worker_node/database_instances").into(),
             config,
-            ProgramStorage::External(program_store.clone()),
+            program_store.clone(),
             energy_monitor,
         );
         let client_actor_index = ClientActorIndex::new();
@@ -151,9 +151,6 @@ fn get_key_path(env: &str) -> Option<PathBuf> {
 
 impl spacetimedb_client_api::NodeDelegate for StandaloneEnv {
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
-        defer_on_success! {
-            db_metrics::reset_counters();
-        }
         self.metrics_registry.gather()
     }
 
@@ -276,47 +273,32 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         match existing_db {
             // The database does not already exist, so we'll create it.
             None => {
-                let program_bytes_address = self.program_store.put(&spec.program_bytes).await?;
+                let initial_program = self.program_store.put(&spec.program_bytes).await?;
                 let mut database = Database {
                     id: 0,
                     address: spec.address,
-                    identity: *identity,
-                    // TODO: Add to `DatabaseDef`
-                    host_type: HostType::Wasm,
-                    num_replicas: spec.num_replicas,
-                    program_bytes_address,
+                    owner_identity: *identity,
+                    host_type: spec.host_type,
+                    initial_program,
                     publisher_address,
                 };
-
-                // NOTE: If initialization fails, we'll still have the database
-                // in the control db.
-                // This will make any subsequent access return an error about
-                // the program hash not matching expectations, until the
-                // database is published again.
                 let database_id = self.control_db.insert_database(database.clone())?;
                 database.id = database_id;
 
-                self.schedule_database(Some(database), None).await?;
+                self.schedule_replicas(database_id, spec.num_replicas).await?;
 
                 Ok(None)
             }
             // The database already exists, so we'll try to update it.
             // If that fails, we'll keep the old one.
-            Some(existing_db) => {
+            Some(database) => {
                 ensure!(
-                    &existing_db.identity == identity,
+                    &database.owner_identity == identity,
                     "Permission denied: `{}` does not own database `{}`",
                     identity,
                     spec.address.to_abbreviated_hex()
                 );
 
-                let program_bytes_address = self.program_store.put(&spec.program_bytes).await?;
-                let database = Database {
-                    num_replicas: spec.num_replicas,
-                    program_bytes_address,
-                    publisher_address,
-                    ..existing_db.clone()
-                };
                 let database_id = database.id;
                 let database_addr = database.address;
 
@@ -324,15 +306,60 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     .control_db
                     .get_leader_database_instance_by_database(database_id)
                     .with_context(|| format!("Not found: leader instance for database `{}`", database_addr))?;
-                let lock = self.lock_database_instance_for_update(leader.id)?;
                 let update_result = self
                     .host_controller
-                    .update_module_host(lock.token() as u128, database.clone(), leader.id)
+                    .update_module_host(
+                        database,
+                        publisher_address,
+                        spec.host_type,
+                        leader.id,
+                        spec.program_bytes.into(),
+                    )
                     .await?;
 
                 if update_result.is_ok() {
-                    self.control_db.update_database(database.clone())?;
-                    self.schedule_database(Some(database), Some(existing_db)).await?;
+                    let instances = self.control_db.get_database_instances_by_database(database_id)?;
+                    let desired_instances = spec.num_replicas as usize;
+                    if desired_instances == 0 {
+                        log::info!("Decommissioning all instances of database {}", database_addr);
+                        for instance in instances {
+                            self.delete_database_instance(instance.id).await?;
+                        }
+                    } else if desired_instances > instances.len() {
+                        let n = desired_instances - instances.len();
+                        log::info!(
+                            "Scaling up database {} from {} to {} instances",
+                            database_addr,
+                            instances.len(),
+                            n
+                        );
+                        for _ in 0..n {
+                            self.insert_database_instance(DatabaseInstance {
+                                id: 0,
+                                database_id,
+                                node_id: 0,
+                                leader: false,
+                            })
+                            .await?;
+                        }
+                    } else if desired_instances < instances.len() {
+                        let n = instances.len() - desired_instances;
+                        log::info!(
+                            "Scaling down database {} from {} to {} instances",
+                            database_addr,
+                            instances.len(),
+                            n
+                        );
+                        for instance in instances.into_iter().filter(|instance| !instance.leader).take(n) {
+                            self.delete_database_instance(instance.id).await?;
+                        }
+                    } else {
+                        log::debug!(
+                            "Desired replica count {} for database {} already satisfied",
+                            desired_instances,
+                            database_addr
+                        );
+                    }
                 }
 
                 anyhow::Ok(Some(update_result))
@@ -345,7 +372,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             return Ok(());
         };
         anyhow::ensure!(
-            &database.identity == identity,
+            &database.owner_identity == identity,
             // TODO: `PermissionDenied` should be a variant of `Error`,
             //       so we can match on it and return better error responses
             //       from HTTP endpoints.
@@ -354,7 +381,9 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         );
 
         self.control_db.delete_database(database.id)?;
-        self.schedule_database(None, Some(database)).await?;
+        for instance in self.control_db.get_database_instances_by_database(database.id)? {
+            self.delete_database_instance(instance.id).await?;
+        }
 
         Ok(())
     }
@@ -423,35 +452,6 @@ impl StandaloneEnv {
         Ok(())
     }
 
-    // Internal
-    #[allow(clippy::comparison_chain)]
-    async fn schedule_database(
-        &self,
-        database: Option<Database>,
-        old_database: Option<Database>,
-    ) -> Result<(), anyhow::Error> {
-        let new_replicas = database.as_ref().map(|db| db.num_replicas).unwrap_or(0) as i32;
-        let old_replicas = old_database.as_ref().map(|db| db.num_replicas).unwrap_or(0) as i32;
-        let replica_diff = new_replicas - old_replicas;
-
-        let database_id = if let Some(database) = database {
-            database.id
-        } else {
-            old_database.unwrap().id
-        };
-
-        log::trace!("Scheduling database {database_id}, new_replicas {new_replicas}, old_replicas {old_replicas}");
-
-        if replica_diff > 0 {
-            self.schedule_replicas(database_id, replica_diff as u32).await?;
-        } else if replica_diff < 0 {
-            self.deschedule_replicas(database_id, replica_diff.unsigned_abs())
-                .await?;
-        }
-
-        Ok(())
-    }
-
     async fn schedule_replicas(&self, database_id: u64, num_replicas: u32) -> Result<(), anyhow::Error> {
         // Just scheduling a bunch of replicas to the only machine
         for i in 0..num_replicas {
@@ -467,17 +467,6 @@ impl StandaloneEnv {
         Ok(())
     }
 
-    async fn deschedule_replicas(&self, database_id: u64, num_replicas: u32) -> Result<(), anyhow::Error> {
-        for _ in 0..num_replicas {
-            let instances = self.control_db.get_database_instances_by_database(database_id)?;
-            let Some(instance) = instances.last() else {
-                return Ok(());
-            };
-            self.delete_database_instance(instance.id).await?;
-        }
-        Ok(())
-    }
-
     async fn on_insert_database_instance(&self, instance: &DatabaseInstance) -> Result<(), anyhow::Error> {
         if instance.leader {
             let database = self
@@ -489,10 +478,10 @@ impl StandaloneEnv {
                         instance.database_id, instance.id
                     )
                 })?;
-            let lock = self.lock_database_instance_for_update(instance.id)?;
             self.host_controller
-                .init_module_host(lock.token() as u128, database, instance.id)
-                .await?;
+                .get_or_launch_module_host(database, instance.id)
+                .await
+                .map(drop)?
         }
 
         Ok(())
@@ -506,11 +495,6 @@ impl StandaloneEnv {
         self.host_controller.exit_module_host(instance_id).await?;
 
         Ok(())
-    }
-
-    fn lock_database_instance_for_update(&self, instance_id: u64) -> anyhow::Result<control_db::Lock> {
-        let key = format!("database_instance/{}", instance_id);
-        Ok(self.control_db.lock(key)?)
     }
 }
 

@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use axum::extract::{Path, Query, State};
 use axum::response::IntoResponse;
+use axum::Extension;
 use axum_extra::TypedHeader;
 use futures::future::MaybeDone;
 use futures::{Future, FutureExt, SinkExt, StreamExt};
@@ -21,7 +22,7 @@ use spacetimedb_lib::Address;
 use std::time::Instant;
 use tokio::sync::mpsc;
 
-use crate::auth::{SpacetimeAuthHeader, SpacetimeIdentity, SpacetimeIdentityToken};
+use crate::auth::SpacetimeAuth;
 use crate::util::websocket::{
     CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade,
 };
@@ -56,14 +57,12 @@ pub async fn handle_websocket<S>(
     Path(SubscribeParams { name_or_address }): Path<SubscribeParams>,
     Query(SubscribeQueryParams { client_address }): Query<SubscribeQueryParams>,
     forwarded_for: Option<TypedHeader<XForwardedFor>>,
-    auth: SpacetimeAuthHeader,
+    Extension(auth): Extension<SpacetimeAuth>,
     ws: WebSocketUpgrade,
 ) -> axum::response::Result<impl IntoResponse>
 where
     S: NodeDelegate + ControlStateDelegate,
 {
-    let auth = auth.get_or_create(&ctx).await?;
-
     let client_address = client_address
         .map(Address::from)
         .unwrap_or_else(generate_random_address);
@@ -155,11 +154,7 @@ where
         }
     });
 
-    Ok((
-        TypedHeader(SpacetimeIdentity(auth.identity)),
-        TypedHeader(SpacetimeIdentityToken(auth.creds)),
-        res,
-    ))
+    Ok(res)
 }
 
 const LIVELINESS_TIMEOUT: Duration = Duration::from_secs(60);
@@ -209,6 +204,9 @@ async fn ws_client_actor_inner(
 
     let mut closed = false;
     let mut rx_buf = Vec::new();
+
+    let addr = client.module.info().address;
+
     loop {
         rx_buf.clear();
         enum Item {
@@ -257,10 +255,24 @@ async fn ws_client_actor_inner(
                     log::info!("dropping messages due to ws already being closed: {:?}", &rx_buf[..n]);
                 } else {
                     let send_all = async {
-                        let id = client.id.identity;
-                        for msg in rx_buf.drain(..n).map(|msg| datamsg_to_wsmsg(msg.serialize(client.protocol))) {
-                            WORKER_METRICS.websocket_sent.with_label_values(&id).inc();
-                            WORKER_METRICS.websocket_sent_msg_size.with_label_values(&id).observe(msg.len() as f64);
+                        for msg in rx_buf.drain(..n) {
+                            let workload = msg.workload();
+                            let num_rows = msg.num_rows();
+
+                            let msg = datamsg_to_wsmsg(msg.serialize(client.protocol));
+
+                            // These metrics should be updated together,
+                            // or not at all.
+                            if let (Some(workload), Some(num_rows)) = (workload, num_rows) {
+                                WORKER_METRICS
+                                    .websocket_sent_num_rows
+                                    .with_label_values(&addr, &workload)
+                                    .observe(num_rows as f64);
+                                WORKER_METRICS
+                                    .websocket_sent_msg_size
+                                    .with_label_values(&addr, &workload)
+                                    .observe(msg.len() as f64);
+                            }
                             // feed() buffers the message, but does not necessarily send it
                             ws.feed(msg).await?;
                         }

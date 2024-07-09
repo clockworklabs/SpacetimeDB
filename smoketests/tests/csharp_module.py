@@ -14,20 +14,20 @@ class CreateProject(unittest.TestCase):
         """
 
         bindings = Path(STDB_DIR) / "crates" / "bindings-csharp"
-        codegen = bindings / "Codegen"
-        runtime = bindings / "Runtime"
 
         try:
 
+            run_cmd("dotnet", "nuget", "locals", "all", "--clear", cwd=bindings, capture_stderr=True)
             run_cmd("dotnet", "workload", "install", "wasi-experimental")
-            run_cmd("dotnet", "pack", cwd=codegen, capture_stderr=True)
-            run_cmd("dotnet", "pack", cwd=runtime, capture_stderr=True)
+            run_cmd("dotnet", "pack", cwd=bindings, capture_stderr=True)
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 spacetime("init", "--lang=csharp", tmpdir)
 
-                codegen_bin = codegen / "bin" / "Release"
-                runtime_bin = runtime / "bin" / "Release"
+                packed_projects = ["BSATN.Runtime", "Runtime"]
+                restore_sources = [str(bindings / project / "bin" / "Release") for project in packed_projects]
+                # note that nuget URL comes last, which ensures local sources should override it.
+                restore_sources.append("https://api.nuget.org/v3/index.json")
 
                 csproj = Path(tmpdir) / "StdbModule.csproj"
                 with open(csproj, "r") as f:
@@ -36,13 +36,13 @@ class CreateProject(unittest.TestCase):
                 contents = contents.replace(
                     "</PropertyGroup>",
                     # note that nuget URL comes last, which ensures local sources should override it.
-                    f"""<RestoreSources>{codegen_bin.absolute()};{runtime_bin.absolute()};https://api.nuget.org/v3/index.json</RestoreSources>
+                    f"""<RestoreSources>{str.join(";", restore_sources)}</RestoreSources>
 </PropertyGroup>""",
                 )
                 with open(csproj, "w") as f:
                     f.write(contents)
 
-                run_cmd("dotnet", "build", cwd=tmpdir, capture_stderr=True)
+                run_cmd("dotnet", "publish", cwd=tmpdir, capture_stderr=True)
 
         except subprocess.CalledProcessError as e:
             print(e)

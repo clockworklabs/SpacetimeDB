@@ -6,6 +6,7 @@ use super::page::Page;
 use super::table::BlobNumBytes;
 use super::var_len::VarLenMembers;
 use core::ops::{ControlFlow, Deref, Index, IndexMut};
+use std::ops::DerefMut;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -327,6 +328,26 @@ impl Pages {
 
         partial_copied_pages
     }
+
+    /// Set this [`Pages`]' contents to be the `pages`.
+    ///
+    /// Used when restoring from a snapshot.
+    ///
+    /// Each page in the `pages` must be consistent with the schema for this [`Pages`],
+    /// i.e. the schema for the [`crate::table::Table`] which contains `self`.
+    ///
+    /// Should only ever be called when `self.is_empty()`.
+    ///
+    /// Also populates `self.non_full_pages`.
+    pub fn set_contents(&mut self, pages: Vec<Box<Page>>, fixed_row_size: Size) {
+        debug_assert!(self.is_empty());
+        self.non_full_pages = pages
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, page)| (!page.is_full(fixed_row_size)).then_some(PageIndex(idx as _)))
+            .collect();
+        self.pages = pages;
+    }
 }
 
 impl Deref for Pages {
@@ -334,5 +355,11 @@ impl Deref for Pages {
 
     fn deref(&self) -> &Self::Target {
         &self.pages
+    }
+}
+
+impl DerefMut for Pages {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.pages
     }
 }

@@ -36,12 +36,14 @@ pub fn parse_simple_enum(sum: &SumType, tag_name: &str) -> Result<AlgebraicValue
 /// Try to parse `value` as [Identity] or [Address].
 pub fn parse_product(product: &ProductType, value: &str) -> Result<AlgebraicValue, ErrorVm> {
     if product.is_identity() {
-        return Ok(Identity::from_hex(value)
+        return Ok(Identity::from_hex(value.trim_start_matches("0x"))
             .map_err(|err| ErrorVm::Other(err.into()))?
             .into());
     }
     if product.is_address() {
-        return Ok(Address::from_hex(value).map_err(ErrorVm::Other)?.into());
+        return Ok(Address::from_hex(value.trim_start_matches("0x"))
+            .map_err(ErrorVm::Other)?
+            .into());
     }
     Err(ErrorVm::Unsupported(format!(
         "Can't parse '{value}' to {}",

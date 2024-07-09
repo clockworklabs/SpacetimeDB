@@ -21,14 +21,28 @@ pub struct EnergyBalance {
     pub balance: i128,
 }
 
+/// Description of a database.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Database {
+    /// Internal id of the database, assigned by the control database.
     pub id: u64,
+    /// Public identity (i.e. [`Address`]) of the database.
     pub address: Address,
-    pub identity: Identity,
+    /// [`Identity`] of the database's owner.
+    pub owner_identity: Identity,
+    /// [`HostType`] of the module associated with the database.
+    ///
+    /// Valid only for as long as `initial_program` is valid.
     pub host_type: HostType,
-    pub num_replicas: u32,
-    pub program_bytes_address: Hash,
+    /// [`Hash`] of the compiled module to initialize the database with.
+    ///
+    /// Updating the database's module will **not** change this value.
+    pub initial_program: Hash,
+    /// The client address of the (initial) publisher of the database.
+    ///
+    /// If set, the value will be part of the  `__init__` reducer's context.
+    /// The meaning of this value is unspecified if the `owner_identity` is
+    /// changed after creation of the database.
     pub publisher_address: Option<Address>,
 }
 

@@ -260,6 +260,15 @@ impl<T: Send + Sync + 'static> FlushAndSyncTask<T> {
 
         loop {
             interval.tick().await;
+
+            // Skip if nothing changed.
+            if let Some(committed) = self.clog.max_committed_offset() {
+                let durable = self.offset.load(Acquire);
+                if durable.is_positive() && committed == durable as _ {
+                    continue;
+                }
+            }
+
             let clog = self.clog.clone();
             let task = spawn_blocking(move || clog.flush_and_sync()).await;
             match task {

@@ -1,6 +1,7 @@
 #![allow(clippy::disallowed_names)]
+use spacetimedb::sats::db::auth::StAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
-use spacetimedb::{query, spacetimedb, Deserialize, ReducerContext, SpacetimeType, Timestamp};
+use spacetimedb::{query, spacetimedb, Deserialize, ReducerContext, SpacetimeType, TableType, Timestamp};
 
 #[spacetimedb(table)]
 #[spacetimedb(index(btree, name = "foo", x))]
@@ -18,15 +19,17 @@ pub struct TestB {
 #[derive(SpacetimeType)]
 #[sats(name = "Namespace.TestC")]
 pub enum TestC {
-    // Foo(String),
     Foo,
     Bar,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb(table(public))]
 pub struct TestD {
     test_c: Option<TestC>,
 }
+
+// This table was specified as public.
+const _: () = assert!(matches!(TestD::TABLE_ACCESS, StAccess::Public));
 
 #[spacetimedb(table)]
 #[derive(Debug)]
@@ -37,17 +40,31 @@ pub struct TestE {
     name: String,
 }
 
+#[derive(SpacetimeType)]
+#[sats(name = "Namespace.TestF")]
+pub enum TestF {
+    Foo,
+    Bar,
+    Baz(String),
+}
+
+// All tables are private by default.
+const _: () = assert!(matches!(TestE::TABLE_ACCESS, StAccess::Private));
+
 #[spacetimedb(table)]
-pub struct _Private {
+pub struct Private {
     name: String,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb(table(private))]
 #[spacetimedb(index(btree, name = "multi_column_index", x, y))]
 pub struct Point {
     x: i64,
     y: i64,
 }
+
+// It is redundant, but we can explicitly specify a table as private.
+const _: () = assert!(matches!(Point::TABLE_ACCESS, StAccess::Private));
 
 // Test we can compile multiple constraints
 #[spacetimedb(table)]
@@ -83,16 +100,20 @@ pub fn repeating_test(ctx: ReducerContext, prev_time: Timestamp) {
 }
 
 #[spacetimedb(reducer)]
-pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC) -> anyhow::Result<()> {
+pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4: TestF) -> anyhow::Result<()> {
     log::info!("BEGIN");
     log::info!("sender: {:?}", ctx.sender);
     log::info!("timestamp: {:?}", ctx.timestamp);
     log::info!("bar: {:?}", arg2.foo);
 
     match arg3 {
-        // TestC::Foo(string) => log::info!("{}", string),
         TestC::Foo => log::info!("Foo"),
         TestC::Bar => log::info!("Bar"),
+    }
+    match arg4 {
+        TestF::Foo => log::info!("Foo"),
+        TestF::Bar => log::info!("Bar"),
+        TestF::Baz(string) => log::info!("{}", string),
     }
     for i in 0..1000 {
         TestA::insert(TestA {
@@ -197,12 +218,12 @@ impl Foo<'_> {
 
 #[spacetimedb(reducer)]
 pub fn add_private(name: String) {
-    _Private::insert(_Private { name });
+    Private::insert(Private { name });
 }
 
 #[spacetimedb(reducer)]
 pub fn query_private() {
-    for person in _Private::iter() {
+    for person in Private::iter() {
         log::info!("Private, {}!", person.name);
     }
     log::info!("Private, World!");

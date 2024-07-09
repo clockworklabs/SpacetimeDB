@@ -196,7 +196,7 @@ macro_rules! define_tables {
 
     // Define a table.
     (@one $name:ident { $($ops:tt)* } $($(#[$attr:meta])* $field_name:ident $ty:ty),* $(,)*) => {
-        #[spacetimedb(table)]
+        #[spacetimedb(table(public))]
         pub struct $name {
             $($(#[$attr])* pub $field_name : $ty,)*
         }
@@ -276,6 +276,16 @@ define_tables! {
     VecByteStruct { insert insert_vec_byte_struct } s Vec<ByteStruct>;
     VecEveryPrimitiveStruct { insert insert_vec_every_primitive_struct } s Vec<EveryPrimitiveStruct>;
     VecEveryVecStruct { insert insert_vec_every_vec_struct } s Vec<EveryVecStruct>;
+}
+
+// Tables holding an Option of various types.
+define_tables! {
+    OptionI32 { insert insert_option_i32 } n Option<i32>;
+    OptionString { insert insert_option_string } s Option<String>;
+    OptionIdentity { insert insert_option_identity } i Option<Identity>;
+    OptionSimpleEnum { insert insert_option_simple_enum } e Option<SimpleEnum>;
+    OptionEveryPrimitiveStruct { insert insert_option_every_primitive_struct } s Option<EveryPrimitiveStruct>;
+    OptionVecOptionI32 { insert insert_option_vec_option_i32 } v Option<Vec<Option<i32>>>;
 }
 
 // Tables mapping a unique, but non-pk, key to a boring i32 payload.

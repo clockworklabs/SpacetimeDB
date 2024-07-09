@@ -5,8 +5,6 @@ use std::path::PathBuf;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
-use crate::util::AnyBytes;
-
 use super::ExternalStorage;
 
 /// A simple [`ExternalStorage`] that stores programs in the filesystem.
@@ -78,7 +76,7 @@ impl DiskStorage {
 
 #[async_trait]
 impl ExternalStorage for DiskStorage {
-    async fn lookup(&self, program_hash: Hash) -> anyhow::Result<Option<AnyBytes>> {
-        Ok(self.get(&program_hash).await?.map(Into::into))
+    async fn lookup(&self, program_hash: Hash) -> anyhow::Result<Option<Box<[u8]>>> {
+        self.get(&program_hash).await.map_err(Into::into)
     }
 }

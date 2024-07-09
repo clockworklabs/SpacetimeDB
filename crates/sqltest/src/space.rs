@@ -5,6 +5,8 @@ use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::sql::compiler::compile_sql;
 use spacetimedb::sql::execute::execute_sql;
+use spacetimedb::subscription::module_subscription_actor::ModuleSubscriptions;
+use spacetimedb::Identity;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_sats::algebraic_value::Packed;
 use spacetimedb_sats::meta_type::MetaType;
@@ -14,6 +16,7 @@ use spacetimedb_vm::relation::MemTable;
 use sqllogictest::{AsyncDB, ColumnType, DBOutput};
 use std::fs;
 use std::io::Write;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Kind(pub(crate) AlgebraicType);
@@ -76,7 +79,8 @@ impl SpaceDb {
     pub(crate) fn run_sql(&self, sql: &str) -> anyhow::Result<Vec<MemTable>> {
         self.conn.with_read_only(&ExecutionContext::default(), |tx| {
             let ast = compile_sql(&self.conn, tx, sql)?;
-            let result = execute_sql(&self.conn, sql, ast, self.auth)?;
+            let subs = ModuleSubscriptions::new(Arc::new(self.conn.db.clone()), Identity::ZERO);
+            let result = execute_sql(&self.conn, sql, ast, self.auth, Some(&subs))?;
             //remove comments to see which SQL worked. Can't collect it outside from lack of a hook in the external `sqllogictest` crate... :(
             //append_file(&std::path::PathBuf::from(".ok.sql"), sql)?;
             Ok(result)

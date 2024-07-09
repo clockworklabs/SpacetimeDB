@@ -15,6 +15,7 @@ impl_st!([] Hash, _ts => AlgebraicType::bytes());
 impl_serialize!([] Hash, (self, ser) => self.data.serialize(ser));
 impl_deserialize!([] Hash, de => Ok(Self { data: <_>::deserialize(de)? }));
 
+#[cfg(feature = "metrics_impls")]
 impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Hash {
     fn as_prometheus_str(&self) -> impl AsRef<str> + '_ {
         self.to_hex()
@@ -55,6 +56,10 @@ impl Hash {
 
     pub fn from_hex(hex: impl AsRef<[u8]>) -> Result<Self, hex::FromHexError> {
         hex::FromHex::from_hex(hex)
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self == &Self::ZERO
     }
 }
 

@@ -1,16 +1,17 @@
 use super::datastore::locking_tx_datastore::MutTxId;
 use super::relational_db::RelationalDB;
 use crate::database_logger::SystemLogger;
-use crate::error::DBError;
+use crate::error::{DBError, TableError};
 use crate::execution_context::ExecutionContext;
 use anyhow::Context;
-use core::fmt;
+use core::{fmt, mem};
+use enum_as_inner::EnumAsInner;
 use itertools::Itertools;
 use similar::{Algorithm, TextDiff};
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_primitives::ConstraintKind;
-use spacetimedb_sats::db::def::{ConstraintSchema, IndexSchema, SequenceSchema, TableDef, TableSchema};
-use spacetimedb_sats::hash::Hash;
+use spacetimedb_primitives::{ConstraintKind, Constraints, IndexId};
+use spacetimedb_sats::db::auth::StAccess;
+use spacetimedb_sats::db::def::{ConstraintSchema, IndexDef, IndexSchema, SequenceSchema, TableDef, TableSchema};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -27,19 +28,34 @@ pub fn update_database(
     stdb: &RelationalDB,
     tx: MutTxId,
     proposed_tables: Vec<TableDef>,
-    fence: u128,
-    module_hash: Hash,
     system_logger: &SystemLogger,
 ) -> anyhow::Result<Result<MutTxId, UpdateDatabaseError>> {
     let ctx = ExecutionContext::internal(stdb.address());
     let (tx, res) = stdb.with_auto_rollback::<_, _, anyhow::Error>(&ctx, tx, |tx| {
         let existing_tables = stdb.get_all_tables_mut(tx)?;
         match schema_updates(existing_tables, proposed_tables)? {
-            SchemaUpdates::Updates { new_tables } => {
-                for (name, schema) in new_tables {
+            SchemaUpdates::Updated(updated) => {
+                for (name, schema) in updated.new_tables {
                     system_logger.info(&format!("Creating table `{}`", name));
                     stdb.create_table(tx, schema)
                         .with_context(|| format!("failed to create table {}", name))?;
+                }
+
+                for (name, access) in updated.changed_access {
+                    stdb.alter_table_access(tx, name, access)?;
+                }
+
+                for (name, added) in updated.added_indexes {
+                    let table_id = stdb
+                        .table_id_from_name_mut(tx, &name)?
+                        .ok_or_else(|| TableError::NotFound(name.into()))?;
+                    for index in added {
+                        stdb.create_index(tx, table_id, index)?;
+                    }
+                }
+
+                for index_id in updated.removed_indexes {
+                    stdb.drop_index(tx, index_id)?;
                 }
             }
 
@@ -66,10 +82,6 @@ pub fn update_database(
                 return Ok(Err(UpdateDatabaseError::IncompatibleSchema { tables }));
             }
         }
-
-        // Update the module hash. Morally, this should be done _after_ calling
-        // the `update` reducer, but that consumes our transaction context.
-        stdb.set_program_hash(tx, fence, module_hash)?;
 
         Ok(Ok(()))
     })?;
@@ -104,15 +116,24 @@ pub struct Tainted {
     pub reason: TaintReason,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
+pub struct Updates {
+    /// Tables to create.
+    new_tables: HashMap<Box<str>, TableDef>,
+    /// The new table access levels.
+    changed_access: HashMap<Box<str>, StAccess>,
+    /// The indices added that are not a consequence of added constraints.
+    added_indexes: HashMap<Box<str>, Vec<IndexDef>>,
+    /// The indices removed that are not a consequence of removed constraints.
+    removed_indexes: Vec<IndexId>,
+}
+
+#[derive(Debug, EnumAsInner)]
 pub enum SchemaUpdates {
     /// The schema cannot be updated due to conflicts.
     Tainted(Vec<Tainted>),
-    /// The schema can be updates.
-    Updates {
-        /// Tables to create.
-        new_tables: HashMap<Box<str>, TableDef>,
-    },
+    /// The schema can be updated.
+    Updated(Updates),
 }
 
 /// Compute the diff between the current and proposed schema.
@@ -132,7 +153,7 @@ pub fn schema_updates(
     existing_tables: impl IntoIterator<Item = Arc<TableSchema>>,
     proposed_tables: Vec<TableDef>,
 ) -> anyhow::Result<SchemaUpdates> {
-    let mut new_tables = HashMap::new();
+    let mut updates = Updates::default();
     let mut tainted_tables = Vec::new();
 
     let mut known_tables: BTreeMap<Box<str>, Arc<TableSchema>> = existing_tables
@@ -166,7 +187,7 @@ pub fn schema_updates(
                     .iter()
                     .cloned()
                     .map(|x| IndexSchema {
-                        index_id: 0.into(),
+                        index_id: if x.is_unique { 0.into() } else { x.index_id },
                         ..x
                     })
                     .sorted_by_key(|x| x.columns.clone())
@@ -197,7 +218,10 @@ pub fn schema_updates(
             );
             let proposed_schema = TableSchema::from_def(known_schema.table_id, proposed_schema_def);
 
-            if proposed_schema != known_schema {
+            let (schema_is_incompatible, known_schema, proposed_schema) =
+                schema_compat_and_updates_hack(&mut updates, known_schema, proposed_schema);
+
+            if schema_is_incompatible {
                 log::warn!("Schema incompatible: {}", proposed_schema.table_name);
                 log::debug!("Existing: {known_schema:?}");
                 log::debug!("Proposed: {proposed_schema:?}");
@@ -210,7 +234,9 @@ pub fn schema_updates(
                 });
             }
         } else {
-            new_tables.insert(proposed_table_name.to_owned(), proposed_schema_def);
+            updates
+                .new_tables
+                .insert(proposed_table_name.to_owned(), proposed_schema_def);
         }
     }
     // We may at some point decide to drop orphaned tables automatically,
@@ -225,7 +251,7 @@ pub fn schema_updates(
     }
 
     let res = if tainted_tables.is_empty() {
-        SchemaUpdates::Updates { new_tables }
+        SchemaUpdates::Updated(updates)
     } else {
         SchemaUpdates::Tainted(tainted_tables)
     };
@@ -233,41 +259,143 @@ pub fn schema_updates(
     Ok(res)
 }
 
+/// Returns whether the `known` schema is compatible with the `prop`osed updated one.
+///
+/// Any compatible updates are extended into `updates`.
+fn schema_compat_and_updates_hack(
+    updates: &mut Updates,
+    mut known: TableSchema,
+    mut prop: TableSchema,
+) -> (bool, TableSchema, TableSchema) {
+    // HACK(Centril): Compute whether the new schema is incompatible with the old,
+    // while ignoring `.table_access` and indices that aren't a consequence of a constraint.
+
+    // Change the access of both known and proposed to `Public`.
+    // We could have also picked `Private`.
+    // It does not matter. We just want access to be irrelevant wrt. schema compatibility.
+    let prop_access = mem::replace(&mut prop.table_access, StAccess::Public);
+    let known_access = mem::replace(&mut known.table_access, StAccess::Public);
+    // Record a change to the table access.
+    let table_name = || known.table_name.clone();
+    if prop_access != known_access {
+        updates.changed_access.insert(table_name(), prop_access);
+    }
+
+    // Filter out any indices that aren't a consequence of a constraint,
+    // i.e., remove all non-generated indices.
+    //
+    // Fortunately for us, all generated indices satisfy `is_unique`,
+    // as we have the following (from `ColumnAttribute`):
+    //
+    // UNSET = {}
+    // INDEXED = { indexed }
+    // AUTO_INC = { autoinc }
+    // UNIQUE = INDEXED | { unique } = { unique, indexed }
+    // IDENTITY = UNIQUE | AUTO_INC = { unique, indexed, autoinc }
+    // PRIMARY_KEY = UNIQUE | { pk } = { unique, indexed, pk }
+    // PRIMARY_KEY_AUTO = PRIMARY_KEY | AUTO_INC = { unique, indexed, autoinc, pk }
+    // PRIMARY_KEY_IDENTITY = PRIMARY_KEY | IDENTITY =  = { unique, indexed, autoinc, pk }
+    //
+    // This entails that all attributes with `indexed`,
+    // that have something additional,
+    // also have `unique`.
+    let prop_indexes = prop.indexes.clone();
+    let known_indexes = known.indexes.clone();
+
+    // Separate the generated and non-generated proposed and known indices.
+    let (prop_gen_indexes, mut prop_spec_indexes) = prop.indexes.into_iter().partition(|idx| idx.is_unique);
+    let (known_gen_indexes, mut known_spec_indexes) = known.indexes.into_iter().partition(|idx| idx.is_unique);
+    prop.indexes = prop_gen_indexes;
+    known.indexes = known_gen_indexes;
+
+    // These indices are not in `known_spec_indexes`, so they were added.
+    prop_spec_indexes.retain(|pidx| !known_spec_indexes.iter().any(|kidx| kidx.index_name == pidx.index_name));
+    if !prop_spec_indexes.is_empty() {
+        updates
+            .added_indexes
+            .insert(table_name(), prop_spec_indexes.into_iter().map_into().collect());
+    }
+
+    // These indices are not in `proposed_indexes`, so they were removed.
+    known_spec_indexes.retain(|kidx| !prop_indexes.iter().any(|pidx| kidx.index_name == pidx.index_name));
+    updates
+        .removed_indexes
+        .extend(known_spec_indexes.into_iter().map(|idx| idx.index_id));
+
+    // Strip constraints that are just `Indexed`.
+    let prop_constraints = prop.constraints.clone();
+    let known_constraints = known.constraints.clone();
+    prop.constraints.retain(|c| c.constraints != Constraints::indexed());
+    known.constraints.retain(|c| c.constraints != Constraints::indexed());
+
+    // Now, while ignoring `table_access` and indices,
+    // compute schema compatibility.
+    let changed = prop != known;
+
+    // Revert back to the original proposed schema.
+    prop.table_access = prop_access;
+    prop.indexes = prop_indexes;
+    prop.constraints = prop_constraints;
+    // Revert back to the original known schema.
+    known.table_access = known_access;
+    known.indexes = known_indexes;
+    known.constraints = known_constraints;
+
+    (changed, known, prop)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use anyhow::bail;
-    use spacetimedb_primitives::{ColId, Constraints, IndexId, TableId};
+    use anyhow::anyhow;
+    use spacetimedb_primitives::{col_list, ColId, Constraints, IndexId, TableId};
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::{ColumnDef, ColumnSchema, IndexSchema, IndexType};
     use spacetimedb_sats::AlgebraicType;
 
     #[test]
     fn test_updates_new_table() -> anyhow::Result<()> {
+        let table_id = TableId(42);
+        let table_name = "Person";
+        let index_id = IndexId(24);
         let current = [Arc::new(TableSchema::new(
-            TableId(42),
-            "Person".into(),
+            table_id,
+            table_name.into(),
             vec![ColumnSchema {
-                table_id: TableId(42),
+                table_id,
                 col_pos: ColId(0),
                 col_name: "name".into(),
                 col_type: AlgebraicType::String,
             }],
-            vec![],
+            vec![IndexSchema {
+                table_id,
+                index_id,
+                index_type: IndexType::BTree,
+                index_name: "known_index".into(),
+                is_unique: false,
+                columns: col_list![0],
+            }],
             vec![],
             vec![],
             StTableType::User,
             StAccess::Public,
         ))];
+        let proposed_indexes = vec![IndexDef {
+            index_type: IndexType::BTree,
+            index_name: "proposed_index".into(),
+            is_unique: false,
+            columns: col_list![0],
+        }];
         let proposed = vec![
             TableDef::new(
-                "Person".into(),
+                table_name.into(),
                 vec![ColumnDef {
                     col_name: "name".into(),
                     col_type: AlgebraicType::String,
                 }],
-            ),
+            )
+            .with_access(StAccess::Private)
+            .with_indexes(proposed_indexes.clone()),
             TableDef::new(
                 "Pet".into(),
                 vec![ColumnDef {
@@ -277,15 +405,23 @@ mod tests {
             ),
         ];
 
-        match schema_updates(current, proposed.clone())? {
-            SchemaUpdates::Tainted(tainted) => bail!("unexpectedly tainted: {tainted:#?}"),
-            SchemaUpdates::Updates { new_tables } => {
-                assert_eq!(new_tables.len(), 1);
-                assert_eq!(new_tables.get("Pet"), proposed.last());
+        let updates = schema_updates(current, proposed.clone())?
+            .into_updated()
+            .map_err(|su| anyhow!("unexpectedly tainted: {su:#?}"))?;
+        assert_eq!(updates.new_tables.len(), 1);
+        assert_eq!(updates.new_tables.get("Pet"), proposed.last());
 
-                Ok(())
-            }
-        }
+        assert_eq!(
+            updates.changed_access.into_iter().collect::<Vec<_>>(),
+            [(table_name.into(), StAccess::Private)]
+        );
+
+        assert_eq!(updates.removed_indexes, [index_id]);
+        let mut added_indexes2 = HashMap::new();
+        added_indexes2.insert(table_name.into(), proposed_indexes);
+        assert_eq!(updates.added_indexes, added_indexes2);
+
+        Ok(())
     }
 
     #[test]
@@ -343,45 +479,40 @@ mod tests {
 
     #[test]
     fn test_updates_add_index() {
-        let current = [Arc::new(
-            TableDef::new(
-                "Person".into(),
-                vec![ColumnDef {
-                    col_name: "name".into(),
-                    col_type: AlgebraicType::String,
-                }],
-            )
-            .into_schema(TableId(42)),
-        )];
-        let proposed = vec![TableDef::new(
+        let table_def = TableDef::new(
             "Person".into(),
             vec![ColumnDef {
                 col_name: "name".into(),
                 col_type: AlgebraicType::String,
             }],
-        )
-        .with_column_index(ColId(0), true)];
+        );
+        let current = [Arc::new(table_def.clone().into_schema(TableId(42)))];
+        let proposed = vec![table_def.with_column_index(ColId(0), false)];
 
-        assert_incompatible_schema(schema_updates(current, proposed).unwrap(), &["Person"]);
+        let updates = schema_updates(current, proposed).unwrap().into_updated().unwrap();
+        assert_eq!(updates.added_indexes["Person"].len(), 1);
+        assert_eq!(updates.removed_indexes, []);
     }
 
     #[test]
     fn test_updates_drop_index() {
+        let table_id = TableId(42);
+        let index_id = IndexId(68);
         let current = [Arc::new(TableSchema::new(
-            TableId(42),
+            table_id,
             "Person".into(),
             vec![ColumnSchema {
-                table_id: TableId(42),
+                table_id,
                 col_pos: ColId(0),
                 col_name: "name".into(),
                 col_type: AlgebraicType::String,
             }],
             vec![IndexSchema {
-                index_id: IndexId(68),
-                table_id: TableId(42),
+                index_id,
+                table_id,
                 index_type: IndexType::BTree,
                 index_name: "bobson_dugnutt".into(),
-                is_unique: true,
+                is_unique: false,
                 columns: ColId(0).into(),
             }],
             vec![],
@@ -397,7 +528,9 @@ mod tests {
             }],
         )];
 
-        assert_incompatible_schema(schema_updates(current, proposed).unwrap(), &["Person"]);
+        let updates = schema_updates(current, proposed).unwrap().into_updated().unwrap();
+        assert_eq!(updates.added_indexes.len(), 0);
+        assert_eq!(updates.removed_indexes, [index_id]);
     }
 
     #[test]
@@ -458,28 +591,18 @@ mod tests {
         assert_tainted(result, tainted_tables, |reason| matches!(reason, TaintReason::Orphaned))
     }
 
-    fn assert_tainted<F>(result: SchemaUpdates, tainted_tables: &[&str], match_reason: F)
-    where
-        F: Fn(&TaintReason) -> bool,
-    {
-        match result {
-            up @ SchemaUpdates::Updates { .. } => {
-                panic!("unexpectedly not tainted: {up:#?}");
-            }
-
-            SchemaUpdates::Tainted(tainted) => {
-                let mut actual_tainted_tables = Vec::with_capacity(tainted.len());
-                for t in tainted {
-                    assert!(
-                        match_reason(&t.reason),
-                        "{}: unexpected taint reason: {:#?}",
-                        t.table_name,
-                        t.reason
-                    );
-                    actual_tainted_tables.push(t.table_name.to_string());
-                }
-                assert_eq!(&actual_tainted_tables, tainted_tables);
-            }
+    fn assert_tainted(result: SchemaUpdates, tainted_tables: &[&str], match_reason: impl Fn(&TaintReason) -> bool) {
+        let tainted = result.into_tainted().unwrap();
+        let mut actual_tainted_tables = Vec::with_capacity(tainted.len());
+        for t in tainted {
+            assert!(
+                match_reason(&t.reason),
+                "{}: unexpected taint reason: {:#?}",
+                t.table_name,
+                t.reason
+            );
+            actual_tainted_tables.push(t.table_name.to_string());
         }
+        assert_eq!(&actual_tainted_tables, tainted_tables);
     }
 }

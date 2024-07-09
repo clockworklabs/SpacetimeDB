@@ -97,10 +97,9 @@ fn test_decode() -> ResultTest<()> {
     let db = Database {
         id: 0,
         address: Default::default(),
-        identity: id,
+        owner_identity: id,
         host_type: HostType::Wasm,
-        num_replicas: 0,
-        program_bytes_address: Hash::ZERO,
+        initial_program: Hash::ZERO,
         publisher_address: Some(Address::zero()),
     };
 
@@ -109,7 +108,7 @@ fn test_decode() -> ResultTest<()> {
     let dbs = cdb.get_databases()?;
 
     assert_eq!(dbs.len(), 1);
-    assert_eq!(dbs[0].identity, id);
+    assert_eq!(dbs[0].owner_identity, id);
 
     let mut new_database_instance = DatabaseInstance {
         id: 0,

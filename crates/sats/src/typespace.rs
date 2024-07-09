@@ -103,6 +103,13 @@ impl Typespace {
         WithTypespace::new(self, ty)
     }
 
+    /// Returns the `AlgebraicType` that `r` resolves to in the context of the `Typespace`.
+    ///
+    /// Panics if `r` is not known by the `Typespace`.
+    pub fn resolve(&self, r: AlgebraicTypeRef) -> WithTypespace<'_, AlgebraicType> {
+        self.with_type(&self[r])
+    }
+
     /// Inlines all type references in `ty` recursively using the current typeset.
     pub fn inline_typerefs_in_type(&mut self, ty: &mut AlgebraicType) -> Result<(), TypeRefError> {
         match ty {

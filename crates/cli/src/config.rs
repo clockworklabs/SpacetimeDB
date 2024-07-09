@@ -3,6 +3,7 @@ use anyhow::Context;
 use jsonwebtoken::DecodingKey;
 use serde::{Deserialize, Serialize};
 use spacetimedb::auth::identity::decode_token;
+use spacetimedb_fs_utils::{atomic_write, create_parent_dir};
 use spacetimedb_lib::Identity;
 use std::{
     fs,
@@ -79,7 +80,7 @@ Or initialize a default identity with:
                 format!(
                     "Cannot verify tokens using invalid saved fingerprint from server: {server}
 Update the fingerprint with:
-\tspacetime server fingerprint {server}",
+\tspacetime server fingerprint -s {server}",
                 )
             })?;
             decode_token(&decoder, &id.token).map_err(|_| {
@@ -105,82 +106,10 @@ pub struct RawConfig {
     server_configs: Vec<ServerConfig>,
 }
 
-fn create_parent_dir(file: &Path) -> anyhow::Result<()> {
-    let parent = file
-        .parent()
-        .with_context(|| format!("Cannot find the parent directory of path {file:?}"))?;
-
-    // If the `file` path is a relative path with no directory component,
-    // `parent` will be the empty path.
-    // In this case, do not attempt to create a directory.
-    if parent != Path::new("") {
-        // If the `file` path has a directory component,
-        // do `create_dir_all` to ensure it exists.
-        // If `parent` already exists as a directory, this is a no-op.
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create directory structure {parent:?} to contain {file:?}"))?;
-    }
-    Ok(())
-}
-
-#[derive(Debug)]
-/// A file used as an exclusive lock on access to another file.
-///
-/// Constructing a `Lockfile` creates the `path` with [`std::fs::File::create_new`],
-/// a.k.a. `O_EXCL`, erroring if the file already exists.
-///
-/// Dropping a `Lockfile` deletes the `path`, releasing the lock.
-///
-/// Used to guarantee exclusive access to the system config file,
-/// in order to prevent racy concurrent modifications.
-struct Lockfile {
-    path: PathBuf,
-}
-
-impl Lockfile {
-    /// Acquire an exclusive lock on the configuration file `config_path`.
-    ///
-    /// `config_path` should be the full name of the SpacetimeDB configuration file.
-    fn for_config(config_path: &Path) -> anyhow::Result<Self> {
-        // Ensure the directory exists before attempting to create the lockfile.
-        create_parent_dir(config_path)?;
-
-        let mut path = config_path.to_path_buf();
-        path.set_extension("lock");
-        // Open with `create_new`, which fails if the file already exists.
-        std::fs::File::create_new(&path).with_context(|| {
-            format!("Unable to acquire lock on config file {config_path:?}: failed to create lockfile {path:?}")
-        })?;
-
-        Ok(Lockfile { path })
-    }
-}
-
-impl Drop for Lockfile {
-    fn drop(&mut self) {
-        std::fs::remove_file(&self.path)
-            .with_context(|| format!("Unable to remove lockfile {:?}", self.path))
-            .unwrap();
-    }
-}
-
+#[derive(Debug, Clone)]
 pub struct Config {
     proj: RawConfig,
     home: RawConfig,
-
-    /// The path from which we loaded the system config `home`,
-    /// and a [`Lockfile`] which guarantees us exclusive access to it.
-    ///
-    /// The lockfile is created before reading or creating the home config,
-    /// and closed upon dropping the config.
-    /// This allows us to mutate the config via [`Config::save`] without worrying about other processes.
-    ///
-    /// None only in tests, which are allowed to concurrently mutate configurations as much as they want,
-    /// since they use a hardcoded configuration rather than loading from a file.
-    ///
-    /// Note that it's not necessary to lock or remember the path of the project config,
-    /// since we never write to that file.
-    home_file: Option<(PathBuf, Lockfile)>,
 }
 
 const HOME_CONFIG_DIR: &str = ".spacetime";
@@ -458,7 +387,7 @@ Import an existing identity with:
                     anyhow::anyhow!(
                         "Cannot delete identities for server without saved identity: {server}
 Fetch the server's fingerprint with:
-\tspacetime server fingerprint {server}"
+\tspacetime server fingerprint -s {server}"
                     )
                 })?;
                 self.remove_identities_for_fingerprint(&fingerprint)?
@@ -475,7 +404,7 @@ Fetch the server's fingerprint with:
         let decoder = DecodingKey::from_ec_pem(fingerprint.as_bytes()).with_context(|| {
             "Cannot delete identities for server without saved identity: {server}
 Fetch the server's fingerprint with:
-\tspacetime server fingerprint {server}"
+\tspacetime server fingerprint -s {server}"
         })?;
 
         // TODO: use `Vec::extract_if` instead when it stabilizes.
@@ -527,7 +456,7 @@ Fetch the server's fingerprint with:
                 format!(
                     "No saved fingerprint for server: {server}
 Fetch the server's fingerprint with:
-\tspacetime server fingerprint {server}"
+\tspacetime server fingerprint -s {server}"
                 )
             })
             .map(|cfg| cfg.ecdsa_public_key.as_deref())
@@ -653,20 +582,6 @@ Fetch the server's fingerprint with:
 }
 
 impl Config {
-    /// Release the system configuration `Lockfile` contained in `self`, if it exists,
-    /// allowing other processes to access the configuration.
-    ///
-    /// This is equivalent to dropping `self`, but more explicit in purpose.
-    pub fn release_lock(self) {
-        // Just drop `self`, cleaning up its lockfile.
-        //
-        // If we had CLI subcommands which wanted to read a `Config` but never `Config::save` it,
-        // we could have this message take `&mut self` and set the `home_lock` to `None`.
-        // This seems unlikely to be useful,
-        // as many accesses to the `Config` will implicitly mutate and `save`,
-        // e.g. by creating a new identity if none exists.
-    }
-
     pub fn default_server_name(&self) -> Option<&str> {
         self.proj
             .default_server
@@ -908,7 +823,6 @@ impl Config {
 
     pub fn load() -> Self {
         let home_path = Self::system_config_path();
-        let home_lock = Lockfile::for_config(&home_path).unwrap();
         let home = if home_path.exists() {
             Self::load_from_file(&home_path)
                 .inspect_err(|e| eprintln!("config file {home_path:?} is invalid: {e:#?}"))
@@ -919,50 +833,36 @@ impl Config {
 
         let proj = Self::load_proj_config();
 
-        Self {
-            home,
-            proj,
-
-            home_file: Some((home_path, home_lock)),
-        }
+        Self { home, proj }
     }
 
     #[doc(hidden)]
-    /// Used in tests; not backed by a file.
+    /// Used in tests.
     pub fn new_with_localhost() -> Self {
         Self {
             home: RawConfig::new_with_localhost(),
             proj: RawConfig::default(),
-
-            home_file: None,
-        }
-    }
-
-    #[doc(hidden)]
-    pub fn clone_for_test(&self) -> Self {
-        assert!(
-            self.home_file.is_none(),
-            "Cannot clone_for_test a Config derived from file {:?}",
-            self.home_file,
-        );
-        Config {
-            home: self.home.clone(),
-            proj: self.proj.clone(),
-            home_file: None,
         }
     }
 
     pub fn save(&self) {
-        let Some((home_path, _)) = &self.home_file else {
-            return;
-        };
-
+        let home_path = Self::system_config_path();
         // If the `home_path` is in a directory, ensure it exists.
-        create_parent_dir(home_path).unwrap();
+        create_parent_dir(home_path.as_ref()).unwrap();
 
         let config = toml::to_string_pretty(&self.home).unwrap();
 
-        if let Err(e) = std::fs::write(home_path, config) {
+        // TODO: We currently have a race condition if multiple processes are modifying the config.
+        // If process X and process Y read the config, each make independent changes, and then save
+        // the config, the first writer will have its changes clobbered by the second writer.
+        //
+        // We used to use `Lockfile` to prevent this from happening, but we had other issues with
+        // that approach (see https://github.com/clockworklabs/SpacetimeDB/issues/1339, and the
+        // TODO in `lockfile.rs`).
+        //
+        // We should address this issue, but we currently don't expect it to arise very frequently
+        // (see https://github.com/clockworklabs/SpacetimeDB/pull/1341#issuecomment-2150857432).
+        if let Err(e) = atomic_write(&home_path, config) {
             eprintln!("could not save config file: {e}")
         }
     }
@@ -1106,7 +1006,7 @@ Import an existing identity with:
                     format!(
                         "Unable to parse invalid saved server fingerprint as ECDSA public key.
 Update the server's fingerprint with:
-\tspacetime server fingerprint {}",
+\tspacetime server fingerprint -s {}",
                         server.unwrap_or("")
                     )
                 })

@@ -99,7 +99,6 @@ mod tests {
     use crate::sql::execute::collect_result;
     use crate::sql::execute::tests::run_for_testing;
     use crate::subscription::subscription::{get_all, ExecutionSet};
-    use crate::util::slow::SlowQueryConfig;
     use crate::vm::tests::create_table_with_rows;
     use crate::vm::DbProgram;
     use itertools::Itertools;
@@ -133,7 +132,8 @@ mod tests {
         let q = Expr::Crud(Box::new(CrudExpr::Query(query.clone())));
 
         let mut result = Vec::with_capacity(1);
-        collect_result(&mut result, run_ast(p, q, sources).into())?;
+        let mut updates = Vec::new();
+        collect_result(&mut result, &mut updates, run_ast(p, q, sources).into())?;
         Ok(result)
     }
 
@@ -170,8 +170,9 @@ mod tests {
         table_name: &str,
         head: &ProductType,
         row: &ProductValue,
+        access: StAccess,
     ) -> ResultTest<(Arc<TableSchema>, MemTable, DatabaseTableUpdate, QueryExpr)> {
-        let schema = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()])?;
+        let schema = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()], access)?;
         let table = mem_table(schema.table_id, schema.get_row_type().clone(), [row.clone()]);
 
         let data = DatabaseTableUpdate {
@@ -191,21 +192,13 @@ mod tests {
         tx: &mut MutTx,
         access: StAccess,
     ) -> ResultTest<(Arc<TableSchema>, MemTable, DatabaseTableUpdate, QueryExpr)> {
-        let table_name = if access == StAccess::Public {
-            "inventory"
-        } else {
-            "_inventory"
-        };
-
         let head = ProductType::from([("inventory_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(1u64, "health");
 
-        let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
+        let (schema, table, data, q) = make_data(db, tx, "inventory", &head, &row, access)?;
 
-        // For filtering out the hidden field `OP_TYPE_FIELD_NAME`
         let fields = &[0, 1].map(|c| FieldName::new(schema.table_id, c.into()).into());
-
-        let q = q.with_project(fields, None);
+        let q = q.with_project(fields.into(), None).unwrap();
 
         Ok((schema, table, data, q))
     }
@@ -218,11 +211,10 @@ mod tests {
         let head = ProductType::from([("player_id", AlgebraicType::U64), ("name", AlgebraicType::String)]);
         let row = product!(2u64, "jhon doe");
 
-        let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row)?;
+        let (schema, table, data, q) = make_data(db, tx, table_name, &head, &row, StAccess::Public)?;
 
-        let fields = &[0, 1].map(|c| FieldName::new(schema.table_id, c.into()).into());
-
-        let q = q.with_project(fields, None);
+        let fields = [0, 1].map(|c| FieldName::new(schema.table_id, c.into()).into());
+        let q = q.with_project(fields.into(), None).unwrap();
 
         Ok((schema, table, data, q))
     }
@@ -234,7 +226,7 @@ mod tests {
         data: &DatabaseTableUpdate,
     ) -> (QueryExpr, SourceSet<Vec<ProductValue>, 1>) {
         let data = data.deletes.iter().chain(data.inserts.iter()).cloned().collect();
-        let mem_table = MemTable::new(of.source.head().clone(), of.source.table_access(), data);
+        let mem_table = MemTable::new(of.head().clone(), of.source.table_access(), data);
         let mut sources = SourceSet::empty();
         of.source = sources.add_mem_table(mem_table);
         (of, sources)
@@ -273,10 +265,10 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let ctx = &ExecutionContext::incremental_update(db.address(), SlowQueryConfig::default());
+        let ctx = &ExecutionContext::incremental_update(db.address());
         let tx = &tx.into();
         let update = update.tables.iter().collect::<Vec<_>>();
-        let result = s.eval_incr(ctx, db, tx, &update)?;
+        let result = s.eval_incr(ctx, db, tx, &update, None);
         assert_eq!(
             result.tables.len(),
             total_tables,
@@ -303,7 +295,7 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval(ctx, Protocol::Binary, db, tx)?.tables.unwrap_left();
+        let result = s.eval(ctx, Protocol::Binary, db, tx, None).tables.unwrap_left();
         assert_eq!(
             result.len(),
             total_tables,
@@ -364,10 +356,10 @@ mod tests {
 
         let query: ExecutionSet = singleton_execution_set(query, sql.into())?;
 
-        let ctx = &ExecutionContext::incremental_update(db.address(), SlowQueryConfig::default());
+        let ctx = &ExecutionContext::incremental_update(db.address());
         let tx = (&tx).into();
         let update = update.tables.iter().collect::<Vec<_>>();
-        let result = query.eval_incr(ctx, &db, &tx, &update)?;
+        let result = query.eval_incr(ctx, &db, &tx, &update, None);
 
         assert_eq!(result.tables.len(), 1);
 
@@ -397,13 +389,14 @@ mod tests {
         let q_1 = q.clone();
         check_query(&db, &table, &tx, &q_1, &data)?;
 
-        let q_2 = q.with_select_cmp(OpCmp::Eq, FieldName::new(schema.table_id, 0.into()), scalar(1u64));
+        let q_2 = q
+            .with_select_cmp(OpCmp::Eq, FieldName::new(schema.table_id, 0.into()), scalar(1u64))
+            .unwrap();
         check_query(&db, &table, &tx, &q_2, &data)?;
 
         Ok(())
     }
 
-    // Check that the `owner` can access private tables (that start with `_`) and that it fails if the `caller` is different
     #[test]
     fn test_subscribe_private() -> ResultTest<()> {
         let db = TestDB::durable()?;
@@ -420,17 +413,15 @@ mod tests {
         check_query(&db, &table, &tx, &q, &data)?;
 
         // SELECT * FROM inventory WHERE inventory_id = 1
-        let q_id = QueryExpr::new(&*schema).with_select_cmp(
-            OpCmp::Eq,
-            FieldName::new(schema.table_id, 0.into()),
-            scalar(1u64),
-        );
+        let q_id = QueryExpr::new(&*schema)
+            .with_select_cmp(OpCmp::Eq, FieldName::new(schema.table_id, 0.into()), scalar(1u64))
+            .unwrap();
 
         let s = singleton_execution_set(q_id, "SELECT * FROM inventory WHERE inventory_id = 1".into())?;
 
         let data = DatabaseTableUpdate {
             table_id: schema.table_id,
-            table_name: "_inventory".into(),
+            table_name: "inventory".into(),
             deletes: [].into(),
             inserts: [row.clone()].into(),
         };
@@ -508,12 +499,12 @@ mod tests {
         run_for_testing(&db, sql_insert)?;
 
         let sql_query = "\
-            SELECT EnemyState.* FROM EnemyState \
-            JOIN MobileEntityState ON MobileEntityState.entity_id = EnemyState.entity_id  \
-            WHERE MobileEntityState.location_x > 96000 \
-            AND MobileEntityState.location_x < 192000 \
-            AND MobileEntityState.location_z > 96000 \
-            AND MobileEntityState.location_z < 192000";
+        SELECT EnemyState.* FROM EnemyState \
+        JOIN MobileEntityState ON MobileEntityState.entity_id = EnemyState.entity_id  \
+        WHERE MobileEntityState.location_x > 96000 \
+        AND MobileEntityState.location_x < 192000 \
+        AND MobileEntityState.location_z > 96000 \
+        AND MobileEntityState.location_z < 192000";
 
         let tx = db.begin_tx();
         let qset = compile_read_only_query(&db, &tx, sql_query)?;
@@ -533,8 +524,8 @@ mod tests {
         Ok(())
     }
 
-    #[tokio::test]
-    async fn test_subscribe_all() -> ResultTest<()> {
+    #[test]
+    fn test_subscribe_all() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
@@ -546,7 +537,7 @@ mod tests {
         let row_2 = product!(2u64, "jhon doe");
         let tx = db.begin_tx();
         let s = get_all(&db, &tx, &AuthCtx::for_testing())?.into();
-        let ctx = ExecutionContext::subscribe(db.address(), SlowQueryConfig::default());
+        let ctx = ExecutionContext::subscribe(db.address());
         check_query_eval(&ctx, &db, &tx, &s, 2, &[row_1.clone(), row_2.clone()])?;
 
         let data1 = DatabaseTableUpdate {
@@ -723,7 +714,7 @@ mod tests {
         db.with_read_only(ctx, |tx| {
             let tx = (&*tx).into();
             let update = update.tables.iter().collect::<Vec<_>>();
-            let result = query.eval_incr(ctx, db, &tx, &update)?;
+            let result = query.eval_incr(ctx, db, &tx, &update, None);
             let tables = result
                 .tables
                 .into_iter()

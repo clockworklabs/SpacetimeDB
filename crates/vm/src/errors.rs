@@ -16,8 +16,6 @@ pub enum ConfigError {
 /// Typing Errors
 #[derive(Error, Debug)]
 pub enum ErrorType {
-    #[error("Field should resolve to `bool`, but it got the value `{{0.to_satn()}}`")]
-    FieldBool(AlgebraicValue),
     #[error("Error Parsing `{value}` into type [{ty}]: {err}")]
     Parse { value: String, ty: String, err: String },
 }
