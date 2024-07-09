@@ -786,13 +786,13 @@ export default TestE;
 // @ts-ignore
 import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 // @ts-ignore
-import { TestA } from "./test_a";
-// @ts-ignore
-import { TestB } from "./test_b";
-// @ts-ignore
 import { Namespace.TestC } from "./namespace.test_c";
 // @ts-ignore
 import { Namespace.TestF } from "./namespace.test_f";
+// @ts-ignore
+import { TestA } from "./test_a";
+// @ts-ignore
+import { TestB } from "./test_b";
 
 export class TestReducer extends Reducer
 {
