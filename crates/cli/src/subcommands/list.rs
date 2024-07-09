@@ -1,3 +1,4 @@
+use crate::common_args;
 use crate::Config;
 use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
@@ -17,12 +18,7 @@ pub fn cli() -> Command {
                 .required(true)
                 .help("The identity to list databases for"),
         )
-        .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
-                .help("The nickname, host name or URL of the server from which to list databases"),
-        )
+        .arg(common_args::server().help("The nickname, host name or URL of the server from which to list databases"))
 }
 
 #[derive(Deserialize)]
