@@ -2,7 +2,7 @@ use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_primitives::{ColId, ColList, ConstraintKind, Constraints};
-use spacetimedb_sats::db::def::{ColumnDef, ConstraintDef, TableDef, TableSchema};
+use spacetimedb_sats::db::def::{ColumnDef, ColumnSchema, ConstraintDef, TableDef, TableSchema};
 use spacetimedb_sats::db::error::RelationError;
 use spacetimedb_sats::relation::{ColExpr, FieldName};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
@@ -173,6 +173,19 @@ impl From {
     /// See [`find_field`] for more details.
     pub(super) fn find_field(&self, f: &str) -> Result<(FieldName, &AlgebraicType), PlanError> {
         find_field(self.iter_tables(), f)
+    }
+
+    /// Returns the name of the table,
+    /// together with the column definition at position `field.col`,
+    /// for table `field.table_id`.
+    pub(super) fn find_field_name(&self, field: FieldName) -> Option<(&str, &ColumnSchema)> {
+        self.iter_tables().find_map(|t| {
+            if t.table_id == field.table() {
+                t.get_column_by_field(field).map(|c| (&*t.table_name, c))
+            } else {
+                None
+            }
+        })
     }
 }
 
