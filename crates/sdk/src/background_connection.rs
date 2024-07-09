@@ -6,7 +6,7 @@ use crate::global_connection::CLIENT_CACHE;
 use crate::identity::Credentials;
 use crate::reducer::Reducer;
 use crate::spacetime_module::SpacetimeModule;
-use crate::websocket::DbConnection;
+use crate::websocket::{DbCodec, DbConnection};
 use crate::ws_messages;
 use anyhow::{Context, Result};
 use futures::stream::StreamExt;
@@ -317,6 +317,7 @@ impl BackgroundDbConnection {
                 db_name,
                 credentials.as_ref(),
                 client_address,
+                DbCodec::Brotli
             ))
         })?;
 

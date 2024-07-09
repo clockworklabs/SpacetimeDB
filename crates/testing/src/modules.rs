@@ -10,7 +10,7 @@ use tokio::runtime::{Builder, Runtime};
 
 use spacetimedb::address::Address;
 
-use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol};
+use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol, ProtocolCodec};
 use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, Storage};
@@ -194,7 +194,7 @@ impl CompiledModule {
         // for stuff like "get logs" or "get message log"
         ModuleHandle {
             _env: env,
-            client: ClientConnection::dummy(client_id, Protocol::Text, instance.id, module_rx),
+            client: ClientConnection::dummy(client_id, Protocol::Text, ProtocolCodec::default(), instance.id, module_rx),
             db_address,
         }
     }

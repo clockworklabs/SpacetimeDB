@@ -12,6 +12,7 @@ use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
 use futures::prelude::*;
+use serde::Deserialize;
 use spacetimedb_lib::identity::RequestId;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
@@ -22,10 +23,24 @@ pub enum Protocol {
     Binary,
 }
 
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, Deserialize)]
+pub enum ProtocolCodec {
+    None,
+    Gzip,
+    Brotli,
+}
+
+impl Default for ProtocolCodec {
+    fn default() -> Self {
+        ProtocolCodec::Brotli
+    }
+}
+
 #[derive(Debug)]
 pub struct ClientConnectionSender {
     pub id: ClientActorId,
     pub protocol: Protocol,
+    pub codec: ProtocolCodec,
     sendtx: mpsc::Sender<SerializableMessage>,
     abort_handle: AbortHandle,
     cancelled: AtomicBool,
@@ -40,7 +55,7 @@ pub enum ClientSendError {
 }
 
 impl ClientConnectionSender {
-    pub fn dummy_with_channel(id: ClientActorId, protocol: Protocol) -> (Self, mpsc::Receiver<SerializableMessage>) {
+    pub fn dummy_with_channel(id: ClientActorId, protocol: Protocol, codec: ProtocolCodec) -> (Self, mpsc::Receiver<SerializableMessage>) {
         let (sendtx, rx) = mpsc::channel(1);
         // just make something up, it doesn't need to be attached to a real task
         let abort_handle = match tokio::runtime::Handle::try_current() {
@@ -51,6 +66,7 @@ impl ClientConnectionSender {
             Self {
                 id,
                 protocol,
+                codec,
                 sendtx,
                 abort_handle,
                 cancelled: AtomicBool::new(false),
@@ -59,8 +75,8 @@ impl ClientConnectionSender {
         )
     }
 
-    pub fn dummy(id: ClientActorId, protocol: Protocol) -> Self {
-        Self::dummy_with_channel(id, protocol).0
+    pub fn dummy(id: ClientActorId, protocol: Protocol, codec: ProtocolCodec) -> Self {
+        Self::dummy_with_channel(id, protocol, codec).0
     }
 
     pub fn send_message(&self, message: impl Into<SerializableMessage>) -> Result<(), ClientSendError> {
@@ -133,6 +149,7 @@ impl ClientConnection {
     pub async fn spawn<F, Fut>(
         id: ClientActorId,
         protocol: Protocol,
+        codec: ProtocolCodec,
         database_instance_id: u64,
         mut module_rx: watch::Receiver<ModuleHost>,
         actor: F,
@@ -168,6 +185,7 @@ impl ClientConnection {
         let sender = Arc::new(ClientConnectionSender {
             id,
             protocol,
+            codec,
             sendtx,
             abort_handle,
             cancelled: AtomicBool::new(false),
@@ -189,12 +207,13 @@ impl ClientConnection {
     pub fn dummy(
         id: ClientActorId,
         protocol: Protocol,
+        codec: ProtocolCodec,
         database_instance_id: u64,
         mut module_rx: watch::Receiver<ModuleHost>,
     ) -> Self {
         let module = module_rx.borrow_and_update().clone();
         Self {
-            sender: Arc::new(ClientConnectionSender::dummy(id, protocol)),
+            sender: Arc::new(ClientConnectionSender::dummy(id, protocol, codec)),
             database_instance_id,
             module,
             module_rx,

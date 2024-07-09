@@ -33,6 +33,7 @@ async-trait.workspace = true
 backtrace.workspace = true
 base64.workspace = true
 blake3.workspace = true
+brotli.workspace = true
 bytes.workspace = true
 bytestring.workspace = true
 chrono.workspace = true
