@@ -1,9 +1,11 @@
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use bytes::Bytes;
 use derive_more::Display;
 use parking_lot::RwLock;
 use spacetimedb_commitlog::{payload::txdata, Varchar};
+use spacetimedb_data_structures::map::{HashCollectionExt, IntMap};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::bsatn;
@@ -60,6 +62,29 @@ impl BufferMetric {
             ..Default::default()
         }
     }
+
+    fn flush(&self, workload: &WorkloadType, database: &Address, reducer: &str) {
+        macro_rules! flush_metric {
+            ($db_metric:expr, $metric_field:ident) => {
+                if self.$metric_field > 0 {
+                    $db_metric
+                        .with_label_values(
+                            workload,
+                            database,
+                            reducer,
+                            &self.table_id.0,
+                            &self.cache_table_name,
+                        )
+                        .inc_by(self.$metric_field);
+                }
+            };
+        }
+        flush_metric!(DB_METRICS.rdb_num_index_seeks, index_seeks);
+        flush_metric!(DB_METRICS.rdb_num_keys_scanned, keys_scanned);
+        flush_metric!(DB_METRICS.rdb_num_rows_fetched, rows_fetched);
+        flush_metric!(DB_METRICS.rdb_num_rows_inserted, rows_inserted);
+        flush_metric!(DB_METRICS.rdb_num_rows_deleted, rows_deleted);
+    }
 }
 
 #[derive(Default, Clone)]
@@ -79,33 +104,6 @@ impl Metrics {
 
     pub fn table_exists(&self, table_id: TableId) -> bool {
         self.0.iter().any(|x| x.table_id == table_id)
-    }
-
-    #[allow(dead_code)]
-    fn flush(&mut self, workload: &WorkloadType, database: &Address, reducer: &str) {
-        macro_rules! flush_metric {
-            ($db_metric:expr, $metric:expr, $metric_field:ident) => {
-                if $metric.$metric_field > 0 {
-                    $db_metric
-                        .with_label_values(
-                            workload,
-                            database,
-                            reducer,
-                            &$metric.table_id.0,
-                            &$metric.cache_table_name,
-                        )
-                        .inc_by($metric.$metric_field);
-                }
-            };
-        }
-
-        self.0.iter().for_each(|metric| {
-            flush_metric!(DB_METRICS.rdb_num_index_seeks, metric, index_seeks);
-            flush_metric!(DB_METRICS.rdb_num_keys_scanned, metric, keys_scanned);
-            flush_metric!(DB_METRICS.rdb_num_rows_fetched, metric, rows_fetched);
-            flush_metric!(DB_METRICS.rdb_num_rows_inserted, metric, rows_inserted);
-            flush_metric!(DB_METRICS.rdb_num_rows_deleted, metric, rows_deleted);
-        });
     }
 }
 
@@ -275,11 +273,31 @@ impl ExecutionContext {
     }
 }
 
-impl Drop for ExecutionContext {
-    fn drop(&mut self) {
-        let workload = self.workload;
-        let database = self.database;
-        let reducer = self.reducer_name();
-        self.metrics.write().flush(&workload, &database, reducer);
+pub fn batch_and_flush_metrics(ctxs: Vec<ExecutionContext>) {
+    if ctxs.is_empty() {
+        return;
+    }
+
+    let mut merged: IntMap<TableId, BufferMetric> = IntMap::new();
+
+    let workload = ctxs[0].workload;
+    let database = ctxs[0].database;
+    let reducer_name = ctxs[0].reducer_name();
+    for ctx in &ctxs {
+        for metric in ctx.metrics.write().0.iter() {
+            if let Some(merged_metric) = merged.get_mut(&metric.table_id) {
+                merged_metric.index_seeks += metric.index_seeks;
+                merged_metric.keys_scanned += metric.keys_scanned;
+                merged_metric.rows_fetched += metric.rows_fetched;
+                merged_metric.rows_inserted += metric.rows_inserted;
+                merged_metric.rows_deleted += metric.rows_deleted;
+            } else {
+                merged.insert(metric.table_id, metric.clone());
+            }
+        }
+    }
+
+    for metric in merged.values() {
+        metric.flush(&workload, &database, &reducer_name);
     }
 }

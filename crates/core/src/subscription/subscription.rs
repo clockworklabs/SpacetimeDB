@@ -26,7 +26,7 @@ use crate::client::Protocol;
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
-use crate::execution_context::ExecutionContext;
+use crate::execution_context::{batch_and_flush_metrics, ExecutionContext};
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdateRelValue, ProtocolDatabaseUpdate, UpdatesRelValue};
 use crate::json::client_api::TableUpdateJson;
 use crate::vm::{build_query, TxMode};
@@ -553,9 +553,7 @@ impl ExecutionSet {
             })
             .unzip();
 
-        tokio::task::spawn_blocking(|| {
-            drop(all_ctx);
-        });
+        batch_and_flush_metrics(all_ctx);
         eval.into_iter().collect::<Result<_, _>>()
     }
 
@@ -573,9 +571,7 @@ impl ExecutionSet {
             })
             .unzip();
 
-        tokio::task::spawn_blocking(|| {
-            drop(all_ctx);
-        });
+        batch_and_flush_metrics(all_ctx);
         eval.into_iter().collect::<Result<_, _>>()
     }
 
