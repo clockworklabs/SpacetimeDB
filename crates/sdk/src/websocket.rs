@@ -155,7 +155,7 @@ impl DbConnection {
     pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage> {
         let mut decompressed = Vec::new();
         let mut d = GzDecoder::new(&bytes[..]);
-        d.read(&mut decompressed).context("Failed to Brotli decompress message")?;
+        d.read(&mut decompressed).context("Failed to Gz decompress message")?;
         Ok(bsatn::from_slice(&decompressed)?)
     }
 

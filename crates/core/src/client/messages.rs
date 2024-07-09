@@ -1,10 +1,10 @@
 use brotli::CompressorReader;
 use base64::Engine;
-use flate2::Compression;
-use flate2::write::GzEncoder;
 use derive_more::From;
 use spacetimedb_client_api_messages::websocket::EncodedValue;
 use spacetimedb_lib::bsatn::ser::BsatnError;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::ser::Serialize;
