@@ -177,6 +177,7 @@ impl CsharpAutogen {
         if namespace != "SpacetimeDB" {
             writeln!(output, "using SpacetimeDB;");
         }
+        writeln!(output, "using SpacetimeDB.ClientApi;");
         for extra_using in extra_usings {
             writeln!(output, "using {extra_using};");
         }
