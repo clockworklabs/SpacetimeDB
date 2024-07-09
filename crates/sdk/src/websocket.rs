@@ -1,7 +1,7 @@
 use crate::identity::Credentials;
 use crate::ws_messages::{ClientMessage, ServerMessage};
 use anyhow::{bail, Context, Result};
-use brotli::BrotliDecompress;
+use flate2::read::GzDecoder;
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{Scheme, Uri};
@@ -14,6 +14,8 @@ use tokio_tungstenite::{
     tungstenite::protocol::{Message as WebSocketMessage, WebSocketConfig},
     MaybeTlsStream, WebSocketStream,
 };
+
+use std::io::prelude::*;
 
 pub(crate) struct DbConnection {
     sock: WebSocketStream<MaybeTlsStream<TcpStream>>,
@@ -152,7 +154,8 @@ impl DbConnection {
 
     pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage> {
         let mut decompressed = Vec::new();
-        BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
+        let mut d = GzDecoder::new(&bytes[..]);
+        d.read(&mut decompressed).context("Failed to Brotli decompress message")?;
         Ok(bsatn::from_slice(&decompressed)?)
     }
 

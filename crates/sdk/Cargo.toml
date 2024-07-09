@@ -18,6 +18,7 @@ anymap.workspace = true
 base64.workspace = true
 brotli.workspace = true
 bytes.workspace = true
+flate2.workspace = true
 futures.workspace = true
 futures-channel.workspace = true
 home.workspace = true
