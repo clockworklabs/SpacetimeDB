@@ -168,21 +168,20 @@ impl DbConnection {
         Ok(DbConnection { sock, codec })
     }
 
-    pub(crate) fn parse_response(&self, bytes: &[u8]) -> Result<Message> {
+    pub(crate) fn parse_response(&self, bytes: &[u8]) -> Result<ServerMessage> {
         let mut decompressed = Vec::new();
-        let decoded: &[u8];
-        match self.codec {
-            DbCodec::None => decoded = bytes,
+        let decoded = match self.codec {
+            DbCodec::None => bytes,
             DbCodec::Gzip => {
-                let mut d = GzDecoder::new(&bytes[..]);
+                let mut d = GzDecoder::new(bytes);
                 d.read(&mut decompressed).context("Failed to Gz decompress message")?;
-                decoded = &decompressed[..];
+                &decompressed[..]
             }
             DbCodec::Brotli => {
                 BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
-                decoded = &decompressed[..];
+                &decompressed[..]
             }
-        }
+        };
         Ok(bsatn::from_slice(decoded)?)
     }
 

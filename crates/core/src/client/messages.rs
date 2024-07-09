@@ -1,10 +1,10 @@
 use base64::Engine;
 use brotli::CompressorReader;
 use derive_more::From;
-use spacetimedb_client_api_messages::websocket::EncodedValue;
-use spacetimedb_lib::bsatn::ser::BsatnError;
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use spacetimedb_client_api_messages::websocket::EncodedValue;
+use spacetimedb_lib::bsatn::ser::BsatnError;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::ser::Serialize;
@@ -34,7 +34,11 @@ pub trait ToProtocol {
 /// Serialize `msg` into a [`DataMessage`] containing a [`ws::ServerMessage`].
 ///
 /// If `protocol` is [`Protocol::Binary`], the message will be compressed by this method.
-pub fn serialize(msg: impl ToProtocol<Encoded = ws::ServerMessage>, protocol: Protocol, codec: ProtocolCodec) -> DataMessage {
+pub fn serialize(
+    msg: impl ToProtocol<Encoded = ws::ServerMessage>,
+    protocol: Protocol,
+    codec: ProtocolCodec,
+) -> DataMessage {
     let msg = msg.to_protocol(protocol);
     match protocol {
         Protocol::Text => serde_json::to_string(&SerializeWrapper::new(msg)).unwrap().into(),

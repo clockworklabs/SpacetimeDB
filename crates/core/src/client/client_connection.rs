@@ -23,17 +23,12 @@ pub enum Protocol {
     Binary,
 }
 
-#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, Deserialize)]
+#[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, Default, Deserialize)]
 pub enum ProtocolCodec {
     None,
     Gzip,
+    #[default]
     Brotli,
-}
-
-impl Default for ProtocolCodec {
-    fn default() -> Self {
-        ProtocolCodec::Brotli
-    }
 }
 
 #[derive(Debug)]
