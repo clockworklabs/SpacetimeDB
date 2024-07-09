@@ -3,9 +3,9 @@ use std::{io, num::NonZeroU16, path::PathBuf, sync::RwLock};
 use log::trace;
 
 mod commit;
-mod commitlog;
-mod repo;
-mod segment;
+pub mod commitlog;
+pub mod repo;
+pub mod segment;
 mod varchar;
 mod varint;
 
