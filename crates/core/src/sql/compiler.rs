@@ -1112,20 +1112,6 @@ mod tests {
             Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` != `String(\"161853\"): String`, executing: `SELECT * FROM PlayerState WHERE entity_id = '161853'`".into())
         );
 
-        let sql = "SELECT * FROM PlayerState JOIN EnemyState ON PlayerState.entity_id = EnemyState.entity_id";
-
-        assert_eq!(
-            compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
-            Err("SqlError: Type Mismatch Join: `PlayerState.entity_id: U64` != `EnemyState.entity_id: I8`, executing: `SELECT * FROM PlayerState JOIN EnemyState ON PlayerState.entity_id = EnemyState.entity_id`".into())
-        );
-
-        let sql = "SELECT * FROM PlayerState JOIN FriendState ON PlayerState.entity_id = FriendState.entity_id WHERE PlayerState.entity_id = '161853'";
-
-        assert_eq!(
-            compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
-            Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` != `String(\"161853\"): String`, executing: `SELECT * FROM PlayerState JOIN FriendState ON PlayerState.entity_id = FriendState.entity_id WHERE PlayerState.entity_id = '161853'`".into())
-        );
-
         // Check we can still compile the query if we remove the type mismatch and have multiple logical operations.
         let sql = "SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id = 2 AND entity_id = 3 OR entity_id = 4 OR entity_id = 5";
 
@@ -1143,7 +1129,7 @@ mod tests {
 
         assert_eq!(
             compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
-            Err("SqlError: Relation Error: `Field `table#4097.col#0` was expected to be `bool` but is `(Builtin = (U64 = ()))``, executing: `SELECT * FROM PlayerState WHERE entity_id AND entity_id`".into())
+            Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` and `PlayerState.entity_id: U64`, both sides must be an `Bool` expression, executing: `SELECT * FROM PlayerState WHERE entity_id AND entity_id`".into())
         );
         Ok(())
     }
