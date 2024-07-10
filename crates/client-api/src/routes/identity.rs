@@ -44,7 +44,7 @@ pub async fn create_identity<S: ControlStateDelegate + NodeDelegate>(
     Ok(axum::Json(identity_response))
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct GetIdentityResponse {
     identities: Vec<GetIdentityResponseEntry>,
 }
@@ -77,7 +77,7 @@ pub async fn get_identity<S: ControlStateDelegate>(
             (!identities.is_empty()).then_some(GetIdentityResponse { identities })
         }
     };
-    let identity_response = lookup.ok_or(StatusCode::NOT_FOUND)?;
+    let identity_response = lookup.unwrap_or_default();
     Ok(axum::Json(identity_response))
 }
 
