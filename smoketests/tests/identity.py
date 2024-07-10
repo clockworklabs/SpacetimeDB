@@ -41,7 +41,7 @@ class IdentityImports(Smoketest):
         self.import_identity(identity, token, default=True)
 
         # Configure our email
-        output = self.spacetime("identity", "set-email", identity, email)
+        output = self.spacetime("identity", "set-email", "--identity", identity, email)
         self.assertEqual(extract_field(output, "IDENTITY"), identity)
         self.assertEqual(extract_field(output, "EMAIL"), email)
 
@@ -63,12 +63,12 @@ class IdentityImports(Smoketest):
         identities = self.spacetime("identity", "list")
         self.assertIn(identity, identities)
 
-        self.spacetime("identity", "remove", identity)
+        self.spacetime("identity", "remove", "--identity", identity)
         identities = self.spacetime("identity", "list")
         self.assertNotIn(identity, identities)
 
         with self.assertRaises(Exception):
-            self.spacetime("identity", "remove", identity)
+            self.spacetime("identity", "remove", "--identity", identity)
 
     def test_remove_all(self):
         """Test deleting all identities with --force"""
@@ -80,7 +80,7 @@ class IdentityImports(Smoketest):
         identities = self.spacetime("identity", "list")
         self.assertIn(identity2, identities)
 
-        self.spacetime("identity", "remove", identity2)
+        self.spacetime("identity", "remove", "--identity", identity2)
         identities = self.spacetime("identity", "list")
         self.assertNotIn(identity2, identities)
 
@@ -100,7 +100,7 @@ class IdentityImports(Smoketest):
         default_identity = next(filter(lambda s: "***" in s, identities), "")
         self.assertNotIn(identity, default_identity)
         
-        self.spacetime("identity", "set-default", identity)
+        self.spacetime("identity", "set-default", "--identity", identity)
 
         identities = self.spacetime("identity", "list").splitlines()
         default_identity = next(filter(lambda s: "***" in s, identities), "")
@@ -123,7 +123,7 @@ class IdentityImports(Smoketest):
         self.import_identity(identity, token, default=True)
 
         # Configure our email
-        output = self.spacetime("identity", "set-email", identity, email)
+        output = self.spacetime("identity", "set-email", "--identity", identity, email)
         self.assertEqual(extract_field(output, "IDENTITY"), identity)
         self.assertEqual(extract_field(output, "EMAIL").lower(), email.lower())
 

@@ -1,7 +1,7 @@
 use crate::common_args;
 use crate::Config;
 use anyhow::Context;
-use clap::{Arg, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use reqwest::StatusCode;
 use serde::Deserialize;
 use spacetimedb_lib::Address;
@@ -14,7 +14,7 @@ pub fn cli() -> Command {
     Command::new("list")
         .about("Lists the databases attached to an identity")
         .arg(
-            Arg::new("identity")
+            common_args::identity()
                 .required(true)
                 .help("The identity to list databases for"),
         )
