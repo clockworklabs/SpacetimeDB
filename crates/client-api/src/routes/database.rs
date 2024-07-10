@@ -1,4 +1,3 @@
-use super::identity::IdentityForUrl;
 use crate::auth::{
     anon_auth_middleware, SpacetimeAuth, SpacetimeAuthHeader, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros,
     SpacetimeIdentity, SpacetimeIdentityToken,
@@ -11,14 +10,11 @@ use axum::extract::{DefaultBodyLimit, Path, Query, State};
 use axum::response::{ErrorResponse, IntoResponse};
 use axum::Extension;
 use axum_extra::TypedHeader;
-use chrono::Utc;
 use futures::StreamExt;
 use http::StatusCode;
-use rand::Rng;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use spacetimedb::address::Address;
-use spacetimedb::auth::identity::encode_token;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::DescribedEntityType;
 use spacetimedb::host::EntityDef;
@@ -32,7 +28,6 @@ use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType};
 use spacetimedb::sql;
 use spacetimedb::sql::execute::{ctx_sql, translate_col};
 use spacetimedb_client_api_messages::name::{self, DnsLookupResponse, DomainName, PublishOp, PublishResult};
-use spacetimedb_client_api_messages::recovery::{RecoveryCode, RecoveryCodeResponse};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::address::AddressForUrl;
 use spacetimedb_lib::identity::AuthCtx;
@@ -633,110 +628,6 @@ pub async fn register_tld<S: ControlStateDelegate>(
 }
 
 #[derive(Deserialize)]
-pub struct RequestRecoveryCodeParams {
-    /// Whether or not the client is requesting a login link for a web-login. This is false for CLI logins.
-    #[serde(default)]
-    link: bool,
-    email: String,
-    identity: IdentityForUrl,
-}
-
-pub async fn request_recovery_code<S: NodeDelegate + ControlStateDelegate>(
-    State(ctx): State<S>,
-    Query(RequestRecoveryCodeParams { link, email, identity }): Query<RequestRecoveryCodeParams>,
-) -> axum::response::Result<impl IntoResponse> {
-    let identity = Identity::from(identity);
-    let Some(sendgrid) = ctx.sendgrid_controller() else {
-        log::error!("A recovery code was requested, but SendGrid is disabled.");
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, "SendGrid is disabled.").into());
-    };
-
-    if !ctx
-        .get_identities_for_email(email.as_str())
-        .map_err(log_and_500)?
-        .iter()
-        .any(|a| a.identity == identity)
-    {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Email is not associated with the provided identity.",
-        )
-            .into());
-    }
-
-    let code = rand::thread_rng().gen_range(0..=999999);
-    let code = format!("{code:06}");
-    let recovery_code = RecoveryCode {
-        code: code.clone(),
-        generation_time: Utc::now(),
-        identity,
-    };
-    ctx.insert_recovery_code(&identity, email.as_str(), recovery_code)
-        .await
-        .map_err(log_and_500)?;
-
-    sendgrid
-        .send_recovery_email(email.as_str(), code.as_str(), &identity.to_hex(), link)
-        .await
-        .map_err(log_and_500)?;
-    Ok(())
-}
-
-#[derive(Deserialize)]
-pub struct ConfirmRecoveryCodeParams {
-    pub email: String,
-    pub identity: IdentityForUrl,
-    pub code: String,
-}
-
-/// Note: We should be slightly more security conscious about this function because
-///  we are providing a login token to the user initiating the request. We want to make
-///  sure there aren't any logical issues in here that would allow a user to request a token
-///  for an identity that they don't have authority over.
-pub async fn confirm_recovery_code<S: ControlStateDelegate + NodeDelegate>(
-    State(ctx): State<S>,
-    Query(ConfirmRecoveryCodeParams { email, identity, code }): Query<ConfirmRecoveryCodeParams>,
-) -> axum::response::Result<impl IntoResponse> {
-    let identity = Identity::from(identity);
-    let recovery_codes = ctx.get_recovery_codes(email.as_str()).map_err(log_and_500)?;
-
-    let recovery_code = recovery_codes
-        .into_iter()
-        .find(|rc| rc.code == code.as_str())
-        .ok_or((StatusCode::BAD_REQUEST, "Recovery code not found."))?;
-
-    let duration = Utc::now() - recovery_code.generation_time;
-    if duration.num_seconds() > 60 * 10 {
-        return Err((StatusCode::BAD_REQUEST, "Recovery code expired.").into());
-    }
-
-    // Make sure the identity provided by the request matches the recovery code registration
-    if recovery_code.identity != identity {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Recovery code doesn't match the provided identity.",
-        )
-            .into());
-    }
-
-    if !ctx
-        .get_identities_for_email(email.as_str())
-        .map_err(log_and_500)?
-        .iter()
-        .any(|a| a.identity == identity)
-    {
-        // This can happen if someone changes their associated email during a recovery request.
-        return Err((StatusCode::BAD_REQUEST, "No identity associated with that email.").into());
-    }
-
-    // Recovery code is verified, return the identity and token to the user
-    let token = encode_token(ctx.private_key(), identity).map_err(log_and_500)?;
-    let result = RecoveryCodeResponse { identity, token };
-
-    Ok(axum::Json(result))
-}
-
-#[derive(Deserialize)]
 pub struct PublishDatabaseParams {}
 
 #[derive(Deserialize)]
@@ -917,8 +808,6 @@ where
         .route("/set_name", get(set_name::<S>))
         .route("/ping", get(ping::<S>))
         .route("/register_tld", get(register_tld::<S>))
-        .route("/request_recovery_code", get(request_recovery_code::<S>))
-        .route("/confirm_recovery_code", get(confirm_recovery_code::<S>))
         .route("/publish", post(publish::<S>).layer(DefaultBodyLimit::disable()))
         .route("/delete/:address", post(delete_database::<S>))
         .route_layer(axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>))
