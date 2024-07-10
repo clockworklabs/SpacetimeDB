@@ -339,7 +339,6 @@ pub async fn confirm_recovery_code<S: ControlStateDelegate + NodeDelegate>(
     Ok(axum::Json(result))
 }
 
-
 pub fn control_routes<S>(_: S) -> axum::Router<S>
 where
     S: NodeDelegate + ControlStateDelegate + Clone + 'static,
