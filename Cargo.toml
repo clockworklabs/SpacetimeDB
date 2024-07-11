@@ -16,6 +16,7 @@ members = [
   "crates/metrics",
   "crates/primitives",
   "crates/sats",
+  "crates/schema",
   "crates/sdk",
   "crates/snapshot",
   "crates/sqltest",
@@ -33,7 +34,7 @@ members = [
   "crates/sdk/tests/test-client",
   "crates/sdk/tests/test-counter",
   "crates/sdk/tests/connect_disconnect_client",
-  "tools/upgrade-version",
+  "tools/upgrade-version", 
 ]
 default-members = ["crates/cli"]
 # cargo feature graph resolver. v2 is default in edition2021 but workspace
@@ -97,6 +98,7 @@ spacetimedb-lib = { path = "crates/lib", default-features = false, version = "0.
 spacetimedb-metrics = { path = "crates/metrics", version = "0.10.1" }
 spacetimedb-primitives = { path = "crates/primitives", version = "0.10.1" }
 spacetimedb-sats = { path = "crates/sats", version = "0.10.1" }
+spacetimedb-schema = { path = "crates/schema", version = "0.10.1" }
 spacetimedb-standalone = { path = "crates/standalone", version = "0.10.1" }
 spacetimedb-table = { path = "crates/table", version = "0.10.1" }
 spacetimedb-vm = { path = "crates/vm", version = "0.10.1" }

@@ -27,13 +27,11 @@ use itertools::Itertools;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::{
     address::Address,
-    db::{
-        auth::{StAccess, StTableType},
-        def::TableSchema,
-    },
+    db::auth::{StAccess, StTableType},
 };
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_schema::schema::TableSchema;
 
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},

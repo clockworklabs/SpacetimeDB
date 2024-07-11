@@ -1,13 +1,13 @@
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem};
 use convert_case::{Case, Casing};
-use spacetimedb_lib::db::def::TableSchema;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
     SumTypeVariant,
 };
 use spacetimedb_lib::{ReducerDef, TableDesc};
 use spacetimedb_primitives::ColList;
+use spacetimedb_schema::schema::TableSchema;
 use std::collections::BTreeSet;
 use std::fmt::{self, Write};
 use std::ops::Deref;
@@ -352,10 +352,7 @@ pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDesc) -> String {
 
     out.newline();
 
-    let table = table
-        .schema
-        .clone()
-        .into_schema(0.into())
+    let table = TableSchema::from_def(0.into(), table.schema.clone())
         .validated()
         .expect("Failed to generate table due to validation errors");
     print_impl_tabletype(ctx, out, &table);
@@ -879,7 +876,7 @@ fn print_handle_table_update_defn(_ctx: &GenCtx, out: &mut Indenter, items: &[Ge
                 "match table_name {",
                 |out| {
                     for table in iter_table_items(items) {
-                        let table = table.schema.clone().into_schema(0.into()).validated().unwrap();
+                        let table = TableSchema::from_def(0.into(), table.schema.clone()).validated().unwrap();
                         writeln!(
                             out,
                             "{:?} => client_cache.{}::<{}::{}>(callbacks, table_update),",

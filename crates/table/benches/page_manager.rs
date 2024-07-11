@@ -7,9 +7,10 @@ use criterion::{
 };
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use spacetimedb_lib::db::def::{TableDef, TableSchema};
+use spacetimedb_lib::db::raw_def::RawTableDefV0;
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_table::blob_store::NullBlobStore;
 use spacetimedb_table::indexes::Byte;
 use spacetimedb_table::indexes::{Bytes, PageOffset, RowPointer, Size, SquashedOffset, PAGE_DATA_SIZE};
@@ -446,7 +447,7 @@ criterion_group!(
 );
 
 fn schema_from_ty(ty: ProductType, name: &str) -> TableSchema {
-    TableSchema::from_def(TableId(0), TableDef::from_product(name, ty))
+    TableSchema::from_def(TableId(0), RawTableDefV0::from_product(name, ty))
 }
 
 fn make_table(c: &mut Criterion) {
@@ -645,8 +646,8 @@ trait IndexedRow: Row + Sized {
     fn indexed_columns() -> ColList {
         0.into()
     }
-    fn make_table_def() -> TableDef {
-        TableDef::from_product(std::any::type_name::<Self>(), Self::row_type())
+    fn make_table_def() -> RawTableDefV0 {
+        RawTableDefV0::from_product(std::any::type_name::<Self>(), Self::row_type())
             .with_column_index(Self::indexed_columns(), false)
     }
     fn make_schema() -> TableSchema {

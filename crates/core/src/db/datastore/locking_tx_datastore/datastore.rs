@@ -29,11 +29,12 @@ use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
 use spacetimedb_lib::db::{
     auth::StAccess,
-    def::{IndexDef, SequenceDef, TableDef, TableSchema},
+    raw_def::{RawIndexDefV0, RawSequenceDefV0, RawTableDefV0},
 };
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductValue};
+use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_snapshot::ReconstructedSnapshot;
 use spacetimedb_table::{
     indexes::RowPointer,
@@ -333,7 +334,7 @@ impl TxDatastore for Locking {
 }
 
 impl MutTxDatastore for Locking {
-    fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: TableDef) -> Result<TableId> {
+    fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: RawTableDefV0) -> Result<TableId> {
         tx.create_table(schema, self.database_address)
     }
 
@@ -386,7 +387,7 @@ impl MutTxDatastore for Locking {
             .map(|opt| opt.map(|s| Cow::Owned(s.into())))
     }
 
-    fn create_index_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, index: IndexDef) -> Result<IndexId> {
+    fn create_index_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, index: RawIndexDefV0) -> Result<IndexId> {
         tx.create_index(table_id, index, self.database_address)
     }
 
@@ -402,7 +403,12 @@ impl MutTxDatastore for Locking {
         tx.get_next_sequence_value(seq_id, self.database_address)
     }
 
-    fn create_sequence_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, seq: SequenceDef) -> Result<SequenceId> {
+    fn create_sequence_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        table_id: TableId,
+        seq: RawSequenceDefV0,
+    ) -> Result<SequenceId> {
         tx.create_sequence(table_id, seq, self.database_address)
     }
 
@@ -937,10 +943,11 @@ mod tests {
     use itertools::Itertools;
     use spacetimedb_lib::address::Address;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
-    use spacetimedb_lib::db::def::{ColumnDef, ColumnSchema, ConstraintSchema, IndexSchema, IndexType, SequenceSchema};
+    use spacetimedb_lib::db::raw_def::{IndexType, RawColumnDefV0};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_primitives::{col_list, ColId, Constraints};
     use spacetimedb_sats::{product, AlgebraicType};
+    use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema};
     use spacetimedb_table::table::UniqueConstraintViolation;
 
     /// For the first user-created table, sequences in the system tables start
@@ -1113,7 +1120,7 @@ mod tests {
             }
         }
     }
-    impl From<ColRow<'_>> for ColumnDef {
+    impl From<ColRow<'_>> for RawColumnDefV0 {
         fn from(value: ColRow<'_>) -> Self {
             Self {
                 col_name: value.name.into(),
@@ -1222,16 +1229,16 @@ mod tests {
         ]
     }
 
-    fn basic_table_schema() -> TableDef {
-        TableDef::new("Foo".into(), map_array(basic_table_schema_cols()))
+    fn basic_table_schema() -> RawTableDefV0 {
+        RawTableDefV0::new("Foo".into(), map_array(basic_table_schema_cols()))
             .with_indexes(vec![
-                IndexDef {
+                RawIndexDefV0 {
                     columns: ColList::new(0.into()),
                     index_name: "id_idx".into(),
                     is_unique: true,
                     index_type: IndexType::BTree,
                 },
-                IndexDef {
+                RawIndexDefV0 {
                     columns: ColList::new(1.into()),
                     index_name: "name_idx".into(),
                     is_unique: true,
@@ -1551,7 +1558,7 @@ mod tests {
         datastore.create_index_mut_tx(
             &mut tx,
             schema.table_id,
-            IndexDef::btree("id_idx".into(), ColId(0), true),
+            RawIndexDefV0::btree("id_idx".into(), ColId(0), true),
         )?;
 
         let expected_indexes = [IdxSchema {
@@ -1755,7 +1762,7 @@ mod tests {
         datastore.commit_mut_tx_for_test(tx)?;
 
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
-        let index_def = IndexDef::btree("age_idx".into(), ColId(2), true);
+        let index_def = RawIndexDefV0::btree("age_idx".into(), ColId(2), true);
         datastore.create_index_mut_tx(&mut tx, table_id, index_def)?;
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
@@ -1798,7 +1805,7 @@ mod tests {
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
-        let index_def = IndexDef::btree("age_idx".into(), ColId(2), true);
+        let index_def = RawIndexDefV0::btree("age_idx".into(), ColId(2), true);
         datastore.create_index_mut_tx(&mut tx, table_id, index_def)?;
         datastore.commit_mut_tx_for_test(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
@@ -1844,7 +1851,7 @@ mod tests {
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
-        let index_def = IndexDef::btree("age_idx".into(), ColId(2), true);
+        let index_def = RawIndexDefV0::btree("age_idx".into(), ColId(2), true);
         datastore.create_index_mut_tx(&mut tx, table_id, index_def)?;
         datastore.rollback_mut_tx_for_test(tx);
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);

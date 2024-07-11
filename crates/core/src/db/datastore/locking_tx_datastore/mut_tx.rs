@@ -27,15 +27,13 @@ use spacetimedb_lib::{
     address::Address,
     db::{
         auth::StAccess,
-        def::{
-            ConstraintDef, ConstraintSchema, IndexDef, IndexSchema, SequenceDef, SequenceSchema, TableDef, TableSchema,
-            SEQUENCE_PREALLOCATION_AMOUNT,
-        },
         error::SchemaErrors,
+        raw_def::{RawConstraintDefV0, RawIndexDefV0, RawSequenceDefV0, RawTableDefV0, SEQUENCE_PREALLOCATION_AMOUNT},
     },
 };
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, Constraints, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_schema::schema::{ConstraintSchema, IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
@@ -84,21 +82,19 @@ impl MutTxId {
         Ok(())
     }
 
-    fn validate_table(table_schema: &TableDef) -> Result<()> {
+    fn validate_table(table_schema: &RawTableDefV0) -> Result<()> {
         if table_name_is_system(&table_schema.table_name) {
             return Err(TableError::System(table_schema.table_name.clone()).into());
         }
 
-        table_schema
-            .clone()
-            .into_schema(0.into())
+        TableSchema::from_def(0.into(), table_schema.clone())
             .validated()
             .map_err(|err| DBError::Schema(SchemaErrors(err)))?;
 
         Ok(())
     }
 
-    pub fn create_table(&mut self, table_schema: TableDef, database_address: Address) -> Result<TableId> {
+    pub fn create_table(&mut self, table_schema: RawTableDefV0, database_address: Address) -> Result<TableId> {
         log::trace!("TABLE CREATING: {}", table_schema.table_name);
 
         Self::validate_table(&table_schema)?;
@@ -118,7 +114,7 @@ impl MutTxId {
             .read_col(StTableFields::TableId)?;
 
         // Generate the full definition of the table, with the generated indexes, constraints, sequences...
-        let table_schema = table_schema.into_schema(table_id);
+        let table_schema = TableSchema::from_def(table_id, table_schema);
 
         // Insert the columns into `st_columns`
         for col in table_schema.columns() {
@@ -316,7 +312,7 @@ impl MutTxId {
         &mut self,
         ctx: &ExecutionContext,
         table_id: TableId,
-        index: IndexDef,
+        index: RawIndexDefV0,
     ) -> Result<IndexId> {
         let columns = index.columns.clone();
         log::trace!(
@@ -385,7 +381,12 @@ impl MutTxId {
         Ok(index_id)
     }
 
-    pub fn create_index(&mut self, table_id: TableId, index: IndexDef, database_address: Address) -> Result<IndexId> {
+    pub fn create_index(
+        &mut self,
+        table_id: TableId,
+        index: RawIndexDefV0,
+        database_address: Address,
+    ) -> Result<IndexId> {
         let columns = index.columns.clone();
         let is_unique = index.is_unique;
         let ctx = ExecutionContext::internal(database_address);
@@ -404,10 +405,10 @@ impl MutTxId {
         table_id: TableId,
         columns: ColList,
         is_unique: bool,
-    ) -> Result<ConstraintDef> {
+    ) -> Result<RawConstraintDefV0> {
         let schema = self.schema_for_table(ctx, table_id)?;
         let constraints = Constraints::from_is_unique(is_unique);
-        Ok(ConstraintDef::for_column(
+        Ok(RawConstraintDefV0::for_column(
             &schema.table_name,
             &schema.generate_cols_name(&columns),
             constraints,
@@ -513,7 +514,7 @@ impl MutTxId {
     pub fn create_sequence(
         &mut self,
         table_id: TableId,
-        seq: SequenceDef,
+        seq: RawSequenceDefV0,
         database_address: Address,
     ) -> Result<SequenceId> {
         log::trace!(
@@ -590,7 +591,7 @@ impl MutTxId {
         &mut self,
         ctx: &ExecutionContext,
         table_id: TableId,
-        constraint: ConstraintDef,
+        constraint: RawConstraintDefV0,
     ) -> Result<ConstraintId> {
         log::trace!(
             "CONSTRAINT CREATING: {} for table: {} and cols: {:?}",

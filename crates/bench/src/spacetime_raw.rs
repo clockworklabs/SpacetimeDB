@@ -5,7 +5,7 @@ use crate::{
 };
 use spacetimedb::db::relational_db::{tests_utils::TestDB, RelationalDB};
 use spacetimedb::execution_context::ExecutionContext;
-use spacetimedb_lib::db::def::{IndexDef, TableDef};
+use spacetimedb_lib::db::raw_def::{RawIndexDefV0, RawTableDefV0};
 use spacetimedb_lib::sats::AlgebraicValue;
 use spacetimedb_primitives::{ColId, TableId};
 use std::hint::black_box;
@@ -38,13 +38,13 @@ impl BenchDatabase for SpacetimeRaw {
     fn create_table<T: BenchTable>(&mut self, index_strategy: IndexStrategy) -> ResultBench<Self::TableId> {
         let name = table_name::<T>(index_strategy);
         self.db.with_auto_commit(&ExecutionContext::default(), |tx| {
-            let table_def = TableDef::from_product(&name, T::product_type());
+            let table_def = RawTableDefV0::from_product(&name, T::product_type());
             let table_id = self.db.create_table(tx, table_def)?;
             self.db.rename_table(tx, table_id, &name)?;
             match index_strategy {
                 IndexStrategy::Unique0 => {
                     self.db
-                        .create_index(tx, table_id, IndexDef::btree("id".into(), ColId(0), true))?;
+                        .create_index(tx, table_id, RawIndexDefV0::btree("id".into(), ColId(0), true))?;
                 }
                 IndexStrategy::NoIndex => (),
                 IndexStrategy::BTreeEachColumn => {
@@ -52,7 +52,7 @@ impl BenchDatabase for SpacetimeRaw {
                         self.db.create_index(
                             tx,
                             table_id,
-                            IndexDef::btree(column.name.clone().unwrap(), ColId(i as u32), false),
+                            RawIndexDefV0::btree(column.name.clone().unwrap(), ColId(i as u32), false),
                         )?;
                     }
                 }

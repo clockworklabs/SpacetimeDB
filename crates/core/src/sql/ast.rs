@@ -1,11 +1,11 @@
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, PlanError};
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
-use spacetimedb_lib::db::def::{ColumnSchema, TableSchema};
 use spacetimedb_lib::db::error::RelationError;
 use spacetimedb_lib::relation::{ColExpr, FieldName};
 use spacetimedb_primitives::ColId;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
+use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{Expr, FieldExpr, FieldOp};
 use spacetimedb_vm::operator::{OpCmp, OpLogic, OpQuery};
@@ -776,7 +776,7 @@ fn compile_delete<T: TableSchemaView>(
     })
 }
 
-/// Compiles the equivalent of `SET key = value`
+// Compiles the equivalent of `SET key = value`
 fn compile_set_config(name: ObjectName, value: Vec<SqlExpr>) -> Result<SqlAst, PlanError> {
     let name = name.to_string();
 

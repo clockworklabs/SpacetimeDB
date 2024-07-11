@@ -1,0 +1,12 @@
+[package]
+name = "spacetimedb-schema"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+spacetimedb-lib.workspace = true
+spacetimedb-primitives.workspace = true
+spacetimedb-sats.workspace = true
+spacetimedb-data-structures.workspace = true
+itertools.workspace = true

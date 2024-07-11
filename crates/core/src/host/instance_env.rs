@@ -13,7 +13,7 @@ use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::error::{IndexError, NodesError};
 use crate::execution_context::ExecutionContext;
 use crate::vm::{build_query, TxMode};
-use spacetimedb_lib::db::def::{IndexDef, IndexType};
+use spacetimedb_lib::db::raw_def::{IndexType, RawIndexDefV0};
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::relation::FieldName;
@@ -251,7 +251,7 @@ impl InstanceEnv {
 
         let is_unique = stdb.column_constraints(tx, table_id, &columns)?.has_unique();
 
-        let index = IndexDef {
+        let index = RawIndexDefV0 {
             columns,
             index_name,
             is_unique,

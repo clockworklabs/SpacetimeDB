@@ -1,4 +1,4 @@
-use crate::db::def::TableDef;
+use crate::db::raw_def::RawTableDefV0;
 use anyhow::Context;
 use sats::typespace::TypespaceBuilder;
 use spacetimedb_sats::{impl_serialize, WithTypespace};
@@ -83,13 +83,13 @@ extern crate self as spacetimedb_lib;
 //WARNING: Change this structure(or any of their members) is an ABI change.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 pub struct TableDesc {
-    pub schema: TableDef,
+    pub schema: RawTableDefV0,
     /// data should always point to a ProductType in the typespace
     pub data: sats::AlgebraicTypeRef,
 }
 
 impl TableDesc {
-    pub fn into_table_def(table: WithTypespace<'_, TableDesc>) -> anyhow::Result<TableDef> {
+    pub fn into_table_def(table: WithTypespace<'_, TableDesc>) -> anyhow::Result<RawTableDefV0> {
         let schema = table
             .map(|t| &t.data)
             .resolve_refs()
