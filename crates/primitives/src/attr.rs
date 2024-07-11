@@ -139,7 +139,7 @@ impl ColumnAttribute {
     }
 }
 
-/// Represents `constraints` for a database `table`.
+/// Represents constraints for a database table. May apply to multiple columns.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct Constraints {
     attr: ColumnAttribute,

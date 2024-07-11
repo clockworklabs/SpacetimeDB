@@ -22,6 +22,7 @@ spacetimedb-primitives.workspace = true
 spacetimedb-core.workspace = true
 spacetimedb-data-structures.workspace = true
 spacetimedb-lib.workspace = true
+spacetimedb-schema.workspace = true
 spacetimedb-standalone = { workspace = true, optional = true }
 spacetimedb-client-api-messages.workspace = true
 spacetimedb-fs-utils.workspace = true
@@ -31,7 +32,7 @@ base64.workspace = true
 bytes.workspace = true
 cargo_metadata.workspace = true
 chrono.workspace = true
-clap = {workspace = true, features = ["derive", "env", "string"]}
+clap = { workspace = true, features = ["derive", "env", "string"] }
 colored.workspace = true
 convert_case.workspace = true
 dirs.workspace = true

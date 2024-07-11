@@ -8,7 +8,6 @@ use itertools::Itertools;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashSet, IntMap};
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
-use spacetimedb_lib::db::def::TableSchema;
 use spacetimedb_lib::db::error::{AuthError, RelationError};
 use spacetimedb_lib::relation::{ColExpr, DbTable, FieldName, Header};
 use spacetimedb_lib::{AlgebraicType, Identity};
@@ -16,6 +15,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::ProductValue;
+use spacetimedb_schema::schema::TableSchema;
 use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::btree_map::Entry;
@@ -2117,8 +2117,9 @@ impl From<Code> for CodeResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use spacetimedb_lib::{
-        db::def::{ColumnDef, TableDef},
+        db::raw_def::{RawColumnDefV8, RawTableDefV8},
         relation::Column,
     };
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
@@ -2580,16 +2581,16 @@ mod tests {
     fn optimize_inner_join_to_semijoin() {
         let lhs = TableSchema::from_def(
             TableId(0),
-            TableDef::new(
+            RawTableDefV8::new(
                 "lhs".into(),
-                ColumnDef::from_product_type(ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String])),
+                RawColumnDefV8::from_product_type(ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String])),
             ),
         );
         let rhs = TableSchema::from_def(
             TableId(1),
-            TableDef::new(
+            RawTableDefV8::new(
                 "rhs".into(),
-                ColumnDef::from_product_type(ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64])),
+                RawColumnDefV8::from_product_type(ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64])),
             ),
         );
 
@@ -2632,16 +2633,16 @@ mod tests {
     fn optimize_inner_join_no_project() {
         let lhs = TableSchema::from_def(
             TableId(0),
-            TableDef::new(
+            RawTableDefV8::new(
                 "lhs".into(),
-                ColumnDef::from_product_type(ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String])),
+                RawColumnDefV8::from_product_type(ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String])),
             ),
         );
         let rhs = TableSchema::from_def(
             TableId(1),
-            TableDef::new(
+            RawTableDefV8::new(
                 "rhs".into(),
-                ColumnDef::from_product_type(ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64])),
+                RawColumnDefV8::from_product_type(ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64])),
             ),
         );
 
@@ -2658,16 +2659,16 @@ mod tests {
     fn optimize_inner_join_wrong_project() {
         let lhs = TableSchema::from_def(
             TableId(0),
-            TableDef::new(
+            RawTableDefV8::new(
                 "lhs".into(),
-                ColumnDef::from_product_type(ProductType::from([AlgebraicType::I32, AlgebraicType::String])),
+                RawColumnDefV8::from_product_type(ProductType::from([AlgebraicType::I32, AlgebraicType::String])),
             ),
         );
         let rhs = TableSchema::from_def(
             TableId(1),
-            TableDef::new(
+            RawTableDefV8::new(
                 "rhs".into(),
-                ColumnDef::from_product_type(ProductType::from([AlgebraicType::I32, AlgebraicType::I64])),
+                RawColumnDefV8::from_product_type(ProductType::from([AlgebraicType::I32, AlgebraicType::I64])),
             ),
         );
 

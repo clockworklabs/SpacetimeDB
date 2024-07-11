@@ -10,7 +10,7 @@ use crate::execution_context::ExecutionContext;
 use core::ops::{Bound, RangeBounds};
 use itertools::Itertools;
 use spacetimedb_data_structures::map::IntMap;
-use spacetimedb_lib::db::def::TableDef;
+use spacetimedb_lib::db::raw_def::RawTableDefV8;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::relation::{ColExpr, DbTable};
 use spacetimedb_primitives::*;
@@ -541,7 +541,7 @@ impl<'db, 'tx> DbProgram<'db, 'tx> {
         }
     }
 
-    fn _create_table(&mut self, table: TableDef) -> Result<Code, ErrorVm> {
+    fn _create_table(&mut self, table: RawTableDefV8) -> Result<Code, ErrorVm> {
         self.db.create_table(self.tx.unwrap_mut(), table)?;
         Ok(Code::Pass(None))
     }
@@ -625,10 +625,11 @@ pub(crate) mod tests {
     use crate::execution_context::ExecutionContext;
     use pretty_assertions::assert_eq;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
-    use spacetimedb_lib::db::def::{ColumnDef, IndexDef, IndexType, TableSchema};
+    use spacetimedb_lib::db::raw_def::{IndexType, RawColumnDefV8, RawIndexDefV8};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::relation::{FieldName, Header};
     use spacetimedb_sats::{product, AlgebraicType, ProductType, ProductValue};
+    use spacetimedb_schema::schema::TableSchema;
     use spacetimedb_vm::eval::run_ast;
     use spacetimedb_vm::eval::test_helpers::{mem_table, mem_table_one_u64, scalar};
     use spacetimedb_vm::operator::OpCmp;
@@ -645,7 +646,7 @@ pub(crate) mod tests {
         let columns: Vec<_> = Vec::from(schema.elements)
             .into_iter()
             .enumerate()
-            .map(|(i, e)| ColumnDef {
+            .map(|(i, e)| RawColumnDefV8 {
                 col_name: e.name.unwrap_or_else(|| i.to_string().into()),
                 col_type: e.algebraic_type,
             })
@@ -653,7 +654,7 @@ pub(crate) mod tests {
 
         let table_id = db.create_table(
             tx,
-            TableDef::new(table_name.into(), columns)
+            RawTableDefV8::new(table_name.into(), columns)
                 .with_type(StTableType::User)
                 .with_access(access),
         )?;
@@ -801,7 +802,7 @@ pub(crate) mod tests {
         let (schema, _) = db.with_auto_commit(&ctx, |tx| create_inv_table(&db, tx))?;
         let table_id = schema.table_id;
 
-        let index = IndexDef::btree("idx_1".into(), ColId(0), true);
+        let index = RawIndexDefV8::btree("idx_1".into(), ColId(0), true);
         let index_id = db.with_auto_commit(&ctx, |tx| db.create_index(tx, table_id, index))?;
 
         let indexes_schema = &*db.schema_for_table(&db.begin_tx(), ST_INDEXES_ID).unwrap();

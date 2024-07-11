@@ -1,4 +1,4 @@
-use crate::db::def::IndexType;
+use crate::db::raw_def::IndexType;
 use crate::relation::{FieldName, Header};
 use crate::{buffer, AlgebraicType, AlgebraicValue};
 use derive_more::Display;

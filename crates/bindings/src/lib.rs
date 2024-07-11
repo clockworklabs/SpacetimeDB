@@ -15,7 +15,7 @@ mod timestamp;
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
 use spacetimedb_lib::db::attr::ColumnAttribute;
 use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_lib::db::def::IndexType;
+use spacetimedb_lib::db::raw_def::IndexType;
 use spacetimedb_lib::{bsatn, ProductType, ProductValue};
 use std::cell::RefCell;
 use std::collections::VecDeque;

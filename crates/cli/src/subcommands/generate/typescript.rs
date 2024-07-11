@@ -4,7 +4,6 @@ use std::fmt;
 use std::ops::Deref;
 
 use convert_case::{Case, Casing};
-use spacetimedb_lib::db::def::TableSchema;
 use spacetimedb_lib::sats::product_type::IDENTITY_TAG;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
@@ -12,6 +11,7 @@ use spacetimedb_lib::sats::{
 };
 use spacetimedb_lib::{ReducerDef, TableDesc};
 use spacetimedb_primitives::ColList;
+use spacetimedb_schema::schema::TableSchema;
 
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem, INDENT};
@@ -589,7 +589,7 @@ pub fn autogen_typescript_table(ctx: &GenCtx, table: &TableDesc) -> String {
         ctx,
         &table.schema.table_name,
         tuple,
-        Some(table.schema.clone().into_schema(0.into())),
+        Some(TableSchema::from_def(0.into(), table.schema.clone())),
     )
 }
 

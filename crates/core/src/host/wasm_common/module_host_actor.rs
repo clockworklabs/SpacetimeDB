@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::{bsatn, Address, ModuleDef, ModuleValidationError, TableDesc};
+use spacetimedb_lib::{bsatn, Address, ModuleValidationError, RawModuleDefV8, TableDesc};
 use spacetimedb_sats::hash::Hash;
 
 use super::instrumentation::CallTimes;
@@ -30,7 +30,7 @@ use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::const_unwrap;
 use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
-use spacetimedb_lib::db::def::TableDef;
+use spacetimedb_lib::db::raw_def::RawTableDefV8;
 
 use super::*;
 
@@ -154,10 +154,10 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         )?;
 
         let desc = instance.extract_descriptions()?;
-        let desc: ModuleDef = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
+        let desc: RawModuleDefV8 = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
         desc.validate_reducers()?;
         let orig_module_def = desc.clone();
-        let ModuleDef {
+        let RawModuleDefV8 {
             mut typespace,
             mut tables,
             reducers,
@@ -278,7 +278,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 }
 
-fn get_tabledefs(info: &ModuleInfo) -> impl Iterator<Item = anyhow::Result<TableDef>> + '_ {
+fn get_tabledefs(info: &ModuleInfo) -> impl Iterator<Item = anyhow::Result<RawTableDefV8>> + '_ {
     info.catalog
         .values()
         .filter_map(EntityDef::as_table)

@@ -5,10 +5,10 @@ use std::fmt::{self, Write};
 use std::ops::Deref;
 
 use convert_case::{Case, Casing};
-use spacetimedb_lib::db::def::TableSchema;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, SumType};
 use spacetimedb_lib::{ReducerDef, TableDesc};
 use spacetimedb_primitives::ColList;
+use spacetimedb_schema::schema::TableSchema;
 
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem};
@@ -287,10 +287,7 @@ pub fn autogen_csharp_table(ctx: &GenCtx, table: &TableDesc, namespace: &str) ->
         &table.schema.table_name,
         tuple,
         Some(
-            table
-                .schema
-                .clone()
-                .into_schema(0.into())
+            TableSchema::from_def(0.into(), table.schema.clone())
                 .validated()
                 .expect("Failed to generate table due to validation errors"),
         ),

@@ -1,10 +1,8 @@
 use crate::db::auth::{StAccess, StTableType};
-use crate::db::def::{ColumnSchema, TableSchema};
 use crate::db::error::{RelationError, TypeError};
 use core::fmt;
 use core::hash::Hash;
 use derive_more::From;
-use itertools::Itertools;
 use spacetimedb_primitives::{ColId, ColList, ColListBuilder, Constraints, TableId};
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;
@@ -89,44 +87,12 @@ impl Column {
     }
 }
 
-impl From<ColumnSchema> for Column {
-    fn from(schema: ColumnSchema) -> Self {
-        Column {
-            field: FieldName {
-                table: schema.table_id,
-                col: schema.col_pos,
-            },
-            algebraic_type: schema.col_type,
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Header {
     pub table_id: TableId,
     pub table_name: Box<str>,
     pub fields: Vec<Column>,
     pub constraints: Vec<(ColList, Constraints)>,
-}
-
-impl From<TableSchema> for Header {
-    fn from(schema: TableSchema) -> Self {
-        Header {
-            table_id: schema.table_id,
-            table_name: schema.table_name.clone(),
-            fields: schema
-                .columns()
-                .iter()
-                .cloned()
-                .map(|schema| schema.into())
-                .collect_vec(),
-            constraints: schema
-                .constraints
-                .into_iter()
-                .map(|schema| (schema.columns, schema.constraints))
-                .collect_vec(),
-        }
-    }
 }
 
 impl Header {

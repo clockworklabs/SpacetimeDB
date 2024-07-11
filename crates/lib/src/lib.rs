@@ -1,4 +1,4 @@
-use crate::db::def::TableDef;
+use crate::db::raw_def::RawTableDefV8;
 use anyhow::Context;
 use sats::typespace::TypespaceBuilder;
 use spacetimedb_sats::{impl_serialize, WithTypespace};
@@ -85,13 +85,13 @@ extern crate self as spacetimedb_lib;
 //WARNING: Change this structure(or any of their members) is an ABI change.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
 pub struct TableDesc {
-    pub schema: TableDef,
+    pub schema: RawTableDefV8,
     /// data should always point to a ProductType in the typespace
     pub data: sats::AlgebraicTypeRef,
 }
 
 impl TableDesc {
-    pub fn into_table_def(table: WithTypespace<'_, TableDesc>) -> anyhow::Result<TableDef> {
+    pub fn into_table_def(table: WithTypespace<'_, TableDesc>) -> anyhow::Result<RawTableDefV8> {
         let schema = table
             .map(|t| &t.data)
             .resolve_refs()
@@ -177,14 +177,14 @@ impl_serialize!([] ReducerArgsWithSchema<'_>, (self, ser) => {
 
 //WARNING: Change this structure(or any of their members) is an ABI change.
 #[derive(Debug, Clone, Default, de::Deserialize, ser::Serialize)]
-pub struct ModuleDef {
+pub struct RawModuleDefV8 {
     pub typespace: sats::Typespace,
     pub tables: Vec<TableDesc>,
     pub reducers: Vec<ReducerDef>,
     pub misc_exports: Vec<MiscModuleExport>,
 }
 
-impl ModuleDef {
+impl RawModuleDefV8 {
     pub fn builder() -> ModuleDefBuilder {
         ModuleDefBuilder::default()
     }
@@ -200,7 +200,7 @@ impl ModuleDef {
 #[derive(Default)]
 pub struct ModuleDefBuilder {
     /// The module definition.
-    module: ModuleDef,
+    module: RawModuleDefV8,
     /// The type map from `T: 'static` Rust types to sats types.
     type_map: BTreeMap<TypeId, sats::AlgebraicTypeRef>,
 }
@@ -230,7 +230,7 @@ impl ModuleDefBuilder {
         &self.module.typespace
     }
 
-    pub fn finish(self) -> ModuleDef {
+    pub fn finish(self) -> RawModuleDefV8 {
         self.module
     }
 }
@@ -280,7 +280,7 @@ pub struct TypeAlias {
     pub ty: sats::AlgebraicTypeRef,
 }
 
-impl ModuleDef {
+impl RawModuleDefV8 {
     pub fn validate_reducers(&self) -> Result<(), ModuleValidationError> {
         for reducer in &self.reducers {
             match &*reducer.name {

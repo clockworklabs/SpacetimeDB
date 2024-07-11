@@ -10,8 +10,9 @@ use itertools::Itertools;
 use similar::{Algorithm, TextDiff};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_lib::db::def::{ConstraintSchema, IndexDef, IndexSchema, SequenceSchema, TableDef, TableSchema};
+use spacetimedb_lib::db::raw_def::{RawIndexDefV8, RawTableDefV8};
 use spacetimedb_primitives::{ConstraintKind, Constraints, IndexId};
+use spacetimedb_schema::schema::{ConstraintSchema, IndexSchema, SequenceSchema, TableSchema};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -27,7 +28,7 @@ pub enum UpdateDatabaseError {
 pub fn update_database(
     stdb: &RelationalDB,
     tx: MutTxId,
-    proposed_tables: Vec<TableDef>,
+    proposed_tables: Vec<RawTableDefV8>,
     system_logger: &SystemLogger,
 ) -> anyhow::Result<Result<MutTxId, UpdateDatabaseError>> {
     let ctx = ExecutionContext::internal(stdb.address());
@@ -119,11 +120,11 @@ pub struct Tainted {
 #[derive(Debug, Default)]
 pub struct Updates {
     /// Tables to create.
-    new_tables: HashMap<Box<str>, TableDef>,
+    new_tables: HashMap<Box<str>, RawTableDefV8>,
     /// The new table access levels.
     changed_access: HashMap<Box<str>, StAccess>,
     /// The indices added that are not a consequence of added constraints.
-    added_indexes: HashMap<Box<str>, Vec<IndexDef>>,
+    added_indexes: HashMap<Box<str>, Vec<RawIndexDefV8>>,
     /// The indices removed that are not a consequence of removed constraints.
     removed_indexes: Vec<IndexId>,
 }
@@ -151,7 +152,7 @@ pub enum SchemaUpdates {
 /// information in [`SchemaUpdates::Updates`].
 pub fn schema_updates(
     existing_tables: impl IntoIterator<Item = Arc<TableSchema>>,
-    proposed_tables: Vec<TableDef>,
+    proposed_tables: Vec<RawTableDefV8>,
 ) -> anyhow::Result<SchemaUpdates> {
     let mut updates = Updates::default();
     let mut tainted_tables = Vec::new();
@@ -363,9 +364,10 @@ mod tests {
     use super::*;
     use anyhow::anyhow;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
-    use spacetimedb_lib::db::def::{ColumnDef, ColumnSchema, IndexSchema, IndexType};
+    use spacetimedb_lib::db::raw_def::{IndexType, RawColumnDefV8};
     use spacetimedb_primitives::{col_list, ColId, Constraints, IndexId, TableId};
     use spacetimedb_sats::AlgebraicType;
+    use spacetimedb_schema::schema::{ColumnSchema, IndexSchema};
 
     #[test]
     fn test_updates_new_table() -> anyhow::Result<()> {
@@ -395,25 +397,25 @@ mod tests {
             StAccess::Public,
             None,
         ))];
-        let proposed_indexes = vec![IndexDef {
+        let proposed_indexes = vec![RawIndexDefV8 {
             index_type: IndexType::BTree,
             index_name: "proposed_index".into(),
             is_unique: false,
             columns: col_list![0],
         }];
         let proposed = vec![
-            TableDef::new(
+            RawTableDefV8::new(
                 table_name.into(),
-                vec![ColumnDef {
+                vec![RawColumnDefV8 {
                     col_name: "name".into(),
                     col_type: AlgebraicType::String,
                 }],
             )
             .with_access(StAccess::Private)
             .with_indexes(proposed_indexes.clone()),
-            TableDef::new(
+            RawTableDefV8::new(
                 "Pet".into(),
-                vec![ColumnDef {
+                vec![RawColumnDefV8 {
                     col_name: "furry".into(),
                     col_type: AlgebraicType::Bool,
                 }],
@@ -441,24 +443,24 @@ mod tests {
 
     #[test]
     fn test_updates_schema_mismatch() {
-        let current = [Arc::new(
-            TableDef::new(
+        let current = [Arc::new(TableSchema::from_def(
+            42.into(),
+            RawTableDefV8::new(
                 "Person".into(),
-                vec![ColumnDef {
+                vec![RawColumnDefV8 {
                     col_name: "name".into(),
                     col_type: AlgebraicType::String,
                 }],
-            )
-            .into_schema(TableId(42)),
-        )];
-        let proposed = vec![TableDef::new(
+            ),
+        ))];
+        let proposed = vec![RawTableDefV8::new(
             "Person".into(),
             vec![
-                ColumnDef {
+                RawColumnDefV8 {
                     col_name: "id".into(),
                     col_type: AlgebraicType::U32,
                 },
-                ColumnDef {
+                RawColumnDefV8 {
                     col_name: "name".into(),
                     col_type: AlgebraicType::String,
                 },
@@ -471,19 +473,19 @@ mod tests {
 
     #[test]
     fn test_updates_orphaned_table() {
-        let current = [Arc::new(
-            TableDef::new(
+        let current = [Arc::new(TableSchema::from_def(
+            42.into(),
+            RawTableDefV8::new(
                 "Person".into(),
-                vec![ColumnDef {
+                vec![RawColumnDefV8 {
                     col_name: "name".into(),
                     col_type: AlgebraicType::String,
                 }],
-            )
-            .into_schema(TableId(42)),
-        )];
-        let proposed = vec![TableDef::new(
+            ),
+        ))];
+        let proposed = vec![RawTableDefV8::new(
             "Pet".into(),
-            vec![ColumnDef {
+            vec![RawColumnDefV8 {
                 col_name: "furry".into(),
                 col_type: AlgebraicType::Bool,
             }],
@@ -494,14 +496,14 @@ mod tests {
 
     #[test]
     fn test_updates_add_index() {
-        let table_def = TableDef::new(
+        let table_def = RawTableDefV8::new(
             "Person".into(),
-            vec![ColumnDef {
+            vec![RawColumnDefV8 {
                 col_name: "name".into(),
                 col_type: AlgebraicType::String,
             }],
         );
-        let current = [Arc::new(table_def.clone().into_schema(TableId(42)))];
+        let current = [Arc::new(TableSchema::from_def(42.into(), table_def.clone()))];
         let proposed = vec![table_def.with_column_index(ColId(0), false)];
 
         let updates = schema_updates(current, proposed).unwrap().into_updated().unwrap();
@@ -536,9 +538,9 @@ mod tests {
             StAccess::Public,
             None,
         ))];
-        let proposed = vec![TableDef::new(
+        let proposed = vec![RawTableDefV8::new(
             "Person".into(),
-            vec![ColumnDef {
+            vec![RawColumnDefV8 {
                 col_name: "name".into(),
                 col_type: AlgebraicType::String,
             }],
@@ -551,19 +553,19 @@ mod tests {
 
     #[test]
     fn test_updates_add_constraint() {
-        let current = [Arc::new(
-            TableDef::new(
+        let current = [Arc::new(TableSchema::from_def(
+            42.into(),
+            RawTableDefV8::new(
                 "Person".into(),
-                vec![ColumnDef {
+                vec![RawColumnDefV8 {
                     col_name: "name".into(),
                     col_type: AlgebraicType::String,
                 }],
-            )
-            .into_schema(TableId(42)),
-        )];
-        let proposed = vec![TableDef::new(
+            ),
+        ))];
+        let proposed = vec![RawTableDefV8::new(
             "Person".into(),
-            vec![ColumnDef {
+            vec![RawColumnDefV8 {
                 col_name: "name".into(),
                 col_type: AlgebraicType::String,
             }],
@@ -575,20 +577,20 @@ mod tests {
 
     #[test]
     fn test_updates_drop_constraint() {
-        let current = [Arc::new(
-            TableDef::new(
+        let current = [Arc::new(TableSchema::from_def(
+            42.into(),
+            RawTableDefV8::new(
                 "Person".into(),
-                vec![ColumnDef {
+                vec![RawColumnDefV8 {
                     col_name: "name".into(),
                     col_type: AlgebraicType::String,
                 }],
             )
-            .with_column_constraint(Constraints::unique(), ColId(0))
-            .into_schema(TableId(42)),
-        )];
-        let proposed = vec![TableDef::new(
+            .with_column_constraint(Constraints::unique(), ColId(0)),
+        ))];
+        let proposed = vec![RawTableDefV8::new(
             "Person".into(),
-            vec![ColumnDef {
+            vec![RawColumnDefV8 {
                 col_name: "name".into(),
                 col_type: AlgebraicType::String,
             }],
