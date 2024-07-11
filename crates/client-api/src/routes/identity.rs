@@ -44,7 +44,7 @@ pub async fn create_identity<S: ControlStateDelegate + NodeDelegate>(
     Ok(axum::Json(identity_response))
 }
 
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize)]
 pub struct GetIdentityResponse {
     identities: Vec<GetIdentityResponseEntry>,
 }
@@ -63,8 +63,8 @@ pub async fn get_identity<S: ControlStateDelegate>(
     State(ctx): State<S>,
     Query(GetIdentityQueryParams { email }): Query<GetIdentityQueryParams>,
 ) -> axum::response::Result<impl IntoResponse> {
-    let lookup = match email {
-        None => None,
+    match email {
+        None => Err(StatusCode::BAD_REQUEST.into()),
         Some(email) => {
             let identities = ctx.get_identities_for_email(email.as_str()).map_err(log_and_500)?;
             let identities = identities
@@ -74,11 +74,9 @@ pub async fn get_identity<S: ControlStateDelegate>(
                     email: identity_email.email,
                 })
                 .collect::<Vec<_>>();
-            (!identities.is_empty()).then_some(GetIdentityResponse { identities })
+            Ok(axum::Json(GetIdentityResponse { identities }))
         }
-    };
-    let identity_response = lookup.unwrap_or_default();
-    Ok(axum::Json(identity_response))
+    }
 }
 
 /// A version of `Identity` appropriate for URL de/encoding.
