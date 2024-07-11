@@ -5,7 +5,8 @@ using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
 {
-    public static class BSATNHelpers {
+    public static class BSATNHelpers
+    {
         public static T FromStream<T>(Stream stream)
             where T : IStructuralReadWrite, new()
         {
@@ -13,7 +14,8 @@ namespace SpacetimeDB
             return IStructuralReadWrite.Read<T>(reader);
         }
 
-        public static T Decode<T>(byte[] bsatn) where T : IStructuralReadWrite, new() {
+        public static T Decode<T>(byte[] bsatn) where T : IStructuralReadWrite, new()
+        {
             using var stream = new MemoryStream(bsatn);
             return FromStream<T>(stream);
         }

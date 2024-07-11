@@ -33,25 +33,33 @@ public class SnapshotTests
         }
     }
 
-    class TimestampConverter : WriteOnlyJsonConverter<Timestamp> {
-        public override void Write(VerifyJsonWriter writer, Timestamp timestamp) {
+    class TimestampConverter : WriteOnlyJsonConverter<Timestamp>
+    {
+        public override void Write(VerifyJsonWriter writer, Timestamp timestamp)
+        {
             writer.WriteValue(timestamp.Microseconds);
         }
     }
 
-    class EnergyQuantaConverter : WriteOnlyJsonConverter<EnergyQuanta> {
-        public override void Write(VerifyJsonWriter writer, EnergyQuanta value) {
+    class EnergyQuantaConverter : WriteOnlyJsonConverter<EnergyQuanta>
+    {
+        public override void Write(VerifyJsonWriter writer, EnergyQuanta value)
+        {
             Assert.Equal(0uL, value.Quanta.hi);
             writer.WriteValue(value.Quanta.lo);
         }
     }
 
-    class EncodedValueConverter : WriteOnlyJsonConverter<EncodedValue> {
-        public override void Write(VerifyJsonWriter writer, EncodedValue value) {
-            if (value is EncodedValue.Binary(var bytes)) {
+    class EncodedValueConverter : WriteOnlyJsonConverter<EncodedValue>
+    {
+        public override void Write(VerifyJsonWriter writer, EncodedValue value)
+        {
+            if (value is EncodedValue.Binary(var bytes))
+            {
                 writer.WriteValue(bytes);
             }
-            else {
+            else
+            {
                 throw new InvalidOperationException();
             }
         }
@@ -81,7 +89,8 @@ public class SnapshotTests
     }
 
     private static ServerMessage.IdentityToken SampleId(string identity, string token, string address) =>
-        new(new() {
+        new(new()
+        {
             Identity = Identity.From(Convert.FromBase64String(identity)),
             Token = token,
             Address = Address.From(Convert.FromBase64String(address)) ?? throw new InvalidDataException("address")
@@ -91,10 +100,12 @@ public class SnapshotTests
         uint requestId,
         ulong hostExecutionDuration,
         List<TableUpdate> updates
-    ) => new(new() {
+    ) => new(new()
+    {
         RequestId = requestId,
         TotalHostExecutionDurationMicros = hostExecutionDuration,
-        DatabaseUpdate = new DatabaseUpdate {
+        DatabaseUpdate = new DatabaseUpdate
+        {
             Tables = updates
         }
     });
@@ -109,20 +120,24 @@ public class SnapshotTests
         ulong hostExecutionDuration,
         List<TableUpdate> updates,
         EncodedValue? args
-    ) => new(new() {
+    ) => new(new()
+    {
         Timestamp = new Timestamp { Microseconds = timestamp },
         CallerIdentity = Identity.From(Convert.FromBase64String(callerIdentity)),
         CallerAddress = Address.From(Convert.FromBase64String(callerAddress)) ?? throw new InvalidDataException("callerAddress"),
         HostExecutionDurationMicros = hostExecutionDuration,
-        EnergyQuantaUsed = new() {
+        EnergyQuantaUsed = new()
+        {
             Quanta = new U128(0, energyQuantaUsed),
         },
-        ReducerCall = new() {
+        ReducerCall = new()
+        {
             RequestId = requestId,
             ReducerName = reducerName,
             Args = args ?? new EncodedValue.Binary([])
         },
-        Status = new UpdateStatus.Committed(new() {
+        Status = new UpdateStatus.Committed(new()
+        {
             Tables = updates
         })
     });
@@ -132,14 +147,16 @@ public class SnapshotTests
         string tableName,
         List<EncodedValue> inserts,
         List<EncodedValue> deletes
-    ) => new() {
+    ) => new()
+    {
         TableId = tableId,
         TableName = tableName,
         Inserts = inserts,
         Deletes = deletes
     };
 
-    private static EncodedValue.Binary Encode<T>(in T value) where T : IStructuralReadWrite {
+    private static EncodedValue.Binary Encode<T>(in T value) where T : IStructuralReadWrite
+    {
         var o = new MemoryStream();
         var w = new BinaryWriter(o);
         value.WriteFields(w);
@@ -147,25 +164,29 @@ public class SnapshotTests
     }
 
     private static TableUpdate SampleUserInsert(string identity, string? name, bool online) =>
-        SampleUpdate(4097, "User", [Encode(new User {
+        SampleUpdate(4097, "User", [Encode(new User
+        {
             Identity = Identity.From(Convert.FromBase64String(identity)),
             Name = name,
             Online = online
         })], []);
 
     private static TableUpdate SampleUserUpdate(string identity, string? oldName, string? newName, bool oldOnline, bool newOnline) =>
-        SampleUpdate(4097, "User", [Encode(new User {
+        SampleUpdate(4097, "User", [Encode(new User
+        {
             Identity = Identity.From(Convert.FromBase64String(identity)),
             Name = newName,
             Online = newOnline
-        })], [Encode(new User {
+        })], [Encode(new User
+        {
             Identity = Identity.From(Convert.FromBase64String(identity)),
             Name = oldName,
             Online = oldOnline
         })]);
 
     private static TableUpdate SampleMessage(string identity, ulong sent, string text) =>
-        SampleUpdate(4098, "Message", [Encode(new Message {
+        SampleUpdate(4098, "Message", [Encode(new Message
+        {
             Sender = Identity.From(Convert.FromBase64String(identity)),
             Sent = sent,
             Text = text
@@ -258,7 +279,8 @@ public class SnapshotTests
         );
 
         client.onBeforeSubscriptionApplied += () => events.Add("OnBeforeSubscriptionApplied");
-        client.onEvent += (ev) => events.Add("OnEvent", ev switch {
+        client.onEvent += (ev) => events.Add("OnEvent", ev switch
+        {
             ServerMessage.IdentityToken(var o) => o,
             ServerMessage.InitialSubscription(var o) => o,
             ServerMessage.TransactionUpdate(var o) => o,
