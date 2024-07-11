@@ -1,3 +1,5 @@
+using SpacetimeDB.ClientApi;
+
 namespace SpacetimeDB
 {
     public interface IReducerArgsBase : BSATN.IStructuralReadWrite
@@ -8,23 +10,23 @@ namespace SpacetimeDB
     public abstract class ReducerEventBase
     {
         public ulong Timestamp { get; }
-        public SpacetimeDB.Identity? Identity { get; }
-        public SpacetimeDB.Address? CallerAddress { get; }
+        public Identity? Identity { get; }
+        public Address? CallerAddress { get; }
         public string? ErrMessage { get; }
-        public ClientApi.Event.Types.Status Status { get; }
+        public UpdateStatus? Status { get; }
 
-        public ReducerEventBase()
-        {
-            Status = ClientApi.Event.Types.Status.Committed;
-        }
+        public ReducerEventBase() { }
 
-        public ReducerEventBase(ClientApi.Event dbEvent)
+        public ReducerEventBase(TransactionUpdate update)
         {
-            Timestamp = dbEvent.Timestamp;
-            Identity = SpacetimeDB.Identity.From(dbEvent.CallerIdentity.ToByteArray());
-            CallerAddress = Address.From(dbEvent.CallerAddress.ToByteArray());
-            ErrMessage = dbEvent.Message;
-            Status = dbEvent.Status;
+            Timestamp = update.Timestamp.Microseconds;
+            Identity = update.CallerIdentity;
+            CallerAddress = update.CallerAddress;
+            Status = update.Status;
+            if (update.Status is UpdateStatus.Failed(var err))
+            {
+                ErrMessage = err;
+            }
         }
 
         public abstract bool InvokeHandler();
