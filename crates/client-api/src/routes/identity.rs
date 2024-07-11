@@ -216,25 +216,6 @@ pub async fn get_public_key<S: NodeDelegate>(State(ctx): State<S>) -> axum::resp
     ))
 }
 
-pub fn router<S>(ctx: S) -> axum::Router<S>
-where
-    S: NodeDelegate + ControlStateDelegate + Clone + 'static,
-{
-    use axum::routing::{get, post};
-    let auth_middleware = axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>);
-    axum::Router::new()
-        .route("/", get(get_identity::<S>).post(create_identity::<S>))
-        .route("/public-key", get(get_public_key::<S>))
-        .route("/websocket_token", post(create_websocket_token::<S>))
-        .route("/:identity/verify", get(validate_token))
-        .route(
-            "/:identity/set-email",
-            post(set_email::<S>).route_layer(auth_middleware.clone()),
-        )
-        .route("/:identity/emails", get(check_email::<S>).route_layer(auth_middleware))
-        .route("/:identity/databases", get(get_databases::<S>))
-}
-
 #[derive(Deserialize)]
 pub struct RequestRecoveryCodeParams {
     /// Whether or not the client is requesting a login link for a web-login. This is false for CLI logins.
@@ -339,12 +320,23 @@ pub async fn confirm_recovery_code<S: ControlStateDelegate + NodeDelegate>(
     Ok(axum::Json(result))
 }
 
-pub fn control_routes<S>(_: S) -> axum::Router<S>
+pub fn router<S>(ctx: S) -> axum::Router<S>
 where
     S: NodeDelegate + ControlStateDelegate + Clone + 'static,
 {
-    use axum::routing::post;
+    use axum::routing::{get, post};
+    let auth_middleware = axum::middleware::from_fn_with_state(ctx, anon_auth_middleware::<S>);
     axum::Router::new()
+        .route("/", get(get_identity::<S>).post(create_identity::<S>))
+        .route("/public-key", get(get_public_key::<S>))
         .route("/request_recovery_code", post(request_recovery_code::<S>))
         .route("/confirm_recovery_code", post(confirm_recovery_code::<S>))
+        .route("/websocket_token", post(create_websocket_token::<S>))
+        .route("/:identity/verify", get(validate_token))
+        .route(
+            "/:identity/set-email",
+            post(set_email::<S>).route_layer(auth_middleware.clone()),
+        )
+        .route("/:identity/emails", get(check_email::<S>).route_layer(auth_middleware))
+        .route("/:identity/databases", get(get_databases::<S>))
 }
