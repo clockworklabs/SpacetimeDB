@@ -16,8 +16,7 @@ namespace SpacetimeDB.ClientApi
 	[SpacetimeDB.Type]
 	public partial class EnergyQuanta
 	{
-		// TODO update bsatn codegen to support U128
-		//[DataMember(Name = "quanta")]
-		//public System.Numerics.BigInteger Quanta;
+		[DataMember(Name = "quanta")]
+		public U128 Quanta;
 	}
 }

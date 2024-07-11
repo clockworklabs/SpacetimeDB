@@ -23,7 +23,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Google.Protobuf" Version="3.23.3" />
+    <PackageReference Include="SpacetimeDB.BSATN.Codegen" Version="0.10.*" OutputItemType="Analyzer" />
     <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="0.10.*" />
 
     <InternalsVisibleTo Include="tests" />
