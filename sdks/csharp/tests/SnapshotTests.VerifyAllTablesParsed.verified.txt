@@ -18,16 +18,16 @@
       }
     },
     OnEvent: {
-      Timestamp: 1718487763059031,
-      CallerIdentity: {Scrubbed},
-      FunctionCall: {
-        Reducer: __identity_connected__,
-        ArgBytes: 
+      status: {Scrubbed},
+      timestamp: 1718487763059031,
+      caller_identity: {Scrubbed},
+      caller_address: Guid_2,
+      reducer_call: {
+        reducer_name: __identity_connected__,
+        args: 
       },
-      Message: ,
-      EnergyQuantaUsed: 1957615,
-      HostExecutionDurationMicros: 66,
-      CallerAddress: Guid_2
+      energy_quanta_used: 1957615,
+      host_execution_duration_micros: 66
     },
     OnUpdateUser: {
       oldUser: {
@@ -46,30 +46,21 @@
         Timestamp: 1718487768057579,
         Identity: Identity_1,
         CallerAddress: Guid_1,
-        ErrMessage: 
+        Status: {Scrubbed}
       }
     },
     OnEvent: {
-      Timestamp: 1718487768057579,
-      CallerIdentity: {Scrubbed},
-      FunctionCall: {
-        Reducer: set_name,
-        ArgBytes: 0100000041,
-        RequestId: 1,
-        CallInfo: {
-          Args: {
-            Name: A
-          },
-          Timestamp: 1718487768057579,
-          Identity: Identity_1,
-          CallerAddress: Guid_1,
-          ErrMessage: 
-        }
+      status: {Scrubbed},
+      timestamp: 1718487768057579,
+      caller_identity: {Scrubbed},
+      caller_address: Guid_1,
+      reducer_call: {
+        reducer_name: set_name,
+        args: AQAAAEE=,
+        request_id: 1
       },
-      Message: ,
-      EnergyQuantaUsed: 4345615,
-      HostExecutionDurationMicros: 70,
-      CallerAddress: Guid_1
+      energy_quanta_used: 4345615,
+      host_execution_duration_micros: 70
     },
     OnSetName: {
       Args: {
@@ -78,7 +69,7 @@
       Timestamp: 1718487768057579,
       Identity: Identity_1,
       CallerAddress: Guid_1,
-      ErrMessage: 
+      Status: {Scrubbed}
     },
     OnInsertMessage: {
       message: {
@@ -93,30 +84,21 @@
         Timestamp: 1718487775346381,
         Identity: Identity_2,
         CallerAddress: Guid_2,
-        ErrMessage: 
+        Status: {Scrubbed}
       }
     },
     OnEvent: {
-      Timestamp: 1718487775346381,
-      CallerIdentity: {Scrubbed},
-      FunctionCall: {
-        Reducer: send_message,
-        ArgBytes: 0900000048656C6C6F2C204121,
-        RequestId: 1,
-        CallInfo: {
-          Args: {
-            Text: Hello, A!
-          },
-          Timestamp: 1718487775346381,
-          Identity: Identity_2,
-          CallerAddress: Guid_2,
-          ErrMessage: 
-        }
+      status: {Scrubbed},
+      timestamp: 1718487775346381,
+      caller_identity: {Scrubbed},
+      caller_address: Guid_2,
+      reducer_call: {
+        reducer_name: send_message,
+        args: CQAAAEhlbGxvLCBBIQ==,
+        request_id: 1
       },
-      Message: ,
-      EnergyQuantaUsed: 2779615,
-      HostExecutionDurationMicros: 57,
-      CallerAddress: Guid_2
+      energy_quanta_used: 2779615,
+      host_execution_duration_micros: 57
     },
     OnSendMessage: {
       Args: {
@@ -125,7 +107,7 @@
       Timestamp: 1718487775346381,
       Identity: Identity_2,
       CallerAddress: Guid_2,
-      ErrMessage: 
+      Status: {Scrubbed}
     },
     OnUpdateUser: {
       oldUser: {
@@ -144,30 +126,21 @@
         Timestamp: 1718487777307855,
         Identity: Identity_2,
         CallerAddress: Guid_2,
-        ErrMessage: 
+        Status: {Scrubbed}
       }
     },
     OnEvent: {
-      Timestamp: 1718487777307855,
-      CallerIdentity: {Scrubbed},
-      FunctionCall: {
-        Reducer: set_name,
-        ArgBytes: 0100000042,
-        RequestId: 2,
-        CallInfo: {
-          Args: {
-            Name: B
-          },
-          Timestamp: 1718487777307855,
-          Identity: Identity_2,
-          CallerAddress: Guid_2,
-          ErrMessage: 
-        }
+      status: {Scrubbed},
+      timestamp: 1718487777307855,
+      caller_identity: {Scrubbed},
+      caller_address: Guid_2,
+      reducer_call: {
+        reducer_name: set_name,
+        args: AQAAAEI=,
+        request_id: 2
       },
-      Message: ,
-      EnergyQuantaUsed: 4268615,
-      HostExecutionDurationMicros: 98,
-      CallerAddress: Guid_2
+      energy_quanta_used: 4268615,
+      host_execution_duration_micros: 98
     },
     OnSetName: {
       Args: {
@@ -176,7 +149,7 @@
       Timestamp: 1718487777307855,
       Identity: Identity_2,
       CallerAddress: Guid_2,
-      ErrMessage: 
+      Status: {Scrubbed}
     },
     OnInsertMessage: {
       message: {
@@ -191,30 +164,21 @@
         Timestamp: 1718487783175083,
         Identity: Identity_1,
         CallerAddress: Guid_1,
-        ErrMessage: 
+        Status: {Scrubbed}
       }
     },
     OnEvent: {
-      Timestamp: 1718487783175083,
-      CallerIdentity: {Scrubbed},
-      FunctionCall: {
-        Reducer: send_message,
-        ArgBytes: 0900000048656C6C6F2C204221,
-        RequestId: 2,
-        CallInfo: {
-          Args: {
-            Text: Hello, B!
-          },
-          Timestamp: 1718487783175083,
-          Identity: Identity_1,
-          CallerAddress: Guid_1,
-          ErrMessage: 
-        }
+      status: {Scrubbed},
+      timestamp: 1718487783175083,
+      caller_identity: {Scrubbed},
+      caller_address: Guid_1,
+      reducer_call: {
+        reducer_name: send_message,
+        args: CQAAAEhlbGxvLCBCIQ==,
+        request_id: 2
       },
-      Message: ,
-      EnergyQuantaUsed: 2677615,
-      HostExecutionDurationMicros: 40,
-      CallerAddress: Guid_1
+      energy_quanta_used: 2677615,
+      host_execution_duration_micros: 40
     },
     OnSendMessage: {
       Args: {
@@ -223,7 +187,7 @@
       Timestamp: 1718487783175083,
       Identity: Identity_1,
       CallerAddress: Guid_1,
-      ErrMessage: 
+      Status: {Scrubbed}
     },
     OnInsertMessage: {
       message: {
@@ -238,30 +202,21 @@
         Timestamp: 1718487787645364,
         Identity: Identity_2,
         CallerAddress: Guid_2,
-        ErrMessage: 
+        Status: {Scrubbed}
       }
     },
     OnEvent: {
-      Timestamp: 1718487787645364,
-      CallerIdentity: {Scrubbed},
-      FunctionCall: {
-        Reducer: send_message,
-        ArgBytes: 08000000476F6F6462796521,
-        RequestId: 3,
-        CallInfo: {
-          Args: {
-            Text: Goodbye!
-          },
-          Timestamp: 1718487787645364,
-          Identity: Identity_2,
-          CallerAddress: Guid_2,
-          ErrMessage: 
-        }
+      status: {Scrubbed},
+      timestamp: 1718487787645364,
+      caller_identity: {Scrubbed},
+      caller_address: Guid_2,
+      reducer_call: {
+        reducer_name: send_message,
+        args: CAAAAEdvb2RieWUh,
+        request_id: 3
       },
-      Message: ,
-      EnergyQuantaUsed: 2636615,
-      HostExecutionDurationMicros: 28,
-      CallerAddress: Guid_2
+      energy_quanta_used: 2636615,
+      host_execution_duration_micros: 28
     },
     OnSendMessage: {
       Args: {
@@ -270,7 +225,7 @@
       Timestamp: 1718487787645364,
       Identity: Identity_2,
       CallerAddress: Guid_2,
-      ErrMessage: 
+      Status: {Scrubbed}
     },
     LogException: Unknown reducer __identity_disconnected__ (Parameter 'Reducer'),
     OnUpdateUser: {
@@ -286,16 +241,16 @@
       }
     },
     OnEvent: {
-      Timestamp: 1718487791901504,
-      CallerIdentity: {Scrubbed},
-      FunctionCall: {
-        Reducer: __identity_disconnected__,
-        ArgBytes: 
+      status: {Scrubbed},
+      timestamp: 1718487791901504,
+      caller_identity: {Scrubbed},
+      caller_address: Guid_2,
+      reducer_call: {
+        reducer_name: __identity_disconnected__,
+        args: 
       },
-      Message: ,
-      EnergyQuantaUsed: 3595615,
-      HostExecutionDurationMicros: 75,
-      CallerAddress: Guid_2
+      energy_quanta_used: 3595615,
+      host_execution_duration_micros: 75
     },
     OnInsertMessage: {
       message: {
@@ -310,30 +265,21 @@
         Timestamp: 1718487794937841,
         Identity: Identity_1,
         CallerAddress: Guid_1,
-        ErrMessage: 
+        Status: {Scrubbed}
       }
     },
     OnEvent: {
-      Timestamp: 1718487794937841,
-      CallerIdentity: {Scrubbed},
-      FunctionCall: {
-        Reducer: send_message,
-        ArgBytes: 08000000476F6F6462796521,
-        RequestId: 3,
-        CallInfo: {
-          Args: {
-            Text: Goodbye!
-          },
-          Timestamp: 1718487794937841,
-          Identity: Identity_1,
-          CallerAddress: Guid_1,
-          ErrMessage: 
-        }
+      status: {Scrubbed},
+      timestamp: 1718487794937841,
+      caller_identity: {Scrubbed},
+      caller_address: Guid_1,
+      reducer_call: {
+        reducer_name: send_message,
+        args: CAAAAEdvb2RieWUh,
+        request_id: 3
       },
-      Message: ,
-      EnergyQuantaUsed: 2636615,
-      HostExecutionDurationMicros: 34,
-      CallerAddress: Guid_1
+      energy_quanta_used: 2636615,
+      host_execution_duration_micros: 34
     },
     OnSendMessage: {
       Args: {
@@ -342,7 +288,7 @@
       Timestamp: 1718487794937841,
       Identity: Identity_1,
       CallerAddress: Guid_1,
-      ErrMessage: 
+      Status: {Scrubbed}
     }
   },
   FinalSnapshot: {
@@ -402,7 +348,7 @@
     ParseMessageTracker: {
       sampleCount: 9,
       Min: type=TransactionUpdate,reducer=send_message,
-      Max: type=SubscriptionUpdate
+      Max: type=InitialSubscription
     }
   }
 }
