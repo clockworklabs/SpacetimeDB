@@ -607,8 +607,6 @@ impl ProgramVm for DbProgram<'_, '_> {
             CrudExpr::Insert { table, rows } => self._execute_insert(&table, rows),
             CrudExpr::Update { delete, assignments } => self._execute_update(&delete, assignments, sources),
             CrudExpr::Delete { query } => self._delete_query(&query, sources),
-            CrudExpr::CreateTable { table } => self._create_table(*table),
-            CrudExpr::Drop { name, kind, .. } => self._drop(&name, kind),
             CrudExpr::SetVar { name, literal } => self._set_var(name, literal),
             CrudExpr::ReadVar { name } => self._read_var(name),
         }

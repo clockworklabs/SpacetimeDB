@@ -4,7 +4,7 @@ use crate::sql::compiler::compile_sql;
 use crate::subscription::subscription::SupportedQuery;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use spacetimedb_vm::expr::{self, Crud, CrudExpr, DbType, QueryExpr};
+use spacetimedb_vm::expr::{self, Crud, CrudExpr, QueryExpr};
 
 pub(crate) static WHITESPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
 pub const SUBSCRIBE_TO_ALL_QUERY: &str = "SELECT * FROM *";
@@ -43,8 +43,6 @@ pub fn compile_read_only_query(
             CrudExpr::Insert { .. } => Crud::Insert,
             CrudExpr::Update { .. } => Crud::Update,
             CrudExpr::Delete { .. } => Crud::Delete,
-            CrudExpr::CreateTable { .. } => Crud::Create(DbType::Table),
-            CrudExpr::Drop { kind, .. } => Crud::Drop(kind),
             CrudExpr::SetVar { .. } => Crud::Config,
             CrudExpr::ReadVar { .. } => Crud::Config,
         })

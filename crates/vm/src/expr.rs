@@ -11,7 +11,7 @@ use spacetimedb_lib::{AlgebraicType, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::def::{TableDef, TableSchema};
+use spacetimedb_sats::db::def::TableSchema;
 use spacetimedb_sats::db::error::{AuthError, RelationError};
 use spacetimedb_sats::relation::{ColExpr, DbTable, FieldName, Header};
 use spacetimedb_sats::satn::Satn;
@@ -828,13 +828,6 @@ pub enum CrudExpr {
     },
     Delete {
         query: QueryExpr,
-    },
-    CreateTable {
-        table: Box<TableDef>,
-    },
-    Drop {
-        name: String,
-        kind: DbType,
     },
     SetVar {
         name: String,
@@ -2124,6 +2117,7 @@ impl From<Code> for CodeResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spacetimedb_sats::db::def::TableDef;
     use spacetimedb_sats::relation::Column;
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use typed_arena::Arena;
@@ -2577,25 +2571,6 @@ mod tests {
             let crud = CrudExpr::Delete { query };
             assert_owner_required(crud);
         }
-    }
-
-    #[test]
-    fn test_auth_crud_code_create_table() {
-        let table = TableDef::new("etcpasswd".into(), vec![])
-            .with_access(StAccess::Public)
-            .with_type(StTableType::System); // hah!
-
-        let crud = CrudExpr::CreateTable { table: Box::new(table) };
-        assert_owner_required(crud);
-    }
-
-    #[test]
-    fn test_auth_crud_code_drop() {
-        let crud = CrudExpr::Drop {
-            name: "etcpasswd".into(),
-            kind: DbType::Table,
-        };
-        assert_owner_required(crud);
     }
 
     #[test]
