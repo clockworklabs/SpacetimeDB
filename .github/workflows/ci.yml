@@ -121,7 +121,7 @@ jobs:
         run: |
           ( cd crates/bindings-csharp/BSATN.Runtime && dotnet pack )
           cd spacetimedb-csharp-sdk
-          ls -lA ..
+          ls -lA ../crates/bindings-csharp/BSATN.Runtime/bin/Release
           sed -i'' 's/Version="0.10.\*"/Version="0.11.*"/' tests/tests.csproj SpacetimeDB.ClientSDK.csproj
 
           cat >nuget.config <<EOF
@@ -129,12 +129,14 @@ jobs:
           <configuration>
             <packageSources>
               <!-- Local NuGet repositories -->
-              <add key="Local SpacetimeDB.BSATN.Runtime" value="../crates/bindings-csharp/BSATN.Runtime/bin/Release" />
+              <add key="Local SpacetimeDB.BSATN.Runtime" value="../crates/bindings-csharp/BSATN.Runtime/bin/Release/" />
               <!-- Official NuGet.org server -->
               <add key="NuGet.org" value="https://api.nuget.org/v3/index.json" />
             </packageSources>
           </configuration>
           EOF
+
+          cat nuget.config
 
           # clear package caches, so we get fresh ones even if version numbers haven't changed
           dotnet nuget locals all --clear
