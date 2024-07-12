@@ -26,7 +26,7 @@ use crate::client::Protocol;
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
-use crate::execution_context::ExecutionContext;
+use crate::execution_context::{batch_and_flush_metrics, ExecutionContext};
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdateRelValue, ProtocolDatabaseUpdate, UpdatesRelValue};
 use crate::json::client_api::TableUpdateJson;
 use crate::vm::{build_query, TxMode};
@@ -540,11 +540,19 @@ impl ExecutionSet {
         slow_query_threshold: Option<Duration>,
     ) -> Vec<TableUpdateJson> {
         // evaluate each of the execution units in this ExecutionSet in parallel
-        self.exec_units
+        let (eval, all_ctx): (Vec<_>, Vec<_>) = self
+            .exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
-            .filter_map(|unit| unit.eval_json(ctx, db, tx, &unit.sql, slow_query_threshold))
-            .collect()
+            .filter_map(|unit| {
+                let ctx = ctx.clone();
+                unit.eval_json(&ctx, db, tx, &unit.sql, slow_query_threshold)
+                    .map(|result| (result, ctx))
+            })
+            .unzip();
+
+        batch_and_flush_metrics(all_ctx);
+        eval
     }
 
     #[tracing::instrument(skip_all)]
@@ -556,11 +564,19 @@ impl ExecutionSet {
         slow_query_threshold: Option<Duration>,
     ) -> Vec<TableUpdate> {
         // evaluate each of the execution units in this ExecutionSet in parallel
-        self.exec_units
+        let (eval, all_ctx): (Vec<_>, Vec<_>) = self
+            .exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
-            .filter_map(|unit| unit.eval_binary(ctx, db, tx, &unit.sql, slow_query_threshold))
-            .collect()
+            .filter_map(|unit| {
+                let ctx = ctx.clone();
+                unit.eval_binary(&ctx, db, tx, &unit.sql, slow_query_threshold)
+                    .map(|result| (result, ctx))
+            })
+            .unzip();
+
+        batch_and_flush_metrics(all_ctx);
+        eval
     }
 
     #[tracing::instrument(skip_all)]

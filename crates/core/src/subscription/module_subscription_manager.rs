@@ -142,11 +142,15 @@ impl SubscriptionManager {
             }
 
             let span = tracing::info_span!("eval_incr").entered();
+            let all_ctx: Vec<ExecutionContext> = vec![ctx.clone(); units.len()];
             let tx = &tx.into();
             let eval = units
+                .into_iter()
+                .zip(&all_ctx)
+                .collect::<Vec<_>>()
                 .par_iter()
-                .filter_map(|(&hash, tables)| {
-                    let unit = self.queries.get(hash)?;
+                .filter_map(|((&hash, tables), ctx)| {
+                    let unit = self.queries.get(&hash)?;
                     unit.eval_incr(ctx, db, tx, &unit.sql, tables.iter().copied(), slow_query_threshold)
                         .map(|table| (hash, table))
                 })
@@ -164,7 +168,7 @@ impl SubscriptionManager {
                     // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
                     let mut ops_bin: Option<Vec<TableRowOperation>> = None;
                     let mut ops_json: Option<Vec<TableRowOperationJson>> = None;
-                    self.subscribers.get(hash).into_iter().flatten().map(move |id| {
+                    self.subscribers.get(&hash).into_iter().flatten().map(move |id| {
                         let ops = match self.clients[id].protocol {
                             Protocol::Binary => {
                                 Either::Left(ops_bin.get_or_insert_with(|| (&delta.updates).into()).clone())
@@ -263,6 +267,9 @@ impl SubscriptionManager {
                     timer: event.timer,
                 };
                 send_to_client(self.client(id).as_ref(), &event, database_update);
+            });
+            tokio::task::spawn_blocking(|| {
+                drop(all_ctx);
             });
         })
     }

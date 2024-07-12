@@ -895,10 +895,10 @@ impl StVarTable {
         literal: &str,
     ) -> Result<(), DBError> {
         let value = Self::parse_var(name, literal)?;
-        if let Some(row_ref) = db
+        let is_row_ref = db
             .iter_by_col_eq_mut(ctx, tx, ST_VAR_ID, StVarFields::Name.col_id(), &name.into())?
-            .next()
-        {
+            .next();
+        if let Some(row_ref) = is_row_ref {
             db.delete(tx, ST_VAR_ID, [row_ref.pointer()]);
         }
         db.insert(tx, ST_VAR_ID, ProductValue::from(StVarRow { name, value }))?;

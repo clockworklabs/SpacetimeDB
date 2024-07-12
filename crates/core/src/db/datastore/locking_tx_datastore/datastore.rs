@@ -511,8 +511,7 @@ impl MutTxDatastore for Locking {
         tx.table_name(*table_id).is_some()
     }
 
-    fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>> {
-        let ctx = ExecutionContext::internal(self.database_address);
+    fn metadata_mut_tx(&self, ctx: &ExecutionContext, tx: &Self::MutTx) -> Result<Option<Metadata>> {
         tx.iter(&ctx, ST_MODULE_ID)?.next().map(metadata_from_row).transpose()
     }
 

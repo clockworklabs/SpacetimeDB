@@ -462,7 +462,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     /// Obtain the [`Metadata`] for this datastore.
     ///
     /// Like [`TxDatastore`], but in a mutable transaction context.
-    fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>>;
+    fn metadata_mut_tx(&self, ctx: &ExecutionContext, tx: &Self::MutTx) -> Result<Option<Metadata>>;
 
     /// Update the datastore with the supplied binary program.
     ///

@@ -341,10 +341,10 @@ impl RelationalDB {
             self.owner_identity,
             program_hash
         );
-
+        let ctx = ExecutionContext::internal(self.address);
         // Probably a bug: the database is already initialized.
         // Ignore if it would be a no-op.
-        if let Some(meta) = self.inner.metadata_mut_tx(tx)? {
+        if let Some(meta) = self.inner.metadata_mut_tx(&ctx, tx)? {
             if program_hash == meta.program_hash
                 && self.address == meta.database_address
                 && self.owner_identity == meta.owner_identity
