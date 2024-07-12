@@ -26,27 +26,27 @@ class CreateProject(unittest.TestCase):
 
                 packed_projects = ["BSATN.Runtime", "Runtime"]
 
-                nuget_lines = []
-                nuget_lines.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>")
-                nuget_lines.append("<configuration>")
-                nuget_lines.append("<packageSources>")
-                nuget_lines.append("<!-- Local NuGet repositories -->")
+                nuget_config = []
+                nuget_config.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>")
+                nuget_config.append("<configuration>")
+                nuget_config.append("<packageSources>")
+                nuget_config.append("<!-- Local NuGet repositories -->")
                 for project in packed_projects:
                     path = bindings / project / "bin" / "Release"
-                    nuget_lines.append("<add key=\"Local %s\" value=\"%s\" />\n" % (project, str(path)))
-                nuget_lines.append("<!-- Official NuGet.org server -->")
-                nuget_lines.append("<add key=\"NuGet.org\" value=\"https://api.nuget.org/v3/index.json\" />")
-                nuget_lines.append("</packageSources>")
-                nuget_lines.append("</configuration>")
+                    nuget_config.append("<add key=\"Local %s\" value=\"%s\" />\n" % (project, str(path)))
+                nuget_config.append("<!-- Official NuGet.org server -->")
+                nuget_config.append("<add key=\"NuGet.org\" value=\"https://api.nuget.org/v3/index.json\" />")
+                nuget_config.append("</packageSources>")
+                nuget_config.append("</configuration>")
 
-                nuget_contents = "\n".join(nuget_lines)
+                nuget_config = "\n".join(nuget_config)
 
                 print("Writing `nuget.config` contents:")
-                print(nuget_contents)
+                print(nuget_config)
 
                 config_path = Path(tmpdir) / "nuget.config"
                 with open(config_path, "w") as f:
-                    f.write(nuget_contents)
+                    f.write(nuget_config)
 
                 run_cmd("dotnet", "publish", cwd=tmpdir, capture_stderr=True)
 
