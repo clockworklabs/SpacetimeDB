@@ -25,21 +25,22 @@ class CreateProject(unittest.TestCase):
                 spacetime("init", "--lang=csharp", tmpdir)
 
                 packed_projects = ["BSATN.Runtime", "Runtime"]
-                restore_sources = [str(bindings / project / "bin" / "Release") for project in packed_projects]
-                # note that nuget URL comes last, which ensures local sources should override it.
-                restore_sources.append("https://api.nuget.org/v3/index.json")
 
-                csproj = Path(tmpdir) / "StdbModule.csproj"
-                with open(csproj, "r") as f:
-                    contents = f.read()
+                contents = ""
+                contents.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>")
+                contents.append("<configuration>")
+                contents.append("<packageSources>")
+                contents.append("<!-- Local NuGet repositories -->")
+                for project in packed_projects:
+                    path = bindings / project / "bin" / "Release"
+                    contents.append("<add key=\"LocalNuget\" value=\"%s\" />" % str(path))
+                contents.append("<!-- Official NuGet.org server -->")
+                contents.append("<add key=\"NuGet.org\" value=\"https://api.nuget.org/v3/index.json\" />")
+                contents.append("</packageSources>")
+                contents.append("</configuration>")
 
-                contents = contents.replace(
-                    "</PropertyGroup>",
-                    # note that nuget URL comes last, which ensures local sources should override it.
-                    f"""<RestoreSources>{str.join(";", restore_sources)}</RestoreSources>
-</PropertyGroup>""",
-                )
-                with open(csproj, "w") as f:
+                nuget_config = Path(tmpdir) / "nuget.config"
+                with open(nuget_config, "w") as f:
                     f.write(contents)
 
                 run_cmd("dotnet", "publish", cwd=tmpdir, capture_stderr=True)
