@@ -33,7 +33,7 @@ class CreateProject(unittest.TestCase):
                 contents += "<!-- Local NuGet repositories -->\n"
                 for project in packed_projects:
                     path = bindings / project / "bin" / "Release"
-                    contents += "<add key=\"LocalNuget%s\" value=\"%s\" />\n" % (project, str(path))
+                    contents += "<add key=\"Local %s\" value=\"%s\" />\n" % (project, str(path))
                 contents += "<!-- Official NuGet.org server -->\n"
                 contents += "<add key=\"NuGet.org\" value=\"https://api.nuget.org/v3/index.json\" />\n"
                 contents += "</packageSources>\n"
