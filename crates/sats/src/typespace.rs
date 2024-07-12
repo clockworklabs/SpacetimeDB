@@ -6,7 +6,7 @@ use crate::algebraic_type_ref::AlgebraicTypeRef;
 use crate::{de::Deserialize, ser::Serialize};
 use crate::{BuiltinType, WithTypespace};
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
 pub enum TypeRefError {
     // TODO: ideally this should give some useful type name or path.
     // Figure out if we can provide that even though it's not encoded in SATS.

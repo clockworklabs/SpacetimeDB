@@ -487,7 +487,7 @@ mod tests {
             }],
         );
         let current = [Arc::new(table_def.clone().into_schema(TableId(42)))];
-        let proposed = vec![table_def.with_column_index(ColId(0), false)];
+        let proposed = vec![table_def.with_index(ColId(0), false)];
 
         let updates = schema_updates(current, proposed).unwrap().into_updated().unwrap();
         assert_eq!(updates.added_indexes["Person"].len(), 1);

@@ -1,8 +1,8 @@
-use anyhow::Context;
-use spacetimedb_sats::db::def::TableDef;
-use spacetimedb_sats::{impl_serialize, WithTypespace};
+use db::raw_def::RawDatabaseDefV1;
+use spacetimedb_sats::impl_serialize;
 
 pub mod address;
+pub mod db;
 pub mod filter;
 pub mod identity;
 pub mod operator;
@@ -12,14 +12,13 @@ pub mod type_def {
 pub mod type_value {
     pub use spacetimedb_sats::{AlgebraicValue, ProductValue};
 }
-
 pub mod error;
+pub mod relation;
 pub mod version;
 
 pub use address::Address;
 pub use identity::Identity;
 pub use spacetimedb_sats::hash::{self, hash_bytes, Hash};
-pub use spacetimedb_sats::relation;
 pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
 pub use type_def::*;
 pub use type_value::{AlgebraicValue, ProductValue};
@@ -73,31 +72,6 @@ impl std::fmt::Display for VersionTuple {
 }
 
 extern crate self as spacetimedb_lib;
-
-//WARNING: Change this structure(or any of their members) is an ABI change.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
-pub struct TableDesc {
-    pub schema: TableDef,
-    /// data should always point to a ProductType in the typespace
-    pub data: sats::AlgebraicTypeRef,
-}
-
-impl TableDesc {
-    pub fn into_table_def(table: WithTypespace<'_, TableDesc>) -> anyhow::Result<TableDef> {
-        let schema = table
-            .map(|t| &t.data)
-            .resolve_refs()
-            .context("recursive types not yet supported")?;
-        let schema = schema.into_product().ok().context("table not a product type?")?;
-        let table = table.ty();
-        anyhow::ensure!(
-            table.schema.columns.len() == schema.elements.len(),
-            "mismatched number of columns"
-        );
-
-        Ok(table.schema.clone())
-    }
-}
 
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
 pub struct ReducerDef {
@@ -167,11 +141,21 @@ impl_serialize!([] ReducerArgsWithSchema<'_>, (self, ser) => {
     seq.end()
 });
 
+#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+pub enum ModuleDef {
+    V1(ModuleDefV1),
+}
+
+impl Default for ModuleDef {
+    fn default() -> Self {
+        Self::V1(ModuleDefV1::default())
+    }
+}
+
 //WARNING: Change this structure(or any of their members) is an ABI change.
 #[derive(Debug, Clone, Default, de::Deserialize, ser::Serialize)]
-pub struct ModuleDef {
-    pub typespace: sats::Typespace,
-    pub tables: Vec<TableDesc>,
+pub struct ModuleDefV1 {
+    pub database_def: RawDatabaseDefV1,
     pub reducers: Vec<ReducerDef>,
     pub misc_exports: Vec<MiscModuleExport>,
 }
@@ -188,7 +172,7 @@ pub struct TypeAlias {
     pub ty: sats::AlgebraicTypeRef,
 }
 
-impl ModuleDef {
+impl ModuleDefV1 {
     pub fn validate_reducers(&self) -> Result<(), ModuleValidationError> {
         for reducer in &self.reducers {
             match &*reducer.name {

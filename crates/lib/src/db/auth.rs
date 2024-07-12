@@ -1,6 +1,6 @@
-use crate::{impl_deserialize, impl_serialize};
+use spacetimedb_sats::{impl_deserialize, impl_serialize};
 
-use crate::de::Error;
+use spacetimedb_sats::de::Error;
 
 /// Describe the visibility of the table
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

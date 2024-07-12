@@ -19,6 +19,8 @@ default = ["serde", "metrics_impls"]
 serde = ["dep:serde", "spacetimedb-sats/serde"]
 # Allows using `Arbitrary` impls defined in this crate.
 proptest = ["dep:proptest", "dep:proptest-derive"]
+# Allows using test-only APIs.
+test = []
 metrics_impls = ["dep:spacetimedb-metrics", "spacetimedb-sats/metrics_impls"]
 
 [dependencies]

@@ -30,6 +30,7 @@ derive_more.workspace = true
 enum-as-inner.workspace = true
 hex.workspace = true
 itertools.workspace = true
+lazy_static.workspace = true
 # For the 'proptest' feature.
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
