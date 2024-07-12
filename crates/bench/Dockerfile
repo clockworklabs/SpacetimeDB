@@ -6,7 +6,7 @@
 FROM rust:1.77.0
 
 RUN apt-get update && \
-    apt-get install -y valgrind protobuf-compiler bash && \
+    apt-get install -y valgrind bash && \
     rm -rf /var/lib/apt/lists/*
 
 ENV CARGO_TARGET_DIR=/projects/SpacetimeDB/linux-target

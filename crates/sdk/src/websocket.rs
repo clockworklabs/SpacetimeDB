@@ -1,12 +1,11 @@
 use crate::identity::Credentials;
+use crate::ws_messages::{ClientMessage, ServerMessage};
 use anyhow::{bail, Context, Result};
 use brotli::BrotliDecompress;
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{Scheme, Uri};
-use prost::Message as ProtobufMessage;
-use spacetimedb_client_api_messages::client_api::Message;
-use spacetimedb_lib::Address;
+use spacetimedb_lib::{bsatn, Address};
 use tokio::task::JoinHandle;
 use tokio::{net::TcpStream, runtime};
 use tokio_tungstenite::{
@@ -151,14 +150,14 @@ impl DbConnection {
         Ok(DbConnection { sock })
     }
 
-    pub(crate) fn parse_response(bytes: &[u8]) -> Result<Message> {
+    pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage> {
         let mut decompressed = Vec::new();
         BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
-        Ok(Message::decode(&decompressed[..])?)
+        Ok(bsatn::from_slice(&decompressed)?)
     }
 
-    pub(crate) fn encode_message(msg: Message) -> WebSocketMessage {
-        WebSocketMessage::Binary(msg.encode_to_vec())
+    pub(crate) fn encode_message(msg: ClientMessage) -> WebSocketMessage {
+        WebSocketMessage::Binary(bsatn::to_vec(&msg).unwrap())
     }
 
     fn maybe_log_error<T, U: std::fmt::Debug>(cause: &str, res: std::result::Result<T, U>) {
@@ -169,8 +168,8 @@ impl DbConnection {
 
     async fn message_loop(
         mut self,
-        incoming_messages: mpsc::UnboundedSender<Message>,
-        outgoing_messages: mpsc::UnboundedReceiver<Message>,
+        incoming_messages: mpsc::UnboundedSender<ServerMessage>,
+        outgoing_messages: mpsc::UnboundedReceiver<ClientMessage>,
     ) {
         let mut outgoing_messages = Some(outgoing_messages);
         loop {
@@ -224,8 +223,8 @@ impl DbConnection {
         runtime: &runtime::Handle,
     ) -> (
         JoinHandle<()>,
-        mpsc::UnboundedReceiver<Message>,
-        mpsc::UnboundedSender<Message>,
+        mpsc::UnboundedReceiver<ServerMessage>,
+        mpsc::UnboundedSender<ClientMessage>,
     ) {
         let (outgoing_send, outgoing_recv) = mpsc::unbounded();
         let (incoming_send, incoming_recv) = mpsc::unbounded();

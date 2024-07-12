@@ -121,7 +121,7 @@ bytes = "1.2.1"
 bytestring = { version = "1.2.0", features = ["serde"] }
 cargo_metadata = "0.17.0"
 chrono = { version = "0.4.24", default-features = false }
-clap = { version = "4.2.4", features = ["derive"] }
+clap = { version = "4.2.4", features = ["derive", "wrap_help"] }
 colored = "2.0.0"
 console = { version = "0.15.6" }
 convert_case = "0.6.0"
@@ -175,8 +175,6 @@ proc-macro2 = "1.0"
 prometheus = "0.13.0"
 proptest = "1.4"
 proptest-derive = "0.4"
-prost = "0.10"
-prost-build = { version = "0.10" }
 quick-junit = { version = "0.3.2" }
 quote = "1.0.8"
 rand = "0.8.5"

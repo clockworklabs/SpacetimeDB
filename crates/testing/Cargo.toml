@@ -21,7 +21,6 @@ wasmbin.workspace = true
 duct.workspace = true
 lazy_static.workspace = true
 rand.workspace = true
-prost.workspace = true
 tempfile.workspace = true
 serde.workspace = true
 

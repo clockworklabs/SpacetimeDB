@@ -197,7 +197,13 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             .call_reducer
             .call(
                 &mut *store,
-                (op.id.0, identity_buf.0, address_buf.0, op.timestamp.0, args_buf.0),
+                (
+                    op.id.0,
+                    identity_buf.0,
+                    address_buf.0,
+                    op.timestamp.microseconds,
+                    args_buf.0,
+                ),
             )
             .and_then(|errbuf| {
                 let errbuf = BufferIdx(errbuf);

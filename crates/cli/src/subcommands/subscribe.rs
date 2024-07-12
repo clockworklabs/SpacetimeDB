@@ -1,14 +1,16 @@
-use std::time::Duration;
-
 use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches};
 use futures::{Sink, SinkExt, TryStream, TryStreamExt};
 use http::header;
 use http::uri::Scheme;
-use serde_json::value::RawValue;
+use serde_json::Value;
+use spacetimedb_client_api_messages::websocket::{self as ws, EncodedValue};
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_lib::{sats, ModuleDef};
+use spacetimedb_lib::de::serde::{DeserializeWrapper, SeedWrapper};
+use spacetimedb_lib::ser::serde::SerializeWrapper;
+use spacetimedb_lib::ModuleDef;
 use spacetimedb_standalone::TEXT_PROTOCOL;
+use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
@@ -80,94 +82,56 @@ pub fn cli() -> clap::Command {
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
 }
 
-#[derive(serde::Serialize)]
-enum ClientMessage {
-    #[serde(rename = "subscribe")]
-    Subscribe { query_strings: Vec<String> },
-}
-
-fn parse_msg_json(msg: &WsMessage) -> Option<ServerMessage> {
+fn parse_msg_json(msg: &WsMessage) -> Option<ws::ServerMessage> {
     let WsMessage::Text(msg) = msg else { return None };
-    serde_json::from_str(msg)
+    serde_json::from_str::<DeserializeWrapper<ws::ServerMessage>>(msg)
         .inspect_err(|e| eprintln!("couldn't parse message from server: {e}"))
+        .map(|wrapper| wrapper.0)
         .ok()
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
-struct TableUpdateJson<'a> {
-    table_name: Box<str>,
-    #[serde(borrow)]
-    table_row_operations: Vec<TableRowOperationJson<'a>>,
+fn reformat_update(msg: ws::DatabaseUpdate, schema: &ModuleDef) -> anyhow::Result<HashMap<String, SubscriptionTable>> {
+    msg.tables
+        .into_iter()
+        .map(|upd| {
+            let table_schema = schema
+                .tables
+                .iter()
+                .find(|tbl| tbl.schema.table_name.as_ref() == upd.table_name)
+                .context("table not found in schema")?;
+            let table_ty = schema.typespace.resolve(table_schema.data);
+
+            let reformat_row = |row: EncodedValue| {
+                let EncodedValue::Text(row) = row else {
+                    anyhow::bail!("Expected row in text format but found {row:?}");
+                };
+                let row = serde_json::from_str::<Value>(&row)?;
+                let row = serde::de::DeserializeSeed::deserialize(SeedWrapper(table_ty), row)?;
+                let row = table_ty.with_value(&row);
+                let row = serde_json::to_value(SerializeWrapper::from_ref(&row))?;
+                Ok(row)
+            };
+
+            let deletes = upd
+                .deletes
+                .into_iter()
+                .map(reformat_row)
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            let inserts = upd
+                .inserts
+                .into_iter()
+                .map(reformat_row)
+                .collect::<anyhow::Result<Vec<_>>>()?;
+
+            Ok((upd.table_name, SubscriptionTable { deletes, inserts }))
+        })
+        .collect()
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
-struct TableRowOperationJson<'a> {
-    op: Op,
-    #[serde(borrow)]
-    row: &'a RawValue, // ProductValue
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum Op {
-    Delete,
-    Insert,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-struct SubscriptionUpdateJson<'a> {
-    #[serde(borrow)]
-    table_updates: Vec<TableUpdateJson<'a>>,
-}
-
-impl SubscriptionUpdateJson<'_> {
-    fn reformat(self, schema: &ModuleDef) -> anyhow::Result<HashMap<String, SubscriptionTable>> {
-        self.table_updates
-            .into_iter()
-            .map(|upd| {
-                let table_schema = schema
-                    .tables
-                    .iter()
-                    .find(|tbl| tbl.schema.table_name == upd.table_name)
-                    .context("table not found in schema")?;
-                let mut deletes = Vec::new();
-                let mut inserts = Vec::new();
-                let table_ty = schema.typespace.resolve(table_schema.data);
-                for op in upd.table_row_operations {
-                    let row = serde::de::DeserializeSeed::deserialize(sats::de::serde::SeedWrapper(table_ty), op.row)?;
-                    let row = table_ty.with_value(&row);
-                    let row = serde_json::to_value(sats::ser::serde::SerializeWrapper::from_ref(&row))?;
-                    match op.op {
-                        Op::Delete => deletes.push(row),
-                        Op::Insert => inserts.push(row),
-                    }
-                }
-                Ok((upd.table_name.into(), SubscriptionTable { deletes, inserts }))
-            })
-            .collect()
-    }
-}
-
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 struct SubscriptionTable {
     deletes: Vec<serde_json::Value>,
     inserts: Vec<serde_json::Value>,
-}
-
-#[derive(serde::Deserialize)]
-struct Event {
-    message: String,
-}
-
-#[derive(serde::Deserialize)]
-enum ServerMessage<'a> {
-    SubscriptionUpdate(#[serde(borrow)] SubscriptionUpdateJson<'a>),
-    TransactionUpdate {
-        subscription_update: SubscriptionUpdateJson<'a>,
-        event: Event,
-    },
-    #[serde(other, deserialize_with = "serde_with::rust::deserialize_ignore_any")]
-    Unknown,
 }
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
@@ -181,7 +145,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let module_def = api.module_def().await?;
 
     // Change the URI scheme from `http(s)` to `ws(s)`.
-    let mut uri = http::Uri::try_from(api.con.db_uri("subscribe")).unwrap().into_parts();
+    let mut uri = http::Uri::try_from(api.con.db_uri("subscribe"))?.into_parts();
     uri.scheme = uri.scheme.map(|s| {
         if s == Scheme::HTTP {
             "ws".parse().unwrap()
@@ -193,12 +157,11 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     });
 
     // Create the websocket request.
-    let mut req = http::Uri::from_parts(uri).unwrap().into_client_request()?;
+    let mut req = http::Uri::from_parts(uri)?.into_client_request()?;
     req.headers_mut().insert(header::SEC_WEBSOCKET_PROTOCOL, TEXT_PROTOCOL);
     //  Add the authorization header, if any.
     if let Some(auth_header) = &api.con.auth_header {
-        req.headers_mut()
-            .insert(header::AUTHORIZATION, auth_header.try_into().unwrap());
+        req.headers_mut().insert(header::AUTHORIZATION, auth_header.try_into()?);
     }
     let (mut ws, _) = tokio_tungstenite::connect_async(req).await?;
 
@@ -230,7 +193,13 @@ async fn subscribe<S>(ws: &mut S, query_strings: Vec<String>) -> Result<(), S::E
 where
     S: Sink<WsMessage> + Unpin,
 {
-    let msg = serde_json::to_string(&ClientMessage::Subscribe { query_strings }).unwrap();
+    let msg = serde_json::to_string(&SerializeWrapper::new(ws::ClientMessage::<()>::Subscribe(
+        ws::Subscribe {
+            query_strings,
+            request_id: 0,
+        },
+    )))
+    .unwrap();
     ws.send(msg.into()).await
 }
 
@@ -244,21 +213,22 @@ where
     while let Some(msg) = ws.try_next().await? {
         let Some(msg) = parse_msg_json(&msg) else { continue };
         match msg {
-            ServerMessage::SubscriptionUpdate(sub) => {
+            ws::ServerMessage::InitialSubscription(sub) => {
                 if let Some(module_def) = module_def {
-                    let output = serde_json::to_string(&sub.reformat(module_def)?)? + "\n";
+                    let formatted = reformat_update(sub.database_update, module_def)?;
+                    let output = serde_json::to_string(&formatted)? + "\n";
                     tokio::io::stdout().write_all(output.as_bytes()).await?
                 }
                 break;
             }
-            ServerMessage::TransactionUpdate { event, .. } => {
-                let mut message = event.message;
-                if message.is_empty() {
-                    message.push_str("protocol error: received transaction update before initial subscription update");
-                }
+            ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate { status, .. }) => {
+                let message = match status {
+                    ws::UpdateStatus::Failed(msg) => msg,
+                    _ => "protocol error: received transaction update before initial subscription update".to_string(),
+                };
                 anyhow::bail!(message)
             }
-            ServerMessage::Unknown => continue,
+            _ => continue,
         }
     }
 
@@ -285,17 +255,18 @@ where
 
         let Some(msg) = parse_msg_json(&msg) else { continue };
         match msg {
-            ServerMessage::SubscriptionUpdate(_) => {
+            ws::ServerMessage::InitialSubscription(_) => {
                 anyhow::bail!("protocol error: received a second initial subscription update")
             }
-            ServerMessage::TransactionUpdate {
-                subscription_update, ..
-            } => {
-                let output = serde_json::to_string(&subscription_update.reformat(module_def)?)? + "\n";
+            ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate {
+                status: ws::UpdateStatus::Committed(update),
+                ..
+            }) => {
+                let output = serde_json::to_string(&reformat_update(update, module_def)?)? + "\n";
                 stdout.write_all(output.as_bytes()).await?;
                 num_received += 1;
             }
-            ServerMessage::Unknown => continue,
+            _ => continue,
         }
     }
 }

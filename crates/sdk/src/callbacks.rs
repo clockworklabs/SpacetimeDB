@@ -16,14 +16,13 @@
 //! which runs the callbacks without a lock held.
 
 use crate::{
-    client_api_messages,
     client_cache::ClientCacheView,
     global_connection::CurrentStateGuard,
     identity::{Credentials, Identity, Token},
     reducer::{AnyReducerEvent, Reducer, Status},
     spacetime_module::SpacetimeModule,
     table::TableType,
-    Address,
+    ws_messages, Address,
 };
 use anyhow::Context;
 use anymap::{any::Any, Map};
@@ -638,7 +637,7 @@ impl DbCallbacks {
 ///
 /// Users should not interact with this type directly.
 pub type HandleEventFn =
-    fn(client_api_messages::Event, &mut ReducerCallbacks, ClientCacheView) -> Option<Arc<AnyReducerEvent>>;
+    fn(ws_messages::TransactionUpdate, &mut ReducerCallbacks, ClientCacheView) -> Option<Arc<AnyReducerEvent>>;
 
 /// A collection of reducer callbacks.
 ///
@@ -656,26 +655,6 @@ pub struct ReducerCallbacks {
     /// A handle on the Tokio runtime, used to spawn `CallbackMap` workers
     /// for specific reducer types in `ReducerCallbacks::find_callbacks`.
     runtime: runtime::Handle,
-}
-
-// In order to be resilient against future extensions to the protocol,
-// Protobuf/Prost does not deserialize `enum` fields directly into a Rust `enum`.
-// Instead, it leaves the message field as an `i32`,
-// which we must then compare against the enum variants.
-// This helper function does that comparison.
-
-fn parse_status(status: i32, message: String) -> Option<Status> {
-    if status == client_api_messages::event::Status::Committed as i32 {
-        debug_assert!(message.is_empty());
-        Some(Status::Committed)
-    } else if status == client_api_messages::event::Status::Failed as i32 {
-        Some(Status::Failed(message))
-    } else if status == client_api_messages::event::Status::OutOfEnergy as i32 {
-        debug_assert!(message.is_empty());
-        Some(Status::OutOfEnergy)
-    } else {
-        None
-    }
 }
 
 impl ReducerCallbacks {
@@ -706,34 +685,20 @@ impl ReducerCallbacks {
     /// `handle_event_of_type`. Users should not call this method directly.
     pub fn handle_event_of_type<R: Reducer, ReducerEvent: Any + Send + Sync>(
         &mut self,
-        event: client_api_messages::Event,
+        event: ws_messages::TransactionUpdate,
         state: ClientCacheView,
         wrap: fn(R) -> ReducerEvent,
     ) -> Option<Arc<AnyReducerEvent>> {
-        let client_api_messages::Event {
+        let ws_messages::TransactionUpdate {
             caller_identity,
             caller_address,
-            function_call: Some(function_call),
-            status,
-            message,
+            ref reducer_call,
+            ref status,
             ..
-        } = event
-        else {
-            log::warn!("Received Event with function_call of None");
-            return None;
-        };
-        let identity = Identity::from_bytes(caller_identity);
-        let address = Address::from_slice(caller_address);
-        let address = if address == Address::zero() {
-            None
-        } else {
-            Some(address)
-        };
-        let Some(status) = parse_status(status, message) else {
-            log::warn!("Received Event with unknown status {:?}", status);
-            return None;
-        };
-        match bsatn::from_slice::<R>(&function_call.arg_bytes) {
+        } = event;
+        let status = Status::from_update_status(status);
+        let address = (caller_address != Address::zero()).then_some(caller_address);
+        match bsatn::from_slice::<R>(reducer_call.args.as_binary().unwrap()) {
             Err(e) => {
                 log::error!("Error while deserializing reducer args from FunctionCall: {:?}", e);
                 None
@@ -741,7 +706,7 @@ impl ReducerCallbacks {
             Ok(instance) => {
                 // TODO: should reducer callbacks' `OwnedArgs` impl take an `Arc<R>` rather than an `R`?
                 self.find_callbacks::<R>()
-                    .invoke((identity, address, status, instance.clone()), state);
+                    .invoke((caller_identity, address, status, instance.clone()), state);
                 Some(Arc::new(wrap(instance)))
             }
         }
@@ -786,7 +751,7 @@ impl ReducerCallbacks {
     /// which should be impossible.
     pub(crate) fn handle_event(
         &mut self,
-        event: client_api_messages::Event,
+        event: ws_messages::TransactionUpdate,
         state: ClientCacheView,
     ) -> Option<Arc<AnyReducerEvent>> {
         self.module.clone().unwrap().handle_event(event, self, state)
@@ -909,7 +874,7 @@ impl CredentialStore {
         self.callbacks.remove(id);
     }
 
-    /// Handle a `client_api_messages::IdentityToken` message received from the database.
+    /// Handle a `ws_messages::IdentityToken` message received from the database.
     ///
     /// If we connected anonymously, store our new credentials.
     ///
@@ -917,19 +882,18 @@ impl CredentialStore {
     /// and log an error if they don't match.
     ///
     /// Either way, invoke any on-connect callbacks with the received credentials.
-    pub(crate) fn handle_identity_token(&mut self, msg: client_api_messages::IdentityToken, state: ClientCacheView) {
-        let client_api_messages::IdentityToken {
+    pub(crate) fn handle_identity_token(&mut self, msg: ws_messages::IdentityToken, state: ClientCacheView) {
+        let ws_messages::IdentityToken {
             identity,
             token,
             address,
         } = msg;
-        if identity.is_empty() || token.is_empty() || address.is_empty() {
+        if token.is_empty() {
             // TODO: panic?
-            log::warn!("Received IdentityToken message with emtpy identity, token and/or address");
+            log::warn!("Received IdentityToken message with empty token ");
             return;
         }
 
-        let identity = Identity::from_bytes(identity);
         log::trace!("handle_identity_token: received identity {:?}", identity);
 
         let creds = Credentials {
@@ -937,7 +901,6 @@ impl CredentialStore {
             token: Token { string: token },
         };
 
-        let address = Address::from_slice(&address);
         log::trace!("handle_identity_token: received address {:?}", address);
 
         if Some(address) != self.address {
@@ -973,7 +936,7 @@ impl CredentialStore {
 
     /// Return the current connection's `Identity`, if one is stored.
     pub(crate) fn identity(&self) -> Option<Identity> {
-        self.credentials.as_ref().map(|creds| creds.identity.clone())
+        self.credentials.as_ref().map(|creds| creds.identity)
     }
 
     /// Return the current connection's private `Token`, if one is stored.

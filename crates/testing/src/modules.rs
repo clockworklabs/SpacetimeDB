@@ -5,18 +5,18 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use spacetimedb::messages::control_db::HostType;
+use spacetimedb_lib::ser::serde::SerializeWrapper;
 use tokio::runtime::{Builder, Runtime};
 
 use spacetimedb::address::Address;
 
-use prost::Message;
 use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol};
 use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, Storage};
-use spacetimedb::protobuf::client_api;
+use spacetimedb::messages::websocket::{self as ws, EncodedValue};
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
-use spacetimedb_lib::sats;
+use spacetimedb_lib::{bsatn, sats};
 
 pub use spacetimedb::database_logger::LogLevel;
 
@@ -50,20 +50,23 @@ pub struct ModuleHandle {
 
 impl ModuleHandle {
     pub async fn call_reducer_json(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
-        let args = serde_json::to_string(&args)?;
-        let args = format!("{{\"call\": {{\"fn\": \"{reducer}\", \"args\": {args} }} }}");
-        self.send(args).await
+        let args = serde_json::to_string(&args).unwrap();
+        let message = ws::ClientMessage::CallReducer(ws::CallReducer {
+            reducer: reducer.to_string(),
+            args: EncodedValue::Text(args.into()),
+            request_id: 0,
+        });
+        self.send(serde_json::to_string(&SerializeWrapper::new(message)).unwrap())
+            .await
     }
 
     pub async fn call_reducer_binary(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
-        let message = client_api::Message {
-            r#type: Some(client_api::message::Type::FunctionCall(client_api::FunctionCall {
-                reducer: reducer.to_string(),
-                arg_bytes: sats::bsatn::to_vec(&args)?,
-                request_id: 0,
-            })),
-        };
-        self.send(message.encode_to_vec()).await
+        let message = ws::ClientMessage::CallReducer(ws::CallReducer {
+            reducer: reducer.to_string(),
+            args: EncodedValue::Binary(bsatn::to_vec(&args).unwrap().into()),
+            request_id: 0,
+        });
+        self.send(bsatn::to_vec(&message).unwrap()).await
     }
 
     pub async fn send(&self, message: impl Into<DataMessage>) -> anyhow::Result<()> {

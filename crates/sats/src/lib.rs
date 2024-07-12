@@ -30,6 +30,11 @@ pub mod typespace;
 #[cfg(any(test, feature = "proptest"))]
 pub mod proptest;
 
+/// Allows the macros in [`spacetimedb_bindings_macro`] to accept `crate = spacetimedb_sats`,
+/// which will then emit `$krate::sats`.
+#[doc(hidden)]
+pub use crate as sats;
+
 pub use algebraic_type::AlgebraicType;
 pub use algebraic_type_ref::AlgebraicTypeRef;
 pub use algebraic_value::{AlgebraicValue, F32, F64};
@@ -223,4 +228,11 @@ where
     fn len(&self) -> usize {
         self.iter.len()
     }
+}
+
+/// Required for derive(SpacetimeType) to work outside of a module
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __make_register_reftype {
+    ($ty:ty, $name:literal) => {};
 }
