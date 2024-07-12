@@ -80,6 +80,37 @@ jobs:
       - name: C# bindings tests
         run: dotnet test crates/bindings-csharp
 
+  sdk_test:
+    name: SDK Tests
+    runs-on: spacetimedb-runner
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+
+      - uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: "8.x"
+
+      - name: Create /stdb dir
+        run: |
+          sudo mkdir /stdb
+          sudo chmod 777 /stdb
       - name: Checkout C# SDK
         uses: actions/checkout@v4
         with:
@@ -90,10 +121,6 @@ jobs:
         run: |
           ( cd crates/bindings-csharp/BSATN.Runtime && dotnet pack )
           cd spacetimedb-csharp-sdk
-          # only for testing - remove this before merging!
-          sed -i'' 's/Version="0.10.\*/Version="0.11.\*/' tests/tests.csproj
-          # only for testing - remove this before merging!
-          sed -i'' 's/Version="0.10.\*/Version="0.11.\*/' SpacetimeDB.ClientSDK.csproj
           cat >nuget.config <<EOF
             <?xml version="1.0" encoding="utf-8"?>
             <configuration>
