@@ -98,16 +98,17 @@ PREINIT(10, startup) {
   _start();
 
   ffi_class = mono_wasm_assembly_find_class(
-      mono_wasm_assembly_load("SpacetimeDB.Runtime.dll"), "SpacetimeDB.Module",
-      "FFI");
-  assert(ffi_class && "FFI class not found");
+      mono_wasm_assembly_load("SpacetimeDB.Runtime.dll"),
+      "SpacetimeDB.Internal", "Module");
+  assert(ffi_class &&
+         "FFI export class (SpacetimeDB.Internal.Module) not found");
 }
 
 #define EXPORT(ret, name, params, args...)                                    \
   static MonoMethod* ffi_method_##name;                                       \
   PREINIT(20, find_##name) {                                                  \
     ffi_method_##name = mono_wasm_assembly_find_method(ffi_class, #name, -1); \
-    assert(ffi_method_##name && "FFI method not found");                      \
+    assert(ffi_method_##name && "FFI export method not found");               \
   }                                                                           \
   ret CEXPORT(name) params {                                                  \
     MonoObject* res;                                                          \
