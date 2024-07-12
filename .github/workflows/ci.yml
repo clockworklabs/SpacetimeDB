@@ -137,7 +137,7 @@ jobs:
             </configuration>
           EOF
           # clear package caches, so we get fresh ones even if version numbers haven't changed
-          dotnet nuget local all --clear
+          dotnet nuget locals all --clear
           dotnet test
 
   lints:
