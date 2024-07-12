@@ -119,9 +119,9 @@ jobs:
 
       - name: C# SDK tests
         run: |
+          ( cd crates/bindings-csharp/BSATN.Codegen && dotnet pack )
           ( cd crates/bindings-csharp/BSATN.Runtime && dotnet pack )
           cd spacetimedb-csharp-sdk
-          ls -lA ../crates/bindings-csharp/BSATN.Runtime/bin/Release
           sed -i'' 's/Version="0.10.\*"/Version="0.11.*"/' tests/tests.csproj SpacetimeDB.ClientSDK.csproj
 
           cat >nuget.config <<EOF
@@ -130,6 +130,7 @@ jobs:
             <packageSources>
               <!-- Local NuGet repositories -->
               <add key="Local SpacetimeDB.BSATN.Runtime" value="../crates/bindings-csharp/BSATN.Runtime/bin/Release/" />
+              <add key="Local SpacetimeDB.BSATN.Codegen" value="../crates/bindings-csharp/BSATN.Codegen/bin/Release/" />
               <!-- Official NuGet.org server -->
               <add key="NuGet.org" value="https://api.nuget.org/v3/index.json" />
             </packageSources>
