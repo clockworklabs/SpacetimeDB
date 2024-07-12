@@ -33,7 +33,7 @@ class CreateProject(unittest.TestCase):
                 nuget_lines.append("<!-- Local NuGet repositories -->")
                 for project in packed_projects:
                     path = bindings / project / "bin" / "Release"
-                    nuget_lines.append("<add key=\"Local %s\" value=\"%s\" />\n" % (project, str(path))
+                    nuget_lines.append("<add key=\"Local %s\" value=\"%s\" />\n" % (project, str(path)))
                 nuget_lines.append("<!-- Official NuGet.org server -->")
                 nuget_lines.append("<add key=\"NuGet.org\" value=\"https://api.nuget.org/v3/index.json\" />")
                 nuget_lines.append("</packageSources>")
