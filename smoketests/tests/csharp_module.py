@@ -27,17 +27,17 @@ class CreateProject(unittest.TestCase):
                 packed_projects = ["BSATN.Runtime", "Runtime"]
 
                 contents = ""
-                contents.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>")
-                contents.append("<configuration>")
-                contents.append("<packageSources>")
-                contents.append("<!-- Local NuGet repositories -->")
+                contents += "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+                contents += "<configuration>\n"
+                contents += "<packageSources>\n"
+                contents += "<!-- Local NuGet repositories -->\n"
                 for project in packed_projects:
                     path = bindings / project / "bin" / "Release"
-                    contents.append("<add key=\"LocalNuget\" value=\"%s\" />" % str(path))
-                contents.append("<!-- Official NuGet.org server -->")
-                contents.append("<add key=\"NuGet.org\" value=\"https://api.nuget.org/v3/index.json\" />")
-                contents.append("</packageSources>")
-                contents.append("</configuration>")
+                    contents += "<add key=\"LocalNuget\" value=\"%s\" />\n" % str(path)
+                contents += "<!-- Official NuGet.org server -->\n"
+                contents += "<add key=\"NuGet.org\" value=\"https://api.nuget.org/v3/index.json\" />\n"
+                contents += "</packageSources>\n"
+                contents += "</configuration>\n"
 
                 nuget_config = Path(tmpdir) / "nuget.config"
                 with open(nuget_config, "w") as f:
