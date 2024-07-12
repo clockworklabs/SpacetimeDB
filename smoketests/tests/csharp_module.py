@@ -39,7 +39,7 @@ class CreateProject(unittest.TestCase):
                 nuget_lines.append("</packageSources>")
                 nuget_lines.append("</configuration>")
 
-                nuget_contents = nuget_lines.join("\n")
+                nuget_contents = "\n".join(nuget_lines)
 
                 print("Writing `nuget.config` contents:")
                 print(nuget_contents)
