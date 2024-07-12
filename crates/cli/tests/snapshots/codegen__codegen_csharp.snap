@@ -10,6 +10,7 @@ expression: outfiles
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
 {
@@ -54,6 +55,7 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
 {
@@ -98,6 +100,7 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
 {
@@ -142,6 +145,7 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
 {
@@ -186,6 +190,7 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
 {
@@ -211,6 +216,7 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
 {
@@ -236,6 +242,7 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
@@ -307,6 +314,7 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
@@ -344,6 +352,7 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
@@ -374,6 +383,7 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
 {
@@ -415,6 +425,7 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
 {
@@ -459,6 +470,7 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
@@ -503,6 +515,7 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
@@ -527,6 +540,7 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
@@ -552,6 +566,7 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
@@ -611,6 +626,7 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
 {
@@ -661,6 +677,7 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
 {
@@ -692,7 +709,7 @@ namespace SpacetimeDB
 		public ReducerType Reducer => Args?.ReducerType ?? ReducerType.None;
 
 		public ReducerEvent(IReducerArgs? args) : base() => Args = args;
-		public ReducerEvent(ClientApi.Event dbEvent, IReducerArgs? args) : base(dbEvent) => Args = args;
+		public ReducerEvent(TransactionUpdate update, IReducerArgs? args) : base(update) => Args = args;
 
 		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
 		public AddPlayerArgsStruct AddPlayerArgs => (AddPlayerArgsStruct)Args!;
@@ -726,21 +743,21 @@ namespace SpacetimeDB
 
 		public static readonly SpacetimeDBClient instance = new();
 
-		protected override ReducerEvent ReducerEventFromDbEvent(ClientApi.Event dbEvent)
+		protected override ReducerEvent ReducerEventFromDbEvent(TransactionUpdate update)
 		{
-			var argBytes = dbEvent.FunctionCall.ArgBytes;
-			IReducerArgs? args = dbEvent.FunctionCall.Reducer switch {
-				"add_player" => BSATNHelpers.FromProtoBytes<AddPlayerArgsStruct>(argBytes),
-				"add_private" => BSATNHelpers.FromProtoBytes<AddPrivateArgsStruct>(argBytes),
-				"delete_player" => BSATNHelpers.FromProtoBytes<DeletePlayerArgsStruct>(argBytes),
-				"delete_players_by_name" => BSATNHelpers.FromProtoBytes<DeletePlayersByNameArgsStruct>(argBytes),
-				"query_private" => BSATNHelpers.FromProtoBytes<QueryPrivateArgsStruct>(argBytes),
-				"repeating_test" => BSATNHelpers.FromProtoBytes<RepeatingTestArgsStruct>(argBytes),
-				"test" => BSATNHelpers.FromProtoBytes<TestArgsStruct>(argBytes),
+			var encodedArgs = update.ReducerCall.Args;
+			IReducerArgs? args = update.ReducerCall.ReducerName switch {
+				"add_player" => BSATNHelpers.Decode<AddPlayerArgsStruct>(encodedArgs),
+				"add_private" => BSATNHelpers.Decode<AddPrivateArgsStruct>(encodedArgs),
+				"delete_player" => BSATNHelpers.Decode<DeletePlayerArgsStruct>(encodedArgs),
+				"delete_players_by_name" => BSATNHelpers.Decode<DeletePlayersByNameArgsStruct>(encodedArgs),
+				"query_private" => BSATNHelpers.Decode<QueryPrivateArgsStruct>(encodedArgs),
+				"repeating_test" => BSATNHelpers.Decode<RepeatingTestArgsStruct>(encodedArgs),
+				"test" => BSATNHelpers.Decode<TestArgsStruct>(encodedArgs),
 				"<none>" => null,
 				var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
 			};
-			return new ReducerEvent(dbEvent, args);
+			return new ReducerEvent(update, args);
 		}
 	}
 }
@@ -753,6 +770,7 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
+using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
 {

@@ -30,7 +30,8 @@ fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
         BuiltinType::U32 => "uint",
         BuiltinType::I64 => "long",
         BuiltinType::U64 => "ulong",
-        BuiltinType::I128 | BuiltinType::U128 => "System.Numerics.BigInteger",
+        BuiltinType::I128 => "I128",
+        BuiltinType::U128 => "U128",
         BuiltinType::String => "string",
         BuiltinType::F32 => "float",
         BuiltinType::F64 => "double",
@@ -307,7 +308,6 @@ fn autogen_csharp_product_table_common(
     let mut output = CsharpAutogen::new(
         namespace,
         &[
-            "SpacetimeDB.ClientApi",
             "System.Collections.Generic",
             "System.Linq",
             "System.Runtime.Serialization",
