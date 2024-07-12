@@ -26,22 +26,22 @@ class CreateProject(unittest.TestCase):
 
                 packed_projects = ["BSATN.Runtime", "Runtime"]
 
-                contents = ""
-                contents += "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
-                contents += "<configuration>\n"
-                contents += "<packageSources>\n"
-                contents += "<!-- Local NuGet repositories -->\n"
+                nuget_lines = []
+                nuget_lines.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>")
+                nuget_lines.append("<configuration>")
+                nuget_lines.append("<packageSources>")
+                nuget_lines.append("<!-- Local NuGet repositories -->")
                 for project in packed_projects:
                     path = bindings / project / "bin" / "Release"
-                    contents += "<add key=\"Local %s\" value=\"%s\" />\n" % (project, str(path))
-                contents += "<!-- Official NuGet.org server -->\n"
-                contents += "<add key=\"NuGet.org\" value=\"https://api.nuget.org/v3/index.json\" />\n"
-                contents += "</packageSources>\n"
-                contents += "</configuration>\n"
+                    nuget_lines.append("<add key=\"Local %s\" value=\"%s\" />\n" % (project, str(path))
+                nuget_lines.append("<!-- Official NuGet.org server -->")
+                nuget_lines.append("<add key=\"NuGet.org\" value=\"https://api.nuget.org/v3/index.json\" />")
+                nuget_lines.append("</packageSources>")
+                nuget_lines.append("</configuration>")
 
-                nuget_config = Path(tmpdir) / "nuget.config"
-                with open(nuget_config, "w") as f:
-                    f.write(contents)
+                config_path = Path(tmpdir) / "nuget.config"
+                with open(config_path, "w") as f:
+                    f.write(nuget_lines.join("\n"))
 
                 run_cmd("dotnet", "publish", cwd=tmpdir, capture_stderr=True)
 
