@@ -121,6 +121,7 @@ jobs:
         run: |
           ( cd crates/bindings-csharp/BSATN.Runtime && dotnet pack )
           cd spacetimedb-csharp-sdk
+          ls -lA ..
           sed -i'' 's/Version="0.10.\*"/Version="0.11.*"/' tests/tests.csproj SpacetimeDB.ClientSDK.csproj
 
           cat >nuget.config <<EOF
