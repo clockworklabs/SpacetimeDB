@@ -5,7 +5,7 @@ use crate::error::{DBError, PlanError};
 use core::ops::Deref;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_primitives::ColId;
-use spacetimedb_sats::db::def::{TableDef, TableSchema};
+use spacetimedb_sats::db::def::TableSchema;
 use spacetimedb_sats::relation::{self, ColExpr, DbTable, FieldName, Header};
 use spacetimedb_vm::expr::{CrudExpr, Expr, FieldExpr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
@@ -199,11 +199,6 @@ fn compile_update(
     Ok(CrudExpr::Update { delete, assignments })
 }
 
-/// Compiles a `CREATE TABLE ...` clause
-fn compile_create_table(table: Box<TableDef>) -> CrudExpr {
-    CrudExpr::CreateTable { table }
-}
-
 /// Compiles a `SQL` clause
 fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, PlanError> {
     statement.type_check()?;
@@ -221,8 +216,6 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
             selection,
         } => compile_update(table, assignments, selection)?,
         SqlAst::Delete { table, selection } => compile_delete(table, selection)?,
-        SqlAst::CreateTable { table } => compile_create_table(table),
-        SqlAst::Drop { name, kind } => CrudExpr::Drop { name, kind },
         SqlAst::SetVar { name, literal } => CrudExpr::SetVar { name, literal },
         SqlAst::ReadVar { name } => CrudExpr::ReadVar { name },
     };
