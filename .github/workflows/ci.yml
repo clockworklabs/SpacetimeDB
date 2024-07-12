@@ -120,17 +120,13 @@ jobs:
       - name: C# SDK tests
         run: |
           ( cd crates/bindings-csharp/BSATN.Runtime && dotnet pack )
-          ( cd crates/bindings-csharp/BSATN.Codegen && dotnet pack )
           cd spacetimedb-csharp-sdk
-          # only for testing - remove this before merging!
-          sed -i'' 's/Version="0.10.\*"/Version="0.12.*"/' SpacetimeDB.ClientSDK.csproj tests/tests.csproj
           cat >nuget.config <<EOF
             <?xml version="1.0" encoding="utf-8"?>
             <configuration>
               <packageSources>
                 <!-- Local NuGet repositories -->
                 <add key="Local SpacetimeDB.BSATN.Runtime" value="../crates/bindings-csharp/BSATN.Runtime/bin/Release" />
-                <add key="Local SpacetimeDB.BSATN.Codegen" value="../crates/bindings-csharp/BSATN.Codegen/bin/Release" />
                 <!-- Official NuGet.org server -->
                 <add key="NuGet.org" value="https://api.nuget.org/v3/index.json" />
               </packageSources>
