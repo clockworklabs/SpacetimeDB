@@ -154,18 +154,18 @@ namespace SpacetimeDB
 
         void PreProcessMessages()
         {
-            try
+            while (!isClosing)
             {
-                while (!isClosing)
+                try
                 {
                     var message = _messageQueue.Take(_preProcessCancellationToken);
                     var preprocessedMessage = PreProcessMessage(message);
                     _preProcessedNetworkMessages.Add(preprocessedMessage, _preProcessCancellationToken);
                 }
-            }
-            catch (OperationCanceledException)
-            {
-                return; // Normal shutdown
+                catch (OperationCanceledException)
+                {
+                    return; // Normal shutdown
+                }
             }
 
             PreProcessedMessage PreProcessMessage(UnprocessedMessage unprocessed)
