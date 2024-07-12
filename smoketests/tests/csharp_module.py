@@ -39,9 +39,14 @@ class CreateProject(unittest.TestCase):
                 nuget_lines.append("</packageSources>")
                 nuget_lines.append("</configuration>")
 
+                nuget_contents = nuget_lines.join("\n")
+
+                print("Writing `nuget.config` contents:")
+                print(nuget_contents)
+
                 config_path = Path(tmpdir) / "nuget.config"
                 with open(config_path, "w") as f:
-                    f.write(nuget_lines.join("\n"))
+                    f.write(nuget_contents)
 
                 run_cmd("dotnet", "publish", cwd=tmpdir, capture_stderr=True)
 
