@@ -1,7 +1,7 @@
-use spacetimedb::{spacetimedb, ReducerContext, Identity, Timestamp};
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
+use spacetimedb::{spacetimedb, Identity, ReducerContext, Timestamp};
 
-#[spacetimedb(table)]
+#[spacetimedb(table(public))]
 pub struct User {
     #[primarykey]
     identity: Identity,
@@ -9,7 +9,7 @@ pub struct User {
     online: bool,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb(table(public))]
 pub struct Message {
     sender: Identity,
     sent: Timestamp,
@@ -26,7 +26,13 @@ pub fn identity_connected(ctx: ReducerContext) {
     if let Some(user) = User::filter_by_identity(&ctx.sender) {
         // If this is a returning user, i.e. we already have a `User` with this `Identity`,
         // set `online: true`, but leave `name` and `identity` unchanged.
-        User::update_by_identity(&ctx.sender, User { online: true, ..user });
+        User::update_by_identity(
+            &ctx.sender,
+            User {
+                online: true,
+                ..user
+            },
+        );
     } else {
         // If this is a new user, create a `User` row for the `Identity`,
         // which is online, but hasn't set a name.
@@ -34,18 +40,28 @@ pub fn identity_connected(ctx: ReducerContext) {
             name: None,
             identity: ctx.sender,
             online: true,
-        }).unwrap();
+        })
+        .unwrap();
     }
 }
 
 #[spacetimedb(disconnect)]
 pub fn identity_disconnected(ctx: ReducerContext) {
     if let Some(user) = User::filter_by_identity(&ctx.sender) {
-        User::update_by_identity(&ctx.sender, User { online: false, ..user });
+        User::update_by_identity(
+            &ctx.sender,
+            User {
+                online: false,
+                ..user
+            },
+        );
     } else {
         // This branch should be unreachable,
         // as it doesn't make sense for a client to disconnect without connecting first.
-        log::warn!("Disconnect event for unknown user with identity {:?}", ctx.sender);
+        log::warn!(
+            "Disconnect event for unknown user with identity {:?}",
+            ctx.sender
+        );
     }
 }
 
@@ -61,7 +77,13 @@ fn validate_name(name: String) -> Result<String> {
 pub fn set_name(ctx: ReducerContext, name: String) -> Result<()> {
     let name = validate_name(name)?;
     if let Some(user) = User::filter_by_identity(&ctx.sender) {
-        User::update_by_identity(&ctx.sender, User { name: Some(name), ..user });
+        User::update_by_identity(
+            &ctx.sender,
+            User {
+                name: Some(name),
+                ..user
+            },
+        );
         Ok(())
     } else {
         Err(anyhow!("Cannot set name for unknown user"))

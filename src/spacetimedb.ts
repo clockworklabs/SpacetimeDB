@@ -1,8 +1,7 @@
 import { EventEmitter } from "events";
 
-import WebSocket from "isomorphic-ws";
-
 import type { WebsocketTestAdapter } from "./websocket_test_adapter";
+import { WebsocketDecompressAdapter } from "./websocket_decompress_adapter";
 
 import {
   ProductValue,
@@ -10,10 +9,10 @@ import {
   BinaryAdapter,
   ValueAdapter,
   ReducerArgsAdapter,
-  JSONReducerArgsAdapter,
   BinaryReducerArgsAdapter,
+  parseValue,
 } from "./algebraic_value";
-import { Serializer, BinarySerializer, JSONSerializer } from "./serializer";
+import { Serializer, BinarySerializer } from "./serializer";
 import {
   AlgebraicType,
   ProductType,
@@ -26,8 +25,7 @@ import { EventType } from "./types";
 import { Identity } from "./identity";
 import { Address } from "./address";
 import { ReducerEvent } from "./reducer_event";
-import * as Proto from "./client_api";
-import * as JsonApi from "./json_api";
+import * as ws from "./client_api";
 import BinaryReader from "./binary_reader";
 import { TableUpdate, TableOperation } from "./table";
 import { _tableProxy, toPascalCase } from "./utils";
@@ -43,8 +41,6 @@ import {
 } from "./message_types";
 import { SpacetimeDBGlobals } from "./global";
 import { stdbLogger } from "./logger";
-import decompress from "brotli/decompress";
-import { Buffer } from "buffer";
 
 export {
   ProductValue,
@@ -67,10 +63,11 @@ export type { ValueAdapter, ReducerArgsAdapter, Serializer };
 
 const g = (typeof window === "undefined" ? global : window)!;
 
-type CreateWSFnType = (
+export type CreateWSFnType = (
   url: string,
-  protocol: string
-) => WebSocket | WebsocketTestAdapter;
+  protocol: string,
+  params: { host: string; auth_token: string | null | undefined; ssl: boolean }
+) => Promise<WebsocketDecompressAdapter | WebsocketTestAdapter>;
 
 /**
  * The database client connection to a SpacetimeDB server.
@@ -96,7 +93,7 @@ export class SpacetimeDBClient {
    */
   public live: boolean;
 
-  private ws!: WebSocket | WebsocketTestAdapter;
+  private ws!: WebsocketDecompressAdapter | WebsocketTestAdapter;
   private manualTableSubscriptions: string[] = [];
   private queriesQueue: string[];
   private runtime: {
@@ -106,7 +103,6 @@ export class SpacetimeDBClient {
     global: SpacetimeDBGlobals;
   };
   private createWSFn: CreateWSFnType;
-  private protocol: "binary" | "json";
   private ssl: boolean = false;
   private clientAddress: Address = Address.random();
 
@@ -142,7 +138,6 @@ export class SpacetimeDBClient {
    * @param host The host of the SpacetimeDB server.
    * @param name_or_address The name or address of the SpacetimeDB module.
    * @param auth_token The credentials to use to connect to authenticate with SpacetimeDB.
-   * @param protocol Define how encode the messages: `"binary" | "json"`. Binary is more efficient and compact, but JSON provides human-readable debug information.
    *
    * @example
    *
@@ -150,18 +145,11 @@ export class SpacetimeDBClient {
    * const host = "ws://localhost:3000";
    * const name_or_address = "database_name"
    * const auth_token = undefined;
-   * const protocol = "binary"
    *
    * var spacetimeDBClient = new SpacetimeDBClient(host, name_or_address, auth_token, protocol);
    * ```
    */
-  constructor(
-    host: string,
-    name_or_address: string,
-    auth_token?: string,
-    protocol?: "binary" | "json"
-  ) {
-    this.protocol = protocol || "binary";
+  constructor(host: string, name_or_address: string, auth_token?: string) {
     const global = g.__SPACETIMEDB__;
 
     if (global.spacetimeDBClient) {
@@ -202,40 +190,7 @@ export class SpacetimeDBClient {
       global,
     };
 
-    this.createWSFn = this.defaultCreateWebSocketFn;
-  }
-
-  private async defaultCreateWebSocketFn(
-    url: string,
-    protocol: string
-  ): Promise<WebSocket | WebsocketTestAdapter> {
-    const headers: { [key: string]: string } = {};
-    if (this.runtime.auth_token) {
-      headers["Authorization"] = `Basic ${btoa(
-        "token:" + this.runtime.auth_token
-      )}`;
-    }
-
-    if (typeof window === "undefined" || !this.runtime.auth_token) {
-      // NodeJS environment
-      const ws = new WebSocket(url, protocol, {
-        maxReceivedFrameSize: 100000000,
-        maxReceivedMessageSize: 100000000,
-        headers,
-      });
-      return ws;
-    } else {
-      // In the browser we first have to get a short lived token and only then connect to the websocket
-      let httpProtocol = this.ssl ? "https://" : "http://";
-      let tokenUrl = `${httpProtocol}${this.runtime.host}/identity/websocket_token`;
-
-      const response = await fetch(tokenUrl, { method: "POST", headers });
-      if (response.ok) {
-        const { token } = await response.json();
-        url += "&token=" + btoa("token:" + token);
-      }
-      return new WebSocket(url, protocol);
-    }
+    this.createWSFn = WebsocketDecompressAdapter.createWebSocketFn;
   }
 
   /**
@@ -274,10 +229,10 @@ export class SpacetimeDBClient {
    * Handles WebSocket onMessage event.
    * @param wsMessage MessageEvent object.
    */
-  private handleOnMessage(wsMessage: any) {
+  private handleOnMessage(wsMessage: { data: Uint8Array }) {
     this.emitter.emit("receiveWSMessage", wsMessage);
 
-    this.processMessage(wsMessage, (message: Message) => {
+    this.processMessage(wsMessage.data, (message: Message) => {
       if (message instanceof SubscriptionUpdateMessage) {
         for (let tableUpdate of message.tableUpdates) {
           const tableName = tableUpdate.tableName;
@@ -288,11 +243,7 @@ export class SpacetimeDBClient {
             entityClass
           );
 
-          table.applyOperations(
-            this.protocol,
-            tableUpdate.operations,
-            undefined
-          );
+          table.applyOperations(tableUpdate.operations, undefined);
         }
 
         if (this.emitter) {
@@ -300,58 +251,55 @@ export class SpacetimeDBClient {
         }
       } else if (message instanceof TransactionUpdateMessage) {
         const reducerName = message.event.reducerName;
-        const reducer: any | undefined = reducerName
-          ? SpacetimeDBClient.getReducerClass(reducerName)
-          : undefined;
 
-        let reducerEvent: ReducerEvent | undefined;
-        let reducerArgs: any;
-        if (reducer && message.event.status === "committed") {
-          let adapter: ReducerArgsAdapter;
-          if (this.protocol === "binary") {
-            adapter = new BinaryReducerArgsAdapter(
+        if (reducerName == "<none>") {
+          let errorMessage = message.event.message;
+          console.error(`Received an error from the database: ${errorMessage}`);
+        } else {
+          const reducer: any | undefined = reducerName
+            ? SpacetimeDBClient.getReducerClass(reducerName)
+            : undefined;
+
+          let reducerEvent: ReducerEvent | undefined;
+          let reducerArgs: any;
+          if (reducer && message.event.status === "committed") {
+            let adapter: ReducerArgsAdapter = new BinaryReducerArgsAdapter(
               new BinaryAdapter(
                 new BinaryReader(message.event.args as Uint8Array)
               )
             );
-          } else {
-            adapter = new JSONReducerArgsAdapter(message.event.args as any[]);
+
+            reducerArgs = reducer.deserializeArgs(adapter);
           }
 
-          reducerArgs = reducer.deserializeArgs(adapter);
-        }
-
-        reducerEvent = new ReducerEvent(
-          message.event.identity,
-          message.event.address,
-          message.event.originalReducerName,
-          message.event.status,
-          message.event.message,
-          reducerArgs
-        );
-
-        for (let tableUpdate of message.tableUpdates) {
-          const tableName = tableUpdate.tableName;
-          const entityClass = SpacetimeDBClient.getTableClass(tableName);
-          const table = this.db.getOrCreateTable(
-            tableUpdate.tableName,
-            undefined,
-            entityClass
+          reducerEvent = new ReducerEvent(
+            message.event.identity,
+            message.event.address,
+            message.event.originalReducerName,
+            message.event.status,
+            message.event.message,
+            reducerArgs
           );
 
-          table.applyOperations(
-            this.protocol,
-            tableUpdate.operations,
-            reducerEvent
-          );
-        }
+          for (let tableUpdate of message.tableUpdates) {
+            const tableName = tableUpdate.tableName;
+            const entityClass = SpacetimeDBClient.getTableClass(tableName);
+            const table = this.db.getOrCreateTable(
+              tableUpdate.tableName,
+              undefined,
+              entityClass
+            );
 
-        if (reducer) {
-          this.emitter.emit(
-            "reducer:" + reducerName,
-            reducerEvent,
-            ...(reducerArgs || [])
-          );
+            table.applyOperations(tableUpdate.operations, reducerEvent);
+          }
+
+          if (reducer) {
+            this.emitter.emit(
+              "reducer:" + reducerName,
+              reducerEvent,
+              ...(reducerArgs || [])
+            );
+          }
         }
       } else if (message instanceof IdentityTokenMessage) {
         this.identity = message.identity;
@@ -382,13 +330,7 @@ export class SpacetimeDBClient {
       query ? query : `SELECT * FROM ${table}`
     );
 
-    this.ws.send(
-      JSON.stringify({
-        subscribe: {
-          query_strings: [...this.manualTableSubscriptions],
-        },
-      })
-    );
+    this.subscribe([...this.manualTableSubscriptions]);
   }
 
   /**
@@ -397,18 +339,15 @@ export class SpacetimeDBClient {
    * @param table The table to unsubscribe from
    */
   public removeManualTable(table: string) {
+    // pgoldman 2024-06-25: Is this broken? `registerManualTable` treats `manualTableSubscriptions`
+    // as containing SQL strings,
+    // but this code treats it as containing table name strings.
     this.manualTableSubscriptions = this.manualTableSubscriptions.filter(
       (val) => val !== table
     );
 
-    this.ws.send(
-      JSON.stringify({
-        subscribe: {
-          query_strings: this.manualTableSubscriptions.map(
-            (val) => `SELECT * FROM ${val}`
-          ),
-        },
-      })
+    this.subscribe(
+      this.manualTableSubscriptions.map((val) => `SELECT * FROM ${val}`)
     );
   }
 
@@ -491,8 +430,11 @@ export class SpacetimeDBClient {
       .replace("ws://", "")
       .replace("wss://", "");
 
-    const stdbProtocol = this.protocol === "binary" ? "bin" : "text";
-    this.ws = await this.createWSFn(url, `v1.${stdbProtocol}.spacetimedb`);
+    this.ws = await this.createWSFn(url, "v1.bin.spacetimedb", {
+      host: this.runtime.host,
+      auth_token: this.runtime.auth_token,
+      ssl: this.ssl,
+    });
 
     this.ws.onclose = this.handleOnClose.bind(this);
     this.ws.onerror = this.handleOnError.bind(this);
@@ -500,175 +442,89 @@ export class SpacetimeDBClient {
     this.ws.onmessage = this.handleOnMessage.bind(this);
   }
 
-  private processMessage(wsMessage: any, callback: (message: Message) => void) {
-    if (this.protocol === "binary") {
-      // Helpers for parsing message components which appear in multiple messages.
-      const parseTableRowOperation = (
-        rawTableOperation: Proto.TableRowOperation
-      ): TableOperation => {
-        const type =
-          rawTableOperation.op === Proto.TableRowOperation_OperationType.INSERT
-            ? "insert"
-            : "delete";
-        // Our SDKs are architected around having a hashable, equality-comparable key
-        // which uniquely identifies every row.
-        // This used to be a strong content-addressed hash computed by the DB,
-        // but the DB no longer computes those hashes,
-        // so now we just use the serialized row as the identifier.
-        const rowPk = new TextDecoder().decode(rawTableOperation.row);
-        return new TableOperation(type, rowPk, rawTableOperation.row);
-      };
-      const parseTableUpdate = (
-        rawTableUpdate: Proto.TableUpdate
-      ): TableUpdate => {
-        const tableName = rawTableUpdate.tableName;
-        const operations: TableOperation[] = [];
-        for (const rawTableOperation of rawTableUpdate.tableRowOperations) {
-          operations.push(parseTableRowOperation(rawTableOperation));
-        }
-        return new TableUpdate(tableName, operations);
-      };
-      const parseSubscriptionUpdate = (
-        subUpdate: Proto.SubscriptionUpdate
-      ): SubscriptionUpdateMessage => {
-        const tableUpdates: TableUpdate[] = [];
-        for (const rawTableUpdate of subUpdate.tableUpdates) {
-          tableUpdates.push(parseTableUpdate(rawTableUpdate));
-        }
-        return new SubscriptionUpdateMessage(tableUpdates);
-      };
+  private processParsedMessage(
+    message: ws.ServerMessage,
+    callback: (message: Message) => void
+  ) {
+    // Helpers for parsing message components which appear in multiple messages.
+    const parseTableOperation = (
+      rawRow: ws.EncodedValue,
+      type: "insert" | "delete"
+    ): TableOperation => {
+      // Our SDKs are architected around having a hashable, equality-comparable key
+      // which uniquely identifies every row.
+      // This used to be a strong content-addressed hash computed by the DB,
+      // but the DB no longer computes those hashes,
+      // so now we just use the serialized row as the identifier.
+      // That's the second argument to the `TableRowOperation` constructor.
 
-      let data = wsMessage.data;
-      if (typeof data.arrayBuffer === "undefined") {
-        data = new Blob([data]);
+      switch (rawRow.tag) {
+        case "Binary":
+          return new TableOperation(
+            type,
+            new TextDecoder().decode(rawRow.value),
+            rawRow.value
+          );
+        case "Text":
+          return new TableOperation(type, rawRow.value, rawRow.value);
       }
-      data.arrayBuffer().then((data: Uint8Array) => {
-        // From https://github.com/foliojs/brotli.js/issues/31 :
-        // use a `Buffer` rather than a `Uint8Array` because for some reason brotli requires that.
-        let decompressed = decompress(new Buffer(data));
-        const message: Proto.Message = Proto.Message.decode(
-          new Uint8Array(decompressed)
-        );
-        if (message["subscriptionUpdate"]) {
-          const rawSubscriptionUpdate = message.subscriptionUpdate;
-          const subscriptionUpdate = parseSubscriptionUpdate(
-            rawSubscriptionUpdate
-          );
-          callback(subscriptionUpdate);
-        } else if (message["transactionUpdate"]) {
-          const txUpdate = message.transactionUpdate;
-          const rawSubscriptionUpdate = txUpdate.subscriptionUpdate;
-          if (!rawSubscriptionUpdate) {
-            throw new Error(
-              "Received TransactionUpdate without SubscriptionUpdate"
-            );
-          }
-          const subscriptionUpdate = parseSubscriptionUpdate(
-            rawSubscriptionUpdate
-          );
+    };
+    const parseTableUpdate = (rawTableUpdate: ws.TableUpdate): TableUpdate => {
+      const tableName = rawTableUpdate.tableName;
+      const operations: TableOperation[] = [];
+      for (const insert of rawTableUpdate.inserts) {
+        operations.push(parseTableOperation(insert, "insert"));
+      }
+      for (const del of rawTableUpdate.deletes) {
+        operations.push(parseTableOperation(del, "delete"));
+      }
+      return new TableUpdate(tableName, operations);
+    };
+    const parseDatabaseUpdate = (
+      dbUpdate: ws.DatabaseUpdate
+    ): SubscriptionUpdateMessage => {
+      const tableUpdates: TableUpdate[] = [];
+      for (const rawTableUpdate of dbUpdate.tables) {
+        tableUpdates.push(parseTableUpdate(rawTableUpdate));
+      }
+      return new SubscriptionUpdateMessage(tableUpdates);
+    };
 
-          const event = txUpdate.event;
-          if (!event) {
-            throw new Error("Received TransactionUpdate without Event");
-          }
-          const functionCall = event.functionCall;
-          if (!functionCall) {
-            throw new Error(
-              "Received TransactionUpdate with Event but no FunctionCall"
-            );
-          }
-          const identity: Identity = new Identity(event.callerIdentity);
-          const address = Address.nullIfZero(event.callerAddress);
-          const originalReducerName: string = functionCall.reducer;
-          const reducerName: string = toPascalCase(originalReducerName);
-          const args = functionCall.argBytes;
-          const status: string = Proto.event_StatusToJSON(event.status);
-          const messageStr = event.message;
-
-          const transactionUpdateEvent: TransactionUpdateEvent =
-            new TransactionUpdateEvent(
-              identity,
-              address,
-              originalReducerName,
-              reducerName,
-              args,
-              status,
-              messageStr
-            );
-
-          const transactionUpdate = new TransactionUpdateMessage(
-            subscriptionUpdate.tableUpdates,
-            transactionUpdateEvent
-          );
-          callback(transactionUpdate);
-        } else if (message["identityToken"]) {
-          const identityToken = message.identityToken;
-          const identity = new Identity(identityToken.identity);
-          const token = identityToken.token;
-          const address = new Address(identityToken.address);
-          const identityTokenMessage: IdentityTokenMessage =
-            new IdentityTokenMessage(identity, token, address);
-          callback(identityTokenMessage);
-        }
-      });
-    } else {
-      const parseTableRowOperation = (
-        rawTableOperation: JsonApi.TableRowOperation
-      ): TableOperation => {
-        const type = rawTableOperation["op"];
-        // Our SDKs are architected around having a hashable, equality-comparable key
-        // which uniquely identifies every row.
-        // This used to be a strong content-addressed hash computed by the DB,
-        // but the DB no longer computes those hashes,
-        // so now we just use the serialized row as the identifier.
-        //
-        // JSON.stringify may be expensive here, but if the client cared about performance
-        // they'd be using the binary format anyway, so we don't care.
-        const rowPk = JSON.stringify(rawTableOperation.row);
-        return new TableOperation(type, rowPk, rawTableOperation.row);
-      };
-      const parseTableUpdate = (
-        rawTableUpdate: JsonApi.TableUpdate
-      ): TableUpdate => {
-        const tableName = rawTableUpdate.table_name;
-        const operations: TableOperation[] = [];
-        for (const rawTableOperation of rawTableUpdate.table_row_operations) {
-          operations.push(parseTableRowOperation(rawTableOperation));
-        }
-        return new TableUpdate(tableName, operations);
-      };
-      const parseSubscriptionUpdate = (
-        rawSubscriptionUpdate: JsonApi.SubscriptionUpdate
-      ): SubscriptionUpdateMessage => {
-        const tableUpdates: TableUpdate[] = [];
-        for (const rawTableUpdate of rawSubscriptionUpdate.table_updates) {
-          tableUpdates.push(parseTableUpdate(rawTableUpdate));
-        }
-        return new SubscriptionUpdateMessage(tableUpdates);
-      };
-
-      const data = JSON.parse(wsMessage.data) as JsonApi.Message;
-      if (data["SubscriptionUpdate"]) {
-        const subscriptionUpdate = parseSubscriptionUpdate(
-          data.SubscriptionUpdate
-        );
+    switch (message.tag) {
+      case "InitialSubscription": {
+        const dbUpdate = message.value.databaseUpdate;
+        const subscriptionUpdate = parseDatabaseUpdate(dbUpdate);
         callback(subscriptionUpdate);
-      } else if (data["TransactionUpdate"]) {
-        const txUpdate = data.TransactionUpdate;
-        const subscriptionUpdate = parseSubscriptionUpdate(
-          txUpdate.subscription_update
-        );
+        break;
+      }
 
-        const event = txUpdate.event;
-        const functionCall = event.function_call;
-        const identity: Identity = new Identity(event.caller_identity);
-        const address = Address.fromStringOrNull(event.caller_address);
-        const originalReducerName: string = functionCall.reducer;
+      case "TransactionUpdate": {
+        const txUpdate = message.value;
+        const identity = txUpdate.callerIdentity;
+        const address = Address.nullIfZero(txUpdate.callerAddress);
+        const originalReducerName = txUpdate.reducerCall.reducerName;
         const reducerName: string = toPascalCase(originalReducerName);
-        const args = JSON.parse(functionCall.args);
-        const status: string = event.status;
-        const message = event.message;
-
+        const rawArgs = txUpdate.reducerCall.args;
+        if (rawArgs.tag !== "Binary") {
+          throw new Error(
+            `Expected a binary EncodedValue but found ${rawArgs.tag} ${rawArgs.value}`
+          );
+        }
+        const args = rawArgs.value;
+        let subscriptionUpdate;
+        let errMessage = "";
+        switch (txUpdate.status.tag) {
+          case "Committed":
+            subscriptionUpdate = parseDatabaseUpdate(txUpdate.status.value);
+            break;
+          case "Failed":
+            subscriptionUpdate = new SubscriptionUpdateMessage([]);
+            errMessage = txUpdate.status.value;
+            break;
+          case "OutOfEnergy":
+            subscriptionUpdate = new SubscriptionUpdateMessage([]);
+            break;
+        }
         const transactionUpdateEvent: TransactionUpdateEvent =
           new TransactionUpdateEvent(
             identity,
@@ -676,8 +532,8 @@ export class SpacetimeDBClient {
             originalReducerName,
             reducerName,
             args,
-            status,
-            message
+            txUpdate.status.tag.toLowerCase(),
+            errMessage
           );
 
         const transactionUpdate = new TransactionUpdateMessage(
@@ -685,16 +541,34 @@ export class SpacetimeDBClient {
           transactionUpdateEvent
         );
         callback(transactionUpdate);
-      } else if (data["IdentityToken"]) {
-        const identityToken = data.IdentityToken;
-        const identity = new Identity(identityToken.identity);
-        const token = identityToken.token;
-        const address = Address.fromString(identityToken.address);
+        break;
+      }
+
+      case "IdentityToken": {
         const identityTokenMessage: IdentityTokenMessage =
-          new IdentityTokenMessage(identity, token, address);
+          new IdentityTokenMessage(
+            message.value.identity,
+            message.value.token,
+            message.value.address
+          );
         callback(identityTokenMessage);
+        break;
+      }
+
+      case "OneOffQueryResponse": {
+        throw new Error(
+          `TypeScript SDK never sends one-off queries, but got OneOffQueryResponse ${message}`
+        );
       }
     }
+  }
+
+  private processMessage(
+    data: Uint8Array,
+    callback: (message: Message) => void
+  ) {
+    const message: ws.ServerMessage = parseValue(ws.ServerMessage, data);
+    this.processParsedMessage(message, callback);
   }
 
   /**
@@ -769,45 +643,46 @@ export class SpacetimeDBClient {
   public subscribe(queryOrQueries: string | string[]) {
     const queries =
       typeof queryOrQueries === "string" ? [queryOrQueries] : queryOrQueries;
-
     if (this.live) {
-      const message = { subscribe: { query_strings: queries } };
-      this.emitter.emit("sendWSMessage", message);
-      this.ws.send(JSON.stringify(message));
+      const message = ws.ClientMessage.Subscribe(
+        new ws.Subscribe(
+          queries,
+          // The TypeScript SDK doesn't currently track `request_id`s,
+          // so always use 0.
+          0
+        )
+      );
+      this.sendMessage(message);
     } else {
       this.queriesQueue = this.queriesQueue.concat(queries);
     }
+  }
+
+  private sendMessage(message: ws.ClientMessage) {
+    const serializer = new BinarySerializer();
+    serializer.write(ws.ClientMessage.getAlgebraicType(), message);
+    const encoded = serializer.args();
+    this.emitter.emit("sendWSMessage", encoded);
+    this.ws.send(encoded);
   }
 
   /**
    * Call a reducer on your SpacetimeDB module.
    *
    * @param reducerName The name of the reducer to call
-   * @param args The arguments to pass to the reducer
+   * @param argsSerializer The arguments to pass to the reducer
    */
-  public call(reducerName: string, serializer: Serializer) {
-    let message: any;
-    if (this.protocol === "binary") {
-      const pmessage: Proto.Message = {
-        functionCall: {
-          reducer: reducerName,
-          argBytes: serializer.args(),
-        },
-      };
-
-      message = Proto.Message.encode(pmessage).finish();
-    } else {
-      message = JSON.stringify({
-        call: {
-          fn: reducerName,
-          args: serializer.args(),
-        },
-      });
-    }
-
-    this.emitter.emit("sendWSMessage", message);
-
-    this.ws.send(message);
+  public call(reducerName: string, argsSerializer: Serializer) {
+    const message = ws.ClientMessage.CallReducer(
+      new ws.CallReducer(
+        reducerName,
+        ws.EncodedValue.Binary(argsSerializer.args()),
+        // The TypeScript SDK doesn't currently track `request_id`s,
+        // so always use 0.
+        0
+      )
+    );
+    this.sendMessage(message);
   }
 
   on(eventName: EventType | string, callback: (...args: any[]) => void) {
@@ -868,11 +743,7 @@ export class SpacetimeDBClient {
   }
 
   getSerializer(): Serializer {
-    if (this.protocol === "binary") {
-      return new BinarySerializer();
-    } else {
-      return new JSONSerializer();
-    }
+    return new BinarySerializer();
   }
 }
 

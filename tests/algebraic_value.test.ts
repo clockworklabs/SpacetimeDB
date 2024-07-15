@@ -10,7 +10,6 @@ import {
   SumValue,
   BuiltinValue,
   BinaryAdapter,
-  JSONAdapter,
 } from "../src/algebraic_value";
 import BinaryReader from "../src/binary_reader";
 
@@ -145,77 +144,6 @@ describe("BuiltinValue", () => {
 
       const reader = new BinaryReader(input);
       const adapter: BinaryAdapter = new BinaryAdapter(reader);
-      const result = BuiltinValue.deserialize(
-        new BuiltinType(BuiltinType.Type.String, undefined),
-        adapter
-      );
-
-      expect(result.asString()).toEqual("zażółć gęślą jaźń");
-    });
-  });
-
-  describe("deserialize with a JSON adapter", () => {
-    test("should correctly deserialize array with U8 type", () => {
-      const value = "0002FF";
-      const adapter: JSONAdapter = new JSONAdapter(value);
-      const elementType = AlgebraicType.createPrimitiveType(
-        BuiltinType.Type.U8
-      );
-      const type: BuiltinType = new BuiltinType(
-        BuiltinType.Type.Array,
-        elementType
-      );
-
-      const result = BuiltinValue.deserialize(type, adapter);
-
-      expect(result.asBytes()).toEqual(new Uint8Array([0, 2, 255]));
-    });
-
-    test("should correctly deserialize array with U128 type", () => {
-      const u128_max = BigInt(2) ** BigInt(128) - BigInt(1);
-      const value = [BigInt(1), u128_max, BigInt(10)];
-      const adapter: JSONAdapter = new JSONAdapter(value);
-      const elementType = AlgebraicType.createPrimitiveType(
-        BuiltinType.Type.U128
-      );
-      const type: BuiltinType = new BuiltinType(
-        BuiltinType.Type.Array,
-        elementType
-      );
-
-      const result = BuiltinValue.deserialize(type, adapter);
-
-      expect(result.asJsArray("BigInt")).toEqual([
-        BigInt(1),
-        u128_max,
-        BigInt(10),
-      ]);
-    });
-
-    test("should correctly deserialize an U128 type", () => {
-      const value = BigInt("123456789123456789");
-      const adapter: JSONAdapter = new JSONAdapter(value);
-      const result = BuiltinValue.deserialize(
-        new BuiltinType(BuiltinType.Type.U128, undefined),
-        adapter
-      );
-
-      expect(result.asBigInt()).toEqual(value);
-    });
-
-    test("should correctly deserialize a boolean type", () => {
-      const adapter: JSONAdapter = new JSONAdapter(true);
-      const result = BuiltinValue.deserialize(
-        new BuiltinType(BuiltinType.Type.Bool, undefined),
-        adapter
-      );
-
-      expect(result.asBool()).toEqual(true);
-    });
-
-    test("should correctly deserialize a string type", () => {
-      const text = "zażółć gęślą jaźń";
-      const adapter: JSONAdapter = new JSONAdapter(text);
       const result = BuiltinValue.deserialize(
         new BuiltinType(BuiltinType.Type.String, undefined),
         adapter
