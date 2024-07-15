@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <AssemblyName>SpacetimeDB.Codegen</AssemblyName>
-    <Version>0.10.0</Version>
+    <Version>0.10.1</Version>
     <Title>SpacetimeDB Module Codegen</Title>
     <Description>The SpacetimeDB Codegen implements the Roslyn incremental generators for writing SpacetimeDB modules in C#.</Description>
   </PropertyGroup>
