@@ -122,6 +122,9 @@ jobs:
           ( cd crates/bindings-csharp/BSATN.Runtime && dotnet pack )
           cd spacetimedb-csharp-sdk
 
+          # Write out the nuget config file to `nuget.config`.
+          # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file,
+          # and https://tldp.org/LDP/abs/html/here-docs.html for more info on this bash feature.
           cat >nuget.config <<EOF
           <?xml version="1.0" encoding="utf-8"?>
           <configuration>
