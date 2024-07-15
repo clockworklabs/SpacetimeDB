@@ -7,7 +7,7 @@ use spacetimedb_sats::SpacetimeType;
 // incl. `serde(transparent)` and some future `sats(transparent)` marker.
 // Because `sats(transparent)` is not currently designed or implemented (as of 2024-06-20),
 // we define this as a regular struct, which serializes as a `ProductValue`.
-#[derive(SpacetimeType, Copy, Clone, PartialEq, Eq, Debug, serde::Serialize)]
+#[derive(SpacetimeType, Copy, Clone, PartialEq, Eq, Debug)]
 #[sats(crate = spacetimedb_sats)]
 pub struct Timestamp {
     pub microseconds: u64,

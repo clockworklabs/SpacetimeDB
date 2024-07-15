@@ -12,6 +12,7 @@ pub mod identity;
 pub mod operator;
 
 pub mod error;
+pub mod timestamp;
 pub mod version;
 
 pub use address::Address;
@@ -23,6 +24,7 @@ pub use spacetimedb_sats::__make_register_reftype;
 pub use spacetimedb_sats::{self as sats, bsatn, buffer, de, ser};
 pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};
 pub use spacetimedb_sats::{AlgebraicValue, ProductValue};
+pub use timestamp::Timestamp;
 
 pub const MODULE_ABI_MAJOR_VERSION: u16 = 8;
 

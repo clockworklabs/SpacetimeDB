@@ -6,7 +6,7 @@ use super::{ClientConnection, DataMessage};
 use crate::energy::EnergyQuanta;
 use crate::execution_context::WorkloadType;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
-use crate::host::{ReducerArgs, ReducerId, Timestamp};
+use crate::host::{ReducerArgs, ReducerId};
 use crate::identity::Identity;
 use crate::messages::websocket::{self as ws, CallReducer, ClientMessage, OneOffQuery};
 use crate::worker_metrics::WORKER_METRICS;
@@ -15,7 +15,7 @@ use bytestring::ByteString;
 use spacetimedb_client_api_messages::websocket::EncodedValue;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
-use spacetimedb_lib::{bsatn, Address};
+use spacetimedb_lib::{bsatn, Address, Timestamp};
 
 #[derive(thiserror::Error, Debug)]
 pub enum MessageHandleError {

@@ -17,12 +17,11 @@
 use bytes::Bytes;
 use bytestring::ByteString;
 use enum_as_inner::EnumAsInner;
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_lib::{Address, Identity, Timestamp};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::SpacetimeType;
 
 use crate::energy::EnergyQuanta;
-use crate::timestamp::Timestamp;
 
 /// Messages sent from the client to the server.
 ///

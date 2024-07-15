@@ -5,7 +5,6 @@ use std::ops::DerefMut;
 use std::sync::Arc;
 
 use super::scheduler::{ScheduleError, ScheduledReducerId, Scheduler};
-use super::Timestamp;
 use crate::client::messages::ToBsatn;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
@@ -15,7 +14,7 @@ use crate::execution_context::ExecutionContext;
 use crate::vm::{build_query, TxMode};
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::operator::OpQuery;
-use spacetimedb_lib::ProductValue;
+use spacetimedb_lib::{ProductValue, Timestamp};
 use spacetimedb_primitives::{ColId, ColListBuilder, TableId};
 use spacetimedb_sats::db::def::{IndexDef, IndexType};
 use spacetimedb_sats::relation::FieldName;

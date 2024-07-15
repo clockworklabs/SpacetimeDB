@@ -1,8 +1,7 @@
+use spacetimedb_lib::Timestamp;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::de::Deserialize;
 use spacetimedb_sats::ser::Serialize;
-
-use crate::host::Timestamp;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Insert {

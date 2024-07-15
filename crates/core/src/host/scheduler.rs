@@ -3,14 +3,14 @@ use std::path::Path;
 use futures::StreamExt;
 use rustc_hash::FxHashMap;
 use sled::transaction::{ConflictableTransactionError::Abort as TxAbort, TransactionError};
-use spacetimedb_lib::bsatn;
 use spacetimedb_lib::bsatn::ser::BsatnError;
+use spacetimedb_lib::{bsatn, Timestamp};
 use tokio::sync::mpsc;
 use tokio_util::time::delay_queue::Expired;
 use tokio_util::time::{delay_queue, DelayQueue};
 
 use super::module_host::WeakModuleHost;
-use super::{ModuleHost, ReducerArgs, ReducerCallError, Timestamp};
+use super::{ModuleHost, ReducerArgs, ReducerCallError};
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct ScheduledReducerId(pub u64);

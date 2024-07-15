@@ -1,5 +1,5 @@
 use super::wasm_common::{CLIENT_CONNECTED_DUNDER, CLIENT_DISCONNECTED_DUNDER};
-use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
+use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId};
 use crate::client::messages::{encode_row, ToProtocol};
 use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
 use crate::database_instance_context::DatabaseInstanceContext;
@@ -28,7 +28,7 @@ use smallvec::SmallVec;
 use spacetimedb_client_api_messages::websocket::EncodedValue;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, IntMap};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
-use spacetimedb_lib::{Address, ModuleDef, ReducerDef, TableDesc};
+use spacetimedb_lib::{Address, ModuleDef, ReducerDef, TableDesc, Timestamp};
 use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_sats::{algebraic_value, ProductValue, Typespace, WithTypespace};
 use spacetimedb_vm::relation::{MemTable, RelValue};
