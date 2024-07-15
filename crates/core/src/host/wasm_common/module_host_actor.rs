@@ -29,7 +29,7 @@ use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::const_unwrap;
 use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
-use spacetimedb_lib::db::raw_def::RawTableDefV0;
+use spacetimedb_lib::db::raw_def::v8::RawTableDef;
 
 use super::*;
 
@@ -276,7 +276,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 }
 
-fn get_tabledefs(info: &ModuleInfo) -> impl Iterator<Item = anyhow::Result<RawTableDefV0>> + '_ {
+fn get_tabledefs(info: &ModuleInfo) -> impl Iterator<Item = anyhow::Result<RawTableDef>> + '_ {
     info.catalog
         .values()
         .filter_map(EntityDef::as_table)

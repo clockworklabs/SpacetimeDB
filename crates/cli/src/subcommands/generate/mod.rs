@@ -9,7 +9,7 @@ use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgGroup};
 use convert_case::{Case, Casing};
 use duct::cmd;
-use spacetimedb_lib::db::raw_def::RawColumnDefV0;
+use spacetimedb_lib::db::raw_def::v8::RawColumnDefV0;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::sats::{AlgebraicType, Typespace};
 use spacetimedb_lib::MODULE_ABI_MAJOR_VERSION;

@@ -26,7 +26,7 @@ use spacetimedb_commitlog as commitlog;
 use spacetimedb_durability::{self as durability, Durability, TxOffset};
 use spacetimedb_lib::address::Address;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
-use spacetimedb_lib::db::raw_def::{RawColumnDefV0, RawIndexDefV0, RawSequenceDefV0, RawTableDefV0};
+use spacetimedb_lib::db::raw_def::v8::{RawColumnDef, RawIndexDef, RawSequenceDef, RawTableDef};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
@@ -806,15 +806,15 @@ impl RelationalDB {
 }
 
 impl RelationalDB {
-    pub fn create_table<T: Into<RawTableDefV0>>(&self, tx: &mut MutTx, schema: T) -> Result<TableId, DBError> {
+    pub fn create_table<T: Into<RawTableDef>>(&self, tx: &mut MutTx, schema: T) -> Result<TableId, DBError> {
         self.inner.create_table_mut_tx(tx, schema.into())
     }
 
-    fn col_def_for_test(schema: &[(&str, AlgebraicType)]) -> Vec<RawColumnDefV0> {
+    fn col_def_for_test(schema: &[(&str, AlgebraicType)]) -> Vec<RawColumnDef> {
         schema
             .iter()
             .cloned()
-            .map(|(col_name, col_type)| RawColumnDefV0 {
+            .map(|(col_name, col_type)| RawColumnDef {
                 col_name: col_name.into(),
                 col_type,
             })
@@ -831,10 +831,10 @@ impl RelationalDB {
         let indexes = indexes
             .iter()
             .copied()
-            .map(|(col_id, index_name)| RawIndexDefV0::btree(index_name.into(), col_id, false))
+            .map(|(col_id, index_name)| RawIndexDef::btree(index_name.into(), col_id, false))
             .collect();
 
-        let schema = RawTableDefV0::new(name.into(), Self::col_def_for_test(schema))
+        let schema = RawTableDef::new(name.into(), Self::col_def_for_test(schema))
             .with_indexes(indexes)
             .with_type(StTableType::User)
             .with_access(access);
@@ -857,7 +857,7 @@ impl RelationalDB {
         schema: &[(&str, AlgebraicType)],
         idx_cols: ColList,
     ) -> Result<TableId, DBError> {
-        let schema = RawTableDefV0::new(name.into(), Self::col_def_for_test(schema))
+        let schema = RawTableDef::new(name.into(), Self::col_def_for_test(schema))
             .with_column_index(idx_cols, false)
             .with_type(StTableType::User)
             .with_access(StAccess::Public);
@@ -875,10 +875,10 @@ impl RelationalDB {
         let idx_cols_single = idx_cols_single
             .iter()
             .copied()
-            .map(|(col_id, index_name)| RawIndexDefV0::btree(index_name.into(), col_id, false))
+            .map(|(col_id, index_name)| RawIndexDef::btree(index_name.into(), col_id, false))
             .collect();
 
-        let schema = RawTableDefV0::new(name.into(), Self::col_def_for_test(schema))
+        let schema = RawTableDef::new(name.into(), Self::col_def_for_test(schema))
             .with_indexes(idx_cols_single)
             .with_column_index(idx_cols_multi, false)
             .with_type(StTableType::User)
@@ -972,7 +972,7 @@ impl RelationalDB {
     /// Returns the `index_id`
     ///
     /// NOTE: It loads the data from the table into it before returning
-    pub fn create_index(&self, tx: &mut MutTx, table_id: TableId, index: RawIndexDefV0) -> Result<IndexId, DBError> {
+    pub fn create_index(&self, tx: &mut MutTx, table_id: TableId, index: RawIndexDef) -> Result<IndexId, DBError> {
         self.inner.create_index_mut_tx(tx, table_id, index)
     }
 
@@ -1099,7 +1099,7 @@ impl RelationalDB {
         &mut self,
         tx: &mut MutTx,
         table_id: TableId,
-        seq: RawSequenceDefV0,
+        seq: RawSequenceDef,
     ) -> Result<SequenceId, DBError> {
         self.inner.create_sequence_mut_tx(tx, table_id, seq)
     }
@@ -1458,7 +1458,7 @@ mod tests {
     use commitlog::Commitlog;
     use durability::EmptyHistory;
     use spacetimedb_data_structures::map::IntMap;
-    use spacetimedb_lib::db::raw_def::{RawColumnDefV0, RawConstraintDefV0};
+    use spacetimedb_lib::db::raw_def::v8::{RawColumnDef, RawConstraintDef};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
     use spacetimedb_sats::bsatn;
@@ -1467,15 +1467,15 @@ mod tests {
     use spacetimedb_table::read_column::ReadColumn;
     use spacetimedb_table::table::RowRef;
 
-    fn column(name: &str, ty: AlgebraicType) -> RawColumnDefV0 {
-        RawColumnDefV0 {
+    fn column(name: &str, ty: AlgebraicType) -> RawColumnDef {
+        RawColumnDef {
             col_name: name.into(),
             col_type: ty,
         }
     }
 
-    fn index(name: &str, cols: &[u32]) -> RawIndexDefV0 {
-        RawIndexDefV0::btree(
+    fn index(name: &str, cols: &[u32]) -> RawIndexDef {
+        RawIndexDef::btree(
             name.into(),
             cols.iter()
                 .copied()
@@ -1489,19 +1489,19 @@ mod tests {
 
     fn table(
         name: &str,
-        columns: Vec<RawColumnDefV0>,
-        indexes: Vec<RawIndexDefV0>,
-        constraints: Vec<RawConstraintDefV0>,
-    ) -> RawTableDefV0 {
-        RawTableDefV0::new(name.into(), columns)
+        columns: Vec<RawColumnDef>,
+        indexes: Vec<RawIndexDef>,
+        constraints: Vec<RawConstraintDef>,
+    ) -> RawTableDef {
+        RawTableDef::new(name.into(), columns)
             .with_indexes(indexes)
             .with_constraints(constraints)
     }
 
-    fn my_table(col_type: AlgebraicType) -> RawTableDefV0 {
-        RawTableDefV0::new(
+    fn my_table(col_type: AlgebraicType) -> RawTableDef {
+        RawTableDef::new(
             "MyTable".into(),
-            vec![RawColumnDefV0 {
+            vec![RawColumnDef {
                 col_name: "my_col".into(),
                 col_type,
             }],
@@ -1721,7 +1721,7 @@ mod tests {
         Ok(())
     }
 
-    fn table_auto_inc() -> RawTableDefV0 {
+    fn table_auto_inc() -> RawTableDef {
         my_table(AlgebraicType::I64).with_column_constraint(Constraints::primary_key_auto(), 0)
     }
 
@@ -1761,8 +1761,8 @@ mod tests {
         Ok(())
     }
 
-    fn table_indexed(is_unique: bool) -> RawTableDefV0 {
-        my_table(AlgebraicType::I64).with_indexes(vec![RawIndexDefV0::btree("MyTable_my_col_idx".into(), 0, is_unique)])
+    fn table_indexed(is_unique: bool) -> RawTableDef {
+        my_table(AlgebraicType::I64).with_indexes(vec![RawIndexDef::btree("MyTable_my_col_idx".into(), 0, is_unique)])
     }
 
     #[test]
@@ -1900,10 +1900,10 @@ mod tests {
         let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        let schema = RawTableDefV0::new(
+        let schema = RawTableDef::new(
             "MyTable".into(),
             ["col1", "col2", "col3", "col4"]
-                .map(|c| RawColumnDefV0 {
+                .map(|c| RawColumnDef {
                     col_name: c.into(),
                     col_type: AlgebraicType::I64,
                 })
@@ -1915,11 +1915,11 @@ mod tests {
                 ("MyTable_col3_idx", false),
                 ("MyTable_col4_idx", true),
             ]
-            .map(|(name, unique)| RawIndexDefV0::btree(name.into(), 0, unique))
+            .map(|(name, unique)| RawIndexDef::btree(name.into(), 0, unique))
             .into(),
         )
-        .with_sequences(vec![RawSequenceDefV0::for_column("MyTable", "col1", 0.into())])
-        .with_constraints(vec![RawConstraintDefV0::for_column(
+        .with_sequences(vec![RawSequenceDef::for_column("MyTable", "col1", 0.into())])
+        .with_constraints(vec![RawConstraintDef::for_column(
             "MyTable",
             "col2",
             Constraints::indexed(),
@@ -2063,8 +2063,7 @@ mod tests {
         let ctx = ExecutionContext::default();
 
         let mut initial_tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        let schema =
-            RawTableDefV0::from_product("test_table", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
+        let schema = RawTableDef::from_product("test_table", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
         let table_id = stdb.create_table(&mut initial_tx, schema).expect("create_table failed");
 
         stdb.commit_tx(&ctx, initial_tx).expect("Commit initial_tx failed");
@@ -2124,7 +2123,7 @@ mod tests {
         );
 
         let row_ty = ProductType::from([("le_boeuf", AlgebraicType::I32)]);
-        let schema = RawTableDefV0::from_product("test_table", row_ty.clone());
+        let schema = RawTableDef::from_product("test_table", row_ty.clone());
 
         // Create an empty transaction
         {

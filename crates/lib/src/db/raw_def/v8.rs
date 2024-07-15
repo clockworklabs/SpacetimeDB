@@ -1,27 +1,18 @@
-//! Raw definitions of the database schema.
-//!
-//! Modules serialize these types and send them across the ABI boundary to describe to the database what tables they expect.
-//! (Wrapped in the type `spacetimedb_lib::ModuleDef`.)
-//!
-//! There will eventually be multiple versions of these types wrapped in a top-level enum.
-//! This is because the only backwards-compatible schema changes allowed by BSATN is adding variants to an existing enum.
-//! The `spacetimedb_schema` crate will in the future perform validation and normalization of these `Raw` types to a canonical form,
-//! which will be used everywhere.
-
 use crate::db::auth::{StAccess, StTableType};
 use crate::relation::FieldName;
 use crate::{AlgebraicType, ProductType};
-use derive_more::Display;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::{de, ser};
+
+use super::IndexType;
 
 /// The default preallocation amount for sequences.
 pub const SEQUENCE_PREALLOCATION_AMOUNT: i128 = 4_096;
 
 /// Represents a sequence definition for a database table column.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
-pub struct RawSequenceDefV0 {
+pub struct RawSequenceDef {
     /// The name of the sequence.
     /// Deprecated. In the future, sequences will be identified by col_pos.
     pub sequence_name: Box<str>,
@@ -40,7 +31,7 @@ pub struct RawSequenceDefV0 {
     pub allocated: i128,
 }
 
-impl RawSequenceDefV0 {
+impl RawSequenceDef {
     /// Creates a new [RawSequenceDefV0] instance for a specific table and column.
     ///
     /// # Parameters
@@ -61,7 +52,7 @@ impl RawSequenceDefV0 {
         //removes the auto-generated suffix...
         let seq_name = column_or_name.trim_start_matches(&format!("ct_{}_", table));
 
-        RawSequenceDefV0 {
+        RawSequenceDef {
             sequence_name: format!("seq_{}_{}", table, seq_name).into(),
             col_pos,
             increment: 1,
@@ -73,37 +64,9 @@ impl RawSequenceDefV0 {
     }
 }
 
-/// Which type of index to create.
-///
-/// Currently only `IndexType::BTree` is allowed.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Display, de::Deserialize, ser::Serialize)]
-pub enum IndexType {
-    /// A BTree index.
-    BTree = 0,
-    /// A Hash index.
-    Hash = 1,
-}
-
-impl From<IndexType> for u8 {
-    fn from(value: IndexType) -> Self {
-        value as u8
-    }
-}
-
-impl TryFrom<u8> for IndexType {
-    type Error = ();
-    fn try_from(v: u8) -> Result<Self, Self::Error> {
-        match v {
-            0 => Ok(IndexType::BTree),
-            1 => Ok(IndexType::Hash),
-            _ => Err(()),
-        }
-    }
-}
-
 /// A struct representing the definition of a database index.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
-pub struct RawIndexDefV0 {
+pub struct RawIndexDef {
     /// The name of the index.
     /// This should not be assumed to follow any particular format.
     pub index_name: Box<str>,
@@ -115,7 +78,7 @@ pub struct RawIndexDefV0 {
     pub columns: ColList,
 }
 
-impl RawIndexDefV0 {
+impl RawIndexDef {
     /// Creates a new [IndexDef] with the provided parameters.
     ///
     /// WARNING: Only [IndexType::Btree] is supported for now...
@@ -166,16 +129,16 @@ impl RawIndexDefV0 {
 
 /// A struct representing the definition of a database column.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
-pub struct RawColumnDefV0 {
+pub struct RawColumnDef {
     /// The name of the column.
     pub col_name: Box<str>,
     /// The type of the column.
     pub col_type: AlgebraicType,
 }
 
-impl RawColumnDefV0 {
+impl RawColumnDef {
     /// Convert a product type to a list of column definitions.
-    pub fn from_product_type(value: ProductType) -> Vec<RawColumnDefV0> {
+    pub fn from_product_type(value: ProductType) -> Vec<RawColumnDef> {
         Vec::from(value.elements)
             .into_iter()
             .enumerate()
@@ -186,7 +149,7 @@ impl RawColumnDefV0 {
                     format!("col_{pos}").into()
                 };
 
-                RawColumnDefV0 {
+                RawColumnDef {
                     col_name,
                     col_type: col.algebraic_type,
                 }
@@ -195,7 +158,7 @@ impl RawColumnDefV0 {
     }
 }
 
-impl RawColumnDefV0 {
+impl RawColumnDef {
     /// Creates a new [ColumnDef] for a system field with the specified data type.
     ///
     /// This method is typically used to define system columns with predefined names and data types.
@@ -216,7 +179,7 @@ impl RawColumnDefV0 {
 /// A struct representing the definition of a database constraint.
 /// Associated with a unique `TableDef`, the one that contains it.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
-pub struct RawConstraintDefV0 {
+pub struct RawConstraintDef {
     /// The name of the constraint.
     /// Deprecated, in the future columns will be identified by their constraint type and the columns
     /// they are associated with.
@@ -227,7 +190,7 @@ pub struct RawConstraintDefV0 {
     pub columns: ColList,
 }
 
-impl RawConstraintDefV0 {
+impl RawConstraintDef {
     /// Creates a new [ConstraintDef] with the specified parameters.
     ///
     /// # Parameters
@@ -298,25 +261,25 @@ pub fn generate_cols_name<'a>(columns: &ColList, col_name: impl Fn(ColId) -> Opt
 /// This struct holds information about the table, including its name, columns, indexes,
 /// constraints, sequences, type, and access rights.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
-pub struct RawTableDefV0 {
+pub struct RawTableDef {
     /// The name of the table.
     pub table_name: Box<str>,
     /// The columns of the table.
     /// The ordering of the columns is significant. Columns are frequently identified by `ColId`, that is, position in this list.
-    pub columns: Vec<RawColumnDefV0>,
+    pub columns: Vec<RawColumnDef>,
     /// The indexes on the table.
-    pub indexes: Vec<RawIndexDefV0>,
+    pub indexes: Vec<RawIndexDef>,
     /// The constraints on the table.
-    pub constraints: Vec<RawConstraintDefV0>,
+    pub constraints: Vec<RawConstraintDef>,
     /// The sequences attached to the table.
-    pub sequences: Vec<RawSequenceDefV0>,
+    pub sequences: Vec<RawSequenceDef>,
     /// Whether the table was created by a user or by the system.
     pub table_type: StTableType,
     /// The visibility of the table.
     pub table_access: StAccess,
 }
 
-impl RawTableDefV0 {
+impl RawTableDef {
     /// Create a new `TableDef` instance with the specified `table_name` and `columns`.
     ///
     /// # Parameters
@@ -324,7 +287,7 @@ impl RawTableDefV0 {
     /// - `table_name`: The name of the table.
     /// - `columns`: A `vec` of `ColumnDef` instances representing the columns of the table.
     ///
-    pub fn new(table_name: Box<str>, columns: Vec<RawColumnDefV0>) -> Self {
+    pub fn new(table_name: Box<str>, columns: Vec<RawColumnDef>) -> Self {
         Self {
             table_name,
             columns,
@@ -351,7 +314,7 @@ impl RawTableDefV0 {
     }
 
     /// Set the constraints for the table and return a new `TableDef` instance with the updated constraints.
-    pub fn with_constraints(self, constraints: Vec<RawConstraintDefV0>) -> Self {
+    pub fn with_constraints(self, constraints: Vec<RawConstraintDef>) -> Self {
         let mut x = self;
         x.constraints = constraints;
         x
@@ -372,13 +335,13 @@ impl RawTableDefV0 {
         self
     }
 
-    fn gen_constraint_def(&self, kind: Constraints, columns: impl Into<ColList>) -> RawConstraintDefV0 {
+    fn gen_constraint_def(&self, kind: Constraints, columns: impl Into<ColList>) -> RawConstraintDef {
         let columns = columns.into();
-        RawConstraintDefV0::for_column(&self.table_name, &self.generate_cols_name(&columns), kind, columns)
+        RawConstraintDef::for_column(&self.table_name, &self.generate_cols_name(&columns), kind, columns)
     }
 
     /// Set the indexes for the table and return a new `TableDef` instance with the updated indexes.
-    pub fn with_indexes(self, indexes: Vec<RawIndexDefV0>) -> Self {
+    pub fn with_indexes(self, indexes: Vec<RawIndexDef>) -> Self {
         let mut x = self;
         x.indexes = indexes;
         x
@@ -388,7 +351,7 @@ impl RawTableDefV0 {
     pub fn with_column_index(self, columns: impl Into<ColList>, is_unique: bool) -> Self {
         let mut x = self;
         let columns = columns.into();
-        x.indexes.push(RawIndexDefV0::for_column(
+        x.indexes.push(RawIndexDef::for_column(
             &x.table_name,
             &x.generate_cols_name(&columns),
             columns,
@@ -398,7 +361,7 @@ impl RawTableDefV0 {
     }
 
     /// Set the sequences for the table and return a new `TableDef` instance with the updated sequences.
-    pub fn with_sequences(self, sequences: Vec<RawSequenceDefV0>) -> Self {
+    pub fn with_sequences(self, sequences: Vec<RawSequenceDef>) -> Self {
         let mut x = self;
         x.sequences = sequences;
         x
@@ -408,7 +371,7 @@ impl RawTableDefV0 {
     pub fn with_column_sequence(self, columns: ColId) -> Self {
         let mut x = self;
 
-        x.sequences.push(RawSequenceDefV0::for_column(
+        x.sequences.push(RawSequenceDef::for_column(
             &x.table_name,
             &x.generate_cols_name(&ColList::new(columns)),
             columns,
@@ -425,7 +388,7 @@ impl RawTableDefV0 {
             Vec::from(row.elements)
                 .into_iter()
                 .enumerate()
-                .map(|(col_pos, e)| RawColumnDefV0 {
+                .map(|(col_pos, e)| RawColumnDef {
                     col_name: e.name.unwrap_or_else(|| format!("col_{col_pos}").into()),
                     col_type: e.algebraic_type,
                 })
@@ -436,7 +399,7 @@ impl RawTableDefV0 {
     /// Get an iterator deriving [IndexDef] from the constraints that require them like `UNIQUE`.
     ///
     /// It looks into [Self::constraints] for possible duplicates and remove them from the result
-    pub fn generated_indexes(&self) -> impl Iterator<Item = RawIndexDefV0> + '_ {
+    pub fn generated_indexes(&self) -> impl Iterator<Item = RawIndexDef> + '_ {
         self.constraints
             .iter()
             // We are only interested in constraints implying an index.
@@ -444,7 +407,7 @@ impl RawTableDefV0 {
             // Create the `IndexDef`.
             .map(|x| {
                 let is_unique = x.constraints.has_unique();
-                RawIndexDefV0::for_column(&self.table_name, &x.constraint_name, x.columns.clone(), is_unique)
+                RawIndexDef::for_column(&self.table_name, &x.constraint_name, x.columns.clone(), is_unique)
             })
             // Only keep those we don't yet have in the list of indices (checked by name).
             .filter(|idx| self.indexes.iter().all(|x| x.index_name != idx.index_name))
@@ -453,13 +416,13 @@ impl RawTableDefV0 {
     /// Get an iterator deriving [RawSequenceDefV0] from the constraints that require them like `IDENTITY`.
     ///
     /// It looks into [Self::constraints] for possible duplicates and remove them from the result
-    pub fn generated_sequences(&self) -> impl Iterator<Item = RawSequenceDefV0> + '_ {
+    pub fn generated_sequences(&self) -> impl Iterator<Item = RawSequenceDef> + '_ {
         self.constraints
             .iter()
             // We are only interested in constraints implying a sequence.
             .filter(|x| x.constraints.has_autoinc())
             // Create the `SequenceDef`.
-            .map(|x| RawSequenceDefV0::for_column(&self.table_name, &x.constraint_name, x.columns.head()))
+            .map(|x| RawSequenceDef::for_column(&self.table_name, &x.constraint_name, x.columns.head()))
             // Only keep those we don't yet have in the list of sequences (checked by name).
             .filter(|seq| self.sequences.iter().all(|x| x.sequence_name != seq.sequence_name))
     }
@@ -467,7 +430,7 @@ impl RawTableDefV0 {
     /// Get an iterator deriving [ConstraintDef] from the indexes that require them like `UNIQUE`.
     ///
     /// It looks into [Self::constraints] for possible duplicates and remove them from the result
-    pub fn generated_constraints(&self) -> impl Iterator<Item = RawConstraintDefV0> + '_ {
+    pub fn generated_constraints(&self) -> impl Iterator<Item = RawConstraintDef> + '_ {
         // Collect the set of all col-lists with a constraint.
         let cols: HashSet<_> = self
             .constraints
@@ -488,19 +451,19 @@ impl RawTableDefV0 {
     /// Check if the `name` of the [FieldName] exist on this [TableDef]
     ///
     /// Warning: It ignores the `table_id`
-    pub fn get_column_by_field(&self, field: FieldName) -> Option<&RawColumnDefV0> {
+    pub fn get_column_by_field(&self, field: FieldName) -> Option<&RawColumnDef> {
         self.get_column(field.col.idx())
     }
 
     /// Get a column by its position in the table.
-    pub fn get_column(&self, pos: usize) -> Option<&RawColumnDefV0> {
+    pub fn get_column(&self, pos: usize) -> Option<&RawColumnDef> {
         self.columns.get(pos)
     }
 
     /// Check if the `col_name` exist on this [TableSchema]
     ///
     /// Warning: It ignores the `table_name`
-    pub fn get_column_by_name(&self, col_name: &str) -> Option<&RawColumnDefV0> {
+    pub fn get_column_by_name(&self, col_name: &str) -> Option<&RawColumnDef> {
         self.columns.iter().find(|x| &*x.col_name == col_name)
     }
 }

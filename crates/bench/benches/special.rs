@@ -6,7 +6,7 @@ use spacetimedb_bench::{
     schemas::{create_sequential, u32_u64_str, u32_u64_u64, u64_u64_u32, BenchTable, RandomTable},
     spacetime_module::BENCHMARKS_MODULE,
 };
-use spacetimedb_lib::db::raw_def::RawTableDefV0;
+use spacetimedb_lib::db::raw_def::v8::RawTableDefV0;
 use spacetimedb_lib::{sats, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_testing::modules::start_runtime;

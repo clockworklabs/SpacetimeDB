@@ -442,7 +442,7 @@ mod test {
     use proptest::prelude::*;
     use proptest::{collection::vec, test_runner::TestCaseResult};
     use spacetimedb_data_structures::map::HashMap;
-    use spacetimedb_lib::db::raw_def::RawTableDefV0;
+    use spacetimedb_lib::db::raw_def::v8::RawTableDef;
     use spacetimedb_primitives::ColListBuilder;
     use spacetimedb_sats::{
         product,
@@ -472,7 +472,7 @@ mod test {
     }
 
     fn table(ty: ProductType) -> Table {
-        let def = RawTableDefV0::from_product("", ty);
+        let def = RawTableDef::from_product("", ty);
         let schema = TableSchema::from_def(0.into(), def);
         Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
     }

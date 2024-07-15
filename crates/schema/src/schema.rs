@@ -5,7 +5,10 @@ use itertools::Itertools;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::error::{DefType, SchemaError};
-use spacetimedb_lib::db::raw_def::*;
+use spacetimedb_lib::db::raw_def::v8::{
+    generate_cols_name, RawColumnDef, RawConstraintDef, RawIndexDef, RawSequenceDef, RawTableDef,
+};
+use spacetimedb_lib::db::raw_def::IndexType;
 use spacetimedb_lib::relation::{Column, DbTable, FieldName, Header};
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductTypeElement};
 use spacetimedb_primitives::*;
@@ -213,7 +216,7 @@ impl TableSchema {
     ///
     /// - `table_id`: The unique identifier for the table.
     /// - `schema`: The `TableDef` containing the schema information.
-    pub fn from_def(table_id: TableId, schema: RawTableDefV0) -> Self {
+    pub fn from_def(table_id: TableId, schema: RawTableDef) -> Self {
         let indexes = schema.generated_indexes().collect::<Vec<_>>();
         let sequences = schema.generated_sequences().collect::<Vec<_>>();
         let constraints = schema.generated_constraints().collect::<Vec<_>>();
@@ -530,7 +533,7 @@ impl From<TableSchema> for Header {
     }
 }
 
-impl From<TableSchema> for RawTableDefV0 {
+impl From<TableSchema> for RawTableDef {
     fn from(value: TableSchema) -> Self {
         Self {
             table_name: value.table_name,
@@ -565,7 +568,7 @@ impl ColumnSchema {
     /// * `table_id`: Identifier of the table to which the column belongs.
     /// * `col_pos`: Position of the column within the table.
     /// * `column`: The `ColumnDef` containing column information.
-    pub fn from_def(table_id: TableId, col_pos: ColId, column: RawColumnDefV0) -> Self {
+    pub fn from_def(table_id: TableId, col_pos: ColId, column: RawColumnDef) -> Self {
         ColumnSchema {
             table_id,
             col_pos,
@@ -575,7 +578,7 @@ impl ColumnSchema {
     }
 }
 
-impl From<ColumnSchema> for RawColumnDefV0 {
+impl From<ColumnSchema> for RawColumnDef {
     fn from(value: ColumnSchema) -> Self {
         Self {
             col_name: value.col_name,
@@ -664,7 +667,7 @@ impl SequenceSchema {
     /// assert_eq!(&*schema.sequence_name, "seq_my_table_my_sequence");
     /// assert_eq!(schema.table_id, 42.into());
     /// ```
-    pub fn from_def(table_id: TableId, sequence: RawSequenceDefV0) -> Self {
+    pub fn from_def(table_id: TableId, sequence: RawSequenceDef) -> Self {
         Self {
             sequence_id: SequenceId(0), // Will be replaced later when created
             sequence_name: sequence.sequence_name.trim().into(),
@@ -679,9 +682,9 @@ impl SequenceSchema {
     }
 }
 
-impl From<SequenceSchema> for RawSequenceDefV0 {
+impl From<SequenceSchema> for RawSequenceDef {
     fn from(value: SequenceSchema) -> Self {
-        RawSequenceDefV0 {
+        RawSequenceDef {
             sequence_name: value.sequence_name,
             col_pos: value.col_pos,
             increment: value.increment,
@@ -717,7 +720,7 @@ pub struct IndexSchema {
 
 impl IndexSchema {
     /// Constructs an [IndexSchema] from a given [IndexDef] and `table_id`.
-    pub fn from_def(table_id: TableId, index: RawIndexDefV0) -> Self {
+    pub fn from_def(table_id: TableId, index: RawIndexDef) -> Self {
         IndexSchema {
             index_id: IndexId(0), // Set to 0 as it may be assigned later.
             table_id,
@@ -729,7 +732,7 @@ impl IndexSchema {
     }
 }
 
-impl From<IndexSchema> for RawIndexDefV0 {
+impl From<IndexSchema> for RawIndexDef {
     fn from(value: IndexSchema) -> Self {
         Self {
             index_name: value.index_name,
@@ -766,7 +769,7 @@ impl ConstraintSchema {
     ///
     /// * `table_id`: Identifier of the table to which the constraint belongs.
     /// * `constraint`: The `ConstraintDef` containing constraint information.
-    pub fn from_def(table_id: TableId, constraint: RawConstraintDefV0) -> Self {
+    pub fn from_def(table_id: TableId, constraint: RawConstraintDef) -> Self {
         ConstraintSchema {
             constraint_id: ConstraintId(0), // Set to 0 as it may be assigned later.
             constraint_name: constraint.constraint_name.trim().into(),
@@ -777,7 +780,7 @@ impl ConstraintSchema {
     }
 }
 
-impl From<ConstraintSchema> for RawConstraintDefV0 {
+impl From<ConstraintSchema> for RawConstraintDef {
     fn from(value: ConstraintSchema) -> Self {
         Self {
             constraint_name: value.constraint_name,
@@ -792,15 +795,15 @@ mod tests {
     use super::*;
     use spacetimedb_primitives::col_list;
 
-    fn table_def() -> RawTableDefV0 {
-        RawTableDefV0::new(
+    fn table_def() -> RawTableDef {
+        RawTableDef::new(
             "test".into(),
             vec![
-                RawColumnDefV0::sys("id", AlgebraicType::U64),
-                RawColumnDefV0::sys("name", AlgebraicType::String),
-                RawColumnDefV0::sys("age", AlgebraicType::I16),
-                RawColumnDefV0::sys("x", AlgebraicType::F32),
-                RawColumnDefV0::sys("y", AlgebraicType::F64),
+                RawColumnDef::sys("id", AlgebraicType::U64),
+                RawColumnDef::sys("name", AlgebraicType::String),
+                RawColumnDef::sys("age", AlgebraicType::I16),
+                RawColumnDef::sys("x", AlgebraicType::F32),
+                RawColumnDef::sys("y", AlgebraicType::F64),
             ],
         )
     }
@@ -823,10 +826,10 @@ mod tests {
         assert_eq!(
             s.indexes,
             vec![
-                IndexSchema::from_def(TableId(0), RawIndexDefV0::btree("idx_test_id_unique".into(), ColId(0), true)),
-                IndexSchema::from_def(TableId(0), RawIndexDefV0::btree("idx_test_id_name_unique".into(), col_list![0, 1], true)),
-                IndexSchema::from_def(TableId(0), RawIndexDefV0::btree("idx_test_name_indexed_non_unique".into(), ColId(1), false)),
-                IndexSchema::from_def(TableId(0), RawIndexDefV0::btree("idx_test_age_primary_key_unique".into(), ColId(2), true)),
+                IndexSchema::from_def(TableId(0), RawIndexDef::btree("idx_test_id_unique".into(), ColId(0), true)),
+                IndexSchema::from_def(TableId(0), RawIndexDef::btree("idx_test_id_name_unique".into(), col_list![0, 1], true)),
+                IndexSchema::from_def(TableId(0), RawIndexDef::btree("idx_test_name_indexed_non_unique".into(), ColId(1), false)),
+                IndexSchema::from_def(TableId(0), RawIndexDef::btree("idx_test_age_primary_key_unique".into(), ColId(2), true)),
             ]
         );
     }
@@ -847,11 +850,11 @@ mod tests {
             vec![
                 SequenceSchema::from_def(
                     TableId(0),
-                    RawSequenceDefV0::for_column("test", "id_identity", ColId(0))
+                    RawSequenceDef::for_column("test", "id_identity", ColId(0))
                 ),
                 SequenceSchema::from_def(
                     TableId(0),
-                    RawSequenceDefV0::for_column("test", "name_primary_key_auto", ColId(1))
+                    RawSequenceDef::for_column("test", "name_primary_key_auto", ColId(1))
                 ),
             ]
         );
@@ -874,15 +877,15 @@ mod tests {
             vec![
                 ConstraintSchema::from_def(
                     TableId(0),
-                    RawConstraintDefV0::new("ct_test_id_unique".into(), Constraints::unique(), ColId(0))
+                    RawConstraintDef::new("ct_test_id_unique".into(), Constraints::unique(), ColId(0))
                 ),
                 ConstraintSchema::from_def(
                     TableId(0),
-                    RawConstraintDefV0::new("ct_test_id_name_unique".into(), Constraints::unique(), col_list![0, 1])
+                    RawConstraintDef::new("ct_test_id_name_unique".into(), Constraints::unique(), col_list![0, 1])
                 ),
                 ConstraintSchema::from_def(
                     TableId(0),
-                    RawConstraintDefV0::new("ct_test_name_indexed".into(), Constraints::indexed(), ColId(1))
+                    RawConstraintDef::new("ct_test_name_indexed".into(), Constraints::indexed(), ColId(1))
                 ),
             ]
         );
@@ -898,7 +901,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(|(pos, x)| {
-                    RawConstraintDefV0::for_column("test", &x.col_name, Constraints::unset(), ColId(pos as u32))
+                    RawConstraintDef::for_column("test", &x.col_name, Constraints::unset(), ColId(pos as u32))
                 })
                 .collect(),
         );
@@ -912,14 +915,14 @@ mod tests {
             s.indexes,
             vec![IndexSchema::from_def(
                 TableId(0),
-                RawIndexDefV0::btree("idx_test_id_unique".into(), ColId(0), true)
+                RawIndexDef::btree("idx_test_id_unique".into(), ColId(0), true)
             )]
         );
         assert_eq!(
             s.constraints,
             vec![ConstraintSchema::from_def(
                 TableId(0),
-                RawConstraintDefV0::new("ct_test_id_unique".into(), Constraints::unique(), ColId(0))
+                RawConstraintDef::new("ct_test_id_unique".into(), Constraints::unique(), ColId(0))
             )]
         );
 
@@ -937,14 +940,14 @@ mod tests {
             s.indexes,
             vec![IndexSchema::from_def(
                 TableId(0),
-                RawIndexDefV0::btree("idx_test_id_unique".into(), ColId(0), true)
+                RawIndexDef::btree("idx_test_id_unique".into(), ColId(0), true)
             )]
         );
         assert_eq!(
             s.constraints,
             vec![ConstraintSchema::from_def(
                 TableId(0),
-                RawConstraintDefV0::new("ct_test_id_unique".into(), Constraints::unique(), ColId(0))
+                RawConstraintDef::new("ct_test_id_unique".into(), Constraints::unique(), ColId(0))
             )]
         );
     }
@@ -963,7 +966,7 @@ mod tests {
         );
 
         let mut t_col = t.clone();
-        t_col.columns.push(RawColumnDefV0::sys("", AlgebraicType::U64));
+        t_col.columns.push(RawColumnDef::sys("", AlgebraicType::U64));
         assert_eq!(
             TableSchema::from_def(TableId(0), t_col).validated(),
             Err(vec![SchemaError::EmptyName {
@@ -975,7 +978,7 @@ mod tests {
 
         let mut t_ct = t.clone();
         t_ct.constraints
-            .push(RawConstraintDefV0::new("".into(), Constraints::primary_key(), ColId(0)));
+            .push(RawConstraintDef::new("".into(), Constraints::primary_key(), ColId(0)));
         assert_eq!(
             TableSchema::from_def(TableId(0), t_ct).validated(),
             Err(vec![SchemaError::EmptyName {
@@ -1121,7 +1124,7 @@ mod tests {
     // Only BTree indexes
     #[test]
     fn test_validate_btree() {
-        let t = table_def().with_indexes(vec![RawIndexDefV0 {
+        let t = table_def().with_indexes(vec![RawIndexDef {
             index_name: "bad".into(),
             is_unique: false,
             index_type: IndexType::Hash,

@@ -1146,13 +1146,14 @@ pub(crate) mod test {
     use crate::var_len::VarLenGranule;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
-    use spacetimedb_lib::db::raw_def::{IndexType, RawColumnDefV0, RawIndexDefV0, RawTableDefV0};
+    use spacetimedb_lib::db::raw_def::v8::{RawColumnDef, RawIndexDef, RawTableDef};
+    use spacetimedb_lib::db::raw_def::IndexType;
     use spacetimedb_sats::bsatn::to_vec;
     use spacetimedb_sats::proptest::generate_typed_row;
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
 
     pub(crate) fn table(ty: ProductType) -> Table {
-        let def = RawTableDefV0::from_product("", ty);
+        let def = RawTableDef::from_product("", ty);
         let schema = TableSchema::from_def(0.into(), def);
         Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
     }
@@ -1161,16 +1162,16 @@ pub(crate) mod test {
     fn unique_violation_error() {
         let index_name = "my_unique_constraint";
         // Build a table for (I32, I32) with a unique index on the 0th column.
-        let table_def = RawTableDefV0::new(
+        let table_def = RawTableDef::new(
             "UniqueIndexed".into(),
             ["unique_col", "other_col"]
-                .map(|c| RawColumnDefV0 {
+                .map(|c| RawColumnDef {
                     col_name: c.into(),
                     col_type: AlgebraicType::I32,
                 })
                 .into(),
         )
-        .with_indexes(vec![RawIndexDefV0 {
+        .with_indexes(vec![RawIndexDef {
             columns: 0.into(),
             index_name: index_name.into(),
             is_unique: true,

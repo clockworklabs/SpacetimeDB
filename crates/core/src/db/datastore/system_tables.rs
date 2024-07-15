@@ -14,7 +14,8 @@ use crate::error::{DBError, TableError};
 use crate::execution_context::ExecutionContext;
 use derive_more::From;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
-use spacetimedb_lib::db::raw_def::*;
+use spacetimedb_lib::db::raw_def::v8::{RawColumnDef, RawTableDef};
+use spacetimedb_lib::db::raw_def::IndexType;
 use spacetimedb_lib::{Address, Identity, SumType};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
@@ -240,13 +241,13 @@ st_fields_enum!(enum StVarFields {
 fn st_table_schema() -> TableSchema {
     TableSchema::from_def(
         ST_TABLES_ID,
-        RawTableDefV0::new(
+        RawTableDef::new(
             ST_TABLES_NAME.into(),
             vec![
-                RawColumnDefV0::sys(StTableFields::TableId.name(), AlgebraicType::U32),
-                RawColumnDefV0::sys(StTableFields::TableName.name(), AlgebraicType::String),
-                RawColumnDefV0::sys(StTableFields::TableType.name(), AlgebraicType::String),
-                RawColumnDefV0::sys(StTableFields::TablesAccess.name(), AlgebraicType::String),
+                RawColumnDef::sys(StTableFields::TableId.name(), AlgebraicType::U32),
+                RawColumnDef::sys(StTableFields::TableName.name(), AlgebraicType::String),
+                RawColumnDef::sys(StTableFields::TableType.name(), AlgebraicType::String),
+                RawColumnDef::sys(StTableFields::TablesAccess.name(), AlgebraicType::String),
             ],
         )
         .with_type(StTableType::System)
@@ -263,13 +264,13 @@ fn st_table_schema() -> TableSchema {
 fn st_columns_schema() -> TableSchema {
     TableSchema::from_def(
         ST_COLUMNS_ID,
-        RawTableDefV0::new(
+        RawTableDef::new(
             ST_COLUMNS_NAME.into(),
             vec![
-                RawColumnDefV0::sys(StColumnFields::TableId.name(), AlgebraicType::U32),
-                RawColumnDefV0::sys(StColumnFields::ColPos.name(), AlgebraicType::U32),
-                RawColumnDefV0::sys(StColumnFields::ColName.name(), AlgebraicType::String),
-                RawColumnDefV0::sys(StColumnFields::ColType.name(), AlgebraicType::bytes()),
+                RawColumnDef::sys(StColumnFields::TableId.name(), AlgebraicType::U32),
+                RawColumnDef::sys(StColumnFields::ColPos.name(), AlgebraicType::U32),
+                RawColumnDef::sys(StColumnFields::ColName.name(), AlgebraicType::String),
+                RawColumnDef::sys(StColumnFields::ColType.name(), AlgebraicType::bytes()),
             ],
         )
         .with_type(StTableType::System)
@@ -289,15 +290,15 @@ fn st_columns_schema() -> TableSchema {
 fn st_indexes_schema() -> TableSchema {
     TableSchema::from_def(
         ST_INDEXES_ID,
-        RawTableDefV0::new(
+        RawTableDef::new(
             ST_INDEXES_NAME.into(),
             vec![
-                RawColumnDefV0::sys(StIndexFields::IndexId.name(), AlgebraicType::U32),
-                RawColumnDefV0::sys(StIndexFields::TableId.name(), AlgebraicType::U32),
-                RawColumnDefV0::sys(StIndexFields::IndexName.name(), AlgebraicType::String),
-                RawColumnDefV0::sys(StIndexFields::Columns.name(), AlgebraicType::array(AlgebraicType::U32)),
-                RawColumnDefV0::sys(StIndexFields::IsUnique.name(), AlgebraicType::Bool),
-                RawColumnDefV0::sys(StIndexFields::IndexType.name(), AlgebraicType::U8),
+                RawColumnDef::sys(StIndexFields::IndexId.name(), AlgebraicType::U32),
+                RawColumnDef::sys(StIndexFields::TableId.name(), AlgebraicType::U32),
+                RawColumnDef::sys(StIndexFields::IndexName.name(), AlgebraicType::String),
+                RawColumnDef::sys(StIndexFields::Columns.name(), AlgebraicType::array(AlgebraicType::U32)),
+                RawColumnDef::sys(StIndexFields::IsUnique.name(), AlgebraicType::Bool),
+                RawColumnDef::sys(StIndexFields::IndexType.name(), AlgebraicType::U8),
             ],
         )
         .with_type(StTableType::System)
@@ -314,18 +315,18 @@ fn st_indexes_schema() -> TableSchema {
 fn st_sequences_schema() -> TableSchema {
     TableSchema::from_def(
         ST_SEQUENCES_ID,
-        RawTableDefV0::new(
+        RawTableDef::new(
             ST_SEQUENCES_NAME.into(),
             vec![
-                RawColumnDefV0::sys(StSequenceFields::SequenceId.name(), AlgebraicType::U32),
-                RawColumnDefV0::sys(StSequenceFields::SequenceName.name(), AlgebraicType::String),
-                RawColumnDefV0::sys(StSequenceFields::TableId.name(), AlgebraicType::U32),
-                RawColumnDefV0::sys(StSequenceFields::ColPos.name(), AlgebraicType::U32),
-                RawColumnDefV0::sys(StSequenceFields::Increment.name(), AlgebraicType::I128),
-                RawColumnDefV0::sys(StSequenceFields::Start.name(), AlgebraicType::I128),
-                RawColumnDefV0::sys(StSequenceFields::MinValue.name(), AlgebraicType::I128),
-                RawColumnDefV0::sys(StSequenceFields::MaxValue.name(), AlgebraicType::I128),
-                RawColumnDefV0::sys(StSequenceFields::Allocated.name(), AlgebraicType::I128),
+                RawColumnDef::sys(StSequenceFields::SequenceId.name(), AlgebraicType::U32),
+                RawColumnDef::sys(StSequenceFields::SequenceName.name(), AlgebraicType::String),
+                RawColumnDef::sys(StSequenceFields::TableId.name(), AlgebraicType::U32),
+                RawColumnDef::sys(StSequenceFields::ColPos.name(), AlgebraicType::U32),
+                RawColumnDef::sys(StSequenceFields::Increment.name(), AlgebraicType::I128),
+                RawColumnDef::sys(StSequenceFields::Start.name(), AlgebraicType::I128),
+                RawColumnDef::sys(StSequenceFields::MinValue.name(), AlgebraicType::I128),
+                RawColumnDef::sys(StSequenceFields::MaxValue.name(), AlgebraicType::I128),
+                RawColumnDef::sys(StSequenceFields::Allocated.name(), AlgebraicType::I128),
             ],
         )
         .with_type(StTableType::System)
@@ -342,14 +343,14 @@ fn st_sequences_schema() -> TableSchema {
 fn st_constraints_schema() -> TableSchema {
     TableSchema::from_def(
         ST_CONSTRAINTS_ID,
-        RawTableDefV0::new(
+        RawTableDef::new(
             ST_CONSTRAINTS_NAME.into(),
             vec![
-                RawColumnDefV0::sys(StConstraintFields::ConstraintId.name(), AlgebraicType::U32),
-                RawColumnDefV0::sys(StConstraintFields::ConstraintName.name(), AlgebraicType::String),
-                RawColumnDefV0::sys(StConstraintFields::Constraints.name(), AlgebraicType::U8),
-                RawColumnDefV0::sys(StConstraintFields::TableId.name(), AlgebraicType::U32),
-                RawColumnDefV0::sys(
+                RawColumnDef::sys(StConstraintFields::ConstraintId.name(), AlgebraicType::U32),
+                RawColumnDef::sys(StConstraintFields::ConstraintName.name(), AlgebraicType::String),
+                RawColumnDef::sys(StConstraintFields::Constraints.name(), AlgebraicType::U8),
+                RawColumnDef::sys(StConstraintFields::TableId.name(), AlgebraicType::U32),
+                RawColumnDef::sys(
                     StConstraintFields::Columns.name(),
                     AlgebraicType::array(AlgebraicType::U32),
                 ),
@@ -377,14 +378,14 @@ fn st_constraints_schema() -> TableSchema {
 pub(crate) fn st_module_schema() -> TableSchema {
     TableSchema::from_def(
         ST_MODULE_ID,
-        RawTableDefV0::new(
+        RawTableDef::new(
             ST_MODULE_NAME.into(),
             vec![
-                RawColumnDefV0::sys(StModuleFields::DatabaseAddress.name(), AlgebraicType::bytes()),
-                RawColumnDefV0::sys(StModuleFields::OwnerIdentity.name(), AlgebraicType::bytes()),
-                RawColumnDefV0::sys(StModuleFields::ProgramKind.name(), AlgebraicType::U8),
-                RawColumnDefV0::sys(StModuleFields::ProgramHash.name(), AlgebraicType::bytes()),
-                RawColumnDefV0::sys(StModuleFields::ProgramBytes.name(), AlgebraicType::bytes()),
+                RawColumnDef::sys(StModuleFields::DatabaseAddress.name(), AlgebraicType::bytes()),
+                RawColumnDef::sys(StModuleFields::OwnerIdentity.name(), AlgebraicType::bytes()),
+                RawColumnDef::sys(StModuleFields::ProgramKind.name(), AlgebraicType::U8),
+                RawColumnDef::sys(StModuleFields::ProgramHash.name(), AlgebraicType::bytes()),
+                RawColumnDef::sys(StModuleFields::ProgramBytes.name(), AlgebraicType::bytes()),
             ],
         )
         .with_type(StTableType::System),
@@ -399,11 +400,11 @@ pub(crate) fn st_module_schema() -> TableSchema {
 fn st_clients_schema() -> TableSchema {
     TableSchema::from_def(
         ST_CLIENTS_ID,
-        RawTableDefV0::new(
+        RawTableDef::new(
             ST_CLIENTS_NAME.into(),
             vec![
-                RawColumnDefV0::sys(StClientsFields::Identity.name(), AlgebraicType::bytes()),
-                RawColumnDefV0::sys(StClientsFields::Address.name(), AlgebraicType::bytes()),
+                RawColumnDef::sys(StClientsFields::Identity.name(), AlgebraicType::bytes()),
+                RawColumnDef::sys(StClientsFields::Address.name(), AlgebraicType::bytes()),
             ],
         )
         .with_type(StTableType::System)
@@ -419,11 +420,11 @@ fn st_clients_schema() -> TableSchema {
 pub fn st_var_schema() -> TableSchema {
     TableSchema::from_def(
         ST_VAR_ID,
-        RawTableDefV0::new(
+        RawTableDef::new(
             ST_VAR_NAME.into(),
             vec![
-                RawColumnDefV0::sys(StVarFields::Name.name(), AlgebraicType::String),
-                RawColumnDefV0::sys(StVarFields::Value.name(), StVarValue::type_of()),
+                RawColumnDef::sys(StVarFields::Name.name(), AlgebraicType::String),
+                RawColumnDef::sys(StVarFields::Value.name(), StVarValue::type_of()),
             ],
         )
         .with_type(StTableType::System)

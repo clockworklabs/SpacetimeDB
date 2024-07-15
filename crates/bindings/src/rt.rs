@@ -9,9 +9,7 @@ use sys::Buffer;
 use crate::timestamp::with_timestamp_set;
 use crate::{sys, ReducerContext, ScheduleToken, SpacetimeType, TableType, Timestamp};
 use spacetimedb_lib::db::auth::StTableType;
-use spacetimedb_lib::db::raw_def::{
-    RawColumnDefV0, RawConstraintDefV0, RawIndexDefV0, RawSequenceDefV0, RawTableDefV0,
-};
+use spacetimedb_lib::db::raw_def::v8::{RawColumnDef, RawConstraintDef, RawIndexDef, RawSequenceDef, RawTableDef};
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
@@ -395,7 +393,7 @@ pub fn register_reftype<T: SpacetimeType>() {
 pub fn register_table<T: TableType>() {
     register_describer(|module| {
         let data = *T::make_type(&mut module.inner).as_ref().unwrap();
-        let columns: Vec<RawColumnDefV0> = RawColumnDefV0::from_product_type(
+        let columns: Vec<RawColumnDef> = RawColumnDef::from_product_type(
             module
                 .inner
                 .typespace()
@@ -417,7 +415,7 @@ pub fn register_table<T: TableType>() {
                     Err(_) => Constraints::unset(),
                 };
 
-                RawConstraintDefV0::for_column(T::TABLE_NAME, &col.col_name, kind, ColList::new(col_pos.into()))
+                RawConstraintDef::for_column(T::TABLE_NAME, &col.col_name, kind, ColList::new(col_pos.into()))
             })
             .collect();
 
@@ -428,18 +426,14 @@ pub fn register_table<T: TableType>() {
                 let col = &columns[col_pos];
 
                 if x.kind() == AttributeKind::AUTO_INC {
-                    Some(RawSequenceDefV0::for_column(
-                        T::TABLE_NAME,
-                        &col.col_name,
-                        col_pos.into(),
-                    ))
+                    Some(RawSequenceDef::for_column(T::TABLE_NAME, &col.col_name, col_pos.into()))
                 } else {
                     None
                 }
             })
             .collect();
 
-        let schema = RawTableDefV0::new(T::TABLE_NAME.into(), columns)
+        let schema = RawTableDef::new(T::TABLE_NAME.into(), columns)
             .with_type(StTableType::User)
             .with_access(T::TABLE_ACCESS)
             .with_constraints(constraints)
@@ -451,8 +445,8 @@ pub fn register_table<T: TableType>() {
     })
 }
 
-impl From<crate::IndexDesc<'_>> for RawIndexDefV0 {
-    fn from(index: crate::IndexDesc<'_>) -> RawIndexDefV0 {
+impl From<crate::IndexDesc<'_>> for RawIndexDef {
+    fn from(index: crate::IndexDesc<'_>) -> RawIndexDef {
         let Ok(columns) = index
             .col_ids
             .iter()
@@ -463,7 +457,7 @@ impl From<crate::IndexDesc<'_>> for RawIndexDefV0 {
             panic!("Need at least one column in IndexDesc for index `{}`", index.name);
         };
 
-        RawIndexDefV0 {
+        RawIndexDef {
             index_name: index.name.into(),
             is_unique: false,
             index_type: index.ty,

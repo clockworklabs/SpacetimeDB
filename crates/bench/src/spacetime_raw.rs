@@ -5,7 +5,7 @@ use crate::{
 };
 use spacetimedb::db::relational_db::{tests_utils::TestDB, RelationalDB};
 use spacetimedb::execution_context::ExecutionContext;
-use spacetimedb_lib::db::raw_def::{RawIndexDefV0, RawTableDefV0};
+use spacetimedb_lib::db::raw_def::v8::{RawIndexDefV0, RawTableDefV0};
 use spacetimedb_lib::sats::AlgebraicValue;
 use spacetimedb_primitives::{ColId, TableId};
 use std::hint::black_box;
