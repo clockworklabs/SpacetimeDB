@@ -26,6 +26,21 @@ readonly record struct ColumnDeclaration
     public readonly ColumnAttrs Attrs;
     public readonly bool IsEquatable;
 
+    public ColumnDeclaration(
+        string name,
+        string type,
+        string typeInfo,
+        ColumnAttrs attrs,
+        bool isEquatable
+    )
+    {
+        Name = name;
+        Type = type;
+        TypeInfo = typeInfo;
+        Attrs = attrs;
+        IsEquatable = isEquatable;
+    }
+
     public ColumnDeclaration(string name, ITypeSymbol type, ColumnAttrs attrs)
     {
         var isInteger = type.SpecialType switch
@@ -84,12 +99,14 @@ record TableDeclaration
     public readonly string FullName;
     public readonly EquatableArray<ColumnDeclaration> Fields;
     public readonly bool IsPublic;
+    public readonly string? Scheduled;
 
     public TableDeclaration(
         TypeDeclarationSyntax tableSyntax,
         INamedTypeSymbol table,
         IEnumerable<ColumnDeclaration> fields,
-        bool isPublic
+        bool isPublic,
+        string? scheduled
     )
     {
         Scope = new Scope(tableSyntax);
@@ -97,6 +114,7 @@ record TableDeclaration
         FullName = SymbolToName(table);
         Fields = new EquatableArray<ColumnDeclaration>(fields.ToImmutableArray());
         IsPublic = isPublic;
+        Scheduled = scheduled;
     }
 }
 
@@ -177,7 +195,42 @@ public class Module : IIncrementalGenerator
                         .Attributes.SelectMany(attr => attr.NamedArguments)
                         .Any(pair => pair.Key == "Public" && pair.Value.Value is true);
 
-                    return new TableDeclaration(tableSyntax, table, fields, isPublic);
+                    var scheduled = context
+                        .Attributes.SelectMany(attr => attr.NamedArguments)
+                        .Where(pair => pair.Key == "Scheduled")
+                        .Select(pair => (string?)pair.Value.Value)
+                        .SingleOrDefault();
+
+                    if (scheduled is not null)
+                    {
+                        // For scheduled tables, we append extra fields early in the pipeline,
+                        // both to the type itself and to the BSATN information, as if they
+                        // were part of the original declaration.
+                        //
+                        // TODO: simplify this when refactor for Table codegen inheriting Type
+                        // codegen has landed (it's in WIP branch at the moment, sp meanwhile we
+                        // need to do some logic duplication in both places).
+                        fields = fields.Concat(
+                            [
+                                new(
+                                    "ScheduledId",
+                                    "ulong",
+                                    "SpacetimeDB.BSATN.U64",
+                                    ColumnAttrs.PrimaryKeyAuto,
+                                    true
+                                ),
+                                new(
+                                    "ScheduledAt",
+                                    "SpacetimeDB.ScheduleAt",
+                                    "SpacetimeDB.ScheduleAt.BSATN",
+                                    ColumnAttrs.UnSet,
+                                    false
+                                )
+                            ]
+                        );
+                    }
+
+                    return new TableDeclaration(tableSyntax, table, fields, isPublic, scheduled);
                 }
             )
             .WithTrackingName("SpacetimeDB.Table.Parse");
@@ -204,7 +257,8 @@ public class Module : IIncrementalGenerator
                                             SpacetimeDB.ColumnAttrs.{f.Attrs}
                                         )
                                     "))} }},
-                                    {t.IsPublic.ToString().ToLower()}
+                                    {t.IsPublic.ToString().ToLower()},
+                                    {(t.Scheduled is not null ? $"\"{t.Scheduled}\"" : "null")}
                                 ),
                                 (SpacetimeDB.BSATN.AlgebraicType.Ref) new BSATN().GetAlgebraicType(registrar)
                             );
@@ -258,7 +312,7 @@ public class Module : IIncrementalGenerator
 
         var tableNames = tables.Select((t, ct) => t.FullName).Collect();
 
-        var reducers = context
+        var addReducers = context
             .SyntaxProvider.ForAttributeWithMetadataName(
                 fullyQualifiedMetadataName: "SpacetimeDB.ReducerAttribute",
                 predicate: (node, ct) => true, // already covered by attribute restrictions
@@ -283,9 +337,7 @@ public class Module : IIncrementalGenerator
                     return new ReducerDeclaration(methodSyntax, method, exportName);
                 }
             )
-            .WithTrackingName("SpacetimeDB.Reducer.Parse");
-
-        var addReducers = reducers
+            .WithTrackingName("SpacetimeDB.Reducer.Parse")
             .Select(
                 (r, ct) =>
                     (
@@ -360,7 +412,7 @@ public class Module : IIncrementalGenerator
                     uint id,
                     SpacetimeDB.Internal.Buffer caller_identity,
                     SpacetimeDB.Internal.Buffer caller_address,
-                    ulong timestamp,
+                    SpacetimeDB.Internal.DateTimeOffsetRepr timestamp,
                     SpacetimeDB.Internal.Buffer args
                 ) => SpacetimeDB.Internal.Module.__call_reducer__(id, caller_identity, caller_address, timestamp, args);
 #endif
@@ -369,25 +421,5 @@ public class Module : IIncrementalGenerator
                 );
             }
         );
-
-        reducers
-            .Select(
-                (r, ct) =>
-                    new KeyValuePair<string, string>(
-                        r.FullName,
-                        r.Scope.GenerateExtensions(
-                            $@"
-                            public static SpacetimeDB.ScheduleToken Schedule{r.Name}(DateTimeOffset time{string.Join("", r.GetNonContextArgs().Select(a => $", {a.Type} {a.Name}"))}) {{
-                                using var stream = new MemoryStream();
-                                using var writer = new BinaryWriter(stream);
-                                {string.Join("\n", r.GetNonContextArgs().Select(a => $"new {a.TypeInfo}().Write(writer, {a.Name});"))}
-                                return SpacetimeDB.Internal.IReducer.Schedule(""{r.ExportName}"", stream, time);
-                            }}
-                        "
-                        )
-                    )
-            )
-            .WithTrackingName("SpacetimeDB.Reducer.GenerateSchedule")
-            .RegisterSourceOutputs(context);
     }
 }
