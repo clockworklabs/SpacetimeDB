@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::{bsatn, Address, ModuleDef, ModuleValidationError, TableDesc};
+use spacetimedb_lib::{bsatn, Address, ModuleValidationError, RawModuleDefV0, TableDesc};
 use spacetimedb_sats::hash::Hash;
 
 use super::instrumentation::CallTimes;
@@ -152,10 +152,10 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         )?;
 
         let desc = instance.extract_descriptions()?;
-        let desc: ModuleDef = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
+        let desc: RawModuleDefV0 = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
         desc.validate_reducers()?;
         let orig_module_def = desc.clone();
-        let ModuleDef {
+        let RawModuleDefV0 {
             mut typespace,
             mut tables,
             reducers,

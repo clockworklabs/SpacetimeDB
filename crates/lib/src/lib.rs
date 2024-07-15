@@ -175,14 +175,14 @@ impl_serialize!([] ReducerArgsWithSchema<'_>, (self, ser) => {
 
 //WARNING: Change this structure(or any of their members) is an ABI change.
 #[derive(Debug, Clone, Default, de::Deserialize, ser::Serialize)]
-pub struct ModuleDef {
+pub struct RawModuleDefV0 {
     pub typespace: sats::Typespace,
     pub tables: Vec<TableDesc>,
     pub reducers: Vec<ReducerDef>,
     pub misc_exports: Vec<MiscModuleExport>,
 }
 
-impl ModuleDef {
+impl RawModuleDefV0 {
     pub fn builder() -> ModuleDefBuilder {
         ModuleDefBuilder::default()
     }
@@ -198,7 +198,7 @@ impl ModuleDef {
 #[derive(Default)]
 pub struct ModuleDefBuilder {
     /// The module definition.
-    module: ModuleDef,
+    module: RawModuleDefV0,
     /// The type map from `T: 'static` Rust types to sats types.
     type_map: BTreeMap<TypeId, sats::AlgebraicTypeRef>,
 }
@@ -228,7 +228,7 @@ impl ModuleDefBuilder {
         &self.module.typespace
     }
 
-    pub fn finish(self) -> ModuleDef {
+    pub fn finish(self) -> RawModuleDefV0 {
         self.module
     }
 }
@@ -278,7 +278,7 @@ pub struct TypeAlias {
     pub ty: sats::AlgebraicTypeRef,
 }
 
-impl ModuleDef {
+impl RawModuleDefV0 {
     pub fn validate_reducers(&self) -> Result<(), ModuleValidationError> {
         for reducer in &self.reducers {
             match &*reducer.name {

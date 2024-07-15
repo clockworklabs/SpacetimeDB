@@ -13,7 +13,7 @@ use spacetimedb_lib::db::raw_def::RawColumnDefV0;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::sats::{AlgebraicType, Typespace};
 use spacetimedb_lib::MODULE_ABI_MAJOR_VERSION;
-use spacetimedb_lib::{bsatn, MiscModuleExport, ModuleDef, ReducerDef, TableDesc, TypeAlias};
+use spacetimedb_lib::{bsatn, MiscModuleExport, RawModuleDefV0, ReducerDef, TableDesc, TypeAlias};
 use wasmtime::{AsContext, Caller};
 
 use crate::Config;
@@ -242,7 +242,7 @@ pub struct GenCtx {
     names: Vec<Option<String>>,
 }
 
-pub fn generate(module: ModuleDef, lang: Language, namespace: &str) -> anyhow::Result<Vec<(String, String)>> {
+pub fn generate(module: RawModuleDefV0, lang: Language, namespace: &str) -> anyhow::Result<Vec<(String, String)>> {
     let (ctx, items) = extract_from_moduledef(module);
     let items: Vec<GenItem> = items.collect();
     let mut files: Vec<(String, String)> = items
@@ -263,8 +263,8 @@ fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenI
     }
 }
 
-pub fn extract_from_moduledef(module: ModuleDef) -> (GenCtx, impl Iterator<Item = GenItem>) {
-    let ModuleDef {
+pub fn extract_from_moduledef(module: RawModuleDefV0) -> (GenCtx, impl Iterator<Item = GenItem>) {
+    let RawModuleDefV0 {
         typespace,
         tables,
         reducers,
@@ -432,7 +432,7 @@ impl GenItem {
     }
 }
 
-pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
+pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDefV0> {
     let engine = wasmtime::Engine::default();
     let t = std::time::Instant::now();
     let module = wasmtime::Module::from_file(&engine, wasm_file)?;
@@ -487,7 +487,7 @@ pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<ModuleDef> {
             let slice = store.data_mut().buffers.remove(buf as usize);
             bsatn::from_slice(&slice)?
         }
-        None => ModuleDef::default(),
+        None => RawModuleDefV0::default(),
     };
     Ok(module)
 }
