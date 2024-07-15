@@ -17,6 +17,7 @@ pub(crate) struct SatsType<'a> {
     pub original_attrs: &'a [syn::Attribute],
     pub data: SatsTypeData<'a>,
     pub public: Option<Span>,
+    pub scheduled: Option<String>,
 }
 
 pub(crate) enum SatsTypeData<'a> {
@@ -87,6 +88,7 @@ pub(crate) fn extract_sats_type<'a>(
     let mut name = None;
     let mut krate = None;
     let mut public = None;
+    let mut scheduled = None;
     for attr in attrs {
         if attr.path() != sym::SATS {
             continue;
@@ -108,6 +110,11 @@ pub(crate) fn extract_sats_type<'a>(
                     return Err(meta.error("public modifier must be empty"));
                 }
                 public = Some(meta.path.span());
+            } else if meta.path == sym::SCHEDULED {
+                check_duplicate_meta(&scheduled, &meta)?;
+                let value = meta.value()?;
+                let v = value.parse::<LitStr>()?;
+                scheduled = Some(v.value());
             } else {
                 return Err(meta.error("unknown sats attribute"));
             }
@@ -125,6 +132,7 @@ pub(crate) fn extract_sats_type<'a>(
         original_attrs: attrs,
         data,
         public,
+        scheduled,
     })
 }
 

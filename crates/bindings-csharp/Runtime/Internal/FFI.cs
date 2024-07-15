@@ -33,7 +33,7 @@ internal static partial class FFI
     // `LibraryImport` directly.
     const string StdbNamespace =
 #if EXPERIMENTAL_WASM_AOT
-        "spacetime_8.0"
+        "spacetime_9.0"
 #else
         "bindings"
 #endif

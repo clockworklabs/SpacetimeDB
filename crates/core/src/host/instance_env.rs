@@ -4,8 +4,7 @@ use spacetimedb_table::table::UniqueConstraintViolation;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
-use super::scheduler::{ScheduleError, ScheduledReducerId, Scheduler};
-use super::Timestamp;
+use super::scheduler::{get_schedule_from_pv, ScheduleError, Scheduler};
 use crate::client::messages::ToBsatn;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
@@ -91,21 +90,6 @@ impl InstanceEnv {
         }
     }
 
-    #[tracing::instrument(skip_all, fields(reducer=reducer))]
-    pub fn schedule(
-        &self,
-        reducer: String,
-        args: Vec<u8>,
-        time: Timestamp,
-    ) -> Result<ScheduledReducerId, ScheduleError> {
-        self.scheduler.schedule(reducer, args, time)
-    }
-
-    #[tracing::instrument(skip_all)]
-    pub fn cancel_reducer(&self, id: ScheduledReducerId) {
-        self.scheduler.cancel(id)
-    }
-
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         self.tx.get()
     }
@@ -141,6 +125,14 @@ impl InstanceEnv {
                     }
                 }
             })?;
+
+        if stdb.is_scheduled_table(ctx, tx, table_id)? {
+            let (schedule_id, schedule_at) = get_schedule_from_pv(tx, stdb, table_id, &ret)
+                .map_err(|e| NodesError::ScheduleError(ScheduleError::DecodingError(e)))?;
+            self.scheduler
+                .schedule(table_id, schedule_id, schedule_at)
+                .map_err(NodesError::ScheduleError)?;
+        }
 
         Ok(ret)
     }

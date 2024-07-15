@@ -20,7 +20,7 @@ pub mod raw {
     // on. Any non-breaking additions to the abi surface should be put in a new `extern {}` block
     // with a module identifier with a minor version 1 above the previous highest minor version.
     // For breaking changes, all functions should be moved into one new `spacetime_X.0` block.
-    #[link(wasm_import_module = "spacetime_8.0")]
+    #[link(wasm_import_module = "spacetime_9.0")]
     extern "C" {
         /*
         /// Create a table with `name`, a UTF-8 slice in WASM memory lasting `name_len` bytes,

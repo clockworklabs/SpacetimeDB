@@ -1,4 +1,5 @@
 use super::datastore::locking_tx_datastore::committed_state::CommittedState;
+use super::datastore::locking_tx_datastore::state_view::StateView as _;
 use super::datastore::system_tables::ST_MODULE_ID;
 use super::datastore::traits::{
     IsolationLevel, Metadata, MutTx as _, MutTxDatastore, RowTypeForTable, Tx as _, TxDatastore,
@@ -521,6 +522,16 @@ impl RelationalDB {
     pub fn get_all_tables(&self, tx: &Tx) -> Result<Vec<Arc<TableSchema>>, DBError> {
         self.inner
             .get_all_tables_tx(&ExecutionContext::internal(self.address), tx)
+    }
+
+    pub fn is_scheduled_table(
+        &self,
+        ctx: &ExecutionContext,
+        tx: &mut MutTx,
+        table_id: TableId,
+    ) -> Result<bool, DBError> {
+        tx.schema_for_table(ctx, table_id)
+            .map(|schema| schema.scheduled.is_some())
     }
 
     pub fn decode_column(
@@ -1450,12 +1461,12 @@ mod tests {
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::error::IndexError;
     use crate::execution_context::ReducerContext;
-    use crate::host::Timestamp;
     use anyhow::bail;
     use bytes::Bytes;
     use commitlog::payload::txdata;
     use commitlog::Commitlog;
     use durability::EmptyHistory;
+    use spacetimedb_client_api_messages::timestamp::Timestamp;
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;

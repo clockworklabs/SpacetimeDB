@@ -11,8 +11,9 @@ use crate::db::{
     datastore::{
         system_tables::{
             table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StFields as _,
-            StIndexFields, StIndexRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable,
-            ST_COLUMNS_ID, ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
+            StIndexFields, StIndexRow, StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow,
+            SystemTable, ST_COLUMNS_ID, ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SCHEDULED_ID, ST_SEQUENCES_ID,
+            ST_TABLES_ID,
         },
         traits::{RowTypeForTable, TxData},
     },
@@ -138,6 +139,12 @@ impl MutTxId {
         schema_internal.clear_adjacent_schemas();
 
         self.create_table_internal(table_id, schema_internal.into());
+
+        // Insert the scheduled table entry into `st_scheduled`
+        if let Some(reducer_name) = table_schema.scheduled {
+            let row = StScheduledRow { table_id, reducer_name };
+            self.insert(ST_SCHEDULED_ID, &mut row.into(), database_address)?;
+        }
 
         // Insert constraints into `st_constraints`
         let ctx = ExecutionContext::internal(database_address);

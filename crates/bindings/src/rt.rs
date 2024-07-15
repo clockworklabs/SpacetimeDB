@@ -8,7 +8,7 @@ use sys::Buffer;
 
 use crate::sats::db::def::{ColumnDef, ConstraintDef, IndexDef, SequenceDef, TableDef};
 use crate::timestamp::with_timestamp_set;
-use crate::{sys, ReducerContext, ScheduleToken, SpacetimeType, TableType, Timestamp};
+use crate::{sys, ReducerContext, SpacetimeType, TableType, Timestamp};
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::db::auth::StTableType;
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
@@ -144,22 +144,6 @@ pub trait Args<'de>: Sized {
     fn schema<I: ReducerInfo>(typespace: &mut impl TypespaceBuilder) -> ReducerDef;
 }
 
-/// A trait of types representing the arguments of a scheduled reducer.
-pub trait ScheduleArgs<'de>: Sized {
-    /// The representation of the reducers arguments.
-    type Args: Args<'de>;
-
-    /// Convert into the real arguments.
-    fn into_args(self) -> Self::Args;
-}
-
-impl<'de, T: Args<'de>> ScheduleArgs<'de> for T {
-    type Args = Self;
-    fn into_args(self) -> Self::Args {
-        self
-    }
-}
-
 /// A trait of types representing the result of executing a reducer.
 pub trait ReducerResult {
     /// Convert the result into form where there is no value
@@ -271,17 +255,6 @@ macro_rules! impl_reducer {
             }
         }
 
-        // `ScheduleArgs` prepends `ReducerContext` to the tuple.
-        impl<'de, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> ScheduleArgs<'de> for (ReducerContext, $($T,)*) {
-            type Args = ($($T,)*);
-            #[allow(clippy::unused_unit)]
-            fn into_args(self) -> Self::Args {
-                #[allow(non_snake_case)]
-                let (_ctx, $($T,)*) = self;
-                ($($T,)*)
-            }
-        }
-
         // Implement `Reducer<..., ContextArg>` for the tuple type `($($T,)*)`.
         impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Reducer<'de, ($($T,)*), ContextArg> for Func
         where
@@ -328,38 +301,6 @@ impl_serialize!(['de, A: Args<'de>] SerDeArgs<A>, (self, ser) => {
     self.0.serialize_seq_product(&mut prod)?;
     prod.end()
 });
-
-/// Returns a timestamp that is `duration` from now.
-#[track_caller]
-pub fn schedule_in(duration: Duration) -> Timestamp {
-    Timestamp::now()
-        .checked_add(duration)
-        .unwrap_or_else(|| panic!("{duration:?} is too far into the future to schedule"))
-}
-
-/// Schedule reducer `R` to be executed async at `time`stamp with arguments `args`.
-///
-/// Returns a token for the schedule that can be used to cancel the schedule.
-pub fn schedule<'de, R: ReducerInfo>(time: Timestamp, args: impl ScheduleArgs<'de>) -> ScheduleToken<R> {
-    // bsatn serialize the arguments into a vector.
-    let arg_bytes = bsatn::to_vec(&SerDeArgs(args.into_args())).unwrap();
-
-    // Schedule the reducer.
-    let id = sys::schedule(R::NAME, &arg_bytes, time.micros_since_epoch);
-    ScheduleToken::new(id)
-}
-
-/// Schedule a repeating `_reducer` `I` with repeater args `A`.
-pub fn schedule_repeater<A: RepeaterArgs, T, I: RepeaterInfo>(_reducer: impl for<'de> Reducer<'de, A, T>) {
-    // First time to schedule reducer at.
-    let time = schedule_in(I::REPEAT_INTERVAL);
-
-    // bsatn serialize the repeater args into a vector.
-    let args = bsatn::to_vec(&SerDeArgs(A::get_now())).unwrap();
-
-    // Schedule the reducer.
-    sys::schedule(I::NAME, &args, time.micros_since_epoch);
-}
 
 /// A trait for types representing repeater arguments.
 pub trait RepeaterArgs: for<'de> Args<'de> {
@@ -437,7 +378,8 @@ pub fn register_table<T: TableType>() {
             .with_access(T::TABLE_ACCESS)
             .with_constraints(constraints)
             .with_sequences(sequences)
-            .with_indexes(indexes);
+            .with_indexes(indexes)
+            .with_scheduled(T::SCHEDULED_REDUCER_NAME.map(Into::into));
         let schema = TableDesc { schema, data };
 
         module.inner.add_table(schema)
