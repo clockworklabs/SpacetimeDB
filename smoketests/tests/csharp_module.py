@@ -25,22 +25,28 @@ class CreateProject(unittest.TestCase):
                 spacetime("init", "--lang=csharp", tmpdir)
 
                 packed_projects = ["BSATN.Runtime", "Runtime"]
-                restore_sources = [str(bindings / project / "bin" / "Release") for project in packed_projects]
-                # note that nuget URL comes last, which ensures local sources should override it.
-                restore_sources.append("https://api.nuget.org/v3/index.json")
 
-                csproj = Path(tmpdir) / "StdbModule.csproj"
-                with open(csproj, "r") as f:
-                    contents = f.read()
+                config = []
+                config.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>")
+                config.append("<configuration>")
+                config.append("<packageSources>")
+                config.append("<!-- Local NuGet repositories -->")
+                for project in packed_projects:
+                    path = bindings / project / "bin" / "Release"
+                    config.append("<add key=\"Local %s\" value=\"%s\" />\n" % (project, str(path)))
+                config.append("<!-- Official NuGet.org server -->")
+                config.append("<add key=\"NuGet.org\" value=\"https://api.nuget.org/v3/index.json\" />")
+                config.append("</packageSources>")
+                config.append("</configuration>")
 
-                contents = contents.replace(
-                    "</PropertyGroup>",
-                    # note that nuget URL comes last, which ensures local sources should override it.
-                    f"""<RestoreSources>{str.join(";", restore_sources)}</RestoreSources>
-</PropertyGroup>""",
-                )
-                with open(csproj, "w") as f:
-                    f.write(contents)
+                config = "\n".join(config)
+
+                print("Writing `nuget.config` contents:")
+                print(config)
+
+                config_path = Path(tmpdir) / "nuget.config"
+                with open(config_path, "w") as f:
+                    f.write(config)
 
                 run_cmd("dotnet", "publish", cwd=tmpdir, capture_stderr=True)
 
