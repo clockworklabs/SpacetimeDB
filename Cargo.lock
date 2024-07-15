@@ -4263,6 +4263,7 @@ dependencies = [
  "flate2",
  "futures",
  "http",
+ "indexmap 2.2.6",
  "indicatif",
  "insta",
  "is-terminal",

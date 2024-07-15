@@ -59,8 +59,8 @@ pub async fn exec(con: Connection) -> Result<(), anyhow::Error> {
 └──────────────────────────────────────────────────────────┘",
     );
 
+    let output_fmt = OutputFormat::Table;
     let render_opts = RenderOpts {
-        fmt: OutputFormat::Table,
         with_timing: true,
         with_row_count: true,
     };
@@ -77,7 +77,7 @@ pub async fn exec(con: Connection) -> Result<(), anyhow::Error> {
                 sql => {
                     rl.add_history_entry(sql).ok();
 
-                    if let Err(err) = run_sql(api.sql(), sql, render_opts).await {
+                    if let Err(err) = run_sql(api.sql(), sql, render_opts, output_fmt).await {
                         eprintln!("{}", err.to_string().red())
                     }
                 }

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
 use crate::meta_type::MetaType;
@@ -74,6 +76,16 @@ impl ProductType {
     /// Returns whether this is a special known type, currently `Address` or `Identity`.
     pub fn is_special(&self) -> bool {
         self.is_identity() || self.is_address()
+    }
+
+    /// Iterator over the names of the product's factors.
+    ///
+    /// Unnamed factors are named by their position.
+    pub fn names(&self) -> impl Iterator<Item = Cow<'_, str>> {
+        self.elements
+            .iter()
+            .enumerate()
+            .map(|(i, col)| col.name().map(Into::into).unwrap_or_else(|| i.to_string().into()))
     }
 }
 

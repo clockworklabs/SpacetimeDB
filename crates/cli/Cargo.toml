@@ -42,6 +42,7 @@ flate2.workspace = true
 http.workspace = true
 is-terminal.workspace = true
 itertools.workspace = true
+indexmap.workspace = true
 indicatif.workspace = true
 jsonwebtoken.workspace = true
 mimalloc.workspace = true

@@ -1,28 +1,35 @@
-use clap::builder::PossibleValue;
+use spacetimedb_lib::{
+    sats::{satn, WithTypespace},
+    ProductType, ProductValue,
+};
 use tokio::io::{AsyncWrite, AsyncWriteExt as _};
 
 /// Output format for tabular data.
 ///
 /// Implements [`clap::ValueEnum`].
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
 pub enum OutputFormat {
+    /// Render output as JSON
     Json,
+    /// Render output in an ASCII table format
     Table,
+    /// Render output as CSV
     Csv,
 }
 
-impl clap::ValueEnum for OutputFormat {
-    fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Json, Self::Table, Self::Csv]
-    }
+/// A pre-configured [`clap::Arg`] for [`OutputFormat`].
+pub fn arg_output_format(default_format: &'static str) -> clap::Arg {
+    clap::Arg::new("output-format")
+        .long("output-format")
+        .short('o')
+        .value_parser(clap::value_parser!(OutputFormat))
+        .default_value(default_format)
+        .help("How to format tabular data.")
+}
 
-    fn to_possible_value(&self) -> Option<PossibleValue> {
-        Some(match self {
-            Self::Json => PossibleValue::new("json").help("Render output as JSON"),
-            Self::Table => PossibleValue::new("table").help("Render output in an ASCII table format"),
-            Self::Csv => PossibleValue::new("csv").help("Render output as CSV"),
-        })
-    }
+/// Get the [`OutputFormat`] arg as configured using [`arg_output_format`].
+pub fn get_arg_output_format(args: &clap::ArgMatches) -> OutputFormat {
+    args.get_one("output-format").copied().unwrap()
 }
 
 /// Write the given `value` to `out` in the [RFC7464] 'json-seq' format.
@@ -40,4 +47,38 @@ pub async fn write_json_seq<W: AsyncWrite + Unpin, T: serde::Serialize>(mut out:
     out.write_u8(b'\n').await?;
 
     Ok(())
+}
+
+/// Types which can be rendered according to an [`OutputFormat`].
+pub trait Render: Sized {
+    /// Render to `out` according to `fmt`.
+    ///
+    /// The default implementation just delegates to the respective `render_*`
+    /// trait method.
+    async fn render(self, out: impl AsyncWrite + Unpin, fmt: OutputFormat) -> anyhow::Result<()> {
+        use OutputFormat::*;
+
+        match fmt {
+            Json => self.render_json(out).await,
+            Table => self.render_tabled(out).await,
+            Csv => self.render_csv(out).await,
+        }
+    }
+
+    /// Render to `out` as JSON.
+    async fn render_json(self, out: impl AsyncWrite + Unpin) -> anyhow::Result<()>;
+    /// Render to `out` as ASCII table(s).
+    async fn render_tabled(self, out: impl AsyncWrite + Unpin) -> anyhow::Result<()>;
+    /// Render to `out` as CSV.
+    async fn render_csv(self, out: impl AsyncWrite + Unpin) -> anyhow::Result<()>;
+}
+
+/// Format each field in `row` as a string using psql formatting / escaping rules.
+pub(crate) fn fmt_row_psql<'a>(
+    row: &'a ProductValue,
+    schema: WithTypespace<'a, ProductType>,
+) -> impl Iterator<Item = String> + 'a {
+    schema
+        .with_values(row)
+        .map(move |value| satn::PsqlWrapper { ty: schema.ty(), value }.to_string())
 }

@@ -1,15 +1,15 @@
-use std::collections::HashMap;
 use std::iter;
 use std::time::{Duration, Instant};
 
 use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson};
-use crate::format::{self, OutputFormat};
-use clap::{value_parser, Arg, ArgAction, ArgGroup, ArgMatches};
+use crate::format::{self, arg_output_format, fmt_row_psql, get_arg_output_format, OutputFormat, Render};
+use clap::{Arg, ArgAction, ArgGroup, ArgMatches};
+use indexmap::IndexMap;
 use reqwest::RequestBuilder;
 use serde_json::json;
 use spacetimedb::json::client_api;
 use spacetimedb_lib::de::serde::SeedWrapper;
-use spacetimedb_lib::sats::{satn, Typespace};
+use spacetimedb_lib::sats::Typespace;
 use tabled::settings::panel::Footer;
 use tabled::settings::Style;
 use tokio::io::{AsyncWrite, AsyncWriteExt as _};
@@ -45,13 +45,8 @@ pub fn cli() -> clap::Command {
                 .required(true)
         )
         .arg(
-            Arg::new("output-format")
-                .long("output-format")
-                .short('o')
-                .conflicts_with("interactive")
-                .value_parser(value_parser!(OutputFormat))
-                .default_value("table")
-                .help("How to render the output of queries. Not available in interactive mode.")
+            arg_output_format("table")
+                .long_help("How to render the output of queries. Not available in interactive mode.")
         )
         .arg(
             Arg::new("identity")
@@ -93,7 +88,6 @@ pub(crate) async fn parse_req(mut config: Config, args: &ArgMatches) -> Result<C
 
 #[derive(Clone, Copy)]
 pub struct RenderOpts {
-    pub fmt: OutputFormat,
     pub with_timing: bool,
     pub with_row_count: bool,
 }
@@ -101,28 +95,22 @@ pub struct RenderOpts {
 struct Output<'a> {
     stmt_results: Vec<StmtResultJson<'a>>,
     elapsed: Duration,
+    opts: RenderOpts,
 }
 
 impl Output<'_> {
-    /// Render the [`Output`] to `out` according to [`RenderOpts`].
-    async fn render(
-        &self,
-        out: impl AsyncWrite + Unpin,
-        RenderOpts {
-            fmt,
-            with_timing,
-            with_row_count,
-        }: RenderOpts,
-    ) -> anyhow::Result<()> {
-        use OutputFormat::*;
-
-        match fmt {
-            Json => self.render_json(out).await,
-            Table => self.render_tabled(out, with_timing, with_row_count).await,
-            Csv => self.render_csv(out).await,
-        }
+    fn fmt_timing(&self) -> String {
+        format!("Time: {:.2?}\n", self.elapsed)
     }
 
+    fn sep_by<'a>(&self, s: &'a [u8]) -> impl Iterator<Item = Option<&'a [u8]>> {
+        iter::repeat(Some(s))
+            .take(self.stmt_results.len().saturating_sub(1))
+            .chain([None])
+    }
+}
+
+impl Render for Output<'_> {
     /// Renders each query result as a JSON object, delimited as [`json-seq`].
     ///
     /// The objects have a single field `rows`, which is an array of the result
@@ -136,41 +124,25 @@ impl Output<'_> {
     /// `quickstart-chat` application may return the following:
     ///
     /// ```json
-    /// {
-    ///   "rows": [{
-    ///     "text": "hello",
-    ///     "sender": [
-    ///       "aba52919637a60eb336e76eed40843653bfb3d9d94881d78ab13dda56363b993"
-    ///     ],
-    ///     "sent": 1718611618273455
-    ///   }]
-    /// }
-    /// {
-    ///   "rows": [{
-    ///     "identity": [
-    ///       "aba52919637a60eb336e76eed40843653bfb3d9d94881d78ab13dda56363b993"
-    ///     ],
-    ///     "name": {
-    ///       "1": []
-    ///     },
-    ///     "online": true
-    ///   }]
-    /// }
+    /// {"rows":[{"sender":["aba52919637a60eb336e76eed40843653bfb3d9d94881d78ab13dda56363b993"],"sent":1718611618273455,"text":"hello"}]}
+    /// {"rows":[{"identity":["aba52919637a60eb336e76eed40843653bfb3d9d94881d78ab13dda56363b993"],"name":{"1":[]},"online":true}]}
     /// ```
     ///
     /// [json-seq]: https://datatracker.ietf.org/doc/html/rfc7464
-    async fn render_json(&self, mut out: impl AsyncWrite + Unpin) -> anyhow::Result<()> {
+    async fn render_json(self, mut out: impl AsyncWrite + Unpin) -> anyhow::Result<()> {
         for stmt_result in &self.stmt_results {
             let client_api::StmtResultJson { schema, rows } = stmt_result.try_into()?;
 
-            let col_names = Vec::from(schema.elements)
-                .into_iter()
-                .enumerate()
-                .map(|(pos, col)| col.name.unwrap_or(pos.to_string().into()))
-                .collect::<Vec<_>>();
+            let col_names = schema.names().collect::<Vec<_>>();
             let rows = rows
                 .into_iter()
-                .map(|row| col_names.iter().zip(row).collect::<HashMap<_, _>>())
+                .map(|row| {
+                    // NOTE: Column names may actually be column positions.
+                    // Render all columns in position order, to make it less
+                    // confusing when inspecting visually.
+                    // TODO: Use a weaker hash algorithm?
+                    col_names.iter().zip(row).collect::<IndexMap<_, _>>()
+                })
                 .collect::<Vec<_>>();
 
             format::write_json_seq(&mut out, &json!({"rows": rows})).await?;
@@ -202,15 +174,10 @@ impl Output<'_> {
     /// --------------------------------------------------------------------+-------------+--------
     ///  0xaba52919637a60eb336e76eed40843653bfb3d9d94881d78ab13dda56363b993 | (none = ()) | true
     /// ```
-    async fn render_tabled(
-        &self,
-        mut out: impl AsyncWrite + Unpin,
-        with_timing: bool,
-        with_row_count: bool,
-    ) -> anyhow::Result<()> {
+    async fn render_tabled(self, mut out: impl AsyncWrite + Unpin) -> anyhow::Result<()> {
         // Print only `OK for empty tables as it's likely a command like `INSERT`.
         if self.stmt_results.is_empty() {
-            if with_timing {
+            if self.opts.with_timing {
                 out.write_all(self.fmt_timing().as_bytes()).await?;
             }
             out.write_all(b"OK").await?;
@@ -219,7 +186,7 @@ impl Output<'_> {
 
         for (stmt_result, sep) in self.stmt_results.iter().zip(self.sep_by(b"\n\n")) {
             let mut table = stmt_result_to_table(stmt_result)?;
-            if with_row_count {
+            if self.opts.with_row_count {
                 let rows = stmt_result.rows.len();
                 table.with(Footer::new(format!(
                     "({} {})",
@@ -233,7 +200,7 @@ impl Output<'_> {
             }
         }
 
-        if with_timing {
+        if self.opts.with_timing {
             out.write_all(self.fmt_timing().as_bytes()).await?;
         }
         out.flush().await?;
@@ -256,7 +223,7 @@ impl Output<'_> {
     /// # identity,name,online
     /// 0xaba52919637a60eb336e76eed40843653bfb3d9d94881d78ab13dda56363b993,(none = ()),true
     /// ```
-    async fn render_csv(&self, mut out: impl AsyncWrite + Unpin) -> anyhow::Result<()> {
+    async fn render_csv(self, mut out: impl AsyncWrite + Unpin) -> anyhow::Result<()> {
         for stmt_result in &self.stmt_results {
             let mut csv = csv_async::AsyncWriter::from_writer(&mut out);
             let StmtResultJson { schema, rows } = stmt_result;
@@ -264,17 +231,11 @@ impl Output<'_> {
 
             // Render column names as a comment, e.g.
             // `# sender,sent,text`
-            let mut cols = schema.elements.iter().enumerate();
-            if let Some((i, col)) = cols.next() {
-                match col.name() {
-                    Some(name) => csv.write_field(format!("# {}", name)).await?,
-                    None => csv.write_field(format!("# {}", i)).await?,
-                }
-            }
-            for (i, col) in cols {
-                match col.name() {
-                    Some(name) => csv.write_field(name).await?,
-                    None => csv.write_field(i.to_string()).await?,
+            for (i, name) in schema.names().enumerate() {
+                if i == 0 {
+                    csv.write_field(format!("# {}", name)).await?;
+                } else {
+                    csv.write_field(&*name).await?;
                 }
             }
             // Terminate record.
@@ -282,10 +243,9 @@ impl Output<'_> {
 
             for row in rows {
                 let row = from_json_seed(row.get(), SeedWrapper(ts))?;
-                for value in ts.with_values(&row) {
-                    let fmt = satn::PsqlWrapper { ty: ts.ty(), value }.to_string();
+                for field in fmt_row_psql(&row, ts) {
                     // Remove quotes around string values to prevent quoting.
-                    csv.write_field(fmt.trim_matches('"')).await?;
+                    csv.write_field(field.trim_matches('"')).await?;
                 }
                 // Terminate record.
                 csv.write_record(None::<&[u8]>).await?;
@@ -296,19 +256,14 @@ impl Output<'_> {
         out.flush().await?;
         Ok(())
     }
-
-    fn fmt_timing(&self) -> String {
-        format!("Time: {:.2?}\n", self.elapsed)
-    }
-
-    fn sep_by<'a>(&self, s: &'a [u8]) -> impl Iterator<Item = Option<&'a [u8]>> {
-        iter::repeat(Some(s))
-            .take(self.stmt_results.len().saturating_sub(1))
-            .chain([None])
-    }
 }
 
-pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, opts: RenderOpts) -> Result<(), anyhow::Error> {
+pub(crate) async fn run_sql(
+    builder: RequestBuilder,
+    sql: &str,
+    opts: RenderOpts,
+    fmt: OutputFormat,
+) -> Result<(), anyhow::Error> {
     let now = Instant::now();
 
     let json = error_for_status(builder.body(sql.to_owned()).send().await?)
@@ -320,8 +275,9 @@ pub(crate) async fn run_sql(builder: RequestBuilder, sql: &str, opts: RenderOpts
     Output {
         stmt_results,
         elapsed: now.elapsed(),
+        opts,
     }
-    .render(tokio::io::stdout(), opts)
+    .render(tokio::io::stdout(), fmt)
     .await?;
 
     Ok(())
@@ -331,21 +287,12 @@ fn stmt_result_to_table(stmt_result: &StmtResultJson) -> anyhow::Result<tabled::
     let StmtResultJson { schema, rows } = stmt_result;
 
     let mut builder = tabled::builder::Builder::default();
-    builder.push_record(
-        schema
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(i, e)| e.name.clone().unwrap_or_else(|| format!("column {i}").into())),
-    );
+    builder.push_record(schema.names());
 
     let ty = Typespace::EMPTY.with_type(schema);
     for row in rows {
         let row = from_json_seed(row.get(), SeedWrapper(ty))?;
-        builder.push_record(
-            ty.with_values(&row)
-                .map(|value| satn::PsqlWrapper { ty: ty.ty(), value }.to_string()),
-        );
+        builder.push_record(fmt_row_psql(&row, ty));
     }
 
     let mut table = builder.build();
@@ -358,24 +305,18 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let interactive = args.get_one::<bool>("interactive").unwrap_or(&false);
     if *interactive {
         let con = parse_req(config, args).await?;
-
         crate::repl::exec(con).await?;
     } else {
         let query = args.get_one::<String>("query").unwrap();
-        let fmt = args
-            .get_one::<OutputFormat>("output-format")
-            .copied()
-            .unwrap_or(OutputFormat::Table);
-
+        let fmt = get_arg_output_format(args);
         let con = parse_req(config, args).await?;
         let api = ClientApi::new(con);
-
-        let render_opts = RenderOpts {
-            fmt,
+        let opts = RenderOpts {
             with_timing: false,
             with_row_count: false,
         };
-        run_sql(api.sql(), query, render_opts).await?;
+
+        run_sql(api.sql(), query, opts, fmt).await?;
     }
     Ok(())
 }
