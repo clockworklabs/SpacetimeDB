@@ -16,7 +16,7 @@ use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
-use spacetimedb_lib::{bsatn, Address, Identity, ModuleDefBuilder, ReducerDef, TableDesc};
+use spacetimedb_lib::{bsatn, Address, Identity, ModuleDefBuilder, RawModuleDef, ReducerDef, TableDesc};
 use spacetimedb_primitives::*;
 
 /// The `sender` invokes `reducer` at `timestamp` and provides it with the given `args`.
@@ -450,6 +450,7 @@ extern "C" fn __describe_module__() -> Buffer {
 
     // Serialize the module to bsatn.
     let module_def = module.inner.finish();
+    let module_def = RawModuleDef::V8BackCompat(module_def);
     let bytes = bsatn::to_vec(&module_def).expect("unable to serialize typespace");
 
     // Write the set of reducers.

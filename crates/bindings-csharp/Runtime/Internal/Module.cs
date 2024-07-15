@@ -122,7 +122,7 @@ public static partial class Module
         : SpacetimeDB.TaggedEnum<(TypeAlias TypeAlias, Unit _Reserved)>;
 
     [SpacetimeDB.Type]
-    public partial struct ModuleDef()
+    public partial struct RawModuleDefV8()
     {
         List<AlgebraicType> Types = [];
         List<TableDesc> Tables = [];
@@ -164,7 +164,11 @@ public static partial class Module
         internal void RegisterTable(TableDesc table) => Tables.Add(table);
     }
 
-    private static readonly ModuleDef moduleDef = new();
+    [SpacetimeDB.Type]
+    internal partial record RawModuleDef
+        : SpacetimeDB.TaggedEnum<(RawModuleDefV8 V8BackCompat, Unit _Reserved)>;
+
+    private static readonly RawModuleDefV0 moduleDef = new();
     private static readonly List<IReducer> reducers = [];
 
     struct TypeRegistrar() : ITypeRegistrar
@@ -224,11 +228,11 @@ public static partial class Module
 
     public static Buffer __describe_module__()
     {
-        // replace `module` with a temporary internal module that will register ModuleDef, AlgebraicType and other internal types
-        // during the ModuleDef.GetSatsTypeInfo() instead of exposing them via user's module.
+        // replace `module` with a temporary internal module that will register RawModuleDefV8, AlgebraicType and other internal types
+        // during the RawModuleDefV8.GetSatsTypeInfo() instead of exposing them via user's module.
         try
         {
-            var moduleBytes = IStructuralReadWrite.ToBytes(moduleDef);
+            var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.V8BackCompat(moduleDef));
             var res = FFI._buffer_alloc(moduleBytes, (uint)moduleBytes.Length);
             return res;
         }

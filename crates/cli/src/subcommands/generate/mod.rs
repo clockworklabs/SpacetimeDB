@@ -12,8 +12,8 @@ use duct::cmd;
 use spacetimedb_lib::db::raw_def::RawColumnDefV8;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::sats::{AlgebraicType, Typespace};
-use spacetimedb_lib::MODULE_ABI_MAJOR_VERSION;
 use spacetimedb_lib::{bsatn, MiscModuleExport, RawModuleDefV8, ReducerDef, TableDesc, TypeAlias};
+use spacetimedb_lib::{RawModuleDef, MODULE_ABI_MAJOR_VERSION};
 use wasmtime::{AsContext, Caller};
 
 use crate::Config;
@@ -481,13 +481,18 @@ pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDefV8> 
     for (_, func) in preinits {
         func.typed(&store)?.call(&mut store, ())?
     }
-    let module = match instance.get_func(&mut store, "__describe_module__") {
+    let module: RawModuleDef = match instance.get_func(&mut store, "__describe_module__") {
         Some(f) => {
             let buf: u32 = f.typed(&store)?.call(&mut store, ()).unwrap();
             let slice = store.data_mut().buffers.remove(buf as usize);
             bsatn::from_slice(&slice)?
         }
-        None => RawModuleDefV8::default(),
+        // TODO: shouldn't we return an error here?
+        None => RawModuleDef::V8BackCompat(RawModuleDefV8::default()),
+    };
+    let module = match module {
+        RawModuleDef::V8BackCompat(v8) => v8,
+        _ => anyhow::bail!("Unimplemented module definition version"),
     };
     Ok(module)
 }

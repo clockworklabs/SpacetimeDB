@@ -196,6 +196,17 @@ impl RawModuleDefV8 {
     }
 }
 
+/// A versioned raw module definition.
+///
+/// This is what is actually returned by the module when `__describe_module__` is called, serialized to BSATN.
+#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[non_exhaustive]
+pub enum RawModuleDef {
+    V8BackCompat(RawModuleDefV8),
+    // TODO(jgilles): It would be nice to have a custom error message if this fails with an unknown variant,
+    // but I'm not sure if that can be done via the Deserialize trait.
+}
+
 /// A builder for a [`ModuleDef`].
 #[derive(Default)]
 pub struct ModuleDefBuilder {
