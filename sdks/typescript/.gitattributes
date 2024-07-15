@@ -1,0 +1,2 @@
+src/client_api/*.ts linguist-generated=true
+examples/quickstart/client/src/module_bindings/*.ts linguist-generated=true

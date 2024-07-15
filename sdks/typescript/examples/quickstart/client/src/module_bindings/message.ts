@@ -23,10 +23,10 @@ export class Message extends DatabaseTable {
   public static db: ClientDB = __SPACETIMEDB__.clientDB;
   public static tableName = "Message";
   public sender: Identity;
-  public sent: bigint;
+  public sent: BigInt;
   public text: string;
 
-  constructor(sender: Identity, sent: bigint, text: string) {
+  constructor(sender: Identity, sent: BigInt, text: string) {
     super();
     this.sender = sender;
     this.sent = sent;
@@ -71,34 +71,28 @@ export class Message extends DatabaseTable {
     return new this(__sender, __sent, __text);
   }
 
-  public static filterBySender(value: Identity): Message[] {
-    let result: Message[] = [];
+  public static *filterBySender(value: Identity): IterableIterator<Message> {
     for (let instance of this.db.getTable("Message").getInstances()) {
       if (instance.sender.isEqual(value)) {
-        result.push(instance);
+        yield instance;
       }
     }
-    return result;
   }
 
-  public static filterBySent(value: BigInt): Message[] {
-    let result: Message[] = [];
+  public static *filterBySent(value: BigInt): IterableIterator<Message> {
     for (let instance of this.db.getTable("Message").getInstances()) {
       if (instance.sent === value) {
-        result.push(instance);
+        yield instance;
       }
     }
-    return result;
   }
 
-  public static filterByText(value: string): Message[] {
-    let result: Message[] = [];
+  public static *filterByText(value: string): IterableIterator<Message> {
     for (let instance of this.db.getTable("Message").getInstances()) {
       if (instance.text === value) {
-        result.push(instance);
+        yield instance;
       }
     }
-    return result;
   }
 }
 

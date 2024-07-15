@@ -70,7 +70,7 @@ function App() {
     messages.sort((a, b) => (a.sent > b.sent ? 1 : a.sent < b.sent ? -1 : 0));
 
     let messagesType: MessageType[] = messages.map((message) => {
-      let sender = User.filterByIdentity(message.sender);
+      let sender = User.findByIdentity(message.sender);
       let name = sender ? userNameOrIdentity(sender) : "unknown";
 
       return {
@@ -84,7 +84,7 @@ function App() {
 
   client.current.on("initialStateSync", () => {
     setAllMessagesInOrder();
-    var user = User.filterByIdentity(local_identity?.current!);
+    var user = User.findByIdentity(local_identity?.current!);
     setName(userNameOrIdentity(user!));
   });
 

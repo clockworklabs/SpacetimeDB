@@ -14,7 +14,7 @@ export class TransactionUpdateEvent {
   public address: Address | null;
   public originalReducerName: string;
   public reducerName: string;
-  public args: any[] | Uint8Array;
+  public args: Uint8Array;
   public status: string;
   public message: string;
 
@@ -23,7 +23,7 @@ export class TransactionUpdateEvent {
     address: Address | null,
     originalReducerName: string,
     reducerName: string,
-    args: any[] | Uint8Array,
+    args: Uint8Array,
     status: string,
     message: string
   ) {
