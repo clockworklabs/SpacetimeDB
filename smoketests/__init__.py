@@ -243,7 +243,9 @@ class Smoketest(unittest.TestCase):
             return lambda timeout=None: []
 
         def run():
-            updates = list(map(json.loads, proc.stdout))
+            # Strip whitespace, including json-seq record separator (u"\x1e")
+            input = map(str.strip, proc.stdout)
+            updates = list(map(json.loads, input))
             code = proc.wait()
             if code:
                 raise subprocess.CalledProcessError(code, fake_args)

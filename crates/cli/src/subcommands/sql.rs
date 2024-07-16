@@ -197,6 +197,8 @@ impl Render for Output<'_> {
             out.write_all(table.to_string().as_bytes()).await?;
             if let Some(sep) = sep {
                 out.write_all(sep).await?;
+            } else {
+                out.write_all(b"\n").await?;
             }
         }
 
