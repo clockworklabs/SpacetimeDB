@@ -160,16 +160,23 @@ impl Table {
     /// returns true if and only if that row should be ignored.
     /// While checking unique constraints against the committed state,
     /// `MutTxId::insert` will ignore rows which are listed in the delete table.
-    pub fn check_unique_constraints(
-        &self,
+    pub fn check_unique_constraints<'a>(
+        &'a self,
+        blob_store: &'a dyn BlobStore,
         row: &ProductValue,
         mut is_deleted: impl FnMut(RowPointer) -> bool,
     ) -> Result<(), UniqueConstraintViolation> {
         for (cols, index) in self.indexes.iter().filter(|(_, index)| index.is_unique) {
             let value = row.project_not_empty(cols).unwrap();
-            if let Some(mut conflicts) = index.get_rows_that_violate_unique_constraint(&value) {
-                if conflicts.any(|ptr| !is_deleted(ptr)) {
-                    return Err(self.build_error_unique(index, cols, value));
+            if let Some(conflicts) = index.get_rows_that_violate_unique_constraint(&value) {
+                for ptr in conflicts {
+                    if !is_deleted(ptr) {
+                        let ref_ = self
+                            .get_row_ref(blob_store, ptr)
+                            .expect("not deleted should be present");
+                        let present_row = ref_.to_product_value();
+                        return Err(self.build_error_unique(index, row.clone(), present_row.clone(), cols));
+                    }
                 }
             }
         }
@@ -196,6 +203,7 @@ impl Table {
         // Check unique constraints.
         // This error should take precedence over any other potential failures.
         self.check_unique_constraints(
+            blob_store,
             row,
             // No need to worry about the committed vs tx state dichotomy here;
             // just treat all rows in the table as live.
@@ -975,12 +983,20 @@ impl IndexScanIter<'_> {
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
-#[error("Unique constraint violation '{}' in table '{}': column(s): '{:?}' value: {}", constraint_name, table_name, cols, value.to_satn())]
+#[error(
+    "Unique constraint violation '{}' in table '{}', column(s): '{:?}': failed to insert: {} because of: {}",
+    constraint_name,
+    table_name,
+    cols,
+    inserted_row.to_satn(),
+    present_row.to_satn()
+)]
 pub struct UniqueConstraintViolation {
     pub constraint_name: Box<str>,
     pub table_name: Box<str>,
+    pub inserted_row: ProductValue,
+    pub present_row: ProductValue,
     pub cols: Vec<Box<str>>,
-    pub value: AlgebraicValue,
 }
 
 // Private API:
@@ -990,8 +1006,9 @@ impl Table {
     fn build_error_unique(
         &self,
         index: &BTreeIndex,
+        inserted_row: ProductValue,
+        present_row: ProductValue,
         cols: &ColList,
-        value: AlgebraicValue,
     ) -> UniqueConstraintViolation {
         let schema = self.get_schema();
 
@@ -1016,8 +1033,9 @@ impl Table {
         UniqueConstraintViolation {
             constraint_name,
             table_name,
+            inserted_row,
+            present_row,
             cols,
-            value,
         }
     }
 
@@ -1204,12 +1222,14 @@ pub(crate) mod test {
                 constraint_name,
                 table_name,
                 cols,
-                value,
+                inserted_row,
+                present_row,
             })) => {
                 assert_eq!(&*constraint_name, index_name);
                 assert_eq!(&*table_name, "UniqueIndexed");
                 assert_eq!(cols.iter().map(|c| c.to_string()).collect::<Vec<_>>(), &["unique_col"]);
-                assert_eq!(value, AlgebraicValue::I32(0));
+                assert_eq!(inserted_row, product![0i32, 1i32]);
+                assert_eq!(present_row, product![0i32, 0i32]);
             }
             Err(e) => panic!("Expected UniqueConstraintViolation but found {:?}", e),
         }

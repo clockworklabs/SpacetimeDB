@@ -333,12 +333,9 @@ pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
         NodesError::ColumnValueNotFound | NodesError::RangeNotFound => Some(errno::LOOKUP_NOT_FOUND),
         NodesError::AlreadyExists(_) => Some(errno::UNIQUE_ALREADY_EXISTS),
         NodesError::Internal(internal) => match **internal {
-            DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
-                constraint_name: _,
-                table_name: _,
-                cols: _,
-                value: _,
-            })) => Some(errno::UNIQUE_ALREADY_EXISTS),
+            DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation { .. })) => {
+                Some(errno::UNIQUE_ALREADY_EXISTS)
+            }
             _ => None,
         },
         _ => None,
