@@ -51,6 +51,8 @@ pub(crate) const ST_MODULE_ID: TableId = TableId(5);
 pub(crate) const ST_CLIENTS_ID: TableId = TableId(6);
 /// The static ID of the table that defines system variables
 pub(crate) const ST_VAR_ID: TableId = TableId(7);
+/// The static ID of the table that defines scheduled tables
+pub(crate) const ST_SCHEDULED_ID: TableId = TableId(8);
 
 pub(crate) const ST_TABLES_NAME: &str = "st_table";
 pub(crate) const ST_COLUMNS_NAME: &str = "st_columns";
@@ -59,6 +61,7 @@ pub(crate) const ST_INDEXES_NAME: &str = "st_indexes";
 pub(crate) const ST_CONSTRAINTS_NAME: &str = "st_constraints";
 pub(crate) const ST_MODULE_NAME: &str = "st_module";
 pub(crate) const ST_CLIENTS_NAME: &str = "st_clients";
+pub(crate) const ST_SCHEDULED_NAME: &str = "st_scheduled";
 pub(crate) const ST_VAR_NAME: &str = "st_var";
 
 /// Reserved range of sequence values used for system tables.
@@ -86,7 +89,7 @@ pub enum SystemTable {
     st_indexes,
     st_constraints,
 }
-pub(crate) fn system_tables() -> [TableSchema; 8] {
+pub(crate) fn system_tables() -> [TableSchema; 9] {
     [
         st_table_schema(),
         st_columns_schema(),
@@ -95,6 +98,7 @@ pub(crate) fn system_tables() -> [TableSchema; 8] {
         st_module_schema(),
         st_clients_schema(),
         st_var_schema(),
+        st_scheduled_schema(),
         // Is important this is always last, so the starting sequence for each
         // system table is correct.
         st_sequences_schema(),
@@ -130,7 +134,8 @@ pub(crate) const ST_CONSTRAINTS_IDX: usize = 3;
 pub(crate) const ST_MODULE_IDX: usize = 4;
 pub(crate) const ST_CLIENT_IDX: usize = 5;
 pub(crate) const ST_VAR_IDX: usize = 6;
-pub(crate) const ST_SEQUENCES_IDX: usize = 7;
+pub(crate) const ST_SCHEDULED_IDX: usize = 7;
+pub(crate) const ST_SEQUENCES_IDX: usize = 8;
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
         #[derive(Copy, Clone, Debug)]
@@ -231,6 +236,10 @@ st_fields_enum!(enum StVarFields {
     "value", Value = 1,
 });
 
+st_fields_enum!(enum StScheduledFields {
+    "table_id", TableId = 0,
+    "reducer_name", ReducerName = 1,
+});
 /// System Table [ST_TABLES_NAME]
 ///
 /// | table_id | table_name  | table_type | table_access |
@@ -396,6 +405,19 @@ fn st_clients_schema() -> TableSchema {
     .into_schema(ST_CLIENTS_ID)
 }
 
+fn st_scheduled_schema() -> TableSchema {
+    TableDef::new(
+        ST_SCHEDULED_NAME.into(),
+        vec![
+            ColumnDef::sys(StScheduledFields::TableId.name(), AlgebraicType::U32),
+            ColumnDef::sys(StScheduledFields::ReducerName.name(), AlgebraicType::String),
+        ],
+    )
+    .with_type(StTableType::System)
+    .with_column_constraint(Constraints::unique(), StScheduledFields::TableId)
+    .into_schema(ST_SCHEDULED_ID)
+}
+
 /// System Table [ST_VAR_NAME]
 ///
 /// | name        | value     |
@@ -430,6 +452,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_MODULE_ID => Some(st_module_schema()),
         ST_CLIENTS_ID => Some(st_clients_schema()),
         ST_VAR_ID => Some(st_var_schema()),
+        ST_SCHEDULED_ID => Some(st_scheduled_schema()),
         _ => None,
     }
 }
@@ -1177,6 +1200,28 @@ impl TryFrom<RowRef<'_>> for StVarRow {
             }),
             _ => Err(invalid_value.into()),
         }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StScheduledRow<ReducerName: AsRef<str>> {
+    pub(crate) table_id: TableId,
+    pub(crate) reducer_name: ReducerName,
+}
+
+impl TryFrom<RowRef<'_>> for StScheduledRow<Box<str>> {
+    type Error = DBError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DBError> {
+        Ok(StScheduledRow {
+            table_id: row.read_col(StScheduledFields::TableId)?,
+            reducer_name: row.read_col(StScheduledFields::ReducerName)?,
+        })
+    }
+}
+
+impl From<StScheduledRow<Box<str>>> for ProductValue {
+    fn from(x: StScheduledRow<Box<str>>) -> Self {
+        product![x.table_id, x.reducer_name]
     }
 }
 

@@ -5,7 +5,6 @@ use std::time::Instant;
 
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
 use crate::execution_context::ExecutionContext;
-use crate::host::scheduler::{ScheduleError, ScheduledReducerId};
 use crate::host::wasm_common::instrumentation;
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
 use crate::host::wasm_common::{
@@ -13,8 +12,7 @@ use crate::host::wasm_common::{
     TimingSpanIdx, TimingSpanSet,
 };
 use crate::host::AbiCall;
-use crate::host::Timestamp;
-use anyhow::{anyhow, Context};
+use anyhow::Context as _;
 use spacetimedb_primitives::errno;
 use wasmtime::{AsContext, Caller, StoreContextMut};
 
@@ -240,62 +238,6 @@ impl WasmInstanceEnv {
 
         let span = span_start.end();
         span::record_span(&mut caller.data_mut().call_times, span);
-    }
-
-    /// Schedules a reducer to be called asynchronously at `time`.
-    ///
-    /// The reducer is named as the valid UTF-8 slice `(name, name_len)`,
-    /// and is passed the slice `(args, args_len)` as its argument.
-    ///
-    /// A generated schedule id is assigned to the reducer.
-    /// This id is written to the pointer `out`.
-    ///
-    /// Returns an error if
-    /// - the `time` delay exceeds `64^6 - 1` milliseconds from now
-    /// - `name` does not point to valid UTF-8
-    /// - `name + name_len` or `args + args_len` overflow a 64-bit integer
-    /// - writing to `out` overflows a 64-bit integer
-    #[tracing::instrument(skip_all)]
-    pub fn schedule_reducer(
-        caller: Caller<'_, Self>,
-        name: WasmPtr<u8>,
-        name_len: u32,
-        args: WasmPtr<u8>,
-        args_len: u32,
-        time: u64,
-        out: WasmPtr<u64>,
-    ) -> RtResult<()> {
-        Self::cvt_ret(caller, AbiCall::ScheduleReducer, out, |caller| {
-            let (mem, env) = Self::mem_env(caller);
-            // Read the index name as a string from `(name, name_len)`.
-            let name = mem.deref_str(name, name_len)?.to_owned();
-
-            // Read the reducer's arguments as a byte slice.
-            let args = mem.deref_slice(args, args_len)?.to_vec();
-
-            // Schedule it!
-            let ScheduledReducerId(id) = env
-                .instance_env
-                .schedule(name, args, Timestamp::from_microseconds(time))
-                .map_err(|e| match e {
-                    ScheduleError::DelayTooLong(_) => anyhow!("requested delay is too long"),
-                    ScheduleError::IdTransactionError(_) => {
-                        anyhow!("transaction to acquire ScheduleReducerId failed")
-                    }
-                })?;
-            Ok(id)
-        })
-        .map(|_| ())
-    }
-
-    /// Unschedule a reducer using the same `id` generated as when it was scheduled.
-    ///
-    /// This assumes that the reducer hasn't already been executed.
-    #[tracing::instrument(skip_all)]
-    pub fn cancel_reducer(caller: Caller<'_, Self>, id: u64) {
-        Self::cvt_noret(caller, AbiCall::CancelReducer, |caller| {
-            caller.data().instance_env.cancel_reducer(ScheduledReducerId(id))
-        })
     }
 
     /// Log at `level` a `message` message occuring in `filename:line_number`

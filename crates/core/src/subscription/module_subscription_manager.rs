@@ -262,6 +262,7 @@ where
 mod tests {
     use std::{sync::Arc, time::Duration};
 
+    use spacetimedb_client_api_messages::timestamp::Timestamp;
     use spacetimedb_lib::{error::ResultTest, Address, AlgebraicType, Identity};
     use spacetimedb_primitives::TableId;
     use spacetimedb_vm::expr::CrudExpr;
@@ -273,7 +274,7 @@ mod tests {
         execution_context::ExecutionContext,
         host::{
             module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall},
-            ArgsTuple, Timestamp,
+            ArgsTuple,
         },
         sql::compiler::compile_sql,
         subscription::{

@@ -81,6 +81,12 @@ impl Timestamp {
     }
 }
 
+impl From<Timestamp> for spacetimedb_lib::ScheduleAt {
+    fn from(ts: Timestamp) -> Self {
+        Self::Time(ts.into_micros_since_epoch())
+    }
+}
+
 impl Add<Duration> for Timestamp {
     type Output = Timestamp;
 

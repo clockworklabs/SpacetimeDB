@@ -460,7 +460,6 @@ impl HostController {
             if let Some(host) = lock.write_owned().await.take() {
                 let module = host.module.borrow().clone();
                 module.exit().await;
-                host.scheduler.clear();
             }
         }
 
@@ -589,7 +588,6 @@ async fn load_program(storage: &ProgramStorage, hash: Hash) -> anyhow::Result<Bo
 }
 
 async fn launch_module(
-    root_dir: &Path,
     database: Database,
     instance_id: u64,
     program_bytes: Box<[u8]>,
@@ -602,7 +600,7 @@ async fn launch_module(
     let host_type = database.host_type;
 
     let dbic = make_dbic(database, instance_id, relational_db).await.map(Arc::new)?;
-    let (scheduler, scheduler_starter) = Scheduler::open(dbic.scheduler_db_path(root_dir.to_path_buf()))?;
+    let (scheduler, scheduler_starter) = Scheduler::open(dbic.relational_db.clone());
     let module_host = make_module_host(
         host_type,
         ModuleCreationContext {
@@ -725,7 +723,6 @@ impl Host {
             // Launch module with program from existing database.
             Some(program_bytes) => {
                 launch_module(
-                    root_dir,
                     database,
                     instance_id,
                     program_bytes,
@@ -742,7 +739,6 @@ impl Host {
                 let program_hash = database.initial_program;
                 let program_bytes = load_program(&program_storage, program_hash).await?;
                 let res = launch_module(
-                    root_dir,
                     database,
                     instance_id,
                     program_bytes.clone(),

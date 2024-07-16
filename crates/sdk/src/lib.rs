@@ -30,7 +30,7 @@ pub mod background_connection;
 // We re-export `spacetimedb_lib` so the cli codegen can reference it through us, rather
 // than requiring downstream users to depend on it explicitly.
 // TODO: determine if this should be `#[doc(hidden)]`
-pub use spacetimedb_lib::{self, Address};
+pub use spacetimedb_lib::{self, Address, ScheduleAt};
 
 // Ditto re-exporing `log`.
 // TODO: determine if this should be `#[doc(hidden)]`.

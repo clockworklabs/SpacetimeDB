@@ -75,6 +75,13 @@ impl ProductType {
     pub fn is_special(&self) -> bool {
         self.is_identity() || self.is_address()
     }
+
+    /// Returns index of the field with the given `name`.
+    pub fn index_of_field_name(&self, name: &str) -> Option<usize> {
+        self.elements
+            .iter()
+            .position(|field| field.name.as_deref() == Some(name))
+    }
 }
 
 impl<I: Into<ProductTypeElement>> FromIterator<I> for ProductType {
