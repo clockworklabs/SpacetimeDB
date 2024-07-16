@@ -9,6 +9,21 @@ using System.Runtime.InteropServices;
 
 static class ModuleRegistration
 {
+    class Init : SpacetimeDB.Internal.IReducer
+    {
+        public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        )
+        {
+            return new("__init__");
+        }
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
+        {
+            Timers.Init(ctx);
+        }
+    }
+
     class InsertData : SpacetimeDB.Internal.IReducer
     {
         private static PublicTable.BSATN data = new();
@@ -55,6 +70,26 @@ static class ModuleRegistration
         }
     }
 
+    class SendScheduledMessage : SpacetimeDB.Internal.IReducer
+    {
+        private static Timers.SendMessageTimer.BSATN arg = new();
+
+        public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        )
+        {
+            return new(
+                "SendScheduledMessage",
+                new SpacetimeDB.BSATN.AggregateElement(nameof(arg), arg.GetAlgebraicType(registrar))
+            );
+        }
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
+        {
+            Timers.SendScheduledMessage(arg.Read(reader));
+        }
+    }
+
 #if EXPERIMENTAL_WASM_AOT
     // In AOT mode we're building a library.
     // Main method won't be called automatically, so we need to export it as a preinit function.
@@ -68,10 +103,13 @@ static class ModuleRegistration
 #endif
     public static void Main()
     {
+        SpacetimeDB.Internal.Module.RegisterReducer<Init>();
         SpacetimeDB.Internal.Module.RegisterReducer<InsertData>();
         SpacetimeDB.Internal.Module.RegisterReducer<InsertData2>();
+        SpacetimeDB.Internal.Module.RegisterReducer<SendScheduledMessage>();
         SpacetimeDB.Internal.Module.RegisterTable<PrivateTable>();
         SpacetimeDB.Internal.Module.RegisterTable<PublicTable>();
+        SpacetimeDB.Internal.Module.RegisterTable<Timers.SendMessageTimer>();
     }
 
     // Exports only work from the main assembly, so we need to generate forwarding methods.
@@ -85,7 +123,7 @@ static class ModuleRegistration
         uint id,
         SpacetimeDB.Internal.Buffer caller_identity,
         SpacetimeDB.Internal.Buffer caller_address,
-        ulong timestamp,
+        SpacetimeDB.Internal.DateTimeOffsetRepr timestamp,
         SpacetimeDB.Internal.Buffer args
     ) =>
         SpacetimeDB.Internal.Module.__call_reducer__(

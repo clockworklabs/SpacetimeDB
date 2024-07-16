@@ -87,6 +87,13 @@ impl ProductType {
             .enumerate()
             .map(|(i, col)| col.name().map(Into::into).unwrap_or_else(|| i.to_string().into()))
     }
+
+    /// Returns index of the field with the given `name`.
+    pub fn index_of_field_name(&self, name: &str) -> Option<usize> {
+        self.elements
+            .iter()
+            .position(|field| field.name.as_deref() == Some(name))
+    }
 }
 
 impl<I: Into<ProductTypeElement>> FromIterator<I> for ProductType {

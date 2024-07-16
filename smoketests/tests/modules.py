@@ -140,17 +140,22 @@ pub fn say_hello() {
 
 class UploadModule2(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb, Timestamp};
+use spacetimedb::{println, duration, spacetimedb, Timestamp, spacetimedb_lib::ScheduleAt, ReducerContext};
+
+
+#[spacetimedb(table(public), scheduled(my_repeating_reducer))]
+pub struct ScheduledMessage {
+    prev: Timestamp,
+}
 
 #[spacetimedb(init)]
 fn init() {
-    spacetimedb::schedule!("100ms", my_repeating_reducer(Timestamp::now()));
+    let _ = ScheduledMessage::insert(ScheduledMessage { prev: Timestamp::now(), scheduled_id: 0, scheduled_at: duration!(100ms).into(), });
 }
 
 #[spacetimedb(reducer)]
-pub fn my_repeating_reducer(prev: Timestamp) {
-  println!("Invoked: ts={:?}, delta={:?}", Timestamp::now(), prev.elapsed());
-    spacetimedb::schedule!("100ms", my_repeating_reducer(Timestamp::now()));
+pub fn my_repeating_reducer(_ctx: ReducerContext, arg: ScheduledMessage) {
+    println!("Invoked: ts={:?}, delta={:?}", Timestamp::now(), arg.prev.elapsed());
 }
 """
     def test_upload_module_2(self):

@@ -3,9 +3,9 @@ use super::{
 };
 use crate::{
     db::datastore::system_tables::{
-        StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StSequenceFields,
-        StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMNS_ID, ST_CONSTRAINTS_ID, ST_INDEXES_ID,
-        ST_SEQUENCES_ID, ST_TABLES_ID,
+        StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields,
+        StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMNS_ID,
+        ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SCHEDULED_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
     },
     error::TableError,
     execution_context::ExecutionContext,
@@ -140,6 +140,15 @@ pub trait StateView {
             })
             .collect::<Result<Vec<_>>>()?;
 
+        let scheduled = self
+            .iter_by_col_eq(ctx, ST_SCHEDULED_ID, StScheduledFields::TableId, value_eq)?
+            .next()
+            .map(|row| -> Result<_> {
+                let row = StScheduledRow::try_from(row)?;
+                Ok(row.reducer_name)
+            })
+            .transpose()?;
+
         Ok(TableSchema::new(
             table_id,
             table_name,
@@ -149,6 +158,7 @@ pub trait StateView {
             sequences,
             table_type,
             table_access,
+            scheduled,
         ))
     }
 

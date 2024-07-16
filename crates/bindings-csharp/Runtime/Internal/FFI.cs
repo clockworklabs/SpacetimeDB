@@ -33,7 +33,7 @@ internal static partial class FFI
     // `LibraryImport` directly.
     const string StdbNamespace =
 #if EXPERIMENTAL_WASM_AOT
-        "spacetime_8.0"
+        "spacetime_9.0"
 #else
         "bindings"
 #endif
@@ -105,12 +105,6 @@ internal static partial class FFI
     public readonly struct LogLevel(byte log_level)
     {
         private readonly byte log_level = log_level;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public readonly struct ScheduleToken
-    {
-        private readonly ulong schedule_token;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -197,19 +191,6 @@ internal static partial class FFI
         [In] byte[] message,
         uint message_len
     );
-
-    [LibraryImport(StdbNamespace)]
-    public static partial void _schedule_reducer(
-        [In] byte[] name,
-        uint name_len,
-        [In] byte[] args,
-        uint args_len,
-        ulong time,
-        out ScheduleToken out_
-    );
-
-    [LibraryImport(StdbNamespace)]
-    public static partial void _cancel_reducer(ScheduleToken schedule_token_handle);
 
     [LibraryImport(StdbNamespace)]
     public static partial uint _buffer_len(Buffer buf_handle);

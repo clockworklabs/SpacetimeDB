@@ -18,14 +18,13 @@ OPAQUE_TYPEDEF(TableId, uint32_t);
 OPAQUE_TYPEDEF(ColId, uint32_t);
 OPAQUE_TYPEDEF(IndexType, uint8_t);
 OPAQUE_TYPEDEF(LogLevel, uint8_t);
-OPAQUE_TYPEDEF(ScheduleToken, uint64_t);
 OPAQUE_TYPEDEF(Buffer, uint32_t);
 OPAQUE_TYPEDEF(RowIter, uint32_t);
 
 #define CSTR(s) (uint8_t*)s, sizeof(s) - 1
 
 #define STDB_EXTERN(name) \
-  __attribute__((import_module("spacetime_8.0"), import_name(#name))) extern
+  __attribute__((import_module("spacetime_9.0"), import_name(#name))) extern
 
 #ifndef EXPERIMENTAL_WASM_AOT
 #define IMPORT(ret, name, params, args)    \
@@ -73,11 +72,6 @@ IMPORT(Status, _iter_advance,
        (RowIter iter, uint8_t* buffer, size_t* buffer_len),
        (iter, buffer, buffer_len));
 IMPORT(void, _iter_drop, (RowIter iter), (iter));
-IMPORT(void, _schedule_reducer,
-       (const uint8_t* name, uint32_t name_len, const uint8_t* args,
-        uint32_t args_len, uint64_t timestamp, ScheduleToken* token),
-       (name, name_len, args, args_len, timestamp, token));
-IMPORT(void, _cancel_reducer, (ScheduleToken token), (token));
 IMPORT(uint32_t, _buffer_len, (Buffer buf), (buf));
 IMPORT(void, _buffer_consume, (Buffer buf, uint8_t* dst, uint32_t dst_len),
        (buf, dst, dst_len));
