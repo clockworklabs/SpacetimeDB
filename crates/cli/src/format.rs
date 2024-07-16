@@ -51,26 +51,23 @@ pub async fn write_json_seq<W: AsyncWrite + Unpin, T: serde::Serialize>(mut out:
 
 /// Types which can be rendered according to an [`OutputFormat`].
 pub trait Render: Sized {
-    /// Render to `out` according to `fmt`.
-    ///
-    /// The default implementation just delegates to the respective `render_*`
-    /// trait method.
-    async fn render(self, out: impl AsyncWrite + Unpin, fmt: OutputFormat) -> anyhow::Result<()> {
-        use OutputFormat::*;
-
-        match fmt {
-            Json => self.render_json(out).await,
-            Table => self.render_tabled(out).await,
-            Csv => self.render_csv(out).await,
-        }
-    }
-
     /// Render to `out` as JSON.
     async fn render_json(self, out: impl AsyncWrite + Unpin) -> anyhow::Result<()>;
     /// Render to `out` as ASCII table(s).
     async fn render_tabled(self, out: impl AsyncWrite + Unpin) -> anyhow::Result<()>;
     /// Render to `out` as CSV.
     async fn render_csv(self, out: impl AsyncWrite + Unpin) -> anyhow::Result<()>;
+}
+
+/// Render the given [`Render`]-able to `out` using `fmt`.
+pub async fn render(r: impl Render, fmt: OutputFormat, out: impl AsyncWrite + Unpin) -> anyhow::Result<()> {
+    use OutputFormat::*;
+
+    match fmt {
+        Json => r.render_json(out).await,
+        Table => r.render_tabled(out).await,
+        Csv => r.render_csv(out).await,
+    }
 }
 
 /// Format each field in `row` as a string using psql formatting / escaping rules.

@@ -1,28 +1,27 @@
-use std::iter;
-use std::time::Duration;
-
-use anyhow::Context;
+use anyhow::{bail, Context};
 use clap::{value_parser, Arg, ArgAction, ArgMatches};
 use futures::{Sink, SinkExt, TryStream, TryStreamExt};
 use http::header;
 use http::uri::Scheme;
-use serde_json::value::RawValue;
+use spacetimedb_client_api_messages::websocket::{self as ws, EncodedValue};
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_lib::de::serde::SeedWrapper;
-use spacetimedb_lib::de::ProductVisitor;
+use spacetimedb_lib::de::serde::{DeserializeWrapper, SeedWrapper};
+use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
-use spacetimedb_lib::ModuleDef;
+use spacetimedb_lib::{ModuleDef, TableDesc};
 use spacetimedb_standalone::TEXT_PROTOCOL;
+use std::iter;
+use std::time::Duration;
 use tabled::settings::panel::Footer;
 use tabled::settings::Style;
-use tokio::io::{AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncWrite, AsyncWriteExt as _};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
 use crate::api::{from_json_seed, ClientApi};
 use crate::format::{self, arg_output_format, fmt_row_psql, get_arg_output_format, OutputFormat, Render};
 use crate::sql::parse_req;
-use crate::Config;
+use crate::{common_args, Config};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("subscribe")
@@ -68,9 +67,7 @@ pub fn cli() -> clap::Command {
         )
         .arg(arg_output_format("json").long_help("How to render the subscription updates."))
         .arg(
-            Arg::new("identity")
-                .long("identity")
-                .short('i')
+            common_args::identity()
                 .conflicts_with("anon_identity")
                 .help("The identity to use for querying the database")
                 .long_help(
@@ -86,68 +83,49 @@ pub fn cli() -> clap::Command {
                 .action(ArgAction::SetTrue)
                 .help("If this flag is present, no identity will be provided when querying the database"),
         )
-        .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
-                .help("The nickname, host name or URL of the server hosting the database"),
-        )
+        .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
 }
 
-#[derive(serde::Serialize)]
-enum ClientMessage {
-    #[serde(rename = "subscribe")]
-    Subscribe { query_strings: Vec<String> },
-}
-
-fn parse_msg_json(msg: &WsMessage) -> Option<ServerMessage> {
+fn parse_msg_json(msg: &WsMessage) -> Option<ws::ServerMessage> {
     let WsMessage::Text(msg) = msg else { return None };
-    serde_json::from_str(msg)
+    serde_json::from_str::<DeserializeWrapper<ws::ServerMessage>>(msg)
         .inspect_err(|e| eprintln!("couldn't parse message from server: {e}"))
+        .map(|wrapper| wrapper.0)
         .ok()
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
-struct TableUpdateJson<'a> {
-    table_name: Box<str>,
-    #[serde(borrow)]
-    table_row_operations: Vec<TableRowOperationJson<'a>>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-struct TableRowOperationJson<'a> {
-    op: Op,
-    #[serde(borrow)]
-    row: &'a RawValue, // ProductValue
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-enum Op {
-    Delete,
-    Insert,
-}
-
-impl Op {
-    fn as_short_str(&self) -> &str {
-        match self {
-            Self::Delete => "D",
-            Self::Insert => "I",
-        }
-    }
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-struct SubscriptionUpdateJson<'a> {
-    #[serde(borrow)]
-    table_updates: Vec<TableUpdateJson<'a>>,
+#[derive(serde::Serialize, Debug)]
+struct SubscriptionTable {
+    deletes: Vec<serde_json::Value>,
+    inserts: Vec<serde_json::Value>,
 }
 
 struct Output<'a> {
     schema: &'a ModuleDef,
-    table_updates: Vec<TableUpdateJson<'a>>,
+    table_updates: Vec<ws::TableUpdate>,
     /// If true, omit the I / D column in tabled output.
     is_initial_update: bool,
+}
+
+impl Output<'_> {
+    pub async fn render(self, fmt: OutputFormat, out: impl AsyncWrite + Unpin) -> anyhow::Result<()> {
+        format::render(self, fmt, out).await
+    }
+}
+
+fn find_table_schema<'a>(schema: &'a ModuleDef, table_name: &str) -> anyhow::Result<&'a TableDesc> {
+    schema
+        .tables
+        .iter()
+        .find(|tbl| &*tbl.schema.table_name == table_name)
+        .with_context(|| format!("table `{}` not found in schema", table_name))
+}
+
+fn decode_row<'de, T: DeserializeSeed<'de>>(row: &'de EncodedValue, seed: T) -> anyhow::Result<T::Output> {
+    let EncodedValue::Text(row) = row else {
+        bail!("Expected row in text format but found {row:?}");
+    };
+    Ok(from_json_seed(row, SeedWrapper(seed))?)
 }
 
 impl Render for Output<'_> {
@@ -168,29 +146,32 @@ impl Render for Output<'_> {
     ///
     /// [json-seq]: https://datatracker.ietf.org/doc/html/rfc7464
     async fn render_json(self, mut out: impl AsyncWrite + Unpin) -> anyhow::Result<()> {
-        let tables: HashMap<Box<str>, SubscriptionTable> = self
+        let tables: HashMap<String, SubscriptionTable> = self
             .table_updates
             .into_iter()
             .map(|upd| {
-                let table_schema = self
-                    .schema
-                    .tables
-                    .iter()
-                    .find(|tbl| tbl.schema.table_name == upd.table_name)
-                    .with_context(|| format!("table `{}` not found in schema", upd.table_name))?;
-                let mut deletes = Vec::new();
-                let mut inserts = Vec::new();
+                let table_schema = find_table_schema(self.schema, &upd.table_name)?;
                 let table_ty = self.schema.typespace.resolve(table_schema.data);
-                for op in upd.table_row_operations {
-                    let row = from_json_seed(op.row.get(), SeedWrapper(table_ty))?;
+
+                let reformat_row = |row: EncodedValue| {
+                    let row = decode_row(&row, table_ty)?;
                     let row = table_ty.with_value(&row);
                     let row = serde_json::to_value(SerializeWrapper::from_ref(&row))?;
-                    match op.op {
-                        Op::Delete => deletes.push(row),
-                        Op::Insert => inserts.push(row),
-                    }
-                }
-                Ok((upd.table_name.clone(), SubscriptionTable { deletes, inserts }))
+                    Ok(row)
+                };
+
+                let deletes = upd
+                    .deletes
+                    .into_iter()
+                    .map(reformat_row)
+                    .collect::<anyhow::Result<Vec<_>>>()?;
+                let inserts = upd
+                    .inserts
+                    .into_iter()
+                    .map(reformat_row)
+                    .collect::<anyhow::Result<Vec<_>>>()?;
+
+                Ok((upd.table_name, SubscriptionTable { deletes, inserts }))
             })
             .collect::<anyhow::Result<_>>()?;
 
@@ -227,17 +208,14 @@ impl Render for Output<'_> {
     ///  Table: User, (D)eletes: 1, (I)nserts: 1
     ///  ```
     async fn render_tabled(self, mut out: impl AsyncWrite + Unpin) -> anyhow::Result<()> {
-        for TableUpdateJson {
+        for ws::TableUpdate {
             table_name,
-            table_row_operations,
+            deletes,
+            inserts,
+            ..
         } in self.table_updates
         {
-            let table_schema = self
-                .schema
-                .tables
-                .iter()
-                .find(|tbl| tbl.schema.table_name == table_name)
-                .with_context(|| format!("table `{table_name}` not found in schema"))?;
+            let table_schema = find_table_schema(self.schema, &table_name)?;
             let table_ty = self
                 .schema
                 .typespace
@@ -245,8 +223,8 @@ impl Render for Output<'_> {
                 .map(|t| t.as_product().unwrap());
 
             let mut builder = {
-                let rows = table_row_operations.len();
-                let mut cols = table_ty.product_len();
+                let rows = deletes.len() + inserts.len();
+                let mut cols = table_schema.schema.columns.len();
                 if !self.is_initial_update {
                     // We need to make space for the `I / D` column.
                     cols += 1;
@@ -261,33 +239,30 @@ impl Render for Output<'_> {
             if self.is_initial_update {
                 builder.push_record(column_names)
             } else {
+                // Empty header for `I / D` column.
                 builder.push_record(iter::once("").chain(column_names))
             };
 
-            let mut deletes = 0;
-            let mut inserts = 0;
-            for TableRowOperationJson { op, row } in table_row_operations {
-                match op {
-                    Op::Delete => {
-                        deletes += 1;
-                    }
-                    Op::Insert => {
-                        inserts += 1;
-                    }
-                }
-                let row = from_json_seed(row.get(), SeedWrapper(table_ty))?;
-                let record = iter::once(op.as_short_str().into()).chain(fmt_row_psql(&row, table_ty));
-                builder.push_record(record);
+            let n_deletes = deletes.len();
+            let n_inserts = inserts.len();
+
+            for (row, op) in deletes
+                .into_iter()
+                .zip(iter::repeat("D"))
+                .chain(inserts.into_iter().zip(iter::repeat("I")))
+            {
+                let row = decode_row(&row, table_ty)?;
+                builder.push_record(iter::once(op.into()).chain(fmt_row_psql(&row, table_ty)));
             }
 
             let mut table = builder.build();
             table.with(Style::psql());
-            if self.is_initial_update && deletes == 0 {
-                table.with(Footer::new(format!("Table: {}, Rows: {}", table_name, inserts)));
+            if self.is_initial_update && n_deletes == 0 {
+                table.with(Footer::new(format!("Table: {}, Rows: {}", table_name, n_inserts)));
             } else {
                 table.with(Footer::new(format!(
                     "Table: {}, (D)eletes: {}, (I)nserts: {}",
-                    table_name, deletes, inserts,
+                    table_name, n_deletes, n_inserts,
                 )));
             };
             out.write_all(table.to_string().as_bytes()).await?;
@@ -315,29 +290,30 @@ impl Render for Output<'_> {
     /// User,I,0xaba52919637a60eb336e76eed40843653bfb3d9d94881d78ab13dda56363b993,(none = ()),false
     /// ```
     async fn render_csv(self, mut out: impl AsyncWrite + Unpin) -> anyhow::Result<()> {
-        for TableUpdateJson {
+        for ws::TableUpdate {
             table_name,
-            table_row_operations,
+            deletes,
+            inserts,
+            ..
         } in self.table_updates
         {
-            let mut csv = csv_async::AsyncWriter::from_writer(&mut out);
-            let table_schema = self
-                .schema
-                .tables
-                .iter()
-                .find(|tbl| tbl.schema.table_name == table_name)
-                .with_context(|| format!("table `{table_name}` not found in schema"))?;
+            let table_schema = find_table_schema(self.schema, &table_name)?;
             let table_ty = self
                 .schema
                 .typespace
                 .resolve(table_schema.data)
                 .map(|t| t.as_product().unwrap());
 
-            for TableRowOperationJson { op, row } in table_row_operations {
-                csv.write_field(table_name.as_ref()).await?;
-                csv.write_field(op.as_short_str()).await?;
+            let mut csv = csv_async::AsyncWriter::from_writer(&mut out);
 
-                let row = from_json_seed(row.get(), SeedWrapper(table_ty))?;
+            for (row, op) in deletes
+                .into_iter()
+                .zip(iter::repeat("D"))
+                .chain(inserts.into_iter().zip(iter::repeat("I")))
+            {
+                let row = decode_row(&row, table_ty)?;
+                csv.write_field(&table_name).await?;
+                csv.write_field(op).await?;
                 for field in fmt_row_psql(&row, table_ty) {
                     // Remove quotes around string values to prevent quoting.
                     csv.write_field(field.trim_matches('"')).await?;
@@ -354,28 +330,6 @@ impl Render for Output<'_> {
     }
 }
 
-#[derive(serde::Serialize)]
-struct SubscriptionTable {
-    deletes: Vec<serde_json::Value>,
-    inserts: Vec<serde_json::Value>,
-}
-
-#[derive(serde::Deserialize)]
-struct Event {
-    message: String,
-}
-
-#[derive(serde::Deserialize)]
-enum ServerMessage<'a> {
-    SubscriptionUpdate(#[serde(borrow)] SubscriptionUpdateJson<'a>),
-    TransactionUpdate {
-        subscription_update: SubscriptionUpdateJson<'a>,
-        event: Event,
-    },
-    #[serde(other, deserialize_with = "serde_with::rust::deserialize_ignore_any")]
-    Unknown,
-}
-
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let queries = args.get_many::<String>("query").unwrap();
     let num = args.get_one::<u32>("num-updates").copied();
@@ -388,7 +342,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     let module_def = api.module_def().await?;
 
     // Change the URI scheme from `http(s)` to `ws(s)`.
-    let mut uri = http::Uri::try_from(api.con.db_uri("subscribe")).unwrap().into_parts();
+    let mut uri = http::Uri::try_from(api.con.db_uri("subscribe"))?.into_parts();
     uri.scheme = uri.scheme.map(|s| {
         if s == Scheme::HTTP {
             "ws".parse().unwrap()
@@ -400,12 +354,11 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), anyhow::Error
     });
 
     // Create the websocket request.
-    let mut req = http::Uri::from_parts(uri).unwrap().into_client_request()?;
+    let mut req = http::Uri::from_parts(uri)?.into_client_request()?;
     req.headers_mut().insert(header::SEC_WEBSOCKET_PROTOCOL, TEXT_PROTOCOL);
     //  Add the authorization header, if any.
     if let Some(auth_header) = &api.con.auth_header {
-        req.headers_mut()
-            .insert(header::AUTHORIZATION, auth_header.try_into().unwrap());
+        req.headers_mut().insert(header::AUTHORIZATION, auth_header.try_into()?);
     }
     let (mut ws, _) = tokio_tungstenite::connect_async(req).await?;
 
@@ -437,7 +390,13 @@ async fn subscribe<S>(ws: &mut S, query_strings: Vec<String>) -> Result<(), S::E
 where
     S: Sink<WsMessage> + Unpin,
 {
-    let msg = serde_json::to_string(&ClientMessage::Subscribe { query_strings }).unwrap();
+    let msg = serde_json::to_string(&SerializeWrapper::new(ws::ClientMessage::<()>::Subscribe(
+        ws::Subscribe {
+            query_strings,
+            request_id: 0,
+        },
+    )))
+    .unwrap();
     ws.send(msg.into()).await
 }
 
@@ -452,26 +411,26 @@ where
     while let Some(msg) = ws.try_next().await? {
         let Some(msg) = parse_msg_json(&msg) else { continue };
         match msg {
-            ServerMessage::SubscriptionUpdate(sub) => {
+            ws::ServerMessage::InitialSubscription(sub) => {
                 if let Some((schema, fmt)) = print {
                     Output {
                         schema,
-                        table_updates: sub.table_updates,
+                        table_updates: sub.database_update.tables,
                         is_initial_update: true,
                     }
-                    .render(tokio::io::stdout(), fmt)
+                    .render(fmt, tokio::io::stdout())
                     .await?;
                 }
                 break;
             }
-            ServerMessage::TransactionUpdate { event, .. } => {
-                let mut message = event.message;
-                if message.is_empty() {
-                    message.push_str("protocol error: received transaction update before initial subscription update");
-                }
+            ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate { status, .. }) => {
+                let message = match status {
+                    ws::UpdateStatus::Failed(msg) => msg,
+                    _ => "protocol error: received transaction update before initial subscription update".to_string(),
+                };
                 anyhow::bail!(message)
             }
-            ServerMessage::Unknown => continue,
+            _ => continue,
         }
     }
 
@@ -503,22 +462,23 @@ where
 
         let Some(msg) = parse_msg_json(&msg) else { continue };
         match msg {
-            ServerMessage::SubscriptionUpdate(_) => {
+            ws::ServerMessage::InitialSubscription(_) => {
                 anyhow::bail!("protocol error: received a second initial subscription update")
             }
-            ServerMessage::TransactionUpdate {
-                subscription_update, ..
-            } => {
+            ws::ServerMessage::TransactionUpdate(ws::TransactionUpdate {
+                status: ws::UpdateStatus::Committed(update),
+                ..
+            }) => {
                 Output {
                     schema,
-                    table_updates: subscription_update.table_updates,
+                    table_updates: update.tables,
                     is_initial_update: false,
                 }
-                .render(tokio::io::stdout(), fmt)
+                .render(fmt, tokio::io::stdout())
                 .await?;
                 num_received += 1;
             }
-            ServerMessage::Unknown => continue,
+            _ => continue,
         }
     }
 }

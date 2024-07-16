@@ -1,4 +1,5 @@
 // use clap::Arg;
+use crate::common_args;
 use clap::{value_parser, Arg, ArgMatches};
 use spacetimedb_lib::Identity;
 
@@ -17,16 +18,14 @@ fn get_energy_subcommands() -> Vec<clap::Command> {
         clap::Command::new("status")
             .about("Show current energy balance for an identity")
             .arg(
-                Arg::new("identity")
+                common_args::identity()
                     .help("The identity to check the balance for")
                     .long_help(
                     "The identity to check the balance for. If no identity is provided, the default one will be used.",
                 ),
             )
             .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
+                common_args::server()
                     .help("The nickname, host name or URL of the server from which to request balance information"),
             ),
         clap::Command::new("set-balance")
@@ -38,16 +37,14 @@ fn get_energy_subcommands() -> Vec<clap::Command> {
                     .help("The balance value to set"),
             )
             .arg(
-                Arg::new("identity")
+                common_args::identity()
                     .help("The identity to set a balance for")
                     .long_help(
                         "The identity to set a balance for. If no identity is provided, the default one will be used.",
                     ),
             )
             .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
+                common_args::server()
                     .help("The nickname, host name or URL of the server on which to update the identity's balance"),
             )
             .arg(

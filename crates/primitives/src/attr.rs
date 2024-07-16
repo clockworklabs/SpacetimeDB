@@ -152,6 +152,16 @@ impl Constraints {
         Self { attr }
     }
 
+    /// Creates a new `Constraints` instance that is [`Self::unique`] if `is_unique`
+    /// and [`Self::indexed`] otherwise.
+    pub const fn from_is_unique(is_unique: bool) -> Self {
+        if is_unique {
+            Self::unique()
+        } else {
+            Self::indexed()
+        }
+    }
+
     /// Creates a new `Constraints` instance with no constraints set.
     pub const fn unset() -> Self {
         Self::new(ColumnAttribute::UNSET)

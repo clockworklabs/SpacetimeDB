@@ -1,19 +1,48 @@
 namespace SpacetimeDB.Codegen;
 
-using System;
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static Utils;
 
-struct VariableDeclaration(string name, ITypeSymbol typeSymbol)
+readonly record struct MemberDeclaration
 {
-    public string Name = name;
-    public string Type = SymbolToName(typeSymbol);
-    public string TypeInfo = GetTypeInfo(typeSymbol);
+    public readonly string Name;
+    public readonly string Type;
+    public readonly string TypeInfo;
+
+    public MemberDeclaration(string name, ITypeSymbol typeSymbol)
+    {
+        Name = name;
+        Type = SymbolToName(typeSymbol);
+        TypeInfo = GetTypeInfo(typeSymbol);
+    }
+}
+
+record TypeDeclaration
+{
+    public readonly Scope Scope;
+    public readonly string ShortName;
+    public readonly string FullName;
+    public readonly bool IsTaggedEnum;
+    public readonly EquatableArray<MemberDeclaration> Members;
+
+    public TypeDeclaration(
+        TypeDeclarationSyntax typeSyntax,
+        INamedTypeSymbol type,
+        bool isTaggedEnum,
+        IEnumerable<IFieldSymbol> members
+    )
+    {
+        Scope = new(typeSyntax);
+        ShortName = type.Name;
+        FullName = SymbolToName(type);
+        IsTaggedEnum = isTaggedEnum;
+        Members = new(
+            members.Select(v => new MemberDeclaration(v.Name, v.Type)).ToImmutableArray()
+        );
+    }
 }
 
 [Generator]
@@ -110,18 +139,10 @@ public class Type : IIncrementalGenerator
                         );
                     }
 
-                    return new
-                    {
-                        Scope = new Scope(typeSyntax),
-                        ShortName = type.Name,
-                        FullName = SymbolToName(type),
-                        IsTaggedEnum = isTaggedEnum,
-                        Members = fields
-                            .Select(v => new VariableDeclaration(v.Name, v.Type))
-                            .ToImmutableArray(),
-                    };
+                    return new TypeDeclaration(typeSyntax, type, isTaggedEnum, fields);
                 }
             )
+            .WithTrackingName("SpacetimeDB.Type.Parse")
             .Select(
                 (type, ct) =>
                 {
@@ -131,9 +152,8 @@ public class Type : IIncrementalGenerator
 
                     var typeDesc = "";
 
-                    var bsatnDecls = type.Members.Select(m => (m.Name, m.TypeInfo)).ToList();
-
-                    var fieldNames = bsatnDecls.Select(m => m.Name).ToArray();
+                    var bsatnDecls = type.Members.Select(m => (m.Name, m.TypeInfo));
+                    var fieldNames = type.Members.Select(m => m.Name);
 
                     if (type.IsTaggedEnum)
                     {
@@ -149,8 +169,7 @@ public class Type : IIncrementalGenerator
                             }}
                         ";
 
-                        bsatnDecls.Insert(
-                            0,
+                        bsatnDecls = bsatnDecls.Prepend(
                             (Name: "__enumTag", TypeInfo: "SpacetimeDB.BSATN.Enum<@enum>")
                         );
 
@@ -228,6 +247,7 @@ public class Type : IIncrementalGenerator
                     );
                 }
             )
+            .WithTrackingName("SpacetimeDB.Type.GenerateExtensions")
             .RegisterSourceOutputs(context);
     }
 }

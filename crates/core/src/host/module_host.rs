@@ -1,8 +1,9 @@
 use super::wasm_common::{CLIENT_CONNECTED_DUNDER, CLIENT_DISCONNECTED_DUNDER};
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId, Timestamp};
-use crate::client::{ClientActorId, ClientConnectionSender};
+use crate::client::messages::{encode_row, ToProtocol};
+use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
 use crate::database_instance_context::DatabaseInstanceContext;
-use crate::database_logger::LogLevel;
+use crate::database_logger::{LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::system_tables::{StClientsFields, StClientsRow, ST_CLIENTS_ID};
 use crate::db::datastore::traits::TxData;
@@ -12,22 +13,21 @@ use crate::error::DBError;
 use crate::execution_context::{ExecutionContext, ReducerContext};
 use crate::hash::Hash;
 use crate::identity::Identity;
-use crate::json::client_api::{TableRowOperationJson, TableUpdateJson};
 use crate::messages::control_db::Database;
-use crate::protobuf::client_api::{TableRowOperation, TableUpdate};
+use crate::messages::websocket::{self as ws, TableUpdate};
+use crate::sql;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
 use crate::worker_metrics::WORKER_METRICS;
+use anyhow::Context;
 use bytes::Bytes;
-use derive_more::{From, Into};
+use derive_more::From;
 use futures::{Future, FutureExt};
 use indexmap::IndexMap;
-use itertools::{Either, Itertools};
 use smallvec::SmallVec;
-use spacetimedb_client_api_messages::client_api::table_row_operation::OperationType;
+use spacetimedb_client_api_messages::websocket::EncodedValue;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, IntMap};
-use spacetimedb_lib::bsatn::to_vec;
-use spacetimedb_lib::identity::RequestId;
+use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::{Address, ModuleDef, ReducerDef, TableDesc};
 use spacetimedb_primitives::{col_list, TableId};
 use spacetimedb_sats::{algebraic_value, ProductValue, Typespace, WithTypespace};
@@ -35,23 +35,6 @@ use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::fmt;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
-
-#[derive(Debug, Clone, From, Into)]
-pub struct ProtocolDatabaseUpdate {
-    pub tables: Either<Vec<TableUpdate>, Vec<TableUpdateJson>>,
-}
-
-impl From<ProtocolDatabaseUpdate> for Vec<TableUpdate> {
-    fn from(update: ProtocolDatabaseUpdate) -> Self {
-        update.tables.unwrap_left()
-    }
-}
-
-impl From<ProtocolDatabaseUpdate> for Vec<TableUpdateJson> {
-    fn from(update: ProtocolDatabaseUpdate) -> Self {
-        update.tables.unwrap_right()
-    }
-}
 
 #[derive(Debug, Default, Clone, From)]
 pub struct DatabaseUpdate {
@@ -96,17 +79,20 @@ impl DatabaseUpdate {
             tables: map.into_values().collect(),
         }
     }
-}
 
-impl From<DatabaseUpdate> for Vec<TableUpdate> {
-    fn from(update: DatabaseUpdate) -> Self {
-        update.tables.into_iter().map_into().collect()
+    /// The number of rows in the payload
+    pub fn num_rows(&self) -> usize {
+        self.tables.iter().map(|t| t.inserts.len() + t.deletes.len()).sum()
     }
 }
 
-impl From<DatabaseUpdate> for Vec<TableUpdateJson> {
-    fn from(update: DatabaseUpdate) -> Self {
-        update.tables.into_iter().map_into().collect()
+impl ToProtocol for DatabaseUpdate {
+    type Encoded = ws::DatabaseUpdate;
+    fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
+        self.tables
+            .into_iter()
+            .map(|table| table.to_protocol(protocol))
+            .collect()
     }
 }
 
@@ -121,40 +107,16 @@ pub struct DatabaseTableUpdate {
     pub deletes: Arc<[ProductValue]>,
 }
 
-impl From<DatabaseTableUpdate> for TableUpdate {
-    fn from(table: DatabaseTableUpdate) -> Self {
-        let deletes = table
-            .deletes
-            .iter()
-            .map(|r| product_to_table_row_op_binary(r, OpType::Delete));
-        let inserts = table
-            .inserts
-            .iter()
-            .map(|r| product_to_table_row_op_binary(r, OpType::Insert));
-        let table_row_operations = deletes.chain(inserts).collect();
-        Self {
-            table_id: table.table_id.into(),
-            table_name: table.table_name.into(),
-            table_row_operations,
-        }
-    }
-}
-
-impl From<DatabaseTableUpdate> for TableUpdateJson {
-    fn from(table: DatabaseTableUpdate) -> Self {
-        let deletes = table
-            .deletes
-            .iter()
-            .map(|r| product_to_table_row_op_json(r.clone(), OpType::Delete));
-        let inserts = table
-            .inserts
-            .iter()
-            .map(|r| product_to_table_row_op_json(r.clone(), OpType::Insert));
-        let table_row_operations = deletes.chain(inserts).map_into().collect();
-        Self {
-            table_id: table.table_id.into(),
-            table_name: table.table_name,
-            table_row_operations,
+impl ToProtocol for DatabaseTableUpdate {
+    type Encoded = TableUpdate;
+    fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
+        let deletes = self.deletes.iter().map(|row| encode_row(row, protocol)).collect();
+        let inserts = self.inserts.iter().map(|row| encode_row(row, protocol)).collect();
+        TableUpdate {
+            table_id: self.table_id,
+            table_name: self.table_name.to_string(),
+            deletes,
+            inserts,
         }
     }
 }
@@ -190,24 +152,12 @@ impl UpdatesRelValue<'_> {
             .map(|row| (OpType::Delete, row))
             .chain(self.inserts.iter().map(|row| (OpType::Insert, row)))
     }
-}
 
-impl From<&UpdatesRelValue<'_>> for Vec<TableRowOperation> {
-    fn from(updates: &UpdatesRelValue<'_>) -> Self {
-        let mut scratch = Vec::new();
-        updates
-            .iter()
-            .map(|(op, row)| rel_value_to_table_row_op_binary(&mut scratch, row, op))
-            .collect()
-    }
-}
-
-impl From<&UpdatesRelValue<'_>> for Vec<TableRowOperationJson> {
-    fn from(updates: &UpdatesRelValue<'_>) -> Self {
-        updates
-            .iter()
-            .map(|(op, row)| rel_value_to_table_row_op_json(row.clone(), op))
-            .collect()
+    pub fn to_protocol(&self, protocol: Protocol) -> (Vec<EncodedValue>, Vec<EncodedValue>) {
+        (
+            self.deletes.iter().map(|row| encode_row(row, protocol)).collect(),
+            self.inserts.iter().map(|row| encode_row(row, protocol)).collect(),
+        )
     }
 }
 
@@ -225,65 +175,6 @@ impl From<&UpdatesRelValue<'_>> for Vec<ProductValue> {
 pub enum OpType {
     Delete = 0,
     Insert = 1,
-}
-
-impl OpType {
-    /// Converts the type to its JSON representation.
-    fn as_json_str(self) -> &'static str {
-        match self {
-            Self::Delete => "delete",
-            Self::Insert => "insert",
-        }
-    }
-}
-
-impl From<OpType> for OperationType {
-    fn from(op_ty: OpType) -> Self {
-        match op_ty {
-            OpType::Delete => Self::Delete,
-            OpType::Insert => Self::Insert,
-        }
-    }
-}
-
-impl From<OpType> for i32 {
-    fn from(op_ty: OpType) -> Self {
-        OperationType::from(op_ty) as i32
-    }
-}
-
-/// Annotate `row` with `op` as a `TableRowOperationJson`.
-pub(crate) fn rel_value_to_table_row_op_json(row: RelValue<'_>, op: OpType) -> TableRowOperationJson {
-    product_to_table_row_op_json(row.into_product_value(), op)
-}
-
-/// Annotate `row` BSATN-encoded with `op` as a `TableRowOperation`.
-pub(crate) fn rel_value_to_table_row_op_binary(
-    scratch: &mut Vec<u8>,
-    row: &RelValue<'_>,
-    op: OpType,
-) -> TableRowOperation {
-    let op = op.into();
-
-    row.to_bsatn_extend(scratch).unwrap();
-    let row = scratch.clone();
-    scratch.clear();
-
-    TableRowOperation { op, row }
-}
-
-/// Annotate `row` BSATN-encoded with `op` as a `TableRowOperation`.
-fn product_to_table_row_op_binary(row: &ProductValue, op: OpType) -> TableRowOperation {
-    let op = op.into();
-    let row = to_vec(&row).unwrap();
-    TableRowOperation { op, row }
-}
-
-/// Annotate `row` with `op` as a `TableRowOperationJson`.
-fn product_to_table_row_op_json(row: ProductValue, op: OpType) -> TableRowOperationJson {
-    let op = op.as_json_str().into();
-    let row = row.elements.into();
-    TableRowOperationJson { op, row }
 }
 
 #[derive(Debug, Clone)]
@@ -305,6 +196,7 @@ impl EventStatus {
 #[derive(Debug, Clone)]
 pub struct ModuleFunctionCall {
     pub reducer: String,
+    pub reducer_id: ReducerId,
     pub args: ArgsTuple,
 }
 
@@ -366,14 +258,7 @@ pub trait Module: Send + Sync + 'static {
     fn info(&self) -> Arc<ModuleInfo>;
     fn create_instance(&self) -> Self::Instance;
     fn dbic(&self) -> &DatabaseInstanceContext;
-    fn inject_logs(&self, log_level: LogLevel, message: &str);
     fn close(self);
-    fn one_off_query(
-        &self,
-        caller_identity: Identity,
-        query: String,
-    ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError>;
-    fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error>;
     #[cfg(feature = "tracelogging")]
     fn get_trace(&self) -> Option<bytes::Bytes>;
     #[cfg(feature = "tracelogging")]
@@ -476,13 +361,6 @@ impl fmt::Debug for ModuleHost {
 trait DynModuleHost: Send + Sync + 'static {
     async fn get_instance(&self, db: Address) -> Result<Box<dyn ModuleInstance>, NoSuchModule>;
     fn dbic(&self) -> &DatabaseInstanceContext;
-    fn inject_logs(&self, log_level: LogLevel, message: &str);
-    fn one_off_query(
-        &self,
-        caller_identity: Identity,
-        query: String,
-    ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError>;
-    fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error>;
     fn exit(&self) -> Closed<'_>;
     fn exited(&self) -> Closed<'_>;
 }
@@ -543,22 +421,6 @@ impl<T: Module> DynModuleHost for HostControllerActor<T> {
 
     fn dbic(&self) -> &DatabaseInstanceContext {
         self.module.dbic()
-    }
-
-    fn inject_logs(&self, log_level: LogLevel, message: &str) {
-        self.module.inject_logs(log_level, message)
-    }
-
-    fn one_off_query(
-        &self,
-        caller_identity: Identity,
-        query: String,
-    ) -> Result<Vec<spacetimedb_vm::relation::MemTable>, DBError> {
-        self.module.one_off_query(caller_identity, query)
-    }
-
-    fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
-        self.module.clear_table(table_name)
     }
 
     fn exit(&self) -> Closed<'_> {
@@ -648,20 +510,16 @@ impl ModuleHost {
                 .reducer_wait_time
                 .with_label_values(&self.info.address, reducer)
                 .start_timer();
-            log::debug!("get instance");
             self.inner.get_instance(self.info.address).await?
         };
 
-        let result = tokio::task::spawn_blocking(move || {
-            log::debug!("call");
-            f(&mut *inst)
-        })
-        .await
-        .unwrap_or_else(|e| {
-            log::warn!("reducer `{reducer}` panicked");
-            (self.on_panic)();
-            std::panic::resume_unwind(e.into_panic())
-        });
+        let result = tokio::task::spawn_blocking(move || f(&mut *inst))
+            .await
+            .unwrap_or_else(|e| {
+                log::warn!("reducer `{reducer}` panicked");
+                (self.on_panic)();
+                std::panic::resume_unwind(e.into_panic())
+            });
         Ok(result)
     }
 
@@ -911,24 +769,50 @@ impl ModuleHost {
     }
 
     pub fn inject_logs(&self, log_level: LogLevel, message: &str) {
-        self.inner.inject_logs(log_level, message)
+        self.dbic().logger.write(
+            log_level,
+            &Record {
+                ts: chrono::Utc::now(),
+                target: None,
+                filename: Some("external"),
+                line_number: None,
+                message,
+            },
+            &(),
+        )
     }
 
-    pub async fn one_off_query(
-        &self,
-        caller_identity: Identity,
-        query: String,
-    ) -> Result<Vec<MemTable>, anyhow::Error> {
-        let result = self.inner.one_off_query(caller_identity, query)?;
-        Ok(result)
+    #[tracing::instrument(skip_all)]
+    pub fn one_off_query(&self, caller_identity: Identity, query: String) -> Result<Vec<MemTable>, anyhow::Error> {
+        let dbic = self.dbic();
+        let db = &dbic.relational_db;
+        let auth = AuthCtx::new(dbic.owner_identity, caller_identity);
+        log::debug!("One-off query: {query}");
+        let ctx = &ExecutionContext::sql(db.address());
+        db.with_read_only(ctx, |tx| {
+            let ast = sql::compiler::compile_sql(db, tx, &query)?;
+            sql::execute::execute_sql_tx(db, tx, &query, ast, auth)?
+                .context("One-off queries are not allowed to modify the database")
+        })
     }
 
     /// FIXME(jgilles): this is a temporary workaround for deleting not currently being supported
     /// for tables without primary keys. It is only used in the benchmarks.
     /// Note: this doesn't drop the table, it just clears it!
-    pub async fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
-        self.inner.clear_table(table_name)?;
-        Ok(())
+    pub fn clear_table(&self, table_name: &str) -> Result<(), anyhow::Error> {
+        let db = &*self.dbic().relational_db;
+        db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
+            let tables = db.get_all_tables_mut(tx)?;
+            // We currently have unique table names,
+            // so we can assume there's only one table to clear.
+            if let Some(table_id) = tables
+                .iter()
+                .find_map(|t| (&*t.table_name == table_name).then_some(t.table_id))
+            {
+                db.clear_table(tx, table_id)?;
+            }
+            Ok(())
+        })
     }
 
     pub fn downgrade(&self) -> WeakModuleHost {

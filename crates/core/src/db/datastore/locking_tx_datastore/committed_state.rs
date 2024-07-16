@@ -42,8 +42,13 @@ use spacetimedb_table::{
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+/// Contains the live, in-memory snapshot of a database. This structure
+/// is exposed in order to support tools wanting to process the commit
+/// logs directly. For normal usage, see the RelationalDB struct instead.
+///
+/// NOTE: unstable API, this may change at any point in the future.
 #[derive(Default)]
-pub(crate) struct CommittedState {
+pub struct CommittedState {
     pub(crate) next_tx_offset: u64,
     pub(crate) tables: IntMap<TableId, Table>,
     pub(crate) blob_store: HashMapBlobStore,
@@ -321,6 +326,22 @@ impl CommittedState {
         Ok(())
     }
 
+    /// After replaying all old transactions,
+    /// inserts and deletes into the system tables
+    /// might not be reflected in the schemas of the built tables.
+    /// So we must re-schema every built table.
+    pub(super) fn reschema_tables(&mut self) -> Result<()> {
+        // For already built tables, we need to reschema them to account for constraints et al.
+        let mut schemas = Vec::with_capacity(self.tables.len());
+        for table_id in self.tables.keys().copied() {
+            schemas.push(self.schema_for_table_raw(&ExecutionContext::default(), table_id)?);
+        }
+        for (table, schema) in self.tables.values_mut().zip(schemas) {
+            table.with_mut_schema(|s| *s = schema);
+        }
+        Ok(())
+    }
+
     /// After replaying all old transactions, tables which have rows will
     /// have been created in memory, but tables with no rows will not have
     /// been created. This function ensures that they are created.
@@ -512,6 +533,12 @@ impl CommittedState {
 
     pub(super) fn get_table_mut(&mut self, table_id: TableId) -> Option<&mut Table> {
         self.tables.get_mut(&table_id)
+    }
+
+    pub fn get_table_and_blob_store_immutable(&self, table_id: TableId) -> Option<(&Table, &dyn BlobStore)> {
+        self.tables
+            .get(&table_id)
+            .map(|tbl| (tbl, &self.blob_store as &dyn BlobStore))
     }
 
     pub(super) fn get_table_and_blob_store(&mut self, table_id: TableId) -> Option<(&mut Table, &mut dyn BlobStore)> {

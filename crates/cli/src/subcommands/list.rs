@@ -1,6 +1,7 @@
+use crate::common_args;
 use crate::Config;
 use anyhow::Context;
-use clap::{Arg, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use reqwest::StatusCode;
 use serde::Deserialize;
 use spacetimedb_lib::Address;
@@ -13,16 +14,11 @@ pub fn cli() -> Command {
     Command::new("list")
         .about("Lists the databases attached to an identity")
         .arg(
-            Arg::new("identity")
+            common_args::identity()
                 .required(true)
                 .help("The identity to list databases for"),
         )
-        .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
-                .help("The nickname, host name or URL of the server from which to list databases"),
-        )
+        .arg(common_args::server().help("The nickname, host name or URL of the server from which to list databases"))
 }
 
 #[derive(Deserialize)]

@@ -947,14 +947,9 @@ impl RelationalDB {
         let table = self.inner.schema_for_table_mut_tx(tx, table_id)?;
 
         let unique_index = table.indexes.iter().find(|x| &x.columns == cols).map(|x| x.is_unique);
-        let attr = Constraints::unset();
-
+        let mut attr = Constraints::unset();
         if let Some(is_unique) = unique_index {
-            attr.push(if is_unique {
-                Constraints::unique()
-            } else {
-                Constraints::indexed()
-            });
+            attr = attr.push(Constraints::from_is_unique(is_unique));
         }
         Ok(attr)
     }

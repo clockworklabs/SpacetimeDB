@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::io::{self, Write};
 
+use crate::common_args;
 use crate::config::Config;
 use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
 use clap::{Arg, ArgAction, ArgMatches};
@@ -18,15 +19,11 @@ pub fn cli() -> clap::Command {
                 .help("The domain or address of the database to print logs from"),
         )
         .arg(
-            Arg::new("server")
-                .long("server")
-                .short('s')
+            common_args::server()
                 .help("The nickname, host name or URL of the server hosting the database"),
         )
         .arg(
-            Arg::new("identity")
-                .long("identity")
-                .short('i')
+            common_args::identity()
                 .help("The identity to use for printing logs from this database"),
         )
         .arg(

@@ -14,7 +14,7 @@ use spacetimedb_sdk::{
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct OptionVecOptionI32 {
-    pub n: Option<Vec<Option<i32>>>,
+    pub v: Option<Vec<Option<i32>>>,
 }
 
 impl TableType for OptionVecOptionI32 {

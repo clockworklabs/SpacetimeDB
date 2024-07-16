@@ -209,16 +209,16 @@ class Smoketest(unittest.TestCase):
         output = self.spacetime("identity", "new", "--no-email" if email is None else f"--email={email}")
         identity = extract_field(output, "IDENTITY")
         if default:
-            self.spacetime("identity", "set-default", identity)
+            self.spacetime("identity", "set-default", "--identity", identity)
         return identity
 
     def token(self, identity):
-        return self.spacetime("identity", "token", identity).strip()
+        return self.spacetime("identity", "token", "--identity", identity).strip()
 
     def import_identity(self, identity, token, *, default=False):
-        self.spacetime("identity", "import", identity, token)
+        self.spacetime("identity", "import", "--identity", identity, token)
         if default:
-            self.spacetime("identity", "set-default", identity)
+            self.spacetime("identity", "set-default", "--identity", identity)
 
     def subscribe(self, *queries, n):
         self._check_published()

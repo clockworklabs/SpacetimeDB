@@ -74,11 +74,7 @@ fn on_user_inserted(user: &User, _: Option<&ReducerEvent>) {
 fn user_name_or_identity(user: &User) -> String {
     user.name
         .clone()
-        .unwrap_or_else(|| identity_leading_hex(&user.identity))
-}
-
-fn identity_leading_hex(id: &Identity) -> String {
-    hex::encode(&id.bytes()[0..8])
+        .unwrap_or_else(|| user.identity.to_abbreviated_hex().to_string())
 }
 
 // ## Notify about updated users

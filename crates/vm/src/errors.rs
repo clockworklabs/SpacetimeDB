@@ -1,3 +1,4 @@
+use spacetimedb_lib::operator::OpLogic;
 use spacetimedb_sats::db::error::{AuthError, RelationError};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use std::fmt;
@@ -18,6 +19,17 @@ pub enum ConfigError {
 pub enum ErrorType {
     #[error("Error Parsing `{value}` into type [{ty}]: {err}")]
     Parse { value: String, ty: String, err: String },
+    #[error("Type Mismatch Join: `{lhs}` != `{rhs}`")]
+    TypeMismatchJoin { lhs: String, rhs: String },
+    #[error("Type Mismatch: `{lhs}` != `{rhs}`")]
+    TypeMismatch { lhs: String, rhs: String },
+    #[error("Type Mismatch: `{lhs}` {op} `{rhs}`, both sides must be an `{expected}` expression")]
+    TypeMismatchLogic {
+        op: OpLogic,
+        lhs: String,
+        rhs: String,
+        expected: String,
+    },
 }
 
 /// Vm Errors

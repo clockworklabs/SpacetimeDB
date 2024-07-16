@@ -42,6 +42,7 @@ crossbeam-channel.workspace = true
 derive_more.workspace = true
 dirs.workspace = true
 email_address.workspace = true
+enum-as-inner.workspace = true
 enum-map.workspace = true
 flate2.workspace = true
 fs2.workspace = true
@@ -62,7 +63,6 @@ parking_lot.workspace = true
 paste.workspace = true
 pin-project-lite.workspace = true
 prometheus.workspace = true
-prost.workspace = true
 rayon.workspace = true
 rayon-core.workspace = true
 regex.workspace = true
@@ -117,6 +117,3 @@ proptest.workspace = true
 proptest-derive.workspace = true
 rand.workspace = true
 env_logger.workspace = true
-
-[build-dependencies]
-prost-build.workspace = true

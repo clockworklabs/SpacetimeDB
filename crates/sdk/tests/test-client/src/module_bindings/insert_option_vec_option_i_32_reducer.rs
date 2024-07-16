@@ -14,7 +14,7 @@ use spacetimedb_sdk::{
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct InsertOptionVecOptionI32Args {
-    pub n: Option<Vec<Option<i32>>>,
+    pub v: Option<Vec<Option<i32>>>,
 }
 
 impl Reducer for InsertOptionVecOptionI32Args {
@@ -22,8 +22,8 @@ impl Reducer for InsertOptionVecOptionI32Args {
 }
 
 #[allow(unused)]
-pub fn insert_option_vec_option_i_32(n: Option<Vec<Option<i32>>>) {
-    InsertOptionVecOptionI32Args { n }.invoke();
+pub fn insert_option_vec_option_i_32(v: Option<Vec<Option<i32>>>) {
+    InsertOptionVecOptionI32Args { v }.invoke();
 }
 
 #[allow(unused)]
@@ -31,8 +31,8 @@ pub fn on_insert_option_vec_option_i_32(
     mut __callback: impl FnMut(&Identity, Option<Address>, &Status, &Option<Vec<Option<i32>>>) + Send + 'static,
 ) -> ReducerCallbackId<InsertOptionVecOptionI32Args> {
     InsertOptionVecOptionI32Args::on_reducer(move |__identity, __addr, __status, __args| {
-        let InsertOptionVecOptionI32Args { n } = __args;
-        __callback(__identity, __addr, __status, n);
+        let InsertOptionVecOptionI32Args { v } = __args;
+        __callback(__identity, __addr, __status, v);
     })
 }
 
@@ -41,8 +41,8 @@ pub fn once_on_insert_option_vec_option_i_32(
     __callback: impl FnOnce(&Identity, Option<Address>, &Status, &Option<Vec<Option<i32>>>) + Send + 'static,
 ) -> ReducerCallbackId<InsertOptionVecOptionI32Args> {
     InsertOptionVecOptionI32Args::once_on_reducer(move |__identity, __addr, __status, __args| {
-        let InsertOptionVecOptionI32Args { n } = __args;
-        __callback(__identity, __addr, __status, n);
+        let InsertOptionVecOptionI32Args { v } = __args;
+        __callback(__identity, __addr, __status, v);
     })
 }
 

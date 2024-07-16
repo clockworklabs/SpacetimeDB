@@ -1,4 +1,5 @@
 use crate::{
+    common_args,
     config::{Config, IdentityConfig},
     util::{init_default, y_or_n, IdentityTokenJson, InitDefaultResultType},
 };
@@ -34,16 +35,13 @@ fn get_subcommands() -> Vec<Command> {
                     .required(true)
                     .help("The email associated with the identity that you would like to find"),
             )
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
+            .arg(common_args::server()
                     .help("The server to search for identities matching the email"),
             ),
         Command::new("import")
             .about("Import an existing identity into your spacetime config")
             .arg(
-                Arg::new("identity")
+                common_args::identity()
                     .required(true)
                     .value_parser(clap::value_parser!(Identity))
                     .help("The identity string associated with the provided token"),
@@ -64,9 +62,7 @@ fn get_subcommands() -> Vec<Command> {
         Command::new("init-default")
             .about("Initialize a new default identity if it is missing from a server's config")
             .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
+                common_args::server()
                     .help("The nickname, host name or URL of the server for which to set the default identity"),
             )
             .arg(
@@ -84,9 +80,7 @@ fn get_subcommands() -> Vec<Command> {
             ),
         Command::new("list").about("List saved identities which apply to a server")
             .arg(
-                Arg::new("server")
-                    .short('s')
-                    .long("server")
+                common_args::server()
                     .help("The nickname, host name or URL of the server to list identities for")
                     .conflicts_with("all")
             )
@@ -103,9 +97,7 @@ fn get_subcommands() -> Vec<Command> {
         Command::new("new")
             .about("Creates a new identity")
             .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
+                common_args::server()
                     .help("The nickname, host name or URL of the server from which to request the identity"),
             )
             .arg(
@@ -150,20 +142,17 @@ fn get_subcommands() -> Vec<Command> {
                     .required(true)
                     .help("The email associated with the identity that you would like to recover."),
             )
-            .arg(Arg::new("identity").required(true).help(
+            .arg(common_args::identity().required(true).help(
                 "The identity you would like to recover. This identity must be associated with the email provided.",
             ).value_parser(clap::value_parser!(Identity)))
-            .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
+            .arg(common_args::server()
                     .help("The server from which to request recovery codes"),
             )
             // TODO: project flag?
             ,
         Command::new("remove")
             .about("Removes a saved identity from your spacetime config")
-            .arg(Arg::new("identity")
+            .arg(common_args::identity()
                 .help("The identity string or name to delete")
             )
             .arg(
@@ -190,20 +179,18 @@ fn get_subcommands() -> Vec<Command> {
             // TODO: project flag?
             ,
         Command::new("token").about("Print the token for an identity").arg(
-            Arg::new("identity")
+            common_args::identity()
                 .help("The identity string or name that we should print the token for")
                 .required(true),
         ),
         Command::new("set-default").about("Set the default identity for a server")
             .arg(
-                Arg::new("identity")
+                common_args::identity()
                     .help("The identity string or name that should become the new default identity")
                     .required(true),
             )
             .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
+                common_args::server()
                     .help("The server nickname, host name or URL of the server which should use this identity as a default")
             )
             // TODO: project flag?
@@ -211,7 +198,7 @@ fn get_subcommands() -> Vec<Command> {
         Command::new("set-email")
             .about("Associates an email address with an identity")
             .arg(
-                Arg::new("identity")
+                common_args::identity()
                     .help("The identity string or name that should be associated with the email")
                     .required(true),
             )
@@ -221,9 +208,7 @@ fn get_subcommands() -> Vec<Command> {
                     .required(true),
             )
             .arg(
-                Arg::new("server")
-                    .long("server")
-                    .short('s')
+                common_args::server()
                     .help("The server that should be informed of the email change")
                     .conflicts_with("all-servers")
             )
@@ -236,7 +221,7 @@ fn get_subcommands() -> Vec<Command> {
                     .conflicts_with("server")
             ),
         Command::new("set-name").about("Set the name of an identity or rename an existing identity nickname").arg(
-            Arg::new("identity")
+            common_args::identity()
                 .help("The identity string or name to be named. If a name is supplied, the corresponding identity will be renamed.")
                 .required(true))
             .arg(Arg::new("name")
@@ -500,7 +485,7 @@ async fn exec_list(config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
             format!(
                 "Cannot list identities for server without a saved fingerprint: {server_name}
 Fetch the server's fingerprint with:
-\tspacetime server fingerprint {server_name}"
+\tspacetime server fingerprint -s {server_name}"
             )
         })?;
         let default_identity = config.get_default_identity_config(server).ok().map(|cfg| cfg.identity);

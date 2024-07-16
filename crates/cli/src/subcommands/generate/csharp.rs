@@ -30,10 +30,8 @@ fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
         BuiltinType::U32 => "uint",
         BuiltinType::I64 => "long",
         BuiltinType::U64 => "ulong",
-        // BuiltinType::I128 => "int128", Not a supported type in csharp
-        // BuiltinType::U128 => "uint128", Not a supported type in csharp
-        BuiltinType::I128 => panic!("i128 not supported for csharp"),
-        BuiltinType::U128 => panic!("i128 not supported for csharp"),
+        BuiltinType::I128 => "I128",
+        BuiltinType::U128 => "U128",
         BuiltinType::String => "string",
         BuiltinType::F32 => "float",
         BuiltinType::F64 => "double",
@@ -180,6 +178,7 @@ impl CsharpAutogen {
         if namespace != "SpacetimeDB" {
             writeln!(output, "using SpacetimeDB;");
         }
+        writeln!(output, "using SpacetimeDB.ClientApi;");
         for extra_using in extra_usings {
             writeln!(output, "using {extra_using};");
         }
@@ -650,7 +649,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
         );
         writeln!(
             output,
-            "public ReducerEvent(ClientApi.Event dbEvent, IReducerArgs? args) : base(dbEvent) => Args = args;"
+            "public ReducerEvent(TransactionUpdate update, IReducerArgs? args) : base(update) => Args = args;"
         );
         writeln!(output);
         // Properties for reducer args
@@ -697,28 +696,31 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
 
         writeln!(
             output,
-            "protected override ReducerEvent ReducerEventFromDbEvent(ClientApi.Event dbEvent)"
+            "protected override ReducerEvent ReducerEventFromDbEvent(TransactionUpdate update)"
         );
         indented_block(output, |output| {
-            writeln!(output, "var argBytes = dbEvent.FunctionCall.ArgBytes;");
-            writeln!(output, "IReducerArgs? args = dbEvent.FunctionCall.Reducer switch {{");
+            writeln!(output, "var encodedArgs = update.ReducerCall.Args;");
+            writeln!(output, "IReducerArgs? args = update.ReducerCall.ReducerName switch {{");
             {
                 indent_scope!(output);
                 for (reducer, reducer_name) in std::iter::zip(&reducers, &reducer_names) {
                     let reducer_str_name = &reducer.name;
                     writeln!(
                         output,
-                        "\"{reducer_str_name}\" => BSATNHelpers.FromProtoBytes<{reducer_name}ArgsStruct>(argBytes),"
+                        "\"{reducer_str_name}\" => BSATNHelpers.Decode<{reducer_name}ArgsStruct>(encodedArgs),"
                     );
                 }
                 writeln!(output, "\"<none>\" => null,");
+                writeln!(output, "\"__identity_connected__\" => null,");
+                writeln!(output, "\"__identity_disconnected__\" => null,");
+                writeln!(output, "\"\" => null,"); //Transaction from CLI command
                 writeln!(
                     output,
                     r#"var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {{reducer}}")"#
                 );
             }
             writeln!(output, "}};");
-            writeln!(output, "return new ReducerEvent(dbEvent, args);");
+            writeln!(output, "return new ReducerEvent(update, args);");
         });
     });
 

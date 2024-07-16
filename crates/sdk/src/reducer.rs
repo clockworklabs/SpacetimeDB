@@ -13,6 +13,16 @@ pub enum Status {
     OutOfEnergy,
 }
 
+impl Status {
+    pub(crate) fn from_update_status(status: &crate::ws_messages::UpdateStatus) -> Self {
+        match status {
+            crate::ws_messages::UpdateStatus::Committed(_) => Self::Committed,
+            crate::ws_messages::UpdateStatus::Failed(errmsg) => Self::Failed(errmsg.clone()),
+            crate::ws_messages::UpdateStatus::OutOfEnergy => Self::OutOfEnergy,
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct ReducerCallbackId<R> {
     id: CallbackId<(Identity, Option<Address>, Status, R)>,

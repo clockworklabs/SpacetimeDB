@@ -1,5 +1,4 @@
-using SpacetimeDB.Module;
-using static SpacetimeDB.Runtime;
+using SpacetimeDB;
 
 static partial class Module
 {
@@ -678,13 +677,13 @@ static partial class Module
     [SpacetimeDB.Table(Public = true)]
     public partial struct OptionVecOptionI32
     {
-        public List<int?>? n;
+        public List<int?>? v;
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_option_vec_option_i32(List<int?>? n)
+    public static void insert_option_vec_option_i32(List<int?>? v)
     {
-        new OptionVecOptionI32 { n = n }.Insert();
+        new OptionVecOptionI32 { v = v }.Insert();
     }
 
     [SpacetimeDB.Table(Public = true)]

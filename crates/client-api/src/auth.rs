@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use axum::extract::Query;
+use axum::extract::{Query, Request, State};
+use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum_extra::typed_header::TypedHeader;
 use headers::{authorization, HeaderMapExt};
@@ -14,6 +15,7 @@ use spacetimedb::identity::Identity;
 
 use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
 
+/// Credentials for login for a spacetime identity, represented as a JWT.
 // Yes, this is using basic auth. See the below issues.
 // The current form is: Authorization: Basic base64("token:<token>")
 // FOOLS, the lot of them!
@@ -47,17 +49,21 @@ impl authorization::Credentials for SpacetimeCreds {
 }
 
 impl SpacetimeCreds {
+    /// The JWT token representing these credentials.
     pub fn token(&self) -> &str {
         &self.token
     }
+    /// Decode this token into auth claims.
     pub fn decode_token(&self, public_key: &DecodingKey) -> Result<SpacetimeIdentityClaims, JwtError> {
         decode_token(public_key, self.token()).map(|x| x.claims)
     }
+    /// Mint a new credentials JWT for an identity.
     pub fn encode_token(private_key: &EncodingKey, identity: Identity) -> Result<Self, JwtError> {
         let token = encode_token(private_key, identity)?;
         Ok(Self { token })
     }
 
+    /// Extract credentials from the headers or else query string of a request.
     fn from_request_parts(parts: &request::Parts) -> Result<Option<Self>, headers::Error> {
         let res = match parts.headers.typed_try_get::<headers::Authorization<Self>>() {
             Ok(Some(headers::Authorization(creds))) => return Ok(Some(creds)),
@@ -88,12 +94,14 @@ pub struct SpacetimeAuth {
 }
 
 impl SpacetimeAuth {
+    /// Allocate a new identity, and mint a new token for it.
     pub async fn alloc(ctx: &(impl NodeDelegate + ControlStateDelegate + ?Sized)) -> axum::response::Result<Self> {
         let identity = ctx.create_identity().await.map_err(log_and_500)?;
         let creds = SpacetimeCreds::encode_token(ctx.private_key(), identity).map_err(log_and_500)?;
         Ok(Self { creds, identity })
     }
 
+    /// Get the auth credentials as headers to be returned from an endpoint.
     pub fn into_headers(self) -> (TypedHeader<SpacetimeIdentity>, TypedHeader<SpacetimeIdentityToken>) {
         let Self { creds, identity } = self;
         (
@@ -104,7 +112,7 @@ impl SpacetimeAuth {
 }
 
 pub struct SpacetimeAuthHeader {
-    pub auth: Option<SpacetimeAuth>,
+    auth: Option<SpacetimeAuth>,
 }
 
 #[async_trait::async_trait]
@@ -168,6 +176,18 @@ impl SpacetimeAuthHeader {
             Some(auth) => Ok(auth),
             None => SpacetimeAuth::alloc(ctx).await,
         }
+    }
+}
+
+pub struct SpacetimeAuthRequired(pub SpacetimeAuth);
+
+#[async_trait::async_trait]
+impl<S: NodeDelegate + Send + Sync> axum::extract::FromRequestParts<S> for SpacetimeAuthRequired {
+    type Rejection = AuthorizationRejection;
+    async fn from_request_parts(parts: &mut request::Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let auth = SpacetimeAuthHeader::from_request_parts(parts, state).await?;
+        let auth = auth.get().ok_or(AuthorizationRejection::Required)?;
+        Ok(SpacetimeAuthRequired(auth))
     }
 }
 
@@ -235,4 +255,16 @@ impl headers::Header for SpacetimeExecutionDurationMicros {
     fn encode<E: Extend<HeaderValue>>(&self, values: &mut E) {
         values.extend([(self.0.as_micros() as u64).into()])
     }
+}
+
+pub async fn anon_auth_middleware<S: ControlStateDelegate + NodeDelegate>(
+    State(worker_ctx): State<S>,
+    auth: SpacetimeAuthHeader,
+    mut req: Request,
+    next: Next,
+) -> axum::response::Result<impl IntoResponse> {
+    let auth = auth.get_or_create(&worker_ctx).await?;
+    req.extensions_mut().insert(auth.clone());
+    let resp = next.run(req).await;
+    Ok((auth.into_headers(), resp))
 }

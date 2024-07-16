@@ -114,10 +114,14 @@ fn custom_db_benchmarks(c: &mut Criterion) {
     }
 }
 
-fn serialize_benchmarks<T: BenchTable + RandomTable>(c: &mut Criterion) {
+fn serialize_benchmarks<
+    T: BenchTable + RandomTable + for<'a> spacetimedb_lib::de::Deserialize<'a> + for<'a> serde::de::Deserialize<'a>,
+>(
+    c: &mut Criterion,
+) {
     let name = T::name();
     let count = 100;
-    let mut group = c.benchmark_group("special/serialize");
+    let mut group = c.benchmark_group("special/serde/serialize");
     group.throughput(criterion::Throughput::Elements(count));
 
     let data = create_sequential::<T>(0xdeadbeef, count as u32, 100);
@@ -192,6 +196,28 @@ fn serialize_benchmarks<T: BenchTable + RandomTable>(c: &mut Criterion) {
         });
     });
 
+    group.finish();
+
+    let mut group = c.benchmark_group("special/serde/deserialize");
+    group.throughput(criterion::Throughput::Elements(count));
+
+    let data_bin = sats::bsatn::to_vec(&data_pv).unwrap();
+    let data_json = serde_json::to_string(&data_pv).unwrap();
+
+    group.bench_function(&format!("{name}/bsatn/count={count}"), |b| {
+        b.iter_batched_ref(
+            || data_bin.clone(),
+            |data_bin| bsatn::from_slice::<Vec<T>>(data_bin).unwrap(),
+            criterion::BatchSize::PerIteration,
+        );
+    });
+    group.bench_function(&format!("{name}/json/count={count}"), |b| {
+        b.iter_batched_ref(
+            || data_json.clone(),
+            |data_json| serde_json::from_str::<Vec<T>>(data_json).unwrap(),
+            criterion::BatchSize::PerIteration,
+        );
+    });
     // TODO: deserialize benches (needs a typespace)
 }
 

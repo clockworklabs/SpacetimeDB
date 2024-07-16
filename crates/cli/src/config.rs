@@ -80,7 +80,7 @@ Or initialize a default identity with:
                 format!(
                     "Cannot verify tokens using invalid saved fingerprint from server: {server}
 Update the fingerprint with:
-\tspacetime server fingerprint {server}",
+\tspacetime server fingerprint -s {server}",
                 )
             })?;
             decode_token(&decoder, &id.token).map_err(|_| {
@@ -387,7 +387,7 @@ Import an existing identity with:
                     anyhow::anyhow!(
                         "Cannot delete identities for server without saved identity: {server}
 Fetch the server's fingerprint with:
-\tspacetime server fingerprint {server}"
+\tspacetime server fingerprint -s {server}"
                     )
                 })?;
                 self.remove_identities_for_fingerprint(&fingerprint)?
@@ -404,7 +404,7 @@ Fetch the server's fingerprint with:
         let decoder = DecodingKey::from_ec_pem(fingerprint.as_bytes()).with_context(|| {
             "Cannot delete identities for server without saved identity: {server}
 Fetch the server's fingerprint with:
-\tspacetime server fingerprint {server}"
+\tspacetime server fingerprint -s {server}"
         })?;
 
         // TODO: use `Vec::extract_if` instead when it stabilizes.
@@ -456,7 +456,7 @@ Fetch the server's fingerprint with:
                 format!(
                     "No saved fingerprint for server: {server}
 Fetch the server's fingerprint with:
-\tspacetime server fingerprint {server}"
+\tspacetime server fingerprint -s {server}"
                 )
             })
             .map(|cfg| cfg.ecdsa_public_key.as_deref())
@@ -1006,7 +1006,7 @@ Import an existing identity with:
                     format!(
                         "Unable to parse invalid saved server fingerprint as ECDSA public key.
 Update the server's fingerprint with:
-\tspacetime server fingerprint {}",
+\tspacetime server fingerprint -s {}",
                         server.unwrap_or("")
                     )
                 })

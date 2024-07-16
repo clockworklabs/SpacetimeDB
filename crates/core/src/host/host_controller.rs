@@ -15,7 +15,7 @@ use crate::{db, host};
 use anyhow::{anyhow, bail, ensure, Context};
 use async_trait::async_trait;
 use durability::EmptyHistory;
-use log::{debug, info, trace, warn};
+use log::{info, trace, warn};
 use parking_lot::Mutex;
 use serde::Serialize;
 use spacetimedb_data_structures::map::IntMap;
@@ -369,22 +369,32 @@ impl HostController {
         Ok(update_result)
     }
 
-    // Accomodates control db bootstrap.
-    // Lives here to avoid letting the [RelationalDB] escape the controller.
-    // TODO: Figure out a non-bracket variant of `using_database`.
-    #[doc(hidden)]
-    pub async fn custom_bootstrap<F, T>(
+    /// Start the host `instance_id` and conditionally update it.
+    ///
+    /// If the host was not initialized before, it is initialized with the
+    /// program [`Database::initial_program`], which is loaded from the
+    /// controller's [`ProgramStorage`].
+    ///
+    /// If it was already initialized and its stored program hash matches
+    /// [`Database::initial_program`], no further action is taken.
+    ///
+    /// Otherwise, if `expected_hash` is `Some` and does **not** match the
+    /// stored hash, an error is returned.
+    ///
+    /// Otherwise, the host is updated to [`Database::initial_program`], loading
+    /// the program data from the controller's [`ProgramStorage`].
+    ///
+    /// > Note that this ascribes different semantics to [`Database::initial_program`]
+    /// > than elsewhere, where the [`Database`] value is provided by the control
+    /// > database. The method is mainly useful for bootstrapping the control
+    /// > database itself.
+    pub async fn init_maybe_update_module_host(
         &self,
-        caller_address: Option<Address>,
-        expected_hash: Option<Hash>,
         database: Database,
         instance_id: u64,
-        post_boot: F,
-    ) -> anyhow::Result<T>
-    where
-        F: FnOnce(&RelationalDB) -> anyhow::Result<T> + Send + 'static,
-        T: Send + 'static,
-    {
+        caller_address: Option<Address>,
+        expected_hash: Option<Hash>,
+    ) -> anyhow::Result<watch::Receiver<ModuleHost>> {
         trace!("custom bootstrap {}/{}", database.address, instance_id);
 
         let db_addr = database.address;
@@ -396,7 +406,7 @@ impl HostController {
             Some(host) => host,
             None => self.try_init_host(database, instance_id).await?,
         };
-        let module = host.module.clone();
+        let module = host.module.subscribe();
 
         // The program is now either:
         //
@@ -437,15 +447,7 @@ impl HostController {
             update_result.map(drop)?;
         }
 
-        let on_panic = self.unregister_fn(instance_id);
-        tokio::task::spawn_blocking(move || post_boot(&module.borrow().dbic().relational_db))
-            .await
-            .unwrap_or_else(|e| {
-                warn!("post-boot database operation panicked");
-                on_panic();
-                std::panic::resume_unwind(e.into_panic())
-            })
-            .map_err(Into::into)
+        Ok(module)
     }
 
     /// Release all resources of the [`ModuleHost`] identified by `instance_id`,
@@ -580,7 +582,6 @@ async fn make_module_host(
 }
 
 async fn load_program(storage: &ProgramStorage, hash: Hash) -> anyhow::Result<Box<[u8]>> {
-    debug!("lookup program {}", hash);
     storage
         .lookup(hash)
         .await?
@@ -596,6 +597,7 @@ async fn launch_module(
     relational_db: Arc<RelationalDB>,
     energy_monitor: Arc<dyn EnergyMonitor>,
 ) -> anyhow::Result<(Arc<DatabaseInstanceContext>, ModuleHost, Scheduler, SchedulerStarter)> {
+    let address = database.address;
     let program_hash = database.initial_program;
     let host_type = database.host_type;
 
@@ -614,7 +616,7 @@ async fn launch_module(
     )
     .await?;
 
-    debug!("launch done");
+    trace!("launched database {} with program {}", address, program_hash);
 
     Ok((dbic, module_host, scheduler, scheduler_starter))
 }
@@ -827,8 +829,9 @@ impl Host {
             (program_hash, program_bytes),
         )
         .await?;
-        debug!("update result: {update_result:?}");
+        trace!("update result: {update_result:?}");
         if update_result.is_ok() {
+            self.scheduler = scheduler;
             scheduler_starter.start(&module)?;
             let old_module = self.module.send_replace(module);
             old_module.exit().await;

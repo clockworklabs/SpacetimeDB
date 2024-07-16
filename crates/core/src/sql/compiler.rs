@@ -1,10 +1,11 @@
+use super::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
+use super::type_check::TypeCheck;
 use crate::db::relational_db::RelationalDB;
 use crate::error::{DBError, PlanError};
-use crate::sql::ast::{compile_to_ast, Column, From, Join, Selection, SqlAst};
 use core::ops::Deref;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_primitives::ColId;
-use spacetimedb_sats::db::def::{TableDef, TableSchema};
+use spacetimedb_sats::db::def::TableSchema;
 use spacetimedb_sats::relation::{self, ColExpr, DbTable, FieldName, Header};
 use spacetimedb_vm::expr::{CrudExpr, Expr, FieldExpr, QueryExpr, SourceExpr};
 use spacetimedb_vm::operator::OpCmp;
@@ -198,13 +199,10 @@ fn compile_update(
     Ok(CrudExpr::Update { delete, assignments })
 }
 
-/// Compiles a `CREATE TABLE ...` clause
-fn compile_create_table(table: Box<TableDef>) -> CrudExpr {
-    CrudExpr::CreateTable { table }
-}
-
 /// Compiles a `SQL` clause
 fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, PlanError> {
+    statement.type_check()?;
+
     let q = match statement {
         SqlAst::Select {
             from,
@@ -218,8 +216,6 @@ fn compile_statement(db: &RelationalDB, statement: SqlAst) -> Result<CrudExpr, P
             selection,
         } => compile_update(table, assignments, selection)?,
         SqlAst::Delete { table, selection } => compile_delete(table, selection)?,
-        SqlAst::CreateTable { table } => compile_create_table(table),
-        SqlAst::Drop { name, kind } => CrudExpr::Drop { name, kind },
         SqlAst::SetVar { name, literal } => CrudExpr::SetVar { name, literal },
         SqlAst::ReadVar { name } => CrudExpr::ReadVar { name },
     };
@@ -1064,6 +1060,10 @@ mod tests {
         let sql = "select * from enum where a = 'Player'";
         let result = run_for_testing(&db, sql)?;
         assert_eq!(result[0].data, vec![product![AlgebraicValue::enum_simple(0)]]);
+
+        let sql = "select * from enum where 'Player' = a";
+        let result = run_for_testing(&db, sql)?;
+        assert_eq!(result[0].data, vec![product![AlgebraicValue::enum_simple(0)]]);
         Ok(())
     }
 
@@ -1073,6 +1073,57 @@ mod tests {
         db.create_table_for_test("A", &[("x", AlgebraicType::U64)], &[])?;
         db.create_table_for_test("B", &[("y", AlgebraicType::U64)], &[])?;
         assert!(compile_sql(&db, &db.begin_tx(), "select * from B join A on B.y = A.x").is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn compile_type_check() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+        db.create_table_for_test(
+            "PlayerState",
+            &[("entity_id", AlgebraicType::U64)],
+            &[(0.into(), "entity_id")],
+        )?;
+        db.create_table_for_test(
+            "EnemyState",
+            &[("entity_id", AlgebraicType::I8)],
+            &[(0.into(), "entity_id")],
+        )?;
+        db.create_table_for_test(
+            "FriendState",
+            &[("entity_id", AlgebraicType::U64)],
+            &[(0.into(), "entity_id")],
+        )?;
+        let sql = "SELECT * FROM PlayerState WHERE entity_id = '161853'";
+
+        // Should fail with type mismatch for selections and joins.
+        //
+        // TODO: Type check other operations deferred for the new query engine.
+
+        assert_eq!(
+            compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
+            Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` != `String(\"161853\"): String`, executing: `SELECT * FROM PlayerState WHERE entity_id = '161853'`".into())
+        );
+
+        // Check we can still compile the query if we remove the type mismatch and have multiple logical operations.
+        let sql = "SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id = 2 AND entity_id = 3 OR entity_id = 4 OR entity_id = 5";
+
+        assert!(compile_sql(&db, &db.begin_tx(), sql).is_ok());
+
+        // Now verify when we have a type mismatch in the middle of the logical operations.
+        let sql = "SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id";
+
+        assert_eq!(
+            compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
+            Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64 == U64(1): U64` and `PlayerState.entity_id: U64`, both sides must be an `Bool` expression, executing: `SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id`".into())
+        );
+        // Verify that all operands of `AND` must be `Bool`.
+        let sql = "SELECT * FROM PlayerState WHERE entity_id AND entity_id";
+
+        assert_eq!(
+            compile_sql(&db, &db.begin_tx(), sql).map_err(|e| e.to_string()),
+            Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` and `PlayerState.entity_id: U64`, both sides must be an `Bool` expression, executing: `SELECT * FROM PlayerState WHERE entity_id AND entity_id`".into())
+        );
         Ok(())
     }
 }

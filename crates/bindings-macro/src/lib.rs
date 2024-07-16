@@ -564,7 +564,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         if col_attr.contains(ColumnAttribute::AUTO_INC)
             && !matches!(field.ty, syn::Type::Path(p) if is_integer_type(&p.path))
         {
-            return Err(syn::Error::new(field.ident.unwrap().span(), "An `autoinc` or `identity` column must be one of the integer types: u8, i8, u16, i16, u32, i32, u64, i64, u128, i128"));
+            return Err(syn::Error::new_spanned(field.ident, "An `autoinc` or `identity` column must be one of the integer types: u8, i8, u16, i16, u32, i32, u64, i64, u128, i128"));
         }
 
         let column = Column {
@@ -904,24 +904,20 @@ pub fn schema_type(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         let ty = module::sats_type_from_derive(&input, quote!(spacetimedb::spacetimedb_lib))?;
 
         let ident = ty.ident;
+        let name = &ty.name;
+        let krate = &ty.krate;
 
         let schema_impl = derive_satstype(&ty, true);
         let deserialize_impl = derive_deserialize(&ty);
         let serialize_impl = derive_serialize(&ty);
-
-        let register_describer_symbol = format!("__preinit__20_register_describer_{}", ty.name);
 
         let emission = quote! {
             #schema_impl
             #deserialize_impl
             #serialize_impl
 
-            const _: () = {
-                #[export_name = #register_describer_symbol]
-                extern "C" fn __register_describer() {
-                    spacetimedb::rt::register_reftype::<#ident>()
-                }
-            };
+            // unfortunately, generic types don't work in modules at the moment.
+            #krate::__make_register_reftype!(#ident, #name);
         };
         let emission = module::ensure_no_public(&ty, emission);
 
