@@ -984,10 +984,11 @@ impl IndexScanIter<'_> {
 
 #[derive(Error, Debug, PartialEq, Eq)]
 #[error(
-    "Unique constraint violation '{}' in table '{}', column(s): '{:?}': failed to insert: {} because of: {}",
+    "Unique constraint violation '{}' in table '{}', column(s): '{:?}': type {:?}: failed to insert: {} because of: {}",
     constraint_name,
     table_name,
     cols,
+    row_type,
     inserted_row.to_satn(),
     present_row.to_satn()
 )]
@@ -996,6 +997,7 @@ pub struct UniqueConstraintViolation {
     pub table_name: Box<str>,
     pub inserted_row: ProductValue,
     pub present_row: ProductValue,
+    pub row_type: ProductType,
     pub cols: Vec<Box<str>>,
 }
 
@@ -1030,12 +1032,15 @@ impl Table {
             .index_name
             .clone();
 
+        let row_type = schema.get_row_type().clone();
+
         UniqueConstraintViolation {
             constraint_name,
             table_name,
             inserted_row,
             present_row,
             cols,
+            row_type,
         }
     }
 
@@ -1167,7 +1172,7 @@ pub(crate) mod test {
     use spacetimedb_sats::bsatn::to_vec;
     use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableDef};
     use spacetimedb_sats::proptest::generate_typed_row;
-    use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
+    use spacetimedb_sats::{product, product_type, AlgebraicType, ArrayValue};
 
     pub(crate) fn table(ty: ProductType) -> Table {
         let def = TableDef::from_product("", ty);
@@ -1224,12 +1229,17 @@ pub(crate) mod test {
                 cols,
                 inserted_row,
                 present_row,
+                row_type,
             })) => {
                 assert_eq!(&*constraint_name, index_name);
                 assert_eq!(&*table_name, "UniqueIndexed");
                 assert_eq!(cols.iter().map(|c| c.to_string()).collect::<Vec<_>>(), &["unique_col"]);
                 assert_eq!(inserted_row, product![0i32, 1i32]);
                 assert_eq!(present_row, product![0i32, 0i32]);
+                assert_eq!(
+                    row_type,
+                    product_type![Some("unique_col") => AlgebraicType::I32, Some("other_col") => AlgebraicType::I32]
+                );
             }
             Err(e) => panic!("Expected UniqueConstraintViolation but found {:?}", e),
         }
