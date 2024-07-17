@@ -103,7 +103,7 @@ fn ignore_duplicate_insert_error<T>(res: std::result::Result<T, InsertError>) ->
 }
 
 impl CommittedState {
-    pub(super) fn bootstrap_system_tables(&mut self, database_address: Address) -> Result<()> {
+    pub fn bootstrap_system_tables(&mut self, database_address: Address) -> Result<()> {
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
         let with_label_values = |table_id: TableId, table_name: &str| {
@@ -265,7 +265,7 @@ impl CommittedState {
         Ok(())
     }
 
-    pub(super) fn replay_delete_by_rel(&mut self, table_id: TableId, rel: &ProductValue) -> Result<()> {
+    pub fn replay_delete_by_rel(&mut self, table_id: TableId, rel: &ProductValue) -> Result<()> {
         let table = self
             .tables
             .get_mut(&table_id)
@@ -279,7 +279,7 @@ impl CommittedState {
         Ok(())
     }
 
-    pub(super) fn replay_insert(
+    pub fn replay_insert(
         &mut self,
         table_id: TableId,
         schema: &Arc<TableSchema>,
@@ -557,7 +557,7 @@ impl CommittedState {
         self.tables.insert(table_id, Self::make_table(schema));
     }
 
-    pub(super) fn get_table_and_blob_store_or_create<'this>(
+    pub fn get_table_and_blob_store_or_create<'this>(
         &'this mut self,
         table_id: TableId,
         schema: &Arc<TableSchema>,
