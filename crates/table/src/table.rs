@@ -112,9 +112,13 @@ impl TableInner {
         unsafe { RowRef::new(self, blob_store, ptr) }
     }
 
+    fn try_page_and_offset(&self, ptr: RowPointer) -> Option<(&Page, PageOffset)> {
+        (ptr.page_index().idx() < self.pages.len()).then(|| (&self.pages[ptr.page_index()], ptr.page_offset()))
+    }
+
     /// Returns the page and page offset that `ptr` points to.
     fn page_and_offset(&self, ptr: RowPointer) -> (&Page, PageOffset) {
-        (&self.pages[ptr.page_index()], ptr.page_offset())
+        self.try_page_and_offset(ptr).unwrap()
     }
 }
 
@@ -1067,8 +1071,13 @@ impl Table {
     //       As such, our `delete` and `insert` methods can be `unsafe`
     //       and trust that the `RowPointer` is valid.
     fn is_row_present(&self, ptr: RowPointer) -> bool {
-        let (page, offset) = self.inner.page_and_offset(ptr);
-        self.squashed_offset == ptr.squashed_offset() && page.has_row_offset(self.row_size(), offset)
+        if self.squashed_offset != ptr.squashed_offset() {
+            return false;
+        }
+        let Some((page, offset)) = self.inner.try_page_and_offset(ptr) else {
+            return false;
+        };
+        page.has_row_offset(self.row_size(), offset)
     }
 
     /// Returns the row size for a row in the table.
@@ -1416,5 +1425,29 @@ pub(crate) mod test {
         // Delete the first long string row. This gets us down to 0 (we've now deleted 2x).
         table1.delete(blob_store, long_row_ptr2, |_| ()).unwrap();
         assert_eq!(table1.blob_store_bytes, 0.into());
+    }
+
+    /// Assert that calling `get_row_ref` to get a row ref to a non-existent `RowPointer`
+    /// does not panic.
+    #[test]
+    fn get_row_ref_no_panic() {
+        let blob_store = &mut HashMapBlobStore::default();
+        let table = table([AlgebraicType::String, AlgebraicType::I32].into());
+
+        // This row pointer has an incorrect `SquashedOffset`, and so does not point into `table`.
+        assert!(table
+            .get_row_ref(
+                blob_store,
+                RowPointer::new(false, PageIndex(0), PageOffset(0), SquashedOffset::TX_STATE),
+            )
+            .is_none());
+
+        // This row pointer has the correct `SquashedOffset`, but points out-of-bounds within `table`.
+        assert!(table
+            .get_row_ref(
+                blob_store,
+                RowPointer::new(false, PageIndex(0), PageOffset(0), SquashedOffset::COMMITTED_STATE),
+            )
+            .is_none());
     }
 }
