@@ -628,8 +628,8 @@ async fn exec_recover(mut config: Config, args: &ArgMatches) -> Result<(), anyho
     }
 
     let client = reqwest::Client::new();
-    let builder = client.get(Url::parse_with_params(
-        format!("{}/database/request_recovery_code", config.get_host_url(server)?,).as_str(),
+    let builder = client.post(Url::parse_with_params(
+        format!("{}/identity/request_recovery_code", config.get_host_url(server)?,).as_str(),
         query_params,
     )?);
     let res = builder.send().await?;
@@ -653,8 +653,8 @@ async fn exec_recover(mut config: Config, args: &ArgMatches) -> Result<(), anyho
         };
 
         let client = reqwest::Client::new();
-        let builder = client.get(Url::parse_with_params(
-            format!("{}/database/confirm_recovery_code", config.get_host_url(server)?,).as_str(),
+        let builder = client.post(Url::parse_with_params(
+            format!("{}/identity/confirm_recovery_code", config.get_host_url(server)?,).as_str(),
             vec![
                 ("code", code.to_string().as_str()),
                 ("email", email.as_str()),
