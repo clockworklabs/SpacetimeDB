@@ -279,12 +279,7 @@ impl CommittedState {
         Ok(())
     }
 
-    pub fn replay_insert(
-        &mut self,
-        table_id: TableId,
-        schema: &Arc<TableSchema>,
-        row: &ProductValue,
-    ) -> Result<()> {
+    pub fn replay_insert(&mut self, table_id: TableId, schema: &Arc<TableSchema>, row: &ProductValue) -> Result<()> {
         let (table, blob_store) = self.get_table_and_blob_store_or_create(table_id, schema);
         table.insert_internal(blob_store, row).map_err(TableError::Insert)?;
         Ok(())
