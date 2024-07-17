@@ -212,12 +212,25 @@ pub fn schema_updates(
                 let proposed_access = mem::replace(&mut proposed_schema.table_access, StAccess::Public);
                 let known_access = mem::replace(&mut known_schema.table_access, StAccess::Public);
 
+                // If a proposed sequence has a lower allocation than an existing sequence,
+                // i.e. the sequence in the DB has advanced beyond its initial allocation,
+                // use the higher number.
+                // Note that this still refuses updates where the proposed schema has a higher allocation
+                // than the known schema,
+                // since the actual update process will not alter the sequence.
+                for (proposed_sequence, known_sequence) in
+                    proposed_schema.sequences.iter_mut().zip(known_schema.sequences.iter())
+                {
+                    proposed_sequence.allocated = known_sequence.allocated.max(proposed_sequence.allocated);
+                }
+
                 // Record a change to the table access.
                 if proposed_access != known_access {
                     changed_access.insert(known_schema.table_name.clone(), proposed_access);
                 }
 
-                // Now, while ignoring `table_access`, compute schema compatibility.
+                // Now, while ignoring `table_access` and permitting sequences which have advanced,
+                // compute schema compatibility.
                 let changed = proposed_schema != known_schema;
 
                 // Revert back to the original accesses.
