@@ -656,7 +656,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         let name = name.as_deref().unwrap_or("default_index");
         indexes.push(quote!(spacetimedb::IndexDesc {
             name: #name,
-            ty: spacetimedb::sats::db::def::IndexType::#ty,
+            ty: spacetimedb::spacetimedb_lib::db::def::IndexType::#ty,
             col_ids: &[#(#col_ids),*],
         }));
     }
@@ -761,9 +761,9 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     };
 
     let table_access = if let Some(span) = sats_ty.public {
-        quote_spanned!(span=> spacetimedb::sats::db::auth::StAccess::Public)
+        quote_spanned!(span=> spacetimedb::spacetimedb_lib::db::auth::StAccess::Public)
     } else {
-        quote!(spacetimedb::sats::db::auth::StAccess::Private)
+        quote!(spacetimedb::spacetimedb_lib::db::auth::StAccess::Private)
     };
 
     let deserialize_impl = derive_deserialize(&sats_ty);
@@ -787,10 +787,10 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     let tabletype_impl = quote! {
         impl spacetimedb::TableType for #original_struct_ident {
             const TABLE_NAME: &'static str = #table_name;
-            const TABLE_ACCESS: spacetimedb::sats::db::auth::StAccess = #table_access;
+            const TABLE_ACCESS: spacetimedb::spacetimedb_lib::db::auth::StAccess = #table_access;
             const SCHEDULED_REDUCER_NAME: Option<&'static str> =  #scheduled_constant;
-            const COLUMN_ATTRS: &'static [spacetimedb::sats::db::attr::ColumnAttribute] = &[
-                #(spacetimedb::sats::db::attr::ColumnAttribute::#column_attrs),*
+            const COLUMN_ATTRS: &'static [spacetimedb::spacetimedb_lib::db::attr::ColumnAttribute] = &[
+                #(spacetimedb::spacetimedb_lib::db::attr::ColumnAttribute::#column_attrs),*
             ];
             const INDEXES: &'static [spacetimedb::IndexDesc<'static>] = &[#(#indexes),*];
             type InsertResult = #insert_result;

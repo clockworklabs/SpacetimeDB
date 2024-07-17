@@ -1,4 +1,4 @@
-use crate::{impl_deserialize, impl_serialize};
+use spacetimedb_sats::{impl_deserialize, impl_serialize};
 
 use crate::de::Error;
 

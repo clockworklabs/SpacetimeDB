@@ -26,15 +26,16 @@ use anyhow::anyhow;
 use core::ops::RangeBounds;
 use itertools::Itertools;
 use spacetimedb_data_structures::map::IntMap;
-use spacetimedb_lib::address::Address;
-use spacetimedb_primitives::{ColList, TableId};
-use spacetimedb_sats::{
+use spacetimedb_lib::{
+    address::Address,
     db::{
         auth::{StAccess, StTableType},
         def::TableSchema,
     },
-    AlgebraicValue, ProductValue,
 };
+use spacetimedb_primitives::{ColList, TableId};
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
+
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},

@@ -7,13 +7,13 @@ use derive_more::From;
 use itertools::Itertools;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashSet, IntMap};
+use spacetimedb_lib::db::auth::{StAccess, StTableType};
+use spacetimedb_lib::db::def::TableSchema;
+use spacetimedb_lib::db::error::{AuthError, RelationError};
+use spacetimedb_lib::relation::{ColExpr, DbTable, FieldName, Header};
 use spacetimedb_lib::{AlgebraicType, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
-use spacetimedb_sats::db::auth::{StAccess, StTableType};
-use spacetimedb_sats::db::def::TableSchema;
-use spacetimedb_sats::db::error::{AuthError, RelationError};
-use spacetimedb_sats::relation::{ColExpr, DbTable, FieldName, Header};
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::ProductValue;
 use std::borrow::Cow;
@@ -2117,8 +2117,10 @@ impl From<Code> for CodeResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use spacetimedb_sats::db::def::TableDef;
-    use spacetimedb_sats::relation::Column;
+    use spacetimedb_lib::{
+        db::def::{ColumnDef, TableDef},
+        relation::Column,
+    };
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use typed_arena::Arena;
 
@@ -2580,14 +2582,14 @@ mod tests {
             TableId(0),
             TableDef::new(
                 "lhs".into(),
-                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String]).into(),
+                ColumnDef::from_product_type(ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String])),
             ),
         );
         let rhs = TableSchema::from_def(
             TableId(1),
             TableDef::new(
                 "rhs".into(),
-                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64]).into(),
+                ColumnDef::from_product_type(ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64])),
             ),
         );
 
@@ -2632,14 +2634,14 @@ mod tests {
             TableId(0),
             TableDef::new(
                 "lhs".into(),
-                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String]).into(),
+                ColumnDef::from_product_type(ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String])),
             ),
         );
         let rhs = TableSchema::from_def(
             TableId(1),
             TableDef::new(
                 "rhs".into(),
-                ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64]).into(),
+                ColumnDef::from_product_type(ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64])),
             ),
         );
 
@@ -2658,14 +2660,14 @@ mod tests {
             TableId(0),
             TableDef::new(
                 "lhs".into(),
-                ProductType::from([AlgebraicType::I32, AlgebraicType::String]).into(),
+                ColumnDef::from_product_type(ProductType::from([AlgebraicType::I32, AlgebraicType::String])),
             ),
         );
         let rhs = TableSchema::from_def(
             TableId(1),
             TableDef::new(
                 "rhs".into(),
-                ProductType::from([AlgebraicType::I32, AlgebraicType::I64]).into(),
+                ColumnDef::from_product_type(ProductType::from([AlgebraicType::I32, AlgebraicType::I64])),
             ),
         );
 

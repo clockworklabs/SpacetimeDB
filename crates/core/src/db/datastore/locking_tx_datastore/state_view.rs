@@ -11,12 +11,12 @@ use crate::{
     execution_context::ExecutionContext,
 };
 use core::ops::RangeBounds;
-use spacetimedb_lib::address::Address;
-use spacetimedb_primitives::{ColList, TableId};
-use spacetimedb_sats::{
+use spacetimedb_lib::{
+    address::Address,
     db::def::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema, TableSchema},
-    AlgebraicValue,
 };
+use spacetimedb_primitives::{ColList, TableId};
+use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_table::table::{IndexScanIter, RowRef, TableScanIter};
 use std::sync::Arc;
 

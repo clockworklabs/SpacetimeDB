@@ -57,6 +57,21 @@ spacetimedb
 │   ├── itertools
 │   │   └── either
 │   ├── spacetimedb_bindings_macro (*)
+│   ├── spacetimedb_data_structures
+│   │   ├── hashbrown
+│   │   │   ├── ahash
+│   │   │   │   ├── cfg_if
+│   │   │   │   ├── once_cell
+│   │   │   │   └── zerocopy
+│   │   │   │   [build-dependencies]
+│   │   │   │   └── version_check
+│   │   │   └── allocator_api2
+│   │   ├── nohash_hasher
+│   │   └── thiserror
+│   │       └── thiserror_impl
+│   │           ├── proc_macro2 (*)
+│   │           ├── quote (*)
+│   │           └── syn (*)
 │   ├── spacetimedb_primitives (*)
 │   ├── spacetimedb_sats
 │   │   ├── arrayvec
@@ -86,21 +101,6 @@ spacetimedb
 │   │   │   └── keccak
 │   │   ├── smallvec
 │   │   ├── spacetimedb_bindings_macro (*)
-│   │   ├── spacetimedb_data_structures
-│   │   │   ├── hashbrown
-│   │   │   │   ├── ahash
-│   │   │   │   │   ├── cfg_if
-│   │   │   │   │   ├── once_cell
-│   │   │   │   │   └── zerocopy
-│   │   │   │   │   [build-dependencies]
-│   │   │   │   │   └── version_check
-│   │   │   │   └── allocator_api2
-│   │   │   ├── nohash_hasher
-│   │   │   └── thiserror
-│   │   │       └── thiserror_impl
-│   │   │           ├── proc_macro2 (*)
-│   │   │           ├── quote (*)
-│   │   │           └── syn (*)
 │   │   ├── spacetimedb_primitives (*)
 │   │   └── thiserror (*)
 │   └── thiserror (*)

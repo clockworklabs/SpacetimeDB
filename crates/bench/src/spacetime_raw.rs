@@ -5,9 +5,9 @@ use crate::{
 };
 use spacetimedb::db::relational_db::{tests_utils::TestDB, RelationalDB};
 use spacetimedb::execution_context::ExecutionContext;
+use spacetimedb_lib::db::def::{IndexDef, TableDef};
 use spacetimedb_lib::sats::AlgebraicValue;
 use spacetimedb_primitives::{ColId, TableId};
-use spacetimedb_sats::db::def::{IndexDef, TableDef};
 use std::hint::black_box;
 use tempdir::TempDir;
 

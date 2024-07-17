@@ -12,12 +12,12 @@ use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::error::{IndexError, NodesError};
 use crate::execution_context::ExecutionContext;
 use crate::vm::{build_query, TxMode};
+use spacetimedb_lib::db::def::{IndexDef, IndexType};
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::operator::OpQuery;
+use spacetimedb_lib::relation::FieldName;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::{ColId, ColListBuilder, TableId};
-use spacetimedb_sats::db::def::{IndexDef, IndexType};
-use spacetimedb_sats::relation::FieldName;
 use spacetimedb_sats::Typespace;
 use spacetimedb_vm::expr::{FieldExpr, FieldOp, NoInMemUsed, QueryExpr};
 

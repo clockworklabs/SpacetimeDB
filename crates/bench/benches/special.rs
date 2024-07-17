@@ -1,11 +1,12 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use mimalloc::MiMalloc;
-use sats::{bsatn, db::def::TableDef};
+use sats::bsatn;
 use spacetimedb::db::{Config, Storage};
 use spacetimedb_bench::{
     schemas::{create_sequential, u32_u64_str, u32_u64_u64, u64_u64_u32, BenchTable, RandomTable},
     spacetime_module::BENCHMARKS_MODULE,
 };
+use spacetimedb_lib::db::def::TableDef;
 use spacetimedb_lib::{sats, ProductValue};
 use spacetimedb_primitives::TableId;
 use spacetimedb_testing::modules::start_runtime;

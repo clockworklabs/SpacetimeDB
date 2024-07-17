@@ -1,10 +1,10 @@
 use crate::db::def::IndexType;
-use crate::product_value::InvalidFieldError;
 use crate::relation::{FieldName, Header};
-use crate::satn::Satn as _;
 use crate::{buffer, AlgebraicType, AlgebraicValue};
 use derive_more::Display;
 use spacetimedb_primitives::{ColId, ColList, TableId};
+use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::satn::Satn as _;
 use std::fmt;
 use std::string::FromUtf8Error;
 use thiserror::Error;

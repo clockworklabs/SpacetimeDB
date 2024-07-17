@@ -1,22 +1,17 @@
 use crate::db::auth::{StAccess, StTableType};
 use crate::db::error::{DefType, SchemaError};
-use crate::product_value::InvalidFieldError;
 use crate::relation::{Column, DbTable, FieldName, Header};
-use crate::{de, impl_deserialize, impl_serialize, ser};
 use crate::{AlgebraicType, ProductType, ProductTypeElement};
 use derive_more::Display;
 use itertools::Itertools;
 use spacetimedb_data_structures::map::{HashMap, HashSet};
 use spacetimedb_primitives::*;
+use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::{de, ser};
 use std::sync::Arc;
 
 /// The default preallocation amount for sequences.
 pub const SEQUENCE_PREALLOCATION_AMOUNT: i128 = 4_096;
-
-impl_deserialize!([] Constraints, de => Self::try_from(de.deserialize_u8()?)
-    .map_err(|_| de::Error::custom("invalid bitflags for `Constraints`"))
-);
-impl_serialize!([] Constraints, (self, ser) => ser.serialize_u8(self.bits()));
 
 /// Represents a schema definition for a database sequence.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,7 +39,7 @@ impl SequenceSchema {
     /// # Example
     ///
     /// ```
-    /// use spacetimedb_sats::db::def::*;
+    /// use spacetimedb_lib::db::def::*;
     ///
     /// let sequence_def = SequenceDef::for_column("my_table".into(), "my_sequence".into(), 1.into());
     /// let schema = SequenceSchema::from_def(42.into(), sequence_def);
@@ -69,7 +64,6 @@ impl SequenceSchema {
 
 /// Represents a sequence definition for a database table column.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
-#[sats(crate = crate)]
 pub struct SequenceDef {
     pub sequence_name: Box<str>,
     /// The position of the column associated with this sequence.
@@ -93,7 +87,7 @@ impl SequenceDef {
     /// # Example
     ///
     /// ```
-    /// use spacetimedb_sats::db::def::*;
+    /// use spacetimedb_lib::db::def::*;
     ///
     /// let sequence_def = SequenceDef::for_column("my_table", "my_sequence", 1.into());
     /// assert_eq!(&*sequence_def.sequence_name, "seq_my_table_my_sequence");
@@ -154,7 +148,6 @@ impl IndexSchema {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Display, de::Deserialize, ser::Serialize)]
-#[sats(crate = crate)]
 pub enum IndexType {
     BTree = 0,
     Hash = 1,
@@ -179,7 +172,6 @@ impl TryFrom<u8> for IndexType {
 
 /// A struct representing the definition of a database index.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
-#[sats(crate = crate)]
 pub struct IndexDef {
     pub index_name: Box<str>,
     pub is_unique: bool,
@@ -215,7 +207,7 @@ impl IndexDef {
     ///
     /// ```
     /// use spacetimedb_primitives::ColList;
-    /// use spacetimedb_sats::db::def::*;
+    /// use spacetimedb_lib::db::def::*;
     ///
     /// let index_def = IndexDef::for_column("my_table", "test", ColList::new(1u32.into()), true);
     /// assert_eq!(&*index_def.index_name, "idx_my_table_test_unique");
@@ -300,14 +292,13 @@ impl From<FieldDef<'_>> for ProductTypeElement {
 
 /// A struct representing the definition of a database column.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
-#[sats(crate = crate)]
 pub struct ColumnDef {
     pub col_name: Box<str>,
     pub col_type: AlgebraicType,
 }
 
-impl From<ProductType> for Vec<ColumnDef> {
-    fn from(value: ProductType) -> Self {
+impl ColumnDef {
+    pub fn from_product_type(value: ProductType) -> Vec<ColumnDef> {
         Vec::from(value.elements)
             .into_iter()
             .enumerate()
@@ -387,7 +378,6 @@ impl ConstraintSchema {
 
 /// A struct representing the definition of a database constraint.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
-#[sats(crate = crate)]
 pub struct ConstraintDef {
     pub constraint_name: Box<str>,
     pub constraints: Constraints,
@@ -426,7 +416,7 @@ impl ConstraintDef {
     ///
     /// ```
     /// use spacetimedb_primitives::{Constraints, ColList};
-    /// use spacetimedb_sats::db::def::*;
+    /// use spacetimedb_lib::db::def::*;
     ///
     /// let constraint_def = ConstraintDef::for_column("my_table", "test", Constraints::identity(), ColList::new(1u32.into()));
     /// assert_eq!(&*constraint_def.constraint_name, "ct_my_table_test_identity");
@@ -972,7 +962,6 @@ impl From<&TableSchema> for Header {
 /// This struct holds information about the table, including its name, columns, indexes,
 /// constraints, sequences, type, and access rights.
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
-#[sats(crate = crate)]
 pub struct TableDef {
     pub table_name: Box<str>,
     pub columns: Vec<ColumnDef>,

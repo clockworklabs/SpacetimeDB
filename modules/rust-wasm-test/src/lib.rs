@@ -1,5 +1,5 @@
 #![allow(clippy::disallowed_names)]
-use spacetimedb::sats::db::auth::StAccess;
+use spacetimedb::spacetimedb_lib::db::auth::StAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
 use spacetimedb::{duration, query, spacetimedb, Deserialize, ReducerContext, SpacetimeType, TableType, Timestamp};
 

@@ -1,6 +1,6 @@
 use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_lib::db::def::SequenceSchema;
 use spacetimedb_primitives::SequenceId;
-use spacetimedb_sats::db::def::SequenceSchema;
 
 pub(super) struct Sequence {
     schema: SequenceSchema,
