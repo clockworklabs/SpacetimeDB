@@ -22,7 +22,7 @@ else
 fi
 
 if which dotnet >/dev/null ; then
-    test crates/bindings-csharp
+    dotnet test crates/bindings-csharp
 else
     echo "Can't find dotnet, not running smoketests"
 fi
