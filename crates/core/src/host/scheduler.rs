@@ -78,10 +78,20 @@ const SCHEDULED_ID_FIELD: [&str; 2] = ["scheduled_id", "ScheduledId"];
 impl SchedulerStarter {
     // TODO(cloutiertyler): This whole start dance is scuffed, but I don't have
     // time to make it better right now.
-    pub fn start(self, module_host: &ModuleHost) -> anyhow::Result<()> {
+    pub fn start(mut self, module_host: &ModuleHost) -> anyhow::Result<()> {
         let mut queue: DelayQueue<ScheduledReducerId> = DelayQueue::new();
         let ctx = &ExecutionContext::internal(self.db.address());
         let tx = self.db.begin_tx();
+
+        // Draining rx before processing schedules from the DB to ensure there are no in-flight messages,
+        // as this can result in duplication.
+        //
+        // Explanation: By this time, if the `Scheduler::schedule` method has been called (the `init` reducer can do that),
+        // there will be an in-flight message in tx that has already been inserted into the DB.
+        // We are building the `queue` below with the DB and then spawning `SchedulerActor`, which will processes
+        // the in-flight message, resulting in a duplicate entry in the queue.
+        while self.rx.try_recv().is_ok() {}
+
         // Find all Scheduled tables
         for st_scheduled_row in self.db.iter(ctx, &tx, ST_SCHEDULED_ID)? {
             let table_id = st_scheduled_row.read_col(StScheduledFields::TableId)?;
