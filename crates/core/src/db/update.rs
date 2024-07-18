@@ -282,6 +282,16 @@ fn schema_compat_and_updates_hack(
         updates.changed_access.insert(table_name(), prop_access);
     }
 
+    // If a proposed sequence has a lower allocation than an existing sequence,
+    // i.e. the sequence in the DB has advanced beyond its initial allocation,
+    // use the higher number.
+    // Note that this still refuses updates where the proposed schema has a higher allocation
+    // than the known schema,
+    // since the actual update process will not alter the sequence.
+    for (proposed_sequence, known_sequence) in prop.sequences.iter_mut().zip(known.sequences.iter()) {
+        proposed_sequence.allocated = known_sequence.allocated.max(proposed_sequence.allocated);
+    }
+
     // Filter out any indices that aren't a consequence of a constraint,
     // i.e., remove all non-generated indices.
     //
@@ -330,6 +340,7 @@ fn schema_compat_and_updates_hack(
     known.constraints.retain(|c| c.constraints != Constraints::indexed());
 
     // Now, while ignoring `table_access` and indices,
+    // and permitting sequence allocation advances,
     // compute schema compatibility.
     let changed = prop != known;
 
@@ -341,6 +352,8 @@ fn schema_compat_and_updates_hack(
     known.table_access = known_access;
     known.indexes = known_indexes;
     known.constraints = known_constraints;
+
+    // Do *not* revert sequence allocations; we intend to use the altered sequence allocation value.
 
     (changed, known, prop)
 }
