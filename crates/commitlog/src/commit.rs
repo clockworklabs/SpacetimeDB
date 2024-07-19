@@ -265,7 +265,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use rand::prelude::*;
+    use std::num::NonZeroU8;
+
+    use proptest::prelude::*;
 
     use super::*;
 
@@ -285,30 +287,32 @@ mod tests {
         assert_eq!(commit, commit2);
     }
 
-    #[test]
-    fn bitflip() {
-        let commit = Commit {
-            min_tx_offset: 42,
-            n: 10,
-            records: vec![1; 512],
-        };
+    proptest! {
+        #[test]
+        fn bitflip(pos in Header::LEN..512, mask in any::<NonZeroU8>()) {
+            let commit = Commit {
+                min_tx_offset: 42,
+                n: 10,
+                records: vec![1; 512],
+            };
 
-        let mut buf = Vec::with_capacity(commit.encoded_len());
-        commit.write(&mut buf).unwrap();
+            let mut buf = Vec::with_capacity(commit.encoded_len());
+            commit.write(&mut buf).unwrap();
 
-        let mut rng = thread_rng();
-        let b = buf.choose_mut(&mut rng).unwrap();
-        *b ^= rng.gen::<u8>();
+            // Flip bit in the `records` section,
+            // so we get `ChecksumMismatch` not any other error.
+            buf[pos] ^= mask.get();
 
-        match Commit::decode(&mut buf.as_slice()) {
-            Err(e) => {
-                assert_eq!(e.kind(), io::ErrorKind::InvalidData);
-                e.into_inner()
-                    .unwrap()
-                    .downcast::<ChecksumMismatch>()
-                    .expect("IO inner should be checksum mismatch");
+            match Commit::decode(&mut buf.as_slice()) {
+                Err(e) => {
+                    assert_eq!(e.kind(), io::ErrorKind::InvalidData);
+                    e.into_inner()
+                        .unwrap()
+                        .downcast::<ChecksumMismatch>()
+                        .expect("IO inner should be checksum mismatch");
+                }
+                Ok(commit) => panic!("expected checksum mismatch, got valid commit: {commit:?}"),
             }
-            Ok(commit) => panic!("expected checksum mismatch, got valid commit: {commit:?}"),
         }
     }
 }
