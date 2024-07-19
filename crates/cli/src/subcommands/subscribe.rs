@@ -315,7 +315,8 @@ impl Render for Output<'_> {
                 csv.write_field(&table_name).await?;
                 csv.write_field(op).await?;
                 for field in fmt_row_psql(&row, table_ty) {
-                    // Remove quotes around string values to prevent quoting.
+                    // Remove quotes around string values to prevent `csv` from
+                    // quoting already quoted strings.
                     csv.write_field(field.trim_matches('"')).await?;
                 }
                 // Terminate record.

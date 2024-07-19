@@ -246,7 +246,8 @@ impl Render for Output<'_> {
             for row in rows {
                 let row = from_json_seed(row.get(), SeedWrapper(ts))?;
                 for field in fmt_row_psql(&row, ts) {
-                    // Remove quotes around string values to prevent quoting.
+                    // Remove quotes around string values to prevent `csv` from
+                    // quoting already quoted strings.
                     csv.write_field(field.trim_matches('"')).await?;
                 }
                 // Terminate record.
