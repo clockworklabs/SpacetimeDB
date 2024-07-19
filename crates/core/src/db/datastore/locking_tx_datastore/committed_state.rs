@@ -295,16 +295,10 @@ impl CommittedState {
         let st_sequences = self.tables.get(&ST_SEQUENCES_ID).unwrap();
         for row_ref in st_sequences.scan_rows(&self.blob_store) {
             let sequence = StSequenceRow::try_from(row_ref)?;
-            // TODO: The system tables have initialized their value already, but this is wrong:
-            // If we exceed  `SEQUENCE_PREALLOCATION_AMOUNT` we will get a unique violation
-            let is_system_table = self
-                .tables
-                .get(&sequence.table_id)
-                .map_or(false, |x| x.get_schema().table_type == StTableType::System);
 
             let mut seq = Sequence::new(sequence.into());
             // Now we need to recover the last allocation value.
-            if !is_system_table && seq.value < seq.allocated() + 1 {
+            if seq.value < seq.allocated() + 1 {
                 seq.value = seq.allocated() + 1;
             }
 
