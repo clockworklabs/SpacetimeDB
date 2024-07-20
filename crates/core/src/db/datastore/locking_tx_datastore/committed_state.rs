@@ -295,8 +295,10 @@ impl CommittedState {
         let st_sequences = self.tables.get(&ST_SEQUENCES_ID).unwrap();
         for row_ref in st_sequences.scan_rows(&self.blob_store) {
             let sequence = StSequenceRow::try_from(row_ref)?;
+            let mut seq = sequence_state
+                .remove(sequence.sequence_id)
+                .unwrap_or_else(|| Sequence::new(sequence.into()));
 
-            let mut seq = Sequence::new(sequence.into());
             // Now we need to recover the last allocation value.
             if seq.value < seq.allocated() + 1 {
                 seq.value = seq.allocated() + 1;

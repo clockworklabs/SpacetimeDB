@@ -506,7 +506,13 @@ impl MutTxId {
         };
 
         self.delete(ST_SEQUENCES_ID, old_seq_row_ptr)?;
-        self.insert(ST_SEQUENCES_ID, &mut ProductValue::from(seq_row), database_address)?;
+        // `insert_row_internal` rather than `insert` because:
+        // - We have already checked unique constraints during `create_sequence`.
+        // - Similarly, we have already applied autoinc sequences.
+        // - We do not want to apply autoinc sequences again,
+        //   since the system table sequence `seq_st_table_table_id_primary_key_auto`
+        //   has ID 0, and would otherwise trigger autoinc.
+        self.insert_row_internal(ST_SEQUENCES_ID, &mut ProductValue::from(seq_row))?;
 
         let Some(sequence) = self.sequence_state_lock.get_sequence_mut(seq_id) else {
             return Err(SequenceError::NotFound(seq_id).into());

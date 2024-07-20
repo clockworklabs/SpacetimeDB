@@ -109,7 +109,7 @@ impl SequencesState {
         self.sequences.insert(seq_id, seq);
     }
 
-    pub(super) fn remove(&mut self, seq_id: SequenceId) {
-        self.sequences.remove(&seq_id);
+    pub(super) fn remove(&mut self, seq_id: SequenceId) -> Option<Sequence> {
+        self.sequences.remove(&seq_id)
     }
 }
