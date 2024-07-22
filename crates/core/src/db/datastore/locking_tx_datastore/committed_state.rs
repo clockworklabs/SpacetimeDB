@@ -223,9 +223,9 @@ impl CommittedState {
                 // All sequences for system tables start from the reserved
                 // range + 1.
                 // Logically, we thus have used up the default pre-allocation
-                // and must initialize the sequence with twice the amount.
+                // and must allocate again on the next increment.
                 start: ST_RESERVED_SEQUENCE_RANGE as i128 + 1,
-                allocated: (ST_RESERVED_SEQUENCE_RANGE * 2) as i128,
+                allocated: ST_RESERVED_SEQUENCE_RANGE as i128,
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_SEQUENCES.

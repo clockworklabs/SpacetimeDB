@@ -11,7 +11,12 @@ use spacetimedb_primitives::*;
 use std::sync::Arc;
 
 /// The default preallocation amount for sequences.
-pub const SEQUENCE_PREALLOCATION_AMOUNT: i128 = 4_096;
+///
+/// Start with no values allocated. The first time we advance the sequence,
+/// we will allocate [`SEQUENCE_ALLOCATION_STEP`] values.
+pub const SEQUENCE_PREALLOCATION_AMOUNT: i128 = 0;
+/// The amount sequences allocate each time they over-run their allocation.
+pub const SEQUENCE_ALLOCATION_STEP: i128 = 4096;
 
 impl_deserialize!([] Constraints, de => Self::try_from(de.deserialize_u8()?)
     .map_err(|_| de::Error::custom("invalid bitflags for `Constraints`"))

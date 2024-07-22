@@ -625,6 +625,7 @@ pub(crate) mod tests {
     };
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::execution_context::ExecutionContext;
+    use pretty_assertions::assert_eq;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_sats::db::auth::{StAccess, StTableType};
     use spacetimedb_sats::db::def::{ColumnDef, IndexDef, IndexType, TableSchema};
@@ -848,7 +849,7 @@ pub(crate) mod tests {
             start: ST_RESERVED_SEQUENCE_RANGE as i128 + 1,
             min_value: 1,
             max_value: i128::MAX,
-            allocated: ST_RESERVED_SEQUENCE_RANGE as i128 * 2,
+            allocated: ST_RESERVED_SEQUENCE_RANGE as i128,
         }
         .into();
         check_catalog(&db, ST_SEQUENCES_NAME, st_sequence_row, q, schema);
