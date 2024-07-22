@@ -11,7 +11,12 @@ use spacetimedb_sats::{de, ser};
 use std::sync::Arc;
 
 /// The default preallocation amount for sequences.
-pub const SEQUENCE_PREALLOCATION_AMOUNT: i128 = 4_096;
+///
+/// Start with no values allocated. The first time we advance the sequence,
+/// we will allocate [`SEQUENCE_ALLOCATION_STEP`] values.
+pub const SEQUENCE_PREALLOCATION_AMOUNT: i128 = 0;
+/// The amount sequences allocate each time they over-run their allocation.
+pub const SEQUENCE_ALLOCATION_STEP: i128 = 4096;
 
 /// Represents a schema definition for a database sequence.
 #[derive(Debug, Clone, PartialEq, Eq)]
