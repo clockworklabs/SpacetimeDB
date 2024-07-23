@@ -49,6 +49,14 @@ pub fn add() {
 
     JOIN_QUERY = "select T1.* from T1 join T2 on T1.id = T2.id where T2.id = 1001"
 
+    def between_publishes(self):
+        """
+        The test `AddRemoveIndexAfterRestart` in `zz_docker.py`
+        overwrites this method to restart docker between each publish,
+        otherwise reusing this test's code.
+        """
+        pass
+
     def test_add_then_remove_index(self):
         """
         First publish without the indices,
@@ -66,6 +74,8 @@ pub fn add() {
         with self.assertRaises(Exception):
             self.subscribe(self.JOIN_QUERY, n = 0)
 
+        self.between_publishes()
+
         # Publish the indexed version.
         # Now we have indices, so the query should be accepted.
         self.write_module_code(self.MODULE_CODE_INDEXED)
@@ -73,6 +83,8 @@ pub fn add() {
         sub = self.subscribe(self.JOIN_QUERY, n = 1)
         self.call("add", anon = True)
         self.assertEqual(sub(), [{'T1': {'deletes': [], 'inserts': [{'id': 1001}]}}])
+
+        self.between_publishes()
 
         # Publish the unindexed version again, removing the index.
         # The initial subscription should be rejected again.
