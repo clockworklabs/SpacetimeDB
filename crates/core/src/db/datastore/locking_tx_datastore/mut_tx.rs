@@ -10,10 +10,10 @@ use super::{
 use crate::db::{
     datastore::{
         system_tables::{
-            table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StFields as _,
-            StIndexFields, StIndexRow, StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow,
-            SystemTable, ST_COLUMNS_ID, ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SCHEDULED_ID, ST_SEQUENCES_ID,
-            ST_TABLES_ID,
+            system_tables, table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow,
+            StFields as _, StIndexFields, StIndexRow, StScheduledRow, StSequenceFields, StSequenceRow, StTableFields,
+            StTableRow, SystemTable, ST_COLUMNS_ID, ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_RESERVED_SEQUENCE_RANGE,
+            ST_SCHEDULED_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
         },
         traits::{RowTypeForTable, TxData},
     },
@@ -24,6 +24,7 @@ use crate::{
     execution_context::ExecutionContext,
 };
 use core::ops::RangeBounds;
+use itertools::Itertools as _;
 use spacetimedb_lib::{
     address::Address,
     db::{
@@ -1059,6 +1060,140 @@ impl MutTxId {
                     .unwrap_or(Ok(false))
             }
         }
+    }
+
+    /// Create the system tables and fixup `st_table` and `st_column`.
+    pub(super) fn bootstrap_rest(&mut self, database_address: Address) -> Result<()> {
+        let ctx = ExecutionContext::internal(database_address);
+
+        let schemas = system_tables().map(Arc::new);
+        let ref_schemas = schemas.each_ref().map(|s| &**s);
+
+        // First create tables after `st_table` and `st_columns`
+        for schema in &schemas {
+            let table_id = schema.table_id;
+            if table_id == ST_TABLES_ID || table_id == ST_COLUMNS_ID {
+                continue;
+            }
+
+            log::debug!(
+                "[{database_address}] BOOTSTRAP: create table {table_id} {}",
+                schema.table_name
+            );
+            let table_row = StTableRow {
+                table_id,
+                table_name: schema.table_name.clone(),
+                table_type: schema.table_type,
+                table_access: schema.table_access,
+            };
+            self.insert(ST_TABLES_ID, &mut table_row.into(), database_address)?;
+            self.create_table_internal(table_id, schema.clone());
+
+            for col in schema.columns() {
+                let column_row = StColumnRow {
+                    table_id,
+                    col_pos: col.col_pos,
+                    col_name: col.col_name.clone(),
+                    col_type: col.col_type.clone(),
+                };
+                self.insert(ST_COLUMNS_ID, &mut column_row.into(), database_address)?;
+            }
+        }
+
+        // Create constraints
+        for (i, constraint) in ref_schemas
+            .iter()
+            .flat_map(|x| &x.constraints)
+            .sorted_by_key(|x| (x.table_id, &x.columns))
+            .cloned()
+            .enumerate()
+        {
+            let table_id = constraint.table_id;
+            let constraint_row = StConstraintRow {
+                constraint_id: i.into(),
+                columns: constraint.columns.clone(),
+                constraint_name: constraint.constraint_name.clone(),
+                constraints: constraint.constraints,
+                table_id,
+            };
+            log::debug!(
+                "[{database_address}] BOOTSTRAP: create constraint {} on table {}",
+                constraint_row.constraint_name,
+                table_id,
+            );
+            self.insert(ST_CONSTRAINTS_ID, &mut constraint_row.clone().into(), ctx.database())?;
+
+            let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
+            table.with_mut_schema(|s| s.update_constraint(constraint_row.into()));
+        }
+
+        // Create indexes
+        for (i, index) in ref_schemas
+            .iter()
+            .flat_map(|x| &x.indexes)
+            .sorted_by_key(|x| (x.table_id, &x.columns))
+            .cloned()
+            .enumerate()
+        {
+            let table_id = index.table_id;
+            let index_row = StIndexRow {
+                index_id: i.into(),
+                table_id,
+                index_type: index.index_type,
+                index_name: index.index_name.clone(),
+                columns: index.columns.clone(),
+                is_unique: index.is_unique,
+            };
+            log::debug!(
+                "[{database_address}] BOOTSTRAP: create index {} on table {}",
+                index_row.index_name,
+                table_id
+            );
+            self.insert(ST_INDEXES_ID, &mut index_row.clone().into(), ctx.database())?;
+            let (table, blob_store, commit_table, commit_blob_store) = self.get_or_create_insert_table_mut(table_id)?;
+            let mut insert_index = table.new_index(index.index_id, &index.columns, index.is_unique)?;
+            insert_index.build_from_rows(&index.columns, table.scan_rows(blob_store))?;
+            if let Some(committed_table) = commit_table {
+                insert_index.build_from_rows(&index.columns, committed_table.scan_rows(commit_blob_store))?;
+            }
+            table.indexes.insert(index.columns.clone(), insert_index);
+            table.with_mut_schema(|s| s.indexes.push(index_row.into()));
+        }
+
+        // Create sequences
+        for (i, seq) in ref_schemas.iter().flat_map(|x| &x.sequences).enumerate() {
+            let table_id = seq.table_id;
+            let sequence_id = i.into();
+
+            let sequence_row = StSequenceRow {
+                sequence_id,
+                sequence_name: seq.sequence_name.clone(),
+                table_id,
+                col_pos: seq.col_pos,
+                increment: seq.increment,
+                min_value: seq.min_value,
+                max_value: seq.max_value,
+
+                // All sequences for system tables start from the reserved
+                // range + 1.
+                // Logically, we thus have used up the default pre-allocation
+                // and must initialize the sequence with twice the amount.
+                start: ST_RESERVED_SEQUENCE_RANGE as i128 + 1,
+                allocated: (ST_RESERVED_SEQUENCE_RANGE * 2) as i128,
+            };
+            log::debug!(
+                "[{database_address}] BOOTSTRAP: create sequence {} on table {}",
+                sequence_row.sequence_name,
+                table_id
+            );
+            self.insert(ST_SEQUENCES_ID, &mut sequence_row.clone().into(), ctx.database())?;
+            let schema: SequenceSchema = sequence_row.into();
+            self.get_insert_table_mut(table_id)?
+                .with_mut_schema(|s| s.update_sequence(schema.clone()));
+            self.sequence_state_lock.insert(sequence_id, Sequence::new(schema));
+        }
+
+        Ok(())
     }
 }
 

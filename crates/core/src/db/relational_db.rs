@@ -298,9 +298,31 @@ impl RelationalDB {
             .and_then(|durability| durability.durable_tx_offset());
 
         log::info!("[{address}] DATABASE: durable_tx_offset is {durable_tx_offset:?}");
-        let inner = Self::restore_from_snapshot_or_bootstrap(address, snapshot_repo.as_deref(), durable_tx_offset)?;
+        let inner = if let Some(inner) =
+            Self::maybe_restore_from_snapshot(address, snapshot_repo.as_deref(), durable_tx_offset)?
+        {
+            // Restored from snapshot, now replay history suffix.
+            apply_history(&inner, address, history)?;
+            inner.rebuild_state_after_replay()?;
+            log::info!("[{}] DATABASE: rebuilt state after replay", address);
 
-        apply_history(&inner, address, history)?;
+            inner
+        } else {
+            // No snapshot, try to apply history.
+            let inner = Locking::bootstrap_base(address)?;
+            let n = apply_history(&inner, address, history)?;
+            if n == 0 {
+                // Empty history, create and commit system tables.
+                let txdata = inner.bootstrap_rest()?;
+                if let Some(durability) = durability.as_ref().map(|(d, _)| d) {
+                    Self::do_durability(&**durability, &ExecutionContext::internal(address), &txdata);
+                }
+            }
+            inner.rebuild_state_after_replay()?;
+            log::info!("[{}] DATABASE: rebuilt state after replay", address);
+
+            inner
+        };
         let db = Self::new(lock, address, owner_identity, inner, durability, snapshot_repo);
 
         if let Some(meta) = db.metadata()? {
@@ -413,11 +435,11 @@ impl RelationalDB {
         self.inner.update_program(tx, program_kind, program_hash, program_bytes)
     }
 
-    fn restore_from_snapshot_or_bootstrap(
+    fn maybe_restore_from_snapshot(
         address: Address,
         snapshot_repo: Option<&SnapshotRepository>,
         durable_tx_offset: Option<TxOffset>,
-    ) -> Result<Locking, DBError> {
+    ) -> Result<Option<Locking>, DBError> {
         if let Some(snapshot_repo) = snapshot_repo {
             if let Some(durable_tx_offset) = durable_tx_offset {
                 // Don't restore from a snapshot newer than the `durable_tx_offset`,
@@ -446,13 +468,13 @@ impl RelationalDB {
                         "[{address}] DATABASE: restored from snapshot of tx_offset {tx_offset} in {:?}",
                         start.elapsed(),
                     );
-                    return res;
+                    return res.map(Some);
                 }
             }
             log::info!("[{address}] DATABASE: no snapshot on disk");
         }
 
-        Locking::bootstrap(address)
+        Ok(None)
     }
 
     /// Apply the provided [`spacetimedb_durability::History`] onto the database
@@ -466,6 +488,8 @@ impl RelationalDB {
         T: durability::History<TxData = Txdata>,
     {
         apply_history(&self.inner, self.address, history)?;
+        self.inner.rebuild_state_after_replay()?;
+
         Ok(self)
     }
 
@@ -1153,7 +1177,7 @@ impl fmt::Debug for LockFile {
     }
 }
 
-fn apply_history<H>(datastore: &Locking, address: Address, history: H) -> Result<(), DBError>
+fn apply_history<H>(datastore: &Locking, address: Address, history: H) -> Result<u64, DBError>
 where
     H: durability::History<TxData = Txdata>,
 {
@@ -1185,11 +1209,11 @@ where
     history
         .fold_transactions_from(start, &mut replay)
         .map_err(anyhow::Error::from)?;
-    log::info!("[{}] DATABASE: applied transaction history", address);
-    datastore.rebuild_state_after_replay()?;
-    log::info!("[{}] DATABASE: rebuilt state after replay", address);
 
-    Ok(())
+    let replayed_txs = replay.next_tx_offset().saturating_sub(start);
+    log::info!("[{}] DATABASE: replayed {} txs", address, replayed_txs);
+
+    Ok(replayed_txs)
 }
 
 /// Initialize local durability with the default parameters.
@@ -2299,13 +2323,14 @@ mod tests {
         let inputs = Rc::into_inner(inputs).unwrap().into_inner();
         log::debug!("collected inputs: {:?}", inputs.inputs);
 
-        // We should've seen four transactions:
+        // We should've seen five transactions:
         //
-        // - the internal tx which initializes `st_module`
+        // - the internal tx which initializes the system tables
+        // - the internal tx which initializes `st_module` with the program data
         // - three non-empty transactions here
         //
         // The empty transaction should've been ignored.
-        assert_eq!(inputs.num_txs, 4);
+        assert_eq!(inputs.num_txs, 5);
         // Two of the transactions should yield inputs.
         assert_eq!(inputs.inputs.len(), 2);
 

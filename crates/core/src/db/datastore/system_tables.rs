@@ -90,18 +90,17 @@ pub enum SystemTable {
     st_constraints,
 }
 pub(crate) fn system_tables() -> [TableSchema; 9] {
+    // Keep this sorted by `TableId`!!
     [
         st_table_schema(),
         st_columns_schema(),
+        st_sequences_schema(),
         st_indexes_schema(),
         st_constraints_schema(),
         st_module_schema(),
         st_clients_schema(),
         st_var_schema(),
         st_scheduled_schema(),
-        // Is important this is always last, so the starting sequence for each
-        // system table is correct.
-        st_sequences_schema(),
     ]
 }
 
@@ -126,16 +125,6 @@ pub trait StFields: Copy + Sized {
     }
 }
 
-// The following are indices into the array returned by [`system_tables`].
-pub(crate) const ST_TABLES_IDX: usize = 0;
-pub(crate) const ST_COLUMNS_IDX: usize = 1;
-pub(crate) const ST_INDEXES_IDX: usize = 2;
-pub(crate) const ST_CONSTRAINTS_IDX: usize = 3;
-pub(crate) const ST_MODULE_IDX: usize = 4;
-pub(crate) const ST_CLIENT_IDX: usize = 5;
-pub(crate) const ST_VAR_IDX: usize = 6;
-pub(crate) const ST_SCHEDULED_IDX: usize = 7;
-pub(crate) const ST_SEQUENCES_IDX: usize = 8;
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
         #[derive(Copy, Clone, Debug)]
@@ -245,7 +234,7 @@ st_fields_enum!(enum StScheduledFields {
 /// | table_id | table_name  | table_type | table_access |
 /// |----------|-------------|----------- |------------- |
 /// | 4        | "customers" | "user"     | "public"     |
-fn st_table_schema() -> TableSchema {
+pub(crate) fn st_table_schema() -> TableSchema {
     TableDef::new(
         ST_TABLES_NAME.into(),
         vec![
@@ -266,7 +255,7 @@ fn st_table_schema() -> TableSchema {
 /// | table_id | col_id | col_name | col_type            |
 /// |----------|---------|----------|--------------------|
 /// | 1        | 0       | "id"     | AlgebraicType::U32 |
-fn st_columns_schema() -> TableSchema {
+pub(crate) fn st_columns_schema() -> TableSchema {
     TableDef::new(
         ST_COLUMNS_NAME.into(),
         vec![

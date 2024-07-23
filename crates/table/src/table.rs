@@ -525,14 +525,30 @@ impl Table {
 
     /// Runs a mutation on the [`TableSchema`] of this table.
     ///
+    /// Note that, unlike [`Self::replace_schema_and_layout`], this does **not**
+    /// update the row layout. It is only intended to fixup indexes and constraints.
+    ///
     /// This uses a clone-on-write mechanism.
     /// If none but `self` refers to the schema, then the mutation will be in-place.
     /// Otherwise, the schema must be cloned, mutated,
     /// and then the cloned version is written back to the table.
     pub fn with_mut_schema(&mut self, with: impl FnOnce(&mut TableSchema)) {
-        let mut schema = self.schema.clone();
-        with(Arc::make_mut(&mut schema));
-        self.schema = schema;
+        with(Arc::make_mut(&mut self.schema));
+    }
+
+    /// Replace the [`TableSchema`] of this table and update the row layout.
+    ///
+    /// This is only safe during bootstrap, while the system table schema is
+    /// incomplete during some phases.
+    pub fn replace_schema_and_layout(&mut self, schema: TableSchema) {
+        let row_layout: RowTypeLayout = schema.get_row_type().clone().into();
+        let static_bsatn_layout = StaticBsatnLayout::for_row_type(&row_layout);
+        let visitor_prog = row_type_visitor(&row_layout);
+
+        self.schema = Arc::new(schema);
+        self.inner.row_layout = row_layout;
+        self.inner.static_bsatn_layout = static_bsatn_layout;
+        self.inner.visitor_prog = visitor_prog;
     }
 
     /// Returns a new [`BTreeIndex`] for `table`.

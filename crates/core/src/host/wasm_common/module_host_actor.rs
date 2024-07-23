@@ -300,6 +300,8 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let stdb = &*self.database_instance_context().relational_db;
         let ctx = ExecutionContext::internal(stdb.address());
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        // Create tables and insert the program.
+        // If the `tx` later rolls back, none of this happened.
         let (tx, ()) = stdb
             .with_auto_rollback(&ctx, tx, |tx| {
                 for schema in get_tabledefs(&self.info) {
