@@ -138,7 +138,7 @@ email_address = "0.2.4"
 enum-as-inner = "0.6"
 enum-map = "2.6.3"
 env_logger = "0.10"
-flate2 = "1.0.24" # TODO features = ["zlib-ng"], default-features = false ?
+flate2 = "1.0.24"
 fs-err = "2.9.0"
 fs2 = "0.4.3"
 futures = "0.3"

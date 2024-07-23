@@ -273,6 +273,7 @@ impl BackgroundDbConnection {
         db_name: &str,
         credentials: Option<Credentials>,
         module: Arc<dyn SpacetimeModule>,
+        codec: DbCodec,
     ) -> Result<()>
     where
         IntoUri: TryInto<http::Uri>,
@@ -317,7 +318,7 @@ impl BackgroundDbConnection {
                 db_name,
                 credentials.as_ref(),
                 client_address,
-                DbCodec::Brotli,
+                codec,
             ))
         })?;
 

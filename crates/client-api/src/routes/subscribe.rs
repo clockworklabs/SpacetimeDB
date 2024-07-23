@@ -13,7 +13,7 @@ use http::{HeaderValue, StatusCode};
 use scopeguard::ScopeGuard;
 use serde::Deserialize;
 use spacetimedb::client::messages::{serialize, IdentityTokenMessage, SerializableMessage};
-use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, MessageHandleError, Protocol};
+use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, MessageHandleError, Protocol, ProtocolCodec};
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::also_poll;
 use spacetimedb::worker_metrics::WORKER_METRICS;

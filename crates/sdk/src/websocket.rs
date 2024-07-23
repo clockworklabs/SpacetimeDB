@@ -139,6 +139,19 @@ fn request_insert_auth_header(req: &mut http::Request<()>, credentials: Option<&
     };
 }
 
+fn decode_gzip(bytes: &[u8]) -> Result<Vec<u8>> {
+    let mut d = GzDecoder::new(bytes);
+    let mut decompressed = Vec::new();
+    d.read(&mut decompressed).context("Failed to Gz decompress message")?;
+    Ok(decompressed)
+}
+
+fn decode_brotli(bytes: &[u8]) -> Result<Vec<u8>> {
+    let mut decompressed = Vec::new();
+    BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
+    Ok(decompressed)
+}
+
 impl DbConnection {
     pub(crate) async fn connect<Host>(
         host: Host,
@@ -169,20 +182,11 @@ impl DbConnection {
     }
 
     pub(crate) fn parse_response(&self, bytes: &[u8]) -> Result<ServerMessage> {
-        let mut decompressed = Vec::new();
-        let decoded = match self.codec {
-            DbCodec::None => bytes,
-            DbCodec::Gzip => {
-                let mut d = GzDecoder::new(bytes);
-                d.read(&mut decompressed).context("Failed to Gz decompress message")?;
-                &decompressed[..]
-            }
-            DbCodec::Brotli => {
-                BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
-                &decompressed[..]
-            }
-        };
-        Ok(bsatn::from_slice(decoded)?)
+        Ok(match self.codec {
+            DbCodec::None => bsatn::from_slice(bytes),
+            DbCodec::Gzip => bsatn::from_slice(&decode_gzip(&bytes)?[..]),
+            DbCodec::Brotli => bsatn::from_slice(&decode_brotli(&bytes)?[..]),
+        }?)
     }
 
     pub(crate) fn encode_message(msg: ClientMessage) -> WebSocketMessage {
