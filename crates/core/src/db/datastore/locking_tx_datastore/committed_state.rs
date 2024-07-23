@@ -8,12 +8,9 @@ use crate::{
     db::{
         datastore::{
             system_tables::{
-                system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableFields, StTableRow,
-                SystemTable, ST_CLIENTS_ID, ST_CLIENT_IDX, ST_COLUMNS_ID, ST_COLUMNS_IDX, ST_COLUMNS_NAME,
-                ST_CONSTRAINTS_ID, ST_CONSTRAINTS_IDX, ST_CONSTRAINTS_NAME, ST_INDEXES_ID, ST_INDEXES_IDX,
-                ST_INDEXES_NAME, ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE, ST_SCHEDULED_ID,
-                ST_SCHEDULED_IDX, ST_SEQUENCES_ID, ST_SEQUENCES_IDX, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_IDX,
-                ST_VAR_ID, ST_VAR_IDX,
+                st_columns_schema, st_table_schema, system_tables, StColumnRow, StIndexRow, StSequenceRow,
+                StTableFields, StTableRow, SystemTable, ST_COLUMNS_ID, ST_COLUMNS_NAME, ST_INDEXES_ID, ST_SEQUENCES_ID,
+                ST_TABLES_ID,
             },
             traits::TxData,
         },
@@ -24,7 +21,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;
-use itertools::Itertools;
+use hashbrown::hash_map::Entry;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::{
     address::Address,
@@ -113,12 +110,10 @@ impl CommittedState {
                 .with_label_values(&database_address, &table_id.0, table_name)
         };
 
-        let schemas = system_tables().map(Arc::new);
+        let schemas = [Arc::new(st_table_schema()), Arc::new(st_columns_schema())];
         let ref_schemas = schemas.each_ref().map(|s| &**s);
 
-        // Insert the table row into st_tables, creating st_tables if it's missing.
-        let (st_tables, blob_store) = self.get_table_and_blob_store_or_create(ST_TABLES_ID, &schemas[ST_TABLES_IDX]);
-        // Insert the table row into `st_tables` for all system tables
+        let (st_tables, blob_store) = self.get_table_and_blob_store_or_create(ST_TABLES_ID, &schemas[0]);
         for schema in ref_schemas {
             let table_id = schema.table_id;
             // Metric for this system table.
@@ -135,9 +130,9 @@ impl CommittedState {
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_tables.insert(blob_store, &row))?;
         }
-
+        //
         // Insert the columns into `st_columns`
-        let (st_columns, blob_store) = self.get_table_and_blob_store_or_create(ST_COLUMNS_ID, &schemas[ST_COLUMNS_IDX]);
+        let (st_columns, blob_store) = self.get_table_and_blob_store_or_create(ST_COLUMNS_ID, &schemas[1]);
         for col in ref_schemas.iter().flat_map(|x| x.columns()).cloned() {
             let row = StColumnRow {
                 table_id: col.table_id,
@@ -151,96 +146,6 @@ impl CommittedState {
             ignore_duplicate_insert_error(st_columns.insert(blob_store, &row))?;
             // Increment row count for st_columns.
             with_label_values(ST_COLUMNS_ID, ST_COLUMNS_NAME).inc();
-        }
-
-        // Insert the FK sorted by table/column so it show together when queried.
-
-        // Insert constraints into `st_constraints`
-        let (st_constraints, blob_store) =
-            self.get_table_and_blob_store_or_create(ST_CONSTRAINTS_ID, &schemas[ST_CONSTRAINTS_IDX]);
-        for (i, constraint) in ref_schemas
-            .iter()
-            .flat_map(|x| &x.constraints)
-            .sorted_by_key(|x| (x.table_id, &x.columns))
-            .cloned()
-            .enumerate()
-        {
-            let row = StConstraintRow {
-                constraint_id: i.into(),
-                columns: constraint.columns,
-                constraint_name: constraint.constraint_name,
-                constraints: constraint.constraints,
-                table_id: constraint.table_id,
-            };
-            let row = ProductValue::from(row);
-            // Insert the meta-row into the in-memory ST_CONSTRAINTS.
-            // If the row is already there, no-op.
-            ignore_duplicate_insert_error(st_constraints.insert(blob_store, &row))?;
-            // Increment row count for st_constraints.
-            with_label_values(ST_CONSTRAINTS_ID, ST_CONSTRAINTS_NAME).inc();
-        }
-
-        // Insert the indexes into `st_indexes`
-        let (st_indexes, blob_store) = self.get_table_and_blob_store_or_create(ST_INDEXES_ID, &schemas[ST_INDEXES_IDX]);
-        for (i, index) in ref_schemas
-            .iter()
-            .flat_map(|x| &x.indexes)
-            .sorted_by_key(|x| (x.table_id, &x.columns))
-            .cloned()
-            .enumerate()
-        {
-            let row = StIndexRow {
-                index_id: i.into(),
-                table_id: index.table_id,
-                index_type: index.index_type,
-                columns: index.columns,
-                index_name: index.index_name,
-                is_unique: index.is_unique,
-            };
-            let row = ProductValue::from(row);
-            // Insert the meta-row into the in-memory ST_INDEXES.
-            // If the row is already there, no-op.
-            ignore_duplicate_insert_error(st_indexes.insert(blob_store, &row))?;
-            // Increment row count for st_indexes.
-            with_label_values(ST_INDEXES_ID, ST_INDEXES_NAME).inc();
-        }
-
-        // We don't add the row here but with `MutProgrammable::set_program_hash`, but we need to register the table
-        // in the internal state.
-        self.create_table(ST_MODULE_ID, schemas[ST_MODULE_IDX].clone());
-
-        self.create_table(ST_CLIENTS_ID, schemas[ST_CLIENT_IDX].clone());
-
-        self.create_table(ST_VAR_ID, schemas[ST_VAR_IDX].clone());
-
-        self.create_table(ST_SCHEDULED_ID, schemas[ST_SCHEDULED_IDX].clone());
-        // Insert the sequences into `st_sequences`
-        let (st_sequences, blob_store) =
-            self.get_table_and_blob_store_or_create(ST_SEQUENCES_ID, &schemas[ST_SEQUENCES_IDX]);
-        // We create sequences last to get right the starting number
-        // so, we don't sort here
-        for (i, col) in ref_schemas.iter().flat_map(|x| &x.sequences).enumerate() {
-            let row = StSequenceRow {
-                sequence_id: i.into(),
-                sequence_name: col.sequence_name.clone(),
-                table_id: col.table_id,
-                col_pos: col.col_pos,
-                increment: col.increment,
-                min_value: col.min_value,
-                max_value: col.max_value,
-                // All sequences for system tables start from the reserved
-                // range + 1.
-                // Logically, we thus have used up the default pre-allocation
-                // and must initialize the sequence with twice the amount.
-                start: ST_RESERVED_SEQUENCE_RANGE as i128 + 1,
-                allocated: (ST_RESERVED_SEQUENCE_RANGE * 2) as i128,
-            };
-            let row = ProductValue::from(row);
-            // Insert the meta-row into the in-memory ST_SEQUENCES.
-            // If the row is already there, no-op.
-            ignore_duplicate_insert_error(st_sequences.insert(blob_store, &row))?;
-            // Increment row count for st_sequences
-            with_label_values(ST_SEQUENCES_ID, ST_SEQUENCES_NAME).inc();
         }
 
         self.reset_system_table_schemas(database_address)?;
@@ -259,8 +164,18 @@ impl CommittedState {
         // Re-read the schema with the correct ids...
         let ctx = ExecutionContext::internal(database_address);
         for schema in system_tables() {
-            self.tables.get_mut(&schema.table_id).unwrap().schema =
-                Arc::new(self.schema_for_table_raw(&ctx, schema.table_id)?);
+            // The schema may not be complete yet, in which case we will reset
+            // it the next time around.
+            if let Ok(raw) = self.schema_for_table_raw(&ctx, schema.table_id) {
+                match self.tables.entry(schema.table_id) {
+                    Entry::Occupied(mut table) => {
+                        table.get_mut().replace_schema_and_layout(raw);
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(Table::new(Arc::new(raw), SquashedOffset::COMMITTED_STATE));
+                    }
+                }
+            }
         }
 
         Ok(())
@@ -552,10 +467,6 @@ impl CommittedState {
 
     fn make_table(schema: Arc<TableSchema>) -> Table {
         Table::new(schema, SquashedOffset::COMMITTED_STATE)
-    }
-
-    fn create_table(&mut self, table_id: TableId, schema: Arc<TableSchema>) {
-        self.tables.insert(table_id, Self::make_table(schema));
     }
 
     pub(super) fn get_table_and_blob_store_or_create<'this>(

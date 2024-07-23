@@ -91,63 +91,84 @@ pub trait StateView {
         columns.sort_by_key(|col| col.col_pos);
 
         // Look up the constraints for the table in question.
-        let constraints = self
-            .iter_by_col_eq(ctx, ST_CONSTRAINTS_ID, StConstraintFields::TableId, value_eq)?
-            .map(|row| {
-                let row = StConstraintRow::try_from(row)?;
-                Ok(ConstraintSchema {
-                    constraint_id: row.constraint_id,
-                    constraint_name: row.constraint_name,
-                    constraints: row.constraints,
-                    table_id: row.table_id,
-                    columns: row.columns,
+        // When bootstrapping, the `st_constraints` table may not yet exist, so
+        // yield an empty list instead.
+        let constraints = if self.get_schema(ST_CONSTRAINTS_ID).is_some() {
+            self.iter_by_col_eq(ctx, ST_CONSTRAINTS_ID, StConstraintFields::TableId, value_eq)?
+                .map(|row| {
+                    let row = StConstraintRow::try_from(row)?;
+                    Ok(ConstraintSchema {
+                        constraint_id: row.constraint_id,
+                        constraint_name: row.constraint_name,
+                        constraints: row.constraints,
+                        table_id: row.table_id,
+                        columns: row.columns,
+                    })
                 })
-            })
-            .collect::<Result<Vec<_>>>()?;
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            vec![]
+        };
 
         // Look up the sequences for the table in question.
-        let sequences = self
-            .iter_by_col_eq(ctx, ST_SEQUENCES_ID, StSequenceFields::TableId, value_eq)?
-            .map(|row| {
-                let row = StSequenceRow::try_from(row)?;
-                Ok(SequenceSchema {
-                    sequence_id: row.sequence_id,
-                    sequence_name: row.sequence_name,
-                    table_id: row.table_id,
-                    col_pos: row.col_pos,
-                    increment: row.increment,
-                    start: row.start,
-                    min_value: row.min_value,
-                    max_value: row.max_value,
-                    allocated: row.allocated,
+        // When bootstrapping, the `st_sequences` table may not yet exist, so
+        // yield an empty list instead.
+        let sequences = if self.get_schema(ST_SEQUENCES_ID).is_some() {
+            self.iter_by_col_eq(ctx, ST_SEQUENCES_ID, StSequenceFields::TableId, value_eq)?
+                .map(|row| {
+                    let row = StSequenceRow::try_from(row)?;
+                    Ok(SequenceSchema {
+                        sequence_id: row.sequence_id,
+                        sequence_name: row.sequence_name,
+                        table_id: row.table_id,
+                        col_pos: row.col_pos,
+                        increment: row.increment,
+                        start: row.start,
+                        min_value: row.min_value,
+                        max_value: row.max_value,
+                        allocated: row.allocated,
+                    })
                 })
-            })
-            .collect::<Result<Vec<_>>>()?;
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            vec![]
+        };
 
         // Look up the indexes for the table in question.
-        let indexes = self
-            .iter_by_col_eq(ctx, ST_INDEXES_ID, StIndexFields::TableId, value_eq)?
-            .map(|row| {
-                let row = StIndexRow::try_from(row)?;
-                Ok(IndexSchema {
-                    table_id: row.table_id,
-                    columns: row.columns,
-                    index_name: row.index_name,
-                    is_unique: row.is_unique,
-                    index_id: row.index_id,
-                    index_type: row.index_type,
+        // When bootstrapping, the `st_sequences` table may not yet exist, so
+        // yield an empty list instead.
+        let indexes = if self.get_schema(ST_INDEXES_ID).is_some() {
+            self.iter_by_col_eq(ctx, ST_INDEXES_ID, StIndexFields::TableId, value_eq)?
+                .map(|row| {
+                    let row = StIndexRow::try_from(row)?;
+                    Ok(IndexSchema {
+                        table_id: row.table_id,
+                        columns: row.columns,
+                        index_name: row.index_name,
+                        is_unique: row.is_unique,
+                        index_id: row.index_id,
+                        index_type: row.index_type,
+                    })
                 })
-            })
-            .collect::<Result<Vec<_>>>()?;
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            vec![]
+        };
 
-        let scheduled = self
-            .iter_by_col_eq(ctx, ST_SCHEDULED_ID, StScheduledFields::TableId, value_eq)?
-            .next()
-            .map(|row| -> Result<_> {
-                let row = StScheduledRow::try_from(row)?;
-                Ok(row.reducer_name)
-            })
-            .transpose()?;
+        // Determine if this is a scheduled table.
+        // When bootstrapping, the `st_scheduled` table may not yet exist, so
+        // default to `None`.
+        let scheduled = if self.get_schema(ST_SCHEDULED_ID).is_some() {
+            self.iter_by_col_eq(ctx, ST_SCHEDULED_ID, StScheduledFields::TableId, value_eq)?
+                .next()
+                .map(|row| -> Result<_> {
+                    let row = StScheduledRow::try_from(row)?;
+                    Ok(row.reducer_name)
+                })
+                .transpose()?
+        } else {
+            None
+        };
 
         Ok(TableSchema::new(
             table_id,

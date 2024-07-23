@@ -12,7 +12,7 @@ use crate::{
             system_tables::{
                 read_addr_from_col, read_bytes_from_col, read_hash_from_col, read_identity_from_col,
                 system_table_schema, ModuleKind, StClientsRow, StModuleFields, StModuleRow, StTableFields,
-                ST_CLIENTS_ID, ST_MODULE_ID, ST_TABLES_ID,
+                ST_CLIENTS_ID, ST_MODULE_ID, ST_RESERVED_SEQUENCE_RANGE, ST_TABLES_ID,
             },
             traits::{
                 DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, RowTypeForTable, Tx, TxData, TxDatastore,
@@ -74,32 +74,31 @@ impl Locking {
         }
     }
 
-    /// IMPORTANT! This the most delicate function in the entire codebase.
-    /// DO NOT CHANGE UNLESS YOU KNOW WHAT YOU'RE DOING!!!
-    pub fn bootstrap(database_address: Address) -> Result<Self> {
-        log::trace!("DATABASE: BOOTSTRAPPING SYSTEM TABLES...");
-
-        // NOTE! The bootstrapping process does not take plan in a transaction.
-        // This is intentional.
+    /// Bootstrap the base system tables -- `st_table` and `st_columns` -- in memory.
+    pub fn bootstrap_base(database_address: Address) -> Result<Self> {
         let datastore = Self::new(database_address);
-        let mut commit_state = datastore.committed_state.write_arc();
-        let database_address = datastore.database_address;
-        // TODO(cloutiertyler): One thing to consider in the future is, should
-        // we persist the bootstrap transaction in the message log? My intuition
-        // is no, because then if we change the schema of the system tables we
-        // would need to migrate that data, whereas since the tables are defined
-        // in the code we don't have that issue. We may have other issues though
-        // for code that relies on the old schema...
-
-        // Create the system tables and insert information about themselves into
-        commit_state.bootstrap_system_tables(database_address)?;
-        // The database tables are now initialized with the correct data.
-        // Now we have to build our in memory structures.
-        commit_state.build_sequence_state(&mut datastore.sequence_state.lock())?;
-        commit_state.build_indexes()?;
-
-        log::trace!("DATABASE:BOOTSTRAPPING SYSTEM TABLES DONE");
+        let mut committed_state = datastore.committed_state.write_arc();
+        committed_state.bootstrap_system_tables(database_address)?;
         Ok(datastore)
+    }
+
+    /// Bootstrap the rest of the system tables in a transactions.
+    ///
+    /// "The rest" is all system tables except the ones bootstrapped in
+    /// [`Self::bootstrap_base`].
+    ///
+    /// This method must be called after [`Self::bootstrap_base`].
+    pub fn bootstrap_rest(&self) -> Result<TxData> {
+        let ctx = ExecutionContext::internal(self.database_address);
+
+        let mut tx = self.begin_mut_tx(IsolationLevel::Serializable);
+        match tx.bootstrap_rest(self.database_address) {
+            Ok(()) => Ok(tx.commit(&ctx)),
+            Err(e) => {
+                tx.rollback(&ctx);
+                Err(e)
+            }
+        }
     }
 
     /// The purpose of this is to rebuild the state of the datastore
@@ -838,7 +837,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
             .replay_insert(table_id, &schema, &row)
             .with_context(|| {
                 format!(
-                    "Error deleting row {:?} during transaction {:?} playback",
+                    "Error inserting row {:?} during transaction {:?} playback",
                     row, self.committed_state.next_tx_offset
                 )
             })?;
@@ -848,6 +847,14 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
             .rdb_num_table_rows
             .with_label_values(self.database_address, &table_id.into(), &schema.table_name)
             .inc();
+
+        // When modifying system tables, we need to continuously reset the
+        // in-memory representation, as we may have been operating on an
+        // incomplete system schema so far.
+        if table_id.0 <= ST_RESERVED_SEQUENCE_RANGE {
+            self.committed_state
+                .reset_system_table_schemas(*self.database_address)?;
+        }
 
         Ok(row)
     }
@@ -878,6 +885,14 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
             .rdb_num_table_rows
             .with_label_values(self.database_address, &table_id.into(), &table_name)
             .dec();
+
+        // When modifying system tables, we need to continuously reset the
+        // in-memory representation, as we may have been operating on an
+        // incomplete system schema so far.
+        if table_id.0 <= ST_RESERVED_SEQUENCE_RANGE {
+            self.committed_state
+                .reset_system_table_schemas(*self.database_address)?;
+        }
 
         Ok(row)
     }
@@ -1035,7 +1050,10 @@ mod tests {
     }
 
     fn get_datastore() -> Result<Locking> {
-        Locking::bootstrap(Address::zero())
+        let datastore = Locking::bootstrap_base(Address::zero())?;
+        datastore.bootstrap_rest()?;
+        datastore.rebuild_state_after_replay()?;
+        Ok(datastore)
     }
 
     fn col(col: u32) -> ColList {
@@ -1375,9 +1393,9 @@ mod tests {
         assert_eq!(query.scan_st_sequences()?, map_array_fn(
             [
                 SequenceRow { id: 0, table: 0, col_pos: 0, name: "seq_st_table_table_id_primary_key_auto", start },
-                SequenceRow { id: 3, table: 2, col_pos: 0, name: "seq_st_sequence_sequence_id_primary_key_auto", start },
-                SequenceRow { id: 1, table: 3, col_pos: 0, name: "seq_st_indexes_index_id_primary_key_auto", start },
-                SequenceRow { id: 2, table: 4, col_pos: 0, name: "seq_st_constraints_constraint_id_primary_key_auto", start },
+                SequenceRow { id: 1, table: 2, col_pos: 0, name: "seq_st_sequence_sequence_id_primary_key_auto", start },
+                SequenceRow { id: 2, table: 3, col_pos: 0, name: "seq_st_indexes_index_id_primary_key_auto", start },
+                SequenceRow { id: 3, table: 4, col_pos: 0, name: "seq_st_constraints_constraint_id_primary_key_auto", start },
             ],
             |row| StSequenceRow {
                 allocated: ST_RESERVED_SEQUENCE_RANGE as i128 * 2,
