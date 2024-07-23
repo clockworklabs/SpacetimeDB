@@ -217,7 +217,8 @@ where
                 if let Some(module_def) = module_def {
                     let formatted = reformat_update(sub.database_update, module_def)?;
                     let output = serde_json::to_string(&formatted)? + "\n";
-                    tokio::io::stdout().write_all(output.as_bytes()).await?
+                    tokio::io::stdout().write_all("hello world".as_bytes()).await?;
+                    tokio::io::stdout().write_all(output.as_bytes()).await?;
                 }
                 break;
             }
