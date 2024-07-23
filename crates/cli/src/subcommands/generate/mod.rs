@@ -5,8 +5,8 @@ use std::io::Write;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
+use clap::Arg;
 use clap::ArgAction::SetTrue;
-use clap::{Arg, ArgGroup};
 use convert_case::{Case, Casing};
 use duct::cmd;
 use spacetimedb_lib::db::def::ColumnDef;
@@ -31,7 +31,6 @@ pub fn cli() -> clap::Command {
     clap::Command::new("generate")
         .about("Generate client files for a spacetime module.")
         .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --wasm-file <PATH>]")
-        .group(ArgGroup::new("source").required(true))
         .arg(
             Arg::new("wasm_file")
                 .value_parser(clap::value_parser!(PathBuf))
