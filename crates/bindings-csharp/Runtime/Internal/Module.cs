@@ -232,6 +232,7 @@ public static partial class Module
         // during the RawModuleDefV8.GetSatsTypeInfo() instead of exposing them via user's module.
         try
         {
+            // We need this explicit cast here to make `ToBytes` understand the types correctly.
             RawModuleDef versioned = new RawModuleDef.V8BackCompat(moduleDef);
             var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), versioned);
             var res = FFI._buffer_alloc(moduleBytes, (uint)moduleBytes.Length);
