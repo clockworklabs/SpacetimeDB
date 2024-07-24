@@ -171,7 +171,6 @@ parking_lot = { version = "0.12.1", features = ["send_guard", "arc_lock"] }
 paste = "1.0"
 pin-project-lite = "0.2.9"
 postgres-types = "0.2.5"
-pretty_assertions = "1.4"
 proc-macro2 = "1.0"
 prometheus = "0.13.0"
 proptest = "1.4"

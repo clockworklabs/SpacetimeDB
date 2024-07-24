@@ -917,7 +917,6 @@ mod tests {
     use crate::db::datastore::Result;
     use crate::error::{DBError, IndexError};
     use itertools::Itertools;
-    use pretty_assertions::assert_eq;
     use spacetimedb_lib::address::Address;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_primitives::{col_list, ColId, Constraints};
@@ -1125,7 +1124,7 @@ mod tests {
                 start: value.start,
                 min_value: 1,
                 max_value: 170141183460469231731687303715884105727,
-                allocated: 0,
+                allocated: 4096,
             }
         }
     }
@@ -1141,7 +1140,7 @@ mod tests {
                 start: value.start,
                 min_value: 1,
                 max_value: 170141183460469231731687303715884105727,
-                allocated: 0,
+                allocated: 4096,
             }
         }
     }
@@ -1359,7 +1358,7 @@ mod tests {
                 SequenceRow { id: 2, table: 4, col_pos: 0, name: "seq_st_constraints_constraint_id_primary_key_auto", start },
             ],
             |row| StSequenceRow {
-                allocated: ST_RESERVED_SEQUENCE_RANGE as i128,
+                allocated: ST_RESERVED_SEQUENCE_RANGE as i128 * 2,
                 ..StSequenceRow::from(row)
             }
         ));

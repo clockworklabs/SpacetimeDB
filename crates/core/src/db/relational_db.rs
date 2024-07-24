@@ -1456,7 +1456,6 @@ mod tests {
     use commitlog::payload::txdata;
     use commitlog::Commitlog;
     use durability::EmptyHistory;
-    use pretty_assertions::assert_eq;
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
@@ -2198,17 +2197,9 @@ mod tests {
             fn visit_delete<'a, R: BufReader<'a>>(
                 &mut self,
                 table_id: TableId,
-                reader: &mut R,
+                _reader: &mut R,
             ) -> Result<Self::Row, Self::Error> {
-                // Allow specifically deletes from `st_sequence`,
-                // since the transactions in this test will allocate sequence values.
-                if table_id != ST_SEQUENCES_ID {
-                    bail!("unexpected delete for table: {table_id}")
-                }
-                let ty = self.sys.get(&table_id).unwrap();
-                let row = ProductValue::decode(ty, reader)?;
-                log::debug!("delete: {table_id} {row:?}");
-                Ok(())
+                bail!("unexpected delete for table: {table_id}")
             }
 
             fn skip_row<'a, R: BufReader<'a>>(
