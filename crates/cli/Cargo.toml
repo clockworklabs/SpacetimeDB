@@ -34,6 +34,7 @@ chrono.workspace = true
 clap = {workspace = true, features = ["derive", "env", "string"]}
 colored.workspace = true
 convert_case.workspace = true
+csv-async = { workspace = true, features = ["tokio"] }
 dirs.workspace = true
 duct.workspace = true
 email_address.workspace = true
@@ -42,6 +43,7 @@ flate2.workspace = true
 http.workspace = true
 is-terminal.workspace = true
 itertools.workspace = true
+indexmap.workspace = true
 indicatif.workspace = true
 jsonwebtoken.workspace = true
 mimalloc.workspace = true
@@ -60,6 +62,7 @@ termcolor.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
+tokio-util = { workspace = true, features = ["compat"] }
 toml.workspace = true
 wasmbin.workspace = true
 wasmtime.workspace = true

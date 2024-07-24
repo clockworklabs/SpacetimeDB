@@ -3,6 +3,7 @@ mod common_args;
 mod config;
 mod edit_distance;
 mod errors;
+mod format;
 mod subcommands;
 mod tasks;
 pub mod util;
