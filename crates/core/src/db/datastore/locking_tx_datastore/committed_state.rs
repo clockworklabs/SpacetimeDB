@@ -223,9 +223,9 @@ impl CommittedState {
                 // All sequences for system tables start from the reserved
                 // range + 1.
                 // Logically, we thus have used up the default pre-allocation
-                // and must initialize the sequence with twice the amount.
+                // and must allocate again on the next increment.
                 start: ST_RESERVED_SEQUENCE_RANGE as i128 + 1,
-                allocated: (ST_RESERVED_SEQUENCE_RANGE * 2) as i128,
+                allocated: ST_RESERVED_SEQUENCE_RANGE as i128,
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_SEQUENCES.
@@ -287,16 +287,12 @@ impl CommittedState {
         let st_sequences = self.tables.get(&ST_SEQUENCES_ID).unwrap();
         for row_ref in st_sequences.scan_rows(&self.blob_store) {
             let sequence = StSequenceRow::try_from(row_ref)?;
-            // TODO: The system tables have initialized their value already, but this is wrong:
-            // If we exceed  `SEQUENCE_PREALLOCATION_AMOUNT` we will get a unique violation
-            let is_system_table = self
-                .tables
-                .get(&sequence.table_id)
-                .map_or(false, |x| x.get_schema().table_type == StTableType::System);
+            let mut seq = sequence_state
+                .remove(sequence.sequence_id)
+                .unwrap_or_else(|| Sequence::new(sequence.into()));
 
-            let mut seq = Sequence::new(sequence.into());
             // Now we need to recover the last allocation value.
-            if !is_system_table && seq.value < seq.allocated() + 1 {
+            if seq.value < seq.allocated() + 1 {
                 seq.value = seq.allocated() + 1;
             }
 

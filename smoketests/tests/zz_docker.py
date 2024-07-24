@@ -1,7 +1,6 @@
 from .. import Smoketest, run_cmd, requires_docker
 from urllib.request import urlopen, URLError
 
-
 def restart_docker():
     # Behold!
     #
@@ -128,8 +127,4 @@ pub fn say_hello() {
         restart_docker()
 
         sql_out = self.spacetime("sql", self.address, "SELECT name FROM Person WHERE id = 3")
-        self.assertMultiLineEqual(sql_out, """\
- name     
-----------
- Samantha 
-""")
+        self.assertMultiLineEqual(sql_out, """ name       \n------------\n "Samantha" \n""")

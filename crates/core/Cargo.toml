@@ -121,3 +121,4 @@ env_logger.workspace = true
 
 [build-dependencies]
 prost-build.workspace = true
+pretty_assertions.workspace = true

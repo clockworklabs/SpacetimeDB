@@ -10,8 +10,11 @@ use spacetimedb_data_structures::map::{HashMap, HashSet};
 use spacetimedb_primitives::*;
 use std::sync::Arc;
 
-/// The default preallocation amount for sequences.
-pub const SEQUENCE_PREALLOCATION_AMOUNT: i128 = 4_096;
+/// The amount sequences allocate each time they over-run their allocation.
+///
+/// Note that we do not perform an initial allocation during `create_sequence` or at startup.
+/// Newly-created sequences will allocate the first time they are advanced.
+pub const SEQUENCE_ALLOCATION_STEP: i128 = 4096;
 
 impl_deserialize!([] Constraints, de => Self::try_from(de.deserialize_u8()?)
     .map_err(|_| de::Error::custom("invalid bitflags for `Constraints`"))
@@ -109,7 +112,9 @@ impl SequenceDef {
             start: None,
             min_value: None,
             max_value: None,
-            allocated: SEQUENCE_PREALLOCATION_AMOUNT,
+            // Start with no values allocated. The first time we advance the sequence,
+            // we will allocate [`SEQUENCE_ALLOCATION_STEP`] values.
+            allocated: 0,
         }
     }
 }
