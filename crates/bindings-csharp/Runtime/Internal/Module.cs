@@ -168,7 +168,7 @@ public static partial class Module
     internal partial record RawModuleDef
         : SpacetimeDB.TaggedEnum<(RawModuleDefV8 V8BackCompat, Unit _Reserved)>;
 
-    private static readonly RawModuleDefV0 moduleDef = new();
+    private static readonly RawModuleDefV8 moduleDef = new();
     private static readonly List<IReducer> reducers = [];
 
     struct TypeRegistrar() : ITypeRegistrar
@@ -232,7 +232,8 @@ public static partial class Module
         // during the RawModuleDefV8.GetSatsTypeInfo() instead of exposing them via user's module.
         try
         {
-            var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.V8BackCompat(moduleDef));
+            RawModuleDef versioned = new RawModuleDef.V8BackCompat(moduleDef);
+            var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), versioned);
             var res = FFI._buffer_alloc(moduleBytes, (uint)moduleBytes.Length);
             return res;
         }
