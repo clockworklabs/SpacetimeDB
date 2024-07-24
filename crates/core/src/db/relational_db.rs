@@ -2,7 +2,7 @@ use super::datastore::locking_tx_datastore::committed_state::CommittedState;
 use super::datastore::locking_tx_datastore::state_view::StateView as _;
 use super::datastore::system_tables::ST_MODULE_ID;
 use super::datastore::traits::{
-    IsolationLevel, Metadata, MutTx as _, MutTxDatastore, RowTypeForTable, Tx as _, TxDatastore,
+    IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
 };
 use super::datastore::{
     locking_tx_datastore::{
@@ -375,13 +375,13 @@ impl RelationalDB {
         self.with_read_only(&ctx, |tx| self.inner.metadata(&ctx, tx))
     }
 
-    /// Obtain the raw bytes of the module associated with this database.
+    /// Obtain the module associated with this database.
     ///
     /// `None` if the database is not yet fully initialized.
     /// Note that a `Some` result may yield an empty slice.
-    pub fn program_bytes(&self) -> Result<Option<Box<[u8]>>, DBError> {
+    pub fn program(&self) -> Result<Option<Program>, DBError> {
         let ctx = ExecutionContext::internal(self.address);
-        self.with_read_only(&ctx, |tx| self.inner.program_bytes(&ctx, tx))
+        self.with_read_only(&ctx, |tx| self.inner.program(&ctx, tx))
     }
 
     /// Read the set of clients currently connected to the database.

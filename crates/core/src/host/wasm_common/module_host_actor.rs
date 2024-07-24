@@ -136,8 +136,9 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
             energy_monitor,
         } = mcc;
         log::trace!(
-            "Making new module host actor for database {}",
-            database_instance_context.address
+            "Making new module host actor for database {} with module {}",
+            database_instance_context.address,
+            module_hash,
         );
         let log_tx = database_instance_context.logger.tx.clone();
 
