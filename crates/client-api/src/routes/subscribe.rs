@@ -132,7 +132,16 @@ where
         }
 
         let actor = |client, sendrx| ws_client_actor(client, ws, sendrx);
-        let client = match ClientConnection::spawn(client_id, protocol, codec.unwrap_or_default(), instance_id, module_rx, actor).await {
+        let client = match ClientConnection::spawn(
+            client_id,
+            protocol,
+            codec.unwrap_or_default(),
+            instance_id,
+            module_rx,
+            actor,
+        )
+        .await
+        {
             Ok(s) => s,
             Err(e) => {
                 log::warn!("ModuleHost died while we were connecting: {e:#}");

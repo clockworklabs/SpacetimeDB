@@ -1,4 +1,3 @@
-use brotli::CompressorReader;
 use base64::Engine;
 use brotli::CompressorReader;
 use derive_more::From;
@@ -35,20 +34,21 @@ pub trait ToProtocol {
 /// Serialize `msg` into a [`DataMessage`] containing a [`ws::ServerMessage`].
 ///
 /// If `protocol` is [`Protocol::Binary`], the message will be compressed by this method.
-pub fn serialize(msg: impl ToProtocol<Encoded = ws::ServerMessage>, protocol: Protocol) -> DataMessage {
+pub fn serialize(msg: impl ToProtocol<Encoded = ws::ServerMessage>, protocol: Protocol, codec: ProtocolCodec) -> DataMessage {
     let msg = msg.to_protocol(protocol);
     match protocol {
         Protocol::Text => serde_json::to_string(&SerializeWrapper::new(msg)).unwrap().into(),
         Protocol::Binary => {
-            let msg_bytes = self.serialize_binary().encode_to_vec();
+            let msg_bytes = bsatn::to_vec(&msg).unwrap();
             match codec {
-                ProtocolCodec::None => msg_bytes,
+                ProtocolCodec::None => msg_bytes.into(),
                 ProtocolCodec::Gzip => {
                     let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
                     encoder.write_all(&msg_bytes[..]).unwrap();
                     encoder
                         .finish()
                         .expect("Failed to Gz compress `SubscriptionUpdateMessage`")
+                        .into()
                 },
                 ProtocolCodec::Brotli => {
                     // TODO(perf): Compression should depend on message size and type.
@@ -82,7 +82,7 @@ pub fn serialize(msg: impl ToProtocol<Encoded = ws::ServerMessage>, protocol: Pr
                         .expect("Failed to Brotli compress `SubscriptionUpdateMessage");
                     out.into()
                 }
-            }.into()
+            }
         }
     }
 }

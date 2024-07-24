@@ -504,7 +504,8 @@ mod tests {
 
         let id0 = Identity::ZERO;
         let client0 = ClientActorId::for_test(id0);
-        let (client0, mut rx) = ClientConnectionSender::dummy_with_channel(client0, Protocol::Binary, ProtocolCodec::default());
+        let (client0, mut rx) =
+            ClientConnectionSender::dummy_with_channel(client0, Protocol::Binary, ProtocolCodec::default());
 
         let subscriptions = SubscriptionManager::default();
 

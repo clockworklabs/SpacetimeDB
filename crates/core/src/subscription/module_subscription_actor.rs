@@ -226,7 +226,11 @@ mod tests {
     fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
         let owner = Identity::from_byte_array([1; 32]);
         let client = ClientActorId::for_test(Identity::ZERO);
-        let sender = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary, ProtocolCodec::default()));
+        let sender = Arc::new(ClientConnectionSender::dummy(
+            client,
+            Protocol::Binary,
+            ProtocolCodec::default(),
+        ));
         let module_subscriptions = ModuleSubscriptions::new(db.clone(), owner);
 
         let subscribe = Subscribe {

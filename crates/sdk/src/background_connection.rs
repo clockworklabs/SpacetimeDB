@@ -317,7 +317,7 @@ impl BackgroundDbConnection {
                 db_name,
                 credentials.as_ref(),
                 client_address,
-                DbCodec::Brotli
+                DbCodec::Brotli,
             ))
         })?;
 

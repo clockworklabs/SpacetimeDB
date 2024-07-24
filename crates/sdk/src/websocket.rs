@@ -22,7 +22,7 @@ use std::io::prelude::*;
 pub enum DbCodec {
     None,
     Gzip,
-    Brotli
+    Brotli,
 }
 
 pub(crate) struct DbConnection {
@@ -175,15 +175,13 @@ impl DbConnection {
             DbCodec::None => decoded = bytes,
             DbCodec::Gzip => {
                 let mut d = GzDecoder::new(&bytes[..]);
-                d.read(&mut decompressed)
-                    .context("Failed to Gz decompress message")?;
+                d.read(&mut decompressed).context("Failed to Gz decompress message")?;
                 decoded = &decompressed[..];
-            },
+            }
             DbCodec::Brotli => {
-                BrotliDecompress(&mut &bytes[..], &mut decompressed)
-                    .context("Failed to Brotli decompress message")?;
+                BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
                 decoded = &decompressed[..];
-            },
+            }
         }
         Ok(bsatn::from_slice(decoded)?)
     }
