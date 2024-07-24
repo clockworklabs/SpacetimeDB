@@ -2,7 +2,7 @@ use super::datastore::locking_tx_datastore::committed_state::CommittedState;
 use super::datastore::locking_tx_datastore::state_view::StateView as _;
 use super::datastore::system_tables::ST_MODULE_ID;
 use super::datastore::traits::{
-    IsolationLevel, Metadata, MutTx as _, MutTxDatastore, RowTypeForTable, Tx as _, TxDatastore,
+    IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
 };
 use super::datastore::{
     locking_tx_datastore::{
@@ -375,13 +375,13 @@ impl RelationalDB {
         self.with_read_only(&ctx, |tx| self.inner.metadata(&ctx, tx))
     }
 
-    /// Obtain the raw bytes of the module associated with this database.
+    /// Obtain the module associated with this database.
     ///
     /// `None` if the database is not yet fully initialized.
     /// Note that a `Some` result may yield an empty slice.
-    pub fn program_bytes(&self) -> Result<Option<Box<[u8]>>, DBError> {
+    pub fn program(&self) -> Result<Option<Program>, DBError> {
         let ctx = ExecutionContext::internal(self.address);
-        self.with_read_only(&ctx, |tx| self.inner.program_bytes(&ctx, tx))
+        self.with_read_only(&ctx, |tx| self.inner.program(&ctx, tx))
     }
 
     /// Read the set of clients currently connected to the database.
@@ -1466,6 +1466,7 @@ mod tests {
     use commitlog::payload::txdata;
     use commitlog::Commitlog;
     use durability::EmptyHistory;
+    use pretty_assertions::assert_eq;
     use spacetimedb_client_api_messages::timestamp::Timestamp;
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_lib::db::def::{ColumnDef, ConstraintDef};
@@ -2208,9 +2209,17 @@ mod tests {
             fn visit_delete<'a, R: BufReader<'a>>(
                 &mut self,
                 table_id: TableId,
-                _reader: &mut R,
+                reader: &mut R,
             ) -> Result<Self::Row, Self::Error> {
-                bail!("unexpected delete for table: {table_id}")
+                // Allow specifically deletes from `st_sequence`,
+                // since the transactions in this test will allocate sequence values.
+                if table_id != ST_SEQUENCES_ID {
+                    bail!("unexpected delete for table: {table_id}")
+                }
+                let ty = self.sys.get(&table_id).unwrap();
+                let row = ProductValue::decode(ty, reader)?;
+                log::debug!("delete: {table_id} {row:?}");
+                Ok(())
             }
 
             fn skip_row<'a, R: BufReader<'a>>(

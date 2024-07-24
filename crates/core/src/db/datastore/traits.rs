@@ -313,6 +313,14 @@ pub struct Metadata {
     pub program_hash: Hash,
 }
 
+/// Program associated with a database.
+pub struct Program {
+    /// Hash over the program's bytes.
+    pub hash: Hash,
+    /// The raw bytes of the program.
+    pub bytes: Box<[u8]>,
+}
+
 pub trait TxDatastore: DataRow + Tx {
     type Iter<'a>: Iterator<Item = Self::RowRef<'a>>
     where
@@ -357,10 +365,10 @@ pub trait TxDatastore: DataRow + Tx {
     /// A `None` return value means that the datastore is not fully initialized yet.
     fn metadata(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Metadata>>;
 
-    /// Obtain the raw bytes of the compiled module associated with this datastore.
+    /// Obtain the compiled module associated with this datastore.
     ///
     /// A `None` return value means that the datastore is not fully initialized yet.
-    fn program_bytes(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Box<[u8]>>>;
+    fn program(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Option<Program>>;
 }
 
 pub trait MutTxDatastore: TxDatastore + MutTx {

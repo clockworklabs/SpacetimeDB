@@ -30,7 +30,7 @@ use spacetimedb_lib::{
         auth::StAccess,
         def::{
             ConstraintDef, ConstraintSchema, IndexDef, IndexSchema, SequenceDef, SequenceSchema, TableDef, TableSchema,
-            SEQUENCE_PREALLOCATION_AMOUNT,
+            SEQUENCE_ALLOCATION_STEP,
         },
         error::SchemaErrors,
     },
@@ -480,9 +480,11 @@ impl MutTxId {
                 return Err(SequenceError::NotFound(seq_id).into());
             };
 
-            // If there are allocated sequence values, return the new value, if it is not bigger than
-            // the upper range of `sequence.allocated`
-            if let Some(value) = sequence.gen_next_value().filter(|v| v < &sequence.allocated()) {
+            // If there are allocated sequence values, return the new value.
+            // `gen_next_value` internally checks that the new allocation is acceptable,
+            // i.e. is less than or equal to the allocation amount.
+            // Note that on restart we start one after the allocation amount.
+            if let Some(value) = sequence.gen_next_value() {
                 return Ok(value);
             }
         }
@@ -500,13 +502,19 @@ impl MutTxId {
             let Some(sequence) = self.sequence_state_lock.get_sequence_mut(seq_id) else {
                 return Err(SequenceError::NotFound(seq_id).into());
             };
-            seq_row.allocated = sequence.nth_value(SEQUENCE_PREALLOCATION_AMOUNT as usize);
+            seq_row.allocated = sequence.nth_value(SEQUENCE_ALLOCATION_STEP as usize);
             sequence.set_allocation(seq_row.allocated);
             seq_row
         };
 
         self.delete(ST_SEQUENCES_ID, old_seq_row_ptr)?;
-        self.insert(ST_SEQUENCES_ID, &mut ProductValue::from(seq_row), database_address)?;
+        // `insert_row_internal` rather than `insert` because:
+        // - We have already checked unique constraints during `create_sequence`.
+        // - Similarly, we have already applied autoinc sequences.
+        // - We do not want to apply autoinc sequences again,
+        //   since the system table sequence `seq_st_table_table_id_primary_key_auto`
+        //   has ID 0, and would otherwise trigger autoinc.
+        self.insert_row_internal(ST_SEQUENCES_ID, &ProductValue::from(seq_row))?;
 
         let Some(sequence) = self.sequence_state_lock.get_sequence_mut(seq_id) else {
             return Err(SequenceError::NotFound(seq_id).into());

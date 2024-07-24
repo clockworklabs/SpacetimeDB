@@ -1,6 +1,7 @@
 import time
 from .. import Smoketest, run_cmd, requires_docker
 from urllib.request import urlopen
+from .add_remove_index import AddRemoveIndex
 
 
 def restart_docker():
@@ -191,3 +192,22 @@ fn print_num_connected() {
         self.call("print_num_connected")
         logs = self.logs(10)
         self.assertEqual("CONNECTED CLIENTS: 1", logs.pop())
+
+@requires_docker
+class AddRemoveIndexAfterRestart(AddRemoveIndex):
+    """
+        `AddRemoveIndex` from `add_remove_index.py`,
+        but restarts docker between each publish.
+
+        This detects a bug we once had, hopefully fixed now,
+        where the system autoinc sequences were borked after restart,
+        leading newly-created database objects to re-use IDs.
+
+        First publish the module without the indices,
+        then restart docker, then add the indices and publish.
+        Then restart docker, and publish again.
+        There should be no errors from publishing,
+        and the unindexed versions should reject subscriptions.
+    """
+    def between_publishes(self):
+        restart_docker()

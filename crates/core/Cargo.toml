@@ -117,3 +117,4 @@ proptest.workspace = true
 proptest-derive.workspace = true
 rand.workspace = true
 env_logger.workspace = true
+pretty_assertions.workspace = true

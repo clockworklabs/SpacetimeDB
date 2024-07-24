@@ -86,7 +86,9 @@ impl Sequence {
     /// 6. incr = 1 allocated = 10, value = 10
     /// 7. next_value() -> 11
     fn needs_allocation(&self) -> bool {
-        self.value == self.schema.allocated
+        // In order to yield a value, it must be strictly less than the allocation amount,
+        // because on restart we will begin at the allocation amount.
+        self.value >= self.schema.allocated
     }
 
     pub(super) fn set_allocation(&mut self, allocated: i128) {
@@ -109,7 +111,7 @@ impl SequencesState {
         self.sequences.insert(seq_id, seq);
     }
 
-    pub(super) fn remove(&mut self, seq_id: SequenceId) {
-        self.sequences.remove(&seq_id);
+    pub(super) fn remove(&mut self, seq_id: SequenceId) -> Option<Sequence> {
+        self.sequences.remove(&seq_id)
     }
 }
