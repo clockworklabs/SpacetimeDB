@@ -4387,6 +4387,7 @@ dependencies = [
  "hashbrown 0.14.1",
  "nohash-hasher",
  "serde",
+ "smallvec",
  "thiserror",
 ]
 
