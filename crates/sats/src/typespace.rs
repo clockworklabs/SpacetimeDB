@@ -34,6 +34,7 @@ pub enum TypeRefError {
 ///
 /// [System F]: https://en.wikipedia.org/wiki/System_F
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 pub struct Typespace {
     /// The types in our typing context that can be referred to with [`AlgebraicTypeRef`]s.
