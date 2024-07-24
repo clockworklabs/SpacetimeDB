@@ -42,7 +42,6 @@ partial record CustomTaggedEnum
                     __enumTag.Write(writer, @enum.IntVariant);
                     IntVariant.Write(writer, inner);
                     break;
-
                 case StringVariant(var inner):
                     __enumTag.Write(writer, @enum.StringVariant);
                     StringVariant.Write(writer, inner);
