@@ -1,11 +1,11 @@
 use crate::error::PlanError;
 use crate::sql::ast::From;
 use crate::sql::ast::{Selection, SqlAst};
-use spacetimedb_lib::db::def::ColumnSchema;
 use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::relation::FieldName;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
+use spacetimedb_schema::schema::ColumnSchema;
 use spacetimedb_vm::errors::ErrorType;
 use spacetimedb_vm::expr::{FieldExpr, FieldOp};
 use std::fmt;

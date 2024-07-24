@@ -340,11 +340,12 @@ mod test {
     use super::*;
     use crate::{blob_store::HashMapBlobStore, indexes::SquashedOffset, table::Table};
     use proptest::{prelude::*, prop_assert_eq, proptest, test_runner::TestCaseResult};
-    use spacetimedb_lib::db::def::{TableDef, TableSchema};
+    use spacetimedb_lib::db::raw_def::RawTableDefV8;
     use spacetimedb_sats::{product, proptest::generate_typed_row};
+    use spacetimedb_schema::schema::TableSchema;
 
     fn table(ty: ProductType) -> Table {
-        let def = TableDef::from_product("", ty);
+        let def = RawTableDefV8::from_product("", ty);
         let schema = TableSchema::from_def(0.into(), def);
         Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
     }

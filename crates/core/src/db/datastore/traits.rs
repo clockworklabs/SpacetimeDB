@@ -8,11 +8,12 @@ use super::Result;
 use crate::db::datastore::system_tables::ST_TABLES_ID;
 use crate::execution_context::ExecutionContext;
 use spacetimedb_data_structures::map::IntMap;
-use spacetimedb_lib::db::def::*;
+use spacetimedb_lib::db::raw_def::*;
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_schema::schema::TableSchema;
 
 /// The `IsolationLevel` enum specifies the degree to which a transaction is
 /// isolated from concurrently running transactions. The higher the isolation
@@ -373,7 +374,7 @@ pub trait TxDatastore: DataRow + Tx {
 
 pub trait MutTxDatastore: TxDatastore + MutTx {
     // Tables
-    fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: TableDef) -> Result<TableId>;
+    fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: RawTableDefV8) -> Result<TableId>;
     // In these methods, we use `'tx` because the return type must borrow data
     // from `Inner` in the `Locking` implementation,
     // and `Inner` lives in `tx: &MutTxId`.
@@ -400,7 +401,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     }
 
     // Indexes
-    fn create_index_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, index: IndexDef) -> Result<IndexId>;
+    fn create_index_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, index: RawIndexDefV8) -> Result<IndexId>;
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTx, index_id: IndexId) -> Result<()>;
     fn index_id_from_name_mut_tx(&self, tx: &Self::MutTx, index_name: &str) -> super::Result<Option<IndexId>>;
 
@@ -411,7 +412,12 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
 
     // Sequences
     fn get_next_sequence_value_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<i128>;
-    fn create_sequence_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, seq: SequenceDef) -> Result<SequenceId>;
+    fn create_sequence_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        table_id: TableId,
+        seq: RawSequenceDefV8,
+    ) -> Result<SequenceId>;
     fn drop_sequence_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<()>;
     fn sequence_id_from_name_mut_tx(&self, tx: &Self::MutTx, sequence_name: &str) -> super::Result<Option<SequenceId>>;
 
@@ -486,32 +492,32 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
 
 #[cfg(test)]
 mod tests {
-    use spacetimedb_lib::db::def::ConstraintDef;
+    use spacetimedb_lib::db::raw_def::RawConstraintDefV8;
     use spacetimedb_primitives::{col_list, ColId, Constraints};
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType, Typespace};
 
-    use super::{ColumnDef, IndexDef, TableDef};
+    use super::{RawColumnDefV8, RawIndexDefV8, RawTableDefV8};
 
     #[test]
     fn test_tabledef_from_lib_tabledef() -> anyhow::Result<()> {
-        let mut expected_schema = TableDef::new(
+        let mut expected_schema = RawTableDefV8::new(
             "Person".into(),
             vec![
-                ColumnDef {
+                RawColumnDefV8 {
                     col_name: "id".into(),
                     col_type: AlgebraicType::U32,
                 },
-                ColumnDef {
+                RawColumnDefV8 {
                     col_name: "name".into(),
                     col_type: AlgebraicType::String,
                 },
             ],
         )
         .with_indexes(vec![
-            IndexDef::btree("id_and_name".into(), col_list![0, 1], false),
-            IndexDef::btree("just_name".into(), ColId(1), false),
+            RawIndexDefV8::btree("id_and_name".into(), col_list![0, 1], false),
+            RawIndexDefV8::btree("just_name".into(), ColId(1), false),
         ])
-        .with_constraints(vec![ConstraintDef::new(
+        .with_constraints(vec![RawConstraintDefV8::new(
             "identity".into(),
             Constraints::identity(),
             ColId(0),

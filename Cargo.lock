@@ -4123,6 +4123,7 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
+ "spacetimedb-schema",
  "spacetimedb-standalone",
  "spacetimedb-table",
  "spacetimedb-testing",
@@ -4188,6 +4189,7 @@ dependencies = [
  "spacetimedb-fs-utils",
  "spacetimedb-lib",
  "spacetimedb-primitives",
+ "spacetimedb-schema",
  "spacetimedb-standalone",
  "spacetimedb-testing",
  "syntect",
@@ -4353,6 +4355,7 @@ dependencies = [
  "spacetimedb-metrics",
  "spacetimedb-primitives",
  "spacetimedb-sats",
+ "spacetimedb-schema",
  "spacetimedb-snapshot",
  "spacetimedb-table",
  "spacetimedb-vm",
@@ -4492,6 +4495,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-schema"
+version = "0.11.0"
+dependencies = [
+ "itertools 0.12.0",
+ "spacetimedb-data-structures",
+ "spacetimedb-lib",
+ "spacetimedb-primitives",
+ "spacetimedb-sats",
+]
+
+[[package]]
 name = "spacetimedb-sdk"
 version = "0.11.0"
 dependencies = [
@@ -4585,6 +4599,7 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
+ "spacetimedb-schema",
  "thiserror",
 ]
 
@@ -4627,6 +4642,7 @@ dependencies = [
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
+ "spacetimedb-schema",
  "spacetimedb-table",
  "tempfile",
  "thiserror",

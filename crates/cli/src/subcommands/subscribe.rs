@@ -8,7 +8,7 @@ use spacetimedb_client_api_messages::websocket::{self as ws, EncodedValue};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::de::serde::{DeserializeWrapper, SeedWrapper};
 use spacetimedb_lib::ser::serde::SerializeWrapper;
-use spacetimedb_lib::ModuleDef;
+use spacetimedb_lib::RawModuleDefV8;
 use spacetimedb_standalone::TEXT_PROTOCOL;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
@@ -90,7 +90,10 @@ fn parse_msg_json(msg: &WsMessage) -> Option<ws::ServerMessage> {
         .ok()
 }
 
-fn reformat_update(msg: ws::DatabaseUpdate, schema: &ModuleDef) -> anyhow::Result<HashMap<String, SubscriptionTable>> {
+fn reformat_update(
+    msg: ws::DatabaseUpdate,
+    schema: &RawModuleDefV8,
+) -> anyhow::Result<HashMap<String, SubscriptionTable>> {
     msg.tables
         .into_iter()
         .map(|upd| {
@@ -205,7 +208,7 @@ where
 
 /// Await the initial [`ServerMessage::SubscriptionUpdate`].
 /// If `module_def` is `Some`, print a JSON representation to stdout.
-async fn await_initial_update<S>(ws: &mut S, module_def: Option<&ModuleDef>) -> anyhow::Result<()>
+async fn await_initial_update<S>(ws: &mut S, module_def: Option<&RawModuleDefV8>) -> anyhow::Result<()>
 where
     S: TryStream<Ok = WsMessage> + Unpin,
     S::Error: std::error::Error + Send + Sync + 'static,
@@ -237,7 +240,11 @@ where
 
 /// Print `num` [`ServerMessage::TransactionUpdate`] messages as JSON.
 /// If `num` is `None`, keep going indefinitely.
-async fn consume_transaction_updates<S>(ws: &mut S, num: Option<u32>, module_def: &ModuleDef) -> anyhow::Result<bool>
+async fn consume_transaction_updates<S>(
+    ws: &mut S,
+    num: Option<u32>,
+    module_def: &RawModuleDefV8,
+) -> anyhow::Result<bool>
 where
     S: TryStream<Ok = WsMessage> + Unpin,
     S::Error: std::error::Error + Send + Sync + 'static,

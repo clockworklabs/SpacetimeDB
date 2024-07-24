@@ -14,8 +14,8 @@ use crate::client::ClientActorId;
 use crate::db::datastore::system_tables::SystemTable;
 use crate::host::scheduler::ScheduleError;
 use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::db::def::IndexDef;
 use spacetimedb_lib::db::error::{LibError, RelationError, SchemaErrors};
+use spacetimedb_lib::db::raw_def::RawIndexDefV8;
 use spacetimedb_lib::relation::FieldName;
 use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::*;
@@ -73,9 +73,9 @@ pub enum IndexError {
     #[error("Index not found: {0:?}")]
     NotFound(IndexId),
     #[error("Index already exist: {0:?}: {1}")]
-    IndexAlreadyExists(IndexDef, String),
+    IndexAlreadyExists(RawIndexDefV8, String),
     #[error("Column not found: {0:?}")]
-    ColumnNotFound(IndexDef),
+    ColumnNotFound(RawIndexDefV8),
     #[error(transparent)]
     UniqueConstraintViolation(#[from] UniqueConstraintViolation),
     #[error("Attempt to define a index with more than 1 auto_inc column: Table: {0:?}, Columns: {1:?}")]

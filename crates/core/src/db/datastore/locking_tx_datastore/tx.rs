@@ -6,9 +6,9 @@ use super::{
     SharedReadGuard,
 };
 use crate::execution_context::ExecutionContext;
-use spacetimedb_lib::db::def::TableSchema;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_schema::schema::TableSchema;
 use std::sync::Arc;
 use std::{
     ops::RangeBounds,

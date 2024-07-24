@@ -656,7 +656,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         let name = name.as_deref().unwrap_or("default_index");
         indexes.push(quote!(spacetimedb::IndexDesc {
             name: #name,
-            ty: spacetimedb::spacetimedb_lib::db::def::IndexType::#ty,
+            ty: spacetimedb::spacetimedb_lib::db::raw_def::IndexType::#ty,
             col_ids: &[#(#col_ids),*],
         }));
     }

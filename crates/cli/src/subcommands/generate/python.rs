@@ -1,12 +1,12 @@
 use super::util::fmt_fn;
 
 use convert_case::{Case, Casing};
-use spacetimedb_lib::db::def::TableSchema;
 use spacetimedb_lib::{
     sats::{AlgebraicTypeRef, ArrayType, BuiltinType, MapType},
     AlgebraicType, ProductType, ProductTypeElement, ReducerDef, SumType, TableDesc,
 };
 use spacetimedb_primitives::ColList;
+use spacetimedb_schema::schema::TableSchema;
 use std::fmt;
 use std::ops::Deref;
 
@@ -157,7 +157,7 @@ pub fn autogen_python_table(ctx: &GenCtx, table: &TableDesc) -> String {
         ctx,
         &table.schema.table_name,
         tuple,
-        Some(table.schema.clone().into_schema(0.into())),
+        Some(TableSchema::from_def(0.into(), table.schema.clone())),
     )
 }
 

@@ -442,13 +442,14 @@ mod test {
     use proptest::prelude::*;
     use proptest::{collection::vec, test_runner::TestCaseResult};
     use spacetimedb_data_structures::map::HashMap;
-    use spacetimedb_lib::db::def::{TableDef, TableSchema};
+    use spacetimedb_lib::db::raw_def::RawTableDefV8;
     use spacetimedb_primitives::ColListBuilder;
     use spacetimedb_sats::{
         product,
         proptest::{generate_product_value, generate_row_type},
         AlgebraicType, ProductType, ProductValue,
     };
+    use spacetimedb_schema::schema::TableSchema;
 
     fn gen_cols(ty_len: usize) -> impl Strategy<Value = ColList> {
         vec((0..ty_len as u32).prop_map_into(), 1..=ty_len)
@@ -471,7 +472,7 @@ mod test {
     }
 
     fn table(ty: ProductType) -> Table {
-        let def = TableDef::from_product("", ty);
+        let def = RawTableDefV8::from_product("", ty);
         let schema = TableSchema::from_def(0.into(), def);
         Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
     }

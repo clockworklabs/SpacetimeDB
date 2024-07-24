@@ -23,7 +23,6 @@ use core::ops::RangeBounds;
 use core::{fmt, ptr};
 use derive_more::{Add, AddAssign, From, Sub};
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_lib::db::def::TableSchema;
 use spacetimedb_primitives::{ColId, ColList, IndexId};
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
@@ -33,6 +32,7 @@ use spacetimedb_sats::{
     ser::{Serialize, Serializer},
     AlgebraicValue, ProductType, ProductValue,
 };
+use spacetimedb_schema::schema::TableSchema;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -1155,13 +1155,13 @@ pub(crate) mod test {
     use crate::var_len::VarLenGranule;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
-    use spacetimedb_lib::db::def::{ColumnDef, IndexDef, IndexType, TableDef};
+    use spacetimedb_lib::db::raw_def::{IndexType, RawColumnDefV8, RawIndexDefV8, RawTableDefV8};
     use spacetimedb_sats::bsatn::to_vec;
     use spacetimedb_sats::proptest::generate_typed_row;
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
 
     pub(crate) fn table(ty: ProductType) -> Table {
-        let def = TableDef::from_product("", ty);
+        let def = RawTableDefV8::from_product("", ty);
         let schema = TableSchema::from_def(0.into(), def);
         Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
     }
@@ -1170,16 +1170,16 @@ pub(crate) mod test {
     fn unique_violation_error() {
         let index_name = "my_unique_constraint";
         // Build a table for (I32, I32) with a unique index on the 0th column.
-        let table_def = TableDef::new(
+        let table_def = RawTableDefV8::new(
             "UniqueIndexed".into(),
             ["unique_col", "other_col"]
-                .map(|c| ColumnDef {
+                .map(|c| RawColumnDefV8 {
                     col_name: c.into(),
                     col_type: AlgebraicType::I32,
                 })
                 .into(),
         )
-        .with_indexes(vec![IndexDef {
+        .with_indexes(vec![RawIndexDefV8 {
             columns: 0.into(),
             index_name: index_name.into(),
             is_unique: true,
