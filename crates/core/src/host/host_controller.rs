@@ -3,7 +3,6 @@ use super::scheduler::SchedulerStarter;
 use super::Scheduler;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::DatabaseLogger;
-use crate::db::datastore::traits::Metadata;
 use crate::db::db_metrics::DB_METRICS;
 use crate::db::relational_db::{self, RelationalDB};
 use crate::energy::{EnergyMonitor, EnergyQuanta};
@@ -12,7 +11,7 @@ use crate::module_host_context::ModuleCreationContext;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::spawn_rayon;
 use crate::{db, host};
-use anyhow::{anyhow, bail, ensure, Context};
+use anyhow::{anyhow, ensure, Context};
 use async_trait::async_trait;
 use durability::EmptyHistory;
 use log::{info, trace, warn};
@@ -308,64 +307,26 @@ impl HostController {
         );
 
         let mut guard = self.acquire_write_lock(instance_id).await;
-        let (update_result, maybe_updated_host) = match guard.take() {
-            // If we don't have a running `Host`, spawn one.
+        let mut host = match guard.take() {
             None => {
                 trace!("host not running, try_init");
-                let host = self.try_init_host(database, instance_id).await?;
-                let module = host.module.borrow().clone();
-                // TODO: Make [ModuleHost] check if it supports the host type.
-                ensure!(
-                    matches!(host_type, HostType::Wasm),
-                    "unsupported host type {:?}",
-                    host_type,
-                );
-                let update_result =
-                    update_module(host.db(), &module, caller_address, (program_hash, program_bytes)).await?;
-                // If the update was not successul, drop the host.
-                // The `database` we gave it refers to a program hash which
-                // doesn't exist (because we just rejected it).
-                let maybe_updated_host = update_result.is_ok().then_some(host);
-
-                (update_result, maybe_updated_host)
+                self.try_init_host(database, instance_id).await?
             }
-
-            // Otherwise, update the host.
-            // Note that we always put back the host -- if the update failed, it
-            // will keep running the previous version of the module.
-            Some(mut host) => {
-                match host.dbic.relational_db.metadata()? {
-                    None => bail!("Host improperly initialized: no metadata"),
-                    Some(Metadata {
-                        database_address,
-                        owner_identity,
-                        ..
-                    }) => {
-                        ensure!(
-                            database_address == database.address,
-                            "cannot change database address when updating module host"
-                        );
-                        ensure!(
-                            owner_identity == database.owner_identity,
-                            "cannot change owner identity when updating module host"
-                        );
-                    }
-                }
+            Some(host) => {
                 trace!("host found, updating");
-                let update_result = host
-                    .update_module(
-                        caller_address,
-                        host_type,
-                        (program_hash, program_bytes),
-                        self.unregister_fn(instance_id),
-                    )
-                    .await?;
-
-                (update_result, Some(host))
+                host
             }
         };
+        let update_result = host
+            .update_module(
+                caller_address,
+                host_type,
+                (program_hash, program_bytes),
+                self.unregister_fn(instance_id),
+            )
+            .await?;
 
-        *guard = maybe_updated_host;
+        *guard = Some(host);
         Ok(update_result)
     }
 
@@ -590,13 +551,12 @@ async fn load_program(storage: &ProgramStorage, hash: Hash) -> anyhow::Result<Bo
 async fn launch_module(
     database: Database,
     instance_id: u64,
-    program_bytes: Box<[u8]>,
+    (program_hash, program_bytes): (Hash, Box<[u8]>),
     on_panic: impl Fn() + Send + Sync + 'static,
     relational_db: Arc<RelationalDB>,
     energy_monitor: Arc<dyn EnergyMonitor>,
 ) -> anyhow::Result<(Arc<DatabaseInstanceContext>, ModuleHost, Scheduler, SchedulerStarter)> {
     let address = database.address;
-    let program_hash = database.initial_program;
     let host_type = database.host_type;
 
     let dbic = make_dbic(database, instance_id, relational_db).await.map(Arc::new)?;
@@ -725,7 +685,8 @@ impl Host {
                 launch_module(
                     database,
                     instance_id,
-                    program_bytes,
+                    // TODO: Make `db.program_bytes()` load hash + bytes
+                    (hash_bytes(&program_bytes), program_bytes),
                     on_panic,
                     Arc::new(db),
                     energy_monitor.clone(),
@@ -741,7 +702,7 @@ impl Host {
                 let res = launch_module(
                     database,
                     instance_id,
-                    program_bytes.clone(),
+                    (program_hash, program_bytes.clone()),
                     on_panic,
                     Arc::new(db),
                     energy_monitor.clone(),
@@ -826,6 +787,8 @@ impl Host {
         )
         .await?;
         trace!("update result: {update_result:?}");
+        // Only replace the module + scheduler if the update succeeded.
+        // Otherwise, we want the database to continue running with the old state.
         if update_result.is_ok() {
             self.scheduler = scheduler;
             scheduler_starter.start(&module)?;
