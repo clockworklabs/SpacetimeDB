@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::{bsatn, Address, ModuleValidationError, RawModuleDefV8, TableDesc};
+use spacetimedb_lib::{bsatn, Address, ModuleValidationError, RawModuleDef, RawModuleDefV8, TableDesc};
 use spacetimedb_sats::hash::Hash;
 
 use super::instrumentation::CallTimes;
@@ -124,6 +124,8 @@ pub enum DescribeError {
     RuntimeError(anyhow::Error),
     #[error("invalid buffer")]
     BadBuffer,
+    #[error("unimplemented RawModuleDef version")]
+    UnimplementedRawModuleDefVersion,
 }
 
 impl<T: WasmModule> WasmModuleHostActor<T> {
@@ -154,7 +156,15 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         )?;
 
         let desc = instance.extract_descriptions()?;
-        let desc: RawModuleDefV8 = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
+        let desc: RawModuleDef = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
+        let desc: RawModuleDefV8 = match desc {
+            RawModuleDef::V8BackCompat(v8) => v8,
+            _ => {
+                return Err(InitializationError::Describe(
+                    DescribeError::UnimplementedRawModuleDefVersion,
+                ))
+            }
+        };
         desc.validate_reducers()?;
         let orig_module_def = desc.clone();
         let RawModuleDefV8 {
