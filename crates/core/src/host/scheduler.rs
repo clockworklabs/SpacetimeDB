@@ -339,49 +339,53 @@ impl SchedulerActor {
         module_host: ModuleHost,
     ) {
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-        let caller_identity: spacetimedb_lib::Identity = module_host.info().identity;
 
         match get_schedule_row_mut(ctx, &tx, db, id) {
             Ok(schedule_row) => {
                 if let Ok(is_repeated) = self.handle_repeated_schedule(&tx, db, id, &schedule_row) {
-                    // Do not delete entry for repeated reducer
                     if is_repeated {
-                        return;
+                        return; // Do not delete entry for repeated reducer
                     }
 
                     let row_ptr = schedule_row.pointer();
                     db.delete(&mut tx, id.table_id, [row_ptr]);
 
-                    let event: ModuleEvent = ModuleEvent {
-                        timestamp: Timestamp::now(),
-                        caller_identity,
-                        caller_address: None,
-                        function_call: ModuleFunctionCall::default(),
-                        status: EventStatus::Committed(DatabaseUpdate::default()),
-                        // Keeping these value as 0 as we did not call any reducer
-                        energy_quanta_used: EnergyQuanta { quanta: 0 },
-                        host_execution_duration: Duration::from_millis(0),
-                        request_id: None,
-                        timer: None,
-                    };
-
-                    if let Err(e) = module_host
-                        .info()
-                        .subscriptions
-                        .commit_and_broadcast_event(None, event, ctx, tx)
-                    {
-                        log::error!("Failed to delete scheduled reducer: {e:#}");
-                    }
+                    commit_and_broadcast_deletion_event(ctx, tx, module_host);
                 }
             }
             Err(_) => {
                 log::debug!(
-                    "table row corresponding to yeild scheduler id not found: tableid {}, schedulerId {}",
+                    "Table row corresponding to yield scheduler ID not found: table_id {}, scheduler_id {}",
                     id.table_id,
                     id.schedule_id
                 );
             }
-        };
+        }
+    }
+}
+
+fn commit_and_broadcast_deletion_event(ctx: &ExecutionContext, tx: MutTxId, module_host: ModuleHost) {
+    let caller_identity = module_host.info().identity;
+
+    let event = ModuleEvent {
+        timestamp: Timestamp::now(),
+        caller_identity,
+        caller_address: None,
+        function_call: ModuleFunctionCall::default(),
+        status: EventStatus::Committed(DatabaseUpdate::default()),
+        //Keeping them 0 as it is internal transaction, not by reducer
+        energy_quanta_used: EnergyQuanta { quanta: 0 },
+        host_execution_duration: Duration::from_millis(0),
+        request_id: None,
+        timer: None,
+    };
+
+    if let Err(e) = module_host
+        .info()
+        .subscriptions
+        .commit_and_broadcast_event(None, event, ctx, tx)
+    {
+        log::error!("Failed to broadcast deletion event: {e:#}");
     }
 }
 
