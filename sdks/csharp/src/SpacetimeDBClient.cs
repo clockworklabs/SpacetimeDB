@@ -8,6 +8,7 @@ using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Tasks;
 using SpacetimeDB.BSATN;
+using SpacetimeDB.Internal;
 using SpacetimeDB.ClientApi;
 using Thread = System.Threading.Thread;
 
@@ -81,7 +82,7 @@ namespace SpacetimeDB
         public event Action<ServerMessage>? onEvent;
 
         public readonly Address clientAddress = Address.Random();
-        public Identity clientIdentity { get; private set; }
+        public Identity? clientIdentity { get; private set; }
 
         private SpacetimeDB.WebSocket webSocket;
         private bool connectionClosed;
