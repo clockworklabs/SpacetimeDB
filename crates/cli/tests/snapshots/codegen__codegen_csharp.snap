@@ -1,6 +1,5 @@
 ---
 source: crates/cli/tests/codegen.rs
-assertion_line: 32
 expression: outfiles
 ---
 "AddPlayerReducer.cs" = '''
@@ -416,7 +415,6 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Serialization;
@@ -522,7 +520,6 @@ namespace SpacetimeDB
 #nullable enable
 
 using System;
-using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
 {
