@@ -67,6 +67,7 @@ spacetimedb
 │   │   │   │   └── version_check
 │   │   │   └── allocator_api2
 │   │   ├── nohash_hasher
+│   │   ├── smallvec
 │   │   └── thiserror
 │   │       └── thiserror_impl
 │   │           ├── proc_macro2 (*)
