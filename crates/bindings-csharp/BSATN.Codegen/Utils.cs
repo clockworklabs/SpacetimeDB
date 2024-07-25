@@ -151,9 +151,38 @@ public static class Utils
         }
     }
 
-    public static IEnumerable<IFieldSymbol> GetFields(INamedTypeSymbol type)
+    public static IEnumerable<IFieldSymbol> GetFields(
+        TypeDeclarationSyntax typeSyntax,
+        INamedTypeSymbol type
+    )
     {
-        return type.GetMembers().OfType<IFieldSymbol>().Where(f => !f.IsStatic);
+        // Note: we could use naively use `type.GetMembers()` to get all fields of the type,
+        // but some users add their own fields in extra partial declarations like this:
+        //
+        // ```csharp
+        // [SpacetimeDB.Type]
+        // partial class MyType
+        // {
+        //     public int TableField;
+        // }
+        //
+        // partial class MyType
+        // {
+        //     public int ExtraField;
+        // }
+        // ```
+        //
+        // In this scenario, only fields declared inside the declaration with the `[SpacetimeDB.Type]` attribute
+        // should be considered as BSATN fields, and others are expected to be ignored.
+        //
+        // To achieve this, we need to walk over the annotated type syntax node, collect the field names,
+        // and look up the resolved field symbols only for those fields.
+        return typeSyntax
+            .Members.OfType<FieldDeclarationSyntax>()
+            .SelectMany(f => f.Declaration.Variables)
+            .SelectMany(v => type.GetMembers(v.Identifier.Text))
+            .OfType<IFieldSymbol>()
+            .Where(f => !f.IsStatic);
     }
 
     // Borrowed & modified code for generating in-place extensions for partial structs/classes/etc. Source:
