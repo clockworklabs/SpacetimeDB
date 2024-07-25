@@ -24,6 +24,11 @@ public partial struct CustomClass
     public string StringField;
 }
 
+public partial struct CustomClass
+{
+    public int IgnoreExtraFields;
+}
+
 [SpacetimeDB.Type]
 public enum CustomEnum
 {

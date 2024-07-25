@@ -175,10 +175,9 @@ public class Module : IIncrementalGenerator
                 transform: (context, ct) =>
                 {
                     var tableSyntax = (TypeDeclarationSyntax)context.TargetNode;
-
                     var table = context.SemanticModel.GetDeclaredSymbol(tableSyntax)!;
 
-                    var fields = GetFields(table)
+                    var fields = GetFields(tableSyntax, table)
                         .Select(f =>
                         {
                             var indexKind = f.GetAttributes()

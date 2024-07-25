@@ -114,7 +114,7 @@ public class Type : IIncrementalGenerator
                 {
                     var typeSyntax = (TypeDeclarationSyntax)context.TargetNode;
                     var type = context.SemanticModel.GetDeclaredSymbol(typeSyntax, ct)!;
-                    var fields = GetFields(type);
+                    var fields = GetFields(typeSyntax, type);
                     var attr = context.Attributes.Single();
 
                     TypeKind kind =
