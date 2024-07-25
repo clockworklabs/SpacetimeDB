@@ -10,7 +10,8 @@
   <PropertyGroup>
     <!-- Note: the source code of this package is used in Unity too, which is limited to C# 9 and .NET Standard 2.1. -->
     <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
-    <LangVersion>9</LangVersion>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>SpacetimeDB</RootNamespace>
   </PropertyGroup>
