@@ -178,7 +178,6 @@ impl CsharpAutogen {
         if namespace != "SpacetimeDB" {
             writeln!(output, "using SpacetimeDB;");
         }
-        writeln!(output, "using SpacetimeDB.ClientApi;");
         for extra_using in extra_usings {
             writeln!(output, "using {extra_using};");
         }
@@ -607,7 +606,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
         .map(|reducer| reducer.name.deref().to_case(Case::Pascal))
         .collect();
 
-    let mut output = CsharpAutogen::new(namespace, &[]);
+    let mut output = CsharpAutogen::new(namespace, &["SpacetimeDB.ClientApi"]);
 
     writeln!(output, "public enum ReducerType");
     indented_block(&mut output, |output| {
