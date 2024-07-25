@@ -12,32 +12,25 @@
     <Company>Clockwork Labs</Company>
     <Product>SpacetimeDB</Product>
     <Description>The SpacetimeDB SDK is a software development kit (SDK) designed to simplify the interaction with SpacetimeDB server modules.</Description>
-    <Copyright>2023</Copyright>
+    <Copyright>2024</Copyright>
     <PackageProjectUrl>https://spacetimedb.com</PackageProjectUrl>
     <PackageIcon>logo.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/clockworklabs/spacetimedb-csharp-sdk</RepositoryUrl>
-    <AssemblyVersion>0.10.0</AssemblyVersion>
+    <AssemblyVersion>0.11.0</AssemblyVersion>
     <Version>$(AssemblyVersion)</Version>
     <DefaultItemExcludes>$(DefaultItemExcludes);examples/**;tests/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SpacetimeDB.BSATN.Codegen" Version="0.10.*" OutputItemType="Analyzer" />
-    <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="0.10.*" />
+    <PackageReference Include="SpacetimeDB.BSATN.Runtime" Version="0.11.*" />
 
-    <InternalsVisibleTo Include="tests" />
+    <InternalsVisibleTo Include="SpacetimeDB.Tests" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="logo.png">
-      <Pack>True</Pack>
-      <PackagePath>\</PackagePath>
-    </None>
-    <None Update="README.md">
-      <Pack>True</Pack>
-      <PackagePath>\</PackagePath>
-    </None>
+    <None Update="logo.png" Pack="true" PackagePath="" />
+    <None Update="README.md" Pack="true" PackagePath="" />
   </ItemGroup>
 
 </Project>
