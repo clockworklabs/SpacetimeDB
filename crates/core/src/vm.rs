@@ -840,9 +840,9 @@ pub(crate) mod tests {
             )
             .unwrap();
         let st_sequence_row = StSequenceRow {
-            sequence_id: 3.into(),
+            sequence_id: 4.into(),
             sequence_name: "seq_st_sequence_sequence_id_primary_key_auto".into(),
-            table_id: 2.into(),
+            table_id: ST_SEQUENCE_ID,
             col_pos: 0.into(),
             increment: 1,
             start: ST_RESERVED_SEQUENCE_RANGE as i128 + 1,

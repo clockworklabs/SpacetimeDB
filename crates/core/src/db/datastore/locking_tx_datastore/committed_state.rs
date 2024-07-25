@@ -162,8 +162,11 @@ impl CommittedState {
             .cloned()
             .enumerate()
         {
+            // Start sequence from 1,
+            // to avoid any confusion with 0 as the autoinc sentinel value.
+            let constraint_id = (i + 1).into();
             let row = StConstraintRow {
-                constraint_id: i.into(),
+                constraint_id,
                 columns: constraint.columns,
                 constraint_name: constraint.constraint_name,
                 constraints: constraint.constraints,
@@ -186,8 +189,11 @@ impl CommittedState {
             .cloned()
             .enumerate()
         {
+            // Start sequence from 1,
+            // to avoid any confusion with 0 as the autoinc sentinel value.
+            let index_id = (i + 1).into();
             let row = StIndexRow {
-                index_id: i.into(),
+                index_id,
                 table_id: index.table_id,
                 index_type: index.index_type,
                 columns: index.columns,
@@ -217,8 +223,11 @@ impl CommittedState {
         // We create sequences last to get right the starting number
         // so, we don't sort here
         for (i, col) in ref_schemas.iter().flat_map(|x| &x.sequences).enumerate() {
+            // Start sequence from 1,
+            // to avoid any confusion with 0 as the autoinc sentinel value.
+            let sequence_id = (i + 1).into();
             let row = StSequenceRow {
-                sequence_id: i.into(),
+                sequence_id,
                 sequence_name: col.sequence_name.clone(),
                 table_id: col.table_id,
                 col_pos: col.col_pos,

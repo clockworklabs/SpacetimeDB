@@ -103,7 +103,7 @@ impl MutTxId {
         // NOTE: Because `st_tables` has a unique index on `table_name`, this will
         // fail if the table already exists.
         let row = StTableRow {
-            table_id: ST_TABLE_ID,
+            table_id: 0.into(), // autoinc
             table_name: table_schema.table_name.clone(),
             table_type: table_schema.table_type,
             table_access: table_schema.table_access,
