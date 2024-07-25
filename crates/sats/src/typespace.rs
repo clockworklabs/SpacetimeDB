@@ -183,6 +183,62 @@ impl Typespace {
         }
         Ok(())
     }
+
+    /// Validates that the typespace is in "nominal normal form".
+    ///
+    /// Nominal normal form is intended for use when generating code in languages with nominal type systems.
+    ///
+    /// In nominal normal form, all `Sum` and `Product` types in the typespace must be referred to via `Ref`s. That is, all `Sum`, `Product`, `Array`, or `Map` types must contain only `Ref`s and `Builtin`s.
+    ///
+    /// Currently, certain types are exceptions to this rule and are allowed to not be behind `Ref`s:
+    /// - Unit `Product`s and empty `Sum`s.
+    /// - Specially tagged `ProductType`s, determined by `ProductType::is_special`.
+    /// - Standard optional `SumType`s, determined by `SumType::as_option`.
+    ///
+    /// Chains of refs are permitted.
+    pub fn is_nominal_normal_form(&self) -> bool {
+        /// Check that a type is not a sum or product, and directly contains no sums or products,
+        /// except for exceptional sum and product types.
+        ///
+        /// Because we do not follow `Ref`s, this is guaranteed to terminate.
+        fn is_allowed(ty: &AlgebraicType) -> bool {
+            match ty {
+                AlgebraicType::Sum(sum) => {
+                    if let Some(wrapped) = sum.as_option() {
+                        is_allowed(wrapped)
+                    } else {
+                        sum.is_empty()
+                    }
+                }
+                AlgebraicType::Product(product) => product.is_special() || product.is_unit(),
+                AlgebraicType::Array(array) => is_allowed(&array.elem_ty),
+                AlgebraicType::Map(map) => is_allowed(&map.key_ty) && is_allowed(&map.ty),
+                AlgebraicType::Ref(_) => true,
+                _ => true,
+            }
+        }
+        self.types.iter().all(|ty| match ty {
+            AlgebraicType::Sum(sum_ty) => sum_ty
+                .variants
+                .iter()
+                .all(|variant| is_allowed(&variant.algebraic_type)),
+
+            AlgebraicType::Product(product_ty) => product_ty
+                .elements
+                .iter()
+                .all(|element| is_allowed(&element.algebraic_type)),
+
+            other => is_allowed(other),
+        })
+    }
+}
+
+impl FromIterator<AlgebraicType> for Typespace {
+    fn from_iter<T: IntoIterator<Item = AlgebraicType>>(iter: T) -> Self {
+        Self {
+            types: iter.into_iter().collect(),
+        }
+    }
 }
 
 /// A trait for types that can be represented as an `AlgebraicType`
@@ -277,3 +333,51 @@ impl_st!([] bytes::Bytes, _ts => AlgebraicType::bytes());
 
 #[cfg(feature = "bytestring")]
 impl_st!([] bytestring::ByteString, _ts => AlgebraicType::String);
+
+#[cfg(test)]
+mod tests {
+    use crate::proptest::generate_nominal_typespace;
+    use proptest::prelude::*;
+
+    use super::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(512))]
+        #[test]
+        fn is_nominal(typespace in generate_nominal_typespace(5)) {
+            prop_assert!(typespace.is_nominal_normal_form());
+        }
+    }
+
+    #[test]
+    fn is_not_nominal() {
+        let bad_inner_1 = AlgebraicType::sum([("red", AlgebraicType::U8), ("green", AlgebraicType::U8)]);
+        let bad_inner_2 = AlgebraicType::product([("red", AlgebraicType::U8), ("green", AlgebraicType::U8)]);
+
+        fn assert_not_nominal(ty: AlgebraicType) {
+            let typespace = Typespace::new(vec![ty.clone()]);
+            assert!(!typespace.is_nominal_normal_form(), "{:?}", ty);
+        }
+        assert_not_nominal(AlgebraicType::product([AlgebraicType::U8, bad_inner_1.clone()]));
+        assert_not_nominal(AlgebraicType::product([AlgebraicType::U8, bad_inner_2.clone()]));
+
+        assert_not_nominal(AlgebraicType::sum([AlgebraicType::U8, bad_inner_1.clone()]));
+        assert_not_nominal(AlgebraicType::sum([AlgebraicType::U8, bad_inner_2.clone()]));
+
+        assert_not_nominal(AlgebraicType::array(bad_inner_1.clone()));
+        assert_not_nominal(AlgebraicType::array(bad_inner_2.clone()));
+
+        assert_not_nominal(AlgebraicType::option(bad_inner_1.clone()));
+        assert_not_nominal(AlgebraicType::option(bad_inner_2.clone()));
+
+        assert_not_nominal(AlgebraicType::map(AlgebraicType::U8, bad_inner_1.clone()));
+        assert_not_nominal(AlgebraicType::map(AlgebraicType::U8, bad_inner_2.clone()));
+
+        assert_not_nominal(AlgebraicType::map(bad_inner_1.clone(), AlgebraicType::U8));
+        assert_not_nominal(AlgebraicType::map(bad_inner_2.clone(), AlgebraicType::U8));
+
+        assert_not_nominal(AlgebraicType::option(AlgebraicType::array(AlgebraicType::option(
+            bad_inner_1.clone(),
+        ))));
+    }
+}

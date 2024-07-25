@@ -4,6 +4,7 @@ pub mod map_notation;
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
 use crate::meta_type::MetaType;
+use crate::product_type::{ADDRESS_TAG, IDENTITY_TAG};
 use crate::{de::Deserialize, ser::Serialize, MapType};
 use crate::{AlgebraicTypeRef, AlgebraicValue, ArrayType, ProductType, SumType, SumTypeVariant};
 use derive_more::From;
@@ -223,6 +224,22 @@ impl AlgebraicType {
         self.as_array().is_some_and(|ty| ty.elem_ty.is_u8())
     }
 
+    /// Whether this type, or the types it references, contain any `AlgebraicTypeRef`s.
+    pub fn contains_refs(&self) -> bool {
+        match self {
+            AlgebraicType::Ref(_) => true,
+            AlgebraicType::Product(ProductType { elements }) => {
+                elements.iter().any(|elem| elem.algebraic_type.contains_refs())
+            }
+            AlgebraicType::Sum(SumType { variants }) => {
+                variants.iter().any(|variant| variant.algebraic_type.contains_refs())
+            }
+            AlgebraicType::Array(array) => array.elem_ty.contains_refs(),
+            AlgebraicType::Map(map) => map.key_ty.contains_refs() || map.ty.contains_refs(),
+            _ => false,
+        }
+    }
+
     /// Returns a sum type with the given `sum`.
     pub fn sum<S: Into<SumType>>(sum: S) -> Self {
         AlgebraicType::Sum(sum.into())
@@ -246,6 +263,16 @@ impl AlgebraicType {
     /// Returns a map type from the type `key` to the type `value`.
     pub fn map(key: Self, value: Self) -> Self {
         MapType::new(key, value).into()
+    }
+
+    /// Construct a copy of the `Identity` type.
+    pub fn identity() -> Self {
+        AlgebraicType::product([(IDENTITY_TAG, AlgebraicType::bytes())])
+    }
+
+    /// Construct a copy of the `Address` type.
+    pub fn address() -> Self {
+        AlgebraicType::product([(ADDRESS_TAG, AlgebraicType::bytes())])
     }
 
     /// Returns a sum type of unit variants with names taken from `var_names`.

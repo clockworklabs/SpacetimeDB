@@ -49,10 +49,14 @@ impl SumType {
         Self { variants }
     }
 
-    /// Returns whether this sum type looks like an option type.
+    /// Check whether this sum type is a structural option type.
     ///
-    /// An option type has `some(T)` as its first variant and `none` as its second.
+    /// A structural option type has `some(T)` as its first variant and `none` as its second.
     /// That is, `{ some(T), none }` or `some: T | none` depending on your notation.
+    /// Note that `some` and `none` are lowercase, unlike Rust's `Option`.
+    /// Order matters, and an option type with these variants in the opposite order will not be recognized.
+    ///
+    /// If the type does look like a structural option type, returns the type `T`.
     pub fn as_option(&self) -> Option<&AlgebraicType> {
         match &*self.variants {
             [first, second]
@@ -64,6 +68,11 @@ impl SumType {
             }
             _ => None,
         }
+    }
+
+    /// Return whether this sum type is empty, that is, has no variants.
+    pub fn is_empty(&self) -> bool {
+        self.variants.is_empty()
     }
 
     /// Returns whether this sum type is like on in C without data attached to the variants.
