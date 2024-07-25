@@ -194,7 +194,7 @@ impl EventStatus {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ModuleFunctionCall {
     pub reducer: String,
     pub reducer_id: ReducerId,
