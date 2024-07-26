@@ -4,8 +4,8 @@ use super::{
 use crate::{
     db::datastore::system_tables::{
         StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields,
-        StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMNS_ID,
-        ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_SCHEDULED_ID, ST_SEQUENCES_ID, ST_TABLES_ID,
+        StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMN_ID,
+        ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
     },
     error::TableError,
     execution_context::ExecutionContext,
@@ -27,7 +27,7 @@ pub trait StateView {
         let ctx = ExecutionContext::internal(database_address);
         let name = &<Box<str>>::from(table_name).into();
         let row = self
-            .iter_by_col_eq(&ctx, ST_TABLES_ID, StTableFields::TableName, name)?
+            .iter_by_col_eq(&ctx, ST_TABLE_ID, StTableFields::TableName, name)?
             .next();
         Ok(row.map(|row| row.read_col(StTableFields::TableId).unwrap()))
     }
@@ -64,7 +64,7 @@ pub trait StateView {
         // Look up the table_name for the table in question.
         let value_eq = &table_id.into();
         let row = self
-            .iter_by_col_eq(ctx, ST_TABLES_ID, StTableFields::TableId, value_eq)?
+            .iter_by_col_eq(ctx, ST_TABLE_ID, StTableFields::TableId, value_eq)?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
         let row = StTableRow::try_from(row)?;
@@ -75,7 +75,7 @@ pub trait StateView {
 
         // Look up the columns for the table in question.
         let mut columns = self
-            .iter_by_col_eq(ctx, ST_COLUMNS_ID, StColumnFields::TableId, value_eq)?
+            .iter_by_col_eq(ctx, ST_COLUMN_ID, StColumnFields::TableId, value_eq)?
             .map(|row| {
                 let row = StColumnRow::try_from(row)?;
                 Ok(ColumnSchema {
@@ -90,7 +90,7 @@ pub trait StateView {
 
         // Look up the constraints for the table in question.
         let constraints = self
-            .iter_by_col_eq(ctx, ST_CONSTRAINTS_ID, StConstraintFields::TableId, value_eq)?
+            .iter_by_col_eq(ctx, ST_CONSTRAINT_ID, StConstraintFields::TableId, value_eq)?
             .map(|row| {
                 let row = StConstraintRow::try_from(row)?;
                 Ok(ConstraintSchema {
@@ -105,7 +105,7 @@ pub trait StateView {
 
         // Look up the sequences for the table in question.
         let sequences = self
-            .iter_by_col_eq(ctx, ST_SEQUENCES_ID, StSequenceFields::TableId, value_eq)?
+            .iter_by_col_eq(ctx, ST_SEQUENCE_ID, StSequenceFields::TableId, value_eq)?
             .map(|row| {
                 let row = StSequenceRow::try_from(row)?;
                 Ok(SequenceSchema {
@@ -124,7 +124,7 @@ pub trait StateView {
 
         // Look up the indexes for the table in question.
         let indexes = self
-            .iter_by_col_eq(ctx, ST_INDEXES_ID, StIndexFields::TableId, value_eq)?
+            .iter_by_col_eq(ctx, ST_INDEX_ID, StIndexFields::TableId, value_eq)?
             .map(|row| {
                 let row = StIndexRow::try_from(row)?;
                 Ok(IndexSchema {

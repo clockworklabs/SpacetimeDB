@@ -3,6 +3,7 @@
 //!
 //! When defining a new system table, remember to:
 //! - Define constants for its ID and name.
+//! - Name it in singular (`st_column` not `st_columns`).
 //! - Add it to [`system_tables`], and define a constant for its index there.
 //! - Use [`st_fields_enum`] to define its column enum.
 //! - Define a function that returns its schema.
@@ -36,32 +37,32 @@ use super::locking_tx_datastore::tx::TxId;
 use super::locking_tx_datastore::MutTxId;
 
 /// The static ID of the table that defines tables
-pub(crate) const ST_TABLES_ID: TableId = TableId(0);
+pub(crate) const ST_TABLE_ID: TableId = TableId(0);
 /// The static ID of the table that defines columns
-pub(crate) const ST_COLUMNS_ID: TableId = TableId(1);
+pub(crate) const ST_COLUMN_ID: TableId = TableId(1);
 /// The static ID of the table that defines sequences
-pub(crate) const ST_SEQUENCES_ID: TableId = TableId(2);
+pub(crate) const ST_SEQUENCE_ID: TableId = TableId(2);
 /// The static ID of the table that defines indexes
-pub(crate) const ST_INDEXES_ID: TableId = TableId(3);
+pub(crate) const ST_INDEX_ID: TableId = TableId(3);
 /// The static ID of the table that defines constraints
-pub(crate) const ST_CONSTRAINTS_ID: TableId = TableId(4);
+pub(crate) const ST_CONSTRAINT_ID: TableId = TableId(4);
 /// The static ID of the table that defines the stdb module associated with
 /// the database
 pub(crate) const ST_MODULE_ID: TableId = TableId(5);
 /// The static ID of the table that defines connected clients
-pub(crate) const ST_CLIENTS_ID: TableId = TableId(6);
+pub(crate) const ST_CLIENT_ID: TableId = TableId(6);
 /// The static ID of the table that defines system variables
 pub(crate) const ST_VAR_ID: TableId = TableId(7);
 /// The static ID of the table that defines scheduled tables
 pub(crate) const ST_SCHEDULED_ID: TableId = TableId(8);
 
-pub(crate) const ST_TABLES_NAME: &str = "st_table";
-pub(crate) const ST_COLUMNS_NAME: &str = "st_columns";
-pub(crate) const ST_SEQUENCES_NAME: &str = "st_sequence";
-pub(crate) const ST_INDEXES_NAME: &str = "st_indexes";
-pub(crate) const ST_CONSTRAINTS_NAME: &str = "st_constraints";
+pub(crate) const ST_TABLE_NAME: &str = "st_table";
+pub(crate) const ST_COLUMN_NAME: &str = "st_column";
+pub(crate) const ST_SEQUENCE_NAME: &str = "st_sequence";
+pub(crate) const ST_INDEX_NAME: &str = "st_index";
+pub(crate) const ST_CONSTRAINT_NAME: &str = "st_constraint";
 pub(crate) const ST_MODULE_NAME: &str = "st_module";
-pub(crate) const ST_CLIENTS_NAME: &str = "st_clients";
+pub(crate) const ST_CLIENT_NAME: &str = "st_client";
 pub(crate) const ST_SCHEDULED_NAME: &str = "st_scheduled";
 pub(crate) const ST_VAR_NAME: &str = "st_var";
 
@@ -85,24 +86,25 @@ pub(crate) const ST_RESERVED_SEQUENCE_RANGE: u32 = 4096;
 #[derive(Debug, Display)]
 pub enum SystemTable {
     st_table,
-    st_columns,
+    st_column,
     st_sequence,
-    st_indexes,
-    st_constraints,
+    st_index,
+    st_constraint,
 }
+
 pub(crate) fn system_tables() -> [TableSchema; 9] {
     [
         st_table_schema(),
-        st_columns_schema(),
-        st_indexes_schema(),
-        st_constraints_schema(),
+        st_column_schema(),
+        st_index_schema(),
+        st_constraint_schema(),
         st_module_schema(),
-        st_clients_schema(),
+        st_client_schema(),
         st_var_schema(),
         st_scheduled_schema(),
         // Is important this is always last, so the starting sequence for each
         // system table is correct.
-        st_sequences_schema(),
+        st_sequence_schema(),
     ]
 }
 
@@ -128,15 +130,16 @@ pub trait StFields: Copy + Sized {
 }
 
 // The following are indices into the array returned by [`system_tables`].
-pub(crate) const ST_TABLES_IDX: usize = 0;
-pub(crate) const ST_COLUMNS_IDX: usize = 1;
-pub(crate) const ST_INDEXES_IDX: usize = 2;
-pub(crate) const ST_CONSTRAINTS_IDX: usize = 3;
+pub(crate) const ST_TABLE_IDX: usize = 0;
+pub(crate) const ST_COLUMN_IDX: usize = 1;
+pub(crate) const ST_INDEX_IDX: usize = 2;
+pub(crate) const ST_CONSTRAINT_IDX: usize = 3;
 pub(crate) const ST_MODULE_IDX: usize = 4;
 pub(crate) const ST_CLIENT_IDX: usize = 5;
 pub(crate) const ST_VAR_IDX: usize = 6;
 pub(crate) const ST_SCHEDULED_IDX: usize = 7;
-pub(crate) const ST_SEQUENCES_IDX: usize = 8;
+pub(crate) const ST_SEQUENCE_IDX: usize = 8;
+
 macro_rules! st_fields_enum {
     ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
         #[derive(Copy, Clone, Debug)]
@@ -227,7 +230,7 @@ st_fields_enum!(enum StModuleFields {
     "program_bytes", ProgramBytes = 4,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
-st_fields_enum!(enum StClientsFields {
+st_fields_enum!(enum StClientFields {
     "identity", Identity = 0,
     "address", Address = 1,
 });
@@ -241,16 +244,17 @@ st_fields_enum!(enum StScheduledFields {
     "table_id", TableId = 0,
     "reducer_name", ReducerName = 1,
 });
-/// System Table [ST_TABLES_NAME]
+
+/// System Table [ST_TABLE_NAME]
 ///
 /// | table_id | table_name  | table_type | table_access |
 /// |----------|-------------|----------- |------------- |
 /// | 4        | "customers" | "user"     | "public"     |
 fn st_table_schema() -> TableSchema {
     TableSchema::from_def(
-        ST_TABLES_ID,
+        ST_TABLE_ID,
         RawTableDefV8::new(
-            ST_TABLES_NAME.into(),
+            ST_TABLE_NAME.into(),
             vec![
                 RawColumnDefV8::sys(StTableFields::TableId.name(), AlgebraicType::U32),
                 RawColumnDefV8::sys(StTableFields::TableName.name(), AlgebraicType::String),
@@ -264,16 +268,16 @@ fn st_table_schema() -> TableSchema {
     )
 }
 
-/// System Table [ST_COLUMNS_NAME]
+/// System Table [ST_COLUMN_NAME]
 ///
 /// | table_id | col_id | col_name | col_type            |
 /// |----------|---------|----------|--------------------|
 /// | 1        | 0       | "id"     | AlgebraicType::U32 |
-fn st_columns_schema() -> TableSchema {
+fn st_column_schema() -> TableSchema {
     TableSchema::from_def(
-        ST_COLUMNS_ID,
+        ST_COLUMN_ID,
         RawTableDefV8::new(
-            ST_COLUMNS_NAME.into(),
+            ST_COLUMN_NAME.into(),
             vec![
                 RawColumnDefV8::sys(StColumnFields::TableId.name(), AlgebraicType::U32),
                 RawColumnDefV8::sys(StColumnFields::ColPos.name(), AlgebraicType::U32),
@@ -290,16 +294,16 @@ fn st_columns_schema() -> TableSchema {
     )
 }
 
-/// System Table [ST_INDEXES]
+/// System Table [ST_INDEX_NAME]
 ///
 /// | index_id | table_id | index_name  | columns | is_unique | index_type |
 /// |----------|----------|-------------|---------|-----------|------------|
 /// | 1        |          | "ix_sample" | [1]     | false     | "btree"    |
-fn st_indexes_schema() -> TableSchema {
+fn st_index_schema() -> TableSchema {
     TableSchema::from_def(
-        ST_INDEXES_ID,
+        ST_INDEX_ID,
         RawTableDefV8::new(
-            ST_INDEXES_NAME.into(),
+            ST_INDEX_NAME.into(),
             vec![
                 RawColumnDefV8::sys(StIndexFields::IndexId.name(), AlgebraicType::U32),
                 RawColumnDefV8::sys(StIndexFields::TableId.name(), AlgebraicType::U32),
@@ -315,16 +319,16 @@ fn st_indexes_schema() -> TableSchema {
     )
 }
 
-/// System Table [ST_SEQUENCES]
+/// System Table [ST_SEQUENCE_NAME]
 ///
 /// | sequence_id | sequence_name     | increment | start | min_value | max_value | table_id | col_pos| allocated |
 /// |-------------|-------------------|-----------|-------|-----------|-----------|----------|--------|-----------|
 /// | 1           | "seq_customer_id" | 1         | 100   | 10        | 1200      | 1        | 1      | 200       |
-fn st_sequences_schema() -> TableSchema {
+fn st_sequence_schema() -> TableSchema {
     TableSchema::from_def(
-        ST_SEQUENCES_ID,
+        ST_SEQUENCE_ID,
         RawTableDefV8::new(
-            ST_SEQUENCES_NAME.into(),
+            ST_SEQUENCE_NAME.into(),
             vec![
                 RawColumnDefV8::sys(StSequenceFields::SequenceId.name(), AlgebraicType::U32),
                 RawColumnDefV8::sys(StSequenceFields::SequenceName.name(), AlgebraicType::String),
@@ -343,16 +347,16 @@ fn st_sequences_schema() -> TableSchema {
     )
 }
 
-/// System Table [ST_CONSTRAINTS_NAME]
+/// System Table [ST_CONSTRAINT_NAME]
 ///
 /// | constraint_id | constraint_name      | constraints | table_id | columns |
 /// |---------------|-------------------- -|-------------|-------|------------|
 /// | 1             | "unique_customer_id" | 1           | 100   | [1, 4]     |
-fn st_constraints_schema() -> TableSchema {
+fn st_constraint_schema() -> TableSchema {
     TableSchema::from_def(
-        ST_CONSTRAINTS_ID,
+        ST_CONSTRAINT_ID,
         RawTableDefV8::new(
-            ST_CONSTRAINTS_NAME.into(),
+            ST_CONSTRAINT_NAME.into(),
             vec![
                 RawColumnDefV8::sys(StConstraintFields::ConstraintId.name(), AlgebraicType::U32),
                 RawColumnDefV8::sys(StConstraintFields::ConstraintName.name(), AlgebraicType::String),
@@ -400,23 +404,23 @@ pub(crate) fn st_module_schema() -> TableSchema {
     )
 }
 
-/// System table [ST_CLIENTS_NAME]
+/// System table [ST_CLIENT_NAME]
 ///
 // identity                                                                                | address
 // -----------------------------------------------------------------------------------------+--------------------------------------------------------
 //  (__identity_bytes = 0x7452047061ea2502003412941d85a42f89b0702588b823ab55fc4f12e9ea8363) | (__address_bytes = 0x6bdea3ab517f5857dc9b1b5fe99e1b14)
-fn st_clients_schema() -> TableSchema {
+fn st_client_schema() -> TableSchema {
     TableSchema::from_def(
-        ST_CLIENTS_ID,
+        ST_CLIENT_ID,
         RawTableDefV8::new(
-            ST_CLIENTS_NAME.into(),
+            ST_CLIENT_NAME.into(),
             vec![
-                RawColumnDefV8::sys(StClientsFields::Identity.name(), AlgebraicType::bytes()),
-                RawColumnDefV8::sys(StClientsFields::Address.name(), AlgebraicType::bytes()),
+                RawColumnDefV8::sys(StClientFields::Identity.name(), AlgebraicType::bytes()),
+                RawColumnDefV8::sys(StClientFields::Address.name(), AlgebraicType::bytes()),
             ],
         )
         .with_type(StTableType::System)
-        .with_column_index(col_list![StClientsFields::Identity, StClientsFields::Address], true),
+        .with_column_index(col_list![StClientFields::Identity, StClientFields::Address], true),
     )
 }
 
@@ -463,13 +467,13 @@ pub fn st_var_schema() -> TableSchema {
 /// This must be kept in sync with the set of system tables.
 pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
     match table_id {
-        ST_TABLES_ID => Some(st_table_schema()),
-        ST_COLUMNS_ID => Some(st_columns_schema()),
-        ST_SEQUENCES_ID => Some(st_sequences_schema()),
-        ST_INDEXES_ID => Some(st_indexes_schema()),
-        ST_CONSTRAINTS_ID => Some(st_constraints_schema()),
+        ST_TABLE_ID => Some(st_table_schema()),
+        ST_COLUMN_ID => Some(st_column_schema()),
+        ST_SEQUENCE_ID => Some(st_sequence_schema()),
+        ST_INDEX_ID => Some(st_index_schema()),
+        ST_CONSTRAINT_ID => Some(st_constraint_schema()),
         ST_MODULE_ID => Some(st_module_schema()),
-        ST_CLIENTS_ID => Some(st_clients_schema()),
+        ST_CLIENT_ID => Some(st_client_schema()),
         ST_VAR_ID => Some(st_var_schema()),
         ST_SCHEDULED_ID => Some(st_scheduled_schema()),
         _ => None,
@@ -497,7 +501,7 @@ impl TryFrom<RowRef<'_>> for StTableRow<Box<str>> {
             .deref()
             .try_into()
             .map_err(|x: &str| TableError::DecodeField {
-                table: ST_TABLES_NAME.into(),
+                table: ST_TABLE_NAME.into(),
                 field: StTableFields::TableType.col_name(),
                 expect: format!("`{}` or `{}`", StTableType::System.as_str(), StTableType::User.as_str()),
                 found: x.to_string(),
@@ -508,7 +512,7 @@ impl TryFrom<RowRef<'_>> for StTableRow<Box<str>> {
             .deref()
             .try_into()
             .map_err(|x: &str| TableError::DecodeField {
-                table: ST_TABLES_NAME.into(),
+                table: ST_TABLE_NAME.into(),
                 field: StTableFields::TablesAccess.col_name(),
                 expect: format!("`{}` or `{}`", StAccess::Public.as_str(), StAccess::Private.as_str()),
                 found: x.to_string(),
@@ -870,8 +874,8 @@ impl TryFrom<RowRef<'_>> for StClientsRow {
     type Error = DBError;
 
     fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
-        let identity = read_identity_from_col(row, StClientsFields::Identity)?;
-        let address = read_addr_from_col(row, StClientsFields::Address)?;
+        let identity = read_identity_from_col(row, StClientFields::Identity)?;
+        let address = read_addr_from_col(row, StClientFields::Address)?;
         Ok(Self { identity, address })
     }
 }

@@ -5,7 +5,7 @@ use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::system_tables::{StClientsFields, StClientsRow, ST_CLIENTS_ID};
+use crate::db::datastore::system_tables::{StClientFields, StClientsRow, ST_CLIENT_ID};
 use crate::db::datastore::traits::{IsolationLevel, TxData};
 use crate::db::update::UpdateDatabaseError;
 use crate::energy::EnergyQuanta;
@@ -634,19 +634,19 @@ impl ModuleHost {
         };
 
         if connected {
-            db.insert(mut_tx, ST_CLIENTS_ID, row.into()).map(|_| ())
+            db.insert(mut_tx, ST_CLIENT_ID, row.into()).map(|_| ())
         } else {
             let row = db
                 .iter_by_col_eq_mut(
                     ctx,
                     mut_tx,
-                    ST_CLIENTS_ID,
-                    col_list![StClientsFields::Identity, StClientsFields::Address],
+                    ST_CLIENT_ID,
+                    col_list![StClientFields::Identity, StClientFields::Address],
                     &algebraic_value::AlgebraicValue::product(row),
                 )?
                 .map(|row_ref| row_ref.pointer())
                 .collect::<SmallVec<[_; 1]>>();
-            db.delete(mut_tx, ST_CLIENTS_ID, row);
+            db.delete(mut_tx, ST_CLIENT_ID, row);
             Ok::<(), DBError>(())
         }
     }
