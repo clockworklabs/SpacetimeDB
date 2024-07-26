@@ -1,5 +1,8 @@
 //! Methods and traits for dealing with multiple errors simultaneously.
 
+use crate::map::HashSet;
+use std::hash::Hash;
+
 /// A non-empty stream of errors.
 ///
 /// Logically, this type is unordered, and it is not guaranteed that the errors will be returned in the order they were added. Attach identifying information to your errors if you want to sort them.
@@ -48,6 +51,24 @@ impl<E> ErrorStream<E> {
                 None
             }
         }
+    }
+}
+
+impl<E: Ord + Eq> ErrorStream<E> {
+    /// Sort and deduplicate the errors in the error stream.
+    pub fn sort_deduplicate(mut self) -> Self {
+        self.0.sort_unstable();
+        self.0.dedup();
+        self
+    }
+}
+impl<E: Eq + Hash> ErrorStream<E> {
+    /// Hash and deduplicate the errors in the error stream.
+    /// The resulting error stream has an arbitrary order.
+    pub fn hash_deduplicate(mut self) -> Self {
+        let set = self.0.drain(..).collect::<HashSet<_>>();
+        self.0.extend(set);
+        self
     }
 }
 
@@ -164,7 +185,7 @@ pub trait CollectAllErrors {
     ///
     /// struct MyError { cause: String };
     ///
-    /// fn operation(data: i32, checksum: u32) -> Result<i32, MyError> {
+    /// fn operation(data: i32, checksum: u32) -> Result<i32, ErrorStream<MyError>> {
     /// #   Ok(1)
     /// }
     ///
@@ -178,27 +199,30 @@ pub trait CollectAllErrors {
     fn collect_all_errors<C: FromIterator<Self::Item>>(self) -> Result<C, ErrorStream<Self::Error>>;
 }
 
-impl<T, E, I: Iterator<Item = Result<T, E>>> CollectAllErrors for I {
+impl<T, E, I: Iterator<Item = Result<T, ErrorStream<E>>>> CollectAllErrors for I {
     type Item = T;
     type Error = E;
 
     fn collect_all_errors<Collection: FromIterator<Self::Item>>(self) -> Result<Collection, ErrorStream<Self::Error>> {
-        let mut errors = ErrorStream(Default::default());
+        // not in a valid state: contains no errors!
+        let mut all_errors = ErrorStream(Default::default());
 
         let collection = self
             .filter_map(|result| match result {
                 Ok(value) => Some(value),
-                Err(error) => {
-                    errors.0.push(error);
+                Err(errors) => {
+                    all_errors.extend(errors);
                     None
                 }
             })
             .collect::<Collection>();
 
-        if errors.0.is_empty() {
+        if all_errors.0.is_empty() {
+            // invalid state is not returned.
             Ok(collection)
         } else {
-            Err(errors)
+            // not empty, so we're good to return it.
+            Err(all_errors)
         }
     }
 }
@@ -236,16 +260,16 @@ mod tests {
 
     #[test]
     fn collect_all_errors() {
-        let data: Vec<std::result::Result<i32, MyError>> = vec![Ok(1), Ok(2), Ok(3)];
+        let data: Vec<Result<i32>> = vec![Ok(1), Ok(2), Ok(3)];
         assert_eq!(data.into_iter().collect_all_errors::<Vec<_>>(), Ok(vec![1, 2, 3]));
 
-        let data = vec![Ok(1), Err(MyError(0)), Ok(3)];
+        let data = vec![Ok(1), Err(MyError(0).into()), Ok(3)];
         assert_eq!(
             data.into_iter().collect_all_errors::<Vec<_>>(),
             Err(ErrorStream([MyError(0)].into()))
         );
 
-        let data: Vec<std::result::Result<i32, MyError>> = vec![Err(MyError(1)), Err(MyError(2)), Err(MyError(3))];
+        let data: Vec<Result<i32>> = vec![Err(MyError(1).into()), Err(MyError(2).into()), Err(MyError(3).into())];
         assert_eq!(
             data.into_iter().collect_all_errors::<Vec<_>>(),
             Err(ErrorStream(smallvec::smallvec![MyError(1), MyError(2), MyError(3)]))

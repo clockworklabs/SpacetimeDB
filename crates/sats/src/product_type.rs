@@ -1,3 +1,5 @@
+use spacetimedb_primitives::ColId;
+
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
 use crate::meta_type::MetaType;
@@ -87,6 +89,16 @@ impl ProductType {
         self.elements
             .iter()
             .position(|field| field.name.as_deref() == Some(name))
+    }
+
+    /// Iterate over the `ColId`s for this `ProductType`.
+    pub fn col_ids(&self) -> impl Iterator<Item = ColId> + '_ {
+        (0..self.elements.len()).map(ColId::from)
+    }
+
+    /// Get a column of this `ProductType` by `ColId`.
+    pub fn get_column(&self, col_id: impl Into<ColId>) -> Option<&ProductTypeElement> {
+        self.elements.get(col_id.into().0 as usize)
     }
 }
 

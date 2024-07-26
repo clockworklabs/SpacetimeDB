@@ -232,6 +232,17 @@ impl ColList {
         self.push_inner(col, self.last() < col);
     }
 
+    /// Try to create a `ColList` from an iterator.
+    ///
+    /// Fails if the iterator is empty.
+    pub fn try_from_iter<Id: Into<ColId>>(iter: impl IntoIterator<Item = Id>) -> Result<Self, EmptyColListError> {
+        let mut builder = ColListBuilder::new();
+        for col in iter {
+            builder.push(col.into());
+        }
+        builder.build()
+    }
+
     /// Push `col` onto the list.
     ///
     /// If `col >= 63` or `col <= last_col`, the list will become heap allocated if not already.
