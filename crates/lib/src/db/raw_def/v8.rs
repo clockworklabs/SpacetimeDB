@@ -10,6 +10,11 @@ use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::{de, ser};
 
+// TODO(1.0): move this definition into this file,
+// along with the other structs contained in it,
+// which are currently in the crate root.
+pub use crate::RawModuleDefV8;
+
 /// The amount sequences allocate each time they over-run their allocation.
 ///
 /// Note that we do not perform an initial allocation during `create_sequence` or at startup.
