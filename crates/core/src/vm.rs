@@ -618,8 +618,8 @@ pub(crate) mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{
         StColumnFields, StColumnRow, StFields as _, StIndexFields, StIndexRow, StSequenceFields, StSequenceRow,
-        StTableFields, StTableRow, ST_COLUMNS_ID, ST_COLUMNS_NAME, ST_INDEXES_ID, ST_INDEXES_NAME,
-        ST_RESERVED_SEQUENCE_RANGE, ST_SEQUENCES_ID, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_NAME,
+        StTableFields, StTableRow, ST_COLUMN_ID, ST_COLUMN_NAME, ST_INDEX_ID, ST_INDEX_NAME,
+        ST_RESERVED_SEQUENCE_RANGE, ST_SEQUENCE_ID, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_NAME,
     };
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::execution_context::ExecutionContext;
@@ -743,23 +743,23 @@ pub(crate) mod tests {
     #[test]
     fn test_query_catalog_tables() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
-        let schema = &*stdb.schema_for_table(&stdb.begin_tx(), ST_TABLES_ID).unwrap();
+        let schema = &*stdb.schema_for_table(&stdb.begin_tx(), ST_TABLE_ID).unwrap();
 
         let q = QueryExpr::new(schema)
             .with_select_cmp(
                 OpCmp::Eq,
-                FieldName::new(ST_TABLES_ID, StTableFields::TableName.into()),
-                scalar(ST_TABLES_NAME),
+                FieldName::new(ST_TABLE_ID, StTableFields::TableName.into()),
+                scalar(ST_TABLE_NAME),
             )
             .unwrap();
         let st_table_row = StTableRow {
-            table_id: ST_TABLES_ID,
-            table_name: ST_TABLES_NAME.into(),
+            table_id: ST_TABLE_ID,
+            table_name: ST_TABLE_NAME.into(),
             table_type: StTableType::System,
             table_access: StAccess::Public,
         }
         .into();
-        check_catalog(&stdb, ST_TABLES_NAME, st_table_row, q, schema);
+        check_catalog(&stdb, ST_TABLE_NAME, st_table_row, q, schema);
 
         Ok(())
     }
@@ -767,29 +767,29 @@ pub(crate) mod tests {
     #[test]
     fn test_query_catalog_columns() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
-        let schema = &*stdb.schema_for_table(&stdb.begin_tx(), ST_COLUMNS_ID).unwrap();
+        let schema = &*stdb.schema_for_table(&stdb.begin_tx(), ST_COLUMN_ID).unwrap();
 
         let q = QueryExpr::new(schema)
             .with_select_cmp(
                 OpCmp::Eq,
-                FieldName::new(ST_COLUMNS_ID, StColumnFields::TableId.into()),
-                scalar(ST_COLUMNS_ID),
+                FieldName::new(ST_COLUMN_ID, StColumnFields::TableId.into()),
+                scalar(ST_COLUMN_ID),
             )
             .unwrap()
             .with_select_cmp(
                 OpCmp::Eq,
-                FieldName::new(ST_COLUMNS_ID, StColumnFields::ColPos.into()),
+                FieldName::new(ST_COLUMN_ID, StColumnFields::ColPos.into()),
                 scalar(StColumnFields::TableId as u32),
             )
             .unwrap();
         let st_column_row = StColumnRow {
-            table_id: ST_COLUMNS_ID,
+            table_id: ST_COLUMN_ID,
             col_pos: StColumnFields::TableId.col_id(),
             col_name: StColumnFields::TableId.col_name(),
             col_type: AlgebraicType::U32,
         }
         .into();
-        check_catalog(&stdb, ST_COLUMNS_NAME, st_column_row, q, schema);
+        check_catalog(&stdb, ST_COLUMN_NAME, st_column_row, q, schema);
 
         Ok(())
     }
@@ -805,11 +805,11 @@ pub(crate) mod tests {
         let index = RawIndexDefV8::btree("idx_1".into(), ColId(0), true);
         let index_id = db.with_auto_commit(&ctx, |tx| db.create_index(tx, table_id, index))?;
 
-        let indexes_schema = &*db.schema_for_table(&db.begin_tx(), ST_INDEXES_ID).unwrap();
+        let indexes_schema = &*db.schema_for_table(&db.begin_tx(), ST_INDEX_ID).unwrap();
         let q = QueryExpr::new(indexes_schema)
             .with_select_cmp(
                 OpCmp::Eq,
-                FieldName::new(ST_INDEXES_ID, StIndexFields::IndexName.into()),
+                FieldName::new(ST_INDEX_ID, StIndexFields::IndexName.into()),
                 scalar("idx_1"),
             )
             .unwrap();
@@ -822,7 +822,7 @@ pub(crate) mod tests {
             index_type: IndexType::BTree,
         }
         .into();
-        check_catalog(&db, ST_INDEXES_NAME, st_index_row, q, indexes_schema);
+        check_catalog(&db, ST_INDEX_NAME, st_index_row, q, indexes_schema);
 
         Ok(())
     }
@@ -831,12 +831,12 @@ pub(crate) mod tests {
     fn test_query_catalog_sequences() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
-        let schema = &*db.schema_for_table(&db.begin_tx(), ST_SEQUENCES_ID).unwrap();
+        let schema = &*db.schema_for_table(&db.begin_tx(), ST_SEQUENCE_ID).unwrap();
         let q = QueryExpr::new(schema)
             .with_select_cmp(
                 OpCmp::Eq,
-                FieldName::new(ST_SEQUENCES_ID, StSequenceFields::TableId.into()),
-                scalar(ST_SEQUENCES_ID),
+                FieldName::new(ST_SEQUENCE_ID, StSequenceFields::TableId.into()),
+                scalar(ST_SEQUENCE_ID),
             )
             .unwrap();
         let st_sequence_row = StSequenceRow {
@@ -851,7 +851,7 @@ pub(crate) mod tests {
             allocated: ST_RESERVED_SEQUENCE_RANGE as i128,
         }
         .into();
-        check_catalog(&db, ST_SEQUENCES_NAME, st_sequence_row, q, schema);
+        check_catalog(&db, ST_SEQUENCE_NAME, st_sequence_row, q, schema);
 
         Ok(())
     }

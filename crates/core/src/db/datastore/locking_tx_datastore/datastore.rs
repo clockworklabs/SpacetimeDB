@@ -12,7 +12,7 @@ use crate::{
             system_tables::{
                 read_addr_from_col, read_bytes_from_col, read_hash_from_col, read_identity_from_col,
                 system_table_schema, ModuleKind, StClientsRow, StModuleFields, StModuleRow, StTableFields,
-                ST_CLIENTS_ID, ST_MODULE_ID, ST_TABLES_ID,
+                ST_CLIENT_ID, ST_MODULE_ID, ST_TABLE_ID,
             },
             traits::{
                 DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, Program, RowTypeForTable, Tx, TxData,
@@ -217,7 +217,7 @@ impl Locking {
         ctx: &'a ExecutionContext,
         tx: &'a TxId,
     ) -> Result<impl Iterator<Item = Result<(Identity, Address)>> + 'a> {
-        let iter = self.iter_tx(ctx, tx, ST_CLIENTS_ID)?.map(|row_ref| {
+        let iter = self.iter_tx(ctx, tx, ST_CLIENT_ID)?.map(|row_ref| {
             let row = StClientsRow::try_from(row_ref)?;
             Ok((row.identity, row.address))
         });
@@ -311,7 +311,7 @@ impl TxDatastore for Locking {
     }
 
     fn get_all_tables_tx(&self, ctx: &ExecutionContext, tx: &Self::Tx) -> Result<Vec<Arc<TableSchema>>> {
-        self.iter_tx(ctx, tx, ST_TABLES_ID)?
+        self.iter_tx(ctx, tx, ST_TABLE_ID)?
             .map(|row_ref| {
                 let table_id = row_ref.read_col(StTableFields::TableId)?;
                 self.schema_for_table_tx(tx, table_id)
@@ -939,8 +939,9 @@ fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
 mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{
-        system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, StVarValue, ST_COLUMNS_ID,
-        ST_CONSTRAINTS_ID, ST_INDEXES_ID, ST_RESERVED_SEQUENCE_RANGE, ST_SEQUENCES_ID,
+        system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, StVarValue, ST_CLIENT_NAME,
+        ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME,
+        ST_RESERVED_SEQUENCE_RANGE, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME, ST_TABLE_NAME, ST_VAR_NAME,
     };
     use crate::db::datastore::traits::{IsolationLevel, MutTx};
     use crate::db::datastore::Result;
@@ -974,7 +975,7 @@ mod tests {
         pub fn scan_st_tables(&self) -> Result<Vec<StTableRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, ST_TABLES_ID)?
+                .iter(self.ctx, ST_TABLE_ID)?
                 .map(|row| StTableRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
@@ -987,7 +988,7 @@ mod tests {
         ) -> Result<Vec<StTableRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter_by_col_eq(self.ctx, ST_TABLES_ID, cols.into(), value)?
+                .iter_by_col_eq(self.ctx, ST_TABLE_ID, cols.into(), value)?
                 .map(|row| StTableRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.table_id)
                 .collect::<Vec<_>>())
@@ -996,7 +997,7 @@ mod tests {
         pub fn scan_st_columns(&self) -> Result<Vec<StColumnRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, ST_COLUMNS_ID)?
+                .iter(self.ctx, ST_COLUMN_ID)?
                 .map(|row| StColumnRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
@@ -1009,7 +1010,7 @@ mod tests {
         ) -> Result<Vec<StColumnRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter_by_col_eq(self.ctx, ST_COLUMNS_ID, cols.into(), value)?
+                .iter_by_col_eq(self.ctx, ST_COLUMN_ID, cols.into(), value)?
                 .map(|row| StColumnRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.col_pos))
                 .collect::<Vec<_>>())
@@ -1018,7 +1019,7 @@ mod tests {
         pub fn scan_st_constraints(&self) -> Result<Vec<StConstraintRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, ST_CONSTRAINTS_ID)?
+                .iter(self.ctx, ST_CONSTRAINT_ID)?
                 .map(|row| StConstraintRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.constraint_id)
                 .collect::<Vec<_>>())
@@ -1027,7 +1028,7 @@ mod tests {
         pub fn scan_st_sequences(&self) -> Result<Vec<StSequenceRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, ST_SEQUENCES_ID)?
+                .iter(self.ctx, ST_SEQUENCE_ID)?
                 .map(|row| StSequenceRow::try_from(row).unwrap())
                 .sorted_by_key(|x| (x.table_id, x.sequence_id))
                 .collect::<Vec<_>>())
@@ -1036,7 +1037,7 @@ mod tests {
         pub fn scan_st_indexes(&self) -> Result<Vec<StIndexRow<Box<str>>>> {
             Ok(self
                 .db
-                .iter(self.ctx, ST_INDEXES_ID)?
+                .iter(self.ctx, ST_INDEX_ID)?
                 .map(|row| StIndexRow::try_from(row).unwrap())
                 .sorted_by_key(|x| x.index_id)
                 .collect::<Vec<_>>())
@@ -1311,15 +1312,15 @@ mod tests {
         let query = query_st_tables(&ctx, &tx);
         #[rustfmt::skip]
         assert_eq!(query.scan_st_tables()?, map_array([
-            TableRow { id: 0, name: "st_table", ty: StTableType::System, access: StAccess::Public },
-            TableRow { id: 1, name: "st_columns", ty: StTableType::System, access: StAccess::Public },
-            TableRow { id: 2, name: "st_sequence", ty: StTableType::System, access: StAccess::Public },
-            TableRow { id: 3, name: "st_indexes", ty: StTableType::System, access: StAccess::Public },
-            TableRow { id: 4, name: "st_constraints", ty: StTableType::System, access: StAccess::Public },
-            TableRow { id: 5, name: "st_module", ty: StTableType::System, access: StAccess::Public },
-            TableRow { id: 6, name: "st_clients", ty: StTableType::System, access: StAccess::Public },
-            TableRow { id: 7, name: "st_var", ty: StTableType::System, access: StAccess::Public },
-            TableRow { id: 8, name: "st_scheduled", ty: StTableType::System, access: StAccess::Public },
+            TableRow { id: 0, name: ST_TABLE_NAME, ty: StTableType::System, access: StAccess::Public },
+            TableRow { id: 1, name: ST_COLUMN_NAME, ty: StTableType::System, access: StAccess::Public },
+            TableRow { id: 2, name: ST_SEQUENCE_NAME, ty: StTableType::System, access: StAccess::Public },
+            TableRow { id: 3, name: ST_INDEX_NAME, ty: StTableType::System, access: StAccess::Public },
+            TableRow { id: 4, name: ST_CONSTRAINT_NAME, ty: StTableType::System, access: StAccess::Public },
+            TableRow { id: 5, name: ST_MODULE_NAME, ty: StTableType::System, access: StAccess::Public },
+            TableRow { id: 6, name: ST_CLIENT_NAME, ty: StTableType::System, access: StAccess::Public },
+            TableRow { id: 7, name: ST_VAR_NAME, ty: StTableType::System, access: StAccess::Public },
+            TableRow { id: 8, name: ST_SCHEDULED_NAME, ty: StTableType::System, access: StAccess::Public },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_columns()?, map_array([
@@ -1375,11 +1376,11 @@ mod tests {
         assert_eq!(query.scan_st_indexes()?, map_array([
             IndexRow { id: 0, table: 0, col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 1, table: 0, col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 2, table: 1, col: col_list![0, 1], name: "idx_st_columns_table_id_col_pos_unique", unique: true },
+            IndexRow { id: 2, table: 1, col: col_list![0, 1], name: "idx_st_column_table_id_col_pos_unique", unique: true },
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 6, table: 6, col: col_list![0, 1], name: "idx_st_clients_identity_address_unique", unique: true },
+            IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_index_index_id_primary_key_auto_unique", unique: true },
+            IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraint_constraint_id_primary_key_auto_unique", unique: true },
+            IndexRow { id: 6, table: 6, col: col_list![0, 1], name: "idx_st_client_identity_address_unique", unique: true },
             IndexRow { id: 7, table: 7, col: col(0), name: "idx_st_var_name_primary_key_unique", unique: true },
             IndexRow { id: 8, table: 8, col: col(0), name: "idx_st_scheduled_table_id_unique", unique: true },
         ]));
@@ -1389,8 +1390,8 @@ mod tests {
             [
                 SequenceRow { id: 0, table: 0, col_pos: 0, name: "seq_st_table_table_id_primary_key_auto", start },
                 SequenceRow { id: 3, table: 2, col_pos: 0, name: "seq_st_sequence_sequence_id_primary_key_auto", start },
-                SequenceRow { id: 1, table: 3, col_pos: 0, name: "seq_st_indexes_index_id_primary_key_auto", start },
-                SequenceRow { id: 2, table: 4, col_pos: 0, name: "seq_st_constraints_constraint_id_primary_key_auto", start },
+                SequenceRow { id: 1, table: 3, col_pos: 0, name: "seq_st_index_index_id_primary_key_auto", start },
+                SequenceRow { id: 2, table: 4, col_pos: 0, name: "seq_st_constraint_constraint_id_primary_key_auto", start },
             ],
             |row| StSequenceRow {
                 allocated: ST_RESERVED_SEQUENCE_RANGE as i128,
@@ -1401,11 +1402,11 @@ mod tests {
         assert_eq!(query.scan_st_constraints()?, map_array([
             ConstraintRow { constraint_id: 0, table_id: 0, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_table_table_id_primary_key_auto" },
             ConstraintRow { constraint_id: 1, table_id: 0, columns: col(1), constraints: Constraints::unique(), constraint_name: "ct_st_table_table_name_unique" },
-            ConstraintRow { constraint_id: 2, table_id: 1, columns: col_list![0, 1], constraints: Constraints::unique(), constraint_name: "ct_st_columns_table_id_col_pos_unique" },
+            ConstraintRow { constraint_id: 2, table_id: 1, columns: col_list![0, 1], constraints: Constraints::unique(), constraint_name: "ct_st_column_table_id_col_pos_unique" },
             ConstraintRow { constraint_id: 3, table_id: 2, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_sequence_sequence_id_primary_key_auto" },
-            ConstraintRow { constraint_id: 4, table_id: 3, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_indexes_index_id_primary_key_auto" },
-            ConstraintRow { constraint_id: 5, table_id: 4, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_constraints_constraint_id_primary_key_auto" },
-            ConstraintRow { constraint_id: 6, table_id: 6, columns: col_list![0, 1], constraints: Constraints::unique(), constraint_name: "ct_st_clients_identity_address_unique" },
+            ConstraintRow { constraint_id: 4, table_id: 3, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_index_index_id_primary_key_auto" },
+            ConstraintRow { constraint_id: 5, table_id: 4, columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_constraint_constraint_id_primary_key_auto" },
+            ConstraintRow { constraint_id: 6, table_id: 6, columns: col_list![0, 1], constraints: Constraints::unique(), constraint_name: "ct_st_client_identity_address_unique" },
             ConstraintRow { constraint_id: 7, table_id: 7, columns: col(0), constraints: Constraints::primary_key(), constraint_name: "ct_st_var_name_primary_key" },
             ConstraintRow { constraint_id: 8, table_id: 8, columns: col(0), constraints: Constraints::unique(), constraint_name: "ct_st_scheduled_table_id_unique" },
         ]));
@@ -1785,11 +1786,11 @@ mod tests {
         assert_eq!(index_rows, [
             IndexRow { id: 0, table: 0, col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 1, table: 0, col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 2, table: 1, col: col_list![0, 1], name: "idx_st_columns_table_id_col_pos_unique", unique: true },
+            IndexRow { id: 2, table: 1, col: col_list![0, 1], name: "idx_st_column_table_id_col_pos_unique", unique: true },
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 6, table: 6, col: col_list![0, 1], name: "idx_st_clients_identity_address_unique", unique: true },
+            IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_index_index_id_primary_key_auto_unique", unique: true },
+            IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraint_constraint_id_primary_key_auto_unique", unique: true },
+            IndexRow { id: 6, table: 6, col: col_list![0, 1], name: "idx_st_client_identity_address_unique", unique: true },
             IndexRow { id: 7, table: 7, col: col(0), name: "idx_st_var_name_primary_key_unique", unique: true },
             IndexRow { id: 8, table: 8, col: col(0), name: "idx_st_scheduled_table_id_unique", unique: true },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },
@@ -1832,11 +1833,11 @@ mod tests {
         assert_eq!(index_rows, [
             IndexRow { id: 0, table: 0, col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 1, table: 0, col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 2, table: 1, col: col_list![0, 1], name: "idx_st_columns_table_id_col_pos_unique", unique: true },
+            IndexRow { id: 2, table: 1, col: col_list![0, 1], name: "idx_st_column_table_id_col_pos_unique", unique: true },
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 6, table: 6, col: col_list![0, 1], name: "idx_st_clients_identity_address_unique", unique: true },
+            IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_index_index_id_primary_key_auto_unique", unique: true },
+            IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraint_constraint_id_primary_key_auto_unique", unique: true },
+            IndexRow { id: 6, table: 6, col: col_list![0, 1], name: "idx_st_client_identity_address_unique", unique: true },
             IndexRow { id: 7, table: 7, col: col(0), name: "idx_st_var_name_primary_key_unique", unique: true },
             IndexRow { id: 8, table: 8, col: col(0), name: "idx_st_scheduled_table_id_unique", unique: true },
             IndexRow { id: seq_start    , table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },
@@ -1879,11 +1880,11 @@ mod tests {
         assert_eq!(index_rows, [
             IndexRow { id: 0, table: 0, col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
             IndexRow { id: 1, table: 0, col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 2, table: 1, col: col_list![0, 1], name: "idx_st_columns_table_id_col_pos_unique", unique: true },
+            IndexRow { id: 2, table: 1, col: col_list![0, 1], name: "idx_st_column_table_id_col_pos_unique", unique: true },
             IndexRow { id: 3, table: 2, col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_indexes_index_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraints_constraint_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 6, table: 6, col: col_list![0, 1], name: "idx_st_clients_identity_address_unique", unique: true },
+            IndexRow { id: 4, table: 3, col: col(0), name: "idx_st_index_index_id_primary_key_auto_unique", unique: true },
+            IndexRow { id: 5, table: 4, col: col(0), name: "idx_st_constraint_constraint_id_primary_key_auto_unique", unique: true },
+            IndexRow { id: 6, table: 6, col: col_list![0, 1], name: "idx_st_client_identity_address_unique", unique: true },
             IndexRow { id: 7, table: 7, col: col(0), name: "idx_st_var_name_primary_key_unique", unique: true },
             IndexRow { id: 8, table: 8, col: col(0), name: "idx_st_scheduled_table_id_unique", unique: true },
             IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },

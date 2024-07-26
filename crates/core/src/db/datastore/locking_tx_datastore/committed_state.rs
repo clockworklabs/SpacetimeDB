@@ -9,11 +9,10 @@ use crate::{
         datastore::{
             system_tables::{
                 system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableFields, StTableRow,
-                SystemTable, ST_CLIENTS_ID, ST_CLIENT_IDX, ST_COLUMNS_ID, ST_COLUMNS_IDX, ST_COLUMNS_NAME,
-                ST_CONSTRAINTS_ID, ST_CONSTRAINTS_IDX, ST_CONSTRAINTS_NAME, ST_INDEXES_ID, ST_INDEXES_IDX,
-                ST_INDEXES_NAME, ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE, ST_SCHEDULED_ID,
-                ST_SCHEDULED_IDX, ST_SEQUENCES_ID, ST_SEQUENCES_IDX, ST_SEQUENCES_NAME, ST_TABLES_ID, ST_TABLES_IDX,
-                ST_VAR_ID, ST_VAR_IDX,
+                SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME,
+                ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX, ST_INDEX_NAME,
+                ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE, ST_SCHEDULED_ID, ST_SCHEDULED_IDX,
+                ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
             },
             traits::TxData,
         },
@@ -115,7 +114,7 @@ impl CommittedState {
         let ref_schemas = schemas.each_ref().map(|s| &**s);
 
         // Insert the table row into st_tables, creating st_tables if it's missing.
-        let (st_tables, blob_store) = self.get_table_and_blob_store_or_create(ST_TABLES_ID, &schemas[ST_TABLES_IDX]);
+        let (st_tables, blob_store) = self.get_table_and_blob_store_or_create(ST_TABLE_ID, &schemas[ST_TABLE_IDX]);
         // Insert the table row into `st_tables` for all system tables
         for schema in ref_schemas {
             let table_id = schema.table_id;
@@ -135,7 +134,7 @@ impl CommittedState {
         }
 
         // Insert the columns into `st_columns`
-        let (st_columns, blob_store) = self.get_table_and_blob_store_or_create(ST_COLUMNS_ID, &schemas[ST_COLUMNS_IDX]);
+        let (st_columns, blob_store) = self.get_table_and_blob_store_or_create(ST_COLUMN_ID, &schemas[ST_COLUMN_IDX]);
         for col in ref_schemas.iter().flat_map(|x| x.columns()).cloned() {
             let row = StColumnRow {
                 table_id: col.table_id,
@@ -148,14 +147,14 @@ impl CommittedState {
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_columns.insert(blob_store, &row))?;
             // Increment row count for st_columns.
-            with_label_values(ST_COLUMNS_ID, ST_COLUMNS_NAME).inc();
+            with_label_values(ST_COLUMN_ID, ST_COLUMN_NAME).inc();
         }
 
         // Insert the FK sorted by table/column so it show together when queried.
 
         // Insert constraints into `st_constraints`
         let (st_constraints, blob_store) =
-            self.get_table_and_blob_store_or_create(ST_CONSTRAINTS_ID, &schemas[ST_CONSTRAINTS_IDX]);
+            self.get_table_and_blob_store_or_create(ST_CONSTRAINT_ID, &schemas[ST_CONSTRAINT_IDX]);
         for (i, constraint) in ref_schemas
             .iter()
             .flat_map(|x| &x.constraints)
@@ -175,11 +174,11 @@ impl CommittedState {
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_constraints.insert(blob_store, &row))?;
             // Increment row count for st_constraints.
-            with_label_values(ST_CONSTRAINTS_ID, ST_CONSTRAINTS_NAME).inc();
+            with_label_values(ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME).inc();
         }
 
         // Insert the indexes into `st_indexes`
-        let (st_indexes, blob_store) = self.get_table_and_blob_store_or_create(ST_INDEXES_ID, &schemas[ST_INDEXES_IDX]);
+        let (st_indexes, blob_store) = self.get_table_and_blob_store_or_create(ST_INDEX_ID, &schemas[ST_INDEX_IDX]);
         for (i, index) in ref_schemas
             .iter()
             .flat_map(|x| &x.indexes)
@@ -200,21 +199,21 @@ impl CommittedState {
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_indexes.insert(blob_store, &row))?;
             // Increment row count for st_indexes.
-            with_label_values(ST_INDEXES_ID, ST_INDEXES_NAME).inc();
+            with_label_values(ST_INDEX_ID, ST_INDEX_NAME).inc();
         }
 
         // We don't add the row here but with `MutProgrammable::set_program_hash`, but we need to register the table
         // in the internal state.
         self.create_table(ST_MODULE_ID, schemas[ST_MODULE_IDX].clone());
 
-        self.create_table(ST_CLIENTS_ID, schemas[ST_CLIENT_IDX].clone());
+        self.create_table(ST_CLIENT_ID, schemas[ST_CLIENT_IDX].clone());
 
         self.create_table(ST_VAR_ID, schemas[ST_VAR_IDX].clone());
 
         self.create_table(ST_SCHEDULED_ID, schemas[ST_SCHEDULED_IDX].clone());
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store) =
-            self.get_table_and_blob_store_or_create(ST_SEQUENCES_ID, &schemas[ST_SEQUENCES_IDX]);
+            self.get_table_and_blob_store_or_create(ST_SEQUENCE_ID, &schemas[ST_SEQUENCE_IDX]);
         // We create sequences last to get right the starting number
         // so, we don't sort here
         for (i, col) in ref_schemas.iter().flat_map(|x| &x.sequences).enumerate() {
@@ -238,7 +237,7 @@ impl CommittedState {
             // If the row is already there, no-op.
             ignore_duplicate_insert_error(st_sequences.insert(blob_store, &row))?;
             // Increment row count for st_sequences
-            with_label_values(ST_SEQUENCES_ID, ST_SEQUENCES_NAME).inc();
+            with_label_values(ST_SEQUENCE_ID, ST_SEQUENCE_NAME).inc();
         }
 
         self.reset_system_table_schemas(database_address)?;
@@ -290,7 +289,7 @@ impl CommittedState {
     }
 
     pub(super) fn build_sequence_state(&mut self, sequence_state: &mut SequencesState) -> Result<()> {
-        let st_sequences = self.tables.get(&ST_SEQUENCES_ID).unwrap();
+        let st_sequences = self.tables.get(&ST_SEQUENCE_ID).unwrap();
         for row_ref in st_sequences.scan_rows(&self.blob_store) {
             let sequence = StSequenceRow::try_from(row_ref)?;
             let mut seq = sequence_state
@@ -308,7 +307,7 @@ impl CommittedState {
     }
 
     pub(super) fn build_indexes(&mut self) -> Result<()> {
-        let st_indexes = self.tables.get(&ST_INDEXES_ID).unwrap();
+        let st_indexes = self.tables.get(&ST_INDEX_ID).unwrap();
         let rows = st_indexes
             .scan_rows(&self.blob_store)
             .map(StIndexRow::try_from)
@@ -345,7 +344,7 @@ impl CommittedState {
     pub(super) fn build_missing_tables(&mut self) -> Result<()> {
         // Find all ids of tables that are in `st_tables` but haven't been built.
         let table_ids = self
-            .get_table(ST_TABLES_ID)
+            .get_table(ST_TABLE_ID)
             .unwrap()
             .scan_rows(&self.blob_store)
             .map(|r| r.read_col(StTableFields::TableId).unwrap())

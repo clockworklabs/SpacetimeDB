@@ -13,7 +13,7 @@ use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::SystemLogger;
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::system_tables::{StClientsRow, ST_CLIENTS_ID};
+use crate::db::datastore::system_tables::{StClientsRow, ST_CLIENT_ID};
 use crate::db::datastore::traits::IsolationLevel;
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use crate::execution_context::{self, ExecutionContext, ReducerContext};
@@ -617,7 +617,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let db = &*self.database_instance_context().relational_db;
         let row = &StClientsRow { identity, address };
 
-        db.insert(tx, ST_CLIENTS_ID, row.into()).map(|_| ())
+        db.insert(tx, ST_CLIENT_ID, row.into()).map(|_| ())
     }
 }
 
