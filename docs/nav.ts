@@ -55,8 +55,6 @@ const nav: Nav = {
     page("Typescript Reference",  "sdks/typescript",              "sdks/typescript/index.md"),
     page("Rust Quickstart",       "sdks/rust/quickstart",         "sdks/rust/quickstart.md"),
     page("Rust Reference",        "sdks/rust",                    "sdks/rust/index.md"),
-    page("Python Quickstart",     "sdks/python/quickstart",       "sdks/python/quickstart.md"),
-    page("Python Reference",      "sdks/python",                  "sdks/python/index.md"),
     page("C# Quickstart",         "sdks/c-sharp/quickstart",      "sdks/c-sharp/quickstart.md"),
     page("C# Reference",          "sdks/c-sharp",                 "sdks/c-sharp/index.md"),
 

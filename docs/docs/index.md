@@ -71,7 +71,6 @@ Currently, Rust is the best-supported language for writing SpacetimeDB modules. 
 - [Rust](/docs/modules/rust) - [(Quickstart)](/docs/modules/rust/quickstart)
 - [C#](/docs/modules/c-sharp) - [(Quickstart)](/docs/modules/c-sharp/quickstart)
 - Python (Coming soon)
-- C# (Coming soon)
 - Typescript (Coming soon)
 - C++ (Planned)
 - Lua (Planned)
@@ -81,7 +80,7 @@ Currently, Rust is the best-supported language for writing SpacetimeDB modules. 
 - [Rust](/docs/sdks/rust) - [(Quickstart)](/docs/sdks/rust/quickstart)
 - [C#](/docs/sdks/c-sharp) - [(Quickstart)](/docs/sdks/c-sharp/quickstart)
 - [TypeScript](/docs/sdks/typescript) - [(Quickstart)](/docs/sdks/typescript/quickstart)
-- [Python](/docs/sdks/python) - [(Quickstart)](/docs/sdks/python/quickstart)
+- Python (Planned)
 - C++ (Planned)
 - Lua (Planned)
 
