@@ -64,7 +64,7 @@ pub fn add() {
         # There are no indices, resulting in an unsupported unindexed join.
         self.publish_module(name, clear = False)
         with self.assertRaises(Exception):
-            self.subscribe(self.JOIN_QUERY, n = 0)
+            self.subscribe(self.JOIN_QUERY, n = 0)()
 
         # Publish the indexed version.
         # Now we have indices, so the query should be accepted.
@@ -79,4 +79,4 @@ pub fn add() {
         self.write_module_code(self.MODULE_CODE)
         self.publish_module(name, clear = False)
         with self.assertRaises(Exception):
-            self.subscribe(self.JOIN_QUERY, n = 0)
+            self.subscribe(self.JOIN_QUERY, n = 0)()
