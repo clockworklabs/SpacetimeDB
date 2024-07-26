@@ -5,6 +5,7 @@ use anyhow::anyhow;
 use futures::StreamExt;
 use rustc_hash::FxHashMap;
 use sled::transaction::TransactionError;
+use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_lib::bsatn::ser::BsatnError;
 use spacetimedb_lib::scheduler::ScheduleAt;
@@ -24,7 +25,10 @@ use crate::db::datastore::traits::IsolationLevel;
 use crate::db::relational_db::RelationalDB;
 use crate::execution_context::ExecutionContext;
 
+use super::module_host::ModuleEvent;
+use super::module_host::ModuleFunctionCall;
 use super::module_host::{CallReducerParams, WeakModuleHost};
+use super::module_host::{DatabaseUpdate, EventStatus};
 use super::{ModuleHost, ReducerArgs, ReducerCallError};
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
@@ -286,6 +290,7 @@ impl SchedulerActor {
         };
 
         let db = module_host.dbic().relational_db.clone();
+        let module_host_clone = module_host.clone();
         let ctx = ExecutionContext::internal(db.address());
 
         let res = tokio::spawn(async move { module_host.call_scheduled_reducer(call_reducer_params).await }).await;
@@ -297,26 +302,8 @@ impl SchedulerActor {
 
             // delete the scheduled reducer row if its not repeated reducer
             Ok(_) | Err(_) => {
-                let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
-                match get_schedule_row_mut(&ctx, &tx, &db, id) {
-                    Ok(schedule_row) => {
-                        if let Ok(is_repeated) = self.handle_repeated_schedule(&tx, &db, id, &schedule_row) {
-                            if !is_repeated {
-                                let row_ptr = schedule_row.pointer();
-                                db.delete(&mut tx, id.table_id, [row_ptr]);
-                                tx.commit(&ctx);
-                            };
-                        }
-                    }
-                    Err(_) => {
-                        log::debug!(
-                            "table row corresponding to yeild scheduler id not found: tableid {}, schedulerId {}",
-                            id.table_id,
-                            id.schedule_id
-                        );
-                        return;
-                    }
-                };
+                self.delete_scheduled_reducer_row(&ctx, &db, id, module_host_clone)
+                    .await;
             }
         }
 
@@ -342,6 +329,63 @@ impl SchedulerActor {
         } else {
             Ok(false)
         }
+    }
+
+    async fn delete_scheduled_reducer_row(
+        &mut self,
+        ctx: &ExecutionContext,
+        db: &RelationalDB,
+        id: ScheduledReducerId,
+        module_host: ModuleHost,
+    ) {
+        let mut tx = db.begin_mut_tx(IsolationLevel::Serializable);
+
+        match get_schedule_row_mut(ctx, &tx, db, id) {
+            Ok(schedule_row) => {
+                if let Ok(is_repeated) = self.handle_repeated_schedule(&tx, db, id, &schedule_row) {
+                    if is_repeated {
+                        return; // Do not delete entry for repeated reducer
+                    }
+
+                    let row_ptr = schedule_row.pointer();
+                    db.delete(&mut tx, id.table_id, [row_ptr]);
+
+                    commit_and_broadcast_deletion_event(ctx, tx, module_host);
+                }
+            }
+            Err(_) => {
+                log::debug!(
+                    "Table row corresponding to yield scheduler ID not found: table_id {}, scheduler_id {}",
+                    id.table_id,
+                    id.schedule_id
+                );
+            }
+        }
+    }
+}
+
+fn commit_and_broadcast_deletion_event(ctx: &ExecutionContext, tx: MutTxId, module_host: ModuleHost) {
+    let caller_identity = module_host.info().identity;
+
+    let event = ModuleEvent {
+        timestamp: Timestamp::now(),
+        caller_identity,
+        caller_address: None,
+        function_call: ModuleFunctionCall::default(),
+        status: EventStatus::Committed(DatabaseUpdate::default()),
+        //Keeping them 0 as it is internal transaction, not by reducer
+        energy_quanta_used: EnergyQuanta { quanta: 0 },
+        host_execution_duration: Duration::from_millis(0),
+        request_id: None,
+        timer: None,
+    };
+
+    if let Err(e) = module_host
+        .info()
+        .subscriptions
+        .commit_and_broadcast_event(None, event, ctx, tx)
+    {
+        log::error!("Failed to broadcast deletion event: {e:#}");
     }
 }
 
