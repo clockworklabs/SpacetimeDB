@@ -199,7 +199,8 @@ fn valid_protocol_or_error(protocol: &str) -> anyhow::Result<()> {
 }
 
 pub async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
-    let url = args.get_one::<String>("url").unwrap();
+    // Trim trailing `/`s because otherwise we end up with a double `//` in some later codepaths.
+    let url = args.get_one::<String>("url").unwrap().trim_end_matches('/');
     let nickname = args.get_one::<String>("name");
     let default = *args.get_one::<bool>("default").unwrap();
     let no_fingerprint = *args.get_one::<bool>("no-fingerprint").unwrap();
