@@ -437,9 +437,15 @@ impl<'a> RawTableDefBuilder<'a> {
         self
     }
 
+    /// Build the table and add it to the module.
+    pub fn finish(self) {
+        // self is now dropped.
+    }
+
     /// Get the column ID of the column with the specified name, if any.
     ///
-    /// Returns `None` if this `TableDef` has been constructed with an invalid `ProductTypeRef`.
+    /// Returns `None` if this `TableDef` has been constructed with an invalid `ProductTypeRef`,
+    /// or if no column exists with that name.
     pub fn get_col_id(&self, column: impl AsRef<str>) -> Option<ColId> {
         let column = column.as_ref();
         self.columns()?
@@ -505,5 +511,11 @@ impl<'a> RawTableDefBuilder<'a> {
         let column_names = self.concat_column_names(columns);
         let table_name = &self.table.table_name;
         format!("{table_name}_unique_{column_names}").into()
+    }
+}
+
+impl<'a> Drop for RawTableDefBuilder<'a> {
+    fn drop(&mut self) {
+        self.module_def.tables.push(self.table.clone());
     }
 }
