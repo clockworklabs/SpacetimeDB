@@ -14,7 +14,7 @@ static class ModuleRegistration
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         )
         {
-            return new("__init__");
+            return new("__init__", new SpacetimeDB.BSATN.AggregateElement[] { });
         }
 
         public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
@@ -25,7 +25,7 @@ static class ModuleRegistration
 
     class InsertData : SpacetimeDB.Internal.IReducer
     {
-        private static PublicTable.BSATN data = new();
+        private static readonly PublicTable.BSATN data = new();
 
         public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -33,10 +33,10 @@ static class ModuleRegistration
         {
             return new(
                 "InsertData",
-                new SpacetimeDB.BSATN.AggregateElement(
-                    nameof(data),
-                    data.GetAlgebraicType(registrar)
-                )
+                new SpacetimeDB.BSATN.AggregateElement[]
+                {
+                    new(nameof(data), data.GetAlgebraicType(registrar))
+                }
             );
         }
 
@@ -48,7 +48,7 @@ static class ModuleRegistration
 
     class InsertData2 : SpacetimeDB.Internal.IReducer
     {
-        private static PublicTable.BSATN data = new();
+        private static readonly PublicTable.BSATN data = new();
 
         public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -56,10 +56,10 @@ static class ModuleRegistration
         {
             return new(
                 "test_custom_name_and_reducer_ctx",
-                new SpacetimeDB.BSATN.AggregateElement(
-                    nameof(data),
-                    data.GetAlgebraicType(registrar)
-                )
+                new SpacetimeDB.BSATN.AggregateElement[]
+                {
+                    new(nameof(data), data.GetAlgebraicType(registrar))
+                }
             );
         }
 
@@ -71,7 +71,7 @@ static class ModuleRegistration
 
     class ScheduleImmediate : SpacetimeDB.Internal.IReducer
     {
-        private static PublicTable.BSATN data = new();
+        private static readonly PublicTable.BSATN data = new();
 
         public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -79,10 +79,10 @@ static class ModuleRegistration
         {
             return new(
                 "ScheduleImmediate",
-                new SpacetimeDB.BSATN.AggregateElement(
-                    nameof(data),
-                    data.GetAlgebraicType(registrar)
-                )
+                new SpacetimeDB.BSATN.AggregateElement[]
+                {
+                    new(nameof(data), data.GetAlgebraicType(registrar))
+                }
             );
         }
 
@@ -94,7 +94,7 @@ static class ModuleRegistration
 
     class SendScheduledMessage : SpacetimeDB.Internal.IReducer
     {
-        private static Timers.SendMessageTimer.BSATN arg = new();
+        private static readonly Timers.SendMessageTimer.BSATN arg = new();
 
         public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
@@ -102,7 +102,10 @@ static class ModuleRegistration
         {
             return new(
                 "SendScheduledMessage",
-                new SpacetimeDB.BSATN.AggregateElement(nameof(arg), arg.GetAlgebraicType(registrar))
+                new SpacetimeDB.BSATN.AggregateElement[]
+                {
+                    new(nameof(arg), arg.GetAlgebraicType(registrar))
+                }
             );
         }
 

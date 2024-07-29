@@ -18,11 +18,8 @@ enum ColumnAttrs : byte
     PrimaryKeyAuto = PrimaryKey | AutoInc,
 }
 
-readonly record struct ColumnDeclaration
+record ColumnDeclaration : MemberDeclaration
 {
-    public readonly string Name;
-    public readonly string Type;
-    public readonly string TypeInfo;
     public readonly ColumnAttrs Attrs;
     public readonly bool IsEquatable;
 
@@ -33,15 +30,14 @@ readonly record struct ColumnDeclaration
         ColumnAttrs attrs,
         bool isEquatable
     )
+        : base(name, type, typeInfo)
     {
-        Name = name;
-        Type = type;
-        TypeInfo = typeInfo;
         Attrs = attrs;
         IsEquatable = isEquatable;
     }
 
     public ColumnDeclaration(IFieldSymbol field)
+        : base(field)
     {
         Attrs = field
             .GetAttributes()
@@ -98,10 +94,6 @@ readonly record struct ColumnDeclaration
                 $"{type} {Name} is not valid for Identity, PrimaryKey or PrimaryKeyAuto as it's not an equatable primitive."
             );
         }
-
-        Name = field.Name;
-        Type = SymbolToName(type);
-        TypeInfo = GetTypeInfo(type);
     }
 
     // For the `TableDesc` constructor.
@@ -249,23 +241,15 @@ record TableDeclaration
     }
 }
 
-readonly record struct ReducerParamDeclaration
+record ReducerParamDeclaration : MemberDeclaration
 {
-    public readonly string Name;
-    public readonly string Type;
-    public readonly string TypeInfo;
     public readonly bool IsContextArg;
 
-    public ReducerParamDeclaration(string name, ITypeSymbol type)
+    public ReducerParamDeclaration(IParameterSymbol param)
+        : base(param.Name, param.Type)
     {
-        Name = name;
-        Type = SymbolToName(type);
-        TypeInfo = GetTypeInfo(type);
         IsContextArg = Type == "SpacetimeDB.ReducerContext";
     }
-
-    public ReducerParamDeclaration(IParameterSymbol field)
-        : this(field.Name, field.Type) { }
 }
 
 record ReducerDeclaration
@@ -304,18 +288,12 @@ record ReducerDeclaration
     {
         var class_ = $$"""
             class {{Name}}: SpacetimeDB.Internal.IReducer {
-                {{string.Join(
-                    "\n",
-                    NonContextArgs.Select(a => $"private static {a.TypeInfo} {a.Name} = new();")
-                )}}
+                {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, NonContextArgs)}}
 
                 public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) {
                     return new (
-                        "{{ExportName}}"
-                        {{string.Join(
-                            "",
-                            NonContextArgs.Select(a => $",\nnew SpacetimeDB.BSATN.AggregateElement(nameof({a.Name}), {a.Name}.GetAlgebraicType(registrar))")
-                        )}}
+                        "{{ExportName}}",
+                        {{MemberDeclaration.GenerateDefs(NonContextArgs)}}
                     );
                 }
 

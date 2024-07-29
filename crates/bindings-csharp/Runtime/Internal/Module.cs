@@ -108,7 +108,7 @@ public static partial class Module
     }
 
     [SpacetimeDB.Type]
-    public partial struct ReducerDef(string name, params AggregateElement[] args)
+    public partial struct ReducerDef(string name, AggregateElement[] args)
     {
         string Name = name;
         AggregateElement[] Args = args;
