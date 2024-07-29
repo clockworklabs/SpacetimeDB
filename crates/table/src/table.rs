@@ -530,9 +530,7 @@ impl Table {
     /// Otherwise, the schema must be cloned, mutated,
     /// and then the cloned version is written back to the table.
     pub fn with_mut_schema(&mut self, with: impl FnOnce(&mut TableSchema)) {
-        let mut schema = self.schema.clone();
-        with(Arc::make_mut(&mut schema));
-        self.schema = schema;
+        with(Arc::make_mut(&mut self.schema));
     }
 
     /// Returns a new [`BTreeIndex`] for `table`.
