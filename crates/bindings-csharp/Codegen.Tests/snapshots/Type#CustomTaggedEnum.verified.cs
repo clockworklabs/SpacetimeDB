@@ -51,14 +51,12 @@ partial record CustomTaggedEnum
         public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
-            registrar.RegisterType<CustomTaggedEnum>(
-                typeRef => new SpacetimeDB.BSATN.AlgebraicType.Sum(
-                    new SpacetimeDB.BSATN.AggregateElement[]
-                    {
-                        new(nameof(IntVariant), IntVariant.GetAlgebraicType(registrar)),
-                        new(nameof(StringVariant), StringVariant.GetAlgebraicType(registrar))
-                    }
-                )
-            );
+            registrar.RegisterType<CustomTaggedEnum>(_ => new SpacetimeDB.BSATN.AlgebraicType.Sum(
+                new SpacetimeDB.BSATN.AggregateElement[]
+                {
+                    new(nameof(IntVariant), IntVariant.GetAlgebraicType(registrar)),
+                    new(nameof(StringVariant), StringVariant.GetAlgebraicType(registrar))
+                }
+            ));
     }
 } // CustomTaggedEnum

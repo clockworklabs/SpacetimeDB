@@ -32,14 +32,12 @@ partial struct CustomStruct : SpacetimeDB.BSATN.IStructuralReadWrite
         public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
-            registrar.RegisterType<CustomStruct>(
-                typeRef => new SpacetimeDB.BSATN.AlgebraicType.Product(
-                    new SpacetimeDB.BSATN.AggregateElement[]
-                    {
-                        new(nameof(IntField), IntField.GetAlgebraicType(registrar)),
-                        new(nameof(StringField), StringField.GetAlgebraicType(registrar))
-                    }
-                )
-            );
+            registrar.RegisterType<CustomStruct>(_ => new SpacetimeDB.BSATN.AlgebraicType.Product(
+                new SpacetimeDB.BSATN.AggregateElement[]
+                {
+                    new(nameof(IntField), IntField.GetAlgebraicType(registrar)),
+                    new(nameof(StringField), StringField.GetAlgebraicType(registrar))
+                }
+            ));
     }
 } // CustomStruct

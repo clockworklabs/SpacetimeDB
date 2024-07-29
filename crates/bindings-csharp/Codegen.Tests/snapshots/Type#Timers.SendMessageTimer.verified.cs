@@ -42,12 +42,10 @@ partial class Timers
                 SpacetimeDB.BSATN.ITypeRegistrar registrar
             ) =>
                 registrar.RegisterType<SendMessageTimer>(
-                    typeRef => new SpacetimeDB.BSATN.AlgebraicType.Product(
+                    _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                         new SpacetimeDB.BSATN.AggregateElement[]
                         {
-                            new(nameof(Text), Text.GetAlgebraicType(registrar)),
-                            new(nameof(ScheduledId), ScheduledId.GetAlgebraicType(registrar)),
-                            new(nameof(ScheduledAt), ScheduledAt.GetAlgebraicType(registrar))
+                            new(nameof(Text), Text.GetAlgebraicType(registrar))
                         }
                     )
                 );

@@ -21,10 +21,8 @@ partial class PrivateTable : SpacetimeDB.BSATN.IStructuralReadWrite
         public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
-            registrar.RegisterType<PrivateTable>(
-                typeRef => new SpacetimeDB.BSATN.AlgebraicType.Product(
-                    new SpacetimeDB.BSATN.AggregateElement[] { }
-                )
-            );
+            registrar.RegisterType<PrivateTable>(_ => new SpacetimeDB.BSATN.AlgebraicType.Product(
+                new SpacetimeDB.BSATN.AggregateElement[] { }
+            ));
     }
 } // PrivateTable

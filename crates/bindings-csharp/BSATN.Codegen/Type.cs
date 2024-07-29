@@ -3,24 +3,39 @@ namespace SpacetimeDB.Codegen;
 using System.Collections.Immutable;
 using System.Text;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static Utils;
 
-readonly record struct MemberDeclaration
+public record MemberDeclaration(string Name, string Type, string TypeInfo)
 {
-    public readonly string Name;
-    public readonly string Type;
-    public readonly string TypeInfo;
-
-    public MemberDeclaration(string name, ITypeSymbol typeSymbol)
-    {
-        Name = name;
-        Type = SymbolToName(typeSymbol);
-        TypeInfo = GetTypeInfo(typeSymbol);
-    }
+    public MemberDeclaration(string name, ITypeSymbol type)
+        : this(name, SymbolToName(type), GetTypeInfo(type)) { }
 
     public MemberDeclaration(IFieldSymbol field)
         : this(field.Name, field.Type) { }
+
+    public static string GenerateBsatnFields(
+        Accessibility visibility,
+        IEnumerable<MemberDeclaration> members
+    )
+    {
+        var visStr = SyntaxFacts.GetText(visibility);
+        return string.Join(
+            "\n",
+            members.Select(m => $"{visStr} static readonly {m.TypeInfo} {m.Name} = new();")
+        );
+    }
+
+    public static string GenerateDefs(IEnumerable<MemberDeclaration> members) =>
+        $$"""
+        new SpacetimeDB.BSATN.AggregateElement[] {
+            {{string.Join(
+                ",\n",
+                members.Select(m => $"new(nameof({m.Name}), {m.Name}.GetAlgebraicType(registrar))")
+            )}}
+        }
+        """;
 }
 
 abstract record TypeKind
@@ -105,7 +120,7 @@ record TypeDeclaration
 
         var typeDesc = new StringBuilder();
 
-        var bsatnDecls = Members.Select(m => (m.Name, m.TypeInfo));
+        var bsatnDecls = Members.Cast<MemberDeclaration>();
 
         if (Kind is TypeKind.Table { IsScheduled: true })
         {
@@ -121,8 +136,8 @@ record TypeDeclaration
             );
             bsatnDecls = bsatnDecls.Concat(
                 [
-                    (Name: "ScheduledId", TypeInfo: "SpacetimeDB.BSATN.U64"),
-                    (Name: "ScheduledAt", TypeInfo: "SpacetimeDB.ScheduleAt.BSATN")
+                    new("ScheduledId", "ulong", "SpacetimeDB.BSATN.U64"),
+                    new("ScheduledAt", "SpacetimeDB.ScheduleAt", "SpacetimeDB.ScheduleAt.BSATN"),
                 ]
             );
         }
@@ -143,7 +158,7 @@ record TypeDeclaration
             );
 
             bsatnDecls = bsatnDecls.Prepend(
-                (Name: "__enumTag", TypeInfo: "SpacetimeDB.BSATN.Enum<@enum>")
+                new("__enumTag", "@enum", "SpacetimeDB.BSATN.Enum<@enum>")
             );
 
             typeDesc.Append(
@@ -213,12 +228,7 @@ record TypeDeclaration
             $$"""
             public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<{{ShortName}}>
             {
-                {{string.Join(
-                    "\n",
-                    bsatnDecls.Select(decl =>
-                        $"internal static readonly {decl.TypeInfo} {decl.Name} = new();"
-                    )
-                )}}
+                {{MemberDeclaration.GenerateBsatnFields(Accessibility.Internal, bsatnDecls)}}
 
                 public {{ShortName}} Read(System.IO.BinaryReader reader) => {{read}};
 
@@ -226,14 +236,10 @@ record TypeDeclaration
                     {{write}}
                 }
 
-                public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) => registrar.RegisterType<{{ShortName}}>(typeRef => new SpacetimeDB.BSATN.AlgebraicType.{{Kind}}(new SpacetimeDB.BSATN.AggregateElement[] {
-                    {{string.Join(
-                        ",\n",
-                        fieldNames.Select(name =>
-                            $"new(nameof({name}), {name}.GetAlgebraicType(registrar))"
-                        )
-                    )}}
-                }));
+                public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+                    registrar.RegisterType<{{ShortName}}>(_ => new SpacetimeDB.BSATN.AlgebraicType.{{Kind}}(
+                        {{MemberDeclaration.GenerateDefs(Members)}}
+                    ));
             }
             """
         );
