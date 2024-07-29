@@ -298,8 +298,9 @@ class Smoketest(unittest.TestCase):
             return result
 
 
-# This is a custom thread class that will propagate exceptions to the caller of `.join()`.
-# Well, it will propagate _an_ exception.
+# This is a custom thread class that will propagate an exception to the caller of `.join()`.
+# This is required because, by default, threads do not propagate exceptions to their callers,
+# even callers who have called `join`.
 class ReturnThread:
     def __init__(self, target):
         self._target = target
