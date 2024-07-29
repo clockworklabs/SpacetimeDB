@@ -4,8 +4,8 @@ pub mod map_notation;
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
 use crate::meta_type::MetaType;
-use crate::{de::Deserialize, ser::Serialize, MapType};
-use crate::{AlgebraicTypeRef, AlgebraicValue, ArrayType, BuiltinType, ProductType, SumType, SumTypeVariant};
+use crate::de::Deserialize;
+use crate::{MapType, AlgebraicTypeRef, AlgebraicValue, ArrayType, BuiltinType, ProductType, SumType, SumTypeVariant, SpacetimeType};
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 
@@ -52,7 +52,7 @@ use enum_as_inner::EnumAsInner;
 ///     indexes: Array<(index_type: String)>,
 /// )
 /// ```
-#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, From)]
+#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, From, SpacetimeType)]
 #[sats(crate = crate)]
 pub enum AlgebraicType {
     /// A structural sum type.

@@ -3,7 +3,6 @@ use std::ops::{Index, IndexMut};
 
 use crate::algebraic_type::AlgebraicType;
 use crate::algebraic_type_ref::AlgebraicTypeRef;
-use crate::{de::Deserialize, ser::Serialize};
 use crate::{BuiltinType, WithTypespace};
 
 #[derive(thiserror::Error, Debug)]
@@ -33,7 +32,7 @@ pub enum TypeRefError {
 /// where `&0` is the type reference at index `0`.
 ///
 /// [System F]: https://en.wikipedia.org/wiki/System_F
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct Typespace {
     /// The types in our typing context that can be referred to with [`AlgebraicTypeRef`]s.
@@ -264,9 +263,12 @@ impl_primitives! {
 }
 
 impl_st!([] (), _ts => AlgebraicType::unit());
-impl_st!([] &str, _ts => AlgebraicType::String);
+impl_st!([] str, _ts => AlgebraicType::String);
+impl_st!([T: SpacetimeType] [T], ts => AlgebraicType::array(T::make_type(ts)));
 impl_st!([T: SpacetimeType] Vec<T>, ts => AlgebraicType::array(T::make_type(ts)));
 impl_st!([T: SpacetimeType] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));
+impl_st!([T: ?Sized + SpacetimeType] &T, ts => T::make_type(ts));
+impl_st!([T: ?Sized + SpacetimeType] Box<T>, ts => T::make_type(ts));
 
 impl_st!([] spacetimedb_primitives::ColId, _ts => AlgebraicType::U32);
 impl_st!([] spacetimedb_primitives::TableId, _ts => AlgebraicType::U32);

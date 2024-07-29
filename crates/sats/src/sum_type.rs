@@ -1,8 +1,8 @@
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
+use crate::de::Deserialize;
 use crate::meta_type::MetaType;
-use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicValue, SumTypeVariant};
+use crate::{AlgebraicType, AlgebraicValue, SpacetimeType, SumTypeVariant};
 
 /// A structural sum type.
 ///
@@ -28,7 +28,7 @@ use crate::{AlgebraicType, AlgebraicValue, SumTypeVariant};
 /// See also: https://ncatlab.org/nlab/show/sum+type.
 ///
 /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct SumType {
     /// The possible variants of the sum type.

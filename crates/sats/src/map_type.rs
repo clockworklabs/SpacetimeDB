@@ -1,7 +1,7 @@
-use crate::{de::Deserialize, meta_type::MetaType, ser::Serialize, AlgebraicType};
+use crate::{meta_type::MetaType, AlgebraicType, SpacetimeType};
 
 /// A map type from keys of type `key_ty` to values of type `ty`.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct MapType {
     /// The key type of the map.

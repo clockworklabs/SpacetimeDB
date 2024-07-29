@@ -1,14 +1,14 @@
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
+use crate::de::Deserialize;
 use crate::meta_type::MetaType;
-use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicValue, ArrayType, MapType, SumTypeVariant};
+use crate::{AlgebraicType, AlgebraicValue, ArrayType, MapType, SumTypeVariant, SpacetimeType};
 use enum_as_inner::EnumAsInner;
 
 /// Represents the built-in types in SATS.
 ///
 /// Some of these types are nominal in our otherwise structural type system.
-#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub enum BuiltinType {
     /// The bool type. Values [`BuiltinValue::Bool(b)`](crate::BuiltinValue::Bool) will have this type.

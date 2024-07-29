@@ -1,12 +1,12 @@
 use crate::algebraic_type::AlgebraicType;
 use crate::meta_type::MetaType;
-use crate::{de::Deserialize, ser::Serialize};
+use crate::SpacetimeType;
 
 /// A variant of a sum type.
 ///
 /// NOTE: Each element has an implicit element tag based on its order.
 /// Uniquely identifies an element similarly to protobuf tags.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct SumTypeVariant {
     /// The name of the variant, if any.
