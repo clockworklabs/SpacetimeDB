@@ -237,10 +237,6 @@ class Smoketest(unittest.TestCase):
         threading.Thread(target=stderr_task).start()
 
         print("initial update:", proc.stdout.readline())
-        if proc.poll() is not None:
-            if proc.returncode:
-                raise subprocess.CalledProcessError(proc.returncode, fake_args)
-            return lambda timeout=None: []
 
         def run():
             updates = list(map(json.loads, proc.stdout))
@@ -248,6 +244,9 @@ class Smoketest(unittest.TestCase):
             if code:
                 raise subprocess.CalledProcessError(code, fake_args)
             return updates
+        # Note that we're returning `.join`, not `.join()`; this returns something that the caller can call in order to
+        # join the thread and wait for the results.
+        # If the caller does not invoke this returned value, the thread will just run in the background and not be awaited.
         return ReturnThread(run).join
 
     @classmethod
@@ -299,6 +298,8 @@ class Smoketest(unittest.TestCase):
             return result
 
 
+# This is a custom thread class that will propagate exceptions to the caller of `.join()`.
+# Well, it will propagate _an_ exception.
 class ReturnThread:
     def __init__(self, target):
         self._target = target
@@ -307,6 +308,8 @@ class ReturnThread:
         self._thread.start()
 
     def _task(self):
+        # Wrap self._target()` with an exception handler, so we can return the exception
+        # to the caller of `join` below.
         try:
             self._result = self._target()
         except BaseException as e:
