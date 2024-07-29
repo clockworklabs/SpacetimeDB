@@ -1,8 +1,8 @@
+using SpacetimeDB.BSATN;
 using SpacetimeDB.ClientApi;
 
 using System;
 using System.Collections.Concurrent;
-using System.IO;
 using System.Linq;
 using System.Net.WebSockets;
 using System.Text;
@@ -185,10 +185,9 @@ namespace SpacetimeDB
                         }
                     }
 
-                    var o = new MemoryStream();
-                    var w = new BinaryWriter(o);
-                    new ClientMessage.BSATN().Write(w, message);
-                    await Ws!.SendAsync(o.ToArray(), WebSocketMessageType.Binary, true, CancellationToken.None);
+                    var messageBSATN = new ClientMessage.BSATN();
+                    var encodedMessage = IStructuralReadWrite.ToBytes(messageBSATN, message);
+                    await Ws!.SendAsync(encodedMessage, WebSocketMessageType.Binary, true, CancellationToken.None);
                 }
             }
             catch (Exception e)
