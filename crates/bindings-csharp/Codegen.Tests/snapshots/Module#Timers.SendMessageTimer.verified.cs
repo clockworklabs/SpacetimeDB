@@ -43,7 +43,7 @@ partial class Timers
                     new(
                         nameof(ScheduledAt),
                         (w, v) => BSATN.ScheduledAt.Write(w, (SpacetimeDB.ScheduleAt)v!)
-                    ),
+                    )
                 ]
             );
 
