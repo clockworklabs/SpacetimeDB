@@ -1,8 +1,6 @@
 namespace SpacetimeDB.Tests;
 
 using System.IO.Compression;
-using System.Runtime.CompilerServices;
-using Argon;
 using SpacetimeDB.BSATN;
 using SpacetimeDB.ClientApi;
 using SpacetimeDB.Types;

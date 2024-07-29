@@ -634,7 +634,7 @@ namespace SpacetimeDB
                         Logger.LogException(e);
                     }
                     break;
-                case ServerMessage.OneOffQueryResponse(var _):
+                case ServerMessage.OneOffQueryResponse:
                     try
                     {
                         onEvent?.Invoke(message);
@@ -663,16 +663,12 @@ namespace SpacetimeDB
                 return;
             }
 
-            var o = new MemoryStream();
-            var bw = new BinaryWriter(o);
-            args.WriteFields(bw);
-
             webSocket.Send(new ClientMessage.CallReducer(
                 new CallReducer
                 {
                     RequestId = stats.ReducerRequestTracker.StartTrackingRequest(args.ReducerName),
                     Reducer = args.ReducerName,
-                    Args = new EncodedValue.Binary(o.ToArray())
+                    Args = new EncodedValue.Binary(IStructuralReadWrite.ToBytes(args))
                 }
             ));
         }
