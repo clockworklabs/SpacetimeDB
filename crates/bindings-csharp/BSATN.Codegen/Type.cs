@@ -29,51 +29,60 @@ public record MemberDeclaration(string Name, string Type, string TypeInfo)
         """;
 }
 
-abstract record TypeKind
+public enum TypeKind
 {
-    public record Product : TypeKind
-    {
-        public sealed override string ToString() => "Product";
-    }
-
-    public record Sum : TypeKind
-    {
-        public sealed override string ToString() => "Sum";
-    }
-
-    public record Table(bool IsScheduled) : Product;
+    Product,
+    Sum,
 }
 
-record TypeDeclaration
+public abstract record BaseTypeDeclaration<M>
+    where M : MemberDeclaration, IEquatable<M>
 {
     public readonly Scope Scope;
     public readonly string ShortName;
     public readonly string FullName;
     public readonly TypeKind Kind;
-    public readonly EquatableArray<MemberDeclaration> Members;
+    public EquatableArray<M> Members { get; init; }
 
-    public TypeDeclaration(GeneratorAttributeSyntaxContext context)
+    protected abstract M ConvertMember(IFieldSymbol field);
+
+    public BaseTypeDeclaration(GeneratorAttributeSyntaxContext context)
     {
         var typeSyntax = (TypeDeclarationSyntax)context.TargetNode;
         var type = (INamedTypeSymbol)context.TargetSymbol;
-        var attr = context.Attributes.Single();
 
-        var fields = GetFields(typeSyntax, type);
-
-        Kind =
-            attr.AttributeClass?.Name == "TableAttribute"
-                ? new TypeKind.Table(attr.NamedArguments.Any(a => a.Key == "Scheduled"))
-                : new TypeKind.Product();
+        // Note: we could use naively use `type.GetMembers()` to get all fields of the type,
+        // but some users add their own fields in extra partial declarations like this:
+        //
+        // ```csharp
+        // [SpacetimeDB.Type]
+        // partial class MyType
+        // {
+        //     public int TableField;
+        // }
+        //
+        // partial class MyType
+        // {
+        //     public int ExtraField;
+        // }
+        // ```
+        //
+        // In this scenario, only fields declared inside the declaration with the `[SpacetimeDB.Type]` attribute
+        // should be considered as BSATN fields, and others are expected to be ignored.
+        //
+        // To achieve this, we need to walk over the annotated type syntax node, collect the field names,
+        // and look up the resolved field symbols only for those fields.
+        var fields = typeSyntax
+            .Members.OfType<FieldDeclarationSyntax>()
+            .SelectMany(f => f.Declaration.Variables)
+            .SelectMany(v => type.GetMembers(v.Identifier.Text))
+            .OfType<IFieldSymbol>()
+            .Where(f => !f.IsStatic);
 
         // Check if type implements generic `SpacetimeDB.TaggedEnum<Variants>` and, if so, extract the `Variants` type.
         if (type.BaseType?.OriginalDefinition.ToString() == "SpacetimeDB.TaggedEnum<Variants>")
         {
-            if (Kind is TypeKind.Table)
-            {
-                throw new InvalidOperationException("Tagged enums cannot be tables.");
-            }
-
-            Kind = new TypeKind.Sum();
+            Kind = TypeKind.Sum;
 
             if (
                 type.BaseType.TypeArguments[0]
@@ -90,6 +99,10 @@ record TypeDeclaration
 
             fields = taggedEnumVariants;
         }
+        else
+        {
+            Kind = TypeKind.Product;
+        }
 
         if (typeSyntax.TypeParameterList is not null)
         {
@@ -101,43 +114,22 @@ record TypeDeclaration
         Scope = new(typeSyntax);
         ShortName = type.Name;
         FullName = SymbolToName(type);
-        Members = new(fields.Select(v => new MemberDeclaration(v)).ToImmutableArray());
+        Members = new(fields.Select(ConvertMember).ToImmutableArray());
     }
 
-    public KeyValuePair<string, string> GenerateOutput()
+    public virtual Scope.Extensions ToExtensions()
     {
         string read,
             write;
 
-        var typeDesc = new StringBuilder();
+        var extensions = new Scope.Extensions(Scope, FullName);
 
         var bsatnDecls = Members.Cast<MemberDeclaration>();
-
-        if (Kind is TypeKind.Table { IsScheduled: true })
-        {
-            // For scheduled tables, we append extra fields early in the pipeline,
-            // both to the type itself and to the BSATN information, as if they
-            // were part of the original declaration.
-
-            typeDesc.Append(
-                """
-                public ulong ScheduledId;
-                public SpacetimeDB.ScheduleAt ScheduledAt;
-                """
-            );
-            bsatnDecls = bsatnDecls.Concat(
-                [
-                    new("ScheduledId", "ulong", "SpacetimeDB.BSATN.U64"),
-                    new("ScheduledAt", "SpacetimeDB.ScheduleAt", "SpacetimeDB.ScheduleAt.BSATN"),
-                ]
-            );
-        }
-
         var fieldNames = bsatnDecls.Select(m => m.Name);
 
         if (Kind is TypeKind.Sum)
         {
-            typeDesc.Append(
+            extensions.Contents.Append(
                 $$"""
                 private {{ShortName}}() { }
 
@@ -152,7 +144,7 @@ record TypeDeclaration
                 new("__enumTag", "@enum", "SpacetimeDB.BSATN.Enum<@enum>")
             );
 
-            typeDesc.Append(
+            extensions.Contents.Append(
                 string.Join(
                     "\n",
                     Members.Select(m =>
@@ -192,7 +184,9 @@ record TypeDeclaration
         }
         else
         {
-            typeDesc.Append(
+            extensions.BaseTypes.Add("SpacetimeDB.BSATN.IStructuralReadWrite");
+
+            extensions.Contents.Append(
                 $$"""
                 public void ReadFields(System.IO.BinaryReader reader) {
                     {{string.Join(
@@ -215,7 +209,7 @@ record TypeDeclaration
             write = "value.WriteFields(writer);";
         }
 
-        typeDesc.Append(
+        extensions.Contents.Append(
             $$"""
             public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<{{ShortName}}>
             {
@@ -238,20 +232,16 @@ record TypeDeclaration
             """
         );
 
-        return new(
-            FullName,
-            Scope.GenerateExtensions(
-                typeDesc.ToString(),
-                Kind is TypeKind.Product ? "SpacetimeDB.BSATN.IStructuralReadWrite" : null,
-                // For scheduled tables we're adding extra fields and compiler will warn about undefined ordering.
-                // We don't care about ordering as we generate BSATN ourselves and don't use those structs in FFI,
-                // so we can safely suppress the warning by saying "yes, we're okay with an auto/arbitrary layout".
-                Kind is TypeKind.Table { IsScheduled: true }
-                    ? "[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]"
-                    : null
-            )
-        );
+        return extensions;
     }
+}
+
+record TypeDeclaration : BaseTypeDeclaration<MemberDeclaration>
+{
+    public TypeDeclaration(GeneratorAttributeSyntaxContext context)
+        : base(context) { }
+
+    protected override MemberDeclaration ConvertMember(IFieldSymbol field) => new(field);
 }
 
 [Generator]
@@ -259,55 +249,39 @@ public class Type : IIncrementalGenerator
 {
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        WithAttrAndPredicate(
-            context,
-            "SpacetimeDB.TypeAttribute",
-            (node) =>
-            {
-                // structs and classes should be always processed
-                if (node is not EnumDeclarationSyntax enumType)
-                    return true;
-
-                // Ensure variants are contiguous as SATS enums don't support explicit tags.
-                if (enumType.Members.Any(m => m.EqualsValue is not null))
-                {
-                    throw new InvalidOperationException(
-                        "[SpacetimeDB.Type] enums cannot have explicit values: "
-                            + enumType.Identifier
-                    );
-                }
-
-                // Ensure all enums fit in `byte` as that's what SATS uses for tags.
-                if (enumType.Members.Count > 256)
-                {
-                    throw new InvalidOperationException(
-                        "[SpacetimeDB.Type] enums cannot have more than 256 variants."
-                    );
-                }
-
-                // Check that enums are compatible with SATS but otherwise skip from extra processing.
-                return false;
-            }
-        );
-
-        // Any table should be treated as a type without an explicit [Type] attribute.
-        WithAttrAndPredicate(context, "SpacetimeDB.TableAttribute", (_node) => true);
-    }
-
-    public static void WithAttrAndPredicate(
-        IncrementalGeneratorInitializationContext context,
-        string fullyQualifiedMetadataName,
-        Func<SyntaxNode, bool> predicate
-    )
-    {
         context
             .SyntaxProvider.ForAttributeWithMetadataName(
-                fullyQualifiedMetadataName,
-                predicate: (node, ct) => predicate(node),
+                "SpacetimeDB.TypeAttribute",
+                predicate: (node, ct) =>
+                {
+                    // structs and classes should be always processed
+                    if (node is not EnumDeclarationSyntax enumType)
+                        return true;
+
+                    // Ensure variants are contiguous as SATS enums don't support explicit tags.
+                    if (enumType.Members.Any(m => m.EqualsValue is not null))
+                    {
+                        throw new InvalidOperationException(
+                            "[SpacetimeDB.Type] enums cannot have explicit values: "
+                                + enumType.Identifier
+                        );
+                    }
+
+                    // Ensure all enums fit in `byte` as that's what SATS uses for tags.
+                    if (enumType.Members.Count > 256)
+                    {
+                        throw new InvalidOperationException(
+                            "[SpacetimeDB.Type] enums cannot have more than 256 variants."
+                        );
+                    }
+
+                    // Check that enums are compatible with SATS but otherwise skip from extra processing.
+                    return false;
+                },
                 transform: (context, ct) => new TypeDeclaration(context)
             )
             .WithTrackingName("SpacetimeDB.Type.Parse")
-            .Select((type, ct) => type.GenerateOutput())
+            .Select((type, ct) => type.ToExtensions())
             .WithTrackingName("SpacetimeDB.Type.GenerateExtensions")
             .RegisterSourceOutputs(context);
     }

@@ -104,19 +104,31 @@ record ColumnDeclaration : MemberDeclaration
         $"new (nameof({Name}), (w, v) => BSATN.{Name}.Write(w, ({Type}) v!))";
 }
 
-record TableDeclaration
+record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 {
-    public readonly Scope Scope;
-    public readonly string ShortName;
-    public readonly string FullName;
-    public readonly EquatableArray<ColumnDeclaration> Fields;
     public readonly bool IsPublic;
     public readonly string? Scheduled;
 
+    private static readonly ColumnDeclaration[] ScheduledColumns =
+    [
+        new("ScheduledId", "ulong", "SpacetimeDB.BSATN.U64", ColumnAttrs.PrimaryKeyAuto, true),
+        new(
+            "ScheduledAt",
+            "SpacetimeDB.ScheduleAt",
+            "SpacetimeDB.ScheduleAt.BSATN",
+            ColumnAttrs.UnSet,
+            false
+        )
+    ];
+
     public TableDeclaration(GeneratorAttributeSyntaxContext context)
+        : base(context)
     {
-        var tableSyntax = (TypeDeclarationSyntax)context.TargetNode;
-        var table = (INamedTypeSymbol)context.TargetSymbol;
+        if (Kind is TypeKind.Sum)
+        {
+            throw new InvalidOperationException("Tagged enums cannot be tables.");
+        }
+
         var attrArgs = context.Attributes.Single().NamedArguments;
 
         IsPublic = attrArgs.Any(pair => pair is { Key: "Public", Value.Value: true });
@@ -126,52 +138,48 @@ record TableDeclaration
             .Select(pair => (string?)pair.Value.Value)
             .SingleOrDefault();
 
-        var fields = GetFields(tableSyntax, table).Select(f => new ColumnDeclaration(f));
-
         if (Scheduled is not null)
         {
             // For scheduled tables, we append extra fields early in the pipeline,
             // both to the type itself and to the BSATN information, as if they
             // were part of the original declaration.
-            //
-            // TODO: simplify this when refactor for Table codegen inheriting Type
-            // codegen has landed (it's in WIP branch at the moment, sp meanwhile we
-            // need to do some logic duplication in both places).
-            fields = fields.Concat(
-                [
-                    new(
-                        "ScheduledId",
-                        "ulong",
-                        "SpacetimeDB.BSATN.U64",
-                        ColumnAttrs.PrimaryKeyAuto,
-                        true
-                    ),
-                    new(
-                        "ScheduledAt",
-                        "SpacetimeDB.ScheduleAt",
-                        "SpacetimeDB.ScheduleAt.BSATN",
-                        ColumnAttrs.UnSet,
-                        false
-                    )
-                ]
+            Members = new(Members.Concat(ScheduledColumns).ToImmutableArray());
+        }
+    }
+
+    protected override ColumnDeclaration ConvertMember(IFieldSymbol field) => new(field);
+
+    public override Scope.Extensions ToExtensions()
+    {
+        var extensions = base.ToExtensions();
+
+        if (Scheduled is not null)
+        {
+            // For scheduled tables we're adding extra fields to the type source.
+            extensions.Contents.Append(
+                $$"""
+                public ulong ScheduledId;
+                public SpacetimeDB.ScheduleAt ScheduledAt;
+                """
+            );
+
+            // When doing so, the compiler will warn about undefined ordering between partial declarations.
+            // We don't care about ordering as we generate BSATN ourselves and don't use those structs in FFI,
+            // so we can safely suppress the warning by saying "yes, we're okay with an auto/arbitrary layout".
+            extensions.ExtraAttrs.Add(
+                "[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]"
             );
         }
 
-        Scope = new Scope(tableSyntax);
-        ShortName = table.Name;
-        FullName = SymbolToName(table);
-        Fields = new EquatableArray<ColumnDeclaration>(fields.ToImmutableArray());
-    }
-
-    public KeyValuePair<string, string> GenerateOutput()
-    {
-        var hasAutoIncFields = Fields.Any(f => f.Attrs.HasFlag(ColumnAttrs.AutoInc));
+        var hasAutoIncFields = Members.Any(f => f.Attrs.HasFlag(ColumnAttrs.AutoInc));
 
         var iTable = $"SpacetimeDB.Internal.ITable<{ShortName}>";
 
-        var extensions = new StringBuilder();
+        // ITable inherits IStructuralReadWrite, so we can replace the base type instead of appending another one.
+        extensions.BaseTypes.Clear();
+        extensions.BaseTypes.Add(iTable);
 
-        extensions.Append(
+        extensions.Contents.Append(
             $$"""
             static bool {{iTable}}.HasAutoIncFields => {{hasAutoIncFields.ToString().ToLower()}};
 
@@ -179,7 +187,7 @@ record TableDeclaration
                 new (
                     nameof({{ShortName}}),
                     new SpacetimeDB.Internal.Module.ColumnDefWithAttrs[] {
-                        {{string.Join(",\n", Fields.Select(f => f.GenerateColumnDefWithAttrs()))}}
+                        {{string.Join(",\n", Members.Select(f => f.GenerateColumnDefWithAttrs()))}}
                     },
                     {{IsPublic.ToString().ToLower()}},
                     {{(Scheduled is not null ? $"\"{Scheduled}\"" : "null")}}
@@ -188,7 +196,7 @@ record TableDeclaration
             );
 
             static SpacetimeDB.Internal.Filter {{iTable}}.CreateFilter() => new([
-                {{string.Join(",\n", Fields.Select(f => f.GenerateFilterEntry()))}}
+                {{string.Join(",\n", Members.Select(f => f.GenerateFilterEntry()))}}
             ]);
 
             public static IEnumerable<{{ShortName}}> Iter() => {{iTable}}.Iter();
@@ -198,14 +206,14 @@ record TableDeclaration
         );
 
         foreach (
-            var (f, i) in Fields
+            var (f, i) in Members
                 .Select((field, i) => (field, i))
                 .Where(pair => pair.field.IsEquatable)
         )
         {
             var colEqWhere = $"{iTable}.ColEq.Where({i}, {f.Name}, BSATN.{f.Name})";
 
-            extensions.Append(
+            extensions.Contents.Append(
                 $"""
                 public static IEnumerable<{ShortName}> FilterBy{f.Name}({f.Type} {f.Name}) =>
                     {colEqWhere}.Iter();
@@ -214,7 +222,7 @@ record TableDeclaration
 
             if (f.Attrs.HasFlag(ColumnAttrs.Unique))
             {
-                extensions.Append(
+                extensions.Contents.Append(
                     $"""
                     public static {ShortName}? FindBy{f.Name}({f.Type} {f.Name}) =>
                         FilterBy{f.Name}({f.Name})
@@ -231,7 +239,7 @@ record TableDeclaration
             }
         }
 
-        return new(FullName, Scope.GenerateExtensions(extensions.ToString(), iTable));
+        return extensions;
     }
 }
 
@@ -323,7 +331,7 @@ public class Module : IIncrementalGenerator
             .WithTrackingName("SpacetimeDB.Table.Parse");
 
         tables
-            .Select((t, ct) => t.GenerateOutput())
+            .Select((t, ct) => t.ToExtensions())
             .WithTrackingName("SpacetimeDB.Table.GenerateExtensions")
             .RegisterSourceOutputs(context);
 
