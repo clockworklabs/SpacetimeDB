@@ -246,7 +246,8 @@ class Smoketest(unittest.TestCase):
             return updates
         # Note that we're returning `.join`, not `.join()`; this returns something that the caller can call in order to
         # join the thread and wait for the results.
-        # If the caller does not invoke this returned value, the thread will just run in the background and not be awaited.
+        # If the caller does not invoke this returned value, the thread will just run in the background, not be awaited,
+        # and **not raise any exceptions to the caller**.
         return ReturnThread(run).join
 
     @classmethod
