@@ -1,6 +1,7 @@
 namespace SpacetimeDB.Codegen;
 
 using System.Collections.Immutable;
+using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -244,7 +245,10 @@ public class Module : IIncrementalGenerator
 
                     var iTable = $"SpacetimeDB.Internal.ITable<{t.ShortName}>";
 
-                    var extensions = $$"""
+                    var extensions = new StringBuilder();
+
+                    extensions.Append(
+                        $$"""
                         static bool {{iTable}}.HasAutoIncFields => {{autoIncFields.Any().ToString().ToLower()}};
 
                         static SpacetimeDB.Internal.Module.TableDesc {{iTable}}.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
@@ -271,7 +275,8 @@ public class Module : IIncrementalGenerator
                         public static IEnumerable<{{t.ShortName}}> Iter() => {{iTable}}.Iter();
                         public static IEnumerable<{{t.ShortName}}> Query(System.Linq.Expressions.Expression<Func<{{t.ShortName}}, bool>> predicate) => {{iTable}}.Query(predicate);
                         public void Insert() => {{iTable}}.Insert(this);
-                        """;
+                        """
+                    );
 
                     foreach (
                         var (f, i) in t
@@ -279,31 +284,37 @@ public class Module : IIncrementalGenerator
                             .Where(pair => pair.field.IsEquatable)
                     )
                     {
-                        extensions += $"""
-                        public static IEnumerable<{t.ShortName}> FilterBy{f.Name}({f.Type} {f.Name}) =>
-                            {iTable}.ColEq.Where({i}, {f.Name}, BSATN.{f.Name}).Iter();
-                        """;
+                        var colEqWhere = $"{iTable}.ColEq.Where({i}, {f.Name}, BSATN.{f.Name})";
+
+                        extensions.Append(
+                            $"""
+                            public static IEnumerable<{t.ShortName}> FilterBy{f.Name}({f.Type} {f.Name}) =>
+                                {colEqWhere}.Iter();
+                            """
+                        );
 
                         if (f.Attrs.HasFlag(ColumnAttrs.Unique))
                         {
-                            extensions += $"""
-                            public static {t.ShortName}? FindBy{f.Name}({f.Type} {f.Name}) =>
-                                FilterBy{f.Name}({f.Name})
-                                .Cast<{t.ShortName}?>()
-                                .SingleOrDefault();
+                            extensions.Append(
+                                $"""
+                                public static {t.ShortName}? FindBy{f.Name}({f.Type} {f.Name}) =>
+                                    FilterBy{f.Name}({f.Name})
+                                    .Cast<{t.ShortName}?>()
+                                    .SingleOrDefault();
 
-                            public static bool DeleteBy{f.Name}({f.Type} {f.Name}) =>
-                                {iTable}.ColEq.Where({i}, {f.Name}, BSATN.{f.Name}).Delete();
+                                public static bool DeleteBy{f.Name}({f.Type} {f.Name}) =>
+                                    {colEqWhere}.Delete();
 
-                            public static bool UpdateBy{f.Name}({f.Type} {f.Name}, {t.ShortName} @this) =>
-                                {iTable}.ColEq.Where({i}, {f.Name}, BSATN.{f.Name}).Update(@this);
-                            """;
+                                public static bool UpdateBy{f.Name}({f.Type} {f.Name}, {t.ShortName} @this) =>
+                                    {colEqWhere}.Update(@this);
+                                """
+                            );
                         }
                     }
 
                     return new KeyValuePair<string, string>(
                         t.FullName,
-                        t.Scope.GenerateExtensions(extensions, iTable)
+                        t.Scope.GenerateExtensions(extensions.ToString(), iTable)
                     );
                 }
             )

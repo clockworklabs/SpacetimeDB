@@ -1,6 +1,7 @@
 namespace SpacetimeDB.Codegen;
 
 using System.Collections.Immutable;
+using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -174,7 +175,7 @@ public class Type : IIncrementalGenerator
                     string read,
                         write;
 
-                    var typeDesc = "";
+                    var typeDesc = new StringBuilder();
 
                     var bsatnDecls = type.Members.Select(m => (m.Name, m.TypeInfo));
 
@@ -184,10 +185,12 @@ public class Type : IIncrementalGenerator
                         // both to the type itself and to the BSATN information, as if they
                         // were part of the original declaration.
 
-                        typeDesc += """
-                        public ulong ScheduledId;
-                        public SpacetimeDB.ScheduleAt ScheduledAt;
-                        """;
+                        typeDesc.Append(
+                            """
+                            public ulong ScheduledId;
+                            public SpacetimeDB.ScheduleAt ScheduledAt;
+                            """
+                        );
                         bsatnDecls = bsatnDecls.Concat(
                             [
                                 (Name: "ScheduledId", TypeInfo: "SpacetimeDB.BSATN.U64"),
@@ -200,26 +203,30 @@ public class Type : IIncrementalGenerator
 
                     if (type.Kind is TypeKind.Sum)
                     {
-                        typeDesc += $$"""
-                        private {{type.ShortName}}() { }
+                        typeDesc.Append(
+                            $$"""
+                            private {{type.ShortName}}() { }
 
-                        internal enum @enum: byte
-                        {
-                            {{string.Join(",\n", fieldNames)}}
-                        }
-                        """;
+                            internal enum @enum: byte
+                            {
+                                {{string.Join(",\n", fieldNames)}}
+                            }
+                            """
+                        );
 
                         bsatnDecls = bsatnDecls.Prepend(
                             (Name: "__enumTag", TypeInfo: "SpacetimeDB.BSATN.Enum<@enum>")
                         );
 
-                        typeDesc += string.Join(
-                            "\n",
-                            type.Members.Select(m =>
-                                // C# puts field names in the same namespace as records themselves, and will complain about clashes if they match.
-                                // To avoid this, we append an underscore to the field name.
-                                // In most cases the field name shouldn't matter anyway as you'll idiomatically use pattern matching to extract the value.
-                                $"public sealed record {m.Name}({m.Type} {m.Name}_) : {type.ShortName};"
+                        typeDesc.Append(
+                            string.Join(
+                                "\n",
+                                type.Members.Select(m =>
+                                    // C# puts field names in the same namespace as records themselves, and will complain about clashes if they match.
+                                    // To avoid this, we append an underscore to the field name.
+                                    // In most cases the field name shouldn't matter anyway as you'll idiomatically use pattern matching to extract the value.
+                                    $"public sealed record {m.Name}({m.Type} {m.Name}_) : {type.ShortName};"
+                                )
                             )
                         );
 
@@ -250,7 +257,8 @@ public class Type : IIncrementalGenerator
                     }
                     else
                     {
-                        typeDesc += $$"""
+                        typeDesc.Append(
+                            $$"""
                             public void ReadFields(System.IO.BinaryReader reader) {
                                 {{string.Join(
                                     "\n",
@@ -264,7 +272,8 @@ public class Type : IIncrementalGenerator
                                     fieldNames.Select(name => $"BSATN.{name}.Write(writer, {name});")
                                 )}}
                             }
-                            """;
+                            """
+                        );
 
                         read =
                             $"SpacetimeDB.BSATN.IStructuralReadWrite.Read<{type.ShortName}>(reader)";
@@ -272,7 +281,8 @@ public class Type : IIncrementalGenerator
                         write = "value.WriteFields(writer);";
                     }
 
-                    typeDesc += $$"""
+                    typeDesc.Append(
+                        $$"""
                         public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<{{type.ShortName}}>
                         {
                             {{string.Join(
@@ -297,12 +307,13 @@ public class Type : IIncrementalGenerator
                                 )}}
                             }));
                         }
-                        """;
+                        """
+                    );
 
                     return new KeyValuePair<string, string>(
                         type.FullName,
                         type.Scope.GenerateExtensions(
-                            typeDesc,
+                            typeDesc.ToString(),
                             type.Kind is TypeKind.Product
                                 ? "SpacetimeDB.BSATN.IStructuralReadWrite"
                                 : null,

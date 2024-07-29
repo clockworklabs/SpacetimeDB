@@ -144,8 +144,8 @@ public static class Utils
             };
             if (type.IsGenericType)
             {
-                result +=
-                    $"<{string.Join(", ", type.TypeArguments.Select(SymbolToName).Concat(type.TypeArguments.Select(GetTypeInfo)))}>";
+                result =
+                    $"{result}<{string.Join(", ", type.TypeArguments.Select(SymbolToName).Concat(type.TypeArguments.Select(GetTypeInfo)))}>";
             }
             return result;
         }
