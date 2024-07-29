@@ -258,14 +258,15 @@ public static partial class Module
             Runtime.Random = new((int)timestamp.MicrosecondsSinceEpoch);
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            reducers[(int)id].Invoke(
-                reader,
-                new(
-                    Identity.From(caller_identity.Consume()),
-                    Address.From(caller_address.Consume()),
-                    timestamp.ToStd()
-                )
-            );
+            reducers[(int)id]
+                .Invoke(
+                    reader,
+                    new(
+                        Identity.From(caller_identity.Consume()),
+                        Address.From(caller_address.Consume()),
+                        timestamp.ToStd()
+                    )
+                );
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the reducer arguments");
