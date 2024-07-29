@@ -225,7 +225,7 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
                             >?)
                                 v!
                         )
-                ),
+                )
             ]
         );
 
