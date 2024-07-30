@@ -59,8 +59,8 @@ pub struct Pet {
     species: String,
 }
 
-#[spacetimedb(update)]
-pub fn on_module_update() {
+#[spacetimedb(reducer)]
+pub fn are_we_updated_yet() {
     println!("MODULE UPDATED");
 }
 """
@@ -95,9 +95,10 @@ pub fn on_module_update() {
         # Check that the old module is still running by calling say_hello
         self.call("say_hello")
 
-        # Adding a table is ok, and invokes update
+        # Adding a table is ok
         self.write_module_code(self.MODULE_CODE_C)
         self.publish_module(name, clear=False)
+        self.call("are_we_updated_yet")
         self.assertIn("MODULE UPDATED", self.logs(2))
 
 

@@ -20,7 +20,7 @@ use crate::execution_context::{self, ExecutionContext, ReducerContext};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
     CallReducerParams, DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
-    ModuleInstance, ReducersMap, UpdateDatabaseResult, UpdateDatabaseSuccess,
+    ModuleInstance, ReducersMap, UpdateDatabaseResult,
 };
 use crate::host::{ArgsTuple, EntityDef, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler};
 use crate::identity::Identity;
@@ -336,7 +336,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             Some(reducer_id) => {
                 self.system_logger().info("Invoking `init` reducer");
                 // If a caller address was passed to the `/database/publish` HTTP endpoint,
-                // the init/update reducer will receive it as the caller address.
+                // the init reducer will receive it as the caller address.
                 // This is useful for bootstrapping the control DB in SpacetimeDB-cloud.
                 let Database {
                     owner_identity: caller_identity,
@@ -368,12 +368,9 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     #[tracing::instrument(skip_all)]
     fn update_database(
         &mut self,
-        caller_address: Option<Address>,
         program_hash: Hash,
         program_bytes: Box<[u8]>,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
-        let timestamp = Timestamp::now();
-
         let proposed_tables = get_tabledefs(&self.info).collect::<anyhow::Result<Vec<_>>>()?;
 
         let stdb = &*self.database_instance_context().relational_db;
@@ -383,50 +380,23 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let (tx, _) = stdb.with_auto_rollback(&ctx, tx, |tx| {
             stdb.update_program(tx, HostType::Wasm, program_hash, program_bytes)
         })?;
-        let res = crate::db::update::update_database(stdb, tx, proposed_tables, self.system_logger())?;
-        let tx = match res {
-            Ok(tx) => tx,
-            Err(e) => return Ok(Err(e)),
-        };
+        self.system_logger().info(&format!("Updated program to {program_hash}"));
 
-        let update_result = match self.info.reducers.lookup_id(UPDATE_DUNDER) {
-            None => {
+        let (tx, res) = stdb.with_auto_rollback(&ctx, tx, |tx| {
+            crate::db::update::update_database(stdb, tx, proposed_tables, self.system_logger())
+        })?;
+        match res {
+            Err(e) => {
+                self.system_logger().warn("Database update failed");
+                stdb.rollback_mut_tx(&ctx, tx);
+                Ok(Err(e))
+            }
+            Ok(()) => {
                 stdb.commit_tx(&ctx, tx)?;
-                None
+                self.system_logger().info("Database updated");
+                Ok(Ok(()))
             }
-
-            Some(reducer_id) => {
-                self.system_logger().info("Invoking `update` reducer");
-                // If a caller address was passed to the `/database/publish` HTTP endpoint,
-                // the init/update reducer will receive it as the caller address.
-                // This is useful for bootstrapping the control DB in SpacetimeDB-cloud.
-                let Database {
-                    owner_identity: caller_identity,
-                    ..
-                } = self.database_instance_context().database;
-                let res = self.call_reducer_with_tx(
-                    Some(tx),
-                    CallReducerParams {
-                        timestamp,
-                        caller_identity,
-                        caller_address: caller_address.unwrap_or(Address::__DUMMY),
-                        client: None,
-                        request_id: None,
-                        timer: None,
-                        reducer_id,
-                        args: ArgsTuple::nullary(),
-                    },
-                );
-                Some(res)
-            }
-        };
-
-        self.system_logger().info("Database updated");
-
-        Ok(Ok(UpdateDatabaseSuccess {
-            update_result,
-            migrate_results: vec![],
-        }))
+        }
     }
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {

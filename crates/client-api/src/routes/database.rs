@@ -21,7 +21,6 @@ use spacetimedb::host::EntityDef;
 use spacetimedb::host::ReducerArgs;
 use spacetimedb::host::ReducerCallError;
 use spacetimedb::host::ReducerOutcome;
-use spacetimedb::host::UpdateDatabaseSuccess;
 use spacetimedb::identity::Identity;
 use spacetimedb::json::client_api::StmtResultJson;
 use spacetimedb::messages::control_db::{Database, DatabaseInstance, HostType};
@@ -713,24 +712,8 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         .await
         .map_err(log_and_500)?;
 
-    if let Some(updated) = maybe_updated {
-        match updated {
-            Ok(success) => {
-                if let UpdateDatabaseSuccess {
-                    // An update reducer was defined, and it was run
-                    update_result: Some(update_result),
-                    // Not yet implemented
-                    migrate_results: _,
-                } = success
-                {
-                    let ror = reducer_outcome_response(&auth.identity, "update", update_result.outcome);
-                    if !matches!(ror, (StatusCode::OK, _)) {
-                        return Err(ror.into());
-                    }
-                }
-            }
-            Err(e) => return Err((StatusCode::BAD_REQUEST, format!("Database update rejected: {e}")).into()),
-        }
+    if let Some(Err(e)) = maybe_updated {
+        return Err((StatusCode::BAD_REQUEST, format!("Database update rejected: {e}")).into());
     }
 
     Ok(axum::Json(PublishResult::Success {

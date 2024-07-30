@@ -94,11 +94,6 @@ pub fn init() {
     });
 }
 
-#[spacetimedb(update)]
-pub fn update() {
-    log::info!("Update called!");
-}
-
 #[spacetimedb(reducer)]
 pub fn repeating_test(ctx: ReducerContext, arg: RepeatingTestArg) {
     let delta_time = arg.prev_time.elapsed();

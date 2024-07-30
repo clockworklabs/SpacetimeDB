@@ -2,7 +2,6 @@ use super::datastore::locking_tx_datastore::MutTxId;
 use super::relational_db::RelationalDB;
 use crate::database_logger::SystemLogger;
 use crate::error::{DBError, TableError};
-use crate::execution_context::ExecutionContext;
 use anyhow::Context;
 use core::{fmt, mem};
 use enum_as_inner::EnumAsInner;
@@ -27,66 +26,62 @@ pub enum UpdateDatabaseError {
 
 pub fn update_database(
     stdb: &RelationalDB,
-    tx: MutTxId,
+    tx: &mut MutTxId,
     proposed_tables: Vec<RawTableDefV8>,
     system_logger: &SystemLogger,
-) -> anyhow::Result<Result<MutTxId, UpdateDatabaseError>> {
-    let ctx = ExecutionContext::internal(stdb.address());
-    let (tx, res) = stdb.with_auto_rollback::<_, _, anyhow::Error>(&ctx, tx, |tx| {
-        let existing_tables = stdb.get_all_tables_mut(tx)?;
-        match schema_updates(existing_tables, proposed_tables)? {
-            SchemaUpdates::Updated(updated) => {
-                for (name, schema) in updated.new_tables {
-                    system_logger.info(&format!("Creating table `{}`", name));
-                    stdb.create_table(tx, schema)
-                        .with_context(|| format!("failed to create table {}", name))?;
-                }
+) -> anyhow::Result<Result<(), UpdateDatabaseError>> {
+    let existing_tables = stdb.get_all_tables_mut(tx)?;
+    match schema_updates(existing_tables, proposed_tables)? {
+        SchemaUpdates::Updated(updated) => {
+            for (name, schema) in updated.new_tables {
+                system_logger.info(&format!("Creating table `{}`", name));
+                stdb.create_table(tx, schema)
+                    .with_context(|| format!("failed to create table {}", name))?;
+            }
 
-                for (name, access) in updated.changed_access {
-                    stdb.alter_table_access(tx, name, access)?;
-                }
+            for (name, access) in updated.changed_access {
+                stdb.alter_table_access(tx, name, access)?;
+            }
 
-                for (name, added) in updated.added_indexes {
-                    let table_id = stdb
-                        .table_id_from_name_mut(tx, &name)?
-                        .ok_or_else(|| TableError::NotFound(name.into()))?;
-                    for index in added {
-                        stdb.create_index(tx, table_id, index)?;
-                    }
-                }
-
-                for index_id in updated.removed_indexes {
-                    stdb.drop_index(tx, index_id)?;
+            for (name, added) in updated.added_indexes {
+                let table_id = stdb
+                    .table_id_from_name_mut(tx, &name)?
+                    .ok_or_else(|| TableError::NotFound(name.into()))?;
+                for index in added {
+                    stdb.create_index(tx, table_id, index)?;
                 }
             }
 
-            SchemaUpdates::Tainted(tainted) => {
-                system_logger.error("Module update rejected due to schema mismatch");
-                let mut tables = Vec::with_capacity(tainted.len());
-                for t in tainted {
-                    system_logger.warn(&format!("{}: {}", t.table_name, t.reason));
-                    if let TaintReason::IncompatibleSchema { existing, proposed } = t.reason {
-                        let existing = format!("{existing:#?}");
-                        let proposed = format!("{proposed:#?}");
-                        let diff = TextDiff::configure()
-                            .timeout(Duration::from_millis(200))
-                            .algorithm(Algorithm::Patience)
-                            .diff_lines(&existing, &proposed);
-                        system_logger.warn(&format!(
-                            "{}: Diff existing vs. proposed:\n{}",
-                            t.table_name,
-                            diff.unified_diff()
-                        ));
-                    }
-                    tables.push(t.table_name);
-                }
-                return Ok(Err(UpdateDatabaseError::IncompatibleSchema { tables }));
+            for index_id in updated.removed_indexes {
+                stdb.drop_index(tx, index_id)?;
             }
         }
 
-        Ok(Ok(()))
-    })?;
-    Ok(stdb.rollback_on_err(&ctx, tx, res).map(|(tx, ())| tx))
+        SchemaUpdates::Tainted(tainted) => {
+            system_logger.error("Module update rejected due to schema mismatch");
+            let mut tables = Vec::with_capacity(tainted.len());
+            for t in tainted {
+                system_logger.warn(&format!("{}: {}", t.table_name, t.reason));
+                if let TaintReason::IncompatibleSchema { existing, proposed } = t.reason {
+                    let existing = format!("{existing:#?}");
+                    let proposed = format!("{proposed:#?}");
+                    let diff = TextDiff::configure()
+                        .timeout(Duration::from_millis(200))
+                        .algorithm(Algorithm::Patience)
+                        .diff_lines(&existing, &proposed);
+                    system_logger.warn(&format!(
+                        "{}: Diff existing vs. proposed:\n{}",
+                        t.table_name,
+                        diff.unified_diff()
+                    ));
+                }
+                tables.push(t.table_name);
+            }
+            return Ok(Err(UpdateDatabaseError::IncompatibleSchema { tables }));
+        }
+    }
+
+    Ok(Ok(()))
 }
 
 /// The reasons a table can become [`Tainted`].
