@@ -12,6 +12,12 @@
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)/logo.png" Pack="true" PackagePath="" />
     <None Include="$(MSBuildThisFileDirectory)/LICENSE" Pack="true" PackagePath="" />
