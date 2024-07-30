@@ -37,24 +37,24 @@ use super::locking_tx_datastore::tx::TxId;
 use super::locking_tx_datastore::MutTxId;
 
 /// The static ID of the table that defines tables
-pub(crate) const ST_TABLE_ID: TableId = TableId(0);
+pub(crate) const ST_TABLE_ID: TableId = TableId(1);
 /// The static ID of the table that defines columns
-pub(crate) const ST_COLUMN_ID: TableId = TableId(1);
+pub(crate) const ST_COLUMN_ID: TableId = TableId(2);
 /// The static ID of the table that defines sequences
-pub(crate) const ST_SEQUENCE_ID: TableId = TableId(2);
+pub(crate) const ST_SEQUENCE_ID: TableId = TableId(3);
 /// The static ID of the table that defines indexes
-pub(crate) const ST_INDEX_ID: TableId = TableId(3);
+pub(crate) const ST_INDEX_ID: TableId = TableId(4);
 /// The static ID of the table that defines constraints
-pub(crate) const ST_CONSTRAINT_ID: TableId = TableId(4);
+pub(crate) const ST_CONSTRAINT_ID: TableId = TableId(5);
 /// The static ID of the table that defines the stdb module associated with
 /// the database
-pub(crate) const ST_MODULE_ID: TableId = TableId(5);
+pub(crate) const ST_MODULE_ID: TableId = TableId(6);
 /// The static ID of the table that defines connected clients
-pub(crate) const ST_CLIENT_ID: TableId = TableId(6);
+pub(crate) const ST_CLIENT_ID: TableId = TableId(7);
 /// The static ID of the table that defines system variables
-pub(crate) const ST_VAR_ID: TableId = TableId(7);
+pub(crate) const ST_VAR_ID: TableId = TableId(8);
 /// The static ID of the table that defines scheduled tables
-pub(crate) const ST_SCHEDULED_ID: TableId = TableId(8);
+pub(crate) const ST_SCHEDULED_ID: TableId = TableId(9);
 
 pub(crate) const ST_TABLE_NAME: &str = "st_table";
 pub(crate) const ST_COLUMN_NAME: &str = "st_column";
