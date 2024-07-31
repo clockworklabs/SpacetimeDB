@@ -24,9 +24,7 @@ pub use disk_storage::DiskStorage;
 pub use host_controller::{
     DescribedEntityType, ExternalStorage, HostController, ProgramStorage, ReducerCallResult, ReducerOutcome,
 };
-pub use module_host::{
-    EntityDef, ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult, UpdateDatabaseSuccess,
-};
+pub use module_host::{EntityDef, ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult};
 pub use scheduler::Scheduler;
 pub use spacetimedb_client_api_messages::timestamp::Timestamp;
 

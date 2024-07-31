@@ -81,7 +81,7 @@ mod sym {
 /// The macro takes this `input`, which defines what the attribute does,
 /// and it is structured roughly like so:
 /// ```ignore
-/// input = table [ ( private | public ) ] | init | connect | disconnect | migrate
+/// input = table [ ( private | public ) ] | init | connect | disconnect
 ///       | reducer
 ///       | index(btree | hash [, name = string] [, field_name:ident]*)
 /// ```
@@ -112,9 +112,7 @@ fn route_input(input: MacroInput, item: TokenStream) -> syn::Result<TokenStream>
         MacroInput::Reducer(None) => spacetimedb_reducer(item),
         MacroInput::Connect => spacetimedb_special_reducer("__identity_connected__", item),
         MacroInput::Disconnect => spacetimedb_special_reducer("__identity_disconnected__", item),
-        MacroInput::Migrate => spacetimedb_special_reducer("__migrate__", item),
         MacroInput::Index { ty, name, field_names } => spacetimedb_index(ty, name, field_names, item),
-        MacroInput::Update => spacetimedb_special_reducer("__update__", item),
     }
 }
 
@@ -137,13 +135,11 @@ enum MacroInput {
     Reducer(Option<Span>),
     Connect,
     Disconnect,
-    Migrate,
     Index {
         ty: IndexType,
         name: Option<String>,
         field_names: Vec<Ident>,
     },
-    Update,
 }
 
 /// Parse `f()` delimited by `,` until `input` is empty.
@@ -234,7 +230,6 @@ impl syn::parse::Parse for MacroInput {
             }
             kw::connect => Self::Connect,
             kw::disconnect => Self::Disconnect,
-            kw::migrate => Self::Migrate,
             kw::index => {
                 // Extract stuff in parens.
                 let in_parens;
@@ -261,7 +256,6 @@ impl syn::parse::Parse for MacroInput {
                 })?;
                 Self::Index { ty, name, field_names }
             }
-            kw::update => Self::Update,
         }))
     }
 }
@@ -293,7 +287,6 @@ mod kw {
     syn::custom_keyword!(reducer);
     syn::custom_keyword!(connect);
     syn::custom_keyword!(disconnect);
-    syn::custom_keyword!(migrate);
     syn::custom_keyword!(index);
     syn::custom_keyword!(btree);
     syn::custom_keyword!(hash);
@@ -301,7 +294,6 @@ mod kw {
     syn::custom_keyword!(private);
     syn::custom_keyword!(public);
     syn::custom_keyword!(repeat);
-    syn::custom_keyword!(update);
     syn::custom_keyword!(scheduled);
 }
 

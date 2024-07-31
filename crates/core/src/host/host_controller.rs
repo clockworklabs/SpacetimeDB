@@ -20,7 +20,7 @@ use parking_lot::Mutex;
 use serde::Serialize;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_durability as durability;
-use spacetimedb_lib::{hash_bytes, Address};
+use spacetimedb_lib::hash_bytes;
 use spacetimedb_sats::hash::Hash;
 use std::fmt;
 use std::future::Future;
@@ -293,7 +293,6 @@ impl HostController {
     pub async fn update_module_host(
         &self,
         database: Database,
-        caller_address: Option<Address>,
         host_type: HostType,
         instance_id: u64,
         program_bytes: Box<[u8]>,
@@ -322,7 +321,7 @@ impl HostController {
             }
         };
         let update_result = host
-            .update_module(caller_address, host_type, program, self.unregister_fn(instance_id))
+            .update_module(host_type, program, self.unregister_fn(instance_id))
             .await?;
 
         *guard = Some(host);
@@ -352,7 +351,6 @@ impl HostController {
         &self,
         database: Database,
         instance_id: u64,
-        caller_address: Option<Address>,
         expected_hash: Option<Hash>,
     ) -> anyhow::Result<watch::Receiver<ModuleHost>> {
         trace!("custom bootstrap {}/{}", database.address, instance_id);
@@ -395,7 +393,6 @@ impl HostController {
             let program_bytes = load_program(&self.program_storage, program_hash).await?;
             let update_result = host
                 .update_module(
-                    caller_address,
                     host_type,
                     Program {
                         hash: program_hash,
@@ -593,22 +590,21 @@ async fn launch_module(
 async fn update_module(
     db: &RelationalDB,
     module: &ModuleHost,
-    caller_address: Option<Address>,
     program: Program,
 ) -> anyhow::Result<UpdateDatabaseResult> {
     let addr = db.address();
     match stored_program_hash(db)? {
         None => Err(anyhow!("database `{}` not yet initialized", addr)),
-        Some(stored) if stored == program.hash => {
-            info!("database `{}` up to date with program `{}`", addr, program.hash);
-            anyhow::Ok(Ok(<_>::default()))
-        }
         Some(stored) => {
-            info!("updating `{}` from {} to {}", addr, stored, program.hash);
-            let update_result = module
-                .update_database(caller_address, program.hash, program.bytes)
-                .await?;
-            Ok(update_result)
+            let res = if stored == program.hash {
+                info!("database `{}` up to date with program `{}`", addr, program.hash);
+                Ok(())
+            } else {
+                info!("updating `{}` from {} to {}", addr, stored, program.hash);
+                module.update_database(program.hash, program.bytes).await?
+            };
+
+            Ok(res)
         }
     }
 }
@@ -763,7 +759,6 @@ impl Host {
     /// Either way, the [`UpdateDatabaseResult`] is returned.
     async fn update_module(
         &mut self,
-        caller_address: Option<Address>,
         host_type: HostType,
         program: Program,
         on_panic: impl Fn() + Send + Sync + 'static,
@@ -783,7 +778,7 @@ impl Host {
         )
         .await?;
 
-        let update_result = update_module(&dbic.relational_db, &module, caller_address, program).await?;
+        let update_result = update_module(&dbic.relational_db, &module, program).await?;
         trace!("update result: {update_result:?}");
         // Only replace the module + scheduler if the update succeeded.
         // Otherwise, we want the database to continue running with the old state.

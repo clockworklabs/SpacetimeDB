@@ -308,13 +308,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     .with_context(|| format!("Not found: leader instance for database `{}`", database_addr))?;
                 let update_result = self
                     .host_controller
-                    .update_module_host(
-                        database,
-                        publisher_address,
-                        spec.host_type,
-                        leader.id,
-                        spec.program_bytes.into(),
-                    )
+                    .update_module_host(database, spec.host_type, leader.id, spec.program_bytes.into())
                     .await?;
 
                 if update_result.is_ok() {

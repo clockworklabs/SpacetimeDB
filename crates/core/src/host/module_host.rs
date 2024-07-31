@@ -275,12 +275,8 @@ pub trait ModuleInstance: Send + 'static {
         program_bytes: Box<[u8]>,
     ) -> anyhow::Result<Option<ReducerCallResult>>;
 
-    fn update_database(
-        &mut self,
-        caller_address: Option<Address>,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
-    ) -> anyhow::Result<UpdateDatabaseResult>;
+    fn update_database(&mut self, program_hash: Hash, program_bytes: Box<[u8]>)
+        -> anyhow::Result<UpdateDatabaseResult>;
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult;
 }
@@ -326,11 +322,10 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
     }
     fn update_database(
         &mut self,
-        caller_address: Option<Address>,
         program_hash: Hash,
         program_bytes: Box<[u8]>,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        let ret = self.inst.update_database(caller_address, program_hash, program_bytes);
+        let ret = self.inst.update_database(program_hash, program_bytes);
         self.check_trap();
         ret
     }
@@ -439,19 +434,7 @@ pub struct WeakModuleHost {
     on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
 }
 
-pub type UpdateDatabaseResult = Result<UpdateDatabaseSuccess, UpdateDatabaseError>;
-
-#[derive(Debug, Default)]
-pub struct UpdateDatabaseSuccess {
-    /// Outcome of calling the module's __update__ reducer, `None` if none is
-    /// defined.
-    pub update_result: Option<ReducerCallResult>,
-    /// Outcome of calling the module's pending __migrate__ reducers, empty if
-    /// none are defined or pending.
-    ///
-    /// Currently always empty, as __migrate__ is not yet supported.
-    pub migrate_results: Vec<ReducerCallResult>,
-}
+pub type UpdateDatabaseResult = Result<(), UpdateDatabaseError>;
 
 #[derive(thiserror::Error, Debug)]
 #[error("no such module")]
@@ -782,12 +765,11 @@ impl ModuleHost {
 
     pub async fn update_database(
         &self,
-        caller_address: Option<Address>,
         program_hash: Hash,
         program_bytes: Box<[u8]>,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
         self.call("<update_database>", move |inst| {
-            inst.update_database(caller_address, program_hash, program_bytes)
+            inst.update_database(program_hash, program_bytes)
         })
         .await?
         .map_err(Into::into)
