@@ -315,7 +315,6 @@ pub struct Metadata {
 }
 
 /// Program associated with a database.
-#[derive(Clone)]
 pub struct Program {
     /// Hash over the program's bytes.
     pub hash: Hash,
