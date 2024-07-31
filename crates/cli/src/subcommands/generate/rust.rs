@@ -2,8 +2,7 @@ use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem};
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::{
-    AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, ProductTypeElement, SumType,
-    SumTypeVariant,
+    AlgebraicType, AlgebraicTypeRef, ArrayType, ProductType, ProductTypeElement, SumType, SumTypeVariant,
 };
 use spacetimedb_lib::{ReducerDef, TableDesc};
 use spacetimedb_primitives::ColList;
@@ -16,33 +15,6 @@ type Indenter = CodeIndenter<String>;
 
 /// Pairs of (module_name, TypeName).
 type Imports = BTreeSet<(String, String)>;
-
-enum MaybePrimitive<'a> {
-    Primitive(&'a str),
-    Array(&'a ArrayType),
-    Map(&'a MapType),
-}
-
-fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
-    MaybePrimitive::Primitive(match b {
-        BuiltinType::Bool => "bool",
-        BuiltinType::I8 => "i8",
-        BuiltinType::U8 => "u8",
-        BuiltinType::I16 => "i16",
-        BuiltinType::U16 => "u16",
-        BuiltinType::I32 => "i32",
-        BuiltinType::U32 => "u32",
-        BuiltinType::I64 => "i64",
-        BuiltinType::U64 => "u64",
-        BuiltinType::I128 => "i128",
-        BuiltinType::U128 => "u128",
-        BuiltinType::String => "String",
-        BuiltinType::F32 => "f32",
-        BuiltinType::F64 => "f64",
-        BuiltinType::Array(ty) => return MaybePrimitive::Array(ty),
-        BuiltinType::Map(m) => return MaybePrimitive::Map(m),
-    })
-}
 
 fn write_type_ctx(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
     write_type(&|r| type_name(ctx, r), out, ty).unwrap()
@@ -65,12 +37,8 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
                 })?;
             }
         }
-        AlgebraicType::Product(p) if p.is_identity() => {
-            write!(out, "Identity")?;
-        }
-        AlgebraicType::Product(p) if p.is_address() => {
-            write!(out, "Address")?;
-        }
+        p if p.is_identity() => write!(out, "Identity")?,
+        p if p.is_address() => write!(out, "Address")?,
         AlgebraicType::Product(ProductType { elements }) => {
             print_comma_sep_braced(out, elements, |out: &mut W, elem: &ProductTypeElement| {
                 if let Some(name) = &elem.name {
@@ -79,29 +47,40 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
                 write_type(ctx, out, &elem.algebraic_type)
             })?;
         }
-        AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-            MaybePrimitive::Primitive(p) => write!(out, "{p}")?,
-            MaybePrimitive::Array(ArrayType { elem_ty }) => {
-                write!(out, "Vec::<")?;
-                write_type(ctx, out, elem_ty)?;
-                write!(out, ">")?;
-            }
-            MaybePrimitive::Map(ty) => {
-                // TODO: Should `BuiltinType::Map` translate to `HashMap`? This requires
-                //       that any map-key type implement `Hash`. We'll have to derive hash
-                //       on generated types, and notably, `HashMap` is not itself `Hash`,
-                //       so any type that holds a `Map` cannot derive `Hash` and cannot
-                //       key a `Map`.
-                // UPDATE: No, `AlgebraicType::Map` is supposed to be `BTreeMap`. Fix this.
-                //         This will require deriving `Ord` for generated types,
-                //         and is likely to be a big headache.
-                write!(out, "HashMap::<")?;
-                write_type(ctx, out, &ty.key_ty)?;
-                write!(out, ", ")?;
-                write_type(ctx, out, &ty.ty)?;
-                write!(out, ">")?;
-            }
-        },
+        AlgebraicType::Bool => write!(out, "bool")?,
+        AlgebraicType::I8 => write!(out, "i8")?,
+        AlgebraicType::U8 => write!(out, "u8")?,
+        AlgebraicType::I16 => write!(out, "i16")?,
+        AlgebraicType::U16 => write!(out, "u16")?,
+        AlgebraicType::I32 => write!(out, "i32")?,
+        AlgebraicType::U32 => write!(out, "u32")?,
+        AlgebraicType::I64 => write!(out, "i64")?,
+        AlgebraicType::U64 => write!(out, "u64")?,
+        AlgebraicType::I128 => write!(out, "i128")?,
+        AlgebraicType::U128 => write!(out, "u128")?,
+        AlgebraicType::F32 => write!(out, "f32")?,
+        AlgebraicType::F64 => write!(out, "f64")?,
+        AlgebraicType::String => write!(out, "String")?,
+        AlgebraicType::Array(ArrayType { elem_ty }) => {
+            write!(out, "Vec::<")?;
+            write_type(ctx, out, elem_ty)?;
+            write!(out, ">")?;
+        }
+        AlgebraicType::Map(ty) => {
+            // TODO: Should `AlgebraicType::Map` translate to `HashMap`? This requires
+            //       that any map-key type implement `Hash`. We'll have to derive hash
+            //       on generated types, and notably, `HashMap` is not itself `Hash`,
+            //       so any type that holds a `Map` cannot derive `Hash` and cannot
+            //       key a `Map`.
+            // UPDATE: No, `AlgebraicType::Map` is supposed to be `BTreeMap`. Fix this.
+            //         This will require deriving `Ord` for generated types,
+            //         and is likely to be a big headache.
+            write!(out, "HashMap::<")?;
+            write_type(ctx, out, &ty.key_ty)?;
+            write!(out, ", ")?;
+            write_type(ctx, out, &ty.ty)?;
+            write!(out, ">")?;
+        }
         AlgebraicType::Ref(r) => {
             write!(out, "{}", ctx(*r))?;
         }
@@ -468,17 +447,15 @@ fn print_table_filter_methods(ctx: &GenCtx, out: &mut Indenter, table_type_name:
             for field in table.columns() {
                 let field_name = field.col_name.deref().to_case(Case::Snake);
                 match &field.col_type {
-                    AlgebraicType::Product(prod) => {
-                        if !prod.is_special() {
-                            continue;
-                        }
-                    }
-                    AlgebraicType::Ref(_)
+                    AlgebraicType::Product(prod) if prod.is_special() => {}
+                    AlgebraicType::Product(_)
+                    | AlgebraicType::Ref(_)
                     | AlgebraicType::Sum(_)
-                    | AlgebraicType::Builtin(BuiltinType::Array(_) | BuiltinType::Map(_)) => {
+                    | AlgebraicType::Array(_)
+                    | AlgebraicType::Map(_) => {
                         continue;
                     }
-                    AlgebraicType::Builtin(_) => {}
+                    _ => {}
                 }
                 writeln!(out, "{ALLOW_UNUSED}");
                 write!(out, "pub fn filter_by_{field_name}({field_name}: ");
@@ -1070,12 +1047,11 @@ fn module_name(name: &str) -> String {
 
 fn generate_imports(ctx: &GenCtx, imports: &mut Imports, ty: &AlgebraicType) {
     match ty {
-        AlgebraicType::Builtin(BuiltinType::Array(ArrayType { elem_ty })) => generate_imports(ctx, imports, elem_ty),
-        AlgebraicType::Builtin(BuiltinType::Map(map_type)) => {
+        AlgebraicType::Array(ArrayType { elem_ty }) => generate_imports(ctx, imports, elem_ty),
+        AlgebraicType::Map(map_type) => {
             generate_imports(ctx, imports, &map_type.key_ty);
             generate_imports(ctx, imports, &map_type.ty);
         }
-        AlgebraicType::Builtin(_) => (),
         AlgebraicType::Ref(r) => {
             let type_name = type_name(ctx, *r);
             let module_name = module_name(&type_name);
@@ -1083,8 +1059,9 @@ fn generate_imports(ctx: &GenCtx, imports: &mut Imports, ty: &AlgebraicType) {
         }
         // Recurse into variants of anonymous sum types, e.g. for `Option<T>`, import `T`.
         AlgebraicType::Sum(s) => generate_imports_variants(ctx, imports, &s.variants),
+        // Products, scalars, and strings.
         // Do we need to generate imports for fields of anonymous product types?
-        _ => (),
+        _ => {}
     }
 }
 

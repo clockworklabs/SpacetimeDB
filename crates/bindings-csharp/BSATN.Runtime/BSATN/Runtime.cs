@@ -131,7 +131,7 @@ public readonly struct Bool : IReadWrite<bool>
     public void Write(BinaryWriter writer, bool value) => writer.Write(value);
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-        new BuiltinType.Bool(default);
+        new AlgebraicType.Bool(default);
 }
 
 public readonly struct U8 : IReadWrite<byte>
@@ -140,7 +140,7 @@ public readonly struct U8 : IReadWrite<byte>
 
     public void Write(BinaryWriter writer, byte value) => writer.Write(value);
 
-    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new BuiltinType.U8(default);
+    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new AlgebraicType.U8(default);
 }
 
 public readonly struct U16 : IReadWrite<ushort>
@@ -149,7 +149,7 @@ public readonly struct U16 : IReadWrite<ushort>
 
     public void Write(BinaryWriter writer, ushort value) => writer.Write(value);
 
-    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new BuiltinType.U16(default);
+    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new AlgebraicType.U16(default);
 }
 
 public readonly struct U32 : IReadWrite<uint>
@@ -158,7 +158,7 @@ public readonly struct U32 : IReadWrite<uint>
 
     public void Write(BinaryWriter writer, uint value) => writer.Write(value);
 
-    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new BuiltinType.U32(default);
+    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new AlgebraicType.U32(default);
 }
 
 public readonly struct U64 : IReadWrite<ulong>
@@ -167,7 +167,7 @@ public readonly struct U64 : IReadWrite<ulong>
 
     public void Write(BinaryWriter writer, ulong value) => writer.Write(value);
 
-    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new BuiltinType.U64(default);
+    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new AlgebraicType.U64(default);
 }
 
 #if NET7_0_OR_GREATER
@@ -183,7 +183,7 @@ public readonly struct U128 : IReadWrite<System.UInt128>
     }
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-        new BuiltinType.U128(default);
+        new AlgebraicType.U128(default);
 }
 #endif
 
@@ -193,7 +193,7 @@ public readonly struct I8 : IReadWrite<sbyte>
 
     public void Write(BinaryWriter writer, sbyte value) => writer.Write(value);
 
-    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new BuiltinType.I8(default);
+    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new AlgebraicType.I8(default);
 }
 
 public readonly struct I16 : IReadWrite<short>
@@ -202,7 +202,7 @@ public readonly struct I16 : IReadWrite<short>
 
     public void Write(BinaryWriter writer, short value) => writer.Write(value);
 
-    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new BuiltinType.I16(default);
+    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new AlgebraicType.I16(default);
 }
 
 public readonly struct I32 : IReadWrite<int>
@@ -211,7 +211,7 @@ public readonly struct I32 : IReadWrite<int>
 
     public void Write(BinaryWriter writer, int value) => writer.Write(value);
 
-    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new BuiltinType.I32(default);
+    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new AlgebraicType.I32(default);
 }
 
 public readonly struct I64 : IReadWrite<long>
@@ -220,7 +220,7 @@ public readonly struct I64 : IReadWrite<long>
 
     public void Write(BinaryWriter writer, long value) => writer.Write(value);
 
-    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new BuiltinType.I64(default);
+    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new AlgebraicType.I64(default);
 }
 
 #if NET7_0_OR_GREATER
@@ -235,7 +235,7 @@ public readonly struct I128 : IReadWrite<System.Int128>
     }
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-        new BuiltinType.I128(default);
+        new AlgebraicType.I128(default);
 }
 #endif
 
@@ -245,7 +245,7 @@ public readonly struct F32 : IReadWrite<float>
 
     public void Write(BinaryWriter writer, float value) => writer.Write(value);
 
-    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new BuiltinType.F32(default);
+    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new AlgebraicType.F32(default);
 }
 
 public readonly struct F64 : IReadWrite<double>
@@ -254,7 +254,7 @@ public readonly struct F64 : IReadWrite<double>
 
     public void Write(BinaryWriter writer, double value) => writer.Write(value);
 
-    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new BuiltinType.F64(default);
+    public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new AlgebraicType.F64(default);
 }
 
 readonly struct Enumerable<Element, ElementRW> : IReadWrite<IEnumerable<Element>>
@@ -281,7 +281,7 @@ readonly struct Enumerable<Element, ElementRW> : IReadWrite<IEnumerable<Element>
     }
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-        new BuiltinType.Array(elementRW.GetAlgebraicType(registrar));
+        new AlgebraicType.Array(elementRW.GetAlgebraicType(registrar));
 }
 
 public readonly struct Array<Element, ElementRW> : IReadWrite<Element[]>
@@ -311,7 +311,7 @@ public readonly struct ByteArray : IReadWrite<byte[]>
     }
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-        new BuiltinType.Array(new BuiltinType.U8(default));
+        new AlgebraicType.Array(new AlgebraicType.U8(default));
 }
 
 // String is a special case of byte array with extra checks.
@@ -324,7 +324,7 @@ public readonly struct String : IReadWrite<string>
         ByteArray.Instance.Write(writer, Encoding.UTF8.GetBytes(value));
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-        new BuiltinType.String(default);
+        new AlgebraicType.String(default);
 }
 
 public readonly struct List<Element, ElementRW> : IReadWrite<List<Element>>
@@ -370,7 +370,7 @@ public readonly struct Dictionary<Key, Value, KeyRW, ValueRW> : IReadWrite<Dicti
     }
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-        new BuiltinType.Map(
+        new AlgebraicType.Map(
             new(keyRW.GetAlgebraicType(registrar), valueRW.GetAlgebraicType(registrar))
         );
 }

@@ -9,7 +9,7 @@ use clap::{Arg, ArgAction, ArgMatches};
 use itertools::Either;
 use serde_json::Value;
 use spacetimedb_lib::de::serde::deserialize_from;
-use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, BuiltinType, Typespace};
+use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, Typespace};
 use spacetimedb_lib::{Address, ProductTypeElement};
 use std::fmt::Write;
 use std::iter;
@@ -79,7 +79,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), Error> {
         .unwrap_or_default()
         .zip(describe_reducer.schema.elements.iter())
         .map(|(argument, element)| match &element.algebraic_type {
-            AlgebraicType::Builtin(BuiltinType::String) if !argument.starts_with('\"') || !argument.ends_with('\"') => {
+            AlgebraicType::String if !argument.starts_with('\"') || !argument.ends_with('\"') => {
                 format!("\"{}\"", argument)
             }
             _ => argument.to_string(),

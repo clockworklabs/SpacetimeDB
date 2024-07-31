@@ -4,7 +4,7 @@ use crate::{
     bsatn::Deserializer,
     buffer::{BufReader, DecodeError},
     de::{Deserialize, Deserializer as _},
-    AlgebraicType, AlgebraicValue, ArrayValue, BuiltinType, MapType, ProductType, ProductValue, SumType, F32, F64,
+    AlgebraicType, AlgebraicValue, ArrayValue, MapType, ProductType, ProductValue, SumType, F32, F64,
 };
 use core::hash::{Hash, Hasher};
 
@@ -98,22 +98,22 @@ pub fn hash_bsatn<'a>(state: &mut impl Hasher, ty: &AlgebraicType, de: Deseriali
         AlgebraicType::Ref(_) => unreachable!("hash_bsatn does not have a typespace"),
         AlgebraicType::Sum(ty) => hash_bsatn_sum(state, ty, de),
         AlgebraicType::Product(ty) => hash_bsatn_prod(state, ty, de),
-        AlgebraicType::Builtin(BuiltinType::Array(ty)) => hash_bsatn_array(state, &ty.elem_ty, de),
-        AlgebraicType::Builtin(BuiltinType::Map(ty)) => hash_bsatn_map(state, ty, de),
-        &AlgebraicType::Bool => hash_bsatn_de::<bool>(state, de),
-        &AlgebraicType::I8 => hash_bsatn_de::<i8>(state, de),
-        &AlgebraicType::U8 => hash_bsatn_de::<u8>(state, de),
-        &AlgebraicType::I16 => hash_bsatn_de::<i16>(state, de),
-        &AlgebraicType::U16 => hash_bsatn_de::<u16>(state, de),
-        &AlgebraicType::I32 => hash_bsatn_de::<i32>(state, de),
-        &AlgebraicType::U32 => hash_bsatn_de::<u32>(state, de),
-        &AlgebraicType::I64 => hash_bsatn_de::<i64>(state, de),
-        &AlgebraicType::U64 => hash_bsatn_de::<u64>(state, de),
-        &AlgebraicType::I128 => hash_bsatn_de::<i128>(state, de),
-        &AlgebraicType::U128 => hash_bsatn_de::<u128>(state, de),
-        &AlgebraicType::F32 => hash_bsatn_de::<F32>(state, de),
-        &AlgebraicType::F64 => hash_bsatn_de::<F64>(state, de),
-        &AlgebraicType::String => hash_bsatn_de::<&str>(state, de),
+        AlgebraicType::Array(ty) => hash_bsatn_array(state, &ty.elem_ty, de),
+        AlgebraicType::Map(ty) => hash_bsatn_map(state, ty, de),
+        AlgebraicType::Bool => hash_bsatn_de::<bool>(state, de),
+        AlgebraicType::I8 => hash_bsatn_de::<i8>(state, de),
+        AlgebraicType::U8 => hash_bsatn_de::<u8>(state, de),
+        AlgebraicType::I16 => hash_bsatn_de::<i16>(state, de),
+        AlgebraicType::U16 => hash_bsatn_de::<u16>(state, de),
+        AlgebraicType::I32 => hash_bsatn_de::<i32>(state, de),
+        AlgebraicType::U32 => hash_bsatn_de::<u32>(state, de),
+        AlgebraicType::I64 => hash_bsatn_de::<i64>(state, de),
+        AlgebraicType::U64 => hash_bsatn_de::<u64>(state, de),
+        AlgebraicType::I128 => hash_bsatn_de::<i128>(state, de),
+        AlgebraicType::U128 => hash_bsatn_de::<u128>(state, de),
+        AlgebraicType::F32 => hash_bsatn_de::<F32>(state, de),
+        AlgebraicType::F64 => hash_bsatn_de::<F64>(state, de),
+        AlgebraicType::String => hash_bsatn_de::<&str>(state, de),
     }
 }
 
@@ -143,19 +143,17 @@ fn hash_bsatn_array<'a>(state: &mut impl Hasher, ty: &AlgebraicType, de: Deseria
         AlgebraicType::Ref(_) => unreachable!("hash_bsatn does not have a typespace"),
         AlgebraicType::Sum(ty) => hash_bsatn_seq(state, de, |s, d| hash_bsatn_sum(s, ty, d)),
         AlgebraicType::Product(ty) => hash_bsatn_seq(state, de, |s, d| hash_bsatn_prod(s, ty, d)),
-        AlgebraicType::Builtin(BuiltinType::Array(ty)) => {
-            hash_bsatn_seq(state, de, |s, d| hash_bsatn_array(s, &ty.elem_ty, d))
-        }
-        AlgebraicType::Builtin(BuiltinType::Map(ty)) => hash_bsatn_seq(state, de, |s, d| hash_bsatn_map(s, ty, d)),
-        &AlgebraicType::Bool => hash_bsatn_seq(state, de, hash_bsatn_de::<bool>),
-        &AlgebraicType::I8 | &AlgebraicType::U8 => hash_bsatn_int_seq(state, de, 1),
-        &AlgebraicType::I16 | &AlgebraicType::U16 => hash_bsatn_int_seq(state, de, 2),
-        &AlgebraicType::I32 | &AlgebraicType::U32 => hash_bsatn_int_seq(state, de, 4),
-        &AlgebraicType::I64 | &AlgebraicType::U64 => hash_bsatn_int_seq(state, de, 8),
-        &AlgebraicType::I128 | &AlgebraicType::U128 => hash_bsatn_int_seq(state, de, 16),
-        &AlgebraicType::F32 => hash_bsatn_seq(state, de, hash_bsatn_de::<F32>),
-        &AlgebraicType::F64 => hash_bsatn_seq(state, de, hash_bsatn_de::<F64>),
-        &AlgebraicType::String => hash_bsatn_seq(state, de, hash_bsatn_de::<&str>),
+        AlgebraicType::Array(ty) => hash_bsatn_seq(state, de, |s, d| hash_bsatn_array(s, &ty.elem_ty, d)),
+        AlgebraicType::Map(ty) => hash_bsatn_seq(state, de, |s, d| hash_bsatn_map(s, ty, d)),
+        AlgebraicType::Bool => hash_bsatn_seq(state, de, hash_bsatn_de::<bool>),
+        AlgebraicType::I8 | AlgebraicType::U8 => hash_bsatn_int_seq(state, de, 1),
+        AlgebraicType::I16 | AlgebraicType::U16 => hash_bsatn_int_seq(state, de, 2),
+        AlgebraicType::I32 | AlgebraicType::U32 => hash_bsatn_int_seq(state, de, 4),
+        AlgebraicType::I64 | AlgebraicType::U64 => hash_bsatn_int_seq(state, de, 8),
+        AlgebraicType::I128 | AlgebraicType::U128 => hash_bsatn_int_seq(state, de, 16),
+        AlgebraicType::F32 => hash_bsatn_seq(state, de, hash_bsatn_de::<F32>),
+        AlgebraicType::F64 => hash_bsatn_seq(state, de, hash_bsatn_de::<F64>),
+        AlgebraicType::String => hash_bsatn_seq(state, de, hash_bsatn_de::<&str>),
     }
 }
 

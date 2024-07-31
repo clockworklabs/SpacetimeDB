@@ -3,8 +3,8 @@
 //! This notably excludes `Ref` types.
 
 use crate::{
-    AlgebraicType, AlgebraicValue, ArrayValue, BuiltinType, MapType, MapValue, ProductType, ProductValue, SumType,
-    SumValue, F32, F64,
+    AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductType, ProductValue, SumType, SumValue, F32,
+    F64,
 };
 use proptest::{
     collection::{vec, SizeRange},
@@ -96,9 +96,9 @@ pub fn generate_algebraic_value(ty: AlgebraicType) -> impl Strategy<Value = Alge
         AlgebraicType::F64 => generate_non_compound::<f64>(),
         AlgebraicType::String => generate_non_compound::<Box<str>>(),
 
-        AlgebraicType::Builtin(BuiltinType::Array(ty)) => generate_array_value(*ty.elem_ty).prop_map_into().boxed(),
+        AlgebraicType::Array(ty) => generate_array_value(*ty.elem_ty).prop_map_into().boxed(),
 
-        AlgebraicType::Builtin(BuiltinType::Map(ty)) => generate_map_value(*ty).prop_map_into().boxed(),
+        AlgebraicType::Map(ty) => generate_map_value(*ty).prop_map_into().boxed(),
 
         AlgebraicType::Product(ty) => generate_product_value(ty).prop_map_into().boxed(),
 
@@ -171,8 +171,8 @@ fn generate_array_value(ty: AlgebraicType) -> BoxedStrategy<ArrayValue> {
         AlgebraicType::String => generate_array_of(any::<Box<str>>()),
         AlgebraicType::Product(ty) => generate_array_of(generate_product_value(ty)),
         AlgebraicType::Sum(ty) => generate_array_of(generate_sum_value(ty)),
-        AlgebraicType::Builtin(BuiltinType::Array(ty)) => generate_array_of(generate_array_value(*ty.elem_ty)),
-        AlgebraicType::Builtin(BuiltinType::Map(ty)) => generate_array_of(generate_map_value(*ty)),
+        AlgebraicType::Array(ty) => generate_array_of(generate_array_value(*ty.elem_ty)),
+        AlgebraicType::Map(ty) => generate_array_of(generate_map_value(*ty)),
         AlgebraicType::Ref(_) => unreachable!(),
     }
 }

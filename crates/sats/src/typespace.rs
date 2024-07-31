@@ -3,8 +3,8 @@ use std::ops::{Index, IndexMut};
 
 use crate::algebraic_type::AlgebraicType;
 use crate::algebraic_type_ref::AlgebraicTypeRef;
+use crate::WithTypespace;
 use crate::{de::Deserialize, ser::Serialize};
-use crate::{BuiltinType, WithTypespace};
 
 #[derive(thiserror::Error, Debug)]
 pub enum TypeRefError {
@@ -123,10 +123,10 @@ impl Typespace {
                     self.inline_typerefs_in_type(&mut element.algebraic_type)?;
                 }
             }
-            AlgebraicType::Builtin(BuiltinType::Array(array_ty)) => {
+            AlgebraicType::Array(array_ty) => {
                 self.inline_typerefs_in_type(&mut array_ty.elem_ty)?;
             }
-            AlgebraicType::Builtin(BuiltinType::Map(map_type)) => {
+            AlgebraicType::Map(map_type) => {
                 self.inline_typerefs_in_type(&mut map_type.key_ty)?;
                 self.inline_typerefs_in_type(&mut map_type.ty)?;
             }

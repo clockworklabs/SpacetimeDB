@@ -98,9 +98,12 @@ struct U32x8 {
     vals: [u32; 8],
 }
 
+// TODO: get rid of this once we change to >= Rust 1.79.
+const TY_U32: AlgebraicType = AlgebraicType::U32;
+
 unsafe impl Row for U32x8 {
     fn row_type() -> ProductType {
-        [AlgebraicType::U32; 8].into()
+        [TY_U32; 8].into()
     }
 
     fn to_product(self) -> ProductValue {
@@ -121,7 +124,7 @@ struct U32x64 {
 
 unsafe impl Row for U32x64 {
     fn row_type() -> ProductType {
-        [AlgebraicType::U32; 64].into()
+        [TY_U32; 64].into()
     }
 
     fn to_product(self) -> ProductValue {

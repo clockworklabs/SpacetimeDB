@@ -108,9 +108,12 @@ struct U32x8 {
     vals: [u32; 8],
 }
 
+// TODO: get rid of this once we change to >= Rust 1.79.
+const TY_U32: AlgebraicType = AlgebraicType::U32;
+
 unsafe impl Row for U32x8 {
     fn row_type() -> ProductType {
-        [AlgebraicType::U32; 8].into()
+        [TY_U32; 8].into()
     }
 }
 
@@ -127,7 +130,7 @@ struct U32x64 {
 
 unsafe impl Row for U32x64 {
     fn row_type() -> ProductType {
-        [AlgebraicType::U32; 64].into()
+        [TY_U32; 64].into()
     }
 }
 
@@ -495,11 +498,11 @@ criterion_group!(
 );
 
 fn u32x2_type() -> ProductType {
-    [AlgebraicType::U32; 2].into()
+    [TY_U32; 2].into()
 }
 
 fn u32x4_type() -> ProductType {
-    [AlgebraicType::U32; 4].into()
+    [TY_U32; 4].into()
 }
 
 fn string_row_type() -> ProductType {
@@ -574,7 +577,7 @@ fn product_value_test_cases() -> impl Iterator<
         ),
         (
             "U32x8",
-            [AlgebraicType::U32; 8].into(),
+            [TY_U32; 8].into(),
             product![0u32, 1u32, 2u32, 3u32, 4u32, 5u32, 6u32, 7u32],
             Some(NullVarLenVisitor),
             Some(AlignedVarLenOffsets::from_offsets(&[])),
