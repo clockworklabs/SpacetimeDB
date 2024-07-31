@@ -1442,6 +1442,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "etcetera"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "136d1b5283a1ab77bd9257427ffd09d8667ced0570b6f938942bc7568ed5b943"
+dependencies = [
+ "cfg-if",
+ "home",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
 name = "fallible-iterator"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4426,6 +4437,19 @@ dependencies = [
  "itertools 0.12.0",
  "paste",
  "prometheus",
+]
+
+[[package]]
+name = "spacetimedb-platforms"
+version = "0.10.1"
+dependencies = [
+ "anyhow",
+ "etcetera",
+ "serde",
+ "spacetimedb-lib",
+ "tempfile",
+ "thiserror",
+ "toml 0.8.2",
 ]
 
 [[package]]

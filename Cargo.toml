@@ -1,39 +1,40 @@
 [workspace]
 members = [
-  "crates/bench",
-  "crates/bindings-sys",
-  "crates/bindings",
-  "crates/bindings-macro",
-  "crates/cli",
-  "crates/client-api",
-  "crates/client-api-messages",
-  "crates/commitlog",
-  "crates/core",
-  "crates/data-structures",
-  "crates/durability",
-  "crates/fs-utils",
-  "crates/lib",
-  "crates/metrics",
-  "crates/primitives",
-  "crates/sats",
-  "crates/sdk",
-  "crates/snapshot",
-  "crates/sqltest",
-  "crates/standalone",
-  "crates/table",
-  "crates/testing",
-  "crates/vm",
-  "modules/benchmarks",
-  "modules/perf-test",
-  "modules/rust-wasm-test",
-  "modules/quickstart-chat",
-  "modules/sdk-test",
-  "modules/sdk-test-connect-disconnect",
-  "modules/spacetimedb-quickstart",
-  "crates/sdk/tests/test-client",
-  "crates/sdk/tests/test-counter",
-  "crates/sdk/tests/connect_disconnect_client",
-  "tools/upgrade-version",
+    "crates/bench",
+    "crates/bindings-sys",
+    "crates/bindings",
+    "crates/bindings-macro",
+    "crates/cli",
+    "crates/client-api",
+    "crates/client-api-messages",
+    "crates/commitlog",
+    "crates/core",
+    "crates/data-structures",
+    "crates/durability",
+    "crates/fs-utils",
+    "crates/lib",
+    "crates/metrics",
+    "crates/platforms",
+    "crates/primitives",
+    "crates/sats",
+    "crates/sdk",
+    "crates/snapshot",
+    "crates/sqltest",
+    "crates/standalone",
+    "crates/table",
+    "crates/testing",
+    "crates/vm",
+    "modules/benchmarks",
+    "modules/perf-test",
+    "modules/rust-wasm-test",
+    "modules/quickstart-chat",
+    "modules/sdk-test",
+    "modules/sdk-test-connect-disconnect",
+    "modules/spacetimedb-quickstart",
+    "crates/sdk/tests/test-client",
+    "crates/sdk/tests/test-counter",
+    "crates/sdk/tests/connect_disconnect_client",
+    "tools/upgrade-version",
 ]
 default-members = ["crates/cli"]
 # cargo feature graph resolver. v2 is default in edition2021 but workspace
@@ -96,6 +97,7 @@ spacetimedb-durability = { path = "crates/durability", version = "0.10.1" }
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "0.10.1" }
 spacetimedb-metrics = { path = "crates/metrics", version = "0.10.1" }
 spacetimedb-primitives = { path = "crates/primitives", version = "0.10.1" }
+spacetimedb-platforms = { path = "crates/platforms", version = "0.10.1" }
 spacetimedb-sats = { path = "crates/sats", version = "0.10.1" }
 spacetimedb-standalone = { path = "crates/standalone", version = "0.10.1" }
 spacetimedb-table = { path = "crates/table", version = "0.10.1" }
@@ -138,6 +140,7 @@ email_address = "0.2.4"
 enum-as-inner = "0.6"
 enum-map = "2.6.3"
 env_logger = "0.10"
+etcetera = "0.8.0"
 flate2 = "1.0.24"
 fs-err = "2.9.0"
 fs2 = "0.4.3"
@@ -241,13 +244,13 @@ wasmtime = { version = "15", default-features = false, features = ["cranelift", 
 # and reconnecting, from the tracy client to the database.
 # TODO(George): Need to be able to remove "broadcast" in some build configurations.
 tracing-tracy = { version = "0.10.4", features = [
-  "enable",
-  "system-tracing",
-  "context-switch-tracing",
-  "sampling",
-  "code-transfer",
-  "broadcast",
-  "ondemand",
+    "enable",
+    "system-tracing",
+    "context-switch-tracing",
+    "sampling",
+    "code-transfer",
+    "broadcast",
+    "ondemand",
 ] }
 
 # Vendor the openssl we rely on, rather than depend on a
