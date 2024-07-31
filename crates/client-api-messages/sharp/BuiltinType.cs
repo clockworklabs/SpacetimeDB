@@ -25,7 +25,7 @@ namespace SpacetimeDB.Types
 		SpacetimeDB.Unit F32,
 		SpacetimeDB.Unit F64,
 		SpacetimeDB.Unit String,
-		SpacetimeDB.Types.ArrayType Array,
+		SpacetimeDB.Types.AlgebraicType Array,
 		SpacetimeDB.Types.MapType Map
 	)>;
 }
