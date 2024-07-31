@@ -7,14 +7,13 @@ use std::time::Duration;
 
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::{bsatn, Address, ModuleValidationError, RawModuleDef, RawModuleDefV8, TableDesc};
-use spacetimedb_sats::hash::Hash;
 
 use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::SystemLogger;
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::system_tables::{StClientsRow, ST_CLIENT_ID};
-use crate::db::datastore::traits::IsolationLevel;
+use crate::db::datastore::traits::{IsolationLevel, Program};
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use crate::execution_context::{self, ExecutionContext, ReducerContext};
 use crate::host::instance_env::InstanceEnv;
@@ -133,10 +132,10 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let ModuleCreationContext {
             dbic: database_instance_context,
             scheduler,
-            program_bytes: _,
-            program_hash: module_hash,
+            program,
             energy_monitor,
         } = mcc;
+        let module_hash = program.hash;
         log::trace!(
             "Making new module host actor for database {} with module {}",
             database_instance_context.address,
@@ -301,11 +300,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     }
 
     #[tracing::instrument(skip_all, fields(db_id = self.instance.instance_env().dbic.id))]
-    fn init_database(
-        &mut self,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
-    ) -> anyhow::Result<Option<ReducerCallResult>> {
+    fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
         log::debug!("init database");
         let timestamp = Timestamp::now();
         let stdb = &*self.database_instance_context().relational_db;
@@ -321,7 +316,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                         .with_context(|| format!("failed to create table {table_name}"))?;
                 }
 
-                stdb.set_initialized(tx, HostType::Wasm, program_hash, program_bytes)?;
+                stdb.set_initialized(tx, HostType::Wasm, program)?;
 
                 anyhow::Ok(())
             })
@@ -366,20 +361,15 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     }
 
     #[tracing::instrument(skip_all)]
-    fn update_database(
-        &mut self,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
-    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+    fn update_database(&mut self, program: Program) -> Result<UpdateDatabaseResult, anyhow::Error> {
         let proposed_tables = get_tabledefs(&self.info).collect::<anyhow::Result<Vec<_>>>()?;
 
         let stdb = &*self.database_instance_context().relational_db;
         let ctx = Lazy::new(|| ExecutionContext::internal(stdb.address()));
 
+        let program_hash = program.hash;
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        let (tx, _) = stdb.with_auto_rollback(&ctx, tx, |tx| {
-            stdb.update_program(tx, HostType::Wasm, program_hash, program_bytes)
-        })?;
+        let (tx, _) = stdb.with_auto_rollback(&ctx, tx, |tx| stdb.update_program(tx, HostType::Wasm, program))?;
         self.system_logger().info(&format!("Updated program to {program_hash}"));
 
         let (tx, res) = stdb.with_auto_rollback(&ctx, tx, |tx| {

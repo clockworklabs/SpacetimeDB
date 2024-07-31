@@ -390,16 +390,9 @@ impl HostController {
                 "[{}] updating database from `{}` to `{}`",
                 db_addr, stored_hash, program_hash
             );
-            let program_bytes = load_program(&self.program_storage, program_hash).await?;
+            let program = load_program(&self.program_storage, program_hash).await?;
             let update_result = host
-                .update_module(
-                    host_type,
-                    Program {
-                        hash: program_hash,
-                        bytes: program_bytes,
-                    },
-                    self.unregister_fn(instance_id),
-                )
+                .update_module(host_type, program, self.unregister_fn(instance_id))
                 .await?;
             if update_result.is_ok() {
                 *guard = Some(host);
@@ -523,28 +516,45 @@ async fn make_dbic(
 
 async fn make_module_host(
     host_type: HostType,
-    mcc: ModuleCreationContext,
+    dbic: Arc<DatabaseInstanceContext>,
+    scheduler: Scheduler,
+    program: Program,
+    energy_monitor: Arc<dyn EnergyMonitor>,
     unregister: impl Fn() + Send + Sync + 'static,
-) -> anyhow::Result<ModuleHost> {
+) -> anyhow::Result<(Program, ModuleHost)> {
     spawn_rayon(move || {
         let module_host = match host_type {
             HostType::Wasm => {
+                let mcc = ModuleCreationContext {
+                    dbic,
+                    scheduler,
+                    program: &program,
+                    energy_monitor,
+                };
                 let start = Instant::now();
                 let actor = host::wasmtime::make_actor(mcc)?;
                 trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
                 ModuleHost::new(actor, unregister)
             }
         };
-        Ok(module_host)
+        Ok((program, module_host))
     })
     .await
 }
 
-async fn load_program(storage: &ProgramStorage, hash: Hash) -> anyhow::Result<Box<[u8]>> {
-    storage
+async fn load_program(storage: &ProgramStorage, hash: Hash) -> anyhow::Result<Program> {
+    let bytes = storage
         .lookup(hash)
         .await?
-        .with_context(|| format!("program {} not found", hash))
+        .with_context(|| format!("program {} not found", hash))?;
+    Ok(Program { hash, bytes })
+}
+
+struct LaunchedModule {
+    dbic: Arc<DatabaseInstanceContext>,
+    module_host: ModuleHost,
+    scheduler: Scheduler,
+    scheduler_starter: SchedulerStarter,
 }
 
 async fn launch_module(
@@ -554,28 +564,33 @@ async fn launch_module(
     on_panic: impl Fn() + Send + Sync + 'static,
     relational_db: Arc<RelationalDB>,
     energy_monitor: Arc<dyn EnergyMonitor>,
-) -> anyhow::Result<(Arc<DatabaseInstanceContext>, ModuleHost, Scheduler, SchedulerStarter)> {
+) -> anyhow::Result<(Program, LaunchedModule)> {
     let address = database.address;
     let host_type = database.host_type;
 
     let dbic = make_dbic(database, instance_id, relational_db).await.map(Arc::new)?;
     let (scheduler, scheduler_starter) = Scheduler::open(dbic.relational_db.clone());
-    let module_host = make_module_host(
+    let (program, module_host) = make_module_host(
         host_type,
-        ModuleCreationContext {
-            dbic: dbic.clone(),
-            scheduler: scheduler.clone(),
-            program_hash: program.hash,
-            program_bytes: program.bytes.into(),
-            energy_monitor: energy_monitor.clone(),
-        },
+        dbic.clone(),
+        scheduler.clone(),
+        program,
+        energy_monitor.clone(),
         on_panic,
     )
     .await?;
 
     trace!("launched database {} with program {}", address, program.hash);
 
-    Ok((dbic, module_host, scheduler, scheduler_starter))
+    Ok((
+        program,
+        LaunchedModule {
+            dbic,
+            module_host,
+            scheduler,
+            scheduler_starter,
+        },
+    ))
 }
 
 /// Update a module.
@@ -601,7 +616,7 @@ async fn update_module(
                 Ok(())
             } else {
                 info!("updating `{}` from {} to {}", addr, stored, program.hash);
-                module.update_database(program.hash, program.bytes).await?
+                module.update_database(program).await?
             };
 
             Ok(res)
@@ -677,10 +692,15 @@ impl Host {
                 )?
             }
         };
-        let (dbic, module_host, scheduler, scheduler_starter) = match db.program()? {
+        let LaunchedModule {
+            dbic,
+            module_host,
+            scheduler,
+            scheduler_starter,
+        } = match db.program()? {
             // Launch module with program from existing database.
             Some(program) => {
-                launch_module(
+                let (_, launched) = launch_module(
                     database,
                     instance_id,
                     program,
@@ -688,34 +708,30 @@ impl Host {
                     Arc::new(db),
                     energy_monitor.clone(),
                 )
-                .await?
+                .await?;
+                launched
             }
 
             // Database is empty, load program from external storage and run
             // initialization.
             None => {
-                let program_hash = database.initial_program;
-                let program_bytes = load_program(&program_storage, program_hash).await?;
-                let res = launch_module(
+                let program = load_program(&program_storage, database.initial_program).await?;
+                let (program, launched) = launch_module(
                     database,
                     instance_id,
-                    Program {
-                        hash: program_hash,
-                        bytes: program_bytes.clone(),
-                    },
+                    program,
                     on_panic,
                     Arc::new(db),
                     energy_monitor.clone(),
                 )
                 .await?;
 
-                let module_host = &res.1;
-                let call_result = module_host.init_database(program_hash, program_bytes).await?;
+                let call_result = launched.module_host.init_database(program).await?;
                 if let Some(call_result) = call_result {
                     Result::from(call_result)?;
                 }
 
-                res
+                launched
             }
         };
 
@@ -765,15 +781,12 @@ impl Host {
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let dbic = &self.dbic;
         let (scheduler, scheduler_starter) = self.scheduler.new_with_same_db();
-        let module = make_module_host(
+        let (program, module) = make_module_host(
             host_type,
-            ModuleCreationContext {
-                dbic: dbic.clone(),
-                scheduler: scheduler.clone(),
-                program_hash: program.hash,
-                program_bytes: program.bytes.clone().into(),
-                energy_monitor: self.energy_monitor.clone(),
-            },
+            dbic.clone(),
+            scheduler.clone(),
+            program,
+            self.energy_monitor.clone(),
             on_panic,
         )
         .await?;

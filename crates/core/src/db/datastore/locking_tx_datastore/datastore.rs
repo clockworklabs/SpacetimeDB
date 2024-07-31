@@ -34,7 +34,7 @@ use spacetimedb_lib::db::{
 };
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
-use spacetimedb_sats::{bsatn, buffer::BufReader, hash::Hash, AlgebraicValue, ProductValue};
+use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_snapshot::ReconstructedSnapshot;
 use spacetimedb_table::{
@@ -527,13 +527,7 @@ impl MutTxDatastore for Locking {
         tx.iter(&ctx, ST_MODULE_ID)?.next().map(metadata_from_row).transpose()
     }
 
-    fn update_program(
-        &self,
-        tx: &mut Self::MutTx,
-        program_kind: ModuleKind,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
-    ) -> Result<()> {
+    fn update_program(&self, tx: &mut Self::MutTx, program_kind: ModuleKind, program: Program) -> Result<()> {
         let ctx = ExecutionContext::internal(self.database_address);
         let old = tx
             .iter(&ctx, ST_MODULE_ID)?
@@ -547,8 +541,8 @@ impl MutTxDatastore for Locking {
         match old {
             Some((ptr, mut row)) => {
                 row.program_kind = program_kind;
-                row.program_hash = program_hash;
-                row.program_bytes = program_bytes;
+                row.program_hash = program.hash;
+                row.program_bytes = program.bytes;
 
                 tx.delete(ST_MODULE_ID, ptr)?;
                 tx.insert(ST_MODULE_ID, &mut row.into(), self.database_address)
