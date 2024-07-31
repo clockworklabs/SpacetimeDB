@@ -1,4 +1,4 @@
-use crate::{AlgebraicType, AlgebraicValue, ArrayType, BuiltinType, MapType, MapValue, ProductType, ProductValue};
+use crate::{AlgebraicType, AlgebraicValue, MapType, MapValue, ProductType, ProductValue};
 use spacetimedb_primitives::{ColId, ConstraintId, IndexId, SequenceId, TableId};
 
 impl crate::Value for AlgebraicValue {
@@ -24,15 +24,9 @@ impl From<AlgebraicType> for ProductType {
     }
 }
 
-impl From<ArrayType> for AlgebraicType {
-    fn from(x: ArrayType) -> Self {
-        BuiltinType::Array(x).into()
-    }
-}
-
 impl From<MapType> for AlgebraicType {
     fn from(x: MapType) -> Self {
-        BuiltinType::Map(Box::new(x)).into()
+        Box::new(x).into()
     }
 }
 

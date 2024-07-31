@@ -14,8 +14,7 @@ use core::mem;
 use core::ops::Index;
 use enum_as_inner::EnumAsInner;
 use spacetimedb_sats::{
-    bsatn, AlgebraicType, AlgebraicValue, BuiltinType, ProductType, ProductTypeElement, ProductValue, SumType,
-    SumTypeVariant,
+    bsatn, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumType, SumTypeVariant,
 };
 
 /// Aligns a `base` offset to the `required_alignment` (in the positive direction) and returns it.
@@ -89,7 +88,7 @@ pub trait HasLayout {
 ///   Supporting recursive types remains a TODO(future-work).
 ///   Note that the previous Spacetime datastore did not support recursive types in tables.
 ///
-/// - [`BuiltinType`] is separated into [`PrimitveType`] (atomically-sized types like integers)
+/// - Types where `ty.is_scalar()` are separated into [`PrimitveType`] (atomically-sized types like integers)
 ///   and  [`VarLenType`] (strings, arrays, and maps).
 ///   This separation allows cleaner pattern-matching, e.g. in `HasLayout::layout`,
 ///   where `VarLenType` returns a static ref to [`VAR_LEN_REF_LAYOUT`],
@@ -268,7 +267,7 @@ pub struct SumTypeVariantLayout {
     pub name: Option<Box<str>>,
 }
 
-/// Variants of [`BuiltinType`] which do not require a `VarLenRef` indirection,
+/// Scalar types which do not require a `VarLenRef` indirection,
 /// i.e. bools, integers and floats.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PrimitiveType {
@@ -299,8 +298,8 @@ impl HasLayout for PrimitiveType {
     }
 }
 
-/// [`BuiltinType`] variants which require a `VarLenRef` indirection,
-/// i.e. strings, arrays and maps.
+/// Types requiring a `VarLenRef` indirection,
+/// i.e. strings, arrays, and maps.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum VarLenType {
     /// The string type corresponds to `AlgebraicType::String`.
@@ -336,28 +335,26 @@ impl From<AlgebraicType> for AlgebraicTypeLayout {
             AlgebraicType::Sum(sum) => AlgebraicTypeLayout::Sum(sum.into()),
             AlgebraicType::Product(prod) => AlgebraicTypeLayout::Product(prod.into()),
 
-            AlgebraicType::Builtin(ref builtin) => match builtin {
-                BuiltinType::String => AlgebraicTypeLayout::VarLen(VarLenType::String),
-                BuiltinType::Array(_) => AlgebraicTypeLayout::VarLen(VarLenType::Array(Box::new(ty))),
-                BuiltinType::Map(_) => AlgebraicTypeLayout::VarLen(VarLenType::Map(Box::new(ty))),
-                BuiltinType::Bool => AlgebraicTypeLayout::Primitive(PrimitiveType::Bool),
-                BuiltinType::I8 => AlgebraicTypeLayout::Primitive(PrimitiveType::I8),
-                BuiltinType::U8 => AlgebraicTypeLayout::Primitive(PrimitiveType::U8),
-                BuiltinType::I16 => AlgebraicTypeLayout::Primitive(PrimitiveType::I16),
-                BuiltinType::U16 => AlgebraicTypeLayout::Primitive(PrimitiveType::U16),
+            AlgebraicType::String => AlgebraicTypeLayout::VarLen(VarLenType::String),
+            AlgebraicType::Array(_) => AlgebraicTypeLayout::VarLen(VarLenType::Array(Box::new(ty))),
+            AlgebraicType::Map(_) => AlgebraicTypeLayout::VarLen(VarLenType::Map(Box::new(ty))),
+            AlgebraicType::Bool => AlgebraicTypeLayout::Primitive(PrimitiveType::Bool),
+            AlgebraicType::I8 => AlgebraicTypeLayout::Primitive(PrimitiveType::I8),
+            AlgebraicType::U8 => AlgebraicTypeLayout::Primitive(PrimitiveType::U8),
+            AlgebraicType::I16 => AlgebraicTypeLayout::Primitive(PrimitiveType::I16),
+            AlgebraicType::U16 => AlgebraicTypeLayout::Primitive(PrimitiveType::U16),
 
-                BuiltinType::I32 => AlgebraicTypeLayout::Primitive(PrimitiveType::I32),
-                BuiltinType::U32 => AlgebraicTypeLayout::Primitive(PrimitiveType::U32),
+            AlgebraicType::I32 => AlgebraicTypeLayout::Primitive(PrimitiveType::I32),
+            AlgebraicType::U32 => AlgebraicTypeLayout::Primitive(PrimitiveType::U32),
 
-                BuiltinType::I64 => AlgebraicTypeLayout::Primitive(PrimitiveType::I64),
-                BuiltinType::U64 => AlgebraicTypeLayout::Primitive(PrimitiveType::U64),
+            AlgebraicType::I64 => AlgebraicTypeLayout::Primitive(PrimitiveType::I64),
+            AlgebraicType::U64 => AlgebraicTypeLayout::Primitive(PrimitiveType::U64),
 
-                BuiltinType::I128 => AlgebraicTypeLayout::Primitive(PrimitiveType::I128),
-                BuiltinType::U128 => AlgebraicTypeLayout::Primitive(PrimitiveType::U128),
+            AlgebraicType::I128 => AlgebraicTypeLayout::Primitive(PrimitiveType::I128),
+            AlgebraicType::U128 => AlgebraicTypeLayout::Primitive(PrimitiveType::U128),
 
-                BuiltinType::F32 => AlgebraicTypeLayout::Primitive(PrimitiveType::F32),
-                BuiltinType::F64 => AlgebraicTypeLayout::Primitive(PrimitiveType::F64),
-            },
+            AlgebraicType::F32 => AlgebraicTypeLayout::Primitive(PrimitiveType::F32),
+            AlgebraicType::F64 => AlgebraicTypeLayout::Primitive(PrimitiveType::F64),
 
             AlgebraicType::Ref(_) => todo!("Refs unsupported without typespace context"),
         }

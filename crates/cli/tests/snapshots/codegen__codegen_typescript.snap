@@ -1,6 +1,5 @@
 ---
 source: crates/cli/tests/codegen.rs
-assertion_line: 31
 expression: outfiles
 ---
 "add_player_reducer.ts" = '''
@@ -8,7 +7,7 @@ expression: outfiles
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 
 export class AddPlayerReducer extends Reducer
 {
@@ -19,13 +18,13 @@ export class AddPlayerReducer extends Reducer
 
 	public call(_name: string) {
 		const serializer = this.client.getSerializer();
-		let _nameType = AlgebraicType.createPrimitiveType(BuiltinType.Type.String);
+		let _nameType = AlgebraicType.createString;
 		serializer.write(_nameType, _name);
 		this.client.call("add_player", serializer);
 	}
 
 	public static deserializeArgs(adapter: ReducerArgsAdapter): any[] {
-		let nameType = AlgebraicType.createPrimitiveType(BuiltinType.Type.String);
+		let nameType = AlgebraicType.createString;
 		let nameValue = AlgebraicValue.deserialize(nameType, adapter.next())
 		let name = nameValue.asString();
 		return [name];
@@ -48,7 +47,7 @@ export default AddPlayerReducer
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 
 export class AddPrivateReducer extends Reducer
 {
@@ -59,13 +58,13 @@ export class AddPrivateReducer extends Reducer
 
 	public call(_name: string) {
 		const serializer = this.client.getSerializer();
-		let _nameType = AlgebraicType.createPrimitiveType(BuiltinType.Type.String);
+		let _nameType = AlgebraicType.createString;
 		serializer.write(_nameType, _name);
 		this.client.call("add_private", serializer);
 	}
 
 	public static deserializeArgs(adapter: ReducerArgsAdapter): any[] {
-		let nameType = AlgebraicType.createPrimitiveType(BuiltinType.Type.String);
+		let nameType = AlgebraicType.createString;
 		let nameValue = AlgebraicValue.deserialize(nameType, adapter.next())
 		let name = nameValue.asString();
 		return [name];
@@ -88,7 +87,7 @@ export default AddPrivateReducer
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 
 export class DeletePlayerReducer extends Reducer
 {
@@ -99,13 +98,13 @@ export class DeletePlayerReducer extends Reducer
 
 	public call(_id: BigInt) {
 		const serializer = this.client.getSerializer();
-		let _idType = AlgebraicType.createPrimitiveType(BuiltinType.Type.U64);
+		let _idType = AlgebraicType.createBigInt;
 		serializer.write(_idType, _id);
 		this.client.call("delete_player", serializer);
 	}
 
 	public static deserializeArgs(adapter: ReducerArgsAdapter): any[] {
-		let idType = AlgebraicType.createPrimitiveType(BuiltinType.Type.U64);
+		let idType = AlgebraicType.createBigInt;
 		let idValue = AlgebraicValue.deserialize(idType, adapter.next())
 		let id = idValue.asBigInt();
 		return [id];
@@ -128,7 +127,7 @@ export default DeletePlayerReducer
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 
 export class DeletePlayersByNameReducer extends Reducer
 {
@@ -139,13 +138,13 @@ export class DeletePlayersByNameReducer extends Reducer
 
 	public call(_name: string) {
 		const serializer = this.client.getSerializer();
-		let _nameType = AlgebraicType.createPrimitiveType(BuiltinType.Type.String);
+		let _nameType = AlgebraicType.createString;
 		serializer.write(_nameType, _name);
 		this.client.call("delete_players_by_name", serializer);
 	}
 
 	public static deserializeArgs(adapter: ReducerArgsAdapter): any[] {
-		let nameType = AlgebraicType.createPrimitiveType(BuiltinType.Type.String);
+		let nameType = AlgebraicType.createString;
 		let nameValue = AlgebraicValue.deserialize(nameType, adapter.next())
 		let name = nameValue.asString();
 		return [name];
@@ -168,7 +167,7 @@ export default DeletePlayersByNameReducer
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, SumTypeVariant, BuiltinType, AlgebraicValue } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, SumTypeVariant, AlgebraicValue } from "@clockworklabs/spacetimedb-sdk";
 
 export namespace Namespace.testC {
 	export function getAlgebraicType(): AlgebraicType {
@@ -207,7 +206,7 @@ export default Namespace.testC;
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, SumTypeVariant, BuiltinType, AlgebraicValue } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, SumTypeVariant, AlgebraicValue } from "@clockworklabs/spacetimedb-sdk";
 
 export namespace Namespace.testF {
 	export function getAlgebraicType(): AlgebraicType {
@@ -216,7 +215,7 @@ export namespace Namespace.testF {
 		])),
 			new SumTypeVariant("Bar", AlgebraicType.createProductType([
 		])),
-			new SumTypeVariant("Baz", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
+			new SumTypeVariant("Baz", AlgebraicType.createString),
 		]);
 	}
 
@@ -263,7 +262,7 @@ export default Namespace.testF;
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 
 export class PkMultiIdentity extends DatabaseTable
 {
@@ -289,8 +288,8 @@ export class PkMultiIdentity extends DatabaseTable
 	public static getAlgebraicType(): AlgebraicType
 	{
 		return AlgebraicType.createProductType([
-			new ProductTypeElement("id", AlgebraicType.createPrimitiveType(BuiltinType.Type.U32)),
-			new ProductTypeElement("other", AlgebraicType.createPrimitiveType(BuiltinType.Type.U32)),
+			new ProductTypeElement("id", AlgebraicType.createNumber),
+			new ProductTypeElement("other", AlgebraicType.createNumber),
 		]);
 	}
 
@@ -342,7 +341,7 @@ export default PkMultiIdentity;
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 
 export class Point extends DatabaseTable
 {
@@ -366,8 +365,8 @@ export class Point extends DatabaseTable
 	public static getAlgebraicType(): AlgebraicType
 	{
 		return AlgebraicType.createProductType([
-			new ProductTypeElement("x", AlgebraicType.createPrimitiveType(BuiltinType.Type.I64)),
-			new ProductTypeElement("y", AlgebraicType.createPrimitiveType(BuiltinType.Type.I64)),
+			new ProductTypeElement("x", AlgebraicType.createBigInt),
+			new ProductTypeElement("y", AlgebraicType.createBigInt),
 		]);
 	}
 
@@ -409,7 +408,7 @@ export default Point;
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 
 export class Private extends DatabaseTable
 {
@@ -431,7 +430,7 @@ export class Private extends DatabaseTable
 	public static getAlgebraicType(): AlgebraicType
 	{
 		return AlgebraicType.createProductType([
-			new ProductTypeElement("name", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
+			new ProductTypeElement("name", AlgebraicType.createString),
 		]);
 	}
 
@@ -462,7 +461,7 @@ export default Private;
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 
 export class QueryPrivateReducer extends Reducer
 {
@@ -497,7 +496,7 @@ export default QueryPrivateReducer
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 // @ts-ignore
 import { ScheduleAt } from "./schedule_at";
 
@@ -527,8 +526,8 @@ export class RepeatingTestArg extends DatabaseTable
 	public static getAlgebraicType(): AlgebraicType
 	{
 		return AlgebraicType.createProductType([
-			new ProductTypeElement("prevTime", AlgebraicType.createPrimitiveType(BuiltinType.Type.U64)),
-			new ProductTypeElement("scheduledId", AlgebraicType.createPrimitiveType(BuiltinType.Type.U64)),
+			new ProductTypeElement("prevTime", AlgebraicType.createBigInt),
+			new ProductTypeElement("scheduledId", AlgebraicType.createBigInt),
 			new ProductTypeElement("scheduledAt", ScheduleAt.getAlgebraicType()),
 		]);
 	}
@@ -577,7 +576,7 @@ export default RepeatingTestArg;
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 // @ts-ignore
 import { RepeatingTestArg } from "./repeating_test_arg";
 
@@ -619,13 +618,13 @@ export default RepeatingTestReducer
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, SumTypeVariant, BuiltinType, AlgebraicValue } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, SumTypeVariant, AlgebraicValue } from "@clockworklabs/spacetimedb-sdk";
 
 export namespace ScheduleAt {
 	export function getAlgebraicType(): AlgebraicType {
 		return AlgebraicType.createSumType([
-			new SumTypeVariant("Time", AlgebraicType.createPrimitiveType(BuiltinType.Type.U64)),
-			new SumTypeVariant("Interval", AlgebraicType.createPrimitiveType(BuiltinType.Type.U64)),
+			new SumTypeVariant("Time", AlgebraicType.createBigInt),
+			new SumTypeVariant("Interval", AlgebraicType.createBigInt),
 		]);
 	}
 
@@ -666,7 +665,7 @@ export default ScheduleAt;
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 
 export class TestA extends DatabaseTable
 {
@@ -692,9 +691,9 @@ export class TestA extends DatabaseTable
 	public static getAlgebraicType(): AlgebraicType
 	{
 		return AlgebraicType.createProductType([
-			new ProductTypeElement("x", AlgebraicType.createPrimitiveType(BuiltinType.Type.U32)),
-			new ProductTypeElement("y", AlgebraicType.createPrimitiveType(BuiltinType.Type.U32)),
-			new ProductTypeElement("z", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
+			new ProductTypeElement("x", AlgebraicType.createNumber),
+			new ProductTypeElement("y", AlgebraicType.createNumber),
+			new ProductTypeElement("z", AlgebraicType.createString),
 		]);
 	}
 
@@ -747,7 +746,7 @@ export default TestA;
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 
 export class TestB extends DatabaseTable
 {
@@ -771,7 +770,7 @@ export class TestB extends DatabaseTable
 	public static getAlgebraicType(): AlgebraicType
 	{
 		return AlgebraicType.createProductType([
-			new ProductTypeElement("foo", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
+			new ProductTypeElement("foo", AlgebraicType.createString),
 		]);
 	}
 
@@ -791,7 +790,7 @@ export default TestB;
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 // @ts-ignore
 import { Namespace.TestC } from "./namespace.test_c";
 
@@ -840,7 +839,7 @@ export default TestD;
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 
 export class TestE extends DatabaseTable
 {
@@ -866,8 +865,8 @@ export class TestE extends DatabaseTable
 	public static getAlgebraicType(): AlgebraicType
 	{
 		return AlgebraicType.createProductType([
-			new ProductTypeElement("id", AlgebraicType.createPrimitiveType(BuiltinType.Type.U64)),
-			new ProductTypeElement("name", AlgebraicType.createPrimitiveType(BuiltinType.Type.String)),
+			new ProductTypeElement("id", AlgebraicType.createBigInt),
+			new ProductTypeElement("name", AlgebraicType.createString),
 		]);
 	}
 
@@ -914,7 +913,7 @@ export default TestE;
 // WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
 
 // @ts-ignore
-import { __SPACETIMEDB__, AlgebraicType, ProductType, BuiltinType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
+import { __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient } from "@clockworklabs/spacetimedb-sdk";
 // @ts-ignore
 import { TestA } from "./test_a";
 // @ts-ignore
