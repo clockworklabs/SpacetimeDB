@@ -13,6 +13,7 @@ members = [
   "crates/durability",
   "crates/fs-utils",
   "crates/lib",
+  "crates/platforms",  
   "crates/planner",
   "crates/metrics",
   "crates/primitives",
@@ -131,9 +132,15 @@ colored = "2.0.0"
 console = { version = "0.15.6" }
 convert_case = "0.6.0"
 crc32c = "0.6.4"
-criterion = { version = "0.5.1", features = ["async", "async_tokio", "html_reports"] }
+criterion = { version = "0.5.1", features = [
+    "async",
+    "async_tokio",
+    "html_reports",
+] }
 crossbeam-channel = "0.5"
-cursive = { version = "0.20", default-features = false, features = ["crossterm-backend"] }
+cursive = { version = "0.20", default-features = false, features = [
+    "crossterm-backend",
+] }
 decorum = { version = "0.3.1", default-features = false, features = ["std"] }
 derive_more = "0.99"
 dirs = "5.0.1"
@@ -144,6 +151,7 @@ enum-as-inner = "0.6"
 enum-map = "2.6.3"
 env_logger = "0.10"
 ethnum = { version = "1.5.0", features = ["serde"] }
+etcetera = "0.8.0"
 flate2 = "1.0.24"
 fs-err = "2.9.0"
 fs2 = "0.4.3"
@@ -217,7 +225,9 @@ sqllogictest-engines = "0.17"
 sqlparser = "0.38.0"
 strum = { version = "0.25.0", features = ["derive"] }
 syn = { version = "2", features = ["full", "extra-traits"] }
-syntect = { version = "5.0.0", default-features = false, features = ["default-fancy"] }
+syntect = { version = "5.0.0", default-features = false, features = [
+    "default-fancy",
+] }
 tabled = "0.14.0"
 tar = "0.4"
 tempdir = "0.3.7"
@@ -247,11 +257,13 @@ walkdir = "2.2.5"
 wasmbin = "0.6"
 
 
-wasmtime = { version = "15", default-features = false, features = ["cranelift", "demangle", "addr2line", "cache"] }
+wasmtime = { version = "15", default-features = false, features = [
+    "cranelift",
+    "demangle",
+    "addr2line",
+    "cache",
+] }
 
-# We use the "ondemand" feature to allow connecting after the start,
-# and reconnecting, from the tracy client to the database.
-# TODO(George): Need to be able to remove "broadcast" in some build configurations.
 tracing-tracy = { version = "0.10.4", features = [
    "enable",
    "system-tracing",
@@ -262,6 +274,9 @@ tracing-tracy = { version = "0.10.4", features = [
    "ondemand",
  ] }
 
+# We use the "ondemand" feature to allow connecting after the start,
+# and reconnecting, from the tracy client to the database.
+# TODO(George): Need to be able to remove "broadcast" in some build configurations.
 # Vendor the openssl we rely on, rather than depend on a
 # potentially very old system version.
 openssl = { version = "0.10", features = ["vendored"] }
