@@ -336,7 +336,7 @@ impl Program {
     /// Create a [`Program`] with no bytes.
     pub fn empty() -> Self {
         Self {
-            hash: Hash::ZERO,
+            hash: hash_bytes([].into()),
             bytes: [].into(),
         }
     }
