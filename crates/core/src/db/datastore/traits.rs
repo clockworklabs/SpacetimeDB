@@ -335,10 +335,7 @@ impl Program {
 
     /// Create a [`Program`] with no bytes.
     pub fn empty() -> Self {
-        Self {
-            hash: hash_bytes([].into()),
-            bytes: [].into(),
-        }
+        Self::from_bytes([])
     }
 }
 
