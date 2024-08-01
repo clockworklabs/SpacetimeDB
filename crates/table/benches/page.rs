@@ -109,6 +109,9 @@ struct U32x8 {
 }
 
 // TODO: get rid of this once we change to >= Rust 1.79.
+// This necessary as Rust currently doesn't understand that `AlgebraicType::U32`
+// in `[AlgebraicType::U32; N]` is a const expression.
+// In Rust 1.79, we can use `[const { AlgebraicType::U32 }; N]` instead.
 const TY_U32: AlgebraicType = AlgebraicType::U32;
 
 unsafe impl Row for U32x8 {
