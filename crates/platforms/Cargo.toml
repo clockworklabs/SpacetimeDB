@@ -11,8 +11,8 @@ spacetimedb-lib.workspace = true
 
 anyhow.workspace = true
 etcetera.workspace = true
+glob.workspace = true
 serde.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 toml.workspace = true
-

@@ -4496,6 +4496,7 @@ version = "0.12.0"
 dependencies = [
  "anyhow",
  "etcetera",
+ "glob",
  "serde",
  "spacetimedb-lib",
  "tempfile",

@@ -1,210 +1,289 @@
-use std::fmt;
+//! # Directory Structure of the Database.
+//!
+//! The [Directories] holds the paths to the various directories used by the database.
+//!
+//! *  **cli-bin-dir** We defined a `cli-bin-dir` under which all versions of all
+//!  SpacetimeDB binaries will be stored. Each binary will be stored in a
+//!  directory named with version number of the binary in this directory. If a
+//!  binary has any related files required by that binary which are specific to
+//!  that version, for example, template configuration files, these files will be
+//!  installed in this folder as well.
+//!
+//! *  **cli-config-dir** We define a `cli-config-dir` which is where
+//! configuration and state for the CLI will be stored.
+//!
+//! ## Linux/macOS Directory Structure
+//!
+//! On Linux and macOS the installation paths follow the `XDG` conventions by default:
+//!
+//! * Default `cli-config-dir`: `$HOME/.config/spacetime`
+//! * Default `cli-bin-dir`: `$HOME/.local/share/spacetime/bin`
+//! * Default `cli-bin-file`: `$HOME/.local/bin/spacetime`
+//!
+//! We also observe the `XDG` environment variables if they are set. If they are set
+//! then the paths are defined as:
+//!
+//! * Default `cli-config-dir`: `$XDG_CONFIG_HOME/spacetime`
+//! * Default `cli-bin-dir`: `$XDG_DATA_HOME/spacetime/bin`
+//!
+//! For reference, the below is an example installation using the default paths:
+//!
+//!```bash
+//! $HOME
+//! ├── .local
+//! │   ├── bin
+//! │   │   └── spacetime -> $HOME/.local/share/spacetime/bin/1.10.1/spacetimedb-update # Current, in $PATH
+//! │   └── share
+//! │       └── spacetime
+//! │           └── bin
+//! │               └── 1.10.1
+//! │                   ├── spacetimedb-update # Version manager
+//! │                   ├── spacetimedb-cli # CLI
+//! │                   ├── spacetimedb-standalone # Server
+//! │                   ├── spacetimedb-cloud # Server
+//! │                   ├── cli.default.toml # Template CLI configuration file
+//! │                   └── config.default.toml # Template server configuration file
+//! └── .config
+//!     └── spacetime
+//!         ├── id_ecdsa # Private key
+//!         ├── id_ecdsa.pub # Public key
+//!         └── cli.toml # CLI configuration
+//! ```
+//!
+//!## Windows Directory Structure
+//!
+//! On Windows the installation paths follow Windows conventions:
+//!
+//! * Default `cli-config-dir`: `%LocalAppData%\SpacetimeDB\config`
+//! * Default `cli-bin-dir`: `%LocalAppData%\SpacetimeDB\bin`
+//! * Default `cli-bin-file`: `%LocalAppData%\SpacetimeDB\spacetime.exe`
+//!
+//! > **Note**: Both directories use `%LocalAppData%` and not `%AppData%`. This is
+//! > intentional so that different users on Windows can have different configuration
+//! > and binaries. This also allows you to install SpacetimeDB on Windows even if you
+//! > are not a privileged user.
+//!
+//! For reference, the below is an example installation using the default paths:
+//!
+//! ```bash
+//! %LocalAppData%
+//! └── SpacetimeDB
+//!     ├── spacetime.exe # A copy of .\bin\1.10.1\spacetimedb-update.exe
+//!     ├── config
+//!     │   ├── id_ecdsa # Private key
+//!     │   ├── id_ecdsa.pub # Public key
+//!     │   └── cli.toml # CLI configuration
+//!     └── bin
+//!         └── 1.10.1
+//!             ├── spacetimedb-update.exe # Version manager
+//!             ├── spacetimedb-cli.exe # CLI
+//!             ├── spacetimedb-standalone.exe # Server
+//!             ├── spacetimedb-cloud.exe # Server
+//!             ├── cli.default.toml # Template CLI configuration file
+//!             └── config.default.toml # Template server configuration file
+//! ```
+//!
+//! ## Custom Root Directory
+//!
+//! Users on all platforms must be allowed to override the default installation
+//! paths entirely with a single `--root-dir` argument passed to the initial
+//! installation commands.
+//!
+//! If users specify a `--root-dir` flag, then the installation paths should be
+//! defined relative to the `root-dir` as follows:
+//!
+//! * `cli-config-dir`: `{root-dir}/config`
+//! * `cli-bin-dir`: `{root-dir}/bin`
+//! * `cli-bin-file`: `{root-dir}/spacetime`
+//!
+//! For reference, the below is an example installation using the `--root-dir` argument:
+//!
+//! ```bash
+//! {root-dir}
+//! ├── spacetime -> {root-dir}/bin/1.10.1/spacetimedb-update # Current, in $PATH
+//! ├── config
+//! │   ├── id_ecdsa # Private key
+//! │   ├── id_ecdsa.pub # Public key
+//! │   └── cli.toml # CLI configuration
+//! └── bin
+//!     └── 1.10.1
+//!         ├── spacetimedb-update.exe # Version manager
+//!         ├── spacetimedb-cli.exe # CLI
+//!         ├── spacetimedb-standalone.exe # Server
+//!         ├── spacetimedb-cloud.exe # Server
+//!         ├── cli.default.toml # Template CLI configuration file
+//!         └── config.default.toml # Template server configuration file
+//! ```
+
 use std::path::PathBuf;
 
-use crate::errors::ErrorPlatform;
-use crate::files::{CONFIG_CLIENT, CONFIG_SERVER};
 use etcetera::base_strategy::{Windows, Xdg};
 use etcetera::BaseStrategy;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Source {
-    Default,
-    Cli,
-    Config,
-}
+use crate::errors::ErrorPlatform;
+use crate::metadata::Bin;
+use crate::platform::Platform;
 
+/// The `Layout` enum represents the different directories layouts that the database can be
+/// installed in.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Layout {
+    /// The `Xdg` layout is the default layout for Unix-like systems.
     Xdg,
-    Nix,
+    /// The `Custom` layout is for custom installations.
+    Custom(Platform),
+    /// The `Windows` layout is the default layout for Windows systems.
     Windows,
 }
 
-#[derive(Debug, Clone)]
-pub struct PathArg {
-    pub(crate) path: PathBuf,
-    pub(crate) source: Source,
-}
-
-impl PathArg {
-    pub(crate) fn exists(&self) -> bool {
-        self.path.exists()
+impl Layout {
+    /// Get the current layout based on the `target_os`.
+    pub fn current() -> Self {
+        if cfg!(target_os = "windows") {
+            Layout::Windows
+        } else {
+            Layout::Xdg
+        }
     }
 
-    pub(crate) fn is_file(&self) -> Result<(), ErrorPlatform> {
-        if !self.path.is_file() {
+    /// Get the current [Platform] based on the layout.
+    pub fn platform(&self) -> Platform {
+        match self {
+            Layout::Xdg => Platform::current(),
+            Layout::Custom(platform) => *platform,
+            Layout::Windows => Platform::Windows,
+        }
+    }
+}
+
+/// The `CheckPath` trait provides methods to check if a path is a file or a directory,
+/// and turns the errors into `ErrorPlatform`.
+pub trait CheckPath {
+    /// Check if the `path` is a file.
+    fn check_is_file(&self) -> Result<(), ErrorPlatform>;
+    /// Check if the `path` is a directory.
+    fn check_is_dir(&self) -> Result<(), ErrorPlatform>;
+}
+
+impl CheckPath for PathBuf {
+    fn check_is_file(&self) -> Result<(), ErrorPlatform> {
+        if !self.is_file() {
             return Err(ErrorPlatform::NotFile { path: self.clone() });
         }
         Ok(())
     }
 
-    pub(crate) fn is_dir(&self) -> Result<(), ErrorPlatform> {
-        if !self.path.is_dir() {
+    fn check_is_dir(&self) -> Result<(), ErrorPlatform> {
+        if !self.is_dir() {
             return Err(ErrorPlatform::NotDirectory { path: self.clone() });
         }
         Ok(())
     }
 }
 
-impl From<PathBuf> for PathArg {
-    fn from(path: PathBuf) -> Self {
-        PathArg {
-            path,
-            source: Source::Default,
-        }
+impl CheckPath for Option<PathBuf> {
+    fn check_is_file(&self) -> Result<(), ErrorPlatform> {
+        self.as_ref().map_or(Ok(()), |path| path.check_is_file())
+    }
+
+    fn check_is_dir(&self) -> Result<(), ErrorPlatform> {
+        self.as_ref().map_or(Ok(()), |path| path.check_is_dir())
     }
 }
 
-impl fmt::Display for PathArg {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}: {:?}", self.source, self.path)
-    }
-}
-
+/// The [Directories] struct holds the `paths` to the various directories used by the database.
+///
+/// **NOTE**: This not create the directories, only calculates the `paths`.
 #[derive(Debug, Clone)]
-pub(crate) struct PathArgOpt {
-    pub(crate) path: Option<PathBuf>,
-    pub(crate) source: Source,
+pub struct Directories {
+    pub layout: Layout,
+    pub home_dir: PathBuf,
+    pub root_dir: Option<PathBuf>,
+    pub bin_file: PathBuf,
+    pub bins_dir: PathBuf,
+    pub config_dir: PathBuf,
+    pub data_dir: PathBuf,
 }
 
-impl PathArgOpt {
-    pub(crate) fn is_dir(&self) -> Result<(), ErrorPlatform> {
-        if let Some(path) = &self.path {
-            if !path.is_dir() {
-                return Err(ErrorPlatform::NotDirectory {
-                    path: PathArg {
-                        path: path.clone(),
-                        source: self.source,
-                    },
-                });
-            }
-        }
-
-        Ok(())
-    }
-}
-
-impl From<Option<PathBuf>> for PathArgOpt {
-    fn from(path: Option<PathBuf>) -> Self {
-        PathArgOpt {
-            path,
-            source: Source::Default,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct BaseDirectories {
-    pub(crate) layout: Layout,
-    pub(crate) root: PathArgOpt,
-    pub(crate) bin: PathArg,
-    pub(crate) config: PathArg,
-    pub(crate) config_client: PathArg,
-    pub(crate) config_server: PathArg,
-    pub(crate) var: PathArg,
-    pub(crate) data: PathArgOpt,
-}
-
-impl BaseDirectories {
-    fn new(layout: Layout, dir: PathBuf) -> BaseDirectories {
-        BaseDirectories {
+impl Directories {
+    fn new(layout: Layout, root: PathBuf) -> Self {
+        Self {
             layout,
-            bin: dir.join("bin").into(),
-            config: dir.join("config").into(),
-            config_client: dir.join("config").join(CONFIG_CLIENT).into(),
-            config_server: dir.join("config").join(CONFIG_SERVER).into(),
-            var: dir.join("var").into(),
-            root: Some(dir).into(),
-            data: None.into(),
+            bin_file: root.join(Bin::Spacetime.name(layout)),
+            bins_dir: root.join("bin"),
+            config_dir: root.join("config"),
+            data_dir: root.join("data"),
+            root_dir: Some(root),
+            home_dir: etcetera::home_dir().unwrap(),
         }
     }
 
-    pub fn custom(dir: PathBuf) -> BaseDirectories {
-        let layout = if cfg!(target_os = "windows") {
-            Layout::Windows
-        } else {
-            Layout::Nix
-        };
-        Self::new(layout, dir)
+    /// Create a new [Directories] with the given `root` path and [Platform].
+    pub fn custom_platform(root: PathBuf, platform: Platform) -> Self {
+        Self::new(Layout::Custom(platform), root)
     }
 
-    pub fn nix() -> BaseDirectories {
-        let dir = Xdg::new().unwrap();
-        let home = dir.home_dir();
-        Self::new(Layout::Nix, home.join(".spacetime"))
+    /// Create a new [Directories] with the given `root` path, and the *current* [Platform].
+    pub fn custom(root: PathBuf) -> Self {
+        Self::custom_platform(root, Platform::current())
     }
 
-    pub fn windows() -> BaseDirectories {
+    /// Create a new [Directories] with the default paths for `Windows` systems.
+    pub fn windows() -> Self {
         let dir = Windows::new().unwrap();
         let home = dir.home_dir();
         Self::new(Layout::Windows, home.join("SpacetimeDB"))
     }
 
-    pub fn xdg() -> BaseDirectories {
+    /// Create a new [Directories] with the default paths for `Xdg` systems.
+    pub fn xdg() -> Self {
         let dir = Xdg::new().unwrap();
-
-        BaseDirectories {
+        let local = dir.home_dir().join(".local");
+        let share = local.join("share").join("spacetime");
+        Self {
             layout: Layout::Xdg,
-            root: None.into(),
-            bin: dir.home_dir().join(".local").join("bin").into(),
-            config: dir.config_dir().join("spacetime").into(),
-            config_client: dir.config_dir().join("spacetime").join(CONFIG_CLIENT).into(),
-            config_server: dir.config_dir().join("spacetime").join(CONFIG_SERVER).into(),
-            var: dir.data_dir().join("spacetime").into(),
-            data: None.into(),
+            home_dir: dir.home_dir().to_path_buf(),
+            root_dir: None,
+            bin_file: local.join("bin").join(Bin::Spacetime.name(Layout::Xdg)),
+            bins_dir: share.join("bin"),
+            config_dir: dir.config_dir().join("spacetime"),
+            data_dir: share.join("data"),
         }
     }
 
-    pub fn platform() -> BaseDirectories {
+    /// Create a new [Directories] based on the current platform.
+    pub fn platform() -> Self {
         if cfg!(target_os = "windows") {
-            BaseDirectories::windows()
+            Directories::windows()
         } else {
-            BaseDirectories::xdg()
+            Directories::xdg()
         }
     }
 
-    pub fn data_dir(&self) -> PathBuf {
-        self.data.path.clone().unwrap_or_else(|| self.var.path.join("data"))
+    /// Change the `root` path.
+    ///
+    /// NOTE: Recalculate the other `paths` based on the new `root_dir`.
+    pub fn root(self, root_dir: PathBuf) -> Self {
+        Self::new(Layout::Custom(Platform::current()), root_dir)
     }
 
-    /// Recalculate the paths based on the new root
-    pub fn with_root(self, source: Source, path: PathBuf) -> Self {
-        // Save the old settings
-        let data = self.data.clone();
-        let config = self.config.clone();
-
-        let mut x = Self::new(self.layout, path);
-        x.root.source = source;
-        x.data = data;
-        x.config = config;
-        x
+    /// Change the `data` path.
+    pub fn data(mut self, data_dir: PathBuf) -> Self {
+        self.data_dir = data_dir;
+        self
     }
 
-    pub fn with_config_dir(self, source: Source, path: PathBuf) -> Self {
-        let mut x = self;
-        x.config = PathArg { path, source };
-        x
-    }
+    /// Utility method to remove the `home` directory from the paths.
+    fn without_home(mut self) -> Self {
+        let remove_home = |path: PathBuf| -> PathBuf { path.strip_prefix(&self.home_dir).unwrap().to_path_buf() };
 
-    pub fn with_config_client_file(self, source: Source, path: PathBuf) -> Self {
-        let mut x = self;
-        x.config_client = PathArg { path, source };
-        x
-    }
+        self.root_dir = self.root_dir.map(remove_home);
+        self.bin_file = remove_home(self.bin_file);
+        self.bins_dir = remove_home(self.bins_dir);
+        self.config_dir = remove_home(self.config_dir);
+        self.data_dir = remove_home(self.data_dir);
 
-    pub fn with_config_server_file(self, source: Source, path: PathBuf) -> Self {
-        let mut x = self;
-        x.config_server = PathArg { path, source };
-        x
-    }
-
-    pub fn with_data(self, source: Source, path: PathBuf) -> Self {
-        let mut x = self;
-        x.data = PathArgOpt {
-            path: Some(path),
-            source,
-        };
-        x
+        self
     }
 }
 
@@ -214,92 +293,60 @@ mod tests {
 
     #[test]
     fn xdg() {
-        let dirs = BaseDirectories::xdg();
-
-        assert!(dirs.root.path.is_none());
-        assert!(dirs.bin.path.ends_with(".local/bin"));
-        assert!(dirs.config.path.ends_with("spacetime"));
-        assert!(dirs.config_client.path.ends_with("spacetime/client.toml"));
-        assert!(dirs.config_server.path.ends_with("spacetime/server.toml"));
-        assert!(dirs.var.path.ends_with("spacetime"));
-    }
-
-    #[test]
-    fn nix() {
-        let dirs = BaseDirectories::nix();
-
-        assert!(dirs.root.path.unwrap().ends_with(".spacetime"));
-        assert!(dirs.bin.path.ends_with(".spacetime/bin"));
-        assert!(dirs.config.path.ends_with(".spacetime/config"));
-        assert!(dirs.config_client.path.ends_with("client.toml"));
-        assert!(dirs.config_server.path.ends_with("server.toml"));
-        assert!(dirs.var.path.ends_with(".spacetime/var"));
+        let dirs = Directories::xdg().without_home();
+        assert_eq!(dirs.root_dir, None);
+        assert_eq!(dirs.bin_file, PathBuf::from(".local").join("bin").join("spacetime"));
+        assert_eq!(
+            dirs.bins_dir,
+            PathBuf::from(".local").join("share").join("spacetime").join("bin")
+        );
+        assert_eq!(dirs.config_dir, PathBuf::from(".config").join("spacetime"));
+        assert_eq!(
+            dirs.data_dir,
+            PathBuf::from(".local").join("share").join("spacetime").join("data")
+        );
     }
 
     #[test]
     fn windows() {
-        let dirs = BaseDirectories::windows();
-
-        assert!(dirs.root.path.unwrap().ends_with("SpacetimeDB"));
-        assert!(dirs.bin.path.ends_with("SpacetimeDB/bin"));
-        assert!(dirs.config.path.ends_with("SpacetimeDB/config"));
-        assert!(dirs.config_client.path.ends_with("client.toml"));
-        assert!(dirs.config_server.path.ends_with("server.toml"));
-        assert!(dirs.var.path.ends_with("SpacetimeDB/var"));
+        let dirs = Directories::windows().without_home();
+        assert_eq!(dirs.root_dir, Some(PathBuf::from("SpacetimeDB")));
+        assert_eq!(dirs.bin_file, PathBuf::from("SpacetimeDB").join("spacetime.exe"));
+        assert_eq!(dirs.bins_dir, PathBuf::from("SpacetimeDB").join("bin"));
+        assert_eq!(dirs.config_dir, PathBuf::from("SpacetimeDB").join("config"));
+        assert_eq!(dirs.data_dir, PathBuf::from("SpacetimeDB").join("data"));
     }
 
     #[test]
     fn custom() {
-        let custom_path = PathBuf::from("/custom/path");
-        let dirs = BaseDirectories::custom(custom_path.clone());
+        let custom_path = PathBuf::from("custom").join("path");
+        let dirs = Directories::custom(custom_path.clone());
 
-        assert_eq!(dirs.root.path.clone().unwrap(), custom_path);
-        assert!(dirs.bin.path.ends_with("bin"));
-        assert!(dirs.config.path.ends_with("config"));
-        assert!(dirs.config_client.path.ends_with("client.toml"));
-        assert!(dirs.config_server.path.ends_with("server.toml"));
-        assert!(dirs.var.path.ends_with("var"));
-
-        // Changing the config file
-        let dirs = dirs
-            .with_config_dir(Source::Cli, PathBuf::from("/new/config"))
-            .with_config_client_file(Source::Cli, PathBuf::from("/a.toml"))
-            .with_config_server_file(Source::Cli, PathBuf::from("/b.toml"));
-        assert_eq!(dirs.config.path, PathBuf::from("/new/config"));
-        assert!(dirs.config_client.path.ends_with("a.toml"));
-        assert!(dirs.config_server.path.ends_with("b.toml"));
+        assert_eq!(dirs.root_dir, Some(custom_path.clone()));
+        assert_eq!(dirs.bin_file, custom_path.join("spacetime"));
+        assert_eq!(dirs.bins_dir, custom_path.join("bin"));
+        assert_eq!(dirs.config_dir, custom_path.join("config"));
+        assert_eq!(dirs.data_dir, custom_path.join("data"));
     }
 
-    // Testing that the paths are correctly set when changing any of the pats that could
-    // be changed by the `with_*` methods, and that changing the root also changes the
-    // other paths.
+    // Testing that the paths are correctly set by the `builder` methods,
+    // and that changing the `root` also changes the others.
     #[test]
     fn setting_paths() {
-        let initial_path = PathBuf::from("/initial/path");
-        let new_root = PathBuf::from("/new/root");
-        let dirs = BaseDirectories::custom(initial_path.clone());
+        let dirs = Directories::custom(PathBuf::from("initial").join("path"));
 
-        let dirs = dirs.with_config_dir(Source::Cli, PathBuf::from("/new/config"));
+        // Change the `data` path
+        let dirs = dirs.data(PathBuf::from("new").join("data"));
+        assert_eq!(dirs.data_dir, PathBuf::from("new").join("data"));
 
-        assert_eq!(dirs.config.path, PathBuf::from("/new/config"));
-        assert_eq!(dirs.config.source, Source::Cli);
-        assert_eq!(dirs.root.path.as_deref().unwrap(), &initial_path);
+        // Change the root
+        let dirs = dirs.root(PathBuf::from("new").join("root"));
 
-        let dirs = dirs.with_data(Source::Config, PathBuf::from("/new/data"));
+        assert_eq!(dirs.root_dir, Some(PathBuf::from("new").join("root")));
 
-        assert_eq!(dirs.data.source, Source::Config);
-        assert_eq!(dirs.data.path.as_deref().unwrap(), &PathBuf::from("/new/data"));
-
-        let dirs = dirs.with_root(Source::Config, new_root.clone());
-
-        assert_eq!(dirs.root.source, Source::Config);
-        assert_eq!(dirs.root.path.unwrap(), new_root);
-        assert_eq!(dirs.bin.path, PathBuf::from("/new/root/bin"));
-
-        assert_eq!(dirs.config.source, Source::Cli);
-        assert_eq!(dirs.config.path, PathBuf::from("/new/config"));
-
-        assert_eq!(dirs.data.source, Source::Config);
-        assert_eq!(dirs.data.path.unwrap(), PathBuf::from("/new/data"));
+        assert_eq!(dirs.bin_file, PathBuf::from("new").join("root").join("spacetime"));
+        assert_eq!(dirs.bins_dir, PathBuf::from("new").join("root").join("bin"));
+        assert_eq!(dirs.config_dir, PathBuf::from("new").join("root").join("config"));
+        assert_eq!(dirs.data_dir, PathBuf::from("new").join("root").join("data"));
     }
 }
