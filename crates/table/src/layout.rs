@@ -267,8 +267,8 @@ pub struct SumTypeVariantLayout {
     pub name: Option<Box<str>>,
 }
 
-/// Scalar types which do not require a `VarLenRef` indirection,
-/// i.e. bools, integers and floats.
+/// Scalar types, i.e. bools, integers and floats.
+/// These types do not require a `VarLenRef` indirection.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PrimitiveType {
     Bool,
