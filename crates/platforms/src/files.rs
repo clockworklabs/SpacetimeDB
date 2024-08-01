@@ -1,35 +1,38 @@
-use std::path::PathBuf;
-use std::{fmt, fs};
-
-use crate::directories::{BaseDirectories, PathArg, Source};
+use crate::directories::{Directories, PathArg, Source};
 use crate::errors::ErrorPlatform;
 use crate::metadata::{Bin, ConfigPaths, Edition, EditionKind, Metadata, Version};
 use crate::toml::read_toml_if_exists;
-
-pub const CONFIG_CLIENT: &str = "client.toml";
-pub const CONFIG_SERVER: &str = "server.toml";
+use spacetimedb_lib::Address;
+use std::path::PathBuf;
+use std::{fmt, fs};
 
 /// Configuration files.
 #[derive(Clone)]
 pub struct Config {
+    /// Path to the configuration directory.
     pub(crate) path: PathBuf,
+    /// Path to the client configuration file, default: "client.toml".
     pub(crate) client: PathBuf,
+    /// Path to the server configuration file, default: "server.toml".
     pub(crate) server: PathBuf,
 }
 
 impl Config {
+    /// Create a new configuration with the given `path`.
+    ///
+    /// The `client` and `server` configuration files are set to `client.toml` and `server.toml` respectively.
     pub fn new(path: PathBuf) -> Self {
         Self {
-            client: path.join(CONFIG_CLIENT),
-            server: path.join(CONFIG_SERVER),
+            client: path.join("client.toml"),
+            server: path.join("server.toml"),
             path,
         }
     }
-    /// Returns the path of the client config file `client.toml`.
+    /// Returns the path of the client config file.
     pub fn client_file(&self) -> &PathBuf {
         &self.client
     }
-    /// Returns the path of the server config file `server.toml`.
+    /// Returns the path of the server config file .
     pub fn server_file(&self) -> &PathBuf {
         &self.server
     }
@@ -60,35 +63,37 @@ impl fmt::Debug for Config {
     }
 }
 
-/// An installation with its `path` and `version`.
+/// An installation directory.
 #[derive(Clone)]
 pub struct Install {
+    /// Path to the installation directory.
     path: PathBuf,
+    /// Version of the installed binaries.
     version: Version,
 }
 
 impl Install {
-    /// Returns the `path` of the update manager binary.
+    /// Returns the `path` of the  [Bin::Update] binary.
     pub fn manager_file(&self) -> PathBuf {
         self.path.join(Bin::Update.name())
     }
 
-    /// Returns the `path` of the spacetime binary.
+    /// Returns the `path` of the [Bin::Spacetime] binary.
     pub fn spacetime_file(&self) -> PathBuf {
         self.path.join(Bin::Spacetime.name())
     }
 
-    /// Returns the `path` of the standalone binary.
+    /// Returns the `path` of the [Bin::StandAlone] binary.
     pub fn standalone_file(&self) -> PathBuf {
         self.path.join(Bin::StandAlone.name())
     }
 
-    /// Returns the `path` of the cloud binary.
+    /// Returns the `path` of the [Bin::Cloud] binary.
     pub fn cloud_file(&self) -> PathBuf {
         self.path.join(Bin::Cloud.name())
     }
 
-    /// Returns the `path` of the CLI binary.
+    /// Returns the `path` of the [Bin::Cli] binary.
     pub fn cli_file(&self) -> PathBuf {
         self.path.join(Bin::Cli.name())
     }
@@ -117,11 +122,12 @@ pub struct Installed {
 /// Cache paths.
 #[derive(Clone)]
 pub struct Cache {
+    /// Path to the cache directory.
     pub path: PathBuf,
 }
 
 impl Cache {
-    /// Returns the path of the Wasmtime directory within the cache.
+    /// Returns the `path` for the `Wasmtime` directory cache.
     pub fn wasmtime_dir(&self) -> PathBuf {
         self.path.join("wasmtime")
     }
@@ -139,6 +145,7 @@ impl fmt::Debug for Cache {
 /// Log paths.
 #[derive(Clone)]
 pub struct Logs {
+    /// Path to the `logs` directory.
     pub path: PathBuf,
     edition: Edition,
 }
@@ -152,11 +159,11 @@ impl Logs {
     pub fn module_dir(&self) -> PathBuf {
         self.path.join("module_logs")
     }
-    /// Returns the `path` of the `module log` file for a given binary.
+    /// Returns the `path` of a `module log` file for a given binary.
     pub fn module_file(&self, of: Bin) -> PathBuf {
         self.log_name(self.module_dir(), of)
     }
-    /// Returns the path of the `program log` file for a given binary.
+    /// Returns the path of a `program log` file for a given binary.
     pub fn program_file(&self, of: Bin) -> PathBuf {
         self.log_name(self.path.clone(), of)
     }
@@ -173,7 +180,9 @@ impl fmt::Debug for Logs {
 
 /// `Path` to a specific spacetime instance.
 pub struct Instance {
+    /// Path to the instance directory.
     pub path: PathBuf,
+    /// The `instance id`.
     pub instance_id: u64,
 }
 
@@ -207,11 +216,16 @@ impl fmt::Debug for Instance {
 /// Struct representing data paths.
 #[derive(Clone)]
 pub struct Data {
+    /// Path to the `data` directory.
     pub path: PathBuf,
+    /// [Cache] paths.
     pub cache: Cache,
 }
 
 impl Data {
+    /// Constructs a new `data` path with the given `path`.
+    ///
+    /// The `cache` directory is set to `path/cache`.
     pub fn new(path: PathBuf) -> Self {
         Self {
             cache: Cache {
@@ -220,26 +234,27 @@ impl Data {
             path,
         }
     }
-    /// Returns the path of the PID file.
+    /// Returns the path of the `PID` file.
     pub fn pid_file(&self) -> PathBuf {
         self.path.join("spacetime.pid")
     }
-    /// Returns the path of the metadata file.
+    /// Returns the path of the `metadata` file.
     pub fn metadata_file(&self) -> PathBuf {
         self.path.join("metadata.toml")
     }
-    /// Returns the path of the program bytes standalone directory.
+    /// Returns the path of the `program bytes` standalone directory.
     ///
-    /// NOTE: Is only used for the _standalone edition_.
+    /// NOTE: Should be used for the _standalone edition_ only.
     pub fn program_bytes_standalone_dir(&self) -> PathBuf {
         self.path.join("program-bytes")
     }
-    /// Returns the path of the control database standalone directory.
+    /// Returns the path of the `control database` standalone directory.
     ///
-    /// NOTE: Is only used for the _standalone edition_.
+    /// NOTE: Should be used for the _standalone edition_ only.
     pub fn control_db_standalone_dir(&self) -> PathBuf {
         self.path.join("control-db")
     }
+    /// Returns the path of the `instances` directory.
     pub fn instances_dir(&self) -> PathBuf {
         self.path.join("instances")
     }
@@ -283,7 +298,7 @@ impl fmt::Debug for Var {
 
 /// Generate the paths used by Spacetime.
 ///
-/// NOTE: It only calculates the paths, not verify or create them.
+/// WARNING: It only *calculates* the paths, not verify or create them.
 #[derive(Clone)]
 pub struct SpacetimePaths {
     pub edition: Edition,
@@ -296,7 +311,8 @@ pub struct SpacetimePaths {
 }
 
 impl SpacetimePaths {
-    pub fn new(edition: Edition, dirs: BaseDirectories) -> Self {
+    /// Create a new instance of `SpacetimePaths` from the [Directories].
+    pub fn new(edition: Edition, dirs: Directories) -> Self {
         let data = dirs.data_dir();
         Self {
             edition,
@@ -313,15 +329,24 @@ impl SpacetimePaths {
     }
 }
 
+/// Options for creating a new [SpacetimeFs].
 #[derive(Debug, Clone)]
 pub struct FsOptions {
     edition: Edition,
+    /// Change the root directory.
     root: Option<PathBuf>,
+    /// Change the configuration directory.
     config: Option<PathBuf>,
+    /// Change the client configuration file.
     config_client: Option<PathBuf>,
+    /// Change the server configuration file.
     config_server: Option<PathBuf>,
+    /// Change the data directory.
     data: Option<PathBuf>,
+    /// If `true`, create the log directories.
     use_logs: bool,
+    /// If is [EditionKind::Cloud], the client address.
+    address: Option<Address>,
 }
 
 impl FsOptions {
@@ -334,10 +359,11 @@ impl FsOptions {
             config_server: None,
             data: None,
             use_logs: false,
+            address: None,
         }
     }
 
-    pub fn cloud(major: u64, minor: u64, patch: u64) -> Self {
+    pub fn cloud(major: u64, minor: u64, patch: u64, address: Address) -> Self {
         Self {
             edition: Edition::cloud(major, minor, patch),
             root: None,
@@ -346,38 +372,50 @@ impl FsOptions {
             config_server: None,
             data: None,
             use_logs: false,
+            address: Some(address),
         }
     }
+
+    /// Change the `root` directory.
     pub fn root(mut self, root: PathBuf) -> Self {
         self.root = Some(root);
         self
     }
+
+    /// Change the configuration directory.
     pub fn config(mut self, config: PathBuf) -> Self {
         self.config = Some(config);
         self
     }
 
+    /// Change the client configuration file.
     pub fn config_client(mut self, config_client: PathBuf) -> Self {
         self.config_client = Some(config_client);
         self
     }
 
+    /// Change the server configuration file.
     pub fn config_server(mut self, config_server: PathBuf) -> Self {
         self.config_server = Some(config_server);
         self
     }
 
+    /// Change the `data` directory.
     pub fn data(mut self, data: PathBuf) -> Self {
         self.data = Some(data);
         self
     }
 
+    /// If `true`, create the `logs` directories.
     pub fn use_logs(mut self, use_logs: bool) -> Self {
         self.use_logs = use_logs;
         self
     }
 }
 
+/// Spacetime file system.
+///
+/// It provides the paths used by Spacetime, and assert that the layout is correct.
 #[derive(Debug, Clone)]
 pub struct SpacetimeFs {
     paths: SpacetimePaths,
@@ -385,7 +423,29 @@ pub struct SpacetimeFs {
 }
 
 impl SpacetimeFs {
-    pub fn resolve(options: FsOptions) -> Result<BaseDirectories, ErrorPlatform> {
+    /// Resolve the directories & files from the given [FsOptions].
+    ///
+    /// * Directories: `root`, `data`, `config`
+    /// * Files: `config_client`, `config_server`
+    ///
+    /// Resolution order:
+    ///
+    ///  The `Locations` are resolved as follows, _merging the values_, from top to bottom, so we exhaust all the possibilities
+    ///  using this priority:
+    ///
+    ///  1. Resolve locally relative to the binary's folder, look for a `Linux` layout folder structure, with the
+    ///     prefix `.spacetime`.
+    ///  2. Otherwise:
+    ///     * On `Linux`/`macOS`, use the `XDG` convention, with the prefix `spacetime`.
+    ///     * On `Windows`, install to local user on `%LocalAppData%`, with the prefix `SpacetimeDB`.
+    ///  3. Read the `{Config}/client.toml`, if it exists and contains the `Locations`, else maintain the current
+    ///     structure.
+    ///  4. Explicitly set by `cli` parameters.
+    ///
+    /// **NOTE:** If the `root` is set by the `config` or the `cli`, the `linux` convention is used.
+    ///
+    /// **ERROR:** If the `root` is set by the `cli` and the `config`, and they are different, it will return [ErrorPlatform::RootMismatch].
+    pub fn resolve(options: FsOptions) -> Result<Directories, ErrorPlatform> {
         let FsOptions {
             edition: _,
             root,
@@ -394,15 +454,31 @@ impl SpacetimeFs {
             config_server,
             data,
             use_logs: _,
+            address: _,
         } = options;
 
-        let mut dirs = BaseDirectories::platform();
+        let local = Directories::current_dir()?;
+
+        let mut dirs = if local.root.is_dir().is_ok()
+            && local.config.path.exists()
+            && local.var.path.exists()
+            && local.bin.path.exists()
+        {
+            local
+        } else {
+            Directories::platform()
+        };
 
         if let Some(config) = config {
-            dirs = dirs.with_config_dir(Source::Cli, config);
+            dirs = dirs.config_dir(Source::Cli, config);
+        }
+        if let Some(config_client) = config_client {
+            dirs = dirs.config_client_file(Source::Cli, config_client);
+        }
 
-            if let Some(config) = read_toml_if_exists::<ConfigPaths, _>(&dirs.config.path)? {
-                if let (Some(root_cli), Some(root_config)) = (dirs.root.path.as_ref(), config.paths.root.as_ref()) {
+        if let Some(config_client) = dirs.config_client.path.as_ref() {
+            if let Some(config) = read_toml_if_exists::<ConfigPaths, _>(config_client)? {
+                if let (Some(root_cli), Some(root_config)) = (dirs.root.path.as_ref(), config.root.as_ref()) {
                     if root_cli != root_config {
                         return Err(ErrorPlatform::RootMismatch {
                             root_cli: root_cli.clone(),
@@ -410,36 +486,35 @@ impl SpacetimeFs {
                         });
                     }
                 }
-
-                if let Some(path) = config.paths.root {
-                    dirs = dirs.with_root(Source::Config, path);
+                if let Some(path) = config.root {
+                    dirs = dirs.root(Source::Config, path);
                 }
-
-                if let Some(path) = config.paths.data {
-                    dirs = dirs.with_data(Source::Config, path);
+                if let Some(path) = config.data {
+                    dirs = dirs.data(Source::Config, path);
                 }
-                if let Some(path) = config.paths.config_server {
-                    dirs = dirs.with_data(Source::Config, path);
+                if let Some(path) = config.config_server {
+                    dirs = dirs.config_server_file(Source::Config, path);
                 }
             }
         }
 
-        if let Some(config_client) = config_client {
-            dirs = dirs.with_config_dir(Source::Cli, config_client);
-        }
         if let Some(config_server) = config_server {
-            dirs = dirs.with_config_dir(Source::Cli, config_server);
+            dirs = dirs.config_server_file(Source::Cli, config_server);
         }
         if let Some(root) = root {
-            dirs = dirs.with_root(Source::Cli, root);
+            dirs = dirs.root(Source::Cli, root);
         }
         if let Some(data) = data {
-            dirs = dirs.with_data(Source::Cli, data);
+            dirs = dirs.data(Source::Cli, data);
         }
+
         Ok(dirs)
     }
 
-    pub fn new(options: FsOptions) -> Result<Self, ErrorPlatform> {
+    /// Open an existing spacetime file system.
+    ///
+    /// It [Self::verify_layout] of the directories, but not create them.
+    pub fn open(options: FsOptions) -> Result<Self, ErrorPlatform> {
         let edition = options.edition;
         let use_logs = options.use_logs;
         let dirs = Self::resolve(options)?;
@@ -452,9 +527,14 @@ impl SpacetimeFs {
         })
     }
 
+    /// Create a new spacetime file system.
+    ///
+    /// It creates the directories and files.
     pub fn create(options: FsOptions) -> Result<Self, ErrorPlatform> {
         let edition = options.edition;
         let use_logs = options.use_logs;
+        let client_address = options.address;
+
         let dirs = Self::resolve(options)?;
 
         fn create_dir(path: &PathBuf) -> Result<(), ErrorPlatform> {
@@ -472,9 +552,14 @@ impl SpacetimeFs {
         create_dir(&dirs.var.path)?;
         // TODO: Create the files
 
-        if let Some(root) = dirs.data.path.as_ref() {
-            create_dir(root)?;
-        }
+        let data = Data::new(dirs.data_dir());
+        create_dir(&data.path)?;
+
+        let meta = Metadata {
+            edition,
+            client_address,
+        };
+        meta.write(data.metadata_file())?;
 
         let paths = SpacetimePaths::new(edition, dirs);
         create_dir(&paths.data.cache.path)?;
@@ -485,10 +570,20 @@ impl SpacetimeFs {
             create_dir(&paths.data.control_db_standalone_dir())?;
         }
 
+        if use_logs {
+            create_dir(&paths.log.path)?;
+            create_dir(&paths.log.module_dir())?;
+        }
+
         Ok(Self { paths, use_logs })
     }
 
-    fn verify_layout(edition: Edition, dirs: &BaseDirectories) -> Result<(), ErrorPlatform> {
+    /// Verify the layout of the directories.
+    ///
+    /// It checks if the directories and files are in the correct layout, and the paths are valid (with `is_dir` and `is_file`).
+    ///
+    /// **ERROR**: If the `metadata` file exists and the  recorded `edition` is different from the given, it will return [ErrorPlatform::EditionMismatch].
+    fn verify_layout(edition: Edition, dirs: &Directories) -> Result<(), ErrorPlatform> {
         dirs.root.is_dir()?;
         dirs.bin.is_dir()?;
         dirs.var.is_dir()?;
@@ -526,7 +621,7 @@ impl SpacetimeFs {
         if is_server {
             let data = Data::new(dirs.data_dir());
             if data.metadata_file().exists() {
-                let metadata = Metadata::from_path(data.metadata_file())?;
+                let metadata = Metadata::read(data.metadata_file())?;
                 if metadata.edition.kind != edition.kind {
                     return Err(ErrorPlatform::EditionMismatch {
                         path: data.path,
@@ -604,27 +699,52 @@ mod tests {
 
     #[test]
     fn correct_layout() {
-        let dirs = BaseDirectories::custom(PathBuf::from("/root"));
+        let dirs = Directories::custom(PathBuf::from("/root"));
         let fs = SpacetimePaths::new(Edition::standalone(0, 1, 0), dirs);
 
         assert_eq!(format!("{:#?}", fs), LAYOUT);
     }
 
     #[test]
-    fn fs() {
+    fn fs_create() {
         let tmp = tempfile::tempdir().unwrap();
 
-        let fs = SpacetimeFs::create(FsOptions::standalone(0, 1, 0).root(tmp.into_path())).unwrap();
+        let options = FsOptions::standalone(0, 1, 0).root(tmp.into_path());
+
+        let fs = SpacetimeFs::create(options.clone()).unwrap();
 
         assert!(fs.paths.root.unwrap().exists());
         assert!(fs.paths.bin_dir.exists());
         assert!(fs.paths.data.cache.path.exists());
         assert!(fs.paths.data.path.exists());
+        assert!(!fs.paths.log.path.exists());
+
+        assert!(fs.paths.data.metadata_file().exists());
         // TODO: Create the files
         // assert!(fs.paths.config.client_file().exists());
         // assert!(fs.paths.config.server_file().exists());
         // assert!(fs.paths.config.log_file().exists());
         // assert!(fs.paths.config.public_key_file().exists());
         // assert!(fs.paths.config.private_key_file().exists());
+
+        let fs = SpacetimeFs::create(options.use_logs(true)).unwrap();
+        assert!(fs.paths.log.path.exists());
+    }
+
+    #[test]
+    fn fs_open() {
+        let tmp = tempfile::tempdir().unwrap();
+
+        let options = FsOptions::standalone(0, 1, 0).root(tmp.into_path());
+
+        SpacetimeFs::create(options.clone()).unwrap();
+
+        let fs = SpacetimeFs::open(options).unwrap();
+
+        assert!(fs.paths.root.unwrap().exists());
+        assert!(fs.paths.bin_dir.exists());
+        assert!(fs.paths.data.cache.path.exists());
+        assert!(fs.paths.data.path.exists());
+        assert!(!fs.paths.log.path.exists());
     }
 }

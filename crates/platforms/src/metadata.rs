@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::errors::ErrorPlatform;
-use crate::toml::read_toml;
+use crate::toml::{read_toml, write_toml};
 use serde::{Deserialize, Serialize};
 use spacetimedb_lib::Address;
 
@@ -40,6 +40,7 @@ impl Version {
         Self { major, minor, patch }
     }
 
+    /// Converts the version to a filename-friendly string.
     pub fn to_filename(&self) -> String {
         format!("{}_{}_{}", self.major, self.minor, self.patch)
     }
@@ -81,8 +82,8 @@ pub enum EditionKind {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Edition {
-    pub(crate) kind: EditionKind,
-    pub(crate) version: Version,
+    pub kind: EditionKind,
+    pub version: Version,
 }
 
 impl Edition {
@@ -101,16 +102,12 @@ impl Edition {
     }
 }
 
+/// Configuration paths defined in the `client.toml` file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConfigPath {
+pub struct ConfigPaths {
     pub root: Option<PathBuf>,
     pub data: Option<PathBuf>,
     pub config_server: Option<PathBuf>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConfigPaths {
-    pub paths: ConfigPath,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,6 +116,9 @@ struct RawMetadata {
     pub client_address: Option<String>,
 }
 
+/// Store the metadata of the executable(ie: edition, version, client-address * -if cloud-) that created the directory.
+///
+/// Defined in the `metadata.toml` file.
 #[derive(Debug, Clone)]
 pub struct Metadata {
     pub edition: Edition,
@@ -126,7 +126,8 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    pub fn from_path(path: PathBuf) -> Result<Self, ErrorPlatform> {
+    /// Read the metadata from the given `path`.
+    pub fn read(path: PathBuf) -> Result<Self, ErrorPlatform> {
         let config: RawMetadata = read_toml(path)?;
 
         let client_address = if let Some(x) = config.client_address.as_deref() {
@@ -138,5 +139,13 @@ impl Metadata {
             edition: config.edition,
             client_address,
         })
+    }
+
+    pub fn write(&self, path: PathBuf) -> Result<(), ErrorPlatform> {
+        let raw = RawMetadata {
+            edition: self.edition,
+            client_address: self.client_address.as_ref().map(|x| x.to_string()),
+        };
+        write_toml(path, &raw)
     }
 }
