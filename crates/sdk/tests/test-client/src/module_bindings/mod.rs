@@ -1218,7 +1218,13 @@ where
     <IntoUri as TryInto<spacetimedb_sdk::http::Uri>>::Error: std::error::Error + Send + Sync + 'static,
 {
     with_connection_mut(|connection| {
-        connection.connect(spacetimedb_uri, db_name, credentials, Arc::new(Module), spacetimedb_sdk::websocket::DbCodec::Brotli)?;
+        connection.connect(
+            spacetimedb_uri,
+            db_name,
+            credentials,
+            Arc::new(Module),
+            spacetimedb_sdk::websocket::DbCodec::Brotli,
+        )?;
         Ok(())
     })
 }

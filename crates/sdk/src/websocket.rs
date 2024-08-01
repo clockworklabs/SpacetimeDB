@@ -184,8 +184,8 @@ impl DbConnection {
     pub(crate) fn parse_response(&self, bytes: &[u8]) -> Result<ServerMessage> {
         Ok(match self.codec {
             DbCodec::None => bsatn::from_slice(bytes),
-            DbCodec::Gzip => bsatn::from_slice(&decode_gzip(&bytes)?[..]),
-            DbCodec::Brotli => bsatn::from_slice(&decode_brotli(&bytes)?[..]),
+            DbCodec::Gzip => bsatn::from_slice(&decode_gzip(bytes)?[..]),
+            DbCodec::Brotli => bsatn::from_slice(&decode_brotli(bytes)?[..]),
         }?)
     }
 
