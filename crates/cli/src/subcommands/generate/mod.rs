@@ -20,7 +20,6 @@ use crate::Config;
 
 mod code_indenter;
 pub mod csharp;
-pub mod python;
 pub mod rust;
 pub mod typescript;
 mod util;
@@ -218,19 +217,17 @@ pub fn exec(_config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
 pub enum Language {
     Csharp,
     TypeScript,
-    Python,
     Rust,
 }
 
 impl clap::ValueEnum for Language {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Csharp, Self::TypeScript, Self::Python, Self::Rust]
+        &[Self::Csharp, Self::TypeScript, Self::Rust]
     }
     fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
         match self {
             Self::Csharp => Some(clap::builder::PossibleValue::new("csharp").aliases(["c#", "cs"])),
             Self::TypeScript => Some(clap::builder::PossibleValue::new("typescript").aliases(["ts", "TS"])),
-            Self::Python => Some(clap::builder::PossibleValue::new("python").aliases(["py", "PY"])),
             Self::Rust => Some(clap::builder::PossibleValue::new("rust").aliases(["rs", "RS"])),
         }
     }
@@ -257,7 +254,6 @@ fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenI
     match lang {
         Language::Csharp => csharp::autogen_csharp_globals(items, namespace),
         Language::TypeScript => typescript::autogen_typescript_globals(ctx, items),
-        Language::Python => python::autogen_python_globals(ctx, items),
         Language::Rust => rust::autogen_rust_globals(ctx, items),
     }
 }
@@ -319,7 +315,6 @@ impl GenItem {
         match lang {
             Language::Csharp => self.generate_csharp(ctx, namespace),
             Language::TypeScript => self.generate_typescript(ctx),
-            Language::Python => self.generate_python(ctx),
             Language::Rust => self.generate_rust(ctx),
         }
     }
@@ -341,35 +336,6 @@ impl GenItem {
             GenItem::Reducer(reducer) => {
                 let code = rust::autogen_rust_reducer(ctx, reducer);
                 Some((rust::rust_reducer_file_name(&reducer.name), code))
-            }
-        }
-    }
-
-    fn generate_python(&self, ctx: &GenCtx) -> Option<(String, String)> {
-        match self {
-            GenItem::Table(table) => {
-                let code = python::autogen_python_table(ctx, table);
-                let name = table.schema.table_name.deref().to_case(Case::Snake);
-                Some((name + ".py", code))
-            }
-            GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
-                AlgebraicType::Sum(sum) => {
-                    let filename = name.replace('.', "").to_case(Case::Snake);
-                    let code = python::autogen_python_sum(ctx, name, sum);
-                    Some((filename + ".py", code))
-                }
-                AlgebraicType::Product(prod) => {
-                    let code = python::autogen_python_tuple(ctx, name, prod);
-                    let name = name.to_case(Case::Snake);
-                    Some((name + ".py", code))
-                }
-                AlgebraicType::Builtin(_) => todo!(),
-                AlgebraicType::Ref(_) => todo!(),
-            },
-            GenItem::Reducer(reducer) => {
-                let code = python::autogen_python_reducer(ctx, reducer);
-                let name = reducer.name.deref().to_case(Case::Snake);
-                Some((name + "_reducer.py", code))
             }
         }
     }
@@ -540,7 +506,6 @@ fn format_files(generated_files: Vec<PathBuf>, lang: Language) -> anyhow::Result
         }
         Language::Csharp => {}
         Language::TypeScript => {}
-        Language::Python => {}
     }
 
     Ok(())
