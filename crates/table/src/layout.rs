@@ -88,8 +88,8 @@ pub trait HasLayout {
 ///   Supporting recursive types remains a TODO(future-work).
 ///   Note that the previous Spacetime datastore did not support recursive types in tables.
 ///
-/// - Types where `ty.is_scalar()` are separated into [`PrimitveType`] (atomically-sized types like integers)
-///   and  [`VarLenType`] (strings, arrays, and maps).
+/// - Scalar types (`ty.is_scalar()`) are separated into [`PrimitveType`] (atomically-sized types like integers).
+/// - Variable length types are separated into [`VarLenType`] (strings, arrays, and maps).
 ///   This separation allows cleaner pattern-matching, e.g. in `HasLayout::layout`,
 ///   where `VarLenType` returns a static ref to [`VAR_LEN_REF_LAYOUT`],
 ///   and `PrimitiveType` dispatches on its variant to return a static ref
