@@ -634,7 +634,6 @@ pub struct PublishDatabaseQueryParams {
     #[serde(default)]
     clear: bool,
     name_or_address: Option<NameOrAddress>,
-    client_address: Option<AddressForUrl>,
 }
 
 impl PublishDatabaseQueryParams {
@@ -650,13 +649,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     Extension(auth): Extension<SpacetimeAuth>,
     body: Bytes,
 ) -> axum::response::Result<axum::Json<PublishResult>> {
-    let PublishDatabaseQueryParams {
-        name_or_address,
-        clear,
-        client_address,
-    } = query_params;
-
-    let client_address = client_address.map(Address::from);
+    let PublishDatabaseQueryParams { name_or_address, clear } = query_params;
 
     // You should not be able to publish to a database that you do not own
     // so, unless you are the owner, this will fail.
@@ -701,7 +694,6 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     let maybe_updated = ctx
         .publish_database(
             &auth.identity,
-            client_address,
             DatabaseDef {
                 address: db_addr,
                 program_bytes: body.into(),

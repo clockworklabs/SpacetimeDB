@@ -305,7 +305,7 @@ impl ControlDb {
         let scan_key: &[u8] = b"";
         for result in tree.range(scan_key..) {
             let (_key, value) = result?;
-            let database = bsatn::from_slice(&value).unwrap();
+            let database = compat::Database::from_slice(&value).unwrap().into();
             databases.push(database);
         }
         Ok(databases)
@@ -325,7 +325,7 @@ impl ControlDb {
         let key = address.to_hex();
         let value = tree.get(key.as_bytes())?;
         if let Some(value) = value {
-            let database = bsatn::from_slice(&value[..]).unwrap();
+            let database = compat::Database::from_slice(&value[..]).unwrap().into();
             return Ok(Some(database));
         }
         Ok(None)
@@ -342,7 +342,7 @@ impl ControlDb {
 
         database.id = id;
 
-        let buf = sled::IVec::from(bsatn::to_vec(&database).unwrap());
+        let buf = sled::IVec::from(compat::Database::from(database).to_vec().unwrap());
 
         tree.insert(key, buf.clone())?;
 
@@ -357,8 +357,8 @@ impl ControlDb {
         let tree_by_address = self.db.open_tree("database_by_address")?;
 
         if let Some(old_value) = tree.get(id.to_be_bytes())? {
-            let database: Database = bsatn::from_slice(&old_value[..])?;
-            let key = database.address.to_hex();
+            let database = compat::Database::from_slice(&old_value[..])?;
+            let key = database.address().to_hex();
 
             tree_by_address.remove(key.as_bytes())?;
             tree.remove(id.to_be_bytes())?;
@@ -542,5 +542,86 @@ impl ControlDb {
         tree.insert(identity.as_bytes(), &energy_balance.get().to_be_bytes())?;
 
         Ok(())
+    }
+}
+
+mod compat {
+    use spacetimedb::hash::Hash;
+    use spacetimedb::messages::control_db::{Database as CanonicalDatabase, HostType};
+    use spacetimedb::Identity;
+    use spacetimedb_lib::bsatn::ser::BsatnError;
+    use spacetimedb_lib::bsatn::{self, DecodeError};
+    use spacetimedb_lib::{de::Deserialize, ser::Serialize, Address};
+
+    /// Serialized form of a [`spacetimedb::messages::control_db::Database`].
+    ///
+    /// To maintain compatibility.
+    #[derive(Serialize, Deserialize)]
+    pub(super) struct Database {
+        id: u64,
+        address: Address,
+        owner_identity: Identity,
+        host_type: HostType,
+        initial_program: Hash,
+        // deprecated
+        publisher_address: Option<Address>,
+    }
+
+    impl Database {
+        pub fn address(&self) -> Address {
+            self.address
+        }
+
+        #[inline]
+        pub fn from_slice(s: &[u8]) -> Result<Self, DecodeError> {
+            bsatn::from_slice(s)
+        }
+
+        #[inline]
+        pub fn to_vec(&self) -> Result<Vec<u8>, BsatnError> {
+            bsatn::to_vec(self)
+        }
+    }
+
+    impl From<Database> for CanonicalDatabase {
+        fn from(
+            Database {
+                id,
+                address,
+                owner_identity,
+                host_type,
+                initial_program,
+                publisher_address: _,
+            }: Database,
+        ) -> Self {
+            Self {
+                id,
+                address,
+                owner_identity,
+                host_type,
+                initial_program,
+            }
+        }
+    }
+
+    impl From<CanonicalDatabase> for Database {
+        fn from(
+            CanonicalDatabase {
+                id,
+                address,
+                owner_identity,
+                host_type,
+                initial_program,
+            }: CanonicalDatabase,
+        ) -> Self {
+            Self {
+                id,
+                address,
+                owner_identity,
+                host_type,
+                initial_program,
+                publisher_address: None,
+            }
+        }
     }
 }

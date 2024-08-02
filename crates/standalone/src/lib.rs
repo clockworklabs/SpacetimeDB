@@ -265,7 +265,6 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
     async fn publish_database(
         &self,
         identity: &Identity,
-        publisher_address: Option<Address>,
         spec: spacetimedb_client_api::DatabaseDef,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
         let existing_db = self.control_db.get_database_by_address(&spec.address)?;
@@ -280,7 +279,6 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     owner_identity: *identity,
                     host_type: spec.host_type,
                     initial_program,
-                    publisher_address,
                 };
                 let database_id = self.control_db.insert_database(database.clone())?;
                 database.id = database_id;

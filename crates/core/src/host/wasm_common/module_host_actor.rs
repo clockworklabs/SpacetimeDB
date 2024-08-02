@@ -24,7 +24,7 @@ use crate::host::module_host::{
 };
 use crate::host::{ArgsTuple, EntityDef, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler};
 use crate::identity::Identity;
-use crate::messages::control_db::{Database, HostType};
+use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
 use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::const_unwrap;
@@ -335,21 +335,14 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
             Some(reducer_id) => {
                 self.system_logger().info("Invoking `init` reducer");
-                // If a caller address was passed to the `/database/publish` HTTP endpoint,
-                // the init reducer will receive it as the caller address.
-                // This is useful for bootstrapping the control DB in SpacetimeDB-cloud.
-                let Database {
-                    owner_identity: caller_identity,
-                    publisher_address: caller_address,
-                    ..
-                } = self.database_instance_context().database;
+                let caller_identity = self.database_instance_context().database.owner_identity;
                 let client = None;
                 Some(self.call_reducer_with_tx(
                     Some(tx),
                     CallReducerParams {
                         timestamp,
                         caller_identity,
-                        caller_address: caller_address.unwrap_or(Address::__DUMMY),
+                        caller_address: Address::__DUMMY,
                         client,
                         request_id: None,
                         timer: None,

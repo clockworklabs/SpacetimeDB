@@ -38,12 +38,6 @@ pub struct Database {
     ///
     /// Updating the database's module will **not** change this value.
     pub initial_program: Hash,
-    /// The client address of the (initial) publisher of the database.
-    ///
-    /// If set, the value will be part of the  `__init__` reducer's context.
-    /// The meaning of this value is unspecified if the `owner_identity` is
-    /// changed after creation of the database.
-    pub publisher_address: Option<Address>,
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
