@@ -1024,7 +1024,7 @@ where
             |out| {
                 writeln!(
                     out,
-                    "connection.connect(spacetimedb_uri, db_name, credentials, Arc::new(Module))?;"
+                    "connection.connect(spacetimedb_uri, db_name, credentials, Arc::new(Module), spacetimedb_sdk::websocket::DbCodec::Brotli)?;"
                 );
                 writeln!(out, "Ok(())");
             },
