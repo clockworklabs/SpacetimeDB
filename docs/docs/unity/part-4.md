@@ -98,11 +98,16 @@ pub struct Config {
 
 ### Step 2: Write our Resource Spawner Repeating Reducer
 
-1. Add the following code to lib.rs. We are using a special attribute argument called repeat which will automatically schedule the reducer to run every 1000ms.
+1. Add the following code to lib.rs. As we want to schedule `resource_spawn_agent` to run later, It will require to implement a scheduler table.
 
 ```rust
-#[spacetimedb(reducer, repeat = 1000ms)]
-pub fn resource_spawner_agent(_ctx: ReducerContext, _prev_time: Timestamp) -> Result<(), String> {
+#[spacetimedb(table, scheduled(resource_spawner_agent))]
+struct ResouceSpawnAgentSchedueler {
+    _prev_time: Timestamp,
+}
+
+#[spacetimedb(reducer)
+pub fn resource_spawner_agent(_ctx: ReducerContext, _arg: ResourceSpawnAgentScheduler) -> Result<(), String> {
     let config = Config::find_by_version(&0).unwrap();
 
     // Retrieve the maximum number of nodes we want to spawn from the Config table
@@ -157,18 +162,24 @@ pub fn resource_spawner_agent(_ctx: ReducerContext, _prev_time: Timestamp) -> Re
 }
 ```
 
+
 2. Since this reducer uses `rand::Rng` we need add include it. Add this `use` statement to the top of lib.rs.
 
 ```rust
 use rand::Rng;
 ```
 
-3. Even though our reducer is set to repeat, we still need to schedule it the first time. Add the following code to the end of the `init` reducer. You can use this `schedule!` macro to schedule any reducer to run in the future after a certain amount of time.
+3. Add the following code to the end of the `init` reducer to set the reducer to repeat at every regular interval.
 
 ```rust
     // Start our resource spawner repeating reducer
-    spacetimedb::schedule!("1000ms", resource_spawner_agent(_, Timestamp::now()));
+    ResouceSpawnAgentSchedueler::insert(ResouceSpawnAgentSchedueler {
+        _prev_time: TimeStamp::now(),
+        scheduled_id: 1,
+        scheduled_at: duration!(1000ms).into()
+    }).expect();
 ```
+struct ResouceSpawnAgentSchedueler {
 
 4. Next we need to generate our client code and publish the module. Since we changed the schema we need to make sure we include the `--clear-database` flag. Run the following commands from your Server directory:
 

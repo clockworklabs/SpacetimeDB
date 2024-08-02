@@ -167,8 +167,6 @@ struct Person {
 
 ### Defining reducers
 
-`#[spacetimedb(reducer)]` optionally takes a single argument, which is a frequency at which the reducer will be automatically called by the database.
-
 `#[spacetimedb(reducer)]` is always applied to top level Rust functions. They can take arguments of types known to SpacetimeDB (just like fields of structs must be known to SpacetimeDB), and either return nothing, or return a `Result<(), E: Debug>`.
 
 ```rust
@@ -192,39 +190,75 @@ struct Item {
 
 Note that reducers can call non-reducer functions, including standard library functions.
 
-Reducers that are called periodically take an additional macro argument specifying the frequency at which they will be invoked. Durations are parsed according to https://docs.rs/humantime/latest/humantime/fn.parse_duration.html and will usually be a number of milliseconds or seconds.
-
-Both of these examples are invoked every second.
-
-```rust
-#[spacetimedb(reducer, repeat = 1s)]
-fn every_second() {}
-
-#[spacetimedb(reducer, repeat = 1000ms)]
-fn every_thousand_milliseconds() {}
-```
-
-Finally, reducers can also receive a ReducerContext object, or the Timestamp at which they are invoked, just by taking parameters of those types first.
-
-```rust
-#[spacetimedb(reducer, repeat = 1s)]
-fn tick_timestamp(time: Timestamp) {
-    println!("tick at {time}");
-}
-
-#[spacetimedb(reducer, repeat = 500ms)]
-fn tick_ctx(ctx: ReducerContext) {
-    println!("tick at {}", ctx.timestamp)
-}
-```
-
-Note that each distinct time a repeating reducer is invoked, a seperate schedule is created for that reducer. So invoking `every_second` three times from the spacetimedb cli will result in the reducer being called times times each second.
 
 There are several macros which modify the semantics of a column, which are applied to the members of the table struct. `#[unique]` and `#[autoinc]` are covered below, describing how those attributes affect the semantics of inserting, filtering, and so on.
 
 #[SpacetimeType]
 
 #[sats]
+
+### Defining Scheduler Tables
+Tables can be used to schedule a reducer calls either at a specific timestamp or at regular intervals.
+
+```rust
+// The `scheduled` attribute links this table to a reducer.
+#[spacetimedb(table, scheduled(send_message))]
+struct SendMessageTimer {
+    text: String,
+}
+```
+
+The `scheduled` attribute adds a couple of default fields and expands as follows: 
+```rust
+#[spacetimedb(table)]
+ struct SendMessageTimer {
+    text: String,   // original field
+    #[primary]
+    #[autoinc]
+    scheduled_id: u64, // identifier for internal purpose
+    scheduled_at: ScheduleAt, //schedule details
+}
+
+pub enum ScheduleAt {
+    /// A specific time at which the reducer is scheduled.
+    /// Value is a UNIX timestamp in microseconds.
+    Time(u64),
+    /// A regular interval at which the repeated reducer is scheduled.
+    /// Value is a duration in microseconds.
+    Interval(u64),
+}
+```
+
+Managing timers with scheduled table is as simple as inserting or deleting rows from table.
+```rust
+#[spacetimedb(reducer)]
+
+// Reducers linked to the scheduler table should have their first argument as `ReducerContext` 
+// and the second as an instance of the table struct it is linked to.
+fn send_message(ctx: ReducerContext, arg: SendMessageTimer) -> Result<(), String> {
+    // ...
+}
+
+// Scheduling reducers inside `init` reducer
+fn init() {
+    // Scheduling a reducer for a specific Timestamp
+    SendMessageTimer::insert(SendMessageTimer {
+        scheduled_id: 1,
+        text:"bot sending a message".to_string(),
+        //`spacetimedb::Timestamp` implements `From` trait to `ScheduleAt::Time`. 
+        scheduled_at: ctx.timestamp.plus(Duration::from_secs(10)).into()
+    });
+
+    // Scheduling a reducer to be called at fixed interval of 100 milliseconds.
+    SendMessageTimer::insert(SendMessageTimer {
+        scheduled_id: 0,
+        text:"bot sending a message".to_string(),
+        //`std::time::Duration` implements `From` trait to `ScheduleAt::Duration`. 
+        scheduled_at: duration!(100ms).into(),
+    });
+}
+```
+
 
 ## Client API
 
