@@ -93,6 +93,8 @@ jobs:
         run: echo "0" | sudo tee /sys/devices/system/cpu/cpufreq/boost
 
       - name: Branch; run bench
+        env:
+          RUST_BACKTRACE: 1
         run: |
           if [[ $PR_NUMBER ]]; then
             BASELINE_NAME=branch
@@ -106,6 +108,7 @@ jobs:
             echo "Running benchmarks with sqlite"
           fi
           pushd crates/bench
+          rm -rf .spacetime
           cargo bench --bench generic -- --save-baseline "$BASELINE_NAME" "$BENCH_FILTER"
           # sticker price benchmark
           cargo bench --bench generic -- --save-baseline "$BASELINE_NAME" 'stdb_module/disk/update_bulk'
