@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license-file = "LICENSE"
+repository.workspace = true
 
 description = "Implementation of the SpacetimeDB commitlog."
 
