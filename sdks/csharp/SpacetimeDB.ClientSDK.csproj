@@ -21,8 +21,6 @@
     <Version>$(AssemblyVersion)</Version>
     <DefaultItemExcludes>$(DefaultItemExcludes);*~/**</DefaultItemExcludes>
     <RestorePackagesPath>packages</RestorePackagesPath>
-    <BaseOutputPath>bin~</BaseOutputPath>
-    <BaseIntermediateOutputPath>obj~</BaseIntermediateOutputPath>
   </PropertyGroup>
 
   <ItemGroup>
