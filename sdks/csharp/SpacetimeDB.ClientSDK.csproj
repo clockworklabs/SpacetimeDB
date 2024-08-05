@@ -20,7 +20,11 @@
     <AssemblyVersion>0.11.0</AssemblyVersion>
     <Version>$(AssemblyVersion)</Version>
     <DefaultItemExcludes>$(DefaultItemExcludes);*~/**</DefaultItemExcludes>
+    <!-- We want to save DLLs for Unity which doesn't support NuGet. -->
     <RestorePackagesPath>packages</RestorePackagesPath>
+    <!-- https://stackoverflow.com/a/70429465 -->
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
   </PropertyGroup>
 
   <ItemGroup>
