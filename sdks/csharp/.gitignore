@@ -71,12 +71,8 @@ crashlytics-build.properties
 
 bin
 obj
-bin.meta
-obj.meta
-
-# Note: some DLLs are explicitly added via `git add -f <file>` to avoid being ignored by this rule.
-# Those are required by Unity to stay in the Git repo.
-/packages
+bin~
+obj~
 
 # This is used for local paths to SpacetimeDB packages.
 /nuget.config
