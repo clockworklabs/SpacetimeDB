@@ -74,11 +74,11 @@ impl RawModuleDefV9 {
     /// Build a new table.
     ///
     /// Does not validate that the product_type_ref is valid; this is left to the module validation code.
-    pub fn build_table(&mut self, table_name: RawIdentifier, product_type_ref: AlgebraicTypeRef) -> RawTableDefBuilder {
+    pub fn build_table(&mut self, name: RawIdentifier, product_type_ref: AlgebraicTypeRef) -> RawTableDefBuilder {
         RawTableDefBuilder {
             module_def: self,
             table: RawTableDefV9 {
-                table_name,
+                name,
                 product_type_ref,
                 indexes: vec![],
                 unique_constraints: vec![],
@@ -178,7 +178,7 @@ pub struct RawTableDefV9 {
     /// The name of the table.
     /// Unique within a module, acts as the table's identifier.
     /// Must be a valid [crate::db::identifier::Identifier].
-    pub table_name: RawIdentifier,
+    pub name: RawIdentifier,
     /// A reference to a product type containing the columns of this table.
     ///
     /// Like all types in the module, this must have the [default element ordering](crate::db::default_element_ordering), UNLESS a custom ordering is declared via `ModuleDef.misc_exports` for this type.
@@ -274,9 +274,9 @@ pub struct RawColumnDefV9 {
     /// the containing `ModuleDefV9`.
     /// Otherwise, an error will result at validation time.
     ///
-    /// Similarly, if any type referred to transitively by `type_` is a `Product` or `Sum` type not
+    /// Similarly, if any type referred to transitively by `ty` is a `Product` or `Sum` type not
     /// referred to via an `AlgebraicType::Ref`, an error will result.
-    pub type_: AlgebraicType,
+    pub ty: AlgebraicType,
 }
 
 impl RawColumnDefV9 {
@@ -287,16 +287,16 @@ impl RawColumnDefV9 {
     /// # Parameters
     ///
     /// * `name`: The name for which to create a column definition.
-    /// * `type_`: The [AlgebraicType] of the column.
+    /// * `ty`: The [AlgebraicType] of the column.
     ///
-    /// If `type_` is not `AlgebraicType::Builtin` or `AlgebraicType::Ref`, an error will result at validation time.
-    /// Similarly, if any type referred to transitively by `type_` is a `Product` or `Sum` type not
+    /// If `ty` is not `AlgebraicType::Builtin` or `AlgebraicType::Ref`, an error will result at validation time.
+    /// Similarly, if any type referred to transitively by `ty` is a `Product` or `Sum` type not
     /// referred to via an `AlgebraicType::Ref`, an error will result.
     ///
     /// Any `AlgebraicType::Ref` MUST have a corresponding `TypeAlias` declaration within
     /// the containing `ModuleDefV9`.
-    pub fn new(name: RawIdentifier, type_: AlgebraicType) -> Self {
-        Self { name, type_ }
+    pub fn new(name: RawIdentifier, ty: AlgebraicType) -> Self {
+        Self { name, ty }
     }
 }
 
@@ -494,27 +494,27 @@ impl<'a> RawTableDefBuilder<'a> {
             RawIndexAlgorithm::Hash { columns } => ("hash", columns),
         };
         let column_names = self.concat_column_names(columns);
-        let table_name = &self.table.table_name;
+        let table_name = &self.table.name;
         format!("{table_name}_{label}_{column_names}").into()
     }
 
     /// YOU CANNOT RELY ON SEQUENCES HAVING THIS NAME FORMAT.
     fn generate_sequence_name(&self, column: ColId) -> RawIdentifier {
         let column_name = self.column_name(column);
-        let table_name = &self.table.table_name;
+        let table_name = &self.table.name;
         format!("{table_name}_seq_{column_name}").into()
     }
 
     /// YOU CANNOT RELY ON SCHEDULES HAVING THIS NAME FORMAT.
     fn generate_schedule_name(&self) -> RawIdentifier {
-        let table_name = &self.table.table_name;
+        let table_name = &self.table.name;
         format!("{table_name}_schedule").into()
     }
 
     /// YOU CANNOT RELY ON UNIQUE CONSTRAINTS HAVING THIS NAME FORMAT.
     fn generate_unique_constraint_name(&self, columns: &ColList) -> RawIdentifier {
         let column_names = self.concat_column_names(columns);
-        let table_name = &self.table.table_name;
+        let table_name = &self.table.name;
         format!("{table_name}_unique_{column_names}").into()
     }
 }
