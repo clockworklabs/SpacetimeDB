@@ -1,5 +1,3 @@
-//! This module contains the "raw definitions" returned by modules to the database.
-
 use crate::db::auth::{StAccess, StTableType};
 use itertools::Itertools;
 use spacetimedb_primitives::*;
@@ -180,6 +178,7 @@ pub struct RawTableDefV9 {
     /// Must be a valid [crate::db::identifier::Identifier].
     pub name: RawIdentifier,
     /// A reference to a product type containing the columns of this table.
+    /// This is the single source of truth for the table's columns.
     ///
     /// Like all types in the module, this must have the [default element ordering](crate::db::default_element_ordering), UNLESS a custom ordering is declared via `ModuleDef.misc_exports` for this type.
     pub product_type_ref: AlgebraicTypeRef,
@@ -257,47 +256,6 @@ pub enum RawIndexAlgorithm {
         /// The columns to index on. These are ordered.
         columns: ColList,
     },
-}
-
-/// The definition of a database column.
-#[derive(Debug, Clone, ser::Serialize, de::Deserialize)]
-#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
-pub struct RawColumnDefV9 {
-    /// The name of the column.
-    pub name: RawIdentifier,
-
-    /// The type of the column.
-    ///
-    /// Must be either a `AlgebraicType::Builtin` or `AlgebraicType::Ref`.
-    ///
-    /// Any `AlgebraicType::Ref` MUST have a corresponding `TypeAlias` declaration within
-    /// the containing `ModuleDefV9`.
-    /// Otherwise, an error will result at validation time.
-    ///
-    /// Similarly, if any type referred to transitively by `ty` is a `Product` or `Sum` type not
-    /// referred to via an `AlgebraicType::Ref`, an error will result.
-    pub ty: AlgebraicType,
-}
-
-impl RawColumnDefV9 {
-    /// Creates a new [RawColumnDef] for a field with the specified data type.
-    ///
-    /// This method is typically used to define columns with predefined names and data types for tests.
-    ///
-    /// # Parameters
-    ///
-    /// * `name`: The name for which to create a column definition.
-    /// * `ty`: The [AlgebraicType] of the column.
-    ///
-    /// If `ty` is not `AlgebraicType::Builtin` or `AlgebraicType::Ref`, an error will result at validation time.
-    /// Similarly, if any type referred to transitively by `ty` is a `Product` or `Sum` type not
-    /// referred to via an `AlgebraicType::Ref`, an error will result.
-    ///
-    /// Any `AlgebraicType::Ref` MUST have a corresponding `TypeAlias` declaration within
-    /// the containing `ModuleDefV9`.
-    pub fn new(name: RawIdentifier, ty: AlgebraicType) -> Self {
-        Self { name, ty }
-    }
 }
 
 /// Requires that the projection of the table onto these `columns` is a bijection.
