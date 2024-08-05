@@ -46,7 +46,6 @@ pub fn cli() -> clap::Command {
                 .value_parser(clap::value_parser!(PathBuf))
                 .long("wasm-file")
                 .short('w')
-                .conflicts_with("project_path")
                 .help("The system path (absolute or relative) to the wasm file we should publish, instead of building the project."),
         )
         .arg(
@@ -148,15 +147,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         query_params.push(("trace_log", "true"));
     }
 
-    let path_to_wasm = if !path_to_project.is_dir() && path_to_project.extension().map_or(false, |ext| ext == "wasm") {
-        println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
-        println!("removed in a future release. Please use --wasm-file instead.");
-        path_to_project.clone()
-    } else if let Some(path) = wasm_file {
+    let path_to_wasm;
+    if let Some(path) = wasm_file {
         println!("Skipping build. Instead we are publishing {}", path.display());
-        path.clone()
+        path_to_wasm = path.clone();
     } else {
-        crate::tasks::build(path_to_project, skip_clippy, build_debug)?
+        path_to_wasm = crate::tasks::build(path_to_project, skip_clippy, build_debug)?;
     };
     let program_bytes = fs::read(path_to_wasm)?;
     println!(
