@@ -177,8 +177,9 @@ pub struct RawTableDefV9 {
     /// Unique within a module, acts as the table's identifier.
     /// Must be a valid [crate::db::identifier::Identifier].
     pub name: RawIdentifier,
-    /// A reference to a product type containing the columns of this table.
+    /// A reference to a `ProductType` containing the columns of this table.
     /// This is the single source of truth for the table's columns.
+    /// All elements of the `ProductType` must have names.
     ///
     /// Like all types in the module, this must have the [default element ordering](crate::db::default_element_ordering), UNLESS a custom ordering is declared via `ModuleDef.misc_exports` for this type.
     pub product_type_ref: AlgebraicTypeRef,
