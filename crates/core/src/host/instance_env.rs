@@ -111,10 +111,7 @@ impl InstanceEnv {
             .insert_bytes_as_row(tx, table_id, buffer)
             .inspect_err(|e| match e {
                 crate::error::DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
-                    constraint_name: _,
-                    table_name: _,
-                    cols: _,
-                    value: _,
+                    ..
                 })) => {}
                 _ => {
                     let res = stdb.table_name_from_id_mut(ctx, tx, table_id);
