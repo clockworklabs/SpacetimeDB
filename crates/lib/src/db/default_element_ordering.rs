@@ -50,13 +50,15 @@ pub fn product_type_has_default_ordering(ty: &ProductType) -> bool {
 }
 
 /// Check that an iterator is sorted.
-fn is_sorted<T: Ord>(it: impl Iterator<Item = T>) -> bool {
+///
+/// TODO: remove this when [`Iterator`::is_sorted`](https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.is_sorted) is stabilized.
+fn is_sorted<T: Ord>(mut it: impl Iterator<Item = T>) -> bool {
     let Some(mut curr) = it.next() else {
         return true;
     };
     it.all(|next| {
         let ordered = curr <= next;
-        current = next;
+        curr = next;
         ordered
     })
 }

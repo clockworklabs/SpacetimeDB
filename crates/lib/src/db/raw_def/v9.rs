@@ -454,7 +454,7 @@ impl<'a> RawTableDefBuilder<'a> {
         let column = column.as_ref();
         self.columns()?
             .iter()
-            .position(|x| x.name.as_ref().map(|s| &s[..]) == Some(column))
+            .position(|x| x.name().is_some_and(|s| s == column))
             .map(|x| x.into())
     }
 
@@ -463,9 +463,10 @@ impl<'a> RawTableDefBuilder<'a> {
     /// Returns `None` if this `TableDef` has been constructed with an invalid `ProductTypeRef`.
     fn columns(&self) -> Option<&[ProductTypeElement]> {
         self.module_def
-            .typespace.get(self.table.product_type_ref)
+            .typespace
+            .get(self.table.product_type_ref)
             .and_then(|ty| ty.as_product())
-            .map(|p| &p.elements)
+            .map(|p| &p.elements[..])
     }
 
     /// Get the name of a column in the typespace.
