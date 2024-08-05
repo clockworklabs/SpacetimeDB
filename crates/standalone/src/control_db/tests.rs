@@ -100,7 +100,6 @@ fn test_decode() -> ResultTest<()> {
         owner_identity: id,
         host_type: HostType::Wasm,
         initial_program: Hash::ZERO,
-        publisher_address: Some(Address::zero()),
     };
 
     cdb.insert_database(db.clone())?;

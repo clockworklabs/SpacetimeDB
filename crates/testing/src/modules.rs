@@ -161,7 +161,6 @@ impl CompiledModule {
 
         env.publish_database(
             &identity,
-            Some(client_address),
             DatabaseDef {
                 address: db_address,
                 program_bytes,

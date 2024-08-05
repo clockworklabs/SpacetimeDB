@@ -127,7 +127,6 @@ pub trait ControlStateWriteAccess: Send + Sync {
     async fn publish_database(
         &self,
         identity: &Identity,
-        publisher_address: Option<Address>,
         spec: DatabaseDef,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>>;
 
@@ -221,10 +220,9 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
     async fn publish_database(
         &self,
         identity: &Identity,
-        publisher_address: Option<Address>,
         spec: DatabaseDef,
     ) -> anyhow::Result<Option<UpdateDatabaseResult>> {
-        (**self).publish_database(identity, publisher_address, spec).await
+        (**self).publish_database(identity, spec).await
     }
 
     async fn delete_database(&self, identity: &Identity, address: &Address) -> anyhow::Result<()> {
