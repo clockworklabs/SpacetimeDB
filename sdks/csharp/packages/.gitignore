@@ -1,11 +1,8 @@
-# Ignore most of NuGet package structure, except .NET Standard 2.x DLLs which are required by Unity.
+# Ignore most of NuGet package structure, except DLLs which are required by Unity.
 /*/*/*
+
 !/*/*/analyzers
 !/*/*/analyzers.meta
+
 !/*/*/lib
 !/*/*/lib.meta
-# Note that we're ignoring non-.NET Standard DLLs but not their .meta files.
-# This is because we tell Unity to ignore those DLLs in said .meta files.
-# It doesn't matter when using package from Git, but matters for local development.
-/*/*/lib/*/*.dll
-!/*/*/lib/netstandard2.*/*.dll
