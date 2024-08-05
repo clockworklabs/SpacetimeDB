@@ -85,7 +85,7 @@ impl RawModuleDefV9 {
                 sequences: vec![],
                 schedule: None,
                 table_type: StTableType::User,
-                // TODO: make the default `Private` before 1.0.
+                // TODO(1.0): make the default `Private` before 1.0.
                 table_access: StAccess::Public,
             },
         }
@@ -245,7 +245,9 @@ pub struct RawIndexDefV9 {
 #[derive(Debug, Clone, ser::Serialize, de::Deserialize)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub enum RawIndexAlgorithm {
-    /// Implemented using a rust `std::collections::BTreeMap`.
+    /// Implemented using a B-Tree.
+    ///
+    /// Currently, this uses a rust `std::collections::BTreeMap`.
     BTree {
         /// The columns to index on. These are ordered.
         columns: ColList,
@@ -298,7 +300,9 @@ impl RawColumnDefV9 {
     }
 }
 
-/// Requires that the projection of the table onto these columns is an bijection.
+/// Requires that the projection of the table onto these `columns` is a bijection.
+///
+/// That is, there must be a one-to-one relationship between a row and the `columns` of that row.
 #[derive(Debug, Clone, ser::Serialize, de::Deserialize)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawUniqueConstraintDefV9 {
@@ -338,7 +342,7 @@ pub enum RawMiscModuleExportV9 {
 
 /// A type alias.
 ///
-/// Exactly of these must be attached to every Product and Sum type used by a module.
+/// Exactly of these must be attached to every `Product` and `Sum` type used by a module.
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawTypeAliasV9 {
@@ -369,7 +373,7 @@ pub struct RawReducerDefV9 {
 
     /// The types and optional names of the parameters, in order.
     /// Parameters are identified by their position in the list, not name.
-    pub args: Vec<ProductTypeElement>,
+    pub params: Vec<ProductTypeElement>,
 }
 
 /// Builder for a `RawTableDef`.
@@ -446,22 +450,22 @@ impl<'a> RawTableDefBuilder<'a> {
     ///
     /// Returns `None` if this `TableDef` has been constructed with an invalid `ProductTypeRef`,
     /// or if no column exists with that name.
-    pub fn get_col_id(&self, column: impl AsRef<str>) -> Option<ColId> {
+    pub fn find_col_pos_by_name(&self, column: impl AsRef<str>) -> Option<ColId> {
         let column = column.as_ref();
         self.columns()?
             .iter()
             .position(|x| x.name.as_ref().map(|s| &s[..]) == Some(column))
-            .map(|x| ColId(x as u32))
+            .map(|x| x.into())
     }
 
     /// Get the columns of this type.
     ///
     /// Returns `None` if this `TableDef` has been constructed with an invalid `ProductTypeRef`.
     fn columns(&self) -> Option<&[ProductTypeElement]> {
-        match self.module_def.typespace.get(self.table.product_type_ref) {
-            Some(AlgebraicType::Product(product)) => Some(&product.elements),
-            _ => None,
-        }
+        self.module_def
+            .typespace.get(self.table.product_type_ref)
+            .and_then(|ty| ty.as_product())
+            .map(|p| &p.elements)
     }
 
     /// Get the name of a column in the typespace.
@@ -472,7 +476,7 @@ impl<'a> RawTableDefBuilder<'a> {
     /// was initialized incorrectly.
     fn column_name(&self, column: ColId) -> String {
         self.columns()
-            .and_then(|columns| columns.get(column.0 as usize))
+            .and_then(|columns| columns.get(column.idx()))
             .and_then(|column| column.name().map(ToString::to_string))
             .unwrap_or_else(|| format!("col_{}", column.0))
     }
@@ -514,7 +518,7 @@ impl<'a> RawTableDefBuilder<'a> {
     }
 }
 
-impl<'a> Drop for RawTableDefBuilder<'a> {
+impl Drop for RawTableDefBuilder<'_> {
     fn drop(&mut self) {
         self.module_def.tables.push(self.table.clone());
     }

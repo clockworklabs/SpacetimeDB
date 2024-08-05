@@ -51,16 +51,14 @@ pub fn product_type_has_default_ordering(ty: &ProductType) -> bool {
 
 /// Check that an iterator is sorted.
 fn is_sorted<T: Ord>(it: impl Iterator<Item = T>) -> bool {
-    let mut current = None;
-    for next in it {
-        if let Some(current) = current {
-            if current > next {
-                return false;
-            }
-        }
-        current = Some(next);
-    }
-    true
+    let Some(mut curr) = it.next() else {
+        return true;
+    };
+    it.all(|next| {
+        let ordered = curr <= next;
+        current = next;
+        ordered
+    })
 }
 
 #[cfg(test)]
