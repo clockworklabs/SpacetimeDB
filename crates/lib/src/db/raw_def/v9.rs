@@ -59,7 +59,7 @@ pub struct RawModuleDefV9 {
     pub reducers: Vec<RawReducerDefV9>,
 
     /// The types exported by the module.
-    pub types: Vec<RawTypeV9>,
+    pub types: Vec<RawTypeDefV9>,
 
     /// Miscellaneous additional module exports.
     pub misc_exports: Vec<RawMiscModuleExportV9>,
@@ -125,7 +125,7 @@ impl RawModuleDefV9 {
         let ty = self.typespace.add(product_type.into().into());
 
         let name = name.into();
-        self.types.push(RawTypeV9 {
+        self.types.push(RawTypeDefV9 {
             name,
             ty,
             custom_ordering,
@@ -149,7 +149,7 @@ impl RawModuleDefV9 {
         let ty = self.typespace.add(sum_type.into().into());
 
         let name = name.into();
-        self.types.push(RawTypeV9 {
+        self.types.push(RawTypeDefV9 {
             name,
             ty,
             custom_ordering,
@@ -295,7 +295,7 @@ pub enum RawMiscModuleExportV9 {}
 /// Exactly of these must be attached to every `Product` and `Sum` type used by a module.
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
-pub struct RawTypeV9 {
+pub struct RawTypeDefV9 {
     /// The name of the type. This must be unique within the module.
     ///
     /// Eventually, we may add more information to this, such as the module name and generic arguments.
