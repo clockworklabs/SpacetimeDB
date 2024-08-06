@@ -171,24 +171,16 @@ public readonly struct U64 : IReadWrite<ulong>
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new AlgebraicType.U64(default);
 }
 
-public readonly struct U128 : IReadWrite<System.UInt128>
+public readonly struct U128 : IReadWrite<SpacetimeDB.UInt128>
 {
-    public System.UInt128 Read(BinaryReader reader) =>
+    public SpacetimeDB.UInt128 Read(BinaryReader reader) =>
         new(reader.ReadUInt64(), reader.ReadUInt64());
 
-#if NET7_0_OR_GREATER
-    public void Write(BinaryWriter writer, System.UInt128 value)
-    {
-        writer.Write((ulong)(value >> 64));
-        writer.Write((ulong)value);
-    }
-#else
-    public void Write(BinaryWriter writer, System.UInt128 value)
+    public void Write(BinaryWriter writer, SpacetimeDB.UInt128 value)
     {
         writer.Write(value.Upper);
         writer.Write(value.Lower);
     }
-#endif
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
         new AlgebraicType.U128(default);
@@ -196,7 +188,8 @@ public readonly struct U128 : IReadWrite<System.UInt128>
 
 public readonly struct U256 : IReadWrite<UInt256>
 {
-    public UInt256 Read(BinaryReader reader) {
+    public UInt256 Read(BinaryReader reader)
+    {
         var bsatn = new U128();
         return new(bsatn.Read(reader), bsatn.Read(reader));
     }
@@ -248,24 +241,16 @@ public readonly struct I64 : IReadWrite<long>
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) => new AlgebraicType.I64(default);
 }
 
-public readonly struct I128 : IReadWrite<System.Int128>
+public readonly struct I128 : IReadWrite<SpacetimeDB.Int128>
 {
-    public System.Int128 Read(BinaryReader reader) =>
+    public SpacetimeDB.Int128 Read(BinaryReader reader) =>
         new(reader.ReadUInt64(), reader.ReadUInt64());
 
-#if NET7_0_OR_GREATER
-    public void Write(BinaryWriter writer, System.Int128 value)
-    {
-        writer.Write((long)(value >> 64));
-        writer.Write((long)value);
-    }
-#else
-    public void Write(BinaryWriter writer, System.Int128 value)
+    public void Write(BinaryWriter writer, SpacetimeDB.Int128 value)
     {
         writer.Write(value.Upper);
         writer.Write(value.Lower);
     }
-#endif
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
         new AlgebraicType.I128(default);
@@ -273,7 +258,8 @@ public readonly struct I128 : IReadWrite<System.Int128>
 
 public readonly struct I256 : IReadWrite<Int256>
 {
-    public Int256 Read(BinaryReader reader) {
+    public Int256 Read(BinaryReader reader)
+    {
         var bsatn = new U128();
         return new(bsatn.Read(reader), bsatn.Read(reader));
     }

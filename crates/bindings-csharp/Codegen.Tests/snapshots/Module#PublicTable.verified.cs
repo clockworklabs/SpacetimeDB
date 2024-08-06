@@ -159,13 +159,13 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
                 new(nameof(UlongField), (w, v) => BSATN.UlongField.Write(w, (ulong)v!)),
                 new(
                     nameof(Uint128Field),
-                    (w, v) => BSATN.Uint128Field.Write(w, (System.UInt128)v!)
+                    (w, v) => BSATN.Uint128Field.Write(w, (SpacetimeDB.UInt128)v!)
                 ),
                 new(nameof(SbyteField), (w, v) => BSATN.SbyteField.Write(w, (sbyte)v!)),
                 new(nameof(ShortField), (w, v) => BSATN.ShortField.Write(w, (short)v!)),
                 new(nameof(IntField), (w, v) => BSATN.IntField.Write(w, (int)v!)),
                 new(nameof(LongField), (w, v) => BSATN.LongField.Write(w, (long)v!)),
-                new(nameof(Int128Field), (w, v) => BSATN.Int128Field.Write(w, (System.Int128)v!)),
+                new(nameof(Int128Field), (w, v) => BSATN.Int128Field.Write(w, (SpacetimeDB.Int128)v!)),
                 new(nameof(BoolField), (w, v) => BSATN.BoolField.Write(w, (bool)v!)),
                 new(nameof(FloatField), (w, v) => BSATN.FloatField.Write(w, (float)v!)),
                 new(nameof(DoubleField), (w, v) => BSATN.DoubleField.Write(w, (double)v!)),
@@ -266,7 +266,7 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
             .Internal.ITable<PublicTable>.ColEq.Where(4, UlongField, BSATN.UlongField)
             .Iter();
 
-    public static IEnumerable<PublicTable> FilterByUint128Field(System.UInt128 Uint128Field) =>
+    public static IEnumerable<PublicTable> FilterByUint128Field(SpacetimeDB.UInt128 Uint128Field) =>
         SpacetimeDB
             .Internal.ITable<PublicTable>.ColEq.Where(5, Uint128Field, BSATN.Uint128Field)
             .Iter();
@@ -287,7 +287,7 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
     public static IEnumerable<PublicTable> FilterByLongField(long LongField) =>
         SpacetimeDB.Internal.ITable<PublicTable>.ColEq.Where(9, LongField, BSATN.LongField).Iter();
 
-    public static IEnumerable<PublicTable> FilterByInt128Field(System.Int128 Int128Field) =>
+    public static IEnumerable<PublicTable> FilterByInt128Field(SpacetimeDB.Int128 Int128Field) =>
         SpacetimeDB
             .Internal.ITable<PublicTable>.ColEq.Where(10, Int128Field, BSATN.Int128Field)
             .Iter();
