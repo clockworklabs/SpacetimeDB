@@ -40,10 +40,9 @@ pub struct RawModuleDefV9 {
     ///
     /// Any `Product` or `Sum` types used transitively by the module MUST be declared in this typespace.
     ///
-    /// Every `Product`, `Sum`, and `Ref` type in this typespace MUST have a corresponding `TypeAlias` declaration in the `misc_exports` field, with a module-unique name.
+    /// Every `Product`, `Sum`, and `Ref` type in this typespace MUST have a corresponding `RawTypeDefV9` declaration in the `types` field, with a module-unique name.
     ///
-    /// All product and sum types in this typespace MUST have the [default element ordering](crate::db::default_element_ordering) UNLESS they declare a custom ordering.
-    /// Custom orderings are declared in `misc_exports`.
+    /// All product and sum types in this typespace MUST have the [default element ordering](crate::db::default_element_ordering) UNLESS they declare a custom ordering via their `RawTypeDefV9`.
     ///
     /// It is permitted but not required to refer to `Builtin` or "primitive" types via this typespace.
     ///
