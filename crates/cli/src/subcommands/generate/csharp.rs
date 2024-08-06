@@ -47,8 +47,8 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
                 unimplemented!()
             }
         }
-        ty if ty.is_identity() => write!(f, "SpacetimeDB.Identity"),
-        ty if ty.is_address() => write!(f, "SpacetimeDB.Address"),
+        ty if ty.is_identity() => f.write_str("SpacetimeDB.Identity"),
+        ty if ty.is_address() => f.write_str("SpacetimeDB.Address"),
         // Arbitrary product types should fail.
         AlgebraicType::Product(_) => unimplemented!(),
         ty if ty.is_bytes() => f.write_str("byte[]"),
@@ -104,14 +104,12 @@ fn default_init(ctx: &GenCtx, ty: &AlgebraicType) -> &'static str {
                 " = null!"
             }
         }
-        // For product types, we can just use the default constructor.
-        AlgebraicType::Product(_) => " = new()",
+        // Byte arrays must be initialized to an empty array.
+        ty if ty.is_bytes() => " = Array.Empty<byte>()",
+        // For product types, arrays, and maps, we can use the default constructor.
+        AlgebraicType::Product(_) | AlgebraicType::Array(_) | AlgebraicType::Map(_) => " = new()",
         // Strings must have explicit default value of "".
         AlgebraicType::String => r#" = """#,
-        // Byte arrays must be initialized to an empty array.
-        AlgebraicType::Array(a) if *a.elem_ty == AlgebraicType::U8 => " = Array.Empty<byte>()",
-        // Lists and Dictionaries must be instantiated with new().
-        AlgebraicType::Array(_) | AlgebraicType::Map(_) => " = new()",
         AlgebraicType::Ref(r) => default_init(ctx, &ctx.typespace[*r]),
         _ => "",
     }
