@@ -183,7 +183,7 @@ public class Module : IIncrementalGenerator
                 transform: (context, ct) =>
                 {
                     var tableSyntax = (TypeDeclarationSyntax)context.TargetNode;
-                    var table = context.SemanticModel.GetDeclaredSymbol(tableSyntax)!;
+                    var table = context.SemanticModel.GetDeclaredSymbol(tableSyntax, ct)!;
 
                     var fields = GetFields(tableSyntax, table)
                         .Select(f =>
@@ -337,8 +337,7 @@ public class Module : IIncrementalGenerator
                 transform: (context, ct) =>
                 {
                     var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
-
-                    var method = context.SemanticModel.GetDeclaredSymbol(methodSyntax)!;
+                    var method = context.SemanticModel.GetDeclaredSymbol(methodSyntax, ct)!;
 
                     if (!method.ReturnsVoid)
                     {
