@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
-  BuiltinType,
   ProductTypeElement,
   SumType,
   SumTypeVariant,
@@ -41,15 +40,9 @@ export class CallReducer {
 
   public static getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement(
-        "reducer",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.String)
-      ),
+      new ProductTypeElement("reducer", AlgebraicType.createStringType()),
       new ProductTypeElement("args", EncodedValue.getAlgebraicType()),
-      new ProductTypeElement(
-        "requestId",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.U32)
-      ),
+      new ProductTypeElement("requestId", AlgebraicType.createU32Type()),
     ]);
   }
 

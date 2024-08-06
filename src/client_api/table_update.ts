@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
-  BuiltinType,
   ProductTypeElement,
   SumType,
   SumTypeVariant,
@@ -55,14 +54,8 @@ export class TableUpdate {
 
   public static getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement(
-        "tableId",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.U32)
-      ),
-      new ProductTypeElement(
-        "tableName",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.String)
-      ),
+      new ProductTypeElement("tableId", AlgebraicType.createU32Type()),
+      new ProductTypeElement("tableName", AlgebraicType.createStringType()),
       new ProductTypeElement(
         "deletes",
         AlgebraicType.createArrayType(EncodedValue.getAlgebraicType())

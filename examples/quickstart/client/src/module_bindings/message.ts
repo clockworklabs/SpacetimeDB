@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
-  BuiltinType,
   ProductTypeElement,
   SumType,
   SumTypeVariant,
@@ -44,28 +43,18 @@ export class Message extends DatabaseTable {
         AlgebraicType.createProductType([
           new ProductTypeElement(
             "__identity_bytes",
-            AlgebraicType.createArrayType(
-              AlgebraicType.createPrimitiveType(BuiltinType.Type.U8)
-            )
+            AlgebraicType.createBytesType()
           ),
         ])
       ),
-      new ProductTypeElement(
-        "sent",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.U64)
-      ),
-      new ProductTypeElement(
-        "text",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.String)
-      ),
+      new ProductTypeElement("sent", AlgebraicType.createU64Type()),
+      new ProductTypeElement("text", AlgebraicType.createStringType()),
     ]);
   }
 
   public static fromValue(value: AlgebraicValue): Message {
     let productValue = value.asProductValue();
-    let __sender = new Identity(
-      productValue.elements[0].asProductValue().elements[0].asBytes()
-    );
+    let __sender = productValue.elements[0].asIdentity();
     let __sent = productValue.elements[1].asBigInt();
     let __text = productValue.elements[2].asString();
     return new this(__sender, __sent, __text);

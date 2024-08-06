@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
-  BuiltinType,
   ProductTypeElement,
   SumType,
   SumTypeVariant,
@@ -42,10 +41,7 @@ export class OneOffTable {
 
   public static getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement(
-        "tableName",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.String)
-      ),
+      new ProductTypeElement("tableName", AlgebraicType.createStringType()),
       new ProductTypeElement(
         "rows",
         AlgebraicType.createArrayType(EncodedValue.getAlgebraicType())

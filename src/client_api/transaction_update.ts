@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
-  BuiltinType,
   ProductTypeElement,
   SumType,
   SumTypeVariant,
@@ -78,9 +77,7 @@ export class TransactionUpdate {
         AlgebraicType.createProductType([
           new ProductTypeElement(
             "__identity_bytes",
-            AlgebraicType.createArrayType(
-              AlgebraicType.createPrimitiveType(BuiltinType.Type.U8)
-            )
+            AlgebraicType.createBytesType()
           ),
         ])
       ),
@@ -89,9 +86,7 @@ export class TransactionUpdate {
         AlgebraicType.createProductType([
           new ProductTypeElement(
             "__address_bytes",
-            AlgebraicType.createArrayType(
-              AlgebraicType.createPrimitiveType(BuiltinType.Type.U8)
-            )
+            AlgebraicType.createBytesType()
           ),
         ])
       ),
@@ -102,7 +97,7 @@ export class TransactionUpdate {
       ),
       new ProductTypeElement(
         "hostExecutionDurationMicros",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.U64)
+        AlgebraicType.createU64Type()
       ),
     ]);
   }
@@ -111,12 +106,8 @@ export class TransactionUpdate {
     let productValue = value.asProductValue();
     let __status = UpdateStatus.fromValue(productValue.elements[0]);
     let __timestamp = Timestamp.fromValue(productValue.elements[1]);
-    let __caller_identity = new Identity(
-      productValue.elements[2].asProductValue().elements[0].asBytes()
-    );
-    let __caller_address = new Address(
-      productValue.elements[3].asProductValue().elements[0].asBytes()
-    );
+    let __caller_identity = productValue.elements[2].asIdentity();
+    let __caller_address = productValue.elements[3].asAddress();
     let __reducer_call = ReducerCallInfo.fromValue(productValue.elements[4]);
     let __energy_quanta_used = EnergyQuanta.fromValue(productValue.elements[5]);
     let __host_execution_duration_micros = productValue.elements[6].asBigInt();

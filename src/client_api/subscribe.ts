@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
-  BuiltinType,
   ProductTypeElement,
   SumType,
   SumTypeVariant,
@@ -39,14 +38,9 @@ export class Subscribe {
     return AlgebraicType.createProductType([
       new ProductTypeElement(
         "queryStrings",
-        AlgebraicType.createArrayType(
-          AlgebraicType.createPrimitiveType(BuiltinType.Type.String)
-        )
+        AlgebraicType.createArrayType(AlgebraicType.createStringType())
       ),
-      new ProductTypeElement(
-        "requestId",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.U32)
-      ),
+      new ProductTypeElement("requestId", AlgebraicType.createU32Type()),
     ]);
   }
 
