@@ -18,13 +18,13 @@ export class AddPlayerReducer extends Reducer
 
 	public call(_name: string) {
 		const serializer = this.client.getSerializer();
-		let _nameType = AlgebraicType.createString;
+		let _nameType = AlgebraicType.createStringType();
 		serializer.write(_nameType, _name);
 		this.client.call("add_player", serializer);
 	}
 
 	public static deserializeArgs(adapter: ReducerArgsAdapter): any[] {
-		let nameType = AlgebraicType.createString;
+		let nameType = AlgebraicType.createStringType();
 		let nameValue = AlgebraicValue.deserialize(nameType, adapter.next())
 		let name = nameValue.asString();
 		return [name];
@@ -58,13 +58,13 @@ export class AddPrivateReducer extends Reducer
 
 	public call(_name: string) {
 		const serializer = this.client.getSerializer();
-		let _nameType = AlgebraicType.createString;
+		let _nameType = AlgebraicType.createStringType();
 		serializer.write(_nameType, _name);
 		this.client.call("add_private", serializer);
 	}
 
 	public static deserializeArgs(adapter: ReducerArgsAdapter): any[] {
-		let nameType = AlgebraicType.createString;
+		let nameType = AlgebraicType.createStringType();
 		let nameValue = AlgebraicValue.deserialize(nameType, adapter.next())
 		let name = nameValue.asString();
 		return [name];
@@ -98,13 +98,13 @@ export class DeletePlayerReducer extends Reducer
 
 	public call(_id: BigInt) {
 		const serializer = this.client.getSerializer();
-		let _idType = AlgebraicType.createBigInt;
+		let _idType = AlgebraicType.createU64Type();
 		serializer.write(_idType, _id);
 		this.client.call("delete_player", serializer);
 	}
 
 	public static deserializeArgs(adapter: ReducerArgsAdapter): any[] {
-		let idType = AlgebraicType.createBigInt;
+		let idType = AlgebraicType.createU64Type();
 		let idValue = AlgebraicValue.deserialize(idType, adapter.next())
 		let id = idValue.asBigInt();
 		return [id];
@@ -138,13 +138,13 @@ export class DeletePlayersByNameReducer extends Reducer
 
 	public call(_name: string) {
 		const serializer = this.client.getSerializer();
-		let _nameType = AlgebraicType.createString;
+		let _nameType = AlgebraicType.createStringType();
 		serializer.write(_nameType, _name);
 		this.client.call("delete_players_by_name", serializer);
 	}
 
 	public static deserializeArgs(adapter: ReducerArgsAdapter): any[] {
-		let nameType = AlgebraicType.createString;
+		let nameType = AlgebraicType.createStringType();
 		let nameValue = AlgebraicValue.deserialize(nameType, adapter.next())
 		let name = nameValue.asString();
 		return [name];
@@ -215,7 +215,7 @@ export namespace Namespace.testF {
 		])),
 			new SumTypeVariant("Bar", AlgebraicType.createProductType([
 		])),
-			new SumTypeVariant("Baz", AlgebraicType.createString),
+			new SumTypeVariant("Baz", AlgebraicType.createStringType()),
 		]);
 	}
 
@@ -288,8 +288,8 @@ export class PkMultiIdentity extends DatabaseTable
 	public static getAlgebraicType(): AlgebraicType
 	{
 		return AlgebraicType.createProductType([
-			new ProductTypeElement("id", AlgebraicType.createNumber),
-			new ProductTypeElement("other", AlgebraicType.createNumber),
+			new ProductTypeElement("id", AlgebraicType.createU32Type()),
+			new ProductTypeElement("other", AlgebraicType.createU32Type()),
 		]);
 	}
 
@@ -365,8 +365,8 @@ export class Point extends DatabaseTable
 	public static getAlgebraicType(): AlgebraicType
 	{
 		return AlgebraicType.createProductType([
-			new ProductTypeElement("x", AlgebraicType.createBigInt),
-			new ProductTypeElement("y", AlgebraicType.createBigInt),
+			new ProductTypeElement("x", AlgebraicType.createI64Type()),
+			new ProductTypeElement("y", AlgebraicType.createI64Type()),
 		]);
 	}
 
@@ -430,7 +430,7 @@ export class Private extends DatabaseTable
 	public static getAlgebraicType(): AlgebraicType
 	{
 		return AlgebraicType.createProductType([
-			new ProductTypeElement("name", AlgebraicType.createString),
+			new ProductTypeElement("name", AlgebraicType.createStringType()),
 		]);
 	}
 
@@ -526,8 +526,8 @@ export class RepeatingTestArg extends DatabaseTable
 	public static getAlgebraicType(): AlgebraicType
 	{
 		return AlgebraicType.createProductType([
-			new ProductTypeElement("prevTime", AlgebraicType.createBigInt),
-			new ProductTypeElement("scheduledId", AlgebraicType.createBigInt),
+			new ProductTypeElement("prevTime", AlgebraicType.createU64Type()),
+			new ProductTypeElement("scheduledId", AlgebraicType.createU64Type()),
 			new ProductTypeElement("scheduledAt", ScheduleAt.getAlgebraicType()),
 		]);
 	}
@@ -623,8 +623,8 @@ import { __SPACETIMEDB__, AlgebraicType, SumTypeVariant, AlgebraicValue } from "
 export namespace ScheduleAt {
 	export function getAlgebraicType(): AlgebraicType {
 		return AlgebraicType.createSumType([
-			new SumTypeVariant("Time", AlgebraicType.createBigInt),
-			new SumTypeVariant("Interval", AlgebraicType.createBigInt),
+			new SumTypeVariant("Time", AlgebraicType.createU64Type()),
+			new SumTypeVariant("Interval", AlgebraicType.createU64Type()),
 		]);
 	}
 
@@ -691,9 +691,9 @@ export class TestA extends DatabaseTable
 	public static getAlgebraicType(): AlgebraicType
 	{
 		return AlgebraicType.createProductType([
-			new ProductTypeElement("x", AlgebraicType.createNumber),
-			new ProductTypeElement("y", AlgebraicType.createNumber),
-			new ProductTypeElement("z", AlgebraicType.createString),
+			new ProductTypeElement("x", AlgebraicType.createU32Type()),
+			new ProductTypeElement("y", AlgebraicType.createU32Type()),
+			new ProductTypeElement("z", AlgebraicType.createStringType()),
 		]);
 	}
 
@@ -770,7 +770,7 @@ export class TestB extends DatabaseTable
 	public static getAlgebraicType(): AlgebraicType
 	{
 		return AlgebraicType.createProductType([
-			new ProductTypeElement("foo", AlgebraicType.createString),
+			new ProductTypeElement("foo", AlgebraicType.createStringType()),
 		]);
 	}
 
@@ -865,8 +865,8 @@ export class TestE extends DatabaseTable
 	public static getAlgebraicType(): AlgebraicType
 	{
 		return AlgebraicType.createProductType([
-			new ProductTypeElement("id", AlgebraicType.createBigInt),
-			new ProductTypeElement("name", AlgebraicType.createString),
+			new ProductTypeElement("id", AlgebraicType.createU64Type()),
+			new ProductTypeElement("name", AlgebraicType.createStringType()),
 		]);
 	}
 
