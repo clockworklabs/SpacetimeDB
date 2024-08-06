@@ -305,22 +305,22 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
             AlgebraicType::Ref(r) => self.resolve(*r).deserialize(de),
             AlgebraicType::Sum(sum) => self.with(sum).deserialize(de).map(Into::into),
             AlgebraicType::Product(prod) => self.with(prod).deserialize(de).map(Into::into),
-            AlgebraicType::Builtin(crate::BuiltinType::Array(ty)) => self.with(ty).deserialize(de).map(Into::into),
-            AlgebraicType::Builtin(crate::BuiltinType::Map(ty)) => self.with(&**ty).deserialize(de).map(Into::into),
-            &AlgebraicType::Bool => bool::deserialize(de).map(Into::into),
-            &AlgebraicType::I8 => i8::deserialize(de).map(Into::into),
-            &AlgebraicType::U8 => u8::deserialize(de).map(Into::into),
-            &AlgebraicType::I16 => i16::deserialize(de).map(Into::into),
-            &AlgebraicType::U16 => u16::deserialize(de).map(Into::into),
-            &AlgebraicType::I32 => i32::deserialize(de).map(Into::into),
-            &AlgebraicType::U32 => u32::deserialize(de).map(Into::into),
-            &AlgebraicType::I64 => i64::deserialize(de).map(Into::into),
-            &AlgebraicType::U64 => u64::deserialize(de).map(Into::into),
-            &AlgebraicType::I128 => i128::deserialize(de).map(Into::into),
-            &AlgebraicType::U128 => u128::deserialize(de).map(Into::into),
-            &AlgebraicType::F32 => f32::deserialize(de).map(Into::into),
-            &AlgebraicType::F64 => f64::deserialize(de).map(Into::into),
-            &AlgebraicType::String => <Box<str>>::deserialize(de).map(Into::into),
+            AlgebraicType::Array(ty) => self.with(ty).deserialize(de).map(Into::into),
+            AlgebraicType::Map(ty) => self.with(&**ty).deserialize(de).map(Into::into),
+            AlgebraicType::Bool => bool::deserialize(de).map(Into::into),
+            AlgebraicType::I8 => i8::deserialize(de).map(Into::into),
+            AlgebraicType::U8 => u8::deserialize(de).map(Into::into),
+            AlgebraicType::I16 => i16::deserialize(de).map(Into::into),
+            AlgebraicType::U16 => u16::deserialize(de).map(Into::into),
+            AlgebraicType::I32 => i32::deserialize(de).map(Into::into),
+            AlgebraicType::U32 => u32::deserialize(de).map(Into::into),
+            AlgebraicType::I64 => i64::deserialize(de).map(Into::into),
+            AlgebraicType::U64 => u64::deserialize(de).map(Into::into),
+            AlgebraicType::I128 => i128::deserialize(de).map(Into::into),
+            AlgebraicType::U128 => u128::deserialize(de).map(Into::into),
+            AlgebraicType::F32 => f32::deserialize(de).map(Into::into),
+            AlgebraicType::F64 => f64::deserialize(de).map(Into::into),
+            AlgebraicType::String => <Box<str>>::deserialize(de).map(Into::into),
         }
     }
 }
@@ -440,11 +440,11 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(<Box<[_]>>::from)
                     .map(ArrayValue::Product),
-                AlgebraicType::Builtin(crate::BuiltinType::Array(ty)) => deserializer
+                AlgebraicType::Array(ty) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(ty))
                     .map(<Box<[_]>>::from)
                     .map(ArrayValue::Array),
-                AlgebraicType::Builtin(crate::BuiltinType::Map(ty)) => deserializer
+                AlgebraicType::Map(ty) => deserializer
                     .deserialize_array_seed(BasicVecVisitor, self.with(&**ty))
                     .map(<Box<[_]>>::from)
                     .map(ArrayValue::Map),

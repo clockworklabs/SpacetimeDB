@@ -11,7 +11,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_sats::algebraic_value::Packed;
 use spacetimedb_sats::meta_type::MetaType;
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, BuiltinType};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_vm::relation::MemTable;
 use sqllogictest::{AsyncDB, ColumnType, DBOutput};
 use std::fs;
@@ -33,22 +33,14 @@ impl ColumnType for Kind {
     }
 
     fn to_char(&self) -> char {
-        match self.0 {
-            AlgebraicType::Builtin(BuiltinType::Map(_)) | AlgebraicType::Builtin(BuiltinType::Array(_)) => '?',
-            AlgebraicType::I8
-            | AlgebraicType::U8
-            | AlgebraicType::U16
-            | AlgebraicType::I16
-            | AlgebraicType::I32
-            | AlgebraicType::U32
-            | AlgebraicType::I64
-            | AlgebraicType::U64
-            | AlgebraicType::I128
-            | AlgebraicType::U128 => 'I',
-            AlgebraicType::F32 | AlgebraicType::F64 => 'R',
+        match &self.0 {
+            AlgebraicType::Map(_) | AlgebraicType::Array(_) => '?',
+            ty if ty.is_integer() => 'I',
+            ty if ty.is_float() => 'R',
             AlgebraicType::String => 'T',
             AlgebraicType::Bool => 'B',
             AlgebraicType::Ref(_) | AlgebraicType::Sum(_) | AlgebraicType::Product(_) => '!',
+            _ => unreachable!(),
         }
     }
 }

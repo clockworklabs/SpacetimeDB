@@ -70,8 +70,8 @@ public abstract partial record ScheduleAt
             // to avoid leaking the internal *Repr wrappers in generated SATS.
             new AlgebraicType.Sum(
                 [
-                    new("Time", new BuiltinType.U64(default)),
-                    new("Interval", new BuiltinType.U64(default))
+                    new("Time", new AlgebraicType.U64(default)),
+                    new("Interval", new AlgebraicType.U64(default))
                 ]
             );
     }

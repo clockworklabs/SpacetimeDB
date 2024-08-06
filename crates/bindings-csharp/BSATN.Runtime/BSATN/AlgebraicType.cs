@@ -20,8 +20,17 @@ public partial struct MapElement(AlgebraicType key, AlgebraicType value)
 }
 
 [SpacetimeDB.Type]
-public partial record BuiltinType
+public partial record AlgebraicType
     : SpacetimeDB.TaggedEnum<(
+        int Ref,
+        AggregateElement[] Sum,
+        AggregateElement[] Product,
+
+        AlgebraicType Array,
+        MapElement Map,
+
+        Unit String,
+
         Unit Bool,
         Unit I8,
         Unit U8,
@@ -34,23 +43,9 @@ public partial record BuiltinType
         Unit I128,
         Unit U128,
         Unit F32,
-        Unit F64,
-        Unit String,
-        AlgebraicType Array,
-        MapElement Map
-    )> { }
-
-[SpacetimeDB.Type]
-public partial record AlgebraicType
-    : SpacetimeDB.TaggedEnum<(
-        AggregateElement[] Sum,
-        AggregateElement[] Product,
-        BuiltinType Builtin,
-        int Ref
+        Unit F64
     )>
 {
-    public static implicit operator AlgebraicType(BuiltinType builtin) => new Builtin(builtin);
-
     public static readonly AlgebraicType Unit = new Product([]);
 
     // Special AlgebraicType that can be recognised by the SpacetimeDB `generate` CLI as an Option<T>.

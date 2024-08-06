@@ -5,7 +5,7 @@ use std::fmt::{self, Write};
 use std::ops::Deref;
 
 use convert_case::{Case, Casing};
-use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, ArrayType, BuiltinType, MapType, ProductType, SumType};
+use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, ArrayType, ProductType, SumType};
 use spacetimedb_lib::{ReducerDef, TableDesc};
 use spacetimedb_primitives::ColList;
 use spacetimedb_schema::schema::TableSchema;
@@ -13,30 +13,27 @@ use spacetimedb_schema::schema::TableSchema;
 use super::code_indenter::CodeIndenter;
 use super::{GenCtx, GenItem};
 
-enum MaybePrimitive<'a> {
-    Primitive(&'static str),
-    Array(&'a ArrayType),
-    Map(&'a MapType),
-}
-
-fn maybe_primitive(b: &BuiltinType) -> MaybePrimitive {
-    MaybePrimitive::Primitive(match b {
-        BuiltinType::Bool => "bool",
-        BuiltinType::I8 => "sbyte",
-        BuiltinType::U8 => "byte",
-        BuiltinType::I16 => "short",
-        BuiltinType::U16 => "ushort",
-        BuiltinType::I32 => "int",
-        BuiltinType::U32 => "uint",
-        BuiltinType::I64 => "long",
-        BuiltinType::U64 => "ulong",
-        BuiltinType::I128 => "I128",
-        BuiltinType::U128 => "U128",
-        BuiltinType::String => "string",
-        BuiltinType::F32 => "float",
-        BuiltinType::F64 => "double",
-        BuiltinType::Array(ty) => return MaybePrimitive::Array(ty),
-        BuiltinType::Map(m) => return MaybePrimitive::Map(m),
+fn scalar_or_string_name(b: &AlgebraicType) -> Option<&str> {
+    Some(match b {
+        AlgebraicType::Bool => "bool",
+        AlgebraicType::I8 => "sbyte",
+        AlgebraicType::U8 => "byte",
+        AlgebraicType::I16 => "short",
+        AlgebraicType::U16 => "ushort",
+        AlgebraicType::I32 => "int",
+        AlgebraicType::U32 => "uint",
+        AlgebraicType::I64 => "long",
+        AlgebraicType::U64 => "ulong",
+        AlgebraicType::I128 => "I128",
+        AlgebraicType::U128 => "U128",
+        AlgebraicType::String => "string",
+        AlgebraicType::F32 => "float",
+        AlgebraicType::F64 => "double",
+        AlgebraicType::Ref(_)
+        | AlgebraicType::Sum(_)
+        | AlgebraicType::Product(_)
+        | AlgebraicType::Array(_)
+        | AlgebraicType::Map(_) => return None,
     })
 }
 
@@ -50,38 +47,29 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
                 unimplemented!()
             }
         }
-        AlgebraicType::Product(prod) => {
-            // The only type that is allowed here is the identity type. All other types should fail.
-            if prod.is_identity() {
-                write!(f, "SpacetimeDB.Identity")
-            } else if prod.is_address() {
-                write!(f, "SpacetimeDB.Address")
-            } else {
-                unimplemented!()
-            }
+        ty if ty.is_identity() => f.write_str("SpacetimeDB.Identity"),
+        ty if ty.is_address() => f.write_str("SpacetimeDB.Address"),
+        // Arbitrary product types should fail.
+        AlgebraicType::Product(_) => unimplemented!(),
+        ty if ty.is_bytes() => f.write_str("byte[]"),
+        AlgebraicType::Array(ArrayType { elem_ty }) => {
+            write!(
+                f,
+                "System.Collections.Generic.List<{}>",
+                ty_fmt(ctx, elem_ty, namespace)
+            )
         }
-        AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-            MaybePrimitive::Primitive(p) => f.write_str(p),
-            MaybePrimitive::Array(ArrayType { elem_ty }) if **elem_ty == AlgebraicType::U8 => f.write_str("byte[]"),
-            MaybePrimitive::Array(ArrayType { elem_ty }) => {
-                write!(
-                    f,
-                    "System.Collections.Generic.List<{}>",
-                    ty_fmt(ctx, elem_ty, namespace)
-                )
-            }
-            MaybePrimitive::Map(ty) => {
-                write!(
-                    f,
-                    "System.Collections.Generic.Dictionary<{}, {}>",
-                    ty_fmt(ctx, &ty.ty, namespace),
-                    ty_fmt(ctx, &ty.key_ty, namespace)
-                )
-            }
-        },
+        AlgebraicType::Map(ty) => {
+            write!(
+                f,
+                "System.Collections.Generic.Dictionary<{}, {}>",
+                ty_fmt(ctx, &ty.ty, namespace),
+                ty_fmt(ctx, &ty.key_ty, namespace)
+            )
+        }
         AlgebraicType::Ref(r) => {
             let name = csharp_typename(ctx, *r);
-            match &ctx.typespace.types[r.idx()] {
+            match &ctx.typespace[*r] {
                 AlgebraicType::Sum(sum_type) => {
                     if sum_type.is_simple_enum() {
                         let parts: Vec<&str> = name.split('.').collect();
@@ -101,6 +89,7 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
                 }
             }
         }
+        ty => f.write_str(scalar_or_string_name(ty).expect("must be a scalar/string type at this point")),
     })
 }
 
@@ -115,18 +104,14 @@ fn default_init(ctx: &GenCtx, ty: &AlgebraicType) -> &'static str {
                 " = null!"
             }
         }
-        // For product types, we can just use the default constructor.
-        AlgebraicType::Product(_) => " = new()",
-        AlgebraicType::Builtin(b) => match b {
-            // Strings must have explicit default value of "".
-            BuiltinType::String => r#" = """#,
-            // Byte arrays must be initialized to an empty array.
-            BuiltinType::Array(a) if *a.elem_ty == AlgebraicType::U8 => " = Array.Empty<byte>()",
-            // Lists and Dictionaries must be instantiated with new().
-            BuiltinType::Array(_) | BuiltinType::Map(_) => " = new()",
-            _ => "",
-        },
-        AlgebraicType::Ref(r) => default_init(ctx, &ctx.typespace.types[r.idx()]),
+        // Byte arrays must be initialized to an empty array.
+        ty if ty.is_bytes() => " = Array.Empty<byte>()",
+        // For product types, arrays, and maps, we can use the default constructor.
+        AlgebraicType::Product(_) | AlgebraicType::Array(_) | AlgebraicType::Map(_) => " = new()",
+        // Strings must have explicit default value of "".
+        AlgebraicType::String => r#" = """#,
+        AlgebraicType::Ref(r) => default_init(ctx, &ctx.typespace[*r]),
+        _ => "",
     }
 }
 
@@ -435,8 +420,8 @@ fn autogen_csharp_access_funcs_for_struct(
                 }
             }
             AlgebraicType::Sum(_) | AlgebraicType::Ref(_) => continue,
-            AlgebraicType::Builtin(b) => match maybe_primitive(b) {
-                MaybePrimitive::Primitive(ty) => ty,
+            ty => match scalar_or_string_name(ty) {
+                Some(ty) => ty,
                 _ => continue,
             },
         };
