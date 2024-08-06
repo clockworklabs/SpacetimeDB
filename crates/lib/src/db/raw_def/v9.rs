@@ -162,11 +162,6 @@ impl RawModuleDefV9 {
 ///
 /// Validation rules:
 /// - The table name must be a valid [crate::db::identifier::Identifier].
-/// - The table's columns MUST be sorted according to [crate::db::ordering::canonical_ordering].
-///   This is a sanity check to ensure that modules know the correct ordering to use for their tables.
-///     - TODO(jgilles): add a test-only validation method that allows tables with unusual
-///       column orderings. This will enable more test coverage in the `table` crate,
-///       in case we allow more orderings in the future.
 /// - The table's indexes, constraints, and sequences need not be sorted; they will be sorted according to their respective ordering rules.
 /// - The table's column types may refer only to types in the containing RawDatabaseDef's typespace.
 /// - The table's column names must be unique.
