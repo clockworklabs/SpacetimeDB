@@ -1,6 +1,5 @@
 namespace SpacetimeDB.Internal;
 
-using System.Text;
 using SpacetimeDB.BSATN;
 
 public interface IReducer
