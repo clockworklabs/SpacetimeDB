@@ -39,7 +39,7 @@ namespace SpacetimeDB
             }
 
             public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-                new AlgebraicType.Builtin(new BuiltinType.I128(new Unit()));
+                new AlgebraicType.I128(new Unit());
         }
     }
 
@@ -76,7 +76,7 @@ namespace SpacetimeDB
             }
 
             public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-                new AlgebraicType.Builtin(new BuiltinType.U128(new Unit()));
+                new AlgebraicType.U128(new Unit());
         }
     }
 
