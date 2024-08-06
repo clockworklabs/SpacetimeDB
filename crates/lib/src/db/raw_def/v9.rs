@@ -1,7 +1,6 @@
 use crate::db::auth::{StAccess, StTableType};
 use itertools::Itertools;
 use spacetimedb_primitives::*;
-use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::AlgebraicTypeRef;
 use spacetimedb_sats::ProductTypeElement;
 use spacetimedb_sats::{de, ser, Typespace};
@@ -56,8 +55,11 @@ pub struct RawModuleDefV9 {
     /// Each table must have a unique name.
     pub tables: Vec<RawTableDefV9>,
 
-    /// The reducers used by the module.
+    /// The reducers exported by the module.
     pub reducers: Vec<RawReducerDefV9>,
+
+    /// The types exported by the module.
+    pub types: Vec<RawTypeV9>,
 
     /// Miscellaneous additional module exports.
     pub misc_exports: Vec<RawMiscModuleExportV9>,
@@ -120,18 +122,15 @@ impl RawModuleDefV9 {
         product_type: impl Into<spacetimedb_sats::ProductType>,
         custom_ordering: bool,
     ) -> AlgebraicTypeRef {
-        let ref_ = self.typespace.add(product_type.into().into());
-        self.misc_exports.push(RawMiscModuleExportV9::TypeAlias(RawTypeAliasV9 {
-            name: name.into(),
-            ty: ref_,
-        }));
-        if custom_ordering {
-            self.misc_exports
-                .push(RawMiscModuleExportV9::CustomTypeOrdering(RawCustomTypeOrderingV9 {
-                    ty: ref_,
-                }));
-        }
-        ref_
+        let ty = self.typespace.add(product_type.into().into());
+
+        let name = name.into();
+        self.types.push(RawTypeV9 {
+            name,
+            ty,
+            custom_ordering,
+        });
+        ty
     }
 
     /// Add a product type to the typespace, along with a type alias declaring its name.
@@ -145,13 +144,17 @@ impl RawModuleDefV9 {
         &mut self,
         name: impl Into<RawIdentifier>,
         sum_type: impl Into<spacetimedb_sats::SumType>,
+        custom_ordering: bool,
     ) -> AlgebraicTypeRef {
-        let ref_ = self.typespace.add(sum_type.into().into());
-        self.misc_exports.push(RawMiscModuleExportV9::TypeAlias(RawTypeAliasV9 {
-            name: name.into(),
-            ty: ref_,
-        }));
-        ref_
+        let ty = self.typespace.add(sum_type.into().into());
+
+        let name = name.into();
+        self.types.push(RawTypeV9 {
+            name,
+            ty,
+            custom_ordering,
+        });
+        ty
     }
 }
 
@@ -285,21 +288,14 @@ pub struct RawScheduleDefV9 {
 #[derive(Debug, Clone, ser::Serialize, de::Deserialize)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[non_exhaustive]
-pub enum RawMiscModuleExportV9 {
-    /// A type alias, declaring a name for an `AlgebraicTypeRef`.
-    TypeAlias(RawTypeAliasV9),
-    /// Annotates a type as possessing a custom ordering.
-    /// If this is not present, the type is required to have the [default ordering](crate::db::default_element_ordering).
-    /// Only `ProductType`s are allowed to have custom orderings.
-    CustomTypeOrdering(RawCustomTypeOrderingV9),
-}
+pub enum RawMiscModuleExportV9 {}
 
 /// A type alias.
 ///
 /// Exactly of these must be attached to every `Product` and `Sum` type used by a module.
 #[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
-pub struct RawTypeAliasV9 {
+pub struct RawTypeV9 {
     /// The name of the type. This must be unique within the module.
     ///
     /// Eventually, we may add more information to this, such as the module name and generic arguments.
@@ -307,15 +303,9 @@ pub struct RawTypeAliasV9 {
 
     /// The type to which the alias refers.
     pub ty: AlgebraicTypeRef,
-}
 
-/// Marks a type as possessing a custom ordering.
-///
-/// Types not marked with this are required to have the default ordering.
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
-#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
-pub struct RawCustomTypeOrderingV9 {
-    pub ty: AlgebraicTypeRef,
+    /// Whether this type has a custom ordering.
+    pub custom_ordering: bool,
 }
 
 /// A reducer definition.
