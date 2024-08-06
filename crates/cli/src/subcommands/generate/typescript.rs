@@ -68,8 +68,8 @@ fn convert_type<'a>(
 ) -> impl fmt::Display + 'a {
     fmt_fn(move |f| {
         match ty {
-        ty if ty.is_identity() => write!(f, "new Identity({value}.asProductValue().elements[0].asBytes())"),
-        ty if ty.is_address() => write!(f, "new Address({value}.asProductValue().elements[0].asBytes())"),
+        ty if ty.is_identity() => write!(f, "{value}.asIdentity()"),
+        ty if ty.is_address() => write!(f, "{value}.asAddress()"),
         AlgebraicType::Product(_) => unimplemented!(),
         AlgebraicType::Sum(sum_type) => match sum_type.as_option() {
             Some(inner_ty @ AlgebraicType::Ref(_)) => fmt::Display::fmt(
@@ -152,7 +152,7 @@ fn convert_algebraic_type<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, ref_prefix
         ),
         AlgebraicType::Map(_) => todo!(),
         AlgebraicType::Ref(r) => write!(f, "{ref_prefix}{}.getAlgebraicType()", typescript_typename(ctx, *r)),
-        ty => write!(f, "AlgebraicType.create{}", scalar_or_string_to_ts(ty).unwrap().1),
+        ty => write!(f, "AlgebraicType.create{ty:?}Type()"),
     })
 }
 
