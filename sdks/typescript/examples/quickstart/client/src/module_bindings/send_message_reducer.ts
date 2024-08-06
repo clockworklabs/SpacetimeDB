@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
-  BuiltinType,
   ProductTypeElement,
   DatabaseTable,
   AlgebraicValue,
@@ -28,13 +27,13 @@ export class SendMessageReducer extends Reducer {
 
   public call(_text: string) {
     const serializer = this.client.getSerializer();
-    let _textType = AlgebraicType.createPrimitiveType(BuiltinType.Type.String);
+    let _textType = AlgebraicType.createStringType();
     serializer.write(_textType, _text);
     this.client.call("send_message", serializer);
   }
 
   public static deserializeArgs(adapter: ReducerArgsAdapter): any[] {
-    let textType = AlgebraicType.createPrimitiveType(BuiltinType.Type.String);
+    let textType = AlgebraicType.createStringType();
     let textValue = AlgebraicValue.deserialize(textType, adapter.next());
     let text = textValue.asString();
     return [text];

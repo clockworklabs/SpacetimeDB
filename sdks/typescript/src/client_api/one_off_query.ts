@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
-  BuiltinType,
   ProductTypeElement,
   SumType,
   SumTypeVariant,
@@ -37,16 +36,8 @@ export class OneOffQuery {
 
   public static getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement(
-        "messageId",
-        AlgebraicType.createArrayType(
-          AlgebraicType.createPrimitiveType(BuiltinType.Type.U8)
-        )
-      ),
-      new ProductTypeElement(
-        "queryString",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.String)
-      ),
+      new ProductTypeElement("messageId", AlgebraicType.createBytesType()),
+      new ProductTypeElement("queryString", AlgebraicType.createStringType()),
     ]);
   }
 

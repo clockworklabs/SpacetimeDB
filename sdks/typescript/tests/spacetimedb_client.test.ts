@@ -2,7 +2,7 @@ import { SpacetimeDBClient, ReducerEvent } from "../src/spacetimedb";
 import { BinarySerializer } from "../src/serializer";
 import { Identity } from "../src/identity";
 import { Address } from "../src/address";
-import { AlgebraicType, BuiltinType } from "../src/algebraic_type";
+import { AlgebraicType } from "../src/algebraic_type";
 import WebsocketTestAdapter from "../src/websocket_test_adapter";
 import Player from "./types/player";
 import User from "./types/user";
@@ -41,10 +41,7 @@ function encodeCreatePlayerArgs(
   location: Point
 ): ws.EncodedValue {
   const encoder = new BinarySerializer();
-  encoder.write(
-    AlgebraicType.createPrimitiveType(BuiltinType.Type.String),
-    name
-  );
+  encoder.write(AlgebraicType.createStringType(), name);
   encoder.write(Point.getAlgebraicType(), location);
   return ws.EncodedValue.Binary(encoder.args());
 }

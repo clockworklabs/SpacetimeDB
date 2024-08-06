@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   SumTypeVariant,
-  BuiltinType,
   AlgebraicValue,
 } from "../index";
 // @ts-ignore
@@ -16,10 +15,7 @@ export namespace UpdateStatus {
   export function getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createSumType([
       new SumTypeVariant("Committed", __DatabaseUpdate.getAlgebraicType()),
-      new SumTypeVariant(
-        "Failed",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.String)
-      ),
+      new SumTypeVariant("Failed", AlgebraicType.createStringType()),
       new SumTypeVariant("OutOfEnergy", AlgebraicType.createProductType([])),
     ]);
   }

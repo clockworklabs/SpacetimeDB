@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   SumTypeVariant,
-  BuiltinType,
   AlgebraicValue,
 } from "../index";
 // @ts-ignore

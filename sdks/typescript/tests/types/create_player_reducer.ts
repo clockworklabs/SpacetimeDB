@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
-  BuiltinType,
   ProductTypeElement,
   DatabaseTable,
   AlgebraicValue,
@@ -30,7 +29,7 @@ export class CreatePlayerReducer extends Reducer {
 
   public call(_name: string, _location: Point) {
     const serializer = this.client.getSerializer();
-    let _nameType = AlgebraicType.createPrimitiveType(BuiltinType.Type.String);
+    let _nameType = AlgebraicType.createStringType();
     serializer.write(_nameType, _name);
     let _locationType = Point.getAlgebraicType();
     serializer.write(_locationType, _location);
@@ -38,7 +37,7 @@ export class CreatePlayerReducer extends Reducer {
   }
 
   public static deserializeArgs(adapter: ReducerArgsAdapter): any[] {
-    let nameType = AlgebraicType.createPrimitiveType(BuiltinType.Type.String);
+    let nameType = AlgebraicType.createStringType();
     let nameValue = AlgebraicValue.deserialize(nameType, adapter.next());
     let name = nameValue.asString();
     let locationType = Point.getAlgebraicType();

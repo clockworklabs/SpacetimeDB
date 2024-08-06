@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
-  BuiltinType,
   ProductTypeElement,
   SumType,
   SumTypeVariant,
@@ -50,34 +49,24 @@ export class User extends DatabaseTable {
         AlgebraicType.createProductType([
           new ProductTypeElement(
             "__identity_bytes",
-            AlgebraicType.createArrayType(
-              AlgebraicType.createPrimitiveType(BuiltinType.Type.U8)
-            )
+            AlgebraicType.createBytesType()
           ),
         ])
       ),
       new ProductTypeElement(
         "name",
         AlgebraicType.createSumType([
-          new SumTypeVariant(
-            "some",
-            AlgebraicType.createPrimitiveType(BuiltinType.Type.String)
-          ),
+          new SumTypeVariant("some", AlgebraicType.createStringType()),
           new SumTypeVariant("none", AlgebraicType.createProductType([])),
         ])
       ),
-      new ProductTypeElement(
-        "online",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.Bool)
-      ),
+      new ProductTypeElement("online", AlgebraicType.createBoolType()),
     ]);
   }
 
   public static fromValue(value: AlgebraicValue): User {
     let productValue = value.asProductValue();
-    let __identity = new Identity(
-      productValue.elements[0].asProductValue().elements[0].asBytes()
-    );
+    let __identity = productValue.elements[0].asIdentity();
     let __name =
       productValue.elements[1].asSumValue().tag == 1
         ? null
