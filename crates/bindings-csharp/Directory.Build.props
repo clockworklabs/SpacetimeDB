@@ -16,6 +16,8 @@
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AnalysisLevel>latest-Minimum</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
 
   <ItemGroup>

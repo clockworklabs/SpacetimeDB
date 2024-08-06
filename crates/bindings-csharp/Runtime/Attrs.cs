@@ -35,7 +35,9 @@ public enum ColumnAttrs : byte
     Identity = Unique | AutoInc,
     PrimaryKey = Unique | 0b1000,
     PrimaryKeyAuto = PrimaryKey | AutoInc,
-    PrimaryKeyIdentity = PrimaryKey | Identity,
+
+    // A legacy alias, originally defined as `PrimaryKey | Identity` which is numerically same as above.
+    PrimaryKeyIdentity = PrimaryKeyAuto,
 }
 
 [AttributeUsage(AttributeTargets.Field, Inherited = false, AllowMultiple = false)]
