@@ -5,7 +5,6 @@
     <LangVersion>9</LangVersion>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
     <PackageId>SpacetimeDB.ClientSDK</PackageId>
     <Title>SpacetimeDB SDK</Title>
     <Authors>jdetter</Authors>
