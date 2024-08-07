@@ -3,8 +3,8 @@
 //! This notably excludes `Ref` types.
 
 use crate::{
-    AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductType, ProductValue, SumType, SumValue, F32,
-    F64,
+    AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ArrayValue, MapType, MapValue, ProductType, ProductValue, SumType,
+    SumValue, Typespace, F32, F64,
 };
 use proptest::{
     collection::{vec, SizeRange},
@@ -42,12 +42,12 @@ fn generate_non_compound_algebraic_type() -> impl Strategy<Value = AlgebraicType
     ]
 }
 
-/// Generates `AlgebraicType`s, not including recursive (i.e. `Ref` types),
-/// but including compound types (i.e. `Product` and `Sum` types).
-///
-/// Any type generated here is valid as a column in a row type.
-pub fn generate_algebraic_type() -> impl Strategy<Value = AlgebraicType> {
-    generate_non_compound_algebraic_type().prop_recursive(4, SIZE as u32, SIZE as u32, |gen_element| {
+/// Generate an algebraic type wrapping leaf types.
+fn generate_algebraic_type_from_leaves(
+    leaves: impl Strategy<Value = AlgebraicType> + 'static,
+    depth: u32,
+) -> impl Strategy<Value = AlgebraicType> {
+    leaves.prop_recursive(depth, SIZE as u32, SIZE as u32, |gen_element| {
         prop_oneof![
             gen_element.clone().prop_map(AlgebraicType::array),
             (gen_element.clone(), gen_element.clone()).prop_map(|(key, val)| AlgebraicType::map(key, val)),
@@ -64,6 +64,14 @@ pub fn generate_algebraic_type() -> impl Strategy<Value = AlgebraicType> {
                 .prop_map(AlgebraicType::sum),
         ]
     })
+}
+
+/// Generates `AlgebraicType`s, not including recursive (i.e. `Ref` types),
+/// but including compound types (i.e. `Product` and `Sum` types).
+///
+/// Any type generated here is valid as a column in a row type.
+pub fn generate_algebraic_type() -> impl Strategy<Value = AlgebraicType> {
+    generate_algebraic_type_from_leaves(generate_non_compound_algebraic_type(), 4)
 }
 
 /// Generates a `ProductType` that is good as a row type.
@@ -185,4 +193,53 @@ pub fn generate_typed_row() -> impl Strategy<Value = (ProductType, ProductValue)
 /// Generates a type `ty` and a value typed at `ty`.
 pub fn generate_typed_value() -> impl Strategy<Value = (AlgebraicType, AlgebraicValue)> {
     generate_algebraic_type().prop_flat_map(|ty| (Just(ty.clone()), generate_algebraic_value(ty)))
+}
+
+/// Generate a `Ref` to something in a `Typespace` of this length.
+fn generate_ref(typespace_len: u32) -> BoxedStrategy<AlgebraicType> {
+    (0..typespace_len).prop_map(|n| AlgebraicTypeRef(n).into()).boxed()
+}
+
+/// Generate a type valid to be used as a leaf in nominal normal form.
+/// That is, a ref, non-compound type, a special type, or an array, map, or option of the same.
+fn generate_nominal_leaf_type() -> impl Strategy<Value = AlgebraicType> {
+    let leaf = prop_oneof![
+        generate_non_compound_algebraic_type(),
+        Just(AlgebraicType::identity()),
+        Just(AlgebraicType::address()),
+    ];
+
+    // we don't need nominal normal form types to be huge.
+    let nominal_size = 3;
+
+    leaf.prop_recursive(nominal_size, nominal_size, nominal_size, |gen_element| {
+        prop_oneof![
+            gen_element.clone().prop_map(AlgebraicType::array),
+            (gen_element.clone(), gen_element.clone()).prop_map(|(key, val)| AlgebraicType::map(key, val)),
+            gen_element.clone().prop_map(AlgebraicType::option),
+        ]
+    })
+}
+
+/// Generate a `Typespace` in nominal normal form with `size` elements.
+///
+/// We don't prop_map on the size because it supposedly can lead to exponential shrinking times.
+///
+/// Does not generate nested arrays or maps currently, although these would be allowed.
+pub fn generate_nominal_typespace(size: u32) -> impl Strategy<Value = Typespace> {
+    let generate_value = generate_nominal_leaf_type().boxed();
+
+    let types = (0..size)
+        .map(|current_len| {
+            let leaf = if current_len == 0 {
+                generate_value.clone()
+            } else {
+                generate_value.clone().prop_union(generate_ref(current_len)).boxed()
+            };
+            // depth 1 means these will either be leaves or a single level of nesting.
+            generate_algebraic_type_from_leaves(leaf, 1)
+        })
+        .collect::<Vec<_>>();
+
+    types.prop_map(FromIterator::from_iter)
 }

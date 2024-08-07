@@ -71,9 +71,15 @@ impl ProductType {
     pub fn is_special_tag(tag_name: &str) -> bool {
         tag_name == IDENTITY_TAG || tag_name == ADDRESS_TAG
     }
+
     /// Returns whether this is a special known type, currently `Address` or `Identity`.
     pub fn is_special(&self) -> bool {
         self.is_identity() || self.is_address()
+    }
+
+    /// Returns whether this is a unit type, that is, has no elements.
+    pub fn is_unit(&self) -> bool {
+        self.elements.is_empty()
     }
 
     /// Returns index of the field with the given `name`.

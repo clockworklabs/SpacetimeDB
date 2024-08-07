@@ -4,6 +4,7 @@ pub mod map_notation;
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
 use crate::meta_type::MetaType;
+use crate::product_type::{ADDRESS_TAG, IDENTITY_TAG};
 use crate::{de::Deserialize, ser::Serialize, MapType};
 use crate::{AlgebraicTypeRef, AlgebraicValue, ArrayType, ProductType, SumType, SumTypeVariant};
 use derive_more::From;
@@ -223,6 +224,22 @@ impl AlgebraicType {
         self.as_array().is_some_and(|ty| ty.elem_ty.is_u8())
     }
 
+    /// Whether this type, or the types it references, contain any `AlgebraicTypeRef`s.
+    pub fn contains_refs(&self) -> bool {
+        match self {
+            AlgebraicType::Ref(_) => true,
+            AlgebraicType::Product(ProductType { elements }) => {
+                elements.iter().any(|elem| elem.algebraic_type.contains_refs())
+            }
+            AlgebraicType::Sum(SumType { variants }) => {
+                variants.iter().any(|variant| variant.algebraic_type.contains_refs())
+            }
+            AlgebraicType::Array(array) => array.elem_ty.contains_refs(),
+            AlgebraicType::Map(map) => map.key_ty.contains_refs() || map.ty.contains_refs(),
+            _ => false,
+        }
+    }
+
     /// Returns a sum type with the given `sum`.
     pub fn sum<S: Into<SumType>>(sum: S) -> Self {
         AlgebraicType::Sum(sum.into())
@@ -246,6 +263,16 @@ impl AlgebraicType {
     /// Returns a map type from the type `key` to the type `value`.
     pub fn map(key: Self, value: Self) -> Self {
         MapType::new(key, value).into()
+    }
+
+    /// Construct a copy of the `Identity` type.
+    pub fn identity() -> Self {
+        AlgebraicType::product([(IDENTITY_TAG, AlgebraicType::bytes())])
+    }
+
+    /// Construct a copy of the `Address` type.
+    pub fn address() -> Self {
+        AlgebraicType::product([(ADDRESS_TAG, AlgebraicType::bytes())])
     }
 
     /// Returns a sum type of unit variants with names taken from `var_names`.
@@ -298,6 +325,36 @@ impl AlgebraicType {
             Self::F32 => Some(f32::MAX.into()),
             Self::F64 => Some(f64::MAX.into()),
             _ => None,
+        }
+    }
+
+    /// Non-recursively validates that the type is in "nominal normal form".
+    ///
+    /// Nominal normal form is intended for use when generating code in languages with nominal type systems.
+    ///
+    /// A nominal normal form type may not directly contain `Sum`s or `Product`s. All `Sum` and `Product` types must be referred to via `Ref`s. This is a recursive check, so all nested types must also be in nominal normal form.
+    ///
+    /// Currently, certain types are exceptions to this rule and are allowed to not be behind `Ref`s:
+    /// - Unit `Product`s and empty `Sum`s.
+    /// - Specially tagged `ProductType`s, determined by `ProductType::is_special`.
+    /// - Structural option `SumType`s, determined by `SumType::as_option`.
+    /// Chains of refs are permitted.
+    ///
+    /// This method does not follow `Ref`s.
+    pub fn is_nominal_normal_form(&self) -> bool {
+        match self {
+            AlgebraicType::Sum(sum) => {
+                if let Some(wrapped) = sum.as_option() {
+                    wrapped.is_nominal_normal_form()
+                } else {
+                    sum.is_empty()
+                }
+            }
+            AlgebraicType::Product(product) => product.is_special() || product.is_unit(),
+            AlgebraicType::Array(array) => array.elem_ty.is_nominal_normal_form(),
+            AlgebraicType::Map(map) => map.key_ty.is_nominal_normal_form() && map.ty.is_nominal_normal_form(),
+            AlgebraicType::Ref(_) => true,
+            _ => true,
         }
     }
 }

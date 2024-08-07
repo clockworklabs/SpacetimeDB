@@ -183,6 +183,38 @@ impl Typespace {
         }
         Ok(())
     }
+
+    /// Check that the entire typespace is in nominal normal form.
+    ///
+    /// Types directly contained in `self.types` are allowed to be sums or products.
+    /// The *fields* of these must be in nominal form, as determined by
+    /// (AlgebraicType::is_nominal_normal_form).
+    ///
+    /// Any type in `self.types` that is not a sum or products must also be in nominal form.
+    /// (TODO(1.0): should we forbid these types entirely?)
+    pub fn is_nominal_normal_form(&self) -> bool {
+        self.types.iter().all(|ty| match ty {
+            AlgebraicType::Sum(sum_ty) => sum_ty
+                .variants
+                .iter()
+                .all(|variant| variant.algebraic_type.is_nominal_normal_form()),
+
+            AlgebraicType::Product(product_ty) => product_ty
+                .elements
+                .iter()
+                .all(|element| element.algebraic_type.is_nominal_normal_form()),
+
+            other => other.is_nominal_normal_form(),
+        })
+    }
+}
+
+impl FromIterator<AlgebraicType> for Typespace {
+    fn from_iter<T: IntoIterator<Item = AlgebraicType>>(iter: T) -> Self {
+        Self {
+            types: iter.into_iter().collect(),
+        }
+    }
 }
 
 /// A trait for types that can be represented as an `AlgebraicType`
@@ -277,3 +309,51 @@ impl_st!([] bytes::Bytes, _ts => AlgebraicType::bytes());
 
 #[cfg(feature = "bytestring")]
 impl_st!([] bytestring::ByteString, _ts => AlgebraicType::String);
+
+#[cfg(test)]
+mod tests {
+    use crate::proptest::generate_nominal_typespace;
+    use proptest::prelude::*;
+
+    use super::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(512))]
+        #[test]
+        fn is_nominal(typespace in generate_nominal_typespace(5)) {
+            prop_assert!(typespace.is_nominal_normal_form());
+        }
+    }
+
+    #[test]
+    fn is_not_nominal() {
+        let bad_inner_1 = AlgebraicType::sum([("red", AlgebraicType::U8), ("green", AlgebraicType::U8)]);
+        let bad_inner_2 = AlgebraicType::product([("red", AlgebraicType::U8), ("green", AlgebraicType::U8)]);
+
+        fn assert_not_nominal(ty: AlgebraicType) {
+            let typespace = Typespace::new(vec![ty.clone()]);
+            assert!(!typespace.is_nominal_normal_form(), "{:?}", ty);
+        }
+        assert_not_nominal(AlgebraicType::product([AlgebraicType::U8, bad_inner_1.clone()]));
+        assert_not_nominal(AlgebraicType::product([AlgebraicType::U8, bad_inner_2.clone()]));
+
+        assert_not_nominal(AlgebraicType::sum([AlgebraicType::U8, bad_inner_1.clone()]));
+        assert_not_nominal(AlgebraicType::sum([AlgebraicType::U8, bad_inner_2.clone()]));
+
+        assert_not_nominal(AlgebraicType::array(bad_inner_1.clone()));
+        assert_not_nominal(AlgebraicType::array(bad_inner_2.clone()));
+
+        assert_not_nominal(AlgebraicType::option(bad_inner_1.clone()));
+        assert_not_nominal(AlgebraicType::option(bad_inner_2.clone()));
+
+        assert_not_nominal(AlgebraicType::map(AlgebraicType::U8, bad_inner_1.clone()));
+        assert_not_nominal(AlgebraicType::map(AlgebraicType::U8, bad_inner_2.clone()));
+
+        assert_not_nominal(AlgebraicType::map(bad_inner_1.clone(), AlgebraicType::U8));
+        assert_not_nominal(AlgebraicType::map(bad_inner_2.clone(), AlgebraicType::U8));
+
+        assert_not_nominal(AlgebraicType::option(AlgebraicType::array(AlgebraicType::option(
+            bad_inner_1.clone(),
+        ))));
+    }
+}
