@@ -11,6 +11,8 @@ description = "Spacetime Algebraic Type Notation"
 serde = ["dep:serde"]
 # Allows using `Arbitrary` impls defined in this crate.
 proptest = ["dep:proptest", "dep:proptest-derive"]
+# Allows using additional test-only methods defined in this crate.
+test = ["proptest"]
 # Impls `Serialize` and `Deserialize` for `blake3::Hash`.
 # Used by `spacetimedb_table`,
 # which serializes and deserializes Blake3 hashes during snapshotting.

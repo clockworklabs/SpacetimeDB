@@ -203,6 +203,7 @@ impl RawModuleDefV8 {
 #[non_exhaustive]
 pub enum RawModuleDef {
     V8BackCompat(RawModuleDefV8),
+    V9(db::raw_def::v9::RawModuleDefV9),
     // TODO(jgilles): It would be nice to have a custom error message if this fails with an unknown variant,
     // but I'm not sure if that can be done via the Deserialize trait.
 }

@@ -20,7 +20,6 @@ pub const SEQUENCE_ALLOCATION_STEP: i128 = 4096;
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
 pub struct RawSequenceDefV8 {
     /// The name of the sequence.
-    /// Deprecated. In the future, sequences will be identified by col_pos.
     pub sequence_name: Box<str>,
     /// The position of the column associated with this sequence.
     pub col_pos: ColId,
@@ -169,6 +168,8 @@ pub struct RawColumnDefV8 {
     /// The name of the column.
     pub col_name: Box<str>,
     /// The type of the column.
+    ///
+    /// Must be in "nominal normal form", as determined by [AlgebraicType::is_nominal_normal_form].
     pub col_type: AlgebraicType,
 }
 
@@ -204,6 +205,7 @@ impl RawColumnDefV8 {
     /// * `field_name`: The name for which to create a column definition.
     /// * `col_type`: The [AlgebraicType] of the column.
     ///
+    /// If `type_` is not `AlgebraicType::Builtin` or `AlgebraicType::Ref`, an error will result at validation time.
     pub fn sys(field_name: &str, col_type: AlgebraicType) -> Self {
         Self {
             col_name: field_name.into(),
@@ -217,8 +219,6 @@ impl RawColumnDefV8 {
 #[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
 pub struct RawConstraintDefV8 {
     /// The name of the constraint.
-    /// Deprecated, in the future columns will be identified by their constraint type and the columns
-    /// they are associated with.
     pub constraint_name: Box<str>,
     /// The constraints applied to the columns.
     pub constraints: Constraints,

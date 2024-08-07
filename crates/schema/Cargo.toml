@@ -12,3 +12,6 @@ spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-data-structures.workspace = true
 itertools.workspace = true
+
+[dev-dependencies]
+spacetimedb-lib = { workspace = true, features = ["test"] }
