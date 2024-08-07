@@ -512,4 +512,3 @@ impl RawTableDefV8 {
         self.columns.iter().find(|x| &*x.col_name == col_name)
     }
 }
-}
