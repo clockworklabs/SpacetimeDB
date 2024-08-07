@@ -2,6 +2,7 @@ use crate::identity::Credentials;
 use crate::ws_messages::{ClientMessage, ServerMessage};
 use anyhow::{bail, Context, Result};
 use brotli::BrotliDecompress;
+use flate2::read::GzDecoder;
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{Scheme, Uri};
@@ -15,8 +16,18 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 
+use std::io::prelude::*;
+
+#[derive(Clone, Copy)]
+pub enum DbCodec {
+    None,
+    Gzip,
+    Brotli,
+}
+
 pub(crate) struct DbConnection {
     sock: WebSocketStream<MaybeTlsStream<TcpStream>>,
+    codec: DbCodec,
 }
 
 fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme> {
@@ -31,7 +42,7 @@ fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme> {
     })
 }
 
-fn make_uri<Host>(host: Host, db_name: &str, client_address: Address) -> Result<Uri>
+fn make_uri<Host>(host: Host, db_name: &str, client_address: Address, codec: DbCodec) -> Result<Uri>
 where
     Host: TryInto<Uri>,
     <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
@@ -56,6 +67,11 @@ where
     path.push_str(db_name);
     path.push_str("?client_address=");
     path.push_str(&client_address.to_hex());
+    match codec {
+        DbCodec::Gzip => path.push_str("&codec=Gzip"),
+        DbCodec::None => path.push_str("&codec=None"),
+        DbCodec::Brotli => {}
+    };
     parts.path_and_query = Some(path.parse()?);
     Ok(Uri::from_parts(parts)?)
 }
@@ -74,12 +90,13 @@ fn make_request<Host>(
     db_name: &str,
     credentials: Option<&Credentials>,
     client_address: Address,
+    codec: DbCodec,
 ) -> Result<http::Request<()>>
 where
     Host: TryInto<Uri>,
     <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
 {
-    let uri = make_uri(host, db_name, client_address)?;
+    let uri = make_uri(host, db_name, client_address, codec)?;
     let mut req = IntoClientRequest::into_client_request(uri)?;
     request_insert_protocol_header(&mut req);
     request_insert_auth_header(&mut req, credentials);
@@ -122,18 +139,32 @@ fn request_insert_auth_header(req: &mut http::Request<()>, credentials: Option<&
     };
 }
 
+fn decode_gzip(bytes: &[u8]) -> Result<Vec<u8>> {
+    let mut d = GzDecoder::new(bytes);
+    let mut decompressed = Vec::new();
+    d.read(&mut decompressed).context("Failed to Gz decompress message")?;
+    Ok(decompressed)
+}
+
+fn decode_brotli(bytes: &[u8]) -> Result<Vec<u8>> {
+    let mut decompressed = Vec::new();
+    BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
+    Ok(decompressed)
+}
+
 impl DbConnection {
     pub(crate) async fn connect<Host>(
         host: Host,
         db_name: &str,
         credentials: Option<&Credentials>,
         client_address: Address,
+        codec: DbCodec,
     ) -> Result<Self>
     where
         Host: TryInto<Uri>,
         <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
     {
-        let req = make_request(host, db_name, credentials, client_address)?;
+        let req = make_request(host, db_name, credentials, client_address, codec)?;
         let (sock, _): (WebSocketStream<MaybeTlsStream<TcpStream>>, _) = connect_async_with_config(
             req,
             // TODO(kim): In order to be able to replicate module WASM blobs,
@@ -147,13 +178,15 @@ impl DbConnection {
             false,
         )
         .await?;
-        Ok(DbConnection { sock })
+        Ok(DbConnection { sock, codec })
     }
 
-    pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage> {
-        let mut decompressed = Vec::new();
-        BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
-        Ok(bsatn::from_slice(&decompressed)?)
+    pub(crate) fn parse_response(&self, bytes: &[u8]) -> Result<ServerMessage> {
+        Ok(match self.codec {
+            DbCodec::None => bsatn::from_slice(bytes),
+            DbCodec::Gzip => bsatn::from_slice(&decode_gzip(bytes)?[..]),
+            DbCodec::Brotli => bsatn::from_slice(&decode_brotli(bytes)?[..]),
+        }?)
     }
 
     pub(crate) fn encode_message(msg: ClientMessage) -> WebSocketMessage {
@@ -183,7 +216,7 @@ impl DbConnection {
                     ),
 
                     Ok(Some(WebSocketMessage::Binary(bytes))) => {
-                        match Self::parse_response(&bytes) {
+                        match self.parse_response(&bytes) {
                             Err(e) => Self::maybe_log_error::<(), _>(
                                 "Error decoding WebSocketMessage::Binary payload",
                                 Err(e),

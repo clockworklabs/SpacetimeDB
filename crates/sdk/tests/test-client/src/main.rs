@@ -350,7 +350,7 @@ fn exec_insert_primitive() {
 
     once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
-    conn_result(connect(LOCALHOST, &name, None));
+    conn_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 }
@@ -391,7 +391,7 @@ fn exec_delete_primitive() {
 
     once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
-    conn_result(connect(LOCALHOST, &name, None));
+    conn_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 
@@ -434,7 +434,7 @@ fn exec_update_primitive() {
 
     once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
-    conn_result(connect(LOCALHOST, &name, None));
+    conn_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 
@@ -463,7 +463,7 @@ fn exec_insert_identity() {
 
     once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
-    conn_result(connect(LOCALHOST, &name, None));
+    conn_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 }
@@ -491,7 +491,7 @@ fn exec_delete_identity() {
 
     once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
-    conn_result(connect(LOCALHOST, &name, None));
+    conn_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 
@@ -521,7 +521,7 @@ fn exec_update_identity() {
 
     once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
-    conn_result(connect(LOCALHOST, &name, None));
+    conn_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 
@@ -550,7 +550,7 @@ fn exec_insert_address() {
 
     once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
-    conn_result(connect(LOCALHOST, &name, None));
+    conn_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 }
@@ -578,7 +578,7 @@ fn exec_delete_address() {
 
     once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
-    conn_result(connect(LOCALHOST, &name, None));
+    conn_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 
@@ -608,7 +608,7 @@ fn exec_update_address() {
 
     once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
-    conn_result(connect(LOCALHOST, &name, None));
+    conn_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 
@@ -673,7 +673,7 @@ fn exec_on_reducer() {
 
     once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
-    conn_result(connect(LOCALHOST, &name, None));
+    conn_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 }
@@ -800,7 +800,7 @@ fn exec_fail_reducer() {
 
     once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
-    conn_result(connect(LOCALHOST, &name, None));
+    conn_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 }
@@ -846,7 +846,7 @@ fn exec_insert_vec() {
 
     once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
-    conn_result(connect(LOCALHOST, &name, None));
+    conn_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 }
@@ -941,7 +941,7 @@ fn exec_insert_struct() {
 
     once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
-    conn_result(connect(LOCALHOST, &name, None));
+    conn_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 }
@@ -969,7 +969,7 @@ fn exec_insert_simple_enum() {
 
     once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
-    conn_result(connect(LOCALHOST, &name, None));
+    conn_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 }
@@ -1024,7 +1024,7 @@ fn exec_insert_enum_with_payload() {
 
     once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
-    conn_result(connect(LOCALHOST, &name, None));
+    conn_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 }
@@ -1132,7 +1132,7 @@ fn exec_insert_long_table() {
 
     once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
 
-    conn_result(connect(LOCALHOST, &name, None));
+    conn_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 }
@@ -1157,7 +1157,7 @@ fn exec_resubscribe() {
         subscribe_result(subscribe(SUBSCRIBE_ALL));
     });
 
-    connect_result(connect(LOCALHOST, &name, None));
+    connect_result(connect(LOCALHOST, &name, None, None));
 
     // Wait for all previous checks before continuing.
     test_counter.wait_for_all();
@@ -1260,7 +1260,7 @@ fn exec_reauth_part_1() {
         save_result(save_credentials(".spacetime_rust_sdk_test", creds));
     });
 
-    connect_result(connect(LOCALHOST, &name, None));
+    connect_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 }
@@ -1291,7 +1291,7 @@ fn exec_reauth_part_2() {
         creds_match_result(run_checks());
     });
 
-    connect_result(connect(LOCALHOST, &name, Some(creds)));
+    connect_result(connect(LOCALHOST, &name, Some(creds), None));
 
     test_counter.wait_for_all();
 }
@@ -1314,7 +1314,7 @@ fn exec_reconnect_same_address() {
         read_addr_result(run_checks());
     });
 
-    connect_result(connect(LOCALHOST, &name, None));
+    connect_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 
@@ -1336,7 +1336,7 @@ fn exec_reconnect_same_address() {
             addr_after_reconnect_result(run_checks());
         });
 
-        reconnect_result(connect(LOCALHOST, &name_dup, None));
+        reconnect_result(connect(LOCALHOST, &name_dup, None, None));
     });
 
     disconnect();
@@ -1401,7 +1401,7 @@ fn exec_subscribe_all_select_star() {
 
     once_on_connect(move |_, _| sub_result(subscribe(&["SELECT * FROM *"])));
 
-    conn_result(connect(LOCALHOST, &name, None));
+    conn_result(connect(LOCALHOST, &name, None, None));
 
     test_counter.wait_for_all();
 }
