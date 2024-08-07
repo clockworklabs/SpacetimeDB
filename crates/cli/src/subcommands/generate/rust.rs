@@ -786,6 +786,7 @@ const DISPATCH_IMPORTS: &[&str] = &[
     "use spacetimedb_sdk::reducer::AnyReducerEvent;",
     "use spacetimedb_sdk::global_connection::with_connection_mut;",
     "use spacetimedb_sdk::spacetime_module::SpacetimeModule;",
+    "use spacetimedb_sdk::websocket::DbCodec;",
     "use std::sync::Arc;",
 ];
 
@@ -1014,7 +1015,7 @@ fn print_connect_docstring(out: &mut Indenter) {
 fn print_connect_defn(out: &mut Indenter) {
     print_connect_docstring(out);
     out.delimited_block(
-        "pub fn connect<IntoUri>(spacetimedb_uri: IntoUri, db_name: &str, credentials: Option<Credentials>) -> Result<()>
+        "pub fn connect<IntoUri>(spacetimedb_uri: IntoUri, db_name: &str, credentials: Option<Credentials>, codec: Option<DbCodec>) -> Result<()>
 where
 \tIntoUri: TryInto<spacetimedb_sdk::http::Uri>,
 \t<IntoUri as TryInto<spacetimedb_sdk::http::Uri>>::Error: std::error::Error + Send + Sync + 'static,
@@ -1024,7 +1025,7 @@ where
             |out| {
                 writeln!(
                     out,
-                    "connection.connect(spacetimedb_uri, db_name, credentials, Arc::new(Module), spacetimedb_sdk::websocket::DbCodec::Brotli)?;"
+                    "connection.connect(spacetimedb_uri, db_name, credentials, Arc::new(Module), codec.unwrap_or(DbCodec::Brotli))?;"
                 );
                 writeln!(out, "Ok(())");
             },

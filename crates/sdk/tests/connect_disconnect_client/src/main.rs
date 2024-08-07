@@ -6,6 +6,7 @@ use spacetimedb_sdk::{
     identity::{credentials, identity, once_on_connect},
     once_on_disconnect, once_on_subscription_applied, subscribe,
     table::TableType,
+    websocket::DbCodec,
 };
 
 use test_counter::TestCounter;
@@ -38,7 +39,7 @@ fn main() {
         subscribe_result(subscribe(&["SELECT * FROM Connected;"]));
     });
 
-    connect_result(connect(LOCALHOST, &db_name_or_panic(), None));
+    connect_result(connect(LOCALHOST, &db_name_or_panic(), None, None));
 
     test_counter.wait_for_all();
 
@@ -71,7 +72,7 @@ fn main() {
         subscribe_result(subscribe(&["SELECT * FROM Disconnected;"]));
     });
 
-    connect_result(connect(LOCALHOST, &db_name_or_panic(), Some(credentials().unwrap())));
+    connect_result(connect(LOCALHOST, &db_name_or_panic(), Some(credentials().unwrap()), Some(DbCodec::Gzip)));
 
     test_counter.wait_for_all();
 }
