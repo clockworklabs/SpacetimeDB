@@ -72,7 +72,12 @@ fn main() {
         subscribe_result(subscribe(&["SELECT * FROM Disconnected;"]));
     });
 
-    connect_result(connect(LOCALHOST, &db_name_or_panic(), Some(credentials().unwrap()), Some(DbCodec::Gzip)));
+    connect_result(connect(
+        LOCALHOST,
+        &db_name_or_panic(),
+        Some(credentials().unwrap()),
+        Some(DbCodec::Gzip),
+    ));
 
     test_counter.wait_for_all();
 }
