@@ -169,9 +169,7 @@ pub struct RawColumnDefV8 {
     pub col_name: Box<str>,
     /// The type of the column.
     ///
-    /// Must be either a `AlgebraicType::Builtin` or `AlgebraicType::Ref`.
-    /// Any `AlgebraicType::Ref` MUST have a corresponding `TypeAlias` declaration within
-    /// the containing `ModuleDefV8`.
+    /// Must be in "nominal normal form", as determined by [AlgebraicType::is_nominal_normal_form].
     pub col_type: AlgebraicType,
 }
 
@@ -513,4 +511,5 @@ impl RawTableDefV8 {
     pub fn get_column_by_name(&self, col_name: &str) -> Option<&RawColumnDefV8> {
         self.columns.iter().find(|x| &*x.col_name == col_name)
     }
+}
 }
