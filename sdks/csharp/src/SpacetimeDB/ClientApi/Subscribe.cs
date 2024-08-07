@@ -12,14 +12,14 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.ClientApi
 {
-	[DataContract]
 	[SpacetimeDB.Type]
+	[DataContract]
 	public partial class Subscribe
 	{
 		[DataMember(Name = "query_strings")]
 		public System.Collections.Generic.List<string> QueryStrings = new();
-
 		[DataMember(Name = "request_id")]
 		public uint RequestId;
+
 	}
 }

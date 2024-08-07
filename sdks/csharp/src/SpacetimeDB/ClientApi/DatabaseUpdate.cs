@@ -12,11 +12,12 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.ClientApi
 {
-	[DataContract]
 	[SpacetimeDB.Type]
+	[DataContract]
 	public partial class DatabaseUpdate
 	{
 		[DataMember(Name = "tables")]
 		public System.Collections.Generic.List<SpacetimeDB.ClientApi.TableUpdate> Tables = new();
+
 	}
 }
