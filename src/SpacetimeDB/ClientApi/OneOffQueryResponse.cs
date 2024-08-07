@@ -12,20 +12,18 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.ClientApi
 {
-	[DataContract]
 	[SpacetimeDB.Type]
+	[DataContract]
 	public partial class OneOffQueryResponse
 	{
 		[DataMember(Name = "message_id")]
 		public byte[] MessageId = Array.Empty<byte>();
-
 		[DataMember(Name = "error")]
 		public string? Error;
-
 		[DataMember(Name = "tables")]
-		public List<SpacetimeDB.ClientApi.OneOffTable> Tables = new();
-
+		public System.Collections.Generic.List<SpacetimeDB.ClientApi.OneOffTable> Tables = new();
 		[DataMember(Name = "total_host_execution_duration_micros")]
 		public ulong TotalHostExecutionDurationMicros;
+
 	}
 }
