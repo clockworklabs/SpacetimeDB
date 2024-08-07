@@ -327,6 +327,36 @@ impl AlgebraicType {
             _ => None,
         }
     }
+
+    /// Non-recursively validates that the type is in "nominal normal form".
+    ///
+    /// Nominal normal form is intended for use when generating code in languages with nominal type systems.
+    ///
+    /// A nominal normal form type may not directly contain `Sum`s or `Product`s. All `Sum` and `Product` types must be referred to via `Ref`s. This is a recursive check, so all nested types must also be in nominal normal form.
+    ///
+    /// Currently, certain types are exceptions to this rule and are allowed to not be behind `Ref`s:
+    /// - Unit `Product`s and empty `Sum`s.
+    /// - Specially tagged `ProductType`s, determined by `ProductType::is_special`.
+    /// - Structural option `SumType`s, determined by `SumType::as_option`.
+    /// Chains of refs are permitted.
+    ///
+    /// This method does not follow `Ref`s.
+    pub fn is_nominal_normal_form(&self) -> bool {
+        match self {
+            AlgebraicType::Sum(sum) => {
+                if let Some(wrapped) = sum.as_option() {
+                    wrapped.is_nominal_normal_form()
+                } else {
+                    sum.is_empty()
+                }
+            }
+            AlgebraicType::Product(product) => product.is_special() || product.is_unit(),
+            AlgebraicType::Array(array) => array.elem_ty.is_nominal_normal_form(),
+            AlgebraicType::Map(map) => map.key_ty.is_nominal_normal_form() && map.ty.is_nominal_normal_form(),
+            AlgebraicType::Ref(_) => true,
+            _ => true,
+        }
+    }
 }
 
 #[cfg(test)]

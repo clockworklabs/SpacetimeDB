@@ -184,51 +184,27 @@ impl Typespace {
         Ok(())
     }
 
-    /// Validates that the typespace is in "nominal normal form".
+    /// Check that the entire typespace is in nominal normal form.
     ///
-    /// Nominal normal form is intended for use when generating code in languages with nominal type systems.
+    /// Types directly contained in `self.types` are allowed to be sums or products.
+    /// The *fields* of these must be in nominal form, as determined by
+    /// (AlgebraicType::is_nominal_normal_form).
     ///
-    /// In nominal normal form, all `Sum` and `Product` types in the typespace must be referred to via `Ref`s. That is, all `Sum`, `Product`, `Array`, or `Map` types must contain only `Ref`s and `Builtin`s.
-    ///
-    /// Currently, certain types are exceptions to this rule and are allowed to not be behind `Ref`s:
-    /// - Unit `Product`s and empty `Sum`s.
-    /// - Specially tagged `ProductType`s, determined by `ProductType::is_special`.
-    /// - Standard optional `SumType`s, determined by `SumType::as_option`.
-    ///
-    /// Chains of refs are permitted.
+    /// Any type in `self.types` that is not a sum or products must also be in nominal form.
+    /// (TODO(1.0): should we forbid these types entirely?)
     pub fn is_nominal_normal_form(&self) -> bool {
-        /// Check that a type is not a sum or product, and directly contains no sums or products,
-        /// except for exceptional sum and product types.
-        ///
-        /// Because we do not follow `Ref`s, this is guaranteed to terminate.
-        fn is_allowed(ty: &AlgebraicType) -> bool {
-            match ty {
-                AlgebraicType::Sum(sum) => {
-                    if let Some(wrapped) = sum.as_option() {
-                        is_allowed(wrapped)
-                    } else {
-                        sum.is_empty()
-                    }
-                }
-                AlgebraicType::Product(product) => product.is_special() || product.is_unit(),
-                AlgebraicType::Array(array) => is_allowed(&array.elem_ty),
-                AlgebraicType::Map(map) => is_allowed(&map.key_ty) && is_allowed(&map.ty),
-                AlgebraicType::Ref(_) => true,
-                _ => true,
-            }
-        }
         self.types.iter().all(|ty| match ty {
             AlgebraicType::Sum(sum_ty) => sum_ty
                 .variants
                 .iter()
-                .all(|variant| is_allowed(&variant.algebraic_type)),
+                .all(|variant| variant.algebraic_type.is_nominal_normal_form()),
 
             AlgebraicType::Product(product_ty) => product_ty
                 .elements
                 .iter()
-                .all(|element| is_allowed(&element.algebraic_type)),
+                .all(|element| element.algebraic_type.is_nominal_normal_form()),
 
-            other => is_allowed(other),
+            other => other.is_nominal_normal_form(),
         })
     }
 }
