@@ -342,8 +342,9 @@ pub fn register_table<T: TableType>() {
                 .typespace()
                 .with_type(&data)
                 .resolve_refs()
-                .and_then(|x| x.into_product().ok())
-                .expect("Fail to retrieve the columns from the module"),
+                .expect("Failed to retrieve the column types from the module")
+                .into_product()
+                .expect("Table is not a product type"),
         );
 
         let indexes: Vec<_> = T::INDEXES.iter().copied().map(Into::into).collect();

@@ -211,7 +211,7 @@ fn entity_description_json(description: WithTypespace<EntityDef>, expand: bool) 
         // TODO(noa): make this less hacky; needs coordination w/ spacetime-web
         let schema = match description.ty() {
             EntityDef::Table(table) => {
-                json!(description.with(&table.data).resolve_refs()?.as_product()?)
+                json!(description.with(&table.data).resolve_refs().ok()?.as_product()?)
             }
             EntityDef::Reducer(r) => json!({
                 "name": r.name,
