@@ -8,6 +8,7 @@ static class TestInit
     [ModuleInitializer]
     public static void Initialize()
     {
+        VerifierSettings.OmitContentFromException();
         // Default diff order is weird and causes new lines to look like deleted and old as inserted.
         Environment.SetEnvironmentVariable("DiffEngine_TargetOnLeft", "true");
         // Store snapshots in a separate directory.
