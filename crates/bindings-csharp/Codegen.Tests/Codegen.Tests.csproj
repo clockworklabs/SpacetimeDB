@@ -8,10 +8,15 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>SpacetimeDB.Codegen.Tests</RootNamespace>
+    <DefaultItemExcludes>$(DefaultItemExcludes);fixtures/**/*</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="CSharpier.Core" Version="0.28.2" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Common" Version="4.10.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.10.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.10.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.6.0" />
     <PackageReference Include="Verify.SourceGenerators" Version="2.2.0" />
     <PackageReference Include="Verify.XUnit" Version="25.0.1" />
@@ -21,10 +26,6 @@
 
   <ItemGroup>
     <ProjectReference Include="../Codegen/Codegen.csproj" />
-    <!-- we only need to make sure that Runtime is (re)built before we run tests, but we don't need the DLL in the test itself -->
-    <ProjectReference Include="../Runtime/Runtime.csproj" ReferenceOutputAssembly="false" />
-    <!-- sample code should not be part of the test compilation -->
-    <Compile Remove="Sample.cs" />
   </ItemGroup>
 
 </Project>

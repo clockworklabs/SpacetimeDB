@@ -1,9 +1,4 @@
-// Standard implicit usings.
-global using global::System;
-global using global::System.Collections.Generic;
-global using global::System.IO;
-global using global::System.Linq;
-// Our own code.
+﻿using System.Runtime.InteropServices;
 using SpacetimeDB;
 
 [SpacetimeDB.Type]
@@ -24,6 +19,7 @@ public partial struct CustomClass
     public string StringField;
 }
 
+[StructLayout(LayoutKind.Auto)]
 public partial struct CustomClass
 {
     public int IgnoreExtraFields;
@@ -53,12 +49,16 @@ public partial struct PublicTable
     public ushort UshortField;
     public uint UintField;
     public ulong UlongField;
+    public UInt128 UInt128Field;
     public U128 U128Field;
+    public U256 U256Field;
     public sbyte SbyteField;
     public short ShortField;
     public int IntField;
     public long LongField;
+    public Int128 Int128Field;
     public I128 I128Field;
+    public I256 I256Field;
     public bool BoolField;
     public float FloatField;
     public double DoubleField;
