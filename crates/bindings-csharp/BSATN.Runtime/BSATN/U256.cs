@@ -1,8 +1,8 @@
 namespace SpacetimeDB;
 
+using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
-using System;
 
 /// <summary>Represents a 128-bit unsigned integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -11,8 +11,8 @@ public readonly struct U256 : IEquatable<U256>, IComparable, IComparable<U256>
     internal const int Size = 32;
 
 #if BIGENDIAN
-        private readonly U128 _upper;
-        private readonly U128 _lower;
+    private readonly U128 _upper;
+    private readonly U128 _lower;
 #else
     private readonly U128 _lower;
     private readonly U128 _upper;
@@ -84,10 +84,12 @@ public readonly struct U256 : IEquatable<U256>, IComparable, IComparable<U256>
     //
 
     /// <inheritdoc cref="IEqualityOperators{TSelf, TOther, TResult}.op_Equality(TSelf, TOther)" />
-    public static bool operator ==(U256 left, U256 right) => (left._lower == right._lower) && (left._upper == right._upper);
+    public static bool operator ==(U256 left, U256 right) =>
+        (left._lower == right._lower) && (left._upper == right._upper);
 
     /// <inheritdoc cref="IEqualityOperators{TSelf, TOther, TResult}.op_Inequality(TSelf, TOther)" />
-    public static bool operator !=(U256 left, U256 right) => (left._lower != right._lower) || (left._upper != right._upper);
+    public static bool operator !=(U256 left, U256 right) =>
+        (left._lower != right._lower) || (left._upper != right._upper);
 
     /// <inheritdoc cref="object.Equals(object?)" />
     public override bool Equals([NotNullWhen(true)] object? obj)

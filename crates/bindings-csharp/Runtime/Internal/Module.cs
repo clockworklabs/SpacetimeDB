@@ -1,8 +1,8 @@
 namespace SpacetimeDB.Internal;
 
 using SpacetimeDB;
-using I128 = SpacetimeDB.I128;
 using SpacetimeDB.BSATN;
+using I128 = SpacetimeDB.I128;
 
 public static partial class Module
 {

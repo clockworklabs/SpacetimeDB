@@ -25,12 +25,9 @@ public partial record AlgebraicType
         int Ref,
         AggregateElement[] Sum,
         AggregateElement[] Product,
-
         AlgebraicType Array,
         MapElement Map,
-
         Unit String,
-
         Unit Bool,
         Unit I8,
         Unit U8,

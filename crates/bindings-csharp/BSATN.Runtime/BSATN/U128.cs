@@ -13,8 +13,8 @@ public readonly struct U128 : IEquatable<U128>, IComparable, IComparable<U128>
     internal const int Size = 16;
 
 #if BIGENDIAN
-        private readonly ulong _upper;
-        private readonly ulong _lower;
+    private readonly ulong _upper;
+    private readonly ulong _lower;
 #else
     private readonly ulong _lower;
     private readonly ulong _upper;
@@ -86,10 +86,12 @@ public readonly struct U128 : IEquatable<U128>, IComparable, IComparable<U128>
     //
 
     /// <inheritdoc cref="IEqualityOperators{TSelf, TOther, TResult}.op_Equality(TSelf, TOther)" />
-    public static bool operator ==(U128 left, U128 right) => (left._lower == right._lower) && (left._upper == right._upper);
+    public static bool operator ==(U128 left, U128 right) =>
+        (left._lower == right._lower) && (left._upper == right._upper);
 
     /// <inheritdoc cref="IEqualityOperators{TSelf, TOther, TResult}.op_Inequality(TSelf, TOther)" />
-    public static bool operator !=(U128 left, U128 right) => (left._lower != right._lower) || (left._upper != right._upper);
+    public static bool operator !=(U128 left, U128 right) =>
+        (left._lower != right._lower) || (left._upper != right._upper);
 
     /// <inheritdoc cref="object.Equals(object?)" />
     public override bool Equals([NotNullWhen(true)] object? obj)
