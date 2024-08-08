@@ -11,12 +11,16 @@ partial struct PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
         UshortField = BSATN.UshortField.Read(reader);
         UintField = BSATN.UintField.Read(reader);
         UlongField = BSATN.UlongField.Read(reader);
+        UInt128Field = BSATN.UInt128Field.Read(reader);
         U128Field = BSATN.U128Field.Read(reader);
+        U256Field = BSATN.U256Field.Read(reader);
         SbyteField = BSATN.SbyteField.Read(reader);
         ShortField = BSATN.ShortField.Read(reader);
         IntField = BSATN.IntField.Read(reader);
         LongField = BSATN.LongField.Read(reader);
+        Int128Field = BSATN.Int128Field.Read(reader);
         I128Field = BSATN.I128Field.Read(reader);
+        I256Field = BSATN.I256Field.Read(reader);
         BoolField = BSATN.BoolField.Read(reader);
         FloatField = BSATN.FloatField.Read(reader);
         DoubleField = BSATN.DoubleField.Read(reader);
@@ -41,12 +45,16 @@ partial struct PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
         BSATN.UshortField.Write(writer, UshortField);
         BSATN.UintField.Write(writer, UintField);
         BSATN.UlongField.Write(writer, UlongField);
+        BSATN.UInt128Field.Write(writer, UInt128Field);
         BSATN.U128Field.Write(writer, U128Field);
+        BSATN.U256Field.Write(writer, U256Field);
         BSATN.SbyteField.Write(writer, SbyteField);
         BSATN.ShortField.Write(writer, ShortField);
         BSATN.IntField.Write(writer, IntField);
         BSATN.LongField.Write(writer, LongField);
+        BSATN.Int128Field.Write(writer, Int128Field);
         BSATN.I128Field.Write(writer, I128Field);
+        BSATN.I256Field.Write(writer, I256Field);
         BSATN.BoolField.Write(writer, BoolField);
         BSATN.FloatField.Write(writer, FloatField);
         BSATN.DoubleField.Write(writer, DoubleField);
@@ -71,12 +79,16 @@ partial struct PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
         internal static readonly SpacetimeDB.BSATN.U16 UshortField = new();
         internal static readonly SpacetimeDB.BSATN.U32 UintField = new();
         internal static readonly SpacetimeDB.BSATN.U64 UlongField = new();
+        internal static readonly SpacetimeDB.BSATN.U128 UInt128Field = new();
         internal static readonly SpacetimeDB.BSATN.U128Stdb U128Field = new();
+        internal static readonly SpacetimeDB.BSATN.U256 U256Field = new();
         internal static readonly SpacetimeDB.BSATN.I8 SbyteField = new();
         internal static readonly SpacetimeDB.BSATN.I16 ShortField = new();
         internal static readonly SpacetimeDB.BSATN.I32 IntField = new();
         internal static readonly SpacetimeDB.BSATN.I64 LongField = new();
+        internal static readonly SpacetimeDB.BSATN.I128 Int128Field = new();
         internal static readonly SpacetimeDB.BSATN.I128Stdb I128Field = new();
+        internal static readonly SpacetimeDB.BSATN.I256 I256Field = new();
         internal static readonly SpacetimeDB.BSATN.Bool BoolField = new();
         internal static readonly SpacetimeDB.BSATN.F32 FloatField = new();
         internal static readonly SpacetimeDB.BSATN.F64 DoubleField = new();
@@ -142,12 +154,16 @@ partial struct PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
                         new(nameof(UshortField), UshortField.GetAlgebraicType(registrar)),
                         new(nameof(UintField), UintField.GetAlgebraicType(registrar)),
                         new(nameof(UlongField), UlongField.GetAlgebraicType(registrar)),
+                        new(nameof(UInt128Field), UInt128Field.GetAlgebraicType(registrar)),
                         new(nameof(U128Field), U128Field.GetAlgebraicType(registrar)),
+                        new(nameof(U256Field), U256Field.GetAlgebraicType(registrar)),
                         new(nameof(SbyteField), SbyteField.GetAlgebraicType(registrar)),
                         new(nameof(ShortField), ShortField.GetAlgebraicType(registrar)),
                         new(nameof(IntField), IntField.GetAlgebraicType(registrar)),
                         new(nameof(LongField), LongField.GetAlgebraicType(registrar)),
+                        new(nameof(Int128Field), Int128Field.GetAlgebraicType(registrar)),
                         new(nameof(I128Field), I128Field.GetAlgebraicType(registrar)),
+                        new(nameof(I256Field), I256Field.GetAlgebraicType(registrar)),
                         new(nameof(BoolField), BoolField.GetAlgebraicType(registrar)),
                         new(nameof(FloatField), FloatField.GetAlgebraicType(registrar)),
                         new(nameof(DoubleField), DoubleField.GetAlgebraicType(registrar)),
