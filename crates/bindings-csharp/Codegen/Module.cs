@@ -57,7 +57,9 @@ readonly record struct ColumnDeclaration
                 => true,
             SpecialType.None
                 => type.ToString()
-                    is "SpacetimeDB.I128"
+                    is "System.Int128"
+                        or "System.UInt128"
+                        or "SpacetimeDB.I128"
                         or "SpacetimeDB.U128"
                         or "SpacetimeDB.I256"
                         or "SpacetimeDB.U256",

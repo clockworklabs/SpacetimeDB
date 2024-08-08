@@ -71,12 +71,12 @@ partial struct PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
         internal static readonly SpacetimeDB.BSATN.U16 UshortField = new();
         internal static readonly SpacetimeDB.BSATN.U32 UintField = new();
         internal static readonly SpacetimeDB.BSATN.U64 UlongField = new();
-        internal static readonly SpacetimeDB.BSATN.U128 U128Field = new();
+        internal static readonly SpacetimeDB.BSATN.U128Stdb U128Field = new();
         internal static readonly SpacetimeDB.BSATN.I8 SbyteField = new();
         internal static readonly SpacetimeDB.BSATN.I16 ShortField = new();
         internal static readonly SpacetimeDB.BSATN.I32 IntField = new();
         internal static readonly SpacetimeDB.BSATN.I64 LongField = new();
-        internal static readonly SpacetimeDB.BSATN.I128 I128Field = new();
+        internal static readonly SpacetimeDB.BSATN.I128Stdb I128Field = new();
         internal static readonly SpacetimeDB.BSATN.Bool BoolField = new();
         internal static readonly SpacetimeDB.BSATN.F32 FloatField = new();
         internal static readonly SpacetimeDB.BSATN.F64 DoubleField = new();

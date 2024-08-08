@@ -131,8 +131,10 @@ public static class Utils
             var result = type.OriginalDefinition.ToString() switch
             {
                 // {U/I}{128/256} are not treated by C# as regular primitives, so we need to match them by type name.
-                "System.I128" or "SpacetimeDB.I128" => "SpacetimeDB.BSATN.I128",
-                "System.U128" or "SpacetimeDB.U128" => "SpacetimeDB.BSATN.U128",
+                "System.Int128" => "SpacetimeDB.BSATN.I128",
+                "System.UInt128" => "SpacetimeDB.BSATN.U128",
+                "SpacetimeDB.I128" => "SpacetimeDB.BSATN.I128Stdb",
+                "SpacetimeDB.U128" => "SpacetimeDB.BSATN.U128Stdb",
                 "SpacetimeDB.I256" => "SpacetimeDB.BSATN.I256",
                 "SpacetimeDB.U256" => "SpacetimeDB.BSATN.U256",
                 "System.Collections.Generic.List<T>" => $"SpacetimeDB.BSATN.List",
@@ -149,6 +151,7 @@ public static class Utils
                 result =
                     $"{result}<{string.Join(", ", type.TypeArguments.Select(SymbolToName).Concat(type.TypeArguments.Select(GetTypeInfo)))}>";
             }
+
             return result;
         }
     }
