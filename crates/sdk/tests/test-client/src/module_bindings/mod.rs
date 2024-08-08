@@ -16,7 +16,7 @@ use spacetimedb_sdk::{
     sats::{de::Deserialize, i256, ser::Serialize, u256},
     spacetimedb_lib,
     table::{TableIter, TableType, TableWithPrimaryKey},
-    Address,
+    Address, ScheduleAt,
 };
 use std::sync::Arc;
 
