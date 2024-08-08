@@ -1,5 +1,7 @@
 namespace SpacetimeDB.Internal;
 
+using SpacetimeDB;
+using I128 = SpacetimeDB.I128;
 using SpacetimeDB.BSATN;
 
 public static partial class Module
@@ -41,20 +43,20 @@ public static partial class Module
     public partial struct SequenceDef(
         string sequenceName,
         uint colPos,
-        Int128? increment = null,
-        Int128? start = null,
-        Int128? min_value = null,
-        Int128? max_value = null,
-        Int128? allocated = null
+        I128? increment = null,
+        I128? start = null,
+        I128? min_value = null,
+        I128? max_value = null,
+        I128? allocated = null
     )
     {
         string SequenceName = sequenceName;
         uint ColPos = colPos;
-        Int128 increment = increment ?? 1;
-        Int128? start = start;
-        Int128? min_value = min_value;
-        Int128? max_value = max_value;
-        Int128 allocated = allocated ?? 4_096;
+        I128 increment = increment ?? 1;
+        I128? start = start;
+        I128? min_value = min_value;
+        I128? max_value = max_value;
+        I128 allocated = allocated ?? 4_096;
     }
 
     // Not part of the database schema, just used by the codegen to group column definitions with their attributes.

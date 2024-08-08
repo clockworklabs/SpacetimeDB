@@ -55,8 +55,8 @@ readonly record struct ColumnDeclaration
             or SpecialType.System_Int64
             or SpecialType.System_UInt64
                 => true,
-            SpecialType.None => type.ToString() is "SpacetimeDB.Int128" or "SpacetimeDB.UInt128"
-                                                or "SpacetimeDB.Int256" or "SpacetimeDB.UInt256",
+            SpecialType.None => type.ToString() is "SpacetimeDB.I128" or "SpacetimeDB.U128"
+                                                or "SpacetimeDB.I256" or "SpacetimeDB.U256",
             _ => false
         };
 

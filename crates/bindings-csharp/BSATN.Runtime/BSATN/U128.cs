@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 
 /// <summary>Represents a 128-bit unsigned integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
-public readonly struct UInt128 : IEquatable<UInt128>
+public readonly struct U128 : IEquatable<U128>
 {
     internal const int Size = 16;
 
@@ -20,10 +20,10 @@ public readonly struct UInt128 : IEquatable<UInt128>
     private readonly ulong _upper;
 #endif
 
-    /// <summary>Initializes a new instance of the <see cref="UInt128" /> struct.</summary>
+    /// <summary>Initializes a new instance of the <see cref="U128" /> struct.</summary>
     /// <param name="upper">The upper 64-bits of the 128-bit value.</param>
     /// <param name="lower">The lower 64-bits of the 128-bit value.</param>
-    public UInt128(ulong upper, ulong lower)
+    public U128(ulong upper, ulong lower)
     {
         _lower = lower;
         _upper = upper;
@@ -36,7 +36,7 @@ public readonly struct UInt128 : IEquatable<UInt128>
     /// <inheritdoc cref="IComparable.CompareTo(object)" />
     public int CompareTo(object? value)
     {
-        if (value is UInt128 other)
+        if (value is U128 other)
         {
             return CompareTo(other);
         }
@@ -51,7 +51,7 @@ public readonly struct UInt128 : IEquatable<UInt128>
     }
 
     /// <inheritdoc cref="IComparable{T}.CompareTo(T)" />
-    public int CompareTo(UInt128 value)
+    public int CompareTo(U128 value)
     {
         if (this < value)
         {
@@ -68,14 +68,14 @@ public readonly struct UInt128 : IEquatable<UInt128>
     }
 
     /// <inheritdoc cref="IComparisonOperators{TSelf, TOther, TResult}.op_LessThan(TSelf, TOther)" />
-    public static bool operator <(UInt128 left, UInt128 right)
+    public static bool operator <(U128 left, U128 right)
     {
         return (left._upper < right._upper)
             || (left._upper == right._upper) && (left._lower < right._lower);
     }
 
     /// <inheritdoc cref="IComparisonOperators{TSelf, TOther, TResult}.op_GreaterThan(TSelf, TOther)" />
-    public static bool operator >(UInt128 left, UInt128 right)
+    public static bool operator >(U128 left, U128 right)
     {
         return (left._upper > right._upper)
             || (left._upper == right._upper) && (left._lower > right._lower);
@@ -86,23 +86,23 @@ public readonly struct UInt128 : IEquatable<UInt128>
     //
 
     /// <inheritdoc cref="IEqualityOperators{TSelf, TOther, TResult}.op_Equality(TSelf, TOther)" />
-    public static bool operator ==(UInt128 left, UInt128 right) => (left._lower == right._lower) && (left._upper == right._upper);
+    public static bool operator ==(U128 left, U128 right) => (left._lower == right._lower) && (left._upper == right._upper);
 
     /// <inheritdoc cref="IEqualityOperators{TSelf, TOther, TResult}.op_Inequality(TSelf, TOther)" />
-    public static bool operator !=(UInt128 left, UInt128 right) => (left._lower != right._lower) || (left._upper != right._upper);
+    public static bool operator !=(U128 left, U128 right) => (left._lower != right._lower) || (left._upper != right._upper);
 
     /// <inheritdoc cref="object.Equals(object?)" />
     public override bool Equals([NotNullWhen(true)] object? obj)
     {
-        return (obj is UInt128 other) && Equals(other);
+        return (obj is U128 other) && Equals(other);
     }
 
     /// <inheritdoc cref="IEquatable{T}.Equals(T)" />
-    public bool Equals(UInt128 x) => _upper == x._upper && _lower == x._lower;
+    public bool Equals(U128 x) => _upper == x._upper && _lower == x._lower;
 
     /// <inheritdoc cref="object.GetHashCode()" />
     public override int GetHashCode() => HashCode.Combine(_lower, _upper);
 
     /// <inheritdoc cref="object.ToString()" />
-    public override string ToString() => $"UInt128({_upper},{_lower})";
+    public override string ToString() => $"U128({_upper},{_lower})";
 }

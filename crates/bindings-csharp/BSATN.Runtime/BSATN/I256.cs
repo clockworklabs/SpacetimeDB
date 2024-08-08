@@ -3,40 +3,41 @@
 
 namespace SpacetimeDB;
 
+using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 
-/// <summary>Represents a 128-bit signed integer.</summary>
+/// <summary>Represents a 256-bit signed integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
-public readonly struct Int128 : IEquatable<Int128>
+public readonly struct I256 : IEquatable<I256>
 {
-    internal const int Size = 16;
+    internal const int Size = 32;
 
 #if BIGENDIAN
-        private readonly ulong _upper;
-        private readonly ulong _lower;
+        private readonly U128 _upper;
+        private readonly U128 _lower;
 #else
-    private readonly ulong _lower;
-    private readonly ulong _upper;
+    private readonly U128 _lower;
+    private readonly U128 _upper;
 #endif
 
-    /// <summary>Initializes a new instance of the <see cref="Int128" /> struct.</summary>
-    /// <param name="upper">The upper 64-bits of the 128-bit value.</param>
-    /// <param name="lower">The lower 64-bits of the 128-bit value.</param>
-    public Int128(ulong upper, ulong lower)
+    /// <summary>Initializes a new instance of the <see cref="I256" /> struct.</summary>
+    /// <param name="upper">The upper 128-bits of the 256-bit value.</param>
+    /// <param name="lower">The lower 128-bits of the 256-bit value.</param>
+    public I256(U128 upper, U128 lower)
     {
         _lower = lower;
         _upper = upper;
     }
 
-    internal ulong Lower => _lower;
+    internal U128 Lower => _lower;
 
-    internal ulong Upper => _upper;
+    internal U128 Upper => _upper;
 
     /// <inheritdoc cref="IComparable.CompareTo(object)" />
     public int CompareTo(object? value)
     {
-        if (value is Int128 other)
+        if (value is I256 other)
         {
             return CompareTo(other);
         }
@@ -51,7 +52,7 @@ public readonly struct Int128 : IEquatable<Int128>
     }
 
     /// <inheritdoc cref="IComparable{T}.CompareTo(T)" />
-    public int CompareTo(Int128 value)
+    public int CompareTo(I256 value)
     {
         if (this < value)
         {
@@ -68,7 +69,7 @@ public readonly struct Int128 : IEquatable<Int128>
     }
 
     /// <inheritdoc cref="IComparisonOperators{TSelf, TOther, TResult}.op_LessThan(TSelf, TOther)" />
-    public static bool operator <(Int128 left, Int128 right)
+    public static bool operator <(I256 left, I256 right)
     {
         if (IsNegative(left) == IsNegative(right))
         {
@@ -82,7 +83,7 @@ public readonly struct Int128 : IEquatable<Int128>
     }
 
     /// <inheritdoc cref="IComparisonOperators{TSelf, TOther, TResult}.op_GreaterThan(TSelf, TOther)" />
-    public static bool operator >(Int128 left, Int128 right)
+    public static bool operator >(I256 left, I256 right)
     {
         if (IsNegative(left) == IsNegative(right))
         {
@@ -96,30 +97,31 @@ public readonly struct Int128 : IEquatable<Int128>
     }
 
     /// <inheritdoc cref="INumberBase{TSelf}.IsNegative(TSelf)" />
-    public static bool IsNegative(Int128 value) => (long)value._upper < 0;
+
+    public static bool IsNegative(I256 value) => (long)value._upper.Upper < 0;
 
     //
     // IEqualityOperators
     //
 
     /// <inheritdoc cref="IEqualityOperators{TSelf, TOther, TResult}.op_Equality(TSelf, TOther)" />
-    public static bool operator ==(Int128 left, Int128 right) => (left._lower == right._lower) && (left._upper == right._upper);
+    public static bool operator ==(I256 left, I256 right) => (left._lower == right._lower) && (left._upper == right._upper);
 
     /// <inheritdoc cref="IEqualityOperators{TSelf, TOther, TResult}.op_Inequality(TSelf, TOther)" />
-    public static bool operator !=(Int128 left, Int128 right) => (left._lower != right._lower) || (left._upper != right._upper);
+    public static bool operator !=(I256 left, I256 right) => (left._lower != right._lower) || (left._upper != right._upper);
 
     /// <inheritdoc cref="object.Equals(object?)" />
     public override bool Equals([NotNullWhen(true)] object? obj)
     {
-        return (obj is Int128 other) && Equals(other);
+        return (obj is I256 other) && Equals(other);
     }
 
     /// <inheritdoc cref="IEquatable{T}.Equals(T)" />
-    public bool Equals(Int128 x) => _upper == x._upper && _lower == x._lower;
+    public bool Equals(I256 x) => _upper == x._upper && _lower == x._lower;
 
     /// <inheritdoc cref="object.GetHashCode()" />
     public override int GetHashCode() => HashCode.Combine(_lower, _upper);
 
     /// <inheritdoc cref="object.ToString()" />
-    public override string ToString() => $"Int128({_upper},{_lower})";
+    public override string ToString() => $"I256({_upper},{_lower})";
 }
