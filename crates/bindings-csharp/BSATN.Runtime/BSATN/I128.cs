@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 
 /// <summary>Represents a 128-bit signed integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
-public readonly struct I128 : IEquatable<I128>
+public readonly struct I128 : IEquatable<I128>, IComparable, IComparable<I128>
 {
     internal const int Size = 16;
 

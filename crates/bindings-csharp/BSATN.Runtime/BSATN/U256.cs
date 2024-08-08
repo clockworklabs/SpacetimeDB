@@ -6,7 +6,7 @@ using System;
 
 /// <summary>Represents a 128-bit unsigned integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
-public readonly struct U256 : IEquatable<U256>
+public readonly struct U256 : IEquatable<U256>, IComparable, IComparable<U256>
 {
     internal const int Size = 32;
 

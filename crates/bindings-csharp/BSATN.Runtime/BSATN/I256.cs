@@ -9,7 +9,7 @@ using System.Runtime.InteropServices;
 
 /// <summary>Represents a 256-bit signed integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
-public readonly struct I256 : IEquatable<I256>
+public readonly struct I256 : IEquatable<I256>, IComparable, IComparable<I256>
 {
     internal const int Size = 32;
 
