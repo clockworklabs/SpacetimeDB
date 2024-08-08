@@ -191,12 +191,11 @@ public readonly struct U128Stdb : IReadWrite<SpacetimeDB.U128>
 }
 
 #if NET7_0_OR_GREATER
-public readonly struct U128 : IReadWrite<System.UInt128>
+public readonly struct U128 : IReadWrite<UInt128>
 {
-    public System.UInt128 Read(BinaryReader reader) =>
-        new(reader.ReadUInt64(), reader.ReadUInt64());
+    public UInt128 Read(BinaryReader reader) => new(reader.ReadUInt64(), reader.ReadUInt64());
 
-    public void Write(BinaryWriter writer, System.UInt128 value)
+    public void Write(BinaryWriter writer, UInt128 value)
     {
         writer.Write((ulong)(value >> 64));
         writer.Write((ulong)value);
@@ -282,11 +281,11 @@ public readonly struct I128Stdb : IReadWrite<SpacetimeDB.I128>
 }
 
 #if NET7_0_OR_GREATER
-public readonly struct I128 : IReadWrite<System.Int128>
+public readonly struct I128 : IReadWrite<Int128>
 {
-    public System.Int128 Read(BinaryReader reader) => new(reader.ReadUInt64(), reader.ReadUInt64());
+    public Int128 Read(BinaryReader reader) => new(reader.ReadUInt64(), reader.ReadUInt64());
 
-    public void Write(BinaryWriter writer, System.Int128 value)
+    public void Write(BinaryWriter writer, Int128 value)
     {
         writer.Write((long)(value >> 64));
         writer.Write((long)value);

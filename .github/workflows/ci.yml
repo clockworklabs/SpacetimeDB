@@ -78,7 +78,8 @@ jobs:
         run: cargo test --all
 
       - name: C# bindings tests
-        run: dotnet test crates/bindings-csharp
+        working-directory: crates/bindings-csharp
+        run: dotnet test -warnaserror
 
   sdk_test:
     name: SDK Tests
@@ -160,6 +161,12 @@ jobs:
 
       - name: Run cargo clippy
         run: cargo clippy --all --tests --benches -- -D warnings
+
+      - name: Run C# formatting check
+        working-directory: crates/bindings-csharp
+        run: |
+          dotnet tool restore
+          dotnet csharpier --check .
 
   wasm_bindings:
     name: Build and test wasm bindings

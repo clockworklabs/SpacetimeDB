@@ -7,7 +7,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static Utils;
 
-[System.Flags]
+[Flags]
 enum ColumnAttrs : byte
 {
     UnSet = 0b0000,
@@ -68,7 +68,7 @@ readonly record struct ColumnDeclaration
 
         if (attrs.HasFlag(ColumnAttrs.AutoInc) && !isInteger)
         {
-            throw new System.Exception(
+            throw new Exception(
                 $"{type} {name} is not valid for AutoInc or Identity as it's not an integer."
             );
         }
@@ -88,7 +88,7 @@ readonly record struct ColumnDeclaration
 
         if (attrs.HasFlag(ColumnAttrs.Unique) && !IsEquatable)
         {
-            throw new System.Exception(
+            throw new Exception(
                 $"{type} {name} is not valid for Identity, PrimaryKey or PrimaryKeyAuto as it's not an equatable primitive."
             );
         }
@@ -183,7 +183,7 @@ public class Module : IIncrementalGenerator
                 transform: (context, ct) =>
                 {
                     var tableSyntax = (TypeDeclarationSyntax)context.TargetNode;
-                    var table = context.SemanticModel.GetDeclaredSymbol(tableSyntax)!;
+                    var table = context.SemanticModel.GetDeclaredSymbol(tableSyntax, ct)!;
 
                     var fields = GetFields(tableSyntax, table)
                         .Select(f =>
@@ -337,12 +337,11 @@ public class Module : IIncrementalGenerator
                 transform: (context, ct) =>
                 {
                     var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
-
-                    var method = context.SemanticModel.GetDeclaredSymbol(methodSyntax)!;
+                    var method = context.SemanticModel.GetDeclaredSymbol(methodSyntax, ct)!;
 
                     if (!method.ReturnsVoid)
                     {
-                        throw new System.Exception($"Reducer {method} must return void");
+                        throw new Exception($"Reducer {method} must return void");
                     }
 
                     var exportName = (string?)
