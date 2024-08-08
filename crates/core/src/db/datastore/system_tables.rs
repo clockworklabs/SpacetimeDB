@@ -1058,6 +1058,7 @@ pub enum StVarValue {
     U64(u64),
     I128(i128),
     U128(u128),
+    // No support for u/i256 added here as it seems unlikely to be useful.
     F32(f32),
     F64(f64),
     String(Box<str>),

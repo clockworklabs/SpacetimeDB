@@ -1,5 +1,6 @@
+use crate::{i256, u256};
 use crate::{AlgebraicType, AlgebraicValue, ArrayType, MapValue, ProductValue, SumValue, F32, F64};
-use std::fmt;
+use core::fmt;
 
 /// An array value in "monomorphized form".
 ///
@@ -35,6 +36,10 @@ pub enum ArrayValue {
     I128(Box<[i128]>),
     /// An array of [`u128`]s.
     U128(Box<[u128]>),
+    /// An array of [`i256`]s.
+    I256(Box<[i256]>),
+    /// An array of [`u256`]s.
+    U256(Box<[u256]>),
     /// An array of totally ordered [`F32`]s.
     F32(Box<[F32]>),
     /// An array of totally ordered [`F64`]s.
@@ -68,6 +73,8 @@ impl ArrayValue {
             Self::U64(_) => Some(AlgebraicType::U64),
             Self::I128(_) => Some(AlgebraicType::I128),
             Self::U128(_) => Some(AlgebraicType::U128),
+            Self::I256(_) => Some(AlgebraicType::I256),
+            Self::U256(_) => Some(AlgebraicType::U256),
             Self::F32(_) => Some(AlgebraicType::F32),
             Self::F64(_) => Some(AlgebraicType::F64),
             Self::String(_) => Some(AlgebraicType::String),
@@ -93,6 +100,8 @@ impl ArrayValue {
             Self::U64(v) => v.len(),
             Self::I128(v) => v.len(),
             Self::U128(v) => v.len(),
+            Self::I256(v) => v.len(),
+            Self::U256(v) => v.len(),
             Self::F32(v) => v.len(),
             Self::F64(v) => v.len(),
             Self::String(v) => v.len(),
@@ -123,6 +132,8 @@ impl ArrayValue {
             ArrayValue::U64(v) => ArrayValueIterCloned::U64(v.iter()),
             ArrayValue::I128(v) => ArrayValueIterCloned::I128(v.iter()),
             ArrayValue::U128(v) => ArrayValueIterCloned::U128(v.iter()),
+            ArrayValue::I256(v) => ArrayValueIterCloned::I256(v.iter()),
+            ArrayValue::U256(v) => ArrayValueIterCloned::U256(v.iter()),
             ArrayValue::F32(v) => ArrayValueIterCloned::F32(v.iter()),
             ArrayValue::F64(v) => ArrayValueIterCloned::F64(v.iter()),
             ArrayValue::String(v) => ArrayValueIterCloned::String(v.iter()),
@@ -170,6 +181,8 @@ impl_from_array!(i64, I64);
 impl_from_array!(u64, U64);
 impl_from_array!(i128, I128);
 impl_from_array!(u128, U128);
+impl_from_array!(i256, I256);
+impl_from_array!(u256, U256);
 impl_from_array!(F32, F32);
 impl_from_array!(F64, F64);
 impl_from_array!(Box<str>, String);
@@ -193,6 +206,8 @@ impl ArrayValue {
             Self::U64(v) => v,
             Self::I128(v) => v,
             Self::U128(v) => v,
+            Self::I256(v) => v,
+            Self::U256(v) => v,
             Self::F32(v) => v,
             Self::F64(v) => v,
             Self::String(v) => v,
@@ -227,6 +242,8 @@ impl IntoIterator for ArrayValue {
             ArrayValue::U64(v) => ArrayValueIntoIter::U64(Vec::from(v).into_iter()),
             ArrayValue::I128(v) => ArrayValueIntoIter::I128(Vec::from(v).into_iter()),
             ArrayValue::U128(v) => ArrayValueIntoIter::U128(Vec::from(v).into_iter()),
+            ArrayValue::I256(v) => ArrayValueIntoIter::I256(Vec::from(v).into_iter()),
+            ArrayValue::U256(v) => ArrayValueIntoIter::U256(Vec::from(v).into_iter()),
             ArrayValue::F32(v) => ArrayValueIntoIter::F32(Vec::from(v).into_iter()),
             ArrayValue::F64(v) => ArrayValueIntoIter::F64(Vec::from(v).into_iter()),
             ArrayValue::String(v) => ArrayValueIntoIter::String(Vec::from(v).into_iter()),
@@ -264,6 +281,10 @@ pub enum ArrayValueIntoIter {
     I128(std::vec::IntoIter<i128>),
     /// An iterator on a [`u128`] array.
     U128(std::vec::IntoIter<u128>),
+    /// An iterator on an [`i256`] array.
+    I256(std::vec::IntoIter<i256>),
+    /// An iterator on a [`u256`] array.
+    U256(std::vec::IntoIter<u256>),
     /// An iterator on a [`F32`] array.
     F32(std::vec::IntoIter<F32>),
     /// An iterator on a [`F64`] array.
@@ -294,6 +315,8 @@ impl Iterator for ArrayValueIntoIter {
             ArrayValueIntoIter::U64(it) => it.next().map(Into::into),
             ArrayValueIntoIter::I128(it) => it.next().map(Into::into),
             ArrayValueIntoIter::U128(it) => it.next().map(Into::into),
+            ArrayValueIntoIter::I256(it) => it.next().map(Into::into),
+            ArrayValueIntoIter::U256(it) => it.next().map(Into::into),
             ArrayValueIntoIter::F32(it) => it.next().map(Into::into),
             ArrayValueIntoIter::F64(it) => it.next().map(Into::into),
             ArrayValueIntoIter::String(it) => it.next().map(Into::into),
@@ -317,6 +340,8 @@ pub enum ArrayValueIterCloned<'a> {
     U64(std::slice::Iter<'a, u64>),
     I128(std::slice::Iter<'a, i128>),
     U128(std::slice::Iter<'a, u128>),
+    I256(std::slice::Iter<'a, i256>),
+    U256(std::slice::Iter<'a, u256>),
     F32(std::slice::Iter<'a, F32>),
     F64(std::slice::Iter<'a, F64>),
     String(std::slice::Iter<'a, Box<str>>),
@@ -342,6 +367,8 @@ impl Iterator for ArrayValueIterCloned<'_> {
             ArrayValueIterCloned::U64(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::I128(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::U128(it) => it.next().cloned().map(Into::into),
+            ArrayValueIterCloned::I256(it) => it.next().cloned().map(Into::into),
+            ArrayValueIterCloned::U256(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::F32(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::F64(it) => it.next().cloned().map(Into::into),
             ArrayValueIterCloned::String(it) => it.next().cloned().map(Into::into),

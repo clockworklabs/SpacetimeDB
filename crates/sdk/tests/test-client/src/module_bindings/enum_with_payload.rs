@@ -7,10 +7,10 @@ use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,
     reducer::{Reducer, ReducerCallbackId, Status},
-    sats::{de::Deserialize, ser::Serialize},
+    sats::{de::Deserialize, i256, ser::Serialize, u256},
     spacetimedb_lib,
     table::{TableIter, TableType, TableWithPrimaryKey},
-    Address,
+    Address, ScheduleAt,
 };
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -20,11 +20,13 @@ pub enum EnumWithPayload {
     U32(u32),
     U64(u64),
     U128(u128),
+    U256(u256),
     I8(i8),
     I16(i16),
     I32(i32),
     I64(i64),
     I128(i128),
+    I256(i256),
     Bool(bool),
     F32(f32),
     F64(f64),

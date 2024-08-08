@@ -1,5 +1,6 @@
 use crate::buffer::{BufReader, DecodeError};
 use crate::de::{self, Deserializer as _, SeqProductAccess, SumAccess, VariantAccess};
+use crate::{i256, u256};
 
 /// Deserializer from the BSATN data format.
 pub struct Deserializer<'a, R> {
@@ -41,8 +42,9 @@ impl de::Error for DecodeError {
         DecodeError::Other(msg.to_string())
     }
 
-    fn unknown_variant_tag<'de, T: de::SumVisitor<'de>>(_tag: u8, _expected: &T) -> Self {
-        DecodeError::InvalidTag
+    fn unknown_variant_tag<'de, T: de::SumVisitor<'de>>(tag: u8, expected: &T) -> Self {
+        let sum_name = expected.sum_name().map(|x| x.to_owned());
+        DecodeError::InvalidTag { tag, sum_name }
     }
 }
 
@@ -75,6 +77,9 @@ impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
     fn deserialize_u128(self) -> Result<u128, DecodeError> {
         self.reader.get_u128()
     }
+    fn deserialize_u256(self) -> Result<u256, DecodeError> {
+        self.reader.get_u256()
+    }
     fn deserialize_i8(self) -> Result<i8, DecodeError> {
         self.reader.get_i8()
     }
@@ -89,6 +94,9 @@ impl<'de, 'a, R: BufReader<'de>> de::Deserializer<'de> for Deserializer<'a, R> {
     }
     fn deserialize_i128(self) -> Result<i128, DecodeError> {
         self.reader.get_i128()
+    }
+    fn deserialize_i256(self) -> Result<i256, DecodeError> {
+        self.reader.get_i256()
     }
     fn deserialize_f32(self) -> Result<f32, Self::Error> {
         self.reader.get_u32().map(f32::from_bits)

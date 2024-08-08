@@ -1,6 +1,6 @@
 use crate::array_value::{ArrayValueIntoIter, ArrayValueIterCloned};
 use crate::{de, AlgebraicValue, SumValue};
-
+use crate::{i256, u256};
 use derive_more::From;
 
 /// An implementation of [`Deserializer`](de::Deserializer)
@@ -87,6 +87,10 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
         map_err(self.val.into_u128().map(|x| x.0))
     }
 
+    fn deserialize_u256(self) -> Result<u256, Self::Error> {
+        map_err(self.val.into_u256().map(|x| *x))
+    }
+
     fn deserialize_i8(self) -> Result<i8, Self::Error> {
         map_err(self.val.into_i8())
     }
@@ -105,6 +109,10 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer {
 
     fn deserialize_i128(self) -> Result<i128, Self::Error> {
         map_err(self.val.into_i128().map(|x| x.0))
+    }
+
+    fn deserialize_i256(self) -> Result<i256, Self::Error> {
+        map_err(self.val.into_i256().map(|x| *x))
     }
 
     fn deserialize_f32(self) -> Result<f32, Self::Error> {
@@ -283,6 +291,9 @@ impl<'de> de::Deserializer<'de> for &'de ValueDeserializer {
     fn deserialize_u128(self) -> Result<u128, Self::Error> {
         ok_or(self.val.as_u128().copied().map(|x| x.0))
     }
+    fn deserialize_u256(self) -> Result<u256, Self::Error> {
+        ok_or(self.val.as_u256().map(|x| **x))
+    }
     fn deserialize_i8(self) -> Result<i8, Self::Error> {
         ok_or(self.val.as_i8().copied())
     }
@@ -297,6 +308,9 @@ impl<'de> de::Deserializer<'de> for &'de ValueDeserializer {
     }
     fn deserialize_i128(self) -> Result<i128, Self::Error> {
         ok_or(self.val.as_i128().copied().map(|x| x.0))
+    }
+    fn deserialize_i256(self) -> Result<i256, Self::Error> {
+        ok_or(self.val.as_i256().map(|x| **x))
     }
     fn deserialize_f32(self) -> Result<f32, Self::Error> {
         ok_or(self.val.as_f32().copied().map(f32::from))

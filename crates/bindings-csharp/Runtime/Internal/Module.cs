@@ -1,5 +1,6 @@
 namespace SpacetimeDB.Internal;
 
+using SpacetimeDB;
 using SpacetimeDB.BSATN;
 
 public static partial class Module

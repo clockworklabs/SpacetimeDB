@@ -35,7 +35,7 @@ pub use crate as sats;
 
 pub use algebraic_type::AlgebraicType;
 pub use algebraic_type_ref::AlgebraicTypeRef;
-pub use algebraic_value::{AlgebraicValue, F32, F64};
+pub use algebraic_value::{i256, u256, AlgebraicValue, F32, F64};
 pub use algebraic_value_hash::hash_bsatn;
 pub use array_type::ArrayType;
 pub use array_value::ArrayValue;

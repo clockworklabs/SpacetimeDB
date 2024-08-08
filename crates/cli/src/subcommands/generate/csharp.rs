@@ -26,6 +26,8 @@ fn scalar_or_string_name(b: &AlgebraicType) -> Option<&str> {
         AlgebraicType::U64 => "ulong",
         AlgebraicType::I128 => "I128",
         AlgebraicType::U128 => "U128",
+        AlgebraicType::I256 => "I256",
+        AlgebraicType::U256 => "U256",
         AlgebraicType::String => "string",
         AlgebraicType::F32 => "float",
         AlgebraicType::F64 => "double",

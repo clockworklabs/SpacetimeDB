@@ -130,6 +130,8 @@ impl AlgebraicTypeLayout {
     pub const U64: Self = Self::Primitive(PrimitiveType::U64);
     pub const I128: Self = Self::Primitive(PrimitiveType::I128);
     pub const U128: Self = Self::Primitive(PrimitiveType::U128);
+    pub const I256: Self = Self::Primitive(PrimitiveType::I256);
+    pub const U256: Self = Self::Primitive(PrimitiveType::U256);
     pub const F32: Self = Self::Primitive(PrimitiveType::F32);
     pub const F64: Self = Self::Primitive(PrimitiveType::F64);
     pub const String: Self = Self::VarLen(VarLenType::String);
@@ -282,18 +284,21 @@ pub enum PrimitiveType {
     U64,
     I128,
     U128,
+    I256,
+    U256,
     F32,
     F64,
 }
 
 impl HasLayout for PrimitiveType {
-    fn layout(&self) -> &Layout {
+    fn layout(&self) -> &'static Layout {
         match self {
             Self::Bool | Self::I8 | Self::U8 => &Layout { size: 1, align: 1 },
             Self::I16 | Self::U16 => &Layout { size: 2, align: 2 },
             Self::I32 | Self::U32 | Self::F32 => &Layout { size: 4, align: 4 },
             Self::I64 | Self::U64 | Self::F64 => &Layout { size: 8, align: 8 },
             Self::I128 | Self::U128 => &Layout { size: 16, align: 16 },
+            Self::I256 | Self::U256 => &Layout { size: 32, align: 32 },
         }
     }
 }
@@ -338,23 +343,21 @@ impl From<AlgebraicType> for AlgebraicTypeLayout {
             AlgebraicType::String => AlgebraicTypeLayout::VarLen(VarLenType::String),
             AlgebraicType::Array(_) => AlgebraicTypeLayout::VarLen(VarLenType::Array(Box::new(ty))),
             AlgebraicType::Map(_) => AlgebraicTypeLayout::VarLen(VarLenType::Map(Box::new(ty))),
-            AlgebraicType::Bool => AlgebraicTypeLayout::Primitive(PrimitiveType::Bool),
-            AlgebraicType::I8 => AlgebraicTypeLayout::Primitive(PrimitiveType::I8),
-            AlgebraicType::U8 => AlgebraicTypeLayout::Primitive(PrimitiveType::U8),
-            AlgebraicType::I16 => AlgebraicTypeLayout::Primitive(PrimitiveType::I16),
-            AlgebraicType::U16 => AlgebraicTypeLayout::Primitive(PrimitiveType::U16),
-
-            AlgebraicType::I32 => AlgebraicTypeLayout::Primitive(PrimitiveType::I32),
-            AlgebraicType::U32 => AlgebraicTypeLayout::Primitive(PrimitiveType::U32),
-
-            AlgebraicType::I64 => AlgebraicTypeLayout::Primitive(PrimitiveType::I64),
-            AlgebraicType::U64 => AlgebraicTypeLayout::Primitive(PrimitiveType::U64),
-
-            AlgebraicType::I128 => AlgebraicTypeLayout::Primitive(PrimitiveType::I128),
-            AlgebraicType::U128 => AlgebraicTypeLayout::Primitive(PrimitiveType::U128),
-
-            AlgebraicType::F32 => AlgebraicTypeLayout::Primitive(PrimitiveType::F32),
-            AlgebraicType::F64 => AlgebraicTypeLayout::Primitive(PrimitiveType::F64),
+            AlgebraicType::Bool => AlgebraicTypeLayout::Bool,
+            AlgebraicType::I8 => AlgebraicTypeLayout::I8,
+            AlgebraicType::U8 => AlgebraicTypeLayout::U8,
+            AlgebraicType::I16 => AlgebraicTypeLayout::I16,
+            AlgebraicType::U16 => AlgebraicTypeLayout::U16,
+            AlgebraicType::I32 => AlgebraicTypeLayout::I32,
+            AlgebraicType::U32 => AlgebraicTypeLayout::U32,
+            AlgebraicType::I64 => AlgebraicTypeLayout::I64,
+            AlgebraicType::U64 => AlgebraicTypeLayout::U64,
+            AlgebraicType::I128 => AlgebraicTypeLayout::I128,
+            AlgebraicType::U128 => AlgebraicTypeLayout::U128,
+            AlgebraicType::I256 => AlgebraicTypeLayout::I256,
+            AlgebraicType::U256 => AlgebraicTypeLayout::U256,
+            AlgebraicType::F32 => AlgebraicTypeLayout::F32,
+            AlgebraicType::F64 => AlgebraicTypeLayout::F64,
 
             AlgebraicType::Ref(_) => todo!("Refs unsupported without typespace context"),
         }
@@ -478,6 +481,8 @@ impl PrimitiveType {
             PrimitiveType::U64 => AlgebraicType::U64,
             PrimitiveType::I128 => AlgebraicType::I128,
             PrimitiveType::U128 => AlgebraicType::U128,
+            PrimitiveType::I256 => AlgebraicType::I256,
+            PrimitiveType::U256 => AlgebraicType::U256,
             PrimitiveType::F32 => AlgebraicType::F32,
             PrimitiveType::F64 => AlgebraicType::F64,
         }
@@ -717,6 +722,11 @@ mod test {
                 16,
             ),
             (
+                AlgebraicType::product([AlgebraicType::I256, AlgebraicType::U256]),
+                64,
+                32,
+            ),
+            (
                 AlgebraicType::product([AlgebraicType::String, AlgebraicType::I16]),
                 6,
                 2,
@@ -760,6 +770,8 @@ mod test {
             (AlgebraicType::sum([AlgebraicType::I32, AlgebraicType::I32]), 8, 4),
             (AlgebraicType::sum([AlgebraicType::I64, AlgebraicType::I64]), 16, 8),
             (AlgebraicType::sum([AlgebraicType::I128, AlgebraicType::I128]), 32, 16),
+            (AlgebraicType::sum([AlgebraicType::I256, AlgebraicType::I128]), 64, 32),
+            (AlgebraicType::sum([AlgebraicType::I256, AlgebraicType::U256]), 64, 32),
             (AlgebraicType::sum([AlgebraicType::String, AlgebraicType::I16]), 6, 2),
         ] {
             assert_size_align(ty, size, align);

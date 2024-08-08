@@ -35,7 +35,7 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
                         SpacetimeDB.ColumnAttrs.UnSet
                     ),
                     new(
-                        new(nameof(Uint128Field), BSATN.Uint128Field.GetAlgebraicType(registrar)),
+                        new(nameof(U128Field), BSATN.U128Field.GetAlgebraicType(registrar)),
                         SpacetimeDB.ColumnAttrs.UnSet
                     ),
                     new(
@@ -55,7 +55,7 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
                         SpacetimeDB.ColumnAttrs.UnSet
                     ),
                     new(
-                        new(nameof(Int128Field), BSATN.Int128Field.GetAlgebraicType(registrar)),
+                        new(nameof(I128Field), BSATN.I128Field.GetAlgebraicType(registrar)),
                         SpacetimeDB.ColumnAttrs.UnSet
                     ),
                     new(
@@ -157,15 +157,12 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
                 new(nameof(UshortField), (w, v) => BSATN.UshortField.Write(w, (ushort)v!)),
                 new(nameof(UintField), (w, v) => BSATN.UintField.Write(w, (uint)v!)),
                 new(nameof(UlongField), (w, v) => BSATN.UlongField.Write(w, (ulong)v!)),
-                new(
-                    nameof(Uint128Field),
-                    (w, v) => BSATN.Uint128Field.Write(w, (System.UInt128)v!)
-                ),
+                new(nameof(U128Field), (w, v) => BSATN.U128Field.Write(w, (SpacetimeDB.U128)v!)),
                 new(nameof(SbyteField), (w, v) => BSATN.SbyteField.Write(w, (sbyte)v!)),
                 new(nameof(ShortField), (w, v) => BSATN.ShortField.Write(w, (short)v!)),
                 new(nameof(IntField), (w, v) => BSATN.IntField.Write(w, (int)v!)),
                 new(nameof(LongField), (w, v) => BSATN.LongField.Write(w, (long)v!)),
-                new(nameof(Int128Field), (w, v) => BSATN.Int128Field.Write(w, (System.Int128)v!)),
+                new(nameof(I128Field), (w, v) => BSATN.I128Field.Write(w, (SpacetimeDB.I128)v!)),
                 new(nameof(BoolField), (w, v) => BSATN.BoolField.Write(w, (bool)v!)),
                 new(nameof(FloatField), (w, v) => BSATN.FloatField.Write(w, (float)v!)),
                 new(nameof(DoubleField), (w, v) => BSATN.DoubleField.Write(w, (double)v!)),
@@ -266,10 +263,8 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
             .Internal.ITable<PublicTable>.ColEq.Where(4, UlongField, BSATN.UlongField)
             .Iter();
 
-    public static IEnumerable<PublicTable> FilterByUint128Field(System.UInt128 Uint128Field) =>
-        SpacetimeDB
-            .Internal.ITable<PublicTable>.ColEq.Where(5, Uint128Field, BSATN.Uint128Field)
-            .Iter();
+    public static IEnumerable<PublicTable> FilterByU128Field(SpacetimeDB.U128 U128Field) =>
+        SpacetimeDB.Internal.ITable<PublicTable>.ColEq.Where(5, U128Field, BSATN.U128Field).Iter();
 
     public static IEnumerable<PublicTable> FilterBySbyteField(sbyte SbyteField) =>
         SpacetimeDB
@@ -287,10 +282,8 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
     public static IEnumerable<PublicTable> FilterByLongField(long LongField) =>
         SpacetimeDB.Internal.ITable<PublicTable>.ColEq.Where(9, LongField, BSATN.LongField).Iter();
 
-    public static IEnumerable<PublicTable> FilterByInt128Field(System.Int128 Int128Field) =>
-        SpacetimeDB
-            .Internal.ITable<PublicTable>.ColEq.Where(10, Int128Field, BSATN.Int128Field)
-            .Iter();
+    public static IEnumerable<PublicTable> FilterByI128Field(SpacetimeDB.I128 I128Field) =>
+        SpacetimeDB.Internal.ITable<PublicTable>.ColEq.Where(10, I128Field, BSATN.I128Field).Iter();
 
     public static IEnumerable<PublicTable> FilterByBoolField(bool BoolField) =>
         SpacetimeDB.Internal.ITable<PublicTable>.ColEq.Where(11, BoolField, BSATN.BoolField).Iter();

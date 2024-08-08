@@ -13,10 +13,10 @@ use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,
     reducer::{Reducer, ReducerCallbackId, Status},
-    sats::{de::Deserialize, ser::Serialize},
+    sats::{de::Deserialize, i256, ser::Serialize, u256},
     spacetimedb_lib,
     table::{TableIter, TableType, TableWithPrimaryKey},
-    Address,
+    Address, ScheduleAt,
 };
 use std::sync::Arc;
 
@@ -25,6 +25,7 @@ pub mod delete_pk_address_reducer;
 pub mod delete_pk_bool_reducer;
 pub mod delete_pk_i_128_reducer;
 pub mod delete_pk_i_16_reducer;
+pub mod delete_pk_i_256_reducer;
 pub mod delete_pk_i_32_reducer;
 pub mod delete_pk_i_64_reducer;
 pub mod delete_pk_i_8_reducer;
@@ -32,6 +33,7 @@ pub mod delete_pk_identity_reducer;
 pub mod delete_pk_string_reducer;
 pub mod delete_pk_u_128_reducer;
 pub mod delete_pk_u_16_reducer;
+pub mod delete_pk_u_256_reducer;
 pub mod delete_pk_u_32_reducer;
 pub mod delete_pk_u_64_reducer;
 pub mod delete_pk_u_8_reducer;
@@ -39,6 +41,7 @@ pub mod delete_unique_address_reducer;
 pub mod delete_unique_bool_reducer;
 pub mod delete_unique_i_128_reducer;
 pub mod delete_unique_i_16_reducer;
+pub mod delete_unique_i_256_reducer;
 pub mod delete_unique_i_32_reducer;
 pub mod delete_unique_i_64_reducer;
 pub mod delete_unique_i_8_reducer;
@@ -46,6 +49,7 @@ pub mod delete_unique_identity_reducer;
 pub mod delete_unique_string_reducer;
 pub mod delete_unique_u_128_reducer;
 pub mod delete_unique_u_16_reducer;
+pub mod delete_unique_u_256_reducer;
 pub mod delete_unique_u_32_reducer;
 pub mod delete_unique_u_64_reducer;
 pub mod delete_unique_u_8_reducer;
@@ -71,6 +75,7 @@ pub mod insert_one_f_32_reducer;
 pub mod insert_one_f_64_reducer;
 pub mod insert_one_i_128_reducer;
 pub mod insert_one_i_16_reducer;
+pub mod insert_one_i_256_reducer;
 pub mod insert_one_i_32_reducer;
 pub mod insert_one_i_64_reducer;
 pub mod insert_one_i_8_reducer;
@@ -79,6 +84,7 @@ pub mod insert_one_simple_enum_reducer;
 pub mod insert_one_string_reducer;
 pub mod insert_one_u_128_reducer;
 pub mod insert_one_u_16_reducer;
+pub mod insert_one_u_256_reducer;
 pub mod insert_one_u_32_reducer;
 pub mod insert_one_u_64_reducer;
 pub mod insert_one_u_8_reducer;
@@ -93,6 +99,7 @@ pub mod insert_pk_address_reducer;
 pub mod insert_pk_bool_reducer;
 pub mod insert_pk_i_128_reducer;
 pub mod insert_pk_i_16_reducer;
+pub mod insert_pk_i_256_reducer;
 pub mod insert_pk_i_32_reducer;
 pub mod insert_pk_i_64_reducer;
 pub mod insert_pk_i_8_reducer;
@@ -100,6 +107,7 @@ pub mod insert_pk_identity_reducer;
 pub mod insert_pk_string_reducer;
 pub mod insert_pk_u_128_reducer;
 pub mod insert_pk_u_16_reducer;
+pub mod insert_pk_u_256_reducer;
 pub mod insert_pk_u_32_reducer;
 pub mod insert_pk_u_64_reducer;
 pub mod insert_pk_u_8_reducer;
@@ -108,6 +116,7 @@ pub mod insert_unique_address_reducer;
 pub mod insert_unique_bool_reducer;
 pub mod insert_unique_i_128_reducer;
 pub mod insert_unique_i_16_reducer;
+pub mod insert_unique_i_256_reducer;
 pub mod insert_unique_i_32_reducer;
 pub mod insert_unique_i_64_reducer;
 pub mod insert_unique_i_8_reducer;
@@ -115,6 +124,7 @@ pub mod insert_unique_identity_reducer;
 pub mod insert_unique_string_reducer;
 pub mod insert_unique_u_128_reducer;
 pub mod insert_unique_u_16_reducer;
+pub mod insert_unique_u_256_reducer;
 pub mod insert_unique_u_32_reducer;
 pub mod insert_unique_u_64_reducer;
 pub mod insert_unique_u_8_reducer;
@@ -128,6 +138,7 @@ pub mod insert_vec_f_32_reducer;
 pub mod insert_vec_f_64_reducer;
 pub mod insert_vec_i_128_reducer;
 pub mod insert_vec_i_16_reducer;
+pub mod insert_vec_i_256_reducer;
 pub mod insert_vec_i_32_reducer;
 pub mod insert_vec_i_64_reducer;
 pub mod insert_vec_i_8_reducer;
@@ -136,6 +147,7 @@ pub mod insert_vec_simple_enum_reducer;
 pub mod insert_vec_string_reducer;
 pub mod insert_vec_u_128_reducer;
 pub mod insert_vec_u_16_reducer;
+pub mod insert_vec_u_256_reducer;
 pub mod insert_vec_u_32_reducer;
 pub mod insert_vec_u_64_reducer;
 pub mod insert_vec_u_8_reducer;
@@ -152,6 +164,7 @@ pub mod one_f_32;
 pub mod one_f_64;
 pub mod one_i_128;
 pub mod one_i_16;
+pub mod one_i_256;
 pub mod one_i_32;
 pub mod one_i_64;
 pub mod one_i_8;
@@ -160,6 +173,7 @@ pub mod one_simple_enum;
 pub mod one_string;
 pub mod one_u_128;
 pub mod one_u_16;
+pub mod one_u_256;
 pub mod one_u_32;
 pub mod one_u_64;
 pub mod one_u_8;
@@ -174,6 +188,7 @@ pub mod pk_address;
 pub mod pk_bool;
 pub mod pk_i_128;
 pub mod pk_i_16;
+pub mod pk_i_256;
 pub mod pk_i_32;
 pub mod pk_i_64;
 pub mod pk_i_8;
@@ -181,6 +196,7 @@ pub mod pk_identity;
 pub mod pk_string;
 pub mod pk_u_128;
 pub mod pk_u_16;
+pub mod pk_u_256;
 pub mod pk_u_32;
 pub mod pk_u_64;
 pub mod pk_u_8;
@@ -190,6 +206,7 @@ pub mod unique_address;
 pub mod unique_bool;
 pub mod unique_i_128;
 pub mod unique_i_16;
+pub mod unique_i_256;
 pub mod unique_i_32;
 pub mod unique_i_64;
 pub mod unique_i_8;
@@ -197,6 +214,7 @@ pub mod unique_identity;
 pub mod unique_string;
 pub mod unique_u_128;
 pub mod unique_u_16;
+pub mod unique_u_256;
 pub mod unique_u_32;
 pub mod unique_u_64;
 pub mod unique_u_8;
@@ -205,6 +223,7 @@ pub mod update_pk_address_reducer;
 pub mod update_pk_bool_reducer;
 pub mod update_pk_i_128_reducer;
 pub mod update_pk_i_16_reducer;
+pub mod update_pk_i_256_reducer;
 pub mod update_pk_i_32_reducer;
 pub mod update_pk_i_64_reducer;
 pub mod update_pk_i_8_reducer;
@@ -212,6 +231,7 @@ pub mod update_pk_identity_reducer;
 pub mod update_pk_string_reducer;
 pub mod update_pk_u_128_reducer;
 pub mod update_pk_u_16_reducer;
+pub mod update_pk_u_256_reducer;
 pub mod update_pk_u_32_reducer;
 pub mod update_pk_u_64_reducer;
 pub mod update_pk_u_8_reducer;
@@ -219,6 +239,7 @@ pub mod update_unique_address_reducer;
 pub mod update_unique_bool_reducer;
 pub mod update_unique_i_128_reducer;
 pub mod update_unique_i_16_reducer;
+pub mod update_unique_i_256_reducer;
 pub mod update_unique_i_32_reducer;
 pub mod update_unique_i_64_reducer;
 pub mod update_unique_i_8_reducer;
@@ -226,6 +247,7 @@ pub mod update_unique_identity_reducer;
 pub mod update_unique_string_reducer;
 pub mod update_unique_u_128_reducer;
 pub mod update_unique_u_16_reducer;
+pub mod update_unique_u_256_reducer;
 pub mod update_unique_u_32_reducer;
 pub mod update_unique_u_64_reducer;
 pub mod update_unique_u_8_reducer;
@@ -239,6 +261,7 @@ pub mod vec_f_32;
 pub mod vec_f_64;
 pub mod vec_i_128;
 pub mod vec_i_16;
+pub mod vec_i_256;
 pub mod vec_i_32;
 pub mod vec_i_64;
 pub mod vec_i_8;
@@ -247,6 +270,7 @@ pub mod vec_simple_enum;
 pub mod vec_string;
 pub mod vec_u_128;
 pub mod vec_u_16;
+pub mod vec_u_256;
 pub mod vec_u_32;
 pub mod vec_u_64;
 pub mod vec_u_8;
@@ -257,6 +281,7 @@ pub use delete_pk_address_reducer::*;
 pub use delete_pk_bool_reducer::*;
 pub use delete_pk_i_128_reducer::*;
 pub use delete_pk_i_16_reducer::*;
+pub use delete_pk_i_256_reducer::*;
 pub use delete_pk_i_32_reducer::*;
 pub use delete_pk_i_64_reducer::*;
 pub use delete_pk_i_8_reducer::*;
@@ -264,6 +289,7 @@ pub use delete_pk_identity_reducer::*;
 pub use delete_pk_string_reducer::*;
 pub use delete_pk_u_128_reducer::*;
 pub use delete_pk_u_16_reducer::*;
+pub use delete_pk_u_256_reducer::*;
 pub use delete_pk_u_32_reducer::*;
 pub use delete_pk_u_64_reducer::*;
 pub use delete_pk_u_8_reducer::*;
@@ -271,6 +297,7 @@ pub use delete_unique_address_reducer::*;
 pub use delete_unique_bool_reducer::*;
 pub use delete_unique_i_128_reducer::*;
 pub use delete_unique_i_16_reducer::*;
+pub use delete_unique_i_256_reducer::*;
 pub use delete_unique_i_32_reducer::*;
 pub use delete_unique_i_64_reducer::*;
 pub use delete_unique_i_8_reducer::*;
@@ -278,6 +305,7 @@ pub use delete_unique_identity_reducer::*;
 pub use delete_unique_string_reducer::*;
 pub use delete_unique_u_128_reducer::*;
 pub use delete_unique_u_16_reducer::*;
+pub use delete_unique_u_256_reducer::*;
 pub use delete_unique_u_32_reducer::*;
 pub use delete_unique_u_64_reducer::*;
 pub use delete_unique_u_8_reducer::*;
@@ -303,6 +331,7 @@ pub use insert_one_f_32_reducer::*;
 pub use insert_one_f_64_reducer::*;
 pub use insert_one_i_128_reducer::*;
 pub use insert_one_i_16_reducer::*;
+pub use insert_one_i_256_reducer::*;
 pub use insert_one_i_32_reducer::*;
 pub use insert_one_i_64_reducer::*;
 pub use insert_one_i_8_reducer::*;
@@ -311,6 +340,7 @@ pub use insert_one_simple_enum_reducer::*;
 pub use insert_one_string_reducer::*;
 pub use insert_one_u_128_reducer::*;
 pub use insert_one_u_16_reducer::*;
+pub use insert_one_u_256_reducer::*;
 pub use insert_one_u_32_reducer::*;
 pub use insert_one_u_64_reducer::*;
 pub use insert_one_u_8_reducer::*;
@@ -325,6 +355,7 @@ pub use insert_pk_address_reducer::*;
 pub use insert_pk_bool_reducer::*;
 pub use insert_pk_i_128_reducer::*;
 pub use insert_pk_i_16_reducer::*;
+pub use insert_pk_i_256_reducer::*;
 pub use insert_pk_i_32_reducer::*;
 pub use insert_pk_i_64_reducer::*;
 pub use insert_pk_i_8_reducer::*;
@@ -332,6 +363,7 @@ pub use insert_pk_identity_reducer::*;
 pub use insert_pk_string_reducer::*;
 pub use insert_pk_u_128_reducer::*;
 pub use insert_pk_u_16_reducer::*;
+pub use insert_pk_u_256_reducer::*;
 pub use insert_pk_u_32_reducer::*;
 pub use insert_pk_u_64_reducer::*;
 pub use insert_pk_u_8_reducer::*;
@@ -340,6 +372,7 @@ pub use insert_unique_address_reducer::*;
 pub use insert_unique_bool_reducer::*;
 pub use insert_unique_i_128_reducer::*;
 pub use insert_unique_i_16_reducer::*;
+pub use insert_unique_i_256_reducer::*;
 pub use insert_unique_i_32_reducer::*;
 pub use insert_unique_i_64_reducer::*;
 pub use insert_unique_i_8_reducer::*;
@@ -347,6 +380,7 @@ pub use insert_unique_identity_reducer::*;
 pub use insert_unique_string_reducer::*;
 pub use insert_unique_u_128_reducer::*;
 pub use insert_unique_u_16_reducer::*;
+pub use insert_unique_u_256_reducer::*;
 pub use insert_unique_u_32_reducer::*;
 pub use insert_unique_u_64_reducer::*;
 pub use insert_unique_u_8_reducer::*;
@@ -360,6 +394,7 @@ pub use insert_vec_f_32_reducer::*;
 pub use insert_vec_f_64_reducer::*;
 pub use insert_vec_i_128_reducer::*;
 pub use insert_vec_i_16_reducer::*;
+pub use insert_vec_i_256_reducer::*;
 pub use insert_vec_i_32_reducer::*;
 pub use insert_vec_i_64_reducer::*;
 pub use insert_vec_i_8_reducer::*;
@@ -368,6 +403,7 @@ pub use insert_vec_simple_enum_reducer::*;
 pub use insert_vec_string_reducer::*;
 pub use insert_vec_u_128_reducer::*;
 pub use insert_vec_u_16_reducer::*;
+pub use insert_vec_u_256_reducer::*;
 pub use insert_vec_u_32_reducer::*;
 pub use insert_vec_u_64_reducer::*;
 pub use insert_vec_u_8_reducer::*;
@@ -384,6 +420,7 @@ pub use one_f_32::*;
 pub use one_f_64::*;
 pub use one_i_128::*;
 pub use one_i_16::*;
+pub use one_i_256::*;
 pub use one_i_32::*;
 pub use one_i_64::*;
 pub use one_i_8::*;
@@ -392,6 +429,7 @@ pub use one_simple_enum::*;
 pub use one_string::*;
 pub use one_u_128::*;
 pub use one_u_16::*;
+pub use one_u_256::*;
 pub use one_u_32::*;
 pub use one_u_64::*;
 pub use one_u_8::*;
@@ -406,6 +444,7 @@ pub use pk_address::*;
 pub use pk_bool::*;
 pub use pk_i_128::*;
 pub use pk_i_16::*;
+pub use pk_i_256::*;
 pub use pk_i_32::*;
 pub use pk_i_64::*;
 pub use pk_i_8::*;
@@ -413,6 +452,7 @@ pub use pk_identity::*;
 pub use pk_string::*;
 pub use pk_u_128::*;
 pub use pk_u_16::*;
+pub use pk_u_256::*;
 pub use pk_u_32::*;
 pub use pk_u_64::*;
 pub use pk_u_8::*;
@@ -422,6 +462,7 @@ pub use unique_address::*;
 pub use unique_bool::*;
 pub use unique_i_128::*;
 pub use unique_i_16::*;
+pub use unique_i_256::*;
 pub use unique_i_32::*;
 pub use unique_i_64::*;
 pub use unique_i_8::*;
@@ -429,6 +470,7 @@ pub use unique_identity::*;
 pub use unique_string::*;
 pub use unique_u_128::*;
 pub use unique_u_16::*;
+pub use unique_u_256::*;
 pub use unique_u_32::*;
 pub use unique_u_64::*;
 pub use unique_u_8::*;
@@ -437,6 +479,7 @@ pub use update_pk_address_reducer::*;
 pub use update_pk_bool_reducer::*;
 pub use update_pk_i_128_reducer::*;
 pub use update_pk_i_16_reducer::*;
+pub use update_pk_i_256_reducer::*;
 pub use update_pk_i_32_reducer::*;
 pub use update_pk_i_64_reducer::*;
 pub use update_pk_i_8_reducer::*;
@@ -444,6 +487,7 @@ pub use update_pk_identity_reducer::*;
 pub use update_pk_string_reducer::*;
 pub use update_pk_u_128_reducer::*;
 pub use update_pk_u_16_reducer::*;
+pub use update_pk_u_256_reducer::*;
 pub use update_pk_u_32_reducer::*;
 pub use update_pk_u_64_reducer::*;
 pub use update_pk_u_8_reducer::*;
@@ -451,6 +495,7 @@ pub use update_unique_address_reducer::*;
 pub use update_unique_bool_reducer::*;
 pub use update_unique_i_128_reducer::*;
 pub use update_unique_i_16_reducer::*;
+pub use update_unique_i_256_reducer::*;
 pub use update_unique_i_32_reducer::*;
 pub use update_unique_i_64_reducer::*;
 pub use update_unique_i_8_reducer::*;
@@ -458,6 +503,7 @@ pub use update_unique_identity_reducer::*;
 pub use update_unique_string_reducer::*;
 pub use update_unique_u_128_reducer::*;
 pub use update_unique_u_16_reducer::*;
+pub use update_unique_u_256_reducer::*;
 pub use update_unique_u_32_reducer::*;
 pub use update_unique_u_64_reducer::*;
 pub use update_unique_u_8_reducer::*;
@@ -471,6 +517,7 @@ pub use vec_f_32::*;
 pub use vec_f_64::*;
 pub use vec_i_128::*;
 pub use vec_i_16::*;
+pub use vec_i_256::*;
 pub use vec_i_32::*;
 pub use vec_i_64::*;
 pub use vec_i_8::*;
@@ -479,6 +526,7 @@ pub use vec_simple_enum::*;
 pub use vec_string::*;
 pub use vec_u_128::*;
 pub use vec_u_16::*;
+pub use vec_u_256::*;
 pub use vec_u_32::*;
 pub use vec_u_64::*;
 pub use vec_u_8::*;
@@ -491,6 +539,7 @@ pub enum ReducerEvent {
     DeletePkBool(delete_pk_bool_reducer::DeletePkBoolArgs),
     DeletePkI128(delete_pk_i_128_reducer::DeletePkI128Args),
     DeletePkI16(delete_pk_i_16_reducer::DeletePkI16Args),
+    DeletePkI256(delete_pk_i_256_reducer::DeletePkI256Args),
     DeletePkI32(delete_pk_i_32_reducer::DeletePkI32Args),
     DeletePkI64(delete_pk_i_64_reducer::DeletePkI64Args),
     DeletePkI8(delete_pk_i_8_reducer::DeletePkI8Args),
@@ -498,6 +547,7 @@ pub enum ReducerEvent {
     DeletePkString(delete_pk_string_reducer::DeletePkStringArgs),
     DeletePkU128(delete_pk_u_128_reducer::DeletePkU128Args),
     DeletePkU16(delete_pk_u_16_reducer::DeletePkU16Args),
+    DeletePkU256(delete_pk_u_256_reducer::DeletePkU256Args),
     DeletePkU32(delete_pk_u_32_reducer::DeletePkU32Args),
     DeletePkU64(delete_pk_u_64_reducer::DeletePkU64Args),
     DeletePkU8(delete_pk_u_8_reducer::DeletePkU8Args),
@@ -505,6 +555,7 @@ pub enum ReducerEvent {
     DeleteUniqueBool(delete_unique_bool_reducer::DeleteUniqueBoolArgs),
     DeleteUniqueI128(delete_unique_i_128_reducer::DeleteUniqueI128Args),
     DeleteUniqueI16(delete_unique_i_16_reducer::DeleteUniqueI16Args),
+    DeleteUniqueI256(delete_unique_i_256_reducer::DeleteUniqueI256Args),
     DeleteUniqueI32(delete_unique_i_32_reducer::DeleteUniqueI32Args),
     DeleteUniqueI64(delete_unique_i_64_reducer::DeleteUniqueI64Args),
     DeleteUniqueI8(delete_unique_i_8_reducer::DeleteUniqueI8Args),
@@ -512,6 +563,7 @@ pub enum ReducerEvent {
     DeleteUniqueString(delete_unique_string_reducer::DeleteUniqueStringArgs),
     DeleteUniqueU128(delete_unique_u_128_reducer::DeleteUniqueU128Args),
     DeleteUniqueU16(delete_unique_u_16_reducer::DeleteUniqueU16Args),
+    DeleteUniqueU256(delete_unique_u_256_reducer::DeleteUniqueU256Args),
     DeleteUniqueU32(delete_unique_u_32_reducer::DeleteUniqueU32Args),
     DeleteUniqueU64(delete_unique_u_64_reducer::DeleteUniqueU64Args),
     DeleteUniqueU8(delete_unique_u_8_reducer::DeleteUniqueU8Args),
@@ -534,6 +586,7 @@ pub enum ReducerEvent {
     InsertOneF64(insert_one_f_64_reducer::InsertOneF64Args),
     InsertOneI128(insert_one_i_128_reducer::InsertOneI128Args),
     InsertOneI16(insert_one_i_16_reducer::InsertOneI16Args),
+    InsertOneI256(insert_one_i_256_reducer::InsertOneI256Args),
     InsertOneI32(insert_one_i_32_reducer::InsertOneI32Args),
     InsertOneI64(insert_one_i_64_reducer::InsertOneI64Args),
     InsertOneI8(insert_one_i_8_reducer::InsertOneI8Args),
@@ -542,6 +595,7 @@ pub enum ReducerEvent {
     InsertOneString(insert_one_string_reducer::InsertOneStringArgs),
     InsertOneU128(insert_one_u_128_reducer::InsertOneU128Args),
     InsertOneU16(insert_one_u_16_reducer::InsertOneU16Args),
+    InsertOneU256(insert_one_u_256_reducer::InsertOneU256Args),
     InsertOneU32(insert_one_u_32_reducer::InsertOneU32Args),
     InsertOneU64(insert_one_u_64_reducer::InsertOneU64Args),
     InsertOneU8(insert_one_u_8_reducer::InsertOneU8Args),
@@ -558,6 +612,7 @@ pub enum ReducerEvent {
     InsertPkBool(insert_pk_bool_reducer::InsertPkBoolArgs),
     InsertPkI128(insert_pk_i_128_reducer::InsertPkI128Args),
     InsertPkI16(insert_pk_i_16_reducer::InsertPkI16Args),
+    InsertPkI256(insert_pk_i_256_reducer::InsertPkI256Args),
     InsertPkI32(insert_pk_i_32_reducer::InsertPkI32Args),
     InsertPkI64(insert_pk_i_64_reducer::InsertPkI64Args),
     InsertPkI8(insert_pk_i_8_reducer::InsertPkI8Args),
@@ -565,6 +620,7 @@ pub enum ReducerEvent {
     InsertPkString(insert_pk_string_reducer::InsertPkStringArgs),
     InsertPkU128(insert_pk_u_128_reducer::InsertPkU128Args),
     InsertPkU16(insert_pk_u_16_reducer::InsertPkU16Args),
+    InsertPkU256(insert_pk_u_256_reducer::InsertPkU256Args),
     InsertPkU32(insert_pk_u_32_reducer::InsertPkU32Args),
     InsertPkU64(insert_pk_u_64_reducer::InsertPkU64Args),
     InsertPkU8(insert_pk_u_8_reducer::InsertPkU8Args),
@@ -573,6 +629,7 @@ pub enum ReducerEvent {
     InsertUniqueBool(insert_unique_bool_reducer::InsertUniqueBoolArgs),
     InsertUniqueI128(insert_unique_i_128_reducer::InsertUniqueI128Args),
     InsertUniqueI16(insert_unique_i_16_reducer::InsertUniqueI16Args),
+    InsertUniqueI256(insert_unique_i_256_reducer::InsertUniqueI256Args),
     InsertUniqueI32(insert_unique_i_32_reducer::InsertUniqueI32Args),
     InsertUniqueI64(insert_unique_i_64_reducer::InsertUniqueI64Args),
     InsertUniqueI8(insert_unique_i_8_reducer::InsertUniqueI8Args),
@@ -580,6 +637,7 @@ pub enum ReducerEvent {
     InsertUniqueString(insert_unique_string_reducer::InsertUniqueStringArgs),
     InsertUniqueU128(insert_unique_u_128_reducer::InsertUniqueU128Args),
     InsertUniqueU16(insert_unique_u_16_reducer::InsertUniqueU16Args),
+    InsertUniqueU256(insert_unique_u_256_reducer::InsertUniqueU256Args),
     InsertUniqueU32(insert_unique_u_32_reducer::InsertUniqueU32Args),
     InsertUniqueU64(insert_unique_u_64_reducer::InsertUniqueU64Args),
     InsertUniqueU8(insert_unique_u_8_reducer::InsertUniqueU8Args),
@@ -593,6 +651,7 @@ pub enum ReducerEvent {
     InsertVecF64(insert_vec_f_64_reducer::InsertVecF64Args),
     InsertVecI128(insert_vec_i_128_reducer::InsertVecI128Args),
     InsertVecI16(insert_vec_i_16_reducer::InsertVecI16Args),
+    InsertVecI256(insert_vec_i_256_reducer::InsertVecI256Args),
     InsertVecI32(insert_vec_i_32_reducer::InsertVecI32Args),
     InsertVecI64(insert_vec_i_64_reducer::InsertVecI64Args),
     InsertVecI8(insert_vec_i_8_reducer::InsertVecI8Args),
@@ -601,6 +660,7 @@ pub enum ReducerEvent {
     InsertVecString(insert_vec_string_reducer::InsertVecStringArgs),
     InsertVecU128(insert_vec_u_128_reducer::InsertVecU128Args),
     InsertVecU16(insert_vec_u_16_reducer::InsertVecU16Args),
+    InsertVecU256(insert_vec_u_256_reducer::InsertVecU256Args),
     InsertVecU32(insert_vec_u_32_reducer::InsertVecU32Args),
     InsertVecU64(insert_vec_u_64_reducer::InsertVecU64Args),
     InsertVecU8(insert_vec_u_8_reducer::InsertVecU8Args),
@@ -610,6 +670,7 @@ pub enum ReducerEvent {
     UpdatePkBool(update_pk_bool_reducer::UpdatePkBoolArgs),
     UpdatePkI128(update_pk_i_128_reducer::UpdatePkI128Args),
     UpdatePkI16(update_pk_i_16_reducer::UpdatePkI16Args),
+    UpdatePkI256(update_pk_i_256_reducer::UpdatePkI256Args),
     UpdatePkI32(update_pk_i_32_reducer::UpdatePkI32Args),
     UpdatePkI64(update_pk_i_64_reducer::UpdatePkI64Args),
     UpdatePkI8(update_pk_i_8_reducer::UpdatePkI8Args),
@@ -617,6 +678,7 @@ pub enum ReducerEvent {
     UpdatePkString(update_pk_string_reducer::UpdatePkStringArgs),
     UpdatePkU128(update_pk_u_128_reducer::UpdatePkU128Args),
     UpdatePkU16(update_pk_u_16_reducer::UpdatePkU16Args),
+    UpdatePkU256(update_pk_u_256_reducer::UpdatePkU256Args),
     UpdatePkU32(update_pk_u_32_reducer::UpdatePkU32Args),
     UpdatePkU64(update_pk_u_64_reducer::UpdatePkU64Args),
     UpdatePkU8(update_pk_u_8_reducer::UpdatePkU8Args),
@@ -624,6 +686,7 @@ pub enum ReducerEvent {
     UpdateUniqueBool(update_unique_bool_reducer::UpdateUniqueBoolArgs),
     UpdateUniqueI128(update_unique_i_128_reducer::UpdateUniqueI128Args),
     UpdateUniqueI16(update_unique_i_16_reducer::UpdateUniqueI16Args),
+    UpdateUniqueI256(update_unique_i_256_reducer::UpdateUniqueI256Args),
     UpdateUniqueI32(update_unique_i_32_reducer::UpdateUniqueI32Args),
     UpdateUniqueI64(update_unique_i_64_reducer::UpdateUniqueI64Args),
     UpdateUniqueI8(update_unique_i_8_reducer::UpdateUniqueI8Args),
@@ -631,6 +694,7 @@ pub enum ReducerEvent {
     UpdateUniqueString(update_unique_string_reducer::UpdateUniqueStringArgs),
     UpdateUniqueU128(update_unique_u_128_reducer::UpdateUniqueU128Args),
     UpdateUniqueU16(update_unique_u_16_reducer::UpdateUniqueU16Args),
+    UpdateUniqueU256(update_unique_u_256_reducer::UpdateUniqueU256Args),
     UpdateUniqueU32(update_unique_u_32_reducer::UpdateUniqueU32Args),
     UpdateUniqueU64(update_unique_u_64_reducer::UpdateUniqueU64Args),
     UpdateUniqueU8(update_unique_u_8_reducer::UpdateUniqueU8Args),
@@ -672,6 +736,7 @@ impl SpacetimeModule for Module {
             "OneF64" => client_cache.handle_table_update_no_primary_key::<one_f_64::OneF64>(callbacks, table_update),
             "OneI128" => client_cache.handle_table_update_no_primary_key::<one_i_128::OneI128>(callbacks, table_update),
             "OneI16" => client_cache.handle_table_update_no_primary_key::<one_i_16::OneI16>(callbacks, table_update),
+            "OneI256" => client_cache.handle_table_update_no_primary_key::<one_i_256::OneI256>(callbacks, table_update),
             "OneI32" => client_cache.handle_table_update_no_primary_key::<one_i_32::OneI32>(callbacks, table_update),
             "OneI64" => client_cache.handle_table_update_no_primary_key::<one_i_64::OneI64>(callbacks, table_update),
             "OneI8" => client_cache.handle_table_update_no_primary_key::<one_i_8::OneI8>(callbacks, table_update),
@@ -685,6 +750,7 @@ impl SpacetimeModule for Module {
             }
             "OneU128" => client_cache.handle_table_update_no_primary_key::<one_u_128::OneU128>(callbacks, table_update),
             "OneU16" => client_cache.handle_table_update_no_primary_key::<one_u_16::OneU16>(callbacks, table_update),
+            "OneU256" => client_cache.handle_table_update_no_primary_key::<one_u_256::OneU256>(callbacks, table_update),
             "OneU32" => client_cache.handle_table_update_no_primary_key::<one_u_32::OneU32>(callbacks, table_update),
             "OneU64" => client_cache.handle_table_update_no_primary_key::<one_u_64::OneU64>(callbacks, table_update),
             "OneU8" => client_cache.handle_table_update_no_primary_key::<one_u_8::OneU8>(callbacks, table_update),
@@ -716,6 +782,7 @@ impl SpacetimeModule for Module {
             "PkBool" => client_cache.handle_table_update_with_primary_key::<pk_bool::PkBool>(callbacks, table_update),
             "PkI128" => client_cache.handle_table_update_with_primary_key::<pk_i_128::PkI128>(callbacks, table_update),
             "PkI16" => client_cache.handle_table_update_with_primary_key::<pk_i_16::PkI16>(callbacks, table_update),
+            "PkI256" => client_cache.handle_table_update_with_primary_key::<pk_i_256::PkI256>(callbacks, table_update),
             "PkI32" => client_cache.handle_table_update_with_primary_key::<pk_i_32::PkI32>(callbacks, table_update),
             "PkI64" => client_cache.handle_table_update_with_primary_key::<pk_i_64::PkI64>(callbacks, table_update),
             "PkI8" => client_cache.handle_table_update_with_primary_key::<pk_i_8::PkI8>(callbacks, table_update),
@@ -727,6 +794,7 @@ impl SpacetimeModule for Module {
             }
             "PkU128" => client_cache.handle_table_update_with_primary_key::<pk_u_128::PkU128>(callbacks, table_update),
             "PkU16" => client_cache.handle_table_update_with_primary_key::<pk_u_16::PkU16>(callbacks, table_update),
+            "PkU256" => client_cache.handle_table_update_with_primary_key::<pk_u_256::PkU256>(callbacks, table_update),
             "PkU32" => client_cache.handle_table_update_with_primary_key::<pk_u_32::PkU32>(callbacks, table_update),
             "PkU64" => client_cache.handle_table_update_with_primary_key::<pk_u_64::PkU64>(callbacks, table_update),
             "PkU8" => client_cache.handle_table_update_with_primary_key::<pk_u_8::PkU8>(callbacks, table_update),
@@ -742,6 +810,9 @@ impl SpacetimeModule for Module {
             }
             "UniqueI16" => {
                 client_cache.handle_table_update_no_primary_key::<unique_i_16::UniqueI16>(callbacks, table_update)
+            }
+            "UniqueI256" => {
+                client_cache.handle_table_update_no_primary_key::<unique_i_256::UniqueI256>(callbacks, table_update)
             }
             "UniqueI32" => {
                 client_cache.handle_table_update_no_primary_key::<unique_i_32::UniqueI32>(callbacks, table_update)
@@ -762,6 +833,9 @@ impl SpacetimeModule for Module {
             }
             "UniqueU16" => {
                 client_cache.handle_table_update_no_primary_key::<unique_u_16::UniqueU16>(callbacks, table_update)
+            }
+            "UniqueU256" => {
+                client_cache.handle_table_update_no_primary_key::<unique_u_256::UniqueU256>(callbacks, table_update)
             }
             "UniqueU32" => {
                 client_cache.handle_table_update_no_primary_key::<unique_u_32::UniqueU32>(callbacks, table_update)
@@ -794,6 +868,7 @@ impl SpacetimeModule for Module {
             "VecF64" => client_cache.handle_table_update_no_primary_key::<vec_f_64::VecF64>(callbacks, table_update),
             "VecI128" => client_cache.handle_table_update_no_primary_key::<vec_i_128::VecI128>(callbacks, table_update),
             "VecI16" => client_cache.handle_table_update_no_primary_key::<vec_i_16::VecI16>(callbacks, table_update),
+            "VecI256" => client_cache.handle_table_update_no_primary_key::<vec_i_256::VecI256>(callbacks, table_update),
             "VecI32" => client_cache.handle_table_update_no_primary_key::<vec_i_32::VecI32>(callbacks, table_update),
             "VecI64" => client_cache.handle_table_update_no_primary_key::<vec_i_64::VecI64>(callbacks, table_update),
             "VecI8" => client_cache.handle_table_update_no_primary_key::<vec_i_8::VecI8>(callbacks, table_update),
@@ -807,6 +882,7 @@ impl SpacetimeModule for Module {
             }
             "VecU128" => client_cache.handle_table_update_no_primary_key::<vec_u_128::VecU128>(callbacks, table_update),
             "VecU16" => client_cache.handle_table_update_no_primary_key::<vec_u_16::VecU16>(callbacks, table_update),
+            "VecU256" => client_cache.handle_table_update_no_primary_key::<vec_u_256::VecU256>(callbacks, table_update),
             "VecU32" => client_cache.handle_table_update_no_primary_key::<vec_u_32::VecU32>(callbacks, table_update),
             "VecU64" => client_cache.handle_table_update_no_primary_key::<vec_u_64::VecU64>(callbacks, table_update),
             "VecU8" => client_cache.handle_table_update_no_primary_key::<vec_u_8::VecU8>(callbacks, table_update),
@@ -837,6 +913,7 @@ impl SpacetimeModule for Module {
         reminders.invoke_callbacks::<one_f_64::OneF64>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<one_i_128::OneI128>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<one_i_16::OneI16>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_i_256::OneI256>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<one_i_32::OneI32>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<one_i_64::OneI64>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<one_i_8::OneI8>(worker, &reducer_event, state);
@@ -845,6 +922,7 @@ impl SpacetimeModule for Module {
         reminders.invoke_callbacks::<one_string::OneString>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<one_u_128::OneU128>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<one_u_16::OneU16>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<one_u_256::OneU256>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<one_u_32::OneU32>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<one_u_64::OneU64>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<one_u_8::OneU8>(worker, &reducer_event, state);
@@ -863,6 +941,7 @@ impl SpacetimeModule for Module {
         reminders.invoke_callbacks::<pk_bool::PkBool>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<pk_i_128::PkI128>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<pk_i_16::PkI16>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<pk_i_256::PkI256>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<pk_i_32::PkI32>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<pk_i_64::PkI64>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<pk_i_8::PkI8>(worker, &reducer_event, state);
@@ -870,6 +949,7 @@ impl SpacetimeModule for Module {
         reminders.invoke_callbacks::<pk_string::PkString>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<pk_u_128::PkU128>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<pk_u_16::PkU16>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<pk_u_256::PkU256>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<pk_u_32::PkU32>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<pk_u_64::PkU64>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<pk_u_8::PkU8>(worker, &reducer_event, state);
@@ -878,6 +958,7 @@ impl SpacetimeModule for Module {
         reminders.invoke_callbacks::<unique_bool::UniqueBool>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<unique_i_128::UniqueI128>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<unique_i_16::UniqueI16>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<unique_i_256::UniqueI256>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<unique_i_32::UniqueI32>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<unique_i_64::UniqueI64>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<unique_i_8::UniqueI8>(worker, &reducer_event, state);
@@ -885,6 +966,7 @@ impl SpacetimeModule for Module {
         reminders.invoke_callbacks::<unique_string::UniqueString>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<unique_u_128::UniqueU128>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<unique_u_16::UniqueU16>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<unique_u_256::UniqueU256>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<unique_u_32::UniqueU32>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<unique_u_64::UniqueU64>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<unique_u_8::UniqueU8>(worker, &reducer_event, state);
@@ -902,6 +984,7 @@ impl SpacetimeModule for Module {
         reminders.invoke_callbacks::<vec_f_64::VecF64>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<vec_i_128::VecI128>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<vec_i_16::VecI16>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_i_256::VecI256>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<vec_i_32::VecI32>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<vec_i_64::VecI64>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<vec_i_8::VecI8>(worker, &reducer_event, state);
@@ -910,6 +993,7 @@ impl SpacetimeModule for Module {
         reminders.invoke_callbacks::<vec_string::VecString>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<vec_u_128::VecU128>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<vec_u_16::VecU16>(worker, &reducer_event, state);
+        reminders.invoke_callbacks::<vec_u_256::VecU256>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<vec_u_32::VecU32>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<vec_u_64::VecU64>(worker, &reducer_event, state);
         reminders.invoke_callbacks::<vec_u_8::VecU8>(worker, &reducer_event, state);
@@ -928,6 +1012,7 @@ match &reducer_call.reducer_name[..] {
 			"delete_pk_bool" => _reducer_callbacks.handle_event_of_type::<delete_pk_bool_reducer::DeletePkBoolArgs, ReducerEvent>(event, _state, ReducerEvent::DeletePkBool),
 			"delete_pk_i128" => _reducer_callbacks.handle_event_of_type::<delete_pk_i_128_reducer::DeletePkI128Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkI128),
 			"delete_pk_i16" => _reducer_callbacks.handle_event_of_type::<delete_pk_i_16_reducer::DeletePkI16Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkI16),
+			"delete_pk_i256" => _reducer_callbacks.handle_event_of_type::<delete_pk_i_256_reducer::DeletePkI256Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkI256),
 			"delete_pk_i32" => _reducer_callbacks.handle_event_of_type::<delete_pk_i_32_reducer::DeletePkI32Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkI32),
 			"delete_pk_i64" => _reducer_callbacks.handle_event_of_type::<delete_pk_i_64_reducer::DeletePkI64Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkI64),
 			"delete_pk_i8" => _reducer_callbacks.handle_event_of_type::<delete_pk_i_8_reducer::DeletePkI8Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkI8),
@@ -935,6 +1020,7 @@ match &reducer_call.reducer_name[..] {
 			"delete_pk_string" => _reducer_callbacks.handle_event_of_type::<delete_pk_string_reducer::DeletePkStringArgs, ReducerEvent>(event, _state, ReducerEvent::DeletePkString),
 			"delete_pk_u128" => _reducer_callbacks.handle_event_of_type::<delete_pk_u_128_reducer::DeletePkU128Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkU128),
 			"delete_pk_u16" => _reducer_callbacks.handle_event_of_type::<delete_pk_u_16_reducer::DeletePkU16Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkU16),
+			"delete_pk_u256" => _reducer_callbacks.handle_event_of_type::<delete_pk_u_256_reducer::DeletePkU256Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkU256),
 			"delete_pk_u32" => _reducer_callbacks.handle_event_of_type::<delete_pk_u_32_reducer::DeletePkU32Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkU32),
 			"delete_pk_u64" => _reducer_callbacks.handle_event_of_type::<delete_pk_u_64_reducer::DeletePkU64Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkU64),
 			"delete_pk_u8" => _reducer_callbacks.handle_event_of_type::<delete_pk_u_8_reducer::DeletePkU8Args, ReducerEvent>(event, _state, ReducerEvent::DeletePkU8),
@@ -942,6 +1028,7 @@ match &reducer_call.reducer_name[..] {
 			"delete_unique_bool" => _reducer_callbacks.handle_event_of_type::<delete_unique_bool_reducer::DeleteUniqueBoolArgs, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueBool),
 			"delete_unique_i128" => _reducer_callbacks.handle_event_of_type::<delete_unique_i_128_reducer::DeleteUniqueI128Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueI128),
 			"delete_unique_i16" => _reducer_callbacks.handle_event_of_type::<delete_unique_i_16_reducer::DeleteUniqueI16Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueI16),
+			"delete_unique_i256" => _reducer_callbacks.handle_event_of_type::<delete_unique_i_256_reducer::DeleteUniqueI256Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueI256),
 			"delete_unique_i32" => _reducer_callbacks.handle_event_of_type::<delete_unique_i_32_reducer::DeleteUniqueI32Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueI32),
 			"delete_unique_i64" => _reducer_callbacks.handle_event_of_type::<delete_unique_i_64_reducer::DeleteUniqueI64Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueI64),
 			"delete_unique_i8" => _reducer_callbacks.handle_event_of_type::<delete_unique_i_8_reducer::DeleteUniqueI8Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueI8),
@@ -949,6 +1036,7 @@ match &reducer_call.reducer_name[..] {
 			"delete_unique_string" => _reducer_callbacks.handle_event_of_type::<delete_unique_string_reducer::DeleteUniqueStringArgs, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueString),
 			"delete_unique_u128" => _reducer_callbacks.handle_event_of_type::<delete_unique_u_128_reducer::DeleteUniqueU128Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueU128),
 			"delete_unique_u16" => _reducer_callbacks.handle_event_of_type::<delete_unique_u_16_reducer::DeleteUniqueU16Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueU16),
+			"delete_unique_u256" => _reducer_callbacks.handle_event_of_type::<delete_unique_u_256_reducer::DeleteUniqueU256Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueU256),
 			"delete_unique_u32" => _reducer_callbacks.handle_event_of_type::<delete_unique_u_32_reducer::DeleteUniqueU32Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueU32),
 			"delete_unique_u64" => _reducer_callbacks.handle_event_of_type::<delete_unique_u_64_reducer::DeleteUniqueU64Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueU64),
 			"delete_unique_u8" => _reducer_callbacks.handle_event_of_type::<delete_unique_u_8_reducer::DeleteUniqueU8Args, ReducerEvent>(event, _state, ReducerEvent::DeleteUniqueU8),
@@ -971,6 +1059,7 @@ match &reducer_call.reducer_name[..] {
 			"insert_one_f64" => _reducer_callbacks.handle_event_of_type::<insert_one_f_64_reducer::InsertOneF64Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneF64),
 			"insert_one_i128" => _reducer_callbacks.handle_event_of_type::<insert_one_i_128_reducer::InsertOneI128Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneI128),
 			"insert_one_i16" => _reducer_callbacks.handle_event_of_type::<insert_one_i_16_reducer::InsertOneI16Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneI16),
+			"insert_one_i256" => _reducer_callbacks.handle_event_of_type::<insert_one_i_256_reducer::InsertOneI256Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneI256),
 			"insert_one_i32" => _reducer_callbacks.handle_event_of_type::<insert_one_i_32_reducer::InsertOneI32Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneI32),
 			"insert_one_i64" => _reducer_callbacks.handle_event_of_type::<insert_one_i_64_reducer::InsertOneI64Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneI64),
 			"insert_one_i8" => _reducer_callbacks.handle_event_of_type::<insert_one_i_8_reducer::InsertOneI8Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneI8),
@@ -979,6 +1068,7 @@ match &reducer_call.reducer_name[..] {
 			"insert_one_string" => _reducer_callbacks.handle_event_of_type::<insert_one_string_reducer::InsertOneStringArgs, ReducerEvent>(event, _state, ReducerEvent::InsertOneString),
 			"insert_one_u128" => _reducer_callbacks.handle_event_of_type::<insert_one_u_128_reducer::InsertOneU128Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneU128),
 			"insert_one_u16" => _reducer_callbacks.handle_event_of_type::<insert_one_u_16_reducer::InsertOneU16Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneU16),
+			"insert_one_u256" => _reducer_callbacks.handle_event_of_type::<insert_one_u_256_reducer::InsertOneU256Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneU256),
 			"insert_one_u32" => _reducer_callbacks.handle_event_of_type::<insert_one_u_32_reducer::InsertOneU32Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneU32),
 			"insert_one_u64" => _reducer_callbacks.handle_event_of_type::<insert_one_u_64_reducer::InsertOneU64Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneU64),
 			"insert_one_u8" => _reducer_callbacks.handle_event_of_type::<insert_one_u_8_reducer::InsertOneU8Args, ReducerEvent>(event, _state, ReducerEvent::InsertOneU8),
@@ -993,6 +1083,7 @@ match &reducer_call.reducer_name[..] {
 			"insert_pk_bool" => _reducer_callbacks.handle_event_of_type::<insert_pk_bool_reducer::InsertPkBoolArgs, ReducerEvent>(event, _state, ReducerEvent::InsertPkBool),
 			"insert_pk_i128" => _reducer_callbacks.handle_event_of_type::<insert_pk_i_128_reducer::InsertPkI128Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkI128),
 			"insert_pk_i16" => _reducer_callbacks.handle_event_of_type::<insert_pk_i_16_reducer::InsertPkI16Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkI16),
+			"insert_pk_i256" => _reducer_callbacks.handle_event_of_type::<insert_pk_i_256_reducer::InsertPkI256Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkI256),
 			"insert_pk_i32" => _reducer_callbacks.handle_event_of_type::<insert_pk_i_32_reducer::InsertPkI32Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkI32),
 			"insert_pk_i64" => _reducer_callbacks.handle_event_of_type::<insert_pk_i_64_reducer::InsertPkI64Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkI64),
 			"insert_pk_i8" => _reducer_callbacks.handle_event_of_type::<insert_pk_i_8_reducer::InsertPkI8Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkI8),
@@ -1000,6 +1091,7 @@ match &reducer_call.reducer_name[..] {
 			"insert_pk_string" => _reducer_callbacks.handle_event_of_type::<insert_pk_string_reducer::InsertPkStringArgs, ReducerEvent>(event, _state, ReducerEvent::InsertPkString),
 			"insert_pk_u128" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_128_reducer::InsertPkU128Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU128),
 			"insert_pk_u16" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_16_reducer::InsertPkU16Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU16),
+			"insert_pk_u256" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_256_reducer::InsertPkU256Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU256),
 			"insert_pk_u32" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_32_reducer::InsertPkU32Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU32),
 			"insert_pk_u64" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_64_reducer::InsertPkU64Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU64),
 			"insert_pk_u8" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_8_reducer::InsertPkU8Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU8),
@@ -1008,6 +1100,7 @@ match &reducer_call.reducer_name[..] {
 			"insert_unique_bool" => _reducer_callbacks.handle_event_of_type::<insert_unique_bool_reducer::InsertUniqueBoolArgs, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueBool),
 			"insert_unique_i128" => _reducer_callbacks.handle_event_of_type::<insert_unique_i_128_reducer::InsertUniqueI128Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueI128),
 			"insert_unique_i16" => _reducer_callbacks.handle_event_of_type::<insert_unique_i_16_reducer::InsertUniqueI16Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueI16),
+			"insert_unique_i256" => _reducer_callbacks.handle_event_of_type::<insert_unique_i_256_reducer::InsertUniqueI256Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueI256),
 			"insert_unique_i32" => _reducer_callbacks.handle_event_of_type::<insert_unique_i_32_reducer::InsertUniqueI32Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueI32),
 			"insert_unique_i64" => _reducer_callbacks.handle_event_of_type::<insert_unique_i_64_reducer::InsertUniqueI64Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueI64),
 			"insert_unique_i8" => _reducer_callbacks.handle_event_of_type::<insert_unique_i_8_reducer::InsertUniqueI8Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueI8),
@@ -1015,6 +1108,7 @@ match &reducer_call.reducer_name[..] {
 			"insert_unique_string" => _reducer_callbacks.handle_event_of_type::<insert_unique_string_reducer::InsertUniqueStringArgs, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueString),
 			"insert_unique_u128" => _reducer_callbacks.handle_event_of_type::<insert_unique_u_128_reducer::InsertUniqueU128Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueU128),
 			"insert_unique_u16" => _reducer_callbacks.handle_event_of_type::<insert_unique_u_16_reducer::InsertUniqueU16Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueU16),
+			"insert_unique_u256" => _reducer_callbacks.handle_event_of_type::<insert_unique_u_256_reducer::InsertUniqueU256Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueU256),
 			"insert_unique_u32" => _reducer_callbacks.handle_event_of_type::<insert_unique_u_32_reducer::InsertUniqueU32Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueU32),
 			"insert_unique_u64" => _reducer_callbacks.handle_event_of_type::<insert_unique_u_64_reducer::InsertUniqueU64Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueU64),
 			"insert_unique_u8" => _reducer_callbacks.handle_event_of_type::<insert_unique_u_8_reducer::InsertUniqueU8Args, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueU8),
@@ -1028,6 +1122,7 @@ match &reducer_call.reducer_name[..] {
 			"insert_vec_f64" => _reducer_callbacks.handle_event_of_type::<insert_vec_f_64_reducer::InsertVecF64Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecF64),
 			"insert_vec_i128" => _reducer_callbacks.handle_event_of_type::<insert_vec_i_128_reducer::InsertVecI128Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecI128),
 			"insert_vec_i16" => _reducer_callbacks.handle_event_of_type::<insert_vec_i_16_reducer::InsertVecI16Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecI16),
+			"insert_vec_i256" => _reducer_callbacks.handle_event_of_type::<insert_vec_i_256_reducer::InsertVecI256Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecI256),
 			"insert_vec_i32" => _reducer_callbacks.handle_event_of_type::<insert_vec_i_32_reducer::InsertVecI32Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecI32),
 			"insert_vec_i64" => _reducer_callbacks.handle_event_of_type::<insert_vec_i_64_reducer::InsertVecI64Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecI64),
 			"insert_vec_i8" => _reducer_callbacks.handle_event_of_type::<insert_vec_i_8_reducer::InsertVecI8Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecI8),
@@ -1036,6 +1131,7 @@ match &reducer_call.reducer_name[..] {
 			"insert_vec_string" => _reducer_callbacks.handle_event_of_type::<insert_vec_string_reducer::InsertVecStringArgs, ReducerEvent>(event, _state, ReducerEvent::InsertVecString),
 			"insert_vec_u128" => _reducer_callbacks.handle_event_of_type::<insert_vec_u_128_reducer::InsertVecU128Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecU128),
 			"insert_vec_u16" => _reducer_callbacks.handle_event_of_type::<insert_vec_u_16_reducer::InsertVecU16Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecU16),
+			"insert_vec_u256" => _reducer_callbacks.handle_event_of_type::<insert_vec_u_256_reducer::InsertVecU256Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecU256),
 			"insert_vec_u32" => _reducer_callbacks.handle_event_of_type::<insert_vec_u_32_reducer::InsertVecU32Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecU32),
 			"insert_vec_u64" => _reducer_callbacks.handle_event_of_type::<insert_vec_u_64_reducer::InsertVecU64Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecU64),
 			"insert_vec_u8" => _reducer_callbacks.handle_event_of_type::<insert_vec_u_8_reducer::InsertVecU8Args, ReducerEvent>(event, _state, ReducerEvent::InsertVecU8),
@@ -1045,6 +1141,7 @@ match &reducer_call.reducer_name[..] {
 			"update_pk_bool" => _reducer_callbacks.handle_event_of_type::<update_pk_bool_reducer::UpdatePkBoolArgs, ReducerEvent>(event, _state, ReducerEvent::UpdatePkBool),
 			"update_pk_i128" => _reducer_callbacks.handle_event_of_type::<update_pk_i_128_reducer::UpdatePkI128Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkI128),
 			"update_pk_i16" => _reducer_callbacks.handle_event_of_type::<update_pk_i_16_reducer::UpdatePkI16Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkI16),
+			"update_pk_i256" => _reducer_callbacks.handle_event_of_type::<update_pk_i_256_reducer::UpdatePkI256Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkI256),
 			"update_pk_i32" => _reducer_callbacks.handle_event_of_type::<update_pk_i_32_reducer::UpdatePkI32Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkI32),
 			"update_pk_i64" => _reducer_callbacks.handle_event_of_type::<update_pk_i_64_reducer::UpdatePkI64Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkI64),
 			"update_pk_i8" => _reducer_callbacks.handle_event_of_type::<update_pk_i_8_reducer::UpdatePkI8Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkI8),
@@ -1052,6 +1149,7 @@ match &reducer_call.reducer_name[..] {
 			"update_pk_string" => _reducer_callbacks.handle_event_of_type::<update_pk_string_reducer::UpdatePkStringArgs, ReducerEvent>(event, _state, ReducerEvent::UpdatePkString),
 			"update_pk_u128" => _reducer_callbacks.handle_event_of_type::<update_pk_u_128_reducer::UpdatePkU128Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkU128),
 			"update_pk_u16" => _reducer_callbacks.handle_event_of_type::<update_pk_u_16_reducer::UpdatePkU16Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkU16),
+			"update_pk_u256" => _reducer_callbacks.handle_event_of_type::<update_pk_u_256_reducer::UpdatePkU256Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkU256),
 			"update_pk_u32" => _reducer_callbacks.handle_event_of_type::<update_pk_u_32_reducer::UpdatePkU32Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkU32),
 			"update_pk_u64" => _reducer_callbacks.handle_event_of_type::<update_pk_u_64_reducer::UpdatePkU64Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkU64),
 			"update_pk_u8" => _reducer_callbacks.handle_event_of_type::<update_pk_u_8_reducer::UpdatePkU8Args, ReducerEvent>(event, _state, ReducerEvent::UpdatePkU8),
@@ -1059,6 +1157,7 @@ match &reducer_call.reducer_name[..] {
 			"update_unique_bool" => _reducer_callbacks.handle_event_of_type::<update_unique_bool_reducer::UpdateUniqueBoolArgs, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueBool),
 			"update_unique_i128" => _reducer_callbacks.handle_event_of_type::<update_unique_i_128_reducer::UpdateUniqueI128Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueI128),
 			"update_unique_i16" => _reducer_callbacks.handle_event_of_type::<update_unique_i_16_reducer::UpdateUniqueI16Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueI16),
+			"update_unique_i256" => _reducer_callbacks.handle_event_of_type::<update_unique_i_256_reducer::UpdateUniqueI256Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueI256),
 			"update_unique_i32" => _reducer_callbacks.handle_event_of_type::<update_unique_i_32_reducer::UpdateUniqueI32Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueI32),
 			"update_unique_i64" => _reducer_callbacks.handle_event_of_type::<update_unique_i_64_reducer::UpdateUniqueI64Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueI64),
 			"update_unique_i8" => _reducer_callbacks.handle_event_of_type::<update_unique_i_8_reducer::UpdateUniqueI8Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueI8),
@@ -1066,6 +1165,7 @@ match &reducer_call.reducer_name[..] {
 			"update_unique_string" => _reducer_callbacks.handle_event_of_type::<update_unique_string_reducer::UpdateUniqueStringArgs, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueString),
 			"update_unique_u128" => _reducer_callbacks.handle_event_of_type::<update_unique_u_128_reducer::UpdateUniqueU128Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueU128),
 			"update_unique_u16" => _reducer_callbacks.handle_event_of_type::<update_unique_u_16_reducer::UpdateUniqueU16Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueU16),
+			"update_unique_u256" => _reducer_callbacks.handle_event_of_type::<update_unique_u_256_reducer::UpdateUniqueU256Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueU256),
 			"update_unique_u32" => _reducer_callbacks.handle_event_of_type::<update_unique_u_32_reducer::UpdateUniqueU32Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueU32),
 			"update_unique_u64" => _reducer_callbacks.handle_event_of_type::<update_unique_u_64_reducer::UpdateUniqueU64Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueU64),
 			"update_unique_u8" => _reducer_callbacks.handle_event_of_type::<update_unique_u_8_reducer::UpdateUniqueU8Args, ReducerEvent>(event, _state, ReducerEvent::UpdateUniqueU8),
@@ -1099,6 +1199,7 @@ match &reducer_call.reducer_name[..] {
             "OneF64" => client_cache.handle_resubscribe_for_type::<one_f_64::OneF64>(callbacks, new_subs),
             "OneI128" => client_cache.handle_resubscribe_for_type::<one_i_128::OneI128>(callbacks, new_subs),
             "OneI16" => client_cache.handle_resubscribe_for_type::<one_i_16::OneI16>(callbacks, new_subs),
+            "OneI256" => client_cache.handle_resubscribe_for_type::<one_i_256::OneI256>(callbacks, new_subs),
             "OneI32" => client_cache.handle_resubscribe_for_type::<one_i_32::OneI32>(callbacks, new_subs),
             "OneI64" => client_cache.handle_resubscribe_for_type::<one_i_64::OneI64>(callbacks, new_subs),
             "OneI8" => client_cache.handle_resubscribe_for_type::<one_i_8::OneI8>(callbacks, new_subs),
@@ -1109,6 +1210,7 @@ match &reducer_call.reducer_name[..] {
             "OneString" => client_cache.handle_resubscribe_for_type::<one_string::OneString>(callbacks, new_subs),
             "OneU128" => client_cache.handle_resubscribe_for_type::<one_u_128::OneU128>(callbacks, new_subs),
             "OneU16" => client_cache.handle_resubscribe_for_type::<one_u_16::OneU16>(callbacks, new_subs),
+            "OneU256" => client_cache.handle_resubscribe_for_type::<one_u_256::OneU256>(callbacks, new_subs),
             "OneU32" => client_cache.handle_resubscribe_for_type::<one_u_32::OneU32>(callbacks, new_subs),
             "OneU64" => client_cache.handle_resubscribe_for_type::<one_u_64::OneU64>(callbacks, new_subs),
             "OneU8" => client_cache.handle_resubscribe_for_type::<one_u_8::OneU8>(callbacks, new_subs),
@@ -1135,6 +1237,7 @@ match &reducer_call.reducer_name[..] {
             "PkBool" => client_cache.handle_resubscribe_for_type::<pk_bool::PkBool>(callbacks, new_subs),
             "PkI128" => client_cache.handle_resubscribe_for_type::<pk_i_128::PkI128>(callbacks, new_subs),
             "PkI16" => client_cache.handle_resubscribe_for_type::<pk_i_16::PkI16>(callbacks, new_subs),
+            "PkI256" => client_cache.handle_resubscribe_for_type::<pk_i_256::PkI256>(callbacks, new_subs),
             "PkI32" => client_cache.handle_resubscribe_for_type::<pk_i_32::PkI32>(callbacks, new_subs),
             "PkI64" => client_cache.handle_resubscribe_for_type::<pk_i_64::PkI64>(callbacks, new_subs),
             "PkI8" => client_cache.handle_resubscribe_for_type::<pk_i_8::PkI8>(callbacks, new_subs),
@@ -1142,6 +1245,7 @@ match &reducer_call.reducer_name[..] {
             "PkString" => client_cache.handle_resubscribe_for_type::<pk_string::PkString>(callbacks, new_subs),
             "PkU128" => client_cache.handle_resubscribe_for_type::<pk_u_128::PkU128>(callbacks, new_subs),
             "PkU16" => client_cache.handle_resubscribe_for_type::<pk_u_16::PkU16>(callbacks, new_subs),
+            "PkU256" => client_cache.handle_resubscribe_for_type::<pk_u_256::PkU256>(callbacks, new_subs),
             "PkU32" => client_cache.handle_resubscribe_for_type::<pk_u_32::PkU32>(callbacks, new_subs),
             "PkU64" => client_cache.handle_resubscribe_for_type::<pk_u_64::PkU64>(callbacks, new_subs),
             "PkU8" => client_cache.handle_resubscribe_for_type::<pk_u_8::PkU8>(callbacks, new_subs),
@@ -1154,6 +1258,7 @@ match &reducer_call.reducer_name[..] {
             "UniqueBool" => client_cache.handle_resubscribe_for_type::<unique_bool::UniqueBool>(callbacks, new_subs),
             "UniqueI128" => client_cache.handle_resubscribe_for_type::<unique_i_128::UniqueI128>(callbacks, new_subs),
             "UniqueI16" => client_cache.handle_resubscribe_for_type::<unique_i_16::UniqueI16>(callbacks, new_subs),
+            "UniqueI256" => client_cache.handle_resubscribe_for_type::<unique_i_256::UniqueI256>(callbacks, new_subs),
             "UniqueI32" => client_cache.handle_resubscribe_for_type::<unique_i_32::UniqueI32>(callbacks, new_subs),
             "UniqueI64" => client_cache.handle_resubscribe_for_type::<unique_i_64::UniqueI64>(callbacks, new_subs),
             "UniqueI8" => client_cache.handle_resubscribe_for_type::<unique_i_8::UniqueI8>(callbacks, new_subs),
@@ -1165,6 +1270,7 @@ match &reducer_call.reducer_name[..] {
             }
             "UniqueU128" => client_cache.handle_resubscribe_for_type::<unique_u_128::UniqueU128>(callbacks, new_subs),
             "UniqueU16" => client_cache.handle_resubscribe_for_type::<unique_u_16::UniqueU16>(callbacks, new_subs),
+            "UniqueU256" => client_cache.handle_resubscribe_for_type::<unique_u_256::UniqueU256>(callbacks, new_subs),
             "UniqueU32" => client_cache.handle_resubscribe_for_type::<unique_u_32::UniqueU32>(callbacks, new_subs),
             "UniqueU64" => client_cache.handle_resubscribe_for_type::<unique_u_64::UniqueU64>(callbacks, new_subs),
             "UniqueU8" => client_cache.handle_resubscribe_for_type::<unique_u_8::UniqueU8>(callbacks, new_subs),
@@ -1186,6 +1292,7 @@ match &reducer_call.reducer_name[..] {
             "VecF64" => client_cache.handle_resubscribe_for_type::<vec_f_64::VecF64>(callbacks, new_subs),
             "VecI128" => client_cache.handle_resubscribe_for_type::<vec_i_128::VecI128>(callbacks, new_subs),
             "VecI16" => client_cache.handle_resubscribe_for_type::<vec_i_16::VecI16>(callbacks, new_subs),
+            "VecI256" => client_cache.handle_resubscribe_for_type::<vec_i_256::VecI256>(callbacks, new_subs),
             "VecI32" => client_cache.handle_resubscribe_for_type::<vec_i_32::VecI32>(callbacks, new_subs),
             "VecI64" => client_cache.handle_resubscribe_for_type::<vec_i_64::VecI64>(callbacks, new_subs),
             "VecI8" => client_cache.handle_resubscribe_for_type::<vec_i_8::VecI8>(callbacks, new_subs),
@@ -1196,6 +1303,7 @@ match &reducer_call.reducer_name[..] {
             "VecString" => client_cache.handle_resubscribe_for_type::<vec_string::VecString>(callbacks, new_subs),
             "VecU128" => client_cache.handle_resubscribe_for_type::<vec_u_128::VecU128>(callbacks, new_subs),
             "VecU16" => client_cache.handle_resubscribe_for_type::<vec_u_16::VecU16>(callbacks, new_subs),
+            "VecU256" => client_cache.handle_resubscribe_for_type::<vec_u_256::VecU256>(callbacks, new_subs),
             "VecU32" => client_cache.handle_resubscribe_for_type::<vec_u_32::VecU32>(callbacks, new_subs),
             "VecU64" => client_cache.handle_resubscribe_for_type::<vec_u_64::VecU64>(callbacks, new_subs),
             "VecU8" => client_cache.handle_resubscribe_for_type::<vec_u_8::VecU8>(callbacks, new_subs),

@@ -1448,6 +1448,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ethnum"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b90ca2580b73ab6a1f724b76ca11ab632df820fd6040c336200d2c1df7b3c82c"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "fallible-iterator"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4475,11 +4484,13 @@ dependencies = [
  "arrayvec",
  "bitflags 2.4.1",
  "blake3",
+ "bytemuck",
  "bytes",
  "bytestring",
  "decorum",
  "derive_more",
  "enum-as-inner",
+ "ethnum",
  "hex",
  "itertools 0.12.0",
  "proptest",

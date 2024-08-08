@@ -3,6 +3,7 @@ use spacetimedb_sdk::{
     identity::{address, identity, load_credentials, once_on_connect, save_credentials},
     once_on_disconnect, once_on_subscription_applied,
     reducer::Status,
+    sats::{i256, u256},
     subscribe,
     table::TableType,
 };
@@ -121,12 +122,14 @@ fn assert_all_tables_empty() -> anyhow::Result<()> {
     assert_table_empty::<OneU32>()?;
     assert_table_empty::<OneU64>()?;
     assert_table_empty::<OneU128>()?;
+    assert_table_empty::<OneU256>()?;
 
     assert_table_empty::<OneI8>()?;
     assert_table_empty::<OneI16>()?;
     assert_table_empty::<OneI32>()?;
     assert_table_empty::<OneI64>()?;
     assert_table_empty::<OneI128>()?;
+    assert_table_empty::<OneI256>()?;
 
     assert_table_empty::<OneBool>()?;
 
@@ -150,12 +153,14 @@ fn assert_all_tables_empty() -> anyhow::Result<()> {
     assert_table_empty::<VecU32>()?;
     assert_table_empty::<VecU64>()?;
     assert_table_empty::<VecU128>()?;
+    assert_table_empty::<VecU256>()?;
 
     assert_table_empty::<VecI8>()?;
     assert_table_empty::<VecI16>()?;
     assert_table_empty::<VecI32>()?;
     assert_table_empty::<VecI64>()?;
     assert_table_empty::<VecI128>()?;
+    assert_table_empty::<VecI256>()?;
 
     assert_table_empty::<VecBool>()?;
 
@@ -186,12 +191,14 @@ fn assert_all_tables_empty() -> anyhow::Result<()> {
     assert_table_empty::<UniqueU32>()?;
     assert_table_empty::<UniqueU64>()?;
     assert_table_empty::<UniqueU128>()?;
+    assert_table_empty::<UniqueU256>()?;
 
     assert_table_empty::<UniqueI8>()?;
     assert_table_empty::<UniqueI16>()?;
     assert_table_empty::<UniqueI32>()?;
     assert_table_empty::<UniqueI64>()?;
     assert_table_empty::<UniqueI128>()?;
+    assert_table_empty::<UniqueI256>()?;
 
     assert_table_empty::<UniqueBool>()?;
 
@@ -204,12 +211,14 @@ fn assert_all_tables_empty() -> anyhow::Result<()> {
     assert_table_empty::<PkU32>()?;
     assert_table_empty::<PkU64>()?;
     assert_table_empty::<PkU128>()?;
+    assert_table_empty::<PkU256>()?;
 
     assert_table_empty::<PkI8>()?;
     assert_table_empty::<PkI16>()?;
     assert_table_empty::<PkI32>()?;
     assert_table_empty::<PkI64>()?;
     assert_table_empty::<PkI128>()?;
+    assert_table_empty::<PkI256>()?;
 
     assert_table_empty::<PkBool>()?;
 
@@ -231,11 +240,13 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM OneU32;",
     "SELECT * FROM OneU64;",
     "SELECT * FROM OneU128;",
+    "SELECT * FROM OneU256;",
     "SELECT * FROM OneI8;",
     "SELECT * FROM OneI16;",
     "SELECT * FROM OneI32;",
     "SELECT * FROM OneI64;",
     "SELECT * FROM OneI128;",
+    "SELECT * FROM OneI256;",
     "SELECT * FROM OneBool;",
     "SELECT * FROM OneF32;",
     "SELECT * FROM OneF64;",
@@ -253,11 +264,13 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM VecU32;",
     "SELECT * FROM VecU64;",
     "SELECT * FROM VecU128;",
+    "SELECT * FROM VecU256;",
     "SELECT * FROM VecI8;",
     "SELECT * FROM VecI16;",
     "SELECT * FROM VecI32;",
     "SELECT * FROM VecI64;",
     "SELECT * FROM VecI128;",
+    "SELECT * FROM VecI256;",
     "SELECT * FROM VecBool;",
     "SELECT * FROM VecF32;",
     "SELECT * FROM VecF64;",
@@ -281,11 +294,13 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM UniqueU32;",
     "SELECT * FROM UniqueU64;",
     "SELECT * FROM UniqueU128;",
+    "SELECT * FROM UniqueU256;",
     "SELECT * FROM UniqueI8;",
     "SELECT * FROM UniqueI16;",
     "SELECT * FROM UniqueI32;",
     "SELECT * FROM UniqueI64;",
     "SELECT * FROM UniqueI128;",
+    "SELECT * FROM UniqueI256;",
     "SELECT * FROM UniqueBool;",
     "SELECT * FROM UniqueString;",
     "SELECT * FROM UniqueIdentity;",
@@ -295,11 +310,13 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM PkU32;",
     "SELECT * FROM PkU64;",
     "SELECT * FROM PkU128;",
+    "SELECT * FROM PkU256;",
     "SELECT * FROM PkI8;",
     "SELECT * FROM PkI16;",
     "SELECT * FROM PkI32;",
     "SELECT * FROM PkI64;",
     "SELECT * FROM PkI128;",
+    "SELECT * FROM PkI256;",
     "SELECT * FROM PkBool;",
     "SELECT * FROM PkString;",
     "SELECT * FROM PkIdentity;",
@@ -330,12 +347,14 @@ fn exec_insert_primitive() {
             insert_one::<OneU32>(&test_counter, 0);
             insert_one::<OneU64>(&test_counter, 0);
             insert_one::<OneU128>(&test_counter, 0);
+            insert_one::<OneU256>(&test_counter, 0u8.into());
 
             insert_one::<OneI8>(&test_counter, 0);
             insert_one::<OneI16>(&test_counter, 0);
             insert_one::<OneI32>(&test_counter, 0);
             insert_one::<OneI64>(&test_counter, 0);
             insert_one::<OneI128>(&test_counter, 0);
+            insert_one::<OneI256>(&test_counter, 0i8.into());
 
             insert_one::<OneBool>(&test_counter, false);
 
@@ -374,12 +393,14 @@ fn exec_delete_primitive() {
             insert_then_delete_one::<UniqueU32>(&test_counter, 0, 0xbeef);
             insert_then_delete_one::<UniqueU64>(&test_counter, 0, 0xbeef);
             insert_then_delete_one::<UniqueU128>(&test_counter, 0, 0xbeef);
+            insert_then_delete_one::<UniqueU256>(&test_counter, 0u8.into(), 0xbeef);
 
             insert_then_delete_one::<UniqueI8>(&test_counter, 0, 0xbeef);
             insert_then_delete_one::<UniqueI16>(&test_counter, 0, 0xbeef);
             insert_then_delete_one::<UniqueI32>(&test_counter, 0, 0xbeef);
             insert_then_delete_one::<UniqueI64>(&test_counter, 0, 0xbeef);
             insert_then_delete_one::<UniqueI128>(&test_counter, 0, 0xbeef);
+            insert_then_delete_one::<UniqueI256>(&test_counter, 0i8.into(), 0xbeef);
 
             insert_then_delete_one::<UniqueBool>(&test_counter, false, 0xbeef);
 
@@ -417,12 +438,14 @@ fn exec_update_primitive() {
             insert_update_delete_one::<PkU32>(&test_counter, 0, 0xbeef, 0xbabe);
             insert_update_delete_one::<PkU64>(&test_counter, 0, 0xbeef, 0xbabe);
             insert_update_delete_one::<PkU128>(&test_counter, 0, 0xbeef, 0xbabe);
+            insert_update_delete_one::<PkU256>(&test_counter, 0u8.into(), 0xbeef, 0xbabe);
 
             insert_update_delete_one::<PkI8>(&test_counter, 0, 0xbeef, 0xbabe);
             insert_update_delete_one::<PkI16>(&test_counter, 0, 0xbeef, 0xbabe);
             insert_update_delete_one::<PkI32>(&test_counter, 0, 0xbeef, 0xbabe);
             insert_update_delete_one::<PkI64>(&test_counter, 0, 0xbeef, 0xbabe);
             insert_update_delete_one::<PkI128>(&test_counter, 0, 0xbeef, 0xbabe);
+            insert_update_delete_one::<PkI256>(&test_counter, 0i8.into(), 0xbeef, 0xbabe);
 
             insert_update_delete_one::<PkBool>(&test_counter, false, 0xbeef, 0xbabe);
 
@@ -824,12 +847,14 @@ fn exec_insert_vec() {
             insert_one::<VecU32>(&test_counter, vec![0, 1]);
             insert_one::<VecU64>(&test_counter, vec![0, 1]);
             insert_one::<VecU128>(&test_counter, vec![0, 1]);
+            insert_one::<VecU256>(&test_counter, [0u8, 1].map(Into::into).into());
 
             insert_one::<VecI8>(&test_counter, vec![0, 1]);
             insert_one::<VecI16>(&test_counter, vec![0, 1]);
             insert_one::<VecI32>(&test_counter, vec![0, 1]);
             insert_one::<VecI64>(&test_counter, vec![0, 1]);
             insert_one::<VecI128>(&test_counter, vec![0, 1]);
+            insert_one::<VecI256>(&test_counter, [0i8, 1].map(Into::into).into());
 
             insert_one::<VecBool>(&test_counter, vec![false, true]);
 
@@ -858,17 +883,19 @@ fn every_primitive_struct() -> EveryPrimitiveStruct {
         c: 2,
         d: 3,
         e: 4,
-        f: -1,
-        g: -2,
-        h: -3,
-        i: -4,
-        j: -5,
-        k: false,
-        l: 1.0,
-        m: -1.0,
-        n: "string".to_string(),
-        o: identity().unwrap(),
-        p: address().unwrap(),
+        f: 5u8.into(),
+        g: -1,
+        h: -2,
+        i: -3,
+        j: -4,
+        k: -5,
+        l: (-5i8).into(),
+        m: false,
+        n: 1.0,
+        o: -1.0,
+        p: "string".to_string(),
+        q: identity().unwrap(),
+        r: address().unwrap(),
     }
 }
 
@@ -879,17 +906,19 @@ fn every_vec_struct() -> EveryVecStruct {
         c: vec![2, 2],
         d: vec![3, 3, 3],
         e: vec![4, 4, 4, 4],
-        f: vec![-1],
-        g: vec![-2, -2],
-        h: vec![-3, -3, -3],
-        i: vec![-4, -4, -4, -4],
-        j: vec![-5, -5, -5, -5, -5],
-        k: vec![false, true, true, false],
-        l: vec![0.0, -1.0, 1.0, -2.0, 2.0],
-        m: vec![0.0, -0.5, 0.5, -1.5, 1.5],
-        n: ["vec", "of", "strings"].into_iter().map(str::to_string).collect(),
-        o: vec![identity().unwrap()],
-        p: vec![address().unwrap()],
+        f: [5u8, 5, 5, 5, 5].map(Into::into).into(),
+        g: vec![-1],
+        h: vec![-2, -2],
+        i: vec![-3, -3, -3],
+        j: vec![-4, -4, -4, -4],
+        k: vec![-5, -5, -5, -5, -5],
+        l: [-6i8, -6, -6, -6, -6, -6].map(Into::into).into(),
+        m: vec![false, true, true, false],
+        n: vec![0.0, -1.0, 1.0, -2.0, 2.0],
+        o: vec![0.0, -0.5, 0.5, -1.5, 1.5],
+        p: ["vec", "of", "strings"].into_iter().map(str::to_string).collect(),
+        q: vec![identity().unwrap()],
+        r: vec![address().unwrap()],
     }
 }
 
@@ -997,11 +1026,13 @@ fn exec_insert_enum_with_payload() {
                     EnumWithPayload::U32(2),
                     EnumWithPayload::U64(3),
                     EnumWithPayload::U128(4),
+                    EnumWithPayload::U256(5u8.into()),
                     EnumWithPayload::I8(0),
                     EnumWithPayload::I16(-1),
                     EnumWithPayload::I32(-2),
                     EnumWithPayload::I64(-3),
                     EnumWithPayload::I128(-4),
+                    EnumWithPayload::I128((-5i8).into()),
                     EnumWithPayload::Bool(true),
                     EnumWithPayload::F32(0.0),
                     EnumWithPayload::F64(100.0),
@@ -1077,21 +1108,23 @@ fn exec_insert_long_table() {
                         assert_eq_or_bail!(row.c, 2);
                         assert_eq_or_bail!(row.d, 3);
                         assert_eq_or_bail!(row.e, 4);
-                        assert_eq_or_bail!(row.f, 0);
-                        assert_eq_or_bail!(row.g, -1);
-                        assert_eq_or_bail!(row.h, -2);
-                        assert_eq_or_bail!(row.i, -3);
-                        assert_eq_or_bail!(row.j, -4);
-                        assert_eq_or_bail!(row.k, false);
-                        assert_eq_or_bail!(row.l, 0.0);
-                        assert_eq_or_bail!(row.m, 1.0);
-                        assert_eq_or_bail!(&row.n, "string");
-                        assert_eq_or_bail!(row.o, SimpleEnum::Zero);
-                        assert_eq_or_bail!(row.p, EnumWithPayload::Bool(false));
-                        assert_eq_or_bail!(row.q, UnitStruct {});
-                        assert_eq_or_bail!(row.r, ByteStruct { b: 0b10101010 });
-                        assert_eq_or_bail!(row.s, every_primitive_struct());
-                        assert_eq_or_bail!(row.t, every_vec_struct());
+                        assert_eq_or_bail!(row.f, u256::from(5u8));
+                        assert_eq_or_bail!(row.g, 0);
+                        assert_eq_or_bail!(row.h, -1);
+                        assert_eq_or_bail!(row.i, -2);
+                        assert_eq_or_bail!(row.j, -3);
+                        assert_eq_or_bail!(row.k, -4);
+                        assert_eq_or_bail!(row.l, i256::from(-5i8));
+                        assert_eq_or_bail!(row.m, false);
+                        assert_eq_or_bail!(row.n, 0.0);
+                        assert_eq_or_bail!(row.o, 1.0);
+                        assert_eq_or_bail!(&row.p, "string");
+                        assert_eq_or_bail!(row.q, SimpleEnum::Zero);
+                        assert_eq_or_bail!(row.r, EnumWithPayload::Bool(false));
+                        assert_eq_or_bail!(row.s, UnitStruct {});
+                        assert_eq_or_bail!(row.t, ByteStruct { b: 0b10101010 });
+                        assert_eq_or_bail!(row.u, every_primitive_struct());
+                        assert_eq_or_bail!(row.v, every_vec_struct());
                         if !matches!(reducer_event, Some(ReducerEvent::InsertLargeTable(_))) {
                             anyhow::bail!(
                                 "Unexpected reducer event: expeced InsertLargeTable but found {:?}",
@@ -1109,11 +1142,13 @@ fn exec_insert_long_table() {
                 2,
                 3,
                 4,
+                5u8.into(),
                 0,
                 -1,
                 -2,
                 -3,
                 -4,
+                (-5i8).into(),
                 false,
                 0.0,
                 1.0,
@@ -1381,12 +1416,14 @@ fn exec_subscribe_all_select_star() {
             insert_one::<OneU32>(&test_counter, 0);
             insert_one::<OneU64>(&test_counter, 0);
             insert_one::<OneU128>(&test_counter, 0);
+            insert_one::<OneU256>(&test_counter, 0u8.into());
 
             insert_one::<OneI8>(&test_counter, 0);
             insert_one::<OneI16>(&test_counter, 0);
             insert_one::<OneI32>(&test_counter, 0);
             insert_one::<OneI64>(&test_counter, 0);
             insert_one::<OneI128>(&test_counter, 0);
+            insert_one::<OneI256>(&test_counter, 0i8.into());
 
             insert_one::<OneBool>(&test_counter, false);
 

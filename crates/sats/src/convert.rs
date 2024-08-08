@@ -1,3 +1,4 @@
+use crate::{i256, u256};
 use crate::{AlgebraicType, AlgebraicValue, MapType, MapValue, ProductType, ProductValue};
 use spacetimedb_primitives::{ColId, ConstraintId, IndexId, SequenceId, TableId};
 
@@ -30,12 +31,6 @@ impl From<MapType> for AlgebraicType {
     }
 }
 
-impl From<MapValue> for AlgebraicValue {
-    fn from(x: MapValue) -> Self {
-        Box::new(x).into()
-    }
-}
-
 macro_rules! built_in_into {
     ($native:ty, $kind:ident) => {
         impl From<$native> for AlgebraicValue {
@@ -46,6 +41,11 @@ macro_rules! built_in_into {
     };
 }
 
+built_in_into!(MapValue, Map);
+built_in_into!(u128, U128);
+built_in_into!(i128, I128);
+built_in_into!(u256, U256);
+built_in_into!(i256, I256);
 built_in_into!(f32, F32);
 built_in_into!(f64, F64);
 built_in_into!(&str, String);

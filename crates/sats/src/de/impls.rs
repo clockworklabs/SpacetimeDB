@@ -1,22 +1,17 @@
-use std::borrow::Cow;
-use std::collections::BTreeMap;
-use std::marker::PhantomData;
-
-// use crate::type_value::{ElementValue, EnumValue};
-// use crate::{ProductTypeElement, SumType, PrimitiveType, ReducerDef, ProductType, ProductValue, AlgebraicType, AlgebraicValue};
-
-use spacetimedb_primitives::{ColId, ColListBuilder};
-
+use super::{
+    BasicMapVisitor, BasicVecVisitor, Deserialize, DeserializeSeed, Deserializer, Error, FieldNameVisitor, ProductKind,
+    ProductVisitor, SeqProductAccess, SliceVisitor, SumAccess, SumVisitor, VariantAccess, VariantVisitor,
+};
 use crate::{
     de::{array_visit, ArrayAccess, ArrayVisitor, GrowingVec},
     AlgebraicType, AlgebraicValue, ArrayType, ArrayValue, MapType, MapValue, ProductType, ProductTypeElement,
     ProductValue, SumType, SumValue, WithTypespace, F32, F64,
 };
-
-use super::{
-    BasicMapVisitor, BasicVecVisitor, Deserialize, DeserializeSeed, Deserializer, Error, FieldNameVisitor, ProductKind,
-    ProductVisitor, SeqProductAccess, SliceVisitor, SumAccess, SumVisitor, VariantAccess, VariantVisitor,
-};
+use crate::{i256, u256};
+use core::marker::PhantomData;
+use spacetimedb_primitives::{ColId, ColListBuilder};
+use std::borrow::Cow;
+use std::collections::BTreeMap;
 
 /// Implements [`Deserialize`] for a type in a simplified manner.
 ///
@@ -51,9 +46,9 @@ macro_rules! impl_prim {
 }
 
 impl_prim! {
-    (bool, deserialize_bool) /*(u8, deserialize_u8)*/ (u16, deserialize_u16)
-    (u32, deserialize_u32) (u64, deserialize_u64) (u128, deserialize_u128) (i8, deserialize_i8)
-    (i16, deserialize_i16) (i32, deserialize_i32) (i64, deserialize_i64) (i128, deserialize_i128)
+    (bool, deserialize_bool)
+    /*(u8, deserialize_u8)*/ (u16, deserialize_u16) (u32, deserialize_u32) (u64, deserialize_u64) (u128, deserialize_u128) (u256, deserialize_u256)
+    (i8, deserialize_i8)     (i16, deserialize_i16) (i32, deserialize_i32) (i64, deserialize_i64) (i128, deserialize_i128) (i256, deserialize_i256)
     (f32, deserialize_f32) (f64, deserialize_f64)
 }
 
@@ -318,6 +313,8 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
             AlgebraicType::U64 => u64::deserialize(de).map(Into::into),
             AlgebraicType::I128 => i128::deserialize(de).map(Into::into),
             AlgebraicType::U128 => u128::deserialize(de).map(Into::into),
+            AlgebraicType::I256 => i256::deserialize(de).map(Into::into),
+            AlgebraicType::U256 => u256::deserialize(de).map(Into::into),
             AlgebraicType::F32 => f32::deserialize(de).map(Into::into),
             AlgebraicType::F64 => f64::deserialize(de).map(Into::into),
             AlgebraicType::String => <Box<str>>::deserialize(de).map(Into::into),
@@ -462,6 +459,8 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ArrayType> {
                 &AlgebraicType::U64 => de_array(deserializer, ArrayValue::U64),
                 &AlgebraicType::I128 => de_array(deserializer, ArrayValue::I128),
                 &AlgebraicType::U128 => de_array(deserializer, ArrayValue::U128),
+                &AlgebraicType::I256 => de_array(deserializer, ArrayValue::I256),
+                &AlgebraicType::U256 => de_array(deserializer, ArrayValue::U256),
                 &AlgebraicType::F32 => de_array(deserializer, ArrayValue::F32),
                 &AlgebraicType::F64 => de_array(deserializer, ArrayValue::F64),
                 &AlgebraicType::String => de_array(deserializer, ArrayValue::String),

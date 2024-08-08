@@ -154,6 +154,8 @@ unsafe fn eq_value(ctx: &mut EqCtx<'_, '_>, ty: &AlgebraicTypeLayout) -> bool {
         | &AlgebraicTypeLayout::U64
         | &AlgebraicTypeLayout::I128
         | &AlgebraicTypeLayout::U128
+        | &AlgebraicTypeLayout::I256
+        | &AlgebraicTypeLayout::U256
         | &AlgebraicTypeLayout::F32
         | &AlgebraicTypeLayout::F64 => eq_byte_array(ctx, ty.size()),
 

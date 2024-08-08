@@ -7,12 +7,13 @@ pub mod serde;
 
 #[doc(hidden)]
 pub use impls::{visit_named_product, visit_seq_product};
-use smallvec::SmallVec;
 
+use crate::{i256, u256};
+use core::fmt;
+use core::marker::PhantomData;
+use smallvec::SmallVec;
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
-use std::fmt;
-use std::marker::PhantomData;
 
 /// A **data format** that can deserialize any data structure supported by SATS.
 ///
@@ -87,25 +88,31 @@ pub trait Deserializer<'de>: Sized {
     /// Deserializes a `u128` value from the input.
     fn deserialize_u128(self) -> Result<u128, Self::Error>;
 
-    /// Deserializes an `i8 value from the input.
+    /// Deserializes a `u256` value from the input.
+    fn deserialize_u256(self) -> Result<u256, Self::Error>;
+
+    /// Deserializes an `i8` value from the input.
     fn deserialize_i8(self) -> Result<i8, Self::Error>;
 
-    /// Deserializes an `i16 value from the input.
+    /// Deserializes an `i16` value from the input.
     fn deserialize_i16(self) -> Result<i16, Self::Error>;
 
-    /// Deserializes an `i32 value from the input.
+    /// Deserializes an `i32` value from the input.
     fn deserialize_i32(self) -> Result<i32, Self::Error>;
 
-    /// Deserializes an `i64 value from the input.
+    /// Deserializes an `i64` value from the input.
     fn deserialize_i64(self) -> Result<i64, Self::Error>;
 
-    /// Deserializes an `i128 value from the input.
+    /// Deserializes an `i128` value from the input.
     fn deserialize_i128(self) -> Result<i128, Self::Error>;
 
-    /// Deserializes an `f32 value from the input.
+    /// Deserializes an `i256` value from the input.
+    fn deserialize_i256(self) -> Result<i256, Self::Error>;
+
+    /// Deserializes an `f32` value from the input.
     fn deserialize_f32(self) -> Result<f32, Self::Error>;
 
-    /// Deserializes an `f64 value from the input.
+    /// Deserializes an `f64` value from the input.
     fn deserialize_f64(self) -> Result<f64, Self::Error>;
 
     /// Deserializes a string-like object the input.
@@ -214,7 +221,7 @@ pub trait Error: Sized {
     fn unknown_variant_tag<'de, T: SumVisitor<'de>>(tag: u8, expected: &T) -> Self {
         Self::custom(format_args!(
             "unknown tag {tag:#x} for sum type {}",
-            expected.sum_name().unwrap_or("<sum>"),
+            expected.sum_name().unwrap_or("<unknown>"),
         ))
     }
 

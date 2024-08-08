@@ -5,7 +5,7 @@ mod impls;
 #[cfg(feature = "serde")]
 pub mod serde;
 
-use std::fmt;
+use core::fmt;
 
 /// A **data format** that can deserialize any data structure supported by SATs.
 ///
@@ -62,6 +62,9 @@ pub trait Serializer: Sized {
     /// Serialize a `u128` value.
     fn serialize_u128(self, v: u128) -> Result<Self::Ok, Self::Error>;
 
+    /// Serialize a `u256` value.
+    fn serialize_u256(self, v: u256) -> Result<Self::Ok, Self::Error>;
+
     /// Serialize an `i8` value.
     fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error>;
 
@@ -76,6 +79,9 @@ pub trait Serializer: Sized {
 
     /// Serialize an `i128` value.
     fn serialize_i128(self, v: i128) -> Result<Self::Ok, Self::Error>;
+
+    /// Serialize an `i256` value.
+    fn serialize_i256(self, v: i256) -> Result<Self::Ok, Self::Error>;
 
     /// Serialize an `f32` value.
     fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error>;
@@ -203,6 +209,7 @@ pub trait Serializer: Sized {
     ) -> Result<Self::Ok, Self::Error>;
 }
 
+use ethnum::{i256, u256};
 pub use spacetimedb_bindings_macro::Serialize;
 
 use crate::AlgebraicType;

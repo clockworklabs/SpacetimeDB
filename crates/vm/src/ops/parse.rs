@@ -1,7 +1,7 @@
 use crate::errors::{ErrorType, ErrorVm};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_sats::satn::Satn;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, SumType};
+use spacetimedb_sats::{i256, u256, AlgebraicType, AlgebraicValue, ProductType, SumType};
 use std::fmt::Display;
 use std::str::FromStr;
 
@@ -77,6 +77,8 @@ pub fn parse(value: &str, ty: &AlgebraicType) -> Result<AlgebraicValue, ErrorVm>
         &AlgebraicType::U64 => _parse::<u64>(value, ty),
         &AlgebraicType::I128 => _parse::<i128>(value, ty),
         &AlgebraicType::U128 => _parse::<u128>(value, ty),
+        &AlgebraicType::I256 => _parse::<i256>(value, ty),
+        &AlgebraicType::U256 => _parse::<u256>(value, ty),
         &AlgebraicType::F32 => _parse::<f32>(value, ty),
         &AlgebraicType::F64 => _parse::<f64>(value, ty),
         &AlgebraicType::String => Ok(AlgebraicValue::String(value.into())),

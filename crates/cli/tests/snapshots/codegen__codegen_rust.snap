@@ -1,6 +1,5 @@
 ---
 source: crates/cli/tests/codegen.rs
-assertion_line: 32
 expression: outfiles
 ---
 "add_player_reducer.rs" = '''
@@ -9,7 +8,7 @@ expression: outfiles
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -78,7 +77,7 @@ pub fn remove_on_add_player(id: ReducerCallbackId<AddPlayerArgs>) {
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -147,7 +146,7 @@ pub fn remove_on_add_private(id: ReducerCallbackId<AddPrivateArgs>) {
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -216,7 +215,7 @@ pub fn remove_on_delete_player(id: ReducerCallbackId<DeletePlayerArgs>) {
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -285,7 +284,7 @@ pub fn remove_on_delete_players_by_name(id: ReducerCallbackId<DeletePlayersByNam
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -427,7 +426,7 @@ where
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -449,7 +448,7 @@ pub enum Namespace.testC {
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -472,7 +471,7 @@ pub enum Namespace.testF {
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -523,7 +522,7 @@ impl PkMultiIdentity {
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -560,7 +559,7 @@ impl Point {
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -592,7 +591,7 @@ impl Private {
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -654,7 +653,7 @@ pub fn remove_on_query_private(id: ReducerCallbackId<QueryPrivateArgs>) {
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -703,7 +702,7 @@ impl RepeatingTestArg {
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -773,7 +772,7 @@ pub fn remove_on_repeating_test(id: ReducerCallbackId<RepeatingTestArgs>) {
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -793,7 +792,7 @@ Interval(u64),
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -835,7 +834,7 @@ impl TestA {
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -854,7 +853,7 @@ pub struct TestB {
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -883,7 +882,7 @@ impl TestD {
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,
@@ -930,7 +929,7 @@ impl TestE {
 
 #![allow(unused_imports)]use spacetimedb_sdk::{
 	Address, ScheduleAt,
-	sats::{ser::Serialize, de::Deserialize},
+	sats::{ser::Serialize, de::Deserialize, i256, u256},
 	table::{TableType, TableIter, TableWithPrimaryKey},
 	reducer::{Reducer, ReducerCallbackId, Status},
 	identity::Identity,

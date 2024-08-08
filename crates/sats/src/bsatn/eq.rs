@@ -24,6 +24,8 @@ pub fn eq_bsatn<'r>(lhs: &AlgebraicValue, rhs: Deserializer<'_, impl BufReader<'
         AlgebraicValue::U64(lhs) => eq_bsatn_de(lhs, rhs),
         AlgebraicValue::I128(lhs) => eq_bsatn_de(&{ lhs.0 }, rhs),
         AlgebraicValue::U128(lhs) => eq_bsatn_de(&{ lhs.0 }, rhs),
+        AlgebraicValue::I256(lhs) => eq_bsatn_de(lhs, rhs),
+        AlgebraicValue::U256(lhs) => eq_bsatn_de(lhs, rhs),
         AlgebraicValue::F32(lhs) => eq_bsatn_de(lhs, rhs),
         AlgebraicValue::F64(lhs) => eq_bsatn_de(lhs, rhs),
         AlgebraicValue::String(lhs) => eq_bsatn_str(lhs, rhs),
@@ -69,6 +71,8 @@ fn eq_bsatn_array<'r>(lhs: &ArrayValue, rhs: Deserializer<'_, impl BufReader<'r>
         ArrayValue::U64(lhs) => unsafe { eq_bsatn_int_seq(lhs, rhs) },
         ArrayValue::I128(lhs) => unsafe { eq_bsatn_int_seq(lhs, rhs) },
         ArrayValue::U128(lhs) => unsafe { eq_bsatn_int_seq(lhs, rhs) },
+        ArrayValue::I256(lhs) => unsafe { eq_bsatn_int_seq(lhs, rhs) },
+        ArrayValue::U256(lhs) => unsafe { eq_bsatn_int_seq(lhs, rhs) },
     }
 }
 

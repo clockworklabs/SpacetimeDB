@@ -53,12 +53,12 @@ public partial struct PublicTable
     public ushort UshortField;
     public uint UintField;
     public ulong UlongField;
-    public UInt128 Uint128Field;
+    public U128 U128Field;
     public sbyte SbyteField;
     public short ShortField;
     public int IntField;
     public long LongField;
-    public Int128 Int128Field;
+    public I128 I128Field;
     public bool BoolField;
     public float FloatField;
     public double DoubleField;

@@ -226,6 +226,7 @@ pub trait SpacetimeType {
     fn make_type<S: TypespaceBuilder>(typespace: &mut S) -> AlgebraicType;
 }
 
+use ethnum::{i256, u256};
 pub use spacetimedb_bindings_macro::SpacetimeType;
 
 /// A trait for types that can build a [`Typespace`].
@@ -291,6 +292,8 @@ impl_primitives! {
     i64 => I64,
     u128 => U128,
     i128 => I128,
+    u256 => U256,
+    i256 => I256,
     f32 => F32,
     f64 => F64,
     String => String,

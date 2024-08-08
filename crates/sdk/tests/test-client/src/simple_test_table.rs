@@ -1,6 +1,11 @@
 use crate::module_bindings::*;
 use anyhow::anyhow;
-use spacetimedb_sdk::{identity::Identity, table::TableType, Address};
+use spacetimedb_sdk::{
+    identity::Identity,
+    sats::{i256, u256},
+    table::TableType,
+    Address,
+};
 use std::sync::Arc;
 use test_counter::TestCounter;
 
@@ -73,6 +78,12 @@ impl_simple_test_table! {
         insert_reducer = insert_one_u_128;
         insert_reducer_event = InsertOneU128;
     }
+    OneU256 {
+        Contents = u256;
+        field_name = n;
+        insert_reducer = insert_one_u_256;
+        insert_reducer_event = InsertOneU256;
+    }
 
     OneI8 {
         Contents = i8;
@@ -103,6 +114,12 @@ impl_simple_test_table! {
         field_name = n;
         insert_reducer = insert_one_i_128;
         insert_reducer_event = InsertOneI128;
+    }
+    OneI256 {
+        Contents = i256;
+        field_name = n;
+        insert_reducer = insert_one_i_256;
+        insert_reducer_event = InsertOneI256;
     }
 
     OneF32 {
@@ -214,6 +231,12 @@ impl_simple_test_table! {
         insert_reducer = insert_vec_u_128;
         insert_reducer_event = InsertVecU128;
     }
+    VecU256 {
+        Contents = Vec<u256>;
+        field_name = n;
+        insert_reducer = insert_vec_u_256;
+        insert_reducer_event = InsertVecU256;
+    }
 
     VecI8 {
         Contents = Vec<i8>;
@@ -244,6 +267,12 @@ impl_simple_test_table! {
         field_name = n;
         insert_reducer = insert_vec_i_128;
         insert_reducer_event = InsertVecI128;
+    }
+    VecI256 {
+        Contents = Vec<i256>;
+        field_name = n;
+        insert_reducer = insert_vec_i_256;
+        insert_reducer_event = InsertVecI256;
     }
 
     VecF32 {
