@@ -819,9 +819,9 @@ mod tests {
         assert_eq!(def.typespace.get(product_type_ref), Some(&product_type));
         assert_eq!(def.typespace.get(sum_type_ref), Some(&sum_type));
 
-        check_product_type(&def, &apples_def);
-        check_product_type(&def, &bananas_def);
-        check_product_type(&def, &delivery_def);
+        check_product_type(&def, apples_def);
+        check_product_type(&def, bananas_def);
+        check_product_type(&def, delivery_def);
     }
 
     #[test]
