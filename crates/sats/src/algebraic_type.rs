@@ -345,7 +345,7 @@ impl AlgebraicType {
         }
     }
 
-    /// Non-recursively validates that the type is in "nominal normal form".
+    /// Validates that the type is in "nominal normal form". Does not follow `Ref`s.
     ///
     /// Nominal normal form is intended for use when generating code in languages with nominal type systems.
     ///
@@ -355,9 +355,6 @@ impl AlgebraicType {
     /// - Unit `Product`s and empty `Sum`s.
     /// - Specially tagged `ProductType`s, determined by `ProductType::is_special`.
     /// - Structural option `SumType`s, determined by `SumType::as_option`.
-    /// Chains of refs are permitted.
-    ///
-    /// This method does not follow `Ref`s.
     pub fn is_nominal_normal_form(&self) -> bool {
         match self {
             AlgebraicType::Sum(sum) => {

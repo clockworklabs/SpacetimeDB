@@ -1,8 +1,15 @@
+use std::any::TypeId;
+use std::collections::btree_map;
+use std::collections::BTreeMap;
+
 use crate::db::auth::{StAccess, StTableType};
 use itertools::Itertools;
 use spacetimedb_primitives::*;
+use spacetimedb_sats::typespace::TypespaceBuilder;
+use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::AlgebraicTypeRef;
 use spacetimedb_sats::ProductTypeElement;
+use spacetimedb_sats::SpacetimeType;
 use spacetimedb_sats::{de, ser, Typespace};
 
 /// A not-yet-validated identifier.
@@ -34,19 +41,21 @@ pub type RawIdentifier = Box<str>;
 #[derive(Debug, Clone, Default, ser::Serialize, de::Deserialize)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawModuleDefV9 {
-    /// The types used in the module.
+    /// The `Typespace` used by the module.
     ///
     /// `AlgebraicTypeRef`s in the table, reducer, and type alias declarations refer to this typespace.
     ///
-    /// Any `Product` or `Sum` types used transitively by the module MUST be declared in this typespace.
+    /// The typespace must satisfy `Typespace::is_nominal_normal_form`. That is, all types referenced by this typespace must either:
+    /// 1. satisfy `AlgebraicType::is_nominal_normal_form`,
+    /// 2. or be a `Sum`/`ProductType`s whose fields satisfy the same.
     ///
-    /// Every `Product`, `Sum`, and `Ref` type in this typespace MUST have a corresponding `RawTypeDefV9` declaration in the `types` field, with a module-unique name.
+    /// Types satisfying condition 2 are called *non-nominal types*.
+    /// Non-nominal types correspond to generated classes in client code.
+    /// Every non-nominal type in this typespace MUST have a corresponding `RawTypeDefV9` declaration in the `types` field, with a module-unique name.
     ///
-    /// All product and sum types in this typespace MUST have the [default element ordering](crate::db::default_element_ordering) UNLESS they declare a custom ordering via their `RawTypeDefV9`.
+    /// (Nominal types are allowed to have `RawTypeDefV9` declarations, but do not require them.)
     ///
-    /// It is permitted but not required to refer to `Builtin` or "primitive" types via this typespace.
-    ///
-    /// The typespace must satisfy `Typespace::is_nominal`. That is, it is not permitted to refer to `Sum` or `Product` types in this typespace except via `AlgebraicType::Ref`.
+    /// All non-nominal in this typespace MUST have the [default element ordering](crate::db::default_element_ordering) UNLESS they declare a custom ordering via their `RawTypeDefV9`.
     pub typespace: Typespace,
 
     /// The tables of the database definition used in the module.
@@ -68,92 +77,6 @@ impl RawModuleDefV9 {
     /// Creates a new, empty [RawDatabaseDef] instance with no types in its typespace.
     pub fn new() -> Self {
         Default::default()
-    }
-
-    /// Build a new table.
-    ///
-    /// Does not validate that the product_type_ref is valid; this is left to the module validation code.
-    pub fn build_table(&mut self, name: RawIdentifier, product_type_ref: AlgebraicTypeRef) -> RawTableDefBuilder {
-        RawTableDefBuilder {
-            module_def: self,
-            table: RawTableDefV9 {
-                name,
-                product_type_ref,
-                indexes: vec![],
-                unique_constraints: vec![],
-                sequences: vec![],
-                schedule: None,
-                table_type: StTableType::User,
-                // TODO(1.0): make the default `Private` before 1.0.
-                table_access: StAccess::Public,
-            },
-        }
-    }
-
-    /// Build a new table with a product type.
-    ///
-    /// This is a convenience method for tests, since in real modules, the product type is initialized automatically by `ModuleBuilder`.
-    #[cfg(feature = "test")]
-    pub fn build_table_with_product_type(
-        &mut self,
-        table_name: RawIdentifier,
-        product_type: spacetimedb_sats::ProductType,
-        custom_ordering: bool,
-    ) -> RawTableDefBuilder {
-        let product_type_ref = self.add_product_for_tests(table_name.clone(), product_type, custom_ordering);
-
-        self.build_table(table_name, product_type_ref)
-    }
-
-    /// Add a product type to the typespace, along with a type alias declaring its name.
-    /// This is a convenience method for tests, since the actual module code uses ModuleBuilder.
-    ///
-    /// NOT idempotent, calling this twice with the same name will cause errors during
-    /// validation.
-    ///
-    /// `custom_ordering` must be set correctly, otherwise an error will result during validation.
-    ///
-    /// Returns an AlgebraicType::Ref.
-    #[cfg(feature = "test")]
-    pub fn add_product_for_tests(
-        &mut self,
-        name: impl Into<RawIdentifier>,
-        product_type: impl Into<spacetimedb_sats::ProductType>,
-        custom_ordering: bool,
-    ) -> AlgebraicTypeRef {
-        let ty = self.typespace.add(product_type.into().into());
-
-        let name = name.into();
-        self.types.push(RawTypeDefV9 {
-            name,
-            ty,
-            custom_ordering,
-        });
-        ty
-    }
-
-    /// Add a product type to the typespace, along with a type alias declaring its name.
-    ///
-    /// NOT idempotent, calling this twice with the same name will cause errors during
-    /// validation.
-    ///
-    /// Returns an AlgebraicType::Ref.
-    #[cfg(feature = "test")]
-    pub fn add_sum_for_tests(
-        &mut self,
-        name: impl Into<RawIdentifier>,
-        sum_type: impl Into<spacetimedb_sats::SumType>,
-        custom_ordering: bool,
-    ) -> AlgebraicTypeRef {
-        let ty = self.typespace.add(sum_type.into().into());
-
-        let name = name.into();
-        self.types.push(RawTypeDefV9 {
-            name,
-            ty,
-            custom_ordering,
-        });
-        ty
     }
 }
 
@@ -270,14 +193,15 @@ pub struct RawUniqueConstraintDefV9 {
 }
 
 /// Marks a table as a timer table for a scheduled reducer.
+///
+/// The table must have columns:
+/// - `scheduled_id` of type `u64`.
+/// - `scheduled_at` of type `ScheduleAt`.
 #[derive(Debug, Clone, ser::Serialize, de::Deserialize)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawScheduleDefV9 {
     /// The name of the schedule. Must be unique within the containing `RawDatabaseDef`.
     pub name: RawIdentifier,
-
-    /// The column that stores the desired invocation time.
-    pub at_column: ColId,
 
     /// The name of the reducer to call.
     pub reducer_name: RawIdentifier,
@@ -317,6 +241,165 @@ pub struct RawReducerDefV9 {
     /// The types and optional names of the parameters, in order.
     /// Parameters are identified by their position in the list, not name.
     pub params: Vec<ProductTypeElement>,
+}
+
+/// A builder for a [`ModuleDef`].
+#[derive(Default)]
+pub struct RawModuleDefV9Builder {
+    /// The module definition.
+    module: RawModuleDefV9,
+    /// The type map from `T: 'static` Rust types to sats types.
+    type_map: BTreeMap<TypeId, AlgebraicTypeRef>,
+}
+
+impl RawModuleDefV9Builder {
+    /// Create a new, empty `RawModuleDefBuilder`.
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    /// Add a type to the in-progress module.
+    ///
+    /// The returned type must satisfy `AlgebraicType::is_nominal_normal_form`
+    pub fn add_type<T: SpacetimeType>(&mut self) -> AlgebraicType {
+        TypespaceBuilder::add_type::<T>(self)
+    }
+
+    /// Create a table builder.
+    ///
+    /// Does not validate that the product_type_ref is valid; this is left to the module validation code.
+    pub fn build_table(&mut self, name: RawIdentifier, product_type_ref: AlgebraicTypeRef) -> RawTableDefBuilder {
+        RawTableDefBuilder {
+            module_def: &mut self.module,
+            table: RawTableDefV9 {
+                name,
+                product_type_ref,
+                indexes: vec![],
+                unique_constraints: vec![],
+                sequences: vec![],
+                schedule: None,
+                table_type: StTableType::User,
+                // TODO(1.0): make the default `Private` before 1.0.
+                table_access: StAccess::Public,
+            },
+        }
+    }
+
+    /// Build a new table with a product type.
+    ///
+    /// This is a convenience method for tests, since in real modules, the product type is initialized via the `SpacetimeType` trait.
+    #[cfg(feature = "test")]
+    pub fn build_table_for_tests(
+        &mut self,
+        table_name: impl Into<RawIdentifier>,
+        product_type: spacetimedb_sats::ProductType,
+        custom_ordering: bool,
+    ) -> RawTableDefBuilder {
+        let table_name = table_name.into();
+        let product_type_ref = self.add_type_for_tests(table_name.clone(), product_type.into(), custom_ordering);
+
+        self.build_table(table_name, product_type_ref)
+    }
+
+    /// Add a type to the typespace, along with a type alias declaring its name.
+    ///
+    /// Returns a reference to the newly-added type.
+    ///
+    /// NOT idempotent, calling this twice with the same name will cause errors during
+    /// validation.
+    ///
+    /// You must set `custom_ordering` if you're not using the default element ordering.
+    ///
+    /// This is a convenience method for tests, since in real modules, types are added to the
+    /// typespace via the `SpacetimeType` trait.
+    #[cfg(feature = "test")]
+    pub fn add_type_for_tests(
+        &mut self,
+        name: impl Into<RawIdentifier>,
+        ty: spacetimedb_sats::AlgebraicType,
+        custom_ordering: bool,
+    ) -> AlgebraicTypeRef {
+        let ty = self.module.typespace.add(ty);
+
+        let name = name.into();
+        self.module.types.push(RawTypeDefV9 {
+            name,
+            ty,
+            custom_ordering,
+        });
+        // We don't add a `TypeId` to `self.type_map`, because there may not be a corresponding Rust type! e.g. if we are randomly generating types in proptests.
+        ty
+    }
+
+    /// Add a reducer to the in-progress module.
+    /// Accepts a `ProductType` of reducer arguments for convenience.
+    /// The `ProductType` need not be registered in the typespace.
+    ///
+    /// Importantly, if the reducer's first argument is a `ReducerContext`, that
+    /// information should not be provided to this method.
+    /// That is an implementation detail handled by the module bindings and can be ignored.
+    /// As far as the module definition is concerned, the reducer's arguments
+    /// start with the first non-`ReducerContext` argument.
+    ///
+    /// (It is impossible, with the current implementation of `ReducerContext`, to
+    /// have more than one `ReducerContext` argument, at least in Rust.
+    /// This is because `SpacetimeType` is not implemented for `ReducerContext`,
+    /// so it can never act like an ordinary argument.)
+    pub fn add_reducer(&mut self, name: impl Into<RawIdentifier>, params: spacetimedb_sats::ProductType) {
+        self.module.reducers.push(RawReducerDefV9 {
+            name: name.into(),
+            params: params.elements.into(),
+        });
+    }
+
+    /// Get the typespace of the module.
+    pub fn typespace(&self) -> &Typespace {
+        &self.module.typespace
+    }
+
+    /// Finish building, consuming the builder and returning the module.
+    /// The module should be validated before use.
+    pub fn finish(self) -> RawModuleDefV9 {
+        self.module
+    }
+}
+
+impl TypespaceBuilder for RawModuleDefV9Builder {
+    fn add(
+        &mut self,
+        typeid: TypeId,
+        name: Option<&'static str>,
+        make_ty: impl FnOnce(&mut Self) -> AlgebraicType,
+    ) -> AlgebraicType {
+        let r = match self.type_map.entry(typeid) {
+            btree_map::Entry::Occupied(o) => *o.get(),
+            btree_map::Entry::Vacant(v) => {
+                // Bind a fresh alias to the unit type.
+                let slot_ref = self.module.typespace.add(AlgebraicType::unit());
+                // Relate `typeid -> fresh alias`.
+                v.insert(slot_ref);
+
+                // Alias provided? Relate `name -> slot_ref`.
+                if let Some(name) = name {
+                    self.module.types.push(RawTypeDefV9 {
+                        name: name.to_owned().into(),
+                        ty: slot_ref,
+                        // TODO(1.0): we need to update the `TypespaceBuilder` trait to include
+                        // a `custom_ordering` parameter.
+                        // For now, we assume all types have custom orderings, since the derive
+                        // macro doesn't know about the default ordering yet.
+                        custom_ordering: true,
+                    });
+                }
+
+                // Borrow of `v` has ended here, so we can now convince the borrow checker.
+                let ty = make_ty(self);
+                self.module.typespace[slot_ref] = ty;
+                slot_ref
+            }
+        };
+        AlgebraicType::Ref(r)
+    }
 }
 
 /// Builder for a `RawTableDef`.
@@ -359,7 +442,8 @@ impl<'a> RawTableDefBuilder<'a> {
     }
 
     /// Adds a [RawSequenceDef] on the supplied `column`.
-    pub fn with_column_sequence(mut self, column: ColId, name: Option<RawIdentifier>) -> Self {
+    pub fn with_column_sequence(mut self, column: impl Into<ColId>, name: Option<RawIdentifier>) -> Self {
+        let column = column.into();
         let name = name.unwrap_or_else(|| self.generate_sequence_name(column));
         self.table.sequences.push(RawSequenceDefV9 {
             name,
@@ -373,14 +457,12 @@ impl<'a> RawTableDefBuilder<'a> {
     }
 
     /// Adds a schedule definition to the table.
-    /// The `at` column must be (TODO).
-    pub fn with_schedule(mut self, at_column: ColId, reducer_name: RawIdentifier, name: Option<RawIdentifier>) -> Self {
+    ///
+    /// The table must have the appropriate columns for a scheduled table.
+    pub fn with_schedule(mut self, reducer_name: impl Into<RawIdentifier>, name: Option<RawIdentifier>) -> Self {
+        let reducer_name = reducer_name.into();
         let name = name.unwrap_or_else(|| self.generate_schedule_name());
-        self.table.schedule = Some(RawScheduleDefV9 {
-            name,
-            at_column,
-            reducer_name,
-        });
+        self.table.schedule = Some(RawScheduleDefV9 { name, reducer_name });
         self
     }
 
