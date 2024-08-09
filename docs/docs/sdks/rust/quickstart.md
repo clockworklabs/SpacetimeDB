@@ -47,7 +47,7 @@ touch client/src/main.rs
 
 ## Generate your module types
 
-The `spacetime` CLI's `generate` command will generate client-side interfaces for the tables, reducers and types defined in your server module.
+The `spacetime` CLI's `generate` command will generate client-side interfaces for the tables, reducers and types referenced by tables or reducers defined in your server module.
 
 In your `quickstart-chat` directory, run:
 
