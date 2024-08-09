@@ -9,7 +9,7 @@ use crate::db::datastore::system_tables::ST_TABLE_ID;
 use crate::execution_context::ExecutionContext;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::db::raw_def::*;
-use spacetimedb_lib::{Address, Identity};
+use spacetimedb_lib::{hash_bytes, Address, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
@@ -322,6 +322,23 @@ pub struct Program {
     pub bytes: Box<[u8]>,
 }
 
+impl Program {
+    /// Create a [`Program`] from its raw bytes.
+    ///
+    /// This computes the hash over `bytes`, so prefer constructing [`Program`]
+    /// directly if the hash is already known.
+    pub fn from_bytes(bytes: impl Into<Box<[u8]>>) -> Self {
+        let bytes = bytes.into();
+        let hash = hash_bytes(&bytes);
+        Self { hash, bytes }
+    }
+
+    /// Create a [`Program`] with no bytes.
+    pub fn empty() -> Self {
+        Self::from_bytes([])
+    }
+}
+
 pub trait TxDatastore: DataRow + Tx {
     type Iter<'a>: Iterator<Item = Self::RowRef<'a>>
     where
@@ -479,15 +496,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     fn metadata_mut_tx(&self, tx: &Self::MutTx) -> Result<Option<Metadata>>;
 
     /// Update the datastore with the supplied binary program.
-    ///
-    /// The `program_hash` is the precomputed hash over `program_bytes`.
-    fn update_program(
-        &self,
-        tx: &mut Self::MutTx,
-        program_kind: ModuleKind,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
-    ) -> Result<()>;
+    fn update_program(&self, tx: &mut Self::MutTx, program_kind: ModuleKind, program: Program) -> Result<()>;
 }
 
 #[cfg(test)]

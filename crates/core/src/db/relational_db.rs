@@ -30,7 +30,6 @@ use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::raw_def::{RawColumnDefV8, RawIndexDefV8, RawSequenceDefV8, RawTableDefV8};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
-use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_snapshot::{SnapshotError, SnapshotRepository};
@@ -330,24 +329,18 @@ impl RelationalDB {
     /// It is an error to call this method on an alread-initialized database.
     ///
     /// See [`Self::open`] for further information.
-    pub fn set_initialized(
-        &self,
-        tx: &mut MutTx,
-        host_type: HostType,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
-    ) -> Result<(), DBError> {
+    pub fn set_initialized(&self, tx: &mut MutTx, host_type: HostType, program: Program) -> Result<(), DBError> {
         log::trace!(
             "[{}] DATABASE: set initialized owner={} program_hash={}",
             self.address,
             self.owner_identity,
-            program_hash
+            program.hash
         );
 
         // Probably a bug: the database is already initialized.
         // Ignore if it would be a no-op.
         if let Some(meta) = self.inner.metadata_mut_tx(tx)? {
-            if program_hash == meta.program_hash
+            if program.hash == meta.program_hash
                 && self.address == meta.database_address
                 && self.owner_identity == meta.owner_identity
             {
@@ -362,8 +355,8 @@ impl RelationalDB {
             program_kind: match host_type {
                 HostType::Wasm => WASM_MODULE,
             },
-            program_hash,
-            program_bytes,
+            program_hash: program.hash,
+            program_bytes: program.bytes,
         };
         self.insert(tx, ST_MODULE_ID, row.into()).map(drop)
     }
@@ -395,23 +388,17 @@ impl RelationalDB {
     ///
     /// The caller must ensure that:
     ///
-    /// - `program_hash` is the [`Hash`] over `program_bytes`.
-    /// - `program_bytes` is a valid module acc. to `host_type`.
+    /// - `program.hash` is the [`Hash`] over `program.bytes`.
+    /// - `program.bytes` is a valid module acc. to `host_type`.
     /// - the schema updates contained in the module have been applied within
     ///   the transactional context `tx`.
     /// - the `__init__` reducer contained in the module has been executed
     ///   within the transactional context `tx`.
-    pub fn update_program(
-        &self,
-        tx: &mut MutTx,
-        host_type: HostType,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
-    ) -> Result<(), DBError> {
+    pub fn update_program(&self, tx: &mut MutTx, host_type: HostType, program: Program) -> Result<(), DBError> {
         let program_kind = match host_type {
             HostType::Wasm => WASM_MODULE,
         };
-        self.inner.update_program(tx, program_kind, program_hash, program_bytes)
+        self.inner.update_program(tx, program_kind, program)
     }
 
     fn restore_from_snapshot_or_bootstrap(
@@ -1427,7 +1414,7 @@ pub mod tests_utils {
             debug_assert!(connected_clients.is_empty());
             let db = db.with_row_count(Self::row_count_fn());
             db.with_auto_commit(&ExecutionContext::internal(db.address()), |tx| {
-                db.set_initialized(tx, HostType::Wasm, Hash::ZERO, [].into())
+                db.set_initialized(tx, HostType::Wasm, Program::empty())
             })?;
             Ok(db)
         }

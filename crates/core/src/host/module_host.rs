@@ -6,7 +6,7 @@ use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::db::datastore::system_tables::{StClientFields, StClientsRow, ST_CLIENT_ID};
-use crate::db::datastore::traits::{IsolationLevel, TxData};
+use crate::db::datastore::traits::{IsolationLevel, Program, TxData};
 use crate::db::update::UpdateDatabaseError;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
@@ -269,14 +269,9 @@ pub trait Module: Send + Sync + 'static {
 pub trait ModuleInstance: Send + 'static {
     fn trapped(&self) -> bool;
 
-    fn init_database(
-        &mut self,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
-    ) -> anyhow::Result<Option<ReducerCallResult>>;
+    fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>>;
 
-    fn update_database(&mut self, program_hash: Hash, program_bytes: Box<[u8]>)
-        -> anyhow::Result<UpdateDatabaseResult>;
+    fn update_database(&mut self, program: Program) -> anyhow::Result<UpdateDatabaseResult>;
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult;
 }
@@ -311,21 +306,13 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
     fn trapped(&self) -> bool {
         self.inst.trapped()
     }
-    fn init_database(
-        &mut self,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
-    ) -> anyhow::Result<Option<ReducerCallResult>> {
-        let ret = self.inst.init_database(program_hash, program_bytes);
+    fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
+        let ret = self.inst.init_database(program);
         self.check_trap();
         ret
     }
-    fn update_database(
-        &mut self,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
-    ) -> anyhow::Result<UpdateDatabaseResult> {
-        let ret = self.inst.update_database(program_hash, program_bytes);
+    fn update_database(&mut self, program: Program) -> anyhow::Result<UpdateDatabaseResult> {
+        let ret = self.inst.update_database(program);
         self.check_trap();
         ret
     }
@@ -751,28 +738,16 @@ impl ModuleHost {
         Ok(self.info().log_tx.subscribe())
     }
 
-    pub async fn init_database(
-        &self,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
-    ) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
-        self.call("<init_database>", move |inst| {
-            inst.init_database(program_hash, program_bytes)
-        })
-        .await?
-        .map_err(InitDatabaseError::Other)
+    pub async fn init_database(&self, program: Program) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
+        self.call("<init_database>", move |inst| inst.init_database(program))
+            .await?
+            .map_err(InitDatabaseError::Other)
     }
 
-    pub async fn update_database(
-        &self,
-        program_hash: Hash,
-        program_bytes: Box<[u8]>,
-    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
-        self.call("<update_database>", move |inst| {
-            inst.update_database(program_hash, program_bytes)
-        })
-        .await?
-        .map_err(Into::into)
+    pub async fn update_database(&self, program: Program) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        self.call("<update_database>", move |inst| inst.update_database(program))
+            .await?
+            .map_err(Into::into)
     }
 
     pub async fn exit(&self) {

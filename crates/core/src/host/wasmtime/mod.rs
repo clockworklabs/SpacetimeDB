@@ -53,7 +53,7 @@ static LINKER: Lazy<Linker<WasmInstanceEnv>> = Lazy::new(|| {
 });
 
 pub fn make_actor(mcc: ModuleCreationContext) -> Result<impl super::module_host::Module, ModuleCreationError> {
-    let module = Module::new(&ENGINE, &mcc.program_bytes).map_err(ModuleCreationError::WasmCompileError)?;
+    let module = Module::new(&ENGINE, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
 
     let func_imports = module
         .imports()
