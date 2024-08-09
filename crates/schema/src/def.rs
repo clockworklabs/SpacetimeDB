@@ -61,7 +61,21 @@ impl ModuleDef {
         self.tables.values()
     }
 
-    /// The typespace of the module def.
+    /// The `Typespace` used by the module.
+    ///
+    /// `AlgebraicTypeRef`s in the table, reducer, and type alias declarations refer to this typespace.
+    ///
+    /// The typespace must satisfy `Typespace::is_nominal_normal_form`. That is, all types referenced by this typespace must either:
+    /// 1. satisfy `AlgebraicType::is_nominal_normal_form`,
+    /// 2. or be a `Sum`/`ProductType`s whose fields satisfy the same.
+    ///
+    /// Types satisfying condition 2 are called *non-nominal types*.
+    /// Non-nominal types correspond to generated classes in client code.
+    /// Every non-nominal type in this typespace MUST have a corresponding `RawTypeDefV9` declaration in the `types` field, with a module-unique name.
+    ///
+    /// (Nominal types are allowed to have `RawTypeDefV9` declarations, but do not require them.)
+    ///
+    /// All non-nominal in this typespace MUST have the [default element ordering](crate::db::default_element_ordering) UNLESS they declare a custom ordering via their `RawTypeDefV9`.
     pub fn typespace(&self) -> &Typespace {
         &self.typespace
     }

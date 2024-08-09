@@ -25,6 +25,16 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         stored_in_table_def: HashMap::new(),
     };
 
+    // Important general note:
+    // This file uses the `ErrorStream` combinator to return *multiple errors
+    // at once* when validating a definition.
+    // The general pattern is that we use `collect_all_errors` when building
+    // a collection, and `combine_errors` when we have multiple
+    // things to validate that are independent of each other.
+    // We try to avoid using `?` until the end of a function, after we've called
+    // `combine_errors` or `collect_all_errors` on all the things we need to validate.
+    // Sometimes it is unavoidable to use `?` early and this should be commented on.
+
     let tables = tables
         .into_iter()
         .map(|table| {
@@ -236,6 +246,7 @@ impl Validator<'_> {
             max_value,
         } = sequence;
 
+        // The column for the sequence exists and is an appropriate type.
         let column = table_in_progress.validate_col_id(&name, column).and_then(|col_id| {
             let ty = table_in_progress
                 .product_type
@@ -256,6 +267,8 @@ impl Validator<'_> {
             }
         });
 
+        /// Compare two `Option<i128>` values, returning `true` if `lo <= hi`,
+        /// or if either is undefined.
         fn le(lo: Option<i128>, hi: Option<i128>) -> bool {
             match (lo, hi) {
                 (Some(lo), Some(hi)) => lo <= hi,
@@ -389,7 +402,7 @@ impl Validator<'_> {
                     position,
                     arg_name: param.name().map(Into::into),
                 };
-                self.validate_algebraic_type(location, &param.algebraic_type)
+                self.validate_nominal_algebraic_type(&location, &param.algebraic_type)
             })
             .collect_all_errors();
 
@@ -484,7 +497,7 @@ impl Validator<'_> {
     ///
     /// Note that `TypeLocation` is defined using `Cow`, so calling this method
     /// does not need to allocate unless an error is returned.
-    fn validate_algebraic_type(&mut self, location: TypeLocation, ty: &AlgebraicType) -> Result<()> {
+    fn validate_nominal_algebraic_type(&mut self, location: &TypeLocation, ty: &AlgebraicType) -> Result<()> {
         let nominal: Result<()> = if ty.is_nominal_normal_form() {
             Ok(())
         } else {
@@ -501,7 +514,7 @@ impl Validator<'_> {
             .map(|_resolved| ())
             .map_err(|error| {
                 ValidationError::ResolutionFailure {
-                    location: location.make_static(),
+                    location: location.clone().make_static(),
                     ty: ty.clone(),
                     error,
                 }
@@ -525,28 +538,37 @@ impl Validator<'_> {
             .types
             .iter()
             .enumerate()
-            .map(|(pos, type_)| {
+            .map(|(pos, ty)| {
                 let ref_ = AlgebraicTypeRef(pos as u32);
-                let resolves: Result<()> = WithTypespace::new(self.typespace, type_)
-                    .resolve_refs()
-                    // we don't care what the resolved type is, only that it resolved successfully.
-                    .map(|_resolved| ())
-                    .map_err(|error| {
-                        ValidationError::ResolutionFailure {
-                            location: TypeLocation::InTypespace { ref_ },
-                            ty: type_.clone(),
-                            error,
-                        }
-                        .into()
-                    });
+                let location = TypeLocation::InTypespace { ref_ };
 
-                // Nominal types like the unit type, `Option<T>`, etc may
-                // be registered in the typespace without a `TypeDef`.
-                let has_def: Result<()> = if type_.is_nominal_normal_form() {
+                // Check that the type is valid.
+                let is_valid: Result<()> = match ty {
+                    // If the type is in nominal normal form, we can validate it directly.
+                    ty if ty.is_nominal_normal_form() => self.validate_nominal_algebraic_type(&location, ty),
+                    // Otherwise, if the type is a sum or product, we need to validate its fields.
+                    AlgebraicType::Sum(sum) => sum
+                        .variants
+                        .iter()
+                        .map(|variant| self.validate_nominal_algebraic_type(&location, &variant.algebraic_type))
+                        .collect_all_errors(),
+                    AlgebraicType::Product(product) => product
+                        .elements
+                        .iter()
+                        .map(|element| self.validate_nominal_algebraic_type(&location, &element.algebraic_type))
+                        .collect_all_errors(),
+                    _ => unreachable!("if type is not sum or product, it must be in nominal normal form"),
+                };
+
+                // Check that the type has a corresponding `TypeDef`.
+                let has_def: Result<()> = if ty.is_nominal_normal_form() {
+                    // Nominal types like the unit type, `Option<T>`, `Ref`s, etc may
+                    // be stored in the typespace without a `TypeDef`.
                     Ok(())
                 } else {
-                    match type_ {
-                        AlgebraicType::Sum(..) | AlgebraicType::Product(..) | AlgebraicType::Ref(..) => {
+                    // If the type is a non-nominal sum or product, it requires a `TypeDef`.
+                    match ty {
+                        AlgebraicType::Sum(..) | AlgebraicType::Product(..) => {
                             let ref_ = AlgebraicTypeRef(pos as _);
                             if !id_to_name.contains_key(&ref_) {
                                 Err(ValidationError::MissingTypeDef { ref_ }.into())
@@ -557,7 +579,7 @@ impl Validator<'_> {
                         _ => Ok(()),
                     }
                 };
-                let ((), ()) = (resolves, has_def).combine_errors()?;
+                let ((), ()) = (is_valid, has_def).combine_errors()?;
                 Ok(())
             })
             .collect_all_errors()

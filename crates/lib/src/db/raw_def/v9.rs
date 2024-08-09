@@ -41,19 +41,21 @@ pub type RawIdentifier = Box<str>;
 #[derive(Debug, Clone, Default, ser::Serialize, de::Deserialize)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawModuleDefV9 {
-    /// The types used in the module.
+    /// The `Typespace` used by the module.
     ///
     /// `AlgebraicTypeRef`s in the table, reducer, and type alias declarations refer to this typespace.
     ///
-    /// Any `Product` or `Sum` types used transitively by the module MUST be declared in this typespace.
+    /// The typespace must satisfy `Typespace::is_nominal_normal_form`. That is, all types referenced by this typespace must either:
+    /// 1. satisfy `AlgebraicType::is_nominal_normal_form`,
+    /// 2. or be a `Sum`/`ProductType`s whose fields satisfy the same.
     ///
-    /// Every `Product`, `Sum`, and `Ref` type in this typespace MUST have a corresponding `RawTypeDefV9` declaration in the `types` field, with a module-unique name.
+    /// Types satisfying condition 2 are called *non-nominal types*.
+    /// Non-nominal types correspond to generated classes in client code.
+    /// Every non-nominal type in this typespace MUST have a corresponding `RawTypeDefV9` declaration in the `types` field, with a module-unique name.
     ///
-    /// All product and sum types in this typespace MUST have the [default element ordering](crate::db::default_element_ordering) UNLESS they declare a custom ordering via their `RawTypeDefV9`.
+    /// (Nominal types are allowed to have `RawTypeDefV9` declarations, but do not require them.)
     ///
-    /// It is permitted but not required to refer to `Builtin` or "primitive" types via this typespace.
-    ///
-    /// The typespace must satisfy `Typespace::is_nominal`. That is, it is not permitted to refer to `Sum` or `Product` types in this typespace except via `AlgebraicType::Ref`.
+    /// All non-nominal in this typespace MUST have the [default element ordering](crate::db::default_element_ordering) UNLESS they declare a custom ordering via their `RawTypeDefV9`.
     pub typespace: Typespace,
 
     /// The tables of the database definition used in the module.
