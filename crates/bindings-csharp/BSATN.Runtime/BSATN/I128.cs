@@ -4,6 +4,7 @@
 namespace SpacetimeDB;
 
 using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
 using System.Runtime.InteropServices;
 
 /// <summary>Represents a 128-bit signed integer.</summary>
@@ -122,8 +123,10 @@ public readonly struct I128 : IEquatable<I128>, IComparable, IComparable<I128>
     /// <inheritdoc cref="object.GetHashCode()" />
     public override int GetHashCode() => HashCode.Combine(_lower, _upper);
 
+    private BigInteger AsBigInt() => new(MemoryMarshal.AsBytes([this]), isUnsigned: false);
+
     /// <inheritdoc cref="object.ToString()" />
-    public override string ToString() => $"I128({_upper},{_lower})";
+    public override string ToString() => AsBigInt().ToString();
 
     /// <summary>Implicitly converts a <see cref="int" /> value to a 128-bit signed integer.</summary>
     /// <param name="value">The value to convert.</param>
