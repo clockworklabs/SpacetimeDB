@@ -3,8 +3,8 @@
 
 namespace SpacetimeDB;
 
-using System.Numerics;
 using System.Runtime.InteropServices;
+using SpacetimeDB.BSATN;
 
 /// <summary>Represents a 128-bit signed integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -26,10 +26,6 @@ public readonly record struct I128 : IEquatable<I128>, IComparable, IComparable<
         _upper = upper;
         _lower = lower;
     }
-
-    internal ulong Lower => _lower;
-
-    internal ulong Upper => _upper;
 
     /// <inheritdoc cref="IComparable.CompareTo(object)" />
     public int CompareTo(object? value)
@@ -96,15 +92,8 @@ public readonly record struct I128 : IEquatable<I128>, IComparable, IComparable<
     /// <inheritdoc cref="INumberBase{TSelf}.IsNegative(TSelf)" />
     public static bool IsNegative(I128 value) => (long)value._upper < 0;
 
-    private BigInteger AsBigInt() =>
-        new(
-            MemoryMarshal.AsBytes(stackalloc[] { this }),
-            isUnsigned: false,
-            isBigEndian: !BitConverter.IsLittleEndian
-        );
-
     /// <inheritdoc cref="object.ToString()" />
-    public override string ToString() => AsBigInt().ToString();
+    public override string ToString() => BigIntHelpers.ToString(this, false);
 
     /// <summary>Implicitly converts a <see cref="int" /> value to a 128-bit signed integer.</summary>
     /// <param name="value">The value to convert.</param>

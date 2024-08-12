@@ -4,8 +4,8 @@
 namespace SpacetimeDB;
 
 using System;
-using System.Numerics;
 using System.Runtime.InteropServices;
+using SpacetimeDB.BSATN;
 
 /// <summary>Represents a 256-bit signed integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -27,10 +27,6 @@ public readonly record struct I256 : IEquatable<I256>, IComparable, IComparable<
         _upper = upper;
         _lower = lower;
     }
-
-    internal U128 Lower => _lower;
-
-    internal U128 Upper => _upper;
 
     /// <inheritdoc cref="IComparable.CompareTo(object)" />
     public int CompareTo(object? value)
@@ -98,13 +94,6 @@ public readonly record struct I256 : IEquatable<I256>, IComparable, IComparable<
 
     public static bool IsNegative(I256 value) => (long)value._upper.Upper < 0;
 
-    private BigInteger AsBigInt() =>
-        new(
-            MemoryMarshal.AsBytes(stackalloc[] { this }),
-            isUnsigned: false,
-            isBigEndian: !BitConverter.IsLittleEndian
-        );
-
     /// <inheritdoc cref="object.ToString()" />
-    public override string ToString() => AsBigInt().ToString();
+    public override string ToString() => BigIntHelpers.ToString(this, false);
 }

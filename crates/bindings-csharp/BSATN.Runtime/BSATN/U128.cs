@@ -3,8 +3,8 @@
 
 namespace SpacetimeDB;
 
-using System.Numerics;
 using System.Runtime.InteropServices;
+using SpacetimeDB.BSATN;
 
 /// <summary>Represents a 128-bit unsigned integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -26,8 +26,6 @@ public readonly record struct U128 : IEquatable<U128>, IComparable, IComparable<
         _upper = upper;
         _lower = lower;
     }
-
-    internal ulong Lower => _lower;
 
     internal ulong Upper => _upper;
 
@@ -79,13 +77,6 @@ public readonly record struct U128 : IEquatable<U128>, IComparable, IComparable<
             || (left._upper == right._upper) && (left._lower > right._lower);
     }
 
-    private BigInteger AsBigInt() =>
-        new(
-            MemoryMarshal.AsBytes(stackalloc[] { this }),
-            isUnsigned: false,
-            isBigEndian: !BitConverter.IsLittleEndian
-        );
-
     /// <inheritdoc cref="object.ToString()" />
-    public override string ToString() => AsBigInt().ToString();
+    public override string ToString() => BigIntHelpers.ToString(this, true);
 }
