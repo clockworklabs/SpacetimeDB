@@ -9,7 +9,7 @@ using System.Runtime.InteropServices;
 
 /// <summary>Represents a 128-bit unsigned integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
-public readonly struct U128 : IEquatable<U128>, IComparable, IComparable<U128>
+public readonly record struct U128 : IEquatable<U128>, IComparable, IComparable<U128>
 {
 #if BIGENDIAN
     private readonly ulong _upper;
@@ -79,30 +79,6 @@ public readonly struct U128 : IEquatable<U128>, IComparable, IComparable<U128>
         return (left._upper > right._upper)
             || (left._upper == right._upper) && (left._lower > right._lower);
     }
-
-    //
-    // IEqualityOperators
-    //
-
-    /// <inheritdoc cref="IEqualityOperators{TSelf, TOther, TResult}.op_Equality(TSelf, TOther)" />
-    public static bool operator ==(U128 left, U128 right) =>
-        (left._lower == right._lower) && (left._upper == right._upper);
-
-    /// <inheritdoc cref="IEqualityOperators{TSelf, TOther, TResult}.op_Inequality(TSelf, TOther)" />
-    public static bool operator !=(U128 left, U128 right) =>
-        (left._lower != right._lower) || (left._upper != right._upper);
-
-    /// <inheritdoc cref="object.Equals(object?)" />
-    public override bool Equals([NotNullWhen(true)] object? obj)
-    {
-        return (obj is U128 other) && Equals(other);
-    }
-
-    /// <inheritdoc cref="IEquatable{T}.Equals(T)" />
-    public bool Equals(U128 x) => _upper == x._upper && _lower == x._lower;
-
-    /// <inheritdoc cref="object.GetHashCode()" />
-    public override int GetHashCode() => HashCode.Combine(_lower, _upper);
 
     private BigInteger AsBigInt() =>
         new(

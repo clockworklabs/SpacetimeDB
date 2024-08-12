@@ -3,13 +3,12 @@
 
 namespace SpacetimeDB;
 
-using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
 /// <summary>Represents a 128-bit signed integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
-public readonly struct I128 : IEquatable<I128>, IComparable, IComparable<I128>
+public readonly record struct I128 : IEquatable<I128>, IComparable, IComparable<I128>
 {
 #if BIGENDIAN
     private readonly ulong _upper;
@@ -96,30 +95,6 @@ public readonly struct I128 : IEquatable<I128>, IComparable, IComparable<I128>
 
     /// <inheritdoc cref="INumberBase{TSelf}.IsNegative(TSelf)" />
     public static bool IsNegative(I128 value) => (long)value._upper < 0;
-
-    //
-    // IEqualityOperators
-    //
-
-    /// <inheritdoc cref="IEqualityOperators{TSelf, TOther, TResult}.op_Equality(TSelf, TOther)" />
-    public static bool operator ==(I128 left, I128 right) =>
-        (left._lower == right._lower) && (left._upper == right._upper);
-
-    /// <inheritdoc cref="IEqualityOperators{TSelf, TOther, TResult}.op_Inequality(TSelf, TOther)" />
-    public static bool operator !=(I128 left, I128 right) =>
-        (left._lower != right._lower) || (left._upper != right._upper);
-
-    /// <inheritdoc cref="object.Equals(object?)" />
-    public override bool Equals([NotNullWhen(true)] object? obj)
-    {
-        return (obj is I128 other) && Equals(other);
-    }
-
-    /// <inheritdoc cref="IEquatable{T}.Equals(T)" />
-    public bool Equals(I128 x) => _upper == x._upper && _lower == x._lower;
-
-    /// <inheritdoc cref="object.GetHashCode()" />
-    public override int GetHashCode() => HashCode.Combine(_lower, _upper);
 
     private BigInteger AsBigInt() =>
         new(
