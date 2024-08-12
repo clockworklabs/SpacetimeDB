@@ -123,7 +123,12 @@ public readonly struct I128 : IEquatable<I128>, IComparable, IComparable<I128>
     /// <inheritdoc cref="object.GetHashCode()" />
     public override int GetHashCode() => HashCode.Combine(_lower, _upper);
 
-    private BigInteger AsBigInt() => new(MemoryMarshal.AsBytes([this]), isUnsigned: false);
+    private BigInteger AsBigInt() =>
+        new(
+            MemoryMarshal.AsBytes(stackalloc[] { this }),
+            isUnsigned: false,
+            isBigEndian: !BitConverter.IsLittleEndian
+        );
 
     /// <inheritdoc cref="object.ToString()" />
     public override string ToString() => AsBigInt().ToString();

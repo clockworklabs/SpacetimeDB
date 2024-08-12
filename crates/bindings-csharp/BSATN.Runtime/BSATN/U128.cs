@@ -106,7 +106,12 @@ public readonly struct U128 : IEquatable<U128>, IComparable, IComparable<U128>
     /// <inheritdoc cref="object.GetHashCode()" />
     public override int GetHashCode() => HashCode.Combine(_lower, _upper);
 
-    private BigInteger AsBigInt() => new(MemoryMarshal.AsBytes([this]), isUnsigned: true);
+    private BigInteger AsBigInt() =>
+        new(
+            MemoryMarshal.AsBytes(stackalloc[] { this }),
+            isUnsigned: false,
+            isBigEndian: !BitConverter.IsLittleEndian
+        );
 
     /// <inheritdoc cref="object.ToString()" />
     public override string ToString() => AsBigInt().ToString();
