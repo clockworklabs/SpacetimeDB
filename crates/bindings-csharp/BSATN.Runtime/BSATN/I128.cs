@@ -11,8 +11,6 @@ using System.Runtime.InteropServices;
 [StructLayout(LayoutKind.Sequential)]
 public readonly struct I128 : IEquatable<I128>, IComparable, IComparable<I128>
 {
-    internal const int Size = 16;
-
 #if BIGENDIAN
     private readonly ulong _upper;
     private readonly ulong _lower;
