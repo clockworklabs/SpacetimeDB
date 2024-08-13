@@ -9,7 +9,7 @@ using SpacetimeDB.BSATN;
 
 /// <summary>Represents a 256-bit signed integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
-public readonly record struct I256 : IEquatable<I256>, IComparable, IComparable<I256>
+public readonly record struct I256 : IBigInt<I256>
 {
 #if BIGENDIAN
     private readonly I128 _upper;
@@ -32,28 +32,27 @@ public readonly record struct I256 : IEquatable<I256>, IComparable, IComparable<
     public int CompareTo(object? value) => BigIntHelpers.CompareTo(this, value);
 
     /// <inheritdoc cref="IComparable{T}.CompareTo(T)" />
-    public int CompareTo(I256 value) => _upper.CompareTo(value._upper) switch
+    public int CompareTo(I256 other)
     {
-        0 => _lower.CompareTo(value),
-        var result => result,
-    };
+        if (IsNegative(this) == IsNegative(other))
+        {
+            var cmp = _upper.CompareTo(other._upper);
+            return cmp != 0 ? cmp : _lower.CompareTo(other._lower);
+        }
+        return IsNegative(this) ? -1 : 1;
+    }
 
     /// <inheritdoc cref="IComparisonOperators{TSelf, TOther, TResult}.op_LessThan(TSelf, TOther)" />
     public static bool operator <(I256 left, I256 right) => left.CompareTo(right) < 0;
 
     /// <inheritdoc cref="IComparisonOperators{TSelf, TOther, TResult}.op_GreaterThan(TSelf, TOther)" />
-    public static bool operator >(I256 left, I256 right)
-    {
-        if (IsNegative(left) == IsNegative(right))
-        {
-            return (left._upper > right._upper)
-                || ((left._upper == right._upper) && (left._lower > right._lower));
-        }
-        else
-        {
-            return IsNegative(right);
-        }
-    }
+    public static bool operator >(I256 left, I256 right) => left.CompareTo(right) > 0;
+
+    /// <inheritdoc cref="IComparisonOperators{TSelf, TOther, TResult}.op_LessThanEqual(TSelf, TOther)" />
+    public static bool operator <=(I256 left, I256 right) => left.CompareTo(right) <= 0;
+
+    /// <inheritdoc cref="IComparisonOperators{TSelf, TOther, TResult}.op_GreaterThanEqual(TSelf, TOther)" />
+    public static bool operator >=(I256 left, I256 right) => left.CompareTo(right) >= 0;
 
     /// <inheritdoc cref="INumberBase{TSelf}.IsNegative(TSelf)" />
 

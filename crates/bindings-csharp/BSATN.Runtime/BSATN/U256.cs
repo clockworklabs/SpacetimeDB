@@ -6,7 +6,7 @@ using SpacetimeDB.BSATN;
 
 /// <summary>Represents a 128-bit unsigned integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
-public readonly record struct U256 : IEquatable<U256>, IComparable, IComparable<U256>
+public readonly record struct U256 : IBigInt<U256>
 {
 #if BIGENDIAN
     private readonly U128 _upper;
@@ -31,33 +31,21 @@ public readonly record struct U256 : IEquatable<U256>, IComparable, IComparable<
     /// <inheritdoc cref="IComparable{T}.CompareTo(T)" />
     public int CompareTo(U256 value)
     {
-        if (this < value)
-        {
-            return -1;
-        }
-        else if (this > value)
-        {
-            return 1;
-        }
-        else
-        {
-            return 0;
-        }
+        var cmp = _upper.CompareTo(value._upper);
+        return cmp != 0 ? cmp : _lower.CompareTo(value._lower);
     }
 
     /// <inheritdoc cref="IComparisonOperators{TSelf, TOther, TResult}.op_LessThan(TSelf, TOther)" />
-    public static bool operator <(U256 left, U256 right)
-    {
-        return (left._upper < right._upper)
-            || (left._upper == right._upper) && (left._lower < right._lower);
-    }
+    public static bool operator <(U256 left, U256 right) => left.CompareTo(right) < 0;
 
     /// <inheritdoc cref="IComparisonOperators{TSelf, TOther, TResult}.op_GreaterThan(TSelf, TOther)" />
-    public static bool operator >(U256 left, U256 right)
-    {
-        return (left._upper > right._upper)
-            || (left._upper == right._upper) && (left._lower > right._lower);
-    }
+    public static bool operator >(U256 left, U256 right) => left.CompareTo(right) > 0;
+
+    /// <inheritdoc cref="IComparisonOperators{TSelf, TOther, TResult}.op_LessThanEqual(TSelf, TOther)" />
+    public static bool operator <=(U256 left, U256 right) => left.CompareTo(right) <= 0;
+
+    /// <inheritdoc cref="IComparisonOperators{TSelf, TOther, TResult}.op_GreaterThanEqual(TSelf, TOther)" />
+    public static bool operator >=(U256 left, U256 right) => left.CompareTo(right) >= 0;
 
     /// <inheritdoc cref="object.ToString()" />
     public override string ToString() => BigIntHelpers.ToString(this, true);

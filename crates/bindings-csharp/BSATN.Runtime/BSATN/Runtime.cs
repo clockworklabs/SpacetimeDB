@@ -49,6 +49,14 @@ public interface IReadWrite<T>
     AlgebraicType GetAlgebraicType(ITypeRegistrar registrar);
 }
 
+public interface IBigInt<TSelf> : IEquatable<TSelf>, IComparable, IComparable<TSelf>
+#if NET7_0_OR_GREATER
+    , IComparisonOperators<TSelf, TSelf, bool>
+#endif
+    where TSelf : IBigInt<TSelf>
+{
+}
+
 public static class BigIntHelpers
 {
     private static BigInteger AsBigInt<T>(scoped ref T value, bool isUnsigned)
