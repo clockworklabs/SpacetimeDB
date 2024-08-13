@@ -73,13 +73,13 @@ impl Identifier {
 
 impl Debug for Identifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "`{}`", self.id)
+        Debug::fmt(&self.id, f)
     }
 }
 
 impl Display for Identifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.id)
+        Display::fmt(&self.id, f)
     }
 }
 
