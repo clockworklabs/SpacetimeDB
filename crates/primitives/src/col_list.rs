@@ -16,6 +16,7 @@ use core::{
     slice::from_raw_parts,
 };
 use either::Either;
+use itertools::Itertools;
 
 /// Constructs a `ColList` like so `col_list![0, 2]`.
 ///
@@ -230,6 +231,13 @@ impl ColList {
     /// If `col >= 63` or `col <= last_col`, the list will become heap allocated if not already.
     pub fn push(&mut self, col: ColId) {
         self.push_inner(col, self.last() < col);
+    }
+
+    /// Try to create a `ColList` from an iterator.
+    ///
+    /// Fails if the iterator is empty.
+    pub fn try_from_iter<Id: Into<ColId>>(iter: impl IntoIterator<Item = Id>) -> Result<Self, EmptyColListError> {
+        iter.into_iter().map_into().collect::<ColListBuilder>().build()
     }
 
     /// Push `col` onto the list.
