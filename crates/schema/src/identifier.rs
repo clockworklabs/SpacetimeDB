@@ -32,8 +32,8 @@ pub struct Identifier {
 impl Identifier {
     /// Validates that the input string is a valid identifier.
     ///
-    /// TODO(jgilles): modify this to also canonicalize the input string.
-    /// This will require careful reworking of codegen in a lot of places.
+    /// Currently, this rejects non-canonicalized identifiers.
+    /// Eventually, it will be changed to canonicalize the input string.
     pub fn new(name: Box<str>) -> Result<Self, IdentifierError> {
         if name.is_empty() {
             return Err(IdentifierError::Empty {});
@@ -41,17 +41,12 @@ impl Identifier {
 
         // Convert to Unicode Normalization Form C (canonical decomposition followed by composition).
         if name.nfc().zip(name.chars()).any(|(a, b)| a != b) {
-            // TODO(jgilles): consider whether we should rip this check out.
-            // The issue is that the Typespace is currently not canonicalized during validation, so actually canonicalizing identifiers here breaks.
-            // Because then you can look up types in the TypeSpace and get back a non-canonicalized identifier, which won't match what you expect...
-            // I guess we should just canonicalize the whole Typespace instead.
-            // The concern is that generated code will be holding onto non-canonicalized identifiers somewhere which could result in weird, hard-to-find bugs.
             return Err(IdentifierError::NotCanonicalized { name });
         }
 
         let mut chars = name.chars();
 
-        let start = chars.next().expect("non-empty");
+        let start = chars.next().ok_or(IdentifierError::Empty {})?;
         if !is_xid_start(start) && start != '_' {
             return Err(IdentifierError::InvalidStart {
                 name,
@@ -117,6 +112,7 @@ mod tests {
         assert!(Identifier::new(" hello".into()).is_err());
         assert!(Identifier::new("hello ".into()).is_err());
         assert!(Identifier::new("🍌".into()).is_err()); // ;-; the unicode committee is no fun
+        assert!(Identifier::new("".into()).is_err());
     }
 
     #[test]
