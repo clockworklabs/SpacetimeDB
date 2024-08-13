@@ -641,4 +641,11 @@ mod tests {
             prop_assert_eq!(list.iter().collect::<Vec<_>>(), cols);
         }
     }
+
+    #[test]
+    fn try_from_iter() {
+        assert!(ColList::try_from_iter(0..0).is_err());
+        assert!(ColList::try_from_iter(0..5).is_ok());
+        assert!(ColList::try_from_iter([4, 3, 2, 1, 0]).is_ok());
+    }
 }
