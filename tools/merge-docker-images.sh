@@ -3,14 +3,14 @@ set -e
 
 # Shorten the first argument (commit sha) to 7 chars
 SHORT_SHA=${1:0:7}
-TAG="sha-$SHORT_SHA"
+TAG="commit-$SHORT_SHA"
 
 # Check if images for both amd64 and arm64 exist
 if docker pull clockworklabs/spacetimedb:$TAG-amd64 --platform amd64 >/dev/null 2>&1 && docker pull clockworklabs/spacetimedb:$TAG-arm64 --platform arm64 >/dev/null 2>&1; then
-    echo "Both images exist, preparing the merged manifest"
+  echo "Both images exist, preparing the merged manifest"
 else
-    echo "One or both images do not exist. Exiting"
-    exit 0
+  echo "One or both images do not exist. Exiting"
+  exit 0
 fi
 
 # Extract digests
@@ -36,4 +36,3 @@ docker manifest push clockworklabs/spacetimedb:$FULL_TAG
 # re-tag the manifeast with a tag
 VERSION=${GITHUB_REF#refs/*/}
 docker buildx imagetools create clockworklabs/spacetimedb:$FULL_TAG --tag clockworklabs/spacetimedb:$VERSION
-
