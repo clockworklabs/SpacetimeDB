@@ -67,7 +67,9 @@ impl ColListBuilder {
 
     /// Build the [`ColList`] or error if it would have been empty.
     pub fn build(self) -> Result<ColList, EmptyColListError> {
-        if self.list.is_empty() {
+        // we cannot use `self.list.is_empty()` as it's always false.
+        #[allow(clippy::len_zero)]
+        if self.list.len() == 0 {
             Err(EmptyColListError)
         } else {
             Ok(self.list)
@@ -644,6 +646,10 @@ mod tests {
 
     #[test]
     fn try_from_iter() {
+        for i in 0..0 {
+            println!("i: {}", i);
+        }
+        println!("{:?}", ColList::try_from_iter(0..0));
         assert!(ColList::try_from_iter(0..0).is_err());
         assert!(ColList::try_from_iter(0..5).is_ok());
         assert!(ColList::try_from_iter([4, 3, 2, 1, 0]).is_ok());
