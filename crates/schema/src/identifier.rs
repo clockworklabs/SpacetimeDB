@@ -63,11 +63,16 @@ impl Identifier {
             }
         }
 
-        if RESERVED_IDENTIFIERS.contains(&&*name.to_uppercase()) {
+        if Identifier::is_reserved(&name) {
             return Err(IdentifierError::Reserved { name });
         }
 
         Ok(Identifier { id: name })
+    }
+
+    /// Check if a string is a reserved identifier.
+    pub fn is_reserved(name: &str) -> bool {
+        RESERVED_IDENTIFIERS.contains(&*name.to_uppercase())
     }
 }
 
@@ -125,6 +130,10 @@ mod tests {
     proptest! {
         #[test]
         fn test_standard_ascii_identifiers(s in "[a-zA-Z_][a-zA-Z0-9_]*") {
+            // Ha! Proptest will reliably find these.
+            if Identifier::is_reserved(&s) {
+                return Ok(());
+            }
             prop_assert!(Identifier::new(s.into()).is_ok());
         }
     }
