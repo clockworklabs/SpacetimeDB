@@ -1,12 +1,116 @@
-//! Methods and traits for dealing with multiple errors simultaneously.
+//! Types, traits, and macros for working with non-empty streams of errorrs.
+//!
+//! The `ErrorStream<_>` type provides a collection that stores a non-empty, unordered stream of errors.
+//! This is valuable for collecting as many errors as possible before returning them to the user,
+//! which allows the user to work through the errors in the order of their choosing.
+//! This is particularly useful for CLI tools.
+//!
+//! Example usage:
+//! ```
+//! use spacetimedb_data_structures::error_stream::{
+//!     ErrorStream,
+//!     CombineErrors,
+//!     CollectAllErrors
+//! };
+//! use std::collections::HashSet;
+//!
+//! enum MyError { /* ... */ };
+//! type MyErrors = ErrorStream<MyError>;
+//!
+//! type Name =
+//!     /* ... */
+//! #   String
+//!     ;
+//!
+//! type Age =
+//!     /* ... */
+//! #   i32
+//!     ;
+//!
+//! fn validate_name(name: String) -> Result<Name, MyErrors> {
+//!     // ...
+//! #   Ok(name)
+//! }
+//!
+//! fn validate_age(age: i32) -> Result<Age, MyErrors> {
+//!     // ...
+//! #   Ok(age)
+//! }
+//!
+//! fn validate_person(
+//!     name: String,
+//!     age: i32,
+//!     friends: Vec<String>
+//! ) -> Result<(Name, Age, HashSet<Name>), MyErrors> {
+//!     // First, we perform some validation on various pieces
+//!     // of input data, WITHOUT using `?`.
+//!     let name: Result<Name, MyErrors> = validate_name(name);
+//!     let age: Result<Age, MyErrors> = validate_age(age);
+//!
+//!     // If we have multiple pieces of data, we can use
+//!     // `collect_all_errors` to build an arbitrary collection from them.
+//!     // If there are any errors, all of these errors
+//!     // will be returned in a single ErrorStream.
+//!     let friends: Result<HashSet<Name>, MyErrors> = friends
+//!         .into_iter()
+//!         .map(validate_name)
+//!         .collect_all_errors();
+//!
+//!     // Now, we can combine the results into a single result.
+//!     // If there are any errors, they will be returned in a
+//!     // single ErrorStream.
+//!     let (name, age, friends): (Name, Age, HashSet<Name>) =
+//!         (name, age, friends).combine_errors()?;
+//!     
+//!     Ok((name, age, friends))
+//! }
+//! ```
+//!
+//! ## Best practices
+//!
+//! ### Use `ErrorStream` everywhere
+//! It is best to use `ErrorStream` everywhere in a multiple-error module, even
+//! for methods that return only a single error. `CombineAllErrors` and `CollectAllErrors`
+//! can only be implemented for types built from `Result<_, ErrorStream<_>>` due to trait conflicts.
+//! `ErrorStream` uses a `smallvec::SmallVec` internally, so it is efficient for single errors.
+//!
+//! You can convert an `E` to an `ErrorStream<E>` using `.into()`.
+//!
+//! ### Not losing any errors
+//! When using this module, it is best to avoid using `?` until as late as possible,
+//! and to completely avoid using the `Result<Collection<_>, _>::collect` method.
+//! Both of these may result in errors being discarded.
+//!
+//! Prefer using `Result::and_then` for chaining operations that may fail,
+//! and `CollectAllErrors::collect_all_errors` for collecting errors from iterators.
+
+use crate::map::HashSet;
+use std::hash::Hash;
 
 /// A non-empty stream of errors.
 ///
-/// Logically, this type is unordered, and it is not guaranteed that the errors will be returned in the order they were added. Attach identifying information to your errors if you want to sort them.
+/// Logically, this type is unordered, and it is not guaranteed that the errors will be returned in the order they were added.
+/// Attach identifying information to your errors if you want to sort them.
 ///
 /// This struct is intended to be used with:
 /// - The [CombineErrors] trait, which allows you to combine a tuples of results.
 /// - The [CollectAllErrors] trait, which allows you to collect errors from an iterator of results.
+///
+/// To create an `ErrorStream` from a single error, you can use `from` or `into`:
+/// ```
+/// use spacetimedb_data_structures::error_stream::ErrorStream;
+///
+/// enum MyError {
+///     A(u32),
+///     B
+/// }
+///
+/// let error: ErrorStream<MyError> = MyError::A(1).into();
+/// // or
+/// let error = ErrorStream::from(MyError::A(1));
+/// ```
+///
+/// This does not allocate (unless your error allocates, of course).
 #[derive(thiserror::Error, Debug, Clone, Default, PartialEq, Eq)]
 pub struct ErrorStream<E>(smallvec::SmallVec<[E; 1]>);
 
@@ -51,6 +155,24 @@ impl<E> ErrorStream<E> {
     }
 }
 
+impl<E: Ord + Eq> ErrorStream<E> {
+    /// Sort and deduplicate the errors in the error stream.
+    pub fn sort_deduplicate(mut self) -> Self {
+        self.0.sort_unstable();
+        self.0.dedup();
+        self
+    }
+}
+impl<E: Eq + Hash> ErrorStream<E> {
+    /// Hash and deduplicate the errors in the error stream.
+    /// The resulting error stream has an arbitrary order.
+    pub fn hash_deduplicate(mut self) -> Self {
+        let set = self.0.drain(..).collect::<HashSet<_>>();
+        self.0.extend(set);
+        self
+    }
+}
+
 impl<E> IntoIterator for ErrorStream<E> {
     type Item = <smallvec::SmallVec<[E; 1]> as IntoIterator>::Item;
     type IntoIter = <smallvec::SmallVec<[E; 1]> as IntoIterator>::IntoIter;
@@ -66,7 +188,8 @@ impl<E> From<E> for ErrorStream<E> {
     }
 }
 
-/// A trait for converting a tuple of `Result`s into a `Result` of a tuple or `ErrorStream`.
+/// A trait for converting a tuple of `Result<_, ErrorStream<_>>`s
+/// into a `Result` of a tuple or combined `ErrorStream`.
 pub trait CombineErrors {
     /// The type of the output if all results are `Ok`.
     type Ok;
@@ -96,9 +219,24 @@ pub trait CombineErrors {
     /// # Ok("hi".into())
     /// }
     ///
+    /// fn likes_dogs() -> Result<bool, ErrorStream<MyError>> {
+    ///     // ...
+    /// # Ok(false)
+    /// }
+    ///
     /// fn description() -> Result<String, ErrorStream<MyError>> {
-    ///     let (age, name) = (age(), name()).combine_errors()?;
-    ///     Ok(format!("{} is {} years old", name, age))
+    ///     // A typical usage of the API:
+    ///     // Collect multiple `Result`s in parallel, only using
+    ///     // `.combine_errors()?` once no more progress can be made.
+    ///     let (age, name, likes_dogs) =
+    ///         (age(), name(), likes_dogs()).combine_errors()?;
+    ///
+    ///     Ok(format!(
+    ///         "{} is {} years old and {}",
+    ///         name,
+    ///         age,
+    ///         if likes_dogs { "likes dogs" } else { "does not like dogs" }
+    ///     ))
     /// }
     /// ```
     fn combine_errors(self) -> Result<Self::Ok, ErrorStream<Self::Error>>;
@@ -150,25 +288,35 @@ pub trait CollectAllErrors {
     type Error;
 
     /// Collect errors from an iterator of results into a single error stream.
-    /// If all results are `Ok`, returns the collected values. Otherwise, returns the collected errors.
+    /// If all results are `Ok`, returns the collected values. Otherwise,
+    /// combine all errors into a single error stream, and return it.
     ///
     /// You CANNOT use the standard library function `Result<T, ErrorStream<E>>::collect()` for this,
-    /// as it will return the FIRST error it encounters, rather than collecting all errors.
+    /// as it will return the FIRST error it encounters, rather than collecting all errors!
     ///
     /// The collection can be anything that implements `FromIterator`.
     ///
     /// Example usage:
     /// ```
-    /// use spacetimedb_data_structures::error_stream::{ErrorStream, CollectAllErrors};
+    /// use spacetimedb_data_structures::error_stream::{
+    ///     ErrorStream,
+    ///     CollectAllErrors
+    /// };
     /// use std::collections::HashSet;
     ///
-    /// struct MyError { cause: String };
+    /// enum MyError { /* ... */ }
     ///
-    /// fn operation(data: i32, checksum: u32) -> Result<i32, MyError> {
+    /// fn operation(
+    ///     data: String,
+    ///     checksum: u32
+    /// ) -> Result<i32, ErrorStream<MyError>> {
+    ///     /* ... */
     /// #   Ok(1)
     /// }
     ///
-    /// fn many_operations(data: Vec<(i32, u32)>) -> Result<HashSet<i32>, ErrorStream<MyError>> {
+    /// fn many_operations(
+    ///     data: Vec<(String, u32)>
+    /// ) -> Result<HashSet<i32>, ErrorStream<MyError>> {
     ///     data
     ///         .into_iter()
     ///         .map(|(data, checksum)| operation(data, checksum))
@@ -178,37 +326,144 @@ pub trait CollectAllErrors {
     fn collect_all_errors<C: FromIterator<Self::Item>>(self) -> Result<C, ErrorStream<Self::Error>>;
 }
 
-impl<T, E, I: Iterator<Item = Result<T, E>>> CollectAllErrors for I {
+impl<T, E, I: Iterator<Item = Result<T, ErrorStream<E>>>> CollectAllErrors for I {
     type Item = T;
     type Error = E;
 
     fn collect_all_errors<Collection: FromIterator<Self::Item>>(self) -> Result<Collection, ErrorStream<Self::Error>> {
-        let mut errors = ErrorStream(Default::default());
+        // not in a valid state: contains no errors!
+        let mut all_errors = ErrorStream(Default::default());
 
         let collection = self
             .filter_map(|result| match result {
                 Ok(value) => Some(value),
-                Err(error) => {
-                    errors.0.push(error);
+                Err(errors) => {
+                    all_errors.extend(errors);
                     None
                 }
             })
             .collect::<Collection>();
 
-        if errors.0.is_empty() {
+        if all_errors.0.is_empty() {
+            // invalid state is not returned.
             Ok(collection)
         } else {
-            Err(errors)
+            // not empty, so we're good to return it.
+            Err(all_errors)
         }
     }
 }
+
+/// Helper macro to match against an error stream, expecting a specific error.
+/// For use in tests.
+/// Panics if a matching error is not found.
+/// Multiple matches are allowed.
+///
+/// Parameters:
+/// - `$result` must be a `Result<_, ErrorStream<E>>`.
+/// - `$expected` is a pattern to match against the error.
+/// - `$cond` is an optional expression that should evaluate to `true` if the error matches.
+///     Variables from `$expected` are bound in `$cond` behind references.
+///     Do not use any asserts in `$cond` as it may be called against multiple errors.
+///
+/// ```
+/// use spacetimedb_data_structures::error_stream::{
+///     ErrorStream,
+///     CollectAllErrors,
+///     expect_error_matching
+/// };
+///
+/// #[derive(PartialEq, Eq, Clone, Copy, Debug)]
+/// struct CaseRef(u32);
+///
+/// #[derive(Debug)]
+/// enum MyError {
+///     InsufficientSwag { amount: u32 },
+///     TooMuchSwag { reason: String, precedent: CaseRef },
+///     SomethingElse(String)
+/// }
+///
+/// let result: Result<(), ErrorStream<MyError>> = vec![
+///     Err(MyError::TooMuchSwag {
+///         reason: "sunglasses indoors".into(),
+///         precedent: CaseRef(37)
+///     }.into()),
+///     Err(MyError::TooMuchSwag {
+///         reason: "fur coat".into(),
+///         precedent: CaseRef(55)
+///     }.into()),
+///     Err(MyError::SomethingElse(
+///         "non-service animals forbidden".into()
+///     ).into())
+/// ].into_iter().collect_all_errors();
+///
+/// // This will panic if the error stream does not contain
+/// // an error matching `MyError::SomethingElse`.
+/// expect_error_matching!(
+///     result,
+///     MyError::SomethingElse(_)
+/// );
+///
+/// // This will panic if the error stream does not contain
+/// // an error matching `MyError::TooMuchSwag`, plus some
+/// // extra conditions.
+/// expect_error_matching!(
+///     result,
+///     MyError::TooMuchSwag { reason, precedent } =>
+///         precedent == &CaseRef(37) && reason.contains("sunglasses")
+/// );
+/// ```
+#[macro_export]
+macro_rules! expect_error_matching (
+    ($result:expr, $expected:pat => $cond:expr) => {
+        let result: &::std::result::Result<
+            _,
+            $crate::error_stream::ErrorStream<_>
+        > = &$result;
+        match result {
+            Ok(_) => panic!("expected error, but got Ok"),
+            Err(errors) => {
+                let err = errors.iter().find(|error|
+                    if let $expected = error {
+                        $cond
+                    } else {
+                        false
+                    }
+                );
+                if let None = err {
+                    panic!("expected error matching `{}` satisfying `{}`,\n but got {:#?}", stringify!($expected), stringify!($cond), errors);
+                }
+            }
+        }
+    };
+    ($result:expr, $expected:pat) => {
+        let result: &::std::result::Result<
+            _,
+            $crate::error_stream::ErrorStream<_>
+        > = &$result;
+        match result {
+            Ok(_) => panic!("expected error, but got Ok"),
+            Err(errors) => {
+                let err = errors.iter().find(|error| matches!(error, $expected));
+                if let None = err {
+                    panic!("expected error matching `{}`,\n but got {:#?}", stringify!($expected), errors);
+                }
+            }
+        }
+    };
+);
+// Make available in this module as well as crate root.
+pub use expect_error_matching;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[derive(Debug, PartialEq)]
-    struct MyError(u32);
+    enum MyError {
+        A(u32),
+        B,
+    }
 
     type Result<T> = std::result::Result<T, ErrorStream<MyError>>;
 
@@ -218,37 +473,67 @@ mod tests {
         let tuple_1: ResultTuple = (Ok(1), Ok("hi".into()), Ok(3));
         assert_eq!(tuple_1.combine_errors(), Ok((1, "hi".into(), 3)));
 
-        let tuple_2: ResultTuple = (Err(MyError(1).into()), Ok("hi".into()), Ok(3));
-        assert_eq!(tuple_2.combine_errors(), Err(MyError(1).into()));
+        let tuple_2: ResultTuple = (Err(MyError::A(1).into()), Ok("hi".into()), Ok(3));
+        assert_eq!(tuple_2.combine_errors(), Err(MyError::A(1).into()));
 
-        let tuple_3: ResultTuple = (Err(MyError(1).into()), Err(MyError(2).into()), Ok(3));
+        let tuple_3: ResultTuple = (Err(MyError::A(1).into()), Err(MyError::A(2).into()), Ok(3));
         assert_eq!(
             tuple_3.combine_errors(),
-            Err(ErrorStream(smallvec::smallvec![MyError(1), MyError(2)]))
+            Err(ErrorStream(smallvec::smallvec![MyError::A(1), MyError::A(2)]))
         );
 
-        let tuple_4: ResultTuple = (Err(MyError(1).into()), Err(MyError(2).into()), Err(MyError(3).into()));
+        let tuple_4: ResultTuple = (
+            Err(MyError::A(1).into()),
+            Err(MyError::A(2).into()),
+            Err(MyError::A(3).into()),
+        );
         assert_eq!(
             tuple_4.combine_errors(),
-            Err(ErrorStream(smallvec::smallvec![MyError(1), MyError(2), MyError(3)]))
+            Err(ErrorStream(smallvec::smallvec![
+                MyError::A(1),
+                MyError::A(2),
+                MyError::A(3)
+            ]))
         );
     }
 
     #[test]
     fn collect_all_errors() {
-        let data: Vec<std::result::Result<i32, MyError>> = vec![Ok(1), Ok(2), Ok(3)];
+        let data: Vec<Result<i32>> = vec![Ok(1), Ok(2), Ok(3)];
         assert_eq!(data.into_iter().collect_all_errors::<Vec<_>>(), Ok(vec![1, 2, 3]));
 
-        let data = vec![Ok(1), Err(MyError(0)), Ok(3)];
+        let data = vec![Ok(1), Err(MyError::A(0).into()), Ok(3)];
         assert_eq!(
             data.into_iter().collect_all_errors::<Vec<_>>(),
-            Err(ErrorStream([MyError(0)].into()))
+            Err(ErrorStream([MyError::A(0)].into()))
         );
 
-        let data: Vec<std::result::Result<i32, MyError>> = vec![Err(MyError(1)), Err(MyError(2)), Err(MyError(3))];
+        let data: Vec<Result<i32>> = vec![
+            Err(MyError::A(1).into()),
+            Err(MyError::A(2).into()),
+            Err(MyError::A(3).into()),
+        ];
         assert_eq!(
             data.into_iter().collect_all_errors::<Vec<_>>(),
-            Err(ErrorStream(smallvec::smallvec![MyError(1), MyError(2), MyError(3)]))
+            Err(ErrorStream(smallvec::smallvec![
+                MyError::A(1),
+                MyError::A(2),
+                MyError::A(3)
+            ]))
         );
+    }
+
+    #[test]
+    #[should_panic]
+    fn expect_error_matching_without_cond_panics() {
+        let data: Result<()> = Err(ErrorStream(vec![MyError::B].into()));
+        expect_error_matching!(data, MyError::A(_));
+    }
+
+    #[test]
+    #[should_panic]
+    fn expect_error_matching_with_cond_panics() {
+        let data: Result<()> = Err(ErrorStream(vec![MyError::A(5), MyError::A(10)].into()));
+        expect_error_matching!(data, MyError::A(n) => n == &12);
     }
 }
