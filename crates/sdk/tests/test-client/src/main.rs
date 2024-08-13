@@ -1202,7 +1202,7 @@ fn exec_insert_primitives_as_strings() {
 
     {
         let test_counter = test_counter.clone();
-        let mut result = Some(test_counter.add_test("insert-every-primitive-struct-as-json"));
+        let mut result = Some(test_counter.add_test("insert-primitives-as-strings"));
         once_on_subscription_applied(move || {
             let s = every_primitive_struct();
 
