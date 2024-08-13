@@ -25,9 +25,8 @@ jobs:
           images: |
             clockworklabs/spacetimedb
           tags: |
-            type=sha,prefix=commit-
             type=ref,event=tag
-            type=sha,suffix=-amd64
+            type=sha,prefix=commit-,suffix=-amd64
           flavor: |
             latest=false
       - name: Set up Docker Buildx
@@ -85,9 +84,8 @@ jobs:
           images: |
             clockworklabs/spacetimedb
           tags: |
-            type=sha,prefix=commit-
             type=ref,event=tag
-            type=sha,suffix=-arm64
+            type=sha,prefix=commit-,suffix=-arm64
           flavor: |
             latest=false
       - name: Set up Docker Buildx
