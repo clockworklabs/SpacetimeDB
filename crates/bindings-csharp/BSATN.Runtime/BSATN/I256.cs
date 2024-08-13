@@ -12,7 +12,7 @@ using SpacetimeDB.BSATN;
 public readonly record struct I256 : IEquatable<I256>, IComparable, IComparable<I256>
 {
 #if BIGENDIAN
-    private readonly U128 _upper;
+    private readonly I128 _upper;
     private readonly U128 _lower;
 #else
     private readonly U128 _lower;
@@ -29,52 +29,22 @@ public readonly record struct I256 : IEquatable<I256>, IComparable, IComparable<
     }
 
     /// <inheritdoc cref="IComparable.CompareTo(object)" />
-    public int CompareTo(object? value)
+    public int CompareTo(object? value) => value switch
     {
-        if (value is I256 other)
-        {
-            return CompareTo(other);
-        }
-        else if (value is null)
-        {
-            return 1;
-        }
-        else
-        {
-            throw new ArgumentException();
-        }
-    }
+        I256 other => CompareTo(other),
+        null => 1,
+        _ => throw new ArgumentNullException(nameof(value)),
+    };
 
     /// <inheritdoc cref="IComparable{T}.CompareTo(T)" />
-    public int CompareTo(I256 value)
+    public int CompareTo(I256 value) => _upper.CompareTo(value._upper) switch
     {
-        if (this < value)
-        {
-            return -1;
-        }
-        else if (this > value)
-        {
-            return 1;
-        }
-        else
-        {
-            return 0;
-        }
-    }
+        0 => _lower.CompareTo(value),
+        var result => result,
+    };
 
     /// <inheritdoc cref="IComparisonOperators{TSelf, TOther, TResult}.op_LessThan(TSelf, TOther)" />
-    public static bool operator <(I256 left, I256 right)
-    {
-        if (IsNegative(left) == IsNegative(right))
-        {
-            return (left._upper < right._upper)
-                || ((left._upper == right._upper) && (left._lower < right._lower));
-        }
-        else
-        {
-            return IsNegative(left);
-        }
-    }
+    public static bool operator <(I256 left, I256 right) => left.CompareTo(right) < 0;
 
     /// <inheritdoc cref="IComparisonOperators{TSelf, TOther, TResult}.op_GreaterThan(TSelf, TOther)" />
     public static bool operator >(I256 left, I256 right)

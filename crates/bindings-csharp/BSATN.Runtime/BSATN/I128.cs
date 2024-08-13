@@ -98,9 +98,8 @@ public readonly record struct I128 : IEquatable<I128>, IComparable, IComparable<
     /// <summary>Implicitly converts a <see cref="int" /> value to a 128-bit signed integer.</summary>
     /// <param name="value">The value to convert.</param>
     /// <returns><paramref name="value" /> converted to a 128-bit signed integer.</returns>
-    public static implicit operator I128(int value)
+    public static implicit operator I128(long value)
     {
-        long lower = value;
-        return new I128((ulong)(lower >> 63), (ulong)lower);
+        return new I128((ulong)(value >> 63), (ulong)value);
     }
 }
