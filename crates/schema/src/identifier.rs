@@ -131,9 +131,8 @@ mod tests {
         #[test]
         fn test_standard_ascii_identifiers(s in "[a-zA-Z_][a-zA-Z0-9_]*") {
             // Ha! Proptest will reliably find these.
-            if Identifier::is_reserved(&s) {
-                return Ok(());
-            }
+            prop_assume!(!Identifier::is_reserved(&s));
+
             prop_assert!(Identifier::new(s.into()).is_ok());
         }
     }
