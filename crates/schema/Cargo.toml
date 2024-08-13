@@ -12,6 +12,10 @@ spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-data-structures.workspace = true
 itertools.workspace = true
+thiserror.workspace = true
+unicode-ident.workspace = true
+unicode-normalization.workspace = true
+lazy_static.workspace = true
 
 [dev-dependencies]
 spacetimedb-lib = { workspace = true, features = ["test"] }
