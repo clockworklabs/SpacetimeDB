@@ -27,8 +27,8 @@ public readonly struct I256 : IEquatable<I256>, IComparable, IComparable<I256>
     /// <param name="lower">The lower 128-bits of the 256-bit value.</param>
     public I256(U128 upper, U128 lower)
     {
-        _lower = lower;
         _upper = upper;
+        _lower = lower;
     }
 
     internal U128 Lower => _lower;
