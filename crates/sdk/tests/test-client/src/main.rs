@@ -3,6 +3,7 @@ use spacetimedb_sdk::{
     identity::{address, identity, load_credentials, once_on_connect, save_credentials},
     once_on_disconnect, once_on_subscription_applied,
     reducer::Status,
+    spacetimedb_lib::sats::{i256, u256},
     subscribe,
     table::TableType,
 };
@@ -878,19 +879,28 @@ fn exec_insert_vec() {
 }
 
 fn every_primitive_struct() -> EveryPrimitiveStruct {
+    // Note: the numbers are intentionally chosen to have asymmetrical binary
+    // representations with all bytes being non-zero.
+    // This allows to catch endianness issues in BSATN implementations.
     EveryPrimitiveStruct {
-        a: 0,
-        b: 1,
-        c: 2,
-        d: 3,
-        e: 4,
-        f: 5u8.into(),
-        g: -1,
-        h: -2,
-        i: -3,
-        j: -4,
-        k: -5,
-        l: (-5i8).into(),
+        a: 0x01_u8,
+        b: 0x0102_u16,
+        c: 0x0102_0304_u32,
+        d: 0x0102_0304_0506_0708_u64,
+        e: 0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10_u128,
+        f: u256::from_words(
+            0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10_u128,
+            0x1112_1314_1516_1718_191a_1b1c_1d1e_1f20_u128,
+        ),
+        g: -0x01_i8,
+        h: -0x0102_i16,
+        i: -0x0102_0304_i32,
+        j: -0x0102_0304_0506_0708_i64,
+        k: -0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10_i128,
+        l: -i256::from_words(
+            0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10_i128,
+            0x1112_1314_1516_1718_191a_1b1c_1d1e_1f20_i128,
+        ),
         m: false,
         n: 1.0,
         o: -1.0,
