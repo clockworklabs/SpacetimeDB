@@ -14,7 +14,10 @@ pub mod tests {
     use spacetimedb_lib::{db::raw_def::v9::RawScopedTypeNameV9, AlgebraicType};
     use spacetimedb_sats::{Typespace, WithTypespace};
 
-    use crate::{def::ScopedTypeName, identifier::Identifier};
+    use crate::{
+        def::{ModuleDef, ScopedTypeName, TableDef},
+        identifier::Identifier,
+    };
 
     /// Create an identifier, panicking if invalid.
     pub fn expect_identifier(data: impl Into<Box<str>>) -> Identifier {
@@ -51,6 +54,22 @@ pub mod tests {
         WithTypespace::new(typespace, ty)
             .resolve_refs()
             .expect("failed to resolve type")
+    }
+
+    /// Check that the columns of a `TableDef` correctly correspond the the `TableDef`'s
+    /// `product_type_ref`.
+    pub fn check_product_type(module_def: &ModuleDef, table_def: &TableDef) {
+        let product_type = module_def
+            .typespace
+            .get(table_def.product_type_ref)
+            .unwrap()
+            .as_product()
+            .unwrap();
+
+        for (element, column) in product_type.elements.iter().zip(table_def.columns.iter()) {
+            assert_eq!(Some(&*column.name), element.name());
+            assert_eq!(column.ty, element.algebraic_type);
+        }
     }
 
     #[test]

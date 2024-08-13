@@ -90,6 +90,17 @@ pub struct ModuleDef {
 }
 
 impl ModuleDef {
+    /// Construct a `ModuleDef` by validating a `RawModuleDef`.
+    /// This is the only way to construct a `ModuleDef`.
+    /// (The `TryFrom` impls for this type just call this method.)
+    pub fn validate(raw: RawModuleDef) -> Result<Self, ValidationErrors> {
+        match raw {
+            RawModuleDef::V8BackCompat(v8_mod) => validate::v8::validate(v8_mod),
+            RawModuleDef::V9(v9_mod) => validate::v9::validate(v9_mod),
+            _ => unimplemented!(),
+        }
+    }
+
     /// The tables of the module definition.
     pub fn tables(&self) -> impl Iterator<Item = &TableDef> {
         self.tables.values()
@@ -128,7 +139,7 @@ impl ModuleDef {
     /// Generate indexes for the module definition.
     /// We guarantee that all `unique` constraints have an index generated for them.
     /// This will be removed once another enforcement mechanism is implemented.
-    /// We implement this after validation to share logic between v8 and v9.
+    /// This is a noop if there are already usable indexes present.
     fn generate_indexes(&mut self) {
         for table in self.tables.values_mut() {
             for constraint in table.unique_constraints.values() {
