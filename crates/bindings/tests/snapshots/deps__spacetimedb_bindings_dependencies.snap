@@ -37,6 +37,8 @@ spacetimedb
 │   ├── spacetimedb_primitives
 │   │   ├── bitflags
 │   │   ├── either
+│   │   ├── itertools
+│   │   │   └── either
 │   │   └── nohash_hasher
 │   └── syn
 │       ├── proc_macro2 (*)
@@ -54,8 +56,7 @@ spacetimedb
 │   │   ├── quote (*)
 │   │   └── syn (*)
 │   ├── hex
-│   ├── itertools
-│   │   └── either
+│   ├── itertools (*)
 │   ├── spacetimedb_bindings_macro (*)
 │   ├── spacetimedb_data_structures
 │   │   ├── hashbrown
