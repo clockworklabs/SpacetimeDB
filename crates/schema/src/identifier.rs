@@ -26,7 +26,6 @@ lazy_static::lazy_static! {
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, de::Deserialize, ser::Serialize)]
 #[sats(crate = spacetimedb_sats)]
 pub struct Identifier {
-    // REMARK(jgilles): We *could* intern these.....
     id: Box<str>,
 }
 
@@ -100,6 +99,7 @@ impl Deref for Identifier {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_a_bunch_of_identifiers() {
@@ -124,5 +124,12 @@ mod tests {
         assert!(Identifier::new("_\u{0041}\u{030A}".into()).is_err());
         // canonicalized version of the above.
         assert!(Identifier::new("_\u{00C5}".into()).is_ok());
+    }
+
+    proptest! {
+        #[test]
+        fn test_standard_ascii_identifiers(s in "[a-zA-Z_][a-zA-Z0-9_]*") {
+            prop_assert!(Identifier::new(s.into()).is_ok());
+        }
     }
 }

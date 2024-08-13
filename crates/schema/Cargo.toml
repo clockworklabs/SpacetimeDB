@@ -19,3 +19,4 @@ lazy_static.workspace = true
 
 [dev-dependencies]
 spacetimedb-lib = { workspace = true, features = ["test"] }
+proptest.workspace = true
