@@ -88,6 +88,12 @@ public static class BigIntHelpers
 #endif
         writer.Write(bytes);
     }
+
+    public static int CompareTo<T>(T left, object? right) where T : IComparable<T> => right switch
+    {
+        null => 1,
+        _ => left.CompareTo((T)right),
+    };
 }
 
 public readonly struct Enum<T> : IReadWrite<T>

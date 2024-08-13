@@ -28,21 +28,7 @@ public readonly record struct I128 : IEquatable<I128>, IComparable, IComparable<
     }
 
     /// <inheritdoc cref="IComparable.CompareTo(object)" />
-    public int CompareTo(object? value)
-    {
-        if (value is I128 other)
-        {
-            return CompareTo(other);
-        }
-        else if (value is null)
-        {
-            return 1;
-        }
-        else
-        {
-            throw new ArgumentException();
-        }
-    }
+    public int CompareTo(object? value) => BigIntHelpers.CompareTo(this, value);
 
     /// <inheritdoc cref="IComparable{T}.CompareTo(T)" />
     public int CompareTo(I128 value)

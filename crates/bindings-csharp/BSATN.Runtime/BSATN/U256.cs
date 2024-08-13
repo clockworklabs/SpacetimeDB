@@ -26,21 +26,7 @@ public readonly record struct U256 : IEquatable<U256>, IComparable, IComparable<
     }
 
     /// <inheritdoc cref="IComparable.CompareTo(object)" />
-    public int CompareTo(object? value)
-    {
-        if (value is U256 other)
-        {
-            return CompareTo(other);
-        }
-        else if (value is null)
-        {
-            return 1;
-        }
-        else
-        {
-            throw new ArgumentException();
-        }
-    }
+    public int CompareTo(object? value) => BigIntHelpers.CompareTo(this, value);
 
     /// <inheritdoc cref="IComparable{T}.CompareTo(T)" />
     public int CompareTo(U256 value)

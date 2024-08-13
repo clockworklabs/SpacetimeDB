@@ -30,21 +30,7 @@ public readonly record struct U128 : IEquatable<U128>, IComparable, IComparable<
     internal ulong Upper => _upper;
 
     /// <inheritdoc cref="IComparable.CompareTo(object)" />
-    public int CompareTo(object? value)
-    {
-        if (value is U128 other)
-        {
-            return CompareTo(other);
-        }
-        else if (value is null)
-        {
-            return 1;
-        }
-        else
-        {
-            throw new ArgumentException();
-        }
-    }
+    public int CompareTo(object? value) => BigIntHelpers.CompareTo(this, value);
 
     /// <inheritdoc cref="IComparable{T}.CompareTo(T)" />
     public int CompareTo(U128 value)

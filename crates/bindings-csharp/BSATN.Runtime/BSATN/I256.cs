@@ -29,12 +29,7 @@ public readonly record struct I256 : IEquatable<I256>, IComparable, IComparable<
     }
 
     /// <inheritdoc cref="IComparable.CompareTo(object)" />
-    public int CompareTo(object? value) => value switch
-    {
-        I256 other => CompareTo(other),
-        null => 1,
-        _ => throw new ArgumentNullException(nameof(value)),
-    };
+    public int CompareTo(object? value) => BigIntHelpers.CompareTo(this, value);
 
     /// <inheritdoc cref="IComparable{T}.CompareTo(T)" />
     public int CompareTo(I256 value) => _upper.CompareTo(value._upper) switch
