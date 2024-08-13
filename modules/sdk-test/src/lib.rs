@@ -562,6 +562,32 @@ fn insert_caller_pk_address(ctx: ReducerContext, data: i32) -> anyhow::Result<()
     Ok(())
 }
 
+#[spacetimedb(reducer)]
+fn insert_primitives_as_strings(s: EveryPrimitiveStruct) {
+    VecString::insert(VecString {
+        s: vec![
+            s.a.to_string(),
+            s.b.to_string(),
+            s.c.to_string(),
+            s.d.to_string(),
+            s.e.to_string(),
+            s.f.to_string(),
+            s.g.to_string(),
+            s.h.to_string(),
+            s.i.to_string(),
+            s.j.to_string(),
+            s.k.to_string(),
+            s.l.to_string(),
+            s.m.to_string(),
+            s.n.to_string(),
+            s.o.to_string(),
+            s.p.to_string(),
+            s.q.to_string(),
+            s.r.to_string(),
+        ],
+    });
+}
+
 // Some weird-looking tables.
 define_tables! {
     // A table with many fields, of many different types.

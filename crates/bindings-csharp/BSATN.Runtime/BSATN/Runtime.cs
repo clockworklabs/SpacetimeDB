@@ -177,13 +177,17 @@ public readonly struct U64 : IReadWrite<ulong>
 
 public readonly struct U128Stdb : IReadWrite<SpacetimeDB.U128>
 {
-    public SpacetimeDB.U128 Read(BinaryReader reader) =>
-        new(reader.ReadUInt64(), reader.ReadUInt64());
+    public SpacetimeDB.U128 Read(BinaryReader reader)
+    {
+        var lower = reader.ReadUInt64();
+        var upper = reader.ReadUInt64();
+        return new(upper, lower);
+    }
 
     public void Write(BinaryWriter writer, SpacetimeDB.U128 value)
     {
-        writer.Write(value.Upper);
         writer.Write(value.Lower);
+        writer.Write(value.Upper);
     }
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
@@ -193,13 +197,17 @@ public readonly struct U128Stdb : IReadWrite<SpacetimeDB.U128>
 #if NET7_0_OR_GREATER
 public readonly struct U128 : IReadWrite<System.UInt128>
 {
-    public System.UInt128 Read(BinaryReader reader) =>
-        new(reader.ReadUInt64(), reader.ReadUInt64());
+    public System.UInt128 Read(BinaryReader reader)
+    {
+        var lower = reader.ReadUInt64();
+        var upper = reader.ReadUInt64();
+        return new(upper, lower);
+    }
 
     public void Write(BinaryWriter writer, System.UInt128 value)
     {
-        writer.Write((ulong)(value >> 64));
         writer.Write((ulong)value);
+        writer.Write((ulong)(value >> 64));
     }
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
@@ -212,14 +220,16 @@ public readonly struct U256 : IReadWrite<SpacetimeDB.U256>
     public SpacetimeDB.U256 Read(BinaryReader reader)
     {
         var bsatn = new U128Stdb();
-        return new(bsatn.Read(reader), bsatn.Read(reader));
+        var lower = bsatn.Read(reader);
+        var upper = bsatn.Read(reader);
+        return new(upper, lower);
     }
 
     public void Write(BinaryWriter writer, SpacetimeDB.U256 value)
     {
         var bsatn = new U128Stdb();
-        bsatn.Write(writer, value.Upper);
         bsatn.Write(writer, value.Lower);
+        bsatn.Write(writer, value.Upper);
     }
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
@@ -268,13 +278,17 @@ public readonly struct I64 : IReadWrite<long>
 
 public readonly struct I128Stdb : IReadWrite<SpacetimeDB.I128>
 {
-    public SpacetimeDB.I128 Read(BinaryReader reader) =>
-        new(reader.ReadUInt64(), reader.ReadUInt64());
+    public SpacetimeDB.I128 Read(BinaryReader reader)
+    {
+        var lower = reader.ReadUInt64();
+        var upper = reader.ReadUInt64();
+        return new(upper, lower);
+    }
 
     public void Write(BinaryWriter writer, SpacetimeDB.I128 value)
     {
-        writer.Write(value.Upper);
         writer.Write(value.Lower);
+        writer.Write(value.Upper);
     }
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
@@ -284,12 +298,17 @@ public readonly struct I128Stdb : IReadWrite<SpacetimeDB.I128>
 #if NET7_0_OR_GREATER
 public readonly struct I128 : IReadWrite<System.Int128>
 {
-    public System.Int128 Read(BinaryReader reader) => new(reader.ReadUInt64(), reader.ReadUInt64());
+    public System.Int128 Read(BinaryReader reader)
+    {
+        var lower = reader.ReadUInt64();
+        var upper = reader.ReadUInt64();
+        return new(upper, lower);
+    }
 
     public void Write(BinaryWriter writer, System.Int128 value)
     {
-        writer.Write((long)(value >> 64));
         writer.Write((long)value);
+        writer.Write((long)(value >> 64));
     }
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
@@ -302,14 +321,16 @@ public readonly struct I256 : IReadWrite<SpacetimeDB.I256>
     public SpacetimeDB.I256 Read(BinaryReader reader)
     {
         var bsatn = new U128Stdb();
-        return new(bsatn.Read(reader), bsatn.Read(reader));
+        var lower = bsatn.Read(reader);
+        var upper = bsatn.Read(reader);
+        return new(upper, lower);
     }
 
     public void Write(BinaryWriter writer, SpacetimeDB.I256 value)
     {
         var bsatn = new U128Stdb();
-        bsatn.Write(writer, value.Upper);
         bsatn.Write(writer, value.Lower);
+        bsatn.Write(writer, value.Upper);
     }
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>

@@ -111,6 +111,7 @@ pub mod insert_pk_u_256_reducer;
 pub mod insert_pk_u_32_reducer;
 pub mod insert_pk_u_64_reducer;
 pub mod insert_pk_u_8_reducer;
+pub mod insert_primitives_as_strings_reducer;
 pub mod insert_table_holds_table_reducer;
 pub mod insert_unique_address_reducer;
 pub mod insert_unique_bool_reducer;
@@ -367,6 +368,7 @@ pub use insert_pk_u_256_reducer::*;
 pub use insert_pk_u_32_reducer::*;
 pub use insert_pk_u_64_reducer::*;
 pub use insert_pk_u_8_reducer::*;
+pub use insert_primitives_as_strings_reducer::*;
 pub use insert_table_holds_table_reducer::*;
 pub use insert_unique_address_reducer::*;
 pub use insert_unique_bool_reducer::*;
@@ -624,6 +626,7 @@ pub enum ReducerEvent {
     InsertPkU32(insert_pk_u_32_reducer::InsertPkU32Args),
     InsertPkU64(insert_pk_u_64_reducer::InsertPkU64Args),
     InsertPkU8(insert_pk_u_8_reducer::InsertPkU8Args),
+    InsertPrimitivesAsStrings(insert_primitives_as_strings_reducer::InsertPrimitivesAsStringsArgs),
     InsertTableHoldsTable(insert_table_holds_table_reducer::InsertTableHoldsTableArgs),
     InsertUniqueAddress(insert_unique_address_reducer::InsertUniqueAddressArgs),
     InsertUniqueBool(insert_unique_bool_reducer::InsertUniqueBoolArgs),
@@ -1095,6 +1098,7 @@ match &reducer_call.reducer_name[..] {
 			"insert_pk_u32" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_32_reducer::InsertPkU32Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU32),
 			"insert_pk_u64" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_64_reducer::InsertPkU64Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU64),
 			"insert_pk_u8" => _reducer_callbacks.handle_event_of_type::<insert_pk_u_8_reducer::InsertPkU8Args, ReducerEvent>(event, _state, ReducerEvent::InsertPkU8),
+			"insert_primitives_as_strings" => _reducer_callbacks.handle_event_of_type::<insert_primitives_as_strings_reducer::InsertPrimitivesAsStringsArgs, ReducerEvent>(event, _state, ReducerEvent::InsertPrimitivesAsStrings),
 			"insert_table_holds_table" => _reducer_callbacks.handle_event_of_type::<insert_table_holds_table_reducer::InsertTableHoldsTableArgs, ReducerEvent>(event, _state, ReducerEvent::InsertTableHoldsTable),
 			"insert_unique_address" => _reducer_callbacks.handle_event_of_type::<insert_unique_address_reducer::InsertUniqueAddressArgs, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueAddress),
 			"insert_unique_bool" => _reducer_callbacks.handle_event_of_type::<insert_unique_bool_reducer::InsertUniqueBoolArgs, ReducerEvent>(event, _state, ReducerEvent::InsertUniqueBool),

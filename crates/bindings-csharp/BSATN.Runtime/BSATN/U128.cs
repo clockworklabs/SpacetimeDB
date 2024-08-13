@@ -4,6 +4,7 @@
 namespace SpacetimeDB;
 
 using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
 using System.Runtime.InteropServices;
 
 /// <summary>Represents a 128-bit unsigned integer.</summary>
@@ -25,8 +26,8 @@ public readonly struct U128 : IEquatable<U128>, IComparable, IComparable<U128>
     /// <param name="lower">The lower 64-bits of the 128-bit value.</param>
     public U128(ulong upper, ulong lower)
     {
-        _lower = lower;
         _upper = upper;
+        _lower = lower;
     }
 
     internal ulong Lower => _lower;
@@ -105,6 +106,13 @@ public readonly struct U128 : IEquatable<U128>, IComparable, IComparable<U128>
     /// <inheritdoc cref="object.GetHashCode()" />
     public override int GetHashCode() => HashCode.Combine(_lower, _upper);
 
+    private BigInteger AsBigInt() =>
+        new(
+            MemoryMarshal.AsBytes(stackalloc[] { this }),
+            isUnsigned: false,
+            isBigEndian: !BitConverter.IsLittleEndian
+        );
+
     /// <inheritdoc cref="object.ToString()" />
-    public override string ToString() => $"U128({_upper},{_lower})";
+    public override string ToString() => AsBigInt().ToString();
 }

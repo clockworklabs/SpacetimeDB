@@ -5,6 +5,7 @@ namespace SpacetimeDB;
 
 using System;
 using System.Diagnostics.CodeAnalysis;
+using System.Numerics;
 using System.Runtime.InteropServices;
 
 /// <summary>Represents a 256-bit signed integer.</summary>
@@ -26,8 +27,8 @@ public readonly struct I256 : IEquatable<I256>, IComparable, IComparable<I256>
     /// <param name="lower">The lower 128-bits of the 256-bit value.</param>
     public I256(U128 upper, U128 lower)
     {
-        _lower = lower;
         _upper = upper;
+        _lower = lower;
     }
 
     internal U128 Lower => _lower;
@@ -124,6 +125,13 @@ public readonly struct I256 : IEquatable<I256>, IComparable, IComparable<I256>
     /// <inheritdoc cref="object.GetHashCode()" />
     public override int GetHashCode() => HashCode.Combine(_lower, _upper);
 
+    private BigInteger AsBigInt() =>
+        new(
+            MemoryMarshal.AsBytes(stackalloc[] { this }),
+            isUnsigned: false,
+            isBigEndian: !BitConverter.IsLittleEndian
+        );
+
     /// <inheritdoc cref="object.ToString()" />
-    public override string ToString() => $"I256({_upper},{_lower})";
+    public override string ToString() => AsBigInt().ToString();
 }

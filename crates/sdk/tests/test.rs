@@ -94,6 +94,11 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
+            fn insert_primitives_as_strings() {
+                make_test("insert_primitives_as_strings").run();
+            }
+
+            #[test]
             fn resubscribe() {
                 make_test("resubscribe").run();
             }

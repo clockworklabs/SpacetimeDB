@@ -3,7 +3,7 @@ use spacetimedb_sdk::{
     identity::{address, identity, load_credentials, once_on_connect, save_credentials},
     once_on_disconnect, once_on_subscription_applied,
     reducer::Status,
-    sats::{i256, u256},
+    spacetimedb_lib::sats::{i256, u256},
     subscribe,
     table::TableType,
 };
@@ -81,6 +81,8 @@ fn main() {
         "insert_enum_with_payload" => exec_insert_enum_with_payload(),
 
         "insert_long_table" => exec_insert_long_table(),
+
+        "insert_primitives_as_strings" => exec_insert_primitives_as_strings(),
 
         "resubscribe" => exec_resubscribe(),
 
@@ -877,19 +879,28 @@ fn exec_insert_vec() {
 }
 
 fn every_primitive_struct() -> EveryPrimitiveStruct {
+    // Note: the numbers are intentionally chosen to have asymmetrical binary
+    // representations with all bytes being non-zero.
+    // This allows to catch endianness issues in BSATN implementations.
     EveryPrimitiveStruct {
-        a: 0,
-        b: 1,
-        c: 2,
-        d: 3,
-        e: 4,
-        f: 5u8.into(),
-        g: -1,
-        h: -2,
-        i: -3,
-        j: -4,
-        k: -5,
-        l: (-5i8).into(),
+        a: 0x01_u8,
+        b: 0x0102_u16,
+        c: 0x0102_0304_u32,
+        d: 0x0102_0304_0506_0708_u64,
+        e: 0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10_u128,
+        f: u256::from_words(
+            0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10_u128,
+            0x1112_1314_1516_1718_191a_1b1c_1d1e_1f20_u128,
+        ),
+        g: -0x01_i8,
+        h: -0x0102_i16,
+        i: -0x0102_0304_i32,
+        j: -0x0102_0304_0506_0708_i64,
+        k: -0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10_i128,
+        l: -i256::from_words(
+            0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10_i128,
+            0x1112_1314_1516_1718_191a_1b1c_1d1e_1f20_i128,
+        ),
         m: false,
         n: 1.0,
         o: -1.0,
@@ -919,6 +930,33 @@ fn every_vec_struct() -> EveryVecStruct {
         p: ["vec", "of", "strings"].into_iter().map(str::to_string).collect(),
         q: vec![identity().unwrap()],
         r: vec![address().unwrap()],
+    }
+}
+
+fn large_table() -> LargeTable {
+    LargeTable {
+        a: 0,
+        b: 1,
+        c: 2,
+        d: 3,
+        e: 4,
+        f: 5u8.into(),
+        g: 0,
+        h: -1,
+        i: -2,
+        j: -3,
+        k: -4,
+        l: (-5i8).into(),
+        m: false,
+        n: 0.0,
+        o: 1.0,
+        p: "string".to_string(),
+        q: SimpleEnum::Zero,
+        r: EnumWithPayload::Bool(false),
+        s: UnitStruct {},
+        t: ByteStruct { b: 0b10101010 },
+        u: every_primitive_struct(),
+        v: every_vec_struct(),
     }
 }
 
@@ -1103,28 +1141,7 @@ fn exec_insert_long_table() {
             LargeTable::on_insert(move |row, reducer_event| {
                 if large_table_result.is_some() {
                     let run_tests = || {
-                        assert_eq_or_bail!(row.a, 0);
-                        assert_eq_or_bail!(row.b, 1);
-                        assert_eq_or_bail!(row.c, 2);
-                        assert_eq_or_bail!(row.d, 3);
-                        assert_eq_or_bail!(row.e, 4);
-                        assert_eq_or_bail!(row.f, u256::from(5u8));
-                        assert_eq_or_bail!(row.g, 0);
-                        assert_eq_or_bail!(row.h, -1);
-                        assert_eq_or_bail!(row.i, -2);
-                        assert_eq_or_bail!(row.j, -3);
-                        assert_eq_or_bail!(row.k, -4);
-                        assert_eq_or_bail!(row.l, i256::from(-5i8));
-                        assert_eq_or_bail!(row.m, false);
-                        assert_eq_or_bail!(row.n, 0.0);
-                        assert_eq_or_bail!(row.o, 1.0);
-                        assert_eq_or_bail!(&row.p, "string");
-                        assert_eq_or_bail!(row.q, SimpleEnum::Zero);
-                        assert_eq_or_bail!(row.r, EnumWithPayload::Bool(false));
-                        assert_eq_or_bail!(row.s, UnitStruct {});
-                        assert_eq_or_bail!(row.t, ByteStruct { b: 0b10101010 });
-                        assert_eq_or_bail!(row.u, every_primitive_struct());
-                        assert_eq_or_bail!(row.v, every_vec_struct());
+                        assert_eq_or_bail!(large_table(), *row);
                         if !matches!(reducer_event, Some(ReducerEvent::InsertLargeTable(_))) {
                             anyhow::bail!(
                                 "Unexpected reducer event: expeced InsertLargeTable but found {:?}",
@@ -1136,30 +1153,96 @@ fn exec_insert_long_table() {
                     (large_table_result.take().unwrap())(run_tests());
                 }
             });
+            let large_table = large_table();
             insert_large_table(
-                0,
-                1,
-                2,
-                3,
-                4,
-                5u8.into(),
-                0,
-                -1,
-                -2,
-                -3,
-                -4,
-                (-5i8).into(),
-                false,
-                0.0,
-                1.0,
-                "string".to_string(),
-                SimpleEnum::Zero,
-                EnumWithPayload::Bool(false),
-                UnitStruct {},
-                ByteStruct { b: 0b10101010 },
-                every_primitive_struct(),
-                every_vec_struct(),
+                large_table.a,
+                large_table.b,
+                large_table.c,
+                large_table.d,
+                large_table.e,
+                large_table.f,
+                large_table.g,
+                large_table.h,
+                large_table.i,
+                large_table.j,
+                large_table.k,
+                large_table.l,
+                large_table.m,
+                large_table.n,
+                large_table.o,
+                large_table.p,
+                large_table.q,
+                large_table.r,
+                large_table.s,
+                large_table.t,
+                large_table.u,
+                large_table.v,
             );
+
+            sub_applied_nothing_result(assert_all_tables_empty())
+        });
+    }
+
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
+
+    conn_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
+}
+
+fn exec_insert_primitives_as_strings() {
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
+
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    {
+        let test_counter = test_counter.clone();
+        let mut result = Some(test_counter.add_test("insert-primitives-as-strings"));
+        once_on_subscription_applied(move || {
+            let s = every_primitive_struct();
+
+            let strings = vec![
+                s.a.to_string(),
+                s.b.to_string(),
+                s.c.to_string(),
+                s.d.to_string(),
+                s.e.to_string(),
+                s.f.to_string(),
+                s.g.to_string(),
+                s.h.to_string(),
+                s.i.to_string(),
+                s.j.to_string(),
+                s.k.to_string(),
+                s.l.to_string(),
+                s.m.to_string(),
+                s.n.to_string(),
+                s.o.to_string(),
+                s.p.to_string(),
+                s.q.to_string(),
+                s.r.to_string(),
+            ];
+
+            VecString::on_insert(move |row, reducer_event| {
+                if result.is_some() {
+                    let run_tests = || {
+                        assert_eq_or_bail!(strings, row.s);
+                        if !matches!(reducer_event, Some(ReducerEvent::InsertPrimitivesAsStrings(_))) {
+                            anyhow::bail!(
+                                "Unexpected reducer event: expeced InsertPrimitivesAsStrings but found {:?}",
+                                reducer_event
+                            );
+                        }
+                        Ok(())
+                    };
+                    (result.take().unwrap())(run_tests());
+                }
+            });
+            insert_primitives_as_strings(s);
 
             sub_applied_nothing_result(assert_all_tables_empty())
         });

@@ -1737,6 +1737,18 @@ static partial class Module
         }.Insert();
     }
 
+    [SpacetimeDB.Reducer]
+    public static void insert_primitives_as_strings(EveryPrimitiveStruct t)
+    {
+        new VecString
+        {
+            s = typeof(EveryPrimitiveStruct)
+                .GetFields()
+                .Select(f => f.GetValue(t)!.ToString()!.ToLowerInvariant())
+                .ToList()
+        }.Insert();
+    }
+
     [SpacetimeDB.Table(Public = true)]
     public partial struct TableHoldsTable
     {
