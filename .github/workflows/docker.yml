@@ -25,7 +25,6 @@ jobs:
           images: |
             clockworklabs/spacetimedb
           tags: |
-            type=ref,event=branch,prefix=branch-
             type=sha,prefix=commit-
             type=ref,event=tag
             type=sha,suffix=-amd64
@@ -86,7 +85,6 @@ jobs:
           images: |
             clockworklabs/spacetimedb
           tags: |
-            type=ref,event=branch,prefix=branch-
             type=sha,prefix=commit-
             type=ref,event=tag
             type=sha,suffix=-arm64
