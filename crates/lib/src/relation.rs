@@ -3,7 +3,7 @@ use crate::db::error::{RelationError, TypeError};
 use core::fmt;
 use core::hash::Hash;
 use derive_more::From;
-use spacetimedb_primitives::{ColId, ColList, ColListBuilder, Constraints, TableId};
+use spacetimedb_primitives::{ColId, ColList, Constraints, TableId};
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{algebraic_type, AlgebraicType};
@@ -159,7 +159,7 @@ impl Header {
     /// Project the [ColExpr]s & the [Constraints] that referenced them
     pub fn project(&self, cols: &[ColExpr]) -> Result<Self, RelationError> {
         let mut p = Vec::with_capacity(cols.len());
-        let mut to_keep = ColListBuilder::new();
+        let mut to_keep = ColList::with_capacity(cols.len() as u32);
 
         for (pos, col) in cols.iter().enumerate() {
             match col {
@@ -177,7 +177,7 @@ impl Header {
             }
         }
 
-        let constraints = self.retain_constraints(&to_keep.build().unwrap());
+        let constraints = self.retain_constraints(&to_keep);
 
         Ok(Self::new(self.table_id, self.table_name.clone(), p, constraints))
     }
@@ -189,12 +189,7 @@ impl Header {
         let mut constraints = self.constraints.clone();
         let len_lhs = self.fields.len() as u32;
         constraints.extend(right.constraints.iter().map(|(cols, c)| {
-            let cols = cols
-                .iter()
-                .map(|col| ColId(col.0 + len_lhs))
-                .collect::<ColListBuilder>()
-                .build()
-                .unwrap();
+            let cols = cols.iter().map(|col| ColId(col.0 + len_lhs)).collect::<ColList>();
             (cols, *c)
         }));
 

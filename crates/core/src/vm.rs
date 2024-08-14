@@ -137,9 +137,9 @@ pub fn build_query<'a>(
                     // because this patch was written (2024-04-01 pgoldman) a short time before the BitCraft alpha,
                     // and a more invasive change was infeasible.
                     Box::new(EmptyRelOps) as Box<IterRows<'a>>
-                } else if cols.is_singleton() {
+                } else if let Some(head) = cols.as_singleton() {
                     // For singleton constraints, we compare the column directly against `bounds`.
-                    let head = cols.head().idx();
+                    let head = head.idx();
                     let iter = result.select(move |row| bounds.contains(&*row.read_column(head).unwrap()));
                     Box::new(iter) as Box<IterRows<'a>>
                 } else {

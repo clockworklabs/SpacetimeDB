@@ -9,7 +9,7 @@ use crate::{
 };
 use crate::{i256, u256};
 use core::marker::PhantomData;
-use spacetimedb_primitives::{ColId, ColListBuilder};
+use spacetimedb_primitives::{ColId, ColList};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
@@ -601,9 +601,9 @@ impl_deserialize!([] spacetimedb_primitives::TableId, de => u32::deserialize(de)
 impl_deserialize!([] spacetimedb_primitives::IndexId, de => u32::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::SequenceId, de => u32::deserialize(de).map(Self));
 
-impl GrowingVec<ColId> for ColListBuilder {
-    fn with_capacity(_: usize) -> Self {
-        Self::new()
+impl GrowingVec<ColId> for ColList {
+    fn with_capacity(cap: usize) -> Self {
+        Self::with_capacity(cap as u32)
     }
     fn push(&mut self, elem: ColId) {
         self.push(elem);
@@ -612,14 +612,13 @@ impl GrowingVec<ColId> for ColListBuilder {
 impl_deserialize!([] spacetimedb_primitives::ColList, de => {
     struct ColListVisitor;
     impl<'de> ArrayVisitor<'de, ColId> for ColListVisitor {
-        type Output = ColListBuilder;
+        type Output = ColList;
 
         fn visit<A: ArrayAccess<'de, Element = ColId>>(self, vec: A) -> Result<Self::Output, A::Error> {
             array_visit(vec)
         }
     }
-    let col_list = de.deserialize_array(ColListVisitor)?;
-    col_list.build().map_err(|_| crate::de::Error::custom("invalid empty ColList".to_string()))
+    de.deserialize_array(ColListVisitor)
 });
 
 #[cfg(feature = "blake3")]
