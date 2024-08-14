@@ -11,9 +11,9 @@ use core::{
     hash::{Hash, Hasher},
     iter,
     mem::{size_of, ManuallyDrop},
-    ops::Deref,
+    ops::{Deref, DerefMut},
     ptr::NonNull,
-    slice::from_raw_parts,
+    slice::{from_raw_parts, from_raw_parts_mut},
 };
 use either::Either;
 
@@ -168,6 +168,34 @@ impl ColList {
         self.len() == 0
     }
 
+    /// Sort the `ColList`.
+    /// This will result in an inline `ColList` unless the `ColList`
+    /// contains large elements.
+    pub fn sort(&mut self) {
+        let replace_with_inline = match self.as_inline_mut() {
+            Ok(_inline) => return, // inline is already sorted
+            Err(heap) => {
+                heap.sort();
+                if *heap.last().expect("ColListVec nonempty") >= ColId::from(Self::FIRST_HEAP_COL as u32) {
+                    // No need to convert to inline.
+                    return;
+                } else {
+                    let result: ColList = heap.iter().copied().collect();
+                    unsafe {
+                        // SAFETY: `heap` is dropped and replaced with an inline list,
+                        // so it will not be dropped again.
+                        ManuallyDrop::drop(heap);
+                    }
+                    result
+                }
+            }
+        };
+        // Leak-safety:
+        // This only happens if the list is heap allocated and the last element is < FIRST_HEAP_COL,
+        // In which case the previous heap allocation has already been dropped.
+        *self = replace_with_inline;
+    }
+
     /// Push `col` onto the list.
     ///
     /// If `col >= 63` or `col <= last_col`, the list will become heap allocated if not already.
@@ -191,7 +219,6 @@ impl ColList {
         }
     }
 
-    /// The first `ColId` that would make the list heap allocated.
     const FIRST_HEAP_COL: u64 = size_of::<u64>() as u64 * 8 - 1;
 
     /// Returns the list either as inline or heap based.
@@ -479,6 +506,21 @@ impl Deref for ColListVec {
     }
 }
 
+impl DerefMut for ColListVec {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        let len = self.len() as usize;
+        let ptr = self.0.as_ptr();
+        // SAFETY: `ptr + 2` is always in bounds of the allocation and `ptr <= isize::MAX`.
+        let ptr = unsafe { ptr.add(2) }.cast::<ColId>();
+        // SAFETY:
+        // - `ptr` is valid for reads for `len * size_of::<ColId>` and it is properly aligned.
+        // - `len`  elements are initialized.
+        // - For the lifetime of `'0`, the memory won't be mutated.
+        // - `len * size_of::<ColId> <= isize::MAX` holds.
+        unsafe { from_raw_parts_mut(ptr, len) }
+    }
+}
+
 impl Drop for ColListVec {
     fn drop(&mut self) {
         let capacity = self.capacity();
@@ -585,6 +627,21 @@ mod tests {
                     prop_assert_eq!(list.as_singleton(), list.head());
                 },
                 _ => prop_assert_eq!(list.as_singleton(), None),
+            }
+        }
+
+        #[test]
+        fn test_sort(mut cols in vec((0..100).prop_map_into(), 0..10)) {
+            let mut list = cols.iter().copied().collect::<ColList>();
+
+            list.sort();
+            cols.sort();
+            prop_assert!(list.iter().eq(cols.into_iter()));
+
+            if let Some(last) = list.last() {
+                if last < ColId::from(ColList::FIRST_HEAP_COL as u32) {
+                    prop_assert!(list.is_inline());
+                }
             }
         }
     }
