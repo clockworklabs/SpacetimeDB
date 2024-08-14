@@ -34,7 +34,7 @@ members = [
   "crates/sdk/tests/test-client",
   "crates/sdk/tests/test-counter",
   "crates/sdk/tests/connect_disconnect_client",
-  "tools/upgrade-version", 
+  "tools/upgrade-version",
 ]
 default-members = ["crates/cli"]
 # cargo feature graph resolver. v2 is default in edition2021 but workspace
@@ -81,7 +81,7 @@ debug = true
 version = "0.12.0"
 edition = "2021"
 # update rust-toolchain.toml too!
-rust-version = "1.78.0"
+rust-version = "1.80.1"
 
 [workspace.dependencies]
 spacetimedb = { path = "crates/bindings", version = "0.12.0" }

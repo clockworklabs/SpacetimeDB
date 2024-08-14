@@ -170,7 +170,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20 # on a successful run, runs in 8 minutes
     container:
-      image: rust:1.78
+      image: rust:1.80.1
       options: --privileged
     # filter for a comment containing 'benchmarks please'
     if: ${{ github.event_name != 'issue_comment' || (github.event.issue.pull_request && contains(github.event.comment.body, 'benchmarks please')) }}
@@ -180,7 +180,7 @@ jobs:
       - name: Install valgrind & iai-callgrind-runner
         run: |
           apt-get update
-          apt-get install -y valgrind protobuf-compiler bash sudo curl gh 
+          apt-get install -y valgrind protobuf-compiler bash sudo curl gh
           cargo install --git https://github.com/clockworklabs/iai-callgrind.git --branch main iai-callgrind-runner
           git config --global --add safe.directory /__w/SpacetimeDB/SpacetimeDB
 
@@ -330,4 +330,3 @@ jobs:
           echo "Letting anybody touch our git repo, in order to avoid breaking other jobs"
           echo "This is necessary because we are running as root inside a docker image"
           chmod -R a+rw .
-
