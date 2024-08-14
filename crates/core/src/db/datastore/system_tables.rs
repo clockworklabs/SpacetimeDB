@@ -598,11 +598,7 @@ fn to_cols(row: RowRef<'_>, col_pos: impl Into<ColId>, col_name: &'static str) -
     let name = Some(col_name);
     let cols = row.read_col(col_pos)?;
     if let ArrayValue::U32(x) = &cols {
-        Ok(x.iter()
-            .map(|x| ColId::from(*x))
-            .collect::<ColListBuilder>()
-            .build()
-            .expect("empty ColList"))
+        Ok(x.iter().copied().collect::<ColList>())
     } else {
         Err(InvalidFieldError { name, col_pos }.into())
     }

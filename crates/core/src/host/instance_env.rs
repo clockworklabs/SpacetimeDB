@@ -17,7 +17,7 @@ use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::relation::FieldName;
 use spacetimedb_lib::ProductValue;
-use spacetimedb_primitives::{ColId, ColListBuilder, TableId};
+use spacetimedb_primitives::{ColId, ColList, TableId};
 use spacetimedb_sats::Typespace;
 use spacetimedb_vm::expr::{FieldExpr, FieldOp, NoInMemUsed, QueryExpr};
 
@@ -234,12 +234,7 @@ impl InstanceEnv {
             }
         };
 
-        let columns = col_ids
-            .into_iter()
-            .map(Into::into)
-            .collect::<ColListBuilder>()
-            .build()
-            .expect("Attempt to create an index with zero columns");
+        let columns = col_ids.into_iter().collect::<ColList>();
 
         let is_unique = stdb.column_constraints(tx, table_id, &columns)?.has_unique();
 

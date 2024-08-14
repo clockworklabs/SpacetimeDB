@@ -467,7 +467,7 @@ impl RawTableDefV8 {
             // We are only interested in constraints implying a sequence.
             .filter(|x| x.constraints.has_autoinc())
             // Create the `SequenceDef`.
-            .map(|x| RawSequenceDefV8::for_column(&self.table_name, &x.constraint_name, x.columns.head()))
+            .map(|x| RawSequenceDefV8::for_column(&self.table_name, &x.constraint_name, x.columns.head().unwrap()))
             // Only keep those we don't yet have in the list of sequences (checked by name).
             .filter(|seq| self.sequences.iter().all(|x| x.sequence_name != seq.sequence_name))
     }

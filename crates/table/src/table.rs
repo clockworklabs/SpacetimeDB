@@ -701,15 +701,13 @@ impl<'a> RowRef<'a> {
     ///
     /// Returns an error if `cols` specifies an index which is out-of-bounds for the row at `self`.
     ///
-    /// If `cols` contains more than one column, the values of the projected columns are wrapped in a [`ProductValue`].
+    /// If `cols` contains zero or more than one column, the values of the projected columns are wrapped in a [`ProductValue`].
     /// If `cols` is a single column, the value of that column is returned without wrapping in a `ProductValue`.
     pub fn project_not_empty(self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
-        let len = match cols.len() {
-            0 => unreachable!("A `ColList` can never be empty"),
-            1 => return self.read_col(cols.head()).map_err(|_| cols.head().into()),
-            len => len,
-        };
-        let mut elements = Vec::with_capacity(len as usize);
+        if let Some(head) = cols.as_singleton() {
+            return self.read_col(head).map_err(|_| head.into());
+        }
+        let mut elements = Vec::with_capacity(cols.len() as usize);
         for col in cols.iter() {
             let col_val = self.read_col(col).map_err(|err| match err {
                 TypeError::WrongType { .. } => {

@@ -144,8 +144,7 @@ impl TypedIndex {
             cols: &ColList,
             row_ref: RowRef<'_>,
         ) -> Result<(), InvalidFieldError> {
-            debug_assert!(cols.is_singleton());
-            let col_pos = cols.head();
+            let col_pos = cols.as_singleton().unwrap();
             let key = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
             this.insert(key, row_ref.pointer());
             Ok(())
@@ -188,8 +187,7 @@ impl TypedIndex {
             cols: &ColList,
             row_ref: RowRef<'_>,
         ) -> Result<bool, InvalidFieldError> {
-            debug_assert!(cols.is_singleton());
-            let col_pos = cols.head();
+            let col_pos = cols.as_singleton().unwrap();
             let key = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
             Ok(this.delete(&key, &row_ref.pointer()))
         }
@@ -342,8 +340,7 @@ impl BTreeIndex {
     ) -> Result<Self, InvalidFieldError> {
         // If the index is on a single column of a primitive type,
         // use a homogeneous map with a native key type.
-        let typed_index = if indexed_columns.is_singleton() {
-            let col_pos = indexed_columns.head();
+        let typed_index = if let Some(col_pos) = indexed_columns.as_singleton() {
             let col = row_type.product().elements.get(col_pos.idx()).ok_or(col_pos)?;
 
             match col.ty {
@@ -453,7 +450,7 @@ mod test {
     use proptest::{collection::vec, test_runner::TestCaseResult};
     use spacetimedb_data_structures::map::HashMap;
     use spacetimedb_lib::db::raw_def::RawTableDefV8;
-    use spacetimedb_primitives::ColListBuilder;
+    use spacetimedb_primitives::ColId;
     use spacetimedb_sats::{
         product,
         proptest::{generate_product_value, generate_row_type},
@@ -462,8 +459,8 @@ mod test {
     use spacetimedb_schema::schema::TableSchema;
 
     fn gen_cols(ty_len: usize) -> impl Strategy<Value = ColList> {
-        vec((0..ty_len as u32).prop_map_into(), 1..=ty_len)
-            .prop_map(|cols| cols.into_iter().collect::<ColListBuilder>().build().unwrap())
+        vec((0..ty_len as u32).prop_map_into::<ColId>(), 1..=ty_len)
+            .prop_map(|cols| cols.into_iter().collect::<ColList>())
     }
 
     fn gen_row_and_cols() -> impl Strategy<Value = (ProductType, ColList, ProductValue)> {

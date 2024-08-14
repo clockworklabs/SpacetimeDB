@@ -237,8 +237,8 @@ impl ColumnOp {
         let cmp = |(col, value): (ColId, _)| Self::cmp(col, op, value);
 
         // For singleton constraints, the `value` must be used directly.
-        if cols.is_singleton() {
-            return cmp((cols.head(), value));
+        if let Some(head) = cols.as_singleton() {
+            return cmp((head, value));
         }
 
         // Otherwise, pair column ids and product fields together.
@@ -1074,14 +1074,14 @@ fn select_best_index<'a>(
             break;
         }
 
-        if col_list.is_singleton() {
+        if let Some(head) = col_list.as_singleton() {
             // Go through each operator.
             // NOTE: We do not consider `OpCmp::NotEq` at the moment
             // since those are typically not answered using an index.
             for cmp in [OpCmp::Eq, OpCmp::Lt, OpCmp::LtEq, OpCmp::Gt, OpCmp::GtEq] {
                 // For a single column index,
                 // we want to avoid the `ProductValue` indirection of below.
-                for ColValue { cmp, value, col, .. } in col_map.remove(&(col_list.head(), cmp)).into_iter().flatten() {
+                for ColValue { cmp, value, col, .. } in col_map.remove(&(head, cmp)).into_iter().flatten() {
                     found.push(make_index_arg(cmp, col_list, value.clone()));
                     cols_indexed.insert((col, cmp));
                 }
@@ -2436,7 +2436,7 @@ mod tests {
 
         let col_list_arena = Arena::new();
         let idx = |cmp, cols: &[ColId], val: &AlgebraicValue| {
-            let columns = cols.iter().copied().collect::<ColListBuilder>().build().unwrap();
+            let columns = cols.iter().copied().collect::<ColList>();
             let columns = col_list_arena.alloc(columns);
             make_index_arg(cmp, columns, val.clone())
         };
