@@ -83,6 +83,9 @@ edition = "2021"
 # update rust-toolchain.toml too!
 rust-version = "1.80.1"
 
+[workspace.lints.clippy]
+doc_lazy_continuation = "allow"
+
 [workspace.dependencies]
 spacetimedb = { path = "crates/bindings", version = "0.12.0" }
 spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "0.12.0" }

@@ -265,6 +265,7 @@ impl WasmInstanceEnv {
     ) {
         let do_console_log = |caller: &mut Caller<'_, Self>| -> WasmResult<()> {
             let env = caller.data();
+            #[allow(clippy::needless_borrows_for_generic_args)] // false positive.
             let mem = env.get_mem().view(&caller);
 
             // Read the `target`, `filename`, and `message` strings from WASM memory.

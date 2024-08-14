@@ -1,4 +1,3 @@
-use core::str::FromStr;
 use spacetimedb_lib::address::Address;
 use std::fs::OpenOptions;
 use std::fs::{self, File};
@@ -138,7 +137,7 @@ impl DatabaseLogger {
         fs::create_dir_all(root).unwrap();
 
         let mut filepath = PathBuf::from(root);
-        filepath.push(&PathBuf::from_str("0.log").unwrap());
+        filepath.push(Path::new("0.log"));
 
         let file = OpenOptions::new().create(true).append(true).open(&filepath).unwrap();
         let (tx, _) = broadcast::channel(64);

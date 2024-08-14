@@ -372,7 +372,7 @@ mod tests {
         };
 
         let mut buf = [0u8; Header::LEN];
-        hdr.write(&mut &mut buf[..]).unwrap();
+        hdr.write(&mut buf[..]).unwrap();
         let h2 = Header::decode(&buf[..]).unwrap();
 
         assert_eq!(hdr, h2);

@@ -25,6 +25,9 @@ blake3 = ["dep:blake3"]
 bytestring = ["dep:bytestring"]
 metrics_impls = ["dep:spacetimedb-metrics"]
 
+[lints]
+workspace = true
+
 [dependencies]
 spacetimedb-bindings-macro.workspace = true
 spacetimedb-primitives.workspace = true

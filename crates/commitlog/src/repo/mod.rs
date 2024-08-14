@@ -1,6 +1,5 @@
-use std::{io, u64};
-
 use log::{debug, warn};
+use std::io;
 
 use crate::{
     commit::Commit,
