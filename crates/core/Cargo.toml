@@ -103,6 +103,7 @@ wasmtime.workspace = true
 [features]
 # Print a warning when doing an unindexed `iter_by_col_range` on a large table.
 unindexed_iter_by_col_range_warn = []
+spacetimedb-wasm-instance-env-times = []
 # Optional storage engines.
 default = ["unindexed_iter_by_col_range_warn"]
 # Enable test helpers and utils
