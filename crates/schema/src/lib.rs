@@ -1,6 +1,7 @@
 //! Internal SpacetimeDB schema handling.
 //!
-//! Eventually, this crate will handle validation and normalization of raw schema definitions from the `spacetimedb_lib` crate.
-//! Currently, it only holds schema types.
+//! Handles validation and normalization of raw schema definitions from the `spacetimedb_lib` crate.
 
+pub mod error;
+pub mod identifier;
 pub mod schema;
