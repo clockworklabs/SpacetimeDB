@@ -142,13 +142,10 @@ impl WasmInstanceEnv {
 
         let total_duration = self.reducer_start.elapsed();
 
-        // Taking the call times record also resets timings to 0s for the next call.
-        let wasm_instance_env_call_times = self.call_times.take();
+        // Taking the call times record resets timings to 0s for the next call.
+        let _ = self.call_times.take();
 
-        ExecutionTimings {
-            total_duration,
-            wasm_instance_env_call_times,
-        }
+        ExecutionTimings { total_duration }
     }
 
     /// Returns an execution context for a reducer call.

@@ -8,13 +8,6 @@ use spacetimedb::db::{Config, Storage};
 use spacetimedb::startup;
 use tokio::net::TcpListener;
 
-#[cfg(feature = "string")]
-impl From<std::string::String> for OsStr {
-    fn from(name: std::string::String) -> Self {
-        Self::from_string(name.into())
-    }
-}
-
 pub enum ProgramMode {
     Standalone,
     CLI,

@@ -8,7 +8,6 @@ use std::time::Duration;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::{bsatn, Address, ModuleValidationError, RawModuleDef, RawModuleDefV8, TableDesc};
 
-use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::SystemLogger;
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -68,7 +67,6 @@ pub struct EnergyStats {
 
 pub struct ExecutionTimings {
     pub total_duration: Duration,
-    pub wasm_instance_env_call_times: CallTimes,
 }
 
 pub struct ExecuteResult<E> {
