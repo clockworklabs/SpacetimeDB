@@ -30,6 +30,9 @@ impl AuthCtx {
     }
 }
 
+/// An identifier for something interacting with the database.
+///
+/// This is a special type.
 #[derive(Default, Eq, PartialEq, PartialOrd, Ord, Clone, Copy, Hash, Serialize, Deserialize)]
 pub struct Identity {
     __identity_bytes: [u8; 32],
@@ -64,6 +67,11 @@ impl Identity {
     #[doc(hidden)]
     pub fn __dummy() -> Self {
         Self::from_byte_array([0; 32])
+    }
+
+    /// Get the special `AlgebraicType` for `Identity`.
+    pub fn get_type() -> AlgebraicType {
+        AlgebraicType::product([(IDENTITY_TAG, AlgebraicType::bytes())])
     }
 
     /// Returns a borrowed view of the byte array defining this `Identity`.
@@ -143,5 +151,15 @@ impl<'de> serde::Deserialize<'de> for Identity {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let arr = spacetimedb_sats::de::serde::deserialize_from(deserializer)?;
         Ok(Identity::from_byte_array(arr))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identity_is_special() {
+        assert!(Identity::get_type().is_special());
     }
 }

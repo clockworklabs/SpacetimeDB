@@ -169,7 +169,7 @@ pub struct RawColumnDefV8 {
     pub col_name: Box<str>,
     /// The type of the column.
     ///
-    /// Must be in "nominal normal form", as determined by [AlgebraicType::is_nominal_normal_form].
+    /// Must satisfy [AlgebraicType::is_valid_for_client_type_use].
     pub col_type: AlgebraicType,
 }
 

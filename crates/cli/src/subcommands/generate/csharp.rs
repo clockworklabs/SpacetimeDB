@@ -42,17 +42,31 @@ fn scalar_or_string_name(b: &AlgebraicType) -> Option<&str> {
 fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
         AlgebraicType::Sum(sum_type) => {
-            // This better be an option type
-            if let Some(inner_ty) = sum_type.as_option() {
-                write!(f, "{}?", ty_fmt(ctx, inner_ty, namespace))
+            if sum_type.is_special() {
+                if let Some(inner_ty) = sum_type.as_option() {
+                    write!(f, "{}?", ty_fmt(ctx, inner_ty, namespace))
+                } else if sum_type.is_schedule_at() {
+                    write!(f, "SpacetimeDB.ScheduleAt")
+                } else {
+                    unimplemented!("Unknown special sum type: {sum_type:?}")
+                }
             } else {
-                unimplemented!()
+                panic!("Cannot format non-special sum type {sum_type:?}")
             }
         }
-        ty if ty.is_identity() => f.write_str("SpacetimeDB.Identity"),
-        ty if ty.is_address() => f.write_str("SpacetimeDB.Address"),
-        // Arbitrary product types should fail.
-        AlgebraicType::Product(_) => unimplemented!(),
+        AlgebraicType::Product(product) => {
+            if product.is_special() {
+                if product.is_identity() {
+                    write!(f, "SpacetimeDB.Identity")
+                } else if product.is_address() {
+                    write!(f, "SpacetimeDB.Address")
+                } else {
+                    unimplemented!("Unknown special product type: {product:?}")
+                }
+            } else {
+                panic!("Cannot format non-special product type {product:?}");
+            }
+        }
         ty if ty.is_bytes() => f.write_str("byte[]"),
         AlgebraicType::Array(ArrayType { elem_ty }) => {
             write!(
