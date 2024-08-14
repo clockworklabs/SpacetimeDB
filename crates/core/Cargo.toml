@@ -14,6 +14,9 @@ path = "src/lib.rs"  # The source file of the target.
 # Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
 bench = false
 
+[lints]
+workspace = true
+
 [dependencies]
 spacetimedb-data-structures.workspace = true
 spacetimedb-lib = { workspace = true, features = ["serde", "metrics_impls"] }

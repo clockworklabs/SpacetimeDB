@@ -21,6 +21,9 @@ harness = false
 name = "page_manager"
 harness = false
 
+[lints]
+workspace = true
+
 [features]
 # Allows using `Arbitrary` impls defined in this crate.
 proptest = ["dep:proptest", "dep:proptest-derive", "spacetimedb-sats/proptest"]
