@@ -11,8 +11,6 @@ static class TestInit
         VerifierSettings.OmitContentFromException();
         // Default diff order is weird and causes new lines to look like deleted and old as inserted.
         Environment.SetEnvironmentVariable("DiffEngine_TargetOnLeft", "true");
-        // Store snapshots in a separate directory.
-        UseProjectRelativeDirectory("snapshots");
         VerifySourceGenerators.Initialize();
         // Format code for more readable snapshots and to avoid diffs on whitespace changes.
         VerifierSettings.AddScrubber(
