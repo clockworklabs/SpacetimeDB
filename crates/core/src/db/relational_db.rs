@@ -1474,16 +1474,7 @@ mod tests {
     }
 
     fn index(name: &str, cols: &[u32]) -> RawIndexDefV8 {
-        RawIndexDefV8::btree(
-            name.into(),
-            cols.iter()
-                .copied()
-                .map(ColId)
-                .collect::<ColListBuilder>()
-                .build()
-                .unwrap(),
-            false,
-        )
+        RawIndexDefV8::btree(name.into(), cols.iter().copied().map(ColId).collect::<ColList>(), false)
     }
 
     fn table(

@@ -19,79 +19,19 @@ use either::Either;
 
 /// Constructs a `ColList` like so `col_list![0, 2]`.
 ///
-/// A head element is required.
 /// Mostly provided for testing.
 #[macro_export]
 macro_rules! col_list {
-    ($head:expr $(, $elem:expr)* $(,)?) => {{
-        let mut list = $crate::ColList::new($head.into());
-        $(list.push($elem.into());)*
-        list
+    ($($elem:expr),* $(,)?) => {{
+        [$($elem),*].into_iter().collect::<$crate::ColList>()
     }};
 }
 
-/// An error signalling that a `ColList` was empty.
-#[derive(Debug)]
-pub struct EmptyColListError;
-
-/// A builder for a [`ColList`] making sure a non-empty one is built.
-pub struct ColListBuilder {
-    /// The in-progress list.
-    list: ColList,
-}
-
-impl Default for ColListBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ColListBuilder {
-    /// Returns an empty builder.
-    pub fn new() -> Self {
-        let list = ColList::from_inline(0);
-        Self { list }
-    }
-
-    /// Returns an empty builder with a capacity for a list of `cap` elements.
-    pub fn with_capacity(cap: u32) -> Self {
-        let list = ColList::with_capacity(cap);
-        Self { list }
-    }
-
-    /// Push a [`ColId`] to the list.
-    pub fn push(&mut self, col: ColId) {
-        self.list.push_maybe_first(col);
-    }
-
-    /// Build the [`ColList`] or error if it would have been empty.
-    pub fn build(self) -> Result<ColList, EmptyColListError> {
-        if self.list.is_empty() {
-            Err(EmptyColListError)
-        } else {
-            Ok(self.list)
-        }
-    }
-}
-
-impl FromIterator<ColId> for ColListBuilder {
-    fn from_iter<T: IntoIterator<Item = ColId>>(iter: T) -> Self {
-        let iter = iter.into_iter();
-        let (lower_bound, _) = iter.size_hint();
-        let mut builder = Self::with_capacity(lower_bound as u32);
-        for col in iter {
-            builder.push(col);
-        }
-        builder
-    }
-}
-
-/// This represents a non-empty list of [`ColId`]
+/// This represents a list of [`ColId`]s
 /// but packed into a `u64` in a way that takes advantage of the fact that
 /// in almost all cases, we won't store a `ColId` larger than 62.
 /// In the rare case that we store larger ids, we fall back to a thin vec approach.
-///
-/// The list does not guarantee a stable order.
+/// We also fall back to a thin vec if the ids stored are not in sorted order, from low to high.
 #[repr(C)]
 pub union ColList {
     /// Used to determine whether the list is stored inline or not.
@@ -119,6 +59,18 @@ impl From<ColId> for ColList {
     }
 }
 
+impl<T: Into<ColId>> FromIterator<T> for ColList {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let iter = iter.into_iter();
+        let (lower_bound, _) = iter.size_hint();
+        let mut list = Self::with_capacity(lower_bound as u32);
+        for col in iter {
+            list.push(col.into());
+        }
+        list
+    }
+}
+
 impl ColList {
     /// Returns a list with a single column.
     /// As long `col` is below `62`, this will not allocate.
@@ -129,7 +81,7 @@ impl ColList {
     }
 
     /// Returns an empty list with a capacity to hold `cap` elements.
-    fn with_capacity(cap: u32) -> Self {
+    pub fn with_capacity(cap: u32) -> Self {
         // We speculate that all elements < `Self::FIRST_HEAP_COL`.
         if cap < Self::FIRST_HEAP_COL as u32 {
             Self::from_inline(0)
@@ -159,25 +111,22 @@ impl ColList {
         Self { heap }
     }
 
-    /// Returns the head of the list.
-    pub fn head(&self) -> ColId {
-        // SAFETY: There's always at least one element in the list when this is called.
-        // Notably, `from_inline(0)` is followed by at least one `.push(col)` before
-        // a safe `ColList` is exposed outside this module.
-        unsafe { self.iter().next().unwrap_unchecked() }
+    /// Returns `head` if that is the only element.
+    pub fn as_singleton(&self) -> Option<ColId> {
+        let mut iter = self.iter();
+        match (iter.next(), iter.next()) {
+            (h @ Some(_), None) => h,
+            _ => None,
+        }
     }
 
-    /// Returns the last of the list.
-    pub fn last(&self) -> ColId {
-        // SAFETY: There's always at least one element in the list when this is called.
-        unsafe { self.last_inner().unwrap_unchecked() }
+    /// Returns the head of the list, if any.
+    pub fn head(&self) -> Option<ColId> {
+        self.iter().next()
     }
 
-    /// Returns the last of the list.
-    ///
-    /// This can be used internally
-    /// where we wish to break the invariant that there's at least one element in the list.
-    fn last_inner(&self) -> Option<ColId> {
+    /// Returns the last of the list, if any.
+    pub fn last(&self) -> Option<ColId> {
         match self.as_inline() {
             Ok(inline) => inline.last(),
             Err(heap) => heap.last().copied(),
@@ -215,28 +164,16 @@ impl ColList {
         }
     }
 
-    /// Returns false. A `ColList` is never empty.
+    /// Returns whether the list is empty.
     pub fn is_empty(&self) -> bool {
-        false
-    }
-
-    /// Is this a list of a single column?
-    pub fn is_singleton(&self) -> bool {
-        self.len() == 1
+        self.len() == 0
     }
 
     /// Push `col` onto the list.
     ///
     /// If `col >= 63` or `col <= last_col`, the list will become heap allocated if not already.
     pub fn push(&mut self, col: ColId) {
-        self.push_inner(col, self.last() < col);
-    }
-
-    /// Push `col` onto the list.
-    ///
-    /// If `col >= 63` or `col <= last_col`, the list will become heap allocated if not already.
-    fn push_maybe_first(&mut self, col: ColId) {
-        self.push_inner(col, self.last_inner().map_or(true, |l| l < col));
+        self.push_inner(col, self.last().map_or(true, |l| l < col));
     }
 
     /// Push `col` onto the list.
@@ -586,20 +523,20 @@ mod tests {
             prop_assert!(is_inline);
             prop_assert!(!list.is_empty());
             prop_assert_eq!(list.len(), 1);
-            prop_assert_eq!(list.head(), *head);
-            prop_assert_eq!(list.last(), *head);
+            prop_assert_eq!(list.head(), Some(*head));
+            prop_assert_eq!(list.last(), Some(*head));
             prop_assert_eq!(list.iter().collect::<Vec<_>>(), [*head]);
 
 
             for col in tail {
-                is_inline &= list.last() < *col;
+                is_inline &= list.last().unwrap() < *col;
                 list.push(*col);
 
                 prop_assert_eq!(is_inline, list.is_inline());
                 prop_assert!(!list.is_empty());
-                prop_assert_eq!(list.head(), *head);
-                prop_assert_eq!(list.last(), *col);
-                prop_assert_eq!(list.last(), list.iter().last().unwrap());
+                prop_assert_eq!(list.head(), Some(*head));
+                prop_assert_eq!(list.last(), Some(*col));
+                prop_assert_eq!(list.last(), list.iter().last());
                 prop_assert!(contains(&list, col));
             }
 
@@ -621,8 +558,8 @@ mod tests {
                 prop_assert!(!list.is_inline());
                 prop_assert!(!list.is_empty());
                 prop_assert_eq!(list.len() as usize, idx + 2);
-                prop_assert_eq!(list.head(), head);
-                prop_assert_eq!(list.last(), *col);
+                prop_assert_eq!(list.head(), Some(head));
+                prop_assert_eq!(list.last(), Some(*col));
                 prop_assert!(contains(&list, col));
             }
 
@@ -631,6 +568,25 @@ mod tests {
             let mut cols = cols;
             cols.insert(0, head);
             prop_assert_eq!(list.iter().collect::<Vec<_>>(), cols);
+        }
+
+        #[test]
+        fn test_collect(cols in vec((0..100).prop_map_into(), 0..100)) {
+            let list = cols.iter().copied().collect::<ColList>();
+            prop_assert!(list.iter().eq(cols));
+            prop_assert_eq!(&list, &list.iter().collect::<ColList>());
+        }
+
+        #[test]
+        fn test_as_singleton(cols in vec((0..100).prop_map_into(), 0..10)) {
+            let list = cols.iter().copied().collect::<ColList>();
+            match cols.len() {
+                1 => {
+                    prop_assert_eq!(list.as_singleton(), Some(cols[0]));
+                    prop_assert_eq!(list.as_singleton(), list.head());
+                },
+                _ => prop_assert_eq!(list.as_singleton(), None),
+            }
         }
     }
 }

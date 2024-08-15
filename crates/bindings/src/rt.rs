@@ -396,13 +396,8 @@ pub fn register_table<T: TableType>() {
 
 impl From<crate::IndexDesc<'_>> for RawIndexDefV8 {
     fn from(index: crate::IndexDesc<'_>) -> RawIndexDefV8 {
-        let Ok(columns) = index
-            .col_ids
-            .iter()
-            .map(|x| (*x).into())
-            .collect::<ColListBuilder>()
-            .build()
-        else {
+        let columns = index.col_ids.iter().copied().collect::<ColList>();
+        if columns.is_empty() {
             panic!("Need at least one column in IndexDesc for index `{}`", index.name);
         };
 

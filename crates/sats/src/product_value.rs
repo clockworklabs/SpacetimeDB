@@ -110,16 +110,15 @@ impl ProductValue {
     /// **Important:**
     ///
     /// The resulting [AlgebraicValue] will wrap into a [ProductValue] when projecting multiple
-    /// fields, otherwise it will consist of a single [AlgebraicValue].
+    /// (including zero) fields, otherwise it will consist of a single [AlgebraicValue].
     ///
     /// **Parameters:**
     /// - `cols`: A [ColList] containing the indexes of fields to be projected.s
     pub fn project_not_empty(&self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
-        let proj_len = cols.len();
-        if proj_len == 1 {
-            self.get_field(cols.head().idx(), None).cloned()
+        if let Some(head) = cols.as_singleton() {
+            self.get_field(head.idx(), None).cloned()
         } else {
-            let mut fields = Vec::with_capacity(proj_len as usize);
+            let mut fields = Vec::with_capacity(cols.len() as usize);
             for col in cols.iter() {
                 fields.push(self.get_field(col.idx(), None)?.clone());
             }
