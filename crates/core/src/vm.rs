@@ -779,7 +779,7 @@ pub(crate) mod tests {
             .with_select_cmp(
                 OpCmp::Eq,
                 FieldName::new(ST_COLUMN_ID, StColumnFields::ColPos.into()),
-                scalar(StColumnFields::TableId as u32),
+                scalar(StColumnFields::TableId as u16),
             )
             .unwrap();
         let st_column_row = StColumnRow {

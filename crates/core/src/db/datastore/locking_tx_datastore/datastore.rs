@@ -948,7 +948,7 @@ mod tests {
     use spacetimedb_lib::db::raw_def::{IndexType, RawColumnDefV8};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_primitives::{col_list, ColId, Constraints};
-    use spacetimedb_sats::{product, AlgebraicType};
+    use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType};
     use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema};
     use spacetimedb_table::table::UniqueConstraintViolation;
 
@@ -1319,38 +1319,38 @@ mod tests {
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_columns()?, map_array([
-            ColRow { table: ST_TABLE_ID.into(), pos: 0, name: "table_id", ty: AlgebraicType::U32 },
+            ColRow { table: ST_TABLE_ID.into(), pos: 0, name: "table_id", ty: TableId::get_type() },
             ColRow { table: ST_TABLE_ID.into(), pos: 1, name: "table_name", ty: AlgebraicType::String },
             ColRow { table: ST_TABLE_ID.into(), pos: 2, name: "table_type", ty: AlgebraicType::String },
             ColRow { table: ST_TABLE_ID.into(), pos: 3, name: "table_access", ty: AlgebraicType::String },
 
-            ColRow { table: ST_COLUMN_ID.into(), pos: 0, name: "table_id", ty: AlgebraicType::U32 },
-            ColRow { table: ST_COLUMN_ID.into(), pos: 1, name: "col_pos", ty: AlgebraicType::U32 },
+            ColRow { table: ST_COLUMN_ID.into(), pos: 0, name: "table_id", ty: TableId::get_type() },
+            ColRow { table: ST_COLUMN_ID.into(), pos: 1, name: "col_pos", ty: ColId::get_type() },
             ColRow { table: ST_COLUMN_ID.into(), pos: 2, name: "col_name", ty: AlgebraicType::String },
             ColRow { table: ST_COLUMN_ID.into(), pos: 3, name: "col_type", ty: AlgebraicType::bytes() },
 
-            ColRow { table: ST_SEQUENCE_ID.into(), pos: 0, name: "sequence_id", ty: AlgebraicType::U32 },
+            ColRow { table: ST_SEQUENCE_ID.into(), pos: 0, name: "sequence_id", ty: SequenceId::get_type() },
             ColRow { table: ST_SEQUENCE_ID.into(), pos: 1, name: "sequence_name", ty: AlgebraicType::String },
-            ColRow { table: ST_SEQUENCE_ID.into(), pos: 2, name: "table_id", ty: AlgebraicType::U32 },
-            ColRow { table: ST_SEQUENCE_ID.into(), pos: 3, name: "col_pos", ty: AlgebraicType::U32 },
+            ColRow { table: ST_SEQUENCE_ID.into(), pos: 2, name: "table_id", ty: TableId::get_type() },
+            ColRow { table: ST_SEQUENCE_ID.into(), pos: 3, name: "col_pos", ty: ColId::get_type() },
             ColRow { table: ST_SEQUENCE_ID.into(), pos: 4, name: "increment", ty: AlgebraicType::I128 },
             ColRow { table: ST_SEQUENCE_ID.into(), pos: 5, name: "start", ty: AlgebraicType::I128 },
             ColRow { table: ST_SEQUENCE_ID.into(), pos: 6, name: "min_value", ty: AlgebraicType::I128 },
             ColRow { table: ST_SEQUENCE_ID.into(), pos: 7, name: "max_value", ty: AlgebraicType::I128 },
             ColRow { table: ST_SEQUENCE_ID.into(), pos: 8, name: "allocated", ty: AlgebraicType::I128 },
 
-            ColRow { table: ST_INDEX_ID.into(), pos: 0, name: "index_id", ty: AlgebraicType::U32 },
-            ColRow { table: ST_INDEX_ID.into(), pos: 1, name: "table_id", ty: AlgebraicType::U32 },
+            ColRow { table: ST_INDEX_ID.into(), pos: 0, name: "index_id", ty: IndexId::get_type() },
+            ColRow { table: ST_INDEX_ID.into(), pos: 1, name: "table_id", ty: TableId::get_type() },
             ColRow { table: ST_INDEX_ID.into(), pos: 2, name: "index_name", ty: AlgebraicType::String },
-            ColRow { table: ST_INDEX_ID.into(), pos: 3, name: "columns", ty: AlgebraicType::array(AlgebraicType::U32) },
+            ColRow { table: ST_INDEX_ID.into(), pos: 3, name: "columns", ty: AlgebraicType::array(ColId::get_type()) },
             ColRow { table: ST_INDEX_ID.into(), pos: 4, name: "is_unique", ty: AlgebraicType::Bool },
             ColRow { table: ST_INDEX_ID.into(), pos: 5, name: "index_type", ty: AlgebraicType::U8 },
 
-            ColRow { table: ST_CONSTRAINT_ID.into(), pos: 0, name: "constraint_id", ty: AlgebraicType::U32 },
+            ColRow { table: ST_CONSTRAINT_ID.into(), pos: 0, name: "constraint_id", ty: ConstraintId::get_type() },
             ColRow { table: ST_CONSTRAINT_ID.into(), pos: 1, name: "constraint_name", ty: AlgebraicType::String },
             ColRow { table: ST_CONSTRAINT_ID.into(), pos: 2, name: "constraints", ty: AlgebraicType::U8 },
-            ColRow { table: ST_CONSTRAINT_ID.into(), pos: 3, name: "table_id", ty: AlgebraicType::U32 },
-            ColRow { table: ST_CONSTRAINT_ID.into(), pos: 4, name: "columns", ty: AlgebraicType::array(AlgebraicType::U32) },
+            ColRow { table: ST_CONSTRAINT_ID.into(), pos: 3, name: "table_id", ty: TableId::get_type() },
+            ColRow { table: ST_CONSTRAINT_ID.into(), pos: 4, name: "columns", ty: AlgebraicType::array(ColId::get_type()) },
 
             ColRow { table: ST_MODULE_ID.into(), pos: 0, name: "database_address", ty: AlgebraicType::bytes() },
             ColRow { table: ST_MODULE_ID.into(), pos: 1, name: "owner_identity", ty: AlgebraicType::bytes() },
@@ -1364,7 +1364,7 @@ mod tests {
             ColRow { table: ST_VAR_ID.into(), pos: 0, name: "name", ty: AlgebraicType::String },
             ColRow { table: ST_VAR_ID.into(), pos: 1, name: "value", ty: StVarValue::type_of() },
 
-            ColRow { table: ST_SCHEDULED_ID.into(), pos: 0, name: "table_id", ty: AlgebraicType::U32 },
+            ColRow { table: ST_SCHEDULED_ID.into(), pos: 0, name: "table_id", ty: TableId::get_type() },
             ColRow { table: ST_SCHEDULED_ID.into(), pos: 1, name: "reducer_name", ty: AlgebraicType::String },
         ]));
         #[rustfmt::skip]
