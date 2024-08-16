@@ -45,23 +45,6 @@ pub fn invoke_reducer<'a, A: Args<'a>, T>(
     cvt_result(res)
 }
 
-/// Creates an index with the name `index_name` and type `index_type`,
-/// on a product of the given columns ids in `col_ids`,
-/// identifying columns in the table identified by `table_id`.
-///
-/// Currently only single-column-indices are supported
-/// and they may only be of the btree index type.
-/// Attempting to create a multi-column index will result in a panic.
-/// Attempting to use an index type other than btree, meanwhile, will return an error.
-///
-/// Returns an invalid buffer on success
-/// and otherwise the error is written into the fresh one returned
-/// when `table_id` doesn't identify a table.
-pub fn create_index(index_name: &str, table_id: TableId, index_type: sys::raw::IndexType, col_ids: Vec<u8>) -> Buffer {
-    let result = sys::create_index(index_name, table_id, index_type as u8, &col_ids);
-    cvt_result(result.map_err(cvt_errno))
-}
-
 /// Creates a reducer context from the given `sender`, `timestamp` and `client_address`.
 ///
 /// `sender` must contain 32 bytes, from which we will read an `Identity`.
@@ -89,12 +72,6 @@ fn assemble_context(sender: Buffer, timestamp: u64, client_address: Buffer) -> R
         timestamp,
         address,
     }
-}
-
-/// Converts `errno` into a string message.
-fn cvt_errno(errno: sys::Errno) -> Box<str> {
-    let message = format!("{errno}");
-    message.into_boxed_str()
 }
 
 /// Converts `res` into a `Buffer` where `Ok(_)` results in an invalid buffer

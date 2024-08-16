@@ -434,48 +434,6 @@ impl WasmInstanceEnv {
         })
     }
 
-    /// Creates an index with the name `index_name` and type `index_type`,
-    /// on a product of the given columns in `col_ids`
-    /// in the table identified by `table_id`.
-    ///
-    /// Here `index_name` points to a UTF-8 slice in WASM memory
-    /// and `col_ids` points to a byte slice in WASM memory with each element being a column.
-    ///
-    /// Currently only single-column-indices are supported
-    /// and they may only be of the btree index type.
-    ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - the slice `(index_name, index_name_len)` is not valid UTF-8
-    /// - `index_name + index_name_len` or `col_ids + col_len` overflow a 64-bit integer
-    /// - `index_type > 1`
-    ///
-    /// Panics if `index_type == 1` or `col_ids.len() != 1`.
-    #[tracing::instrument(skip_all)]
-    pub fn create_index(
-        caller: Caller<'_, Self>,
-        index_name: WasmPtr<u8>,
-        index_name_len: u32,
-        table_id: u32,
-        index_type: u32,
-        col_ids: WasmPtr<u8>,
-        col_len: u32,
-    ) -> RtResult<u32> {
-        Self::cvt(caller, AbiCall::CreateIndex, |caller| {
-            let (mem, env) = Self::mem_env(caller);
-            // Read the index name from WASM memory.
-            let index_name = mem.deref_str(index_name, index_name_len)?.into();
-
-            // Read the column ids on which to create an index from WASM memory.
-            // This may be one column or an index on several columns.
-            let cols = mem.deref_slice(col_ids, col_len)?.to_vec();
-
-            env.instance_env
-                .create_index(index_name, table_id.into(), index_type as u8, cols)?;
-            Ok(())
-        })
-    }
-
     /// Finds all rows in the table identified by `table_id`,
     /// where the row has a column, identified by `cols`,
     /// with data matching the byte string, in WASM memory, pointed to at by `val`.

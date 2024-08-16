@@ -44,10 +44,6 @@ IMPORT(void, _console_log,
 IMPORT(Status, _get_table_id,
        (const uint8_t* name, uint32_t name_len, TableId* id),
        (name, name_len, id));
-IMPORT(Status, _create_index,
-       (const uint8_t* index_name, uint32_t index_name_len, TableId table_id,
-        const ColId* col_ids, uint32_t col_ids_len, IndexType type),
-       (index_name, index_name_len, table_id, col_ids, col_ids_len, type));
 IMPORT(Status, _iter_by_col_eq,
        (TableId table_id, ColId col_id, const uint8_t* value,
         uint32_t value_len, RowIter* iter),

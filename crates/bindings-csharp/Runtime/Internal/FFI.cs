@@ -121,16 +121,6 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _create_index(
-        [In] byte[] index_name,
-        uint index_name_len,
-        TableId table_id,
-        IndexType index_type,
-        [In] ColId[] col_ids,
-        uint col_len
-    );
-
-    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _iter_by_col_eq(
         TableId table_id,
         ColId col_id,

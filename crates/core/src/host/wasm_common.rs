@@ -358,7 +358,6 @@ macro_rules! abi_funcs {
             "spacetime_9.0"::buffer_consume,
             "spacetime_9.0"::buffer_len,
             "spacetime_9.0"::console_log,
-            "spacetime_9.0"::create_index,
             "spacetime_9.0"::delete_by_col_eq,
             "spacetime_9.0"::delete_by_rel,
             "spacetime_9.0"::get_table_id,
