@@ -158,7 +158,7 @@ struct DeCtx<'types> {
 #[derive(Clone, Copy)]
 struct DeCtxWithLhs<'types> {
     inner: DeCtx<'types>,
-    lhs_field: u8,
+    lhs_field: u16,
 }
 
 struct With<Ctx, T> {
@@ -214,17 +214,17 @@ impl<'de> DeserializeSeed<'de> for With<DeCtxWithLhs<'_>, AlgebraicValue> {
     }
 }
 
-impl_forward!(u8);
+impl_forward!(u16);
 
 #[derive(Debug, Serialize)]
 pub enum Rhs {
     Value(AlgebraicValue),
-    Field(u8),
+    Field(u16),
 }
 
 impl_sum!(DeCtxWithLhs, Rhs {
     Value(AlgebraicValue),
-    Field(u8),
+    Field(u16),
 });
 
 // This type can only be (de)serialized as part of [`Cmp`]
@@ -232,14 +232,14 @@ impl_sum!(DeCtxWithLhs, Rhs {
 // and isn't self-describing.
 #[derive(Debug, Serialize)]
 pub struct CmpArgs {
-    pub lhs_field: u8,
+    pub lhs_field: u16,
     pub rhs: Rhs,
 }
 
 impl_product!(
     DeCtx,
     CmpArgs {
-        lhs_field: u8,
+        lhs_field: u16,
 
         #[seed = |ctx| With::<_, Rhs> {
             ctx: DeCtxWithLhs { inner: ctx, lhs_field },

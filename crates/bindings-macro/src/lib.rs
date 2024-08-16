@@ -422,7 +422,7 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str) -> syn::Result<Tok
 
 // TODO: We actually need to add a constraint that requires this column to be unique!
 struct Column<'a> {
-    index: u8,
+    index: u16,
     field: &'a module::SatsField<'a>,
     attr: ColumnAttribute,
 }
@@ -588,9 +588,9 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     };
 
     for (i, field) in fields.iter().enumerate() {
-        let col_num: u8 = i
+        let col_num: u16 = i
             .try_into()
-            .map_err(|_| syn::Error::new_spanned(field.ident, "too many columns; the most a table can have is 256"))?;
+            .map_err(|_| syn::Error::new_spanned(field.ident, "too many columns; the most a table can have is 2^16"))?;
 
         let mut col_attr = ColumnAttribute::UNSET;
         for attr in field.original_attrs {
@@ -663,7 +663,6 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     let mut unique_filter_funcs = Vec::with_capacity(unique_columns.len());
     let mut unique_update_funcs = Vec::with_capacity(unique_columns.len());
     let mut unique_delete_funcs = Vec::with_capacity(unique_columns.len());
-    let mut unique_fields = Vec::with_capacity(unique_columns.len());
     for unique in unique_columns {
         let column_index = unique.index;
         let vis = unique.field.vis;
@@ -673,8 +672,6 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         let filter_func_ident = format_ident!("filter_by_{}", column_ident);
         let update_func_ident = format_ident!("update_by_{}", column_ident);
         let delete_func_ident = format_ident!("delete_by_{}", column_ident);
-
-        unique_fields.push(column_index);
 
         unique_filter_funcs.push(quote! {
             #vis fn #filter_func_ident(#column_ident: &#column_type) -> Option<Self> {
@@ -804,7 +801,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
     let field_names = fields.iter().map(|f| f.ident.unwrap()).collect::<Vec<_>>();
     let field_types = fields.iter().map(|f| f.ty).collect::<Vec<_>>();
 
-    let col_num = 0u8..;
+    let col_num = 0u16..;
     let field_access_impls = quote! {
         #(impl spacetimedb::query::FieldAccess<#col_num> for #original_struct_ident {
             type Field = #field_types;
@@ -818,7 +815,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         const _: () = {
             #[derive(Debug, spacetimedb::Serialize, spacetimedb::Deserialize)]
             #[sats(crate = spacetimedb::spacetimedb_lib)]
-            #[repr(u8)]
+            #[repr(u16)]
             #[allow(non_camel_case_types)]
             pub enum FieldIndex {
                 #(#field_names),*
@@ -1063,7 +1060,7 @@ impl ClosureArg {
 
         let table_ty = &self.table_ty;
 
-        let lhs_field = quote_spanned!(left.span()=> <#table_ty as spacetimedb::spacetimedb_lib::filter::Table>::FieldIndex::#left as u8);
+        let lhs_field = quote_spanned!(left.span()=> <#table_ty as spacetimedb::spacetimedb_lib::filter::Table>::FieldIndex::#left as u16);
 
         let rhs = quote_spanned!(right.span()=> spacetimedb::spacetimedb_lib::filter::Rhs::Value(
             std::convert::identity::<<#table_ty as spacetimedb::query::FieldAccess::<{#lhs_field}>>::Field>(#right).into()
