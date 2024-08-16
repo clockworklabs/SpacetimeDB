@@ -88,11 +88,11 @@ internal static partial class FFI
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public readonly struct ColId(uint col_id)
+    public readonly struct ColId(ushort col_id)
     {
-        private readonly uint col_id = col_id;
+        private readonly ushort col_id = col_id;
 
-        public static explicit operator uint(ColId col_id) => col_id.col_id;
+        public static explicit operator ushort(ColId col_id) => col_id.col_id;
     }
 
     [StructLayout(LayoutKind.Sequential)]

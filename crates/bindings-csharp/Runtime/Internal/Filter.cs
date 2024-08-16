@@ -20,12 +20,12 @@ public partial class Filter(KeyValuePair<string, Action<BinaryWriter, object?>>[
     }
 
     [SpacetimeDB.Type]
-    partial record Rhs : SpacetimeDB.TaggedEnum<(ErasedValue Value, byte Field)>;
+    partial record Rhs : SpacetimeDB.TaggedEnum<(ErasedValue Value, ushort Field)>;
 
     [SpacetimeDB.Type]
-    partial struct CmpArgs(byte lhsField, Rhs rhs)
+    partial struct CmpArgs(ushort lhsField, Rhs rhs)
     {
-        public byte LhsField = lhsField;
+        public ushort LhsField = lhsField;
         public Rhs Rhs = rhs;
     }
 
@@ -108,7 +108,7 @@ public partial class Filter(KeyValuePair<string, Action<BinaryWriter, object?>>[
     Cmp HandleCmp(BinaryExpression expr)
     {
         var field = ExprAsTableField(expr.Left);
-        var lhsFieldIndex = (byte)Array.FindIndex(fieldTypeInfos, x => x.Key == field.Name);
+        var lhsFieldIndex = (ushort)Array.FindIndex(fieldTypeInfos, x => x.Key == field.Name);
 
         var rhs = ExprAsRhs(expr.Right);
         rhs = Convert.ChangeType(rhs, field.FieldType);
