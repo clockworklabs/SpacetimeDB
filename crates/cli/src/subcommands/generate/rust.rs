@@ -395,7 +395,7 @@ fn begin_rust_struct_def_shared(ctx: &GenCtx, out: &mut Indenter, name: &str, el
 }
 
 fn find_primary_key_column_index(table: &TableSchema) -> Option<usize> {
-    table.pk().map(|x| x.col_pos.into())
+    table.pk().map(|x| x.col_pos.idx())
 }
 
 fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableSchema) {

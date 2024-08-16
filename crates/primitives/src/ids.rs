@@ -2,28 +2,23 @@
 
 use core::fmt;
 
-#[derive(Debug, Default, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
-#[repr(transparent)]
-pub struct TableId(pub u32);
-
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
-#[repr(transparent)]
-pub struct ColId(pub u32);
-
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
-#[repr(transparent)]
-pub struct IndexId(pub u32);
-
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
-#[repr(transparent)]
-pub struct SequenceId(pub u32);
-
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
-#[repr(transparent)]
-pub struct ConstraintId(pub u32);
-
 macro_rules! system_id {
-    ($name:ident) => {
+    ($name:ident, $backing_ty:ty) => {
+        #[derive(Debug, Default, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
+        #[repr(transparent)]
+        pub struct $name(pub $backing_ty);
+
+        impl From<$backing_ty> for $name {
+            fn from(value: $backing_ty) -> Self {
+                Self(value)
+            }
+        }
+        impl From<$name> for $backing_ty {
+            fn from(value: $name) -> Self {
+                value.0
+            }
+        }
+
         impl $name {
             pub fn idx(self) -> usize {
                 self.0 as usize
@@ -32,45 +27,36 @@ macro_rules! system_id {
 
         impl nohash_hasher::IsEnabled for $name {}
 
-        impl From<i32> for $name {
-            fn from(value: i32) -> Self {
-                Self(value as u32)
-            }
-        }
-        impl From<u32> for $name {
-            fn from(value: u32) -> Self {
-                Self(value)
-            }
-        }
-        impl From<$name> for usize {
-            fn from(value: $name) -> Self {
-                value.0 as usize
-            }
-        }
-        impl From<$name> for u32 {
-            fn from(value: $name) -> Self {
-                value.0
-            }
-        }
         impl From<usize> for $name {
             fn from(value: usize) -> Self {
-                Self(value as u32)
+                Self(value as _)
             }
         }
-        impl From<u8> for $name {
-            fn from(value: u8) -> Self {
-                Self(value as u32)
-            }
-        }
+
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "{}", self.0)
             }
         }
+
+        // Defined so that e.g., `0.into()` is possible.
+        impl From<i32> for $name {
+            fn from(value: i32) -> Self {
+                Self(value as _)
+            }
+        }
+
+        // TODO(Centril): get rid of this.
+        impl From<u8> for $name {
+            fn from(value: u8) -> Self {
+                Self(value as _)
+            }
+        }
     };
 }
-system_id!(TableId);
-system_id!(ColId);
-system_id!(SequenceId);
-system_id!(IndexId);
-system_id!(ConstraintId);
+
+system_id!(TableId, u32);
+system_id!(SequenceId, u32);
+system_id!(IndexId, u32);
+system_id!(ConstraintId, u32);
+system_id!(ColId, u32);

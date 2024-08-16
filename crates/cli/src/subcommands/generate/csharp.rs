@@ -404,9 +404,7 @@ fn autogen_csharp_access_funcs_for_struct(
     for col in schema.columns() {
         let is_unique = constraints[&ColList::new(col.col_pos)].has_unique();
 
-        let col_i: usize = col.col_pos.into();
-
-        let field = &product_type.elements[col_i];
+        let field = &product_type.elements[col.col_pos.idx()];
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
         let field_type = &field.algebraic_type;
         let csharp_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);
