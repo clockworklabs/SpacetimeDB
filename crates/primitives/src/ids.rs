@@ -45,13 +45,6 @@ macro_rules! system_id {
                 Self(value as _)
             }
         }
-
-        // TODO(Centril): get rid of this.
-        impl From<u8> for $name {
-            fn from(value: u8) -> Self {
-                Self(value as _)
-            }
-        }
     };
 }
 
