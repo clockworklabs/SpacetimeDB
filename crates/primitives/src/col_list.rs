@@ -23,7 +23,7 @@ use either::Either;
 #[macro_export]
 macro_rules! col_list {
     ($($elem:expr),* $(,)?) => {{
-        [$($elem),*].into_iter().collect::<$crate::ColList>()
+        $crate::ColList::from([$($elem),*])
     }};
 }
 
@@ -53,8 +53,14 @@ impl<C: Into<ColId>> From<C> for ColList {
     }
 }
 
-impl<T: Into<ColId>> FromIterator<T> for ColList {
-    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+impl<C: Into<ColId>, const N: usize> From<[C; N]> for ColList {
+    fn from(cols: [C; N]) -> Self {
+        cols.map(|c| c.into()).into_iter().collect()
+    }
+}
+
+impl<C: Into<ColId>> FromIterator<C> for ColList {
+    fn from_iter<I: IntoIterator<Item = C>>(iter: I) -> Self {
         let iter = iter.into_iter();
         let (lower_bound, _) = iter.size_hint();
         let mut list = Self::with_capacity(lower_bound as u16);
