@@ -1047,7 +1047,7 @@ mod tests {
         Locking::bootstrap(Address::zero())
     }
 
-    fn col(col: u32) -> ColList {
+    fn col(col: u16) -> ColList {
         col.into()
     }
 
@@ -1098,7 +1098,7 @@ mod tests {
 
     struct ColRow<'a> {
         table: u32,
-        pos: u32,
+        pos: u16,
         name: &'a str,
         ty: AlgebraicType,
     }
@@ -1135,7 +1135,7 @@ mod tests {
         id: u32,
         name: &'a str,
         table: u32,
-        col_pos: u32,
+        col_pos: u16,
         start: i128,
     }
     impl From<SequenceRow<'_>> for StSequenceRow<Box<str>> {
@@ -1173,7 +1173,7 @@ mod tests {
     struct IdxSchema<'a> {
         id: u32,
         table: u32,
-        col: u32,
+        col: u16,
         name: &'a str,
         unique: bool,
     }
@@ -1182,7 +1182,7 @@ mod tests {
             Self {
                 index_id: value.id.into(),
                 table_id: value.table.into(),
-                columns: ColId(value.col).into(),
+                columns: value.col.into(),
                 index_name: value.name.into(),
                 is_unique: value.unique,
                 index_type: IndexType::BTree,

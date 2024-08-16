@@ -22,8 +22,8 @@ use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{
-    impl_deserialize, impl_serialize, product, AlgebraicType, AlgebraicValue, ArrayValue, ProductValue, SumTypeVariant,
-    SumValue,
+    impl_deserialize, impl_serialize, product, AlgebraicType, AlgebraicValue, ArrayValue, GroundSpacetimeType,
+    ProductValue, SumTypeVariant, SumValue,
 };
 use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_table::table::RowRef;
@@ -151,7 +151,7 @@ macro_rules! st_fields_enum {
         impl StFields for $ty_name {
             #[inline]
             fn col_id(self) -> ColId {
-                ColId(self as u32)
+                ColId(self as _)
             }
 
             #[inline]
@@ -165,12 +165,6 @@ macro_rules! st_fields_enum {
         impl From<$ty_name> for ColId {
             fn from(value: $ty_name) -> Self {
                 value.col_id()
-            }
-        }
-
-        impl From<$ty_name> for ColList {
-            fn from(value: $ty_name) -> Self {
-                ColList::new(value.col_id())
             }
         }
     }
@@ -256,7 +250,7 @@ fn st_table_schema() -> TableSchema {
         RawTableDefV8::new(
             ST_TABLE_NAME.into(),
             vec![
-                RawColumnDefV8::sys(StTableFields::TableId.name(), AlgebraicType::U32),
+                RawColumnDefV8::sys(StTableFields::TableId.name(), TableId::get_type()),
                 RawColumnDefV8::sys(StTableFields::TableName.name(), AlgebraicType::String),
                 RawColumnDefV8::sys(StTableFields::TableType.name(), AlgebraicType::String),
                 RawColumnDefV8::sys(StTableFields::TablesAccess.name(), AlgebraicType::String),
@@ -279,18 +273,17 @@ fn st_column_schema() -> TableSchema {
         RawTableDefV8::new(
             ST_COLUMN_NAME.into(),
             vec![
-                RawColumnDefV8::sys(StColumnFields::TableId.name(), AlgebraicType::U32),
-                RawColumnDefV8::sys(StColumnFields::ColPos.name(), AlgebraicType::U32),
+                RawColumnDefV8::sys(StColumnFields::TableId.name(), TableId::get_type()),
+                RawColumnDefV8::sys(StColumnFields::ColPos.name(), ColId::get_type()),
                 RawColumnDefV8::sys(StColumnFields::ColName.name(), AlgebraicType::String),
                 RawColumnDefV8::sys(StColumnFields::ColType.name(), AlgebraicType::bytes()),
             ],
         )
         .with_type(StTableType::System)
-        .with_column_constraint(Constraints::unique(), {
-            let mut cols = ColList::new(StColumnFields::TableId.col_id());
-            cols.push(StColumnFields::ColPos.col_id());
-            cols
-        }),
+        .with_column_constraint(
+            Constraints::unique(),
+            col_list![StColumnFields::TableId.col_id(), StColumnFields::ColPos.col_id()],
+        ),
     )
 }
 
@@ -305,10 +298,10 @@ fn st_index_schema() -> TableSchema {
         RawTableDefV8::new(
             ST_INDEX_NAME.into(),
             vec![
-                RawColumnDefV8::sys(StIndexFields::IndexId.name(), AlgebraicType::U32),
-                RawColumnDefV8::sys(StIndexFields::TableId.name(), AlgebraicType::U32),
+                RawColumnDefV8::sys(StIndexFields::IndexId.name(), IndexId::get_type()),
+                RawColumnDefV8::sys(StIndexFields::TableId.name(), TableId::get_type()),
                 RawColumnDefV8::sys(StIndexFields::IndexName.name(), AlgebraicType::String),
-                RawColumnDefV8::sys(StIndexFields::Columns.name(), AlgebraicType::array(AlgebraicType::U32)),
+                RawColumnDefV8::sys(StIndexFields::Columns.name(), AlgebraicType::array(ColId::get_type())),
                 RawColumnDefV8::sys(StIndexFields::IsUnique.name(), AlgebraicType::Bool),
                 RawColumnDefV8::sys(StIndexFields::IndexType.name(), AlgebraicType::U8),
             ],
@@ -330,10 +323,10 @@ fn st_sequence_schema() -> TableSchema {
         RawTableDefV8::new(
             ST_SEQUENCE_NAME.into(),
             vec![
-                RawColumnDefV8::sys(StSequenceFields::SequenceId.name(), AlgebraicType::U32),
+                RawColumnDefV8::sys(StSequenceFields::SequenceId.name(), SequenceId::get_type()),
                 RawColumnDefV8::sys(StSequenceFields::SequenceName.name(), AlgebraicType::String),
-                RawColumnDefV8::sys(StSequenceFields::TableId.name(), AlgebraicType::U32),
-                RawColumnDefV8::sys(StSequenceFields::ColPos.name(), AlgebraicType::U32),
+                RawColumnDefV8::sys(StSequenceFields::TableId.name(), TableId::get_type()),
+                RawColumnDefV8::sys(StSequenceFields::ColPos.name(), ColId::get_type()),
                 RawColumnDefV8::sys(StSequenceFields::Increment.name(), AlgebraicType::I128),
                 RawColumnDefV8::sys(StSequenceFields::Start.name(), AlgebraicType::I128),
                 RawColumnDefV8::sys(StSequenceFields::MinValue.name(), AlgebraicType::I128),
@@ -358,13 +351,13 @@ fn st_constraint_schema() -> TableSchema {
         RawTableDefV8::new(
             ST_CONSTRAINT_NAME.into(),
             vec![
-                RawColumnDefV8::sys(StConstraintFields::ConstraintId.name(), AlgebraicType::U32),
+                RawColumnDefV8::sys(StConstraintFields::ConstraintId.name(), ConstraintId::get_type()),
                 RawColumnDefV8::sys(StConstraintFields::ConstraintName.name(), AlgebraicType::String),
                 RawColumnDefV8::sys(StConstraintFields::Constraints.name(), AlgebraicType::U8),
-                RawColumnDefV8::sys(StConstraintFields::TableId.name(), AlgebraicType::U32),
+                RawColumnDefV8::sys(StConstraintFields::TableId.name(), TableId::get_type()),
                 RawColumnDefV8::sys(
                     StConstraintFields::Columns.name(),
-                    AlgebraicType::array(AlgebraicType::U32),
+                    AlgebraicType::array(ColId::get_type()),
                 ),
             ],
         )
@@ -430,7 +423,7 @@ fn st_scheduled_schema() -> TableSchema {
         RawTableDefV8::new(
             ST_SCHEDULED_NAME.into(),
             vec![
-                RawColumnDefV8::sys(StScheduledFields::TableId.name(), AlgebraicType::U32),
+                RawColumnDefV8::sys(StScheduledFields::TableId.name(), TableId::get_type()),
                 RawColumnDefV8::sys(StScheduledFields::ReducerName.name(), AlgebraicType::String),
             ],
         )
@@ -595,11 +588,11 @@ pub struct StIndexRow<Name: AsRef<str>> {
 
 fn to_cols(row: RowRef<'_>, col_pos: impl Into<ColId>, col_name: &'static str) -> Result<ColList, DBError> {
     let col_pos = col_pos.into();
-    let name = Some(col_name);
     let cols = row.read_col(col_pos)?;
-    if let ArrayValue::U32(x) = &cols {
+    if let ArrayValue::U16(x) = &cols {
         Ok(x.iter().copied().collect::<ColList>())
     } else {
+        let name = Some(col_name);
         Err(InvalidFieldError { name, col_pos }.into())
     }
 }
@@ -629,7 +622,7 @@ impl From<StIndexRow<Box<str>>> for ProductValue {
             x.index_id,
             x.table_id,
             x.index_name,
-            ArrayValue::from(x.columns.to_u32_vec()),
+            ArrayValue::from(x.columns.to_u16_vec()),
             x.is_unique,
             u8::from(x.index_type),
         ]
@@ -743,7 +736,7 @@ impl From<StConstraintRow<Box<str>>> for ProductValue {
             x.constraint_name,
             x.constraints.bits(),
             x.table_id,
-            ArrayValue::from(x.columns.to_u32_vec())
+            ArrayValue::from(x.columns.to_u16_vec())
         ]
     }
 }

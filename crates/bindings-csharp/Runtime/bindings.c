@@ -15,7 +15,7 @@
 
 OPAQUE_TYPEDEF(Status, uint16_t);
 OPAQUE_TYPEDEF(TableId, uint32_t);
-OPAQUE_TYPEDEF(ColId, uint32_t);
+OPAQUE_TYPEDEF(ColId, uint16_t);
 OPAQUE_TYPEDEF(IndexType, uint8_t);
 OPAQUE_TYPEDEF(LogLevel, uint8_t);
 OPAQUE_TYPEDEF(Buffer, uint32_t);

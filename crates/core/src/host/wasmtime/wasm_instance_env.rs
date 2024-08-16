@@ -13,7 +13,7 @@ use crate::host::wasm_common::{
 };
 use crate::host::AbiCall;
 use anyhow::Context as _;
-use spacetimedb_primitives::errno;
+use spacetimedb_primitives::{errno, ColId};
 use wasmtime::{AsContext, Caller, StoreContextMut};
 
 use crate::host::instance_env::InstanceEnv;
@@ -240,6 +240,14 @@ impl WasmInstanceEnv {
         span::record_span(&mut caller.data_mut().call_times, span);
     }
 
+    fn convert_u32_to_col_id(col_id: u32) -> WasmResult<ColId> {
+        let col_id: u16 = col_id
+            .try_into()
+            .context("ABI violation, a `ColId` must be a `u16`")
+            .map_err(WasmError::Wasm)?;
+        Ok(col_id.into())
+    }
+
     /// Log at `level` a `message` message occuring in `filename:line_number`
     /// with [`target`] being the module path at the `log!` invocation site.
     ///
@@ -356,12 +364,14 @@ impl WasmInstanceEnv {
         out: WasmPtr<u32>,
     ) -> RtResult<u32> {
         Self::cvt_ret(caller, AbiCall::DeleteByColEq, out, |caller| {
+            let col_id = Self::convert_u32_to_col_id(col_id)?;
+
             let (mem, env) = Self::mem_env(caller);
             let ctx = env.reducer_context()?;
             let value = mem.deref_slice(value, value_len)?;
             let count = env
                 .instance_env
-                .delete_by_col_eq(&ctx, table_id.into(), col_id.into(), value)?;
+                .delete_by_col_eq(&ctx, table_id.into(), col_id, value)?;
             Ok(count)
         })
     }
@@ -492,6 +502,8 @@ impl WasmInstanceEnv {
         out: WasmPtr<RowIterIdx>,
     ) -> RtResult<u32> {
         Self::cvt_ret(caller, AbiCall::IterByColEq, out, |caller| {
+            let col_id = Self::convert_u32_to_col_id(col_id)?;
+
             let (mem, env) = Self::mem_env(caller);
             // Read the test value from WASM memory.
             let value = mem.deref_slice(val, val_len)?;
@@ -502,7 +514,7 @@ impl WasmInstanceEnv {
             // Find the relevant rows.
             let chunks = env
                 .instance_env
-                .iter_by_col_eq_chunks(&ctx, table_id.into(), col_id.into(), value)?;
+                .iter_by_col_eq_chunks(&ctx, table_id.into(), col_id, value)?;
 
             // Release the immutable borrow of `env.buffers` by dropping `ctx`.
             drop(ctx);

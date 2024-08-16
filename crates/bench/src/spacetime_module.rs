@@ -5,6 +5,7 @@ use spacetimedb_lib::{
     sats::{product, ArrayValue},
     AlgebraicValue,
 };
+use spacetimedb_primitives::ColId;
 use spacetimedb_testing::modules::{start_runtime, CompilationMode, CompiledModule, LoggerRecord, ModuleHandle};
 use tokio::runtime::Runtime;
 
@@ -183,14 +184,14 @@ impl BenchDatabase for SpacetimeModule {
     fn filter<T: BenchTable>(
         &mut self,
         table_id: &Self::TableId,
-        column_index: u32,
+        col_id: impl Into<ColId>,
         value: AlgebraicValue,
     ) -> ResultBench<()> {
         let SpacetimeModule { runtime, module } = self;
         let module = module.as_mut().unwrap();
 
         let product_type = T::product_type();
-        let column_name = product_type.elements[column_index as usize].name.as_ref().unwrap();
+        let column_name = product_type.elements[col_id.into().idx()].name.as_ref().unwrap();
         let reducer_name = format!("filter_{}_by_{}", table_id.snake_case, column_name);
 
         runtime.block_on(async move {

@@ -169,7 +169,7 @@ impl From<DomainName> for Tld {
     }
 }
 
-impl_st!([] Tld, _ts => spacetimedb_lib::AlgebraicType::String);
+impl_st!([] Tld, spacetimedb_lib::AlgebraicType::String);
 impl_serialize!([] Tld, (self, ser) => spacetimedb_sats::ser::Serialize::serialize(&self.0, ser));
 impl_deserialize!([] Tld, de => {
     let s: String = spacetimedb_sats::de::Deserialize::deserialize(de)?;
@@ -345,7 +345,7 @@ impl From<Tld> for DomainName {
     }
 }
 
-impl_st!([] DomainName, _ts => spacetimedb_lib::AlgebraicType::String);
+impl_st!([] DomainName, spacetimedb_lib::AlgebraicType::String);
 impl_serialize!([] DomainName, (self, ser) => spacetimedb_sats::ser::Serialize::serialize(self.as_str(), ser));
 impl_deserialize!([] DomainName, de => {
     let s: String = spacetimedb_sats::de::Deserialize::deserialize(de)?;

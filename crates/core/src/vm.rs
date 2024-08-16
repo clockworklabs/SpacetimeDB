@@ -298,7 +298,7 @@ pub struct IndexSemiJoinLeft<'a, 'c, Rhs: RelOps<'a>> {
     ctx: &'a ExecutionContext,
 }
 
-static_assert_size!(IndexSemiJoinLeft<Box<IterRows<'static>>>, 312);
+static_assert_size!(IndexSemiJoinLeft<Box<IterRows<'static>>>, 304);
 
 impl<'a, Rhs: RelOps<'a>> IndexSemiJoinLeft<'a, '_, Rhs> {
     fn filter(&self, index_row: &RelValue<'_>) -> bool {
@@ -359,7 +359,7 @@ pub struct IndexSemiJoinRight<'a, 'c, Rhs: RelOps<'a>> {
     ctx: &'a ExecutionContext,
 }
 
-static_assert_size!(IndexSemiJoinRight<Box<IterRows<'static>>>, 64);
+static_assert_size!(IndexSemiJoinRight<Box<IterRows<'static>>>, 56);
 
 impl<'a, Rhs: RelOps<'a>> IndexSemiJoinRight<'a, '_, Rhs> {
     fn filter(&self, index_row: &RelValue<'_>) -> bool {

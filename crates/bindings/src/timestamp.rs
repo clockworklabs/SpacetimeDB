@@ -105,6 +105,6 @@ impl Sub<Duration> for Timestamp {
     }
 }
 
-impl_st!([] Timestamp, _ts => spacetimedb_lib::AlgebraicType::U64);
+impl_st!([] Timestamp, spacetimedb_lib::AlgebraicType::U64);
 impl_deserialize!([] Timestamp, de => u64::deserialize(de).map(Self::from_micros_since_epoch));
 impl_serialize!([] Timestamp, (self, ser) => self.into_micros_since_epoch().serialize(ser));

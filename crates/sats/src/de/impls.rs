@@ -596,14 +596,14 @@ impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
     }
 }
 
-impl_deserialize!([] spacetimedb_primitives::ColId, de => u32::deserialize(de).map(Self));
+impl_deserialize!([] spacetimedb_primitives::ColId, de => u16::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::TableId, de => u32::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::IndexId, de => u32::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::SequenceId, de => u32::deserialize(de).map(Self));
 
 impl GrowingVec<ColId> for ColList {
     fn with_capacity(cap: usize) -> Self {
-        Self::with_capacity(cap as u32)
+        Self::with_capacity(cap as u16)
     }
     fn push(&mut self, elem: ColId) {
         self.push(elem);

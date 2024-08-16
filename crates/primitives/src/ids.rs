@@ -59,4 +59,4 @@ system_id!(TableId, u32);
 system_id!(SequenceId, u32);
 system_id!(IndexId, u32);
 system_id!(ConstraintId, u32);
-system_id!(ColId, u32);
+system_id!(ColId, u16);

@@ -388,7 +388,7 @@ impl TableSchema {
                 Some(SchemaError::EmptyName {
                     table: self.table_name.clone(),
                     ty: DefType::Column,
-                    id: x.col_pos.0,
+                    id: x.col_pos.0 as _,
                 })
             } else {
                 None
@@ -913,9 +913,7 @@ mod tests {
                 .columns
                 .iter()
                 .enumerate()
-                .map(|(pos, x)| {
-                    RawConstraintDefV8::for_column("test", &x.col_name, Constraints::unset(), ColId(pos as u32))
-                })
+                .map(|(pos, x)| RawConstraintDefV8::for_column("test", &x.col_name, Constraints::unset(), pos))
                 .collect(),
         );
 

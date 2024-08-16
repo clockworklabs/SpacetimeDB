@@ -52,7 +52,7 @@ impl BenchDatabase for SpacetimeRaw {
                         self.db.create_index(
                             tx,
                             table_id,
-                            RawIndexDefV8::btree(column.name.clone().unwrap(), ColId(i as u32), false),
+                            RawIndexDefV8::btree(column.name.clone().unwrap(), i, false),
                         )?;
                     }
                 }
@@ -143,12 +143,12 @@ impl BenchDatabase for SpacetimeRaw {
     fn filter<T: BenchTable>(
         &mut self,
         table_id: &Self::TableId,
-        column_index: u32,
+        col_id: impl Into<ColId>,
         value: AlgebraicValue,
     ) -> ResultBench<()> {
         let ctx = ExecutionContext::default();
         self.db.with_auto_commit(&ctx, |tx| {
-            for row in self.db.iter_by_col_eq_mut(&ctx, tx, *table_id, column_index, &value)? {
+            for row in self.db.iter_by_col_eq_mut(&ctx, tx, *table_id, col_id, &value)? {
                 black_box(row);
             }
             Ok(())

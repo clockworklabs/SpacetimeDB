@@ -236,7 +236,8 @@ mod tests {
     use spacetimedb_lib::{Address, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
     use spacetimedb_sats::{
-        product, satn, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, Typespace, ValueWithType,
+        product, satn, AlgebraicType, AlgebraicValue, GroundSpacetimeType as _, ProductType, ProductTypeElement,
+        Typespace, ValueWithType,
     };
     use spacetimedb_vm::expr::{ColumnOp, IndexJoin, IndexScan, JoinExpr, Query};
     use std::convert::From;

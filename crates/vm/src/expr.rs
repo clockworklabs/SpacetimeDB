@@ -2216,7 +2216,7 @@ mod tests {
         assert!(matches!(auth.check_auth(ALICE, BOB), Err(AuthError::OwnerRequired)));
     }
 
-    fn mem_table(id: TableId, name: &str, fields: &[(u32, AlgebraicType, bool)]) -> SourceExpr {
+    fn mem_table(id: TableId, name: &str, fields: &[(u16, AlgebraicType, bool)]) -> SourceExpr {
         let table_access = StAccess::Public;
         let head = Header::new(
             id,
