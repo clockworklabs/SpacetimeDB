@@ -118,8 +118,18 @@ const DESCRIBE_MODULE_SIG: StaticFuncSig = FuncSig::new(&[], &[WasmType::I32]);
 const CALL_REDUCER_SIG: StaticFuncSig = FuncSig::new(
     &[
         WasmType::I32, // Reducer ID
-        WasmType::I32, // Sender `Identity` buffer
-        WasmType::I32, // Sender `Address` buffer
+        // Sender's `Identity` broken into 4 u64s.
+        // ----------------------------------------------------
+        WasmType::I64, // `sender_0` contains bytes `[0 ..8 ]`.
+        WasmType::I64, // `sender_1` contains bytes `[8 ..16]`.
+        WasmType::I64, // `sender_1` contains bytes `[16..24]`.
+        WasmType::I64, // `sender_1` contains bytes `[24..32]`.
+        // ----------------------------------------------------
+        // Caller's `Address` broken into 2 u64s.
+        // ----------------------------------------------------
+        WasmType::I64, // `address_0` contains bytes `[0..8 ]`.
+        WasmType::I64, // `address_1` contains bytes `[8..16]`.
+        // ----------------------------------------------------
         WasmType::I64, // Timestamp
         WasmType::I32, // Args buffer
     ],

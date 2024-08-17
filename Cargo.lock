@@ -4306,6 +4306,7 @@ dependencies = [
  "base64 0.21.4",
  "blake3",
  "brotli",
+ "bytemuck",
  "bytes",
  "bytestring",
  "chrono",

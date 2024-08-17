@@ -135,10 +135,12 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
     }
 }
 
+type CallReducerType = TypedFunc<(u32, u64, u64, u64, u64, u64, u64, u64, u32), u32>;
+
 pub struct WasmtimeInstance {
     store: Store<WasmInstanceEnv>,
     instance: Instance,
-    call_reducer: TypedFunc<(u32, u32, u32, u64, u32), u32>,
+    call_reducer: CallReducerType,
 }
 
 impl module_host_actor::WasmInstance for WasmtimeInstance {
@@ -185,11 +187,9 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // otherwise, we'd return something like `used: i128::MAX - u64::MAX`, which is inaccurate.
         set_store_fuel(store, budget.into());
 
-        let mut make_buf = |data| store.data_mut().insert_buffer(data);
-
-        let identity_buf = make_buf(op.caller_identity.as_bytes().to_vec().into());
-        let address_buf = make_buf(op.caller_address.as_slice().to_vec().into());
-        let args_buf = make_buf(op.arg_bytes);
+        let [sender_0, sender_1, sender_2, sender_3] = bytemuck::must_cast(*op.caller_identity.as_bytes());
+        let [address_0, address_1] = bytemuck::must_cast(*op.caller_address.as_slice());
+        let args_buf = store.data_mut().insert_buffer(op.arg_bytes);
 
         store.data_mut().start_reducer(op.name);
 
@@ -199,8 +199,12 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                 &mut *store,
                 (
                     op.id.0,
-                    identity_buf.0,
-                    address_buf.0,
+                    sender_0,
+                    sender_1,
+                    sender_2,
+                    sender_3,
+                    address_0,
+                    address_1,
                     op.timestamp.microseconds,
                     args_buf.0,
                 ),
