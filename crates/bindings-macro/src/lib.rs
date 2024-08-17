@@ -377,21 +377,10 @@ fn gen_reducer(original_function: ItemFn, reducer_name: &str) -> syn::Result<Tok
     let register_describer_symbol = format!("__preinit__20_register_describer_{reducer_name}");
 
     let generated_function = quote! {
-        fn __reducer(
-            __sender: spacetimedb::sys::Buffer,
-            __caller_address: spacetimedb::sys::Buffer,
-            __timestamp: u64,
-            __args: &[u8]
-        ) -> spacetimedb::sys::Buffer {
+        fn __reducer(__ctx: spacetimedb::ReducerContext, __args: &[u8]) -> spacetimedb::sys::Buffer {
             #(spacetimedb::rt::assert_reducer_arg::<#arg_tys>();)*
             #(spacetimedb::rt::assert_reducer_ret::<#ret_ty>();)*
-            spacetimedb::rt::invoke_reducer(
-                #func_name,
-                __sender,
-                __caller_address,
-                __timestamp,
-                __args,
-            )
+            spacetimedb::rt::invoke_reducer(#func_name, __ctx, __args)
         }
     };
 

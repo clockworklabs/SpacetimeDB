@@ -337,7 +337,17 @@ pub mod raw {
             fn __describe_module__() -> Encoded<ModuleDef>;
             /// Required. id is an index into the `ModuleDef.reducers` returned from `__describe_module__`.
             /// args is a bsatn-encoded product value defined by the schema at `reducers[id]`.
-            fn __call_reducer__(id: usize, sender: Identity, timestamp: Timestamp, args: Buffer) -> Result;
+            fn __call_reducer__(
+                id: usize,
+                sender_0: u64,
+                sender_1: u64,
+                sender_2: u64,
+                sender_3: u64,
+                address_0: u64,
+                address_1: u64,
+                timestamp: u64,
+                args: Buffer,
+            ) -> Result;
             /// Currently unused?
             fn __migrate_database__XXXX(sender: Identity, timestamp: Timestamp, something: Buffer) -> Result;
         }

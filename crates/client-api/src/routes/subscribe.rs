@@ -49,7 +49,7 @@ pub struct SubscribeQueryParams {
 //       maintains a global counter, and hashes the next value from that counter
 //       with some constant salt.
 pub fn generate_random_address() -> Address {
-    Address::from_arr(&rand::random())
+    Address::from_byte_array(rand::random())
 }
 
 pub async fn handle_websocket<S>(
