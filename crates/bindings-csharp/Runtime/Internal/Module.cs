@@ -3,6 +3,7 @@ namespace SpacetimeDB.Internal;
 using SpacetimeDB;
 using SpacetimeDB.BSATN;
 using System;
+using System.Runtime.InteropServices;
 
 public static partial class Module
 {
@@ -260,16 +261,10 @@ public static partial class Module
     )
     {
         // Piece together the sender identity.
-        ulong[] sender_arr = { sender_0, sender_1, sender_2, sender_3 };
-        byte[] sender_bytes = new byte[sender_arr.Length * sizeof(ulong)];
-        System.Buffer.BlockCopy(sender_arr, 0, sender_bytes, 0, sender_bytes.Length);
-        var sender = Identity.From(sender_bytes);
+        var sender = Identity.From(MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray());
 
         // Piece together the sender address.
-        ulong[] addr_arr = { address_0, address_1 };
-        byte[] addr_bytes = new byte[addr_arr.Length * sizeof(ulong)];
-        System.Buffer.BlockCopy(addr_arr, 0, addr_bytes, 0, addr_bytes.Length);
-        var address = Address.From(addr_bytes);
+        var address = Address.From(MemoryMarshal.AsBytes([address_0, address_1]).ToArray());
 
         try
         {
