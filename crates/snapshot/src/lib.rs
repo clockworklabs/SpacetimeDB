@@ -21,6 +21,8 @@
 //! - Transforming a [`ReconstructedSnapshot`] into a live Spacetime datastore.
 // TODO(docs): consider making the snapshot proposal public and either linking or pasting it here.
 
+#![allow(clippy::result_large_err)]
+
 use spacetimedb_durability::TxOffset;
 use spacetimedb_fs_utils::{
     dir_trie::{o_excl, o_rdonly, CountCreated, DirTrie},
