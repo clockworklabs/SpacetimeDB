@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
-  BuiltinType,
   ProductTypeElement,
   SumType,
   SumTypeVariant,
@@ -53,13 +52,10 @@ export class InitialSubscription {
         "databaseUpdate",
         DatabaseUpdate.getAlgebraicType()
       ),
-      new ProductTypeElement(
-        "requestId",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.U32)
-      ),
+      new ProductTypeElement("requestId", AlgebraicType.createU32Type()),
       new ProductTypeElement(
         "totalHostExecutionDurationMicros",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.U64)
+        AlgebraicType.createU64Type()
       ),
     ]);
   }

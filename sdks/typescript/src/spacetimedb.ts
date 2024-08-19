@@ -19,7 +19,6 @@ import {
   ProductTypeElement,
   SumType,
   SumTypeVariant,
-  BuiltinType,
 } from "./algebraic_type";
 import { EventType } from "./types";
 import { Identity } from "./identity";
@@ -50,7 +49,6 @@ export {
   ProductTypeElement,
   SumType,
   SumTypeVariant,
-  BuiltinType,
   BinarySerializer,
   ReducerEvent,
   Reducer,

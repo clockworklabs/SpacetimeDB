@@ -6,23 +6,14 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   SumTypeVariant,
-  BuiltinType,
   AlgebraicValue,
 } from "../index";
 
 export namespace EncodedValue {
   export function getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createSumType([
-      new SumTypeVariant(
-        "Binary",
-        AlgebraicType.createArrayType(
-          AlgebraicType.createPrimitiveType(BuiltinType.Type.U8)
-        )
-      ),
-      new SumTypeVariant(
-        "Text",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.String)
-      ),
+      new SumTypeVariant("Binary", AlgebraicType.createBytesType()),
+      new SumTypeVariant("Text", AlgebraicType.createStringType()),
     ]);
   }
 

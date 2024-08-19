@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
-  BuiltinType,
   ProductTypeElement,
   SumType,
   SumTypeVariant,
@@ -35,10 +34,7 @@ export class Timestamp {
 
   public static getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement(
-        "microseconds",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.U64)
-      ),
+      new ProductTypeElement("microseconds", AlgebraicType.createU64Type()),
     ]);
   }
 

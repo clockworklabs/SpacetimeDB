@@ -112,80 +112,19 @@ export class MapType {
   }
 }
 
-export class BuiltinType {
-  public type: BuiltinType.Type;
-  public arrayType: AlgebraicType | undefined;
-  public mapType: MapType | undefined;
-
-  constructor(
-    type: BuiltinType.Type,
-    arrayOrMapType: AlgebraicType | MapType | undefined
-  ) {
-    this.type = type;
-    if (arrayOrMapType !== undefined) {
-      if (arrayOrMapType.constructor === MapType) {
-        this.mapType = arrayOrMapType;
-      } else if (arrayOrMapType.constructor === AlgebraicType) {
-        this.arrayType = arrayOrMapType;
-      }
-    }
-  }
-
-  public static bytes(): BuiltinType {
-    return new BuiltinType(
-      BuiltinType.Type.Array,
-      AlgebraicType.createPrimitiveType(BuiltinType.Type.U8)
-    );
-  }
-
-  public static string_ty(): BuiltinType {
-    return new BuiltinType(BuiltinType.Type.String, undefined);
-  }
-}
-
-// exporting BuiltinType as a namespace as well as a class allows to add
-// export types on the namespace, so we can use BuiltinType.Type
-/*
- * Represents the built-in types in SATS.
- *
- * Some of these types are nominal in our otherwise structural type system.
- */
-export namespace BuiltinType {
-  export enum Type {
-    Bool = "Bool",
-    I8 = "I8",
-    U8 = "U8",
-    I16 = "I16",
-    U16 = "U16",
-    I32 = "I32",
-    U32 = "U32",
-    I64 = "I64",
-    U64 = "U64",
-    I128 = "I128",
-    U128 = "U128",
-    F32 = "F32",
-    F64 = "F64",
-    /** UTF-8 encoded */
-    String = "String",
-    /** This is a SATS `ArrayType`
-     *
-     * An array type is a **homogeneous** product type of dynamic length.
-     *
-     * That is, it is a product type
-     * where every element / factor / field is of the same type
-     * and where the length is statically unknown.
-     */
-    Array = "Array",
-    /** This is a SATS `MapType` */
-    Map = "Map",
-  }
-}
-
+type ArrayBaseType = AlgebraicType;
 type TypeRef = null;
 type None = null;
 export type EnumLabel = { label: string };
 
-type AnyType = ProductType | SumType | BuiltinType | EnumLabel | TypeRef | None;
+type AnyType =
+  | ProductType
+  | SumType
+  | ArrayBaseType
+  | MapType
+  | EnumLabel
+  | TypeRef
+  | None;
 
 /**
  * The SpacetimeDB Algebraic Type System (SATS) is a structural type system in
@@ -198,6 +137,11 @@ export class AlgebraicType {
   type!: Type;
   type_?: AnyType;
 
+  private setter(type: Type, payload: AnyType | undefined) {
+    this.type_ = payload;
+    this.type = payload === undefined ? Type.None : type;
+  }
+
   public get product(): ProductType {
     if (this.type !== Type.ProductType) {
       throw "product type was requested, but the type is not ProductType";
@@ -206,8 +150,7 @@ export class AlgebraicType {
   }
 
   public set product(value: ProductType | undefined) {
-    this.type_ = value;
-    this.type = value == undefined ? Type.None : Type.ProductType;
+    this.setter(Type.ProductType, value);
   }
 
   public get sum(): SumType {
@@ -217,45 +160,103 @@ export class AlgebraicType {
     return this.type_ as SumType;
   }
   public set sum(value: SumType | undefined) {
-    this.type_ = value;
-    this.type = value == undefined ? Type.None : Type.SumType;
+    this.setter(Type.SumType, value);
   }
 
-  public get builtin(): BuiltinType {
-    if (this.type !== Type.BuiltinType) {
-      throw "builtin type was requested, but the type is not BuiltinType";
+  public get array(): ArrayBaseType {
+    if (this.type !== Type.ArrayType) {
+      throw "array type was requested, but the type is not ArrayType";
     }
-    return this.type_ as BuiltinType;
+    return this.type_ as ArrayBaseType;
   }
-  public set builtin(value: BuiltinType | undefined) {
-    this.type_ = value;
-    this.type = value == undefined ? Type.None : Type.BuiltinType;
+  public set array(value: ArrayBaseType | undefined) {
+    this.setter(Type.ArrayType, value);
+  }
+
+  public get map(): MapType {
+    if (this.type !== Type.MapType) {
+      throw "map type was requested, but the type is not MapType";
+    }
+    return this.type_ as MapType;
+  }
+  public set map(value: MapType | undefined) {
+    this.setter(Type.MapType, value);
+  }
+
+  private static createType(
+    type: Type,
+    payload: AnyType | undefined
+  ): AlgebraicType {
+    let at = new AlgebraicType();
+    at.setter(type, payload);
+    return at;
   }
 
   public static createProductType(
     elements: ProductTypeElement[]
   ): AlgebraicType {
-    let type = new AlgebraicType();
-    type.product = new ProductType(elements);
-    return type;
-  }
-
-  public static createArrayType(elementType: AlgebraicType) {
-    let type = new AlgebraicType();
-    type.builtin = new BuiltinType(BuiltinType.Type.Array, elementType);
-    return type;
+    return this.createType(Type.ProductType, new ProductType(elements));
   }
 
   public static createSumType(variants: SumTypeVariant[]): AlgebraicType {
-    let type = new AlgebraicType();
-    type.sum = new SumType(variants);
-    return type;
+    return this.createType(Type.SumType, new SumType(variants));
   }
 
-  public static createPrimitiveType(type: BuiltinType.Type) {
-    let algebraicType = new AlgebraicType();
-    algebraicType.builtin = new BuiltinType(type, undefined);
-    return algebraicType;
+  public static createArrayType(elementType: AlgebraicType): AlgebraicType {
+    return this.createType(Type.ArrayType, elementType);
+  }
+
+  public static createMapType(
+    key: AlgebraicType,
+    val: AlgebraicType
+  ): AlgebraicType {
+    return this.createType(Type.MapType, new MapType(key, val));
+  }
+
+  public static createBoolType(): AlgebraicType {
+    return this.createType(Type.Bool, null);
+  }
+  public static createI8Type(): AlgebraicType {
+    return this.createType(Type.I8, null);
+  }
+  public static createU8Type(): AlgebraicType {
+    return this.createType(Type.U8, null);
+  }
+  public static createI16Type(): AlgebraicType {
+    return this.createType(Type.I16, null);
+  }
+  public static createU16Type(): AlgebraicType {
+    return this.createType(Type.U16, null);
+  }
+  public static createI32Type(): AlgebraicType {
+    return this.createType(Type.I32, null);
+  }
+  public static createU32Type(): AlgebraicType {
+    return this.createType(Type.U32, null);
+  }
+  public static createI64Type(): AlgebraicType {
+    return this.createType(Type.I64, null);
+  }
+  public static createU64Type(): AlgebraicType {
+    return this.createType(Type.U64, null);
+  }
+  public static createI128Type(): AlgebraicType {
+    return this.createType(Type.I128, null);
+  }
+  public static createU128Type(): AlgebraicType {
+    return this.createType(Type.U128, null);
+  }
+  public static createF32Type(): AlgebraicType {
+    return this.createType(Type.F32, null);
+  }
+  public static createF64Type(): AlgebraicType {
+    return this.createType(Type.F64, null);
+  }
+  public static createStringType(): AlgebraicType {
+    return this.createType(Type.String, null);
+  }
+  public static createBytesType(): AlgebraicType {
+    return this.createArrayType(this.createU8Type());
   }
 
   public isProductType(): boolean {
@@ -266,18 +267,16 @@ export class AlgebraicType {
     return this.type === Type.SumType;
   }
 
-  public isBuiltinType(): boolean {
-    return this.type === Type.BuiltinType;
+  public isArrayType(): boolean {
+    return this.type === Type.ArrayType;
+  }
+
+  public isMapType(): boolean {
+    return this.type === Type.MapType;
   }
 
   private isBytes(): boolean {
-    return (
-      this.isBuiltinType() &&
-      this.builtin.type === BuiltinType.Type.Array &&
-      (this.builtin.arrayType as AlgebraicType).isBuiltinType() &&
-      ((this.builtin.arrayType as AlgebraicType).builtin as BuiltinType).type ==
-        BuiltinType.Type.U8
-    );
+    return this.isArrayType() && this.array.type == Type.U8;
   }
 
   private isBytesNewtype(tag: string): boolean {
@@ -302,7 +301,23 @@ export namespace AlgebraicType {
   export enum Type {
     SumType = "SumType",
     ProductType = "ProductType",
-    BuiltinType = "BuiltinType",
+    ArrayType = "ArrayType",
+    MapType = "MapType",
+    Bool = "Bool",
+    I8 = "I8",
+    U8 = "U8",
+    I16 = "I16",
+    U16 = "U16",
+    I32 = "I32",
+    U32 = "U32",
+    I64 = "I64",
+    U64 = "U64",
+    I128 = "I128",
+    U128 = "U128",
+    F32 = "F32",
+    F64 = "F64",
+    /** UTF-8 encoded */
+    String = "String",
     None = "None",
   }
 }

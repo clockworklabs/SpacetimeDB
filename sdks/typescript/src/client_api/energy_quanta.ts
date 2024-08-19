@@ -6,7 +6,6 @@ import {
   __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
-  BuiltinType,
   ProductTypeElement,
   SumType,
   SumTypeVariant,
@@ -35,10 +34,7 @@ export class EnergyQuanta {
 
   public static getAlgebraicType(): AlgebraicType {
     return AlgebraicType.createProductType([
-      new ProductTypeElement(
-        "quanta",
-        AlgebraicType.createPrimitiveType(BuiltinType.Type.U128)
-      ),
+      new ProductTypeElement("quanta", AlgebraicType.createU128Type()),
     ]);
   }
 
