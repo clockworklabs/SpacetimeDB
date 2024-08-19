@@ -197,31 +197,21 @@ pub mod raw {
             message_len: usize,
         );
 
-        /// Schedules a reducer to be called asynchronously at `time`.
+        /// Schedules a reducer to be called asynchronously, nonatomically,
+        /// and immediately on a best effort basis.
         ///
         /// The reducer is named as the valid UTF-8 slice `(name, name_len)`,
         /// and is passed the slice `(args, args_len)` as its argument.
         ///
-        /// A generated schedule id is assigned to the reducer.
-        /// This id is written to the pointer `out`.
-        ///
         /// Traps if
-        /// - the `time` delay exceeds `64^6 - 1` milliseconds from now
         /// - `name` does not point to valid UTF-8
         /// - `name + name_len` or `args + args_len` overflow a 64-bit integer
-        pub fn _schedule_reducer(
+        pub fn _volatile_nonatomic_schedule_immediate(
             name: *const u8,
             name_len: usize,
             args: *const u8,
             args_len: usize,
-            time: u64,
-            out: *mut u64,
         );
-
-        /// Unschedule a reducer using the same `id` generated as when it was scheduled.
-        ///
-        /// This assumes that the reducer hasn't already been executed.
-        pub fn _cancel_reducer(id: u64);
 
         /// Returns the length (number of bytes) of buffer `bufh` without
         /// transferring ownership of the data into the function.
@@ -671,29 +661,13 @@ pub fn console_log(
     }
 }
 
-/// Schedule a reducer to be called asynchronously at `time`.
+/// Schedule a reducer to be called asynchronously, nonatomically, and immediately
+/// on a best-effort basis.
 ///
 /// The reducer is assigned `name` and is provided `args` as its argument.
-///
-/// A generated schedule id is assigned to the reducer which is returned.
-///
-/// Returns an error if the `time` delay exceeds `64^6 - 1` milliseconds from now.
-///
-/// TODO: not fully implemented yet
-/// TODO(Centril): Unsure what is unimplemented; perhaps it refers to a new
-///   implementation with a special system table rather than a special sys call.
 #[inline]
-pub fn schedule(name: &str, args: &[u8], time: u64) -> u64 {
-    let mut out = 0;
-    unsafe { raw::_schedule_reducer(name.as_ptr(), name.len(), args.as_ptr(), args.len(), time, &mut out) }
-    out
-}
-
-/// Unschedule a reducer using the same `id` generated as when it was scheduled.
-///
-/// This assumes that the reducer hasn't already been executed.
-pub fn cancel_reducer(id: u64) {
-    unsafe { raw::_cancel_reducer(id) }
+pub fn volatile_nonatomic_schedule_immediate(name: &str, args: &[u8]) {
+    unsafe { raw::_volatile_nonatomic_schedule_immediate(name.as_ptr(), name.len(), args.as_ptr(), args.len()) }
 }
 
 /// A RAII wrapper around [`raw::Buffer`].
