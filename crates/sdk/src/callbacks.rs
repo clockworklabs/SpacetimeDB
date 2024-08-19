@@ -788,7 +788,7 @@ impl CredentialStore {
         match std::fs::read(file) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 let file = AsRef::<std::path::Path>::as_ref(file);
-                let addr = Address::from_arr(&rand::random());
+                let addr = Address::from_byte_array(rand::random());
                 let addr_bytes = bsatn::to_vec(&addr).context("Error serializing Address")?;
 
                 if let Some(parent) = file.parent() {
@@ -843,7 +843,7 @@ impl CredentialStore {
         if let Some(addr) = self.address {
             addr
         } else {
-            let addr = Address::from_arr(&rand::random());
+            let addr = Address::from_byte_array(rand::random());
             self.address = Some(addr);
             addr
         }

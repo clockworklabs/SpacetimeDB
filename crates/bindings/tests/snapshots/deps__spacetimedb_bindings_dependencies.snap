@@ -2,8 +2,9 @@
 source: crates/bindings/tests/deps.rs
 expression: "cargo tree -p spacetimedb -f {lib} -e no-dev"
 ---
-total crates: 61
+total crates: 60
 spacetimedb
+├── bytemuck
 ├── derive_more
 │   ├── convert_case
 │   ├── proc_macro2
@@ -78,10 +79,6 @@ spacetimedb
 │   │   ├── arrayvec
 │   │   ├── bitflags
 │   │   ├── bytemuck
-│   │   │   └── bytemuck_derive
-│   │   │       ├── proc_macro2 (*)
-│   │   │       ├── quote (*)
-│   │   │       └── syn (*)
 │   │   ├── bytes
 │   │   ├── decorum
 │   │   │   ├── approx

@@ -52,8 +52,8 @@ impl Address {
         __address_bytes: [0; 16],
     };
 
-    pub fn from_arr(arr: &[u8; 16]) -> Self {
-        Self { __address_bytes: *arr }
+    pub fn from_byte_array(arr: [u8; 16]) -> Self {
+        Self { __address_bytes: arr }
     }
 
     pub const fn zero() -> Self {
@@ -61,13 +61,13 @@ impl Address {
     }
 
     pub fn from_u128(u: u128) -> Self {
-        Self::from_arr(&u.to_be_bytes())
+        Self::from_byte_array(u.to_be_bytes())
     }
 
     pub fn from_hex(hex: &str) -> Result<Self, anyhow::Error> {
         from_hex_pad::<[u8; 16], _>(hex)
             .context("Addresses must be 32 hex characters (16 bytes) in length.")
-            .map(|arr| Self::from_arr(&arr))
+            .map(Self::from_byte_array)
     }
 
     pub fn to_hex(self) -> HexString<16> {
@@ -86,7 +86,7 @@ impl Address {
         let slice = slice.as_ref();
         let mut dst = [0u8; 16];
         dst.copy_from_slice(slice);
-        Self::from_arr(&dst)
+        Self::from_byte_array(dst)
     }
 
     pub fn as_slice(&self) -> &[u8; 16] {
@@ -160,7 +160,7 @@ impl<'de> serde::Deserialize<'de> for AddressForUrl {
         D: serde::Deserializer<'de>,
     {
         let arr = spacetimedb_sats::de::serde::deserialize_from(deserializer)?;
-        Ok(Address::from_arr(&arr).into())
+        Ok(Address::from_byte_array(arr).into())
     }
 }
 
@@ -181,7 +181,7 @@ impl<'de> serde::Deserialize<'de> for Address {
         D: serde::Deserializer<'de>,
     {
         let arr = spacetimedb_sats::de::serde::deserialize_from(deserializer)?;
-        Ok(Address::from_arr(&arr))
+        Ok(Address::from_byte_array(arr))
     }
 }
 

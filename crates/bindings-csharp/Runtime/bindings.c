@@ -110,9 +110,14 @@ PREINIT(10, startup) {
 EXPORT(Buffer, __describe_module__, ());
 
 EXPORT(Buffer, __call_reducer__,
-       (uint32_t id, Buffer caller_identity, Buffer caller_address,
+       (uint32_t id,
+        uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+        uint64_t address_0, uint64_t address_1,
         uint64_t timestamp, Buffer args),
-       &id, &caller_identity, &caller_address, &timestamp, &args);
+       &id,
+       &sender_0, &sender_1, &sender_2, &sender_3,
+       &address_0, &address_1,
+       &timestamp, &args);
 #endif
 
 // Shims to avoid dependency on WASI in the generated Wasm file.

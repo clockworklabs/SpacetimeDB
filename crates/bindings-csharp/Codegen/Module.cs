@@ -448,11 +448,25 @@ public class Module : IIncrementalGenerator
                         [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
                         public static SpacetimeDB.Internal.Buffer __call_reducer__(
                             uint id,
-                            SpacetimeDB.Internal.Buffer caller_identity,
-                            SpacetimeDB.Internal.Buffer caller_address,
+                            ulong sender_0,
+                            ulong sender_1,
+                            ulong sender_2,
+                            ulong sender_3,
+                            ulong address_0,
+                            ulong address_1,
                             SpacetimeDB.Internal.DateTimeOffsetRepr timestamp,
                             SpacetimeDB.Internal.Buffer args
-                        ) => SpacetimeDB.Internal.Module.__call_reducer__(id, caller_identity, caller_address, timestamp, args);
+                        ) => SpacetimeDB.Internal.Module.__call_reducer__(
+                            id,
+                            sender_0,
+                            sender_1,
+                            sender_2,
+                            sender_3,
+                            address_0,
+                            address_0,
+                            timestamp,
+                            args
+                        );
                     #endif
                     }
                     """

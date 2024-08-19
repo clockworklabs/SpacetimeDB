@@ -25,13 +25,9 @@ use spacetimedb_primitives::*;
 /// and otherwise the error is written into the fresh one returned.
 pub fn invoke_reducer<'a, A: Args<'a>, T>(
     reducer: impl Reducer<'a, A, T>,
-    sender: Buffer,
-    client_address: Buffer,
-    timestamp: u64,
+    ctx: ReducerContext,
     args: &'a [u8],
 ) -> Buffer {
-    let ctx = assemble_context(sender, timestamp, client_address);
-
     // Deserialize the arguments from a bsatn encoding.
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
@@ -43,35 +39,6 @@ pub fn invoke_reducer<'a, A: Args<'a>, T>(
 
     // Any error is pushed into a `Buffer`.
     cvt_result(res)
-}
-
-/// Creates a reducer context from the given `sender`, `timestamp` and `client_address`.
-///
-/// `sender` must contain 32 bytes, from which we will read an `Identity`.
-///
-/// `timestamp` is a count of microseconds since the Unix epoch.
-///
-/// `client_address` must contain 16 bytes, from which we will read an `Address`.
-/// The all-zeros `client_address` (constructed by [`Address::__dummy`]) is used as a sentinel,
-/// and translated to `None`.
-fn assemble_context(sender: Buffer, timestamp: u64, client_address: Buffer) -> ReducerContext {
-    let sender = Identity::from_byte_array(sender.read_array::<32>());
-
-    let timestamp = Timestamp::UNIX_EPOCH + Duration::from_micros(timestamp);
-
-    let address = Address::from_arr(&client_address.read_array::<16>());
-
-    let address = if address == Address::__DUMMY {
-        None
-    } else {
-        Some(address)
-    };
-
-    ReducerContext {
-        sender,
-        timestamp,
-        address,
-    }
 }
 
 /// Converts `res` into a `Buffer` where `Ok(_)` results in an invalid buffer
@@ -409,7 +376,7 @@ struct ModuleBuilder {
 static DESCRIBERS: Mutex<Vec<fn(&mut ModuleBuilder)>> = Mutex::new(Vec::new());
 
 /// A reducer function takes in `(Sender, Timestamp, Args)` and writes to a new `Buffer`.
-pub type ReducerFn = fn(Buffer, Buffer, u64, &[u8]) -> Buffer;
+pub type ReducerFn = fn(ReducerContext, &[u8]) -> Buffer;
 static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
 
 /// Describes the module into a serialized form that is returned and writes the set of `REDUCERS`.
@@ -433,20 +400,59 @@ extern "C" fn __describe_module__() -> Buffer {
     Buffer::alloc(&bytes)
 }
 
-/// The `sender` calls the reducer identified by `id` at `timestamp` with `args`.
+// TODO(1.0): update `__call_reducer__` docs + for `BytesSource` & `BytesSink`.
+
+/// Called by the host to execute a reducer
+/// when the `sender` calls the reducer identified by `id` at `timestamp` with `args`.
+///
+/// The `sender_{0-3}` are the pieces of a `[u8; 32]` (`u256`) representing the sender's `Identity`.
+/// They are encoded as follows (assuming `identity.identity_bytes: [u8; 32]`):
+/// - `sender_0` contains bytes `[0 ..8 ]`.
+/// - `sender_1` contains bytes `[8 ..16]`.
+/// - `sender_2` contains bytes `[16..24]`.
+/// - `sender_3` contains bytes `[24..32]`.
+///
+/// The `address_{0-1}` are the pieces of a `[u8; 16]` (`u128`) representing the callers's `Address`.
+/// They are encoded as follows (assuming `identity.__address_bytes: [u8; 16]`):
+/// - `address_0` contains bytes `[0 ..8 ]`.
+/// - `address_1` contains bytes `[8 ..16]`.
 ///
 /// The result of the reducer is written into a fresh buffer.
 #[no_mangle]
 extern "C" fn __call_reducer__(
     id: usize,
-    sender: Buffer,
-    caller_address: Buffer,
+    sender_0: u64,
+    sender_1: u64,
+    sender_2: u64,
+    sender_3: u64,
+    address_0: u64,
+    address_1: u64,
     timestamp: u64,
     args: Buffer,
 ) -> Buffer {
+    // Piece together `sender_i` into an `Identity`.
+    let sender = [sender_0, sender_1, sender_2, sender_3];
+    let sender: [u8; 32] = bytemuck::must_cast(sender);
+    let sender = Identity::from_byte_array(sender);
+
+    // Piece together `address_i` into an `Address`.
+    // The all-zeros `address` (`Address::__DUMMY`) is interpreted as `None`.
+    let address = [address_0, address_1];
+    let address: [u8; 16] = bytemuck::must_cast(address);
+    let address = Address::from_byte_array(address);
+    let address = (address != Address::__DUMMY).then_some(address);
+
+    // Assemble the `ReducerContext`.
+    let timestamp = Timestamp::UNIX_EPOCH + Duration::from_micros(timestamp);
+    let ctx = ReducerContext {
+        sender,
+        timestamp,
+        address,
+    };
+
     let reducers = REDUCERS.get().unwrap();
     let args = args.read();
-    reducers[id](sender, caller_address, timestamp, &args)
+    reducers[id](ctx, &args)
 }
 
 #[macro_export]

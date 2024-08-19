@@ -2,6 +2,8 @@ namespace SpacetimeDB.Internal;
 
 using SpacetimeDB;
 using SpacetimeDB.BSATN;
+using System;
+using System.Runtime.InteropServices;
 
 public static partial class Module
 {
@@ -248,26 +250,28 @@ public static partial class Module
 
     public static Buffer __call_reducer__(
         uint id,
-        Buffer caller_identity,
-        Buffer caller_address,
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong address_0,
+        ulong address_1,
         DateTimeOffsetRepr timestamp,
         Buffer args
     )
     {
+        // Piece together the sender identity.
+        var sender = Identity.From(MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray());
+
+        // Piece together the sender address.
+        var address = Address.From(MemoryMarshal.AsBytes([address_0, address_1]).ToArray());
+
         try
         {
             Runtime.Random = new((int)timestamp.MicrosecondsSinceEpoch);
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            reducers[(int)id]
-                .Invoke(
-                    reader,
-                    new(
-                        Identity.From(caller_identity.Consume()),
-                        Address.From(caller_address.Consume()),
-                        timestamp.ToStd()
-                    )
-                );
+            reducers[(int)id].Invoke(reader, new(sender, address, timestamp.ToStd()));
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the reducer arguments");
