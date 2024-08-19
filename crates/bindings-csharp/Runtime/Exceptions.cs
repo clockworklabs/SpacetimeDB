@@ -27,6 +27,11 @@ public class BufferTooSmallException : StdbException
     public override string Message => "The provided buffer is not large enough to store the data";
 }
 
+public class NoSuchBytesException : StdbException
+{
+    public override string Message => "The provided bytes source or sink does not exist";
+}
+
 public class UnknownException : StdbException
 {
     private readonly FFI.CheckedStatus.Errno code;

@@ -7,6 +7,15 @@ using System.Runtime.InteropServices.Marshalling;
 // forwarding in the codegen for `__describe_module__` and `__call_reducer__` exports which both
 // use this type.
 [StructLayout(LayoutKind.Sequential)]
+public readonly record struct BytesSource(uint Handle)
+{
+    public static readonly BytesSource INVALID = new(0);
+}
+
+// This type is outside of the hidden `FFI` class because for now we need to do some public
+// forwarding in the codegen for `__describe_module__` and `__call_reducer__` exports which both
+// use this type.
+[StructLayout(LayoutKind.Sequential)]
 [NativeMarshalling(typeof(Marshaller))]
 public readonly record struct Buffer(uint Handle)
 {
@@ -49,6 +58,7 @@ internal static partial class FFI
             LOOKUP_NOT_FOUND = 2,
             UNIQUE_ALREADY_EXISTS = 3,
             BUFFER_TOO_SMALL = 4,
+            NO_SUCH_BYTES = 8,
         }
 
         // This custom marshaller takes care of checking the status code
@@ -75,6 +85,7 @@ internal static partial class FFI
                     Errno.LOOKUP_NOT_FOUND => new LookupNotFoundException(),
                     Errno.UNIQUE_ALREADY_EXISTS => new UniqueAlreadyExistsException(),
                     Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
+                    Errno.NO_SUCH_BYTES => new NoSuchBytesException(),
                     _ => new UnknownException(status),
                 };
             }
@@ -163,7 +174,7 @@ internal static partial class FFI
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _iter_advance(
         RowIter iter_handle,
-        [MarshalUsing(CountElementName = nameof(buffer_len))] [Out] byte[] buffer,
+        [MarshalUsing(CountElementName = nameof(buffer_len))][Out] byte[] buffer,
         ref uint buffer_len
     );
 
@@ -183,13 +194,10 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial uint _buffer_len(Buffer buf_handle);
-
-    [LibraryImport(StdbNamespace)]
-    public static partial void _buffer_consume(
-        Buffer buf_handle,
-        [MarshalUsing(CountElementName = nameof(dst_len))] [Out] byte[] dst,
-        uint dst_len
+    public static partial short _bytes_source_read(
+        BytesSource source,
+        Span<byte> buffer,
+        ref uint buffer_len_ptr
     );
 
     [LibraryImport(StdbNamespace)]

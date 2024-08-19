@@ -187,11 +187,12 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // otherwise, we'd return something like `used: i128::MAX - u64::MAX`, which is inaccurate.
         set_store_fuel(store, budget.into());
 
+        // Prepare sender identity and address.
         let [sender_0, sender_1, sender_2, sender_3] = bytemuck::must_cast(*op.caller_identity.as_bytes());
         let [address_0, address_1] = bytemuck::must_cast(*op.caller_address.as_slice());
-        let args_buf = store.data_mut().insert_buffer(op.arg_bytes);
 
-        store.data_mut().start_reducer(op.name);
+        // Prepare arguments to the reducer & start timings.
+        let args_source = store.data_mut().start_reducer(op.name, op.arg_bytes);
 
         let call_result = self
             .call_reducer
@@ -206,7 +207,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                     address_0,
                     address_1,
                     op.timestamp.microseconds,
-                    args_buf.0,
+                    args_source,
                 ),
             )
             .and_then(|errbuf| {

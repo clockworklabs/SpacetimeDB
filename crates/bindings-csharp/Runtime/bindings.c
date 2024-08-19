@@ -19,6 +19,7 @@ OPAQUE_TYPEDEF(ColId, uint16_t);
 OPAQUE_TYPEDEF(IndexType, uint8_t);
 OPAQUE_TYPEDEF(LogLevel, uint8_t);
 OPAQUE_TYPEDEF(Buffer, uint32_t);
+OPAQUE_TYPEDEF(BytesSource, uint32_t);
 OPAQUE_TYPEDEF(RowIter, uint32_t);
 
 #define CSTR(s) (uint8_t*)s, sizeof(s) - 1
@@ -68,9 +69,8 @@ IMPORT(Status, _iter_advance,
        (RowIter iter, uint8_t* buffer, size_t* buffer_len),
        (iter, buffer, buffer_len));
 IMPORT(void, _iter_drop, (RowIter iter), (iter));
-IMPORT(uint32_t, _buffer_len, (Buffer buf), (buf));
-IMPORT(void, _buffer_consume, (Buffer buf, uint8_t* dst, uint32_t dst_len),
-       (buf, dst, dst_len));
+IMPORT(int16_t, _bytes_source_read, (BytesSource source, uint8_t* buffer_ptr, size_t* buffer_len_ptr),
+       (source, buffer_ptr, buffer_len_ptr));
 IMPORT(Buffer, _buffer_alloc, (const uint8_t* data, uint32_t len), (data, len));
 
 #ifndef EXPERIMENTAL_WASM_AOT

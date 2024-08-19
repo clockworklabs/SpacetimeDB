@@ -8,8 +8,6 @@ use core::mem::MaybeUninit;
 use core::num::NonZeroU16;
 use std::ptr;
 
-use alloc::boxed::Box;
-
 use spacetimedb_primitives::{errno, errnos, ColId, TableId};
 
 /// Provides a raw set of sys calls which abstractions can be built atop of.
@@ -252,6 +250,71 @@ pub mod raw {
         /// Traps if `data + data_len` overflows a 64-bit integer.
         pub fn _buffer_alloc(data: *const u8, data_len: usize) -> Buffer;
 
+        /// Reads bytes from `source`, registered in the host environment,
+        /// and stores them in the memory pointed to by `buffer = buffer_ptr[..buffer_len]`.
+        ///
+        /// The `buffer_len = buffer_len_ptr[..size_of::<usize>()]` stores the capacity of `buffer`.
+        /// On success (`0` or `-1` is returned),
+        /// `buffer_len` is set to the number of bytes written to `buffer`.
+        /// When `-1` is returned, the resource has been exhausted
+        /// and there are no more bytes to read,
+        /// leading to the resource being immediately destroyed.
+        /// Note that the host is free to reuse allocations in a pool,
+        /// destroying the handle logically does not entail that memory is necessarily reclaimed.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        ///
+        /// - `buffer_len_ptr` is NULL or `buffer_len` is not in bounds of WASM memory.
+        /// - `buffer_ptr` is NULL or `buffer` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NO_SUCH_BYTES`, when `source` is not a valid bytes source.
+        ///
+        /// # Example
+        ///
+        /// The typical use case for this ABI is in `__call_reducer__`,
+        /// to read and deserialize the `args`.
+        /// An example definition, dealing with `args` might be:
+        /// ```rust,ignore
+        /// /// #[no_mangle]
+        /// extern "C" fn __call_reducer__(..., args: BytesSource, ...) -> i16 {
+        ///     // ...
+        ///
+        ///     let mut buf = Vec::<u8>::with_capacity(1024);
+        ///     loop {
+        ///         // Write into the spare capacity of the buffer.
+        ///         let buf_ptr = buf.spare_capacity_mut();
+        ///         let spare_len = buf_ptr.len();
+        ///         let mut buf_len = buf_ptr.len();
+        ///         let buf_ptr = buf_ptr.as_mut_ptr().cast();
+        ///         let ret = unsafe { bytes_source_read(args, buf_ptr, &mut buf_len) };
+        ///         // SAFETY: `bytes_source_read` just appended `spare_len` bytes to `buf`.
+        ///         unsafe { buf.set_len(buf.len() + spare_len) };
+        ///         match ret {
+        ///             // Host side source exhausted, we're done.
+        ///             -1 => break,
+        ///             // Wrote the entire spare capacity.
+        ///             // Need to reserve more space in the buffer.
+        ///             0 if spare_len == buf_len => buf.reserve(1024),
+        ///             // Host didn't write as much as possible.
+        ///             // Try to read some more.
+        ///             // The host will likely not trigger this branch,
+        ///             // but a module should be prepared for it.
+        ///             0 => {}
+        ///             _ => unreachable!(),
+        ///         }
+        ///     }
+        ///
+        ///     // ...
+        /// }
+        /// ```
+        pub fn _bytes_source_read(source: BytesSource, buffer_ptr: *mut u8, buffer_len_ptr: *mut usize) -> i16;
+
         /// Begin a timing span.
         ///
         /// When the returned `u32` span ID is passed to [`_span_end`],
@@ -297,6 +360,18 @@ pub mod raw {
     ///
     /// A panic level is emitted just before a fatal error causes the WASM module to trap.
     pub const LOG_LEVEL_PANIC: u8 = 101;
+
+    /// A handle into a buffer of bytes in the host environment that can be read from.
+    ///
+    /// Used for transporting bytes from host to WASM linear memory.
+    #[derive(PartialEq, Eq, Copy, Clone)]
+    #[repr(transparent)]
+    pub struct BytesSource(u32);
+
+    impl BytesSource {
+        /// An invalid handle, used e.g., when the reducer arguments were empty.
+        pub const INVALID: Self = Self(0);
+    }
 
     /// A handle into a buffer of bytes in the host environment.
     ///
@@ -631,47 +706,6 @@ impl Buffer {
     pub const INVALID: Self = Buffer {
         raw: raw::INVALID_BUFFER,
     };
-
-    /// Returns the number of bytes of the data stored in the buffer.
-    pub fn data_len(&self) -> usize {
-        unsafe { raw::_buffer_len(self.raw) }
-    }
-
-    /// Read the contents of the buffer into the provided Vec.
-    /// The Vec is cleared in the process.
-    pub fn read_into(self, buf: &mut Vec<u8>) {
-        let data_len = self.data_len();
-        buf.clear();
-        buf.reserve(data_len);
-        self.read_uninit(&mut buf.spare_capacity_mut()[..data_len]);
-        // SAFETY: We just wrote `data_len` bytes into `buf`.
-        unsafe { buf.set_len(data_len) };
-    }
-
-    /// Read the contents of the buffer into a new boxed byte slice.
-    pub fn read(self) -> Box<[u8]> {
-        let mut buf = alloc::vec::Vec::new();
-        self.read_into(&mut buf);
-        buf.into_boxed_slice()
-    }
-
-    /// Read the contents of the buffer into an array of fixed size `N`.
-    ///
-    /// If the length is wrong, the module will crash.
-    pub fn read_array<const N: usize>(self) -> [u8; N] {
-        // use MaybeUninit::uninit_array once stable
-        let mut arr = unsafe { MaybeUninit::<[MaybeUninit<u8>; N]>::uninit().assume_init() };
-        self.read_uninit(&mut arr);
-        // use MaybeUninit::array_assume_init once stable
-        unsafe { (&arr as *const [_; N]).cast::<[u8; N]>().read() }
-    }
-
-    /// Reads the buffer into an uninitialized byte string `buf`.
-    ///
-    /// The module will crash if `buf`'s length doesn't match the buffer.
-    pub fn read_uninit(self, buf: &mut [MaybeUninit<u8>]) {
-        unsafe { raw::_buffer_consume(self.raw, buf.as_mut_ptr().cast(), buf.len()) }
-    }
 
     /// Allocates a buffer with the contents of `data`.
     pub fn alloc(data: &[u8]) -> Self {

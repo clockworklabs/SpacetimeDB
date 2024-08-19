@@ -49,6 +49,10 @@ pub(super) struct WasmInstanceEnv {
     /// always be `Some`.
     mem: Option<Mem>,
 
+    /// The arguments being passed to a reducer
+    /// that it can read via [`Self::bytes_source_read`].
+    call_reducer_args: Option<(bytes::Bytes, usize)>,
+
     /// The slab of `Buffers` created for this instance.
     buffers: Buffers,
 
@@ -71,6 +75,8 @@ pub(super) struct WasmInstanceEnv {
     reducer_name: String,
 }
 
+const CALL_REDUCER_ARGS_SOURCE: u32 = 1;
+
 type WasmResult<T> = Result<T, WasmError>;
 type RtResult<T> = anyhow::Result<T>;
 
@@ -83,6 +89,7 @@ impl WasmInstanceEnv {
         Self {
             instance_env,
             mem: None,
+            call_reducer_args: None,
             buffers: Default::default(),
             iters: Default::default(),
             timing_spans: Default::default(),
@@ -119,22 +126,30 @@ impl WasmInstanceEnv {
         self.buffers.take(idx)
     }
 
-    /// Take ownership of the given `data` and give back a `BufferIdx`
-    /// as a handle to that data.
-    pub fn insert_buffer(&mut self, data: bytes::Bytes) -> BufferIdx {
-        self.buffers.insert(data)
-    }
-
     /// Signal to this `WasmInstanceEnv` that a reducer call is beginning.
-    pub fn start_reducer(&mut self, name: &str) {
+    ///
+    /// Returns the handle used by reducers to read from `args`.
+    pub fn start_reducer(&mut self, name: &str, args: bytes::Bytes) -> u32 {
+        self.call_reducer_args = (!args.is_empty()).then_some((args, 0));
+
         self.reducer_start = Instant::now();
         name.clone_into(&mut self.reducer_name);
+
+        // Pass an invalid source when the reducer args were empty.
+        // This allows the module to avoid allocating and make a system call in those cases.
+        if self.call_reducer_args.is_some() {
+            CALL_REDUCER_ARGS_SOURCE
+        } else {
+            0
+        }
     }
 
     /// Signal to this `WasmInstanceEnv` that a reducer call is over.
     /// This resets all of the state associated to a single reducer call,
     /// and returns instrumentation records.
     pub fn finish_reducer(&mut self) -> ExecutionTimings {
+        self.call_reducer_args = None;
+
         // For the moment, we only explicitly clear the set of buffers and the
         // "syscall" times.
         // TODO: should we be clearing `iters` and/or `timing_spans`?
@@ -156,34 +171,20 @@ impl WasmInstanceEnv {
         self.instance_env().get_ctx().map_err(|err| WasmError::Db(err.into()))
     }
 
-    /// Call the function `f` with the name `func`.
-    /// The function `f` is provided with the callers environment and the host's memory.
-    ///
-    /// One of `cvt`, `cvt_ret`, or `cvt_noret` should be used in the implementation of any
-    /// host call, to provide consistent error handling and instrumentation.
-    ///
-    /// Some database errors are logged but are otherwise regarded as `Ok(_)`.
-    /// See `err_to_errno` for a list.
-    fn cvt(
-        mut caller: Caller<'_, Self>,
-        func: AbiCall,
-        f: impl FnOnce(&mut Caller<'_, Self>) -> WasmResult<()>,
-    ) -> RtResult<u32> {
+    fn with_span<R>(mut caller: Caller<'_, Self>, func: AbiCall, run: impl FnOnce(&mut Caller<'_, Self>) -> R) -> R {
         let span_start = span::CallSpanStart::new(func);
 
-        // Call `f` with the caller and a handle to the memory.
-        let result = f(&mut caller);
+        // Call `run` with the caller and a handle to the memory.
+        let result = run(&mut caller);
 
         // Track the span of this call.
         let span = span_start.end();
         span::record_span(&mut caller.data_mut().call_times, span);
 
-        // Bail if there were no errors.
-        let Err(err) = result else {
-            return Ok(0);
-        };
+        result
+    }
 
-        // Handle any errors.
+    fn convert_wasm_result<T: From<u16>>(func: AbiCall, err: WasmError) -> RtResult<T> {
         Err(match err {
             WasmError::Db(err) => match err_to_errno(&err) {
                 Some(errno) => {
@@ -200,6 +201,40 @@ impl WasmInstanceEnv {
         })
     }
 
+    /// Call the function `run` with the name `func`.
+    /// The function `run` is provided with the callers environment and the host's memory.
+    ///
+    /// One of `cvt_custom`, `cvt`, `cvt_ret`, or `cvt_noret` should be used in the implementation of any
+    /// host call, to provide consistent error handling and instrumentation.
+    ///
+    /// Some database errors are logged but are otherwise regarded as `Ok(_)`.
+    /// See `err_to_errno` for a list.
+    ///
+    /// This variant should be used when more control is needed over the success value.
+    fn cvt_custom<T: From<u16>>(
+        caller: Caller<'_, Self>,
+        func: AbiCall,
+        run: impl FnOnce(&mut Caller<'_, Self>) -> WasmResult<T>,
+    ) -> RtResult<T> {
+        Self::with_span(caller, func, run).or_else(|err| Self::convert_wasm_result(func, err))
+    }
+
+    /// Call the function `run` with the name `func`.
+    /// The function `run` is provided with the callers environment and the host's memory.
+    ///
+    /// One of `cvt`, `cvt_ret`, or `cvt_noret` should be used in the implementation of any
+    /// host call, to provide consistent error handling and instrumentation.
+    ///
+    /// Some database errors are logged but are otherwise regarded as `Ok(_)`.
+    /// See `err_to_errno` for a list.
+    fn cvt<T: From<u16>>(
+        caller: Caller<'_, Self>,
+        func: AbiCall,
+        run: impl FnOnce(&mut Caller<'_, Self>) -> WasmResult<()>,
+    ) -> RtResult<T> {
+        Self::cvt_custom(caller, func, |c| run(c).map(|()| 0u16.into()))
+    }
+
     /// Call the function `f` with any return value being written to the pointer `out`.
     ///
     /// Otherwise, `cvt_ret` (this function) behaves as `cvt`.
@@ -211,11 +246,11 @@ impl WasmInstanceEnv {
     /// as it helps with upholding the safety invariants of [`bindings_sys::call`].
     ///
     /// Returns an error if writing `T` to `out` errors.
-    fn cvt_ret<T: WasmPointee>(
+    fn cvt_ret<O: WasmPointee>(
         caller: Caller<'_, Self>,
         call: AbiCall,
-        out: WasmPtr<T>,
-        f: impl FnOnce(&mut Caller<'_, Self>) -> WasmResult<T>,
+        out: WasmPtr<O>,
+        f: impl FnOnce(&mut Caller<'_, Self>) -> WasmResult<O>,
     ) -> RtResult<u32> {
         Self::cvt(caller, call, |caller| {
             f(caller).and_then(|ret| {
@@ -230,14 +265,8 @@ impl WasmInstanceEnv {
     /// This is the version of `cvt` or `cvt_ret` for functions with no return value.
     /// One of `cvt`, `cvt_ret`, or `cvt_noret` should be used in the implementation of any
     /// host call, to provide consistent error handling and instrumentation.
-    fn cvt_noret(mut caller: Caller<'_, Self>, call: AbiCall, f: impl FnOnce(&mut Caller<'_, Self>)) {
-        let span_start = span::CallSpanStart::new(call);
-
-        // Call `f` with the caller and a handle to the memory.
-        f(&mut caller);
-
-        let span = span_start.end();
-        span::record_span(&mut caller.data_mut().call_times, span);
+    fn cvt_noret(caller: Caller<'_, Self>, call: AbiCall, f: impl FnOnce(&mut Caller<'_, Self>)) {
+        Self::with_span(caller, call, f)
     }
 
     fn convert_u32_to_col_id(col_id: u32) -> WasmResult<ColId> {
@@ -606,37 +635,6 @@ impl WasmInstanceEnv {
         Ok(())
     }
 
-    /// Returns the length (number of bytes) of buffer `bufh` without
-    /// transferring ownership of the data into the function.
-    ///
-    /// The `bufh` must have previously been allocating using `_buffer_alloc`.
-    ///
-    /// Returns an error if the buffer does not exist.
-    // #[tracing::instrument(skip_all)]
-    pub fn buffer_len(caller: Caller<'_, Self>, buffer: u32) -> RtResult<u32> {
-        caller
-            .data()
-            .buffers
-            .get(BufferIdx(buffer))
-            .map(|b| b.len() as u32)
-            .context("no such buffer")
-    }
-
-    /// Consumes the `buffer`,
-    /// moving its contents to the slice `(dst, dst_len)`.
-    ///
-    /// Returns an error if
-    /// - the buffer does not exist
-    /// - `dst + dst_len` overflows a 64-bit integer
-    // #[tracing::instrument(skip_all)]
-    pub fn buffer_consume(mut caller: Caller<'_, Self>, buffer: u32, dst: WasmPtr<u8>, dst_len: u32) -> RtResult<()> {
-        let (mem, env) = Self::mem_env(&mut caller);
-        let buf = env.take_buffer(BufferIdx(buffer)).context("no such buffer")?;
-        anyhow::ensure!(dst_len as usize == buf.len(), "bad length passed to buffer_consume");
-        mem.deref_slice_mut(dst, dst_len)?.copy_from_slice(&buf);
-        Ok(())
-    }
-
     /// Creates a buffer of size `data_len` in the host environment.
     ///
     /// The contents of the byte slice pointed to by `data`
@@ -651,6 +649,113 @@ impl WasmInstanceEnv {
         let (mem, env) = Self::mem_env(&mut caller);
         let buf = mem.deref_slice(data, data_len)?;
         Ok(env.buffers.insert(buf.to_vec().into()).0)
+    }
+
+    /// Reads bytes from `source`, registered in the host environment,
+    /// and stores them in the memory pointed to by `buffer = buffer_ptr[..buffer_len]`.
+    ///
+    /// The `buffer_len = buffer_len_ptr[..size_of::<usize>()]` stores the capacity of `buffer`.
+    /// On success (`0` or `-1` is returned),
+    /// `buffer_len` is set to the number of bytes written to `buffer`.
+    /// When `-1` is returned, the resource has been exhausted
+    /// and there are no more bytes to read,
+    /// leading to the resource being immediately destroyed.
+    /// Note that the host is free to reuse allocations in a pool,
+    /// destroying the handle logically does not entail that memory is necessarily reclaimed.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `buffer_len_ptr` is NULL or `buffer_len` is not in bounds of WASM memory.
+    /// - `buffer_ptr` is NULL or `buffer` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NO_SUCH_BYTES`, when `source` is not a valid bytes source.
+    ///
+    /// # Example
+    ///
+    /// The typical use case for this ABI is in `__call_reducer__`,
+    /// to read and deserialize the `args`.
+    /// An example definition, dealing with `args` might be:
+    /// ```rust,ignore
+    /// /// #[no_mangle]
+    /// extern "C" fn __call_reducer__(..., args: BytesSource, ...) -> i16 {
+    ///     // ...
+    ///
+    ///     let mut buf = Vec::<u8>::with_capacity(1024);
+    ///     loop {
+    ///         // Write into the spare capacity of the buffer.
+    ///         let buf_ptr = buf.spare_capacity_mut();
+    ///         let spare_len = buf_ptr.len();
+    ///         let mut buf_len = buf_ptr.len();
+    ///         let buf_ptr = buf_ptr.as_mut_ptr().cast();
+    ///         let ret = unsafe { bytes_source_read(args, buf_ptr, &mut buf_len) };
+    ///         // SAFETY: `bytes_source_read` just appended `spare_len` bytes to `buf`.
+    ///         unsafe { buf.set_len(buf.len() + spare_len) };
+    ///         match ret {
+    ///             // Host side source exhausted, we're done.
+    ///             -1 => break,
+    ///             // Wrote the entire spare capacity.
+    ///             // Need to reserve more space in the buffer.
+    ///             0 if spare_len == buf_len => buf.reserve(1024),
+    ///             // Host didn't write as much as possible.
+    ///             // Try to read some more.
+    ///             // The host will likely not trigger this branch,
+    ///             // but a module should be prepared for it.
+    ///             0 => {}
+    ///             _ => unreachable!(),
+    ///         }
+    ///     }
+    ///
+    ///     // ...
+    /// }
+    /// ```
+    pub fn bytes_source_read(
+        caller: Caller<'_, Self>,
+        source: u32,
+        buffer_ptr: WasmPtr<u8>,
+        buffer_len_ptr: WasmPtr<u32>,
+    ) -> RtResult<i32> {
+        Self::cvt_custom(caller, AbiCall::BytesSourceRead, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+
+            // Retrieve the reducer args if available and requested, or error.
+            let Some((reducer_args, cursor)) = env
+                .call_reducer_args
+                .as_mut()
+                .filter(|_| source == CALL_REDUCER_ARGS_SOURCE)
+            else {
+                return Ok(errno::NO_SUCH_BYTES.get().into());
+            };
+
+            // Read `buffer_len`, i.e., the capacity of `buffer` pointed to by `buffer_ptr`.
+            let buffer_len = u32::read_from(mem, buffer_len_ptr)?;
+            // Get a mutable view to the `buffer`.
+            let buffer = mem.deref_slice_mut(buffer_ptr, buffer_len)?;
+            let buffer_len = buffer_len as usize;
+
+            // Derive the portion that we can read and what remains,
+            // based on what is left to read and the capacity.
+            let left_to_read = &reducer_args[*cursor..];
+            let can_read_len = buffer_len.min(left_to_read.len());
+            let (can_read, remainder) = left_to_read.split_at(can_read_len);
+            // Copy to the `buffer` and write written bytes count to `buffer_len`.
+            buffer[..can_read_len].copy_from_slice(can_read);
+            (can_read_len as u32).write_to(mem, buffer_len_ptr)?;
+
+            // Destroy the source if exhausted, or advance `cursor`.
+            if remainder.is_empty() {
+                env.call_reducer_args = None;
+                Ok(-1i32)
+            } else {
+                *cursor = can_read_len;
+                Ok(0)
+            }
+        })
     }
 
     pub fn span_start(mut caller: Caller<'_, Self>, name: WasmPtr<u8>, name_len: u32) -> RtResult<u32> {
