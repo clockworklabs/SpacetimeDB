@@ -212,6 +212,12 @@ impl ExecutionContext {
         Self::new(database, None, WorkloadType::Update)
     }
 
+    /// Returns an [ExecutionContext] for an incremental subscription update,
+    /// where this update is the result of a reducer mutation.
+    pub fn incremental_update_for_reducer(database: Address, ctx: ReducerContext) -> Self {
+        Self::new(database, Some(ctx), WorkloadType::Update)
+    }
+
     /// Returns an [ExecutionContext] for an internal database operation.
     pub fn internal(database: Address) -> Self {
         Self::new(database, None, WorkloadType::Internal)
