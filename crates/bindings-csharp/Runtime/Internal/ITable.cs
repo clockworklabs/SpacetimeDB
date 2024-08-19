@@ -149,7 +149,7 @@ public interface ITable<T> : IStructuralReadWrite
             this.value = value;
         }
 
-        public static ColEq Where<TCol, TColRW>(uint colId, TCol colValue, TColRW rw)
+        public static ColEq Where<TCol, TColRW>(ushort colId, TCol colValue, TColRW rw)
             where TColRW : IReadWrite<TCol>
         {
             return new(new FFI.ColId(colId), ToBytes(rw, colValue));

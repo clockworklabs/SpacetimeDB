@@ -7,6 +7,7 @@ use lazy_static::lazy_static;
 use rusqlite::Connection;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicValue, ProductType};
+use spacetimedb_primitives::ColId;
 use std::{
     fmt::Write,
     hint::black_box,
@@ -171,11 +172,11 @@ impl BenchDatabase for SQLite {
     fn filter<T: BenchTable>(
         &mut self,
         table_id: &Self::TableId,
-        column_index: u32,
+        col_id: impl Into<ColId>,
         value: AlgebraicValue,
     ) -> ResultBench<()> {
         let statement = memo_query(BenchName::Filter, table_id, || {
-            let column: Box<str> = T::product_type().elements[column_index as usize].name.take().unwrap();
+            let column: Box<str> = T::product_type().elements[col_id.into().idx()].name.take().unwrap();
             format!("SELECT * FROM {table_id} WHERE {column} = ?")
         });
 

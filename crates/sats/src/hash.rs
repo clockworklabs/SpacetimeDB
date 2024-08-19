@@ -11,7 +11,7 @@ pub struct Hash {
     pub data: [u8; HASH_SIZE],
 }
 
-impl_st!([] Hash, _ts => AlgebraicType::bytes());
+impl_st!([] Hash, AlgebraicType::bytes());
 impl_serialize!([] Hash, (self, ser) => self.data.serialize(ser));
 impl_deserialize!([] Hash, de => Ok(Self { data: <_>::deserialize(de)? }));
 

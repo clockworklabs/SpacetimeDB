@@ -159,7 +159,7 @@ impl Header {
     /// Project the [ColExpr]s & the [Constraints] that referenced them
     pub fn project(&self, cols: &[ColExpr]) -> Result<Self, RelationError> {
         let mut p = Vec::with_capacity(cols.len());
-        let mut to_keep = ColList::with_capacity(cols.len() as u32);
+        let mut to_keep = ColList::with_capacity(cols.len() as _);
 
         for (pos, col) in cols.iter().enumerate() {
             match col {
@@ -187,7 +187,7 @@ impl Header {
     pub fn extend(&self, right: &Self) -> Self {
         // Increase the positions of the columns in `right.constraints`, adding the count of fields on `left`
         let mut constraints = self.constraints.clone();
-        let len_lhs = self.fields.len() as u32;
+        let len_lhs = self.fields.len() as u16;
         constraints.extend(right.constraints.iter().map(|(cols, c)| {
             let cols = cols.iter().map(|col| ColId(col.0 + len_lhs)).collect::<ColList>();
             (cols, *c)
@@ -245,7 +245,7 @@ mod tests {
     use spacetimedb_primitives::col_list;
 
     /// Build a [Header] using the initial `start_pos` as the column position for the [Constraints]
-    fn head(id: impl Into<TableId>, name: &str, fields: (ColId, ColId), start_pos: u32) -> Header {
+    fn head(id: impl Into<TableId>, name: &str, fields: (ColId, ColId), start_pos: u16) -> Header {
         let pos_lhs = start_pos;
         let pos_rhs = start_pos + 1;
 

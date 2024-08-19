@@ -459,7 +459,7 @@ mod test {
     use spacetimedb_schema::schema::TableSchema;
 
     fn gen_cols(ty_len: usize) -> impl Strategy<Value = ColList> {
-        vec((0..ty_len as u32).prop_map_into::<ColId>(), 1..=ty_len)
+        vec((0..ty_len as u16).prop_map_into::<ColId>(), 1..=ty_len)
             .prop_map(|cols| cols.into_iter().collect::<ColList>())
     }
 

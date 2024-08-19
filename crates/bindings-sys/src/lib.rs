@@ -20,7 +20,7 @@ pub mod raw {
     // on. Any non-breaking additions to the abi surface should be put in a new `extern {}` block
     // with a module identifier with a minor version 1 above the previous highest minor version.
     // For breaking changes, all functions should be moved into one new `spacetime_X.0` block.
-    #[link(wasm_import_module = "spacetime_9.0")]
+    #[link(wasm_import_module = "spacetime_10.0")]
     extern "C" {
         /*
         /// Create a table with `name`, a UTF-8 slice in WASM memory lasting `name_len` bytes,
@@ -47,32 +47,6 @@ pub mod raw {
         /// - `name + name_len` overflows a 64-bit address.
         /// - writing to `out` overflows a 32-bit integer
         pub fn _get_table_id(name: *const u8, name_len: usize, out: *mut TableId) -> u16;
-
-        /// Creates an index with the name `index_name` and type `index_type`,
-        /// on a product of the given columns in `col_ids`
-        /// in the table identified by `table_id`.
-        ///
-        /// Here `index_name` points to a UTF-8 slice in WASM memory
-        /// and `col_ids` points to a byte slice in WASM memory with each element being a column.
-        ///
-        /// Currently only single-column-indices are supported
-        /// and they may only be of the btree index type.
-        ///
-        /// Returns an error if
-        /// - a table with the provided `table_id` doesn't exist
-        /// - the slice `(index_name, index_name_len)` is not valid UTF-8
-        /// - `index_name + index_name_len` or `col_ids + col_len` overflow a 64-bit integer
-        /// - `index_type > 1`
-        ///
-        /// Traps if `index_type == 1` or `col_ids.len() != 1`.
-        pub fn _create_index(
-            index_name: *const u8,
-            index_name_len: usize,
-            table_id: TableId,
-            index_type: u8,
-            col_ids: *const u8,
-            col_len: usize,
-        ) -> u16;
 
         /// Finds all rows in the table identified by `table_id`,
         /// where the row has a column, identified by `col_id`,
@@ -467,32 +441,6 @@ unsafe fn call<T>(f: impl FnOnce(*mut T) -> u16) -> Result<T, Errno> {
 #[inline]
 pub fn get_table_id(name: &str) -> Result<TableId, Errno> {
     unsafe { call(|out| raw::_get_table_id(name.as_ptr(), name.len(), out)) }
-}
-
-/// Creates an index with the name `index_name` and type `index_type`,
-/// on a product of the given columns ids in `col_ids`,
-/// identifying columns in the table identified by `table_id`.
-///
-/// Currently only single-column-indices are supported
-/// and they may only be of the btree index type.
-///
-/// Returns an error if
-/// - a table with the provided `table_id` doesn't exist
-/// - `index_type > 1`
-///
-/// Traps if `index_type == 1` or `col_ids.len() != 1`.
-#[inline]
-pub fn create_index(index_name: &str, table_id: TableId, index_type: u8, col_ids: &[u8]) -> Result<(), Errno> {
-    cvt(unsafe {
-        raw::_create_index(
-            index_name.as_ptr(),
-            index_name.len(),
-            table_id,
-            index_type,
-            col_ids.as_ptr(),
-            col_ids.len(),
-        )
-    })
 }
 
 /// Finds all rows in the table identified by `table_id`,

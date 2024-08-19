@@ -33,7 +33,7 @@ internal static partial class FFI
     // `LibraryImport` directly.
     const string StdbNamespace =
 #if EXPERIMENTAL_WASM_AOT
-        "spacetime_9.0"
+        "spacetime_10.0"
 #else
         "bindings"
 #endif
@@ -88,11 +88,11 @@ internal static partial class FFI
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public readonly struct ColId(uint col_id)
+    public readonly struct ColId(ushort col_id)
     {
-        private readonly uint col_id = col_id;
+        private readonly ushort col_id = col_id;
 
-        public static explicit operator uint(ColId col_id) => col_id.col_id;
+        public static explicit operator ushort(ColId col_id) => col_id.col_id;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -118,16 +118,6 @@ internal static partial class FFI
         [In] byte[] name,
         uint name_len,
         out TableId out_
-    );
-
-    [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _create_index(
-        [In] byte[] index_name,
-        uint index_name_len,
-        TableId table_id,
-        IndexType index_type,
-        [In] ColId[] col_ids,
-        uint col_len
     );
 
     [LibraryImport(StdbNamespace)]

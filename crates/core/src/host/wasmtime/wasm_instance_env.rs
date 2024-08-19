@@ -13,7 +13,7 @@ use crate::host::wasm_common::{
 };
 use crate::host::AbiCall;
 use anyhow::Context as _;
-use spacetimedb_primitives::errno;
+use spacetimedb_primitives::{errno, ColId};
 use wasmtime::{AsContext, Caller, StoreContextMut};
 
 use crate::host::instance_env::InstanceEnv;
@@ -240,6 +240,14 @@ impl WasmInstanceEnv {
         span::record_span(&mut caller.data_mut().call_times, span);
     }
 
+    fn convert_u32_to_col_id(col_id: u32) -> WasmResult<ColId> {
+        let col_id: u16 = col_id
+            .try_into()
+            .context("ABI violation, a `ColId` must be a `u16`")
+            .map_err(WasmError::Wasm)?;
+        Ok(col_id.into())
+    }
+
     /// Log at `level` a `message` message occuring in `filename:line_number`
     /// with [`target`] being the module path at the `log!` invocation site.
     ///
@@ -356,12 +364,14 @@ impl WasmInstanceEnv {
         out: WasmPtr<u32>,
     ) -> RtResult<u32> {
         Self::cvt_ret(caller, AbiCall::DeleteByColEq, out, |caller| {
+            let col_id = Self::convert_u32_to_col_id(col_id)?;
+
             let (mem, env) = Self::mem_env(caller);
             let ctx = env.reducer_context()?;
             let value = mem.deref_slice(value, value_len)?;
             let count = env
                 .instance_env
-                .delete_by_col_eq(&ctx, table_id.into(), col_id.into(), value)?;
+                .delete_by_col_eq(&ctx, table_id.into(), col_id, value)?;
             Ok(count)
         })
     }
@@ -424,48 +434,6 @@ impl WasmInstanceEnv {
         })
     }
 
-    /// Creates an index with the name `index_name` and type `index_type`,
-    /// on a product of the given columns in `col_ids`
-    /// in the table identified by `table_id`.
-    ///
-    /// Here `index_name` points to a UTF-8 slice in WASM memory
-    /// and `col_ids` points to a byte slice in WASM memory with each element being a column.
-    ///
-    /// Currently only single-column-indices are supported
-    /// and they may only be of the btree index type.
-    ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - the slice `(index_name, index_name_len)` is not valid UTF-8
-    /// - `index_name + index_name_len` or `col_ids + col_len` overflow a 64-bit integer
-    /// - `index_type > 1`
-    ///
-    /// Panics if `index_type == 1` or `col_ids.len() != 1`.
-    #[tracing::instrument(skip_all)]
-    pub fn create_index(
-        caller: Caller<'_, Self>,
-        index_name: WasmPtr<u8>,
-        index_name_len: u32,
-        table_id: u32,
-        index_type: u32,
-        col_ids: WasmPtr<u8>,
-        col_len: u32,
-    ) -> RtResult<u32> {
-        Self::cvt(caller, AbiCall::CreateIndex, |caller| {
-            let (mem, env) = Self::mem_env(caller);
-            // Read the index name from WASM memory.
-            let index_name = mem.deref_str(index_name, index_name_len)?.into();
-
-            // Read the column ids on which to create an index from WASM memory.
-            // This may be one column or an index on several columns.
-            let cols = mem.deref_slice(col_ids, col_len)?.to_vec();
-
-            env.instance_env
-                .create_index(index_name, table_id.into(), index_type as u8, cols)?;
-            Ok(())
-        })
-    }
-
     /// Finds all rows in the table identified by `table_id`,
     /// where the row has a column, identified by `cols`,
     /// with data matching the byte string, in WASM memory, pointed to at by `val`.
@@ -492,6 +460,8 @@ impl WasmInstanceEnv {
         out: WasmPtr<RowIterIdx>,
     ) -> RtResult<u32> {
         Self::cvt_ret(caller, AbiCall::IterByColEq, out, |caller| {
+            let col_id = Self::convert_u32_to_col_id(col_id)?;
+
             let (mem, env) = Self::mem_env(caller);
             // Read the test value from WASM memory.
             let value = mem.deref_slice(val, val_len)?;
@@ -502,7 +472,7 @@ impl WasmInstanceEnv {
             // Find the relevant rows.
             let chunks = env
                 .instance_env
-                .iter_by_col_eq_chunks(&ctx, table_id.into(), col_id.into(), value)?;
+                .iter_by_col_eq_chunks(&ctx, table_id.into(), col_id, value)?;
 
             // Release the immutable borrow of `env.buffers` by dropping `ctx`.
             drop(ctx);

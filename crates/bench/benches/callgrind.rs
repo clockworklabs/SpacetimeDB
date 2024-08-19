@@ -271,7 +271,7 @@ mod callgrind_benches {
         preload: u32,
         // Underscore here cause it's an implementation detail.
         // The only thing downstream cares about is data_type
-        _column: u32,
+        _column: u16,
         data_type: String,
         #[serde(skip)]
         _marker: std::marker::PhantomData<(DB, T)>,

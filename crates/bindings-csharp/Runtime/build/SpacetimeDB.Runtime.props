@@ -15,7 +15,7 @@
     <DefineConstants>$(DefineConstants);EXPERIMENTAL_WASM_AOT</DefineConstants>
     <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
     <UseAppHost>false</UseAppHost>
-    <SpacetimeNamespace>spacetime_8.0</SpacetimeNamespace>
+    <SpacetimeNamespace>spacetime_10.0</SpacetimeNamespace>
     <RestoreAdditionalProjectSources>https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-experimental/nuget/v3/index.json</RestoreAdditionalProjectSources>
   </PropertyGroup>
 

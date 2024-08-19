@@ -69,7 +69,7 @@ impl MutTxId {
         let rows = self.iter_by_col_eq(&ctx, table_id, col_pos, value)?;
         let ptrs_to_delete = rows.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>();
         if ptrs_to_delete.is_empty() {
-            return Err(TableError::IdNotFound(SystemTable::st_column, col_pos.0).into());
+            return Err(TableError::IdNotFound(SystemTable::st_column, col_pos.0 as _).into());
         }
 
         for ptr in ptrs_to_delete {
@@ -845,7 +845,7 @@ impl MutTxId {
         for seq in schema
             .sequences
             .iter()
-            .filter(|seq| row.elements[usize::from(seq.col_pos)].is_numeric_zero())
+            .filter(|seq| row.elements[seq.col_pos.idx()].is_numeric_zero())
         {
             for seq_row in self.iter_by_col_eq(&ctx, ST_SEQUENCE_ID, StSequenceFields::TableId, &table_id.into())? {
                 let seq_col_pos: ColId = seq_row.read_col(StSequenceFields::ColPos)?;

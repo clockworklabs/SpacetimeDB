@@ -13,12 +13,12 @@ public static partial class Module
     }
 
     [SpacetimeDB.Type]
-    public partial struct IndexDef(string name, IndexType type, bool isUnique, uint[] columnIds)
+    public partial struct IndexDef(string name, IndexType type, bool isUnique, ushort[] columnIds)
     {
         string IndexName = name;
         bool IsUnique = isUnique;
         IndexType Type = type;
-        uint[] ColumnIds = columnIds;
+        ushort[] ColumnIds = columnIds;
     }
 
     [SpacetimeDB.Type]
@@ -29,19 +29,19 @@ public static partial class Module
     }
 
     [SpacetimeDB.Type]
-    public partial struct ConstraintDef(string name, ColumnAttrs kind, uint[] columnIds)
+    public partial struct ConstraintDef(string name, ColumnAttrs kind, ushort[] columnIds)
     {
         string ConstraintName = name;
 
         // bitflags should be serialized as bytes rather than sum types
         byte Kind = (byte)kind;
-        uint[] ColumnIds = columnIds;
+        ushort[] ColumnIds = columnIds;
     }
 
     [SpacetimeDB.Type]
     public partial struct SequenceDef(
         string sequenceName,
-        uint colPos,
+        ushort colPos,
         Int128? increment = null,
         Int128? start = null,
         Int128? min_value = null,
@@ -50,7 +50,7 @@ public static partial class Module
     )
     {
         string SequenceName = sequenceName;
-        uint ColPos = colPos;
+        ushort ColPos = colPos;
         Int128 increment = increment ?? 1;
         Int128? start = start;
         Int128? min_value = min_value;
@@ -83,7 +83,7 @@ public static partial class Module
             .Select(pair => new ConstraintDef(
                 $"ct_{tableName}_{pair.col.ColumnDef.ColName}_{pair.col.Attrs}",
                 pair.col.Attrs,
-                [(uint)pair.pos]
+                [(ushort)pair.pos]
             ))
             .ToArray();
         SequenceDef[] Sequences = [];

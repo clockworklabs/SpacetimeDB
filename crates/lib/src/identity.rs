@@ -35,7 +35,7 @@ pub struct Identity {
     __identity_bytes: [u8; 32],
 }
 
-impl_st!([] Identity, _ts => Identity::get_type());
+impl_st!([] Identity, AlgebraicType::product([(IDENTITY_TAG, AlgebraicType::bytes())]));
 
 #[cfg(feature = "metrics_impls")]
 impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Identity {
@@ -64,10 +64,6 @@ impl Identity {
     #[doc(hidden)]
     pub fn __dummy() -> Self {
         Self::from_byte_array([0; 32])
-    }
-
-    pub fn get_type() -> AlgebraicType {
-        AlgebraicType::product([(IDENTITY_TAG, AlgebraicType::bytes())])
     }
 
     /// Returns a borrowed view of the byte array defining this `Identity`.

@@ -764,7 +764,7 @@ fn autogen_typescript_access_funcs_for_struct(
     let constraints = table.column_constraints();
     for col in table.columns() {
         let is_unique = constraints[&ColList::new(col.col_pos)].has_unique();
-        let field = &product_type.elements[usize::from(col.col_pos)];
+        let field = &product_type.elements[col.col_pos.idx()];
         let field_name = field.name.as_ref().expect("autogen'd tuples should have field names");
         let field_type = &field.algebraic_type;
         let typescript_field_name_pascal = field_name.replace("r#", "").to_case(Case::Pascal);

@@ -1473,7 +1473,7 @@ mod tests {
         }
     }
 
-    fn index(name: &str, cols: &[u32]) -> RawIndexDefV8 {
+    fn index(name: &str, cols: &[u16]) -> RawIndexDefV8 {
         RawIndexDefV8::btree(name.into(), cols.iter().copied().map(ColId).collect::<ColList>(), false)
     }
 

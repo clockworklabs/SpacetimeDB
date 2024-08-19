@@ -218,7 +218,17 @@ impl FromIterator<AlgebraicType> for Typespace {
     }
 }
 
-/// A trait for types that can be represented as an `AlgebraicType`
+/// A trait for Rust types that can be represented as an [`AlgebraicType`]
+/// with an empty typing context.
+///
+/// The returned `AlgebraicType` must have no free variables,
+/// that is, no `AlgebraicTypeRef`s in its tree at all.
+pub trait GroundSpacetimeType {
+    /// Returns the `AlgebraicType` representation of `Self`.
+    fn get_type() -> AlgebraicType;
+}
+
+/// A trait for Rust types that can be represented as an [`AlgebraicType`]
 /// provided a typing context `typespace`.
 pub trait SpacetimeType {
     /// Returns an `AlgebraicType` representing the type for `Self` in SATS
@@ -226,12 +236,18 @@ pub trait SpacetimeType {
     fn make_type<S: TypespaceBuilder>(typespace: &mut S) -> AlgebraicType;
 }
 
+impl<T: GroundSpacetimeType> SpacetimeType for T {
+    fn make_type<S: TypespaceBuilder>(_: &mut S) -> AlgebraicType {
+        T::get_type()
+    }
+}
+
 use ethnum::{i256, u256};
 pub use spacetimedb_bindings_macro::SpacetimeType;
 
 /// A trait for types that can build a [`Typespace`].
 pub trait TypespaceBuilder {
-    /// Returns and adds a representation of type `T: 'static` as an `AlgebraicType`
+    /// Returns and adds a representation of type `T: 'static` as an [`AlgebraicType`]
     /// with an optional `name` to the typing context in `self`.
     fn add(
         &mut self,
@@ -265,6 +281,13 @@ pub trait TypespaceBuilder {
 /// ```
 #[macro_export]
 macro_rules! impl_st {
+    ([ $($rgenerics:tt)* ] $rty:ty, $stty:expr) => {
+        impl<$($rgenerics)*> $crate::GroundSpacetimeType for $rty {
+            fn get_type() -> $crate::AlgebraicType {
+                $stty
+            }
+        }
+    };
     ([ $($rgenerics:tt)* ] $rty:ty, $ts:ident => $stty:expr) => {
         impl<$($rgenerics)*> $crate::SpacetimeType for $rty {
             fn make_type<S: $crate::typespace::TypespaceBuilder>($ts: &mut S) -> $crate::AlgebraicType {
@@ -276,7 +299,7 @@ macro_rules! impl_st {
 
 macro_rules! impl_primitives {
     ($($t:ty => $x:ident,)*) => {
-        $(impl_st!([] $t, _ts => AlgebraicType::$x);)*
+        $(impl_st!([] $t, AlgebraicType::$x);)*
     };
 }
 
@@ -299,20 +322,21 @@ impl_primitives! {
     String => String,
 }
 
-impl_st!([] (), _ts => AlgebraicType::unit());
-impl_st!([] &str, _ts => AlgebraicType::String);
+impl_st!([](), AlgebraicType::unit());
+impl_st!([] & str, AlgebraicType::String);
 impl_st!([T: SpacetimeType] Vec<T>, ts => AlgebraicType::array(T::make_type(ts)));
 impl_st!([T: SpacetimeType] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));
 
-impl_st!([] spacetimedb_primitives::ColId, _ts => AlgebraicType::U32);
-impl_st!([] spacetimedb_primitives::TableId, _ts => AlgebraicType::U32);
-impl_st!([] spacetimedb_primitives::IndexId, _ts => AlgebraicType::U32);
-impl_st!([] spacetimedb_primitives::SequenceId, _ts => AlgebraicType::U32);
+impl_st!([] spacetimedb_primitives::ColId, AlgebraicType::U16);
+impl_st!([] spacetimedb_primitives::TableId, AlgebraicType::U32);
+impl_st!([] spacetimedb_primitives::IndexId, AlgebraicType::U32);
+impl_st!([] spacetimedb_primitives::SequenceId, AlgebraicType::U32);
+impl_st!([] spacetimedb_primitives::ConstraintId, AlgebraicType::U32);
 
-impl_st!([] bytes::Bytes, _ts => AlgebraicType::bytes());
+impl_st!([] bytes::Bytes, AlgebraicType::bytes());
 
 #[cfg(feature = "bytestring")]
-impl_st!([] bytestring::ByteString, _ts => AlgebraicType::String);
+impl_st!([] bytestring::ByteString, AlgebraicType::String);
 
 #[cfg(test)]
 mod tests {

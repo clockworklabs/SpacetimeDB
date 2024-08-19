@@ -20,7 +20,7 @@ pub struct Address {
     __address_bytes: [u8; 16],
 }
 
-impl_st!([] Address, _ts => AlgebraicType::product([(ADDRESS_TAG, AlgebraicType::bytes())]));
+impl_st!([] Address, AlgebraicType::product([(ADDRESS_TAG, AlgebraicType::bytes())]));
 
 #[cfg(feature = "metrics_impls")]
 impl spacetimedb_metrics::typed_prometheus::AsPrometheusLabel for Address {
@@ -51,10 +51,6 @@ impl Address {
     pub const ZERO: Self = Self {
         __address_bytes: [0; 16],
     };
-
-    pub fn get_type() -> AlgebraicType {
-        AlgebraicType::product([(ADDRESS_TAG, AlgebraicType::bytes())])
-    }
 
     pub fn from_arr(arr: &[u8; 16]) -> Self {
         Self { __address_bytes: *arr }
@@ -145,7 +141,7 @@ impl From<AddressForUrl> for Address {
 
 impl_serialize!([] AddressForUrl, (self, ser) => self.0.to_be_bytes().serialize(ser));
 impl_deserialize!([] AddressForUrl, de => <[u8; 16]>::deserialize(de).map(|v| Self(u128::from_be_bytes(v))));
-impl_st!([] AddressForUrl, _ts => AlgebraicType::bytes());
+impl_st!([] AddressForUrl, AlgebraicType::bytes());
 
 #[cfg(feature = "serde")]
 impl serde::Serialize for AddressForUrl {

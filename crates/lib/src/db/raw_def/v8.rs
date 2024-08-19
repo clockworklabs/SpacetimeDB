@@ -142,7 +142,7 @@ impl RawIndexDefV8 {
     /// use spacetimedb_primitives::ColList;
     /// use spacetimedb_lib::db::raw_def::*;
     ///
-    /// let index_def = RawIndexDefV8::for_column("my_table", "test", ColList::new(1u32.into()), true);
+    /// let index_def = RawIndexDefV8::for_column("my_table", "test", 1, true);
     /// assert_eq!(&*index_def.index_name, "idx_my_table_test_unique");
     /// ```
     pub fn for_column(table: &str, index_or_name: &str, columns: impl Into<ColList>, is_unique: bool) -> Self {
@@ -259,7 +259,7 @@ impl RawConstraintDefV8 {
     /// use spacetimedb_primitives::{Constraints, ColList};
     /// use spacetimedb_lib::db::raw_def::*;
     ///
-    /// let constraint_def = RawConstraintDefV8::for_column("my_table", "test", Constraints::identity(), ColList::new(1u32.into()));
+    /// let constraint_def = RawConstraintDefV8::for_column("my_table", "test", Constraints::identity(), 1);
     /// assert_eq!(&*constraint_def.constraint_name, "ct_my_table_test_identity");
     /// ```
     pub fn for_column(

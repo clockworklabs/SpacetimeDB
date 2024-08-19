@@ -12,12 +12,11 @@ use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::error::{IndexError, NodesError};
 use crate::execution_context::ExecutionContext;
 use crate::vm::{build_query, TxMode};
-use spacetimedb_lib::db::raw_def::{IndexType, RawIndexDefV8};
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::relation::FieldName;
 use spacetimedb_lib::ProductValue;
-use spacetimedb_primitives::{ColId, ColList, TableId};
+use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::Typespace;
 use spacetimedb_vm::expr::{FieldExpr, FieldOp, NoInMemUsed, QueryExpr};
 
@@ -200,54 +199,6 @@ impl InstanceEnv {
             .ok_or(NodesError::TableNotFound)?;
 
         Ok(table_id)
-    }
-
-    /// Creates an index of type `index_type` and name `index_name`,
-    /// on a product of the given columns in `col_ids`,
-    /// in the table identified by `table_id`.
-    ///
-    /// Currently only single-column-indices are supported.
-    /// That is, `col_ids.len() == 1`, or the call will panic.
-    ///
-    /// Another limitation is on the `index_type`.
-    /// Only `btree` indices are supported as of now, i.e., `index_type == 0`.
-    /// When `index_type == 1` is passed, the call will happen
-    /// and on `index_type > 1`, an error is returned.
-    #[tracing::instrument(skip_all)]
-    pub fn create_index(
-        &self,
-        index_name: Box<str>,
-        table_id: TableId,
-        index_type: u8,
-        col_ids: Vec<u8>,
-    ) -> Result<(), NodesError> {
-        let stdb = &*self.dbic.relational_db;
-        let tx = &mut *self.get_tx()?;
-
-        // TODO(george) This check should probably move towards src/db/index, but right
-        // now the API is pretty hardwired towards btrees.
-        let index_type = IndexType::try_from(index_type).map_err(|_| NodesError::BadIndexType(index_type))?;
-        match index_type {
-            IndexType::BTree => {}
-            IndexType::Hash => {
-                todo!("Hash indexes not yet supported")
-            }
-        };
-
-        let columns = col_ids.into_iter().collect::<ColList>();
-
-        let is_unique = stdb.column_constraints(tx, table_id, &columns)?.has_unique();
-
-        let index = RawIndexDefV8 {
-            columns,
-            index_name,
-            is_unique,
-            index_type,
-        };
-
-        stdb.create_index(tx, table_id, index)?;
-
-        Ok(())
     }
 
     /// Finds all rows in the table identified by `table_id`

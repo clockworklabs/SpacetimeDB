@@ -17,6 +17,7 @@ use spacetimedb_lib::db::attr::ColumnAttribute;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::IndexType;
 use spacetimedb_lib::{bsatn, ProductType, ProductValue};
+use spacetimedb_primitives::ColId;
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
@@ -173,11 +174,11 @@ pub fn insert<T: TableType>(table_id: TableId, row: T) -> T::InsertResult {
 /// - there were unique constraint violations
 /// - `row` doesn't decode from BSATN to a `ProductValue`
 ///   according to the `ProductType` that the table's schema specifies
-pub fn iter_by_col_eq(table_id: TableId, col_id: u8, val: &impl Serialize) -> Result<RowIter> {
+pub fn iter_by_col_eq(table_id: TableId, col_id: ColId, val: &impl Serialize) -> Result<RowIter> {
     with_row_buf(|bytes| {
         // Encode `val` as BSATN into `bytes` and then use that.
         bsatn::to_writer(bytes, val).unwrap();
-        sys::iter_by_col_eq(table_id, col_id.into(), bytes)
+        sys::iter_by_col_eq(table_id, col_id, bytes)
     })
 }
 
@@ -197,11 +198,11 @@ pub fn iter_by_col_eq(table_id: TableId, col_id: u8, val: &impl Serialize) -> Re
 ///   according to the `AlgebraicType` that the table's schema specifies for `col_id`.
 ///
 /// Panics when serialization fails.
-pub fn delete_by_col_eq(table_id: TableId, col_id: u8, value: &impl Serialize) -> Result<u32> {
+pub fn delete_by_col_eq(table_id: TableId, col_id: ColId, value: &impl Serialize) -> Result<u32> {
     with_row_buf(|bytes| {
         // Encode `value` as BSATN into `bytes` and then use that.
         bsatn::to_writer(bytes, value).unwrap();
-        sys::delete_by_col_eq(table_id, col_id.into(), bytes)
+        sys::delete_by_col_eq(table_id, col_id, bytes)
     })
 }
 
@@ -325,7 +326,7 @@ pub struct IndexDesc<'a> {
     /// The type of index used, i.e. the strategy used for indexing.
     pub ty: IndexType,
     /// The set of columns indexed over given by the identifiers of the columns.
-    pub col_ids: &'a [u8],
+    pub col_ids: &'a [u16],
 }
 
 /// A trait for the set of types serializable, deserializable, and convertible to `AlgebraicType`.
@@ -439,7 +440,7 @@ pub mod query {
     ///
     /// In other words, a type implementing `FieldAccess<N>` allows
     /// shared projection from `self` to its `N`th field.
-    pub trait FieldAccess<const N: u8> {
+    pub trait FieldAccess<const N: u16> {
         /// The type of the field at the `N`th position.
         type Field;
 
@@ -457,12 +458,12 @@ pub mod query {
     pub fn filter_by_unique_field<
         Table: TableType + FieldAccess<COL_IDX, Field = T>,
         T: FilterableValue,
-        const COL_IDX: u8,
+        const COL_IDX: u16,
     >(
         val: &T,
     ) -> Option<Table> {
         // Find the row with a match.
-        let iter = iter_by_col_eq(Table::table_id(), COL_IDX, val).unwrap();
+        let iter = iter_by_col_eq(Table::table_id(), COL_IDX.into(), val).unwrap();
         with_row_buf(|buf| {
             // We will always find either 0 or 1 rows here due to the unique constraint.
             iter.read(buf);
@@ -486,8 +487,8 @@ pub mod query {
     /// **NOTE:** Do not use directly.
     /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb(table)]`.
     #[doc(hidden)]
-    pub fn filter_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u8>(val: &T) -> TableIter<Table> {
-        let iter = iter_by_col_eq(Table::table_id(), COL_IDX, val).expect("iter_by_col_eq failed");
+    pub fn filter_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(val: &T) -> TableIter<Table> {
+        let iter = iter_by_col_eq(Table::table_id(), COL_IDX.into(), val).expect("iter_by_col_eq failed");
         TableIter::new(iter)
     }
 
@@ -501,8 +502,8 @@ pub mod query {
     /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb(table)]`
     /// where the field does not have a unique constraint.
     #[doc(hidden)]
-    pub fn delete_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u8>(val: &T) -> u32 {
-        delete_by_col_eq(Table::table_id(), COL_IDX, val)
+    pub fn delete_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(val: &T) -> u32 {
+        delete_by_col_eq(Table::table_id(), COL_IDX.into(), val)
             // TODO: Returning `Err` here was supposed to signify an error,
             //       but it can also return `Err(_)` when there is nothing to delete.
             .unwrap_or(0)
@@ -517,7 +518,7 @@ pub mod query {
     /// **NOTE:** Do not use directly.
     /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb(table)]`
     /// where the field has a unique constraint.
-    pub fn delete_by_unique_field<Table: TableType, T: FilterableValue, const COL_IDX: u8>(val: &T) -> bool {
+    pub fn delete_by_unique_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(val: &T) -> bool {
         let count = delete_by_field::<Table, T, COL_IDX>(val);
         debug_assert!(count <= 1);
         count > 0
@@ -531,7 +532,7 @@ pub mod query {
     /// **NOTE:** Do not use directly.
     /// This is exposed as `update_by_{$field_name}` on types with `#[spacetimedb(table)]`.
     #[doc(hidden)]
-    pub fn update_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u8>(old: &T, new: Table) -> bool {
+    pub fn update_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(old: &T, new: Table) -> bool {
         // Delete the existing row, if any.
         delete_by_field::<Table, T, COL_IDX>(old);
 

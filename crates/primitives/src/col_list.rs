@@ -23,7 +23,7 @@ use either::Either;
 #[macro_export]
 macro_rules! col_list {
     ($($elem:expr),* $(,)?) => {{
-        [$($elem),*].into_iter().collect::<$crate::ColList>()
+        $crate::ColList::from([$($elem),*])
     }};
 }
 
@@ -47,23 +47,23 @@ unsafe impl Sync for ColList {}
 // SAFETY: The data is owned by `ColList` so this is OK.
 unsafe impl Send for ColList {}
 
-impl From<u32> for ColList {
-    fn from(value: u32) -> Self {
-        ColId(value).into()
+impl<C: Into<ColId>> From<C> for ColList {
+    fn from(value: C) -> Self {
+        Self::new(value.into())
     }
 }
 
-impl From<ColId> for ColList {
-    fn from(value: ColId) -> Self {
-        Self::new(value)
+impl<C: Into<ColId>, const N: usize> From<[C; N]> for ColList {
+    fn from(cols: [C; N]) -> Self {
+        cols.map(|c| c.into()).into_iter().collect()
     }
 }
 
-impl<T: Into<ColId>> FromIterator<T> for ColList {
-    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+impl<C: Into<ColId>> FromIterator<C> for ColList {
+    fn from_iter<I: IntoIterator<Item = C>>(iter: I) -> Self {
         let iter = iter.into_iter();
         let (lower_bound, _) = iter.size_hint();
-        let mut list = Self::with_capacity(lower_bound as u32);
+        let mut list = Self::with_capacity(lower_bound as u16);
         for col in iter {
             list.push(col.into());
         }
@@ -81,9 +81,9 @@ impl ColList {
     }
 
     /// Returns an empty list with a capacity to hold `cap` elements.
-    pub fn with_capacity(cap: u32) -> Self {
+    pub fn with_capacity(cap: u16) -> Self {
         // We speculate that all elements < `Self::FIRST_HEAP_COL`.
-        if cap < Self::FIRST_HEAP_COL as u32 {
+        if cap < Self::FIRST_HEAP_COL_U16 {
             Self::from_inline(0)
         } else {
             Self::from_heap(ColListVec::with_capacity(cap))
@@ -151,13 +151,13 @@ impl ColList {
         }
     }
 
-    /// Convert to a `Box<[u32]>`.
-    pub fn to_u32_vec(&self) -> alloc::boxed::Box<[u32]> {
-        self.iter().map(u32::from).collect()
+    /// Convert to a `Box<[u16]>`.
+    pub fn to_u16_vec(&self) -> alloc::boxed::Box<[u16]> {
+        self.iter().map(u16::from).collect()
     }
 
     /// Returns the length of the list.
-    pub fn len(&self) -> u32 {
+    pub fn len(&self) -> u16 {
         match self.as_inline() {
             Ok(inline) => inline.len(),
             Err(heap) => heap.len(),
@@ -182,7 +182,7 @@ impl ColList {
     /// the list will become heap allocated if not already.
     #[inline]
     fn push_inner(&mut self, col: ColId, preserves_set_order: bool) {
-        let val = u32::from(col) as u64;
+        let val = u16::from(col) as u64;
         match (val < Self::FIRST_HEAP_COL && preserves_set_order, self.as_inline_mut()) {
             (true, Ok(inline)) => inline.0 |= 1 << (val + 1),
             // Converts the list to its non-inline heap form.
@@ -194,6 +194,9 @@ impl ColList {
 
     /// The first `ColId` that would make the list heap allocated.
     const FIRST_HEAP_COL: u64 = size_of::<u64>() as u64 * 8 - 1;
+
+    /// The first `ColId` that would make the list heap allocated.
+    const FIRST_HEAP_COL_U16: u16 = Self::FIRST_HEAP_COL as u16;
 
     /// Returns the list either as inline or heap based.
     #[inline]
@@ -222,7 +225,12 @@ impl ColList {
     #[inline]
     fn is_inline(&self) -> bool {
         // Check whether the lowest bit has been marked.
-        // This bit is unused by the heap case as the pointer must be aligned for `u32`.
+        // This bit is unused by the heap case as the pointer must be aligned for `u16`.
+        // That is, we know that if the `self.heap` variant is active,
+        // then `self.heap.addr() % align_of::<u16> == 0`.
+        // So if `self.check % align_of::<u16> == 1`, as checked below,
+        // we now it's the inline case and not the heap case.
+
         // SAFETY: Even when `inline`, and on a < 64-bit target,
         // we can treat the union as a `usize` to check the lowest bit.
         let addr = unsafe { self.check };
@@ -294,7 +302,7 @@ impl ColListInline {
     fn contains(&self, needle: ColId) -> bool {
         let col = needle.0;
         let inline = self.undo_mark();
-        col < ColList::FIRST_HEAP_COL as u32 && inline & (1u64 << col) != 0
+        col < ColList::FIRST_HEAP_COL_U16 && inline & (1u64 << col) != 0
     }
 
     /// Returns an iterator over the [`ColId`]s stored by this list.
@@ -307,7 +315,7 @@ impl ColListInline {
             } else {
                 // Count trailing zeros and then zero out the first set bit.
                 // For e.g., `0b11001`, this would yield `[0, 3, 4]` as expected.
-                let id = ColId(value.trailing_zeros());
+                let id = ColId(value.trailing_zeros() as u16);
                 value &= value.wrapping_sub(1);
                 Some(id)
             }
@@ -316,12 +324,14 @@ impl ColListInline {
 
     /// Returns the last element of the list.
     fn last(&self) -> Option<ColId> {
-        (u64::BITS - self.undo_mark().leading_zeros()).checked_sub(1).map(ColId)
+        (u64::BITS - self.undo_mark().leading_zeros())
+            .checked_sub(1)
+            .map(|c| ColId(c as _))
     }
 
     /// Returns the length of the list.
-    fn len(&self) -> u32 {
-        self.undo_mark().count_ones()
+    fn len(&self) -> u16 {
+        self.undo_mark().count_ones() as u16
     }
 
     /// Undoes the shift in (1).
@@ -343,15 +353,15 @@ impl ColListInline {
 }
 
 /// The thin-vec heap based version of a [`ColList`].
-struct ColListVec(NonNull<u32>);
+struct ColListVec(NonNull<u16>);
 
 impl ColListVec {
     /// Returns an empty vector with `capacity`.
-    fn with_capacity(capacity: u32) -> Self {
+    fn with_capacity(capacity: u16) -> Self {
         // Allocate the vector using the global allocator.
         let layout = Self::layout(capacity);
-        // SAFETY: the size of `[u32; 2 + capacity]` is always non-zero.
-        let ptr = unsafe { alloc(layout) }.cast::<u32>();
+        // SAFETY: the size of `[u16; 2 + capacity]` is always non-zero.
+        let ptr = unsafe { alloc(layout) }.cast::<u16>();
         let Some(ptr_non_null) = NonNull::new(ptr) else {
             handle_alloc_error(layout)
         };
@@ -367,41 +377,41 @@ impl ColListVec {
     }
 
     /// Returns the length of the list.
-    fn len(&self) -> u32 {
+    fn len(&self) -> u16 {
         let ptr = self.0.as_ptr();
-        // SAFETY: `ptr` is properly aligned for `u32` and is valid for reads.
+        // SAFETY: `ptr` is properly aligned for `u16` and is valid for reads.
         unsafe { *ptr }
     }
 
     /// SAFETY: `new_len <= self.capacity()` and `new_len` <= number of initialized elements.
-    unsafe fn set_len(&mut self, new_len: u32) {
+    unsafe fn set_len(&mut self, new_len: u16) {
         let ptr = self.0.as_ptr();
         // SAFETY:
         // - `ptr` is valid for writes as we have exclusive access.
-        // - It's also properly aligned for `u32`.
+        // - It's also properly aligned for `u16`.
         unsafe {
             *ptr = new_len;
         }
     }
 
     /// Returns the capacity of the allocation in terms of elements.
-    fn capacity(&self) -> u32 {
+    fn capacity(&self) -> u16 {
         let ptr = self.0.as_ptr();
-        // SAFETY: `ptr + 1 u32` is in bounds of the allocation and it doesn't overflow isize.
+        // SAFETY: `ptr + 1 u16` is in bounds of the allocation and it doesn't overflow isize.
         let capacity_ptr = unsafe { ptr.add(1) };
-        // SAFETY: `capacity_ptr` is properly aligned for `u32` and is valid for reads.
+        // SAFETY: `capacity_ptr` is properly aligned for `u16` and is valid for reads.
         unsafe { *capacity_ptr }
     }
 
     /// Sets the capacity of the allocation in terms of elements.
     ///
     /// SAFETY: `cap` must match the actual capacity of the allocation.
-    unsafe fn set_capacity(&mut self, cap: u32) {
+    unsafe fn set_capacity(&mut self, cap: u16) {
         let ptr = self.0.as_ptr();
-        // SAFETY: `ptr + 1 u32` is in bounds of the allocation and it doesn't overflow isize.
+        // SAFETY: `ptr + 1 u16` is in bounds of the allocation and it doesn't overflow isize.
         let cap_ptr = unsafe { ptr.add(1) };
         // SAFETY: `cap_ptr` is valid for writes as we have ownership of the allocation.
-        // It's also properly aligned for `u32`.
+        // It's also properly aligned for `u16`.
         unsafe {
             *cap_ptr = cap;
         }
@@ -436,7 +446,7 @@ impl ColListVec {
         // Write the element and increase the length.
         let base_ptr = self.0.as_ptr();
         let elem_offset = 2 + len as usize;
-        // SAFETY: Allocated for `2 + capacity` `u32`s and `len <= capacity`, so we're in bounds.
+        // SAFETY: Allocated for `2 + capacity` `u16`s and `len <= capacity`, so we're in bounds.
         let elem_ptr = unsafe { base_ptr.add(elem_offset) }.cast();
         // SAFETY: `elem_ptr` is valid for writes and is properly aligned for `ColId`.
         unsafe {
@@ -451,15 +461,15 @@ impl ColListVec {
     /// Computes a layout for the following struct:
     /// ```rust,ignore
     /// struct ColListVecData {
-    ///     len: u32,
-    ///     capacity: u32,
+    ///     len: u16,
+    ///     capacity: u16,
     ///     data: [ColId],
     /// }
     /// ```
     ///
     /// Panics if `cap` would result in an allocation larger than `isize::MAX`.
-    fn layout(cap: u32) -> Layout {
-        Layout::array::<u32>(cap.checked_add(2).expect("capacity overflow") as usize).unwrap()
+    fn layout(cap: u16) -> Layout {
+        Layout::array::<u16>(cap.checked_add(2).expect("capacity overflow") as usize).unwrap()
     }
 }
 
@@ -515,7 +525,7 @@ mod tests {
         #![proptest_config(ProptestConfig::with_cases(if cfg!(miri) { 8 } else { 2048 }))]
 
         #[test]
-        fn test_inline(cols in vec((0..ColList::FIRST_HEAP_COL as u32).prop_map_into(), 1..100)) {
+        fn test_inline(cols in vec((0..ColList::FIRST_HEAP_COL_U16).prop_map_into(), 1..100)) {
             let [head, tail @ ..] = &*cols else { unreachable!() };
 
             let mut list = ColList::new(*head);
@@ -545,7 +555,7 @@ mod tests {
         }
 
         #[test]
-        fn test_heap(cols in vec((ColList::FIRST_HEAP_COL as u32.. ).prop_map_into(), 1..100)) {
+        fn test_heap(cols in vec((ColList::FIRST_HEAP_COL_U16..).prop_map_into(), 1..100)) {
             let contains = |list: &ColList, x| list.iter().collect::<Vec<_>>().contains(x);
 
             let head = ColId(0);

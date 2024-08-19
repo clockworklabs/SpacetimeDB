@@ -47,7 +47,7 @@ pub use product_value::ProductValue;
 pub use sum_type::SumType;
 pub use sum_type_variant::SumTypeVariant;
 pub use sum_value::SumValue;
-pub use typespace::{SpacetimeType, Typespace};
+pub use typespace::{GroundSpacetimeType, SpacetimeType, Typespace};
 
 /// The `Value` trait provides an abstract notion of a value.
 ///

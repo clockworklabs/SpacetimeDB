@@ -354,22 +354,21 @@ pub struct AbiRuntimeError {
 macro_rules! abi_funcs {
     ($mac:ident) => {
         $mac! {
-            "spacetime_9.0"::buffer_alloc,
-            "spacetime_9.0"::buffer_consume,
-            "spacetime_9.0"::buffer_len,
-            "spacetime_9.0"::console_log,
-            "spacetime_9.0"::create_index,
-            "spacetime_9.0"::delete_by_col_eq,
-            "spacetime_9.0"::delete_by_rel,
-            "spacetime_9.0"::get_table_id,
-            "spacetime_9.0"::insert,
-            "spacetime_9.0"::iter_by_col_eq,
-            "spacetime_9.0"::iter_drop,
-            "spacetime_9.0"::iter_advance,
-            "spacetime_9.0"::iter_start,
-            "spacetime_9.0"::iter_start_filtered,
-            "spacetime_9.0"::span_end,
-            "spacetime_9.0"::span_start,
+            "spacetime_10.0"::buffer_alloc,
+            "spacetime_10.0"::buffer_consume,
+            "spacetime_10.0"::buffer_len,
+            "spacetime_10.0"::console_log,
+            "spacetime_10.0"::delete_by_col_eq,
+            "spacetime_10.0"::delete_by_rel,
+            "spacetime_10.0"::get_table_id,
+            "spacetime_10.0"::insert,
+            "spacetime_10.0"::iter_by_col_eq,
+            "spacetime_10.0"::iter_drop,
+            "spacetime_10.0"::iter_advance,
+            "spacetime_10.0"::iter_start,
+            "spacetime_10.0"::iter_start_filtered,
+            "spacetime_10.0"::span_end,
+            "spacetime_10.0"::span_start,
         }
     };
 }
