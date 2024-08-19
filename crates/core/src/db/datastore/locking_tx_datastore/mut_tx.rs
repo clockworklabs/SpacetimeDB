@@ -760,7 +760,7 @@ impl MutTxId {
             ctx,
             self.timer,
             self.lock_wait_time,
-            false,
+            true,
             Some(&tx_data),
             Some(&committed_state_write_lock),
         );
@@ -780,7 +780,7 @@ impl MutTxId {
             ctx,
             self.timer,
             self.lock_wait_time,
-            false,
+            true,
             Some(&tx_data),
             Some(&committed_state_write_lock),
         );
