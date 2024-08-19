@@ -11,12 +11,10 @@ export class WebsocketDecompressAdapter {
   private ws: WebSocket;
 
   private handleOnMessage(msg: { data: any }) {
-    msg.data.arrayBuffer().then((data: Uint8Array) => {
-      const decompressed = decompress(new Buffer(data));
-      if (this.onmessage) {
-        this.onmessage({ data: decompressed });
-      }
-    });
+    const decompressed = decompress(new Buffer(msg.data));
+    if (this.onmessage) {
+      this.onmessage({ data: decompressed });
+    }
   }
 
   private handleOnClose(msg: any) {
@@ -55,6 +53,8 @@ export class WebsocketDecompressAdapter {
     ws.onerror = this.handleOnError.bind(this);
     ws.onclose = this.handleOnError.bind(this);
     ws.onopen = this.handleOnOpen.bind(this);
+
+    ws.binaryType = 'arraybuffer'
 
     this.ws = ws;
   }
