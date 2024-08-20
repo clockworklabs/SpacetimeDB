@@ -69,6 +69,29 @@ static class ModuleRegistration
         }
     }
 
+    class ScheduleImmediate : SpacetimeDB.Internal.IReducer
+    {
+        private static PublicTable.BSATN data = new();
+
+        public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        )
+        {
+            return new(
+                "ScheduleImmediate",
+                new SpacetimeDB.BSATN.AggregateElement(
+                    nameof(data),
+                    data.GetAlgebraicType(registrar)
+                )
+            );
+        }
+
+        public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
+        {
+            Reducers.ScheduleImmediate(data.Read(reader));
+        }
+    }
+
     class SendScheduledMessage : SpacetimeDB.Internal.IReducer
     {
         private static Timers.SendMessageTimer.BSATN arg = new();
@@ -105,6 +128,7 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterReducer<Init>();
         SpacetimeDB.Internal.Module.RegisterReducer<InsertData>();
         SpacetimeDB.Internal.Module.RegisterReducer<InsertData2>();
+        SpacetimeDB.Internal.Module.RegisterReducer<ScheduleImmediate>();
         SpacetimeDB.Internal.Module.RegisterReducer<SendScheduledMessage>();
         SpacetimeDB.Internal.Module.RegisterTable<PrivateTable>();
         SpacetimeDB.Internal.Module.RegisterTable<PublicTable>();

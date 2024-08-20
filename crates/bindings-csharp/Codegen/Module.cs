@@ -329,29 +329,30 @@ public class Module : IIncrementalGenerator
 
         var tableNames = tables.Select((t, ct) => t.FullName).Collect();
 
-        var addReducers = context
-            .SyntaxProvider.ForAttributeWithMetadataName(
-                fullyQualifiedMetadataName: "SpacetimeDB.ReducerAttribute",
-                predicate: (node, ct) => true, // already covered by attribute restrictions
-                transform: (context, ct) =>
+        var reducers = context.SyntaxProvider.ForAttributeWithMetadataName(
+            fullyQualifiedMetadataName: "SpacetimeDB.ReducerAttribute",
+            predicate: (node, ct) => true, // already covered by attribute restrictions
+            transform: (context, ct) =>
+            {
+                var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
+                var method = context.SemanticModel.GetDeclaredSymbol(methodSyntax, ct)!;
+
+                if (!method.ReturnsVoid)
                 {
-                    var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
-                    var method = context.SemanticModel.GetDeclaredSymbol(methodSyntax, ct)!;
-
-                    if (!method.ReturnsVoid)
-                    {
-                        throw new Exception($"Reducer {method} must return void");
-                    }
-
-                    var exportName = (string?)
-                        context
-                            .Attributes.SingleOrDefault()
-                            ?.ConstructorArguments.SingleOrDefault()
-                            .Value;
-
-                    return new ReducerDeclaration(methodSyntax, method, exportName);
+                    throw new Exception($"Reducer {method} must return void");
                 }
-            )
+
+                var exportName = (string?)
+                    context
+                        .Attributes.SingleOrDefault()
+                        ?.ConstructorArguments.SingleOrDefault()
+                        .Value;
+
+                return new ReducerDeclaration(methodSyntax, method, exportName);
+            }
+        );
+
+        var addReducers = reducers
             .WithTrackingName("SpacetimeDB.Reducer.Parse")
             .Select(
                 (r, ct) =>
@@ -471,5 +472,25 @@ public class Module : IIncrementalGenerator
                 );
             }
         );
+
+        reducers
+            .Select(
+                (r, ct) =>
+                    new KeyValuePair<string, string>(
+                        r.FullName,
+                        r.Scope.GenerateExtensions(
+                            $@"
+                            public static void VolatileNonatomicScheduleImmediate{r.Name}({string.Join(", ", r.GetNonContextArgs().Select(a => $"{a.Type} {a.Name}"))}) {{
+                                using var stream = new MemoryStream();
+                                using var writer = new BinaryWriter(stream);
+                                {string.Join("\n", r.GetNonContextArgs().Select(a => $"new {a.TypeInfo}().Write(writer, {a.Name});"))}
+                                SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(""{r.ExportName}"", stream);
+                            }}
+                        "
+                        )
+                    )
+            )
+            .WithTrackingName("SpacetimeDB.Reducer.GenerateSchedule")
+            .RegisterSourceOutputs(context);
     }
 }
