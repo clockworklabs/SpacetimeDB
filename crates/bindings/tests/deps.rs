@@ -3,6 +3,7 @@
 //! slowing down compilation for every spacetime module.
 
 #[test]
+#[cfg_attr(target_family = "windows", ignore)] // dependency structure is different on windows
 fn deptree_snapshot() -> std::io::Result<()> {
     let cmd = "cargo tree -p spacetimedb -f {lib} -e no-dev";
     let deps_tree = run_cmd(cmd);

@@ -18,6 +18,8 @@ pub mod raw {
     // on. Any non-breaking additions to the abi surface should be put in a new `extern {}` block
     // with a module identifier with a minor version 1 above the previous highest minor version.
     // For breaking changes, all functions should be moved into one new `spacetime_X.0` block.
+    //
+    // If you update this, make sure to update the `windows_test_shims` module below.
     #[link(wasm_import_module = "spacetime_10.0")]
     extern "C" {
         /*
@@ -743,5 +745,157 @@ impl RowIter {
 impl Drop for RowIter {
     fn drop(&mut self) {
         unsafe { raw::_iter_drop(self.raw) }
+    }
+}
+
+/// Rust tries to build tests for our various modules on the host system, not for wasm.
+/// On Linux, this succeeds, despite there being unresolved symbols, because the linker is okay with
+/// unresolved symbols.
+/// On Windows, this fails, because the linker errors on unresolved symbols.
+/// By adding these shims, we can build and run tests on windows, as long as they don't use module ABI calls.
+#[cfg(target_family = "windows")]
+mod windows_test_shims {
+    use std::process;
+
+    use spacetimedb_primitives::{ColId, TableId};
+
+    use crate::raw::{Buffer, BytesSource, RowIter};
+
+    #[allow(clippy::disallowed_macros)]
+    fn abort(name: &str) -> ! {
+        eprintln!("ABI method unimplemented outside wasm module: {}", name);
+        process::abort()
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _get_table_id(_name: *const u8, _name_len: usize, _out: *mut TableId) -> u16 {
+        abort("_get_table_id")
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _iter_by_col_eq(
+        _table_id: TableId,
+        _col_id: ColId,
+        _val: *const u8,
+        _val_len: usize,
+        _out: *mut RowIter,
+    ) -> u16 {
+        abort("_iter_by_col_eq")
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _insert(_table_id: TableId, _row: *mut u8, _row_len: usize) -> u16 {
+        abort("_insert")
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _delete_by_col_eq(
+        _table_id: TableId,
+        _col_id: ColId,
+        _value: *const u8,
+        _value_len: usize,
+        _out: *mut u32,
+    ) -> u16 {
+        abort("_delete_by_col_eq")
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _delete_by_rel(
+        _table_id: TableId,
+        _relation: *const u8,
+        _relation_len: usize,
+        _out: *mut u32,
+    ) -> u16 {
+        abort("_delete_by_rel")
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _iter_start(_table_id: TableId, _out: *mut RowIter) -> u16 {
+        abort("_iter_start")
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _iter_start_filtered(
+        _table_id: TableId,
+        _filter: *const u8,
+        _filter_len: usize,
+        _out: *mut RowIter,
+    ) -> u16 {
+        abort("_iter_start_filtered")
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _iter_advance(_iter: RowIter, _buffer: *mut u8, _buffer_len: *mut usize) -> u16 {
+        abort("_iter_advance")
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _iter_drop(_iter: RowIter) {
+        abort("_iter_drop")
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _console_log(
+        _level: u8,
+        _target: *const u8,
+        _target_len: usize,
+        _filename: *const u8,
+        _filename_len: usize,
+        _line_number: u32,
+        _message: *const u8,
+        _message_len: usize,
+    ) {
+        abort("_console_log")
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _schedule_reducer(
+        _name: *const u8,
+        _name_len: usize,
+        _args: *const u8,
+        _args_len: usize,
+        _time: u64,
+        _out: *mut u64,
+    ) {
+        abort("_schedule_reducer")
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _cancel_reducer(_id: u64) {
+        abort("_cancel_reducer")
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _buffer_len(_bufh: Buffer) -> usize {
+        abort("_cancel_reducer")
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _buffer_consume(_buffer: Buffer, _dst: *mut u8, _dst_len: usize) {
+        abort("_buffer_consume")
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _buffer_alloc(_data: *const u8, _data_len: usize) -> Buffer {
+        abort("_buffer_alloc")
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _bytes_source_read(
+        _source: BytesSource,
+        _buffer_ptr: *mut u8,
+        _buffer_len_ptr: *mut usize,
+    ) -> i16 {
+        abort("_bytes_source_read")
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _span_start(_name: *const u8, _name_len: usize) -> u32 {
+        abort("_span_start")
+    }
+
+    #[no_mangle]
+    pub extern "C" fn _span_end(_span_id: u32) {
+        abort("_span_end")
     }
 }
