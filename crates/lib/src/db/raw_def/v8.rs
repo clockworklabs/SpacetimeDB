@@ -8,6 +8,7 @@ use crate::{AlgebraicType, ProductType, SpacetimeType};
 use derive_more::Display;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_primitives::*;
+use std::fmt;
 
 // TODO(1.0): move these definitions into this file,
 // along with the other structs contained in it,
@@ -171,7 +172,7 @@ impl RawIndexDefV8 {
 }
 
 /// A struct representing the definition of a database column.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, SpacetimeType)]
+#[derive(Clone, Eq, PartialEq, PartialOrd, Ord, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct RawColumnDefV8 {
     /// The name of the column.
@@ -180,6 +181,13 @@ pub struct RawColumnDefV8 {
     ///
     /// Must satisfy [AlgebraicType::is_valid_for_client_type_use].
     pub col_type: AlgebraicType,
+}
+
+impl fmt::Debug for RawColumnDefV8 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}: ", &self.col_name)?;
+        self.col_type.fmt(f)
+    }
 }
 
 impl RawColumnDefV8 {

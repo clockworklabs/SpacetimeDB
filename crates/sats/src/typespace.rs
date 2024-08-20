@@ -33,12 +33,19 @@ pub enum TypeRefError {
 /// where `&0` is the type reference at index `0`.
 ///
 /// [System F]: https://en.wikipedia.org/wiki/System_F
-#[derive(Debug, Clone, SpacetimeType)]
+#[derive(Clone, SpacetimeType)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 pub struct Typespace {
     /// The types in our typing context that can be referred to with [`AlgebraicTypeRef`]s.
     pub types: Vec<AlgebraicType>,
+}
+
+impl std::fmt::Debug for Typespace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Typespace ")?;
+        f.debug_list().entries(&self.types).finish()
+    }
 }
 
 impl Default for Typespace {

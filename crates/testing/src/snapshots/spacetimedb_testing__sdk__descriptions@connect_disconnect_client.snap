@@ -7,24 +7,8 @@ NormalizedModuleDef {
         "Connected": RawTableDefV8 {
             table_name: "Connected",
             columns: [
-                RawColumnDefV8 {
-                    col_name: "identity",
-                    col_type: Product(
-                        ProductType {
-                            elements: [
-                                ProductTypeElement {
-                                    name: Some(
-                                        "__identity_bytes",
-                                    ),
-                                    algebraic_type: Array(
-                                        ArrayType {
-                                            elem_ty: U8,
-                                        },
-                                    ),
-                                },
-                            ],
-                        },
-                    ),
+                "identity": ProductType {
+                    "__identity_bytes": ArrayType(U8),
                 },
             ],
             indexes: [],
@@ -37,24 +21,8 @@ NormalizedModuleDef {
         "Disconnected": RawTableDefV8 {
             table_name: "Disconnected",
             columns: [
-                RawColumnDefV8 {
-                    col_name: "identity",
-                    col_type: Product(
-                        ProductType {
-                            elements: [
-                                ProductTypeElement {
-                                    name: Some(
-                                        "__identity_bytes",
-                                    ),
-                                    algebraic_type: Array(
-                                        ArrayType {
-                                            elem_ty: U8,
-                                        },
-                                    ),
-                                },
-                            ],
-                        },
-                    ),
+                "identity": ProductType {
+                    "__identity_bytes": ArrayType(U8),
                 },
             ],
             indexes: [],
@@ -66,12 +34,8 @@ NormalizedModuleDef {
         },
     },
     reducers: {
-        "__identity_connected__": ProductType {
-            elements: [],
-        },
-        "__identity_disconnected__": ProductType {
-            elements: [],
-        },
+        "__identity_connected__": ProductType {},
+        "__identity_disconnected__": ProductType {},
     },
     exports: {},
 }

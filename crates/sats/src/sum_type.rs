@@ -3,6 +3,7 @@ use crate::algebraic_value::ser::value_serialize;
 use crate::de::Deserialize;
 use crate::meta_type::MetaType;
 use crate::{AlgebraicType, AlgebraicValue, SpacetimeType, SumTypeVariant};
+use std::fmt;
 
 /// The tag used for the `Interval` variant of the special `ScheduleAt` sum type.
 pub const SCHEDULE_AT_INTERVAL_TAG: &str = "Interval";
@@ -37,13 +38,26 @@ pub const OPTION_NONE_TAG: &str = "none";
 /// See also: https://ncatlab.org/nlab/show/sum+type.
 ///
 /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct SumType {
     /// The possible variants of the sum type.
     ///
     /// The order is relevant as it defines the tags of the variants at runtime.
     pub variants: Box<[SumTypeVariant]>,
+}
+
+impl fmt::Debug for SumType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SumType ")?;
+        f.debug_map()
+            .entries(
+                self.variants
+                    .iter()
+                    .map(|variant| (crate::dbg_aggregate_name(&variant.name), &variant.algebraic_type)),
+            )
+            .finish()
+    }
 }
 
 impl SumType {

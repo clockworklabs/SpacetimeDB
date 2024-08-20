@@ -20,7 +20,7 @@ use enum_as_inner::EnumAsInner;
 /// The type system unifies the concepts sum types, product types, scalar value types,
 /// and convenience types strings, arrays, and maps,
 /// into a single type system.
-#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType, From)]
+#[derive(EnumAsInner, derive_more::Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType, From)]
 #[sats(crate = crate)]
 pub enum AlgebraicType {
     /// A type where the definition is given by the typing context (`Typespace`).
@@ -28,6 +28,7 @@ pub enum AlgebraicType {
     ///
     /// This should not be conflated with reference and pointer types in languages like Rust,
     /// In other words, this is not `&T` or `*const T`.
+    #[debug("{_0:?}")]
     Ref(AlgebraicTypeRef),
     /// A structural sum type.
     ///
@@ -53,6 +54,7 @@ pub enum AlgebraicType {
     /// See also: https://ncatlab.org/nlab/show/sum+type.
     ///
     /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
+    #[debug("{_0:?}")]
     Sum(SumType),
     /// A structural product type.
     ///
@@ -77,13 +79,16 @@ pub enum AlgebraicType {
     /// so for example, `values({ A: U64, B: Bool }) = values(U64) * values(Bool)`.
     ///
     /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
+    #[debug("{_0:?}")]
     Product(ProductType),
     /// The type of array values where elements are of a base type `elem_ty`.
     /// Values [`AlgebraicValue::Array(array)`](crate::AlgebraicValue::Array) will have this type.
+    #[debug("{_0:?}")]
     Array(ArrayType),
     /// The type of map values consisting of a key type `key_ty` and value `ty`.
     /// Values [`AlgebraicValue::Map(map)`](crate::AlgebraicValue::Map) will have this type.
     /// The order of entries in a map value is observable.
+    #[debug("{_0:?}")]
     Map(Box<MapType>),
     /// The UTF-8 encoded `String` type.
     /// Values [`AlgebraicValue::String(s)`](crate::AlgebraicValue::String) will have this type.

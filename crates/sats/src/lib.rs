@@ -233,3 +233,8 @@ where
 macro_rules! __make_register_reftype {
     ($ty:ty, $name:literal) => {};
 }
+
+// A helper for prettier Debug implementation, without extra indirection around Some("name").
+fn dbg_aggregate_name(opt: &Option<Box<str>>) -> &dyn std::fmt::Debug {
+    opt.as_ref().map_or(&None::<()>, |s| s)
+}
