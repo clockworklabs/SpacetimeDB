@@ -273,10 +273,10 @@ impl<'a, 'b> ser::Serializer for SatnFormatter<'a, 'b> {
         write!(self, "{v}")
     }
     fn serialize_u128(mut self, v: u128) -> Result<Self::Ok, Self::Error> {
-        write!(self, "{v}")
+        write!(self, "0x{}", hex::encode(v.to_le_bytes()))
     }
     fn serialize_u256(mut self, v: u256) -> Result<Self::Ok, Self::Error> {
-        write!(self, "{v}")
+        write!(self, "0x{}", hex::encode(v.to_le_bytes()))
     }
     fn serialize_i8(mut self, v: i8) -> Result<Self::Ok, Self::Error> {
         write!(self, "{v}")
