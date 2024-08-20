@@ -236,7 +236,11 @@ class Smoketest(unittest.TestCase):
             sys.stderr.writelines(proc.stderr)
         threading.Thread(target=stderr_task).start()
 
-        print("initial update:", proc.stdout.readline())
+        init_update = proc.stdout.readline()
+        code = proc.poll()
+        if code:
+            raise subprocess.CalledProcessError(code, fake_args)
+        print("initial update:", init_update)
 
         def run():
             updates = list(map(json.loads, proc.stdout))
