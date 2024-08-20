@@ -1631,7 +1631,7 @@ static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_caller_one_address(ReducerContext ctx)
     {
-        new OneAddress { a = (Address)ctx.Address!, }.Insert();
+        new OneAddress { a = (Address)ctx.Address! }.Insert();
     }
 
     [SpacetimeDB.Reducer]
@@ -1745,7 +1745,7 @@ static partial class Module
             s = typeof(EveryPrimitiveStruct)
                 .GetFields()
                 .Select(f => f.GetValue(s)!.ToString()!.ToLowerInvariant())
-                .ToList()
+                .ToList(),
         }.Insert();
     }
 

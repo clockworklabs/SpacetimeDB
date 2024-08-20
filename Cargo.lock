@@ -4648,6 +4648,7 @@ dependencies = [
  "clap 4.4.6",
  "duct",
  "env_logger",
+ "insta",
  "lazy_static",
  "log",
  "rand 0.8.5",

@@ -145,7 +145,7 @@ impl Typespace {
     /// Inlines all nested references behind the current [`AlgebraicTypeRef`] recursively using the current typeset.
     ///
     /// Returns the fully-resolved type or an error if the type reference is invalid or self-referential.
-    fn inline_typerefs_in_ref(&mut self, r: AlgebraicTypeRef) -> Result<&AlgebraicType, TypeRefError> {
+    pub fn inline_typerefs_in_ref(&mut self, r: AlgebraicTypeRef) -> Result<&AlgebraicType, TypeRefError> {
         let resolved_ty = match self.get_mut(r) {
             None => return Err(TypeRefError::InvalidTypeRef(r)),
             // If we encountered a type reference, that means one of the parent calls
@@ -172,17 +172,6 @@ impl Typespace {
         // Now we can put the fully-resolved type back and return that place.
         *place = resolved_ty;
         Ok(place)
-    }
-
-    /// Inlines all type references in the typespace recursively.
-    ///
-    /// Errors out if any type reference is invalid or self-referential.
-    pub fn inline_all_typerefs(&mut self) -> Result<(), TypeRefError> {
-        // We need to use indices here to allow mutable reference on each iteration.
-        for r in 0..self.types.len() as u32 {
-            self.inline_typerefs_in_ref(AlgebraicTypeRef(r))?;
-        }
-        Ok(())
     }
 
     /// Iterate over types in the typespace with their references.

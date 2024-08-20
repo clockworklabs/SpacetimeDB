@@ -1,0 +1,77 @@
+---
+source: crates/testing/src/sdk.rs
+expression: def
+---
+NormalizedModuleDef {
+    tables: {
+        "Connected": RawTableDefV8 {
+            table_name: "Connected",
+            columns: [
+                RawColumnDefV8 {
+                    col_name: "identity",
+                    col_type: Product(
+                        ProductType {
+                            elements: [
+                                ProductTypeElement {
+                                    name: Some(
+                                        "__identity_bytes",
+                                    ),
+                                    algebraic_type: Array(
+                                        ArrayType {
+                                            elem_ty: U8,
+                                        },
+                                    ),
+                                },
+                            ],
+                        },
+                    ),
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "Disconnected": RawTableDefV8 {
+            table_name: "Disconnected",
+            columns: [
+                RawColumnDefV8 {
+                    col_name: "identity",
+                    col_type: Product(
+                        ProductType {
+                            elements: [
+                                ProductTypeElement {
+                                    name: Some(
+                                        "__identity_bytes",
+                                    ),
+                                    algebraic_type: Array(
+                                        ArrayType {
+                                            elem_ty: U8,
+                                        },
+                                    ),
+                                },
+                            ],
+                        },
+                    ),
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+    },
+    reducers: {
+        "__identity_connected__": ProductType {
+            elements: [],
+        },
+        "__identity_disconnected__": ProductType {
+            elements: [],
+        },
+    },
+    exports: {},
+}
