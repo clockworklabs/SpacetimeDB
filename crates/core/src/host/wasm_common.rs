@@ -287,10 +287,6 @@ impl<I: ResourceIndex> ResourceSlab<I> {
         I::from_u32(idx)
     }
 
-    pub fn get(&self, handle: I) -> Option<&I::Resource> {
-        self.slab.get(handle.to_u32() as usize)
-    }
-
     pub fn get_mut(&mut self, handle: I) -> Option<&mut I::Resource> {
         self.slab.get_mut(handle.to_u32() as usize)
     }
@@ -365,8 +361,7 @@ macro_rules! abi_funcs {
     ($mac:ident) => {
         $mac! {
             "spacetime_10.0"::buffer_alloc,
-            "spacetime_10.0"::buffer_consume,
-            "spacetime_10.0"::buffer_len,
+            "spacetime_10.0"::bytes_source_read,
             "spacetime_10.0"::console_log,
             "spacetime_10.0"::delete_by_col_eq,
             "spacetime_10.0"::delete_by_rel,

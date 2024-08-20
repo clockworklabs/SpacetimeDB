@@ -12,6 +12,7 @@ macro_rules! errnos {
             LOOKUP_NOT_FOUND(2, "Value or range provided not found in table"),
             UNIQUE_ALREADY_EXISTS(3, "Value with given unique identifier already exists"),
             BUFFER_TOO_SMALL(4, "The provided buffer is not large enough to store the data"),
+            NO_SUCH_BYTES(8, "The provided bytes source or sink is not valid"),
         );
     };
 }

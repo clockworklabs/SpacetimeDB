@@ -3,6 +3,7 @@ namespace SpacetimeDB.Internal;
 using SpacetimeDB;
 using SpacetimeDB.BSATN;
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 public static partial class Module
@@ -219,12 +220,42 @@ public static partial class Module
         moduleDef.RegisterTable(T.MakeTableDesc(typeRegistrar));
     }
 
-    private static byte[] Consume(this Buffer buffer)
+    private static byte[] Consume(this BytesSource source)
     {
-        var len = FFI._buffer_len(buffer);
-        var result = new byte[len];
-        FFI._buffer_consume(buffer, result, len);
-        return result;
+        if (source == BytesSource.INVALID)
+        {
+            return [];
+        }
+        var buffer = new byte[0x20_000];
+        var written = 0U;
+        while (true)
+        {
+            // Write into the spare capacity of the buffer.
+            var spare = buffer.AsSpan((int)written);
+            var buf_len = (uint)spare.Length;
+            var ret = FFI._bytes_source_read(source, spare, ref buf_len);
+            written += buf_len;
+            switch (ret)
+            {
+                // Host side source exhausted, we're done.
+                case -1:
+                    Array.Resize(ref buffer, (int)written);
+                    return buffer;
+                // Wrote the entire spare capacity.
+                // Need to reserve more space in the buffer.
+                case 0 when written == buffer.Length:
+                    Array.Resize(ref buffer, buffer.Length + 1024);
+                    break;
+                // Host didn't write as much as possible.
+                // Try to read some more.
+                // The host will likely not trigger this branch (current host doesn't),
+                // but a module should be prepared for it.
+                case 0:
+                    break;
+                default:
+                    throw new UnreachableException();
+            }
+        }
     }
 
 #pragma warning disable IDE1006 // Naming Styles - methods below are meant for FFI.
@@ -257,7 +288,7 @@ public static partial class Module
         ulong address_0,
         ulong address_1,
         DateTimeOffsetRepr timestamp,
-        Buffer args
+        BytesSource args
     )
     {
         // Piece together the sender identity.
@@ -269,6 +300,7 @@ public static partial class Module
         try
         {
             Runtime.Random = new((int)timestamp.MicrosecondsSinceEpoch);
+
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
             reducers[(int)id].Invoke(reader, new(sender, address, timestamp.ToStd()));

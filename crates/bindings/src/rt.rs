@@ -4,10 +4,11 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
+use sys::raw::BytesSource;
 use sys::Buffer;
 
 use crate::timestamp::with_timestamp_set;
-use crate::{sys, ReducerContext, SpacetimeType, TableType, Timestamp};
+use crate::{return_iter_buf, sys, take_iter_buf, ReducerContext, SpacetimeType, TableType, Timestamp};
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::db::raw_def::{
     RawColumnDefV8, RawConstraintDefV8, RawIndexDefV8, RawSequenceDefV8, RawTableDefV8,
@@ -400,7 +401,7 @@ extern "C" fn __describe_module__() -> Buffer {
     Buffer::alloc(&bytes)
 }
 
-// TODO(1.0): update `__call_reducer__` docs + for `BytesSource` & `BytesSink`.
+// TODO(1.0): update `__call_reducer__` docs + for `BytesSink`.
 
 /// Called by the host to execute a reducer
 /// when the `sender` calls the reducer identified by `id` at `timestamp` with `args`.
@@ -417,6 +418,11 @@ extern "C" fn __describe_module__() -> Buffer {
 /// - `address_0` contains bytes `[0 ..8 ]`.
 /// - `address_1` contains bytes `[8 ..16]`.
 ///
+/// The `args` is a `BytesSource`, registered on the host side,
+/// which can be read with `bytes_source_read`.
+/// The contents of the buffer are the BSATN-encoding of the arguments to the reducer.
+/// In the case of empty arguments, `args` will be 0, that is, invalid.
+///
 /// The result of the reducer is written into a fresh buffer.
 #[no_mangle]
 extern "C" fn __call_reducer__(
@@ -428,7 +434,7 @@ extern "C" fn __call_reducer__(
     address_0: u64,
     address_1: u64,
     timestamp: u64,
-    args: Buffer,
+    args: BytesSource,
 ) -> Buffer {
     // Piece together `sender_i` into an `Identity`.
     let sender = [sender_0, sender_1, sender_2, sender_3];
@@ -451,8 +457,59 @@ extern "C" fn __call_reducer__(
     };
 
     let reducers = REDUCERS.get().unwrap();
-    let args = args.read();
-    reducers[id](ctx, &args)
+    with_read_args(args, |args| reducers[id](ctx, args))
+}
+
+/// Run `logic` with `args` read from the host into a `&[u8]`.
+fn with_read_args<R>(args: BytesSource, logic: impl FnOnce(&[u8]) -> R) -> R {
+    if args == BytesSource::INVALID {
+        return logic(&[]);
+    }
+
+    // Steal an iteration row buffer.
+    // These were not meant for this purpose,
+    // but it's likely we have one sitting around being unused at this point,
+    // so use it to avoid allocating a temporary buffer if possible.
+    // And if we do allocate a temporary buffer now, it will likely be reused later.
+    let mut buf = take_iter_buf();
+
+    // Read `args` and run `logic`.
+    read_bytes_source_into(args, &mut buf);
+    let ret = logic(&buf);
+
+    // Return the `buf` back to the pool.
+    // Should a panic occur before reaching here,
+    // the WASM module cannot recover and will trap,
+    // so we don't need to care that this is not returned to the pool.
+    return_iter_buf(buf);
+    ret
+}
+
+/// Read `source` from the host fully into `buf`.
+fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
+    loop {
+        // Write into the spare capacity of the buffer.
+        let buf_ptr = buf.spare_capacity_mut();
+        let spare_len = buf_ptr.len();
+        let mut buf_len = buf_ptr.len();
+        let buf_ptr = buf_ptr.as_mut_ptr().cast();
+        let ret = unsafe { sys::raw::_bytes_source_read(source, buf_ptr, &mut buf_len) };
+        // SAFETY: `bytes_source_read` just appended `spare_len` bytes to `buf`.
+        unsafe { buf.set_len(buf.len() + spare_len) };
+        match ret {
+            // Host side source exhausted, we're done.
+            -1 => break,
+            // Wrote the entire spare capacity.
+            // Need to reserve more space in the buffer.
+            0 if spare_len == buf_len => buf.reserve(1024),
+            // Host didn't write as much as possible.
+            // Try to read some more.
+            // The host will likely not trigger this branch (current host doesn't),
+            // but a module should be prepared for it.
+            0 => {}
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[macro_export]
