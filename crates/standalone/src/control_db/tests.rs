@@ -48,7 +48,7 @@ fn test_domain() -> anyhow::Result<()> {
 
     let cdb = ControlDb::at(tmp.path())?;
 
-    let addr = Address::zero();
+    let addr = Address::ZERO;
     let res = cdb.spacetime_insert_domain(&addr, domain.clone(), *ALICE, true)?;
     assert!(matches!(res, InsertDomainResult::Success { .. }));
 

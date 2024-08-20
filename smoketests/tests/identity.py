@@ -76,3 +76,83 @@ class IdentityImports(Smoketest):
         default_identity = next(filter(lambda s: "***" in s, identities), "")
         self.assertIn(identity, default_identity)
 
+    def test_set_email(self):
+        """Ensure that we are able to associate an email with an identity"""
+
+        self.fingerprint()
+
+        # Create a new identity
+        identity = self.new_identity(email=None)
+        email = random_email()
+        token = self.token(identity)
+
+        # Reset our config so we lose this identity
+        self.reset_config()
+
+        # Import this identity, and set it as the default identity
+        self.import_identity(identity, token, default=True)
+
+        # Configure our email
+        output = self.spacetime("identity", "set-email", "--identity", identity, email)
+        self.assertEqual(extract_field(output, "IDENTITY"), identity)
+        self.assertEqual(extract_field(output, "EMAIL").lower(), email.lower())
+
+        # Reset config again
+        self.reset_config()
+
+        # Find our identity by its email
+        output = self.spacetime("identity", "find", email)
+        self.assertEqual(extract_field(output, "IDENTITY"), identity)
+        self.assertEqual(extract_field(output, "EMAIL").lower(), email.lower())
+
+
+class IdentityFormatting(Smoketest):
+    MODULE_CODE = """
+use log::info;
+use spacetimedb::{Address, Identity, ReducerContext, Table};
+
+#[spacetimedb::table(name = connected_client)]
+pub struct ConnectedClient {
+    identity: Identity,
+    address: Address,
+}
+
+#[spacetimedb::reducer(client_connected)]
+fn on_connect(ctx: &ReducerContext) {
+    ctx.db.connected_client().insert(ConnectedClient {
+        identity: ctx.sender,
+        address: ctx.address.expect("sender address unset"),
+    });
+}
+
+#[spacetimedb::reducer(client_disconnected)]
+fn on_disconnect(ctx: &ReducerContext) {
+    let sender_identity = &ctx.sender;
+    let sender_address = ctx.address.as_ref().expect("sender address unset");
+    let match_client = |row: &ConnectedClient| {
+        &row.identity == sender_identity && &row.address == sender_address
+    };
+    if let Some(client) = ctx.db.connected_client().iter().find(match_client) {
+        ctx.db.connected_client().delete(client);
+    }
+}
+
+#[spacetimedb::reducer]
+fn print_num_connected(ctx: &ReducerContext) {
+    let n = ctx.db.connected_client().count();
+    info!("CONNECTED CLIENTS: {n}")
+}
+"""
+
+    def test_identity_formatting(self):
+        """Tests formatting of Identity."""
+
+        # Start two subscribers
+        self.subscribe("SELECT * FROM connected_client", n=2)
+        self.subscribe("SELECT * FROM connected_client", n=2)
+
+        # Assert that we have two clients + the reducer call
+        self.call("print_num_connected")
+        logs = self.logs(10)
+        self.assertEqual("CONNECTED CLIENTS: 3", logs.pop())
+
