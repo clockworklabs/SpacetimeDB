@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 // and convert to standard C# types.
 
 [StructLayout(LayoutKind.Sequential)] // we should be able to use it in FFI
-[SpacetimeDB.Type] // we should be able to encode it to BSATN too
+[Type] // we should be able to encode it to BSATN too
 public partial struct DateTimeOffsetRepr(DateTimeOffset time)
 {
     public ulong MicrosecondsSinceEpoch = (ulong)time.Ticks / 10;
@@ -18,7 +18,7 @@ public partial struct DateTimeOffsetRepr(DateTimeOffset time)
 }
 
 [StructLayout(LayoutKind.Sequential)] // we should be able to use it in FFI
-[SpacetimeDB.Type] // we should be able to encode it to BSATN too
+[Type] // we should be able to encode it to BSATN too
 public partial struct TimeSpanRepr(TimeSpan duration)
 {
     public ulong Microseconds = (ulong)duration.Ticks / 10;

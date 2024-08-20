@@ -392,7 +392,8 @@ public static class Utils
     }
 
     private static readonly SymbolDisplayFormat SymbolFormat = SymbolDisplayFormat
-        .FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)
+        .FullyQualifiedFormat
+        .WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)
         .AddMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType)
         .AddMiscellaneousOptions(
             SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier
