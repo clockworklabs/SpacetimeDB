@@ -20,20 +20,6 @@ pub mod raw {
     // For breaking changes, all functions should be moved into one new `spacetime_X.0` block.
     #[link(wasm_import_module = "spacetime_10.0")]
     extern "C" {
-        /*
-        /// Create a table with `name`, a UTF-8 slice in WASM memory lasting `name_len` bytes,
-        /// and with the table's `schema` in a slice in WASM memory lasting `schema_len` bytes.
-        ///
-        /// Writes the table id of the new table into the WASM pointer `out`.
-        pub fn _create_table(
-            name: *const u8,
-            name_len: usize,
-            schema: *const u8,
-            schema_len: usize,
-            out: *mut TableId,
-        ) -> u16;
-        */
-
         /// Queries the `table_id` associated with the given (table) `name`
         /// where `name` points to a UTF-8 slice in WASM memory of `name_len` bytes.
         ///
@@ -214,32 +200,25 @@ pub mod raw {
             args_len: usize,
         );
 
-        /// Returns the length (number of bytes) of buffer `bufh` without
-        /// transferring ownership of the data into the function.
+        /// Writes up to `buffer_len` bytes from `buffer = buffer_ptr[..buffer_len]`,
+        /// to the `sink`, registered in the host environment.
         ///
-        /// The `bufh` must have previously been allocating using `_buffer_alloc`.
+        /// The `buffer_len = buffer_len_ptr[..size_of::<usize>()]` stores the capacity of `buffer`.
+        /// On success (`0` is returned),
+        /// `buffer_len` is set to the number of bytes written to `sink`.
         ///
-        /// Traps if the buffer does not exist.
-        pub fn _buffer_len(bufh: Buffer) -> usize;
-
-        /// Consumes the `buffer`,
-        /// moving its contents to the slice `(dst, dst_len)`.
+        /// # Traps
         ///
-        /// Traps if
-        /// - the buffer does not exist
-        /// - `dst + dst_len` overflows a 64-bit integer
-        pub fn _buffer_consume(buffer: Buffer, dst: *mut u8, dst_len: usize);
-
-        /// Creates a buffer of size `data_len` in the host environment.
+        /// - `buffer_len_ptr` is NULL or `buffer_len` is not in bounds of WASM memory.
+        /// - `buffer_ptr` is NULL or `buffer` is not in bounds of WASM memory.
         ///
-        /// The contents of the byte slice pointed to by `data`
-        /// and lasting `data_len` bytes
-        /// is written into the newly initialized buffer.
+        /// # Errors
         ///
-        /// The buffer is registered in the host environment and is indexed by the returned `u32`.
+        /// Returns an error:
         ///
-        /// Traps if `data + data_len` overflows a 64-bit integer.
-        pub fn _buffer_alloc(data: *const u8, data_len: usize) -> Buffer;
+        /// - `NO_SUCH_BYTES`, when `sink` is not a valid bytes sink.
+        /// - `NO_SPACE`, when there is no room for more bytes in `sink`.
+        pub fn _bytes_sink_write(sink: BytesSink, buffer_ptr: *const u8, buffer_len_ptr: *mut usize) -> u16;
 
         /// Reads bytes from `source`, registered in the host environment,
         /// and stores them in the memory pointed to by `buffer = buffer_ptr[..buffer_len]`.
@@ -364,19 +343,12 @@ pub mod raw {
         pub const INVALID: Self = Self(0);
     }
 
-    /// A handle into a buffer of bytes in the host environment.
+    /// A handle into a buffer of bytes in the host environment that can be written to.
     ///
-    /// Used for transporting bytes host <-> WASM linear memory.
+    /// Used for transporting bytes from WASM linear memory to host.
     #[derive(PartialEq, Eq, Copy, Clone)]
     #[repr(transparent)]
-    pub struct Buffer(u32);
-
-    /// An invalid buffer handle.
-    ///
-    /// Could happen if too many buffers exist, making the key overflow a `u32`.
-    /// `INVALID_BUFFER` is also used for parts of the protocol
-    /// that are "morally" sending a `None`s in `Option<Box<[u8]>>`s.
-    pub const INVALID_BUFFER: Buffer = Buffer(u32::MAX);
+    pub struct BytesSink(u32);
 
     /// Represents table iterators.
     #[derive(PartialEq, Eq, Copy, Clone)]
@@ -670,24 +642,6 @@ pub fn console_log(
 #[inline]
 pub fn volatile_nonatomic_schedule_immediate(name: &str, args: &[u8]) {
     unsafe { raw::_volatile_nonatomic_schedule_immediate(name.as_ptr(), name.len(), args.as_ptr(), args.len()) }
-}
-
-/// A RAII wrapper around [`raw::Buffer`].
-#[repr(transparent)]
-pub struct Buffer {
-    raw: raw::Buffer,
-}
-
-impl Buffer {
-    pub const INVALID: Self = Buffer {
-        raw: raw::INVALID_BUFFER,
-    };
-
-    /// Allocates a buffer with the contents of `data`.
-    pub fn alloc(data: &[u8]) -> Self {
-        let raw = unsafe { raw::_buffer_alloc(data.as_ptr(), data.len()) };
-        Buffer { raw }
-    }
 }
 
 pub struct RowIter {

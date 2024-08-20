@@ -252,15 +252,29 @@ public static partial class Module
                 // but a module should be prepared for it.
                 case 0:
                     break;
+                case (short)(ushort)FFI.Errno.NO_SUCH_BYTES:
+                    throw new NoSuchBytesException();
                 default:
-                    throw new UnreachableException();
+                    throw new UnknownException((FFI.Errno)(ushort)ret);
             }
+        }
+    }
+
+    private static void Write(this BytesSink sink, byte[] bytes)
+    {
+        var start = 0U;
+        while (start != bytes.Length)
+        {
+            var written = (uint)bytes.Length;
+            var buffer = bytes.AsSpan((int)start);
+            FFI._bytes_sink_write(sink, buffer, ref written);
+            start += written;
         }
     }
 
 #pragma warning disable IDE1006 // Naming Styles - methods below are meant for FFI.
 
-    public static Buffer __describe_module__()
+    public static void __describe_module__(BytesSink description)
     {
         // replace `module` with a temporary internal module that will register RawModuleDefV8, AlgebraicType and other internal types
         // during the RawModuleDefV8.GetSatsTypeInfo() instead of exposing them via user's module.
@@ -269,17 +283,15 @@ public static partial class Module
             // We need this explicit cast here to make `ToBytes` understand the types correctly.
             RawModuleDef versioned = new RawModuleDef.V8BackCompat(moduleDef);
             var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), versioned);
-            var res = FFI._buffer_alloc(moduleBytes, (uint)moduleBytes.Length);
-            return res;
+            description.Write(moduleBytes);
         }
         catch (Exception e)
         {
             Runtime.Log($"Error while describing the module: {e}", Runtime.LogLevel.Error);
-            return Buffer.INVALID;
         }
     }
 
-    public static Buffer __call_reducer__(
+    public static short __call_reducer__(
         uint id,
         ulong sender_0,
         ulong sender_1,
@@ -288,7 +300,8 @@ public static partial class Module
         ulong address_0,
         ulong address_1,
         DateTimeOffsetRepr timestamp,
-        BytesSource args
+        BytesSource args,
+        BytesSink error
     )
     {
         // Piece together the sender identity.
@@ -310,14 +323,14 @@ public static partial class Module
             {
                 throw new Exception("Unrecognised extra bytes in the reducer arguments");
             }
-            return /* no exception */
-            Buffer.INVALID;
+            return 0; /* no exception */
         }
         catch (Exception e)
         {
             var error_str = e.ToString();
             var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
-            return FFI._buffer_alloc(error_bytes, (uint)error_bytes.Length);
+            error.Write(error_bytes);
+            return (short)(ushort)FFI.Errno.HOST_CALL_FAILURE;
         }
     }
 }

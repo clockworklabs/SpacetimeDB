@@ -50,7 +50,7 @@ pub trait WasmInstancePre: Send + Sync + 'static {
 }
 
 pub trait WasmInstance: Send + Sync + 'static {
-    fn extract_descriptions(&mut self) -> Result<Bytes, DescribeError>;
+    fn extract_descriptions(&mut self) -> Result<Vec<u8>, DescribeError>;
 
     fn instance_env(&self) -> &InstanceEnv;
 
@@ -121,8 +121,6 @@ pub enum DescribeError {
     Decode(#[from] DecodeError),
     #[error(transparent)]
     RuntimeError(anyhow::Error),
-    #[error("invalid buffer")]
-    BadBuffer,
     #[error("unimplemented RawModuleDef version")]
     UnimplementedRawModuleDefVersion,
 }

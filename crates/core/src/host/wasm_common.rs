@@ -113,8 +113,8 @@ pub trait FuncSigLike: PartialEq<StaticFuncSig> {
 }
 
 const PREINIT_SIG: StaticFuncSig = FuncSig::new(&[], &[]);
-const INIT_SIG: StaticFuncSig = FuncSig::new(&[], &[WasmType::I32]);
-const DESCRIBE_MODULE_SIG: StaticFuncSig = FuncSig::new(&[], &[WasmType::I32]);
+const INIT_SIG: StaticFuncSig = FuncSig::new(&[WasmType::I32], &[WasmType::I32]);
+const DESCRIBE_MODULE_SIG: StaticFuncSig = FuncSig::new(&[WasmType::I32], &[]);
 const CALL_REDUCER_SIG: StaticFuncSig = FuncSig::new(
     &[
         WasmType::I32, // Reducer ID
@@ -131,10 +131,11 @@ const CALL_REDUCER_SIG: StaticFuncSig = FuncSig::new(
         WasmType::I64, // `address_1` contains bytes `[8..16]`.
         // ----------------------------------------------------
         WasmType::I64, // Timestamp
-        WasmType::I32, // Args buffer
+        WasmType::I32, // Args source buffer
+        WasmType::I32, // Errors sink buffer
     ],
     &[
-        WasmType::I32, // Result buffer
+        WasmType::I32, // Result code
     ],
 );
 
@@ -294,21 +295,6 @@ impl<I: ResourceIndex> ResourceSlab<I> {
     pub fn take(&mut self, handle: I) -> Option<I::Resource> {
         self.slab.try_remove(handle.to_u32() as usize)
     }
-
-    pub fn clear(&mut self) {
-        self.slab.clear()
-    }
-}
-
-decl_index!(BufferIdx => bytes::Bytes);
-pub(super) type Buffers = ResourceSlab<BufferIdx>;
-
-impl BufferIdx {
-    pub const INVALID: Self = Self(u32::MAX);
-
-    pub const fn is_invalid(&self) -> bool {
-        self.0 == Self::INVALID.0
-    }
 }
 
 decl_index!(RowIterIdx => std::vec::IntoIter<Box<[u8]>>);
@@ -360,8 +346,9 @@ pub struct AbiRuntimeError {
 macro_rules! abi_funcs {
     ($mac:ident) => {
         $mac! {
-            "spacetime_10.0"::buffer_alloc,
             "spacetime_10.0"::bytes_source_read,
+            "spacetime_10.0"::bytes_sink_write,
+
             "spacetime_10.0"::console_log,
             "spacetime_10.0"::delete_by_col_eq,
             "spacetime_10.0"::delete_by_rel,

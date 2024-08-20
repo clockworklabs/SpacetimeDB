@@ -15,7 +15,7 @@
     <WasmImport Include="$(SpacetimeNamespace)!_iter_next" />
     <WasmImport Include="$(SpacetimeNamespace)!_iter_drop" />
     <WasmImport Include="$(SpacetimeNamespace)!_bytes_source_read" />
-    <WasmImport Include="$(SpacetimeNamespace)!_buffer_alloc" />
+    <WasmImport Include="$(SpacetimeNamespace)!_bytes_sink_write" />
 
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
     <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
