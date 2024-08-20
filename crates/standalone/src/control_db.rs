@@ -1,7 +1,7 @@
 use spacetimedb::address::Address;
 use spacetimedb::hash::hash_bytes;
 use spacetimedb::identity::Identity;
-use spacetimedb::messages::control_db::{Database, EnergyBalance, Node, Replica};
+use spacetimedb::messages::control_db::{Database, EnergyBalance, Node, Replica, IdentityEmail};
 use spacetimedb::{energy, stdb_path};
 
 use spacetimedb_client_api_messages::name::{
@@ -85,7 +85,7 @@ impl ControlDb {
 
     pub fn spacetime_reverse_dns(&self, address: &Address) -> Result<Vec<DomainName>> {
         let tree = self.db.open_tree("reverse_dns")?;
-        let value = tree.get(address.as_slice())?;
+        let value = tree.get(address.as_byte_array())?;
         if let Some(value) = value {
             let vec: Vec<DomainName> = serde_json::from_slice(&value[..])?;
             return Ok(vec);
@@ -140,18 +140,19 @@ impl ControlDb {
             }
         }
 
+        let addr_bytes = address.as_byte_array();
         let tree = self.db.open_tree("dns")?;
-        tree.insert(domain.to_lowercase().as_bytes(), &address.as_slice()[..])?;
+        tree.insert(domain.to_lowercase().as_bytes(), &addr_bytes)?;
 
         let tree = self.db.open_tree("reverse_dns")?;
-        match tree.get(address.as_slice())? {
+        match tree.get(addr_bytes)? {
             Some(value) => {
                 let mut vec: Vec<DomainName> = serde_json::from_slice(&value[..])?;
                 vec.push(domain.clone());
-                tree.insert(address.as_slice(), serde_json::to_string(&vec)?.as_bytes())?;
+                tree.insert(addr_bytes, serde_json::to_string(&vec)?.as_bytes())?;
             }
             None => {
-                tree.insert(address.as_slice(), serde_json::to_string(&vec![&domain])?.as_bytes())?;
+                tree.insert(addr_bytes, serde_json::to_string(&vec![&domain])?.as_bytes())?;
             }
         }
 
@@ -177,7 +178,7 @@ impl ControlDb {
                 }
             }
             None => {
-                tree.insert(key, owner_identity.as_bytes())?;
+                tree.insert(key, &owner_identity.to_byte_array())?;
                 Ok(RegisterTldResult::Success { domain: tld })
             }
         }
@@ -205,8 +206,45 @@ impl ControlDb {
         let name = b"clockworklabs:";
         let bytes = [name, bytes].concat();
         let hash = hash_bytes(bytes);
-        let address = Address::from_slice(&hash.as_slice()[..16]);
+        let address = Address::from_slice(hash.abbreviate());
         Ok(address)
+    }
+
+    pub async fn associate_email_spacetime_identity(&self, identity: Identity, email: &str) -> Result<()> {
+        // Lowercase the email before storing
+        let email = email.to_lowercase();
+
+        let tree = self.db.open_tree("email")?;
+        let identity_email = IdentityEmail { identity, email };
+        let buf = bsatn::to_vec(&identity_email).unwrap();
+        tree.insert(identity.to_byte_array(), buf)?;
+        Ok(())
+    }
+
+    pub fn get_identities_for_email(&self, email: &str) -> Result<Vec<IdentityEmail>> {
+        let mut result = Vec::<IdentityEmail>::new();
+        let tree = self.db.open_tree("email")?;
+        for i in tree.iter() {
+            let (_, value) = i?;
+            let iemail: IdentityEmail = bsatn::from_slice(&value)?;
+            if iemail.email.eq_ignore_ascii_case(email) {
+                result.push(iemail);
+            }
+        }
+        Ok(result)
+    }
+
+    pub fn get_emails_for_identity(&self, identity: &Identity) -> Result<Vec<IdentityEmail>> {
+        let mut result = Vec::<IdentityEmail>::new();
+        let tree = self.db.open_tree("email")?;
+        for i in tree.iter() {
+            let (_, value) = i?;
+            let iemail: IdentityEmail = bsatn::from_slice(&value)?;
+            if &iemail.identity == identity {
+                result.push(iemail);
+            }
+        }
+        Ok(result)
     }
 
     pub fn get_databases(&self) -> Result<Vec<Database>> {
@@ -430,7 +468,7 @@ impl ControlDb {
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
     pub fn get_energy_balance(&self, identity: &Identity) -> Result<Option<energy::EnergyBalance>> {
         let tree = self.db.open_tree("energy_budget")?;
-        let value = tree.get(identity.as_bytes())?;
+        let value = tree.get(identity.to_byte_array())?;
         if let Some(value) = value {
             let arr = <[u8; 16]>::try_from(value.as_ref()).map_err(|_| bsatn::DecodeError::BufferLength {
                 for_type: "Identity".into(),
@@ -449,7 +487,7 @@ impl ControlDb {
     /// `control_budget`, where a cached copy is stored along with business logic for managing it.
     pub fn set_energy_balance(&self, identity: Identity, energy_balance: energy::EnergyBalance) -> Result<()> {
         let tree = self.db.open_tree("energy_budget")?;
-        tree.insert(identity.as_bytes(), &energy_balance.get().to_be_bytes())?;
+        tree.insert(identity.to_byte_array(), &energy_balance.get().to_be_bytes())?;
 
         Ok(())
     }
