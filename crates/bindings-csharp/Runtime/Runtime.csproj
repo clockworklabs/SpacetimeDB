@@ -14,6 +14,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="build\**" />
+    <EmbeddedResource Remove="build\**" />
+    <None Remove="build\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Note: BSATN.Codegen is included in the BSATN.Runtime NuGet package. -->
     <ProjectReference Include="../BSATN.Runtime/BSATN.Runtime.csproj" />
     <!-- ...But we also need BSATN.Codegen to transform `[SpacetimeDB.Type]` usages in source of Runtime itself. -->
@@ -26,7 +32,6 @@
 
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="" />
-    <None Include="build/*" Pack="true" PackagePath="build" />
     <None Include="bindings.c" Pack="true" PackagePath="" />
     <None Include="driver.h" Pack="true" PackagePath="" />
     <!-- We want all users who depends on Runtime to automatically get the Roslyn codegen component as well. -->

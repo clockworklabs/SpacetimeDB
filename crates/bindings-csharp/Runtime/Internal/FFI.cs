@@ -35,7 +35,7 @@ public readonly record struct Buffer(uint Handle)
 }
 
 #pragma warning disable IDE1006 // Naming Styles - Not applicable to FFI stuff.
-internal static partial class FFI
+public static partial class FFI
 {
     // For now this must match the name of the `.c` file (`bindings.c`).
     // In the future C# will allow to specify Wasm import namespace in
@@ -200,6 +200,9 @@ internal static partial class FFI
         ref uint buffer_len_ptr
     );
 
+    /// <summary>
+    /// Allocations from this function are automatically freed when control is returned to the host.
+    /// </summary>
     [LibraryImport(StdbNamespace)]
     public static partial Buffer _buffer_alloc([In] byte[] data, uint data_len);
 }

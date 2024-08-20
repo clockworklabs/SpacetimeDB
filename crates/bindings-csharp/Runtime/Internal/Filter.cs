@@ -13,9 +13,6 @@ public partial class Filter(KeyValuePair<string, Action<BinaryWriter, object?>>[
             public ErasedValue Read(BinaryReader reader) => throw new NotSupportedException();
 
             public void Write(BinaryWriter writer, ErasedValue value) => value.Write(writer);
-
-            public AlgebraicType GetAlgebraicType(ITypeRegistrar _) =>
-                throw new NotSupportedException();
         }
     }
 

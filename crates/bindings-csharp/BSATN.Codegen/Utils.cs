@@ -1,7 +1,9 @@
 namespace SpacetimeDB.Codegen;
 
 using System.Collections;
+using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -9,6 +11,368 @@ using static System.Collections.StructuralComparisons;
 
 public static class Utils
 {
+    static readonly StringBuilder sb = new();
+
+    public static StringBuilder StringBuilder()
+    {
+        sb.Clear();
+        return sb;
+    }
+
+    public static readonly SymbolDisplayFormat fmt = new(
+        globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Included,
+        typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
+        memberOptions: SymbolDisplayMemberOptions.IncludeContainingType,
+        genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters);
+
+    public static bool Always(SyntaxNode _sn, CancellationToken _ct) => true;
+
+    public static string Bool(bool x) => x ? "true" : "false";
+
+    public static ITypeSymbol Generic(ITypeSymbol sym, int idx)
+    {
+        if (sym is INamedTypeSymbol named)
+        {
+            return named.TypeArguments[idx];
+        }
+        else
+        {
+            throw new InvalidOperationException($"Failed to get generic type argument {idx} for type {sym.ToDisplayString()}");
+        }
+    }
+
+    public static void CollectType(HashSet<ITypeSymbol> syms, ITypeSymbol sym)
+    {
+        if (syms.Contains(sym))
+        {
+            return;
+        }
+
+        syms.Add(sym);
+
+        foreach (var f in sym.GetMembers().OfType<IFieldSymbol>())
+        {
+            CollectType(syms, f.Type);
+        }
+
+        if (sym.BaseType?.OriginalDefinition.ToString() == "SpacetimeDB.TaggedEnum<Variants>")
+        {
+            foreach (var f in GetSumElements(sym))
+            {
+                CollectType(syms, f.Type);
+            }
+        }
+
+        switch (sym)
+        {
+            case IArrayTypeSymbol array:
+                CollectType(syms, array.ElementType);
+                break;
+            case INamedTypeSymbol named:
+                foreach (var t in named.TypeArguments)
+                {
+                    CollectType(syms, t);
+                }
+                break;
+        }
+    }
+
+    public class AnalyzedType
+    {
+        public required ITypeSymbol sym;
+        public required int idx;
+        public required string fqn;
+        public required string alg;
+        public required string var;
+        public required string? prim;
+        public required TypeKind kind;
+        public required bool isOpt;
+        public required bool isInt;
+        public required bool isEq;
+    }
+
+    public enum TypeKind
+    {
+        Prim,
+        Enum,
+        Builtin,
+        Option,
+        Array,
+        List,
+        Map,
+        Sum,
+        Product,
+    }
+
+    public static Dictionary<ISymbol, AnalyzedType> AnalyzeTypes(HashSet<ITypeSymbol> syms)
+    {
+        if (syms.Count == 0)
+        {
+            throw new Exception("No types found in module.");
+        }
+
+        var refOffset = 0; // Used to align indexes for type references and type aliases.
+        var types = syms.Select((sym, idx) =>
+        {
+            var od = sym.OriginalDefinition.ToString();
+
+            var prim = sym.SpecialType switch
+            {
+                SpecialType.System_String => "String",
+                SpecialType.System_Boolean => "Bool",
+                SpecialType.System_SByte => "I8",
+                SpecialType.System_Byte => "U8",
+                SpecialType.System_Int16 => "I16",
+                SpecialType.System_UInt16 => "U16",
+                SpecialType.System_Int32 => "I32",
+                SpecialType.System_UInt32 => "U32",
+                SpecialType.System_Int64 => "I64",
+                SpecialType.System_UInt64 => "U64",
+                SpecialType.System_Single => "F32",
+                SpecialType.System_Double => "F64",
+                SpecialType.None => od switch
+                {
+                    "System.Int128" => "I128",
+                    "System.UInt128" => "U128",
+                    "SpacetimeDB.I128" => "I128Stdb",
+                    "SpacetimeDB.U128" => "U128Stdb",
+                    "SpacetimeDB.I256" => "I256",
+                    "SpacetimeDB.U256" => "U256",
+                    _ => null
+                },
+                _ => null
+            };
+
+            var builtin = od is "SpacetimeDB.Address" or "SpacetimeDB.Identity";
+            if (builtin)
+            {
+                prim = sym.Name;
+            }
+
+            var isInt = sym.SpecialType switch
+            {
+                SpecialType.System_SByte or
+                SpecialType.System_Byte or
+                SpecialType.System_Int16 or
+                SpecialType.System_UInt16 or
+                SpecialType.System_Int32 or
+                SpecialType.System_UInt32 or
+                SpecialType.System_Int64 or
+                SpecialType.System_UInt64 => true,
+                SpecialType.None => od is
+                    "System.Int128" or
+                    "System.UInt128" or
+                    "SpacetimeDB.I128" or
+                    "SpacetimeDB.U128" or
+                    "SpacetimeDB.I256" or
+                    "SpacetimeDB.U256",
+                _ => false
+            };
+
+            var isOpt = sym.NullableAnnotation == NullableAnnotation.Annotated;
+
+            var isEq = (isInt || sym.SpecialType switch
+            {
+                SpecialType.System_Boolean or
+                SpecialType.System_String => true,
+                SpecialType.None => builtin,
+                _ => false
+            }) && !isOpt;
+
+            var kind = isOpt && sym.IsValueType ? TypeKind.Option
+                : builtin ? TypeKind.Builtin
+                : prim != null ? TypeKind.Prim
+                : od switch
+                {
+                    "System.Collections.Generic.List<T>" => TypeKind.List,
+                    "System.Collections.Generic.Dictionary<TKey, TValue>" => TypeKind.Map,
+                    _ => sym.BaseType?.OriginalDefinition.ToString() switch
+                    {
+                        "System.Enum" => TypeKind.Enum,
+                        "SpacetimeDB.TaggedEnum<Variants>" => TypeKind.Sum,
+                        _ => sym is IArrayTypeSymbol ? TypeKind.Array : TypeKind.Product
+                    }
+                };
+
+            var prevRefOffset = refOffset;
+            if (!(kind is TypeKind.Enum or TypeKind.Sum or TypeKind.Product)) refOffset++;
+
+            return new AnalyzedType()
+            {
+                sym = sym,
+                idx = idx - prevRefOffset,
+                fqn = sym.ToDisplayString(fmt),
+                alg = "",
+                var = "",
+                prim = prim,
+                kind = kind,
+                isOpt = isOpt && !sym.IsValueType,
+                isInt = isInt,
+                isEq = isEq
+            };
+        }).ToDictionary(x => x.sym, SymbolEqualityComparer.Default);
+
+        foreach (var t in types.Values)
+        {
+            if (t.prim != null && !t.isOpt)
+            {
+                t.var = t.prim;
+            }
+            else
+            {
+                var sb = StringBuilder();
+                EmitVar(types!, t, sb);
+                t.var = sb.ToString();
+            }
+
+            t.alg = t.isOpt
+                ? t.var
+                : t.kind switch
+                {
+                    TypeKind.Prim or
+                    TypeKind.Builtin => $"global::SpacetimeDB.BSATN.AlgebraicTypes.{t.prim}",
+                    TypeKind.Enum or
+                    TypeKind.Sum or
+                    TypeKind.Product => $"{t.var}Ref",
+                    _ => t.var
+                };
+        }
+
+        return types!;
+    }
+
+    public static ImmutableArray<IFieldSymbol> GetSumElements(ITypeSymbol sym)
+    {
+        if (sym.BaseType!.TypeArguments[0] is not INamedTypeSymbol { IsTupleType: true, TupleElements: var elems })
+        {
+            throw new Exception("TaggedUnion must have a tuple type as its type argument.");
+        }
+
+        if (sym.GetMembers().OfType<IFieldSymbol>().Any())
+        {
+            throw new Exception("TaggedUnion cannot have fields.");
+        }
+
+        return elems;
+    }
+
+    public static string ResolveBSATN(IReadOnlyDictionary<ISymbol, AnalyzedType> types, ITypeSymbol sym)
+    {
+        var sb = StringBuilder();
+        ResolveBSATN(types, sym, sb);
+        return sb.ToString();
+    }
+
+    static void ResolveBSATN(IReadOnlyDictionary<ISymbol, AnalyzedType> types, ITypeSymbol sym, StringBuilder sb)
+    {
+        var t = types[sym];
+        if (t.isOpt)
+        {
+            sb.Append("global::SpacetimeDB.BSATN.RefOption<");
+            sb.Append(t.fqn);
+            sb.Append(", ");
+        }
+
+        sb.Append(t.kind switch
+        {
+            TypeKind.Prim => $"global::SpacetimeDB.BSATN.{t.prim}",
+            TypeKind.Builtin => $"global::SpacetimeDB.{t.sym.Name}.BSATN",
+            TypeKind.Enum => $"global::SpacetimeDB.BSATN.Enum<{t.fqn}>",
+            TypeKind.Option => "global::SpacetimeDB.BSATN.ValueOption",
+            TypeKind.Array when sym is IArrayTypeSymbol { ElementType: var elem } &&
+                                elem.SpecialType == SpecialType.System_Byte =>
+                                "global::SpacetimeDB.BSATN.ByteArray",
+            TypeKind.Array => "global::SpacetimeDB.BSATN.Array",
+            TypeKind.List => "global::SpacetimeDB.BSATN.List",
+            TypeKind.Map => "global::SpacetimeDB.BSATN.Dictionary",
+            TypeKind.Sum or
+            TypeKind.Product => $"{t.fqn}.BSATN",
+            _ => throw new InvalidDataException($"Failed to resolve BSATN type for {types[sym].fqn}")
+        });
+
+        switch (sym)
+        {
+            case IArrayTypeSymbol { ElementType: var elem } when elem.SpecialType != SpecialType.System_Byte:
+                sb.Append('<');
+                sb.Append(types[elem].fqn);
+                sb.Append(", ");
+                ResolveBSATN(types, elem, sb);
+                sb.Append('>');
+                break;
+            case INamedTypeSymbol named when !named.TypeArguments.IsEmpty:
+                sb.Append('<');
+                bool first = true;
+                foreach (var a in named.TypeArguments)
+                {
+                    if (first) first = false;
+                    else sb.Append(", ");
+                    sb.Append(types[a].fqn);
+                }
+                foreach (var a in named.TypeArguments)
+                {
+                    sb.Append(", ");
+                    ResolveBSATN(types, a, sb);
+                }
+                sb.Append('>');
+                break;
+        }
+
+        if (t.isOpt)
+        {
+            sb.Append('>');
+        }
+    }
+
+    static void EmitVar(IReadOnlyDictionary<ISymbol, AnalyzedType> types, AnalyzedType t, StringBuilder sb)
+    {
+        if (t.isOpt)
+        {
+            sb.Append("RefOpt__");
+        }
+
+        switch (t.kind)
+        {
+            case TypeKind.Prim:
+                sb.Append(t.prim);
+                break;
+            case TypeKind.Builtin:
+            case TypeKind.Enum:
+                sb.Append(t.sym.Name);
+                break;
+            case TypeKind.Option:
+                sb.Append("ValOpt_");
+                break;
+            case TypeKind.Array:
+                sb.Append("Arr_");
+                break;
+            case TypeKind.List:
+                sb.Append("List_");
+                break;
+            case TypeKind.Map:
+                sb.Append("Map_");
+                break;
+            case TypeKind.Sum:
+            case TypeKind.Product:
+                sb.Append(t.sym.Name);
+                break;
+        };
+
+        switch (t.sym)
+        {
+            case IArrayTypeSymbol { ElementType: var elem }:
+                sb.Append('_');
+                EmitVar(types, types[elem], sb);
+                break;
+            case INamedTypeSymbol named when !named.TypeArguments.IsEmpty:
+                foreach (var a in named.TypeArguments)
+                {
+                    sb.Append('_');
+                    EmitVar(types, types[a], sb);
+                }
+                break;
+        }
+    }
+
     // Even `ImmutableArray<T>` is not deeply equatable, which makes it a common
     // pain point for source generators as they must use only cacheable types.
     // As a result, everyone builds their own `EquatableArray<T>` type.

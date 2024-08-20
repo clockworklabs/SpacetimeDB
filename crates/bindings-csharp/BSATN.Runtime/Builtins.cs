@@ -12,9 +12,6 @@ public readonly partial struct Unit
         public Unit Read(BinaryReader reader) => default;
 
         public void Write(BinaryWriter writer, Unit value) { }
-
-        public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-            new AlgebraicType.Product([]);
     }
 }
 
@@ -50,15 +47,6 @@ public abstract record BytesWrapper
     protected static byte[] ReadRaw(BinaryReader reader) => ByteArray.Instance.Read(reader);
 
     protected void Write(BinaryWriter writer) => ByteArray.Instance.Write(writer, bytes);
-
-    // Custom BSATN that returns an inline product type with special property name that can be recognised by SpacetimeDB.
-    protected static AlgebraicType GetAlgebraicType(
-        ITypeRegistrar registrar,
-        string wrapperPropertyName
-    ) =>
-        new AlgebraicType.Product(
-            [new(wrapperPropertyName, ByteArray.Instance.GetAlgebraicType(registrar))]
-        );
 }
 
 public record Address : BytesWrapper
@@ -92,9 +80,6 @@ public record Address : BytesWrapper
         public Address Read(BinaryReader reader) => new(ReadRaw(reader));
 
         public void Write(BinaryWriter writer, Address value) => value.Write(writer);
-
-        public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-            BytesWrapper.GetAlgebraicType(registrar, "__address_bytes");
     }
 
     // This must be explicitly forwarded to base, otherwise record will generate a new implementation.
@@ -117,9 +102,6 @@ public record Identity : BytesWrapper
         public Identity Read(BinaryReader reader) => new(ReadRaw(reader));
 
         public void Write(BinaryWriter writer, Identity value) => value.Write(writer);
-
-        public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
-            BytesWrapper.GetAlgebraicType(registrar, "__identity_bytes");
     }
 
     // This must be explicitly forwarded to base, otherwise record will generate a new implementation.
