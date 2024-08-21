@@ -1,7 +1,11 @@
 <!-- See https://learn.microsoft.com/en-us/visualstudio/msbuild/customize-solution-build?view=vs-2019 -->
 <Project>
- <Target Name="RemoveUnsupportedDLLs" AfterTargets="Restore">
-    <!-- After `dotnet restore`, delete DLLs for incompatible frameworks as they will confuse Unity. -->
-    <RemoveDir Directories="packages/spacetimedb.bsatn.runtime/0.11.0/lib/net8.0" />
- </Target>
+   <!-- After `dotnet restore`, delete DLLs for incompatible frameworks as they will confuse Unity. -->
+   <Target Name="RemoveUnsupportedDLLs" AfterTargets="Restore">
+      <ItemGroup>
+         <!-- Delete doesn't support wildcards on its own, collect files into an interim ItemGroup. -->
+         <_UnsupportedDLLs Include="packages/**/net8.0/**" />
+      </ItemGroup>
+      <Delete Files="@(_UnsupportedDLLs)" />
+   </Target>
 </Project>
