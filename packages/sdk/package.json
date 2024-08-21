@@ -33,7 +33,6 @@
     "url": "https://github.com/clockworklabs/spacetimedb-typescript-sdk"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com/clockworklabs",
     "provenance": true
   },
   "engines": {
