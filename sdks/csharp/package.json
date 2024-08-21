@@ -1,7 +1,7 @@
 {
   "name": "com.clockworklabs.spacetimedbsdk",
   "displayName": "SpacetimeDB SDK",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "The SpacetimeDB Client SDK is a software development kit (SDK) designed to interact with and manipulate SpacetimeDB modules..",
   "keywords": [],
   "author": {
