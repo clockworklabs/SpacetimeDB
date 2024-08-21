@@ -63,10 +63,30 @@ dependencies = [
 ]
 
 [[package]]
-name = "bytes"
-version = "1.6.0"
+name = "bytemuck"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "514de17de45fdb8dc022b1a7975556c53c86f9f0aa5f534b98977b171857c2c9"
+checksum = "6fd4c6dcc3b0aea2f5c0b4b82c2b15fe39ddbc76041a310848f4706edf76bb31"
+dependencies = [
+ "bytemuck_derive",
+]
+
+[[package]]
+name = "bytemuck_derive"
+version = "1.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0cc8b54b395f2fcfbb3d90c47b01c7f444d94d05bdeb775811dec868ac3bbc26"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.32",
+]
+
+[[package]]
+name = "bytes"
+version = "1.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8318a53db07bb3f8dca91a600466bdb3f2eaadeedfdbcf02e1accbad9271ba50"
 
 [[package]]
 name = "cfg-if"
@@ -148,6 +168,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.32",
+]
+
+[[package]]
+name = "ethnum"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b90ca2580b73ab6a1f724b76ca11ab632df820fd6040c336200d2c1df7b3c82c"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -332,6 +361,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92d43fe69e652f3df9bdc2b85b2854a0825b86e4fb76bc44d945137d053639ca"
 
 [[package]]
+name = "serde"
+version = "1.0.193"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25dd9975e68d0cb5aa1120c288333fc98731bd1dd12f561e468ea4728c042b89"
+dependencies = [
+ "serde_derive",
+]
+
+[[package]]
+name = "serde_derive"
+version = "1.0.193"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43576ca501357b9b071ac53cdc7da8ef0cbd9493d8df094cd821777ea6e894d3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.32",
+]
+
+[[package]]
 name = "sha3"
 version = "0.10.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -358,7 +407,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "derive_more",
  "getrandom",
@@ -373,7 +422,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "bitflags",
  "humantime",
@@ -385,23 +434,24 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-sys"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "spacetimedb-primitives",
 ]
 
 [[package]]
 name = "spacetimedb-data-structures"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "hashbrown",
  "nohash-hasher",
+ "smallvec",
  "thiserror",
 ]
 
 [[package]]
 name = "spacetimedb-lib"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "anyhow",
  "bitflags",
@@ -410,6 +460,7 @@ dependencies = [
  "hex",
  "itertools",
  "spacetimedb-bindings-macro",
+ "spacetimedb-data-structures",
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "thiserror",
@@ -417,7 +468,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-primitives"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "bitflags",
  "either",
@@ -426,21 +477,22 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sats"
-version = "0.10.0"
+version = "0.12.0"
 dependencies = [
  "arrayvec",
  "bitflags",
+ "bytemuck",
  "bytes",
  "decorum",
  "derive_more",
  "enum-as-inner",
+ "ethnum",
  "hex",
  "itertools",
  "second-stack",
  "sha3",
  "smallvec",
  "spacetimedb-bindings-macro",
- "spacetimedb-data-structures",
  "spacetimedb-primitives",
  "thiserror",
 ]

@@ -1,0 +1,27 @@
+{
+  "name": "client-vite",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "spacetime:generate-bindings": "spacetime generate --lang typescript --out-dir src/module_bindings --project-path server",
+    "spacetime:start": "spacetime start server",
+    "spacetime:publish:local": "spacetime publish chat --project-path server --server local",
+    "spacetime:publish": "spacetime publish chat --project-path server --server testnet"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "@clockworklabs/spacetimedb-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.2.2",
+    "vite": "^5.3.4"
+  }
+}
