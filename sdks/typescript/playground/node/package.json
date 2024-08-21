@@ -1,0 +1,19 @@
+{
+  "name": "node",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "spacetime:generate-bindings": "spacetime generate --lang typescript --out-dir ./module_bindings --project-path ./server",
+    "spacetime:start": "spacetime start server",
+    "spacetime:publish:local": "spacetime publish chat-node --project-path ./server --server local"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@clockworklabs/spacetimedb-sdk": "workspace:*"
+  }
+}

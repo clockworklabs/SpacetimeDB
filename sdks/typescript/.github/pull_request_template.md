@@ -1,12 +1,13 @@
 ## Description of Changes
-*Describe what has been changed, any new features or bug fixes*
+
+_Describe what has been changed, any new features or bug fixes_
 
 ## API
 
- - [ ] This is an API breaking change to the SDK
+- [ ] This is an API breaking change to the SDK
 
-*If the API is breaking, please state below what will break*
-
+_If the API is breaking, please state below what will break_
 
 ## Requires SpacetimeDB PRs
-*List any PRs here that are required for this SDK change to work*
+
+_List any PRs here that are required for this SDK change to work_
