@@ -19,11 +19,13 @@ public static class Utils
         return sb;
     }
 
-    public static readonly SymbolDisplayFormat fmt = new(
-        globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Included,
-        typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
-        memberOptions: SymbolDisplayMemberOptions.IncludeContainingType,
-        genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters);
+    public static readonly SymbolDisplayFormat fmt =
+        new(
+            globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Included,
+            typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
+            memberOptions: SymbolDisplayMemberOptions.IncludeContainingType,
+            genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters
+        );
 
     public static bool Always(SyntaxNode _sn, CancellationToken _ct) => true;
 
@@ -37,7 +39,9 @@ public static class Utils
         }
         else
         {
-            throw new InvalidOperationException($"Failed to get generic type argument {idx} for type {sym.ToDisplayString()}");
+            throw new InvalidOperationException(
+                $"Failed to get generic type argument {idx} for type {sym.ToDisplayString()}"
+            );
         }
     }
 
@@ -112,105 +116,113 @@ public static class Utils
         }
 
         var refOffset = 0; // Used to align indexes for type references and type aliases.
-        var types = syms.Select((sym, idx) =>
-        {
-            var od = sym.OriginalDefinition.ToString();
-
-            var prim = sym.SpecialType switch
-            {
-                SpecialType.System_String => "String",
-                SpecialType.System_Boolean => "Bool",
-                SpecialType.System_SByte => "I8",
-                SpecialType.System_Byte => "U8",
-                SpecialType.System_Int16 => "I16",
-                SpecialType.System_UInt16 => "U16",
-                SpecialType.System_Int32 => "I32",
-                SpecialType.System_UInt32 => "U32",
-                SpecialType.System_Int64 => "I64",
-                SpecialType.System_UInt64 => "U64",
-                SpecialType.System_Single => "F32",
-                SpecialType.System_Double => "F64",
-                SpecialType.None => od switch
+        var types = syms.Select(
+                (sym, idx) =>
                 {
-                    "System.Int128" => "I128",
-                    "System.UInt128" => "U128",
-                    "SpacetimeDB.I128" => "I128Stdb",
-                    "SpacetimeDB.U128" => "U128Stdb",
-                    "SpacetimeDB.I256" => "I256",
-                    "SpacetimeDB.U256" => "U256",
-                    _ => null
-                },
-                _ => null
-            };
+                    var od = sym.OriginalDefinition.ToString();
 
-            var builtin = od is "SpacetimeDB.Address" or "SpacetimeDB.Identity";
-            if (builtin)
-            {
-                prim = sym.Name;
-            }
-
-            var isInt = sym.SpecialType switch
-            {
-                SpecialType.System_SByte or
-                SpecialType.System_Byte or
-                SpecialType.System_Int16 or
-                SpecialType.System_UInt16 or
-                SpecialType.System_Int32 or
-                SpecialType.System_UInt32 or
-                SpecialType.System_Int64 or
-                SpecialType.System_UInt64 => true,
-                SpecialType.None => od is
-                    "System.Int128" or
-                    "System.UInt128" or
-                    "SpacetimeDB.I128" or
-                    "SpacetimeDB.U128" or
-                    "SpacetimeDB.I256" or
-                    "SpacetimeDB.U256",
-                _ => false
-            };
-
-            var isOpt = sym.NullableAnnotation == NullableAnnotation.Annotated;
-
-            var isEq = (isInt || sym.SpecialType switch
-            {
-                SpecialType.System_Boolean or
-                SpecialType.System_String => true,
-                SpecialType.None => builtin,
-                _ => false
-            }) && !isOpt;
-
-            var kind = isOpt && sym.IsValueType ? TypeKind.Option
-                : builtin ? TypeKind.Builtin
-                : prim != null ? TypeKind.Prim
-                : od switch
-                {
-                    "System.Collections.Generic.List<T>" => TypeKind.List,
-                    "System.Collections.Generic.Dictionary<TKey, TValue>" => TypeKind.Map,
-                    _ => sym.BaseType?.OriginalDefinition.ToString() switch
+                    var prim = sym.SpecialType switch
                     {
-                        "System.Enum" => TypeKind.Enum,
-                        "SpacetimeDB.TaggedEnum<Variants>" => TypeKind.Sum,
-                        _ => sym is IArrayTypeSymbol ? TypeKind.Array : TypeKind.Product
+                        SpecialType.System_String => "String",
+                        SpecialType.System_Boolean => "Bool",
+                        SpecialType.System_SByte => "I8",
+                        SpecialType.System_Byte => "U8",
+                        SpecialType.System_Int16 => "I16",
+                        SpecialType.System_UInt16 => "U16",
+                        SpecialType.System_Int32 => "I32",
+                        SpecialType.System_UInt32 => "U32",
+                        SpecialType.System_Int64 => "I64",
+                        SpecialType.System_UInt64 => "U64",
+                        SpecialType.System_Single => "F32",
+                        SpecialType.System_Double => "F64",
+                        SpecialType.None => od switch
+                        {
+                            "System.Int128" => "I128",
+                            "System.UInt128" => "U128",
+                            "SpacetimeDB.I128" => "I128Stdb",
+                            "SpacetimeDB.U128" => "U128Stdb",
+                            "SpacetimeDB.I256" => "I256",
+                            "SpacetimeDB.U256" => "U256",
+                            _ => null,
+                        },
+                        _ => null,
+                    };
+
+                    var builtin = od is "SpacetimeDB.Address" or "SpacetimeDB.Identity";
+                    if (builtin)
+                    {
+                        prim = sym.Name;
                     }
-                };
 
-            var prevRefOffset = refOffset;
-            if (!(kind is TypeKind.Enum or TypeKind.Sum or TypeKind.Product)) refOffset++;
+                    var isInt = sym.SpecialType switch
+                    {
+                        SpecialType.System_SByte
+                        or SpecialType.System_Byte
+                        or SpecialType.System_Int16
+                        or SpecialType.System_UInt16
+                        or SpecialType.System_Int32
+                        or SpecialType.System_UInt32
+                        or SpecialType.System_Int64
+                        or SpecialType.System_UInt64 => true,
+                        SpecialType.None => od
+                            is "System.Int128"
+                                or "System.UInt128"
+                                or "SpacetimeDB.I128"
+                                or "SpacetimeDB.U128"
+                                or "SpacetimeDB.I256"
+                                or "SpacetimeDB.U256",
+                        _ => false,
+                    };
 
-            return new AnalyzedType()
-            {
-                sym = sym,
-                idx = idx - prevRefOffset,
-                fqn = sym.ToDisplayString(fmt),
-                alg = "",
-                var = "",
-                prim = prim,
-                kind = kind,
-                isOpt = isOpt && !sym.IsValueType,
-                isInt = isInt,
-                isEq = isEq
-            };
-        }).ToDictionary(x => x.sym, SymbolEqualityComparer.Default);
+                    var isOpt = sym.NullableAnnotation == NullableAnnotation.Annotated;
+
+                    var isEq =
+                        (
+                            isInt
+                            || sym.SpecialType switch
+                            {
+                                SpecialType.System_Boolean or SpecialType.System_String => true,
+                                SpecialType.None => builtin,
+                                _ => false,
+                            }
+                        ) && !isOpt;
+
+                    var kind =
+                        isOpt && sym.IsValueType ? TypeKind.Option
+                        : builtin ? TypeKind.Builtin
+                        : prim != null ? TypeKind.Prim
+                        : od switch
+                        {
+                            "System.Collections.Generic.List<T>" => TypeKind.List,
+                            "System.Collections.Generic.Dictionary<TKey, TValue>" => TypeKind.Map,
+                            _ => sym.BaseType?.OriginalDefinition.ToString() switch
+                            {
+                                "System.Enum" => TypeKind.Enum,
+                                "SpacetimeDB.TaggedEnum<Variants>" => TypeKind.Sum,
+                                _ => sym is IArrayTypeSymbol ? TypeKind.Array : TypeKind.Product,
+                            },
+                        };
+
+                    var prevRefOffset = refOffset;
+                    if (!(kind is TypeKind.Enum or TypeKind.Sum or TypeKind.Product))
+                        refOffset++;
+
+                    return new AnalyzedType()
+                    {
+                        sym = sym,
+                        idx = idx - prevRefOffset,
+                        fqn = sym.ToDisplayString(fmt),
+                        alg = "",
+                        var = "",
+                        prim = prim,
+                        kind = kind,
+                        isOpt = isOpt && !sym.IsValueType,
+                        isInt = isInt,
+                        isEq = isEq,
+                    };
+                }
+            )
+            .ToDictionary(x => x.sym, SymbolEqualityComparer.Default);
 
         foreach (var t in types.Values)
         {
@@ -229,12 +241,10 @@ public static class Utils
                 ? t.var
                 : t.kind switch
                 {
-                    TypeKind.Prim or
-                    TypeKind.Builtin => $"global::SpacetimeDB.BSATN.AlgebraicTypes.{t.prim}",
-                    TypeKind.Enum or
-                    TypeKind.Sum or
-                    TypeKind.Product => $"{t.var}Ref",
-                    _ => t.var
+                    TypeKind.Prim or TypeKind.Builtin =>
+                        $"global::SpacetimeDB.BSATN.AlgebraicTypes.{t.prim}",
+                    TypeKind.Enum or TypeKind.Sum or TypeKind.Product => $"{t.var}Ref",
+                    _ => t.var,
                 };
         }
 
@@ -243,7 +253,10 @@ public static class Utils
 
     public static ImmutableArray<IFieldSymbol> GetSumElements(ITypeSymbol sym)
     {
-        if (sym.BaseType!.TypeArguments[0] is not INamedTypeSymbol { IsTupleType: true, TupleElements: var elems })
+        if (
+            sym.BaseType!.TypeArguments[0]
+            is not INamedTypeSymbol { IsTupleType: true, TupleElements: var elems }
+        )
         {
             throw new Exception("TaggedUnion must have a tuple type as its type argument.");
         }
@@ -256,14 +269,21 @@ public static class Utils
         return elems;
     }
 
-    public static string ResolveBSATN(IReadOnlyDictionary<ISymbol, AnalyzedType> types, ITypeSymbol sym)
+    public static string ResolveBSATN(
+        IReadOnlyDictionary<ISymbol, AnalyzedType> types,
+        ITypeSymbol sym
+    )
     {
         var sb = StringBuilder();
         ResolveBSATN(types, sym, sb);
         return sb.ToString();
     }
 
-    static void ResolveBSATN(IReadOnlyDictionary<ISymbol, AnalyzedType> types, ITypeSymbol sym, StringBuilder sb)
+    static void ResolveBSATN(
+        IReadOnlyDictionary<ISymbol, AnalyzedType> types,
+        ITypeSymbol sym,
+        StringBuilder sb
+    )
     {
         var t = types[sym];
         if (t.isOpt)
@@ -273,26 +293,31 @@ public static class Utils
             sb.Append(", ");
         }
 
-        sb.Append(t.kind switch
-        {
-            TypeKind.Prim => $"global::SpacetimeDB.BSATN.{t.prim}",
-            TypeKind.Builtin => $"global::SpacetimeDB.{t.sym.Name}.BSATN",
-            TypeKind.Enum => $"global::SpacetimeDB.BSATN.Enum<{t.fqn}>",
-            TypeKind.Option => "global::SpacetimeDB.BSATN.ValueOption",
-            TypeKind.Array when sym is IArrayTypeSymbol { ElementType: var elem } &&
-                                elem.SpecialType == SpecialType.System_Byte =>
-                                "global::SpacetimeDB.BSATN.ByteArray",
-            TypeKind.Array => "global::SpacetimeDB.BSATN.Array",
-            TypeKind.List => "global::SpacetimeDB.BSATN.List",
-            TypeKind.Map => "global::SpacetimeDB.BSATN.Dictionary",
-            TypeKind.Sum or
-            TypeKind.Product => $"{t.fqn}.BSATN",
-            _ => throw new InvalidDataException($"Failed to resolve BSATN type for {types[sym].fqn}")
-        });
+        sb.Append(
+            t.kind switch
+            {
+                TypeKind.Prim => $"global::SpacetimeDB.BSATN.{t.prim}",
+                TypeKind.Builtin => $"global::SpacetimeDB.{t.sym.Name}.BSATN",
+                TypeKind.Enum => $"global::SpacetimeDB.BSATN.Enum<{t.fqn}>",
+                TypeKind.Option => "global::SpacetimeDB.BSATN.ValueOption",
+                TypeKind.Array
+                    when sym is IArrayTypeSymbol { ElementType: var elem }
+                        && elem.SpecialType == SpecialType.System_Byte =>
+                    "global::SpacetimeDB.BSATN.ByteArray",
+                TypeKind.Array => "global::SpacetimeDB.BSATN.Array",
+                TypeKind.List => "global::SpacetimeDB.BSATN.List",
+                TypeKind.Map => "global::SpacetimeDB.BSATN.Dictionary",
+                TypeKind.Sum or TypeKind.Product => $"{t.fqn}.BSATN",
+                _ => throw new InvalidDataException(
+                    $"Failed to resolve BSATN type for {types[sym].fqn}"
+                ),
+            }
+        );
 
         switch (sym)
         {
-            case IArrayTypeSymbol { ElementType: var elem } when elem.SpecialType != SpecialType.System_Byte:
+            case IArrayTypeSymbol { ElementType: var elem }
+                when elem.SpecialType != SpecialType.System_Byte:
                 sb.Append('<');
                 sb.Append(types[elem].fqn);
                 sb.Append(", ");
@@ -304,8 +329,10 @@ public static class Utils
                 bool first = true;
                 foreach (var a in named.TypeArguments)
                 {
-                    if (first) first = false;
-                    else sb.Append(", ");
+                    if (first)
+                        first = false;
+                    else
+                        sb.Append(", ");
                     sb.Append(types[a].fqn);
                 }
                 foreach (var a in named.TypeArguments)
@@ -323,7 +350,11 @@ public static class Utils
         }
     }
 
-    static void EmitVar(IReadOnlyDictionary<ISymbol, AnalyzedType> types, AnalyzedType t, StringBuilder sb)
+    static void EmitVar(
+        IReadOnlyDictionary<ISymbol, AnalyzedType> types,
+        AnalyzedType t,
+        StringBuilder sb
+    )
     {
         if (t.isOpt)
         {
@@ -355,7 +386,8 @@ public static class Utils
             case TypeKind.Product:
                 sb.Append(t.sym.Name);
                 break;
-        };
+        }
+        ;
 
         switch (t.sym)
         {
@@ -392,8 +424,7 @@ public static class Utils
     }
 
     private static readonly SymbolDisplayFormat SymbolFormat = SymbolDisplayFormat
-        .FullyQualifiedFormat
-        .WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)
+        .FullyQualifiedFormat.WithGlobalNamespaceStyle(SymbolDisplayGlobalNamespaceStyle.Omitted)
         .AddMemberOptions(SymbolDisplayMemberOptions.IncludeContainingType)
         .AddMiscellaneousOptions(
             SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier

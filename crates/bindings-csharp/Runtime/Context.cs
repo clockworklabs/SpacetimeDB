@@ -1,12 +1,11 @@
 ﻿namespace SpacetimeDB;
 
 using System.Collections;
-using System.Runtime.CompilerServices;
-
 using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
 
-public abstract class BaseReducerContext<DbView> : DbContext<DbView> where DbView : struct
+public abstract class BaseReducerContext<DbView> : DbContext<DbView>
+    where DbView : struct
 {
     public Identity Sender => Runtime.SenderIdentity!;
     public Address Address => Runtime.SenderAddress!;
@@ -24,7 +23,8 @@ internal static class Tmp
     }
 }
 
-public struct LocalTableIter<T>(FFI.TableId id) : IEnumerable<T> where T : struct, IStructuralReadWrite
+public struct LocalTableIter<T>(FFI.TableId id) : IEnumerable<T>
+    where T : struct, IStructuralReadWrite
 {
     public readonly Enumerator GetEnumerator()
     {
@@ -58,7 +58,8 @@ public struct LocalTableIter<T>(FFI.TableId id) : IEnumerable<T> where T : struc
         {
             if (Tmp.stream.Position >= _offset)
             {
-                uint len = (uint)Tmp.stream.Capacity; retry:
+                uint len = (uint)Tmp.stream.Capacity;
+                retry:
                 var buffer = Tmp.stream.GetBuffer();
                 try
                 {
@@ -66,7 +67,10 @@ public struct LocalTableIter<T>(FFI.TableId id) : IEnumerable<T> where T : struc
                 }
                 catch (BufferTooSmallException)
                 {
-                    Runtime.Log($"Resized the row enumerator buffer to {len} bytes", Runtime.LogLevel.Debug);
+                    Runtime.Log(
+                        $"Resized the row enumerator buffer to {len} bytes",
+                        Runtime.LogLevel.Debug
+                    );
                     Tmp.stream.Capacity = (int)len;
                     Tmp.stream.SetLength((int)len);
                     goto retry;

@@ -19,7 +19,7 @@ public enum IndexType : byte
 public sealed class TableAttribute : Attribute
 {
     /// <summary>
-    /// This identifier is used to name the SpacetimeDB table on the host as well as the 
+    /// This identifier is used to name the SpacetimeDB table on the host as well as the
     /// table handle structures generated to access the table from within a reducer call.
     ///
     /// <para>Defaults to the <c>nameof</c> of the target type.</para>
@@ -33,9 +33,6 @@ public sealed class TableAttribute : Attribute
     /// </summary>
     public bool Public = false;
 
-    /// <summary>
-    /// 
-    /// </summary>
     public string? Index;
 
     public IndexType? IndexType;

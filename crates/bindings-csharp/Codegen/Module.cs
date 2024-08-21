@@ -1,7 +1,6 @@
 namespace SpacetimeDB.Codegen;
 
 using System.Collections.Immutable;
-
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -21,125 +20,187 @@ public class Module : IIncrementalGenerator
 {
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var rowTypes = context.SyntaxProvider
-            .ForAttributeWithMetadataName(
-                fullyQualifiedMetadataName: "SpacetimeDB.TableAttribute",
-                predicate: Utils.Always,
-                transform: (c, ct) => c.SemanticModel.GetDeclaredSymbol((TypeDeclarationSyntax)c.TargetNode, ct)!);
+        var rowTypes = context.SyntaxProvider.ForAttributeWithMetadataName(
+            fullyQualifiedMetadataName: "SpacetimeDB.TableAttribute",
+            predicate: Utils.Always,
+            transform: (c, ct) =>
+                c.SemanticModel.GetDeclaredSymbol((TypeDeclarationSyntax)c.TargetNode, ct)!
+        );
 
-        var reducers = context.SyntaxProvider
-            .ForAttributeWithMetadataName(
-                fullyQualifiedMetadataName: "SpacetimeDB.ReducerAttribute",
-                predicate: Utils.Always,
-                transform: (c, ct) =>
+        var reducers = context.SyntaxProvider.ForAttributeWithMetadataName(
+            fullyQualifiedMetadataName: "SpacetimeDB.ReducerAttribute",
+            predicate: Utils.Always,
+            transform: (c, ct) =>
+            {
+                var sym = c.SemanticModel.GetDeclaredSymbol(
+                    (MethodDeclarationSyntax)c.TargetNode,
+                    ct
+                )!;
+                if (!sym.ReturnsVoid)
                 {
-                    var sym = c.SemanticModel.GetDeclaredSymbol((MethodDeclarationSyntax)c.TargetNode, ct)!;
-                    if (!sym.ReturnsVoid)
-                    {
-                        throw new Exception($"Reducer '{sym.Name}' must return void");
-                    }
+                    throw new Exception($"Reducer '{sym.Name}' must return void");
+                }
 
-                    var name = c.Attributes
-                        .Where(a => a.AttributeClass?.OriginalDefinition.ToString() == "SpacetimeDB.ReducerAttribute")
+                var name =
+                    c.Attributes.Where(a =>
+                            a.AttributeClass?.OriginalDefinition.ToString()
+                            == "SpacetimeDB.ReducerAttribute"
+                        )
                         .SelectMany(a => a.NamedArguments)
                         .FirstOrDefault(x => x.Key == "Name")
-                        .Value.Value as string ?? sym.Name;
+                        .Value.Value as string
+                    ?? sym.Name;
 
-                    var ps = sym.Parameters;
-                    if (ps.Length == 0 || ps[0].Type.ToString() != "ReducerContext")
-                    {
-                        throw new Exception($"First argument to a reducer must be of type ReducerContext, but got a {ps[0].Type}");
-                    }
-                    var var = ps.Length == 1 ? '_' : 'r';
-                    var args = ps.Skip(1).ToImmutableArray();
-                    return (sym, name, var, args);
-                });
+                var ps = sym.Parameters;
+                if (ps.Length == 0 || ps[0].Type.ToString() != "ReducerContext")
+                {
+                    throw new Exception(
+                        $"First argument to a reducer must be of type ReducerContext, but got a {ps[0].Type}"
+                    );
+                }
+                var var = ps.Length == 1 ? '_' : 'r';
+                var args = ps.Skip(1).ToImmutableArray();
+                return (sym, name, var, args);
+            }
+        );
 
-        var source = rowTypes.Collect().Combine(reducers.Collect())
+        var source = rowTypes
+            .Collect()
+            .Combine(reducers.Collect())
             .WithTrackingName("SpacetimeDB.Codegen.Analyze")
-            .Select((xs, _) =>
-            {
-                var satsSyms = new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default);
-                var usedSyms = new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default);
-                var rowTypes = xs.Left.Sort((a, b) => a.Name.CompareTo(b.Name));
-                var reducers = xs.Right.Sort((a, b) => a.name.CompareTo(b.name));
-
-                foreach (var t in rowTypes)
+            .Select(
+                (xs, _) =>
                 {
-                    Utils.CollectType(usedSyms, t);
-                }
+                    var satsSyms = new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default);
+                    var usedSyms = new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default);
+                    var rowTypes = xs.Left.Sort((a, b) => a.Name.CompareTo(b.Name));
+                    var reducers = xs.Right.Sort((a, b) => a.name.CompareTo(b.name));
 
-                foreach (var r in reducers)
-                {
-                    foreach (var a in r.args)
+                    foreach (var t in rowTypes)
                     {
-                        Utils.CollectType(usedSyms, a.Type);
-                        satsSyms.Add(a.Type);
+                        Utils.CollectType(usedSyms, t);
                     }
-                }
 
-                var types = Utils.AnalyzeTypes(usedSyms);
-                var tableTypes = rowTypes.Aggregate(new HashSet<ISymbol>(SymbolEqualityComparer.Default), (xs, x) =>
-                {
-                    xs.Add(x);
-                    return xs;
-                });
-                var typeSyms = usedSyms
-                    .Where(t => types[t].prim == null)
-                    .ToImmutableArray();
-
-                var tables = rowTypes.SelectMany(sym => sym.GetAttributes()
-                    .Where(a => a.AttributeClass?.ToString() == "SpacetimeDB.TableAttribute")
-                    .Select(attr => (sym, attr)))
-                .Select(t =>
-                {
-                    var sym = t.sym;
-                    var vis = t.sym.DeclaredAccessibility switch
+                    foreach (var r in reducers)
                     {
-                        Accessibility.ProtectedAndInternal or
-                        Accessibility.NotApplicable or
-                        Accessibility.Internal => "internal",
-                        Accessibility.Public => "public",
-                        _ => throw new Exception("Table row type visibility must be public or internal."),
-                    };
-                    var args = t.attr.NamedArguments;
-                    var name = args.FirstOrDefault(x => x.Key == "Name").Value.Value as string ?? t.sym.Name;
-                    var isPublic = args.Any(x => x.Key == "Public" && x.Value.Value is true);
-                    var fields = sym.GetMembers().OfType<IFieldSymbol>().Select((sym, idx) =>
-                    {
-                        var attrs = sym.GetAttributes()
-                            .Select(a => a.AttributeClass?.OriginalDefinition.ToString() switch
-                            {
-                                "SpacetimeDB.PrimaryKeyAttribute" => MatchColumn(a, name, ColumnAttrs.PrimaryKey),
-                                "SpacetimeDB.UniqueAttribute" => MatchColumn(a, name, ColumnAttrs.Unique),
-                                "SpacetimeDB.AutoIncAttribute" => MatchColumn(a, name, ColumnAttrs.AutoInc),
-                                "SpacetimeDB.IndexedAttribute" => MatchColumn(a, name, ColumnAttrs.Indexed),
-                                _ => ColumnAttrs.None
-                            }).Aggregate(ColumnAttrs.None, (xs, x) => xs | x);
-
-                        if (attrs.HasFlag(ColumnAttrs.AutoInc) && !types[sym.Type].isInt)
+                        foreach (var a in r.args)
                         {
-                            throw new Exception($"[AutoInc] must be used with integer data types, got type {sym.Type.Name} on field {sym.Type.ToDisplayString()}.");
+                            Utils.CollectType(usedSyms, a.Type);
+                            satsSyms.Add(a.Type);
                         }
+                    }
 
-                        if (attrs.HasFlag(ColumnAttrs.Unique) && !types[sym.Type].isEq)
-                        { // PrimaryKey implies Unique
-                            throw new Exception($"[PrimaryKey] and [Unique] must be used with equatable data types, got type {sym.Type.ToDisplayString()}.");
+                    var types = Utils.AnalyzeTypes(usedSyms);
+                    var tableTypes = rowTypes.Aggregate(
+                        new HashSet<ISymbol>(SymbolEqualityComparer.Default),
+                        (xs, x) =>
+                        {
+                            xs.Add(x);
+                            return xs;
                         }
+                    );
+                    var typeSyms = usedSyms.Where(t => types[t].prim == null).ToImmutableArray();
 
-                        return (sym, idx, attrs);
-                    }).ToImmutableArray();
-                    return (sym, vis, name, fields, isPublic);
-                });
+                    var tables = rowTypes
+                        .SelectMany(sym =>
+                            sym.GetAttributes()
+                                .Where(a =>
+                                    a.AttributeClass?.ToString() == "SpacetimeDB.TableAttribute"
+                                )
+                                .Select(attr => (sym, attr))
+                        )
+                        .Select(t =>
+                        {
+                            var sym = t.sym;
+                            var vis = t.sym.DeclaredAccessibility switch
+                            {
+                                Accessibility.ProtectedAndInternal
+                                or Accessibility.NotApplicable
+                                or Accessibility.Internal => "internal",
+                                Accessibility.Public => "public",
+                                _ => throw new Exception(
+                                    "Table row type visibility must be public or internal."
+                                ),
+                            };
+                            var args = t.attr.NamedArguments;
+                            var name =
+                                args.FirstOrDefault(x => x.Key == "Name").Value.Value as string
+                                ?? t.sym.Name;
+                            var isPublic = args.Any(x =>
+                                x.Key == "Public" && x.Value.Value is true
+                            );
+                            var fields = sym.GetMembers()
+                                .OfType<IFieldSymbol>()
+                                .Select(
+                                    (sym, idx) =>
+                                    {
+                                        var attrs = sym.GetAttributes()
+                                            .Select(a =>
+                                                a.AttributeClass?.OriginalDefinition.ToString() switch
+                                                {
+                                                    "SpacetimeDB.PrimaryKeyAttribute" =>
+                                                        MatchColumn(
+                                                            a,
+                                                            name,
+                                                            ColumnAttrs.PrimaryKey
+                                                        ),
+                                                    "SpacetimeDB.UniqueAttribute" => MatchColumn(
+                                                        a,
+                                                        name,
+                                                        ColumnAttrs.Unique
+                                                    ),
+                                                    "SpacetimeDB.AutoIncAttribute" => MatchColumn(
+                                                        a,
+                                                        name,
+                                                        ColumnAttrs.AutoInc
+                                                    ),
+                                                    "SpacetimeDB.IndexedAttribute" => MatchColumn(
+                                                        a,
+                                                        name,
+                                                        ColumnAttrs.Indexed
+                                                    ),
+                                                    _ => ColumnAttrs.None,
+                                                }
+                                            )
+                                            .Aggregate(ColumnAttrs.None, (xs, x) => xs | x);
 
-                return (types, satsSyms, typeSyms, tables, tableTypes, reducers, rowTypes);
-            });
+                                        if (
+                                            attrs.HasFlag(ColumnAttrs.AutoInc)
+                                            && !types[sym.Type].isInt
+                                        )
+                                        {
+                                            throw new Exception(
+                                                $"[AutoInc] must be used with integer data types, got type {sym.Type.Name} on field {sym.Type.ToDisplayString()}."
+                                            );
+                                        }
+
+                                        if (
+                                            attrs.HasFlag(ColumnAttrs.Unique)
+                                            && !types[sym.Type].isEq
+                                        )
+                                        { // PrimaryKey implies Unique
+                                            throw new Exception(
+                                                $"[PrimaryKey] and [Unique] must be used with equatable data types, got type {sym.Type.ToDisplayString()}."
+                                            );
+                                        }
+
+                                        return (sym, idx, attrs);
+                                    }
+                                )
+                                .ToImmutableArray();
+                            return (sym, vis, name, fields, isPublic);
+                        });
+
+                    return (types, satsSyms, typeSyms, tables, tableTypes, reducers, rowTypes);
+                }
+            );
 
         context.RegisterSourceOutput(
             source,
-            (c, s) => c.AddSource(
-                "Registration.cs",
-                $$"""
+            (c, s) =>
+                c.AddSource(
+                    "Registration.cs",
+                    $$"""
                 // <auto-generated />
                 #nullable enable
                 namespace SpacetimeDB;
@@ -278,11 +339,14 @@ public class Module : IIncrementalGenerator
                     }
                 }
                 """
-            )
+                )
         );
     }
 
-    public static string GetAlg(IReadOnlyDictionary<ISymbol, Utils.AnalyzedType> types, ITypeSymbol sym)
+    public static string GetAlg(
+        IReadOnlyDictionary<ISymbol, Utils.AnalyzedType> types,
+        ITypeSymbol sym
+    )
     {
         var alg = types[sym].alg;
         if (sym.NullableAnnotation == NullableAnnotation.Annotated && !sym.IsValueType)
@@ -298,7 +362,11 @@ public class Module : IIncrementalGenerator
     static bool IsRef(Utils.AnalyzedType t) =>
         t.kind is Utils.TypeKind.Enum or Utils.TypeKind.Sum or Utils.TypeKind.Product;
 
-    static string EmitType(IReadOnlyDictionary<ISymbol, Utils.AnalyzedType> types, ITypeSymbol sym, bool isOpt = false)
+    static string EmitType(
+        IReadOnlyDictionary<ISymbol, Utils.AnalyzedType> types,
+        ITypeSymbol sym,
+        bool isOpt = false
+    )
     {
         var t = types[sym];
         if (t.isOpt && !isOpt)
@@ -310,16 +378,22 @@ public class Module : IIncrementalGenerator
             Utils.TypeKind.Prim => t.alg,
             Utils.TypeKind.Enum => $"global::SpacetimeDB.BSATN.AlgebraicType.MakeEnum<{t.fqn}>()",
             Utils.TypeKind.Builtin => $"global::SpacetimeDB.BSATN.AlgebraicTypes.{t.sym.Name}",
-            Utils.TypeKind.Option => $"global::SpacetimeDB.BSATN.AlgebraicType.MakeOption({GetAlg(types, Utils.Generic(sym, 0))})",
-            Utils.TypeKind.List => $"new global::SpacetimeDB.BSATN.AlgebraicType.Array({GetAlg(types, Utils.Generic(sym, 0))})",
-            Utils.TypeKind.Array when sym is IArrayTypeSymbol { ElementType: var elem } => elem.SpecialType == SpecialType.System_Byte
-                ? "global::SpacetimeDB.BSATN.AlgebraicTypes.U8Array"
-                : $"new global::SpacetimeDB.BSATN.AlgebraicType.Array({GetAlg(types, elem)})",
-            Utils.TypeKind.Map => $"new global::SpacetimeDB.BSATN.AlgebraicType.Map(new({GetAlg(types, Utils.Generic(sym, 0))}, {GetAlg(types, Utils.Generic(sym, 1))}))",
-            Utils.TypeKind.Sum => $"new global::SpacetimeDB.BSATN.AlgebraicType.Sum([\n                {string.Join(",\n                ", Utils.GetSumElements(sym)
+            Utils.TypeKind.Option =>
+                $"global::SpacetimeDB.BSATN.AlgebraicType.MakeOption({GetAlg(types, Utils.Generic(sym, 0))})",
+            Utils.TypeKind.List =>
+                $"new global::SpacetimeDB.BSATN.AlgebraicType.Array({GetAlg(types, Utils.Generic(sym, 0))})",
+            Utils.TypeKind.Array when sym is IArrayTypeSymbol { ElementType: var elem } =>
+                elem.SpecialType == SpecialType.System_Byte
+                    ? "global::SpacetimeDB.BSATN.AlgebraicTypes.U8Array"
+                    : $"new global::SpacetimeDB.BSATN.AlgebraicType.Array({GetAlg(types, elem)})",
+            Utils.TypeKind.Map =>
+                $"new global::SpacetimeDB.BSATN.AlgebraicType.Map(new({GetAlg(types, Utils.Generic(sym, 0))}, {GetAlg(types, Utils.Generic(sym, 1))}))",
+            Utils.TypeKind.Sum =>
+                $"new global::SpacetimeDB.BSATN.AlgebraicType.Sum([\n                {string.Join(",\n                ", Utils.GetSumElements(sym)
                     .Select(f => @$"new(""{f.Name}"", {GetAlg(types, f.Type)})")
                 )}\n            ])",
-            Utils.TypeKind.Product => $"new global::SpacetimeDB.BSATN.AlgebraicType.Product([\n                {string.Join(",\n                ", sym
+            Utils.TypeKind.Product =>
+                $"new global::SpacetimeDB.BSATN.AlgebraicType.Product([\n                {string.Join(",\n                ", sym
                     .GetMembers()
                     .OfType<IFieldSymbol>()
                     .Select(f => @$"new(""{f.Name}"", {GetAlg(types, f.Type)})"))}\n            ])",
@@ -339,7 +413,10 @@ public class Module : IIncrementalGenerator
         return column;
     }
 
-    static string CallReducer(IReadOnlyDictionary<ISymbol, Utils.AnalyzedType> types, ImmutableArray<IParameterSymbol> args)
+    static string CallReducer(
+        IReadOnlyDictionary<ISymbol, Utils.AnalyzedType> types,
+        ImmutableArray<IParameterSymbol> args
+    )
     {
         if (args.IsEmpty)
         {

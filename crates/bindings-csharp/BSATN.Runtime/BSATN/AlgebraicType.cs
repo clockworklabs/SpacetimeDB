@@ -15,29 +15,30 @@ public partial struct MapElement(AlgebraicType key, AlgebraicType value)
 }
 
 [Type]
-public partial record AlgebraicType : TaggedEnum<(
-    int Ref,
-    AggregateElement[] Sum,
-    AggregateElement[] Product,
-    AlgebraicType Array,
-    MapElement Map,
-    Unit String,
-    Unit Bool,
-    Unit I8,
-    Unit U8,
-    Unit I16,
-    Unit U16,
-    Unit I32,
-    Unit U32,
-    Unit I64,
-    Unit U64,
-    Unit I128,
-    Unit U128,
-    Unit I256,
-    Unit U256,
-    Unit F32,
-    Unit F64
-)>
+public partial record AlgebraicType
+    : TaggedEnum<(
+        int Ref,
+        AggregateElement[] Sum,
+        AggregateElement[] Product,
+        AlgebraicType Array,
+        MapElement Map,
+        Unit String,
+        Unit Bool,
+        Unit I8,
+        Unit U8,
+        Unit I16,
+        Unit U16,
+        Unit I32,
+        Unit U32,
+        Unit I64,
+        Unit U64,
+        Unit I128,
+        Unit U128,
+        Unit I256,
+        Unit U256,
+        Unit F32,
+        Unit F64
+    )>
 {
     public static readonly Product Unit = new Product([]);
 
@@ -45,10 +46,9 @@ public partial record AlgebraicType : TaggedEnum<(
     public static Sum MakeOption(AlgebraicType someType) =>
         new([new("some", someType), new("none", Unit)]);
 
-    public static Sum MakeEnum<T>() where T : Enum =>
-        new(Enum.GetNames(typeof(T))
-            .Select(name => new AggregateElement(name, Unit))
-            .ToArray());
+    public static Sum MakeEnum<T>()
+        where T : Enum =>
+        new(Enum.GetNames(typeof(T)).Select(name => new AggregateElement(name, Unit)).ToArray());
 }
 
 public static class AlgebraicTypes
@@ -75,11 +75,11 @@ public static class AlgebraicTypes
 
     public static readonly AlgebraicType U8Array = new AlgebraicType.Array(U8);
 
-    public static readonly AlgebraicType Address = new AlgebraicType.Product([
-        new("__address_bytes", U8Array)
-    ]);
+    public static readonly AlgebraicType Address = new AlgebraicType.Product(
+        [new("__address_bytes", U8Array)]
+    );
 
-    public static readonly AlgebraicType Identity = new AlgebraicType.Product([
-        new("__identity_bytes", U8Array)
-    ]);
+    public static readonly AlgebraicType Identity = new AlgebraicType.Product(
+        [new("__identity_bytes", U8Array)]
+    );
 }

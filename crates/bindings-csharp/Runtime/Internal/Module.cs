@@ -1,9 +1,9 @@
 namespace SpacetimeDB.Internal;
 
-using SpacetimeDB.BSATN;
 using System;
 using System.Runtime.CompilerServices;
 using System.Text;
+using SpacetimeDB.BSATN;
 
 [Flags]
 public enum ColumnAttrs : byte
@@ -124,8 +124,7 @@ public static partial class Module
     }
 
     [Type]
-    public partial record MiscModuleExport
-        : TaggedEnum<(TypeAlias TypeAlias, Unit _Reserved)>;
+    public partial record MiscModuleExport : TaggedEnum<(TypeAlias TypeAlias, Unit _Reserved)>;
 
     [Type]
     public partial struct RawModuleDefV8()
@@ -137,7 +136,8 @@ public static partial class Module
     }
 
     [Type]
-    internal partial record RawModuleDef : TaggedEnum<(RawModuleDefV8 V8BackCompat, Unit _Reserved)>;
+    internal partial record RawModuleDef
+        : TaggedEnum<(RawModuleDefV8 V8BackCompat, Unit _Reserved)>;
 
     public delegate void CallReducer(BinaryReader reader);
 
@@ -166,7 +166,8 @@ public static partial class Module
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void Insert<T>(FFI.TableId id, in T row) where T : struct, IStructuralReadWrite
+    public static void Insert<T>(FFI.TableId id, in T row)
+        where T : struct, IStructuralReadWrite
     {
         var bytes = IStructuralReadWrite.ToBytes(row);
         FFI._insert(id, bytes, (uint)bytes.Length);
@@ -186,7 +187,8 @@ public static partial class Module
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool Delete<C, RW>(FFI.TableId id, FFI.ColId colId, in C col) where RW : struct, IReadWrite<C>
+    public static bool Delete<C, RW>(FFI.TableId id, FFI.ColId colId, in C col)
+        where RW : struct, IReadWrite<C>
     {
         var bytes = IStructuralReadWrite.ToBytes(new RW(), col);
         FFI._delete_by_col_eq(id, colId, bytes!, (uint)bytes.Length, out var result);
@@ -293,7 +295,8 @@ public static partial class Module
             }
             else
             {
-                return /* no exception */ Buffer.INVALID;
+                return /* no exception */
+                Buffer.INVALID;
             }
         }
         catch (Exception e)
