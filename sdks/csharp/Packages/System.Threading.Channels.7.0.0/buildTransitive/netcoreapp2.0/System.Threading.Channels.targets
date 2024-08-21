@@ -1,0 +1,6 @@
+<Project InitialTargets="NETStandardCompatError_System_Threading_Channels_net6_0">
+  <Target Name="NETStandardCompatError_System_Threading_Channels_net6_0"
+          Condition="'$(SuppressTfmSupportBuildWarnings)' == ''">
+    <Warning Text="System.Threading.Channels 7.0.0 doesn't support $(TargetFramework) and has not been tested with it. Consider upgrading your TargetFramework to net6.0 or later. You may also set &lt;SuppressTfmSupportBuildWarnings&gt;true&lt;/SuppressTfmSupportBuildWarnings&gt; in the project file to ignore this warning and attempt to run in this unsupported configuration at your own risk." />
+  </Target>
+</Project>

@@ -1,0 +1,243 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<doc>
+  <assembly>
+    <name>System.Threading.Channels</name>
+  </assembly>
+  <members>
+    <member name="T:System.Threading.Channels.BoundedChannelFullMode">
+      <summary>Specifies the behavior to use when writing to a bounded channel that is already full.</summary>
+    </member>
+    <member name="F:System.Threading.Channels.BoundedChannelFullMode.DropNewest">
+      <summary>Removes and ignores the newest item in the channel in order to make room for the item being written.</summary>
+    </member>
+    <member name="F:System.Threading.Channels.BoundedChannelFullMode.DropOldest">
+      <summary>Removes and ignores the oldest item in the channel in order to make room for the item being written.</summary>
+    </member>
+    <member name="F:System.Threading.Channels.BoundedChannelFullMode.DropWrite">
+      <summary>Drops the item being written.</summary>
+    </member>
+    <member name="F:System.Threading.Channels.BoundedChannelFullMode.Wait">
+      <summary>Waits for space to be available in order to complete the write operation.</summary>
+    </member>
+    <member name="T:System.Threading.Channels.BoundedChannelOptions">
+      <summary>Provides options that control the behavior of bounded <see cref="T:System.Threading.Channels.Channel`1" /> instances.</summary>
+    </member>
+    <member name="M:System.Threading.Channels.BoundedChannelOptions.#ctor(System.Int32)">
+      <summary>Initializes the options.</summary>
+      <param name="capacity">The maximum number of items the bounded channel may store.</param>
+    </member>
+    <member name="P:System.Threading.Channels.BoundedChannelOptions.Capacity">
+      <summary>Gets or sets the maximum number of items the bounded channel may store.</summary>
+    </member>
+    <member name="P:System.Threading.Channels.BoundedChannelOptions.FullMode">
+      <summary>Gets or sets the behavior incurred by write operations when the channel is full.</summary>
+    </member>
+    <member name="T:System.Threading.Channels.Channel">
+      <summary>Provides static methods for creating channels.</summary>
+    </member>
+    <member name="M:System.Threading.Channels.Channel.CreateBounded``1(System.Int32)">
+      <summary>Creates a channel with the specified maximum capacity.</summary>
+      <param name="capacity">The maximum number of items the channel may store.</param>
+      <typeparam name="T">Specifies the type of data in the channel.</typeparam>
+      <returns>The created channel.</returns>
+    </member>
+    <member name="M:System.Threading.Channels.Channel.CreateBounded``1(System.Threading.Channels.BoundedChannelOptions)">
+      <summary>Creates a channel with the specified maximum capacity.</summary>
+      <param name="options">Options that guide the behavior of the channel.</param>
+      <typeparam name="T">Specifies the type of data in the channel.</typeparam>
+      <returns>The created channel.</returns>
+    </member>
+    <member name="M:System.Threading.Channels.Channel.CreateBounded``1(System.Threading.Channels.BoundedChannelOptions,System.Action{``0})">
+      <summary>Creates a channel subject to the provided options.</summary>
+      <param name="options">Options that guide the behavior of the channel.</param>
+      <param name="itemDropped">Delegate that will be called when item is being dropped from channel. See <see cref="T:System.Threading.Channels.BoundedChannelFullMode" />.</param>
+      <typeparam name="T">Specifies the type of data in the channel.</typeparam>
+      <returns>The created channel.</returns>
+    </member>
+    <member name="M:System.Threading.Channels.Channel.CreateUnbounded``1">
+      <summary>Creates an unbounded channel usable by any number of readers and writers concurrently.</summary>
+      <typeparam name="T">The type of data in the channel.</typeparam>
+      <returns>The created channel.</returns>
+    </member>
+    <member name="M:System.Threading.Channels.Channel.CreateUnbounded``1(System.Threading.Channels.UnboundedChannelOptions)">
+      <summary>Creates an unbounded channel subject to the provided options.</summary>
+      <param name="options">Options that guide the behavior of the channel.</param>
+      <typeparam name="T">Specifies the type of data in the channel.</typeparam>
+      <returns>The created channel.</returns>
+    </member>
+    <member name="T:System.Threading.Channels.Channel`1">
+      <summary>Provides a base class for channels that support reading and writing elements of type <typeparamref name="T" />.</summary>
+      <typeparam name="T">Specifies the type of data readable and writable in the channel.</typeparam>
+    </member>
+    <member name="M:System.Threading.Channels.Channel`1.#ctor">
+      <summary>Initializes an instance of the <see cref="T:System.Threading.Channels.Channel`1" /> class.</summary>
+    </member>
+    <member name="T:System.Threading.Channels.Channel`2">
+      <summary>Provides a base class for channels that support reading elements of type <typeparamref name="TRead" /> and writing elements of type <typeparamref name="TWrite" />.</summary>
+      <typeparam name="TWrite">Specifies the type of data that may be written to the channel.</typeparam>
+      <typeparam name="TRead">Specifies the type of data that may be read from the channel.</typeparam>
+    </member>
+    <member name="M:System.Threading.Channels.Channel`2.#ctor">
+      <summary>Initializes an instance of the <see cref="T:System.Threading.Channels.Channel`2" /> class.</summary>
+    </member>
+    <member name="M:System.Threading.Channels.Channel`2.op_Implicit(System.Threading.Channels.Channel{`0,`1})~System.Threading.Channels.ChannelReader{`1}">
+      <summary>Implicit cast from a <see cref="T:System.Threading.Channels.Channel`2" /> to its readable half.</summary>
+      <param name="channel">The <see cref="T:System.Threading.Channels.Channel`2" /> being cast.</param>
+      <returns>The readable half.</returns>
+    </member>
+    <member name="M:System.Threading.Channels.Channel`2.op_Implicit(System.Threading.Channels.Channel{`0,`1})~System.Threading.Channels.ChannelWriter{`0}">
+      <summary>Implicit cast from a <see cref="T:System.Threading.Channels.Channel`2" /> to its writable half.</summary>
+      <param name="channel">The <see cref="T:System.Threading.Channels.Channel`2" /> being cast.</param>
+      <returns>The writable half.</returns>
+    </member>
+    <member name="P:System.Threading.Channels.Channel`2.Reader">
+      <summary>Gets the readable half of this channel.</summary>
+    </member>
+    <member name="P:System.Threading.Channels.Channel`2.Writer">
+      <summary>Gets the writable half of this channel.</summary>
+    </member>
+    <member name="T:System.Threading.Channels.ChannelClosedException">
+      <summary>Exception thrown when a channel is used after it's been closed.</summary>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelClosedException.#ctor">
+      <summary>Initializes a new instance of the <see cref="T:System.Threading.Channels.ChannelClosedException" /> class.</summary>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelClosedException.#ctor(System.Exception)">
+      <summary>Initializes a new instance of the <see cref="T:System.Threading.Channels.ChannelClosedException" /> class.</summary>
+      <param name="innerException">The exception that is the cause of this exception.</param>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelClosedException.#ctor(System.Runtime.Serialization.SerializationInfo,System.Runtime.Serialization.StreamingContext)">
+      <summary>Initializes a new instance of the <see cref="T:System.Threading.Channels.ChannelClosedException" /> class with serialized data.</summary>
+      <param name="info">The object that holds the serialized object data.</param>
+      <param name="context">The contextual information about the source or destination.</param>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelClosedException.#ctor(System.String)">
+      <summary>Initializes a new instance of the <see cref="T:System.Threading.Channels.ChannelClosedException" /> class.</summary>
+      <param name="message">The message that describes the error.</param>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelClosedException.#ctor(System.String,System.Exception)">
+      <summary>Initializes a new instance of the <see cref="T:System.Threading.Channels.ChannelClosedException" /> class.</summary>
+      <param name="message">The message that describes the error.</param>
+      <param name="innerException">The exception that is the cause of this exception.</param>
+    </member>
+    <member name="T:System.Threading.Channels.ChannelOptions">
+      <summary>Provides options that control the behavior of channel instances.</summary>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelOptions.#ctor">
+      <summary>Initializes an instance of the <see cref="T:System.Threading.Channels.ChannelOptions" /> class.</summary>
+    </member>
+    <member name="P:System.Threading.Channels.ChannelOptions.AllowSynchronousContinuations">
+      <summary>
+        <see langword="true" /> if operations performed on a channel may synchronously invoke continuations subscribed to
+            notifications of pending async operations; <see langword="false" /> if all continuations should be invoked asynchronously.</summary>
+    </member>
+    <member name="P:System.Threading.Channels.ChannelOptions.SingleReader">
+      <summary>
+        <see langword="true" /> readers from the channel guarantee that there will only ever be at most one read operation at a time;
+            <see langword="false" /> if no such constraint is guaranteed.</summary>
+    </member>
+    <member name="P:System.Threading.Channels.ChannelOptions.SingleWriter">
+      <summary>
+        <see langword="true" /> if writers to the channel guarantee that there will only ever be at most one write operation
+            at a time; <see langword="false" /> if no such constraint is guaranteed.</summary>
+    </member>
+    <member name="T:System.Threading.Channels.ChannelReader`1">
+      <summary>Provides a base class for reading from a channel.</summary>
+      <typeparam name="T">Specifies the type of data that may be read from the channel.</typeparam>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelReader`1.#ctor">
+      <summary>Initializes an instance of the <see cref="T:System.Threading.Channels.ChannelReader`1" /> class.</summary>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelReader`1.ReadAllAsync(System.Threading.CancellationToken)">
+      <summary>Creates an <see cref="T:System.Collections.Generic.IAsyncEnumerable`1" /> that enables reading all of the data from the channel.</summary>
+      <param name="cancellationToken">The cancellation token to use to cancel the enumeration. If data is immediately ready for reading, then that data may be yielded even after cancellation has been requested.</param>
+      <returns>The created async enumerable.</returns>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelReader`1.ReadAsync(System.Threading.CancellationToken)">
+      <summary>Asynchronously reads an item from the channel.</summary>
+      <param name="cancellationToken">A <see cref="T:System.Threading.CancellationToken" /> used to cancel the read operation.</param>
+      <returns>A <see cref="T:System.Threading.Tasks.ValueTask`1" /> that represents the asynchronous read operation.</returns>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelReader`1.TryPeek(`0@)">
+      <summary>Attempts to peek at an item from the channel.</summary>
+      <param name="item">The peeked item, or a default value if no item could be peeked.</param>
+      <returns>
+        <see langword="true" /> if an item was read; otherwise, <see langword="false" />.</returns>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelReader`1.TryRead(`0@)">
+      <summary>Attempts to read an item from the channel.</summary>
+      <param name="item">The read item, or a default value if no item could be read.</param>
+      <returns>
+        <see langword="true" /> if an item was read; otherwise, <see langword="false" />.</returns>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelReader`1.WaitToReadAsync(System.Threading.CancellationToken)">
+      <summary>Returns a <see cref="T:System.Threading.Tasks.ValueTask`1" /> that will complete when data is available to read.</summary>
+      <param name="cancellationToken">A <see cref="T:System.Threading.CancellationToken" /> used to cancel the wait operation.</param>
+      <returns>
+        <para>A <see cref="T:System.Threading.Tasks.ValueTask`1" /> that will complete with a <see langword="true" /> result when data is available to read
+            or with a <see langword="false" /> result when no further data will ever be available to be read due to the channel completing successfully.</para>
+        <para>If the channel completes with an exception, the task will also complete with an exception.</para>
+      </returns>
+    </member>
+    <member name="P:System.Threading.Channels.ChannelReader`1.CanCount">
+      <summary>Gets a value that indicates whether <see cref="P:System.Threading.Channels.ChannelReader`1.Count" /> is available for use on this <see cref="T:System.Threading.Channels.ChannelReader`1" /> instance.</summary>
+    </member>
+    <member name="P:System.Threading.Channels.ChannelReader`1.CanPeek">
+      <summary>Gets a value that indicates whether <see cref="M:System.Threading.Channels.ChannelReader`1.TryPeek(`0@)" /> is available for use on this <see cref="T:System.Threading.Channels.ChannelReader`1" /> instance.</summary>
+      <returns>
+        <see langword="true" /> if peeking is supported by this channel instance; <see langword="false" /> otherwise.</returns>
+    </member>
+    <member name="P:System.Threading.Channels.ChannelReader`1.Completion">
+      <summary>Gets a <see cref="T:System.Threading.Tasks.Task" /> that completes when no more data will ever
+            be available to be read from this channel.</summary>
+    </member>
+    <member name="P:System.Threading.Channels.ChannelReader`1.Count">
+      <summary>Gets the current number of items available from this channel reader.</summary>
+      <exception cref="T:System.NotSupportedException">Counting is not supported on this instance.</exception>
+    </member>
+    <member name="T:System.Threading.Channels.ChannelWriter`1">
+      <summary>Provides a base class for writing to a channel.</summary>
+      <typeparam name="T">Specifies the type of data that may be written to the channel.</typeparam>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelWriter`1.#ctor">
+      <summary>Initializes an instance of the <see cref="T:System.Threading.Channels.ChannelWriter`1" /> class.</summary>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelWriter`1.Complete(System.Exception)">
+      <summary>Mark the channel as being complete, meaning no more items will be written to it.</summary>
+      <param name="error">Optional Exception indicating a failure that's causing the channel to complete.</param>
+      <exception cref="T:System.InvalidOperationException">The channel has already been marked as complete.</exception>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelWriter`1.TryComplete(System.Exception)">
+      <summary>Attempts to mark the channel as being completed, meaning no more data will be written to it.</summary>
+      <param name="error">An <see cref="T:System.Exception" /> indicating the failure causing no more data to be written, or null for success.</param>
+      <returns>
+        <see langword="true" /> if this operation successfully completes the channel; otherwise, <see langword="false" /> if the channel could not be marked for completion,
+            for example due to having already been marked as such, or due to not supporting completion.
+          .</returns>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelWriter`1.TryWrite(`0)">
+      <summary>Attempts to write the specified item to the channel.</summary>
+      <param name="item">The item to write.</param>
+      <returns>
+        <see langword="true" /> if the item was written; otherwise, <see langword="false" />.</returns>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelWriter`1.WaitToWriteAsync(System.Threading.CancellationToken)">
+      <summary>Returns a <see cref="T:System.Threading.Tasks.ValueTask`1" /> that will complete when space is available to write an item.</summary>
+      <param name="cancellationToken">A <see cref="T:System.Threading.CancellationToken" /> used to cancel the wait operation.</param>
+      <returns>A <see cref="T:System.Threading.Tasks.ValueTask`1" /> that will complete with a <see langword="true" /> result when space is available to write an item
+            or with a <see langword="false" /> result when no further writing will be permitted.</returns>
+    </member>
+    <member name="M:System.Threading.Channels.ChannelWriter`1.WriteAsync(`0,System.Threading.CancellationToken)">
+      <summary>Asynchronously writes an item to the channel.</summary>
+      <param name="item">The value to write to the channel.</param>
+      <param name="cancellationToken">A <see cref="T:System.Threading.CancellationToken" /> used to cancel the write operation.</param>
+      <returns>A <see cref="T:System.Threading.Tasks.ValueTask" /> that represents the asynchronous write operation.</returns>
+    </member>
+    <member name="T:System.Threading.Channels.UnboundedChannelOptions">
+      <summary>Provides options that control the behavior of unbounded <see cref="T:System.Threading.Channels.Channel`1" /> instances.</summary>
+    </member>
+    <member name="M:System.Threading.Channels.UnboundedChannelOptions.#ctor">
+      <summary>Initializes a new instance of the <see cref="T:System.Threading.Channels.UnboundedChannelOptions" /> class.</summary>
+    </member>
+  </members>
+</doc>
