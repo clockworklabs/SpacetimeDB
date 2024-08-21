@@ -1,7 +1,7 @@
 using System;
-using Google.Protobuf;
 using SpacetimeDB.BSATN;
 using System.IO;
+using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
 {
@@ -14,56 +14,23 @@ namespace SpacetimeDB
             return IStructuralReadWrite.Read<T>(reader);
         }
 
-        // There is CommunityToolkit.HighPerformance that provides this,
-        // but it's not compatible with Unity as it relies on .NET intrinsics,
-        // so we need to implement our own.
-        class ProtoStream : Stream
+        public static T Decode<T>(byte[] bsatn) where T : IStructuralReadWrite, new()
         {
-            private readonly ReadOnlyMemory<byte> memory;
-
-            public ProtoStream(ByteString input)
-            {
-                memory = input.Memory;
-            }
-
-            public override long Position { get; set; }
-            public override long Length => memory.Length;
-
-            public override bool CanRead => true;
-            public override int Read(byte[] buffer, int offset, int count)
-            {
-                memory.Slice((int)Position, count).CopyTo(buffer.AsMemory(offset));
-                Position += count;
-                return count;
-            }
-
-            // Easy to implement, but not needed for our use cases.
-            public override bool CanSeek => false;
-            public override long Seek(long offset, SeekOrigin origin) => throw new NotImplementedException();
-
-
-            // Our stream is read-only.
-            public override bool CanWrite => false;
-            public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-            public override void Flush() {}
-            public override void SetLength(long value) => throw new NotSupportedException();
-        }
-
-        public static T FromProtoBytes<T>(ByteString bytes)
-            where T : IStructuralReadWrite, new()
-        {
-            using var stream = new ProtoStream(bytes);
+            using var stream = new MemoryStream(bsatn);
             return FromStream<T>(stream);
         }
 
-        public static ByteString ToProtoBytes<T>(this T value)
+        public static T Decode<T>(string json)
             where T : IStructuralReadWrite, new()
         {
-            using var stream = new MemoryStream();
-            using var writer = new BinaryWriter(stream);
-            value.WriteFields(writer);
-            // This is safe because we know we own args so nobody else will modify it.
-            return UnsafeByteOperations.UnsafeWrap(stream.ToArray());
+            throw new InvalidOperationException("JSON isn't supported at the moment");
         }
+
+        public static T Decode<T>(EncodedValue value) where T : IStructuralReadWrite, new() => value switch
+        {
+            EncodedValue.Binary(var bin) => Decode<T>(bin),
+            EncodedValue.Text(var text) => Decode<T>(text),
+            _ => throw new InvalidOperationException()
+        };
     }
 }

@@ -1,11 +1,13 @@
+using SpacetimeDB.ClientApi;
+
 using System;
 using System.Collections.Concurrent;
+using System.IO;
 using System.Linq;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using Google.Protobuf;
 
 namespace SpacetimeDB
 {
@@ -147,7 +149,7 @@ namespace SpacetimeDB
         }
 
         private Task? senderTask;
-        private readonly ConcurrentQueue<byte[]> messageSendQueue = new();
+        private readonly ConcurrentQueue<ClientMessage> messageSendQueue = new();
 
         /// <summary>
         /// This sender guarantees that that messages are sent out in the order they are received. Our websocket
@@ -155,11 +157,11 @@ namespace SpacetimeDB
         /// before we start another one. This function is also thread safe, just in case.
         /// </summary>
         /// <param name="message">The message to send</param>
-        public void Send(ClientApi.Message message)
+        public void Send(ClientMessage message)
         {
             lock (messageSendQueue)
             {
-                messageSendQueue.Enqueue(message.ToByteArray());
+                messageSendQueue.Enqueue(message);
                 senderTask ??= Task.Run(ProcessSendQueue);
             }
         }
@@ -171,7 +173,7 @@ namespace SpacetimeDB
             {
                 while (true)
                 {
-                    byte[]? message;
+                    ClientMessage message;
 
                     lock (messageSendQueue)
                     {
@@ -183,7 +185,10 @@ namespace SpacetimeDB
                         }
                     }
 
-                    await Ws!.SendAsync(message, WebSocketMessageType.Binary, true, CancellationToken.None);
+                    var o = new MemoryStream();
+                    var w = new BinaryWriter(o);
+                    new ClientMessage.BSATN().Write(w, message);
+                    await Ws!.SendAsync(o.ToArray(), WebSocketMessageType.Binary, true, CancellationToken.None);
                 }
             }
             catch (Exception e)

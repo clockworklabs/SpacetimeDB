@@ -3,7 +3,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using SpacetimeDB.BSATN;
-using Google.Protobuf;
+using SpacetimeDB.Internal;
+using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB
 {
@@ -14,15 +15,15 @@ namespace SpacetimeDB
             Type ClientTableType { get; }
             bool InsertEntry(byte[] rowBytes, IDatabaseTable value);
             bool DeleteEntry(byte[] rowBytes);
-            IDatabaseTable DecodeValue(ByteString bytes);
+            IDatabaseTable DecodeValue(byte[] bytes);
         }
 
         public class TableCache<T> : ITableCache
-            where T: IDatabaseTable, IStructuralReadWrite, new()
+            where T : IDatabaseTable, IStructuralReadWrite, new()
         {
             public Type ClientTableType => typeof(T);
 
-            public static readonly Dictionary<byte[], T> Entries = new (ByteArrayComparer.Instance);
+            public static readonly Dictionary<byte[], T> Entries = new(ByteArrayComparer.Instance);
 
             /// <summary>
             /// Inserts the value into the table. There can be no existing value with the provided BSATN bytes.
@@ -49,7 +50,7 @@ namespace SpacetimeDB
             }
 
             // The function to use for decoding a type value.
-            public IDatabaseTable DecodeValue(ByteString bytes) => BSATNHelpers.FromProtoBytes<T>(bytes);
+            public IDatabaseTable DecodeValue(byte[] bytes) => BSATNHelpers.Decode<T>(bytes);
 
             public IEnumerator<KeyValuePair<byte[], IDatabaseTable>> GetEnumerator() => Entries.Select(kv => new KeyValuePair<byte[], IDatabaseTable>(kv.Key, kv.Value)).GetEnumerator();
 
@@ -59,7 +60,7 @@ namespace SpacetimeDB
         private readonly Dictionary<string, ITableCache> tables = new();
 
         public void AddTable<T>()
-            where T: IDatabaseTable, IStructuralReadWrite, new()
+            where T : IDatabaseTable, IStructuralReadWrite, new()
         {
             string name = typeof(T).Name;
 
