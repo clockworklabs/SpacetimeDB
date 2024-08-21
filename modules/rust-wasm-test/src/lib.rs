@@ -1,7 +1,9 @@
 #![allow(clippy::disallowed_names)]
 use spacetimedb::spacetimedb_lib::db::auth::StAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
-use spacetimedb::{duration, query, spacetimedb, Deserialize, ReducerContext, SpacetimeType, TableType, Timestamp};
+use spacetimedb::{
+    duration, query, spacetimedb, Address, Deserialize, Identity, ReducerContext, SpacetimeType, TableType, Timestamp,
+};
 
 #[spacetimedb(table)]
 #[spacetimedb(index(btree, name = "foo", x))]
@@ -83,6 +85,12 @@ pub type TestAlias = TestA;
 #[spacetimedb(table, scheduled(repeating_test))]
 pub struct RepeatingTestArg {
     prev_time: Timestamp,
+}
+
+#[spacetimedb(table)]
+pub struct HasSpecialStuff {
+    identity: Identity,
+    address: Address,
 }
 
 #[spacetimedb(init)]
