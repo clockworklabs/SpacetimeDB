@@ -358,7 +358,7 @@ namespace SpacetimeDB.BSATN
                 new AlgebraicType.String(default);
         }
 
-        namespace Collections.Generics
+        namespace Collections.Generic
         {
             public readonly struct List<Element, ElementRW> : IReadWrite<List<Element>>
                 where ElementRW : IReadWrite<Element>, new()

@@ -193,7 +193,10 @@ public class Type : IIncrementalGenerator
                         );
                         bsatnDecls = bsatnDecls.Concat(
                             [
-                                (Name: "ScheduledId", TypeInfo: "SpacetimeDB.BSATN.U64"),
+                                (
+                                    Name: "ScheduledId",
+                                    TypeInfo: "SpacetimeDB.BSATN.SystemImpls.UInt64"
+                                ),
                                 (Name: "ScheduledAt", TypeInfo: "SpacetimeDB.ScheduleAt.BSATN"),
                             ]
                         );

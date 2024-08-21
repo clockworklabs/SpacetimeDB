@@ -87,10 +87,10 @@ public static class Utils
         {
             ITypeParameterSymbol typeParameter => MakeRwTypeParam(typeParameter.Name),
             INamedTypeSymbol namedType => GetTypeInfoForNamedType(namedType),
-            IArrayTypeSymbol { ElementType: var elementType }
-                => elementType.SpecialType == SpecialType.System_Byte
-                    ? "SpacetimeDB.BSATN.ByteArray"
-                    : $"SpacetimeDB.BSATN.Array<{elementType}, {GetTypeInfo(elementType)}>",
+            IArrayTypeSymbol { ElementType: var elementType } => elementType.SpecialType
+            == SpecialType.System_Byte
+                ? "SpacetimeDB.BSATN.ByteArray"
+                : $"SpacetimeDB.BSATN.Array<{elementType}, {GetTypeInfo(elementType)}>",
             _ => throw new InvalidOperationException($"Unsupported type {type}"),
         };
 

@@ -221,7 +221,7 @@ public class Module : IIncrementalGenerator
                                 new(
                                     "ScheduledId",
                                     "ulong",
-                                    "SpacetimeDB.BSATN.U64",
+                                    "SpacetimeDB.BSATN.SystemImpls.UInt64",
                                     ColumnAttrs.PrimaryKeyAuto,
                                     true
                                 ),
