@@ -682,11 +682,17 @@ export class SpacetimeDBClient {
     this.#sendMessage(message);
   }
 
-  on(eventName: EventType | string, callback: (...args: any[]) => void): void {
+  on(
+    eventName: EventType | (string & {}),
+    callback: (...args: any[]) => void
+  ): void {
     this.emitter.on(eventName, callback);
   }
 
-  off(eventName: EventType | string, callback: (...args: any[]) => void): void {
+  off(
+    eventName: EventType | (string & {}),
+    callback: (...args: any[]) => void
+  ): void {
     this.emitter.off(eventName, callback);
   }
 
