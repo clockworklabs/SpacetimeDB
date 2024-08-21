@@ -22,17 +22,14 @@ fn write_type_ctx(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
 
 pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut W, ty: &AlgebraicType) -> fmt::Result {
     match ty {
+        p if p.is_identity() => write!(out, "Identity")?,
+        p if p.is_address() => write!(out, "Address")?,
+        p if p.is_schedule_at() => write!(out, "ScheduleAt")?,
         AlgebraicType::Sum(sum_type) => {
-            if sum_type.is_special() {
-                if let Some(inner_ty) = sum_type.as_option() {
-                    write!(out, "Option::<")?;
-                    write_type(ctx, out, inner_ty)?;
-                    write!(out, ">")?;
-                } else if sum_type.is_schedule_at() {
-                    write!(out, "ScheduleAt")?;
-                } else {
-                    unimplemented!("Unknown special sum type: {sum_type:?}");
-                }
+            if let Some(inner_ty) = sum_type.as_option() {
+                write!(out, "Option::<")?;
+                write_type(ctx, out, inner_ty)?;
+                write!(out, ">")?;
             } else {
                 write!(out, "enum ")?;
                 print_comma_sep_braced(out, &sum_type.variants, |out: &mut W, elem: &_| {
@@ -43,17 +40,8 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
                 })?;
             }
         }
-        AlgebraicType::Product(product) => {
-            if product.is_special() {
-                if product.is_address() {
-                    write!(out, "Address")?;
-                } else if product.is_identity() {
-                    write!(out, "Identity")?;
-                } else {
-                    unimplemented!("Unknown special product type: {product:?}");
-                }
-            }
-            print_comma_sep_braced(out, &product.elements, |out: &mut W, elem: &ProductTypeElement| {
+        AlgebraicType::Product(ProductType { elements }) => {
+            print_comma_sep_braced(out, elements, |out: &mut W, elem: &ProductTypeElement| {
                 if let Some(name) = &elem.name {
                     write!(out, "{name}: ")?;
                 }
@@ -462,7 +450,6 @@ fn print_table_filter_methods(ctx: &GenCtx, out: &mut Indenter, table_type_name:
             for field in table.columns() {
                 let field_name = field.col_name.deref().to_case(Case::Snake);
                 match &field.col_type {
-                    // We allow filtering by special product types only (Identity and Address, not Option or ScheduleAt).
                     AlgebraicType::Product(prod) if prod.is_special() => {}
                     AlgebraicType::Product(_)
                     | AlgebraicType::Ref(_)

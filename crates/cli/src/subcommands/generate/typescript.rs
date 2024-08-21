@@ -39,33 +39,18 @@ fn scalar_or_string_to_ts(ty: &AlgebraicType) -> Option<(&str, &str)> {
 
 fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, ref_prefix: &'a str) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
+        ty if ty.is_identity() => write!(f, "Identity"),
+        ty if ty.is_address() => write!(f, "Address"),
+        ty if ty.is_schedule_at() => write!(f, "ScheduleAt"),
         AlgebraicType::Sum(sum_type) => {
-            if sum_type.is_special() {
-                if let Some(inner_ty) = sum_type.as_option() {
-                    write!(f, "{} | null", ty_fmt(ctx, inner_ty, ref_prefix))
-                } else if sum_type.is_schedule_at() {
-                    write!(f, "ScheduleAt")
-                } else {
-                    unimplemented!("Unknown special sum type: {sum_type:?}")
-                }
+            if let Some(inner_ty) = sum_type.as_option() {
+                write!(f, "{} | null", ty_fmt(ctx, inner_ty, ref_prefix))
             } else {
-                panic!("Cannot format non-special sum type {sum_type:?}")
+                unimplemented!()
             }
         }
         // All other types should fail.
-        AlgebraicType::Product(product_type) => {
-            if product_type.is_special() {
-                if product_type.is_address() {
-                    write!(f, "Address")
-                } else if product_type.is_identity() {
-                    write!(f, "Identity")
-                } else {
-                    unimplemented!("Unknown special product type: {product_type:?}")
-                }
-            } else {
-                unimplemented!("Cannot format non-special product type {product_type:?}")
-            }
-        }
+        AlgebraicType::Product(_) => unimplemented!(),
         ty if ty.is_bytes() => f.write_str("Uint8Array"),
         AlgebraicType::Array(ty) => write!(f, "{}[]", ty_fmt(ctx, &ty.elem_ty, ref_prefix)),
         AlgebraicType::Map(ty) => {
