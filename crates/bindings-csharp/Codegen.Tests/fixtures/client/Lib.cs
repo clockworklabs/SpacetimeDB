@@ -33,7 +33,7 @@ public partial struct CustomClass
 public enum CustomEnum
 {
     EnumVariant1,
-    EnumVariant2
+    EnumVariant2,
 }
 
 namespace System.Runtime.CompilerServices

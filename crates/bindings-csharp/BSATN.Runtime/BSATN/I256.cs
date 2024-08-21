@@ -48,7 +48,7 @@ public readonly struct I256 : IEquatable<I256>, IComparable, IComparable<I256>
         }
         else
         {
-            throw new ArgumentException();
+            throw new ArgumentException("Argument must be a I256", nameof(value));
         }
     }
 

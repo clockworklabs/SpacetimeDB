@@ -49,7 +49,7 @@ public abstract partial record ScheduleAt
             {
                 ScheduleAtRepr.Time(var timeRepr) => new Time(timeRepr.ToStd()),
                 ScheduleAtRepr.Interval(var intervalRepr) => new Interval(intervalRepr.ToStd()),
-                _ => throw new SwitchExpressionException()
+                _ => throw new SwitchExpressionException(),
             };
 
         public void Write(BinaryWriter writer, ScheduleAt value)
@@ -60,7 +60,7 @@ public abstract partial record ScheduleAt
                 {
                     Time(var time) => new ScheduleAtRepr.Time(new(time)),
                     Interval(var interval) => new ScheduleAtRepr.Interval(new(interval)),
-                    _ => throw new SwitchExpressionException()
+                    _ => throw new SwitchExpressionException(),
                 }
             );
         }
@@ -71,7 +71,7 @@ public abstract partial record ScheduleAt
             new AlgebraicType.Sum(
                 [
                     new("Time", new AlgebraicType.U64(default)),
-                    new("Interval", new AlgebraicType.U64(default))
+                    new("Interval", new AlgebraicType.U64(default)),
                 ]
             );
     }
@@ -86,7 +86,7 @@ public static class Runtime
         Info,
         Debug,
         Trace,
-        Panic
+        Panic,
     }
 
     public static void Log(

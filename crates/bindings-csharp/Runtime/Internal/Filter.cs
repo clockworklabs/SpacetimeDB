@@ -89,20 +89,19 @@ public partial class Filter(KeyValuePair<string, Action<BinaryWriter, object?>>[
         expr switch
         {
             // LINQ inserts spurious conversions in comparisons, so we need to unwrap them
-            UnaryExpression { NodeType: ExpressionType.Convert, Operand: var arg }
-                => ExprAsTableField(arg),
+            UnaryExpression { NodeType: ExpressionType.Convert, Operand: var arg } =>
+                ExprAsTableField(arg),
             MemberExpression { Expression: ParameterExpression, Member: FieldInfo field } => field,
-            _
-                => throw new NotSupportedException(
-                    "expected table field access in the left-hand side of a comparison"
-                )
+            _ => throw new NotSupportedException(
+                "expected table field access in the left-hand side of a comparison"
+            ),
         };
 
     static object? ExprAsRhs(Expression expr) =>
         expr switch
         {
             ConstantExpression { Value: var value } => value,
-            _ => Expression.Lambda(expr).Compile().DynamicInvoke()
+            _ => Expression.Lambda(expr).Compile().DynamicInvoke(),
         };
 
     Cmp HandleCmp(BinaryExpression expr)
@@ -126,7 +125,7 @@ public partial class Filter(KeyValuePair<string, Action<BinaryWriter, object?>>[
             ExpressionType.LessThanOrEqual => OpCmp.LtEq,
             ExpressionType.GreaterThan => OpCmp.Gt,
             ExpressionType.GreaterThanOrEqual => OpCmp.GtEq,
-            _ => throw new NotSupportedException("unsupported comparison operation")
+            _ => throw new NotSupportedException("unsupported comparison operation"),
         };
 
         return new Cmp(op, args);
@@ -141,7 +140,7 @@ public partial class Filter(KeyValuePair<string, Action<BinaryWriter, object?>>[
         {
             ExpressionType.And => OpLogic.And,
             ExpressionType.Or => OpLogic.Or,
-            _ => throw new NotSupportedException("unsupported logic operation")
+            _ => throw new NotSupportedException("unsupported logic operation"),
         };
 
         return new Logic(lhs, op, rhs);
@@ -158,11 +157,10 @@ public partial class Filter(KeyValuePair<string, Action<BinaryWriter, object?>>[
                     or ExpressionType.LessThanOrEqual
                     or ExpressionType.GreaterThan
                     or ExpressionType.GreaterThanOrEqual
-            }
-                => new Expr.Cmp(HandleCmp(expr)),
-            BinaryExpression { NodeType: ExpressionType.And or ExpressionType.Or }
-                => new Expr.Logic(HandleLogic(expr)),
-            _ => throw new NotSupportedException("unsupported expression")
+            } => new Expr.Cmp(HandleCmp(expr)),
+            BinaryExpression { NodeType: ExpressionType.And or ExpressionType.Or } =>
+                new Expr.Logic(HandleLogic(expr)),
+            _ => throw new NotSupportedException("unsupported expression"),
         };
 
     Expr.Unary HandleUnary(UnaryExpression expr)
@@ -172,7 +170,7 @@ public partial class Filter(KeyValuePair<string, Action<BinaryWriter, object?>>[
         var op = expr.NodeType switch
         {
             ExpressionType.Not => OpUnary.Not,
-            _ => throw new NotSupportedException("unsupported unary operation")
+            _ => throw new NotSupportedException("unsupported unary operation"),
         };
 
         return new(new Unary(op, arg));
@@ -183,6 +181,6 @@ public partial class Filter(KeyValuePair<string, Action<BinaryWriter, object?>>[
         {
             BinaryExpression binExpr => HandleBinary(binExpr),
             UnaryExpression unExpr => HandleUnary(unExpr),
-            _ => throw new NotSupportedException("unsupported expression")
+            _ => throw new NotSupportedException("unsupported expression"),
         };
 }

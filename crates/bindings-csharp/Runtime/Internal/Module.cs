@@ -1,10 +1,10 @@
 namespace SpacetimeDB.Internal;
 
-using SpacetimeDB;
-using SpacetimeDB.BSATN;
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using SpacetimeDB;
+using SpacetimeDB.BSATN;
 
 public static partial class Module
 {
@@ -292,7 +292,9 @@ public static partial class Module
     )
     {
         // Piece together the sender identity.
-        var sender = Identity.From(MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray());
+        var sender = Identity.From(
+            MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+        );
 
         // Piece together the sender address.
         var address = Address.From(MemoryMarshal.AsBytes([address_0, address_1]).ToArray());

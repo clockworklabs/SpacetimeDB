@@ -7,7 +7,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static Utils;
 
-[System.Flags]
+[Flags]
 enum ColumnAttrs : byte
 {
     UnSet = 0b0000,
@@ -53,22 +53,20 @@ readonly record struct ColumnDeclaration
             or SpecialType.System_Int32
             or SpecialType.System_UInt32
             or SpecialType.System_Int64
-            or SpecialType.System_UInt64
-                => true,
-            SpecialType.None
-                => type.ToString()
-                    is "System.Int128"
-                        or "System.UInt128"
-                        or "SpacetimeDB.I128"
-                        or "SpacetimeDB.U128"
-                        or "SpacetimeDB.I256"
-                        or "SpacetimeDB.U256",
-            _ => false
+            or SpecialType.System_UInt64 => true,
+            SpecialType.None => type.ToString()
+                is "System.Int128"
+                    or "System.UInt128"
+                    or "SpacetimeDB.I128"
+                    or "SpacetimeDB.U128"
+                    or "SpacetimeDB.I256"
+                    or "SpacetimeDB.U256",
+            _ => false,
         };
 
         if (attrs.HasFlag(ColumnAttrs.AutoInc) && !isInteger)
         {
-            throw new System.Exception(
+            throw new Exception(
                 $"{type} {name} is not valid for AutoInc or Identity as it's not an integer."
             );
         }
@@ -79,8 +77,9 @@ readonly record struct ColumnDeclaration
                 || type.SpecialType switch
                 {
                     SpecialType.System_String or SpecialType.System_Boolean => true,
-                    SpecialType.None
-                        => type.ToString() is "SpacetimeDB.Address" or "SpacetimeDB.Identity",
+                    SpecialType.None => type.ToString()
+                        is "SpacetimeDB.Address"
+                            or "SpacetimeDB.Identity",
                     _ => false,
                 }
             )
@@ -88,7 +87,7 @@ readonly record struct ColumnDeclaration
 
         if (attrs.HasFlag(ColumnAttrs.Unique) && !IsEquatable)
         {
-            throw new System.Exception(
+            throw new Exception(
                 $"{type} {name} is not valid for Identity, PrimaryKey or PrimaryKeyAuto as it's not an equatable primitive."
             );
         }
@@ -183,7 +182,7 @@ public class Module : IIncrementalGenerator
                 transform: (context, ct) =>
                 {
                     var tableSyntax = (TypeDeclarationSyntax)context.TargetNode;
-                    var table = context.SemanticModel.GetDeclaredSymbol(tableSyntax)!;
+                    var table = context.SemanticModel.GetDeclaredSymbol(tableSyntax, ct)!;
 
                     var fields = GetFields(tableSyntax, table)
                         .Select(f =>
@@ -232,7 +231,7 @@ public class Module : IIncrementalGenerator
                                     "SpacetimeDB.ScheduleAt.BSATN",
                                     ColumnAttrs.UnSet,
                                     false
-                                )
+                                ),
                             ]
                         );
                     }
@@ -337,12 +336,11 @@ public class Module : IIncrementalGenerator
                 transform: (context, ct) =>
                 {
                     var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
-
-                    var method = context.SemanticModel.GetDeclaredSymbol(methodSyntax)!;
+                    var method = context.SemanticModel.GetDeclaredSymbol(methodSyntax, ct)!;
 
                     if (!method.ReturnsVoid)
                     {
-                        throw new System.Exception($"Reducer {method} must return void");
+                        throw new Exception($"Reducer {method} must return void");
                     }
 
                     var exportName = (string?)
