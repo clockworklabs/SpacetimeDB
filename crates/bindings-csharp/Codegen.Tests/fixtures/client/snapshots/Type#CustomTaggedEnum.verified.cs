@@ -19,8 +19,8 @@ partial record CustomTaggedEnum
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<CustomTaggedEnum>
     {
         internal static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTag = new();
-        internal static readonly SpacetimeDB.BSATN.I32 IntVariant = new();
-        internal static readonly SpacetimeDB.BSATN.String StringVariant = new();
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.Int32 IntVariant = new();
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.String StringVariant = new();
 
         public CustomTaggedEnum Read(System.IO.BinaryReader reader) =>
             __enumTag.Read(reader) switch

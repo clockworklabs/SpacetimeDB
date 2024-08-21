@@ -68,58 +68,63 @@ partial struct PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<PublicTable>
     {
-        internal static readonly SpacetimeDB.BSATN.U8 ByteField = new();
-        internal static readonly SpacetimeDB.BSATN.U16 UshortField = new();
-        internal static readonly SpacetimeDB.BSATN.U32 UintField = new();
-        internal static readonly SpacetimeDB.BSATN.U64 UlongField = new();
-        internal static readonly SpacetimeDB.BSATN.U128Stdb U128Field = new();
-        internal static readonly SpacetimeDB.BSATN.U256 U256Field = new();
-        internal static readonly SpacetimeDB.BSATN.I8 SbyteField = new();
-        internal static readonly SpacetimeDB.BSATN.I16 ShortField = new();
-        internal static readonly SpacetimeDB.BSATN.I32 IntField = new();
-        internal static readonly SpacetimeDB.BSATN.I64 LongField = new();
-        internal static readonly SpacetimeDB.BSATN.I128Stdb I128Field = new();
-        internal static readonly SpacetimeDB.BSATN.I256 I256Field = new();
-        internal static readonly SpacetimeDB.BSATN.Bool BoolField = new();
-        internal static readonly SpacetimeDB.BSATN.F32 FloatField = new();
-        internal static readonly SpacetimeDB.BSATN.F64 DoubleField = new();
-        internal static readonly SpacetimeDB.BSATN.String StringField = new();
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.Byte ByteField = new();
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.UInt16 UshortField = new();
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.UInt32 UintField = new();
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.UInt64 UlongField = new();
+        internal static readonly SpacetimeDB.U128.BSATN U128Field = new();
+        internal static readonly SpacetimeDB.U256.BSATN U256Field = new();
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.SByte SbyteField = new();
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.Int16 ShortField = new();
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.Int32 IntField = new();
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.Int64 LongField = new();
+        internal static readonly SpacetimeDB.I128.BSATN I128Field = new();
+        internal static readonly SpacetimeDB.I256.BSATN I256Field = new();
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.Boolean BoolField = new();
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.Single FloatField = new();
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.Double DoubleField = new();
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.String StringField = new();
         internal static readonly SpacetimeDB.Identity.BSATN IdentityField = new();
         internal static readonly SpacetimeDB.Address.BSATN AddressField = new();
         internal static readonly CustomStruct.BSATN CustomStructField = new();
         internal static readonly CustomClass.BSATN CustomClassField = new();
         internal static readonly SpacetimeDB.BSATN.Enum<CustomEnum> CustomEnumField = new();
         internal static readonly CustomTaggedEnum.BSATN CustomTaggedEnumField = new();
-        internal static readonly SpacetimeDB.BSATN.List<int, SpacetimeDB.BSATN.I32> ListField =
-            new();
-        internal static readonly SpacetimeDB.BSATN.Dictionary<
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.Collections.Generic.List<
+            int,
+            SpacetimeDB.BSATN.SystemImpls.Int32
+        > ListField = new();
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.Collections.Generic.Dictionary<
             string,
             int,
-            SpacetimeDB.BSATN.String,
-            SpacetimeDB.BSATN.I32
+            SpacetimeDB.BSATN.SystemImpls.String,
+            SpacetimeDB.BSATN.SystemImpls.Int32
         > DictionaryField = new();
-        internal static readonly SpacetimeDB.BSATN.ValueOption<
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.Nullable<
             int,
-            SpacetimeDB.BSATN.I32
+            SpacetimeDB.BSATN.SystemImpls.Int32
         > NullableValueField = new();
         internal static readonly SpacetimeDB.BSATN.RefOption<
             string,
-            SpacetimeDB.BSATN.String
+            SpacetimeDB.BSATN.SystemImpls.String
         > NullableReferenceField = new();
         internal static readonly SpacetimeDB.BSATN.RefOption<
             System.Collections.Generic.Dictionary<
                 CustomEnum,
                 System.Collections.Generic.List<int?>?
             >,
-            SpacetimeDB.BSATN.Dictionary<
+            SpacetimeDB.BSATN.SystemImpls.Collections.Generic.Dictionary<
                 CustomEnum,
                 System.Collections.Generic.List<int?>?,
                 SpacetimeDB.BSATN.Enum<CustomEnum>,
                 SpacetimeDB.BSATN.RefOption<
                     System.Collections.Generic.List<int?>,
-                    SpacetimeDB.BSATN.List<
+                    SpacetimeDB.BSATN.SystemImpls.Collections.Generic.List<
                         int?,
-                        SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>
+                        SpacetimeDB.BSATN.SystemImpls.Nullable<
+                            int,
+                            SpacetimeDB.BSATN.SystemImpls.Int32
+                        >
                     >
                 >
             >

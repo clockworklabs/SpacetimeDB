@@ -7,6 +7,7 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using SpacetimeDB.BSATN;
 
 /// <summary>Represents a 256-bit signed integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -134,4 +135,25 @@ public readonly struct I256 : IEquatable<I256>, IComparable, IComparable<I256>
 
     /// <inheritdoc cref="object.ToString()" />
     public override string ToString() => AsBigInt().ToString();
+
+    public readonly struct BSATN : IReadWrite<I256>
+    {
+        private static readonly U128.BSATN u128 = new();
+
+        public I256 Read(BinaryReader reader)
+        {
+            var lower = u128.Read(reader);
+            var upper = u128.Read(reader);
+            return new(upper, lower);
+        }
+
+        public void Write(BinaryWriter writer, I256 value)
+        {
+            u128.Write(writer, value.Lower);
+            u128.Write(writer, value.Upper);
+        }
+
+        public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
+            new AlgebraicType.I256(default);
+    }
 }

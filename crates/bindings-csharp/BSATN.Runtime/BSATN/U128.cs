@@ -6,6 +6,7 @@ namespace SpacetimeDB;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using SpacetimeDB.BSATN;
 
 /// <summary>Represents a 128-bit unsigned integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -115,4 +116,23 @@ public readonly struct U128 : IEquatable<U128>, IComparable, IComparable<U128>
 
     /// <inheritdoc cref="object.ToString()" />
     public override string ToString() => AsBigInt().ToString();
+
+    public readonly struct BSATN : IReadWrite<U128>
+    {
+        public U128 Read(BinaryReader reader)
+        {
+            var lower = reader.ReadUInt64();
+            var upper = reader.ReadUInt64();
+            return new(upper, lower);
+        }
+
+        public void Write(BinaryWriter writer, U128 value)
+        {
+            writer.Write(value.Lower);
+            writer.Write(value.Upper);
+        }
+
+        public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
+            new AlgebraicType.U128(default);
+    }
 }

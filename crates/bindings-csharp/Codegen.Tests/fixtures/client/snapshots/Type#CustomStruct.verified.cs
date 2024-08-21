@@ -18,8 +18,8 @@ partial struct CustomStruct : SpacetimeDB.BSATN.IStructuralReadWrite
 
     public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<CustomStruct>
     {
-        internal static readonly SpacetimeDB.BSATN.I32 IntField = new();
-        internal static readonly SpacetimeDB.BSATN.String StringField = new();
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.Int32 IntField = new();
+        internal static readonly SpacetimeDB.BSATN.SystemImpls.String StringField = new();
 
         public CustomStruct Read(System.IO.BinaryReader reader) =>
             SpacetimeDB.BSATN.IStructuralReadWrite.Read<CustomStruct>(reader);

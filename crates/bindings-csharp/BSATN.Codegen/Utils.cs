@@ -39,6 +39,11 @@ public static class Utils
         return symbol.ToDisplayString(SymbolFormat);
     }
 
+    private static readonly SymbolDisplayFormat SymbolFormatForBSATN = SymbolFormat
+        .WithGenericsOptions(SymbolDisplayGenericsOptions.None)
+        .RemoveMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.UseSpecialTypes)
+        .AddMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.ExpandNullable);
+
     public static void RegisterSourceOutputs(
         this IncrementalValuesProvider<KeyValuePair<string, string>> methods,
         IncrementalGeneratorInitializationContext context
@@ -81,29 +86,11 @@ public static class Utils
         return type switch
         {
             ITypeParameterSymbol typeParameter => MakeRwTypeParam(typeParameter.Name),
-            INamedTypeSymbol namedType => type.SpecialType switch
-            {
-                SpecialType.System_Boolean => "SpacetimeDB.BSATN.Bool",
-                SpecialType.System_SByte => "SpacetimeDB.BSATN.I8",
-                SpecialType.System_Byte => "SpacetimeDB.BSATN.U8",
-                SpecialType.System_Int16 => "SpacetimeDB.BSATN.I16",
-                SpecialType.System_UInt16 => "SpacetimeDB.BSATN.U16",
-                SpecialType.System_Int32 => "SpacetimeDB.BSATN.I32",
-                SpecialType.System_UInt32 => "SpacetimeDB.BSATN.U32",
-                SpecialType.System_Int64 => "SpacetimeDB.BSATN.I64",
-                SpecialType.System_UInt64 => "SpacetimeDB.BSATN.U64",
-                SpecialType.System_Single => "SpacetimeDB.BSATN.F32",
-                SpecialType.System_Double => "SpacetimeDB.BSATN.F64",
-                SpecialType.System_String => "SpacetimeDB.BSATN.String",
-                SpecialType.None => GetTypeInfoForNamedType(namedType),
-                _ => throw new InvalidOperationException(
-                    $"Unsupported special type {type} ({type.SpecialType})"
-                ),
-            },
-            IArrayTypeSymbol { ElementType: var elementType } => elementType.SpecialType
-            == SpecialType.System_Byte
-                ? "SpacetimeDB.BSATN.ByteArray"
-                : $"SpacetimeDB.BSATN.Array<{elementType}, {GetTypeInfo(elementType)}>",
+            INamedTypeSymbol namedType => GetTypeInfoForNamedType(namedType),
+            IArrayTypeSymbol { ElementType: var elementType }
+                => elementType.SpecialType == SpecialType.System_Byte
+                    ? "SpacetimeDB.BSATN.ByteArray"
+                    : $"SpacetimeDB.BSATN.Array<{elementType}, {GetTypeInfo(elementType)}>",
             _ => throw new InvalidOperationException($"Unsupported type {type}"),
         };
 
@@ -126,25 +113,19 @@ public static class Utils
                 }
                 return $"SpacetimeDB.BSATN.Enum<{SymbolToName(type)}>";
             }
-            var result = type.OriginalDefinition.ToString() switch
+            var fullName = type.ToDisplayString(SymbolFormatForBSATN);
+            string result;
+            if (fullName.StartsWith("System."))
             {
-                // {U/I}{128/256} are not treated by C# as regular primitives, so we need to match them by type name.
-                "System.Int128" => "SpacetimeDB.BSATN.I128",
-                "System.UInt128" => "SpacetimeDB.BSATN.U128",
-                "SpacetimeDB.I128" => "SpacetimeDB.BSATN.I128Stdb",
-                "SpacetimeDB.U128" => "SpacetimeDB.BSATN.U128Stdb",
-                "SpacetimeDB.I256" => "SpacetimeDB.BSATN.I256",
-                "SpacetimeDB.U256" => "SpacetimeDB.BSATN.U256",
-                "System.Collections.Generic.List<T>" => $"SpacetimeDB.BSATN.List",
-                "System.Collections.Generic.Dictionary<TKey, TValue>" =>
-                    $"SpacetimeDB.BSATN.Dictionary",
-                // If we're here, then this is nullable *value* type like `int?`.
-                "System.Nullable<T>" => $"SpacetimeDB.BSATN.ValueOption",
-                var name when name.StartsWith("System.") => throw new InvalidOperationException(
-                    $"Unsupported system type {name}"
-                ),
-                _ => $"{SymbolToName(type)}.BSATN",
-            };
+                // C# doesn't have traits, so we put all the implementations for built-in types
+                // in a special namespace with 1:1 name mapping.
+                result = $"SpacetimeDB.BSATN.SystemImpls.{fullName[7..]}";
+            }
+            else
+            {
+                // Whereas user types should have a nested `struct BSATN` type.
+                result = fullName + ".BSATN";
+            }
             if (type.IsGenericType)
             {
                 result =

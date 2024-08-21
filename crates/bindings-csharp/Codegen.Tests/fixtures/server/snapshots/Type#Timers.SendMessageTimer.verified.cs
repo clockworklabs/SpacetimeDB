@@ -26,7 +26,7 @@ partial class Timers
 
         public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<SendMessageTimer>
         {
-            internal static readonly SpacetimeDB.BSATN.String Text = new();
+            internal static readonly SpacetimeDB.BSATN.SystemImpls.String Text = new();
             internal static readonly SpacetimeDB.BSATN.U64 ScheduledId = new();
             internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduledAt = new();
 

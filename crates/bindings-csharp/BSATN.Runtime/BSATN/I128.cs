@@ -6,6 +6,7 @@ namespace SpacetimeDB;
 using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using SpacetimeDB.BSATN;
 
 /// <summary>Represents a 128-bit signed integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -140,5 +141,24 @@ public readonly struct I128 : IEquatable<I128>, IComparable, IComparable<I128>
     {
         long lower = value;
         return new I128((ulong)(lower >> 63), (ulong)lower);
+    }
+
+    public readonly struct BSATN : IReadWrite<I128>
+    {
+        public I128 Read(BinaryReader reader)
+        {
+            var lower = reader.ReadUInt64();
+            var upper = reader.ReadUInt64();
+            return new(upper, lower);
+        }
+
+        public void Write(BinaryWriter writer, I128 value)
+        {
+            writer.Write(value.Lower);
+            writer.Write(value.Upper);
+        }
+
+        public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
+            new AlgebraicType.I128(default);
     }
 }
