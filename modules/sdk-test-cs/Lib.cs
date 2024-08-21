@@ -1738,13 +1738,13 @@ static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_primitives_as_strings(EveryPrimitiveStruct t)
+    public static void insert_primitives_as_strings(EveryPrimitiveStruct s)
     {
         new VecString
         {
             s = typeof(EveryPrimitiveStruct)
                 .GetFields()
-                .Select(f => f.GetValue(t)!.ToString()!.ToLowerInvariant())
+                .Select(f => f.GetValue(s)!.ToString()!.ToLowerInvariant())
                 .ToList()
         }.Insert();
     }

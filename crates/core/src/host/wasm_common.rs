@@ -247,10 +247,10 @@ macro_rules! decl_index {
         impl ResourceIndex for $name {
             type Resource = $resource;
             fn from_u32(i: u32) -> Self {
-                Self(i)
+                Self(i + 1)
             }
             fn to_u32(&self) -> u32 {
-                self.0
+                self.0 - 1
             }
         }
 
@@ -346,6 +346,8 @@ pub struct AbiRuntimeError {
 macro_rules! abi_funcs {
     ($mac:ident) => {
         $mac! {
+            "spacetime_10.0"::row_iter_bsatn_advance,
+            "spacetime_10.0"::row_iter_bsatn_close,
             "spacetime_10.0"::bytes_source_read,
             "spacetime_10.0"::bytes_sink_write,
 
@@ -355,8 +357,6 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::get_table_id,
             "spacetime_10.0"::insert,
             "spacetime_10.0"::iter_by_col_eq,
-            "spacetime_10.0"::iter_drop,
-            "spacetime_10.0"::iter_advance,
             "spacetime_10.0"::iter_start,
             "spacetime_10.0"::iter_start_filtered,
             "spacetime_10.0"::span_end,

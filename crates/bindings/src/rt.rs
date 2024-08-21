@@ -516,8 +516,13 @@ fn with_read_args<R>(args: BytesSource, logic: impl FnOnce(&[u8]) -> R) -> R {
     ret
 }
 
+const NO_SPACE: u16 = errno::NO_SPACE.get();
+const NO_SUCH_BYTES: u16 = errno::NO_SUCH_BYTES.get();
+
 /// Read `source` from the host fully into `buf`.
 fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
+    const INVALID: i16 = NO_SUCH_BYTES as i16;
+
     loop {
         // Write into the spare capacity of the buffer.
         let buf_ptr = buf.spare_capacity_mut();
@@ -525,8 +530,10 @@ fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
         let mut buf_len = buf_ptr.len();
         let buf_ptr = buf_ptr.as_mut_ptr().cast();
         let ret = unsafe { sys::raw::_bytes_source_read(source, buf_ptr, &mut buf_len) };
-        // SAFETY: `bytes_source_read` just appended `spare_len` bytes to `buf`.
-        unsafe { buf.set_len(buf.len() + spare_len) };
+        if ret <= 0 {
+            // SAFETY: `bytes_source_read` just appended `spare_len` bytes to `buf`.
+            unsafe { buf.set_len(buf.len() + spare_len) };
+        }
         match ret {
             // Host side source exhausted, we're done.
             -1 => break,
@@ -538,6 +545,7 @@ fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
             // The host will likely not trigger this branch (current host doesn't),
             // but a module should be prepared for it.
             0 => {}
+            INVALID => panic!("invalid source passed"),
             _ => unreachable!(),
         }
     }
@@ -545,9 +553,6 @@ fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
 
 /// Write `buf` to `sink`.
 fn write_to_sink(sink: BytesSink, mut buf: &[u8]) {
-    const NO_SPACE: u16 = errno::NO_SPACE.get();
-    const NO_SUCH_BYTES: u16 = errno::NO_SUCH_BYTES.get();
-
     loop {
         let len = &mut buf.len();
         match unsafe { sys::raw::_bytes_sink_write(sink, buf.as_ptr(), len) } {

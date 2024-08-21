@@ -12,6 +12,7 @@ macro_rules! errnos {
             LOOKUP_NOT_FOUND(2, "Value or range provided not found in table"),
             HOST_CALL_FAILURE(1, "ABI called by host returned an error"),
             NO_SUCH_TABLE(4, "No such table"),
+            NO_SUCH_ITER(6, "The provided row iterator is not valid"),
             NO_SUCH_BYTES(8, "The provided bytes source or sink is not valid"),
             NO_SPACE(9, "The provided sink has no more space left"),
             BUFFER_TOO_SMALL(11, "The provided buffer is not large enough to store the data"),

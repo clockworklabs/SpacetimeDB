@@ -18,6 +18,20 @@ public readonly record struct BytesSource(uint Handle)
 [StructLayout(LayoutKind.Sequential)]
 public readonly record struct BytesSink(uint Handle) { }
 
+public enum Errno : short
+{
+    EXHAUSTED = -1,
+    OK = 0,
+    HOST_CALL_FAILURE = 1,
+    NO_SUCH_TABLE = 4,
+    LOOKUP_NOT_FOUND = 2,
+    NO_SUCH_ITER = 6,
+    NO_SUCH_BYTES = 8,
+    NO_SPACE = 9,
+    BUFFER_TOO_SMALL = 11,
+    UNIQUE_ALREADY_EXISTS = 12,
+}
+
 #pragma warning disable IDE1006 // Naming Styles - Not applicable to FFI stuff.
 internal static partial class FFI
 {
@@ -31,18 +45,6 @@ internal static partial class FFI
         "bindings"
 #endif
     ;
-
-    public enum Errno : ushort
-    {
-        OK = 0,
-        HOST_CALL_FAILURE = 1,
-        NO_SUCH_TABLE = 4,
-        LOOKUP_NOT_FOUND = 2,
-        NO_SUCH_BYTES = 8,
-        NO_SPACE = 9,
-        BUFFER_TOO_SMALL = 11,
-        UNIQUE_ALREADY_EXISTS = 12,
-    }
 
     [NativeMarshalling(typeof(Marshaller))]
     public struct CheckedStatus
@@ -108,7 +110,7 @@ internal static partial class FFI
     [StructLayout(LayoutKind.Sequential)]
     public readonly record struct RowIter(uint Handle)
     {
-        public static readonly RowIter INVALID = new(uint.MaxValue);
+        public static readonly RowIter INVALID = new(0);
     }
 
     [LibraryImport(StdbNamespace)]
@@ -159,14 +161,14 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_advance(
+    public static partial Errno _row_iter_bsatn_advance(
         RowIter iter_handle,
         [MarshalUsing(CountElementName = nameof(buffer_len))] [Out] byte[] buffer,
         ref uint buffer_len
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial void _iter_drop(RowIter iter_handle);
+    public static partial CheckedStatus _row_iter_bsatn_close(RowIter iter_handle);
 
     [LibraryImport(StdbNamespace)]
     public static partial void _volatile_nonatomic_schedule_immediate(
@@ -189,7 +191,7 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial short _bytes_source_read(
+    public static partial Errno _bytes_source_read(
         BytesSource source,
         Span<byte> buffer,
         ref uint buffer_len
