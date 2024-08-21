@@ -81,32 +81,30 @@ public static class Utils
         return type switch
         {
             ITypeParameterSymbol typeParameter => MakeRwTypeParam(typeParameter.Name),
-            INamedTypeSymbol namedType
-                => type.SpecialType switch
-                {
-                    SpecialType.System_Boolean => "SpacetimeDB.BSATN.Bool",
-                    SpecialType.System_SByte => "SpacetimeDB.BSATN.I8",
-                    SpecialType.System_Byte => "SpacetimeDB.BSATN.U8",
-                    SpecialType.System_Int16 => "SpacetimeDB.BSATN.I16",
-                    SpecialType.System_UInt16 => "SpacetimeDB.BSATN.U16",
-                    SpecialType.System_Int32 => "SpacetimeDB.BSATN.I32",
-                    SpecialType.System_UInt32 => "SpacetimeDB.BSATN.U32",
-                    SpecialType.System_Int64 => "SpacetimeDB.BSATN.I64",
-                    SpecialType.System_UInt64 => "SpacetimeDB.BSATN.U64",
-                    SpecialType.System_Single => "SpacetimeDB.BSATN.F32",
-                    SpecialType.System_Double => "SpacetimeDB.BSATN.F64",
-                    SpecialType.System_String => "SpacetimeDB.BSATN.String",
-                    SpecialType.None => GetTypeInfoForNamedType(namedType),
-                    _
-                        => throw new InvalidOperationException(
-                            $"Unsupported special type {type} ({type.SpecialType})"
-                        )
-                },
-            IArrayTypeSymbol { ElementType: var elementType }
-                => elementType.SpecialType == SpecialType.System_Byte
-                    ? "SpacetimeDB.BSATN.ByteArray"
-                    : $"SpacetimeDB.BSATN.Array<{elementType}, {GetTypeInfo(elementType)}>",
-            _ => throw new InvalidOperationException($"Unsupported type {type}")
+            INamedTypeSymbol namedType => type.SpecialType switch
+            {
+                SpecialType.System_Boolean => "SpacetimeDB.BSATN.Bool",
+                SpecialType.System_SByte => "SpacetimeDB.BSATN.I8",
+                SpecialType.System_Byte => "SpacetimeDB.BSATN.U8",
+                SpecialType.System_Int16 => "SpacetimeDB.BSATN.I16",
+                SpecialType.System_UInt16 => "SpacetimeDB.BSATN.U16",
+                SpecialType.System_Int32 => "SpacetimeDB.BSATN.I32",
+                SpecialType.System_UInt32 => "SpacetimeDB.BSATN.U32",
+                SpecialType.System_Int64 => "SpacetimeDB.BSATN.I64",
+                SpecialType.System_UInt64 => "SpacetimeDB.BSATN.U64",
+                SpecialType.System_Single => "SpacetimeDB.BSATN.F32",
+                SpecialType.System_Double => "SpacetimeDB.BSATN.F64",
+                SpecialType.System_String => "SpacetimeDB.BSATN.String",
+                SpecialType.None => GetTypeInfoForNamedType(namedType),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported special type {type} ({type.SpecialType})"
+                ),
+            },
+            IArrayTypeSymbol { ElementType: var elementType } => elementType.SpecialType
+            == SpecialType.System_Byte
+                ? "SpacetimeDB.BSATN.ByteArray"
+                : $"SpacetimeDB.BSATN.Array<{elementType}, {GetTypeInfo(elementType)}>",
+            _ => throw new InvalidOperationException($"Unsupported type {type}"),
         };
 
         static string GetTypeInfoForNamedType(INamedTypeSymbol type)
@@ -138,13 +136,14 @@ public static class Utils
                 "SpacetimeDB.I256" => "SpacetimeDB.BSATN.I256",
                 "SpacetimeDB.U256" => "SpacetimeDB.BSATN.U256",
                 "System.Collections.Generic.List<T>" => $"SpacetimeDB.BSATN.List",
-                "System.Collections.Generic.Dictionary<TKey, TValue>"
-                    => $"SpacetimeDB.BSATN.Dictionary",
+                "System.Collections.Generic.Dictionary<TKey, TValue>" =>
+                    $"SpacetimeDB.BSATN.Dictionary",
                 // If we're here, then this is nullable *value* type like `int?`.
                 "System.Nullable<T>" => $"SpacetimeDB.BSATN.ValueOption",
-                var name when name.StartsWith("System.")
-                    => throw new InvalidOperationException($"Unsupported system type {name}"),
-                _ => $"{SymbolToName(type)}.BSATN"
+                var name when name.StartsWith("System.") => throw new InvalidOperationException(
+                    $"Unsupported system type {name}"
+                ),
+                _ => $"{SymbolToName(type)}.BSATN",
             };
             if (type.IsGenericType)
             {

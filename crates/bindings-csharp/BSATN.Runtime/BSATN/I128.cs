@@ -47,7 +47,7 @@ public readonly struct I128 : IEquatable<I128>, IComparable, IComparable<I128>
         }
         else
         {
-            throw new ArgumentException();
+            throw new ArgumentException("Argument must be a I128", nameof(value));
         }
     }
 

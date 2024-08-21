@@ -53,17 +53,15 @@ readonly record struct ColumnDeclaration
             or SpecialType.System_Int32
             or SpecialType.System_UInt32
             or SpecialType.System_Int64
-            or SpecialType.System_UInt64
-                => true,
-            SpecialType.None
-                => type.ToString()
-                    is "System.Int128"
-                        or "System.UInt128"
-                        or "SpacetimeDB.I128"
-                        or "SpacetimeDB.U128"
-                        or "SpacetimeDB.I256"
-                        or "SpacetimeDB.U256",
-            _ => false
+            or SpecialType.System_UInt64 => true,
+            SpecialType.None => type.ToString()
+                is "System.Int128"
+                    or "System.UInt128"
+                    or "SpacetimeDB.I128"
+                    or "SpacetimeDB.U128"
+                    or "SpacetimeDB.I256"
+                    or "SpacetimeDB.U256",
+            _ => false,
         };
 
         if (attrs.HasFlag(ColumnAttrs.AutoInc) && !isInteger)
@@ -79,8 +77,9 @@ readonly record struct ColumnDeclaration
                 || type.SpecialType switch
                 {
                     SpecialType.System_String or SpecialType.System_Boolean => true,
-                    SpecialType.None
-                        => type.ToString() is "SpacetimeDB.Address" or "SpacetimeDB.Identity",
+                    SpecialType.None => type.ToString()
+                        is "SpacetimeDB.Address"
+                            or "SpacetimeDB.Identity",
                     _ => false,
                 }
             )
@@ -232,7 +231,7 @@ public class Module : IIncrementalGenerator
                                     "SpacetimeDB.ScheduleAt.BSATN",
                                     ColumnAttrs.UnSet,
                                     false
-                                )
+                                ),
                             ]
                         );
                     }
