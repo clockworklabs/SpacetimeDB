@@ -18,15 +18,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 18.x
-          cache: 'pnpm'
-
       - uses: pnpm/action-setup@v4
         with:
           version: 9.7
           run_install: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18.x
+          cache: 'pnpm'
 
       - run: pnpm compile
 
