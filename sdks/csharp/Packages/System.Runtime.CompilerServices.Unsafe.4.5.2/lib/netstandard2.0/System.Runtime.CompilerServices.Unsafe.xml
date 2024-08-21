@@ -1,0 +1,200 @@
+﻿<?xml version="1.0" encoding="utf-8"?><doc>
+  <assembly>
+    <name>System.Runtime.CompilerServices.Unsafe</name>
+  </assembly>
+  <members>
+    <member name="T:System.Runtime.CompilerServices.Unsafe">
+      <summary>Contains generic, low-level functionality for manipulating pointers.</summary>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.Add``1(``0@,System.Int32)">
+      <summary>Adds an element offset to the given reference.</summary>
+      <param name="source">The reference to add the offset to.</param>
+      <param name="elementOffset">The offset to add.</param>
+      <typeparam name="T">The type of reference.</typeparam>
+      <returns>A new reference that reflects the addition of offset to pointer.</returns>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.Add``1(``0@,System.IntPtr)">
+      <summary>Adds an element offset to the given reference.</summary>
+      <param name="source">The reference to add the offset to.</param>
+      <param name="elementOffset">The offset to add.</param>
+      <typeparam name="T">The type of reference.</typeparam>
+      <returns>A new reference that reflects the addition of offset to pointer.</returns>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.AddByteOffset``1(``0@,System.IntPtr)">
+      <summary>Adds a byte offset to the given reference.</summary>
+      <param name="source">The reference to add the offset to.</param>
+      <param name="byteOffset">The offset to add.</param>
+      <typeparam name="T">The type of reference.</typeparam>
+      <returns>A new reference that reflects the addition of byte offset to pointer.</returns>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.AreSame``1(``0@,``0@)">
+      <summary>Determines whether the specified references point to the same location.</summary>
+      <param name="left">The first reference to compare.</param>
+      <param name="right">The second reference to compare.</param>
+      <typeparam name="T">The type of reference.</typeparam>
+      <returns>true if <paramref name="left">left</paramref> and <paramref name="right">right</paramref> point to the same location; otherwise, false.</returns>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.As``1(System.Object)">
+      <summary>Casts the given object to the specified type.</summary>
+      <param name="o">The object to cast.</param>
+      <typeparam name="T">The type which the object will be cast to.</typeparam>
+      <returns>The original object, casted to the given type.</returns>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.As``2(``0@)">
+      <summary>Reinterprets the given reference as a reference to a value of type <typeparamref name="TTo">TTo</typeparamref>.</summary>
+      <param name="source">The reference to reinterpret.</param>
+      <typeparam name="TFrom">The type of reference to reinterpret..</typeparam>
+      <typeparam name="TTo">The desired type of the reference.</typeparam>
+      <returns>A reference to a value of type <typeparamref name="TTo">TTo</typeparamref>.</returns>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.AsPointer``1(``0@)">
+      <summary>Returns a pointer to the given by-ref parameter.</summary>
+      <param name="value">The object whose pointer is obtained.</param>
+      <typeparam name="T">The type of object.</typeparam>
+      <returns>A pointer to the given value.</returns>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.AsRef``1(System.Void*)">
+      <summary>Reinterprets the given location as a reference to a value of type <typeparamref name="T">T</typeparamref>.</summary>
+      <param name="source">The location of the value to reference.</param>
+      <typeparam name="T">The type of the interpreted location.</typeparam>
+      <returns>A reference to a value of type <typeparamref name="T">T</typeparamref>.</returns>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.ByteOffset``1(``0@,``0@)">
+      <summary>Determines the byte offset from origin to target from the given references.</summary>
+      <param name="origin">The reference to origin.</param>
+      <param name="target">The reference to target.</param>
+      <typeparam name="T">The type of reference.</typeparam>
+      <returns>Byte offset from origin to target i.e. <paramref name="target">target</paramref> - <paramref name="origin">origin</paramref>.</returns>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.Copy``1(System.Void*,``0@)">
+      <summary>Copies a value of type <typeparamref name="T">T</typeparamref> to the given location.</summary>
+      <param name="destination">The location to copy to.</param>
+      <param name="source">A reference to the value to copy.</param>
+      <typeparam name="T">The type of value to copy.</typeparam>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.Copy``1(``0@,System.Void*)">
+      <summary>Copies a value of type <typeparamref name="T">T</typeparamref> to the given location.</summary>
+      <param name="destination">The location to copy to.</param>
+      <param name="source">A pointer to the value to copy.</param>
+      <typeparam name="T">The type of value to copy.</typeparam>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.CopyBlock(System.Byte@,System.Byte@,System.UInt32)">
+      <summary>Copies bytes from the source address to the destination address.</summary>
+      <param name="destination">The destination address to copy to.</param>
+      <param name="source">The source address to copy from.</param>
+      <param name="byteCount">The number of bytes to copy.</param>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.CopyBlock(System.Void*,System.Void*,System.UInt32)">
+      <summary>Copies bytes from the source address to the destination address.</summary>
+      <param name="destination">The destination address to copy to.</param>
+      <param name="source">The source address to copy from.</param>
+      <param name="byteCount">The number of bytes to copy.</param>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.CopyBlockUnaligned(System.Void*,System.Void*,System.UInt32)">
+      <summary>Copies bytes from the source address to the destination address 
+without assuming architecture dependent alignment of the addresses.</summary>
+      <param name="destination">The destination address to copy to.</param>
+      <param name="source">The source address to copy from.</param>
+      <param name="byteCount">The number of bytes to copy.</param>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.CopyBlockUnaligned(System.Byte@,System.Byte@,System.UInt32)">
+      <summary>Copies bytes from the source address to the destination address 
+without assuming architecture dependent alignment of the addresses.</summary>
+      <param name="destination">The destination address to copy to.</param>
+      <param name="source">The source address to copy from.</param>
+      <param name="byteCount">The number of bytes to copy.</param>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.InitBlock(System.Byte@,System.Byte,System.UInt32)">
+      <summary>Initializes a block of memory at the given location with a given initial value.</summary>
+      <param name="startAddress">The address of the start of the memory block to initialize.</param>
+      <param name="value">The value to initialize the block to.</param>
+      <param name="byteCount">The number of bytes to initialize.</param>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.InitBlock(System.Void*,System.Byte,System.UInt32)">
+      <summary>Initializes a block of memory at the given location with a given initial value.</summary>
+      <param name="startAddress">The address of the start of the memory block to initialize.</param>
+      <param name="value">The value to initialize the block to.</param>
+      <param name="byteCount">The number of bytes to initialize.</param>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.InitBlockUnaligned(System.Byte@,System.Byte,System.UInt32)">
+      <summary>Initializes a block of memory at the given location with a given initial value 
+without assuming architecture dependent alignment of the address.</summary>
+      <param name="startAddress">The address of the start of the memory block to initialize.</param>
+      <param name="value">The value to initialize the block to.</param>
+      <param name="byteCount">The number of bytes to initialize.</param>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.InitBlockUnaligned(System.Void*,System.Byte,System.UInt32)">
+      <summary>Initializes a block of memory at the given location with a given initial value 
+without assuming architecture dependent alignment of the address.</summary>
+      <param name="startAddress">The address of the start of the memory block to initialize.</param>
+      <param name="value">The value to initialize the block to.</param>
+      <param name="byteCount">The number of bytes to initialize.</param>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.Read``1(System.Void*)">
+      <summary>Reads a value of type <typeparamref name="T">T</typeparamref> from the given location.</summary>
+      <param name="source">The location to read from.</param>
+      <typeparam name="T">The type to read.</typeparam>
+      <returns>An object of type <typeparamref name="T">T</typeparamref> read from the given location.</returns>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.ReadUnaligned``1(System.Byte@)">
+      <summary>Reads a value of type <typeparamref name="T">T</typeparamref> from the given location
+without assuming architecture dependent alignment of the addresses.</summary>
+      <param name="source">The location to read from.</param>
+      <typeparam name="T">The type to read.</typeparam>
+      <returns>An object of type <typeparamref name="T">T</typeparamref> read from the given location.</returns>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.ReadUnaligned``1(System.Void*)">
+      <summary>Reads a value of type <typeparamref name="T">T</typeparamref> from the given location
+without assuming architecture dependent alignment of the addresses.</summary>
+      <param name="source">The location to read from.</param>
+      <typeparam name="T">The type to read.</typeparam>
+      <returns>An object of type <typeparamref name="T">T</typeparamref> read from the given location.</returns>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.SizeOf``1">
+      <summary>Returns the size of an object of the given type parameter.</summary>
+      <typeparam name="T">The type of object whose size is retrieved.</typeparam>
+      <returns>The size of an object of type <typeparamref name="T">T</typeparamref>.</returns>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.Subtract``1(``0@,System.Int32)">
+      <summary>Subtracts an element offset from the given reference.</summary>
+      <param name="source">The reference to subtract the offset from.</param>
+      <param name="elementOffset">The offset to subtract.</param>
+      <typeparam name="T">The type of reference.</typeparam>
+      <returns>A new reference that reflects the subraction of offset from pointer.</returns>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.Subtract``1(``0@,System.IntPtr)">
+      <summary>Subtracts an element offset from the given reference.</summary>
+      <param name="source">The reference to subtract the offset from.</param>
+      <param name="elementOffset">The offset to subtract.</param>
+      <typeparam name="T">The type of reference.</typeparam>
+      <returns>A new reference that reflects the subraction of offset from pointer.</returns>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.SubtractByteOffset``1(``0@,System.IntPtr)">
+      <summary>Subtracts a byte offset from the given reference.</summary>
+      <param name="source">The reference to subtract the offset from.</param>
+      <param name="byteOffset"></param>
+      <typeparam name="T">The type of reference.</typeparam>
+      <returns>A new reference that reflects the subraction of byte offset from pointer.</returns>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.Write``1(System.Void*,``0)">
+      <summary>Writes a value of type <typeparamref name="T">T</typeparamref> to the given location.</summary>
+      <param name="destination">The location to write to.</param>
+      <param name="value">The value to write.</param>
+      <typeparam name="T">The type of value to write.</typeparam>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.WriteUnaligned``1(System.Byte@,``0)">
+      <summary>Writes a value of type <typeparamref name="T">T</typeparamref> to the given location
+without assuming architecture dependent alignment of the addresses.</summary>
+      <param name="destination">The location to write to.</param>
+      <param name="value">The value to write.</param>
+      <typeparam name="T">The type of value to write.</typeparam>
+    </member>
+    <member name="M:System.Runtime.CompilerServices.Unsafe.WriteUnaligned``1(System.Void*,``0)">
+      <summary>Writes a value of type <typeparamref name="T">T</typeparamref> to the given location
+without assuming architecture dependent alignment of the addresses.</summary>
+      <param name="destination">The location to write to.</param>
+      <param name="value">The value to write.</param>
+      <typeparam name="T">The type of value to write.</typeparam>
+    </member>
+  </members>
+</doc>
