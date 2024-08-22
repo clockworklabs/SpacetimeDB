@@ -215,19 +215,18 @@ fn generate_ref(typespace_len: u32) -> BoxedStrategy<AlgebraicType> {
     (0..typespace_len).prop_map(|n| AlgebraicTypeRef(n).into()).boxed()
 }
 
-/// Generate a type valid to be used as a leaf in nominal normal form.
+/// Generate a type valid to be used to generate a type *use* in a client module.
 /// That is, a ref, non-compound type, a special type, or an array, map, or option of the same.
-fn generate_nominal_leaf_type() -> impl Strategy<Value = AlgebraicType> {
+fn generate_type_valid_for_client_use() -> impl Strategy<Value = AlgebraicType> {
     let leaf = prop_oneof![
         generate_non_compound_algebraic_type(),
         Just(AlgebraicType::identity()),
         Just(AlgebraicType::address()),
     ];
 
-    // we don't need nominal normal form types to be huge.
-    let nominal_size = 3;
+    let size = 3;
 
-    leaf.prop_recursive(nominal_size, nominal_size, nominal_size, |gen_element| {
+    leaf.prop_recursive(size, size, size, |gen_element| {
         prop_oneof![
             gen_element.clone().prop_map(AlgebraicType::array),
             (gen_element.clone(), gen_element.clone()).prop_map(|(key, val)| AlgebraicType::map(key, val)),
@@ -236,13 +235,13 @@ fn generate_nominal_leaf_type() -> impl Strategy<Value = AlgebraicType> {
     })
 }
 
-/// Generate a `Typespace` in nominal normal form with `size` elements.
+/// Generate a `Typespace` valid for client code generation with `size` elements.
 ///
 /// We don't prop_map on the size because it supposedly can lead to exponential shrinking times.
 ///
 /// Does not generate nested arrays or maps currently, although these would be allowed.
-pub fn generate_nominal_typespace(size: u32) -> impl Strategy<Value = Typespace> {
-    let generate_value = generate_nominal_leaf_type().boxed();
+pub fn generate_typespace_valid_for_codegen(size: u32) -> impl Strategy<Value = Typespace> {
+    let generate_value = generate_type_valid_for_client_use().boxed();
 
     let types = (0..size)
         .map(|current_len| {

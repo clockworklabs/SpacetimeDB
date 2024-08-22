@@ -22,7 +22,7 @@ pub trait ResolveRefs {
     /// within `this` (typing context carried) resolved
     /// using the provided resolver `state`.
     ///
-    /// `Err` is returned if a cycle was detected, or if any `TypeRef` touched was invalid.
+    /// `Err` is returned if a cycle was detected, or if any `AlgebraicTypeRef` touched was invalid.
     fn resolve_refs(this: WithTypespace<'_, Self>, state: &mut ResolveRefState) -> Result<Self::Output, TypeRefError>;
 }
 

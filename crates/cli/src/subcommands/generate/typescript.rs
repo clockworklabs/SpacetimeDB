@@ -39,6 +39,9 @@ fn scalar_or_string_to_ts(ty: &AlgebraicType) -> Option<(&str, &str)> {
 
 fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, ref_prefix: &'a str) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
+        ty if ty.is_identity() => write!(f, "Identity"),
+        ty if ty.is_address() => write!(f, "Address"),
+        ty if ty.is_schedule_at() => write!(f, "ScheduleAt"),
         AlgebraicType::Sum(sum_type) => {
             if let Some(inner_ty) = sum_type.as_option() {
                 write!(f, "{} | null", ty_fmt(ctx, inner_ty, ref_prefix))
@@ -46,8 +49,6 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, ref_prefix: &'a str) -> im
                 unimplemented!()
             }
         }
-        ty if ty.is_identity() => write!(f, "Identity"),
-        ty if ty.is_address() => write!(f, "Address"),
         // All other types should fail.
         AlgebraicType::Product(_) => unimplemented!(),
         ty if ty.is_bytes() => f.write_str("Uint8Array"),
@@ -75,6 +76,7 @@ fn convert_type<'a>(
         match ty {
         ty if ty.is_identity() => write!(f, "{value}.asIdentity()"),
         ty if ty.is_address() => write!(f, "{value}.asAddress()"),
+        ty if ty.is_schedule_at() => write!(f, "{value}.asScheduleAt()"),
         AlgebraicType::Product(_) => unimplemented!(),
         AlgebraicType::Sum(sum_type) => match sum_type.as_option() {
             Some(inner_ty @ AlgebraicType::Ref(_)) => fmt::Display::fmt(
@@ -148,6 +150,7 @@ macro_rules! indent_scope {
 
 fn convert_algebraic_type<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, ref_prefix: &'a str) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
+        ty if ty.is_schedule_at() => write!(f, "ScheduleAt.getAlgebraicType()"),
         AlgebraicType::Product(product_type) => write!(f, "{}", convert_product_type(ctx, product_type, ref_prefix)),
         AlgebraicType::Sum(sum_type) => write!(f, "{}", convert_sum_type(ctx, sum_type, ref_prefix)),
         AlgebraicType::Array(ty) => write!(
@@ -228,6 +231,8 @@ fn serialize_type<'a>(
                     "{value} ? {{ \"some\": {} }} : {{ \"none\": [] }}",
                     serialize_type(ctx, inner_ty, value, prefix)
                 )
+            } else if sum_type.is_schedule_at() {
+                write!(f, "ScheduleAt.serialize({value})")
             } else {
                 unimplemented!()
             }
@@ -568,7 +573,7 @@ fn autogen_typescript_product_table_common(
     writeln!(output);
 
     writeln!(output, "// @ts-ignore");
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ClientDB, SpacetimeDBClient }} from \"@clockworklabs/spacetimedb-sdk\";");
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, SumType, SumTypeVariant, DatabaseTable, AlgebraicValue, ReducerEvent, Identity, Address, ScheduleAt, ClientDB, SpacetimeDBClient }} from \"@clockworklabs/spacetimedb-sdk\";");
 
     let mut imports = Vec::new();
     generate_imports(ctx, &product_type.elements, &mut imports, None);
@@ -867,7 +872,7 @@ pub fn autogen_typescript_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> String 
     writeln!(output);
 
     writeln!(output, "// @ts-ignore");
-    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ReducerEvent, Reducer, SpacetimeDBClient }} from \"@clockworklabs/spacetimedb-sdk\";");
+    writeln!(output, "import {{ __SPACETIMEDB__, AlgebraicType, ProductType, ProductTypeElement, DatabaseTable, AlgebraicValue, ReducerArgsAdapter, SumTypeVariant, Serializer, Identity, Address, ScheduleAt, ReducerEvent, Reducer, SpacetimeDBClient }} from \"@clockworklabs/spacetimedb-sdk\";");
 
     let mut imports = Vec::new();
     generate_imports(

@@ -46,7 +46,7 @@ pub struct RawModuleDefV9 {
     ///
     /// It is permitted but not required to refer to `Builtin` or "primitive" types via this typespace.
     ///
-    /// The typespace must satisfy `Typespace::is_nominal`. That is, it is not permitted to refer to `Sum` or `Product` types in this typespace except via `AlgebraicType::Ref`.
+    /// The typespace must satisfy `Typespace::is_valid_for_client_code_generation`.
     pub typespace: Typespace,
 
     /// The tables of the database definition used in the module.

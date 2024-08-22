@@ -41,6 +41,9 @@ fn scalar_or_string_name(b: &AlgebraicType) -> Option<&str> {
 
 fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
+        ty if ty.is_identity() => f.write_str("SpacetimeDB.Identity"),
+        ty if ty.is_address() => f.write_str("SpacetimeDB.Address"),
+        ty if ty.is_schedule_at() => f.write_str("SpacetimeDB.ScheduleAt"),
         AlgebraicType::Sum(sum_type) => {
             // This better be an option type
             if let Some(inner_ty) = sum_type.as_option() {
@@ -49,8 +52,6 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
                 unimplemented!()
             }
         }
-        ty if ty.is_identity() => f.write_str("SpacetimeDB.Identity"),
-        ty if ty.is_address() => f.write_str("SpacetimeDB.Address"),
         // Arbitrary product types should fail.
         AlgebraicType::Product(_) => unimplemented!(),
         ty if ty.is_bytes() => f.write_str("byte[]"),

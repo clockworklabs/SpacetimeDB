@@ -11,6 +11,8 @@ use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType,
 /// It is a unique identifier for a particular database and once set for a database,
 /// does not change.
 ///
+/// This is a special type.
+///
 // TODO: Evaluate other possible names: `DatabaseAddress`, `SPAddress`
 // TODO: Evaluate replacing this with a literal Ipv6Address
 //       which is assigned permanently to a database.
@@ -51,6 +53,11 @@ impl Address {
     pub const ZERO: Self = Self {
         __address_bytes: [0; 16],
     };
+
+    /// Get the special `AlgebraicType` for `Address`.
+    pub fn get_type() -> AlgebraicType {
+        AlgebraicType::product([(ADDRESS_TAG, AlgebraicType::bytes())])
+    }
 
     pub fn from_byte_array(arr: [u8; 16]) -> Self {
         Self { __address_bytes: arr }
@@ -196,6 +203,11 @@ mod tests {
         let ser = bsatn::to_vec(&addr).unwrap();
         let de = bsatn::from_slice(&ser).unwrap();
         assert_eq!(addr, de);
+    }
+
+    #[test]
+    fn address_is_special() {
+        assert!(Address::get_type().is_special());
     }
 
     #[cfg(feature = "serde")]

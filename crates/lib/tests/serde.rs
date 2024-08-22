@@ -3,7 +3,6 @@ use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::{AlgebraicType, Identity, ProductType, ProductTypeElement, ProductValue, SumType};
 use spacetimedb_sats::algebraic_value::de::ValueDeserializer;
 use spacetimedb_sats::algebraic_value::ser::value_serialize;
-use spacetimedb_sats::GroundSpacetimeType as _;
 use spacetimedb_sats::{satn::Satn, SumTypeVariant, Typespace, WithTypespace};
 
 macro_rules! de_json_snapshot {

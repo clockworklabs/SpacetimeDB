@@ -22,6 +22,9 @@ fn write_type_ctx(ctx: &GenCtx, out: &mut Indenter, ty: &AlgebraicType) {
 
 pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut W, ty: &AlgebraicType) -> fmt::Result {
     match ty {
+        p if p.is_identity() => write!(out, "Identity")?,
+        p if p.is_address() => write!(out, "Address")?,
+        p if p.is_schedule_at() => write!(out, "ScheduleAt")?,
         AlgebraicType::Sum(sum_type) => {
             if let Some(inner_ty) = sum_type.as_option() {
                 write!(out, "Option::<")?;
@@ -37,8 +40,6 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
                 })?;
             }
         }
-        p if p.is_identity() => write!(out, "Identity")?,
-        p if p.is_address() => write!(out, "Address")?,
         AlgebraicType::Product(ProductType { elements }) => {
             print_comma_sep_braced(out, elements, |out: &mut W, elem: &ProductTypeElement| {
                 if let Some(name) = &elem.name {
