@@ -237,6 +237,10 @@ impl SchedulerActor {
     fn handle_message(&mut self, msg: SchedulerMessage) {
         match msg {
             SchedulerMessage::Schedule { id, at } => {
+                // Incase of row update, remove the existing entry from queue first
+                if let Some(key) = self.key_map.get(&id) {
+                    self.queue.remove(key);
+                }
                 let key = self.queue.insert(id, at.to_duration_from_now());
                 self.key_map.insert(id, key);
             }
@@ -324,7 +328,8 @@ impl SchedulerActor {
         let schedule_at = get_schedule_at_mut(tx, db, id.table_id, schedule_row)?;
 
         if let ScheduleAt::Interval(dur) = schedule_at {
-            self.queue.insert(id, Duration::from_micros(dur));
+            let key = self.queue.insert(id, Duration::from_micros(dur));
+            self.key_map.insert(id, key);
             Ok(true)
         } else {
             Ok(false)
