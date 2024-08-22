@@ -540,6 +540,7 @@ macro_rules! __make_register_reftype {
     };
 }
 
+#[cfg(feature = "unstable_abi")]
 #[doc(hidden)]
 pub fn volatile_nonatomic_schedule_immediate<'de, A: Args<'de>, R: Reducer<'de, A, T>, R2: ReducerInfo, T>(
     _reducer: R,

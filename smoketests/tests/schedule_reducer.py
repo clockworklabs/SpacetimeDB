@@ -113,6 +113,7 @@ pub fn my_reducer(_ctx: ReducerContext, arg: ScheduledTable) {
 
 
 class VolatileNonatomicScheduleImmediate(Smoketest):
+    BINDINGS_FEATURES = ["unstable_abi"]
     MODULE_CODE = """
 use spacetimedb::spacetimedb;
 

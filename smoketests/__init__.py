@@ -27,7 +27,7 @@ TEMPLATE_CARGO_TOML = open(STDB_DIR / "crates/cli/src/subcommands/project/rust/C
 bindings_path = (STDB_DIR / "crates/bindings").absolute()
 escaped_bindings_path = str(bindings_path).replace('\\', '\\\\\\\\') # double escape for re.sub + toml
 TEMPLATE_CARGO_TOML = (re.compile(r"^spacetimedb\s*=.*$", re.M) \
-    .sub(f'spacetimedb = {{ path = "{escaped_bindings_path}" }}', TEMPLATE_CARGO_TOML))
+    .sub(f'spacetimedb = {{ path = "{escaped_bindings_path}", features = {{features}} }}', TEMPLATE_CARGO_TOML))
 
 # this is set to true when the --docker flag is passed to the cli
 HAVE_DOCKER = False
@@ -156,11 +156,12 @@ HAVE_DOTNET = _check_for_dotnet()
 class Smoketest(unittest.TestCase):
     MODULE_CODE = TEMPLATE_LIB_RS
     AUTOPUBLISH = True
+    BINDINGS_FEATURES = []
     EXTRA_DEPS = ""
 
     @classmethod
     def cargo_manifest(cls, manifest_text):
-        return manifest_text + cls.EXTRA_DEPS
+        return manifest_text.replace("{features}", repr(list(cls.BINDINGS_FEATURES))) + cls.EXTRA_DEPS
 
     # helpers
 

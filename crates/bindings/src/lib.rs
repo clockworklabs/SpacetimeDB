@@ -571,7 +571,7 @@ pub mod query {
     }
 }
 
-#[doc(hidden)]
+#[cfg(feature = "unstable_abi")]
 #[macro_export]
 macro_rules! volatile_nonatomic_schedule_immediate {
     ($($args:tt)*) => {
@@ -579,6 +579,7 @@ macro_rules! volatile_nonatomic_schedule_immediate {
     };
 }
 
+#[cfg(feature = "unstable_abi")]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __volatile_nonatomic_schedule_immediate_impl {
