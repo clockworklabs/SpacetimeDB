@@ -140,6 +140,7 @@ impl Validator<'_> {
 
         let table_in_progress = TableInProgress {
             raw_name: &raw_table_name[..],
+            product_type_ref,
             product_type,
         };
 
@@ -226,10 +227,12 @@ impl Validator<'_> {
             })
             .and_then(|name| identifier(name.into()));
 
-        // We don't need to validate this type here.
-        // This type comes from the table's `product_type_ref` field, which points into the `typespace`,
-        // and validation for types in the typespace is handled elsewhere.
-        let ty = column.algebraic_type.clone();
+        let structural_type = self.validate_resolves(
+            &TypeLocation::InTypespace {
+                ref_: table_in_progress.product_type_ref,
+            },
+            &column.algebraic_type,
+        );
 
         // This error will be created multiple times if the table name is invalid,
         // but we sort and deduplicate the error stream afterwards,
@@ -239,11 +242,11 @@ impl Validator<'_> {
         // nonempty. We need to put something in there if the table name is invalid.
         let table_name = identifier(table_in_progress.raw_name.into());
 
-        let (name, table_name) = (name, table_name).combine_errors()?;
+        let (name, structural_type, table_name) = (name, structural_type, table_name).combine_errors()?;
 
         Ok(ColumnDef {
             name,
-            ty,
+            structural_type,
             col_id,
             table_name,
         })
@@ -449,7 +452,7 @@ impl Validator<'_> {
                     arg_name: param.name().map(Into::into),
                 };
                 let valid_for_use = self.validate_for_type_use(&location, &param.algebraic_type);
-                let resolves = self.validate_resolves(&location, &param.algebraic_type);
+                let resolves = self.validate_resolves(&location, &param.algebraic_type).map(|_| ());
                 let ((), ()) = (valid_for_use, resolves).combine_errors()?;
                 Ok(())
             })
@@ -602,21 +605,19 @@ impl Validator<'_> {
         }
     }
 
-    /// Validate that a type resolves correctly.
-    fn validate_resolves(&mut self, location: &TypeLocation, ty: &AlgebraicType) -> Result<()> {
+    /// Validate that a type resolves correctly, returning the resolved type if successful.
+    /// The resolved type will not contain any `Ref`s.
+    fn validate_resolves(&mut self, location: &TypeLocation, ty: &AlgebraicType) -> Result<AlgebraicType> {
         // This repeats some work for nested types.
         // TODO: implement a reentrant, cached version of `resolve_refs`.
-        WithTypespace::new(self.typespace, ty)
-            .resolve_refs()
-            .map(|_resolved| ())
-            .map_err(|error| {
-                ValidationError::ResolutionFailure {
-                    location: location.clone().make_static(),
-                    ty: ty.clone(),
-                    error,
-                }
-                .into()
-            })
+        WithTypespace::new(self.typespace, ty).resolve_refs().map_err(|error| {
+            ValidationError::ResolutionFailure {
+                location: location.clone().make_static(),
+                ty: ty.clone(),
+                error,
+            }
+            .into()
+        })
     }
 
     /// Validate the typespace.
@@ -648,8 +649,8 @@ impl Validator<'_> {
                             }
                             TypeDefOrUse::Use => Ok(()),
                         });
-
-                let resolves = self.validate_resolves(&location, ty);
+                // Discard the resolved type, we only want to check that it DOES resolve.
+                let resolves = self.validate_resolves(&location, ty).map(|_| ());
 
                 let ((), ()) = (is_valid, resolves).combine_errors()?;
                 Ok(())
@@ -661,6 +662,7 @@ impl Validator<'_> {
 /// A partially validated table.
 struct TableInProgress<'a> {
     raw_name: &'a str,
+    product_type_ref: AlgebraicTypeRef,
     product_type: &'a ProductType,
 }
 
@@ -737,7 +739,7 @@ enum TypeDefOrUse {
 
 #[cfg(test)]
 mod tests {
-    use crate::def::validate::tests::{expect_identifier, expect_raw_type_name, expect_type_name};
+    use crate::def::validate::tests::{expect_identifier, expect_raw_type_name, expect_resolve, expect_type_name};
     use crate::def::IndexAlgorithm;
     use crate::def::{validate::Result, ModuleDef, TableDef};
     use crate::error::*;
@@ -761,8 +763,12 @@ mod tests {
             .unwrap();
 
         for (element, column) in product_type.elements.iter().zip(table_def.columns.iter()) {
-            assert_eq!(element.name(), Some(&*column.name));
-            assert_eq!(element.algebraic_type, column.ty);
+            assert_eq!(Some(&*column.name), element.name());
+            assert_eq!(column.get_type_for_client_use(module_def), &element.algebraic_type);
+            assert_eq!(
+                column.structural_type,
+                expect_resolve(&module_def.typespace, &element.algebraic_type)
+            );
         }
     }
 
@@ -863,13 +869,16 @@ mod tests {
 
         assert_eq!(apples_def.columns.len(), 4);
         assert_eq!(apples_def.columns[0].name, expect_identifier("id"));
-        assert_eq!(apples_def.columns[0].ty, AlgebraicType::U64);
+        assert_eq!(apples_def.columns[0].structural_type, AlgebraicType::U64);
         assert_eq!(apples_def.columns[1].name, expect_identifier("name"));
-        assert_eq!(apples_def.columns[1].ty, AlgebraicType::String);
+        assert_eq!(apples_def.columns[1].structural_type, AlgebraicType::String);
         assert_eq!(apples_def.columns[2].name, expect_identifier("count"));
-        assert_eq!(apples_def.columns[2].ty, AlgebraicType::U16);
+        assert_eq!(apples_def.columns[2].structural_type, AlgebraicType::U16);
         assert_eq!(apples_def.columns[3].name, expect_identifier("type"));
-        assert_eq!(apples_def.columns[3].ty, AlgebraicType::Ref(sum_type_ref));
+        assert_eq!(
+            apples_def.columns[3].structural_type,
+            expect_resolve(&def.typespace, &sum_type_ref.into())
+        );
 
         assert_eq!(apples_def.primary_key, None);
 
@@ -910,23 +919,23 @@ mod tests {
         assert_eq!(&bananas_def.name, &bananas);
         assert_eq!(bananas_def.columns.len(), 4);
         assert_eq!(bananas_def.columns[0].name, expect_identifier("count"));
-        assert_eq!(bananas_def.columns[0].ty, AlgebraicType::U16);
+        assert_eq!(bananas_def.columns[0].structural_type, AlgebraicType::U16);
         assert_eq!(bananas_def.columns[1].name, expect_identifier("id"));
-        assert_eq!(bananas_def.columns[1].ty, AlgebraicType::U64);
+        assert_eq!(bananas_def.columns[1].structural_type, AlgebraicType::U64);
         assert_eq!(bananas_def.columns[2].name, expect_identifier("name"));
-        assert_eq!(bananas_def.columns[2].ty, AlgebraicType::String);
+        assert_eq!(bananas_def.columns[2].structural_type, AlgebraicType::String);
         assert_eq!(
             bananas_def.columns[3].name,
             expect_identifier("optional_product_column")
         );
         assert_eq!(
-            bananas_def.columns[3].ty,
-            AlgebraicType::option(product_type_ref.into())
+            bananas_def.columns[3].structural_type,
+            expect_resolve(def.typespace(), &AlgebraicType::option(product_type_ref.into()))
         );
         assert_eq!(bananas_def.primary_key, Some(0.into()));
         assert_eq!(bananas_def.indexes.len(), 2);
         assert_eq!(bananas_def.unique_constraints.len(), 1);
-        let (bananas_constraint_name, bananas_constraint) = bananas_def.unique_constraints.iter().nth(0).unwrap();
+        let (bananas_constraint_name, bananas_constraint) = bananas_def.unique_constraints.iter().next().unwrap();
         assert_eq!(bananas_constraint_name, &bananas_constraint.name);
         assert_eq!(bananas_constraint.columns, 0.into());
 
@@ -934,11 +943,11 @@ mod tests {
         assert_eq!(&delivery_def.name, &deliveries);
         assert_eq!(delivery_def.columns.len(), 3);
         assert_eq!(delivery_def.columns[0].name, expect_identifier("id"));
-        assert_eq!(delivery_def.columns[0].ty, AlgebraicType::U64);
+        assert_eq!(delivery_def.columns[0].structural_type, AlgebraicType::U64);
         assert_eq!(delivery_def.columns[1].name, expect_identifier("scheduled_at"));
-        assert_eq!(delivery_def.columns[1].ty, schedule_at_type);
+        assert_eq!(delivery_def.columns[1].structural_type, schedule_at_type);
         assert_eq!(delivery_def.columns[2].name, expect_identifier("scheduled_id"));
-        assert_eq!(delivery_def.columns[2].ty, AlgebraicType::U64);
+        assert_eq!(delivery_def.columns[2].structural_type, AlgebraicType::U64);
         assert_eq!(delivery_def.schedule.as_ref().unwrap().at_column, 1.into());
         assert_eq!(
             &delivery_def.schedule.as_ref().unwrap().reducer_name[..],

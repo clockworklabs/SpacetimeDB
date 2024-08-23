@@ -384,11 +384,30 @@ pub struct ColumnDef {
     /// The ID of this column.
     pub col_id: ColId,
 
-    /// The type of the column.
-    pub ty: AlgebraicType,
+    /// The *structural* type of the column.
+    /// This is how the database will think of the column.
+    ///
+    /// This `AlgebraicType` does not contain any `Ref`s and is
+    /// NOT required to satisfy `AlgebraicType::is_valid_for_client_type_use`.
+    ///
+    /// To get a version of the type that does, use `ColumnDef::get_column_type_for_client_use`.
+    pub structural_type: AlgebraicType,
 
     /// The table this `ColumnDef` is stored in.
     pub table_name: Identifier,
+}
+impl ColumnDef {
+    /// Get a version of the column type that satisfies `AlgebraicType::is_valid_for_client_type_use`.
+    /// Panics if `self` is not contained in the passed `ModuleDef`.
+    pub fn get_type_for_client_use<'a>(&'a self, module_def: &'a ModuleDef) -> &'a AlgebraicType {
+        let table_def = module_def
+            .stored_in_table_def(&self.table_name)
+            .expect("validated column");
+        let product_type = module_def.typespace()[table_def.product_type_ref]
+            .as_product()
+            .expect("validated column");
+        &product_type.elements[self.col_id.idx()].algebraic_type
+    }
 }
 
 /// Requires that the projection of the table onto these columns is an bijection.

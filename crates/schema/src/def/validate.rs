@@ -11,7 +11,8 @@ pub type Result<T> = std::result::Result<T, ValidationErrors>;
 #[cfg(test)]
 pub mod tests {
     use itertools::Itertools;
-    use spacetimedb_lib::db::raw_def::v9::RawScopedTypeNameV9;
+    use spacetimedb_lib::{db::raw_def::v9::RawScopedTypeNameV9, AlgebraicType};
+    use spacetimedb_sats::{Typespace, WithTypespace};
 
     use crate::{def::ScopedTypeName, identifier::Identifier};
 
@@ -43,6 +44,13 @@ pub mod tests {
         let scope = scope.into();
 
         RawScopedTypeNameV9 { name, scope }
+    }
+
+    /// Resolve a type in a typespace, expecting success.
+    pub fn expect_resolve(typespace: &Typespace, ty: &AlgebraicType) -> AlgebraicType {
+        WithTypespace::new(typespace, ty)
+            .resolve_refs()
+            .expect("failed to resolve type")
     }
 
     #[test]
