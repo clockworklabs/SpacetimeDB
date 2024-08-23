@@ -47,6 +47,7 @@ enum MsgOrExit<T> {
 
 enum SchedulerMessage {
     Schedule { id: ScheduledReducerId, at: ScheduleAt },
+    ScheduleImmediate { reducer_name: String, args: ReducerArgs },
 }
 
 pub struct ScheduledReducer {
@@ -83,7 +84,7 @@ impl SchedulerStarter {
     // TODO(cloutiertyler): This whole start dance is scuffed, but I don't have
     // time to make it better right now.
     pub fn start(mut self, module_host: &ModuleHost) -> anyhow::Result<()> {
-        let mut queue: DelayQueue<ScheduledReducerId> = DelayQueue::new();
+        let mut queue: DelayQueue<QueueItem> = DelayQueue::new();
         let ctx = &ExecutionContext::internal(self.db.address());
         let tx = self.db.begin_tx();
 
@@ -106,7 +107,7 @@ impl SchedulerStarter {
                 let schedule_at = get_schedule_at(&tx, &self.db, table_id, &scheduled_row)?;
                 // calculate duration left to call the scheduled reducer
                 let duration = schedule_at.to_duration_from_now();
-                queue.insert(ScheduledReducerId { table_id, schedule_id }, duration);
+                queue.insert(QueueItem::Id(ScheduledReducerId { table_id, schedule_id }), duration);
             }
         }
 
@@ -205,6 +206,13 @@ impl Scheduler {
         Ok(())
     }
 
+    pub fn volatile_nonatomic_schedule_immediate(&self, reducer_name: String, args: ReducerArgs) {
+        let _ = self.tx.send(MsgOrExit::Msg(SchedulerMessage::ScheduleImmediate {
+            reducer_name,
+            args,
+        }));
+    }
+
     pub fn close(&self) {
         let _ = self.tx.send(MsgOrExit::Exit);
     }
@@ -212,9 +220,14 @@ impl Scheduler {
 
 struct SchedulerActor {
     rx: mpsc::UnboundedReceiver<MsgOrExit<SchedulerMessage>>,
-    queue: DelayQueue<ScheduledReducerId>,
+    queue: DelayQueue<QueueItem>,
     key_map: FxHashMap<ScheduledReducerId, delay_queue::Key>,
     module_host: WeakModuleHost,
+}
+
+enum QueueItem {
+    Id(ScheduledReducerId),
+    VolatileNonatomicImmediate { reducer_name: String, args: ReducerArgs },
 }
 
 impl SchedulerActor {
@@ -241,15 +254,27 @@ impl SchedulerActor {
                 if let Some(key) = self.key_map.get(&id) {
                     self.queue.remove(key);
                 }
-                let key = self.queue.insert(id, at.to_duration_from_now());
+                let key = self.queue.insert(QueueItem::Id(id), at.to_duration_from_now());
                 self.key_map.insert(id, key);
+            }
+            SchedulerMessage::ScheduleImmediate { reducer_name, args } => {
+                self.queue.insert(
+                    QueueItem::VolatileNonatomicImmediate { reducer_name, args },
+                    Duration::ZERO,
+                );
             }
         }
     }
 
-    async fn handle_queued(&mut self, id: Expired<ScheduledReducerId>) {
-        let id = id.into_inner();
-        self.key_map.remove(&id);
+    async fn handle_queued(&mut self, id: Expired<QueueItem>) {
+        let item = id.into_inner();
+        let id = match item {
+            QueueItem::Id(id) => Some(id),
+            QueueItem::VolatileNonatomicImmediate { .. } => None,
+        };
+        if let Some(id) = id {
+            self.key_map.remove(&id);
+        }
 
         let Some(module_host) = self.module_host.upgrade() else {
             return;
@@ -260,6 +285,29 @@ impl SchedulerActor {
         let module_info = module_host.info.clone();
 
         let call_reducer_params = move |tx: &MutTxId| -> Result<Option<CallReducerParams>, anyhow::Error> {
+            let id = match item {
+                QueueItem::Id(id) => id,
+                QueueItem::VolatileNonatomicImmediate { reducer_name, args } => {
+                    let (reducer_id, schema) = module_info
+                        .reducers
+                        .lookup(&reducer_name)
+                        .ok_or(ReducerCallError::NoSuchReducer)?;
+
+                    let reducer_args = args.into_tuple(module_info.typespace.with_type(schema))?;
+
+                    return Ok(Some(CallReducerParams {
+                        timestamp: Timestamp::now(),
+                        caller_identity,
+                        caller_address: Address::default(),
+                        client: None,
+                        request_id: None,
+                        timer: None,
+                        reducer_id,
+                        args: reducer_args,
+                    }));
+                }
+            };
+
             let Ok(schedule_row) = get_schedule_row_mut(&ctx, tx, &db, id) else {
                 // if the row is not found, it means the schedule is cancelled by the user
                 log::debug!(
@@ -306,8 +354,10 @@ impl SchedulerActor {
 
             // delete the scheduled reducer row if its not repeated reducer
             Ok(_) | Err(_) => {
-                self.delete_scheduled_reducer_row(&ctx, &db, id, module_host_clone)
-                    .await;
+                if let Some(id) = id {
+                    self.delete_scheduled_reducer_row(&ctx, &db, id, module_host_clone)
+                        .await;
+                }
             }
         }
 
@@ -328,7 +378,7 @@ impl SchedulerActor {
         let schedule_at = get_schedule_at_mut(tx, db, id.table_id, schedule_row)?;
 
         if let ScheduleAt::Interval(dur) = schedule_at {
-            let key = self.queue.insert(id, Duration::from_micros(dur));
+            let key = self.queue.insert(QueueItem::Id(id), Duration::from_micros(dur));
             self.key_map.insert(id, key);
             Ok(true)
         } else {

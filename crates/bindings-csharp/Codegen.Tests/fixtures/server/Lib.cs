@@ -88,6 +88,12 @@ public static partial class Reducers
             Runtime.Log($"Item: {item.StringField}");
         }
     }
+
+    [SpacetimeDB.Reducer]
+    public static void ScheduleImmediate(PublicTable data)
+    {
+        VolatileNonatomicScheduleImmediateInsertData(data);
+    }
 }
 
 namespace Test

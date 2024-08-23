@@ -374,6 +374,7 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::iter_start_filtered,
             "spacetime_10.0"::span_end,
             "spacetime_10.0"::span_start,
+            "spacetime_10.0"::volatile_nonatomic_schedule_immediate,
         }
     };
 }
