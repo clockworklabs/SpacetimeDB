@@ -110,3 +110,34 @@ pub fn my_reducer(_ctx: ReducerContext, arg: ScheduledTable) {
 
         # subscription should have 2 updates and should not have any deletes
         self.assertEqual(sub(), [{'ScheduledTable': {'deletes': [], 'inserts': [repeated_row_entry]}}, {'ScheduledTable': {'deletes': [], 'inserts': [row_entry]}}])
+
+
+class VolatileNonatomicScheduleImmediate(Smoketest):
+    BINDINGS_FEATURES = ["unstable_abi"]
+    MODULE_CODE = """
+use spacetimedb::spacetimedb;
+
+#[spacetimedb(table(public))]
+pub struct MyTable {
+    x: String,
+}
+
+#[spacetimedb(reducer)]
+fn do_schedule() {
+    spacetimedb::volatile_nonatomic_schedule_immediate!(do_insert("hello".to_owned()));
+}
+
+#[spacetimedb(reducer)]
+fn do_insert(x: String) {
+    MyTable::insert(MyTable { x });
+}
+"""
+    def test_volatile_nonatomic_schedule_immediate(self):
+        """Check that volatile_nonatomic_schedule_immediate works"""
+
+        sub = self.subscribe("SELECT * FROM MyTable", n=2)
+
+        self.call("do_insert", "yay!")
+        self.call("do_schedule")
+
+        self.assertEqual(sub(), [{'MyTable': {'deletes': [], 'inserts': [{'x': 'yay!'}]}}, {'MyTable': {'deletes': [], 'inserts': [{'x': 'hello'}]}}])

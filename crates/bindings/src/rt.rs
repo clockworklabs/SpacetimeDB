@@ -111,6 +111,9 @@ fn cvt_result(res: Result<(), Box<str>>) -> Buffer {
 /// The type parameter `T` is used for determining whether there is a context argument.
 pub trait Reducer<'de, A: Args<'de>, T> {
     fn invoke(&self, ctx: ReducerContext, args: A) -> Result<(), Box<str>>;
+
+    type ArgsWithContext;
+    fn extract_args(args: Self::ArgsWithContext) -> A;
 }
 
 /// A trait for types that can *describe* a reducer.
@@ -232,18 +235,18 @@ macro_rules! impl_reducer {
                 Ok(($($T,)*))
             }
 
+            #[allow(non_snake_case)]
             fn serialize_seq_product<Ser: SerializeSeqProduct>(&self, _prod: &mut Ser) -> Result<(), Ser::Error> {
                 // For every element in the product, serialize.
-                #[allow(non_snake_case)]
                 let ($($T,)*) = self;
                 $(_prod.serialize_element($T)?;)*
                 Ok(())
             }
 
             #[inline]
+            #[allow(non_snake_case, irrefutable_let_patterns)]
             fn schema<Info: ReducerInfo>(_typespace: &mut impl TypespaceBuilder) -> ReducerDef {
                 // Extract the names of the arguments.
-                #[allow(non_snake_case, irrefutable_let_patterns)]
                 let [.., $($T),*] = Info::ARG_NAMES else { panic!() };
                 ReducerDef {
                     name: Info::NAME.into(),
@@ -263,10 +266,17 @@ macro_rules! impl_reducer {
             Func: Fn(ReducerContext, $($T),*) -> Ret,
             Ret: ReducerResult
         {
+            #[allow(non_snake_case)]
             fn invoke(&self, ctx: ReducerContext, args: ($($T,)*)) -> Result<(), Box<str>> {
-                #[allow(non_snake_case)]
                 let ($($T,)*) = args;
                 self(ctx, $($T),*).into_result()
+            }
+
+            type ArgsWithContext = (ReducerContext, $($T,)*);
+            #[allow(non_snake_case, clippy::unused_unit)]
+            fn extract_args(args: Self::ArgsWithContext) -> ($($T,)*) {
+                let (_ctx, $($T,)*) = args;
+                ($($T,)*)
             }
         }
 
@@ -276,10 +286,15 @@ macro_rules! impl_reducer {
             Func: Fn($($T),*) -> Ret,
             Ret: ReducerResult
         {
+            #[allow(non_snake_case)]
             fn invoke(&self, _ctx: ReducerContext, args: ($($T,)*)) -> Result<(), Box<str>> {
-                #[allow(non_snake_case)]
                 let ($($T,)*) = args;
                 self($($T),*).into_result()
+            }
+
+            type ArgsWithContext = ($($T,)*);
+            fn extract_args(args: Self::ArgsWithContext) -> ($($T,)*) {
+                args
             }
         }
     };
@@ -487,4 +502,17 @@ macro_rules! __make_register_reftype {
             }
         };
     };
+}
+
+#[cfg(feature = "unstable_abi")]
+#[doc(hidden)]
+pub fn volatile_nonatomic_schedule_immediate<'de, A: Args<'de>, R: Reducer<'de, A, T>, R2: ReducerInfo, T>(
+    _reducer: R,
+    args: R::ArgsWithContext,
+) {
+    let args = R::extract_args(args);
+    let arg_bytes = bsatn::to_vec(&SerDeArgs(args)).unwrap();
+
+    // Schedule the reducer.
+    sys::volatile_nonatomic_schedule_immediate(R2::NAME, &arg_bytes)
 }

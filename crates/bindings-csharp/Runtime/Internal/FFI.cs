@@ -181,6 +181,14 @@ internal static partial class FFI
     public static partial void _iter_drop(RowIter iter_handle);
 
     [LibraryImport(StdbNamespace)]
+    public static partial void _volatile_nonatomic_schedule_immediate(
+        [In] byte[] name,
+        uint name_len,
+        [In] byte[] args,
+        uint args_len
+    );
+
+    [LibraryImport(StdbNamespace)]
     public static partial void _console_log(
         byte level,
         [In] byte[] target,

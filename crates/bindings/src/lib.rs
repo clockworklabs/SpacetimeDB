@@ -570,7 +570,35 @@ pub mod query {
     }
 }
 
-/// An erased reducer.
-pub struct AnyReducer {
-    _never: std::convert::Infallible,
+#[cfg(feature = "unstable_abi")]
+#[macro_export]
+macro_rules! volatile_nonatomic_schedule_immediate {
+    ($($args:tt)*) => {
+        $crate::__volatile_nonatomic_schedule_immediate_impl!([] [$($args)*])
+    };
+}
+
+#[cfg(feature = "unstable_abi")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __volatile_nonatomic_schedule_immediate_impl {
+    ([$repeater:path] [($($args:tt)*)]) => {
+        $crate::__volatile_nonatomic_schedule_immediate_impl!(@process_args $repeater, ($($args)*))
+    };
+    ([$($cur:tt)*] [$next:tt $($rest:tt)*]) => {
+        $crate::__volatile_nonatomic_schedule_immediate_impl!([$($cur)* $next] [$($rest)*])
+    };
+    (@process_args $repeater:path, (_$(, $args:expr)* $(,)?)) => {
+        $crate::__volatile_nonatomic_schedule_immediate_impl!(@call $repeater, ($crate::ReducerContext::__dummy(), $($args),*))
+    };
+    (@process_args $repeater:path, ($($args:expr),* $(,)?)) => {
+        $crate::__volatile_nonatomic_schedule_immediate_impl!(@call $repeater, ($($args),*))
+    };
+    (@call $repeater:path, ($($args:expr),*)) => {
+        if false {
+            let _ = $repeater($($args,)*);
+        } else {
+            $crate::rt::volatile_nonatomic_schedule_immediate::<_, _, $repeater, _>($repeater, ($($args,)*))
+        }
+    };
 }

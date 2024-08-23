@@ -667,6 +667,24 @@ impl WasmInstanceEnv {
         Ok(())
     }
 
+    pub fn volatile_nonatomic_schedule_immediate(
+        mut caller: Caller<'_, Self>,
+        name: WasmPtr<u8>,
+        name_len: u32,
+        args: WasmPtr<u8>,
+        args_len: u32,
+    ) -> RtResult<()> {
+        let (mem, env) = Self::mem_env(&mut caller);
+        let name = mem.deref_str(name, name_len)?;
+        let args = mem.deref_slice(args, args_len)?;
+        env.instance_env.scheduler.volatile_nonatomic_schedule_immediate(
+            name.to_owned(),
+            crate::host::ReducerArgs::Bsatn(args.to_vec().into()),
+        );
+
+        Ok(())
+    }
+
     /// Creates a buffer of size `data_len` in the host environment.
     ///
     /// The contents of the byte slice pointed to by `data`
