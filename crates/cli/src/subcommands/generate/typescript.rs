@@ -498,6 +498,7 @@ fn typescript_field_name(field_name: String) -> String {
 pub fn autogen_typescript_tuple(ctx: &GenCtx, name: &str, tuple: &ProductType) -> String {
     autogen_typescript_product_table_common(ctx, name, tuple, None)
 }
+#[allow(deprecated)]
 pub fn autogen_typescript_table(ctx: &GenCtx, table: &TableDesc) -> String {
     let tuple = ctx.typespace[table.data].as_product().unwrap();
     autogen_typescript_product_table_common(

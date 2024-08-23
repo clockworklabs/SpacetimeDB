@@ -17,7 +17,9 @@ lazy_static.workspace = true
 thiserror.workspace = true
 unicode-ident.workspace = true
 unicode-normalization.workspace = true
+serde_json.workspace = true
 smallvec.workspace = true
+hashbrown.workspace = true
 
 [dev-dependencies]
 spacetimedb-lib = { workspace = true, features = ["test"] }

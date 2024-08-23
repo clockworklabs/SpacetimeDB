@@ -155,6 +155,7 @@ fn serialize_benchmarks<
         );
     });
 
+    #[allow(deprecated)]
     let mut table = spacetimedb_table::table::Table::new(
         TableSchema::from_def(0.into(), RawTableDefV8::from_product(name, T::product_type().clone())).into(),
         spacetimedb_table::indexes::SquashedOffset::COMMITTED_STATE,

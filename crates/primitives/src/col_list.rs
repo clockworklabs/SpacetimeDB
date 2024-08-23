@@ -72,6 +72,11 @@ impl<C: Into<ColId>> FromIterator<C> for ColList {
 }
 
 impl ColList {
+    /// Returns an empty list.
+    pub fn empty() -> Self {
+        Self::from_inline(0)
+    }
+
     /// Returns a list with a single column.
     /// As long `col` is below `62`, this will not allocate.
     pub fn new(col: ColId) -> Self {

@@ -84,6 +84,7 @@ impl MutTxId {
             return Err(TableError::System(table_schema.table_name.clone()).into());
         }
 
+        #[allow(deprecated)]
         TableSchema::from_def(0.into(), table_schema.clone())
             .validated()
             .map_err(|err| DBError::Schema(SchemaErrors(err)))?;
@@ -111,6 +112,7 @@ impl MutTxId {
             .read_col(StTableFields::TableId)?;
 
         // Generate the full definition of the table, with the generated indexes, constraints, sequences...
+        #[allow(deprecated)]
         let table_schema = TableSchema::from_def(table_id, table_schema);
 
         // Insert the columns into `st_columns`
@@ -346,6 +348,7 @@ impl MutTxId {
             .read_col(StIndexFields::IndexId)?;
 
         // Construct the index schema.
+        #[allow(deprecated)]
         let mut index = IndexSchema::from_def(table_id, index.clone());
         index.index_id = index_id;
 
@@ -637,6 +640,7 @@ impl MutTxId {
         // TODO: Can we return early here?
 
         let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
+        #[allow(deprecated)]
         let mut constraint = ConstraintSchema::from_def(table_id, constraint);
         constraint.constraint_id = constraint_id;
         // This won't clone-write when creating a table but likely to otherwise.

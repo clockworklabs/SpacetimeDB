@@ -324,6 +324,7 @@ fn find_product_type(ctx: &GenCtx, ty: AlgebraicTypeRef) -> &ProductType {
 
 /// Generate a file which defines a `struct` corresponding to the `table`'s `ProductType`,
 /// and implements `spacetimedb_sdk::table::TableType` for it.
+#[allow(deprecated)]
 pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDesc) -> String {
     let mut output = CodeIndenter::new(String::new());
     let out = &mut output;
@@ -847,6 +848,7 @@ fn print_spacetime_module_struct_defn(ctx: &GenCtx, out: &mut Indenter, items: &
 /// Define the `handle_table_update` method,
 /// which dispatches on the table name in a `TableUpdate` message
 /// to call an appropriate method on the `ClientCache`.
+#[allow(deprecated)]
 fn print_handle_table_update_defn(_ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
     out.delimited_block(
         "fn handle_table_update(&self, table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",

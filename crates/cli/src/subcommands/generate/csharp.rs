@@ -267,6 +267,7 @@ pub fn autogen_csharp_tuple(ctx: &GenCtx, name: &str, tuple: &ProductType, names
     autogen_csharp_product_table_common(ctx, name, tuple, None, namespace)
 }
 
+#[allow(deprecated)]
 pub fn autogen_csharp_table(ctx: &GenCtx, table: &TableDesc, namespace: &str) -> String {
     let tuple = ctx.typespace[table.data].as_product().unwrap();
     autogen_csharp_product_table_common(

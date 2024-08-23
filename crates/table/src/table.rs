@@ -1158,6 +1158,7 @@ pub(crate) mod test {
 
     pub(crate) fn table(ty: ProductType) -> Table {
         let def = RawTableDefV8::from_product("", ty);
+        #[allow(deprecated)]
         let schema = TableSchema::from_def(0.into(), def);
         Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
     }
@@ -1181,6 +1182,7 @@ pub(crate) mod test {
             is_unique: true,
             index_type: IndexType::BTree,
         }]);
+        #[allow(deprecated)]
         let schema = TableSchema::from_def(0.into(), table_def);
         let index_schema = schema.indexes[0].clone();
         let mut table = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);

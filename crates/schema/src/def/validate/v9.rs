@@ -3,10 +3,7 @@ use crate::error::{RawColumnName, ValidationError};
 use crate::{def::validate::Result, error::TypeLocation};
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors};
 use spacetimedb_data_structures::map::HashSet;
-use spacetimedb_lib::db::{
-    default_element_ordering::{product_type_has_default_ordering, sum_type_has_default_ordering},
-    raw_def::v9::*,
-};
+use spacetimedb_lib::db::default_element_ordering::{product_type_has_default_ordering, sum_type_has_default_ordering};
 use spacetimedb_lib::ProductType;
 use spacetimedb_sats::WithTypespace;
 
@@ -827,7 +824,7 @@ mod tests {
         let mut builder = RawModuleDefV9Builder::new();
 
         let product_type = AlgebraicType::product([("a", AlgebraicType::U64), ("b", AlgebraicType::String)]);
-        let product_type_ref = builder.add_type_for_tests(
+        let product_type_ref = builder.add_algebraic_type(
             ["scope1".into(), "scope2".into()],
             "ReferencedProduct",
             product_type.clone(),
@@ -835,12 +832,12 @@ mod tests {
         );
 
         let sum_type = AlgebraicType::simple_enum(["Gala", "GrannySmith", "RedDelicious"].into_iter());
-        let sum_type_ref = builder.add_type_for_tests([], "ReferencedSum", sum_type.clone(), false);
+        let sum_type_ref = builder.add_algebraic_type([], "ReferencedSum", sum_type.clone(), false);
 
         let schedule_at_type = builder.add_type::<ScheduleAt>();
 
         builder
-            .build_table_for_tests(
+            .build_table_with_new_type(
                 "Apples",
                 ProductType::from([
                     ("id", AlgebraicType::U64),
@@ -861,7 +858,7 @@ mod tests {
             .finish();
 
         builder
-            .build_table_for_tests(
+            .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([
                     ("count", AlgebraicType::U16),
@@ -893,7 +890,7 @@ mod tests {
             .finish();
 
         let deliveries_product_type = builder
-            .build_table_for_tests(
+            .build_table_with_new_type(
                 "Deliveries",
                 ProductType::from([
                     ("id", AlgebraicType::U64),
@@ -1090,7 +1087,7 @@ mod tests {
         let mut builder = RawModuleDefV9Builder::new();
         let product_type = ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]);
         builder
-            .build_table_for_tests("Bananas", product_type.clone(), false)
+            .build_table_with_new_type("Bananas", product_type.clone(), false)
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
@@ -1105,7 +1102,7 @@ mod tests {
     fn invalid_table_name() {
         let mut builder = RawModuleDefV9Builder::new();
         builder
-            .build_table_for_tests(
+            .build_table_with_new_type(
                 "",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
@@ -1122,7 +1119,7 @@ mod tests {
     fn invalid_column_name() {
         let mut builder = RawModuleDefV9Builder::new();
         builder
-            .build_table_for_tests(
+            .build_table_with_new_type(
                 "",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
@@ -1139,7 +1136,7 @@ mod tests {
     fn invalid_index_column_ref() {
         let mut builder = RawModuleDefV9Builder::new();
         builder
-            .build_table_for_tests(
+            .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
@@ -1165,7 +1162,7 @@ mod tests {
     fn invalid_unique_constraint_column_ref() {
         let mut builder = RawModuleDefV9Builder::new();
         builder
-            .build_table_for_tests(
+            .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
@@ -1186,7 +1183,7 @@ mod tests {
         // invalid column id
         let mut builder = RawModuleDefV9Builder::new();
         builder
-            .build_table_for_tests(
+            .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
@@ -1204,7 +1201,7 @@ mod tests {
         // incorrect column type
         let mut builder = RawModuleDefV9Builder::new();
         builder
-            .build_table_for_tests(
+            .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::String)]),
                 false,
@@ -1224,7 +1221,7 @@ mod tests {
     fn invalid_index_column_duplicates() {
         let mut builder = RawModuleDefV9Builder::new();
         builder
-            .build_table_for_tests(
+            .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
@@ -1248,7 +1245,7 @@ mod tests {
     fn invalid_unique_constraint_column_duplicates() {
         let mut builder = RawModuleDefV9Builder::new();
         builder
-            .build_table_for_tests(
+            .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
@@ -1267,7 +1264,7 @@ mod tests {
         let recursive_type = AlgebraicType::product([("a", AlgebraicTypeRef(0).into())]);
 
         let mut builder = RawModuleDefV9Builder::new();
-        builder.add_type_for_tests([], "Recursive", recursive_type.clone(), false);
+        builder.add_algebraic_type([], "Recursive", recursive_type.clone(), false);
         builder.add_reducer("silly", ProductType::from([("a", recursive_type.clone())]), None);
         let result: Result<ModuleDef> = builder.finish().try_into();
 
@@ -1295,7 +1292,7 @@ mod tests {
         let invalid_type_1 = AlgebraicType::product([("a", AlgebraicTypeRef(31).into())]);
         let invalid_type_2 = AlgebraicType::option(AlgebraicTypeRef(55).into());
         let mut builder = RawModuleDefV9Builder::new();
-        builder.add_type_for_tests([], "Invalid", invalid_type_1.clone(), false);
+        builder.add_algebraic_type([], "Invalid", invalid_type_1.clone(), false);
         builder.add_reducer("silly", ProductType::from([("a", invalid_type_2.clone())]), None);
         let result: Result<ModuleDef> = builder.finish().try_into();
 
@@ -1320,7 +1317,7 @@ mod tests {
         let inner_type_invalid_for_use = AlgebraicType::product([("b", AlgebraicType::U32)]);
         let invalid_type = AlgebraicType::product([("a", inner_type_invalid_for_use.clone())]);
         let mut builder = RawModuleDefV9Builder::new();
-        builder.add_type_for_tests([], "Invalid", invalid_type.clone(), false);
+        builder.add_algebraic_type([], "Invalid", invalid_type.clone(), false);
         builder.add_reducer("silly", ProductType::from([("a", invalid_type.clone())]), None);
         let result: Result<ModuleDef> = builder.finish().try_into();
 
@@ -1342,7 +1339,7 @@ mod tests {
     fn only_btree_indexes() {
         let mut builder = RawModuleDefV9Builder::new();
         builder
-            .build_table_for_tests(
+            .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
@@ -1364,7 +1361,7 @@ mod tests {
     fn one_auto_inc() {
         let mut builder = RawModuleDefV9Builder::new();
         builder
-            .build_table_for_tests(
+            .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
@@ -1383,7 +1380,7 @@ mod tests {
     fn invalid_primary_key() {
         let mut builder = RawModuleDefV9Builder::new();
         builder
-            .build_table_for_tests(
+            .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
@@ -1403,7 +1400,7 @@ mod tests {
     fn missing_primary_key_unique_constraint() {
         let mut builder = RawModuleDefV9Builder::new();
         builder
-            .build_table_for_tests(
+            .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
                 false,
@@ -1420,13 +1417,13 @@ mod tests {
     #[test]
     fn duplicate_type_name() {
         let mut builder = RawModuleDefV9Builder::new();
-        builder.add_type_for_tests(
+        builder.add_algebraic_type(
             ["scope1".into(), "scope2".into()],
             "Duplicate",
             AlgebraicType::U64,
             false,
         );
-        builder.add_type_for_tests(
+        builder.add_algebraic_type(
             ["scope1".into(), "scope2".into()],
             "Duplicate",
             AlgebraicType::U32,
@@ -1456,7 +1453,7 @@ mod tests {
         let mut builder = RawModuleDefV9Builder::new();
         let schedule_at_type = builder.add_type::<ScheduleAt>();
         builder
-            .build_table_for_tests(
+            .build_table_with_new_type(
                 "Deliveries",
                 ProductType::from([
                     ("id", AlgebraicType::U64),
@@ -1481,7 +1478,7 @@ mod tests {
         let mut builder = RawModuleDefV9Builder::new();
         let schedule_at_type = builder.add_type::<ScheduleAt>();
         let deliveries_product_type = builder
-            .build_table_for_tests(
+            .build_table_with_new_type(
                 "Deliveries",
                 ProductType::from([
                     ("id", AlgebraicType::U64),
