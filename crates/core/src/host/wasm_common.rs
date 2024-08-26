@@ -320,6 +320,7 @@ pub(super) type TimingSpanSet = ResourceSlab<TimingSpanIdx>;
 pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
     match err {
         NodesError::NotInTransaction => Some(errno::NOT_IN_TRANSACTION),
+        NodesError::DecodeRow(_) => Some(errno::BSATN_DECODE_ERROR),
         NodesError::TableNotFound => Some(errno::NO_SUCH_TABLE),
         NodesError::AlreadyExists(_) => Some(errno::UNIQUE_ALREADY_EXISTS),
         NodesError::Internal(internal) => match **internal {
@@ -351,12 +352,12 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::datastore_table_scan_bsatn,
             "spacetime_10.0"::row_iter_bsatn_advance,
             "spacetime_10.0"::row_iter_bsatn_close,
+            "spacetime_10.0"::datastore_delete_all_by_eq_bsatn,
             "spacetime_10.0"::bytes_source_read,
             "spacetime_10.0"::bytes_sink_write,
 
             "spacetime_10.0"::console_log,
             "spacetime_10.0"::delete_by_col_eq,
-            "spacetime_10.0"::delete_by_rel,
             "spacetime_10.0"::insert,
             "spacetime_10.0"::iter_by_col_eq,
             "spacetime_10.0"::iter_start_filtered,

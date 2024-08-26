@@ -225,13 +225,14 @@ pub fn delete_by_col_eq(table_id: TableId, col_id: ColId, value: &impl Serialize
 /// Returns an error if
 /// - a table with the provided `table_id` doesn't exist
 /// - `(relation, relation_len)` doesn't decode from BSATN to a `Vec<ProductValue>`
+/// - this is called outside a transaction
 ///
 /// Panics when serialization fails.
 pub fn delete_by_rel(table_id: TableId, relation: &[impl Serialize]) -> Result<u32> {
     with_row_buf(|bytes| {
         // Encode `value` as BSATN into `bytes` and then use that.
         bsatn::to_writer(bytes, relation).unwrap();
-        sys::delete_by_rel(table_id, bytes)
+        sys::datastore_delete_all_by_eq_bsatn(table_id, bytes)
     })
 }
 

@@ -138,22 +138,37 @@ pub mod raw {
         ) -> u16;
 
         /// Deletes those rows, in the table identified by `table_id`,
-        /// that match any row in `relation`.
+        /// that match any row in the byte string `rel = rel_ptr[..rel_len]` in WASM memory.
         ///
         /// Matching is defined by first BSATN-decoding
         /// the byte string pointed to at by `relation` to a `Vec<ProductValue>`
         /// according to the row schema of the table
         /// and then using `Ord for AlgebraicValue`.
+        /// A match happens when `Ordering::Equal` is returned from `fn cmp`.
+        /// This occurs exactly when the row's BSATN-encoding is equal to the encoding of the `ProductValue`.
         ///
         /// The number of rows deleted is written to the WASM pointer `out`.
         ///
-        /// Returns an error if
-        /// - a table with the provided `table_id` doesn't exist
-        /// - `(relation, relation_len)` doesn't decode from BSATN to a `Vec<ProductValue>`
-        ///   according to the `ProductValue` that the table's schema specifies for rows.
-        /// - `relation + relation_len` overflows a 64-bit integer
-        /// - writing to `out` would overflow a 32-bit integer
-        pub fn _delete_by_rel(table_id: TableId, relation: *const u8, relation_len: usize, out: *mut u32) -> u16;
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `rel_ptr` is NULL or `rel` is not in bounds of WASM memory.
+        /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+        /// - `BSATN_DECODE_ERROR`, when `rel` cannot be decoded to `Vec<ProductValue>`
+        ///   where each `ProductValue` is typed at the `ProductType` the table's schema specifies.
+        pub fn _datastore_delete_all_by_eq_bsatn(
+            table_id: TableId,
+            rel_ptr: *const u8,
+            rel_len: usize,
+            out: *mut u32,
+        ) -> u16;
 
         /// Like [`_datastore_table_scan_bsatn`], start iteration on each row,
         /// as bytes, of a table identified by `table_id`.
@@ -200,7 +215,7 @@ pub mod raw {
         /// - `BUFFER_TOO_SMALL`, when there are rows left but they cannot fit in `buffer`.
         ///   When this occurs, `buffer_len` is set to the size of the next item in the iterator.
         ///   To make progress, the caller should reallocate the buffer to at least that size and try again.
-        pub fn _row_iter_bsatn_advance(iter: RowIter, buffer: *mut u8, buffer_len: *mut usize) -> i16;
+        pub fn _row_iter_bsatn_advance(iter: RowIter, buffer_ptr: *mut u8, buffer_len_ptr: *mut usize) -> i16;
 
         /// Destroys the iterator registered under `iter`.
         ///
@@ -538,17 +553,28 @@ unsafe fn call<T: Copy>(f: impl FnOnce(*mut T) -> u16) -> Result<T, Errno> {
     Ok(out.assume_init())
 }
 
-/// Queries and returns the `table_id` associated with the given (table) `name`.
+/// Queries the `table_id` associated with the given (table) `name`.
 ///
-/// Returns an error if the table does not exist.
+/// The table id is returned.
+///
+/// # Errors
+///
+/// Returns an error:
+///
+/// - `NO_SUCH_TABLE`, when `name` is not the name of a table.
 #[inline]
 pub fn table_id_from_name(name: &str) -> Result<TableId, Errno> {
     unsafe { call(|out| raw::_table_id_from_name(name.as_ptr(), name.len(), out)) }
 }
 
-/// Queries and returns the number of rows in the table identified by `table_id`.
+/// Returns the number of rows currently in table identified by `table_id`.
 ///
-/// Returns an error if the table does not exist or if not in a transaction.
+/// # Errors
+///
+/// Returns an error:
+///
+/// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+/// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
 #[inline]
 pub fn datastore_table_row_count(table_id: TableId) -> Result<u64, Errno> {
     unsafe { call(|out| raw::_datastore_table_row_count(table_id, out)) }
@@ -611,30 +637,33 @@ pub fn delete_by_col_eq(table_id: TableId, col_id: ColId, value: &[u8]) -> Resul
 }
 
 /// Deletes those rows, in the table identified by `table_id`,
-/// that match any row in `relation`.
+/// that match any row in the byte string `relation`.
 ///
 /// Matching is defined by first BSATN-decoding
 /// the byte string pointed to at by `relation` to a `Vec<ProductValue>`
 /// according to the row schema of the table
 /// and then using `Ord for AlgebraicValue`.
+/// A match happens when `Ordering::Equal` is returned from `fn cmp`.
+/// This occurs exactly when the row's BSATN-encoding is equal to the encoding of the `ProductValue`.
 ///
-/// Returns the number of rows deleted.
+/// The number of rows deleted is returned.
 ///
-/// Returns an error if
-/// - a table with the provided `table_id` doesn't exist
-/// - `(relation, relation_len)` doesn't decode from BSATN to a `Vec<ProductValue>`
+/// # Errors
+///
+/// Returns an error:
+///
+/// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+/// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+/// - `BSATN_DECODE_ERROR`, when `rel` cannot be decoded to `Vec<ProductValue>`
+///   where each `ProductValue` is typed at the `ProductType` the table's schema specifies.
 #[inline]
-pub fn delete_by_rel(table_id: TableId, relation: &[u8]) -> Result<u32, Errno> {
-    unsafe { call(|out| raw::_delete_by_rel(table_id, relation.as_ptr(), relation.len(), out)) }
+pub fn datastore_delete_all_by_eq_bsatn(table_id: TableId, relation: &[u8]) -> Result<u32, Errno> {
+    unsafe { call(|out| raw::_datastore_delete_all_by_eq_bsatn(table_id, relation.as_ptr(), relation.len(), out)) }
 }
 
 /// Starts iteration on each row, as BSATN-encoded, of a table identified by `table_id`.
 /// Returns iterator handle is written to the `out` pointer.
 /// This handle can be advanced by [`row_iter_bsatn_advance`].
-///
-/// # Traps
-///
-/// This function does not trap.
 ///
 /// # Errors
 ///

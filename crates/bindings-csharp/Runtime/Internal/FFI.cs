@@ -24,6 +24,7 @@ public enum Errno : short
     OK = 0,
     HOST_CALL_FAILURE = 1,
     NOT_IN_TRANSACTION = 2,
+    BSATN_DECODE_ERROR = 3,
     NO_SUCH_TABLE = 4,
     NO_SUCH_ITER = 6,
     NO_SUCH_BYTES = 8,
@@ -70,11 +71,13 @@ internal static partial class FFI
                 throw status switch
                 {
                     Errno.NOT_IN_TRANSACTION => new NotInTransactionException(),
+                    Errno.BSATN_DECODE_ERROR => new BsatnDecodeException(),
                     Errno.NO_SUCH_TABLE => new NoSuchTableException(),
-                    Errno.UNIQUE_ALREADY_EXISTS => new UniqueAlreadyExistsException(),
-                    Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
+                    Errno.NO_SUCH_ITER => new NoSuchIterException(),
                     Errno.NO_SUCH_BYTES => new NoSuchBytesException(),
                     Errno.NO_SPACE => new NoSpaceException(),
+                    Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
+                    Errno.UNIQUE_ALREADY_EXISTS => new UniqueAlreadyExistsException(),
                     _ => new UnknownException(status),
                 };
             }
@@ -154,14 +157,6 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _delete_by_rel(
-        TableId table_id,
-        [In] byte[] relation,
-        uint relation_len,
-        out uint out_
-    );
-
-    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _iter_start_filtered(
         TableId table_id,
         [In] byte[] filter,
@@ -178,6 +173,14 @@ internal static partial class FFI
 
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _row_iter_bsatn_close(RowIter iter_handle);
+
+    [LibraryImport(StdbNamespace)]
+    public static partial CheckedStatus _datastore_delete_all_by_eq_bsatn(
+        TableId table_id,
+        [In] byte[] relation,
+        uint relation_len,
+        out uint out_
+    );
 
     [LibraryImport(StdbNamespace)]
     public static partial void _volatile_nonatomic_schedule_immediate(

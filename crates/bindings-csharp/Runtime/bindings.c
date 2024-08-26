@@ -60,10 +60,6 @@ IMPORT(Status, _delete_by_col_eq,
        (TableId table_id, ColId col_id, const uint8_t* value,
         uint32_t value_len, uint32_t* num_deleted),
        (table_id, col_id, value, value_len, num_deleted));
-IMPORT(Status, _delete_by_rel,
-       (TableId table_id, const uint8_t* relation, uint32_t relation_len,
-        uint32_t* num_deleted),
-       (table_id, relation, relation_len, num_deleted));
 IMPORT(Status, _iter_start_filtered,
        (TableId table_id, const uint8_t* filter, uint32_t filter_len,
         RowIter* iter),
@@ -72,6 +68,10 @@ IMPORT(int16_t, _row_iter_bsatn_advance,
        (RowIter iter, uint8_t* buffer_ptr, size_t* buffer_len_ptr),
        (iter, buffer_ptr, buffer_len_ptr));
 IMPORT(uint16_t, _row_iter_bsatn_close, (RowIter iter), (iter));
+IMPORT(Status, _datastore_delete_all_by_eq_bsatn,
+       (TableId table_id, const uint8_t* rel_ptr, uint32_t rel_len,
+        uint32_t* num_deleted),
+       (table_id, rel_ptr, rel_len, num_deleted));
 IMPORT(void, _volatile_nonatomic_schedule_immediate,
        (const uint8_t* name, size_t name_len, const uint8_t* args, size_t args_len),
        (name, name_len, args, args_len));

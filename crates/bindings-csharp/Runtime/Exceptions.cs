@@ -12,6 +12,11 @@ public class NotInTransactionException : StdbException
     public override string Message => "ABI call can only be made while in a transaction";
 }
 
+public class BsatnDecodeException : StdbException
+{
+    public override string Message => "Couldn't decode the BSATN to the expected type";
+}
+
 public class NoSuchTableException : StdbException
 {
     public override string Message => "No such table";

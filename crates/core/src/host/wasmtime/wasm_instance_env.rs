@@ -417,37 +417,6 @@ impl WasmInstanceEnv {
         })
     }
 
-    /// Deletes those rows, in the table identified by `table_id`,
-    /// that match any row in `relation`.
-    ///
-    /// Matching is defined by first BSATN-decoding
-    /// the byte string pointed to at by `relation` to a `Vec<ProductValue>`
-    /// according to the row schema of the table
-    /// and then using `Ord for AlgebraicValue`.
-    ///
-    /// The number of rows deleted is written to the WASM pointer `out`.
-    ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - `(relation, relation_len)` doesn't decode from BSATN to a `Vec<ProductValue>`
-    ///   according to the `ProductValue` that the table's schema specifies for rows.
-    /// - `relation + relation_len` overflows a 64-bit integer
-    /// - writing to `out` would overflow a 32-bit integer
-    #[tracing::instrument(skip_all)]
-    pub fn delete_by_rel(
-        caller: Caller<'_, Self>,
-        table_id: u32,
-        relation: WasmPtr<u8>,
-        relation_len: u32,
-        out: WasmPtr<u32>,
-    ) -> RtResult<u32> {
-        Self::cvt_ret(caller, AbiCall::DeleteByRel, out, |caller| {
-            let (mem, env) = Self::mem_env(caller);
-            let relation = mem.deref_slice(relation, relation_len)?;
-            Ok(env.instance_env.delete_by_rel(table_id.into(), relation)?)
-        })
-    }
-
     /// Queries the `table_id` associated with the given (table) `name`
     /// where `name` is the UTF-8 slice in WASM memory at `name_ptr[..name_len]`.
     ///
@@ -740,6 +709,49 @@ impl WasmInstanceEnv {
                 // TODO(Centril): consider putting these into a pool for reuse.
                 Some(_) => 0,
             })
+        })
+    }
+
+    /// Deletes those rows, in the table identified by `table_id`,
+    /// that match any row in the byte string `rel = rel_ptr[..rel_len]` in WASM memory.
+    ///
+    /// Matching is defined by first BSATN-decoding
+    /// the byte string pointed to at by `relation` to a `Vec<ProductValue>`
+    /// according to the row schema of the table
+    /// and then using `Ord for AlgebraicValue`.
+    /// A match happens when `Ordering::Equal` is returned from `fn cmp`.
+    /// This occurs exactly when the row's BSATN-encoding is equal to the encoding of the `ProductValue`.
+    ///
+    /// The number of rows deleted is written to the WASM pointer `out`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `rel_ptr` is NULL or `rel` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+    /// - `BSATN_DECODE_ERROR`, when `rel` cannot be decoded to `Vec<ProductValue>`
+    ///   where each `ProductValue` is typed at the `ProductType` the table's schema specifies.
+    #[tracing::instrument(skip_all)]
+    pub fn datastore_delete_all_by_eq_bsatn(
+        caller: Caller<'_, Self>,
+        table_id: u32,
+        rel_ptr: WasmPtr<u8>,
+        rel_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DeleteByRel, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            let relation = mem.deref_slice(rel_ptr, rel_len)?;
+            Ok(env
+                .instance_env
+                .datastore_delete_all_by_eq_bsatn(table_id.into(), relation)?)
         })
     }
 
