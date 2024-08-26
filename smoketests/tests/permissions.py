@@ -67,10 +67,14 @@ class Permissions(Smoketest):
 
         self.reset_config()
 
-        with self.assertRaises(Exception): 
+        with self.assertRaises(Exception):
             self.spacetime("publish", self.address, "--project-path", self.project_path, "--clear-database", "--force")
 
-    
+        # Check that this holds without `--clear-database`, too.
+        with self.assertRaises(Exception):
+            self.spacetime("publish", self.address, "--project-path", self.project_path)
+
+
 class PrivateTablePermissions(Smoketest):
     MODULE_CODE = """
 use spacetimedb::spacetimedb;
