@@ -165,6 +165,7 @@ impl ModuleDef {
                     .map(|col_id| &*table.get_column(col_id).expect("validated unique constraint").name)
                     .join("_");
 
+                // TODO(1.0): ensure generated index names are identical when upgrading the Rust module bindings.
                 let mut index_name =
                     Identifier::new(format!("idx_{}_{}_{}_unique", table.name, column_names, constraint.name).into())
                         .expect("validated identifier parts");
@@ -411,6 +412,8 @@ impl ColumnDef {
 }
 
 /// Requires that the projection of the table onto these columns is an bijection.
+///
+/// That is, there must be a one-to-one relationship between a row and the `columns` of that row.
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct UniqueConstraintDef {
@@ -495,6 +498,7 @@ impl ScopedTypeName {
         Ok(ScopedTypeName { scope, name })
     }
 
+    /// Create a new `ScopedTypeName` with an empty scope.
     pub fn from_name(name: Identifier) -> Self {
         ScopedTypeName {
             scope: Box::new([]),

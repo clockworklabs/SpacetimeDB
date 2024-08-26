@@ -315,7 +315,7 @@ impl RawModuleDefV9Builder {
 
     /// Add a type to the in-progress module.
     ///
-    /// The returned type must satisfy `AlgebraicType::is_nominal_normal_form`
+    /// The returned type must satisfy `AlgebraicType::is_valid_for_client_type_definition` or  `AlgebraicType::is_valid_for_client_type_use` .
     pub fn add_type<T: SpacetimeType>(&mut self) -> AlgebraicType {
         TypespaceBuilder::add_type::<T>(self)
     }
