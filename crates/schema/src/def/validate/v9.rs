@@ -743,8 +743,8 @@ mod tests {
     use crate::def::IndexAlgorithm;
     use crate::def::{validate::Result, ModuleDef, TableDef};
     use crate::error::*;
-    use crate::expect_error_matching;
 
+    use spacetimedb_data_structures::expect_error_matching;
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::ScheduleAt;
     use spacetimedb_primitives::ColList;
