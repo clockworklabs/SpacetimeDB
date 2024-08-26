@@ -57,6 +57,11 @@ impl StateView for CommittedState {
     fn get_schema(&self, table_id: TableId) -> Option<&Arc<TableSchema>> {
         self.tables.get(&table_id).map(|table| table.get_schema())
     }
+
+    fn table_row_count(&self, table_id: TableId) -> Option<u64> {
+        self.get_table(table_id).map(|table| table.row_count)
+    }
+
     fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Iter<'a>> {
         if let Some(table_name) = self.table_name(table_id) {
             return Ok(Iter::new(ctx, table_id, table_name, None, self));

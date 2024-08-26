@@ -937,6 +937,12 @@ impl RelationalDB {
         self.inner.table_name_from_id_mut_tx(ctx, tx, table_id)
     }
 
+    pub fn table_row_count_mut(&self, tx: &MutTx, table_id: TableId) -> Option<u64> {
+        // TODO(Centril): Go via MutTxDatastore trait instead.
+        // Doing this for now to ship this quicker.
+        tx.table_row_count(table_id)
+    }
+
     pub fn column_constraints(
         &self,
         tx: &mut MutTx,
@@ -1821,7 +1827,7 @@ mod tests {
 
         let stdb = stdb.reopen()?;
         let tx = stdb.begin_tx();
-        assert_eq!(tx.get_row_count(table_id).unwrap(), 2);
+        assert_eq!(tx.table_row_count(table_id).unwrap(), 2);
         Ok(())
     }
 

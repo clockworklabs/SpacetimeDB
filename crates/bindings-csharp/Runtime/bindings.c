@@ -45,6 +45,9 @@ IMPORT(void, _console_log,
 IMPORT(Status, _table_id_from_name,
        (const uint8_t* name, uint32_t name_len, TableId* id),
        (name, name_len, id));
+IMPORT(Status, _datastore_table_row_count,
+       (TableId table_id, uint64_t* count),
+       (table_id, count));
 IMPORT(Status, _iter_by_col_eq,
        (TableId table_id, ColId col_id, const uint8_t* value,
         uint32_t value_len, RowIter* iter),

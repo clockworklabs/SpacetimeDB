@@ -32,6 +32,9 @@ pub trait StateView {
         Ok(row.map(|row| row.read_col(StTableFields::TableId).unwrap()))
     }
 
+    /// Returns the number of rows in the table identified by `table_id`.
+    fn table_row_count(&self, table_id: TableId) -> Option<u64>;
+
     fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Iter<'a>>;
 
     fn table_name(&self, table_id: TableId) -> Option<&str> {

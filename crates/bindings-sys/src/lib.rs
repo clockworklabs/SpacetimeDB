@@ -40,6 +40,21 @@ pub mod raw {
         /// - `NO_SUCH_TABLE`, when `name` is not the name of a table.
         pub fn _table_id_from_name(name: *const u8, name_len: usize, out: *mut TableId) -> u16;
 
+        /// Writes the number of rows currently in table identified by `table_id` to `out`.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `out` is NULL or `out[..size_of::<u64>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+        pub fn _datastore_table_row_count(table_id: TableId, out: *mut u64) -> u16;
+
         /// Finds all rows in the table identified by `table_id`,
         /// where the row has a column, identified by `col_id`,
         /// with data matching the byte string, in WASM memory, pointed to at by `val`.
@@ -521,6 +536,14 @@ unsafe fn call<T: Copy>(f: impl FnOnce(*mut T) -> u16) -> Result<T, Errno> {
 #[inline]
 pub fn table_id_from_name(name: &str) -> Result<TableId, Errno> {
     unsafe { call(|out| raw::_table_id_from_name(name.as_ptr(), name.len(), out)) }
+}
+
+/// Queries and returns the number of rows in the table identified by `table_id`.
+///
+/// Returns an error if the table does not exist or if not in a transaction.
+#[inline]
+pub fn datastore_table_row_count(table_id: TableId) -> Result<u64, Errno> {
+    unsafe { call(|out| raw::_datastore_table_row_count(table_id, out)) }
 }
 
 /// Finds all rows in the table identified by `table_id`,

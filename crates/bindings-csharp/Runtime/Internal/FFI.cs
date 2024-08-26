@@ -121,6 +121,12 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
+    public static partial CheckedStatus _datastore_table_row_count(
+        TableId table_id,
+        out ulong out_
+    );
+
+    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _iter_by_col_eq(
         TableId table_id,
         ColId col_id,

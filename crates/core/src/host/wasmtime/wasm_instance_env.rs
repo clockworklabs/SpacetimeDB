@@ -483,6 +483,27 @@ impl WasmInstanceEnv {
         })
     }
 
+    /// Writes the number of rows currently in table identified by `table_id` to `out`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `out` is NULL or `out[..size_of::<u64>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+    #[tracing::instrument(skip_all)]
+    pub fn datastore_table_row_count(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<u64>) -> RtResult<u32> {
+        Self::cvt_ret::<u64>(caller, AbiCall::DatastoreTableRowCount, out, |caller| {
+            let (_, env) = Self::mem_env(caller);
+            Ok(env.instance_env.datastore_table_row_count(table_id.into())?)
+        })
+    }
+
     /// Finds all rows in the table identified by `table_id`,
     /// where the row has a column, identified by `cols`,
     /// with data matching the byte string, in WASM memory, pointed to at by `val`.

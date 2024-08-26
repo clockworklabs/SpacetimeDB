@@ -7,16 +7,13 @@ use super::{
     tx_state::TxState,
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::db::{
-    datastore::{
-        system_tables::{
-            table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StFields as _,
-            StIndexFields, StIndexRow, StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow,
-            SystemTable, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
-        },
-        traits::{RowTypeForTable, TxData},
+use crate::db::datastore::{
+    system_tables::{
+        table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StFields as _,
+        StIndexFields, StIndexRow, StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow,
+        SystemTable, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
     },
-    db_metrics::table_num_rows,
+    traits::{RowTypeForTable, TxData},
 };
 use crate::{
     error::{DBError, IndexError, SequenceError, TableError},
@@ -1082,6 +1079,18 @@ impl StateView for MutTxId {
             .map(|table| table.get_schema())
     }
 
+    fn table_row_count(&self, table_id: TableId) -> Option<u64> {
+        let commit_count = self.committed_state_write_lock.table_row_count(table_id);
+        let (tx_ins_count, tx_del_count) = self.tx_state.table_row_count(table_id);
+        let commit_count = commit_count.map(|cc| cc - tx_del_count);
+        // Keep track of whether `table_id` exists.
+        match (commit_count, tx_ins_count) {
+            (Some(cc), Some(ic)) => Some(cc + ic),
+            (Some(c), None) | (None, Some(c)) => Some(c),
+            (None, None) => None,
+        }
+    }
+
     fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Iter<'a>> {
         if let Some(table_name) = self.table_name(table_id) {
             return Ok(Iter::new(
@@ -1137,29 +1146,31 @@ impl StateView for MutTxId {
                 ))),
                 None => {
                     #[cfg(feature = "unindexed_iter_by_col_range_warn")]
-                    match self.schema_for_table(ctx, table_id) {
+                    match self.table_row_count(table_id) {
                         // TODO(ux): log these warnings to the module logs rather than host logs.
-                        Err(e) => log::error!(
-                            "iter_by_col_range on unindexed column, but got error from `schema_for_table` during diagnostics: {e:?}",
+                        None => log::error!(
+                            "iter_by_col_range on unindexed column, but couldn't fetch table `{table_id}`s row count",
                         ),
-                        Ok(schema) => {
+                        Some(num_rows) => {
                             const TOO_MANY_ROWS_FOR_SCAN: u64 = 1000;
-
-                            let table_name = &schema.table_name;
-                            let num_rows = table_num_rows(ctx.database(), table_id, table_name);
-
                             if num_rows >= TOO_MANY_ROWS_FOR_SCAN {
-                                let col_names = cols.iter()
-                                    .map(|col_id| schema.columns()
-                                         .get(col_id.idx())
-                                         .map(|col| &col.col_name[..])
-                                         .unwrap_or("[unknown column]"))
+                                let schema = self.schema_for_table(ctx, table_id).unwrap();
+                                let table_name = &schema.table_name;
+                                let col_names = cols
+                                    .iter()
+                                    .map(|col_id| {
+                                        schema
+                                            .columns()
+                                            .get(col_id.idx())
+                                            .map(|col| &col.col_name[..])
+                                            .unwrap_or("[unknown column]")
+                                    })
                                     .collect::<Vec<_>>();
                                 log::warn!(
                                     "iter_by_col_range without index: table {table_name} has {num_rows} rows; scanning columns {col_names:?}",
                                 );
                             }
-                        },
+                        }
                     }
 
                     Ok(IterByColRange::Scan(ScanIterByColRange::new(
