@@ -187,9 +187,10 @@ impl InstanceEnv {
 
     /// Returns the `table_id` associated with the given `table_name`.
     ///
-    /// Errors with `TableNotFound` if the table does not exist.
+    /// Errors with `GetTxError` if not in a transaction
+    /// and `TableNotFound` if the table does not exist.
     #[tracing::instrument(skip_all)]
-    pub fn get_table_id(&self, table_name: &str) -> Result<TableId, NodesError> {
+    pub fn table_id_from_name(&self, table_name: &str) -> Result<TableId, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 

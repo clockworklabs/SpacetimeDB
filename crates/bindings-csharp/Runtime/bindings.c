@@ -42,7 +42,7 @@ IMPORT(void, _console_log,
        (level, target, target_len, filename, filename_len, line_number, message,
         message_len));
 
-IMPORT(Status, _get_table_id,
+IMPORT(Status, _table_id_from_name,
        (const uint8_t* name, uint32_t name_len, TableId* id),
        (name, name_len, id));
 IMPORT(Status, _iter_by_col_eq,

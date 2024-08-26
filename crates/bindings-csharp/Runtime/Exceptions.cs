@@ -7,14 +7,14 @@ public abstract class StdbException : Exception
     public abstract override string Message { get; }
 }
 
+public class NotInTransactionException : StdbException
+{
+    public override string Message => "ABI call can only be made while in a transaction";
+}
+
 public class NoSuchTableException : StdbException
 {
     public override string Message => "No such table";
-}
-
-public class LookupNotFoundException : StdbException
-{
-    public override string Message => "Value or range provided not found in table";
 }
 
 public class UniqueAlreadyExistsException : StdbException

@@ -567,11 +567,11 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
 
     let mut columns = Vec::<Column>::new();
 
-    let get_table_id_func = quote! {
+    let table_id_from_name_func = quote! {
         fn table_id() -> spacetimedb::TableId {
             static TABLE_ID: std::sync::OnceLock<spacetimedb::TableId> = std::sync::OnceLock::new();
             *TABLE_ID.get_or_init(|| {
-                spacetimedb::get_table_id(<Self as spacetimedb::TableType>::TABLE_NAME)
+                spacetimedb::table_id_from_name(<Self as spacetimedb::TableType>::TABLE_NAME)
             })
         }
     };
@@ -774,7 +774,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
             ];
             const INDEXES: &'static [spacetimedb::IndexDesc<'static>] = &[#(#indexes),*];
             type InsertResult = #insert_result;
-            #get_table_id_func
+            #table_id_from_name_func
         }
     };
 
