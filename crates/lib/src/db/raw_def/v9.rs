@@ -101,7 +101,7 @@ pub struct RawTableDefV9 {
     /// All elements of the `ProductType` must have names.
     ///
     /// Like all types in the module, this must have the [default element ordering](crate::db::default_element_ordering),
-    /// UNLESS a custom ordering is declared via `ModuleDef.misc_exports` for this type.
+    /// UNLESS a custom ordering is declared via a `RawTypeDefv9` for this type.
     pub product_type_ref: AlgebraicTypeRef,
 
     /// The primary key of the table, if present. Must refer to a valid column.
