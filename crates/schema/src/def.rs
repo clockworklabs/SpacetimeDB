@@ -385,10 +385,11 @@ pub struct ColumnDef {
     /// The ID of this column.
     pub col_id: ColId,
 
-    /// The type of this column.
+    /// The type of this column. May refer to the containing `ModuleDef`'s `Typespace`.
     /// Must satisfy `AlgebraicType::is_valid_for_client_type_use`.
+    ///
     /// Will always correspond to the corresponding element of this table's
-    /// `produt_type_ref`, that is, the element at index `col_id.idx()`
+    /// `product_type_ref`, that is, the element at index `col_id.idx()`
     /// with name `Some(name.as_str())`.
     pub ty: AlgebraicType,
 
