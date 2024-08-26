@@ -8,9 +8,10 @@
     <WasmImport Include="$(SpacetimeNamespace)!_insert" />
     <WasmImport Include="$(SpacetimeNamespace)!_delete_by_col_eq" />
     <WasmImport Include="$(SpacetimeNamespace)!_delete_by_rel" />
-    <WasmImport Include="$(SpacetimeNamespace)!_iter_start" />
     <WasmImport Include="$(SpacetimeNamespace)!_iter_start_filtered" />
     <WasmImport Include="$(SpacetimeNamespace)!_table_id_from_name" />
+    <WasmImport Include="$(SpacetimeNamespace)!_datastore_table_row_count" />
+    <WasmImport Include="$(SpacetimeNamespace)!_datastore_table_scan_bsatn" />
     <WasmImport Include="$(SpacetimeNamespace)!_row_iter_bsatn_advance" />
     <WasmImport Include="$(SpacetimeNamespace)!_row_iter_bsatn_close" />
     <WasmImport Include="$(SpacetimeNamespace)!_bytes_source_read" />

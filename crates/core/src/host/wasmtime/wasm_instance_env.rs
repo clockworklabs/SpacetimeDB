@@ -504,6 +504,42 @@ impl WasmInstanceEnv {
         })
     }
 
+    /// Starts iteration on each row, as BSATN-encoded, of a table identified by `table_id`.
+    ///
+    /// On success, the iterator handle is written to the `out` pointer.
+    /// This handle can be advanced by [`row_iter_bsatn_advance`].
+    ///
+    /// # Traps
+    ///
+    /// This function does not trap.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+    // #[tracing::instrument(skip_all)]
+    pub fn datastore_table_scan_bsatn(
+        caller: Caller<'_, Self>,
+        table_id: u32,
+        out: WasmPtr<RowIterIdx>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::IterStart, out, |caller| {
+            let env = caller.data_mut();
+            // Retrieve the execution context for the current reducer.
+            let ctx = env.reducer_context()?;
+            // Collect the iterator chunks.
+            let chunks = env
+                .instance_env
+                .datastore_table_scan_bsatn_chunks(&ctx, table_id.into())?;
+            drop(ctx);
+            // Register the iterator and get back the index to write to `out`.
+            // Calls to the iterator are done through dynamic dispatch.
+            Ok(env.iters.insert(chunks.into_iter()))
+        })
+    }
+
     /// Finds all rows in the table identified by `table_id`,
     /// where the row has a column, identified by `cols`,
     /// with data matching the byte string, in WASM memory, pointed to at by `val`.
@@ -552,29 +588,7 @@ impl WasmInstanceEnv {
         })
     }
 
-    /// Start iteration on each row, as bytes, of a table identified by `table_id`.
-    ///
-    /// The iterator is registered in the host environment
-    /// under an assigned index which is written to the `out` pointer provided.
-    ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    // #[tracing::instrument(skip_all)]
-    pub fn iter_start(caller: Caller<'_, Self>, table_id: u32, out: WasmPtr<RowIterIdx>) -> RtResult<u32> {
-        Self::cvt_ret(caller, AbiCall::IterStart, out, |caller| {
-            let env = caller.data_mut();
-            // Retrieve the execution context for the current reducer.
-            let ctx = env.reducer_context()?;
-            // Collect the iterator chunks.
-            let chunks = env.instance_env.iter_chunks(&ctx, table_id.into())?;
-            drop(ctx);
-            // Register the iterator and get back the index to write to `out`.
-            // Calls to the iterator are done through dynamic dispatch.
-            Ok(env.iters.insert(chunks.into_iter()))
-        })
-    }
-
-    /// Like [`WasmInstanceEnv::iter_start`], start iteration on each row,
+    /// Like [`WasmInstanceEnv::datastore_table_scan_bsatn`], start iteration on each row,
     /// as bytes, of a table identified by `table_id`.
     ///
     /// The rows are filtered through `filter`, which is read from WASM memory

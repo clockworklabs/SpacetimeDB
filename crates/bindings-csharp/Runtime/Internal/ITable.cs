@@ -114,7 +114,7 @@ public interface ITable<T> : IStructuralReadWrite
     private class RawTableIter(FFI.TableId tableId) : RawTableIterBase
     {
         protected override void IterStart(out FFI.RowIter handle) =>
-            FFI._iter_start(tableId, out handle);
+            FFI._datastore_table_scan_bsatn(tableId, out handle);
     }
 
     private class RawTableIterFiltered(FFI.TableId tableId, byte[] filterBytes) : RawTableIterBase

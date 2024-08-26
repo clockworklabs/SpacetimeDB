@@ -238,7 +238,11 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn iter_chunks(&self, ctx: &ExecutionContext, table_id: TableId) -> Result<Vec<Box<[u8]>>, NodesError> {
+    pub fn datastore_table_scan_bsatn_chunks(
+        &self,
+        ctx: &ExecutionContext,
+        table_id: TableId,
+    ) -> Result<Vec<Box<[u8]>>, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.tx.get()?;
 

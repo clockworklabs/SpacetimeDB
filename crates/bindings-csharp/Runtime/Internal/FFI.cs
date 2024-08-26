@@ -127,6 +127,12 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
+    public static partial CheckedStatus _datastore_table_scan_bsatn(
+        TableId table_id,
+        out RowIter out_
+    );
+
+    [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _iter_by_col_eq(
         TableId table_id,
         ColId col_id,
@@ -154,9 +160,6 @@ internal static partial class FFI
         uint relation_len,
         out uint out_
     );
-
-    [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _iter_start(TableId table_id, out RowIter out_);
 
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _iter_start_filtered(
