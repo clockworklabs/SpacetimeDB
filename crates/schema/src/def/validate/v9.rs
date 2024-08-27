@@ -21,7 +21,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         misc_exports,
     } = def;
 
-    let mut validator = Validator {
+    let mut validator = ModuleValidator {
         typespace: &typespace,
         stored_in_table_def: Default::default(),
         type_namespace: Default::default(),
@@ -78,7 +78,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         "Misc module exports are not yet supported in ABI v9."
     );
 
-    let Validator {
+    let ModuleValidator {
         stored_in_table_def, ..
     } = validator;
 
@@ -96,7 +96,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
 }
 
 /// Collects state used during validation.
-struct Validator<'a> {
+struct ModuleValidator<'a> {
     /// The typespace of the module.
     ///
     /// Behind a reference to ensure we don't accidentally mutate it.
@@ -116,7 +116,7 @@ struct Validator<'a> {
     lifecycle_reducers: HashSet<Lifecycle>,
 }
 
-impl Validator<'_> {
+impl ModuleValidator<'_> {
     fn validate_table_def(&mut self, table: RawTableDefV9) -> Result<TableDef> {
         let RawTableDefV9 {
             name: raw_table_name,
@@ -143,11 +143,11 @@ impl Validator<'_> {
                 })
             })?;
 
-        let mut table_in_progress = TableInProgress {
+        let mut table_in_progress = TableValidator {
             raw_name: raw_table_name.clone(),
             product_type_ref,
             product_type,
-            validator: self,
+            module_validator: self,
             has_sequence: Default::default(),
         };
 
@@ -436,15 +436,15 @@ impl Validator<'_> {
 }
 
 /// A partially validated table.
-struct TableInProgress<'a, 'b> {
-    validator: &'a mut Validator<'b>,
+struct TableValidator<'a, 'b> {
+    module_validator: &'a mut ModuleValidator<'b>,
     raw_name: Box<str>,
     product_type_ref: AlgebraicTypeRef,
     product_type: &'a ProductType,
     has_sequence: HashSet<ColId>,
 }
 
-impl TableInProgress<'_, '_> {
+impl TableValidator<'_, '_> {
     /// Validate a column.
     ///
     /// Note that this accepts a `ProductTypeElement` rather than a `ColumnDef`,
@@ -467,7 +467,7 @@ impl TableInProgress<'_, '_> {
             .and_then(|name| identifier(name.into()));
 
         let ty = self
-            .validator
+            .module_validator
             .validate_resolves(
                 &TypeLocation::InTypespace {
                     ref_: self.product_type_ref,
@@ -675,10 +675,12 @@ impl TableInProgress<'_, '_> {
         // This may report the table_name as invalid multiple times, but this will be removed
         // when we sort and deduplicate the error stream.
         let (table_name, name) = (table_name, name).combine_errors()?;
-        if self.validator.stored_in_table_def.contains_key(&name) {
+        if self.module_validator.stored_in_table_def.contains_key(&name) {
             Err(ValidationError::DuplicateName { name }.into())
         } else {
-            self.validator.stored_in_table_def.insert(name.clone(), table_name);
+            self.module_validator
+                .stored_in_table_def
+                .insert(name.clone(), table_name);
             Ok(name)
         }
     }
