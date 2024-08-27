@@ -393,7 +393,7 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         query_params.push(("email", email.as_str()))
     }
 
-    let mut builder = reqwest::Client::new().post(Url::parse_with_params(
+    let builder = reqwest::Client::new().post(Url::parse_with_params(
         format!("{}/identity", config.get_host_url(server)?).as_str(),
         query_params,
     )?);
