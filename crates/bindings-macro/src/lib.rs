@@ -759,6 +759,24 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         )
     });
 
+    // Generate `integrate_generated_columns`
+    // which will integrate all generated auto-inc col values into `_row`.
+    let integrate_gen_col = columns
+        .iter()
+        .filter(|col| col.attr.has_autoinc())
+        .map(|col| col.field.ident.unwrap())
+        .map(|field| {
+            quote_spanned!(field.span()=>
+                _row.#field = spacetimedb::sats::bsatn::from_reader(_in).unwrap();
+            )
+        });
+    let integrate_generated_columns = quote_spanned!(item.span() =>
+        fn integrate_generated_columns(_row: &mut Self, mut _generated_cols: &[u8]) {
+            let mut _in = &mut _generated_cols;
+            #(#integrate_gen_col)*
+        }
+    );
+
     let scheduled_constant = match sats_ty.scheduled {
         Some(reducer_name) => quote!(Some(#reducer_name)),
         None => quote!(None),
@@ -774,6 +792,7 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
             ];
             const INDEXES: &'static [spacetimedb::IndexDesc<'static>] = &[#(#indexes),*];
             type InsertResult = #insert_result;
+            #integrate_generated_columns
             #table_id_from_name_func
         }
     };

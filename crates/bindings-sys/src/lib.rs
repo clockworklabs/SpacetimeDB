@@ -95,23 +95,6 @@ pub mod raw {
             out: *mut RowIter,
         ) -> u16;
 
-        /// Inserts a row into the table identified by `table_id`,
-        /// where the row is read from the byte slice `row` in WASM memory,
-        /// lasting `row_len` bytes.
-        ///
-        /// The `(row, row_len)` slice must be a BSATN-encoded `ProductValue`
-        /// matching the table's `ProductType` row-schema.
-        /// The `row` pointer is written to with the inserted row re-encoded.
-        /// This is due to auto-incrementing columns.
-        ///
-        /// Returns an error if
-        /// - a table with the provided `table_id` doesn't exist
-        /// - there were unique constraint violations
-        /// - `row + row_len` overflows a 64-bit integer
-        /// - `(row, row_len)` doesn't decode from BSATN to a `ProductValue`
-        ///   according to the `ProductType` that the table's schema specifies.
-        pub fn _insert(table_id: TableId, row: *mut u8, row_len: usize) -> u16;
-
         /// Deletes all rows in the table identified by `table_id`
         /// where the column identified by `col_id` matches the byte string,
         /// in WASM memory, pointed to at by `value`.
@@ -228,6 +211,41 @@ pub mod raw {
         ///
         /// - `NO_SUCH_ITER`, when `iter` is not a valid iterator.
         pub fn _row_iter_bsatn_close(iter: RowIter) -> u16;
+
+        /// Inserts a row into the table identified by `table_id`,
+        /// where the row is read from the byte string `row = row_ptr[..row_len]` in WASM memory
+        /// where `row_len = row_len_ptr[..size_of::<usize>()]` stores the capacity of `row`.
+        ///
+        /// The byte string `row` must be a BSATN-encoded `ProductValue`
+        /// typed at the table's `ProductType` row-schema.
+        ///
+        /// To handle auto-incrementing columns,
+        /// when the call is successful,
+        /// the `row` is written back to with the generated sequence values.
+        /// These values are written as a BSATN-encoded `pv: ProductValue`.
+        /// Each `v: AlgebraicValue` in `pv` is typed at the sequence's column type.
+        /// The `v`s in `pv` are ordered by the order of the columns, in the schema of the table.
+        /// When the table has no sequences,
+        /// this implies that the `pv`, and thus `row`, will be empty.
+        /// The `row_len` is set to the length of `bsatn(pv)`.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `row_len_ptr` is NULL or `row_len` is not in bounds of WASM memory.
+        /// - `row_ptr` is NULL or `row` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+        /// - `BSATN_DECODE_ERROR`, when `row` cannot be decoded to a `ProductValue`.
+        ///   typed at the `ProductType` the table's schema specifies.
+        /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
+        /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
+        pub fn _datastore_insert_bsatn(table_id: TableId, row_ptr: *mut u8, row_len_ptr: *mut usize) -> u16;
 
         /// Log at `level` a `message` message occuring in `filename:line_number`
         /// with [`target`] being the module path at the `log!` invocation site.
@@ -615,8 +633,10 @@ pub fn iter_by_col_eq(table_id: TableId, col_id: ColId, val: &[u8]) -> Result<Ro
 /// - `row` doesn't decode from BSATN to a `ProductValue`
 ///   according to the `ProductType` that the table's schema specifies.
 #[inline]
-pub fn insert(table_id: TableId, row: &mut [u8]) -> Result<(), Errno> {
-    cvt(unsafe { raw::_insert(table_id, row.as_mut_ptr(), row.len()) })
+pub fn insert(table_id: TableId, row: &mut [u8]) -> Result<&[u8], Errno> {
+    let row_ptr = row.as_mut_ptr();
+    let row_len = &mut row.len();
+    cvt(unsafe { raw::_datastore_insert_bsatn(table_id, row_ptr, row_len) }).map(|()| &row[..*row_len])
 }
 
 /// Deletes all rows in the table identified by `table_id`

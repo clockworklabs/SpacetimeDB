@@ -54,8 +54,8 @@ IMPORT(Status, _iter_by_col_eq,
        (TableId table_id, ColId col_id, const uint8_t* value,
         uint32_t value_len, RowIter* iter),
        (table_id, col_id, value, value_len, iter));
-IMPORT(Status, _insert, (TableId table_id, const uint8_t* row, uint32_t len),
-       (table_id, row, len));
+IMPORT(Status, _datastore_insert_bsatn, (TableId table_id, const uint8_t* row_ptr, size_t* row_len_ptr),
+       (table_id, row_ptr, row_len_ptr));
 IMPORT(Status, _delete_by_col_eq,
        (TableId table_id, ColId col_id, const uint8_t* value,
         uint32_t value_len, uint32_t* num_deleted),

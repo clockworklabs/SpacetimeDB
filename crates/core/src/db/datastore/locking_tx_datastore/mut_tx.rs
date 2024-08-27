@@ -20,6 +20,7 @@ use crate::{
     execution_context::ExecutionContext,
 };
 use core::ops::RangeBounds;
+use smallvec::SmallVec;
 use spacetimedb_lib::{
     address::Address,
     db::{
@@ -836,45 +837,52 @@ impl MutTxId {
         row: &mut ProductValue,
         database_address: Address,
     ) -> Result<RowRefInsertion<'_>> {
+        self.insert_write_gens(table_id, row, database_address, |_| ())
+    }
+
+    pub(super) fn insert_write_gens(
+        &mut self,
+        table_id: TableId,
+        row: &mut ProductValue,
+        database_address: Address,
+        write_gen_col: impl FnMut(&AlgebraicValue),
+    ) -> Result<RowRefInsertion<'_>> {
+        self.write_sequence_values(table_id, row, database_address, write_gen_col)?;
+        self.insert_row_internal(table_id, row)
+    }
+
+    fn write_sequence_values(
+        &mut self,
+        table_id: TableId,
+        row: &mut ProductValue,
+        database_address: Address,
+        mut write_gen_col: impl FnMut(&AlgebraicValue),
+    ) -> Result<()> {
         let ctx = ExecutionContext::internal(database_address);
 
         // TODO: Executing schema_for_table for every row insert is expensive.
         // However we ask for the schema in the [Table] struct instead.
         let schema = self.schema_for_table(&ctx, table_id)?;
 
-        let mut col_to_update = None;
-        for seq in schema
+        // Collect all the columns with sequences that need generation.
+        let cols_to_update = schema
             .sequences
             .iter()
             .filter(|seq| row.elements[seq.col_pos.idx()].is_numeric_zero())
-        {
-            for seq_row in self.iter_by_col_eq(&ctx, ST_SEQUENCE_ID, StSequenceFields::TableId, &table_id.into())? {
-                let seq_col_pos: ColId = seq_row.read_col(StSequenceFields::ColPos)?;
-                if seq_col_pos == seq.col_pos {
-                    let seq_id = seq_row.read_col(StSequenceFields::SequenceId)?;
-                    col_to_update = Some((seq.col_pos, seq_id));
-                    break;
-                }
-            }
-        }
+            .map(|seq| (seq.col_pos, seq.sequence_id))
+            .collect::<SmallVec<[_; 1]>>();
 
-        if let Some((col_id, sequence_id)) = col_to_update {
-            let col_idx = col_id.idx();
-            let col = &schema.columns()[col_idx];
-            if !col.col_type.is_integer() {
-                return Err(SequenceError::NotInteger {
-                    col: format!("{}.{}", &schema.table_name, &col.col_name),
-                    found: col.col_type.clone(),
-                }
-                .into());
-            }
-            // At this point, we know this will be essentially a cheap copy.
-            let col_ty = col.col_type.clone();
+        // Update every column in the row that needs it.
+        // We assume here that column with a sequence is of a sequence-compatible type.
+        for (col_id, sequence_id) in cols_to_update {
             let seq_val = self.get_next_sequence_value(sequence_id, database_address)?;
-            row.elements[col_idx] = AlgebraicValue::from_sequence_value(&col_ty, seq_val);
+            let col_typ = &schema.columns()[col_id.idx()].col_type;
+            let gen_val = AlgebraicValue::from_sequence_value(col_typ, seq_val);
+            write_gen_col(&gen_val);
+            row.elements[col_id.idx()] = gen_val;
         }
 
-        self.insert_row_internal(table_id, row)
+        Ok(())
     }
 
     pub(super) fn insert_row_internal(&mut self, table_id: TableId, row: &ProductValue) -> Result<RowRefInsertion<'_>> {

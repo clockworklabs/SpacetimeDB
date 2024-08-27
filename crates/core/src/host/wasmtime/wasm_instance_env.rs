@@ -346,39 +346,6 @@ impl WasmInstanceEnv {
         })
     }
 
-    /// Inserts a row into the table identified by `table_id`,
-    /// where the row is read from the byte slice `row` in WASM memory,
-    /// lasting `row_len` bytes.
-    ///
-    /// The `(row, row_len)` slice must be a BSATN-encoded `ProductValue`
-    /// matching the table's `ProductType` row-schema.
-    /// The `row` pointer is written to with the inserted row re-encoded.
-    /// This is due to auto-incrementing columns.
-    ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - there were unique constraint violations
-    /// - `row + row_len` overflows a 64-bit integer
-    /// - `(row, row_len)` doesn't decode from BSATN to a `ProductValue`
-    ///   according to the `ProductType` that the table's schema specifies.
-    #[tracing::instrument(skip_all)]
-    pub fn insert(caller: Caller<'_, Self>, table_id: u32, row: WasmPtr<u8>, row_len: u32) -> RtResult<u32> {
-        Self::cvt(caller, AbiCall::Insert, |caller| {
-            let (mem, env) = Self::mem_env(caller);
-
-            // Read the row from WASM memory into a buffer.
-            let row_buffer = mem.deref_slice_mut(row, row_len)?;
-
-            // Insert the row into the DB. We get back the decoded version.
-            // Then re-encode and write that back into WASM memory at `row`.
-            // We're doing this because of autoinc.
-            let ctx = env.reducer_context()?;
-            let new_row = env.instance_env.insert(&ctx, table_id.into(), row_buffer)?;
-            new_row.encode(&mut { row_buffer });
-            Ok(())
-        })
-    }
-
     /// Deletes all rows in the table identified by `table_id`
     /// where the column identified by `cols` matches the byte string,
     /// in WASM memory, pointed to at by `value`.
@@ -709,6 +676,66 @@ impl WasmInstanceEnv {
                 // TODO(Centril): consider putting these into a pool for reuse.
                 Some(_) => 0,
             })
+        })
+    }
+
+    /// Inserts a row into the table identified by `table_id`,
+    /// where the row is read from the byte string `row = row_ptr[..row_len]` in WASM memory
+    /// where `row_len = row_len_ptr[..size_of::<usize>()]` stores the capacity of `row`.
+    ///
+    /// The byte string `row` must be a BSATN-encoded `ProductValue`
+    /// typed at the table's `ProductType` row-schema.
+    ///
+    /// To handle auto-incrementing columns,
+    /// when the call is successful,
+    /// the `row` is written back to with the generated sequence values.
+    /// These values are written as a BSATN-encoded `pv: ProductValue`.
+    /// Each `v: AlgebraicValue` in `pv` is typed at the sequence's column type.
+    /// The `v`s in `pv` are ordered by the order of the columns, in the schema of the table.
+    /// When the table has no sequences,
+    /// this implies that the `pv`, and thus `row`, will be empty.
+    /// The `row_len` is set to the length of `bsatn(pv)`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `row_len_ptr` is NULL or `row_len` is not in bounds of WASM memory.
+    /// - `row_ptr` is NULL or `row` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+    /// - `BSATN_DECODE_ERROR`, when `row` cannot be decoded to a `ProductValue`.
+    ///   typed at the `ProductType` the table's schema specifies.
+    /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
+    /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
+    #[tracing::instrument(skip_all)]
+    pub fn datastore_insert_bsatn(
+        caller: Caller<'_, Self>,
+        table_id: u32,
+        row_ptr: WasmPtr<u8>,
+        row_len_ptr: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt(caller, AbiCall::Insert, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+
+            // Read `row-len`, i.e., the capacity of `row` pointed to by `row_ptr`.
+            let row_len = u32::read_from(mem, row_len_ptr)?;
+            // Get a mutable view to the `row`.
+            let row = mem.deref_slice_mut(row_ptr, row_len)?;
+
+            // Insert the row into the DB.
+            // This will write back encoded generated column values to `row`.
+            // All we need to do then is to write
+            // how much the module should read from `row` to `row_len`.
+            let ctx = env.reducer_context()?;
+            let row_len = env.instance_env.insert(&ctx, table_id.into(), row)?;
+
+            u32::try_from(row_len).unwrap().write_to(mem, row_len_ptr)?;
+            Ok(())
         })
     }
 

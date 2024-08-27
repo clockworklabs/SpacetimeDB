@@ -30,7 +30,8 @@ use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::raw_def::{RawColumnDefV8, RawIndexDefV8, RawSequenceDefV8, RawTableDefV8};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_sats::buffer::{CountWriter, TeeWriter};
+use spacetimedb_sats::{bsatn, AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_snapshot::{SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
@@ -1061,18 +1062,30 @@ impl RelationalDB {
     }
 
     pub fn insert(&self, tx: &mut MutTx, table_id: TableId, row: ProductValue) -> Result<ProductValue, DBError> {
-        self.inner.insert_mut_tx(tx, table_id, row)
+        self.inner.insert_mut_tx(tx, table_id, row, |_| ())
     }
 
     pub fn insert_bytes_as_row(
         &self,
         tx: &mut MutTx,
         table_id: TableId,
-        row_bytes: &[u8],
-    ) -> Result<ProductValue, DBError> {
+        row_bytes: &mut [u8],
+    ) -> Result<(ProductValue, usize), DBError> {
+        // Decode the `row_bytes` as a `ProductValue` according to the schema.
         let ty = self.inner.row_type_for_table_mut_tx(tx, table_id)?;
         let row = ProductValue::decode(&ty, &mut &row_bytes[..])?;
-        self.insert(tx, table_id, row)
+
+        // A writer for the generated column values.
+        let counter = CountWriter::default();
+        let mut writer = TeeWriter::new(counter, row_bytes);
+
+        // Insert the row, writing back generated col values.
+        let new_pv = self.inner.insert_mut_tx(tx, table_id, row, |gen_val| {
+            bsatn::to_writer(&mut writer, gen_val).unwrap()
+        })?;
+
+        let written_to_buffer = writer.w1.finish();
+        Ok((new_pv, written_to_buffer))
     }
 
     pub fn delete(&self, tx: &mut MutTx, table_id: TableId, row_ids: impl IntoIterator<Item = RowPointer>) -> u32 {

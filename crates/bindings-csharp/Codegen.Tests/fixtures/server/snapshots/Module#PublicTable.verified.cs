@@ -188,7 +188,9 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
             ));
     }
 
-    static bool SpacetimeDB.Internal.ITable<PublicTable>.HasAutoIncFields => true;
+    public void ReadGenFields(System.IO.BinaryReader reader) {
+        Id = BSATN.Id.Read(reader);
+    }
 
     static SpacetimeDB.Internal.Module.TableDesc SpacetimeDB.Internal.ITable<PublicTable>.MakeTableDesc(
         SpacetimeDB.BSATN.ITypeRegistrar registrar

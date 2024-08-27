@@ -27,6 +27,11 @@ public class UniqueAlreadyExistsException : StdbException
     public override string Message => "Value with given unique identifier already exists";
 }
 
+public class ScheduleAtDelayTooLongException : StdbException
+{
+    public override string Message => "Specified delay in scheduling row was too long";
+}
+
 public class BufferTooSmallException : StdbException
 {
     public override string Message => "The provided buffer is not large enough to store the data";

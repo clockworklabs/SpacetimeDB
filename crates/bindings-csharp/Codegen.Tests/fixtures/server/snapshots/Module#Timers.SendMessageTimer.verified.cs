@@ -52,7 +52,10 @@ partial class Timers
 
         public ulong ScheduledId;
         public SpacetimeDB.ScheduleAt ScheduledAt;
-        static bool SpacetimeDB.Internal.ITable<SendMessageTimer>.HasAutoIncFields => true;
+
+        public void ReadGenFields(System.IO.BinaryReader reader) {
+            ScheduledId = BSATN.ScheduledId.Read(reader);
+        }
 
         static SpacetimeDB.Internal.Module.TableDesc SpacetimeDB.Internal.ITable<SendMessageTimer>.MakeTableDesc(
             SpacetimeDB.BSATN.ITypeRegistrar registrar

@@ -103,10 +103,10 @@ impl InstanceEnv {
         log::trace!("MOD({}): {}", self.dbic.address.to_abbreviated_hex(), record.message);
     }
 
-    pub fn insert(&self, ctx: &ExecutionContext, table_id: TableId, buffer: &[u8]) -> Result<ProductValue, NodesError> {
+    pub fn insert(&self, ctx: &ExecutionContext, table_id: TableId, buffer: &mut [u8]) -> Result<usize, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
-        let ret = stdb
+        let (ret, len) = stdb
             .insert_bytes_as_row(tx, table_id, buffer)
             .inspect_err(|e| match e {
                 crate::error::DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
@@ -127,13 +127,15 @@ impl InstanceEnv {
 
         if stdb.is_scheduled_table(ctx, tx, table_id)? {
             let (schedule_id, schedule_at) = get_schedule_from_pv(tx, stdb, table_id, &ret)
+                // NOTE(centril): Should never happen,
+                // as we successfully inserted and thus `ret` is verified against the table schema.
                 .map_err(|e| NodesError::ScheduleError(ScheduleError::DecodingError(e)))?;
             self.scheduler
                 .schedule(table_id, schedule_id, schedule_at)
                 .map_err(NodesError::ScheduleError)?;
         }
 
-        Ok(ret)
+        Ok(len)
     }
 
     /// Deletes all rows in the table identified by `table_id`

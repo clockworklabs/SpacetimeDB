@@ -488,6 +488,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         tx: &'a mut Self::MutTx,
         table_id: TableId,
         row: ProductValue,
+        write_gen_col: impl FnMut(&AlgebraicValue),
     ) -> Result<ProductValue>;
 
     /// Obtain the [`Metadata`] for this datastore.
