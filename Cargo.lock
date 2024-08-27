@@ -4534,6 +4534,7 @@ dependencies = [
  "brotli",
  "bytes",
  "cursive",
+ "flate2",
  "futures",
  "futures-channel",
  "hex",
