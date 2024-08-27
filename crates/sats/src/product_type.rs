@@ -48,6 +48,11 @@ impl ProductType {
         Self { elements }
     }
 
+    /// Returns the unit product type.
+    pub fn unit() -> Self {
+        Self { elements: Box::new([]) }
+    }
+
     /// Returns whether this is a "newtype" over bytes.
     /// Does not follow `Ref`s.
     fn is_bytes_newtype(&self, check: &str) -> bool {
