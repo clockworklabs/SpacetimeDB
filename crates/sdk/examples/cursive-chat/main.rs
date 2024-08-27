@@ -197,10 +197,8 @@ fn on_user_updated(send: UiSend) -> impl FnMut(&User, &User, Option<&ReducerEven
                 .unwrap();
             }
             if old.online && !new.online {
-                send.unbounded_send(UiMessage::UserDisconnected {
-                    identity: new.identity,
-                })
-                .unwrap();
+                send.unbounded_send(UiMessage::UserDisconnected { identity: new.identity })
+                    .unwrap();
             }
             if !old.online && new.online {
                 send.unbounded_send(UiMessage::UserConnected {
