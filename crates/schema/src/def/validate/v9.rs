@@ -2,6 +2,7 @@ use crate::def::*;
 use crate::error::{RawColumnName, ValidationError};
 use crate::{def::validate::Result, error::TypeLocation};
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors};
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::db::{
     default_element_ordering::{product_type_has_default_ordering, sum_type_has_default_ordering},
     raw_def::v9::*,
@@ -168,10 +169,11 @@ impl Validator<'_> {
                 self.validate_primary_key(&table_in_progress, constraints, primary_key)
             });
 
+        let mut have_sequence_on_column = HashSet::default();
         let sequences = sequences
             .into_iter()
             .map(|sequence| {
-                self.validate_sequence_def(&table_in_progress, sequence)
+                self.validate_sequence_def(&table_in_progress, &mut have_sequence_on_column, sequence)
                     .map(|sequence| (sequence.name.clone(), sequence))
             })
             .collect_all_errors();
@@ -284,6 +286,7 @@ impl Validator<'_> {
     fn validate_sequence_def(
         &mut self,
         table_in_progress: &TableInProgress,
+        have_sequence_on_column: &mut HashSet<ColId>,
         sequence: RawSequenceDefV9,
     ) -> Result<SequenceDef> {
         let RawSequenceDefV9 {
@@ -304,6 +307,11 @@ impl Validator<'_> {
                     sequence: name.clone(),
                     column: table_in_progress.raw_column_name(col_id),
                     column_type: ty.clone(),
+                }
+                .into())
+            } else if !have_sequence_on_column.insert(col_id) {
+                Err(ValidationError::OneAutoInc {
+                    column: table_in_progress.raw_column_name(col_id),
                 }
                 .into())
             } else {
@@ -1265,6 +1273,25 @@ mod tests {
 
         expect_error_matching!(result, ValidationError::OnlyBtree { index } => {
             &index[..] == "Bananas_index"
+        });
+    }
+
+    #[test]
+    fn one_auto_inc() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_for_tests(
+                "Bananas",
+                ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
+                false,
+            )
+            .with_column_sequence(1, None)
+            .with_column_sequence(1, None)
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::OneAutoInc { column } => {
+            column == &RawColumnName::new("Bananas", "a")
         });
     }
 
