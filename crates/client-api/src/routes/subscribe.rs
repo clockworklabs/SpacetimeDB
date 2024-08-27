@@ -56,7 +56,10 @@ pub fn generate_random_address() -> Address {
 pub async fn handle_websocket<S>(
     State(ctx): State<S>,
     Path(SubscribeParams { name_or_address }): Path<SubscribeParams>,
-    Query(SubscribeQueryParams { client_address, compression }): Query<SubscribeQueryParams>,
+    Query(SubscribeQueryParams {
+        client_address,
+        compression,
+    }): Query<SubscribeQueryParams>,
     forwarded_for: Option<TypedHeader<XForwardedFor>>,
     Extension(auth): Extension<SpacetimeAuth>,
     ws: WebSocketUpgrade,
@@ -132,7 +135,16 @@ where
         }
 
         let actor = |client, sendrx| ws_client_actor(client, ws, sendrx);
-        let client = match ClientConnection::spawn(client_id, protocol, compression.unwrap_or_default(), instance_id, module_rx, actor).await {
+        let client = match ClientConnection::spawn(
+            client_id,
+            protocol,
+            compression.unwrap_or_default(),
+            instance_id,
+            module_rx,
+            actor,
+        )
+        .await
+        {
             Ok(s) => s,
             Err(e) => {
                 log::warn!("ModuleHost died while we were connecting: {e:#}");

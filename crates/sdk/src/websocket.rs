@@ -175,15 +175,15 @@ impl DbConnection {
             Compression::None => bytes,
             Compression::Gzip => {
                 let mut decoder = GzDecoder::new(&bytes[..]);
-                decoder.read(&mut decompressed)
+                decoder
+                    .read(&mut decompressed)
                     .context("Failed to Gzip decompress message")?;
                 &decompressed
-            },
+            }
             Compression::Brotli => {
-                BrotliDecompress(&mut &bytes[..], &mut decompressed)
-                    .context("Failed to Brotli decompress message")?;
+                BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
                 &decompressed
-            },
+            }
         })?)
     }
 
