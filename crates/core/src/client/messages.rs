@@ -75,7 +75,11 @@ fn serialize_brotli(bytes: &[u8]) -> Vec<u8> {
 /// Serialize `msg` into a [`DataMessage`] containing a [`ws::ServerMessage`].
 ///
 /// If `protocol` is [`Protocol::Binary`], the message will be compressed by this method.
-pub fn serialize(msg: impl ToProtocol<Encoded = ws::ServerMessage>, protocol: Protocol, compression: Compression) -> DataMessage {
+pub fn serialize(
+    msg: impl ToProtocol<Encoded = ws::ServerMessage>,
+    protocol: Protocol,
+    compression: Compression,
+) -> DataMessage {
     let msg = msg.to_protocol(protocol);
     match protocol {
         Protocol::Text => serde_json::to_string(&SerializeWrapper::new(msg)).unwrap().into(),
@@ -85,7 +89,8 @@ pub fn serialize(msg: impl ToProtocol<Encoded = ws::ServerMessage>, protocol: Pr
                 Compression::None => msg_bytes,
                 Compression::Gzip => serialize_gzip(&msg_bytes),
                 Compression::Brotli => serialize_brotli(&msg_bytes),
-            }.into()
+            }
+            .into()
         }
     }
 }

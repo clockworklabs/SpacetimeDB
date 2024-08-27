@@ -6,7 +6,9 @@ mod client_connection_index;
 mod message_handlers;
 pub mod messages;
 
-pub use client_connection::{ClientConnection, ClientConnectionSender, ClientSendError, Compression, DataMessage, Protocol};
+pub use client_connection::{
+    ClientConnection, ClientConnectionSender, ClientSendError, Compression, DataMessage, Protocol,
+};
 pub use client_connection_index::ClientActorIndex;
 pub use message_handlers::MessageHandleError;
 use spacetimedb_lib::Address;

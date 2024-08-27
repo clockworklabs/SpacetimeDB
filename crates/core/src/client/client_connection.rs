@@ -50,7 +50,11 @@ pub enum ClientSendError {
 }
 
 impl ClientConnectionSender {
-    pub fn dummy_with_channel(id: ClientActorId, protocol: Protocol, compression: Compression) -> (Self, mpsc::Receiver<SerializableMessage>) {
+    pub fn dummy_with_channel(
+        id: ClientActorId,
+        protocol: Protocol,
+        compression: Compression,
+    ) -> (Self, mpsc::Receiver<SerializableMessage>) {
         let (sendtx, rx) = mpsc::channel(1);
         // just make something up, it doesn't need to be attached to a real task
         let abort_handle = match tokio::runtime::Handle::try_current() {
