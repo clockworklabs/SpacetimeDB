@@ -442,10 +442,10 @@ public class Module : IIncrementalGenerator
                     // Exports only work from the main assembly, so we need to generate forwarding methods.
                     #if EXPERIMENTAL_WASM_AOT
                         [UnmanagedCallersOnly(EntryPoint = "__describe_module__")]
-                        public static SpacetimeDB.Internal.Buffer __describe_module__() => SpacetimeDB.Internal.Module.__describe_module__();
+                        public static void __describe_module__(SpacetimeDB.Internal.BytesSink d) => SpacetimeDB.Internal.Module.__describe_module__(d);
 
                         [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
-                        public static SpacetimeDB.Internal.Buffer __call_reducer__(
+                        public static short __call_reducer__(
                             uint id,
                             ulong sender_0,
                             ulong sender_1,
@@ -454,7 +454,8 @@ public class Module : IIncrementalGenerator
                             ulong address_0,
                             ulong address_1,
                             SpacetimeDB.Internal.DateTimeOffsetRepr timestamp,
-                            SpacetimeDB.Internal.Buffer args
+                            SpacetimeDB.Internal.BytesSource args,
+                            SpacetimeDB.Internal.BytesSink error
                         ) => SpacetimeDB.Internal.Module.__call_reducer__(
                             id,
                             sender_0,
@@ -464,7 +465,8 @@ public class Module : IIncrementalGenerator
                             address_0,
                             address_0,
                             timestamp,
-                            args
+                            args,
+                            error
                         );
                     #endif
                     }

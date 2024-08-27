@@ -18,7 +18,7 @@ OPAQUE_TYPEDEF(TableId, uint32_t);
 OPAQUE_TYPEDEF(ColId, uint16_t);
 OPAQUE_TYPEDEF(IndexType, uint8_t);
 OPAQUE_TYPEDEF(LogLevel, uint8_t);
-OPAQUE_TYPEDEF(Buffer, uint32_t);
+OPAQUE_TYPEDEF(BytesSink, uint32_t);
 OPAQUE_TYPEDEF(BytesSource, uint32_t);
 OPAQUE_TYPEDEF(RowIter, uint32_t);
 
@@ -74,7 +74,8 @@ IMPORT(void, _volatile_nonatomic_schedule_immediate,
        (name, name_len, args, args_len));
 IMPORT(int16_t, _bytes_source_read, (BytesSource source, uint8_t* buffer_ptr, size_t* buffer_len_ptr),
        (source, buffer_ptr, buffer_len_ptr));
-IMPORT(Buffer, _buffer_alloc, (const uint8_t* data, uint32_t len), (data, len));
+IMPORT(uint16_t, _bytes_sink_write, (BytesSink sink, uint8_t* buffer_ptr, size_t* buffer_len_ptr),
+       (sink, buffer_ptr, buffer_len_ptr));
 
 #ifndef EXPERIMENTAL_WASM_AOT
 static MonoClass* ffi_class;
@@ -97,7 +98,7 @@ PREINIT(10, startup) {
          "FFI export class (SpacetimeDB.Internal.Module) not found");
 }
 
-#define EXPORT(ret, name, params, args...)                                    \
+#define EXPORT_WITH_MONO_RES(ret, res_code, name, params, args...)            \
   static MonoMethod* ffi_method_##name;                                       \
   PREINIT(20, find_##name) {                                                  \
     ffi_method_##name = mono_wasm_assembly_find_method(ffi_class, #name, -1); \
@@ -107,20 +108,26 @@ PREINIT(10, startup) {
     MonoObject* res;                                                          \
     mono_wasm_invoke_method_ref(ffi_method_##name, NULL, (void*[]){args},     \
                                 NULL, &res);                                  \
-    return *(ret*)mono_object_unbox(res);                                     \
+    res_code                                                                  \
   }
 
-EXPORT(Buffer, __describe_module__, ());
+#define EXPORT(ret, name, params, args...)                                             \
+  EXPORT_WITH_MONO_RES(ret, return *(ret*)mono_object_unbox(res);, name, params, args) \
 
-EXPORT(Buffer, __call_reducer__,
+#define EXPORT_VOID(name, params, args...)                                    \
+  EXPORT_WITH_MONO_RES(void, return;, name, params, args)                      \
+
+EXPORT_VOID(__describe_module__, (BytesSink description), &description);
+
+EXPORT(int16_t, __call_reducer__,
        (uint32_t id,
         uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
         uint64_t address_0, uint64_t address_1,
-        uint64_t timestamp, Buffer args),
+        uint64_t timestamp, BytesSource args, BytesSink error),
        &id,
        &sender_0, &sender_1, &sender_2, &sender_3,
        &address_0, &address_1,
-       &timestamp, &args);
+       &timestamp, &args, &error);
 #endif
 
 // Shims to avoid dependency on WASI in the generated Wasm file.

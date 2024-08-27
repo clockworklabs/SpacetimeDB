@@ -8,11 +8,14 @@ use core::num::NonZeroU16;
 macro_rules! errnos {
     ($mac:ident) => {
         $mac!(
-            NO_SUCH_TABLE(1, "No such table"),
+            // TODO(1.0): remove this.
             LOOKUP_NOT_FOUND(2, "Value or range provided not found in table"),
-            UNIQUE_ALREADY_EXISTS(3, "Value with given unique identifier already exists"),
-            BUFFER_TOO_SMALL(4, "The provided buffer is not large enough to store the data"),
+            HOST_CALL_FAILURE(1, "ABI called by host returned an error"),
+            NO_SUCH_TABLE(4, "No such table"),
             NO_SUCH_BYTES(8, "The provided bytes source or sink is not valid"),
+            NO_SPACE(9, "The provided sink has no more space left"),
+            BUFFER_TOO_SMALL(11, "The provided buffer is not large enough to store the data"),
+            UNIQUE_ALREADY_EXISTS(12, "Value with given unique identifier already exists"),
         );
     };
 }

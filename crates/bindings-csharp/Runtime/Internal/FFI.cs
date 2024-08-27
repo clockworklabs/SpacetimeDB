@@ -16,23 +16,7 @@ public readonly record struct BytesSource(uint Handle)
 // forwarding in the codegen for `__describe_module__` and `__call_reducer__` exports which both
 // use this type.
 [StructLayout(LayoutKind.Sequential)]
-[NativeMarshalling(typeof(Marshaller))]
-public readonly record struct Buffer(uint Handle)
-{
-    public static readonly Buffer INVALID = new(uint.MaxValue);
-
-    // We need custom marshaller for `Buffer` because we return it by value
-    // instead of passing an `out` reference, and C# currently doesn't match
-    // the common Wasm C ABI in that a struct with a single field is supposed
-    // to have the same ABI as the field itself.
-    [CustomMarshaller(typeof(Buffer), MarshalMode.Default, typeof(Marshaller))]
-    internal static class Marshaller
-    {
-        public static Buffer ConvertToManaged(uint buf_handle) => new(buf_handle);
-
-        public static uint ConvertToUnmanaged(Buffer buf) => buf.Handle;
-    }
-}
+public readonly record struct BytesSink(uint Handle) { }
 
 #pragma warning disable IDE1006 // Naming Styles - Not applicable to FFI stuff.
 internal static partial class FFI
@@ -48,19 +32,21 @@ internal static partial class FFI
 #endif
     ;
 
+    public enum Errno : ushort
+    {
+        OK = 0,
+        HOST_CALL_FAILURE = 1,
+        NO_SUCH_TABLE = 4,
+        LOOKUP_NOT_FOUND = 2,
+        NO_SUCH_BYTES = 8,
+        NO_SPACE = 9,
+        BUFFER_TOO_SMALL = 11,
+        UNIQUE_ALREADY_EXISTS = 12,
+    }
+
     [NativeMarshalling(typeof(Marshaller))]
     public struct CheckedStatus
     {
-        public enum Errno : ushort
-        {
-            OK = 0,
-            NO_SUCH_TABLE = 1,
-            LOOKUP_NOT_FOUND = 2,
-            UNIQUE_ALREADY_EXISTS = 3,
-            BUFFER_TOO_SMALL = 4,
-            NO_SUCH_BYTES = 8,
-        }
-
         // This custom marshaller takes care of checking the status code
         // returned from the host and throwing an exception if it's not 0.
         // The only reason it doesn't return `void` is because the C# compiler
@@ -86,6 +72,7 @@ internal static partial class FFI
                     Errno.UNIQUE_ALREADY_EXISTS => new UniqueAlreadyExistsException(),
                     Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
                     Errno.NO_SUCH_BYTES => new NoSuchBytesException(),
+                    Errno.NO_SPACE => new NoSpaceException(),
                     _ => new UnknownException(status),
                 };
             }
@@ -205,9 +192,13 @@ internal static partial class FFI
     public static partial short _bytes_source_read(
         BytesSource source,
         Span<byte> buffer,
-        ref uint buffer_len_ptr
+        ref uint buffer_len
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial Buffer _buffer_alloc([In] byte[] data, uint data_len);
+    public static partial CheckedStatus _bytes_sink_write(
+        BytesSink sink,
+        Span<byte> buffer,
+        ref uint buffer_len
+    );
 }

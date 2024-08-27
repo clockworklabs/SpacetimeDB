@@ -1,20 +1,22 @@
 #![warn(clippy::uninlined_format_args)]
 
-use std::fs;
-use std::io::Write;
-use std::ops::Deref;
-use std::path::{Path, PathBuf};
-
 use clap::Arg;
 use clap::ArgAction::SetTrue;
 use convert_case::{Case, Casing};
+use core::mem;
 use duct::cmd;
+use spacetimedb::host::wasmtime::{Mem, MemView, WasmPointee as _};
 use spacetimedb_lib::db::raw_def::RawColumnDefV8;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::sats::{AlgebraicType, Typespace};
 use spacetimedb_lib::{bsatn, MiscModuleExport, RawModuleDefV8, ReducerDef, TableDesc, TypeAlias};
 use spacetimedb_lib::{RawModuleDef, MODULE_ABI_MAJOR_VERSION};
-use wasmtime::{AsContext, Caller};
+use spacetimedb_primitives::errno;
+use std::fs;
+use std::io::Write;
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
+use wasmtime::{Caller, StoreContextMut};
 
 use crate::Config;
 
@@ -402,7 +404,7 @@ pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDefV8> 
     println!("compilation took {:?}", t.elapsed());
     let ctx = WasmCtx {
         mem: None,
-        buffers: slab::Slab::new(),
+        sink: Vec::new(),
     };
     let mut store = wasmtime::Store::new(&engine, ctx);
     let mut linker = wasmtime::Linker::new(&engine);
@@ -411,7 +413,7 @@ pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDefV8> 
     linker.func_wrap(
         module_name,
         "_console_log",
-        |caller: Caller<'_, WasmCtx>,
+        |mut caller: Caller<'_, WasmCtx>,
          _level: u32,
          _target: u32,
          _target_len: u32,
@@ -420,20 +422,14 @@ pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDefV8> 
          _line_number: u32,
          message: u32,
          message_len: u32| {
-            let mem = caller.data().mem.unwrap();
-            let slice = mem.deref_slice(&caller, message, message_len);
-            if let Some(slice) = slice {
-                println!("from wasm: {}", String::from_utf8_lossy(slice));
-            } else {
-                println!("tried to print from wasm but out of bounds")
-            }
+            let (mem, _) = WasmCtx::mem_env(&mut caller);
+            let slice = mem.deref_slice(message, message_len).unwrap();
+            println!("from wasm: {}", String::from_utf8_lossy(slice));
         },
     )?;
-    linker.func_wrap(module_name, "_buffer_alloc", WasmCtx::buffer_alloc)?;
+    linker.func_wrap(module_name, "_bytes_sink_write", WasmCtx::bytes_sink_write)?;
     let instance = linker.instantiate(&mut store, &module)?;
-    let memory = Memory {
-        mem: instance.get_memory(&mut store, "memory").unwrap(),
-    };
+    let memory = Mem::extract(&instance, &mut store)?;
     store.data_mut().mem = Some(memory);
 
     let mut preinits = instance
@@ -446,9 +442,10 @@ pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDefV8> 
     }
     let module: RawModuleDef = match instance.get_func(&mut store, "__describe_module__") {
         Some(f) => {
-            let buf: u32 = f.typed(&store)?.call(&mut store, ()).unwrap();
-            let slice = store.data_mut().buffers.remove(buf as usize);
-            bsatn::from_slice(&slice)?
+            store.data_mut().sink = Vec::new();
+            f.typed::<u32, ()>(&store)?.call(&mut store, 1).unwrap();
+            let buf = mem::take(&mut store.data_mut().sink);
+            bsatn::from_slice(&buf)?
         }
         // TODO: shouldn't we return an error here?
         None => RawModuleDef::V8BackCompat(RawModuleDefV8::default()),
@@ -461,36 +458,40 @@ pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDefV8> 
 }
 
 struct WasmCtx {
-    mem: Option<Memory>,
-    buffers: slab::Slab<Vec<u8>>,
+    mem: Option<Mem>,
+    sink: Vec<u8>,
 }
 
 impl WasmCtx {
-    fn mem(&self) -> Memory {
-        self.mem.unwrap()
+    pub fn get_mem(&self) -> Mem {
+        self.mem.expect("Initialized memory")
     }
-    fn buffer_alloc(mut caller: Caller<'_, Self>, data: u32, data_len: u32) -> u32 {
-        let buf = caller
-            .data()
-            .mem()
-            .deref_slice(&caller, data, data_len)
-            .unwrap()
-            .to_vec();
-        caller.data_mut().buffers.insert(buf) as u32
+
+    fn mem_env<'a>(ctx: impl Into<StoreContextMut<'a, Self>>) -> (&'a mut MemView, &'a mut Self) {
+        let ctx = ctx.into();
+        let mem = ctx.data().get_mem();
+        mem.view_and_store_mut(ctx)
     }
-}
 
-#[derive(Copy, Clone)]
-struct Memory {
-    mem: wasmtime::Memory,
-}
+    pub fn bytes_sink_write(
+        mut caller: Caller<'_, Self>,
+        sink_handle: u32,
+        buffer_ptr: u32,
+        buffer_len_ptr: u32,
+    ) -> anyhow::Result<u32> {
+        if sink_handle != 1 {
+            return Ok(errno::NO_SUCH_BYTES.get().into());
+        }
 
-impl Memory {
-    fn deref_slice<'a>(&self, store: &'a impl AsContext, offset: u32, len: u32) -> Option<&'a [u8]> {
-        self.mem
-            .data(store.as_context())
-            .get(offset as usize..)?
-            .get(..len as usize)
+        let (mem, env) = Self::mem_env(&mut caller);
+
+        // Read `buffer_len`, i.e., the capacity of `buffer` pointed to by `buffer_ptr`.
+        let buffer_len = u32::read_from(mem, buffer_len_ptr)?;
+        // Write `buffer` to `sink`.
+        let buffer = mem.deref_slice(buffer_ptr, buffer_len)?;
+        env.sink.extend(buffer);
+
+        Ok(0)
     }
 }
 

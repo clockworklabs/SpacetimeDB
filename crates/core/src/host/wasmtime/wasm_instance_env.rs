@@ -8,8 +8,8 @@ use crate::execution_context::ExecutionContext;
 use crate::host::wasm_common::instrumentation;
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
 use crate::host::wasm_common::{
-    err_to_errno, instrumentation::CallTimes, AbiRuntimeError, BufferIdx, Buffers, RowIterIdx, RowIters, TimingSpan,
-    TimingSpanIdx, TimingSpanSet,
+    err_to_errno, instrumentation::CallTimes, AbiRuntimeError, RowIterIdx, RowIters, TimingSpan, TimingSpanIdx,
+    TimingSpanSet,
 };
 use crate::host::AbiCall;
 use anyhow::Context as _;
@@ -53,8 +53,8 @@ pub(super) struct WasmInstanceEnv {
     /// that it can read via [`Self::bytes_source_read`].
     call_reducer_args: Option<(bytes::Bytes, usize)>,
 
-    /// The slab of `Buffers` created for this instance.
-    buffers: Buffers,
+    /// The standard sink used for [`Self::bytes_sink_write`].
+    standard_bytes_sink: Option<Vec<u8>>,
 
     /// The slab of `BufferIters` created for this instance.
     iters: RowIters,
@@ -76,6 +76,7 @@ pub(super) struct WasmInstanceEnv {
 }
 
 const CALL_REDUCER_ARGS_SOURCE: u32 = 1;
+const STANDARD_BYTES_SINK: u32 = 1;
 
 type WasmResult<T> = Result<T, WasmError>;
 type RtResult<T> = anyhow::Result<T>;
@@ -90,7 +91,7 @@ impl WasmInstanceEnv {
             instance_env,
             mem: None,
             call_reducer_args: None,
-            buffers: Default::default(),
+            standard_bytes_sink: None,
             iters: Default::default(),
             timing_spans: Default::default(),
             reducer_start,
@@ -121,49 +122,60 @@ impl WasmInstanceEnv {
         &self.instance_env
     }
 
-    /// Take ownership of a particular `Buffer` from this instance.
-    pub fn take_buffer(&mut self, idx: BufferIdx) -> Option<bytes::Bytes> {
-        self.buffers.take(idx)
+    /// Setup the standard bytes sink and return a handle to it for writing.
+    pub fn setup_standard_bytes_sink(&mut self) -> u32 {
+        self.standard_bytes_sink = Some(Vec::new());
+        STANDARD_BYTES_SINK
+    }
+
+    /// Extract all the bytes written to the standard bytes sink
+    /// and prevent further writes to it.
+    pub fn take_standard_bytes_sink(&mut self) -> Vec<u8> {
+        self.standard_bytes_sink.take().unwrap_or_default()
     }
 
     /// Signal to this `WasmInstanceEnv` that a reducer call is beginning.
     ///
-    /// Returns the handle used by reducers to read from `args`.
-    pub fn start_reducer(&mut self, name: &str, args: bytes::Bytes) -> u32 {
+    /// Returns the handle used by reducers to read from `args`
+    /// as well as the handle used to write the error message, if any.
+    pub fn start_reducer(&mut self, name: &str, args: bytes::Bytes) -> (u32, u32) {
+        let errors = self.setup_standard_bytes_sink();
+
+        // Pass an invalid source when the reducer args were empty.
+        // This allows the module to avoid allocating and make a system call in those cases.
         self.call_reducer_args = (!args.is_empty()).then_some((args, 0));
+        let args = if self.call_reducer_args.is_some() {
+            CALL_REDUCER_ARGS_SOURCE
+        } else {
+            0
+        };
 
         self.reducer_start = Instant::now();
         name.clone_into(&mut self.reducer_name);
 
-        // Pass an invalid source when the reducer args were empty.
-        // This allows the module to avoid allocating and make a system call in those cases.
-        if self.call_reducer_args.is_some() {
-            CALL_REDUCER_ARGS_SOURCE
-        } else {
-            0
-        }
+        (args, errors)
     }
 
     /// Signal to this `WasmInstanceEnv` that a reducer call is over.
     /// This resets all of the state associated to a single reducer call,
     /// and returns instrumentation records.
-    pub fn finish_reducer(&mut self) -> ExecutionTimings {
-        self.call_reducer_args = None;
-
-        // For the moment, we only explicitly clear the set of buffers and the
-        // "syscall" times.
+    pub fn finish_reducer(&mut self) -> (ExecutionTimings, Vec<u8>) {
+        // For the moment,
+        // we only explicitly clear the source/sink buffers and the "syscall" times.
         // TODO: should we be clearing `iters` and/or `timing_spans`?
-        self.buffers.clear();
 
         let total_duration = self.reducer_start.elapsed();
 
         // Taking the call times record also resets timings to 0s for the next call.
         let wasm_instance_env_call_times = self.call_times.take();
 
-        ExecutionTimings {
+        let timings = ExecutionTimings {
             total_duration,
             wasm_instance_env_call_times,
-        }
+        };
+
+        self.call_reducer_args = None;
+        (timings, self.take_standard_bytes_sink())
     }
 
     /// Returns an execution context for a reducer call.
@@ -255,7 +267,7 @@ impl WasmInstanceEnv {
         Self::cvt(caller, call, |caller| {
             f(caller).and_then(|ret| {
                 let (mem, _) = Self::mem_env(caller);
-                ret.write_to(mem, out)
+                ret.write_to(mem, out).map_err(|e| e.into())
             })
         })
     }
@@ -653,22 +665,6 @@ impl WasmInstanceEnv {
         Ok(())
     }
 
-    /// Creates a buffer of size `data_len` in the host environment.
-    ///
-    /// The contents of the byte slice pointed to by `data`
-    /// and lasting `data_len` bytes
-    /// is written into the newly initialized buffer.
-    ///
-    /// The buffer is registered in the host environment and is indexed by the returned `u32`.
-    ///
-    /// Returns an error if `data + data_len` overflows a 64-bit integer.
-    // #[tracing::instrument(skip_all)]
-    pub fn buffer_alloc(mut caller: Caller<'_, Self>, data: WasmPtr<u8>, data_len: u32) -> RtResult<u32> {
-        let (mem, env) = Self::mem_env(&mut caller);
-        let buf = mem.deref_slice(data, data_len)?;
-        Ok(env.buffers.insert(buf.to_vec().into()).0)
-    }
-
     /// Reads bytes from `source`, registered in the host environment,
     /// and stores them in the memory pointed to by `buffer = buffer_ptr[..buffer_len]`.
     ///
@@ -773,6 +769,49 @@ impl WasmInstanceEnv {
                 *cursor = can_read_len;
                 Ok(0)
             }
+        })
+    }
+
+    /// Writes up to `buffer_len` bytes from `buffer = buffer_ptr[..buffer_len]`,
+    /// to the `sink`, registered in the host environment.
+    ///
+    /// The `buffer_len = buffer_len_ptr[..size_of::<usize>()]` stores the capacity of `buffer`.
+    /// On success (`0` is returned),
+    /// `buffer_len` is set to the number of bytes written to `sink`.
+    ///
+    /// # Traps
+    ///
+    /// - `buffer_len_ptr` is NULL or `buffer_len` is not in bounds of WASM memory.
+    /// - `buffer_ptr` is NULL or `buffer` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NO_SUCH_BYTES`, when `sink` is not a valid bytes sink.
+    /// - `NO_SPACE`, when there is no room for more bytes in `sink`.
+    ///    (Doesn't currently happen.)
+    pub fn bytes_sink_write(
+        caller: Caller<'_, Self>,
+        sink: u32,
+        buffer_ptr: WasmPtr<u8>,
+        buffer_len_ptr: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_custom(caller, AbiCall::BytesSinkWrite, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+
+            // Retrieve the reducer args if available and requested, or error.
+            let Some(sink) = env.standard_bytes_sink.as_mut().filter(|_| sink == STANDARD_BYTES_SINK) else {
+                return Ok(errno::NO_SUCH_BYTES.get().into());
+            };
+
+            // Read `buffer_len`, i.e., the capacity of `buffer` pointed to by `buffer_ptr`.
+            let buffer_len = u32::read_from(mem, buffer_len_ptr)?;
+            // Write `buffer` to `sink`.
+            let buffer = mem.deref_slice(buffer_ptr, buffer_len)?;
+            sink.extend(buffer);
+
+            Ok(0)
         })
     }
 

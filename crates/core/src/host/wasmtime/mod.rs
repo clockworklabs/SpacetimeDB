@@ -72,7 +72,7 @@ pub fn make_actor(mcc: ModuleCreationContext) -> Result<impl super::module_host:
 }
 
 #[derive(Debug, derive_more::From)]
-enum WasmError {
+pub enum WasmError {
     Db(NodesError),
     BufferTooSmall,
     Wasm(anyhow::Error),
@@ -108,10 +108,10 @@ impl From<WasmtimeFuel> for EnergyQuanta {
     }
 }
 
-trait WasmPointee {
+pub trait WasmPointee {
     type Pointer;
-    fn write_to(self, mem: &mut MemView, ptr: Self::Pointer) -> Result<(), WasmError>;
-    fn read_from(mem: &mut MemView, ptr: Self::Pointer) -> Result<Self, WasmError>
+    fn write_to(self, mem: &mut MemView, ptr: Self::Pointer) -> Result<(), MemError>;
+    fn read_from(mem: &mut MemView, ptr: Self::Pointer) -> Result<Self, MemError>
     where
         Self: Sized;
 }
@@ -119,31 +119,31 @@ macro_rules! impl_pointee {
     ($($t:ty),*) => {
         $(impl WasmPointee for $t {
             type Pointer = u32;
-            fn write_to(self, mem: &mut MemView, ptr: Self::Pointer) -> Result<(), WasmError> {
+            fn write_to(self, mem: &mut MemView, ptr: Self::Pointer) -> Result<(), MemError> {
                 let bytes = self.to_le_bytes();
                 mem.deref_slice_mut(ptr, bytes.len() as u32)?.copy_from_slice(&bytes);
                 Ok(())
             }
-            fn read_from(mem: &mut MemView, ptr: Self::Pointer) -> Result<Self, WasmError> {
+            fn read_from(mem: &mut MemView, ptr: Self::Pointer) -> Result<Self, MemError> {
                 Ok(Self::from_le_bytes(*mem.deref_array(ptr)?))
             }
         })*
     };
 }
 impl_pointee!(u8, u16, u32, u64);
-impl_pointee!(super::wasm_common::BufferIdx, super::wasm_common::RowIterIdx);
+impl_pointee!(super::wasm_common::RowIterIdx);
 type WasmPtr<T> = <T as WasmPointee>::Pointer;
 
 /// Wraps access to WASM linear memory with some additional functionality.
 #[derive(Clone, Copy)]
-struct Mem {
+pub struct Mem {
     /// The underlying WASM `memory` instance.
     pub memory: wasmtime::Memory,
 }
 
 impl Mem {
     /// Constructs an instance of `Mem` from an exports map.
-    fn extract(exports: &wasmtime::Instance, store: impl wasmtime::AsContextMut) -> anyhow::Result<Self> {
+    pub fn extract(exports: &wasmtime::Instance, store: impl wasmtime::AsContextMut) -> anyhow::Result<Self> {
         Ok(Self {
             memory: exports.get_memory(store, "memory").context("no memory export")?,
         })
@@ -151,7 +151,7 @@ impl Mem {
 
     /// Creates and returns a view into the actual memory `store`.
     /// This view allows for reads and writes.
-    fn view_and_store_mut<'a, T>(&self, store: impl Into<StoreContextMut<'a, T>>) -> (&'a mut MemView, &'a mut T) {
+    pub fn view_and_store_mut<'a, T>(&self, store: impl Into<StoreContextMut<'a, T>>) -> (&'a mut MemView, &'a mut T) {
         let (mem, store_data) = self.memory.data_and_store_mut(store);
         (MemView::from_slice_mut(mem), store_data)
     }
@@ -162,7 +162,7 @@ impl Mem {
 }
 
 #[repr(transparent)]
-struct MemView([u8]);
+pub struct MemView([u8]);
 
 impl MemView {
     fn from_slice_mut(v: &mut [u8]) -> &mut Self {
@@ -175,7 +175,7 @@ impl MemView {
     }
 
     /// Get a byte slice of wasm memory given a pointer and a length.
-    fn deref_slice(&self, offset: WasmPtr<u8>, len: u32) -> Result<&[u8], MemError> {
+    pub fn deref_slice(&self, offset: WasmPtr<u8>, len: u32) -> Result<&[u8], MemError> {
         if offset == 0 {
             return Err(MemError::Null);
         }
@@ -216,7 +216,7 @@ impl MemView {
 
 /// An error that can result from operations on [`MemView`].
 #[derive(thiserror::Error, Debug)]
-enum MemError {
+pub enum MemError {
     #[error("out of bounds pointer passed to a spacetime function")]
     OutOfBounds,
     #[error("null pointer passed to a spacetime function")]
@@ -234,14 +234,14 @@ impl From<MemError> for WasmError {
 /// Extension trait to gracefully handle null `WasmPtr`s, e.g.
 /// `mem.deref_slice(ptr, len).check_nullptr()? == Option<&[u8]>`.
 trait NullableMemOp<T> {
-    fn check_nullptr(self) -> Result<Option<T>, WasmError>;
+    fn check_nullptr(self) -> Result<Option<T>, MemError>;
 }
 impl<T> NullableMemOp<T> for Result<T, MemError> {
-    fn check_nullptr(self) -> Result<Option<T>, WasmError> {
+    fn check_nullptr(self) -> Result<Option<T>, MemError> {
         match self {
             Ok(x) => Ok(Some(x)),
             Err(MemError::Null) => Ok(None),
-            Err(e) => Err(e.into()),
+            Err(e) => Err(e),
         }
     }
 }

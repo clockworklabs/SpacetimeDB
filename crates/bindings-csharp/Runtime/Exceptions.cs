@@ -32,11 +32,16 @@ public class NoSuchBytesException : StdbException
     public override string Message => "The provided bytes source or sink does not exist";
 }
 
+public class NoSpaceException : StdbException
+{
+    public override string Message => "The provided bytes sink has no more room left";
+}
+
 public class UnknownException : StdbException
 {
-    private readonly FFI.CheckedStatus.Errno code;
+    private readonly FFI.Errno code;
 
-    internal UnknownException(FFI.CheckedStatus.Errno code) => this.code = code;
+    internal UnknownException(FFI.Errno code) => this.code = code;
 
     public override string Message => $"SpacetimeDB error code {code}";
 }

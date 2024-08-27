@@ -15,7 +15,7 @@ mod host_controller;
 #[allow(clippy::too_many_arguments)]
 pub mod module_host;
 pub mod scheduler;
-mod wasmtime;
+pub mod wasmtime;
 // Visible for integration testing.
 pub mod instance_env;
 mod wasm_common;
@@ -142,6 +142,7 @@ fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T)
 #[derive(Debug, Display, Enum, Clone, Copy, strum::AsRefStr)]
 pub enum AbiCall {
     BytesSourceRead,
+    BytesSinkWrite,
 
     CancelReducer,
     ConsoleLog,

@@ -47,6 +47,8 @@ pub use timestamp::Timestamp;
 
 pub type Result<T = (), E = Errno> = core::result::Result<T, E>;
 
+pub type ReducerResult = core::result::Result<(), Box<str>>;
+
 /// A context that any reducer is provided with.
 #[non_exhaustive]
 #[derive(Copy, Clone)]
