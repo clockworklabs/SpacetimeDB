@@ -398,10 +398,6 @@ async fn exec_new(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         query_params,
     )?);
 
-    if let Ok(identity_token) = config.get_default_identity_config(server) {
-        builder = builder.basic_auth("token", Some(identity_token.token.clone()));
-    }
-
     let identity_token: IdentityTokenJson = builder.send().await?.error_for_status()?.json().await?;
     let identity = identity_token.identity;
 
