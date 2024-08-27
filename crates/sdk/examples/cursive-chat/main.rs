@@ -161,7 +161,7 @@ fn on_user_inserted(send: UiSend) -> impl FnMut(&User, Option<&ReducerEvent>) + 
             .unwrap();
         } else if user.online {
             send.unbounded_send(UiMessage::UserConnected {
-                identity: user.identity.clone(),
+                identity: user.identity,
                 name: user_name_or_identity(user),
             })
             .unwrap();
@@ -191,20 +191,20 @@ fn on_user_updated(send: UiSend) -> impl FnMut(&User, &User, Option<&ReducerEven
         } else {
             if old.name != new.name {
                 send.unbounded_send(UiMessage::SetName {
-                    identity: new.identity.clone(),
+                    identity: new.identity,
                     new_name: user_name_or_identity(new),
                 })
                 .unwrap();
             }
             if old.online && !new.online {
                 send.unbounded_send(UiMessage::UserDisconnected {
-                    identity: new.identity.clone(),
+                    identity: new.identity,
                 })
                 .unwrap();
             }
             if !old.online && new.online {
                 send.unbounded_send(UiMessage::UserConnected {
-                    identity: new.identity.clone(),
+                    identity: new.identity,
                     name: user_name_or_identity(new),
                 })
                 .unwrap();
@@ -225,12 +225,12 @@ fn on_message_inserted(send: UiSend) -> impl FnMut(&Message, Option<&ReducerEven
 }
 
 fn print_message(send: &UiSend, message: &Message) {
-    let sender = User::find_by_identity(message.sender.clone())
+    let sender = User::find_by_identity(message.sender)
         .map(|u| user_name_or_identity(&u))
         .unwrap_or_else(|| "unknown".to_string());
     send.unbounded_send(UiMessage::Message {
         sender_name: sender,
-        sender_identity: message.sender.clone(),
+        sender_identity: message.sender,
         text: message.text.clone(),
     })
     .unwrap();

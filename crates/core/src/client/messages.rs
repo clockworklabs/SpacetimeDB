@@ -32,7 +32,7 @@ pub trait ToProtocol {
 
 fn serialize_gzip(bytes: &[u8]) -> Vec<u8> {
     let mut encoder = GzEncoder::new(Vec::new(), flate2::Compression::fast());
-    encoder.write_all(&bytes[..]).unwrap();
+    encoder.write_all(bytes).unwrap();
     encoder
         .finish()
         .expect("Failed to Gz compress `SubscriptionUpdateMessage`")

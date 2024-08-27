@@ -174,7 +174,7 @@ impl DbConnection {
         Ok(bsatn::from_slice(match self.compression {
             Compression::None => bytes,
             Compression::Gzip => {
-                let mut decoder = GzDecoder::new(&bytes[..]);
+                let mut decoder = GzDecoder::new(bytes);
                 decoder
                     .read(&mut decompressed)
                     .context("Failed to Gzip decompress message")?;
