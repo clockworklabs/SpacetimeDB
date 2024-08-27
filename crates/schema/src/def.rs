@@ -43,8 +43,7 @@ pub type IdentifierMap<T> = HashMap<Identifier, T>;
 
 /// A validated, canonicalized, immutable module definition.
 ///
-/// Cannot be created directly. Instead, create/deserialize a [spacetimedb_lib::RawModuleDef] and call [ModuleDef::validate]
-/// or use `try_into`.
+/// Cannot be created directly. Instead, create/deserialize a [spacetimedb_lib::RawModuleDef] and call [ModuleDef::try_from].
 ///
 /// ```rust
 /// use spacetimedb_lib::RawModuleDef;
@@ -57,7 +56,7 @@ pub type IdentifierMap<T> = HashMap<Identifier, T>;
 /// }
 ///
 /// let raw_module_def = read_raw_module_def_from_file();
-/// let module_def = ModuleDef::validate(raw_module_def).expect("valid module def");
+/// let module_def = ModuleDef::try_from(raw_module_def).expect("valid module def");
 ///
 /// let table_name = Identifier::new("my_table".into()).expect("valid identifier");
 /// let index_name = Identifier::new("my_index".into()).expect("valid identifier");
@@ -91,19 +90,6 @@ pub struct ModuleDef {
 }
 
 impl ModuleDef {
-    /// Construct a `ModuleDef` by validating a `RawModuleDef`.
-    /// This is the only way to construct a `ModuleDef`.
-    /// (The `TryFrom` impls for this type just call this method.)
-    pub fn validate(raw: RawModuleDef) -> Result<Self, ValidationErrors> {
-        let mut result = match raw {
-            RawModuleDef::V8BackCompat(v8_mod) => validate::v8::validate(v8_mod),
-            RawModuleDef::V9(v9_mod) => validate::v9::validate(v9_mod),
-            _ => unimplemented!(),
-        }?;
-        result.generate_indexes();
-        Ok(result)
-    }
-
     /// The tables of the module definition.
     pub fn tables(&self) -> impl Iterator<Item = &TableDef> {
         self.tables.values()
@@ -196,21 +182,29 @@ impl TryFrom<RawModuleDef> for ModuleDef {
     type Error = ValidationErrors;
 
     fn try_from(raw: RawModuleDef) -> Result<Self, Self::Error> {
-        Self::validate(raw)
+        match raw {
+            RawModuleDef::V8BackCompat(v8_mod) => Self::try_from(v8_mod),
+            RawModuleDef::V9(v9_mod) => Self::try_from(v9_mod),
+            _ => unimplemented!(),
+        }
     }
 }
 impl TryFrom<raw_def::v8::RawModuleDefV8> for ModuleDef {
     type Error = ValidationErrors;
 
     fn try_from(v8_mod: raw_def::v8::RawModuleDefV8) -> Result<Self, Self::Error> {
-        Self::validate(RawModuleDef::V8BackCompat(v8_mod))
+        // it is not necessary to generate indexes for a v8 mod, since the validation
+        // handles index generation.
+        validate::v8::validate(v8_mod)
     }
 }
 impl TryFrom<raw_def::v9::RawModuleDefV9> for ModuleDef {
     type Error = ValidationErrors;
 
     fn try_from(v9_mod: raw_def::v9::RawModuleDefV9) -> Result<Self, Self::Error> {
-        Self::validate(RawModuleDef::V9(v9_mod))
+        let mut result = validate::v9::validate(v9_mod)?;
+        result.generate_indexes();
+        Ok(result)
     }
 }
 
