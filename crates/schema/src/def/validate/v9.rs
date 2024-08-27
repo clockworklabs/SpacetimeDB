@@ -25,6 +25,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         typespace: &typespace,
         stored_in_table_def: Default::default(),
         type_namespace: Default::default(),
+        lifecycle_reducers: Default::default(),
     };
 
     // Important general note:
@@ -110,6 +111,9 @@ struct Validator<'a> {
 
     /// Module-scoped type names we have seen so far.
     type_namespace: HashMap<ScopedTypeName, AlgebraicTypeRef>,
+
+    /// Reducers that play special lifecycle roles.
+    lifecycle_reducers: HashSet<Lifecycle>,
 }
 
 impl Validator<'_> {
@@ -139,20 +143,23 @@ impl Validator<'_> {
                 })
             })?;
 
-        let table_in_progress = TableInProgress {
-            raw_name: &raw_table_name[..],
+        let mut table_in_progress = TableInProgress {
+            raw_name: raw_table_name.clone(),
             product_type_ref,
             product_type,
+            validator: self,
+            has_sequence: Default::default(),
         };
 
         let columns = (0..product_type.elements.len())
-            .map(|id| self.validate_column_def(&table_in_progress, id.into()))
+            .map(|id| table_in_progress.validate_column_def(id.into()))
             .collect_all_errors();
 
         let indexes = indexes
             .into_iter()
             .map(|index| {
-                self.validate_index_def(&table_in_progress, index)
+                table_in_progress
+                    .validate_index_def(index)
                     .map(|index| (index.name.clone(), index))
             })
             .collect_all_errors();
@@ -161,28 +168,29 @@ impl Validator<'_> {
         let unique_constraints_primary_key = unique_constraints
             .into_iter()
             .map(|constraint| {
-                self.validate_unique_constraint_def(&table_in_progress, constraint)
+                table_in_progress
+                    .validate_unique_constraint_def(constraint)
                     .map(|constraint| (constraint.name.clone(), constraint))
             })
             .collect_all_errors()
             .and_then(|constraints: IdentifierMap<UniqueConstraintDef>| {
-                self.validate_primary_key(&table_in_progress, constraints, primary_key)
+                table_in_progress.validate_primary_key(constraints, primary_key)
             });
 
-        let mut have_sequence_on_column = HashSet::default();
         let sequences = sequences
             .into_iter()
             .map(|sequence| {
-                self.validate_sequence_def(&table_in_progress, &mut have_sequence_on_column, sequence)
+                table_in_progress
+                    .validate_sequence_def(sequence)
                     .map(|sequence| (sequence.name.clone(), sequence))
             })
             .collect_all_errors();
 
         let schedule = schedule
-            .map(|schedule| self.validate_schedule_def(&table_in_progress, schedule))
+            .map(|schedule| table_in_progress.validate_schedule_def(schedule))
             .transpose();
 
-        let name = self.add_to_global_namespace(&table_in_progress, raw_table_name.clone());
+        let name = table_in_progress.add_to_global_namespace(raw_table_name.clone());
 
         let (name, columns, indexes, (unique_constraints, primary_key), sequences, schedule) = (
             name,
@@ -208,246 +216,13 @@ impl Validator<'_> {
         })
     }
 
-    /// Validate a column.
-    ///
-    /// Note that this accepts a `ProductTypeElement` rather than a `ColumnDef`,
-    /// because all information about columns is stored in the `Typespace` in ABI version 9.
-    fn validate_column_def(&mut self, table_in_progress: &TableInProgress, col_id: ColId) -> Result<ColumnDef> {
-        let column = &table_in_progress
-            .product_type
-            .elements
-            .get(col_id.idx())
-            .expect("enumerate is generating an out-of-range index...");
-
-        let name: Result<Identifier> = column
-            .name()
-            .ok_or_else(|| {
-                ValidationError::UnnamedColumn {
-                    column: table_in_progress.raw_column_name(col_id),
-                }
-                .into()
-            })
-            .and_then(|name| identifier(name.into()));
-
-        let ty = self
-            .validate_resolves(
-                &TypeLocation::InTypespace {
-                    ref_: table_in_progress.product_type_ref,
-                },
-                &column.algebraic_type,
-            )
-            .map(|_resolved| column.algebraic_type.clone()); // We don't need the resolved type.
-
-        // This error will be created multiple times if the table name is invalid,
-        // but we sort and deduplicate the error stream afterwards,
-        // so it isn't a huge deal.
-        //
-        // This is necessary because we require `ErrorStream` to be
-        // nonempty. We need to put something in there if the table name is invalid.
-        let table_name = identifier(table_in_progress.raw_name.into());
-
-        let (name, ty, table_name) = (name, ty, table_name).combine_errors()?;
-
-        Ok(ColumnDef {
-            name,
-            ty,
-            col_id,
-            table_name,
-        })
-    }
-
-    fn validate_primary_key(
-        &mut self,
-        table_in_progress: &TableInProgress,
-        validated_unique_constraints: IdentifierMap<UniqueConstraintDef>,
-        primary_key: Option<ColId>,
-    ) -> Result<(IdentifierMap<UniqueConstraintDef>, Option<ColId>)> {
-        let pk = primary_key
-            .map(|pk| -> Result<ColId> {
-                let pk = table_in_progress.validate_col_id(table_in_progress.raw_name, pk)?;
-                let pk_col_list = ColList::from(pk);
-                if validated_unique_constraints
-                    .values()
-                    .any(|constraint| constraint.columns == pk_col_list)
-                {
-                    Ok(pk)
-                } else {
-                    Err(ValidationError::MissingPrimaryKeyUniqueConstraint {
-                        table: table_in_progress.raw_name.into(),
-                        column: table_in_progress.raw_column_name(pk),
-                    }
-                    .into())
-                }
-            })
-            .transpose()?;
-        Ok((validated_unique_constraints, pk))
-    }
-
-    fn validate_sequence_def(
-        &mut self,
-        table_in_progress: &TableInProgress,
-        have_sequence_on_column: &mut HashSet<ColId>,
-        sequence: RawSequenceDefV9,
-    ) -> Result<SequenceDef> {
-        let RawSequenceDefV9 {
-            name,
-            column,
-            min_value,
-            start,
-            max_value,
-            increment,
-        } = sequence;
-
-        // The column for the sequence exists and is an appropriate type.
-        let column = table_in_progress.validate_col_id(&name, column).and_then(|col_id| {
-            let ty = &table_in_progress.product_type.elements[col_id.idx()].algebraic_type;
-
-            if !ty.is_integer() {
-                Err(ValidationError::InvalidSequenceColumnType {
-                    sequence: name.clone(),
-                    column: table_in_progress.raw_column_name(col_id),
-                    column_type: ty.clone(),
-                }
-                .into())
-            } else if !have_sequence_on_column.insert(col_id) {
-                Err(ValidationError::OneAutoInc {
-                    column: table_in_progress.raw_column_name(col_id),
-                }
-                .into())
-            } else {
-                Ok(col_id)
-            }
-        });
-
-        /// Compare two `Option<i128>` values, returning `true` if `lo <= hi`,
-        /// or if either is `None`.
-        fn le(lo: Option<i128>, hi: Option<i128>) -> bool {
-            match (lo, hi) {
-                (Some(lo), Some(hi)) => lo <= hi,
-                _ => true,
-            }
-        }
-        let valid = le(min_value, start) && le(start, max_value) && le(min_value, max_value);
-
-        let min_start_max = if valid {
-            Ok((min_value, start, max_value))
-        } else {
-            Err(ValidationError::InvalidSequenceRange {
-                sequence: name.clone(),
-                min_value,
-                start,
-                max_value,
-            }
-            .into())
-        };
-
-        let name = self.add_to_global_namespace(table_in_progress, name);
-
-        let (name, column, (min_value, start, max_value)) = (name, column, min_start_max).combine_errors()?;
-
-        Ok(SequenceDef {
-            name,
-            column,
-            min_value,
-            start,
-            max_value,
-            increment,
-        })
-    }
-
-    /// Validate an index definition.
-    fn validate_index_def(&mut self, table_in_progress: &TableInProgress, index: RawIndexDefV9) -> Result<IndexDef> {
-        let RawIndexDefV9 {
-            name,
-            algorithm,
-            accessor_name,
-        } = index;
-
-        let algorithm: Result<IndexAlgorithm> = match algorithm {
-            RawIndexAlgorithm::BTree { columns } => table_in_progress
-                .validate_col_ids(&name, columns)
-                .map(|columns| IndexAlgorithm::BTree { columns }),
-            _ => Err(ValidationError::OnlyBtree { index: name.clone() }.into()),
-        };
-        let name = self.add_to_global_namespace(table_in_progress, name);
-        let accessor_name = accessor_name.map(identifier).transpose();
-
-        let (name, accessor_name, algorithm) = (name, accessor_name, algorithm).combine_errors()?;
-
-        Ok(IndexDef {
-            name,
-            algorithm,
-            accessor_name,
-        })
-    }
-
-    /// Validate a unique constraint definition.
-    fn validate_unique_constraint_def(
-        &mut self,
-        table_in_progress: &TableInProgress,
-        constraint: RawUniqueConstraintDefV9,
-    ) -> Result<UniqueConstraintDef> {
-        let RawUniqueConstraintDefV9 { name, columns } = constraint;
-
-        let columns = table_in_progress.validate_col_ids(&name, columns);
-        let name = self.add_to_global_namespace(table_in_progress, name);
-
-        let (name, columns) = (name, columns).combine_errors()?;
-        Ok(UniqueConstraintDef { name, columns })
-    }
-
-    /// Validate a schedule definition.
-    fn validate_schedule_def(
-        &mut self,
-        table_in_progress: &TableInProgress,
-        schedule: RawScheduleDefV9,
-    ) -> Result<ScheduleDef> {
-        let RawScheduleDefV9 { name, reducer_name } = schedule;
-
-        // Find the appropriate columns.
-        let at_column = table_in_progress
-            .product_type
-            .elements
-            .iter()
-            .enumerate()
-            .find(|(_, element)| element.name() == Some("scheduled_at"));
-        let id_column = table_in_progress
-            .product_type
-            .elements
-            .iter()
-            .enumerate()
-            .find(|(_, element)| {
-                element.name() == Some("scheduled_id") && element.algebraic_type == AlgebraicType::U64
-            });
-
-        // Error if either column is missing.
-        let at_id = at_column.zip(id_column).ok_or_else(|| {
-            ValidationError::ScheduledIncorrectColumns {
-                table: table_in_progress.raw_name.into(),
-                columns: table_in_progress.product_type.clone(),
-            }
-            .into()
-        });
-
-        let name = self.add_to_global_namespace(table_in_progress, name);
-        let reducer_name = identifier(reducer_name);
-
-        let (name, (at_column, id_column), reducer_name) = (name, at_id, reducer_name).combine_errors()?;
-
-        let at_column = at_column.0.into();
-        let id_column = id_column.0.into();
-
-        Ok(ScheduleDef {
-            name,
-            at_column,
-            id_column,
-            reducer_name,
-        })
-    }
-
     /// Validate a reducer definition.
     fn validate_reducer_def(&mut self, reducer_def: RawReducerDefV9) -> Result<ReducerDef> {
-        let RawReducerDefV9 { name, params } = reducer_def;
+        let RawReducerDefV9 {
+            name,
+            params,
+            lifecycle,
+        } = reducer_def;
 
         let params_valid: Result<()> = params
             .elements
@@ -471,9 +246,20 @@ impl Validator<'_> {
         // reducers don't live in the global namespace.
         let name = identifier(name);
 
-        let (name, ()) = (name, params_valid).combine_errors()?;
+        let lifecycle = lifecycle
+            .map(|lifecycle| match self.lifecycle_reducers.insert(lifecycle.clone()) {
+                true => Ok(lifecycle),
+                false => Err(ValidationError::DuplicateLifecycle { lifecycle }.into()),
+            })
+            .transpose();
 
-        Ok(ReducerDef { name, params })
+        let (name, (), lifecycle) = (name, params_valid, lifecycle).combine_errors()?;
+
+        Ok(ReducerDef {
+            name,
+            params,
+            lifecycle,
+        })
     }
 
     /// Validate a type definition.
@@ -545,26 +331,6 @@ impl Validator<'_> {
         })
     }
 
-    /// Validate `name` as an `Identifier` and add it to the global namespace, registering the corresponding `Def` as being stored in a  particular `TableDef`.
-    ///
-    /// If it has already been added, return an error.
-    ///
-    /// This is not used for all `Def` types.
-    fn add_to_global_namespace(&mut self, table_in_progress: &TableInProgress, name: Box<str>) -> Result<Identifier> {
-        let table_name = identifier(table_in_progress.raw_name.into());
-        let name = identifier(name);
-
-        // This may report the table_name as invalid multiple times, but this will be removed
-        // when we sort and deduplicate the error stream.
-        let (table_name, name) = (table_name, name).combine_errors()?;
-        if self.stored_in_table_def.contains_key(&name) {
-            Err(ValidationError::DuplicateName { name }.into())
-        } else {
-            self.stored_in_table_def.insert(name.clone(), table_name);
-            Ok(name)
-        }
-    }
-
     /// Validates that a type can be used to generate a client type definition or use.
     ///
     /// This reimplements `AlgebraicType::is_valid_for_client_type_definition` with more errors.
@@ -617,7 +383,7 @@ impl Validator<'_> {
 
     /// Validate that a type resolves correctly, returning the resolved type if successful.
     /// The resolved type will not contain any `Ref`s.
-    fn validate_resolves(&mut self, location: &TypeLocation, ty: &AlgebraicType) -> Result<AlgebraicType> {
+    fn validate_resolves(&self, location: &TypeLocation, ty: &AlgebraicType) -> Result<AlgebraicType> {
         // This repeats some work for nested types.
         // TODO: implement a reentrant, cached version of `resolve_refs`.
         WithTypespace::new(self.typespace, ty).resolve_refs().map_err(|error| {
@@ -670,13 +436,253 @@ impl Validator<'_> {
 }
 
 /// A partially validated table.
-struct TableInProgress<'a> {
-    raw_name: &'a str,
+struct TableInProgress<'a, 'b> {
+    validator: &'a mut Validator<'b>,
+    raw_name: Box<str>,
     product_type_ref: AlgebraicTypeRef,
     product_type: &'a ProductType,
+    has_sequence: HashSet<ColId>,
 }
 
-impl TableInProgress<'_> {
+impl TableInProgress<'_, '_> {
+    /// Validate a column.
+    ///
+    /// Note that this accepts a `ProductTypeElement` rather than a `ColumnDef`,
+    /// because all information about columns is stored in the `Typespace` in ABI version 9.
+    fn validate_column_def(&mut self, col_id: ColId) -> Result<ColumnDef> {
+        let column = &self
+            .product_type
+            .elements
+            .get(col_id.idx())
+            .expect("enumerate is generating an out-of-range index...");
+
+        let name: Result<Identifier> = column
+            .name()
+            .ok_or_else(|| {
+                ValidationError::UnnamedColumn {
+                    column: self.raw_column_name(col_id),
+                }
+                .into()
+            })
+            .and_then(|name| identifier(name.into()));
+
+        let ty = self
+            .validator
+            .validate_resolves(
+                &TypeLocation::InTypespace {
+                    ref_: self.product_type_ref,
+                },
+                &column.algebraic_type,
+            )
+            .map(|_resolved| column.algebraic_type.clone()); // We don't need the resolved type.
+
+        // This error will be created multiple times if the table name is invalid,
+        // but we sort and deduplicate the error stream afterwards,
+        // so it isn't a huge deal.
+        //
+        // This is necessary because we require `ErrorStream` to be
+        // nonempty. We need to put something in there if the table name is invalid.
+        let table_name = identifier(self.raw_name.clone());
+
+        let (name, ty, table_name) = (name, ty, table_name).combine_errors()?;
+
+        Ok(ColumnDef {
+            name,
+            ty,
+            col_id,
+            table_name,
+        })
+    }
+
+    fn validate_primary_key(
+        &mut self,
+        validated_unique_constraints: IdentifierMap<UniqueConstraintDef>,
+        primary_key: Option<ColId>,
+    ) -> Result<(IdentifierMap<UniqueConstraintDef>, Option<ColId>)> {
+        let pk = primary_key
+            .map(|pk| -> Result<ColId> {
+                let pk = self.validate_col_id(&self.raw_name, pk)?;
+                let pk_col_list = ColList::from(pk);
+                if validated_unique_constraints
+                    .values()
+                    .any(|constraint| constraint.columns == pk_col_list)
+                {
+                    Ok(pk)
+                } else {
+                    Err(ValidationError::MissingPrimaryKeyUniqueConstraint {
+                        column: self.raw_column_name(pk),
+                    }
+                    .into())
+                }
+            })
+            .transpose()?;
+        Ok((validated_unique_constraints, pk))
+    }
+
+    fn validate_sequence_def(&mut self, sequence: RawSequenceDefV9) -> Result<SequenceDef> {
+        let RawSequenceDefV9 {
+            name,
+            column,
+            min_value,
+            start,
+            max_value,
+            increment,
+        } = sequence;
+
+        // The column for the sequence exists and is an appropriate type.
+        let column = self.validate_col_id(&name, column).and_then(|col_id| {
+            let ty = &self.product_type.elements[col_id.idx()].algebraic_type;
+
+            if !ty.is_integer() {
+                Err(ValidationError::InvalidSequenceColumnType {
+                    sequence: name.clone(),
+                    column: self.raw_column_name(col_id),
+                    column_type: ty.clone(),
+                }
+                .into())
+            } else if !self.has_sequence.insert(col_id) {
+                Err(ValidationError::OneAutoInc {
+                    column: self.raw_column_name(col_id),
+                }
+                .into())
+            } else {
+                Ok(col_id)
+            }
+        });
+
+        /// Compare two `Option<i128>` values, returning `true` if `lo <= hi`,
+        /// or if either is `None`.
+        fn le(lo: Option<i128>, hi: Option<i128>) -> bool {
+            match (lo, hi) {
+                (Some(lo), Some(hi)) => lo <= hi,
+                _ => true,
+            }
+        }
+        let valid = le(min_value, start) && le(start, max_value) && le(min_value, max_value);
+
+        let min_start_max = if valid {
+            Ok((min_value, start, max_value))
+        } else {
+            Err(ValidationError::InvalidSequenceRange {
+                sequence: name.clone(),
+                min_value,
+                start,
+                max_value,
+            }
+            .into())
+        };
+
+        let name = self.add_to_global_namespace(name);
+
+        let (name, column, (min_value, start, max_value)) = (name, column, min_start_max).combine_errors()?;
+
+        Ok(SequenceDef {
+            name,
+            column,
+            min_value,
+            start,
+            max_value,
+            increment,
+        })
+    }
+
+    /// Validate an index definition.
+    fn validate_index_def(&mut self, index: RawIndexDefV9) -> Result<IndexDef> {
+        let RawIndexDefV9 {
+            name,
+            algorithm,
+            accessor_name,
+        } = index;
+
+        let algorithm: Result<IndexAlgorithm> = match algorithm {
+            RawIndexAlgorithm::BTree { columns } => self
+                .validate_col_ids(&name, columns)
+                .map(|columns| IndexAlgorithm::BTree { columns }),
+            _ => Err(ValidationError::OnlyBtree { index: name.clone() }.into()),
+        };
+        let name = self.add_to_global_namespace(name);
+        let accessor_name = accessor_name.map(identifier).transpose();
+
+        let (name, accessor_name, algorithm) = (name, accessor_name, algorithm).combine_errors()?;
+
+        Ok(IndexDef {
+            name,
+            algorithm,
+            accessor_name,
+        })
+    }
+
+    /// Validate a unique constraint definition.
+    fn validate_unique_constraint_def(&mut self, constraint: RawUniqueConstraintDefV9) -> Result<UniqueConstraintDef> {
+        let RawUniqueConstraintDefV9 { name, columns } = constraint;
+
+        let columns = self.validate_col_ids(&name, columns);
+        let name = self.add_to_global_namespace(name);
+
+        let (name, columns) = (name, columns).combine_errors()?;
+        Ok(UniqueConstraintDef { name, columns })
+    }
+
+    /// Validate a schedule definition.
+    fn validate_schedule_def(&mut self, schedule: RawScheduleDefV9) -> Result<ScheduleDef> {
+        let RawScheduleDefV9 { name, reducer_name } = schedule;
+
+        // Find the appropriate columns.
+        let at_column = self
+            .product_type
+            .elements
+            .iter()
+            .enumerate()
+            .find(|(_, element)| element.name() == Some("scheduled_at"));
+        let id_column = self.product_type.elements.iter().enumerate().find(|(_, element)| {
+            element.name() == Some("scheduled_id") && element.algebraic_type == AlgebraicType::U64
+        });
+
+        // Error if either column is missing.
+        let at_id = at_column.zip(id_column).ok_or_else(|| {
+            ValidationError::ScheduledIncorrectColumns {
+                table: self.raw_name.clone(),
+                columns: self.product_type.clone(),
+            }
+            .into()
+        });
+
+        let name = self.add_to_global_namespace(name);
+        let reducer_name = identifier(reducer_name);
+
+        let (name, (at_column, id_column), reducer_name) = (name, at_id, reducer_name).combine_errors()?;
+
+        let at_column = at_column.0.into();
+        let id_column = id_column.0.into();
+
+        Ok(ScheduleDef {
+            name,
+            at_column,
+            id_column,
+            reducer_name,
+        })
+    }
+
+    /// Validate `name` as an `Identifier` and add it to the global namespace, registering the corresponding `Def` as being stored in a  particular `TableDef`.
+    ///
+    /// If it has already been added, return an error.
+    ///
+    /// This is not used for all `Def` types.
+    fn add_to_global_namespace(&mut self, name: Box<str>) -> Result<Identifier> {
+        let table_name = identifier(self.raw_name.clone());
+        let name = identifier(name);
+
+        // This may report the table_name as invalid multiple times, but this will be removed
+        // when we sort and deduplicate the error stream.
+        let (table_name, name) = (table_name, name).combine_errors()?;
+        if self.validator.stored_in_table_def.contains_key(&name) {
+            Err(ValidationError::DuplicateName { name }.into())
+        } else {
+            self.validator.stored_in_table_def.insert(name.clone(), table_name);
+            Ok(name)
+        }
+    }
+
     /// Validate a `ColId` for this table, returning it unmodified if valid.
     /// `def_name` is the name of the definition being validated and is used in errors.
     pub fn validate_col_id(&self, def_name: &str, col_id: ColId) -> Result<ColId> {
@@ -685,7 +691,7 @@ impl TableInProgress<'_> {
         } else {
             Err(ValidationError::ColumnNotFound {
                 column: col_id,
-                table: self.raw_name.into(),
+                table: self.raw_name.clone(),
                 def: def_name.into(),
             }
             .into())
@@ -729,7 +735,7 @@ impl TableInProgress<'_> {
             .unwrap_or_else(|| format!("{}", col_id).into());
 
         RawColumnName {
-            table: self.raw_name.into(),
+            table: self.raw_name.clone(),
             column,
         }
     }
@@ -760,7 +766,7 @@ mod tests {
     use spacetimedb_primitives::ColList;
     use spacetimedb_sats::typespace::TypeRefError;
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType};
-    use v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess, TableType};
+    use v9::{Lifecycle, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess, TableType};
 
     /// Check that the columns of a `TableDef` correctly correspond the the `TableDef`'s
     /// `product_type_ref`.
@@ -1184,7 +1190,7 @@ mod tests {
 
         let mut builder = RawModuleDefV9Builder::new();
         builder.add_type_for_tests([], "Recursive", recursive_type.clone(), false);
-        builder.add_reducer("silly", ProductType::from([("a", recursive_type.clone())]));
+        builder.add_reducer("silly", ProductType::from([("a", recursive_type.clone())]), None);
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         // If you use a recursive type as a reducer argument, you get two errors.
@@ -1212,7 +1218,7 @@ mod tests {
         let invalid_type_2 = AlgebraicType::option(AlgebraicTypeRef(55).into());
         let mut builder = RawModuleDefV9Builder::new();
         builder.add_type_for_tests([], "Invalid", invalid_type_1.clone(), false);
-        builder.add_reducer("silly", ProductType::from([("a", invalid_type_2.clone())]));
+        builder.add_reducer("silly", ProductType::from([("a", invalid_type_2.clone())]), None);
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::ResolutionFailure { location, ty, error } => {
@@ -1237,7 +1243,7 @@ mod tests {
         let invalid_type = AlgebraicType::product([("a", inner_not_nominal_type.clone())]);
         let mut builder = RawModuleDefV9Builder::new();
         builder.add_type_for_tests([], "Invalid", invalid_type.clone(), false);
-        builder.add_reducer("silly", ProductType::from([("a", invalid_type.clone())]));
+        builder.add_reducer("silly", ProductType::from([("a", invalid_type.clone())]), None);
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::NotValidForTypeDefinition { ref_, ty } => {
@@ -1328,8 +1334,8 @@ mod tests {
             .finish();
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        expect_error_matching!(result, ValidationError::MissingPrimaryKeyUniqueConstraint { table, column } => {
-            &table[..] == "Bananas" && column == &RawColumnName::new("Bananas", "b")
+        expect_error_matching!(result, ValidationError::MissingPrimaryKeyUniqueConstraint { column } => {
+            column == &RawColumnName::new("Bananas", "b")
         });
     }
 
@@ -1352,6 +1358,18 @@ mod tests {
 
         expect_error_matching!(result, ValidationError::DuplicateTypeName { name } => {
             name == &expect_type_name("scope1::scope2::Duplicate")
+        });
+    }
+
+    #[test]
+    fn duplicate_lifecycle() {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder.add_reducer("init1", ProductType::unit(), Some(Lifecycle::Init));
+        builder.add_reducer("init1", ProductType::unit(), Some(Lifecycle::Init));
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::DuplicateLifecycle { lifecycle } => {
+            lifecycle == &Lifecycle::Init
         });
     }
 }

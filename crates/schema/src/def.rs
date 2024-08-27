@@ -23,7 +23,7 @@ use itertools::Itertools;
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors, ErrorStream};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::raw_def;
-use spacetimedb_lib::db::raw_def::v9::{RawIdentifier, RawScopedTypeNameV9, TableAccess, TableType};
+use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawIdentifier, RawScopedTypeNameV9, TableAccess, TableType};
 use spacetimedb_lib::{ProductType, RawModuleDef};
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::AlgebraicType;
@@ -523,6 +523,9 @@ pub struct ReducerDef {
     ///
     /// This `ProductType` need not be registered in the module's `Typespace`.
     pub params: ProductType,
+
+    /// The special role of this reducer in the module lifecycle, if any.
+    pub lifecycle: Option<Lifecycle>,
 }
 
 impl ModuleDefLookup for TableDef {

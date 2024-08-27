@@ -1,5 +1,5 @@
 use spacetimedb_data_structures::error_stream::ErrorStream;
-use spacetimedb_lib::db::raw_def::v9::{RawIdentifier, RawScopedTypeNameV9};
+use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawIdentifier, RawScopedTypeNameV9};
 use spacetimedb_lib::ProductType;
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::{typespace::TypeRefError, AlgebraicType, AlgebraicTypeRef};
@@ -23,6 +23,8 @@ pub enum ValidationError {
     DuplicateName { name: Identifier },
     #[error("name `{name}` is used for multiple types")]
     DuplicateTypeName { name: ScopedTypeName },
+    #[error("Multiple reducers defined for lifecycle event {lifecycle:?}")]
+    DuplicateLifecycle { lifecycle: Lifecycle },
     #[error("module contains invalid identifier: {error}")]
     IdentifierError { error: IdentifierError },
     #[error("table `{}` has unnamed column `{}`, which is forbidden.", column.table, column.column)]
@@ -88,11 +90,8 @@ pub enum ValidationError {
     },
     #[error("Missing type definition for ref: {ref_}")]
     MissingTypeDef { ref_: AlgebraicTypeRef },
-    #[error("Table {table} has no unique constraint on primary key column {column}")]
-    MissingPrimaryKeyUniqueConstraint {
-        table: RawIdentifier,
-        column: RawColumnName,
-    },
+    #[error("{column} is primary key but has no unique constraint")]
+    MissingPrimaryKeyUniqueConstraint { column: RawColumnName },
 }
 
 /// A place a type can be located in a module.

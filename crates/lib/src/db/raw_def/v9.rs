@@ -348,6 +348,21 @@ pub struct RawReducerDefV9 {
     /// The types and optional names of the parameters, in order.
     /// This `ProductType` need not be registered in the typespace.
     pub params: ProductType,
+
+    /// If the reducer has a special role in the module lifecycle, it should be marked here.
+    pub lifecycle: Option<Lifecycle>,
+}
+
+/// Special roles a reducer can play in the module lifecycle.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, de::Deserialize, ser::Serialize)]
+#[non_exhaustive]
+pub enum Lifecycle {
+    /// The reducer will be invoked upon module initialization.
+    Init,
+    /// The reducer will be invoked when a client connects.
+    OnConnect,
+    /// The reducer will be invoked when a client disconnects.
+    OnDisconnect,
 }
 
 /// A builder for a [`ModuleDef`].
@@ -453,10 +468,16 @@ impl RawModuleDefV9Builder {
     /// have more than one `ReducerContext` argument, at least in Rust.
     /// This is because `SpacetimeType` is not implemented for `ReducerContext`,
     /// so it can never act like an ordinary argument.)
-    pub fn add_reducer(&mut self, name: impl Into<RawIdentifier>, params: spacetimedb_sats::ProductType) {
+    pub fn add_reducer(
+        &mut self,
+        name: impl Into<RawIdentifier>,
+        params: spacetimedb_sats::ProductType,
+        lifecycle: Option<Lifecycle>,
+    ) {
         self.module.reducers.push(RawReducerDefV9 {
             name: name.into(),
             params,
+            lifecycle,
         });
     }
 
