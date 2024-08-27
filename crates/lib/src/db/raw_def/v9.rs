@@ -19,6 +19,9 @@ use spacetimedb_sats::ProductTypeElement;
 use spacetimedb_sats::SpacetimeType;
 use spacetimedb_sats::{de, ser, Typespace};
 
+use crate::db::auth::StAccess;
+use crate::db::auth::StTableType;
+
 /// A not-yet-validated identifier.
 pub type RawIdentifier = Box<str>;
 
@@ -138,6 +141,22 @@ pub enum TableType {
     /// Created by the user.
     User,
 }
+impl From<StTableType> for TableType {
+    fn from(t: StTableType) -> Self {
+        match t {
+            StTableType::System => TableType::System,
+            StTableType::User => TableType::User,
+        }
+    }
+}
+impl From<TableType> for StTableType {
+    fn from(t: TableType) -> Self {
+        match t {
+            TableType::System => StTableType::System,
+            TableType::User => StTableType::User,
+        }
+    }
+}
 
 /// The visibility of the table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
@@ -146,6 +165,22 @@ pub enum TableAccess {
     Public,
     /// Visible only to the owner
     Private,
+}
+impl From<StAccess> for TableAccess {
+    fn from(t: StAccess) -> Self {
+        match t {
+            StAccess::Public => TableAccess::Public,
+            StAccess::Private => TableAccess::Private,
+        }
+    }
+}
+impl From<TableAccess> for StAccess {
+    fn from(t: TableAccess) -> Self {
+        match t {
+            TableAccess::Public => StAccess::Public,
+            TableAccess::Private => StAccess::Private,
+        }
+    }
 }
 
 /// A sequence definition for a database table column.
