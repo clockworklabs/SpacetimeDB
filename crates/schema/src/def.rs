@@ -518,7 +518,7 @@ impl TryFrom<RawScopedTypeNameV9> for ScopedTypeName {
     }
 }
 
-/// A type exported by the module.
+/// A reducer exported by the module.
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ReducerDef {
