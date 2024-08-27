@@ -198,7 +198,7 @@ internal static partial class FFI
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _bytes_sink_write(
         BytesSink sink,
-        Span<byte> buffer,
+        ReadOnlySpan<byte> buffer,
         ref uint buffer_len
     );
 }

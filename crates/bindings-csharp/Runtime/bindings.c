@@ -70,11 +70,11 @@ IMPORT(Status, _iter_advance,
        (iter, buffer, buffer_len));
 IMPORT(void, _iter_drop, (RowIter iter), (iter));
 IMPORT(void, _volatile_nonatomic_schedule_immediate,
-       (uint8_t* name, size_t name_len, uint8_t* args, size_t args_len),
+       (const uint8_t* name, size_t name_len, const uint8_t* args, size_t args_len),
        (name, name_len, args, args_len));
 IMPORT(int16_t, _bytes_source_read, (BytesSource source, uint8_t* buffer_ptr, size_t* buffer_len_ptr),
        (source, buffer_ptr, buffer_len_ptr));
-IMPORT(uint16_t, _bytes_sink_write, (BytesSink sink, uint8_t* buffer_ptr, size_t* buffer_len_ptr),
+IMPORT(uint16_t, _bytes_sink_write, (BytesSink sink, const uint8_t* buffer_ptr, size_t* buffer_len_ptr),
        (sink, buffer_ptr, buffer_len_ptr));
 
 #ifndef EXPERIMENTAL_WASM_AOT
