@@ -487,7 +487,7 @@ mod test {
 
     /// Extracts from `row` the relevant column values according to what columns are indexed.
     fn get_fields(cols: &ColList, row: &ProductValue) -> AlgebraicValue {
-        row.project_not_empty(cols).unwrap()
+        row.project(cols).unwrap()
     }
 
     /// Returns whether indexing `row` again would violate a unique constraint, if any.

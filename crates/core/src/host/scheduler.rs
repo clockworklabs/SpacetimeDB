@@ -9,7 +9,7 @@ use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_lib::scheduler::ScheduleAt;
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::TableId;
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_table::table::RowRef;
 use tokio::sync::mpsc;
@@ -505,11 +505,11 @@ fn get_schedule_row_mut<'a>(
 }
 
 /// Helper to get schedule_id and schedule_at from schedule_row product value
-pub fn get_schedule_from_pv(
+pub fn get_schedule_from_row(
     tx: &MutTxId,
     db: &RelationalDB,
     table_id: TableId,
-    row: &ProductValue,
+    row: &RowRef<'_>,
 ) -> anyhow::Result<(u64, ScheduleAt)> {
     let row_ty = db.row_schema_for_table(tx, table_id)?;
 
@@ -522,9 +522,8 @@ pub fn get_schedule_from_pv(
     let schedule_id_col_pos = col_pos(SCHEDULED_ID_FIELD[0]).or_else(|_| col_pos(SCHEDULED_ID_FIELD[1]))?;
     let schedule_at_col_pos = col_pos(SCHEDULED_AT_FIELD[0]).or_else(|_| col_pos(SCHEDULED_AT_FIELD[1]))?;
 
-    let schedule_id = row.field_as_u64(schedule_id_col_pos, SCHEDULED_ID_FIELD[0].into())?;
-
-    let schedule_at_av = row.get_field(schedule_at_col_pos, SCHEDULED_AT_FIELD[0].into())?;
+    let schedule_id: u64 = row.read_col(schedule_id_col_pos)?;
+    let schedule_at_av: AlgebraicValue = row.read_col(schedule_at_col_pos)?;
     let schedule_at = ScheduleAt::try_from(schedule_at_av.clone()).map_err(|e| {
         anyhow!(
             "Failed to convert field '{}' to ScheduleAt: {:?}",

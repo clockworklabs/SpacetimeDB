@@ -14,6 +14,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_table::table::RowRef;
 
 /// The `IsolationLevel` enum specifies the degree to which a transaction is
 /// isolated from concurrently running transactions. The higher the isolation
@@ -488,8 +489,7 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         tx: &'a mut Self::MutTx,
         table_id: TableId,
         row: ProductValue,
-        write_gen_col: impl FnMut(&AlgebraicValue),
-    ) -> Result<ProductValue>;
+    ) -> Result<(AlgebraicValue, RowRef<'a>)>;
 
     /// Obtain the [`Metadata`] for this datastore.
     ///

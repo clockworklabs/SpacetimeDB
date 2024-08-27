@@ -30,11 +30,11 @@ use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::raw_def::{RawColumnDefV8, RawIndexDefV8, RawSequenceDefV8, RawTableDefV8};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
-use spacetimedb_sats::buffer::{CountWriter, TeeWriter};
-use spacetimedb_sats::{bsatn, AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_snapshot::{SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
+use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
@@ -1061,31 +1061,27 @@ impl RelationalDB {
         self.inner.iter_by_col_range_tx(ctx, tx, table_id.into(), cols, range)
     }
 
-    pub fn insert(&self, tx: &mut MutTx, table_id: TableId, row: ProductValue) -> Result<ProductValue, DBError> {
-        self.inner.insert_mut_tx(tx, table_id, row, |_| ())
+    pub fn insert<'a>(
+        &'a self,
+        tx: &'a mut MutTx,
+        table_id: TableId,
+        row: ProductValue,
+    ) -> Result<(AlgebraicValue, RowRef<'a>), DBError> {
+        self.inner.insert_mut_tx(tx, table_id, row)
     }
 
-    pub fn insert_bytes_as_row(
-        &self,
-        tx: &mut MutTx,
+    pub fn insert_bytes_as_row<'a>(
+        &'a self,
+        tx: &'a mut MutTx,
         table_id: TableId,
-        row_bytes: &mut [u8],
-    ) -> Result<(ProductValue, usize), DBError> {
+        row_bytes: &[u8],
+    ) -> Result<(AlgebraicValue, RowRef<'a>), DBError> {
         // Decode the `row_bytes` as a `ProductValue` according to the schema.
         let ty = self.inner.row_type_for_table_mut_tx(tx, table_id)?;
         let row = ProductValue::decode(&ty, &mut &row_bytes[..])?;
 
-        // A writer for the generated column values.
-        let counter = CountWriter::default();
-        let mut writer = TeeWriter::new(counter, row_bytes);
-
-        // Insert the row, writing back generated col values.
-        let new_pv = self.inner.insert_mut_tx(tx, table_id, row, |gen_val| {
-            bsatn::to_writer(&mut writer, gen_val).unwrap()
-        })?;
-
-        let written_to_buffer = writer.w1.finish();
-        Ok((new_pv, written_to_buffer))
+        // Insert the row.
+        self.insert(tx, table_id, row)
     }
 
     pub fn delete(&self, tx: &mut MutTx, table_id: TableId, row_ids: impl IntoIterator<Item = RowPointer>) -> u32 {

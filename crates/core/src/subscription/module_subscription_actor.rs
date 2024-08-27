@@ -261,7 +261,7 @@ mod tests {
         // Create table with one row
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
         db.with_auto_commit(&ExecutionContext::default(), |tx| {
-            db.insert(tx, table_id, product!(1_u8))
+            db.insert(tx, table_id, product!(1_u8)).map(drop)
         })?;
 
         let (send, mut recv) = mpsc::unbounded_channel();
@@ -290,7 +290,7 @@ mod tests {
         let write_handle = runtime.spawn(async move {
             let _ = recv.recv().await;
             db2.with_auto_commit(&ExecutionContext::default(), |tx| {
-                db2.insert(tx, table_id, product!(2_u8))
+                db2.insert(tx, table_id, product!(2_u8)).map(drop)
             })
         });
 

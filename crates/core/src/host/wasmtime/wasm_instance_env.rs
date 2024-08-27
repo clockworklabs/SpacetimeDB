@@ -14,6 +14,8 @@ use crate::host::wasm_common::{
 use crate::host::AbiCall;
 use anyhow::Context as _;
 use spacetimedb_primitives::{errno, ColId};
+use spacetimedb_sats::bsatn;
+use spacetimedb_sats::buffer::{CountWriter, TeeWriter};
 use wasmtime::{AsContext, Caller, StoreContextMut};
 
 use crate::host::instance_env::InstanceEnv;
@@ -719,7 +721,7 @@ impl WasmInstanceEnv {
         row_ptr: WasmPtr<u8>,
         row_len_ptr: WasmPtr<u32>,
     ) -> RtResult<u32> {
-        Self::cvt(caller, AbiCall::Insert, |caller| {
+        Self::cvt(caller, AbiCall::DatastoreInsertBsatn, |caller| {
             let (mem, env) = Self::mem_env(caller);
 
             // Read `row-len`, i.e., the capacity of `row` pointed to by `row_ptr`.
@@ -728,12 +730,16 @@ impl WasmInstanceEnv {
             let row = mem.deref_slice_mut(row_ptr, row_len)?;
 
             // Insert the row into the DB.
-            // This will write back encoded generated column values to `row`.
-            // All we need to do then is to write
-            // how much the module should read from `row` to `row_len`.
+            // This will return back the generated column values.
             let ctx = env.reducer_context()?;
-            let row_len = env.instance_env.insert(&ctx, table_id.into(), row)?;
+            let gen_cols = env.instance_env.insert(&ctx, table_id.into(), row)?;
 
+            // Write back the generated column values to `row`
+            // and the encoded length to `row_len`.
+            let counter = CountWriter::default();
+            let mut writer = TeeWriter::new(counter, row);
+            bsatn::to_writer(&mut writer, &gen_cols).unwrap();
+            let row_len = writer.w1.finish();
             u32::try_from(row_len).unwrap().write_to(mem, row_len_ptr)?;
             Ok(())
         })

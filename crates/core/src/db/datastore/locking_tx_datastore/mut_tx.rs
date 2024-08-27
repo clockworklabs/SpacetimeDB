@@ -109,6 +109,7 @@ impl MutTxId {
         };
         let table_id = self
             .insert(ST_TABLE_ID, &mut row.into(), database_address)?
+            .1
             .collapse()
             .read_col(StTableFields::TableId)?;
 
@@ -345,6 +346,7 @@ impl MutTxId {
         };
         let index_id = self
             .insert(ST_INDEX_ID, &mut row.into(), ctx.database())?
+            .1
             .collapse()
             .read_col(StIndexFields::IndexId)?;
 
@@ -554,7 +556,7 @@ impl MutTxId {
             max_value: seq.max_value.unwrap_or(i128::MAX),
         };
         let row = self.insert(ST_SEQUENCE_ID, &mut sequence_row.clone().into(), database_address)?;
-        let seq_id = row.collapse().read_col(StSequenceFields::SequenceId)?;
+        let seq_id = row.1.collapse().read_col(StSequenceFields::SequenceId)?;
         sequence_row.sequence_id = seq_id;
 
         let schema: SequenceSchema = sequence_row.into();
@@ -636,8 +638,8 @@ impl MutTxId {
             &mut ProductValue::from(constraint_row),
             ctx.database(),
         )?;
-        let constraint_id = constraint_row.collapse().read_col(StConstraintFields::ConstraintId)?;
-        let existed = matches!(constraint_row, RowRefInsertion::Existed(_));
+        let constraint_id = constraint_row.1.collapse().read_col(StConstraintFields::ConstraintId)?;
+        let existed = matches!(constraint_row.1, RowRefInsertion::Existed(_));
         // TODO: Can we return early here?
 
         let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
@@ -821,43 +823,35 @@ pub(super) enum RowRefInsertion<'a> {
     Existed(RowRef<'a>),
 }
 
-impl RowRefInsertion<'_> {
+impl<'a> RowRefInsertion<'a> {
     /// Returns a row,
     /// collapsing the distinction between inserted and existing rows.
-    fn collapse(&self) -> RowRef<'_> {
+    pub(super) fn collapse(&self) -> RowRef<'a> {
         let (Self::Inserted(row) | Self::Existed(row)) = *self;
         row
     }
 }
 
 impl MutTxId {
-    pub(super) fn insert(
-        &mut self,
+    pub(super) fn insert<'a>(
+        &'a mut self,
         table_id: TableId,
         row: &mut ProductValue,
         database_address: Address,
-    ) -> Result<RowRefInsertion<'_>> {
-        self.insert_write_gens(table_id, row, database_address, |_| ())
+    ) -> Result<(AlgebraicValue, RowRefInsertion<'a>)> {
+        let generated = self.write_sequence_values(table_id, row, database_address)?;
+        let row_ref = self.insert_row_internal(table_id, row)?;
+        Ok((generated, row_ref))
     }
 
-    pub(super) fn insert_write_gens(
-        &mut self,
-        table_id: TableId,
-        row: &mut ProductValue,
-        database_address: Address,
-        write_gen_col: impl FnMut(&AlgebraicValue),
-    ) -> Result<RowRefInsertion<'_>> {
-        self.write_sequence_values(table_id, row, database_address, write_gen_col)?;
-        self.insert_row_internal(table_id, row)
-    }
-
+    /// Generate and write sequence values to `row`
+    /// and return a projection of `row` with only the generated column values.
     fn write_sequence_values(
         &mut self,
         table_id: TableId,
         row: &mut ProductValue,
         database_address: Address,
-        mut write_gen_col: impl FnMut(&AlgebraicValue),
-    ) -> Result<()> {
+    ) -> Result<AlgebraicValue> {
         let ctx = ExecutionContext::internal(database_address);
 
         // TODO: Executing schema_for_table for every row insert is expensive.
@@ -865,24 +859,23 @@ impl MutTxId {
         let schema = self.schema_for_table(&ctx, table_id)?;
 
         // Collect all the columns with sequences that need generation.
-        let cols_to_update = schema
+        let (cols_to_update, seqs_to_use): (ColList, SmallVec<[_; 1]>) = schema
             .sequences
             .iter()
             .filter(|seq| row.elements[seq.col_pos.idx()].is_numeric_zero())
             .map(|seq| (seq.col_pos, seq.sequence_id))
-            .collect::<SmallVec<[_; 1]>>();
+            .unzip();
 
         // Update every column in the row that needs it.
         // We assume here that column with a sequence is of a sequence-compatible type.
-        for (col_id, sequence_id) in cols_to_update {
+        for (col_id, sequence_id) in cols_to_update.iter().zip(seqs_to_use) {
             let seq_val = self.get_next_sequence_value(sequence_id, database_address)?;
             let col_typ = &schema.columns()[col_id.idx()].col_type;
             let gen_val = AlgebraicValue::from_sequence_value(col_typ, seq_val);
-            write_gen_col(&gen_val);
             row.elements[col_id.idx()] = gen_val;
         }
 
-        Ok(())
+        Ok(row.project(&cols_to_update)?)
     }
 
     pub(super) fn insert_row_internal(&mut self, table_id: TableId, row: &ProductValue) -> Result<RowRefInsertion<'_>> {

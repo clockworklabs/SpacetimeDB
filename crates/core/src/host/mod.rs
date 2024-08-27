@@ -152,7 +152,7 @@ pub enum AbiCall {
     ConsoleLog,
     DeleteByColEq,
     DeleteByRel,
-    Insert,
+    DatastoreInsertBsatn,
     IterByColEq,
     IterStart,
     IterStartFiltered,

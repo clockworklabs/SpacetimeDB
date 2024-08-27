@@ -4,7 +4,7 @@ use spacetimedb_table::table::UniqueConstraintViolation;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
-use super::scheduler::{get_schedule_from_pv, ScheduleError, Scheduler};
+use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::client::messages::ToBsatn;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
@@ -15,9 +15,9 @@ use crate::vm::{build_query, TxMode};
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::relation::FieldName;
-use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::Typespace;
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::expr::{FieldExpr, FieldOp, NoInMemUsed, QueryExpr};
 
 #[derive(Clone)]
@@ -103,11 +103,18 @@ impl InstanceEnv {
         log::trace!("MOD({}): {}", self.dbic.address.to_abbreviated_hex(), record.message);
     }
 
-    pub fn insert(&self, ctx: &ExecutionContext, table_id: TableId, buffer: &mut [u8]) -> Result<usize, NodesError> {
+    pub fn insert(
+        &self,
+        ctx: &ExecutionContext,
+        table_id: TableId,
+        buffer: &[u8],
+    ) -> Result<AlgebraicValue, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
-        let (ret, len) = stdb
+
+        let (gen_cols, row_ptr) = stdb
             .insert_bytes_as_row(tx, table_id, buffer)
+            .map(|(gc, rr)| (gc, rr.pointer()))
             .inspect_err(|e| match e {
                 crate::error::DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                     constraint_name: _,
@@ -126,7 +133,8 @@ impl InstanceEnv {
             })?;
 
         if stdb.is_scheduled_table(ctx, tx, table_id)? {
-            let (schedule_id, schedule_at) = get_schedule_from_pv(tx, stdb, table_id, &ret)
+            let row_ref = tx.get(table_id, row_ptr)?.unwrap();
+            let (schedule_id, schedule_at) = get_schedule_from_row(tx, stdb, table_id, &row_ref)
                 // NOTE(centril): Should never happen,
                 // as we successfully inserted and thus `ret` is verified against the table schema.
                 .map_err(|e| NodesError::ScheduleError(ScheduleError::DecodingError(e)))?;
@@ -135,7 +143,7 @@ impl InstanceEnv {
                 .map_err(NodesError::ScheduleError)?;
         }
 
-        Ok(len)
+        Ok(gen_cols)
     }
 
     /// Deletes all rows in the table identified by `table_id`
