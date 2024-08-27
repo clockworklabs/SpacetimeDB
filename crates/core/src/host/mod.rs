@@ -141,6 +141,8 @@ fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T)
 /// Tags for each call that a `WasmInstanceEnv` can make.
 #[derive(Debug, Display, Enum, Clone, Copy, strum::AsRefStr)]
 pub enum AbiCall {
+    RowIterBsatnAdvance,
+    RowIterBsatnClose,
     BytesSourceRead,
     BytesSinkWrite,
 
@@ -151,8 +153,6 @@ pub enum AbiCall {
     GetTableId,
     Insert,
     IterByColEq,
-    IterDrop,
-    IterNext,
     IterStart,
     IterStartFiltered,
     ScheduleReducer,

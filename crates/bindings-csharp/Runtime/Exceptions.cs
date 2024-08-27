@@ -27,6 +27,11 @@ public class BufferTooSmallException : StdbException
     public override string Message => "The provided buffer is not large enough to store the data";
 }
 
+public class NoSuchIterException : StdbException
+{
+    public override string Message => "The provided row iterator does not exist";
+}
+
 public class NoSuchBytesException : StdbException
 {
     public override string Message => "The provided bytes source or sink does not exist";
@@ -39,9 +44,9 @@ public class NoSpaceException : StdbException
 
 public class UnknownException : StdbException
 {
-    private readonly FFI.Errno code;
+    private readonly Errno code;
 
-    internal UnknownException(FFI.Errno code) => this.code = code;
+    internal UnknownException(Errno code) => this.code = code;
 
     public override string Message => $"SpacetimeDB error code {code}";
 }

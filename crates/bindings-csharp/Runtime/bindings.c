@@ -65,10 +65,10 @@ IMPORT(Status, _iter_start_filtered,
        (TableId table_id, const uint8_t* filter, uint32_t filter_len,
         RowIter* iter),
        (table_id, filter, filter_len, iter));
-IMPORT(Status, _iter_advance,
-       (RowIter iter, uint8_t* buffer, size_t* buffer_len),
-       (iter, buffer, buffer_len));
-IMPORT(void, _iter_drop, (RowIter iter), (iter));
+IMPORT(int16_t, _row_iter_bsatn_advance,
+       (RowIter iter, uint8_t* buffer_ptr, size_t* buffer_len_ptr),
+       (iter, buffer_ptr, buffer_len_ptr));
+IMPORT(uint16_t, _row_iter_bsatn_close, (RowIter iter), (iter));
 IMPORT(void, _volatile_nonatomic_schedule_immediate,
        (const uint8_t* name, size_t name_len, const uint8_t* args, size_t args_len),
        (name, name_len, args, args_len));

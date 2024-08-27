@@ -139,24 +139,49 @@ pub mod raw {
         /// - `filter + filter_len` overflows a 64-bit integer
         pub fn _iter_start_filtered(table_id: TableId, filter: *const u8, filter_len: usize, out: *mut RowIter) -> u16;
 
-        /// Reads rows from the given iterator.
+        /// Reads rows from the given iterator registered under `iter`.
         ///
-        /// Takes rows from the iterator and stores them in the memory pointed to by `buffer`,
-        /// encoded in BSATN format. `buffer_len` should be a pointer to the capacity of `buffer`,
-        /// and on success it is set to the combined length of the encoded rows. If it is `0`,
-        /// the iterator is exhausted and there are no more rows to read.
+        /// Takes rows from the iterator
+        /// and stores them in the memory pointed to by `buffer = buffer_ptr[..buffer_len]`,
+        /// encoded in BSATN format.
         ///
-        /// If no rows can fit in the buffer, `BUFFER_TOO_SMALL` is returned and `buffer_len` is
-        /// set to the size of the next row in the iterator. The caller should reallocate the
-        /// buffer to at least that size and try again.
+        /// The `buffer_len = buffer_len_ptr[..size_of::<usize>()]` stores the capacity of `buffer`.
+        /// On success (`0` or `-1` is returned),
+        /// `buffer_len` is set to the combined length of the encoded rows.
+        /// When `-1` is returned, the iterator has been exhausted
+        /// and there are no more rows to read,
+        /// leading to the iterator being immediately destroyed.
+        /// Note that the host is free to reuse allocations in a pool,
+        /// destroying the handle logically does not entail that memory is necessarily reclaimed.
         ///
-        /// `iter` must be a valid iterator, or the module will trap.
-        pub fn _iter_advance(iter: RowIter, buffer: *mut u8, buffer_len: *mut usize) -> u16;
+        /// # Traps
+        ///
+        /// Traps if:
+        ///
+        /// - `buffer_len_ptr` is NULL or `buffer_len` is not in bounds of WASM memory.
+        /// - `buffer_ptr` is NULL or `buffer` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NO_SUCH_ITER`, when `iter` is not a valid iterator.
+        /// - `BUFFER_TOO_SMALL`, when there are rows left but they cannot fit in `buffer`.
+        ///   When this occurs, `buffer_len` is set to the size of the next item in the iterator.
+        ///   To make progress, the caller should reallocate the buffer to at least that size and try again.
+        pub fn _row_iter_bsatn_advance(iter: RowIter, buffer: *mut u8, buffer_len: *mut usize) -> i16;
 
-        /// Destroys the iterator.
+        /// Destroys the iterator registered under `iter`.
         ///
-        /// `iter` must be a valid iterator, or the module will trap.
-        pub fn _iter_drop(iter: RowIter);
+        /// Once `row_iter_bsatn_close` is called on `iter`, the `iter` is invalid.
+        /// That is, `row_iter_bsatn_close(iter)` the second time will yield `NO_SUCH_ITER`.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NO_SUCH_ITER`, when `iter` is not a valid iterator.
+        pub fn _row_iter_bsatn_close(iter: RowIter) -> u16;
 
         /// Log at `level` a `message` message occuring in `filename:line_number`
         /// with [`target`] being the module path at the `log!` invocation site.
@@ -355,6 +380,11 @@ pub mod raw {
     #[repr(transparent)]
     pub struct RowIter(u32);
 
+    impl RowIter {
+        /// An invalid handle, used e.g., when the iterator has been exhausted.
+        pub const INVALID: Self = Self(0);
+    }
+
     #[cfg(any())]
     mod module_exports {
         type Encoded<T> = Buffer;
@@ -469,16 +499,10 @@ fn cvt(x: u16) -> Result<(), Errno> {
 ///   It's not required to write to `out` when `f(out)` returns an error code.
 /// - The function `f` never reads a safe and valid `T` from the `out` pointer
 ///   before writing a safe and valid `T` to it.
-/// - If running `Drop` on `T` is required for safety,
-///   `f` must never panic nor return an error once `out` has been written to.
 #[inline]
-unsafe fn call<T>(f: impl FnOnce(*mut T) -> u16) -> Result<T, Errno> {
+unsafe fn call<T: Copy>(f: impl FnOnce(*mut T) -> u16) -> Result<T, Errno> {
     let mut out = MaybeUninit::uninit();
-    // TODO: If we have a panic here after writing a safe `T` to `out`,
-    // we will may have a memory leak if `T` requires running `Drop` for cleanup.
     let f_code = f(out.as_mut_ptr());
-    // TODO: A memory leak may also result due to an error code from `f(out)`
-    // if `out` has been written to.
     cvt(f_code)?;
     Ok(out.assume_init())
 }
@@ -649,29 +673,49 @@ pub struct RowIter {
 }
 
 impl RowIter {
-    /// Read some number of bsatn-encoded rows into the provided buffer.
+    /// Read some number of BSATN-encoded rows into the provided buffer.
     ///
-    /// If the iterator is exhausted and did not read anything into buf, 0 is returned. Otherwise,
-    /// it's the number of new bytes that were added to the end of the buffer.
-    pub fn read(&self, buf: &mut Vec<u8>) -> usize {
+    /// Returns the number of new bytes added to the end of the buffer.
+    /// When the iterator has been exhausted,
+    /// `self.is_exhausted()` will return `true`.
+    pub fn read(&mut self, buf: &mut Vec<u8>) -> usize {
         loop {
             let buf_ptr = buf.spare_capacity_mut();
             let mut buf_len = buf_ptr.len();
-            match cvt(unsafe { raw::_iter_advance(self.raw, buf_ptr.as_mut_ptr().cast(), &mut buf_len) }) {
-                Ok(()) => {
-                    // SAFETY: iter_advance just wrote `buf_len` bytes into the end of `buf`.
-                    unsafe { buf.set_len(buf.len() + buf_len) };
+            let ret = unsafe { raw::_row_iter_bsatn_advance(self.raw, buf_ptr.as_mut_ptr().cast(), &mut buf_len) };
+            if let -1 | 0 = ret {
+                // SAFETY: `_row_iter_bsatn_advance` just wrote `buf_len` bytes into the end of `buf`.
+                unsafe { buf.set_len(buf.len() + buf_len) };
+            }
+
+            const TOO_SMALL: i16 = errno::BUFFER_TOO_SMALL.get() as i16;
+            match ret {
+                -1 => {
+                    self.raw = raw::RowIter::INVALID;
                     return buf_len;
                 }
-                Err(Errno::BUFFER_TOO_SMALL) => buf.reserve(buf_len),
-                Err(e) => panic!("unexpected error from _iter_advance: {e}"),
+                0 => return buf_len,
+                TOO_SMALL => buf.reserve(buf_len),
+                e => panic!("unexpected error from `_row_iter_bsatn_advance`: {e}"),
             }
         }
+    }
+
+    /// Returns whether the iterator is exhausted or not.
+    pub fn is_exhausted(&self) -> bool {
+        self.raw == raw::RowIter::INVALID
     }
 }
 
 impl Drop for RowIter {
     fn drop(&mut self) {
-        unsafe { raw::_iter_drop(self.raw) }
+        // Avoid this syscall when `_row_iter_bsatn_advance` above
+        // notifies us that the iterator is exhausted.
+        if self.is_exhausted() {
+            return;
+        }
+        unsafe {
+            raw::_row_iter_bsatn_close(self.raw);
+        }
     }
 }

@@ -15,7 +15,7 @@ use spacetimedb_sdk::{
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct InsertPrimitivesAsStringsArgs {
-    pub t: EveryPrimitiveStruct,
+    pub s: EveryPrimitiveStruct,
 }
 
 impl Reducer for InsertPrimitivesAsStringsArgs {
@@ -23,8 +23,8 @@ impl Reducer for InsertPrimitivesAsStringsArgs {
 }
 
 #[allow(unused)]
-pub fn insert_primitives_as_strings(t: EveryPrimitiveStruct) {
-    InsertPrimitivesAsStringsArgs { t }.invoke();
+pub fn insert_primitives_as_strings(s: EveryPrimitiveStruct) {
+    InsertPrimitivesAsStringsArgs { s }.invoke();
 }
 
 #[allow(unused)]
@@ -32,8 +32,8 @@ pub fn on_insert_primitives_as_strings(
     mut __callback: impl FnMut(&Identity, Option<Address>, &Status, &EveryPrimitiveStruct) + Send + 'static,
 ) -> ReducerCallbackId<InsertPrimitivesAsStringsArgs> {
     InsertPrimitivesAsStringsArgs::on_reducer(move |__identity, __addr, __status, __args| {
-        let InsertPrimitivesAsStringsArgs { t } = __args;
-        __callback(__identity, __addr, __status, t);
+        let InsertPrimitivesAsStringsArgs { s } = __args;
+        __callback(__identity, __addr, __status, s);
     })
 }
 
@@ -42,8 +42,8 @@ pub fn once_on_insert_primitives_as_strings(
     __callback: impl FnOnce(&Identity, Option<Address>, &Status, &EveryPrimitiveStruct) + Send + 'static,
 ) -> ReducerCallbackId<InsertPrimitivesAsStringsArgs> {
     InsertPrimitivesAsStringsArgs::once_on_reducer(move |__identity, __addr, __status, __args| {
-        let InsertPrimitivesAsStringsArgs { t } = __args;
-        __callback(__identity, __addr, __status, t);
+        let InsertPrimitivesAsStringsArgs { s } = __args;
+        __callback(__identity, __addr, __status, s);
     })
 }
 

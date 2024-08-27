@@ -238,24 +238,24 @@ public static partial class Module
             switch (ret)
             {
                 // Host side source exhausted, we're done.
-                case -1:
+                case Errno.EXHAUSTED:
                     Array.Resize(ref buffer, (int)written);
                     return buffer;
                 // Wrote the entire spare capacity.
                 // Need to reserve more space in the buffer.
-                case 0 when written == buffer.Length:
+                case Errno.OK when written == buffer.Length:
                     Array.Resize(ref buffer, buffer.Length + 1024);
                     break;
                 // Host didn't write as much as possible.
                 // Try to read some more.
                 // The host will likely not trigger this branch (current host doesn't),
                 // but a module should be prepared for it.
-                case 0:
+                case Errno.OK:
                     break;
-                case (short)(ushort)FFI.Errno.NO_SUCH_BYTES:
+                case Errno.NO_SUCH_BYTES:
                     throw new NoSuchBytesException();
                 default:
-                    throw new UnknownException((FFI.Errno)(ushort)ret);
+                    throw new UnknownException(ret);
             }
         }
     }
@@ -291,7 +291,7 @@ public static partial class Module
         }
     }
 
-    public static short __call_reducer__(
+    public static Errno __call_reducer__(
         uint id,
         ulong sender_0,
         ulong sender_1,
@@ -323,14 +323,14 @@ public static partial class Module
             {
                 throw new Exception("Unrecognised extra bytes in the reducer arguments");
             }
-            return 0; /* no exception */
+            return Errno.OK; /* no exception */
         }
         catch (Exception e)
         {
             var error_str = e.ToString();
             var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
             error.Write(error_bytes);
-            return (short)(ushort)FFI.Errno.HOST_CALL_FAILURE;
+            return Errno.HOST_CALL_FAILURE;
         }
     }
 }

@@ -5,15 +5,14 @@
     <UnmanagedEntryPointsAssembly Include="SpacetimeDB.Runtime" />
     <WasmImport Include="$(SpacetimeNamespace)!_console_log" />
     <WasmImport Include="$(SpacetimeNamespace)!_get_table_id" />
-    <WasmImport Include="$(SpacetimeNamespace)!_create_index" />
     <WasmImport Include="$(SpacetimeNamespace)!_iter_by_col_eq" />
     <WasmImport Include="$(SpacetimeNamespace)!_insert" />
     <WasmImport Include="$(SpacetimeNamespace)!_delete_by_col_eq" />
     <WasmImport Include="$(SpacetimeNamespace)!_delete_by_rel" />
     <WasmImport Include="$(SpacetimeNamespace)!_iter_start" />
     <WasmImport Include="$(SpacetimeNamespace)!_iter_start_filtered" />
-    <WasmImport Include="$(SpacetimeNamespace)!_iter_next" />
-    <WasmImport Include="$(SpacetimeNamespace)!_iter_drop" />
+    <WasmImport Include="$(SpacetimeNamespace)!_row_iter_bsatn_advance" />
+    <WasmImport Include="$(SpacetimeNamespace)!_row_iter_bsatn_close" />
     <WasmImport Include="$(SpacetimeNamespace)!_bytes_source_read" />
     <WasmImport Include="$(SpacetimeNamespace)!_bytes_sink_write" />
 

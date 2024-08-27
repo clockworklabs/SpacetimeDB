@@ -582,69 +582,122 @@ impl WasmInstanceEnv {
         })
     }
 
-    /// Advances the registered iterator with the index given by `iter`.
+    /// Reads rows from the given iterator registered under `iter`.
     ///
-    /// On success, the next element (the row as bytes) is written to a buffer.
-    /// The buffer's index is returned and written to the `out` pointer.
-    /// If there are no elements left, an invalid buffer index is written to `out`.
-    /// On failure however, the error is returned.
+    /// Takes rows from the iterator
+    /// and stores them in the memory pointed to by `buffer = buffer_ptr[..buffer_len]`,
+    /// encoded in BSATN format.
     ///
-    /// Returns an error if
-    /// - `iter` does not identify a registered `BufferIter`
-    /// - writing to `out` would overflow a 32-bit integer
-    /// - advancing the iterator resulted in an error
+    /// The `buffer_len = buffer_len_ptr[..size_of::<usize>()]` stores the capacity of `buffer`.
+    /// On success (`0` or `-1` is returned),
+    /// `buffer_len` is set to the combined length of the encoded rows.
+    /// When `-1` is returned, the iterator has been exhausted
+    /// and there are no more rows to read,
+    /// leading to the iterator being immediately destroyed.
+    /// Note that the host is free to reuse allocations in a pool,
+    /// destroying the handle logically does not entail that memory is necessarily reclaimed.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `buffer_len_ptr` is NULL or `buffer_len` is not in bounds of WASM memory.
+    /// - `buffer_ptr` is NULL or `buffer` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NO_SUCH_ITER`, when `iter` is not a valid iterator.
+    /// - `BUFFER_TOO_SMALL`, when there are rows left but they cannot fit in `buffer`.
+    ///   When this occurs, `buffer_len` is set to the size of the next item in the iterator.
+    ///   To make progress, the caller should reallocate the buffer to at least that size and try again.
     // #[tracing::instrument(skip_all)]
-    pub fn iter_advance(
+    pub fn row_iter_bsatn_advance(
         caller: Caller<'_, Self>,
         iter: u32,
-        buffer: WasmPtr<u8>,
-        buffer_len: WasmPtr<u32>,
-    ) -> RtResult<u32> {
-        let iter = RowIterIdx(iter);
-        Self::cvt(caller, AbiCall::IterNext, |caller| {
+        buffer_ptr: WasmPtr<u8>,
+        buffer_len_ptr: WasmPtr<u32>,
+    ) -> RtResult<i32> {
+        let row_iter_idx = RowIterIdx(iter);
+        Self::cvt_custom(caller, AbiCall::RowIterBsatnAdvance, |caller| {
             let (mem, env) = Self::mem_env(caller);
 
-            // Retrieve the iterator by `iter`.
-            let iter = env.iters.get_mut(iter).context("no such iterator")?;
+            // Retrieve the iterator by `row_iter_idx`, or error.
+            let Some(iter) = env.iters.get_mut(row_iter_idx) else {
+                return Ok(errno::NO_SUCH_ITER.get().into());
+            };
 
-            let buffer_len_ = u32::read_from(mem, buffer_len)?;
-            let mut wasm_buffer = mem.deref_slice_mut(buffer, buffer_len_)?;
+            // Read `buffer_len`, i.e., the capacity of `buffer` pointed to by `buffer_ptr`.
+            let buffer_len = u32::read_from(mem, buffer_len_ptr)?;
+            let write_buffer_len = |mem, len| u32::try_from(len).unwrap().write_to(mem, buffer_len_ptr);
+            // Get a mutable view to the `buffer`.
+            let mut buffer = mem.deref_slice_mut(buffer_ptr, buffer_len)?;
 
             let mut written = 0;
-            // Advance the iterator.
+            // Fill the buffer as much as possible.
             while let Some(chunk) = iter.as_slice().first() {
-                let Some(buf_chunk) = wasm_buffer.get_mut(..chunk.len()) else {
+                // TODO(Centril): refactor using `split_at_mut_checked`.
+                let Some(buf_chunk) = buffer.get_mut(..chunk.len()) else {
+                    // Cannot fit chunk into the buffer,
+                    // either because we already filled it too much,
+                    // or because it is too small.
                     break;
                 };
                 buf_chunk.copy_from_slice(chunk);
                 written += chunk.len();
-                wasm_buffer = &mut wasm_buffer[chunk.len()..];
+                buffer = &mut buffer[chunk.len()..];
+
+                // Advance the iterator, as we used a chunk.
+                // TODO(Centril): consider putting these into a pool for reuse
+                // by the next `ChunkedWriter::collect_iter`, `span_start`, and `bytes_sink_write`.
+                // Although we need to shrink these chunks to fit due to `Box<[u8]>`,
+                // in practice, `realloc` will in practice not move the data to a new heap allocation.
                 iter.next();
             }
-            if written == 0 {
-                if let Some(chunk) = iter.as_slice().first() {
-                    u32::try_from(chunk.len()).unwrap().write_to(mem, buffer_len)?;
-                    return Err(WasmError::BufferTooSmall);
-                }
-            }
-            (written as u32).write_to(mem, buffer_len)?;
 
-            Ok(())
+            let ret = match (written, iter.as_slice().first()) {
+                // Nothing was written and the iterator is not exhausted.
+                (0, Some(chunk)) => {
+                    write_buffer_len(mem, chunk.len())?;
+                    return Ok(errno::BUFFER_TOO_SMALL.get().into());
+                }
+                // The iterator is exhausted, destroy it, and tell the caller.
+                (_, None) => {
+                    env.iters.take(row_iter_idx);
+                    -1
+                }
+                // Something was written, but the iterator is not exhausted.
+                (_, Some(_)) => 0,
+            };
+            write_buffer_len(mem, written)?;
+            Ok(ret)
         })
     }
 
-    /// Drops the entire registered iterator with the index given by `iter`.
-    /// The iterator is effectively de-registered.
+    /// Destroys the iterator registered under `iter`.
     ///
-    /// Returns an error if the iterator does not exist.
+    /// Once `row_iter_bsatn_close` is called on `iter`, the `iter` is invalid.
+    /// That is, `row_iter_bsatn_close(iter)` the second time will yield `NO_SUCH_ITER`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NO_SUCH_ITER`, when `iter` is not a valid iterator.
     // #[tracing::instrument(skip_all)]
-    pub fn iter_drop(mut caller: Caller<'_, Self>, iter: u32) -> RtResult<()> {
-        caller
-            .data_mut()
-            .iters
-            .take(RowIterIdx(iter))
-            .context("no such iterator")?;
-        Ok(())
+    pub fn row_iter_bsatn_close(caller: Caller<'_, Self>, iter: u32) -> RtResult<u32> {
+        let row_iter_idx = RowIterIdx(iter);
+        Self::cvt_custom(caller, AbiCall::RowIterBsatnClose, |caller| {
+            let (_, env) = Self::mem_env(caller);
+
+            // Retrieve the iterator by `row_iter_idx`, or error.
+            Ok(match env.iters.take(row_iter_idx) {
+                None => errno::NO_SUCH_ITER.get().into(),
+                // TODO(Centril): consider putting these into a pool for reuse.
+                Some(_) => 0,
+            })
+        })
     }
 
     pub fn volatile_nonatomic_schedule_immediate(

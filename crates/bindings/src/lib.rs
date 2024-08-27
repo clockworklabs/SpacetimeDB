@@ -300,23 +300,33 @@ impl<T: TableType> Drop for TableIter<T> {
     }
 }
 
+impl<T: TableType> TableIter<T> {
+    fn decode(&mut self) -> T {
+        bsatn::from_reader(&mut &self.reader).expect("Failed to decode row!")
+    }
+}
+
 impl<T: TableType> Iterator for TableIter<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            // If we currently have some bytes in the buffer to still decode, do that.
-            if (&self.reader).remaining() > 0 {
-                let row = bsatn::from_reader(&mut &self.reader).expect("Failed to decode row!");
-                return Some(row);
-            }
-            // Otherwise, try to fetch the next chunk while reusing the buffer.
-            self.reader.buf.clear();
-            self.reader.pos.set(0);
-            if self.inner.read(&mut self.reader.buf) == 0 {
-                return None;
-            }
+        // If we currently have some bytes in the buffer to still decode, do that.
+        if (&self.reader).remaining() > 0 {
+            return Some(self.decode());
         }
+
+        // Don't fetch the next chunk if there is none.
+        if self.inner.is_exhausted() {
+            return None;
+        }
+
+        // Otherwise, try to fetch the next chunk while reusing the buffer.
+        self.reader.buf.clear();
+        self.reader.pos.set(0);
+        if self.inner.read(&mut self.reader.buf) == 0 {
+            return None;
+        }
+        Some(self.decode())
     }
 }
 
@@ -465,10 +475,12 @@ pub mod query {
         val: &T,
     ) -> Option<Table> {
         // Find the row with a match.
-        let iter = iter_by_col_eq(Table::table_id(), COL_IDX.into(), val).unwrap();
+        let mut iter = iter_by_col_eq(Table::table_id(), COL_IDX.into(), val).unwrap();
         with_row_buf(|buf| {
             // We will always find either 0 or 1 rows here due to the unique constraint.
             iter.read(buf);
+            debug_assert!(iter.is_exhausted());
+
             if buf.is_empty() {
                 return None;
             }

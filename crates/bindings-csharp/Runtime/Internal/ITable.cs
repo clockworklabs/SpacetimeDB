@@ -22,31 +22,53 @@ public interface ITable<T> : IStructuralReadWrite
 
             public bool MoveNext()
             {
+                if (handle == FFI.RowIter.INVALID)
+                {
+                    return false;
+                }
+
                 uint buffer_len;
                 while (true)
                 {
                     buffer_len = (uint)buffer.Length;
-                    try
+                    var ret = FFI._row_iter_bsatn_advance(handle, buffer, ref buffer_len);
+                    if (ret == Errno.EXHAUSTED)
                     {
-                        FFI._iter_advance(handle, buffer, ref buffer_len);
+                        handle = FFI.RowIter.INVALID;
                     }
-                    catch (BufferTooSmallException)
+                    // On success, the only way `buffer_len == 0` is for the iterator to be exhausted.
+                    // This happens when the host iterator was empty from the start.
+                    System.Diagnostics.Debug.Assert(!(ret == Errno.OK && buffer_len == 0));
+                    switch (ret)
                     {
-                        buffer = new byte[buffer_len];
-                        continue;
+                        // Iterator advanced and may also be `EXHAUSTED`.
+                        // When `OK`, we'll need to advance the iterator in the next call to `MoveNext`.
+                        // In both cases, copy over the row data to `Current` from the scratch `buffer`.
+                        case Errno.EXHAUSTED
+                        or Errno.OK:
+                            Current = new byte[buffer_len];
+                            Array.Copy(buffer, 0, Current, 0, buffer_len);
+                            return buffer_len != 0;
+                        // Couldn't find the iterator, error!
+                        case Errno.NO_SUCH_ITER:
+                            throw new NoSuchIterException();
+                        // The scratch `buffer` is too small to fit a row / chunk.
+                        // Grow `buffer` and try again.
+                        // The `buffer_len` will have been updated with the necessary size.
+                        case Errno.BUFFER_TOO_SMALL:
+                            buffer = new byte[buffer_len];
+                            continue;
+                        default:
+                            throw new UnknownException(ret);
                     }
-                    break;
                 }
-                Current = new byte[buffer_len];
-                Array.Copy(buffer, 0, Current, 0, buffer_len);
-                return buffer_len != 0;
             }
 
             public void Dispose()
             {
-                if (!handle.Equals(FFI.RowIter.INVALID))
+                if (handle != FFI.RowIter.INVALID)
                 {
-                    FFI._iter_drop(handle);
+                    FFI._row_iter_bsatn_close(handle);
                     handle = FFI.RowIter.INVALID;
                     // Avoid running ~RowIter if Dispose was executed successfully.
                     GC.SuppressFinalize(this);
