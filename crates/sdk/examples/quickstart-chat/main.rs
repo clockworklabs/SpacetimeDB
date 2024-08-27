@@ -165,6 +165,7 @@ fn connect_to_db() {
         HOST,
         DB_NAME,
         load_credentials(CREDS_DIR).expect("Error reading stored credentials"),
+        None,
     )
     .expect("Failed to connect");
 }

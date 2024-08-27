@@ -38,7 +38,7 @@ fn main() {
         subscribe_result(subscribe(&["SELECT * FROM Connected;"]));
     });
 
-    connect_result(connect(LOCALHOST, &db_name_or_panic(), None));
+    connect_result(connect(LOCALHOST, &db_name_or_panic(), None, None));
 
     test_counter.wait_for_all();
 
@@ -71,7 +71,7 @@ fn main() {
         subscribe_result(subscribe(&["SELECT * FROM Disconnected;"]));
     });
 
-    connect_result(connect(LOCALHOST, &db_name_or_panic(), Some(credentials().unwrap())));
+    connect_result(connect(LOCALHOST, &db_name_or_panic(), Some(credentials().unwrap()), None));
 
     test_counter.wait_for_all();
 }

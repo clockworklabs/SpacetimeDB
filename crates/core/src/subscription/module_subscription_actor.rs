@@ -223,7 +223,7 @@ pub struct WriteConflict;
 #[cfg(test)]
 mod tests {
     use super::{AssertTxFn, ModuleSubscriptions};
-    use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
+    use crate::client::{ClientActorId, ClientConnectionSender, Compression, Protocol};
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::db::relational_db::RelationalDB;
     use crate::error::DBError;
@@ -240,7 +240,7 @@ mod tests {
     fn add_subscriber(db: Arc<RelationalDB>, sql: &str, assert: Option<AssertTxFn>) -> Result<(), DBError> {
         let owner = Identity::from_byte_array([1; 32]);
         let client = ClientActorId::for_test(Identity::ZERO);
-        let sender = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary));
+        let sender = Arc::new(ClientConnectionSender::dummy(client, Protocol::Binary, Compression::Brotli));
         let module_subscriptions = ModuleSubscriptions::new(db.clone(), owner);
 
         let subscribe = Subscribe {

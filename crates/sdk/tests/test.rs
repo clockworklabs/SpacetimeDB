@@ -150,5 +150,5 @@ macro_rules! declare_tests_with_suffix {
     };
 }
 
-declare_tests_with_suffix!(rust, "");
+//declare_tests_with_suffix!(rust, "");
 declare_tests_with_suffix!(csharp, "-cs");

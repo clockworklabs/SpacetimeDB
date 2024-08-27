@@ -13,7 +13,7 @@ use http::{HeaderValue, StatusCode};
 use scopeguard::ScopeGuard;
 use serde::Deserialize;
 use spacetimedb::client::messages::{serialize, IdentityTokenMessage, SerializableMessage};
-use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, MessageHandleError, Protocol};
+use spacetimedb::client::{ClientActorId, ClientConnection, Compression, DataMessage, MessageHandleError, Protocol};
 use spacetimedb::host::NoSuchModule;
 use spacetimedb::util::also_poll;
 use spacetimedb::worker_metrics::WORKER_METRICS;
@@ -42,6 +42,7 @@ pub struct SubscribeParams {
 #[derive(Deserialize)]
 pub struct SubscribeQueryParams {
     pub client_address: Option<AddressForUrl>,
+    pub compression: Option<Compression>,
 }
 
 // TODO: is this a reasonable way to generate client addresses?
@@ -55,7 +56,7 @@ pub fn generate_random_address() -> Address {
 pub async fn handle_websocket<S>(
     State(ctx): State<S>,
     Path(SubscribeParams { name_or_address }): Path<SubscribeParams>,
-    Query(SubscribeQueryParams { client_address }): Query<SubscribeQueryParams>,
+    Query(SubscribeQueryParams { client_address, compression }): Query<SubscribeQueryParams>,
     forwarded_for: Option<TypedHeader<XForwardedFor>>,
     Extension(auth): Extension<SpacetimeAuth>,
     ws: WebSocketUpgrade,
@@ -131,7 +132,7 @@ where
         }
 
         let actor = |client, sendrx| ws_client_actor(client, ws, sendrx);
-        let client = match ClientConnection::spawn(client_id, protocol, instance_id, module_rx, actor).await {
+        let client = match ClientConnection::spawn(client_id, protocol, compression.unwrap_or_default(), instance_id, module_rx, actor).await {
             Ok(s) => s,
             Err(e) => {
                 log::warn!("ModuleHost died while we were connecting: {e:#}");
@@ -259,7 +260,7 @@ async fn ws_client_actor_inner(
                             let workload = msg.workload();
                             let num_rows = msg.num_rows();
 
-                            let msg = datamsg_to_wsmsg(serialize(msg, client.protocol));
+                            let msg = datamsg_to_wsmsg(serialize(msg, client.protocol, client.compression));
 
                             // These metrics should be updated together,
                             // or not at all.
@@ -347,7 +348,7 @@ async fn ws_client_actor_inner(
                 if let Err(e) = res {
                     if let MessageHandleError::Execution(err) = e {
                         log::error!("{err:#}");
-                        let msg = serialize(err, client.protocol);
+                        let msg = serialize(err, client.protocol, client.compression);
                         if let Err(error) = ws.send(datamsg_to_wsmsg(msg)).await {
                             log::warn!("Websocket send error: {error}")
                         }

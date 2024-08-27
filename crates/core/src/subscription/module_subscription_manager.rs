@@ -268,7 +268,7 @@ mod tests {
     use spacetimedb_vm::expr::CrudExpr;
 
     use crate::{
-        client::{ClientActorId, ClientConnectionSender, ClientName, Protocol},
+        client::{ClientActorId, ClientConnectionSender, ClientName, Compression, Protocol},
         db::relational_db::{tests_utils::TestDB, RelationalDB},
         energy::EnergyQuanta,
         execution_context::ExecutionContext,
@@ -315,6 +315,7 @@ mod tests {
                 name: ClientName(0),
             },
             Protocol::Binary,
+            Compression::Brotli
         )
     }
 
@@ -503,7 +504,7 @@ mod tests {
 
         let id0 = Identity::ZERO;
         let client0 = ClientActorId::for_test(id0);
-        let (client0, mut rx) = ClientConnectionSender::dummy_with_channel(client0, Protocol::Binary);
+        let (client0, mut rx) = ClientConnectionSender::dummy_with_channel(client0, Protocol::Binary, Compression::Brotli);
 
         let subscriptions = SubscriptionManager::default();
 

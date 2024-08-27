@@ -1,7 +1,10 @@
+use std::io::Read;
+
 use crate::identity::Credentials;
 use crate::ws_messages::{ClientMessage, ServerMessage};
 use anyhow::{bail, Context, Result};
 use brotli::BrotliDecompress;
+use flate2::read::GzDecoder;
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{Scheme, Uri};
@@ -15,8 +18,17 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 
+#[derive(Clone, Copy, Default)]
+pub enum Compression {
+    None,
+    Gzip,
+    #[default]
+    Brotli,
+}
+
 pub(crate) struct DbConnection {
     sock: WebSocketStream<MaybeTlsStream<TcpStream>>,
+    compression: Compression,
 }
 
 fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme> {
@@ -31,7 +43,7 @@ fn parse_scheme(scheme: Option<Scheme>) -> Result<Scheme> {
     })
 }
 
-fn make_uri<Host>(host: Host, db_name: &str, client_address: Address) -> Result<Uri>
+fn make_uri<Host>(host: Host, db_name: &str, client_address: Address, compression: Compression) -> Result<Uri>
 where
     Host: TryInto<Uri>,
     <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
@@ -56,6 +68,11 @@ where
     path.push_str(db_name);
     path.push_str("?client_address=");
     path.push_str(&client_address.to_hex());
+    match compression {
+        Compression::None => path.push_str("&codec=None"),
+        Compression::Gzip => path.push_str("&codec=Gzip"),
+        Compression::Brotli => path.push_str("&codec=Brotli"),
+    };
     parts.path_and_query = Some(path.parse()?);
     Ok(Uri::from_parts(parts)?)
 }
@@ -74,12 +91,13 @@ fn make_request<Host>(
     db_name: &str,
     credentials: Option<&Credentials>,
     client_address: Address,
+    compression: Compression,
 ) -> Result<http::Request<()>>
 where
     Host: TryInto<Uri>,
     <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
 {
-    let uri = make_uri(host, db_name, client_address)?;
+    let uri = make_uri(host, db_name, client_address, compression)?;
     let mut req = IntoClientRequest::into_client_request(uri)?;
     request_insert_protocol_header(&mut req);
     request_insert_auth_header(&mut req, credentials);
@@ -128,12 +146,13 @@ impl DbConnection {
         db_name: &str,
         credentials: Option<&Credentials>,
         client_address: Address,
+        compression: Compression,
     ) -> Result<Self>
     where
         Host: TryInto<Uri>,
         <Host as TryInto<Uri>>::Error: std::error::Error + Send + Sync + 'static,
     {
-        let req = make_request(host, db_name, credentials, client_address)?;
+        let req = make_request(host, db_name, credentials, client_address, compression)?;
         let (sock, _): (WebSocketStream<MaybeTlsStream<TcpStream>>, _) = connect_async_with_config(
             req,
             // TODO(kim): In order to be able to replicate module WASM blobs,
@@ -147,13 +166,25 @@ impl DbConnection {
             false,
         )
         .await?;
-        Ok(DbConnection { sock })
+        Ok(DbConnection { sock, compression })
     }
 
-    pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage> {
+    pub(crate) fn parse_response(&self, bytes: &[u8]) -> Result<ServerMessage> {
         let mut decompressed = Vec::new();
-        BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
-        Ok(bsatn::from_slice(&decompressed)?)
+        Ok(bsatn::from_slice(match self.compression {
+            Compression::None => bytes,
+            Compression::Gzip => {
+                let mut decoder = GzDecoder::new(&bytes[..]);
+                decoder.read(&mut decompressed)
+                    .context("Failed to Gzip decompress message")?;
+                &decompressed
+            },
+            Compression::Brotli => {
+                BrotliDecompress(&mut &bytes[..], &mut decompressed)
+                    .context("Failed to Brotli decompress message")?;
+                &decompressed
+            },
+        })?)
     }
 
     pub(crate) fn encode_message(msg: ClientMessage) -> WebSocketMessage {
@@ -183,7 +214,7 @@ impl DbConnection {
                     ),
 
                     Ok(Some(WebSocketMessage::Binary(bytes))) => {
-                        match Self::parse_response(&bytes) {
+                        match self.parse_response(&bytes) {
                             Err(e) => Self::maybe_log_error::<(), _>(
                                 "Error decoding WebSocketMessage::Binary payload",
                                 Err(e),
