@@ -319,8 +319,8 @@ pub(super) type TimingSpanSet = ResourceSlab<TimingSpanIdx>;
 
 pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
     match err {
+        NodesError::NotInTransaction => Some(errno::NOT_IN_TRANSACTION),
         NodesError::TableNotFound => Some(errno::NO_SUCH_TABLE),
-        NodesError::ColumnValueNotFound | NodesError::RangeNotFound => Some(errno::LOOKUP_NOT_FOUND),
         NodesError::AlreadyExists(_) => Some(errno::UNIQUE_ALREADY_EXISTS),
         NodesError::Internal(internal) => match **internal {
             DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
@@ -346,6 +346,7 @@ pub struct AbiRuntimeError {
 macro_rules! abi_funcs {
     ($mac:ident) => {
         $mac! {
+            "spacetime_10.0"::table_id_from_name,
             "spacetime_10.0"::row_iter_bsatn_advance,
             "spacetime_10.0"::row_iter_bsatn_close,
             "spacetime_10.0"::bytes_source_read,
@@ -354,7 +355,6 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::console_log,
             "spacetime_10.0"::delete_by_col_eq,
             "spacetime_10.0"::delete_by_rel,
-            "spacetime_10.0"::get_table_id,
             "spacetime_10.0"::insert,
             "spacetime_10.0"::iter_by_col_eq,
             "spacetime_10.0"::iter_start,

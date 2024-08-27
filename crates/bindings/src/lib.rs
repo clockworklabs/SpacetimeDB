@@ -116,8 +116,8 @@ pub fn decode_schema<'a>(bytes: &mut impl BufReader<'a>) -> Result<ProductType, 
 /// Queries and returns the `table_id` associated with the given (table) `name`.
 ///
 /// Panics if the table does not exist.
-pub fn get_table_id(table_name: &str) -> TableId {
-    sys::get_table_id(table_name).unwrap_or_else(|_| {
+pub fn table_id_from_name(table_name: &str) -> TableId {
+    sys::table_id_from_name(table_name).unwrap_or_else(|_| {
         panic!("Failed to get table with name: {}", table_name);
     })
 }

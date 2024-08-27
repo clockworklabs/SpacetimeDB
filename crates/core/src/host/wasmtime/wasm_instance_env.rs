@@ -449,29 +449,37 @@ impl WasmInstanceEnv {
     }
 
     /// Queries the `table_id` associated with the given (table) `name`
-    /// where `name` points to a UTF-8 slice in WASM memory of `name_len` bytes.
+    /// where `name` is the UTF-8 slice in WASM memory at `name_ptr[..name_len]`.
     ///
     /// The table id is written into the `out` pointer.
     ///
-    /// Returns an error if
-    /// - a table with the provided `table_id` doesn't exist
-    /// - the slice `(name, name_len)` is not valid UTF-8
-    /// - `name + name_len` overflows a 64-bit address.
-    /// - writing to `out` overflows a 32-bit integer
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `name_ptr` is NULL or `name` is not in bounds of WASM memory.
+    /// - `name` is not valid UTF-8.
+    /// - `out` is NULL or `out[..size_of::<TableId>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_TABLE`, when `name` is not the name of a table.
     #[tracing::instrument(skip_all)]
-    pub fn get_table_id(
+    pub fn table_id_from_name(
         caller: Caller<'_, Self>,
         name: WasmPtr<u8>,
         name_len: u32,
         out: WasmPtr<u32>,
     ) -> RtResult<u32> {
-        Self::cvt_ret::<u32>(caller, AbiCall::GetTableId, out, |caller| {
+        Self::cvt_ret::<u32>(caller, AbiCall::TableIdFromName, out, |caller| {
             let (mem, env) = Self::mem_env(caller);
             // Read the table name from WASM memory.
             let name = mem.deref_str(name, name_len)?;
 
             // Query the table id.
-            Ok(env.instance_env.get_table_id(name)?.into())
+            Ok(env.instance_env.table_id_from_name(name)?.into())
         })
     }
 

@@ -135,7 +135,7 @@ public interface ITable<T> : IStructuralReadWrite
         new(() =>
         {
             var name_bytes = System.Text.Encoding.UTF8.GetBytes(typeof(T).Name);
-            FFI._get_table_id(name_bytes, (uint)name_bytes.Length, out var out_);
+            FFI._table_id_from_name(name_bytes, (uint)name_bytes.Length, out var out_);
             return out_;
         });
 

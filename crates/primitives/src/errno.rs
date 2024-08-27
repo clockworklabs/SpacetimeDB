@@ -8,9 +8,8 @@ use core::num::NonZeroU16;
 macro_rules! errnos {
     ($mac:ident) => {
         $mac!(
-            // TODO(1.0): remove this.
-            LOOKUP_NOT_FOUND(2, "Value or range provided not found in table"),
             HOST_CALL_FAILURE(1, "ABI called by host returned an error"),
+            NOT_IN_TRANSACTION(2, "ABI call can only be made while in a transaction"),
             NO_SUCH_TABLE(4, "No such table"),
             NO_SUCH_ITER(6, "The provided row iterator is not valid"),
             NO_SUCH_BYTES(8, "The provided bytes source or sink is not valid"),

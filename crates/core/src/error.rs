@@ -322,10 +322,6 @@ pub enum NodesError {
     DecodeFilter(#[source] DecodeError),
     #[error("table with provided name or id doesn't exist")]
     TableNotFound,
-    #[error("row with column of given value not found")]
-    ColumnValueNotFound,
-    #[error("range of rows not found")]
-    RangeNotFound,
     #[error("column is out of bounds")]
     BadColumn,
     #[error("can't perform operation; not inside transaction")]

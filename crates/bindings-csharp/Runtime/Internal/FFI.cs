@@ -23,8 +23,8 @@ public enum Errno : short
     EXHAUSTED = -1,
     OK = 0,
     HOST_CALL_FAILURE = 1,
+    NOT_IN_TRANSACTION = 2,
     NO_SUCH_TABLE = 4,
-    LOOKUP_NOT_FOUND = 2,
     NO_SUCH_ITER = 6,
     NO_SUCH_BYTES = 8,
     NO_SPACE = 9,
@@ -69,8 +69,8 @@ internal static partial class FFI
                 }
                 throw status switch
                 {
+                    Errno.NOT_IN_TRANSACTION => new NotInTransactionException(),
                     Errno.NO_SUCH_TABLE => new NoSuchTableException(),
-                    Errno.LOOKUP_NOT_FOUND => new LookupNotFoundException(),
                     Errno.UNIQUE_ALREADY_EXISTS => new UniqueAlreadyExistsException(),
                     Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
                     Errno.NO_SUCH_BYTES => new NoSuchBytesException(),
@@ -114,7 +114,7 @@ internal static partial class FFI
     }
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _get_table_id(
+    public static partial CheckedStatus _table_id_from_name(
         [In] byte[] name,
         uint name_len,
         out TableId out_

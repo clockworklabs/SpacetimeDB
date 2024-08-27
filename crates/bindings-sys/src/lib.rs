@@ -21,16 +21,24 @@ pub mod raw {
     #[link(wasm_import_module = "spacetime_10.0")]
     extern "C" {
         /// Queries the `table_id` associated with the given (table) `name`
-        /// where `name` points to a UTF-8 slice in WASM memory of `name_len` bytes.
+        /// where `name` is the UTF-8 slice in WASM memory at `name_ptr[..name_len]`.
         ///
         /// The table id is written into the `out` pointer.
         ///
-        /// Returns an error if
-        /// - a table with the provided `table_id` doesn't exist
-        /// - the slice `(name, name_len)` is not valid UTF-8
-        /// - `name + name_len` overflows a 64-bit address.
-        /// - writing to `out` overflows a 32-bit integer
-        pub fn _get_table_id(name: *const u8, name_len: usize, out: *mut TableId) -> u16;
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `name_ptr` is NULL or `name` is not in bounds of WASM memory.
+        /// - `name` is not valid UTF-8.
+        /// - `out` is NULL or `out[..size_of::<TableId>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_TABLE`, when `name` is not the name of a table.
+        pub fn _table_id_from_name(name: *const u8, name_len: usize, out: *mut TableId) -> u16;
 
         /// Finds all rows in the table identified by `table_id`,
         /// where the row has a column, identified by `col_id`,
@@ -511,8 +519,8 @@ unsafe fn call<T: Copy>(f: impl FnOnce(*mut T) -> u16) -> Result<T, Errno> {
 ///
 /// Returns an error if the table does not exist.
 #[inline]
-pub fn get_table_id(name: &str) -> Result<TableId, Errno> {
-    unsafe { call(|out| raw::_get_table_id(name.as_ptr(), name.len(), out)) }
+pub fn table_id_from_name(name: &str) -> Result<TableId, Errno> {
+    unsafe { call(|out| raw::_table_id_from_name(name.as_ptr(), name.len(), out)) }
 }
 
 /// Finds all rows in the table identified by `table_id`,
