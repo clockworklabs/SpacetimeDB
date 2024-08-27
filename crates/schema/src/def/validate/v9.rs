@@ -752,7 +752,7 @@ mod tests {
     use spacetimedb_primitives::ColList;
     use spacetimedb_sats::typespace::TypeRefError;
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType};
-    use v9::{RawIndexAlgorithm, RawModuleDefV9Builder};
+    use v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess, TableType};
 
     /// Check that the columns of a `TableDef` correctly correspond the the `TableDef`'s
     /// `product_type_ref`.
@@ -826,6 +826,7 @@ mod tests {
             .with_column_sequence(0, None)
             .with_unique_constraint(0.into(), None)
             .with_primary_key(0)
+            .with_access(TableAccess::Private)
             .with_index(
                 RawIndexAlgorithm::BTree { columns: 0.into() },
                 "bananas_count".into(),
@@ -851,6 +852,7 @@ mod tests {
                 true,
             )
             .with_schedule("check_deliveries", Some("check_deliveries_schedule".into()))
+            .with_type(TableType::System)
             .finish();
 
         let def: ModuleDef = builder.finish().try_into().unwrap();
@@ -863,7 +865,9 @@ mod tests {
 
         let apples_def = &def.tables[&apples];
 
-        assert_eq!(&apples_def.name, &apples);
+        assert_eq!(apples_def.name, apples);
+        assert_eq!(apples_def.table_type, TableType::User);
+        assert_eq!(apples_def.table_access, TableAccess::Public);
 
         assert_eq!(apples_def.columns.len(), 4);
         assert_eq!(apples_def.columns[0].name, expect_identifier("id"));
@@ -912,7 +916,9 @@ mod tests {
 
         let bananas_def = &def.tables[&bananas];
 
-        assert_eq!(&bananas_def.name, &bananas);
+        assert_eq!(bananas_def.name, bananas);
+        assert_eq!(bananas_def.table_access, TableAccess::Private);
+        assert_eq!(bananas_def.table_type, TableType::User);
         assert_eq!(bananas_def.columns.len(), 4);
         assert_eq!(bananas_def.columns[0].name, expect_identifier("count"));
         assert_eq!(bananas_def.columns[0].ty, AlgebraicType::U16);
@@ -936,7 +942,9 @@ mod tests {
         assert_eq!(bananas_constraint.columns, 0.into());
 
         let delivery_def = &def.tables[&deliveries];
-        assert_eq!(&delivery_def.name, &deliveries);
+        assert_eq!(delivery_def.name, deliveries);
+        assert_eq!(delivery_def.table_access, TableAccess::Public);
+        assert_eq!(delivery_def.table_type, TableType::System);
         assert_eq!(delivery_def.columns.len(), 3);
         assert_eq!(delivery_def.columns[0].name, expect_identifier("id"));
         assert_eq!(delivery_def.columns[0].ty, AlgebraicType::U64);

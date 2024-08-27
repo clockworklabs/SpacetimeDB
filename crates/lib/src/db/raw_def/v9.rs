@@ -9,7 +9,6 @@ use std::collections::btree_map;
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::db::auth::{StAccess, StTableType};
 use itertools::Itertools;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::typespace::TypespaceBuilder;
@@ -125,10 +124,28 @@ pub struct RawTableDefV9 {
     pub schedule: Option<RawScheduleDefV9>,
 
     /// Whether this is a system- or user-created table.
-    pub table_type: StTableType,
+    pub table_type: TableType,
 
     /// Whether this table is public or private.
-    pub table_access: StAccess,
+    pub table_access: TableAccess,
+}
+
+/// Whether the table was created by the system or the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
+pub enum TableType {
+    /// Created by the system.
+    System,
+    /// Created by the user.
+    User,
+}
+
+/// The visibility of the table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
+pub enum TableAccess {
+    /// Visible to all
+    Public,
+    /// Visible only to the owner
+    Private,
 }
 
 /// A sequence definition for a database table column.
@@ -334,9 +351,8 @@ impl RawModuleDefV9Builder {
                 sequences: vec![],
                 schedule: None,
                 primary_key: None,
-                table_type: StTableType::User,
-                // TODO(1.0): make the default `Private` before 1.0.
-                table_access: StAccess::Public,
+                table_type: TableType::User,
+                table_access: TableAccess::Public,
             },
         }
     }
@@ -480,13 +496,13 @@ impl<'a> RawTableDefBuilder<'a> {
     ///
     /// This is not about column algebraic types, but about whether the table
     /// was created by the system or the user.
-    pub fn with_type(mut self, table_type: StTableType) -> Self {
+    pub fn with_type(mut self, table_type: TableType) -> Self {
         self.table.table_type = table_type;
         self
     }
 
     /// Sets the access rights for the table and return it.
-    pub fn with_access(mut self, table_access: StAccess) -> Self {
+    pub fn with_access(mut self, table_access: TableAccess) -> Self {
         self.table.table_access = table_access;
         self
     }

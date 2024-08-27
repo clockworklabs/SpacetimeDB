@@ -22,9 +22,8 @@ use crate::identifier::Identifier;
 use itertools::Itertools;
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors, ErrorStream};
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::raw_def;
-use spacetimedb_lib::db::raw_def::v9::{RawIdentifier, RawScopedTypeNameV9};
+use spacetimedb_lib::db::raw_def::v9::{RawIdentifier, RawScopedTypeNameV9, TableAccess, TableType};
 use spacetimedb_lib::{ProductType, RawModuleDef};
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::AlgebraicType;
@@ -282,10 +281,10 @@ pub struct TableDef {
     pub schedule: Option<ScheduleDef>,
 
     /// Whether this is a system- or user-created table.
-    pub table_type: StTableType,
+    pub table_type: TableType,
 
     /// Whether this table is public or private.
-    pub table_access: StAccess,
+    pub table_access: TableAccess,
 }
 
 impl TableDef {
