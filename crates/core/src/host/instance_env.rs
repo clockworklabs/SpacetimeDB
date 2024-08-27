@@ -195,11 +195,21 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
 
         // Query the table id from the name.
-        let table_id = stdb
-            .table_id_from_name_mut(tx, table_name)?
-            .ok_or(NodesError::TableNotFound)?;
+        stdb.table_id_from_name_mut(tx, table_name)?
+            .ok_or(NodesError::TableNotFound)
+    }
 
-        Ok(table_id)
+    /// Returns the number of rows in the table identified by `table_id`.
+    ///
+    /// Errors with `GetTxError` if not in a transaction
+    /// and `TableNotFound` if the table does not exist.
+    #[tracing::instrument(skip_all)]
+    pub fn datastore_table_row_count(&self, table_id: TableId) -> Result<u64, NodesError> {
+        let stdb = &*self.dbic.relational_db;
+        let tx = &mut *self.get_tx()?;
+
+        // Query the row count for id.
+        stdb.table_row_count_mut(tx, table_id).ok_or(NodesError::TableNotFound)
     }
 
     /// Finds all rows in the table identified by `table_id`

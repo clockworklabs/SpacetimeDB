@@ -347,6 +347,7 @@ macro_rules! abi_funcs {
     ($mac:ident) => {
         $mac! {
             "spacetime_10.0"::table_id_from_name,
+            "spacetime_10.0"::datastore_table_row_count,
             "spacetime_10.0"::row_iter_bsatn_advance,
             "spacetime_10.0"::row_iter_bsatn_close,
             "spacetime_10.0"::bytes_source_read,

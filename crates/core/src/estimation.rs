@@ -1,4 +1,4 @@
-use crate::db::relational_db::Tx;
+use crate::db::{datastore::locking_tx_datastore::state_view::StateView as _, relational_db::Tx};
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_vm::expr::{Query, QueryExpr, SourceExpr};
 
@@ -11,7 +11,7 @@ pub fn num_rows(tx: &Tx, expr: &QueryExpr) -> u64 {
 fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
     match ops {
         // The base case is the table row count.
-        [] => src.table_id().and_then(|id| tx.get_row_count(id)).unwrap_or(0),
+        [] => src.table_id().and_then(|id| tx.table_row_count(id)).unwrap_or(0),
         // Walk in reverse from the end (`op`) to the beginning.
         [input @ .., op] => match op {
             // How selective is an index lookup?
@@ -61,7 +61,7 @@ fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
 /// Note this method is not applicable to range scans.
 fn index_row_est(tx: &Tx, table_id: TableId, cols: &ColList) -> u64 {
     tx.num_distinct_values(table_id, cols)
-        .map_or(0, |ndv| tx.get_row_count(table_id).unwrap_or(0) / ndv)
+        .map_or(0, |ndv| tx.table_row_count(table_id).unwrap_or(0) / ndv)
 }
 
 #[cfg(test)]

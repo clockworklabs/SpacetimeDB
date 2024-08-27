@@ -64,6 +64,14 @@ pub(super) struct TxState {
 }
 
 impl TxState {
+    /// Returns the row count in insert tables
+    /// and the number of rows deleted from committed state.
+    pub(super) fn table_row_count(&self, table_id: TableId) -> (Option<u64>, u64) {
+        let del_count = self.delete_tables.get(&table_id).map(|dt| dt.len() as u64).unwrap_or(0);
+        let ins_count = self.insert_tables.get(&table_id).map(|it| it.row_count);
+        (ins_count, del_count)
+    }
+
     /// When there's an index on `cols`,
     /// returns an iterator over the [BTreeIndex] that yields all the `RowId`s
     /// that match the specified `value` in the indexed column.
