@@ -23,7 +23,7 @@
     <PackageReference Include="xunit" Version="2.8.1" />
     <ProjectReference Include="../SpacetimeDB.ClientSDK.csproj" />
 
-    <Compile Include="../examples/quickstart/client/module_bindings/**/*.cs" />
+    <Compile Include="../examples~/quickstart/client/module_bindings/**/*.cs" />
   </ItemGroup>
 
 </Project>
