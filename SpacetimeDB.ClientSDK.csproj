@@ -18,7 +18,9 @@
     <RepositoryUrl>https://github.com/clockworklabs/spacetimedb-csharp-sdk</RepositoryUrl>
     <AssemblyVersion>0.12.0</AssemblyVersion>
     <Version>$(AssemblyVersion)</Version>
-    <DefaultItemExcludes>$(DefaultItemExcludes);examples/**;tests/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);*~/**</DefaultItemExcludes>
+    <!-- We want to save DLLs for Unity which doesn't support NuGet. -->
+    <RestorePackagesPath>packages</RestorePackagesPath>
   </PropertyGroup>
 
   <ItemGroup>

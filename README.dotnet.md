@@ -1,35 +1,32 @@
-# SpacetimeDB SDK for Unity Engine
+# SpacetimeDB SDK for C#
 
 ## Overview
 
-This repository contains the [Unity](https://unity.com/) SDK for SpacetimeDB. The SDK allows to interact with the database server and is prepared to work with code generated from a SpacetimeDB backend code.
+This repository contains the [C#](https://learn.microsoft.com/en-us/dotnet/csharp/) SDK for SpacetimeDB. The SDK allows to interact with the database server and is prepared to work with code generated from a SpacetimeDB backend code.
 
 ## Documentation
 
-The Unity SDK uses the same code as the C# SDK. You can find the documentation for the C# SDK in the [C# SDK Reference](README.dotnet.md).
-
-There is also a comprehensive Unity tutorial/demo available:
-
-- [Unity Tutorial](https://spacetimedb.com/docs/unity/part-1) Doc
-- [Unity Demo](https://github.com/clockworklabs/SpacetimeDBUnityTutorial) Repo
+The C# SDK has a [Quick Start](https://spacetimedb.com/docs/client-languages/csharp/csharp-sdk-quickstart-guide) guide and a [Reference](https://spacetimedb.com/docs/client-languages/csharp/csharp-sdk-reference).
 
 ## Installation
 
-### Unity Demo
+The SDK is available as a [NuGet Package](https://www.nuget.org/packages/SpacetimeDB.ClientSDK). To install it, follow these steps:
 
-Download the [.unitypackage release](https://github.com/clockworklabs/SpacetimeDBUnityTutorial/releases) of our [Unity Part 1 tutorial](https://spacetimedb.com/docs/unity/part-1) demo that includes this SDK as a package manfiest requirement.
+1. Open the NuGet package manager in Visual Studio.
+2. Search for `SpacetimeDB.ClientSDK`.
+3. Click the install button.
 
-### Standalone
+Alternatively, it can be installed on the command line using the `dotnet` command:
 
-1. Open the package manager window in Unity.
-2. Click the "(+)" button in the top-left corner and select "Add package from git URL".
-3. Paste the following URL: `https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git`
+```bash
+dotnet add package SpacetimeDB.ClientSDK
+```
 
 ## Usage
 
-### UnityNetworkManager
+### Access the SpacetimeDB Client
 
-The Unity SDK for SpacetimeDB requires that there is a `UnityNetworkManager` component attached to a GameObject in the scene. The `UnityNetworkManager` component is responsible for connecting to SpacetimeDB and managing the connection. The `UnityNetworkManager` component is a singleton and there can only be one instance of it in the scene.
+The SpacetimeDB client is created automatically as a singleton and accessible via the `SpacetimeDBClient.instance` property.
 
 ### Connecting to SpacetimeDB
 
@@ -40,7 +37,7 @@ To connect to SpacetimeDB, you need to call the `Connect` method on the `Spaceti
 - `moduleAddress`: The address of the module to connect to. This is the same address that you use to connect to the SpacetimeDB web interface.
 - `sslEnabled`: Whether to use SSL to connect to SpacetimeDB. This is the same value that you use to connect to the SpacetimeDB web interface.
 
-Example:
+Example: 
 
 ```csharp
 using SpacetimeDB;
@@ -48,22 +45,23 @@ using SpacetimeDB;
 SpacetimeDBClient.instance.Connect(TOKEN, HOST, DBNAME, SSL_ENABLED);
 ```
 
-### AuthToken
+### AuthToken optional helper class
 
-The `AuthToken` class is an optional helper class that can be used to store the local client's authentication token locally in the Unity PlayerPrefs.
-
-Example:
+The `AuthToken` class is a helper class that can be used to store the local client's authentication token locally to your user's home directory.
 
 ```csharp
 using SpacetimeDB;
 
-// called when we receive the client identity from SpacetimeDB
-SpacetimeDBClient.instance.onIdentityReceived += (token, identity, address) => {
-    AuthToken.SaveToken(token);
-    local_identity = identity;
-};
+AuthToken.Init(".spacetime_csharp_quickstart");
 
-SpacetimeDBClient.instance.Connect(AuthToken.Token, hostName, moduleAddress, sslEnabled);
+SpacetimeDBClient.instance.Connect(AuthToken.Token, HOST, DBNAME, SSL_ENABLED);
+
+void OnIdentityReceived(string authToken, Identity identity)
+{
+    local_identity = identity;
+    AuthToken.SaveToken(authToken);
+}
+SpacetimeDBClient.instance.onIdentityReceived += OnIdentityReceived;
 ```
 
 ### Subscribing to tables
@@ -86,7 +84,6 @@ You can register for row update events on a table. To do this, you need to regis
 - `OnUpdate`: Called when a row is updated in the table.
 - `OnBeforeDelete`: Called before a row is deleted from the table.
 - `OnDelete`: Called when a row is deleted from the table.
-- `OnRowUpdate`: Called when a row is inserted, updated, or deleted from the table.
 
 Example:
 
@@ -97,7 +94,6 @@ PlayerComponent.OnInsert += PlayerComponent_OnInsert;
 PlayerComponent.OnUpdate += PlayerComponent_OnUpdate;
 PlayerComponent.OnDelete += PlayerComponent_OnDelete;
 PlayerComponent.OnBeforeDelete += PlayerComponent_OnBeforeDelete;
-PlayerComponent.OnRowUpdate += PlayerComponent_OnRowUpdate;
 ```
 
 You can register for reducer call updates as well.
