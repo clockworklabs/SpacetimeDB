@@ -273,6 +273,8 @@ fn upgrade_constraint_to_unique_constraint(
                 });
             }
         } else {
+            // There is a primary key annotation on multiple columns.
+            // client codegen can't handle this.
             extra_errors.push(ValidationError::RepeatedPrimaryKey {
                 table: table_name.clone(),
             });

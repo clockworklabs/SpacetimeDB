@@ -81,7 +81,6 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
     let tables_types_reducers = (tables, types, reducers)
         .combine_errors()
         .and_then(|(tables, types, reducers)| {
-            check_table_names_consistent_with_type_names(&tables, &types)?;
             check_scheduled_reducers_exist(&tables, &reducers)?;
             Ok((tables, types, reducers))
         });
@@ -767,30 +766,6 @@ fn identifier(name: Box<str>) -> Result<Identifier> {
 enum TypeDefOrUse {
     Def,
     Use,
-}
-
-fn check_table_names_consistent_with_type_names(
-    tables: &IdentifierMap<TableDef>,
-    types: &HashMap<ScopedTypeName, TypeDef>,
-) -> Result<()> {
-    tables
-        .values()
-        .map(|table| -> Result<()> {
-            let scoped_name = ScopedTypeName {
-                name: table.name.clone(),
-                scope: [].into(),
-            };
-            let ty = types.get(&scoped_name).map(|def| def.ty);
-            if ty != Some(table.product_type_ref) {
-                Err(ValidationError::TableTypeNameMismatch {
-                    table: table.name.clone(),
-                }
-                .into())
-            } else {
-                Ok(())
-            }
-        })
-        .collect_all_errors()
 }
 
 fn check_scheduled_reducers_exist(
