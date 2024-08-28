@@ -848,7 +848,7 @@ impl WasmInstanceEnv {
                 env.call_reducer_args = None;
                 Ok(-1i32)
             } else {
-                *cursor = can_read_len;
+                *cursor += can_read_len;
                 Ok(0)
             }
         })
