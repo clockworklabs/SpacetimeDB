@@ -654,6 +654,8 @@ pub struct Errno(NonZeroU16);
 // once Error gets exposed from core this crate can be no_std again
 impl std::error::Error for Errno {}
 
+pub type Result<T, E = Errno> = core::result::Result<T, E>;
+
 macro_rules! def_errno {
     ($($err_name:ident($errno:literal, $errmsg:literal),)*) => {
         impl Errno {

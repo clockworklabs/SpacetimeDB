@@ -3,38 +3,30 @@
 
 #[macro_use]
 mod io;
-mod impls;
 pub mod log_stopwatch;
 mod logger;
 #[cfg(feature = "rand")]
 mod rng;
 #[doc(hidden)]
 pub mod rt;
+#[doc(hidden)]
+pub mod table;
 mod timestamp;
 
-use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
-use spacetimedb_lib::db::attr::ColumnAttribute;
-use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_lib::db::raw_def::IndexType;
-use spacetimedb_lib::{bsatn, ProductType, ProductValue};
-use spacetimedb_primitives::ColId;
+use spacetimedb_lib::bsatn;
 use std::cell::RefCell;
 use std::collections::VecDeque;
-use std::marker::PhantomData;
-use std::slice::from_ref;
-use std::{fmt, panic};
-use sys::RowIter;
 
 pub use log;
 #[cfg(feature = "rand")]
 pub use rand;
 
 #[cfg(feature = "rand")]
-pub use rng::{random, rng, StdbRng};
+pub use rng::StdbRng;
 pub use sats::SpacetimeType;
 #[doc(hidden)]
 pub use spacetimedb_bindings_macro::__TableHelper;
-pub use spacetimedb_bindings_macro::{duration, query, reducer, table};
+pub use spacetimedb_bindings_macro::{duration, reducer, table};
 pub use spacetimedb_bindings_sys as sys;
 pub use spacetimedb_lib;
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
@@ -45,15 +37,13 @@ pub use spacetimedb_lib::AlgebraicValue;
 pub use spacetimedb_lib::Identity;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
+pub use table::{AutoIncOverflow, BTreeIndex, Table, TryInsertError, UniqueColumn, UniqueConstraintViolation};
 pub use timestamp::Timestamp;
-
-pub type Result<T = (), E = Errno> = core::result::Result<T, E>;
 
 pub type ReducerResult = core::result::Result<(), Box<str>>;
 
 /// A context that any reducer is provided with.
 #[non_exhaustive]
-#[derive(Copy, Clone)]
 pub struct ReducerContext {
     /// The `Identity` of the client that invoked the reducer.
     pub sender: Identity,
@@ -67,195 +57,71 @@ pub struct ReducerContext {
     /// For automatic reducers, i.e. `init`, `update` and scheduled reducers,
     /// this will be the module's `Address`.
     pub address: Option<Address>,
+    pub db: Local,
+
+    #[cfg(feature = "rand")]
+    rng: std::cell::OnceCell<StdbRng>,
 }
 
 impl ReducerContext {
     #[doc(hidden)]
     pub fn __dummy() -> Self {
         Self {
+            db: Local {},
             sender: Identity::__dummy(),
             timestamp: Timestamp::UNIX_EPOCH,
             address: None,
+            rng: std::cell::OnceCell::new(),
         }
     }
 }
+
+/// A handle on a database with a particular table schema.
+pub trait DbContext {
+    /// A view into the tables of a database.
+    ///
+    /// This type is specialized on the database's particular schema.
+    ///
+    /// Methods on the `DbView` type will allow querying tables defined by the module.
+    type DbView;
+
+    /// Get a view into the tables.
+    ///
+    /// This method is provided for times when a programmer wants to be generic over the `DbContext` type.
+    /// Concrete-typed code is expected to read the `.db` field off the particular `DbContext` implementor.
+    /// Currently, being this generic is only meaningful in clients,
+    /// as modules have only a single implementor of `DbContext`.
+    fn db(&self) -> &Self::DbView;
+}
+
+impl DbContext for ReducerContext {
+    type DbView = Local;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+}
+
+#[non_exhaustive]
+pub struct Local {}
 
 // #[cfg(target_arch = "wasm32")]
 // #[global_allocator]
 // static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-/// Run a function `f` provided with an empty mutable row buffer
-/// and return the result of the function.
-fn with_row_buf<R>(f: impl FnOnce(&mut Vec<u8>) -> R) -> R {
-    thread_local! {
-        /// A global buffer used for row data.
-        // This gets optimized away to a normal global since wasm32 doesn't have threads by default.
-        static ROW_BUF: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(DEFAULT_BUFFER_CAPACITY));
-    }
-
-    ROW_BUF.with_borrow_mut(|buf| {
-        buf.clear();
-        f(buf)
-    })
-}
-
-pub fn encode_row(row: ProductValue, bytes: &mut impl BufWriter) {
-    row.encode(bytes);
-}
-
-pub fn decode_row<'a>(schema: &ProductType, bytes: &mut impl BufReader<'a>) -> Result<ProductValue, DecodeError> {
-    ProductValue::decode(schema, bytes)
-}
-
-pub fn encode_schema(schema: ProductType, bytes: &mut impl BufWriter) {
-    schema.encode(bytes);
-}
-
-pub fn decode_schema<'a>(bytes: &mut impl BufReader<'a>) -> Result<ProductType, DecodeError> {
-    ProductType::decode(bytes)
-}
+// This should guarantee in most cases that we don't have to reallocate an iterator
+// buffer, unless there's a single row that serializes to >1 MiB.
+const DEFAULT_BUFFER_CAPACITY: usize = spacetimedb_primitives::ROW_ITER_CHUNK_SIZE * 2;
 
 /// Queries and returns the `table_id` associated with the given (table) `name`.
 ///
 /// Panics if the table does not exist.
+#[doc(hidden)]
 pub fn table_id_from_name(table_name: &str) -> TableId {
     sys::table_id_from_name(table_name).unwrap_or_else(|_| {
         panic!("Failed to get table with name: {}", table_name);
     })
 }
-
-/// Insert a row of type `T` into the table identified by `table_id`.
-/// This will call `handle_gen_cols` to write back the generated column values passed in the `&[u8]`.
-pub fn insert_raw<T: Serialize>(
-    table_id: TableId,
-    row: T,
-    handle_gen_cols: impl FnOnce(&mut T, &[u8]),
-) -> Result<T, Errno> {
-    with_row_buf(|bytes| {
-        // Encode the row as bsatn into the buffer `bytes`.
-        bsatn::to_writer(bytes, &row).unwrap();
-
-        // Insert row into table.
-        sys::insert(table_id, bytes).map(|gen_cols| {
-            let mut row = row;
-            // Let the caller handle any generated columns written back by `sys::insert` to `bytes`.
-            handle_gen_cols(&mut row, gen_cols);
-            row
-        })
-    })
-}
-
-/// Insert a row of type `T` into the table identified by `table_id`.
-pub fn insert<T: TableType>(table_id: TableId, row: T) -> T::InsertResult {
-    let res = insert_raw(table_id, row, T::integrate_generated_columns);
-    sealed::InsertResult::from_res(res)
-}
-
-/// Finds all rows in the table identified by `table_id`,
-/// where the row has a column, identified by `col_id`,
-/// with data matching `val` that can be serialized.
-///
-/// Matching is defined by decoding of `value` to an `AlgebraicValue`
-/// according to the column's schema and then `Ord for AlgebraicValue`.
-///
-/// The rows found are BSATN encoded and then concatenated.
-/// The resulting byte string from the concatenation is written
-/// to a fresh buffer with a handle to it returned as a `Buffer`.
-///
-/// Panics if
-/// - BSATN serialization fails
-/// - there were unique constraint violations
-/// - `row` doesn't decode from BSATN to a `ProductValue`
-///   according to the `ProductType` that the table's schema specifies
-pub fn iter_by_col_eq(table_id: TableId, col_id: ColId, val: &impl Serialize) -> Result<RowIter> {
-    with_row_buf(|bytes| {
-        // Encode `val` as BSATN into `bytes` and then use that.
-        bsatn::to_writer(bytes, val).unwrap();
-        sys::iter_by_col_eq(table_id, col_id, bytes)
-    })
-}
-
-/// Deletes all rows in the table identified by `table_id`
-/// where the column identified by `col_id` matches a `value` that can be serialized.
-///
-/// Matching is defined by decoding of `value` to an `AlgebraicValue`
-/// according to the column's schema and then `Ord for AlgebraicValue`.
-///
-/// Returns the number of rows deleted.
-///
-/// Returns an error if
-/// - a table with the provided `table_id` doesn't exist
-/// - no columns were deleted
-/// - `col_id` does not identify a column of the table,
-/// - `value` doesn't decode from BSATN to an `AlgebraicValue`
-///   according to the `AlgebraicType` that the table's schema specifies for `col_id`.
-///
-/// Panics when serialization fails.
-pub fn delete_by_col_eq(table_id: TableId, col_id: ColId, value: &impl Serialize) -> Result<u32> {
-    with_row_buf(|bytes| {
-        // Encode `value` as BSATN into `bytes` and then use that.
-        bsatn::to_writer(bytes, value).unwrap();
-        sys::delete_by_col_eq(table_id, col_id, bytes)
-    })
-}
-
-/// Deletes those rows, in the table identified by `table_id`,
-/// that match any row in `relation`.
-///
-/// The `relation` will be BSATN encoded to `[ProductValue]`
-/// i.e., a list of product values, so each element in `relation`
-/// must serialize to what a `ProductValue` would in BSATN.
-///
-/// Matching is then defined by first BSATN-decoding
-/// the resulting bsatn to a `Vec<ProductValue>`
-/// according to the row schema of the table
-/// and then using `Ord for AlgebraicValue`.
-///
-/// Returns the number of rows deleted.
-///
-/// Returns an error if
-/// - a table with the provided `table_id` doesn't exist
-/// - `(relation, relation_len)` doesn't decode from BSATN to a `Vec<ProductValue>`
-/// - this is called outside a transaction
-///
-/// Panics when serialization fails.
-pub fn delete_by_rel(table_id: TableId, relation: &[impl Serialize]) -> Result<u32> {
-    with_row_buf(|bytes| {
-        // Encode `value` as BSATN into `bytes` and then use that.
-        bsatn::to_writer(bytes, relation).unwrap();
-        sys::datastore_delete_all_by_eq_bsatn(table_id, bytes)
-    })
-}
-
-// Get the iterator for this table with an optional filter,
-fn table_iter<T: TableType>(table_id: TableId) -> Result<TableIter<T>> {
-    sys::datastore_table_scan_bsatn(table_id).map(TableIter::new)
-}
-
-fn table_iter_filtered<T: TableType>(
-    table_id: TableId,
-    filter: &spacetimedb_lib::filter::Expr,
-) -> Result<TableIter<T>> {
-    with_row_buf(|buf| {
-        bsatn::to_writer(buf, filter).expect("Couldn't encode the filter query");
-        sys::iter_filtered(table_id, buf).map(TableIter::new)
-    })
-}
-
-/// A table iterator which yields values of the `TableType` corresponding to the table.
-pub struct TableIter<T: TableType> {
-    /// The underlying source of our `Buffer`s.
-    inner: RowIter,
-
-    /// The current position in the buffer, from which `deserializer` can read.
-    reader: Cursor<Vec<u8>>,
-
-    _marker: PhantomData<T>,
-}
-
-// This should guarantee in most cases that we don't have to reallocate an iterator
-// buffer, unless there's a single row that serializes to >1 MiB.
-const DEFAULT_BUFFER_CAPACITY: usize = spacetimedb_primitives::ROW_ITER_CHUNK_SIZE * 2;
 
 thread_local! {
     /// A global pool of buffers used for iteration.
@@ -263,331 +129,54 @@ thread_local! {
     static ITER_BUFS: RefCell<VecDeque<Vec<u8>>> = const { RefCell::new(VecDeque::new()) };
 }
 
-/// Take a buffer from the pool of buffers for row iterators, if one exists. Otherwise, allocate a new one.
-fn take_iter_buf() -> Vec<u8> {
-    ITER_BUFS
-        .with_borrow_mut(|v| v.pop_front())
-        .unwrap_or_else(|| Vec::with_capacity(DEFAULT_BUFFER_CAPACITY))
+struct IterBuf {
+    buf: Vec<u8>,
 }
 
-/// Return the buffer to the pool of buffers for row iterators.
-fn return_iter_buf(mut buf: Vec<u8>) {
-    buf.clear();
-    ITER_BUFS.with_borrow_mut(|v| v.push_back(buf))
-}
+impl IterBuf {
+    /// Take a buffer from the pool of buffers for row iterators, if one exists. Otherwise, allocate a new one.
+    fn take() -> Self {
+        let buf = ITER_BUFS
+            .with_borrow_mut(|v| v.pop_front())
+            .unwrap_or_else(|| Vec::with_capacity(DEFAULT_BUFFER_CAPACITY));
+        Self { buf }
+    }
 
-impl<T: TableType> TableIter<T> {
-    fn new(iter: RowIter) -> Self {
-        TableIter {
-            inner: iter,
-            reader: Cursor::new(take_iter_buf()),
-            _marker: PhantomData,
-        }
+    fn serialize<T: Serialize + ?Sized>(val: &T) -> Result<Self, bsatn::EncodeError> {
+        let mut buf = IterBuf::take();
+        buf.serialize_into(val)?;
+        Ok(buf)
+    }
+
+    #[inline]
+    fn serialize_into<T: Serialize + ?Sized>(&mut self, val: &T) -> Result<(), bsatn::EncodeError> {
+        bsatn::to_writer(&mut **self, val)
     }
 }
 
-impl<T: TableType> Drop for TableIter<T> {
+impl Drop for IterBuf {
     fn drop(&mut self) {
-        return_iter_buf(std::mem::take(&mut self.reader.buf))
+        self.buf.clear();
+        let buf = std::mem::take(&mut self.buf);
+        ITER_BUFS.with_borrow_mut(|v| v.push_back(buf));
     }
 }
 
-impl<T: TableType> TableIter<T> {
-    fn decode(&mut self) -> T {
-        bsatn::from_reader(&mut &self.reader).expect("Failed to decode row!")
+impl AsRef<[u8]> for IterBuf {
+    fn as_ref(&self) -> &[u8] {
+        &self.buf
     }
 }
 
-impl<T: TableType> Iterator for TableIter<T> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        // If we currently have some bytes in the buffer to still decode, do that.
-        if (&self.reader).remaining() > 0 {
-            return Some(self.decode());
-        }
-
-        // Don't fetch the next chunk if there is none.
-        if self.inner.is_exhausted() {
-            return None;
-        }
-
-        // Otherwise, try to fetch the next chunk while reusing the buffer.
-        self.reader.buf.clear();
-        self.reader.pos.set(0);
-        if self.inner.read(&mut self.reader.buf) == 0 {
-            return None;
-        }
-        Some(self.decode())
+impl std::ops::Deref for IterBuf {
+    type Target = Vec<u8>;
+    fn deref(&self) -> &Self::Target {
+        &self.buf
     }
 }
-
-/// Describe a named index with an index type over a set of columns identified by their IDs.
-#[derive(Clone, Copy)]
-pub struct IndexDesc<'a> {
-    /// The name of the index.
-    pub name: &'a str,
-    /// The type of index used, i.e. the strategy used for indexing.
-    pub ty: IndexType,
-    /// The set of columns indexed over given by the identifiers of the columns.
-    pub col_ids: &'a [u16],
-}
-
-/// A trait for the set of types serializable, deserializable, and convertible to `AlgebraicType`.
-///
-/// Additionally, the type knows its own table name, its column attributes, and indices.
-pub trait TableType: SpacetimeType + DeserializeOwned + Serialize {
-    const TABLE_NAME: &'static str;
-    const TABLE_ACCESS: StAccess;
-    const COLUMN_ATTRS: &'static [ColumnAttribute];
-    const INDEXES: &'static [IndexDesc<'static>];
-    const SCHEDULED_REDUCER_NAME: Option<&'static str> = None;
-
-    type InsertResult: sealed::InsertResult<T = Self>;
-
-    /// Returns the ID of this table.
-    fn table_id() -> TableId;
-
-    // Re-integrates the BSATN of the `generated_cols` into `row`.
-    fn integrate_generated_columns(row: &mut Self, generated_cols: &[u8]);
-
-    /// Insert `ins` as a row in this table.
-    fn insert(ins: Self) -> Self::InsertResult {
-        insert(Self::table_id(), ins)
-    }
-
-    /// Returns an iterator over the rows in this table.
-    fn iter() -> TableIter<Self> {
-        table_iter(Self::table_id()).unwrap()
-    }
-
-    /// Returns an iterator filtered by `filter` over the rows in this table.
-    ///
-    /// **NOTE:** Do not use directly. This is exposed as `query!(...)`.
-    #[doc(hidden)]
-    fn iter_filtered(filter: spacetimedb_lib::filter::Expr) -> TableIter<Self> {
-        table_iter_filtered(Self::table_id(), &filter).unwrap()
-    }
-
-    /// Deletes this row `self` from the table.
-    ///
-    /// Returns `true` if the row was deleted.
-    fn delete(&self) -> bool {
-        let count = delete_by_rel(Self::table_id(), from_ref(self)).unwrap();
-        debug_assert!(count < 2);
-        count == 1
-    }
-}
-
-mod sealed {
-    use super::*;
-
-    /// A trait of result types which know how to convert a `Result<T: TableType>` into itself.
-    pub trait InsertResult {
-        type T: TableType;
-        fn from_res(res: Result<Self::T>) -> Self;
-    }
-}
-
-/// A UNIQUE constraint violation on table type `T` was attempted.
-pub struct UniqueConstraintViolation<T: TableType>(PhantomData<T>);
-impl<T: TableType> fmt::Debug for UniqueConstraintViolation<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "UniqueConstraintViolation({})", T::TABLE_NAME)
-    }
-}
-impl<T: TableType> fmt::Display for UniqueConstraintViolation<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "not able to insert into table {}; duplicate unique column",
-            T::TABLE_NAME
-        )
-    }
-}
-impl<T: TableType> From<UniqueConstraintViolation<T>> for String {
-    fn from(err: UniqueConstraintViolation<T>) -> Self {
-        err.to_string()
-    }
-}
-impl<T: TableType> std::error::Error for UniqueConstraintViolation<T> {}
-
-impl<T: TableType> sealed::InsertResult for Result<T, UniqueConstraintViolation<T>> {
-    type T = T;
-    fn from_res(res: Result<Self::T>) -> Self {
-        res.map_err(|e| match e {
-            Errno::UNIQUE_ALREADY_EXISTS => UniqueConstraintViolation(PhantomData),
-            _ => panic!("unexpected error from insert(): {e}"),
-        })
-    }
-}
-
-impl<T: TableType> sealed::InsertResult for T {
-    type T = T;
-    fn from_res(res: Result<Self::T>) -> Self {
-        res.unwrap_or_else(|e| panic!("unexpected error from insert(): {e}"))
-    }
-}
-
-/// A trait for types that know if their value will trigger a sequence.
-/// This is used for auto-inc columns to determine if an insertion of a row
-/// will require the column to be updated in the row.
-///
-/// For now, this is equivalent to a "is zero" test.
-pub trait IsSequenceTrigger {
-    /// Is this value one that will trigger a sequence, if any,
-    /// when used as a column value.
-    fn is_sequence_trigger(&self) -> bool;
-}
-
-/// A trait for types that can be serialized and tested for equality.
-///
-/// A type `T` implementing this trait should uphold the invariant:
-/// ```text
-/// ∀ a, b ∈ T. a == b <=> serialize(a) == serialize(b)
-/// ```
-/// That is, if two values `a: T` and `b: T` are equal,
-/// then so are the values in their serialized representation.
-pub trait FilterableValue: Serialize + Eq {}
-
-#[doc(hidden)]
-pub mod query {
-    use super::*;
-
-    /// A trait for types exposing an operation to access their `N`th field.
-    ///
-    /// In other words, a type implementing `FieldAccess<N>` allows
-    /// shared projection from `self` to its `N`th field.
-    pub trait FieldAccess<const N: u16> {
-        /// The type of the field at the `N`th position.
-        type Field;
-
-        /// Project to the value of the field at position `N`.
-        fn get_field(&self) -> &Self::Field;
-    }
-
-    /// Finds the row of `Table` where the column at `COL_IDX` matches `val`,
-    /// as defined by decoding to an `AlgebraicValue`
-    /// according to the column's schema and then `Ord for AlgebraicValue`.
-    ///
-    /// **NOTE:** Do not use directly.
-    /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb::table]`.
-    #[doc(hidden)]
-    pub fn filter_by_unique_field<
-        Table: TableType + FieldAccess<COL_IDX, Field = T>,
-        T: FilterableValue,
-        const COL_IDX: u16,
-    >(
-        val: &T,
-    ) -> Option<Table> {
-        // Find the row with a match.
-        let mut iter = iter_by_col_eq(Table::table_id(), COL_IDX.into(), val).unwrap();
-        with_row_buf(|buf| {
-            // We will always find either 0 or 1 rows here due to the unique constraint.
-            iter.read(buf);
-            debug_assert!(iter.is_exhausted());
-
-            if buf.is_empty() {
-                return None;
-            }
-            let mut reader = buf.as_slice();
-            let row = bsatn::from_reader(&mut reader).unwrap();
-            assert!(
-                reader.is_empty(),
-                "iter_by_col_eq on unique field cannot return >1 rows"
-            );
-            Some(row)
-        })
-    }
-
-    /// Finds all rows of `Table` where the column at `COL_IDX` matches `val`,
-    /// as defined by decoding to an `AlgebraicValue`
-    /// according to the column's schema and then `Ord for AlgebraicValue`.
-    ///
-    /// **NOTE:** Do not use directly.
-    /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb::table]`.
-    #[doc(hidden)]
-    pub fn filter_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(val: &T) -> TableIter<Table> {
-        let iter = iter_by_col_eq(Table::table_id(), COL_IDX.into(), val).expect("iter_by_col_eq failed");
-        TableIter::new(iter)
-    }
-
-    /// Deletes all rows of `Table` where the column at `COL_IDX` matches `val`,
-    /// as defined by decoding to an `AlgebraicValue`
-    /// according to the column's schema and then `Ord for AlgebraicValue`.
-    ///
-    /// Returns the number of deleted rows.
-    ///
-    /// **NOTE:** Do not use directly.
-    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb::table]`
-    /// where the field does not have a unique constraint.
-    #[doc(hidden)]
-    pub fn delete_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(val: &T) -> u32 {
-        delete_by_col_eq(Table::table_id(), COL_IDX.into(), val)
-            // TODO: Returning `Err` here was supposed to signify an error,
-            //       but it can also return `Err(_)` when there is nothing to delete.
-            .unwrap_or(0)
-    }
-
-    /// Deletes the row of `Table` where the column at `COL_IDX` matches `val`,
-    /// as defined by decoding to an `AlgebraicValue`
-    /// according to the column's schema and then `Ord for AlgebraicValue`.
-    ///
-    /// Returns whether any rows were deleted.
-    ///
-    /// **NOTE:** Do not use directly.
-    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb::table]`
-    /// where the field has a unique constraint.
-    pub fn delete_by_unique_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(val: &T) -> bool {
-        let count = delete_by_field::<Table, T, COL_IDX>(val);
-        debug_assert!(count <= 1);
-        count > 0
-    }
-
-    /// Updates the row of `Table`, where the column at `COL_IDX` matches `old`, to be `new` instead.
-    ///
-    /// Matching is defined by decoding to an `AlgebraicValue`
-    /// according to the column's schema and then `Ord for AlgebraicValue`.
-    ///
-    /// **NOTE:** Do not use directly.
-    /// This is exposed as `update_by_{$field_name}` on types with `#[spacetimedb::table]`.
-    #[doc(hidden)]
-    pub fn update_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(old: &T, new: Table) -> bool {
-        // Delete the existing row, if any.
-        delete_by_field::<Table, T, COL_IDX>(old);
-
-        // Insert the new row.
-        Table::insert(new);
-
-        // TODO: For now this is always successful.
-        //       In the future, this could return what `delete_by_field` returns?
-        true
-    }
-
-    /// An iterator returned by `filter_by_field`,
-    /// which yields all of the rows of a table where a particular column's value
-    /// matches a given target value.
-    ///
-    /// Matching is defined by decoding to an `AlgebraicValue`
-    /// according to the column's schema and then `Ord for AlgebraicValue`.
-    #[doc(hidden)]
-    pub struct FilterByIter<Table: TableType> {
-        /// The buffer of rows returned by `iter_by_col_eq`.
-        cursor: Cursor<Box<[u8]>>,
-
-        _phantom: PhantomData<Table>,
-    }
-
-    impl<Table> Iterator for FilterByIter<Table>
-    where
-        Table: TableType,
-    {
-        type Item = Table;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            let mut cursor = &self.cursor;
-            (cursor.remaining() != 0).then(|| bsatn::from_reader(&mut cursor).unwrap())
-        }
+impl std::ops::DerefMut for IterBuf {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.buf
     }
 }
 

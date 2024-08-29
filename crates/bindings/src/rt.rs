@@ -1,7 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use crate::timestamp::with_timestamp_set;
-use crate::{return_iter_buf, sys, take_iter_buf, ReducerContext, ReducerResult, SpacetimeType, TableType, Timestamp};
+use crate::{sys, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, Timestamp};
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::db::raw_def::{
     RawColumnDefV8, RawConstraintDefV8, RawIndexDefV8, RawSequenceDefV8, RawTableDefV8,
@@ -22,8 +22,8 @@ use sys::raw::{BytesSink, BytesSource};
 ///
 /// Returns an invalid buffer on success
 /// and otherwise the error is written into the fresh one returned.
-pub fn invoke_reducer<'a, A: Args<'a>, T>(
-    reducer: impl Reducer<'a, A, T>,
+pub fn invoke_reducer<'a, A: Args<'a>>(
+    reducer: impl Reducer<'a, A>,
     ctx: ReducerContext,
     args: &'a [u8],
 ) -> Result<(), Box<str>> {
@@ -31,16 +31,11 @@ pub fn invoke_reducer<'a, A: Args<'a>, T>(
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
     // Run the reducer with the environment all set up.
-    let invoke = || reducer.invoke(ctx, args);
-    #[cfg(feature = "rand")]
-    let invoke = || crate::rng::with_rng_set(invoke);
-    with_timestamp_set(ctx.timestamp, invoke)
+    with_timestamp_set(ctx.timestamp, || reducer.invoke(&ctx, args))
 }
 /// A trait for types representing the *execution logic* of a reducer.
-///
-/// The type parameter `T` is used for determining whether there is a context argument.
-pub trait Reducer<'de, A: Args<'de>, T> {
-    fn invoke(&self, ctx: ReducerContext, args: A) -> ReducerResult;
+pub trait Reducer<'de, A: Args<'de>> {
+    fn invoke(&self, ctx: &ReducerContext, args: A) -> ReducerResult;
 
     type ArgsWithContext;
     fn extract_args(args: Self::ArgsWithContext) -> A;
@@ -91,30 +86,27 @@ impl IntoReducerResult for () {
         Ok(self)
     }
 }
-impl<E: fmt::Debug> IntoReducerResult for Result<(), E> {
+impl<E: fmt::Display> IntoReducerResult for Result<(), E> {
     #[inline]
     fn into_result(self) -> Result<(), Box<str>> {
-        self.map_err(|e| format!("{e:?}").into())
+        self.map_err(|e| e.to_string().into())
     }
 }
 
 /// A trait of types that can be an argument of a reducer.
 pub trait ReducerArg<'de> {}
 impl<'de, T: Deserialize<'de>> ReducerArg<'de> for T {}
-impl ReducerArg<'_> for ReducerContext {}
+impl ReducerArg<'_> for &ReducerContext {}
 /// Assert that `T: ReducerArg`.
 pub fn assert_reducer_arg<'de, T: ReducerArg<'de>>() {}
 /// Assert that `T: IntoReducerResult`.
 pub fn assert_reducer_ret<T: IntoReducerResult>() {}
-pub const fn assert_reducer_typecheck<'de, A: Args<'de>, T>(_: impl Reducer<'de, A, T> + Copy) {}
+/// Assert that a reducer type-checks with a given type.
+pub const fn assert_reducer_typecheck<'de, A: Args<'de>>(_: impl Reducer<'de, A> + Copy) {}
 
 /// Used in the last type parameter of `Reducer` to indicate that the
 /// context argument *should* be passed to the reducer logic.
 pub struct ContextArg;
-
-/// Used in the last type parameter of `Reducer` to indicate that the
-/// context argument *should not* be passed to the reducer logic.
-pub struct NoContextArg;
 
 /// A visitor providing a deserializer for a type `A: Args`.
 struct ArgsVisitor<A> {
@@ -190,13 +182,13 @@ macro_rules! impl_reducer {
         }
 
         // Implement `Reducer<..., ContextArg>` for the tuple type `($($T,)*)`.
-        impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Reducer<'de, ($($T,)*), ContextArg> for Func
+        impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Reducer<'de, ($($T,)*)> for Func
         where
-            Func: Fn(ReducerContext, $($T),*) -> Ret,
+            Func: Fn(&ReducerContext, $($T),*) -> Ret,
             Ret: IntoReducerResult
         {
             #[allow(non_snake_case)]
-            fn invoke(&self, ctx: ReducerContext, args: ($($T,)*)) -> Result<(), Box<str>> {
+            fn invoke(&self, ctx: &ReducerContext, args: ($($T,)*)) -> Result<(), Box<str>> {
                 let ($($T,)*) = args;
                 self(ctx, $($T),*).into_result()
             }
@@ -209,23 +201,6 @@ macro_rules! impl_reducer {
             }
         }
 
-        // Implement `Reducer<..., NoContextArg>` for the tuple type `($($T,)*)`.
-        impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Reducer<'de, ($($T,)*), NoContextArg> for Func
-        where
-            Func: Fn($($T),*) -> Ret,
-            Ret: IntoReducerResult
-        {
-            #[allow(non_snake_case)]
-            fn invoke(&self, _ctx: ReducerContext, args: ($($T,)*)) -> Result<(), Box<str>> {
-                let ($($T,)*) = args;
-                self($($T),*).into_result()
-            }
-
-            type ArgsWithContext = ($($T,)*);
-            fn extract_args(args: Self::ArgsWithContext) -> ($($T,)*) {
-                args
-            }
-        }
     };
     // Counts the number of elements in the tuple.
     (@count $($T:ident)*) => {
@@ -277,9 +252,9 @@ pub fn register_reftype<T: SpacetimeType>() {
 }
 
 /// Registers a describer for the `TableType` `T`.
-pub fn register_table<T: TableType>() {
+pub fn register_table<T: Table>() {
     register_describer(|module| {
-        let data = *T::make_type(&mut module.inner).as_ref().unwrap();
+        let data = *T::Row::make_type(&mut module.inner).as_ref().unwrap();
         let columns: Vec<RawColumnDefV8> = RawColumnDefV8::from_product_type(
             module
                 .inner
@@ -338,8 +313,8 @@ pub fn register_table<T: TableType>() {
     })
 }
 
-impl From<crate::IndexDesc<'_>> for RawIndexDefV8 {
-    fn from(index: crate::IndexDesc<'_>) -> RawIndexDefV8 {
+impl From<crate::table::IndexDesc<'_>> for RawIndexDefV8 {
+    fn from(index: crate::table::IndexDesc<'_>) -> RawIndexDefV8 {
         let columns = index.col_ids.iter().copied().collect::<ColList>();
         if columns.is_empty() {
             panic!("Need at least one column in IndexDesc for index `{}`", index.name);
@@ -355,7 +330,7 @@ impl From<crate::IndexDesc<'_>> for RawIndexDefV8 {
 }
 
 /// Registers a describer for the reducer `I` with arguments `A`.
-pub fn register_reducer<'a, A: Args<'a>, T, I: ReducerInfo>(_: impl Reducer<'a, A, T>) {
+pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>) {
     register_describer(|module| {
         let schema = A::schema::<I>(&mut module.inner);
         module.inner.add_reducer(schema);
@@ -471,9 +446,11 @@ extern "C" fn __call_reducer__(
     // Assemble the `ReducerContext`.
     let timestamp = Timestamp::UNIX_EPOCH + Duration::from_micros(timestamp);
     let ctx = ReducerContext {
+        db: crate::Local {},
         sender,
         timestamp,
         address,
+        rng: std::cell::OnceCell::new(),
     };
 
     // Fetch reducer function.
@@ -501,18 +478,11 @@ fn with_read_args<R>(args: BytesSource, logic: impl FnOnce(&[u8]) -> R) -> R {
     // but it's likely we have one sitting around being unused at this point,
     // so use it to avoid allocating a temporary buffer if possible.
     // And if we do allocate a temporary buffer now, it will likely be reused later.
-    let mut buf = take_iter_buf();
+    let mut buf = IterBuf::take();
 
     // Read `args` and run `logic`.
     read_bytes_source_into(args, &mut buf);
-    let ret = logic(&buf);
-
-    // Return the `buf` back to the pool.
-    // Should a panic occur before reaching here,
-    // the WASM module cannot recover and will trap,
-    // so we don't need to care that this is not returned to the pool.
-    return_iter_buf(buf);
-    ret
+    logic(&buf)
 }
 
 const NO_SPACE: u16 = errno::NO_SPACE.get();

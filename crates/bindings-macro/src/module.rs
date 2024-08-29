@@ -12,7 +12,7 @@ use crate::{check_duplicate, sym};
 pub(crate) struct SatsType<'a> {
     pub ident: &'a syn::Ident,
     pub generics: &'a syn::Generics,
-    pub name: String,
+    pub name: LitStr,
     pub krate: TokenStream,
     // may want to use in the future
     #[allow(unused)]
@@ -104,14 +104,14 @@ pub(crate) fn extract_sats_type<'a>(
                     check_duplicate(&name, &meta)?;
                     let value = meta.value()?;
                     let v = value.parse::<LitStr>()?;
-                    name = Some(v.value());
+                    name = Some(v);
                 }
             });
             Ok(())
         })?;
     }
     let krate = krate.unwrap_or(crate_fallback);
-    let name = name.unwrap_or_else(|| ident.to_string());
+    let name = name.unwrap_or_else(|| LitStr::new(&ident.to_string(), ident.span()));
 
     Ok(SatsType {
         ident,
