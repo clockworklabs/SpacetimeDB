@@ -12,16 +12,17 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.ClientApi
 {
-	[SpacetimeDB.Type]
 	[DataContract]
+	[SpacetimeDB.Type]
 	public partial class IdentityToken
 	{
 		[DataMember(Name = "identity")]
 		public SpacetimeDB.Identity Identity = new();
+
 		[DataMember(Name = "token")]
 		public string Token = "";
+
 		[DataMember(Name = "address")]
 		public SpacetimeDB.Address Address = new();
-
 	}
 }

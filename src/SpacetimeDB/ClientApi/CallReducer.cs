@@ -12,16 +12,17 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.ClientApi
 {
-	[SpacetimeDB.Type]
 	[DataContract]
+	[SpacetimeDB.Type]
 	public partial class CallReducer
 	{
 		[DataMember(Name = "reducer")]
 		public string Reducer = "";
+
 		[DataMember(Name = "args")]
 		public SpacetimeDB.ClientApi.EncodedValue Args = null!;
+
 		[DataMember(Name = "request_id")]
 		public uint RequestId;
-
 	}
 }

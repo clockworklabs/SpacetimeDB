@@ -12,18 +12,20 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.ClientApi
 {
-	[SpacetimeDB.Type]
 	[DataContract]
+	[SpacetimeDB.Type]
 	public partial class TableUpdate
 	{
 		[DataMember(Name = "table_id")]
 		public uint TableId;
+
 		[DataMember(Name = "table_name")]
 		public string TableName = "";
-		[DataMember(Name = "deletes")]
-		public System.Collections.Generic.List<SpacetimeDB.ClientApi.EncodedValue> Deletes = new();
-		[DataMember(Name = "inserts")]
-		public System.Collections.Generic.List<SpacetimeDB.ClientApi.EncodedValue> Inserts = new();
 
+		[DataMember(Name = "deletes")]
+		public List<SpacetimeDB.ClientApi.EncodedValue> Deletes = new();
+
+		[DataMember(Name = "inserts")]
+		public List<SpacetimeDB.ClientApi.EncodedValue> Inserts = new();
 	}
 }
