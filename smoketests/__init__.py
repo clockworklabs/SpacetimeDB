@@ -241,10 +241,13 @@ class Smoketest(unittest.TestCase):
         if init_update:
             print("initial update:", init_update)
         else:
-            code = proc.poll()
-            if code:
-                raise subprocess.CalledProcessError(code, fake_args)
-            print("no inital update, but no error code either")
+            try:
+                code = proc.wait()
+                if code:
+                    raise subprocess.CalledProcessError(code, fake_args)
+                print("no inital update, but no error code either")
+            except subprocess.TimeoutExpired:
+                print("no initial update, but process is still running")
 
         def run():
             updates = list(map(json.loads, proc.stdout))
