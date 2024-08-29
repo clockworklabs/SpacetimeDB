@@ -12,14 +12,14 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.ClientApi
 {
-	[SpacetimeDB.Type]
 	[DataContract]
+	[SpacetimeDB.Type]
 	public partial class OneOffQuery
 	{
 		[DataMember(Name = "message_id")]
 		public byte[] MessageId = Array.Empty<byte>();
+
 		[DataMember(Name = "query_string")]
 		public string QueryString = "";
-
 	}
 }

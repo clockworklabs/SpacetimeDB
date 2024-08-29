@@ -43,15 +43,23 @@ public class SnapshotTests
     {
         public override void Write(VerifyJsonWriter writer, EnergyQuanta value)
         {
-            writer.WriteRawValueIfNoStrict(value.Quanta.ToString());
+            Assert.Equal(0uL, value.Quanta.hi);
+            writer.WriteValue(value.Quanta.lo);
         }
     }
 
-    class EncodedValueConverter : WriteOnlyJsonConverter<EncodedValue.Binary>
+    class EncodedValueConverter : WriteOnlyJsonConverter<EncodedValue>
     {
-        public override void Write(VerifyJsonWriter writer, EncodedValue.Binary value)
+        public override void Write(VerifyJsonWriter writer, EncodedValue value)
         {
-            writer.WriteValue(value.Binary_);
+            if (value is EncodedValue.Binary(var bytes))
+            {
+                writer.WriteValue(bytes);
+            }
+            else
+            {
+                throw new InvalidOperationException();
+            }
         }
     }
 

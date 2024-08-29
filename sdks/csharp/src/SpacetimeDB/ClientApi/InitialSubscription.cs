@@ -12,16 +12,17 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.ClientApi
 {
-	[SpacetimeDB.Type]
 	[DataContract]
+	[SpacetimeDB.Type]
 	public partial class InitialSubscription
 	{
 		[DataMember(Name = "database_update")]
 		public SpacetimeDB.ClientApi.DatabaseUpdate DatabaseUpdate = new();
+
 		[DataMember(Name = "request_id")]
 		public uint RequestId;
+
 		[DataMember(Name = "total_host_execution_duration_micros")]
 		public ulong TotalHostExecutionDurationMicros;
-
 	}
 }
