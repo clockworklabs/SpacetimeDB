@@ -258,6 +258,10 @@ public static void OnDisconnect(ReducerContext ReducerContext)
 }
 ```
 
+## Start the Server
+
+If you haven't already started the SpacetimeDB server, run the `spacetime start` command in a _separate_ terminal and leave it running while you continue following along.
+
 ## Publish the module
 
 And that's all of our module code! We'll run `spacetime publish` to compile our module and publish it on SpacetimeDB. `spacetime publish` takes an optional name which will map to the database's unique address. Clients can connect either by name or by address, but names are much more pleasant. Come up with a unique name, and fill it in where we've written `<module-name>`.
