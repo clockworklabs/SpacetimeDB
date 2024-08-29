@@ -38,21 +38,21 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
     // `combine_errors` or `collect_all_errors` on all the things we need to validate.
     // Sometimes it is unavoidable to use `?` early and this should be commented on.
 
-    let tables = tables
-        .into_iter()
-        .map(|table| {
-            validator
-                .validate_table_def(table)
-                .map(|table_def| (table_def.name.clone(), table_def))
-        })
-        .collect_all_errors();
-
     let reducers = reducers
         .into_iter()
         .map(|reducer| {
             validator
                 .validate_reducer_def(reducer)
                 .map(|reducer_def| (reducer_def.name.clone(), reducer_def))
+        })
+        .collect_all_errors();
+
+    let tables = tables
+        .into_iter()
+        .map(|table| {
+            validator
+                .validate_table_def(table)
+                .map(|table_def| (table_def.name.clone(), table_def))
         })
         .collect_all_errors();
 
@@ -78,21 +78,30 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         "Misc module exports are not yet supported in ABI v9."
     );
 
+    let tables_types_reducers = (tables, types, reducers)
+        .combine_errors()
+        .and_then(|(tables, types, reducers)| {
+            check_scheduled_reducers_exist(&tables, &reducers)?;
+            Ok((tables, types, reducers))
+        });
+
     let ModuleValidator {
         stored_in_table_def, ..
     } = validator;
 
-    let (tables, reducers, types) = (tables, reducers, types)
-        .combine_errors()
-        .map_err(|errors| errors.sort_deduplicate())?;
+    let (tables, types, reducers) = (tables_types_reducers).map_err(|errors| errors.sort_deduplicate())?;
 
-    Ok(ModuleDef {
+    let mut result = ModuleDef {
         tables,
         reducers,
         types,
         typespace,
         stored_in_table_def,
-    })
+    };
+
+    result.generate_indexes();
+
+    Ok(result)
 }
 
 /// Collects state used during validation.
@@ -292,7 +301,7 @@ impl ModuleValidator<'_> {
                         return Err(ValidationError::TypeHasIncorrectOrdering {
                             type_name: name.clone(),
                             ref_: ty,
-                            bad_type: pointed_to.clone(),
+                            bad_type: pointed_to.clone().into(),
                         }
                         .into());
                     }
@@ -375,7 +384,7 @@ impl ModuleValidator<'_> {
         } else {
             Err(ValidationError::NotValidForTypeUse {
                 location: location.clone().make_static(),
-                ty: ty.clone(),
+                ty: ty.clone().into(),
             }
             .into())
         }
@@ -389,7 +398,7 @@ impl ModuleValidator<'_> {
         WithTypespace::new(self.typespace, ty).resolve_refs().map_err(|error| {
             ValidationError::ResolutionFailure {
                 location: location.clone().make_static(),
-                ty: ty.clone(),
+                ty: ty.clone().into(),
                 error,
             }
             .into()
@@ -420,7 +429,11 @@ impl ModuleValidator<'_> {
                                 if id_to_name.contains_key(&ref_) {
                                     Ok(())
                                 } else {
-                                    Err(ValidationError::MissingTypeDef { ref_ }.into())
+                                    Err(ValidationError::MissingTypeDef {
+                                        ref_,
+                                        ty: ty.clone().into(),
+                                    }
+                                    .into())
                                 }
                             }
                             TypeDefOrUse::Use => Ok(()),
@@ -537,7 +550,7 @@ impl TableValidator<'_, '_> {
                 Err(ValidationError::InvalidSequenceColumnType {
                     sequence: name.clone(),
                     column: self.raw_column_name(col_id),
-                    column_type: ty.clone(),
+                    column_type: ty.clone().into(),
                 }
                 .into())
             } else if !self.has_sequence.insert(col_id) {
@@ -755,11 +768,49 @@ enum TypeDefOrUse {
     Use,
 }
 
+fn check_scheduled_reducers_exist(
+    tables: &IdentifierMap<TableDef>,
+    reducers: &IdentifierMap<ReducerDef>,
+) -> Result<()> {
+    tables
+        .values()
+        .map(|table| -> Result<()> {
+            if let Some(schedule) = &table.schedule {
+                let reducer = reducers.get(&schedule.reducer_name);
+                if let Some(reducer) = reducer {
+                    if reducer.params.elements.len() == 1
+                        && reducer.params.elements[0].algebraic_type == table.product_type_ref.into()
+                    {
+                        Ok(())
+                    } else {
+                        Err(ValidationError::IncorrectScheduledReducerParams {
+                            reducer: (&*schedule.reducer_name).into(),
+                            expected: AlgebraicType::product([AlgebraicType::Ref(table.product_type_ref)]).into(),
+                            actual: reducer.params.clone().into(),
+                        }
+                        .into())
+                    }
+                } else {
+                    Err(ValidationError::MissingScheduledReducer {
+                        schedule: schedule.name.clone(),
+                        reducer: schedule.reducer_name.clone(),
+                    }
+                    .into())
+                }
+            } else {
+                Ok(())
+            }
+        })
+        .collect_all_errors()
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::def::validate::tests::{expect_identifier, expect_raw_type_name, expect_resolve, expect_type_name};
+    use crate::def::validate::tests::{
+        check_product_type, expect_identifier, expect_raw_type_name, expect_resolve, expect_type_name,
+    };
     use crate::def::IndexAlgorithm;
-    use crate::def::{validate::Result, ModuleDef, TableDef};
+    use crate::def::{validate::Result, ModuleDef};
     use crate::error::*;
 
     use spacetimedb_data_structures::expect_error_matching;
@@ -769,22 +820,6 @@ mod tests {
     use spacetimedb_sats::typespace::TypeRefError;
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType};
     use v9::{Lifecycle, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess, TableType};
-
-    /// Check that the columns of a `TableDef` correctly correspond the the `TableDef`'s
-    /// `product_type_ref`.
-    fn check_product_type(module_def: &ModuleDef, table_def: &TableDef) {
-        let product_type = module_def
-            .typespace
-            .get(table_def.product_type_ref)
-            .unwrap()
-            .as_product()
-            .unwrap();
-
-        for (element, column) in product_type.elements.iter().zip(table_def.columns.iter()) {
-            assert_eq!(Some(&*column.name), element.name());
-            assert_eq!(column.ty, element.algebraic_type);
-        }
-    }
 
     /// This test attempts to exercise every successful path in the validation code.
     #[test]
@@ -857,7 +892,7 @@ mod tests {
             )
             .finish();
 
-        builder
+        let deliveries_product_type = builder
             .build_table_for_tests(
                 "Deliveries",
                 ProductType::from([
@@ -870,6 +905,16 @@ mod tests {
             .with_schedule("check_deliveries", Some("check_deliveries_schedule".into()))
             .with_type(TableType::System)
             .finish();
+
+        builder.add_reducer("init", ProductType::unit(), Some(Lifecycle::Init));
+        builder.add_reducer("on_connect", ProductType::unit(), Some(Lifecycle::OnConnect));
+        builder.add_reducer("on_disconnect", ProductType::unit(), Some(Lifecycle::OnDisconnect));
+        builder.add_reducer("extra_reducer", ProductType::from([("a", AlgebraicType::U64)]), None);
+        builder.add_reducer(
+            "check_deliveries",
+            ProductType::from([("a", deliveries_product_type.into())]),
+            None,
+        );
 
         let def: ModuleDef = builder.finish().try_into().unwrap();
 
@@ -993,13 +1038,44 @@ mod tests {
         assert_eq!(def.types[&apples_type_name].ty, apples_def.product_type_ref);
         assert_eq!(def.types[&bananas_type_name].ty, bananas_def.product_type_ref);
         assert_eq!(def.types[&deliveries_type_name].ty, delivery_def.product_type_ref);
+
+        let init_name = expect_identifier("init");
+        assert_eq!(def.reducers[&init_name].name, init_name);
+        assert_eq!(def.reducers[&init_name].lifecycle, Some(Lifecycle::Init));
+
+        let on_connect_name = expect_identifier("on_connect");
+        assert_eq!(def.reducers[&on_connect_name].name, on_connect_name);
+        assert_eq!(def.reducers[&on_connect_name].lifecycle, Some(Lifecycle::OnConnect));
+
+        let on_disconnect_name = expect_identifier("on_disconnect");
+        assert_eq!(def.reducers[&on_disconnect_name].name, on_disconnect_name);
+        assert_eq!(
+            def.reducers[&on_disconnect_name].lifecycle,
+            Some(Lifecycle::OnDisconnect)
+        );
+
+        let extra_reducer_name = expect_identifier("extra_reducer");
+        assert_eq!(def.reducers[&extra_reducer_name].name, extra_reducer_name);
+        assert_eq!(def.reducers[&extra_reducer_name].lifecycle, None);
+        assert_eq!(
+            def.reducers[&extra_reducer_name].params,
+            ProductType::from([("a", AlgebraicType::U64)])
+        );
+
+        let check_deliveries_name = expect_identifier("check_deliveries");
+        assert_eq!(def.reducers[&check_deliveries_name].name, check_deliveries_name);
+        assert_eq!(def.reducers[&check_deliveries_name].lifecycle, None);
+        assert_eq!(
+            def.reducers[&check_deliveries_name].params,
+            ProductType::from([("a", deliveries_product_type.into())])
+        );
     }
 
     #[test]
     fn invalid_product_type_ref() {
         let mut builder = RawModuleDefV9Builder::new();
 
-        // `with_table` does NOT initialize table.product_type_ref, which should result in an error.
+        // `build_table` does NOT initialize table.product_type_ref, which should result in an error.
         builder.build_table("Bananas".into(), AlgebraicTypeRef(1337)).finish();
 
         let result: Result<ModuleDef> = builder.finish().try_into();
@@ -1140,7 +1216,7 @@ mod tests {
         expect_error_matching!(result, ValidationError::InvalidSequenceColumnType { sequence, column, column_type } => {
             &sequence[..] == "Bananas_sequence" &&
             column == &RawColumnName::new("Bananas", "a") &&
-            column_type == &AlgebraicType::String
+            column_type.0 == AlgebraicType::String
         });
     }
 
@@ -1200,7 +1276,7 @@ mod tests {
         // This seems fine...
         expect_error_matching!(result, ValidationError::ResolutionFailure { location, ty, error } => {
             location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) } &&
-            ty == &recursive_type &&
+            ty.0 == recursive_type &&
             error == &TypeRefError::RecursiveTypeRef(AlgebraicTypeRef(0))
         });
         expect_error_matching!(result, ValidationError::ResolutionFailure { location, ty, error } => {
@@ -1209,7 +1285,7 @@ mod tests {
                 position: 0,
                 arg_name: Some("a".into())
             } &&
-            ty == &recursive_type &&
+            ty.0 == recursive_type &&
             error == &TypeRefError::RecursiveTypeRef(AlgebraicTypeRef(0))
         });
     }
@@ -1225,7 +1301,7 @@ mod tests {
 
         expect_error_matching!(result, ValidationError::ResolutionFailure { location, ty, error } => {
             location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) } &&
-            ty == &invalid_type_1 &&
+            ty.0 == invalid_type_1 &&
             error == &TypeRefError::InvalidTypeRef(AlgebraicTypeRef(31))
         });
         expect_error_matching!(result, ValidationError::ResolutionFailure { location, ty, error } => {
@@ -1234,15 +1310,15 @@ mod tests {
                 position: 0,
                 arg_name: Some("a".into())
             } &&
-            ty == &invalid_type_2 &&
+            ty.0 == invalid_type_2 &&
             error == &TypeRefError::InvalidTypeRef(AlgebraicTypeRef(55))
         });
     }
 
     #[test]
     fn not_valid_for_client_code_generation() {
-        let inner_not_nominal_type = AlgebraicType::product([("b", AlgebraicType::U32)]);
-        let invalid_type = AlgebraicType::product([("a", inner_not_nominal_type.clone())]);
+        let inner_type_invalid_for_use = AlgebraicType::product([("b", AlgebraicType::U32)]);
+        let invalid_type = AlgebraicType::product([("a", inner_type_invalid_for_use.clone())]);
         let mut builder = RawModuleDefV9Builder::new();
         builder.add_type_for_tests([], "Invalid", invalid_type.clone(), false);
         builder.add_reducer("silly", ProductType::from([("a", invalid_type.clone())]), None);
@@ -1258,7 +1334,7 @@ mod tests {
                 position: 0,
                 arg_name: Some("a".into())
             } &&
-            ty == &invalid_type
+            ty.0 == invalid_type
         });
     }
 
@@ -1372,6 +1448,58 @@ mod tests {
 
         expect_error_matching!(result, ValidationError::DuplicateLifecycle { lifecycle } => {
             lifecycle == &Lifecycle::Init
+        });
+    }
+
+    #[test]
+    fn missing_scheduled_reducer() {
+        let mut builder = RawModuleDefV9Builder::new();
+        let schedule_at_type = builder.add_type::<ScheduleAt>();
+        builder
+            .build_table_for_tests(
+                "Deliveries",
+                ProductType::from([
+                    ("id", AlgebraicType::U64),
+                    ("scheduled_at", schedule_at_type.clone()),
+                    ("scheduled_id", AlgebraicType::U64),
+                ]),
+                true,
+            )
+            .with_schedule("check_deliveries", Some("check_deliveries_schedule".into()))
+            .with_type(TableType::System)
+            .finish();
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::MissingScheduledReducer { schedule, reducer } => {
+            schedule == &expect_identifier("check_deliveries_schedule") &&
+            reducer == &expect_identifier("check_deliveries")
+        });
+    }
+
+    #[test]
+    fn incorrect_scheduled_reducer_args() {
+        let mut builder = RawModuleDefV9Builder::new();
+        let schedule_at_type = builder.add_type::<ScheduleAt>();
+        let deliveries_product_type = builder
+            .build_table_for_tests(
+                "Deliveries",
+                ProductType::from([
+                    ("id", AlgebraicType::U64),
+                    ("scheduled_at", schedule_at_type.clone()),
+                    ("scheduled_id", AlgebraicType::U64),
+                ]),
+                true,
+            )
+            .with_schedule("check_deliveries", Some("check_deliveries_schedule".into()))
+            .with_type(TableType::System)
+            .finish();
+        builder.add_reducer("check_deliveries", ProductType::from([("a", AlgebraicType::U64)]), None);
+        let result: Result<ModuleDef> = builder.finish().try_into();
+
+        expect_error_matching!(result, ValidationError::IncorrectScheduledReducerParams { reducer, expected, actual } => {
+            &reducer[..] == "check_deliveries" &&
+            expected.0 == AlgebraicType::product([AlgebraicType::Ref(deliveries_product_type)]) &&
+            actual.0 == ProductType::from([("a", AlgebraicType::U64)]).into()
         });
     }
 }

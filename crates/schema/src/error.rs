@@ -1,7 +1,8 @@
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawIdentifier, RawScopedTypeNameV9};
-use spacetimedb_lib::ProductType;
+use spacetimedb_lib::{ProductType, SumType};
 use spacetimedb_primitives::{ColId, ColList};
+use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{typespace::TypeRefError, AlgebraicType, AlgebraicTypeRef};
 use std::borrow::Cow;
 use std::fmt;
@@ -29,12 +30,12 @@ pub enum ValidationError {
     IdentifierError { error: IdentifierError },
     #[error("table `{}` has unnamed column `{}`, which is forbidden.", column.table, column.column)]
     UnnamedColumn { column: RawColumnName },
-    #[error("type `{type_name:?}` is not annotated with a custom ordering, but uses one: {bad_type:?}")]
+    #[error("type `{type_name:?}` is not annotated with a custom ordering, but uses one: {bad_type}")]
     TypeHasIncorrectOrdering {
         type_name: RawScopedTypeNameV9,
         ref_: AlgebraicTypeRef,
         /// Could be a sum or product.
-        bad_type: AlgebraicType,
+        bad_type: PrettyAlgebraicType,
     },
     #[error("column `{column}` referenced by def {def} not found in table `{table}`")]
     ColumnNotFound {
@@ -42,19 +43,28 @@ pub enum ValidationError {
         def: RawIdentifier,
         column: ColId,
     },
-    #[error("column `{column}` has `Constraints::unset()`")]
-    ConstraintUnset { column: RawColumnName, name: RawIdentifier },
-    #[error("Attempt to define a column `{column}` with more than 1 auto_inc sequence")]
+    #[error(
+        "{column} type {ty} does not match corresponding element at position {pos} in product type `{product_type}`"
+    )]
+    ColumnDefMalformed {
+        column: RawColumnName,
+        ty: PrettyAlgebraicType,
+        pos: ColId,
+        product_type: PrettyAlgebraicType,
+    },
+    #[error("table `{table}` has multiple primary key annotations")]
+    RepeatedPrimaryKey { table: RawIdentifier },
+    #[error("Attempt to define {column} with more than 1 auto_inc sequence")]
     OneAutoInc { column: RawColumnName },
     #[error("Only Btree Indexes are supported: index `{index}` is not a btree")]
     OnlyBtree { index: RawIdentifier },
     #[error("def `{def}` has duplicate columns: {columns:?}")]
     DuplicateColumns { def: RawIdentifier, columns: ColList },
-    #[error("invalid sequence column type: `{column}` with type `{column_type:?}` in sequence `{sequence}`")]
+    #[error("invalid sequence column type: {column} with type `{column_type:?}` in sequence `{sequence}`")]
     InvalidSequenceColumnType {
         sequence: RawIdentifier,
         column: RawColumnName,
-        column_type: AlgebraicType,
+        column_type: PrettyAlgebraicType,
     },
     #[error("invalid sequence range information: expected {min_value:?} <= {start:?} <= {max_value:?} in sequence `{sequence}`")]
     InvalidSequenceRange {
@@ -78,20 +88,65 @@ pub enum ValidationError {
     #[error("{location} has type {ty:?} which cannot be used to generate a type use")]
     NotValidForTypeUse {
         location: TypeLocation<'static>,
-        ty: AlgebraicType,
+        ty: PrettyAlgebraicType,
     },
     #[error("{ref_} stores type {ty:?} which cannot be used to generate a type definition")]
     NotValidForTypeDefinition { ref_: AlgebraicTypeRef, ty: AlgebraicType },
-    #[error("Type {ty:?} failed to resolve")]
+    #[error("Type {ty} failed to resolve")]
     ResolutionFailure {
         location: TypeLocation<'static>,
-        ty: AlgebraicType,
+        ty: PrettyAlgebraicType,
         error: TypeRefError,
     },
-    #[error("Missing type definition for ref: {ref_}")]
-    MissingTypeDef { ref_: AlgebraicTypeRef },
+    #[error("Missing type definition for ref: {ref_}, holds type: {ty}")]
+    MissingTypeDef {
+        ref_: AlgebraicTypeRef,
+        ty: PrettyAlgebraicType,
+    },
     #[error("{column} is primary key but has no unique constraint")]
     MissingPrimaryKeyUniqueConstraint { column: RawColumnName },
+    #[error("Table {table} should have a type definition for its product_type_element, but does not")]
+    TableTypeNameMismatch { table: Identifier },
+    #[error("Schedule {schedule} refers to a scheduled reducer {reducer} that does not exist")]
+    MissingScheduledReducer { schedule: Identifier, reducer: Identifier },
+    #[error("Scheduled reducer {reducer} expected to have type {expected}, but has type {actual}")]
+    IncorrectScheduledReducerParams {
+        reducer: RawIdentifier,
+        expected: PrettyAlgebraicType,
+        actual: PrettyAlgebraicType,
+    },
+}
+
+/// A wrapper around an `AlgebraicType` that implements `fmt::Display`.
+#[derive(PartialOrd, Ord, PartialEq, Eq)]
+pub struct PrettyAlgebraicType(pub AlgebraicType);
+
+impl fmt::Display for PrettyAlgebraicType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt_algebraic_type(&self.0).fmt(f)
+    }
+}
+impl fmt::Debug for PrettyAlgebraicType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        <Self as fmt::Display>::fmt(self, f)
+    }
+}
+impl From<AlgebraicType> for PrettyAlgebraicType {
+    fn from(ty: AlgebraicType) -> Self {
+        Self(ty)
+    }
+}
+impl From<ProductType> for PrettyAlgebraicType {
+    fn from(ty: ProductType) -> Self {
+        let ty: AlgebraicType = ty.into();
+        Self(ty)
+    }
+}
+impl From<SumType> for PrettyAlgebraicType {
+    fn from(ty: SumType) -> Self {
+        let ty: AlgebraicType = ty.into();
+        Self(ty)
+    }
 }
 
 /// A place a type can be located in a module.

@@ -222,12 +222,52 @@ impl ModuleDefBuilder {
         TypespaceBuilder::add_type::<T>(self)
     }
 
+    /// Add a type that may not correspond to a Rust type.
+    /// Used only in tests.
+    #[cfg(feature = "test")]
+    pub fn add_type_for_tests(&mut self, name: &str, ty: AlgebraicType) -> spacetimedb_sats::AlgebraicTypeRef {
+        let slot_ref = self.module.typespace.add(ty);
+        self.module.misc_exports.push(MiscModuleExport::TypeAlias(TypeAlias {
+            name: name.to_owned(),
+            ty: slot_ref,
+        }));
+        slot_ref
+    }
+
+    /// Add a table that may not correspond to a Rust type.
+    /// Wraps it in a `TableDesc` and generates a corresponding `ProductType` in the typespace.
+    /// Used only in tests.
+    /// Returns the `AlgebraicTypeRef` of the generated `ProductType`.
+    #[cfg(feature = "test")]
+    pub fn add_table_for_tests(&mut self, schema: RawTableDefV8) -> spacetimedb_sats::AlgebraicTypeRef {
+        let ty: ProductType = schema
+            .columns
+            .iter()
+            .map(|c| ProductTypeElement {
+                name: Some(c.col_name.clone()),
+                algebraic_type: c.col_type.clone(),
+            })
+            .collect();
+        // do NOT add a `TypeAlias`: in v8, the `RawTableDef` itself serves as a `TypeAlias`.
+        let data = self.module.typespace.add(ty.into());
+        self.add_table(TableDesc { schema, data });
+        data
+    }
+
     pub fn add_table(&mut self, table: TableDesc) {
         self.module.tables.push(table)
     }
 
     pub fn add_reducer(&mut self, reducer: ReducerDef) {
         self.module.reducers.push(reducer)
+    }
+
+    #[cfg(feature = "test")]
+    pub fn add_reducer_for_tests(&mut self, name: impl Into<Box<str>>, args: ProductType) {
+        self.add_reducer(ReducerDef {
+            name: name.into(),
+            args: args.elements.to_vec(),
+        });
     }
 
     pub fn add_misc_export(&mut self, misc_export: MiscModuleExport) {

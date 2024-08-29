@@ -21,4 +21,8 @@ smallvec.workspace = true
 
 [dev-dependencies]
 spacetimedb-lib = { workspace = true, features = ["test"] }
+# these are circular dependencies, but only in tests, so it's fine
+spacetimedb-testing = { path = "../testing" }
+spacetimedb-cli.workspace = true
+
 proptest.workspace = true

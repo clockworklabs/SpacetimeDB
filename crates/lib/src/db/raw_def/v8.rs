@@ -10,9 +10,10 @@ use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::{de, ser};
 
-// TODO(1.0): move this definition into this file,
+// TODO(1.0): move these definitions into this file,
 // along with the other structs contained in it,
 // which are currently in the crate root.
+pub use crate::ModuleDefBuilder as RawModuleDefV8Builder;
 pub use crate::RawModuleDefV8;
 
 /// The amount sequences allocate each time they over-run their allocation.
@@ -341,6 +342,11 @@ impl RawTableDefV8 {
             table_access: StAccess::Public,
             scheduled: None,
         }
+    }
+
+    #[cfg(feature = "test")]
+    pub fn new_for_tests(table_name: impl Into<Box<str>>, columns: ProductType) -> Self {
+        Self::new(table_name.into(), RawColumnDefV8::from_product_type(columns))
     }
 
     /// Set the type of the table and return a new `TableDef` instance with the updated type.

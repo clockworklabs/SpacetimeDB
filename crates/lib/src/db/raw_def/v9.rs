@@ -493,6 +493,21 @@ impl RawModuleDefV9Builder {
     }
 }
 
+/// Convert a string from a sats type-name annotation like `#[sats(name = "namespace.name")]` to a `RawScopedTypeNameV9`.
+/// We split the input on the strings `"::"` and `"."` to split up module paths.
+///
+/// TODO(1.0): build namespacing directly into the bindings macros so that we don't need to do this.
+pub fn sats_name_to_scoped_name(sats_name: &str) -> RawScopedTypeNameV9 {
+    // We can't use `&[char]: Pattern` for `split` here because "::" is not a char :/
+    let mut scope: Vec<RawIdentifier> = sats_name.split("::").flat_map(|s| s.split('.')).map_into().collect();
+    // Unwrapping to "" will result in a validation error down the line, which is exactly what we want.
+    let name = scope.pop().unwrap_or_default();
+    RawScopedTypeNameV9 {
+        scope: scope.into(),
+        name,
+    }
+}
+
 impl TypespaceBuilder for RawModuleDefV9Builder {
     fn add(
         &mut self,
@@ -509,19 +524,11 @@ impl TypespaceBuilder for RawModuleDefV9Builder {
                 v.insert(slot_ref);
 
                 // Alias provided? Relate `name -> slot_ref`.
-                if let Some(name) = name {
-                    // Right now, we just split the name on patterns likely to split up module paths.
-                    // TODO(1.0): build namespacing directly into the bindings macros so that we don't need to do this.
-                    // Note that we can't use `&[char]: Pattern` for `split` here because "::" is not a char :/
-                    let mut scope: Vec<RawIdentifier> =
-                        name.split("::").flat_map(|s| s.split('.')).map_into().collect();
-                    let name = scope.pop().expect("empty name forbidden");
+                if let Some(sats_name) = name {
+                    let name = sats_name_to_scoped_name(sats_name);
 
                     self.module.types.push(RawTypeDefV9 {
-                        name: RawScopedTypeNameV9 {
-                            name,
-                            scope: scope.into(),
-                        },
+                        name,
                         ty: slot_ref,
                         // TODO(1.0): we need to update the `TypespaceBuilder` trait to include
                         // a `custom_ordering` parameter.
@@ -622,8 +629,9 @@ impl<'a> RawTableDefBuilder<'a> {
         self
     }
 
-    /// Build the table and add it to the module.
-    pub fn finish(self) {
+    /// Build the table and add it to the module, returning the `product_type_ref` of the table.
+    pub fn finish(self) -> AlgebraicTypeRef {
+        self.table.product_type_ref
         // self is now dropped.
     }
 
