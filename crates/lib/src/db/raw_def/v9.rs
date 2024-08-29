@@ -408,22 +408,22 @@ impl RawModuleDefV9Builder {
     }
 
     /// Build a new table with a product type.
-    ///
-    /// This is a convenience method for tests, since in real modules, the product type is initialized via the `SpacetimeType` trait.
-    #[cfg(feature = "test")]
-    pub fn build_table_for_tests(
+    /// Adds the type to the module.
+    pub fn build_table_with_new_type(
         &mut self,
         table_name: impl Into<RawIdentifier>,
         product_type: spacetimedb_sats::ProductType,
         custom_ordering: bool,
     ) -> RawTableDefBuilder {
         let table_name = table_name.into();
-        let product_type_ref = self.add_type_for_tests([], table_name.clone(), product_type.into(), custom_ordering);
+        let product_type_ref = self.add_algebraic_type([], table_name.clone(), product_type.into(), custom_ordering);
 
         self.build_table(table_name, product_type_ref)
     }
 
     /// Add a type to the typespace, along with a type alias declaring its name.
+    /// This method should only be use for `AlgebraicType`s not corresponding to a Rust
+    /// type that implements `SpacetimeType`.
     ///
     /// Returns a reference to the newly-added type.
     ///
@@ -431,11 +431,7 @@ impl RawModuleDefV9Builder {
     /// validation.
     ///
     /// You must set `custom_ordering` if you're not using the default element ordering.
-    ///
-    /// This is a convenience method for tests, since in real modules, types are added to the
-    /// typespace via the `SpacetimeType` trait.
-    #[cfg(feature = "test")]
-    pub fn add_type_for_tests(
+    pub fn add_algebraic_type(
         &mut self,
         scope: impl IntoIterator<Item = RawIdentifier>,
         name: impl Into<RawIdentifier>,

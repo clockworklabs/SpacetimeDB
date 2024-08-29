@@ -1,4 +1,5 @@
 use crate::error::IdentifierError;
+use hashbrown::Equivalent;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_sats::{de, ser};
 use std::fmt::{self, Debug, Display};
@@ -93,6 +94,18 @@ impl Deref for Identifier {
 
     fn deref(&self) -> &str {
         &self.id
+    }
+}
+
+impl From<Identifier> for Box<str> {
+    fn from(value: Identifier) -> Self {
+        value.id
+    }
+}
+
+impl Equivalent<Identifier> for str {
+    fn equivalent(&self, other: &Identifier) -> bool {
+        self == &other.id[..]
     }
 }
 

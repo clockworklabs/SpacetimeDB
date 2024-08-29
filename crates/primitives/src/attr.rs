@@ -211,6 +211,13 @@ impl Constraints {
         Self::new(self.attr | other.attr)
     }
 
+    /// Add auto-increment constraint to the existing constraints.
+    /// Returns Err if the result would not be valid.
+    #[allow(clippy::result_unit_err)]
+    pub fn push_auto_inc(self) -> Result<Self, ()> {
+        Self::try_from(self.attr | ColumnAttribute::AUTO_INC)
+    }
+
     /// Returns the bits representing the constraints.
     pub const fn bits(&self) -> u8 {
         self.attr.bits()

@@ -213,6 +213,7 @@ pub fn schema_updates(
                 known_schema.table_access,
                 known_schema.scheduled.clone(),
             );
+            #[allow(deprecated)]
             let proposed_schema = TableSchema::from_def(known_schema.table_id, proposed_schema_def);
 
             let (schema_is_incompatible, known_schema, proposed_schema) =
@@ -438,6 +439,7 @@ mod tests {
 
     #[test]
     fn test_updates_schema_mismatch() {
+        #[allow(deprecated)]
         let current = [Arc::new(TableSchema::from_def(
             42.into(),
             RawTableDefV8::new(
@@ -468,6 +470,7 @@ mod tests {
 
     #[test]
     fn test_updates_orphaned_table() {
+        #[allow(deprecated)]
         let current = [Arc::new(TableSchema::from_def(
             42.into(),
             RawTableDefV8::new(
@@ -498,6 +501,7 @@ mod tests {
                 col_type: AlgebraicType::String,
             }],
         );
+        #[allow(deprecated)]
         let current = [Arc::new(TableSchema::from_def(42.into(), table_def.clone()))];
         let proposed = vec![table_def.with_column_index(ColId(0), false)];
 
@@ -548,6 +552,7 @@ mod tests {
 
     #[test]
     fn test_updates_add_constraint() {
+        #[allow(deprecated)]
         let current = [Arc::new(TableSchema::from_def(
             42.into(),
             RawTableDefV8::new(
@@ -572,6 +577,7 @@ mod tests {
 
     #[test]
     fn test_updates_drop_constraint() {
+        #[allow(deprecated)]
         let current = [Arc::new(TableSchema::from_def(
             42.into(),
             RawTableDefV8::new(
