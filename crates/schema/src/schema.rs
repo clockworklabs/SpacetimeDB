@@ -601,8 +601,9 @@ impl TableSchema {
         )
     }
 
-    /// The C# and Rust SDKs are inconsistent about whether column defs store resolved or unresolved algebraic types.
+    /// The C# and Rust SDKs are inconsistent about whether v8 column defs store resolved or unresolved algebraic types.
     /// This method works around this problem by copying the column types from the module def into the table schema.
+    /// It can be removed once v8 is removed, since v9 will reject modules with an inconsistency like this.
     pub fn janky_fix_column_defs(&mut self, module_def: &ModuleDef) {
         let table_name = Identifier::new(self.table_name.clone()).unwrap();
         for col in &mut self.columns {
