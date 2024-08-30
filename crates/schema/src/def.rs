@@ -20,15 +20,16 @@ use std::hash::Hash;
 
 use crate::error::{IdentifierError, ValidationErrors};
 use crate::identifier::Identifier;
+use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
 use hashbrown::Equivalent;
 use itertools::Itertools;
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors, ErrorStream};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v9::{
-    Lifecycle, RawIdentifier, RawIndexAlgorithm, RawIndexDefV9, RawModuleDefV9, RawReducerDefV9, RawScheduleDefV9,
-    RawScopedTypeNameV9, RawSequenceDefV9, RawTableDefV9, RawTypeDefV9, RawUniqueConstraintDefV9, TableAccess,
-    TableType,
+    Lifecycle, RawConstraintDataV9, RawConstraintDefV9, RawIdentifier, RawIndexAlgorithm, RawIndexDefV9,
+    RawModuleDefV9, RawReducerDefV9, RawScheduleDefV9, RawScopedTypeNameV9, RawSequenceDefV9, RawTableDefV9,
+    RawTypeDefV9, RawUniqueConstraintDataV9, TableAccess, TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
 use spacetimedb_primitives::{ColId, ColList};
@@ -88,28 +89,40 @@ pub struct ModuleDef {
     /// The typespace of the module definition.
     typespace: Typespace,
 
+    /// The typespace, restructured to be useful for client codegen.
+    typespace_for_generate: TypespaceForGenerate,
+
     /// The global namespace of the module:
     /// tables, indexes, constraints, schedules, and sequences live in the global namespace.
     /// Concretely, though, they're stored in the `TableDef` data structures.
     /// This map allows looking up which `TableDef` stores the `Def` you're looking for.
     stored_in_table_def: IdentifierMap<Identifier>,
+
+    /// A map from type refs to their names, if they have any.
+    refmap: HashMap<AlgebraicTypeRef, RefPointee>,
 }
 
 impl ModuleDef {
-    /// Construct a `ModuleDef` by validating a `RawModuleDef`.
-    /// This is the only way to construct a `ModuleDef`.
-    /// (The `TryFrom` impls for this type just call this method.)
-    pub fn validate(raw: RawModuleDef) -> Result<Self, ValidationErrors> {
-        match raw {
-            RawModuleDef::V8BackCompat(v8_mod) => validate::v8::validate(v8_mod),
-            RawModuleDef::V9(v9_mod) => validate::v9::validate(v9_mod),
-            _ => unimplemented!(),
-        }
-    }
-
     /// The tables of the module definition.
     pub fn tables(&self) -> impl Iterator<Item = &TableDef> {
         self.tables.values()
+    }
+
+    /// The reducers of the module definition.
+    pub fn reducers(&self) -> impl Iterator<Item = &ReducerDef> {
+        self.reducers.values()
+    }
+
+    /// The named types of the module definition.
+    pub fn types(&self) -> impl Iterator<Item = &TypeDef> {
+        self.types.values()
+    }
+
+    /// The named types of the module definition that aren't table row type definitions.
+    pub fn types_not_tables(&self) -> impl Iterator<Item = &TypeDef> {
+        self.types
+            .values()
+            .filter(|typ| !typ.name.as_identifier().is_some_and(|name| self.table(name).is_some()))
     }
 
     /// The `Typespace` used by the module.
@@ -126,6 +139,11 @@ impl ModuleDef {
     /// Types satisfying condition 1 are required to have corresponding `RawTypeDefV9` declarations in the module.
     pub fn typespace(&self) -> &Typespace {
         &self.typespace
+    }
+
+    /// The typespace of the module from a different perspective, one useful for client code generation.
+    pub fn typespace_for_generate(&self) -> &TypespaceForGenerate {
+        &self.typespace_for_generate
     }
 
     /// The `TableDef` an entity in the global namespace is stored in, if any.
@@ -148,35 +166,39 @@ impl ModuleDef {
         self.tables.get(name)
     }
 
+    /// Lookup a type's name from its `AlgebraicTypeRef`.
+    pub fn type_name_from_ref(&self, r: AlgebraicTypeRef) -> Option<&RefPointee> {
+        self.refmap.get(&r)
+    }
+
     /// Generate indexes for the module definition.
     /// We guarantee that all `unique` constraints have an index generated for them.
     /// This will be removed once another enforcement mechanism is implemented.
     /// This is a noop if there are already usable indexes present.
     fn generate_indexes(&mut self) {
         for table in self.tables.values_mut() {
-            for constraint in table.unique_constraints.values() {
+            for constraint in table.constraints.values() {
+                let ConstraintData::Unique(UniqueConstraintData { columns }) = &constraint.data;
+
                 // if we have a constraint for the index, we're fine.
                 if table.indexes.values().any(|index| {
                     let IndexDef {
-                        algorithm: IndexAlgorithm::BTree { columns },
+                        algorithm: IndexAlgorithm::BTree { columns: index_columns },
                         ..
                     } = index;
 
-                    columns == &constraint.columns
+                    index_columns == columns
                 }) {
                     continue;
                 }
 
-                let column_names = constraint
-                    .columns
-                    .iter()
-                    .map(|col_id| &*table.get_column(col_id).expect("validated unique constraint").name)
-                    .join("_");
-
-                // TODO(1.0): ensure generated index names are identical when upgrading the Rust module bindings.
-                let mut index_name =
-                    Identifier::new(format!("idx_{}_{}_{}_unique", table.name, column_names, constraint.name).into())
-                        .expect("validated identifier parts");
+                // This replicates the logic from `RawIndexDefV8::for_column`.
+                let constraint_name = &constraint
+                    .name
+                    .trim_start_matches(&format!("ct_{}_", table.name))
+                    .trim_end_matches("_unique");
+                let mut index_name = Identifier::new(format!("idx_{}_{}_unique", table.name, constraint_name).into())
+                    .expect("validated identifier parts");
 
                 // incredibly janky loop to avoid name collisions.
                 // hey, somebody could be being malicious.
@@ -190,7 +212,7 @@ impl ModuleDef {
                     IndexDef {
                         name: index_name.clone(),
                         algorithm: IndexAlgorithm::BTree {
-                            columns: constraint.columns.clone(),
+                            columns: columns.clone(),
                         },
                         accessor_name: None, // this is a generated index.
                     },
@@ -260,6 +282,8 @@ impl From<ModuleDef> for RawModuleDefV9 {
             types,
             typespace,
             stored_in_table_def: _,
+            typespace_for_generate: _,
+            refmap: _,
         } = val;
 
         RawModuleDefV9 {
@@ -330,7 +354,7 @@ pub struct TableDef {
     pub indexes: IdentifierMap<IndexDef>,
 
     /// The unique constraints on the table, indexed by name.
-    pub unique_constraints: IdentifierMap<UniqueConstraintDef>,
+    pub constraints: IdentifierMap<ConstraintDef>,
 
     /// The sequences for the table, indexed by name.
     pub sequences: IdentifierMap<SequenceDef>,
@@ -364,7 +388,7 @@ impl From<TableDef> for RawTableDefV9 {
             primary_key,
             columns: _, // will be reconstructed from the product type.
             indexes,
-            unique_constraints,
+            constraints,
             sequences,
             schedule,
             table_type,
@@ -376,9 +400,7 @@ impl From<TableDef> for RawTableDefV9 {
             product_type_ref,
             primary_key,
             indexes: to_raw(indexes, |index: &RawIndexDefV9| &index.name),
-            unique_constraints: to_raw(unique_constraints, |constraint: &RawUniqueConstraintDefV9| {
-                &constraint.name
-            }),
+            constraints: to_raw(constraints, |constraint: &RawConstraintDefV9| &constraint.name),
             sequences: to_raw(sequences, |sequence: &RawSequenceDefV9| &sequence.name),
             schedule: schedule.map(Into::into),
             table_type,
@@ -514,29 +536,59 @@ pub struct ColumnDef {
     /// with name `Some(name.as_str())`.
     pub ty: AlgebraicType,
 
+    /// The type of the column, formatted for client code generation.
+    pub ty_for_generate: AlgebraicTypeUse,
+
     /// The table this `ColumnDef` is stored in.
     pub table_name: Identifier,
+}
+
+/// A constraint definition attached to a table.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ConstraintDef {
+    /// The name of the constraint. Unique within the containing `RawDatabaseDef`.
+    pub name: Identifier,
+
+    /// The data for the constraint.
+    pub data: ConstraintData,
+}
+
+impl From<ConstraintDef> for RawConstraintDefV9 {
+    fn from(val: ConstraintDef) -> Self {
+        RawConstraintDefV9 {
+            name: val.name.into(),
+            data: val.data.into(),
+        }
+    }
+}
+
+/// Data for a constraint attached to a table.
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum ConstraintData {
+    Unique(UniqueConstraintData),
+}
+
+impl From<ConstraintData> for RawConstraintDataV9 {
+    fn from(val: ConstraintData) -> Self {
+        match val {
+            ConstraintData::Unique(unique) => RawConstraintDataV9::Unique(unique.into()),
+        }
+    }
 }
 
 /// Requires that the projection of the table onto these columns is an bijection.
 ///
 /// That is, there must be a one-to-one relationship between a row and the `columns` of that row.
 #[derive(Debug, Clone, Eq, PartialEq)]
-#[non_exhaustive]
-pub struct UniqueConstraintDef {
-    /// The name of the unique constraint. Must be unique within the containing `RawDatabaseDef`.
-    pub name: Identifier,
-
+pub struct UniqueConstraintData {
     /// The columns on the containing `TableDef`
     pub columns: ColList,
 }
 
-impl From<UniqueConstraintDef> for RawUniqueConstraintDefV9 {
-    fn from(val: UniqueConstraintDef) -> Self {
-        RawUniqueConstraintDefV9 {
-            name: val.name.into(),
-            columns: val.columns,
-        }
+impl From<UniqueConstraintData> for RawUniqueConstraintDataV9 {
+    fn from(val: UniqueConstraintData) -> Self {
+        RawUniqueConstraintDataV9 { columns: val.columns }
     }
 }
 
@@ -579,6 +631,8 @@ pub struct TypeDef {
     pub name: ScopedTypeName,
 
     /// The type to which the alias refers.
+    /// Look in `ModuleDef.typespace` for the actual type,
+    /// or in `ModuleDef.typespace_for_generate` for the client codegen version.
     pub ty: AlgebraicTypeRef,
 
     /// Whether this type has a custom ordering.
@@ -590,6 +644,41 @@ impl From<TypeDef> for RawTypeDefV9 {
             name: val.name.into(),
             ty: val.ty,
             custom_ordering: val.custom_ordering,
+        }
+    }
+}
+
+/// The return value from [`ModuleDef::type_name_from_ref`].
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub enum RefPointee {
+    Table(Identifier),
+    Type(ScopedTypeName),
+}
+
+impl RefPointee {
+    /// Iterate over the segments of this name.
+    pub fn name_segments(&self) -> impl Iterator<Item = &Identifier> {
+        let (scope, name) = match self {
+            RefPointee::Table(id) => (None, id),
+            RefPointee::Type(ScopedTypeName { scope, name }) => (Some(&**scope), name),
+        };
+        scope.into_iter().flatten().chain(std::iter::once(name))
+    }
+
+    /// Get the least-significant segment of this name.
+    pub fn name(&self) -> &Identifier {
+        match self {
+            RefPointee::Table(id) => id,
+            RefPointee::Type(scoped) => &scoped.name,
+        }
+    }
+
+    /// Retrieve the `ScopedTypeName`, if this name is scoped.
+    pub fn scoped_name(&self) -> Option<&ScopedTypeName> {
+        match self {
+            RefPointee::Table(_) => None,
+            RefPointee::Type(scoped) => Some(scoped),
         }
     }
 }
@@ -639,6 +728,21 @@ impl ScopedTypeName {
             name,
         }
     }
+
+    /// Retrieve the name of this type.
+    pub fn name(&self) -> &Identifier {
+        &self.name
+    }
+
+    /// Retrieve the name of this type, if the scope is empty.
+    pub fn as_identifier(&self) -> Option<&Identifier> {
+        self.scope.is_empty().then_some(&self.name)
+    }
+
+    /// Iterate over the segments of this name.
+    pub fn name_segments(&self) -> impl Iterator<Item = &Identifier> {
+        self.scope.iter().chain(std::iter::once(&self.name))
+    }
 }
 impl fmt::Debug for ScopedTypeName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -686,6 +790,11 @@ pub struct ReducerDef {
     ///
     /// This `ProductType` need not be registered in the module's `Typespace`.
     pub params: ProductType,
+
+    /// The parameters of the reducer, formatted for client codegen.
+    ///
+    /// This `ProductType` need not be registered in the module's `TypespaceForGenerate`.
+    pub params_for_generate: ProductTypeDef,
 
     /// The special role of this reducer in the module lifecycle, if any.
     pub lifecycle: Option<Lifecycle>,
@@ -755,7 +864,7 @@ impl ModuleDefLookup for ColumnDef {
     }
 }
 
-impl ModuleDefLookup for UniqueConstraintDef {
+impl ModuleDefLookup for ConstraintDef {
     type Key<'a> = &'a Identifier;
 
     fn key(&self) -> Self::Key<'_> {
@@ -763,7 +872,7 @@ impl ModuleDefLookup for UniqueConstraintDef {
     }
 
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
-        module_def.stored_in_table_def(key)?.unique_constraints.get(key)
+        module_def.stored_in_table_def(key)?.constraints.get(key)
     }
 }
 

@@ -16,6 +16,7 @@ use enum_as_inner::EnumAsInner;
 use spacetimedb_sats::{
     bsatn, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, SumType, SumTypeVariant,
 };
+pub use spacetimedb_schema::type_for_generate::PrimitiveType;
 
 /// Aligns a `base` offset to the `required_alignment` (in the positive direction) and returns it.
 ///
@@ -269,27 +270,6 @@ pub struct SumTypeVariantLayout {
     pub name: Option<Box<str>>,
 }
 
-/// Scalar types, i.e. bools, integers and floats.
-/// These types do not require a `VarLenRef` indirection.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum PrimitiveType {
-    Bool,
-    I8,
-    U8,
-    I16,
-    U16,
-    I32,
-    U32,
-    I64,
-    U64,
-    I128,
-    U128,
-    I256,
-    U256,
-    F32,
-    F64,
-}
-
 impl HasLayout for PrimitiveType {
     fn layout(&self) -> &'static Layout {
         match self {
@@ -463,28 +443,6 @@ impl AlgebraicTypeLayout {
             AlgebraicTypeLayout::VarLen(var_len) => var_len.algebraic_type(),
             AlgebraicTypeLayout::Product(prod) => AlgebraicType::Product(prod.product_type()),
             AlgebraicTypeLayout::Sum(sum) => AlgebraicType::Sum(sum.sum_type()),
-        }
-    }
-}
-
-impl PrimitiveType {
-    fn algebraic_type(&self) -> AlgebraicType {
-        match self {
-            PrimitiveType::Bool => AlgebraicType::Bool,
-            PrimitiveType::I8 => AlgebraicType::I8,
-            PrimitiveType::U8 => AlgebraicType::U8,
-            PrimitiveType::I16 => AlgebraicType::I16,
-            PrimitiveType::U16 => AlgebraicType::U16,
-            PrimitiveType::I32 => AlgebraicType::I32,
-            PrimitiveType::U32 => AlgebraicType::U32,
-            PrimitiveType::I64 => AlgebraicType::I64,
-            PrimitiveType::U64 => AlgebraicType::U64,
-            PrimitiveType::I128 => AlgebraicType::I128,
-            PrimitiveType::U128 => AlgebraicType::U128,
-            PrimitiveType::I256 => AlgebraicType::I256,
-            PrimitiveType::U256 => AlgebraicType::U256,
-            PrimitiveType::F32 => AlgebraicType::F32,
-            PrimitiveType::F64 => AlgebraicType::F64,
         }
     }
 }

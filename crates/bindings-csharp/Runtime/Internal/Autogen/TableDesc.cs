@@ -30,9 +30,10 @@ namespace SpacetimeDB.Internal
 			this.Data = Data;
 		}
 
-		public TableDesc() : this(
-			new(),
-			default!
-		) { }
+		public TableDesc()
+		{
+			this.Schema = new();
+		}
+
 	}
 }

@@ -38,11 +38,11 @@ namespace SpacetimeDB.Internal
 			this.Columns = Columns;
 		}
 
-		public RawIndexDefV8() : this(
-			"",
-			default!,
-			default!,
-			new()
-		) { }
+		public RawIndexDefV8()
+		{
+			this.IndexName = "";
+			this.Columns = new();
+		}
+
 	}
 }

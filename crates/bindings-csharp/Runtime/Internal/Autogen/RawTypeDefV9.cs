@@ -34,10 +34,10 @@ namespace SpacetimeDB.Internal
 			this.CustomOrdering = CustomOrdering;
 		}
 
-		public RawTypeDefV9() : this(
-			new(),
-			default!,
-			default!
-		) { }
+		public RawTypeDefV9()
+		{
+			this.Name = new();
+		}
+
 	}
 }
