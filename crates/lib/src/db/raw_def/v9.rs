@@ -303,6 +303,7 @@ pub struct RawTypeDefV9 {
     pub name: RawScopedTypeNameV9,
 
     /// The type to which the declaration refers.
+    /// This must point to an `AlgebraicType::Product` or an `AlgebraicType::Sum` in the module's typespace.
     pub ty: AlgebraicTypeRef,
 
     /// Whether this type has a custom ordering.

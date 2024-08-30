@@ -362,12 +362,12 @@ mod tests {
     use crate::def::validate::v8::{IDENTITY_CONNECTED_NAME, IDENTITY_DISCONNECTED_NAME, INIT_NAME};
     use crate::def::{validate::Result, ModuleDef};
     use crate::error::*;
+    use crate::type_for_generate::ClientCodegenError;
 
     use spacetimedb_data_structures::expect_error_matching;
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::{ScheduleAt, TableDesc};
     use spacetimedb_primitives::{ColId, ColList, Constraints};
-    use spacetimedb_sats::typespace::TypeRefError;
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType};
     use v8::RawModuleDefV8Builder;
     use v9::Lifecycle;
@@ -703,51 +703,39 @@ mod tests {
         let recursive_type = AlgebraicType::product([("a", AlgebraicTypeRef(0).into())]);
 
         let mut builder = RawModuleDefV8Builder::default();
-        builder.add_type_for_tests("Recursive", recursive_type.clone());
-        builder.add_reducer_for_tests("silly", ProductType::from([("a", recursive_type.clone())]));
+        let ref_ = builder.add_type_for_tests("Recursive", recursive_type.clone());
+        builder.add_reducer_for_tests("silly", ProductType::from([("a", ref_.into())]));
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        // If you use a recursive type as a reducer argument, you get two errors.
-        // One for the reducer argument, and one for the type itself.
-        // This seems fine...
-        expect_error_matching!(result, ValidationError::ResolutionFailure { location, ty, error } => {
-            location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) } &&
-            ty.0 == recursive_type &&
-            error == &TypeRefError::RecursiveTypeRef(AlgebraicTypeRef(0))
-        });
-        expect_error_matching!(result, ValidationError::ResolutionFailure { location, ty, error } => {
+        expect_error_matching!(result, ValidationError::ClientCodegenError { location, error: ClientCodegenError::TypeRefError(_)  } => {
             location == &TypeLocation::ReducerArg {
                 reducer_name: "silly".into(),
                 position: 0,
                 arg_name: Some("a".into())
-            } &&
-            ty.0 == recursive_type &&
-            error == &TypeRefError::RecursiveTypeRef(AlgebraicTypeRef(0))
+            }
+        });
+        expect_error_matching!(result, ValidationError::ClientCodegenError { location, error: ClientCodegenError::TypeRefError(_)  } => {
+            location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) }
         });
     }
 
     #[test]
     fn invalid_type_ref() {
         let invalid_type_1 = AlgebraicType::product([("a", AlgebraicTypeRef(31).into())]);
-        let invalid_type_2 = AlgebraicType::option(AlgebraicTypeRef(55).into());
         let mut builder = RawModuleDefV8Builder::default();
-        builder.add_type_for_tests("Invalid", invalid_type_1.clone());
-        builder.add_reducer_for_tests("silly", ProductType::from([("a", invalid_type_2.clone())]));
+        let ref_ = builder.add_type_for_tests("Invalid", invalid_type_1.clone());
+        builder.add_reducer_for_tests("silly", ProductType::from([("a", ref_.into())]));
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        expect_error_matching!(result, ValidationError::ResolutionFailure { location, ty, error } => {
-            location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) } &&
-            ty.0 == invalid_type_1 &&
-            error == &TypeRefError::InvalidTypeRef(AlgebraicTypeRef(31))
-        });
-        expect_error_matching!(result, ValidationError::ResolutionFailure { location, ty, error } => {
+        expect_error_matching!(result, ValidationError::ClientCodegenError { location, error: ClientCodegenError::TypeRefError(_)  } => {
             location == &TypeLocation::ReducerArg {
                 reducer_name: "silly".into(),
                 position: 0,
                 arg_name: Some("a".into())
-            } &&
-            ty.0 == invalid_type_2 &&
-            error == &TypeRefError::InvalidTypeRef(AlgebraicTypeRef(55))
+            }
+        });
+        expect_error_matching!(result, ValidationError::ClientCodegenError { location, error: ClientCodegenError::TypeRefError(_)  } => {
+            location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) }
         });
     }
 
@@ -756,22 +744,31 @@ mod tests {
         let inner_type_invalid_for_use = AlgebraicType::product([("b", AlgebraicType::U32)]);
         let invalid_type = AlgebraicType::product([("a", inner_type_invalid_for_use.clone())]);
         let mut builder = RawModuleDefV8Builder::default();
-        builder.add_type_for_tests("Invalid", invalid_type.clone());
-        builder.add_reducer_for_tests("silly", ProductType::from([("a", invalid_type.clone())]));
+        let ref_ = builder.add_type_for_tests("Invalid", invalid_type.clone());
+        builder.add_reducer_for_tests("silly", ProductType::from([("a", ref_.into())]));
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        expect_error_matching!(result, ValidationError::NotValidForTypeDefinition { ref_, ty } => {
-            ref_ == &AlgebraicTypeRef(0) &&
-            ty == &invalid_type
-        });
-        expect_error_matching!(result, ValidationError::NotValidForTypeUse { location, ty } => {
-            location == &TypeLocation::ReducerArg {
+        expect_error_matching!(
+            result,
+            ValidationError::ClientCodegenError {
+                location,
+                error: ClientCodegenError::NonSpecialTypeNotAUse { ty }
+            } => {
+                location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) } &&
+                ty.0 == inner_type_invalid_for_use
+            }
+        );
+        expect_error_matching!(
+            result,
+            ValidationError::ClientCodegenError {
+                location,
+                error: ClientCodegenError::NonSpecialTypeNotAUse { .. }
+            } => location == &TypeLocation::ReducerArg {
                 reducer_name: "silly".into(),
                 position: 0,
                 arg_name: Some("a".into())
-            } &&
-            ty.0 == invalid_type
-        });
+            }
+        );
     }
 
     #[test]

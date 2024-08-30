@@ -1,11 +1,11 @@
 use crate::def::*;
 use crate::error::{RawColumnName, ValidationError};
+use crate::type_for_generate::TypespaceForGenerateBuilder;
 use crate::{def::validate::Result, error::TypeLocation};
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::db::default_element_ordering::{product_type_has_default_ordering, sum_type_has_default_ordering};
 use spacetimedb_lib::ProductType;
-use spacetimedb_sats::WithTypespace;
 
 /// Validate a `RawModuleDefV9` and convert it into a `ModuleDef`,
 /// or return a stream of errors if the definition is invalid.
@@ -18,11 +18,14 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         misc_exports,
     } = def;
 
+    let known_type_definitions = types.iter().map(|def| def.ty);
+
     let mut validator = ModuleValidator {
         typespace: &typespace,
         stored_in_table_def: Default::default(),
         type_namespace: Default::default(),
         lifecycle_reducers: Default::default(),
+        typespace_for_generate: TypespaceForGenerate::builder(&typespace, known_type_definitions),
     };
 
     // Important general note:
@@ -60,13 +63,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
                 .validate_type_def(ty)
                 .map(|type_def| (type_def.name.clone(), type_def))
         })
-        .collect_all_errors::<HashMap<_, _>>()
-        .and_then(|types| {
-            // We need to validate the typespace *after* we have all the type definitions.
-            // Types in the typespace need to look stuff up in the type definitions.
-            validator.validate_typespace(&types)?;
-            Ok(types)
-        });
+        .collect_all_errors::<HashMap<_, _>>();
 
     // It's statically impossible for this assert to fire until `RawMiscModuleExportV9` grows some variants.
     assert_eq!(
@@ -83,16 +80,21 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         });
 
     let ModuleValidator {
-        stored_in_table_def, ..
+        stored_in_table_def,
+        typespace_for_generate,
+        ..
     } = validator;
 
     let (tables, types, reducers) = (tables_types_reducers).map_err(|errors| errors.sort_deduplicate())?;
+
+    let typespace_for_generate = typespace_for_generate.finish();
 
     let mut result = ModuleDef {
         tables,
         reducers,
         types,
         typespace,
+        typespace_for_generate,
         stored_in_table_def,
     };
 
@@ -107,6 +109,9 @@ struct ModuleValidator<'a> {
     ///
     /// Behind a reference to ensure we don't accidentally mutate it.
     typespace: &'a Typespace,
+
+    /// The in-progress typespace used to generate client types.
+    typespace_for_generate: TypespaceForGenerateBuilder<'a>,
 
     /// Names we have seen so far.
     ///
@@ -230,7 +235,7 @@ impl ModuleValidator<'_> {
             lifecycle,
         } = reducer_def;
 
-        let params_valid: Result<()> = params
+        let params_for_generate: Result<_> = params
             .elements
             .iter()
             .enumerate()
@@ -242,10 +247,7 @@ impl ModuleValidator<'_> {
                     position,
                     arg_name: param.name().map(Into::into),
                 };
-                let valid_for_use = self.validate_for_type_use(&location, &param.algebraic_type);
-                let resolves = self.validate_resolves(&location, &param.algebraic_type).map(|_| ());
-                let ((), ()) = (valid_for_use, resolves).combine_errors()?;
-                Ok(())
+                self.validate_for_type_use(&location, &param.algebraic_type)
             })
             .collect_all_errors();
 
@@ -259,11 +261,12 @@ impl ModuleValidator<'_> {
             })
             .transpose();
 
-        let (name, (), lifecycle) = (name, params_valid, lifecycle).combine_errors()?;
+        let (name, params_for_generate, lifecycle) = (name, params_for_generate, lifecycle).combine_errors()?;
 
         Ok(ReducerDef {
             name,
-            params,
+            params: params.clone(),
+            params_for_generate,
             lifecycle,
         })
     }
@@ -288,21 +291,30 @@ impl ModuleValidator<'_> {
                 .into()
             })
             .and_then(|pointed_to| {
-                if !custom_ordering {
+                let ordering_ok = if custom_ordering {
+                    Ok(())
+                } else {
                     let correct = match pointed_to {
                         AlgebraicType::Sum(sum) => sum_type_has_default_ordering(sum),
                         AlgebraicType::Product(product) => product_type_has_default_ordering(product),
                         _ => true,
                     };
-                    if !correct {
-                        return Err(ValidationError::TypeHasIncorrectOrdering {
+                    if correct {
+                        Ok(())
+                    } else {
+                        Err(ValidationError::TypeHasIncorrectOrdering {
                             type_name: name.clone(),
                             ref_: ty,
                             bad_type: pointed_to.clone().into(),
                         }
-                        .into());
+                        .into())
                     }
-                }
+                };
+
+                // Now check the definition is valid
+                let def_ok = self.validate_for_type_definition(ty);
+
+                let ((), ()) = (ordering_ok, def_ok).combine_errors()?;
 
                 // note: we return the reference `ty`, not the pointed-to type `pointed_to`.
                 // The reference is semantically important.
@@ -337,111 +349,24 @@ impl ModuleValidator<'_> {
         })
     }
 
-    /// Validates that a type can be used to generate a client type definition or use.
-    ///
-    /// This reimplements `AlgebraicType::is_valid_for_client_type_definition` with more errors.
-    fn validate_for_type_definition_or_use(
-        &mut self,
-        ref_: AlgebraicTypeRef,
-        ty: &AlgebraicType,
-    ) -> Result<TypeDefOrUse> {
-        if ty.is_valid_for_client_type_use() {
-            return Ok(TypeDefOrUse::Use);
-        }
-        let location = TypeLocation::InTypespace { ref_ };
-        match ty {
-            AlgebraicType::Sum(sum) => sum
-                .variants
-                .iter()
-                .map(|variant| self.validate_for_type_use(&location, &variant.algebraic_type))
-                .collect_all_errors::<()>()
-                .map_err(|_| {
-                    ValidationErrors::from(ValidationError::NotValidForTypeDefinition { ref_, ty: ty.clone() })
-                })?,
-            AlgebraicType::Product(product) => product
-                .elements
-                .iter()
-                .map(|element| self.validate_for_type_use(&location, &element.algebraic_type))
-                .collect_all_errors::<()>()
-                .map_err(|_| {
-                    ValidationErrors::from(ValidationError::NotValidForTypeDefinition { ref_, ty: ty.clone() })
-                })?,
-
-            // it's not a *valid* type use, but it isn't a valid type definition either.
-            // so, get some errors from the type use validation.
-            _ => self.validate_for_type_use(&location, ty)?,
-        }
-        Ok(TypeDefOrUse::Def)
-    }
-
     /// Validates that a type can be used to generate a client type use.
-    fn validate_for_type_use(&mut self, location: &TypeLocation, ty: &AlgebraicType) -> Result<()> {
-        if ty.is_valid_for_client_type_use() {
-            Ok(())
-        } else {
-            Err(ValidationError::NotValidForTypeUse {
+    fn validate_for_type_use(&mut self, location: &TypeLocation, ty: &AlgebraicType) -> Result<AlgebraicTypeUse> {
+        self.typespace_for_generate.add_use(ty).map_err(|err| {
+            ErrorStream::expect_nonempty(err.into_iter().map(|error| ValidationError::ClientCodegenError {
                 location: location.clone().make_static(),
-                ty: ty.clone().into(),
-            }
-            .into())
-        }
-    }
-
-    /// Validate that a type resolves correctly, returning the resolved type if successful.
-    /// The resolved type will not contain any `Ref`s.
-    fn validate_resolves(&self, location: &TypeLocation, ty: &AlgebraicType) -> Result<AlgebraicType> {
-        // This repeats some work for nested types.
-        // TODO: implement a reentrant, cached version of `resolve_refs`.
-        WithTypespace::new(self.typespace, ty).resolve_refs().map_err(|error| {
-            ValidationError::ResolutionFailure {
-                location: location.clone().make_static(),
-                ty: ty.clone().into(),
                 error,
-            }
-            .into()
+            }))
         })
     }
 
-    /// Validate the typespace.
-    /// This checks that every `Product`, `Sum`, and `Ref` in the typespace has a corresponding
-    /// `TypeDef`.
-    fn validate_typespace(&mut self, validated_type_defs: &HashMap<ScopedTypeName, TypeDef>) -> Result<()> {
-        let id_to_name = validated_type_defs
-            .values()
-            .map(|def| (&def.ty, &def.name))
-            .collect::<HashMap<_, _>>();
-
-        self.typespace
-            .types
-            .iter()
-            .enumerate()
-            .map(|(pos, ty)| {
-                let ref_ = AlgebraicTypeRef(pos as u32);
-                let location = TypeLocation::InTypespace { ref_ };
-
-                let is_valid =
-                    self.validate_for_type_definition_or_use(ref_, ty)
-                        .and_then(|def_or_use| match def_or_use {
-                            TypeDefOrUse::Def => {
-                                if id_to_name.contains_key(&ref_) {
-                                    Ok(())
-                                } else {
-                                    Err(ValidationError::MissingTypeDef {
-                                        ref_,
-                                        ty: ty.clone().into(),
-                                    }
-                                    .into())
-                                }
-                            }
-                            TypeDefOrUse::Use => Ok(()),
-                        });
-                // Discard the resolved type, we only want to check that it DOES resolve.
-                let resolves = self.validate_resolves(&location, ty).map(|_| ());
-
-                let ((), ()) = (is_valid, resolves).combine_errors()?;
-                Ok(())
-            })
-            .collect_all_errors()
+    /// Validates that a type can be used to generate a client type definition.
+    fn validate_for_type_definition(&mut self, ref_: AlgebraicTypeRef) -> Result<()> {
+        self.typespace_for_generate.add_definition(ref_).map_err(|err| {
+            ErrorStream::expect_nonempty(err.into_iter().map(|error| ValidationError::ClientCodegenError {
+                location: TypeLocation::InTypespace { ref_ },
+                error,
+            }))
+        })
     }
 }
 
@@ -476,15 +401,12 @@ impl TableValidator<'_, '_> {
             })
             .and_then(|name| identifier(name.into()));
 
-        let ty = self
-            .module_validator
-            .validate_resolves(
-                &TypeLocation::InTypespace {
-                    ref_: self.product_type_ref,
-                },
-                &column.algebraic_type,
-            )
-            .map(|_resolved| column.algebraic_type.clone()); // We don't need the resolved type.
+        let ty_for_generate = self.module_validator.validate_for_type_use(
+            &TypeLocation::InTypespace {
+                ref_: self.product_type_ref,
+            },
+            &column.algebraic_type,
+        );
 
         // This error will be created multiple times if the table name is invalid,
         // but we sort and deduplicate the error stream afterwards,
@@ -494,11 +416,12 @@ impl TableValidator<'_, '_> {
         // nonempty. We need to put something in there if the table name is invalid.
         let table_name = identifier(self.raw_name.clone());
 
-        let (name, ty, table_name) = (name, ty, table_name).combine_errors()?;
+        let (name, ty_for_generate, table_name) = (name, ty_for_generate, table_name).combine_errors()?;
 
         Ok(ColumnDef {
             name,
-            ty,
+            ty: column.algebraic_type.clone(),
+            ty_for_generate,
             col_id,
             table_name,
         })
@@ -759,12 +682,6 @@ fn identifier(name: Box<str>) -> Result<Identifier> {
     Identifier::new(name).map_err(|error| ValidationError::IdentifierError { error }.into())
 }
 
-/// Stores whether a type can be used to generate a definition or a use.
-enum TypeDefOrUse {
-    Def,
-    Use,
-}
-
 fn check_scheduled_reducers_exist(
     tables: &IdentifierMap<TableDef>,
     reducers: &IdentifierMap<ReducerDef>,
@@ -809,12 +726,12 @@ mod tests {
     use crate::def::IndexAlgorithm;
     use crate::def::{validate::Result, ModuleDef};
     use crate::error::*;
+    use crate::type_for_generate::ClientCodegenError;
 
     use spacetimedb_data_structures::expect_error_matching;
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::ScheduleAt;
     use spacetimedb_primitives::ColList;
-    use spacetimedb_sats::typespace::TypeRefError;
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType};
     use v9::{Lifecycle, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess, TableType};
 
@@ -1264,51 +1181,39 @@ mod tests {
         let recursive_type = AlgebraicType::product([("a", AlgebraicTypeRef(0).into())]);
 
         let mut builder = RawModuleDefV9Builder::new();
-        builder.add_algebraic_type([], "Recursive", recursive_type.clone(), false);
-        builder.add_reducer("silly", ProductType::from([("a", recursive_type.clone())]), None);
+        let ref_ = builder.add_algebraic_type([], "Recursive", recursive_type.clone(), false);
+        builder.add_reducer("silly", ProductType::from([("a", ref_.into())]), None);
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        // If you use a recursive type as a reducer argument, you get two errors.
-        // One for the reducer argument, and one for the type itself.
-        // This seems fine...
-        expect_error_matching!(result, ValidationError::ResolutionFailure { location, ty, error } => {
-            location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) } &&
-            ty.0 == recursive_type &&
-            error == &TypeRefError::RecursiveTypeRef(AlgebraicTypeRef(0))
-        });
-        expect_error_matching!(result, ValidationError::ResolutionFailure { location, ty, error } => {
+        expect_error_matching!(result, ValidationError::ClientCodegenError { location, error: ClientCodegenError::TypeRefError(_)  } => {
             location == &TypeLocation::ReducerArg {
                 reducer_name: "silly".into(),
                 position: 0,
                 arg_name: Some("a".into())
-            } &&
-            ty.0 == recursive_type &&
-            error == &TypeRefError::RecursiveTypeRef(AlgebraicTypeRef(0))
+            }
+        });
+        expect_error_matching!(result, ValidationError::ClientCodegenError { location, error: ClientCodegenError::TypeRefError(_)  } => {
+            location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) }
         });
     }
 
     #[test]
     fn invalid_type_ref() {
         let invalid_type_1 = AlgebraicType::product([("a", AlgebraicTypeRef(31).into())]);
-        let invalid_type_2 = AlgebraicType::option(AlgebraicTypeRef(55).into());
         let mut builder = RawModuleDefV9Builder::new();
-        builder.add_algebraic_type([], "Invalid", invalid_type_1.clone(), false);
-        builder.add_reducer("silly", ProductType::from([("a", invalid_type_2.clone())]), None);
+        let ref_ = builder.add_algebraic_type([], "Invalid", invalid_type_1.clone(), false);
+        builder.add_reducer("silly", ProductType::from([("a", ref_.into())]), None);
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        expect_error_matching!(result, ValidationError::ResolutionFailure { location, ty, error } => {
-            location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) } &&
-            ty.0 == invalid_type_1 &&
-            error == &TypeRefError::InvalidTypeRef(AlgebraicTypeRef(31))
-        });
-        expect_error_matching!(result, ValidationError::ResolutionFailure { location, ty, error } => {
+        expect_error_matching!(result, ValidationError::ClientCodegenError { location, error: ClientCodegenError::TypeRefError(_)  } => {
             location == &TypeLocation::ReducerArg {
                 reducer_name: "silly".into(),
                 position: 0,
                 arg_name: Some("a".into())
-            } &&
-            ty.0 == invalid_type_2 &&
-            error == &TypeRefError::InvalidTypeRef(AlgebraicTypeRef(55))
+            }
+        });
+        expect_error_matching!(result, ValidationError::ClientCodegenError { location, error: ClientCodegenError::TypeRefError(_)  } => {
+            location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) }
         });
     }
 
@@ -1317,22 +1222,20 @@ mod tests {
         let inner_type_invalid_for_use = AlgebraicType::product([("b", AlgebraicType::U32)]);
         let invalid_type = AlgebraicType::product([("a", inner_type_invalid_for_use.clone())]);
         let mut builder = RawModuleDefV9Builder::new();
-        builder.add_algebraic_type([], "Invalid", invalid_type.clone(), false);
-        builder.add_reducer("silly", ProductType::from([("a", invalid_type.clone())]), None);
+        let ref_ = builder.add_algebraic_type([], "Invalid", invalid_type.clone(), false);
+        builder.add_reducer("silly", ProductType::from([("a", ref_.into())]), None);
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        expect_error_matching!(result, ValidationError::NotValidForTypeDefinition { ref_, ty } => {
-            ref_ == &AlgebraicTypeRef(0) &&
-            ty == &invalid_type
-        });
-        expect_error_matching!(result, ValidationError::NotValidForTypeUse { location, ty } => {
-            location == &TypeLocation::ReducerArg {
-                reducer_name: "silly".into(),
-                position: 0,
-                arg_name: Some("a".into())
-            } &&
-            ty.0 == invalid_type
-        });
+        expect_error_matching!(
+            result,
+            ValidationError::ClientCodegenError {
+                location,
+                error: ClientCodegenError::NonSpecialTypeNotAUse { ty }
+            } => {
+                location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) } &&
+                ty.0 == inner_type_invalid_for_use
+            }
+        );
     }
 
     #[test]

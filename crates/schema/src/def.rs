@@ -20,6 +20,7 @@ use std::hash::Hash;
 
 use crate::error::{IdentifierError, ValidationErrors};
 use crate::identifier::Identifier;
+use crate::type_for_generate::{AlgebraicTypeUse, TypespaceForGenerate};
 use hashbrown::Equivalent;
 use itertools::Itertools;
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors, ErrorStream};
@@ -88,6 +89,9 @@ pub struct ModuleDef {
     /// The typespace of the module definition.
     typespace: Typespace,
 
+    /// The typespace, restructured to be useful for client codegen.
+    typespace_for_generate: TypespaceForGenerate,
+
     /// The global namespace of the module:
     /// tables, indexes, constraints, schedules, and sequences live in the global namespace.
     /// Concretely, though, they're stored in the `TableDef` data structures.
@@ -126,6 +130,11 @@ impl ModuleDef {
     /// Types satisfying condition 1 are required to have corresponding `RawTypeDefV9` declarations in the module.
     pub fn typespace(&self) -> &Typespace {
         &self.typespace
+    }
+
+    /// The typespace of the module from a different perspective, one useful for client code generation.
+    pub fn typespace_for_generate(&self) -> &TypespaceForGenerate {
+        &self.typespace_for_generate
     }
 
     /// The `TableDef` an entity in the global namespace is stored in, if any.
@@ -260,6 +269,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             types,
             typespace,
             stored_in_table_def: _,
+            typespace_for_generate: _,
         } = val;
 
         RawModuleDefV9 {
@@ -514,6 +524,9 @@ pub struct ColumnDef {
     /// with name `Some(name.as_str())`.
     pub ty: AlgebraicType,
 
+    /// The type of the column, formatted for client code generation.
+    pub ty_for_generate: AlgebraicTypeUse,
+
     /// The table this `ColumnDef` is stored in.
     pub table_name: Identifier,
 }
@@ -579,6 +592,8 @@ pub struct TypeDef {
     pub name: ScopedTypeName,
 
     /// The type to which the alias refers.
+    /// Look in `ModuleDef.typespace` for the actual type,
+    /// or in `ModuleDef.typespace_for_generate` for the client codegen version.
     pub ty: AlgebraicTypeRef,
 
     /// Whether this type has a custom ordering.
@@ -686,6 +701,9 @@ pub struct ReducerDef {
     ///
     /// This `ProductType` need not be registered in the module's `Typespace`.
     pub params: ProductType,
+
+    /// The parameters of the reducer, formatted for client codegen.
+    pub params_for_generate: Vec<AlgebraicTypeUse>,
 
     /// The special role of this reducer in the module lifecycle, if any.
     pub lifecycle: Option<Lifecycle>,

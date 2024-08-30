@@ -186,6 +186,14 @@ impl Typespace {
         Ok(())
     }
 
+    /// Iterate over types in the typespace with their references.
+    pub fn refs_with_types(&self) -> impl Iterator<Item = (AlgebraicTypeRef, &AlgebraicType)> {
+        self.types
+            .iter()
+            .enumerate()
+            .map(|(idx, ty)| (AlgebraicTypeRef(idx as _), ty))
+    }
+
     /// Check that the entire typespace is valid for generating a `SpacetimeDB` client module.
     /// See also the `spacetimedb_schema` crate, which layers additional validation on top
     /// of these checks.

@@ -2,7 +2,7 @@
 //!
 //! This notably excludes `Ref` types.
 
-use crate::{i256, u256};
+use crate::{i256, u256, ProductTypeElement, SumTypeVariant};
 use crate::{
     AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ArrayValue, MapType, MapValue, ProductType, ProductValue, SumType,
     SumValue, Typespace, F32, F64,
@@ -54,15 +54,29 @@ fn generate_algebraic_type_from_leaves(
         prop_oneof![
             gen_element.clone().prop_map(AlgebraicType::array),
             (gen_element.clone(), gen_element.clone()).prop_map(|(key, val)| AlgebraicType::map(key, val)),
-            // No need for field or variant names.
-
             // No need to generate units here;
             // we already generate them in `generate_non_compound_algebraic_type`.
             vec(gen_element.clone().prop_map_into(), 1..=SIZE)
+                .prop_map(|vec| vec
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, ty)| ProductTypeElement {
+                        name: Some(format!("element_{i}").into()),
+                        algebraic_type: ty
+                    })
+                    .collect())
                 .prop_map(Vec::into_boxed_slice)
                 .prop_map(AlgebraicType::product),
             // Do not generate nevers here; we can't store never in a page.
             vec(gen_element.clone().prop_map_into(), 1..=SIZE)
+                .prop_map(|vec| vec
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, ty)| SumTypeVariant {
+                        name: Some(format!("variant_{i}").into()),
+                        algebraic_type: ty
+                    })
+                    .collect::<Vec<_>>())
                 .prop_map(Vec::into_boxed_slice)
                 .prop_map(AlgebraicType::sum),
         ]
