@@ -12,11 +12,12 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.ClientApi
 {
-	[DataContract]
 	[SpacetimeDB.Type]
+	[DataContract]
 	public partial class EnergyQuanta
 	{
 		[DataMember(Name = "quanta")]
 		public U128 Quanta;
+
 	}
 }

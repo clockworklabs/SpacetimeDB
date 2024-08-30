@@ -5,6 +5,7 @@
 #nullable enable
 
 using System;
+using SpacetimeDB;
 
 namespace SpacetimeDB.ClientApi
 {

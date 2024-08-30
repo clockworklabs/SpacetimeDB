@@ -12,14 +12,14 @@ using System.Runtime.Serialization;
 
 namespace SpacetimeDB.ClientApi
 {
-	[DataContract]
 	[SpacetimeDB.Type]
+	[DataContract]
 	public partial class OneOffTable
 	{
 		[DataMember(Name = "table_name")]
 		public string TableName = "";
-
 		[DataMember(Name = "rows")]
-		public List<SpacetimeDB.ClientApi.EncodedValue> Rows = new();
+		public System.Collections.Generic.List<SpacetimeDB.ClientApi.EncodedValue> Rows = new();
+
 	}
 }
