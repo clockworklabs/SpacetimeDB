@@ -15,6 +15,7 @@ bitflags.workspace = true
 crc32c.workspace = true
 itertools.workspace = true
 log.workspace = true
+memmap2 = "0.9.4"
 serde = { workspace = true, optional = true }
 spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
