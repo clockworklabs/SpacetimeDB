@@ -169,9 +169,12 @@ impl InstanceEnv {
     /// where the rows match one in `relation`
     /// which is a bsatn encoding of `Vec<ProductValue>`.
     ///
-    /// Returns an error if no rows were deleted.
+    /// Returns an error if
+    /// - not in a transaction.
+    /// - the table didn't exist.
+    /// - a row couldn't be decoded to the table schema type.
     #[tracing::instrument(skip(self, relation))]
-    pub fn delete_by_rel(&self, table_id: TableId, relation: &[u8]) -> Result<u32, NodesError> {
+    pub fn datastore_delete_all_by_eq_bsatn(&self, table_id: TableId, relation: &[u8]) -> Result<u32, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
