@@ -281,10 +281,10 @@ npm i wasm-opt -g
 You can use the CLI (command line interface) to run reducers. The arguments to the reducer are passed in JSON format.
 
 ```bash
-spacetime call <module-name> send_message "Hello, World!"
+spacetime call <module-name> SendMessage "Hello, World!"
 ```
 
-Once we've called our `send_message` reducer, we can check to make sure it ran by running the `logs` command.
+Once we've called our `SendMessage` reducer, we can check to make sure it ran by running the `logs` command.
 
 ```bash
 spacetime logs <module-name>
