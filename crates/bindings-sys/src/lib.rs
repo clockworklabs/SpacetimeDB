@@ -55,6 +55,23 @@ pub mod raw {
         /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
         pub fn _datastore_table_row_count(table_id: TableId, out: *mut u64) -> u16;
 
+        /// Starts iteration on each row, as BSATN-encoded, of a table identified by `table_id`.
+        ///
+        /// On success, the iterator handle is written to the `out` pointer.
+        /// This handle can be advanced by [`row_iter_bsatn_advance`].
+        ///
+        /// # Traps
+        ///
+        /// This function does not trap.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+        pub fn _datastore_table_scan_bsatn(table_id: TableId, out: *mut RowIter) -> u16;
+
         /// Finds all rows in the table identified by `table_id`,
         /// where the row has a column, identified by `col_id`,
         /// with data matching the byte string, in WASM memory, pointed to at by `val`.
@@ -138,16 +155,7 @@ pub mod raw {
         /// - writing to `out` would overflow a 32-bit integer
         pub fn _delete_by_rel(table_id: TableId, relation: *const u8, relation_len: usize, out: *mut u32) -> u16;
 
-        /// Start iteration on each row, as bytes, of a table identified by `table_id`.
-        ///
-        /// On success, the iterator handle is written to the `out` pointer.
-        ///
-        /// # Errors
-        ///
-        /// - `NO_SUCH_TABLE`, if a table with the provided `table_id` doesn't exist
-        pub fn _iter_start(table_id: TableId, out: *mut RowIter) -> u16;
-
-        /// Like [`_iter_start`], start iteration on each row,
+        /// Like [`_datastore_table_scan_bsatn`], start iteration on each row,
         /// as bytes, of a table identified by `table_id`.
         ///
         /// The rows are filtered through `filter`, which is read from WASM memory
@@ -620,13 +628,22 @@ pub fn delete_by_rel(table_id: TableId, relation: &[u8]) -> Result<u32, Errno> {
     unsafe { call(|out| raw::_delete_by_rel(table_id, relation.as_ptr(), relation.len(), out)) }
 }
 
-/// Returns an iterator of a table identified by `table_id`.
+/// Starts iteration on each row, as BSATN-encoded, of a table identified by `table_id`.
+/// Returns iterator handle is written to the `out` pointer.
+/// This handle can be advanced by [`row_iter_bsatn_advance`].
+///
+/// # Traps
+///
+/// This function does not trap.
 ///
 /// # Errors
 ///
-/// - `NO_SUCH_TABLE`, if `table_id` doesn't exist.
-pub fn iter(table_id: TableId) -> Result<RowIter, Errno> {
-    let raw = unsafe { call(|out| raw::_iter_start(table_id, out))? };
+/// Returns an error:
+///
+/// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+/// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+pub fn datastore_table_scan_bsatn(table_id: TableId) -> Result<RowIter, Errno> {
+    let raw = unsafe { call(|out| raw::_datastore_table_scan_bsatn(table_id, out))? };
     Ok(RowIter { raw })
 }
 

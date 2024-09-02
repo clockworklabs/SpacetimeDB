@@ -48,6 +48,8 @@ IMPORT(Status, _table_id_from_name,
 IMPORT(Status, _datastore_table_row_count,
        (TableId table_id, uint64_t* count),
        (table_id, count));
+IMPORT(Status, _datastore_table_scan_bsatn, (TableId table_id, RowIter* iter),
+       (table_id, iter));
 IMPORT(Status, _iter_by_col_eq,
        (TableId table_id, ColId col_id, const uint8_t* value,
         uint32_t value_len, RowIter* iter),
@@ -62,8 +64,6 @@ IMPORT(Status, _delete_by_rel,
        (TableId table_id, const uint8_t* relation, uint32_t relation_len,
         uint32_t* num_deleted),
        (table_id, relation, relation_len, num_deleted));
-IMPORT(Status, _iter_start, (TableId table_id, RowIter* iter),
-       (table_id, iter));
 IMPORT(Status, _iter_start_filtered,
        (TableId table_id, const uint8_t* filter, uint32_t filter_len,
         RowIter* iter),

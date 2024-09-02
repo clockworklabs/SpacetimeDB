@@ -237,7 +237,7 @@ pub fn delete_by_rel(table_id: TableId, relation: &[impl Serialize]) -> Result<u
 
 // Get the iterator for this table with an optional filter,
 fn table_iter<T: TableType>(table_id: TableId) -> Result<TableIter<T>> {
-    sys::iter(table_id).map(TableIter::new)
+    sys::datastore_table_scan_bsatn(table_id).map(TableIter::new)
 }
 
 fn table_iter_filtered<T: TableType>(
