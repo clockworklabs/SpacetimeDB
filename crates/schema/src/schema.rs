@@ -61,8 +61,10 @@ pub struct TableSchema {
     pub table_type: StTableType,
     /// The visibility of the table.
     pub table_access: StAccess,
-    pub scheduled: Option<Box<str>>,
+    pub scheduled: Option<ScheduleSchema>,
     /// Cache for `row_type_for_table` in the data store.
+    /// Not stored in resolved form, may contain references to the module's
+    /// `Typespace`.
     row_type: ProductType,
 }
 
@@ -805,8 +807,7 @@ pub struct SequenceSchema {
     /// The unique identifier for the sequence within a database.
     pub sequence_id: SequenceId,
     /// The name of the sequence.
-    /// Deprecated. In the future, sequences will be identified by col_pos.
-    pub sequence_name: Box<str>,
+    pub name: Box<str>,
     /// The ID of the table associated with the sequence.
     pub table_id: TableId,
     /// The position of the column associated with this sequence.
@@ -958,19 +959,33 @@ impl From<IndexSchema> for RawIndexDefV8 {
 }
 
 /// A struct representing the schema of a database constraint.
+pub struct ConstraintSchema {
+    /// The unique identifier for the constraint within a database.
+    pub constraint_id: ConstraintId,
+    /// The name of the constraint.
+    pub constraint_name: Box<str>,
+    /// The data attached to the constraint.
+    pub constraint_data: ConstraintData,
+}
+
+/// A struct representing the schema of a database constraint.
 ///
 /// This struct holds information about a database constraint, including its unique identifier,
 /// name, the table it belongs to, and the columns it is associated with.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ConstraintSchema {
+pub enum ConstraintData {
     Unique(UniqueConstraintSchema),
 }
 
 /// A unique constraint.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UniqueConstraintSchema {
-    pub name: Identifier,
-    pub constraint_id: ConstraintId,
+    /// A unique constraint applies to columns of this table.
+    pub table_id: TableId,
+    /// The columns the constraint applies to.
+    /// Projecting the table onto these columns must result in a table with the same cardinality
+    /// (set-theoretically).
+    /// I.e. if you project onto these columns and deduplicate, you shouldn't need to remove any rows.
     pub columns: ColList,
 }
 

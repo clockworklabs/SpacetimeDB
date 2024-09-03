@@ -518,9 +518,17 @@ pub struct ColumnDef {
     pub table_name: Identifier,
 }
 
-/// A constraint on a table.
+/// A constraint definition.
+pub struct ConstraintDef {
+    /// The name of the constraint.
+    pub name: Identifier,
+    /// The data for the constraint.
+    pub data: ConstraintData,
+}
+
+/// Data for a constraint.
 #[non_exhaustive]
-pub enum ConstraintDef {
+pub enum ConstraintData {
     Unique(UniqueConstraintDef),
 }
 
@@ -530,9 +538,6 @@ pub enum ConstraintDef {
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct UniqueConstraintDef {
-    /// The name of the unique constraint. Must be unique within the containing `RawDatabaseDef`.
-    pub name: Identifier,
-
     /// The columns on the containing `TableDef`
     pub columns: ColList,
 }

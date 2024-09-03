@@ -187,8 +187,14 @@ st_fields_enum!(enum StColumnFields {
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(
     enum StIndexFields {
-        // TODO(jgilles): how do we add a system table that stores only an enum?
-        // What if we need to add new variants to the enum?
+        "index_id", IndexId = 0,
+        "table_id", TableId = 1,
+        "index_name", IndexName = 2,
+
+        // TODO(jgilles): can a system table store an enum?
+        // What if we need to add new variants to the enum? Will that break
+        // the schema? Does this need to store a byte array instead?
+        "index_algorithm", IndexAlgorithm = 3,
     }
 );
 // WARNING: For a stable schema, don't change the field names and discriminants.
@@ -208,8 +214,12 @@ st_fields_enum!(
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(
     enum StConstraintFields {
-        // TODO(jgilles): how do we add a system table that stores only an enum?
-        // What if we need to add new variants to the enum?
+        "constraint_id", ConstraintId = 0,
+        "name", ConstraintName = 1,
+        // TODO(jgilles): can a system table store an enum?
+        // What if we need to add new variants to the enum? Will that break
+        // the schema? Does this need to store a byte array instead?
+        "data", ConstraintData = 3,
     }
 );
 // WARNING: For a stable schema, don't change the field names and discriminants.
