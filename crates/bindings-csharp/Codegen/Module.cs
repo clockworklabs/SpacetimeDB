@@ -191,7 +191,14 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             public void ReadGenFields(System.IO.BinaryReader reader) {
                 {{string.Join(
                     "\n",
-                    autoIncFields.Select(name => $"{name} = BSATN.{name}.Read(reader);")
+                    autoIncFields.Select(name =>
+                        $$"""
+                        if ({{name}} == default)
+                        {
+                            {{name}} = BSATN.{{name}}.Read(reader);
+                        }
+                        """
+                    )
                 )}}
             }
 

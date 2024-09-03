@@ -149,7 +149,7 @@ internal static partial class FFI
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _datastore_insert_bsatn(
         TableId table_id,
-        [MarshalUsing(CountElementName = nameof(row_len))] [Out] byte[] row,
+        Span<byte> row,
         ref uint row_len
     );
 

@@ -54,7 +54,10 @@ partial class Timers
         public SpacetimeDB.ScheduleAt ScheduledAt;
 
         public void ReadGenFields(System.IO.BinaryReader reader) {
-            ScheduledId = BSATN.ScheduledId.Read(reader);
+            if (ScheduledId == default)
+            {
+                ScheduledId = BSATN.ScheduledId.Read(reader);
+            }
         }
 
         static SpacetimeDB.Internal.Module.TableDesc SpacetimeDB.Internal.ITable<SendMessageTimer>.MakeTableDesc(

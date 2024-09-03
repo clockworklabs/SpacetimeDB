@@ -427,6 +427,17 @@ impl<T: TableType> sealed::InsertResult for T {
     }
 }
 
+/// A trait for types that know if their value will trigger a sequence.
+/// This is used for auto-inc columns to determine if an insertion of a row
+/// will require the column to be updated in the row.
+///
+/// For now, this is equivalent to a "is zero" test.
+pub trait IsSequenceTrigger {
+    /// Is this value one that will trigger a sequence, if any,
+    /// when used as a column value.
+    fn is_sequence_trigger(&self) -> bool;
+}
+
 /// A trait for types that can be serialized and tested for equality.
 ///
 /// A type `T` implementing this trait should uphold the invariant:

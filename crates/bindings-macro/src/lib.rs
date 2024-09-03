@@ -767,7 +767,9 @@ fn spacetimedb_tabletype_impl(item: syn::DeriveInput) -> syn::Result<TokenStream
         .map(|col| col.field.ident.unwrap())
         .map(|field| {
             quote_spanned!(field.span()=>
-                _row.#field = spacetimedb::sats::bsatn::from_reader(_in).unwrap();
+                if spacetimedb::IsSequenceTrigger::is_sequence_trigger(&_row.#field) {
+                    _row.#field = spacetimedb::sats::bsatn::from_reader(_in).unwrap();
+                }
             )
         });
     let integrate_generated_columns = quote_spanned!(item.span() =>
