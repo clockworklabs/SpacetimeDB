@@ -117,8 +117,8 @@ pub struct RawTableDefV9 {
     /// The indices of the table.
     pub indexes: Vec<RawIndexDefV9>,
 
-    /// Any unique constraints on the table.
-    pub unique_constraints: Vec<RawUniqueConstraintDefV9>,
+    /// Any constraints on the table.
+    pub constraints: Vec<RawConstraintDefV9>,
 
     /// The sequences for the table.
     pub sequences: Vec<RawSequenceDefV9>,
@@ -272,6 +272,13 @@ pub struct RawUniqueConstraintDefV9 {
     pub columns: ColList,
 }
 
+#[derive(Debug, Clone, ser::Serialize, de::Deserialize)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+#[non_exhaustive]
+pub enum RawConstraintDefV9 {
+    Unique(RawUniqueConstraintDefV9),
+}
+
 /// Marks a table as a timer table for a scheduled reducer.
 ///
 /// The table must have columns:
@@ -397,7 +404,7 @@ impl RawModuleDefV9Builder {
                 name,
                 product_type_ref,
                 indexes: vec![],
-                unique_constraints: vec![],
+                constraints: vec![],
                 sequences: vec![],
                 schedule: None,
                 primary_key: None,
@@ -570,8 +577,8 @@ impl<'a> RawTableDefBuilder<'a> {
     pub fn with_unique_constraint(mut self, columns: ColList, name: Option<RawIdentifier>) -> Self {
         let name = name.unwrap_or_else(|| self.generate_unique_constraint_name(&columns));
         self.table
-            .unique_constraints
-            .push(RawUniqueConstraintDefV9 { name, columns });
+            .constraints
+            .push(RawConstraintDefV9::Unique(RawUniqueConstraintDefV9 { name, columns }));
         self
     }
 

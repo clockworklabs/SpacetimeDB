@@ -329,8 +329,8 @@ pub struct TableDef {
     /// The indices on the table, indexed by name.
     pub indexes: IdentifierMap<IndexDef>,
 
-    /// The unique constraints on the table, indexed by name.
-    pub unique_constraints: IdentifierMap<UniqueConstraintDef>,
+    /// The constraints on the table, indexed by name.
+    pub constraints: IdentifierMap<ConstraintDef>,
 
     /// The sequences for the table, indexed by name.
     pub sequences: IdentifierMap<SequenceDef>,
@@ -376,7 +376,7 @@ impl From<TableDef> for RawTableDefV9 {
             product_type_ref,
             primary_key,
             indexes: to_raw(indexes, |index: &RawIndexDefV9| &index.name),
-            unique_constraints: to_raw(unique_constraints, |constraint: &RawUniqueConstraintDefV9| {
+            constraints: to_raw(unique_constraints, |constraint: &RawUniqueConstraintDefV9| {
                 &constraint.name
             }),
             sequences: to_raw(sequences, |sequence: &RawSequenceDefV9| &sequence.name),
@@ -516,6 +516,12 @@ pub struct ColumnDef {
 
     /// The table this `ColumnDef` is stored in.
     pub table_name: Identifier,
+}
+
+/// A constraint on a table.
+#[non_exhaustive]
+pub enum ConstraintDef {
+    Unique(UniqueConstraintDef),
 }
 
 /// Requires that the projection of the table onto these columns is an bijection.

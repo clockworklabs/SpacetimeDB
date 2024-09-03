@@ -173,7 +173,7 @@ macro_rules! st_fields_enum {
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StTableFields {
     "table_id", TableId = 0,
-    "table_name", TableName = 1,
+    "name", TableName = 1,
     "table_type", TableType = 2,
     "table_access", TablesAccess = 3,
 });
@@ -181,18 +181,16 @@ st_fields_enum!(enum StTableFields {
 st_fields_enum!(enum StColumnFields {
     "table_id", TableId = 0,
     "col_pos", ColPos = 1,
-    "col_name", ColName = 2,
-    "col_type", ColType = 3,
+    "name", ColName = 2,
+    "type", ColType = 3,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
-st_fields_enum!(enum StIndexFields {
-    "index_id", IndexId = 0,
-    "table_id", TableId = 1,
-    "index_name", IndexName = 2,
-    "columns", Columns = 3,
-    "is_unique", IsUnique = 4,
-    "index_type", IndexType = 5,
-});
+st_fields_enum!(
+    enum StIndexFields {
+        // TODO(jgilles): how do we add a system table that stores only an enum?
+        // What if we need to add new variants to the enum?
+    }
+);
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(
     /// The fields that define the internal table [crate::db::relational_db::ST_SEQUENCES_NAME].
@@ -208,13 +206,12 @@ st_fields_enum!(
     "allocated", Allocated = 8,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
-st_fields_enum!(enum StConstraintFields {
-    "constraint_id", ConstraintId = 0,
-    "constraint_name", ConstraintName = 1,
-    "constraints", Constraints = 2,
-    "table_id", TableId = 3,
-    "columns", Columns = 4,
-});
+st_fields_enum!(
+    enum StConstraintFields {
+        // TODO(jgilles): how do we add a system table that stores only an enum?
+        // What if we need to add new variants to the enum?
+    }
+);
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StModuleFields {
     "database_address", DatabaseAddress = 0,
@@ -233,10 +230,10 @@ st_fields_enum!(enum StVarFields {
     "name", Name = 0,
     "value", Value = 1,
 });
-
 st_fields_enum!(enum StScheduledFields {
     "table_id", TableId = 0,
     "reducer_name", ReducerName = 1,
+    "name", Name = 2,
 });
 
 /// System Table [ST_TABLE_NAME]

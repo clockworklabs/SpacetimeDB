@@ -129,7 +129,7 @@ impl ModuleValidator<'_> {
             product_type_ref,
             primary_key,
             indexes,
-            unique_constraints,
+            constraints: unique_constraints,
             sequences,
             schedule,
             table_type,

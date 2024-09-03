@@ -46,7 +46,7 @@ pub struct TableSchema {
     /// The unique identifier of the table within the database.
     pub table_id: TableId,
     /// The name of the table.
-    pub table_name: Box<str>,
+    pub name: Box<str>,
     /// The columns of the table.
     /// Inaccessible to prevent mutation.
     /// The ordering of the columns is significant. Columns are frequently identified by `ColId`, that is, position in this list.
@@ -714,6 +714,7 @@ pub struct ColumnSchema {
     /// The name of the column. Unique within the table.
     pub col_name: Box<str>,
     /// The type of the column.
+    /// May refer to the `Typespace` of the module.
     pub col_type: AlgebraicType,
 }
 
@@ -893,23 +894,20 @@ impl From<SequenceSchema> for RawSequenceDefV8 {
 
 /// A struct representing the schema of a database index.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IndexSchema {
-    /// The unique ID of the index within the schema.
+pub enum IndexSchema {
+    BTree(BTreeIndexSchema),
+}
+
+/// A BTree index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BTreeIndexSchema {
+    /// The ID of the index.
     pub index_id: IndexId,
-    /// The ID of the table associated with the index.
+    /// The ID of the table to which the index is attached.
     pub table_id: TableId,
-    /// The type of the index.
-    pub index_type: IndexType,
-    /// The name of the index. This should not be assumed to follow any particular format.
-    /// Unique within the table.
-    // TODO(jgilles): check and/or specify if this is currently unique within the database.
-    pub index_name: Box<str>,
-    /// If the index is unique.
-    pub is_unique: bool,
-    /// The list of columns associated with the index.
-    /// This is truly a list: the order of the columns is significant.
-    /// The columns are projected and serialized to bitstrings in this order,
-    /// which affects the order of elements within a BTreeIndex.
+    /// The name of the index.
+    pub name: Box<str>,
+    /// The columns of the index.
     pub columns: ColList,
 }
 
@@ -964,17 +962,15 @@ impl From<IndexSchema> for RawIndexDefV8 {
 /// This struct holds information about a database constraint, including its unique identifier,
 /// name, the table it belongs to, and the columns it is associated with.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConstraintSchema {
-    /// The unique ID of the constraint within the database.
+pub enum ConstraintSchema {
+    Unique(UniqueConstraintSchema),
+}
+
+/// A unique constraint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UniqueConstraintSchema {
+    pub name: Identifier,
     pub constraint_id: ConstraintId,
-    /// The name of the constraint.
-    /// Deprecated, in the future constraints will be identified by the columns they refer to and their constraint type.
-    pub constraint_name: Box<str>,
-    /// The constraints applied to the columns
-    pub constraints: Constraints,
-    /// The ID of the table the constraint applies to.
-    pub table_id: TableId,
-    /// The columns the constraint applies to.
     pub columns: ColList,
 }
 
