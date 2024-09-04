@@ -161,7 +161,7 @@ static class ModuleRegistration
             sender_2,
             sender_3,
             address_0,
-            address_0,
+            address_1,
             timestamp,
             args,
             error

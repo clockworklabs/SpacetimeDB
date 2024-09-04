@@ -39,6 +39,11 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
+            fn insert_caller_identity() {
+                make_test("insert_caller_identity").run();
+            }
+
+            #[test]
             fn delete_identity() {
                 make_test("delete_identity").run();
             }
@@ -51,6 +56,11 @@ macro_rules! declare_tests_with_suffix {
             #[test]
             fn insert_address() {
                 make_test("insert_address").run();
+            }
+
+            #[test]
+            fn insert_caller_address() {
+                make_test("insert_caller_address").run();
             }
 
             #[test]
