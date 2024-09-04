@@ -1,17 +1,25 @@
 ﻿namespace SpacetimeDB;
 
-public static class ReducerKind
+/// <summary>
+/// This enum provides constants for special reducer kinds.
+/// Do not rely on the type or values of these constants - they are only meant to be passed to the [SpacetimeDB.Reducer] attribute.
+/// </summary>
+public enum ReducerKind
 {
-    public const string Init = "__init__";
-    public const string Update = "__update__";
-    public const string Connect = "__identity_connected__";
-    public const string Disconnect = "__identity_disconnected__";
+    Init = Internal.Lifecycle.Init,
+    Connect = Internal.Lifecycle.OnConnect,
+    Disconnect = Internal.Lifecycle.OnDisconnect,
 }
 
 [AttributeUsage(AttributeTargets.Method, Inherited = false, AllowMultiple = false)]
-public sealed class ReducerAttribute(string? name = null) : Attribute
+public sealed class ReducerAttribute : Attribute
 {
-    public string? Name => name;
+    public ReducerAttribute() { }
+
+    public ReducerAttribute(ReducerKind kind)
+    {
+        _ = kind;
+    }
 }
 
 [AttributeUsage(
@@ -36,7 +44,9 @@ public enum ColumnAttrs : byte
     PrimaryKey = Unique | 0b1000,
     PrimaryKeyAuto = PrimaryKey | AutoInc,
 
-    // A legacy alias, originally defined as `PrimaryKey | Identity` which is numerically same as above.
+    /// <summary>
+    /// A legacy alias, originally defined as `PrimaryKey | Identity` which is numerically same as above.
+    /// </summary>.
     PrimaryKeyIdentity = PrimaryKeyAuto,
 }
 

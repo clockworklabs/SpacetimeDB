@@ -18,34 +18,33 @@ partial class PrivateTable : SpacetimeDB.Internal.ITable<PrivateTable>
             value.WriteFields(writer);
         }
 
-        public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
+        public SpacetimeDB.BSATN.AlgebraicType.Ref GetAlgebraicType(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             registrar.RegisterType<PrivateTable>(_ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                 new SpacetimeDB.BSATN.AggregateElement[] { }
             ));
+
+        SpacetimeDB.BSATN.AlgebraicType SpacetimeDB.BSATN.IReadWrite<PrivateTable>.GetAlgebraicType(
+            SpacetimeDB.BSATN.ITypeRegistrar registrar
+        ) => GetAlgebraicType(registrar);
     }
 
     void SpacetimeDB.Internal.ITable<PrivateTable>.ReadGenFields(System.IO.BinaryReader reader) { }
 
-    static SpacetimeDB.Internal.TableDesc SpacetimeDB.Internal.ITable<PrivateTable>.MakeTableDesc(
+    static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITable<PrivateTable>.MakeTableDesc(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new(
-            new(
-                TableName: nameof(PrivateTable),
-                Columns: [],
-                Indexes: [],
-                Constraints: [],
-                Sequences: [],
-                // "system" | "user"
-                TableType: "user",
-                // "public" | "private"
-                TableAccess: "private",
-                Scheduled: null
-            ),
-            (uint)
-                ((SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)).Ref_
+            Name: nameof(PrivateTable),
+            ProductTypeRef: (uint)new BSATN().GetAlgebraicType(registrar).Ref_,
+            PrimaryKey: null,
+            Indexes: [],
+            Constraints: [],
+            Sequences: [],
+            Schedule: null,
+            TableType: SpacetimeDB.Internal.TableType.User,
+            TableAccess: SpacetimeDB.Internal.TableAccess.Private
         );
 
     static SpacetimeDB.Internal.Filter SpacetimeDB.Internal.ITable<PrivateTable>.CreateFilter() =>

@@ -10,9 +10,9 @@ static class ModuleRegistration
 {
     class Init : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new("__init__", []);
+        ) => new(nameof(Init), [], SpacetimeDB.Internal.Lifecycle.Init);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
         {
@@ -24,9 +24,9 @@ static class ModuleRegistration
     {
         private static readonly PublicTable.BSATN data = new();
 
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new("InsertData", [new(nameof(data), data.GetAlgebraicType(registrar))]);
+        ) => new(nameof(InsertData), [new(nameof(data), data.GetAlgebraicType(registrar))], null);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
         {
@@ -38,13 +38,9 @@ static class ModuleRegistration
     {
         private static readonly PublicTable.BSATN data = new();
 
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) =>
-            new(
-                "test_custom_name_and_reducer_ctx",
-                [new(nameof(data), data.GetAlgebraicType(registrar))]
-            );
+        ) => new(nameof(InsertData2), [new(nameof(data), data.GetAlgebraicType(registrar))], null);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
         {
@@ -56,9 +52,14 @@ static class ModuleRegistration
     {
         private static readonly PublicTable.BSATN data = new();
 
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new("ScheduleImmediate", [new(nameof(data), data.GetAlgebraicType(registrar))]);
+        ) =>
+            new(
+                nameof(ScheduleImmediate),
+                [new(nameof(data), data.GetAlgebraicType(registrar))],
+                null
+            );
 
         public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
         {
@@ -70,9 +71,14 @@ static class ModuleRegistration
     {
         private static readonly Timers.SendMessageTimer.BSATN arg = new();
 
-        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        ) => new("SendScheduledMessage", [new(nameof(arg), arg.GetAlgebraicType(registrar))]);
+        ) =>
+            new(
+                nameof(SendScheduledMessage),
+                [new(nameof(arg), arg.GetAlgebraicType(registrar))],
+                null
+            );
 
         public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
         {
