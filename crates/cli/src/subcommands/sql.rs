@@ -32,7 +32,7 @@ pub fn cli() -> clap::Command {
                  .long("interactive")
                  .action(ArgAction::SetTrue)
                  .conflicts_with("query")
-                 .help("Runs an interactive command prompt for `SQL` expressions"),)
+                 .help("Instead of using a query, run an interactive command prompt for `SQL` expressions"),)
         .arg(
             common_args::identity()
                 .conflicts_with("anon_identity")
