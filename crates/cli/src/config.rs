@@ -852,7 +852,7 @@ impl Config {
 
         let config = toml::to_string_pretty(&self.home).unwrap();
 
-        eprintln!("Saving config to {home_path}..");
+        eprintln!("Saving config to {}..", home_path.display());
         // TODO: We currently have a race condition if multiple processes are modifying the config.
         // If process X and process Y read the config, each make independent changes, and then save
         // the config, the first writer will have its changes clobbered by the second writer.
