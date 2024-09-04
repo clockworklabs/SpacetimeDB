@@ -1,11 +1,12 @@
-use std::{io, u64};
+use std::io;
 
 use log::{debug, warn};
 
 use crate::{
     commit::Commit,
     error,
-    segment::{FileLike, Header, Metadata, Reader, Writer},
+    index::IndexFileMut,
+    segment::{FileLike, Header, Metadata, OffsetIndexWriter, Reader, Writer},
     Options,
 };
 
@@ -16,6 +17,23 @@ pub mod mem;
 pub use fs::Fs;
 #[cfg(test)]
 pub use mem::Memory;
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct TxOffset(u64);
+
+impl From<TxOffset> for u64 {
+    fn from(value: TxOffset) -> Self {
+        value.0
+    }
+}
+
+impl From<u64> for TxOffset {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+pub type TxOffsetIndex = IndexFileMut<TxOffset>;
 
 /// A repository of log segments.
 ///
@@ -53,6 +71,19 @@ pub trait Repo: Clone {
     /// Traverse all segments in this repository and return list of their
     /// offsets, sorted in ascending order.
     fn existing_offsets(&self) -> io::Result<Vec<u64>>;
+
+    /// Create or get an existing `TxOffsetIndex` for the given `offset`.
+    /// The `cap` parameter is the maximum number of entries in the index.
+    fn get_offset_index(&self, _offset: TxOffset, _cap: u64) -> Option<TxOffsetIndex> {
+        None
+    }
+
+    /// Remove `TxOffsetIndex` named with `offset`.
+    fn remove_offset_index(&self, _offset: TxOffset) {}
+}
+
+fn offset_index_len(opts: Options) -> u64 {
+    opts.max_segment_size / opts.offset_index_interval_bytes
 }
 
 /// Create a new segment [`Writer`] with `offset`.
@@ -70,6 +101,7 @@ pub fn create_segment_writer<R: Repo>(repo: &R, opts: Options, offset: u64) -> i
     .write(&mut storage)?;
     storage.fsync()?;
 
+    let offset_index_head = repo.get_offset_index(offset.into(), offset_index_len(opts));
     Ok(Writer {
         commit: Commit {
             min_tx_offset: offset,
@@ -82,6 +114,8 @@ pub fn create_segment_writer<R: Repo>(repo: &R, opts: Options, offset: u64) -> i
         bytes_written: Header::LEN as u64,
 
         max_records_in_commit: opts.max_records_in_commit,
+
+        offset_index_head: offset_index_head.map(|index| OffsetIndexWriter::new(index, opts)),
     })
 }
 
@@ -123,6 +157,8 @@ pub fn resume_segment_writer<R: Repo>(
         .ensure_compatible(opts.log_format_version, Commit::CHECKSUM_ALGORITHM)
         .map_err(|msg| io::Error::new(io::ErrorKind::InvalidData, msg))?;
 
+    let offset_index_head = repo.get_offset_index(offset.into(), offset_index_len(opts));
+
     Ok(Ok(Writer {
         commit: Commit {
             min_tx_offset: tx_range.end,
@@ -135,6 +171,8 @@ pub fn resume_segment_writer<R: Repo>(
         bytes_written: size_in_bytes,
 
         max_records_in_commit: opts.max_records_in_commit,
+
+        offset_index_head: offset_index_head.map(|index| OffsetIndexWriter::new(index, opts)),
     }))
 }
 

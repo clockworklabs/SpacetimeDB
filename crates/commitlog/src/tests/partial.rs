@@ -161,12 +161,12 @@ struct ShortSegment {
 }
 
 impl FileLike for ShortSegment {
-    fn fsync(&self) -> std::io::Result<()> {
+    fn fsync(&mut self) -> std::io::Result<()> {
         self.inner.fsync()
     }
 
-    fn ftruncate(&self, size: u64) -> std::io::Result<()> {
-        self.inner.ftruncate(size)
+    fn ftruncate(&mut self, tx_offset: u64, size: u64) -> std::io::Result<()> {
+        self.inner.ftruncate(tx_offset, size)
     }
 }
 

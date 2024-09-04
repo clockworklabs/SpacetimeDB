@@ -1,16 +1,19 @@
 use std::{
     fs::File,
     io::{self, BufWriter, Write as _},
-    num::NonZeroU16,
+    num::{NonZeroU16, NonZeroU64},
     ops::Range,
 };
 
-use log::debug;
+use log::{debug, info};
 
 use crate::{
     commit::{self, Commit, StoredCommit},
     error,
+    index::{IndexError, IndexWrite as _},
     payload::Encode,
+    repo::{TxOffset, TxOffsetIndex},
+    Options,
 };
 
 pub const MAGIC: [u8; 6] = [b'(', b'd', b's', b')', b'^', b'2'];
@@ -83,6 +86,8 @@ pub struct Writer<W: io::Write> {
     pub(crate) bytes_written: u64,
 
     pub(crate) max_records_in_commit: NonZeroU16,
+
+    pub(crate) offset_index_head: Option<OffsetIndexWriter>,
 }
 
 impl<W: io::Write> Writer<W> {
@@ -116,7 +121,16 @@ impl<W: io::Write> Writer<W> {
         self.commit.write(&mut self.inner)?;
         self.inner.flush()?;
 
-        self.bytes_written += self.commit.encoded_len() as u64;
+        let commit_len = self.commit.encoded_len() as u64;
+        self.offset_index_head.as_mut().map(|index| {
+            index
+                .append_after_commit(self.commit.min_tx_offset.into(), self.bytes_written, commit_len)
+                .map_err(|e| {
+                    info!("failed to append to offset index: {:?}", e);
+                })
+        });
+
+        self.bytes_written += commit_len;
         self.commit.min_tx_offset += self.commit.n as u64;
         self.commit.n = 0;
         self.commit.records.clear();
@@ -149,40 +163,123 @@ impl<W: io::Write> Writer<W> {
 }
 
 pub trait FileLike {
-    fn fsync(&self) -> io::Result<()>;
-    fn ftruncate(&self, size: u64) -> io::Result<()>;
+    fn fsync(&mut self) -> io::Result<()>;
+    fn ftruncate(&mut self, tx_offset: u64, size: u64) -> io::Result<()>;
 }
 
 impl FileLike for File {
-    fn fsync(&self) -> io::Result<()> {
+    fn fsync(&mut self) -> io::Result<()> {
         self.sync_all()
     }
 
-    fn ftruncate(&self, size: u64) -> io::Result<()> {
+    fn ftruncate(&mut self, _tx_offset: u64, size: u64) -> io::Result<()> {
         self.set_len(size)
     }
 }
 
 impl<W: io::Write + FileLike> FileLike for BufWriter<W> {
-    fn fsync(&self) -> io::Result<()> {
-        self.get_ref().fsync()
+    fn fsync(&mut self) -> io::Result<()> {
+        self.get_mut().fsync()
     }
 
-    fn ftruncate(&self, size: u64) -> io::Result<()> {
-        self.get_ref().ftruncate(size)
+    fn ftruncate(&mut self, tx_offset: u64, size: u64) -> io::Result<()> {
+        self.get_mut().ftruncate(tx_offset, size)
     }
 }
 
 impl<W: io::Write + FileLike> FileLike for Writer<W> {
-    fn fsync(&self) -> io::Result<()> {
-        self.inner.fsync()
+    fn fsync(&mut self) -> io::Result<()> {
+        self.inner.fsync()?;
+        self.offset_index_head.as_mut().map(|index| index.fsync());
+        Ok(())
     }
 
-    fn ftruncate(&self, size: u64) -> io::Result<()> {
-        self.inner.ftruncate(size)
+    fn ftruncate(&mut self, tx_offset: u64, size: u64) -> io::Result<()> {
+        self.inner.ftruncate(tx_offset, size)?;
+        self.offset_index_head
+            .as_mut()
+            .map(|index| index.ftruncate(tx_offset, size));
+        Ok(())
     }
 }
 
+#[derive(Debug)]
+pub struct OffsetIndexWriter {
+    pub(crate) head: TxOffsetIndex,
+
+    require_segment_fsync: bool,
+    min_write_interval: NonZeroU64,
+
+    pub(crate) candidate_min_tx_offset: TxOffset,
+    pub(crate) candidate_byte_offset: u64,
+    pub(crate) bytes_since_last_index: u64,
+}
+
+impl OffsetIndexWriter {
+    pub fn new(head: TxOffsetIndex, opts: Options) -> Self {
+        OffsetIndexWriter {
+            head,
+            require_segment_fsync: opts.offset_index_require_segment_fsync,
+            min_write_interval: opts.offset_index_interval_bytes,
+            candidate_min_tx_offset: TxOffset::default(),
+            candidate_byte_offset: 0,
+            bytes_since_last_index: 0,
+        }
+    }
+
+    fn reset(&mut self) {
+        self.candidate_byte_offset = 0;
+        self.candidate_min_tx_offset = TxOffset::default();
+        self.bytes_since_last_index = 0;
+    }
+
+    /// Either append to index or save offsets to append at future fsync
+    fn append_after_commit(
+        &mut self,
+        min_tx_offset: TxOffset,
+        byte_offset: u64,
+        commit_len: u64,
+    ) -> Result<(), IndexError> {
+        self.bytes_since_last_index += commit_len;
+
+        if !self.require_segment_fsync && self.bytes_since_last_index >= self.min_write_interval.get() {
+            self.head.append(min_tx_offset, byte_offset)?;
+            self.head.async_flush()?;
+            self.reset();
+        } else {
+            self.candidate_byte_offset = byte_offset;
+            self.candidate_min_tx_offset = min_tx_offset;
+        }
+        Ok(())
+    }
+
+    pub fn append_after_fsync(&mut self) -> Result<(), IndexError> {
+        if self.bytes_since_last_index >= self.min_write_interval.get() {
+            self.head
+                .append(self.candidate_min_tx_offset, self.candidate_byte_offset)?;
+
+            self.head.async_flush()?;
+            self.reset();
+        }
+        Ok(())
+    }
+}
+
+impl FileLike for OffsetIndexWriter {
+    /// Must be called via SegmentWriter::fsync
+    fn fsync(&mut self) -> io::Result<()> {
+        let _ = self.append_after_fsync().map_err(|e| {
+            info!("failed to append to offset index: {:?}", e);
+        });
+        Ok(())
+    }
+
+    fn ftruncate(&mut self, _tx_offset: u64, tx_offset: u64) -> io::Result<()> {
+        self.reset();
+        let _ = self.head.truncate(tx_offset.into());
+        Ok(())
+    }
+}
 #[derive(Debug)]
 pub struct Reader<R> {
     pub header: Header,
@@ -511,6 +608,8 @@ mod tests {
                 bytes_written: 0,
 
                 max_records_in_commit,
+
+                offset_index_head: None,
             };
 
             for i in 0..max_records_in_commit.get() {
@@ -539,6 +638,7 @@ mod tests {
             bytes_written: 0,
 
             max_records_in_commit: NonZeroU16::MAX,
+            offset_index_head: None,
         };
 
         assert_eq!(0, writer.next_tx_offset());

@@ -3,7 +3,7 @@ use std::{
     io,
     marker::PhantomData,
     mem,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use log::debug;
@@ -15,7 +15,7 @@ const KEY_SIZE: usize = mem::size_of::<u64>();
 const ENTRY_SIZE: usize = KEY_SIZE + mem::size_of::<u64>();
 
 /// Returns the offset index file name based on the root path and offset
-pub fn offset_index_file_name(root: &PathBuf, offset: u64) -> PathBuf {
+pub fn offset_index_file_name(root: &Path, offset: u64) -> PathBuf {
     root.join(format!("{offset:0>20}{OFFSET_INDEX_FILE_EXT}"))
 }
 
@@ -35,6 +35,7 @@ pub struct IndexFileMut<Key: Into<u64> + From<u64>> {
 }
 
 impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
+    // Searches for first 0-key, to count number of entries
     fn num_entries(&self) -> Result<usize, IndexError> {
         for index in 0.. {
             match self.index_lookup(index) {
@@ -50,7 +51,7 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
         Ok(0)
     }
 
-    /// Finds the 0 based index of the first key encountered that is smaller than or equal to the given key.
+    /// Finds the 0 based index of the first key encountered that is just smaller than or equal to the given key.
     ///
     /// # Error
     ///
@@ -114,7 +115,6 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
 }
 
 impl<Key: Into<u64> + From<u64>> IndexRead<Key> for IndexFileMut<Key> {
-    /// Find the index of key smaller or equal to given Key, and then look up its value
     fn key_lookup(&self, key: Key) -> Result<(Key, u64), IndexError> {
         let (_, idx) = self.find_index(key)?;
         self.index_lookup(idx as usize)
@@ -123,12 +123,6 @@ impl<Key: Into<u64> + From<u64>> IndexRead<Key> for IndexFileMut<Key> {
 
 /// Implementation of the `IndexWrite` trait for `IndexFileMut`.
 impl<Key: Into<u64> + From<u64>> IndexWrite<Key> for IndexFileMut<Key> {
-    /// Appends a key-value pair to the index file.
-    /// Successive calls to `append` must supply key in ascending order
-    ///
-    /// Errors
-    /// - `IndexError::InvalidInput`: Either Key or Value is 0
-    /// - `IndexError::OutOfMemory`: Append after index file is already full.
     fn append(&mut self, key: Key, value: u64) -> Result<(), IndexError> {
         let key = key.into();
         if self.last_key()? >= key {
@@ -152,17 +146,15 @@ impl<Key: Into<u64> + From<u64>> IndexWrite<Key> for IndexFileMut<Key> {
         Ok(())
     }
 
-    /// Asynchronously flushes the index file.
     fn async_flush(&self) -> Result<(), IndexError> {
         self.inner.flush_async().map_err(Into::into)
     }
 
-    /// Truncates the index file starting from the entry with a key greater than or equal to the given key.
     fn truncate(&mut self, key: Key) -> Result<(), IndexError> {
         let key = key.into();
         let (found_key, index) = self.find_index(Key::from(key))?;
 
-        // Start index to truncate
+        // If returned key is smalled than asked key, truncate from next entry
         self.num_entries = if found_key.into() == key {
             index as usize
         } else {
@@ -179,8 +171,8 @@ impl<Key: Into<u64> + From<u64>> IndexWrite<Key> for IndexFileMut<Key> {
     }
 }
 
-pub fn create_index<Key: Into<u64> + From<u64>>(
-    path: &PathBuf,
+pub fn create_index_file<Key: Into<u64> + From<u64>>(
+    path: &Path,
     offset: u64,
     cap: u64,
 ) -> Result<IndexFileMut<Key>, IndexError> {
@@ -202,7 +194,7 @@ pub fn create_index<Key: Into<u64> + From<u64>>(
         .or_else(|e| {
             if e.kind() == io::ErrorKind::AlreadyExists {
                 debug!("Index file {} already exists", path.display());
-                return open_index(path, offset);
+                open_index_file(path, offset)
             } else {
                 debug!("Index file creation failed with error: {}", e);
                 Err(e.into())
@@ -210,7 +202,7 @@ pub fn create_index<Key: Into<u64> + From<u64>>(
         })
 }
 
-pub fn open_index<Key: Into<u64> + From<u64>>(path: &PathBuf, offset: u64) -> Result<IndexFileMut<Key>, IndexError> {
+pub fn open_index_file<Key: Into<u64> + From<u64>>(path: &Path, offset: u64) -> Result<IndexFileMut<Key>, IndexError> {
     let file = File::options()
         .read(true)
         .write(true)
@@ -227,26 +219,23 @@ pub fn open_index<Key: Into<u64> + From<u64>>(path: &PathBuf, offset: u64) -> Re
     Ok(me)
 }
 
-pub fn delete_index(path: &PathBuf, offset: u64) -> Result<(), IndexError> {
+pub fn delete_index_file(path: &Path, offset: u64) -> Result<(), IndexError> {
     fs::remove_file(offset_index_file_name(path, offset)).map_err(Into::into)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::FromBytesUntilNulError;
-
     use super::*;
-    use rand::seq::index;
     use tempfile::TempDir;
 
-    /// Create and fill index file with key as first `fill_till - 1` even numbers 
+    /// Create and fill index file with key as first `fill_till - 1` even numbers
     fn create_and_fill_index(cap: u64, fill_till: u64) -> Result<IndexFileMut<u64>, IndexError> {
         // Create a temporary directory for testing
         let temp_dir = TempDir::new()?;
         let path = temp_dir.path().to_path_buf();
 
         // Create an index file
-        let mut index_file: IndexFileMut<u64> = create_index(&path, 0, cap)?;
+        let mut index_file: IndexFileMut<u64> = create_index_file(&path, 0, cap)?;
 
         // Enter even number keys from 2
         for i in 1..fill_till {
@@ -280,12 +269,12 @@ mod tests {
 
         // append smaller than already appended key
         assert!(index.append(17, 300).is_err());
-                
+
         // append duplicate key
         assert!(index.append(18, 500).is_err());
 
         // append to fill the capacty
-        assert_eq!(index.append(22, 500)?, ());
+        assert!(index.append(22, 500).is_ok());
 
         // Append after capacity should give error
         assert!(index.append(224, 600).is_err());
@@ -298,7 +287,6 @@ mod tests {
         let mut index = create_and_fill_index(10, 9)?;
 
         assert_eq!(index.num_entries, 8);
-
 
         // Truncate last present entry
         index.truncate(16)?;
@@ -322,13 +310,13 @@ mod tests {
     }
 
     #[test]
-    fn test_open_index() -> Result<(), IndexError> {
+    fn test_close_open_index() -> Result<(), IndexError> {
         // Create a temporary directory for testing
         let temp_dir = TempDir::new()?;
         let path = temp_dir.path().to_path_buf();
 
         // Create an index file
-        let mut index_file: IndexFileMut<u64> = create_index(&path, 0, 100)?;
+        let mut index_file: IndexFileMut<u64> = create_index_file(&path, 0, 100)?;
 
         for i in 1..10 {
             index_file.append(i * 2, i * 2 * 100)?;
@@ -337,7 +325,7 @@ mod tests {
         assert_eq!(index_file.num_entries, 9);
         drop(index_file);
 
-        let open_index_file: IndexFileMut<u64> = open_index(&path, 0)?;
+        let open_index_file: IndexFileMut<u64> = open_index_file(&path, 0)?;
         assert_eq!(open_index_file.num_entries, 9);
         assert_eq!(open_index_file.key_lookup(6)?, (6, 600));
 
