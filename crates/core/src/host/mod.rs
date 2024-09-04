@@ -143,18 +143,20 @@ fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T)
 pub enum AbiCall {
     TableIdFromName,
     DatastoreTableRowCount,
+    DatastoreTableScanBsatn,
     RowIterBsatnAdvance,
     RowIterBsatnClose,
+    DatastoreInsertBsatn,
+    DatastoreDeleteAllByEqBsatn,
     BytesSourceRead,
     BytesSinkWrite,
-
-    CancelReducer,
     ConsoleLog,
+    ConsoleTimerStart,
+    ConsoleTimerEnd,
+
     DeleteByColEq,
-    DeleteByRel,
-    DatastoreInsertBsatn,
     IterByColEq,
-    IterStart,
     IterStartFiltered,
-    ScheduleReducer,
+
+    VolatileNonatomicScheduleImmediate,
 }

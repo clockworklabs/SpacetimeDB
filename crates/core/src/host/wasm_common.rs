@@ -302,11 +302,11 @@ pub(super) type RowIters = ResourceSlab<RowIterIdx>;
 
 pub(super) struct TimingSpan {
     pub start: Instant,
-    pub name: Vec<u8>,
+    pub name: String,
 }
 
 impl TimingSpan {
-    pub fn new(name: Vec<u8>) -> Self {
+    pub fn new(name: String) -> Self {
         Self {
             start: Instant::now(),
             name,
@@ -357,10 +357,9 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::datastore_delete_all_by_eq_bsatn,
             "spacetime_10.0"::bytes_source_read,
             "spacetime_10.0"::bytes_sink_write,
-
             "spacetime_10.0"::console_log,
-            "spacetime_10.0"::span_end,
-            "spacetime_10.0"::span_start,
+            "spacetime_10.0"::console_timer_start,
+            "spacetime_10.0"::console_timer_end,
 
             "spacetime_10.0"::delete_by_col_eq,
             "spacetime_10.0"::iter_by_col_eq,
