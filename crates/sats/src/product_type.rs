@@ -9,6 +9,20 @@ pub const IDENTITY_TAG: &str = "__identity_bytes";
 /// The tag used inside the special `Address` product type.
 pub const ADDRESS_TAG: &str = "__address_bytes";
 
+/// Constructs a product type from a list of field types with syntax:
+///
+/// `product_type![Some("bananas") => AlgebraicType::I32, None => AlgebraicType::String, Some("apples") => AlgebraicType::I64, ...]`.
+///
+/// Repeat notation from `vec![x; n]` is not supported.
+#[macro_export]
+macro_rules! product_type {
+    [$($name:expr => $ty:expr),*$(,)?] => {
+        $crate::ProductType {
+            elements: [$($crate::ProductTypeElement::new($crate::AlgebraicType::from($ty), $name.map(|v| v.into()))),*].into(),
+        }
+    }
+}
+
 /// A structural product type  of the factors given by `elements`.
 ///
 /// This is also known as `struct` and `tuple` in many languages,

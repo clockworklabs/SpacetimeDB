@@ -886,7 +886,9 @@ impl MutTxId {
         // so this method needs only to check the committed state.
         if let Some(commit_table) = commit_table {
             commit_table
-                .check_unique_constraints(row, |maybe_conflict| self.tx_state.is_deleted(table_id, maybe_conflict))
+                .check_unique_constraints(&self.committed_state_write_lock.blob_store, row, |maybe_conflict| {
+                    self.tx_state.is_deleted(table_id, maybe_conflict)
+                })
                 .map_err(IndexError::from)?;
         }
 
