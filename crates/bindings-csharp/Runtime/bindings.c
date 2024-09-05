@@ -36,11 +36,11 @@ OPAQUE_TYPEDEF(RowIter, uint32_t);
 #endif
 
 IMPORT(void, _console_log,
-       (LogLevel level, const uint8_t* target, uint32_t target_len,
-        const uint8_t* filename, uint32_t filename_len, uint32_t line_number,
-        const uint8_t* message, uint32_t message_len),
-       (level, target, target_len, filename, filename_len, line_number, message,
-        message_len));
+       (LogLevel level, const uint8_t* target_ptr, uint32_t target_len,
+        const uint8_t* filename_ptr, uint32_t filename_len, uint32_t line_number,
+        const uint8_t* message_ptr, uint32_t message_len),
+       (level, target_ptr, target_len, filename_ptr, filename_len, line_number,
+        message_ptr, message_len));
 
 IMPORT(Status, _table_id_from_name,
        (const uint8_t* name, uint32_t name_len, TableId* id),

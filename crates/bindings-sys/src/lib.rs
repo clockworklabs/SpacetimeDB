@@ -247,31 +247,6 @@ pub mod raw {
         /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
         pub fn _datastore_insert_bsatn(table_id: TableId, row_ptr: *mut u8, row_len_ptr: *mut usize) -> u16;
 
-        /// Log at `level` a `message` message occuring in `filename:line_number`
-        /// with [`target`] being the module path at the `log!` invocation site.
-        ///
-        /// These various pointers are interpreted lossily as UTF-8 strings with a corresponding `_len`.
-        ///
-        /// The `target` and `filename` pointers are ignored by passing `NULL`.
-        /// The line number is ignored if `line_number == u32::MAX`.
-        ///
-        /// No message is logged if
-        /// - `target != NULL && target + target_len > u64::MAX`
-        /// - `filename != NULL && filename + filename_len > u64::MAX`
-        /// - `message + message_len > u64::MAX`
-        ///
-        /// [`target`]: https://docs.rs/log/latest/log/struct.Record.html#method.target
-        pub fn _console_log(
-            level: u8,
-            target: *const u8,
-            target_len: usize,
-            filename: *const u8,
-            filename_len: usize,
-            line_number: u32,
-            message: *const u8,
-            message_len: usize,
-        );
-
         /// Schedules a reducer to be called asynchronously, nonatomically,
         /// and immediately on a best effort basis.
         ///
@@ -374,23 +349,66 @@ pub mod raw {
         /// ```
         pub fn _bytes_source_read(source: BytesSource, buffer_ptr: *mut u8, buffer_len_ptr: *mut usize) -> i16;
 
-        /// Begin a timing span.
+        /// Logs at `level` a `message` message occuring in `filename:line_number`
+        /// with [`target`](target) being the module path at the `log!` invocation site.
         ///
-        /// When the returned `u32` span ID is passed to [`_span_end`],
+        /// These various pointers are interpreted lossily as UTF-8 strings with a corresponding `_len`.
+        ///
+        /// The `target` and `filename` pointers are ignored by passing `NULL`.
+        /// The line number is ignored if `line_number == u32::MAX`.
+        ///
+        /// No message is logged if
+        /// - `target != NULL && target + target_len > u64::MAX`
+        /// - `filename != NULL && filename + filename_len > u64::MAX`
+        /// - `message + message_len > u64::MAX`
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `target` is not NULL and `target_ptr[..target_len]` is not in bounds of WASM memory.
+        /// - `filename` is not NULL and `filename_ptr[..filename_len]` is not in bounds of WASM memory.
+        /// - `message` is not NULL and `message_ptr[..message_len]` is not in bounds of WASM memory.
+        ///
+        /// [target]: https://docs.rs/log/latest/log/struct.Record.html#method.target
+        pub fn _console_log(
+            level: u8,
+            target_ptr: *const u8,
+            target_len: usize,
+            filename_ptr: *const u8,
+            filename_len: usize,
+            line_number: u32,
+            message_ptr: *const u8,
+            message_len: usize,
+        );
+
+        /// Begins a timing span with `name = name_ptr[..name_len]`.
+        ///
+        /// When the returned `ConsoleTimerId` is passed to [`console_timer_end`],
         /// the duration between the calls will be printed to the module's logs.
         ///
-        /// The slice (`name`, `name_len`) must be valid UTF-8 bytes.
-        pub fn _span_start(name: *const u8, name_len: usize) -> u32;
+        /// The `name` is interpreted lossily as UTF-8.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `name_ptr` is NULL or `name` is not in bounds of WASM memory.
+        pub fn _console_timer_start(name_ptr: *const u8, name_len: usize) -> u32;
 
         /// End a timing span.
         ///
-        /// The `span_id` must be the result of a call to `_span_start`.
+        /// The `timer_id` must be the result of a call to `console_timer_start`.
         /// The duration between the two calls will be computed and printed to the module's logs.
+        /// Once `console_timer_end` is called on `id: ConsoleTimerId`, the `id` is invalid.
+        /// That is, `console_timer_end(id)` the second time will yield `NO_SUCH_CONSOLE_TIMER`.
         ///
-        /// Behavior is unspecified
-        /// if `_span_end` is called on a `span_id` which is not the result of a call to `_span_start`,
-        /// or if `_span_end` is called multiple times with the same `span_id`.
-        pub fn _span_end(span_id: u32);
+        /// Note that the host is free to reuse allocations in a pool,
+        /// destroying the handle logically does not entail that memory is necessarily reclaimed.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        /// - `NO_SUCH_CONSOLE_TIMER`, when `timer_id` does not exist.
+        pub fn _console_timer_end(timer_id: u32) -> u16;
     }
 
     /// What strategy does the database index use?

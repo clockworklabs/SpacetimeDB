@@ -415,15 +415,15 @@ pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDefV8> 
         "_console_log",
         |mut caller: Caller<'_, WasmCtx>,
          _level: u32,
-         _target: u32,
+         _target_ptr: u32,
          _target_len: u32,
-         _filename: u32,
+         _filename_ptr: u32,
          _filename_len: u32,
          _line_number: u32,
-         message: u32,
+         message_ptr: u32,
          message_len: u32| {
             let (mem, _) = WasmCtx::mem_env(&mut caller);
-            let slice = mem.deref_slice(message, message_len).unwrap();
+            let slice = mem.deref_slice(message_ptr, message_len).unwrap();
             println!("from wasm: {}", String::from_utf8_lossy(slice));
         },
     )?;
