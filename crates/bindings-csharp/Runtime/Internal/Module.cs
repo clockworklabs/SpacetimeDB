@@ -1,7 +1,6 @@
 namespace SpacetimeDB.Internal;
 
 using System;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using SpacetimeDB;
 using SpacetimeDB.BSATN;

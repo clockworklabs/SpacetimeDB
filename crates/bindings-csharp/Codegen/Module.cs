@@ -1,7 +1,6 @@
 namespace SpacetimeDB.Codegen;
 
 using System.Collections.Immutable;
-using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static Utils;
