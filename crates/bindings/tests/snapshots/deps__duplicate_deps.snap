@@ -2,6 +2,4 @@
 source: crates/bindings/tests/deps.rs
 expression: cargo tree -p spacetimedb -e no-dev -d --depth 0
 ---
-syn v1.0.109
 
-syn v2.0.39
