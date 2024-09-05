@@ -252,8 +252,11 @@ impl ModuleDefBuilder {
                 algebraic_type: c.col_type.clone(),
             })
             .collect();
-        // do NOT add a `TypeAlias`: in v8, the `RawTableDef` itself serves as a `TypeAlias`.
         let data = self.module.typespace.add(ty.into());
+        self.add_type_alias(TypeAlias {
+            name: schema.table_name.clone().into(),
+            ty: data,
+        });
         self.add_table(TableDesc { schema, data });
         data
     }

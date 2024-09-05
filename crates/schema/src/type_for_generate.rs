@@ -332,16 +332,24 @@ pub enum AlgebraicTypeUse {
 impl AlgebraicTypeUse {
     /// Extract all `AlgebraicTypeRef`s that are used in this type and add them to `buf`.`
     fn extract_refs(&self, buf: &mut HashSet<AlgebraicTypeRef>) {
+        self.for_each_ref(|r| {
+            buf.insert(r);
+        })
+    }
+
+    pub fn for_each_ref(&self, mut f: impl FnMut(AlgebraicTypeRef)) {
+        self._for_each_ref(&mut f)
+    }
+
+    fn _for_each_ref(&self, f: &mut impl FnMut(AlgebraicTypeRef)) {
         match self {
-            AlgebraicTypeUse::Ref(ref_) => {
-                buf.insert(*ref_);
-            }
-            AlgebraicTypeUse::Array(elem_ty) => elem_ty.extract_refs(buf),
+            AlgebraicTypeUse::Ref(ref_) => f(*ref_),
+            AlgebraicTypeUse::Array(elem_ty) => elem_ty._for_each_ref(f),
             AlgebraicTypeUse::Map { key, value } => {
-                key.extract_refs(buf);
-                value.extract_refs(buf);
+                key._for_each_ref(f);
+                value._for_each_ref(f);
             }
-            AlgebraicTypeUse::Option(elem_ty) => elem_ty.extract_refs(buf),
+            AlgebraicTypeUse::Option(elem_ty) => elem_ty._for_each_ref(f),
             _ => {}
         }
     }

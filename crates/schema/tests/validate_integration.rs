@@ -4,7 +4,7 @@
 //! The name should refer to a path in the `modules` directory of this repo.
 
 use spacetimedb_cli::generate::extract_descriptions;
-use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9, ser::serde::SerializeWrapper, RawModuleDefV8};
+use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9, ser::serde::SerializeWrapper, RawModuleDef};
 use spacetimedb_primitives::TableId;
 use spacetimedb_schema::{
     def::{ModuleDef, TableDef},
@@ -18,8 +18,11 @@ const TEST_TABLE_ID: TableId = TableId(1337);
 #[allow(clippy::disallowed_macros)] // LET ME PRINTLN >:(
 fn validate_module(module_name: &str) {
     let module = CompiledModule::compile(module_name, CompilationMode::Debug);
-    let raw_module_def: RawModuleDefV8 =
+    let raw_module_def: RawModuleDef =
         extract_descriptions(module.path()).expect("failed to extract module descriptions");
+    let RawModuleDef::V8BackCompat(raw_module_def) = raw_module_def else {
+        panic!("no more v8")
+    };
 
     // v8 -> ModuleDef
     let result = ModuleDef::try_from(raw_module_def.clone());
