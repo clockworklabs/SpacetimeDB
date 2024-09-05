@@ -4512,6 +4512,7 @@ dependencies = [
 name = "spacetimedb-schema"
 version = "0.12.0"
 dependencies = [
+ "enum-as-inner",
  "hashbrown 0.14.1",
  "itertools 0.12.0",
  "lazy_static",

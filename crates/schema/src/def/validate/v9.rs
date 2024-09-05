@@ -47,21 +47,25 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         })
         .collect_all_errors();
 
+    let mut refmap = HashMap::default();
+
     let tables = tables
         .into_iter()
         .map(|table| {
-            validator
-                .validate_table_def(table)
-                .map(|table_def| (table_def.name.clone(), table_def))
+            validator.validate_table_def(table).map(|table_def| {
+                refmap.insert(table_def.product_type_ref, RefPointee::Table(table_def.name.clone()));
+                (table_def.name.clone(), table_def)
+            })
         })
         .collect_all_errors();
 
     let types = types
         .into_iter()
         .map(|ty| {
-            validator
-                .validate_type_def(ty)
-                .map(|type_def| (type_def.name.clone(), type_def))
+            validator.validate_type_def(ty).map(|type_def| {
+                refmap.insert(type_def.ty, RefPointee::Type(type_def.name.clone()));
+                (type_def.name.clone(), type_def)
+            })
         })
         .collect_all_errors::<HashMap<_, _>>();
 
@@ -96,6 +100,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         typespace,
         typespace_for_generate,
         stored_in_table_def,
+        refmap,
     };
 
     result.generate_indexes();
@@ -229,6 +234,8 @@ impl ModuleValidator<'_> {
 
     /// Validate a reducer definition.
     fn validate_reducer_def(&mut self, reducer_def: RawReducerDefV9) -> Result<ReducerDef> {
+        use crate::type_for_generate::ClientCodegenError;
+
         let RawReducerDefV9 {
             name,
             params,
@@ -247,7 +254,18 @@ impl ModuleValidator<'_> {
                     position,
                     arg_name: param.name().map(Into::into),
                 };
-                self.validate_for_type_use(&location, &param.algebraic_type)
+                let param_name = param
+                    .name()
+                    .ok_or_else(|| {
+                        ValidationError::ClientCodegenError {
+                            location: location.clone().make_static(),
+                            error: ClientCodegenError::NamelessReducerParam,
+                        }
+                        .into()
+                    })
+                    .and_then(|s| identifier(s.into()));
+                let ty_use = self.validate_for_type_use(&location, &param.algebraic_type);
+                (param_name, ty_use).combine_errors()
             })
             .collect_all_errors();
 
@@ -266,7 +284,9 @@ impl ModuleValidator<'_> {
         Ok(ReducerDef {
             name,
             params: params.clone(),
-            params_for_generate,
+            params_for_generate: crate::type_for_generate::ProductTypeDef {
+                elements: params_for_generate,
+            },
             lifecycle,
         })
     }

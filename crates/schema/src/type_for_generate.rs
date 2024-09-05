@@ -1,5 +1,6 @@
 //! `AlgebraicType` extensions for generating client code.
 
+use enum_as_inner::EnumAsInner;
 use spacetimedb_data_structures::{
     error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
     map::{HashMap, HashSet},
@@ -30,6 +31,9 @@ pub enum ClientCodegenError {
 
     #[error("internal codegen error: all type elements require names: {ty}")]
     NamelessTypeDef { ty: PrettyAlgebraicType },
+
+    #[error("internal codegen error: all reducer parameters require names")]
+    NamelessReducerParam,
 
     #[error("internal codegen error: type {ty} is not valid for generating a definition")]
     NotValidForDefinition { ty: PrettyAlgebraicType },
@@ -79,8 +83,16 @@ impl TypespaceForGenerate {
     }
 }
 
+impl std::ops::Index<AlgebraicTypeRef> for TypespaceForGenerate {
+    type Output = AlgebraicTypeDef;
+
+    fn index(&self, index: AlgebraicTypeRef) -> &Self::Output {
+        &self.defs[&index]
+    }
+}
+
 /// An algebraic type definition.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, EnumAsInner)]
 pub enum AlgebraicTypeDef {
     /// A product type declaration.
     Product(ProductTypeDef),
@@ -89,17 +101,33 @@ pub enum AlgebraicTypeDef {
 }
 
 /// A product type definition.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ProductTypeDef {
     /// The elements of the product type, in order.
     pub elements: Box<[(Identifier, AlgebraicTypeUse)]>,
 }
 
+impl<'a> IntoIterator for &'a ProductTypeDef {
+    type Item = &'a (Identifier, AlgebraicTypeUse);
+    type IntoIter = std::slice::Iter<'a, (Identifier, AlgebraicTypeUse)>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.elements.iter()
+    }
+}
+
 /// A sum type definition.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SumTypeDef {
     /// The variants of the sum type, in order.
     pub variants: Box<[(Identifier, AlgebraicTypeUse)]>,
+}
+
+impl<'a> IntoIterator for &'a SumTypeDef {
+    type Item = &'a (Identifier, AlgebraicTypeUse);
+    type IntoIter = std::slice::Iter<'a, (Identifier, AlgebraicTypeUse)>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.variants.iter()
+    }
 }
 
 /// A use of an algebraic type.
@@ -177,6 +205,26 @@ pub enum AlgebraicTypeUse {
     F32,
     /// The `F64` type. Values [`AlgebraicValue::F64(v)`](crate::AlgebraicValue::F64) will have this type.
     F64,
+}
+
+impl AlgebraicTypeUse {
+    /// Recurses through this `AlgebraicTypeUse` tree, calling the function F for every `Ref` found.
+    pub fn for_each_ref<F: FnMut(AlgebraicTypeRef)>(&self, mut f: F) {
+        self._for_each_ref(&mut f)
+    }
+
+    fn _for_each_ref<F: FnMut(AlgebraicTypeRef)>(&self, f: &mut F) {
+        match self {
+            AlgebraicTypeUse::Ref(r) => f(*r),
+            AlgebraicTypeUse::Array(elem) => elem._for_each_ref(f),
+            AlgebraicTypeUse::Map { key, value } => {
+                key._for_each_ref(f);
+                value._for_each_ref(f);
+            }
+            AlgebraicTypeUse::Option(t) => t._for_each_ref(f),
+            _ => {}
+        }
+    }
 }
 
 /// A builder for a `TypespaceForGenerate`.

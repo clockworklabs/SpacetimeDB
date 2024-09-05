@@ -97,6 +97,9 @@ pub struct ModuleDef {
     /// Concretely, though, they're stored in the `TableDef` data structures.
     /// This map allows looking up which `TableDef` stores the `Def` you're looking for.
     stored_in_table_def: IdentifierMap<Identifier>,
+
+    /// A map from type refs to their names, if they have any.
+    refmap: HashMap<AlgebraicTypeRef, RefPointee>,
 }
 
 impl ModuleDef {
@@ -114,6 +117,23 @@ impl ModuleDef {
     /// The tables of the module definition.
     pub fn tables(&self) -> impl Iterator<Item = &TableDef> {
         self.tables.values()
+    }
+
+    /// The reducers of the module definition.
+    pub fn reducers(&self) -> impl Iterator<Item = &ReducerDef> {
+        self.reducers.values()
+    }
+
+    /// The named types of the module definition.
+    pub fn types(&self) -> impl Iterator<Item = &TypeDef> {
+        self.types.values()
+    }
+
+    /// The named types of the module definition that aren't table row type definitions.
+    pub fn types_not_tables(&self) -> impl Iterator<Item = &TypeDef> {
+        self.types
+            .values()
+            .filter(|typ| !typ.name.as_identifier().is_some_and(|name| self.table(name).is_some()))
     }
 
     /// The `Typespace` used by the module.
@@ -155,6 +175,11 @@ impl ModuleDef {
     pub fn table<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&TableDef> {
         // If the string IS a valid identifier, we can just look it up.
         self.tables.get(name)
+    }
+
+    /// Lookup a type's name from its `AlgebraicTypeRef`.
+    pub fn type_name_from_ref(&self, r: AlgebraicTypeRef) -> Option<&RefPointee> {
+        self.refmap.get(&r)
     }
 
     /// Generate indexes for the module definition.
@@ -270,6 +295,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             typespace,
             stored_in_table_def: _,
             typespace_for_generate: _,
+            refmap: _,
         } = val;
 
         RawModuleDefV9 {
@@ -609,6 +635,41 @@ impl From<TypeDef> for RawTypeDefV9 {
     }
 }
 
+/// The return value from [`ModuleDef::type_name_from_ref`].
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub enum RefPointee {
+    Table(Identifier),
+    Type(ScopedTypeName),
+}
+
+impl RefPointee {
+    /// Iterate over the segments of this name.
+    pub fn name_segments(&self) -> impl Iterator<Item = &Identifier> {
+        let (scope, name) = match self {
+            RefPointee::Table(id) => (None, id),
+            RefPointee::Type(ScopedTypeName { scope, name }) => (Some(&**scope), name),
+        };
+        scope.into_iter().flatten().chain(std::iter::once(name))
+    }
+
+    /// Get the least-significant segment of this name.
+    pub fn name(&self) -> &Identifier {
+        match self {
+            RefPointee::Table(id) => id,
+            RefPointee::Type(scoped) => &scoped.name,
+        }
+    }
+
+    /// Retrieve the `ScopedTypeName`, if this name is scoped.
+    pub fn scoped_name(&self) -> Option<&ScopedTypeName> {
+        match self {
+            RefPointee::Table(_) => None,
+            RefPointee::Type(scoped) => Some(scoped),
+        }
+    }
+}
+
 /// A scoped type name, in the form `scope0::scope1::...::scopeN::name`.
 ///
 /// These are the names that will be used *in client code generation*, NOT the names used for types
@@ -653,6 +714,21 @@ impl ScopedTypeName {
             scope: Box::new([]),
             name,
         }
+    }
+
+    /// Retrieve the name of this type.
+    pub fn name(&self) -> &Identifier {
+        &self.name
+    }
+
+    /// Retrieve the name of this type, if the scope is empty.
+    pub fn as_identifier(&self) -> Option<&Identifier> {
+        self.scope.is_empty().then_some(&self.name)
+    }
+
+    /// Iterate over the segments of this name.
+    pub fn name_segments(&self) -> impl Iterator<Item = &Identifier> {
+        self.scope.iter().chain(std::iter::once(&self.name))
     }
 }
 impl fmt::Debug for ScopedTypeName {
@@ -703,7 +779,7 @@ pub struct ReducerDef {
     pub params: ProductType,
 
     /// The parameters of the reducer, formatted for client codegen.
-    pub params_for_generate: Vec<AlgebraicTypeUse>,
+    pub params_for_generate: crate::type_for_generate::ProductTypeDef,
 
     /// The special role of this reducer in the module lifecycle, if any.
     pub lifecycle: Option<Lifecycle>,
