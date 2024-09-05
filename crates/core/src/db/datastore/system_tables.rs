@@ -340,6 +340,7 @@ fn st_sequence_schema() -> TableSchema {
         )
         .with_type(StTableType::System)
         // TODO: Unique constraint on sequence name?
+        // TODO: index on `TableId`?
         .with_column_constraint(Constraints::primary_key_auto(), StSequenceFields::SequenceId),
     )
 }

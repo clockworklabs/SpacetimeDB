@@ -17,6 +17,7 @@ macro_rules! errnos {
             NO_SPACE(9, "The provided sink has no more space left"),
             BUFFER_TOO_SMALL(11, "The provided buffer is not large enough to store the data"),
             UNIQUE_ALREADY_EXISTS(12, "Value with given unique identifier already exists"),
+            SCHEDULE_AT_DELAY_TOO_LONG(13, "Specified delay in scheduling row was too long"),
         );
     };
 }

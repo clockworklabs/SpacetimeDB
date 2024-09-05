@@ -14,6 +14,7 @@ use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_table::table::RowRef;
 
 /// The `IsolationLevel` enum specifies the degree to which a transaction is
 /// isolated from concurrently running transactions. The higher the isolation
@@ -483,12 +484,23 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
         table_id: TableId,
         relation: impl IntoIterator<Item = ProductValue>,
     ) -> u32;
+    /// Inserts `row` into the table identified by `table_id`.
+    ///
+    /// Returns the generated column values (the [`AlgebraicValue`])
+    /// and a reference to the row as a [`RowRef`].
+    /// The generated column values are only those that were generated.
+    /// Those are columns with an auto-inc sequence
+    /// and where the column was `0` in `row`.
+    /// In case of zero or multiple such column,
+    /// an `AlgebraicValue::Product` is returned.
+    /// Otherwise, in case of a single column,
+    /// as an optimization, the value is not wrapped.
     fn insert_mut_tx<'a>(
         &'a self,
         tx: &'a mut Self::MutTx,
         table_id: TableId,
         row: ProductValue,
-    ) -> Result<ProductValue>;
+    ) -> Result<(AlgebraicValue, RowRef<'a>)>;
 
     /// Obtain the [`Metadata`] for this datastore.
     ///

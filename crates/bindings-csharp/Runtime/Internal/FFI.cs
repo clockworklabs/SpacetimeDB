@@ -31,6 +31,7 @@ public enum Errno : short
     NO_SPACE = 9,
     BUFFER_TOO_SMALL = 11,
     UNIQUE_ALREADY_EXISTS = 12,
+    SCHEDULE_AT_DELAY_TOO_LONG = 13,
 }
 
 #pragma warning disable IDE1006 // Naming Styles - Not applicable to FFI stuff.
@@ -78,6 +79,7 @@ internal static partial class FFI
                     Errno.NO_SPACE => new NoSpaceException(),
                     Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
                     Errno.UNIQUE_ALREADY_EXISTS => new UniqueAlreadyExistsException(),
+                    Errno.SCHEDULE_AT_DELAY_TOO_LONG => new ScheduleAtDelayTooLongException(),
                     _ => new UnknownException(status),
                 };
             }
@@ -145,7 +147,11 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _insert(TableId table_id, byte[] row, uint row_len);
+    public static partial CheckedStatus _datastore_insert_bsatn(
+        TableId table_id,
+        Span<byte> row,
+        ref uint row_len
+    );
 
     [LibraryImport(StdbNamespace)]
     public static partial CheckedStatus _delete_by_col_eq(

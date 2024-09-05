@@ -176,7 +176,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             );
         }
 
-        var hasAutoIncFields = Members.Any(f => f.Attrs.HasFlag(ColumnAttrs.AutoInc));
+        var autoIncFields = Members
+            .Where(f => f.Attrs.HasFlag(ColumnAttrs.AutoInc))
+            .Select(f => f.Name);
 
         var iTable = $"SpacetimeDB.Internal.ITable<{ShortName}>";
 
@@ -186,7 +188,19 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
         extensions.Contents.Append(
             $$"""
-            static bool {{iTable}}.HasAutoIncFields => {{hasAutoIncFields.ToString().ToLower()}};
+            public void ReadGenFields(System.IO.BinaryReader reader) {
+                {{string.Join(
+                    "\n",
+                    autoIncFields.Select(name =>
+                        $$"""
+                        if ({{name}} == default)
+                        {
+                            {{name}} = BSATN.{{name}}.Read(reader);
+                        }
+                        """
+                    )
+                )}}
+            }
 
             static SpacetimeDB.Internal.Module.TableDesc {{iTable}}.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
                 new (
