@@ -188,7 +188,8 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
             ));
     }
 
-    public void ReadGenFields(System.IO.BinaryReader reader) {
+    public void ReadGenFields(System.IO.BinaryReader reader)
+    {
         if (Id == default)
         {
             Id = BSATN.Id.Read(reader);

@@ -53,7 +53,8 @@ partial class Timers
         public ulong ScheduledId;
         public SpacetimeDB.ScheduleAt ScheduledAt;
 
-        public void ReadGenFields(System.IO.BinaryReader reader) {
+        public void ReadGenFields(System.IO.BinaryReader reader)
+        {
             if (ScheduledId == default)
             {
                 ScheduledId = BSATN.ScheduledId.Read(reader);
