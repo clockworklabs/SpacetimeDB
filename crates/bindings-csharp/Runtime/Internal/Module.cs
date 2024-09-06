@@ -1,20 +1,33 @@
 namespace SpacetimeDB.Internal;
 
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
+
 using SpacetimeDB;
 using SpacetimeDB.BSATN;
 
+[Flags]
+public enum ColumnAttrs : byte
+{
+    None = 0b0000,
+    Indexed = 0b0001,
+    AutoInc = 0b0010,
+    Unique = 0b0100 | Indexed,
+    PrimaryKey = 0b1000 | Unique,
+}
+
 public static partial class Module
 {
-    [SpacetimeDB.Type]
+    [Type]
     public enum IndexType : byte
     {
         BTree,
         Hash,
     }
 
-    [SpacetimeDB.Type]
+    [Type]
     public partial struct IndexDef(string name, IndexType type, bool isUnique, ushort[] columnIds)
     {
         string IndexName = name;
@@ -23,14 +36,14 @@ public static partial class Module
         ushort[] ColumnIds = columnIds;
     }
 
-    [SpacetimeDB.Type]
+    [Type]
     public partial struct ColumnDef(string name, AlgebraicType type)
     {
         internal string ColName = name;
         AlgebraicType ColType = type;
     }
 
-    [SpacetimeDB.Type]
+    [Type]
     public partial struct ConstraintDef(string name, ColumnAttrs kind, ushort[] columnIds)
     {
         string ConstraintName = name;
@@ -40,7 +53,7 @@ public static partial class Module
         ushort[] ColumnIds = columnIds;
     }
 
-    [SpacetimeDB.Type]
+    [Type]
     public partial struct SequenceDef(
         string sequenceName,
         ushort colPos,
@@ -67,7 +80,7 @@ public static partial class Module
         public ColumnAttrs Attrs = attrs;
     }
 
-    [SpacetimeDB.Type]
+    [Type]
     public partial struct TableDef(
         string tableName,
         ColumnDefWithAttrs[] columns,
@@ -81,7 +94,7 @@ public static partial class Module
         ConstraintDef[] Constraints = columns
             // Important: the position must be stored here, before filtering.
             .Select((col, pos) => (col, pos))
-            .Where(pair => pair.col.Attrs != ColumnAttrs.UnSet)
+            .Where(pair => pair.col.Attrs != ColumnAttrs.None)
             .Select(pair => new ConstraintDef(
                 $"ct_{tableName}_{pair.col.ColumnDef.ColName}_{pair.col.Attrs}",
                 pair.col.Attrs,
@@ -99,38 +112,38 @@ public static partial class Module
         string? ScheduledReducer = scheduledReducer;
     }
 
-    [SpacetimeDB.Type]
+    [Type]
     public partial struct TableDesc(TableDef schema, AlgebraicType.Ref typeRef)
     {
         TableDef Schema = schema;
         int TypeRef = typeRef.Ref_;
     }
 
-    [SpacetimeDB.Type]
+    [Type]
     public partial struct ReducerDef(string name, AggregateElement[] args)
     {
         string Name = name;
         AggregateElement[] Args = args;
     }
 
-    [SpacetimeDB.Type]
-    internal partial struct TypeAlias(string name, AlgebraicType.Ref typeRef)
+    [Type]
+    public partial struct TypeAlias(string name, AlgebraicType.Ref typeRef)
     {
         string Name = name;
         int TypeRef = typeRef.Ref_;
     }
 
-    [SpacetimeDB.Type]
-    internal partial record MiscModuleExport
-        : SpacetimeDB.TaggedEnum<(TypeAlias TypeAlias, Unit _Reserved)>;
+    [Type]
+    public partial record MiscModuleExport
+        : TaggedEnum<(TypeAlias TypeAlias, Unit _Reserved)>;
 
-    [SpacetimeDB.Type]
+    [Type]
     public partial struct RawModuleDefV8()
     {
-        List<AlgebraicType> Types = [];
-        List<TableDesc> Tables = [];
-        List<ReducerDef> Reducers = [];
-        List<MiscModuleExport> MiscExports = [];
+        public List<AlgebraicType> Types = [];
+        public TableDesc[] Tables;
+        public ReducerDef[] Reducers;
+        public List<MiscModuleExport> MiscExports = [];
 
         // Note: this intends to generate a valid identifier, but it's not guaranteed to be unique as it's not proper mangling.
         // Fix it up to a different mangling scheme if it causes problems.
@@ -161,18 +174,13 @@ public static partial class Module
             RegisterTypeName<T>(typeRef);
             return typeRef;
         }
-
-        internal void RegisterReducer(ReducerDef reducer) => Reducers.Add(reducer);
-
-        internal void RegisterTable(TableDesc table) => Tables.Add(table);
     }
 
-    [SpacetimeDB.Type]
+    [Type]
     internal partial record RawModuleDef
-        : SpacetimeDB.TaggedEnum<(RawModuleDefV8 V8BackCompat, Unit _Reserved)>;
+        : TaggedEnum<(RawModuleDefV8 V8BackCompat, Unit _Reserved)>;
 
-    private static readonly RawModuleDefV8 moduleDef = new();
-    private static readonly List<IReducer> reducers = [];
+    private static RawModuleDefV8 moduleDef = new();
 
     struct TypeRegistrar() : ITypeRegistrar
     {
@@ -203,20 +211,68 @@ public static partial class Module
         }
     }
 
-    static readonly TypeRegistrar typeRegistrar = new();
+    public static readonly ITypeRegistrar typeRegistrar = new TypeRegistrar();
 
-    public static void RegisterReducer<R>()
-        where R : IReducer, new()
+    public delegate void CallReducer(BinaryReader reader);
+
+    #pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor.
+    static CallReducer[] reducers;
+
+    static TableId?[] tableIds;
+#pragma warning restore CS8618
+
+    public static void Initialize(
+        TableDesc[] tableDescs,
+        ReducerDef[] reducerDefs,
+        CallReducer[] reducerCalls
+    )
     {
-        var reducer = new R();
-        reducers.Add(reducer);
-        moduleDef.RegisterReducer(reducer.MakeReducerDef(typeRegistrar));
+        moduleDef.Tables = tableDescs;
+        moduleDef.Reducers = reducerDefs;
+        reducers = reducerCalls;
+        tableIds = new TableId?[tableDescs.Length];
     }
 
-    public static void RegisterTable<T>()
-        where T : ITable<T>, new()
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Insert<T>(TableId id, in T row)
+        where T : struct, IStructuralReadWrite
     {
-        moduleDef.RegisterTable(T.MakeTableDesc(typeRegistrar));
+        var bytes = IStructuralReadWrite.ToBytes(row);
+        FFI._insert(id, bytes, (uint)bytes.Length);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool Update<T, C, RW>(TableId id, ColId colId, in C col, in T row)
+        where T : struct, IStructuralReadWrite
+        where RW : struct, IReadWrite<C>
+    {
+        if (Delete<C, RW>(id, colId, col))
+        {
+            Insert(id, row);
+            return true;
+        }
+        return false;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool Delete<C, RW>(TableId id, ColId colId, in C col)
+        where RW : struct, IReadWrite<C>
+    {
+        var bytes = IStructuralReadWrite.ToBytes(new RW(), col);
+        FFI._delete_by_col_eq(id, colId, bytes!, (uint)bytes.Length, out var result);
+        return result > 0;
+    }
+
+    public static TableId GetTableId(int idx, string name)
+    {
+        var id = tableIds[idx];
+        if (id == null)
+        {
+            var bytes = Encoding.UTF8.GetBytes(name);
+            FFI._table_id_from_name(bytes, (uint)bytes.Length, out var newId);
+            tableIds[idx] = id = newId;
+        }
+        return id.Value;
     }
 
     private static byte[] Consume(this BytesSource source)
@@ -304,12 +360,12 @@ public static partial class Module
     )
     {
         // Piece together the sender identity.
-        var sender = Identity.From(
+        Runtime.SenderIdentity = Identity.From(
             MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
         );
 
         // Piece together the sender address.
-        var address = Address.From(MemoryMarshal.AsBytes([address_0, address_1]).ToArray());
+        Runtime.SenderAddress = Address.From(MemoryMarshal.AsBytes([address_0, address_1]).ToArray());
 
         try
         {
@@ -317,7 +373,7 @@ public static partial class Module
 
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            reducers[(int)id].Invoke(reader, new(sender, address, timestamp.ToStd()));
+            reducers[(int)id](reader);
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the reducer arguments");
@@ -327,7 +383,7 @@ public static partial class Module
         catch (Exception e)
         {
             var error_str = e.ToString();
-            var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
+            var error_bytes = Encoding.UTF8.GetBytes(error_str);
             error.Write(error_bytes);
             return Errno.HOST_CALL_FAILURE;
         }

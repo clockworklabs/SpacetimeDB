@@ -34,6 +34,33 @@ public enum Errno : short
     SCHEDULE_AT_DELAY_TOO_LONG = 13,
 }
 
+[StructLayout(LayoutKind.Sequential)]
+public readonly struct TableId {
+    private readonly uint table_id;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public readonly struct ColId(ushort col_id) {
+    private readonly ushort col_id = col_id;
+
+    public static explicit operator ushort(ColId col_id) => col_id.col_id;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public readonly struct IndexType {
+    private readonly byte index_type;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public readonly struct LogLevel(byte log_level) {
+    private readonly byte log_level = log_level;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+public readonly record struct RowIter(uint Handle) {
+    public static readonly RowIter INVALID = new(0);
+}
+
 #pragma warning disable IDE1006 // Naming Styles - Not applicable to FFI stuff.
 internal static partial class FFI
 {
@@ -84,38 +111,6 @@ internal static partial class FFI
                 };
             }
         }
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public readonly struct TableId
-    {
-        private readonly uint table_id;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public readonly struct ColId(ushort col_id)
-    {
-        private readonly ushort col_id = col_id;
-
-        public static explicit operator ushort(ColId col_id) => col_id.col_id;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public readonly struct IndexType
-    {
-        private readonly byte index_type;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public readonly struct LogLevel(byte log_level)
-    {
-        private readonly byte log_level = log_level;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public readonly record struct RowIter(uint Handle)
-    {
-        public static readonly RowIter INVALID = new(0);
     }
 
     [LibraryImport(StdbNamespace)]

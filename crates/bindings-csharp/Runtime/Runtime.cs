@@ -5,24 +5,6 @@ using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
 using static System.Text.Encoding;
 
-public class ReducerContext
-{
-    public readonly Identity Sender;
-    public readonly DateTimeOffset Time;
-    public readonly Address? Address;
-
-    internal ReducerContext(
-        Identity senderIdentity,
-        Address? senderAddress,
-        DateTimeOffset timestamp
-    )
-    {
-        Sender = senderIdentity;
-        Address = senderAddress;
-        Time = timestamp;
-    }
-}
-
 // [SpacetimeDB.Type] - we have custom representation of time in microseconds, so implementing BSATN manually
 public abstract partial record ScheduleAt
     : SpacetimeDB.TaggedEnum<(DateTimeOffset Time, TimeSpan Interval)>
@@ -115,4 +97,10 @@ public static class Runtime
 
     // An instance of `System.Random` that is reseeded by each reducer's timestamp.
     public static Random Random { get; internal set; } = new();
+    
+    public static Identity? SenderIdentity { get; internal set; }
+
+    public static Address? SenderAddress { get; internal set; }
+
+    public static DateTimeOffset Timestamp { get; internal set; }
 }

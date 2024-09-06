@@ -48,6 +48,6 @@ public partial record AlgebraicType
     public static readonly AlgebraicType Unit = new Product([]);
 
     // Special AlgebraicType that can be recognised by the SpacetimeDB `generate` CLI as an Option<T>.
-    internal static AlgebraicType MakeOption(AlgebraicType someType) =>
+    public static AlgebraicType MakeOption(AlgebraicType someType) =>
         new Sum([new("some", someType), new("none", Unit)]);
 }
