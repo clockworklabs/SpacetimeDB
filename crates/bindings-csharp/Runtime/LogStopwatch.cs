@@ -18,7 +18,7 @@ namespace SpacetimeDB
         private static uint StartStopwatchInternal(string name)
         {
             var name_bytes = Encoding.UTF8.GetBytes(name);
-            var id = Internal.FFI._log_stopwatch_start(name_bytes, (uint)name_bytes.Length);
+            var id = Internal.FFI._console_timer_start(name_bytes, (uint)name_bytes.Length);
             return id;
         }
 
@@ -29,7 +29,7 @@ namespace SpacetimeDB
 
         public void End()
         {
-            Internal.FFI._log_stopwatch_end(StopwatchId);
+            Internal.FFI._console_timer_end(StopwatchId);
         }
     }
 }

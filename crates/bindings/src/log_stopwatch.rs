@@ -5,7 +5,7 @@ pub struct LogStopwatch {
 impl LogStopwatch {
     pub fn new(name: &str) -> Self {
         let name = name.as_bytes();
-        let id = unsafe { spacetimedb_bindings_sys::raw::_log_stopwatch_start(name.as_ptr(), name.len()) };
+        let id = unsafe { spacetimedb_bindings_sys::raw::_console_timer_start(name.as_ptr(), name.len()) };
         Self { stopwatch_id: id }
     }
 
@@ -17,7 +17,7 @@ impl LogStopwatch {
 impl std::ops::Drop for LogStopwatch {
     fn drop(&mut self) {
         unsafe {
-            spacetimedb_bindings_sys::raw::_log_stopwatch_end(self.stopwatch_id);
+            spacetimedb_bindings_sys::raw::_console_timer_end(self.stopwatch_id);
         }
     }
 }

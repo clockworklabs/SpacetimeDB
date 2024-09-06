@@ -79,10 +79,10 @@ IMPORT(int16_t, _bytes_source_read, (BytesSource source, uint8_t* buffer_ptr, si
        (source, buffer_ptr, buffer_len_ptr));
 IMPORT(uint16_t, _bytes_sink_write, (BytesSink sink, const uint8_t* buffer_ptr, size_t* buffer_len_ptr),
        (sink, buffer_ptr, buffer_len_ptr));
-IMPORT(uint32_t, _log_stopwatch_start,
+IMPORT(uint32_t, _console_timer_start,
        (const uint8_t* name, size_t name_len),
        (name, name_len));
-IMPORT(Status, _log_stopwatch_end,
+IMPORT(Status, _console_timer_end,
        (uint32_t stopwatch_id),
        (stopwatch_id));
 

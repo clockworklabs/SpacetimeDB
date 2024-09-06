@@ -358,8 +358,8 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::bytes_source_read,
             "spacetime_10.0"::bytes_sink_write,
             "spacetime_10.0"::console_log,
-            "spacetime_10.0"::log_stopwatch_end,
-            "spacetime_10.0"::log_stopwatch_start,
+            "spacetime_10.0"::console_timer_start,
+            "spacetime_10.0"::console_timer_end,
 
             "spacetime_10.0"::delete_by_col_eq,
             "spacetime_10.0"::iter_by_col_eq,

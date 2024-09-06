@@ -27,7 +27,7 @@ public enum Errno : short
     BSATN_DECODE_ERROR = 3,
     NO_SUCH_TABLE = 4,
     NO_SUCH_ITER = 6,
-    NO_SUCH_LOG_STOPWATCH = 7,
+    NO_SUCH_CONSOLE_TIMER = 7,
     NO_SUCH_BYTES = 8,
     NO_SPACE = 9,
     BUFFER_TOO_SMALL = 11,
@@ -76,7 +76,7 @@ internal static partial class FFI
                     Errno.BSATN_DECODE_ERROR => new BsatnDecodeException(),
                     Errno.NO_SUCH_TABLE => new NoSuchTableException(),
                     Errno.NO_SUCH_ITER => new NoSuchIterException(),
-                    Errno.NO_SUCH_LOG_STOPWATCH => new NoSuchLogStopwatch(),
+                    Errno.NO_SUCH_CONSOLE_TIMER => new NoSuchLogStopwatch(),
                     Errno.NO_SUCH_BYTES => new NoSuchBytesException(),
                     Errno.NO_SPACE => new NoSpaceException(),
                     Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
@@ -225,8 +225,8 @@ internal static partial class FFI
     );
 
     [LibraryImport(StdbNamespace)]
-    public static partial uint _log_stopwatch_start([In] byte[] name, uint name_len);
+    public static partial uint _console_timer_start([In] byte[] name, uint name_len);
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _log_stopwatch_end(uint stopwatch_id);
+    public static partial CheckedStatus _console_timer_end(uint stopwatch_id);
 }
