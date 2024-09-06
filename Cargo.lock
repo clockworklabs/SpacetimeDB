@@ -4178,6 +4178,7 @@ dependencies = [
  "duct",
  "email_address",
  "flate2",
+ "fs-err",
  "futures",
  "http",
  "indicatif",

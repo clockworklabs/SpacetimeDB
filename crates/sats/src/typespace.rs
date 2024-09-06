@@ -4,7 +4,6 @@ use std::ops::{Index, IndexMut};
 use crate::algebraic_type::AlgebraicType;
 use crate::algebraic_type_ref::AlgebraicTypeRef;
 use crate::WithTypespace;
-use crate::{de::Deserialize, ser::Serialize};
 
 /// An error that occurs when attempting to resolve a type.
 #[derive(thiserror::Error, Debug, PartialOrd, Ord, PartialEq, Eq)]
@@ -34,7 +33,7 @@ pub enum TypeRefError {
 /// where `&0` is the type reference at index `0`.
 ///
 /// [System F]: https://en.wikipedia.org/wiki/System_F
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, SpacetimeType)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 pub struct Typespace {
@@ -228,12 +227,6 @@ pub trait SpacetimeType {
     fn make_type<S: TypespaceBuilder>(typespace: &mut S) -> AlgebraicType;
 }
 
-impl<T: GroundSpacetimeType> SpacetimeType for T {
-    fn make_type<S: TypespaceBuilder>(_: &mut S) -> AlgebraicType {
-        T::get_type()
-    }
-}
-
 use ethnum::{i256, u256};
 pub use spacetimedb_bindings_macro::SpacetimeType;
 
@@ -273,15 +266,21 @@ pub trait TypespaceBuilder {
 /// ```
 #[macro_export]
 macro_rules! impl_st {
-    ([ $($rgenerics:tt)* ] $rty:ty, $stty:expr) => {
-        impl<$($rgenerics)*> $crate::GroundSpacetimeType for $rty {
+    ([ $($generic_wrapped:ident $($other_generics:tt)*)? ] $rty:ty, $stty:expr) => {
+        impl<$($generic_wrapped $($other_generics)*)?> $crate::GroundSpacetimeType for $rty
+            $(where $generic_wrapped: $crate::GroundSpacetimeType)?
+        {
             fn get_type() -> $crate::AlgebraicType {
                 $stty
             }
         }
+
+        impl_st!([ $($generic $($other_generics)*)? ] $rty, _ts => $stty);
     };
-    ([ $($rgenerics:tt)* ] $rty:ty, $ts:ident => $stty:expr) => {
-        impl<$($rgenerics)*> $crate::SpacetimeType for $rty {
+    ([ $($generic_wrapped:ident $($other_generics:tt)*)? ] $rty:ty, $ts:ident => $stty:expr) => {
+        impl<$($generic_wrapped $($other_generics)*)?> $crate::SpacetimeType for $rty
+            $(where $generic_wrapped: $crate::SpacetimeType)?
+        {
             fn make_type<S: $crate::typespace::TypespaceBuilder>($ts: &mut S) -> $crate::AlgebraicType {
                 $stty
             }
@@ -315,9 +314,11 @@ impl_primitives! {
 }
 
 impl_st!([](), AlgebraicType::unit());
-impl_st!([] & str, AlgebraicType::String);
-impl_st!([T: SpacetimeType] Vec<T>, ts => AlgebraicType::array(T::make_type(ts)));
-impl_st!([T: SpacetimeType] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));
+impl_st!([] str, AlgebraicType::String);
+impl_st!([T] [T], ts => AlgebraicType::array(T::make_type(ts)));
+impl_st!([T: ?Sized] Box<T>, ts => T::make_type(ts));
+impl_st!([T] Vec<T>, ts => <[T]>::make_type(ts));
+impl_st!([T] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));
 
 impl_st!([] spacetimedb_primitives::ColId, AlgebraicType::U16);
 impl_st!([] spacetimedb_primitives::TableId, AlgebraicType::U32);

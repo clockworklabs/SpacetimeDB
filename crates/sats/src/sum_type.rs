@@ -1,8 +1,8 @@
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
+use crate::de::Deserialize;
 use crate::meta_type::MetaType;
-use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicValue, SumTypeVariant};
+use crate::{AlgebraicType, AlgebraicValue, SpacetimeType, SumTypeVariant};
 
 /// The tag used for the `Interval` variant of the special `ScheduleAt` sum type.
 pub const SCHEDULE_AT_INTERVAL_TAG: &str = "Interval";
@@ -37,7 +37,7 @@ pub const OPTION_NONE_TAG: &str = "none";
 /// See also: https://ncatlab.org/nlab/show/sum+type.
 ///
 /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct SumType {
     /// The possible variants of the sum type.

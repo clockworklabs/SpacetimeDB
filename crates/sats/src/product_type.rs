@@ -1,8 +1,8 @@
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
+use crate::de::Deserialize;
 use crate::meta_type::MetaType;
-use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, ValueWithType, WithTypespace};
+use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SpacetimeType, ValueWithType, WithTypespace};
 
 /// The tag used inside the special `Identity` product type.
 pub const IDENTITY_TAG: &str = "__identity_bytes";
@@ -32,7 +32,7 @@ pub const ADDRESS_TAG: &str = "__address_bytes";
 /// so for example, `values({ A: U64, B: Bool }) = values(U64) * values(Bool)`.
 ///
 /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct ProductType {
     /// The factors of the product type.

@@ -28,17 +28,24 @@ partial class PrivateTable : SpacetimeDB.Internal.ITable<PrivateTable>
 
     public void ReadGenFields(System.IO.BinaryReader reader) { }
 
-    static SpacetimeDB.Internal.Module.TableDesc SpacetimeDB.Internal.ITable<PrivateTable>.MakeTableDesc(
+    static SpacetimeDB.Internal.TableDesc SpacetimeDB.Internal.ITable<PrivateTable>.MakeTableDesc(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new(
             new(
-                nameof(PrivateTable),
-                new SpacetimeDB.Internal.Module.ColumnDefWithAttrs[] { },
-                false,
-                null
+                TableName: nameof(PrivateTable),
+                Columns: [],
+                Indexes: [],
+                Constraints: [],
+                Sequences: [],
+                // "system" | "user"
+                TableType: "user",
+                // "public" | "private"
+                TableAccess: "private",
+                Scheduled: null
             ),
-            (SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)
+            (uint)
+                ((SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)).Ref_
         );
 
     static SpacetimeDB.Internal.Filter SpacetimeDB.Internal.ITable<PrivateTable>.CreateFilter() =>

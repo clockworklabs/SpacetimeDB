@@ -83,7 +83,8 @@ impl std::fmt::Display for VersionTuple {
 extern crate self as spacetimedb_lib;
 
 //WARNING: Change this structure(or any of their members) is an ABI change.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct TableDesc {
     pub schema: RawTableDefV8,
     /// data should always point to a ProductType in the typespace
@@ -107,7 +108,8 @@ impl TableDesc {
     }
 }
 
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct ReducerDef {
     pub name: Box<str>,
     pub args: Vec<ProductTypeElement>,
@@ -176,7 +178,8 @@ impl_serialize!([] ReducerArgsWithSchema<'_>, (self, ser) => {
 });
 
 //WARNING: Change this structure(or any of their members) is an ABI change.
-#[derive(Debug, Clone, Default, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, Default, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct RawModuleDefV8 {
     pub typespace: sats::Typespace,
     pub tables: Vec<TableDesc>,
@@ -199,7 +202,8 @@ impl RawModuleDefV8 {
 /// A versioned raw module definition.
 ///
 /// This is what is actually returned by the module when `__describe_module__` is called, serialized to BSATN.
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 #[non_exhaustive]
 pub enum RawModuleDef {
     V8BackCompat(RawModuleDefV8),
@@ -321,12 +325,14 @@ impl TypespaceBuilder for ModuleDefBuilder {
 }
 
 // an enum to keep it extensible without breaking abi
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 pub enum MiscModuleExport {
     TypeAlias(TypeAlias),
 }
 
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct TypeAlias {
     pub name: String,
     pub ty: sats::AlgebraicTypeRef,

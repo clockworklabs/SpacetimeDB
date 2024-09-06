@@ -196,163 +196,77 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
         }
     }
 
-    static SpacetimeDB.Internal.Module.TableDesc SpacetimeDB.Internal.ITable<PublicTable>.MakeTableDesc(
+    static SpacetimeDB.Internal.TableDesc SpacetimeDB.Internal.ITable<PublicTable>.MakeTableDesc(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new(
             new(
-                nameof(PublicTable),
-                new SpacetimeDB.Internal.Module.ColumnDefWithAttrs[]
-                {
+                TableName: nameof(PublicTable),
+                Columns:
+                [
+                    new(nameof(Id), BSATN.Id.GetAlgebraicType(registrar)),
+                    new(nameof(ByteField), BSATN.ByteField.GetAlgebraicType(registrar)),
+                    new(nameof(UshortField), BSATN.UshortField.GetAlgebraicType(registrar)),
+                    new(nameof(UintField), BSATN.UintField.GetAlgebraicType(registrar)),
+                    new(nameof(UlongField), BSATN.UlongField.GetAlgebraicType(registrar)),
+                    new(nameof(UInt128Field), BSATN.UInt128Field.GetAlgebraicType(registrar)),
+                    new(nameof(U128Field), BSATN.U128Field.GetAlgebraicType(registrar)),
+                    new(nameof(U256Field), BSATN.U256Field.GetAlgebraicType(registrar)),
+                    new(nameof(SbyteField), BSATN.SbyteField.GetAlgebraicType(registrar)),
+                    new(nameof(ShortField), BSATN.ShortField.GetAlgebraicType(registrar)),
+                    new(nameof(IntField), BSATN.IntField.GetAlgebraicType(registrar)),
+                    new(nameof(LongField), BSATN.LongField.GetAlgebraicType(registrar)),
+                    new(nameof(Int128Field), BSATN.Int128Field.GetAlgebraicType(registrar)),
+                    new(nameof(I128Field), BSATN.I128Field.GetAlgebraicType(registrar)),
+                    new(nameof(I256Field), BSATN.I256Field.GetAlgebraicType(registrar)),
+                    new(nameof(BoolField), BSATN.BoolField.GetAlgebraicType(registrar)),
+                    new(nameof(FloatField), BSATN.FloatField.GetAlgebraicType(registrar)),
+                    new(nameof(DoubleField), BSATN.DoubleField.GetAlgebraicType(registrar)),
+                    new(nameof(StringField), BSATN.StringField.GetAlgebraicType(registrar)),
+                    new(nameof(IdentityField), BSATN.IdentityField.GetAlgebraicType(registrar)),
+                    new(nameof(AddressField), BSATN.AddressField.GetAlgebraicType(registrar)),
                     new(
-                        new(nameof(Id), BSATN.Id.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.PrimaryKeyAuto
+                        nameof(CustomStructField),
+                        BSATN.CustomStructField.GetAlgebraicType(registrar)
                     ),
                     new(
-                        new(nameof(ByteField), BSATN.ByteField.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
+                        nameof(CustomClassField),
+                        BSATN.CustomClassField.GetAlgebraicType(registrar)
+                    ),
+                    new(nameof(CustomEnumField), BSATN.CustomEnumField.GetAlgebraicType(registrar)),
+                    new(
+                        nameof(CustomTaggedEnumField),
+                        BSATN.CustomTaggedEnumField.GetAlgebraicType(registrar)
+                    ),
+                    new(nameof(ListField), BSATN.ListField.GetAlgebraicType(registrar)),
+                    new(nameof(DictionaryField), BSATN.DictionaryField.GetAlgebraicType(registrar)),
+                    new(
+                        nameof(NullableValueField),
+                        BSATN.NullableValueField.GetAlgebraicType(registrar)
                     ),
                     new(
-                        new(nameof(UshortField), BSATN.UshortField.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
+                        nameof(NullableReferenceField),
+                        BSATN.NullableReferenceField.GetAlgebraicType(registrar)
                     ),
                     new(
-                        new(nameof(UintField), BSATN.UintField.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(UlongField), BSATN.UlongField.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(UInt128Field), BSATN.UInt128Field.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(U128Field), BSATN.U128Field.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(U256Field), BSATN.U256Field.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(SbyteField), BSATN.SbyteField.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(ShortField), BSATN.ShortField.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(IntField), BSATN.IntField.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(LongField), BSATN.LongField.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(Int128Field), BSATN.Int128Field.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(I128Field), BSATN.I128Field.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(I256Field), BSATN.I256Field.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(BoolField), BSATN.BoolField.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(FloatField), BSATN.FloatField.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(DoubleField), BSATN.DoubleField.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(StringField), BSATN.StringField.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(IdentityField), BSATN.IdentityField.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(AddressField), BSATN.AddressField.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(
-                            nameof(CustomStructField),
-                            BSATN.CustomStructField.GetAlgebraicType(registrar)
-                        ),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(
-                            nameof(CustomClassField),
-                            BSATN.CustomClassField.GetAlgebraicType(registrar)
-                        ),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(
-                            nameof(CustomEnumField),
-                            BSATN.CustomEnumField.GetAlgebraicType(registrar)
-                        ),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(
-                            nameof(CustomTaggedEnumField),
-                            BSATN.CustomTaggedEnumField.GetAlgebraicType(registrar)
-                        ),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(nameof(ListField), BSATN.ListField.GetAlgebraicType(registrar)),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(
-                            nameof(DictionaryField),
-                            BSATN.DictionaryField.GetAlgebraicType(registrar)
-                        ),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(
-                            nameof(NullableValueField),
-                            BSATN.NullableValueField.GetAlgebraicType(registrar)
-                        ),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(
-                            nameof(NullableReferenceField),
-                            BSATN.NullableReferenceField.GetAlgebraicType(registrar)
-                        ),
-                        SpacetimeDB.ColumnAttrs.UnSet
-                    ),
-                    new(
-                        new(
-                            nameof(ComplexNestedField),
-                            BSATN.ComplexNestedField.GetAlgebraicType(registrar)
-                        ),
-                        SpacetimeDB.ColumnAttrs.UnSet
+                        nameof(ComplexNestedField),
+                        BSATN.ComplexNestedField.GetAlgebraicType(registrar)
                     )
-                },
-                false,
-                null
+                ],
+                Indexes: [],
+                Constraints:
+                [
+                    new(nameof(PublicTable), 0, nameof(Id), SpacetimeDB.ColumnAttrs.PrimaryKeyAuto)
+                ],
+                Sequences: [],
+                // "system" | "user"
+                TableType: "user",
+                // "public" | "private"
+                TableAccess: "private",
+                Scheduled: null
             ),
-            (SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)
+            (uint)
+                ((SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)).Ref_
         );
 
     static SpacetimeDB.Internal.Filter SpacetimeDB.Internal.ITable<PublicTable>.CreateFilter() =>

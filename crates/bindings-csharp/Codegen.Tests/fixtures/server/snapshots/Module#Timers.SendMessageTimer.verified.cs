@@ -61,31 +61,39 @@ partial class Timers
             }
         }
 
-        static SpacetimeDB.Internal.Module.TableDesc SpacetimeDB.Internal.ITable<SendMessageTimer>.MakeTableDesc(
+        static SpacetimeDB.Internal.TableDesc SpacetimeDB.Internal.ITable<SendMessageTimer>.MakeTableDesc(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
                 new(
-                    nameof(SendMessageTimer),
-                    new SpacetimeDB.Internal.Module.ColumnDefWithAttrs[]
-                    {
+                    TableName: nameof(SendMessageTimer),
+                    Columns:
+                    [
+                        new(nameof(Text), BSATN.Text.GetAlgebraicType(registrar)),
+                        new(nameof(ScheduledId), BSATN.ScheduledId.GetAlgebraicType(registrar)),
+                        new(nameof(ScheduledAt), BSATN.ScheduledAt.GetAlgebraicType(registrar))
+                    ],
+                    Indexes: [],
+                    Constraints:
+                    [
                         new(
-                            new(nameof(Text), BSATN.Text.GetAlgebraicType(registrar)),
-                            SpacetimeDB.ColumnAttrs.UnSet
-                        ),
-                        new(
-                            new(nameof(ScheduledId), BSATN.ScheduledId.GetAlgebraicType(registrar)),
+                            nameof(SendMessageTimer),
+                            1,
+                            nameof(ScheduledId),
                             SpacetimeDB.ColumnAttrs.PrimaryKeyAuto
-                        ),
-                        new(
-                            new(nameof(ScheduledAt), BSATN.ScheduledAt.GetAlgebraicType(registrar)),
-                            SpacetimeDB.ColumnAttrs.UnSet
                         )
-                    },
-                    false,
-                    "SendScheduledMessage"
+                    ],
+                    Sequences: [],
+                    // "system" | "user"
+                    TableType: "user",
+                    // "public" | "private"
+                    TableAccess: "private",
+                    Scheduled: nameof(SendScheduledMessage)
                 ),
-                (SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)
+                (uint)
+                    (
+                        (SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)
+                    ).Ref_
             );
 
         static SpacetimeDB.Internal.Filter SpacetimeDB.Internal.ITable<SendMessageTimer>.CreateFilter() =>
