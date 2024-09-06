@@ -151,8 +151,8 @@ pub enum AbiCall {
     BytesSourceRead,
     BytesSinkWrite,
     ConsoleLog,
-    ConsoleTimerStart,
-    ConsoleTimerEnd,
+    LogStopwatchStart,
+    LogStopwatchEnd,
 
     DeleteByColEq,
     IterByColEq,

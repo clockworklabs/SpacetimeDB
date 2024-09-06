@@ -381,9 +381,9 @@ pub mod raw {
             message_len: usize,
         );
 
-        /// Begins a timing span with `name = name_ptr[..name_len]`.
+        /// Begins a stopwatch with `name = name_ptr[..name_len]`.
         ///
-        /// When the returned `ConsoleTimerId` is passed to [`console_timer_end`],
+        /// When the returned `StopwatchId` is passed to [`log_stopwatch_end`],
         /// the duration between the calls will be printed to the module's logs.
         ///
         /// The `name` is interpreted lossily as UTF-8.
@@ -392,14 +392,14 @@ pub mod raw {
         ///
         /// Traps if:
         /// - `name_ptr` is NULL or `name` is not in bounds of WASM memory.
-        pub fn _console_timer_start(name_ptr: *const u8, name_len: usize) -> u32;
+        pub fn _log_stopwatch_start(name_ptr: *const u8, name_len: usize) -> u32;
 
-        /// End a timing span.
+        /// End a stopwatch and prints elapsed time to module's log.
         ///
-        /// The `timer_id` must be the result of a call to `console_timer_start`.
+        /// The `stopwatch_id` must be the result of a call to `log_stopwatch_start`.
         /// The duration between the two calls will be computed and printed to the module's logs.
-        /// Once `console_timer_end` is called on `id: ConsoleTimerId`, the `id` is invalid.
-        /// That is, `console_timer_end(id)` the second time will yield `NO_SUCH_CONSOLE_TIMER`.
+        /// Once `log_stopwatch_end` is called on `id: StopwatchId`, the `id` is invalid.
+        /// That is, `log_stopwatch_end(id)` the second time will yield `NO_SUCH_LOG_STOPWATCH`.
         ///
         /// Note that the host is free to reuse allocations in a pool,
         /// destroying the handle logically does not entail that memory is necessarily reclaimed.
@@ -407,8 +407,8 @@ pub mod raw {
         /// # Errors
         ///
         /// Returns an error:
-        /// - `NO_SUCH_CONSOLE_TIMER`, when `timer_id` does not exist.
-        pub fn _console_timer_end(timer_id: u32) -> u16;
+        /// - `NO_SUCH_LOG_STOPWATCH`, when `stopwatch_id` does not exist.
+        pub fn _log_stopwatch_end(stopwatch_id: u32) -> u16;
     }
 
     /// What strategy does the database index use?

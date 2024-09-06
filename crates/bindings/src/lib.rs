@@ -4,12 +4,12 @@
 #[macro_use]
 mod io;
 mod impls;
+pub mod log_stopwatch;
 mod logger;
 #[cfg(feature = "rand")]
 mod rng;
 #[doc(hidden)]
 pub mod rt;
-pub mod time_span;
 mod timestamp;
 
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};

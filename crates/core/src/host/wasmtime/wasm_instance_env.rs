@@ -967,7 +967,7 @@ impl WasmInstanceEnv {
 
     /// Begins a timing span with `name = name_ptr[..name_len]`.
     ///
-    /// When the returned `ConsoleTimerId` is passed to [`console_timer_end`],
+    /// When the returned `StopwatchId` is passed to [`log_stopwatch_end`],
     /// the duration between the calls will be printed to the module's logs.
     ///
     /// The `name` is interpreted lossily as a UTF-8 string.
@@ -976,18 +976,18 @@ impl WasmInstanceEnv {
     ///
     /// Traps if:
     /// - `name_ptr` is NULL or `name` is not in bounds of WASM memory.
-    pub fn console_timer_start(caller: Caller<'_, Self>, name_ptr: WasmPtr<u8>, name_len: u32) -> RtResult<u32> {
-        Self::with_span(caller, AbiCall::ConsoleTimerStart, |caller| {
+    pub fn log_stopwatch_start(caller: Caller<'_, Self>, name_ptr: WasmPtr<u8>, name_len: u32) -> RtResult<u32> {
+        Self::with_span(caller, AbiCall::LogStopwatchStart, |caller| {
             let (mem, env) = Self::mem_env(caller);
             let name = mem.deref_str_lossy(name_ptr, name_len)?.into_owned();
             Ok(env.timing_spans.insert(TimingSpan::new(name)).0)
         })
     }
 
-    pub fn console_timer_end(caller: Caller<'_, Self>, span_id: u32) -> RtResult<u32> {
-        Self::cvt_custom(caller, AbiCall::ConsoleTimerEnd, |caller| {
+    pub fn log_stopwatch_end(caller: Caller<'_, Self>, span_id: u32) -> RtResult<u32> {
+        Self::cvt_custom(caller, AbiCall::LogStopwatchEnd, |caller| {
             let Some(span) = caller.data_mut().timing_spans.take(TimingSpanIdx(span_id)) else {
-                return Ok(errno::NO_SUCH_CONSOLE_TIMER.get().into());
+                return Ok(errno::NO_SUCH_LOG_STOPWATCH.get().into());
             };
 
             let elapsed = span.start.elapsed();

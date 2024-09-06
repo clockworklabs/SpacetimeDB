@@ -11,15 +11,21 @@ public class ReducerContext
     public readonly DateTimeOffset Time;
     public readonly Address? Address;
 
+    /// <summary>
+    /// A reducer-specific instance of `System.Random` that is seeded by current reducer's timestamp. This object is unchanged throught the entire reducer call
+    /// </summary>
+    public Random Rng { get; private set; }
+
     internal ReducerContext(
         Identity senderIdentity,
         Address? senderAddress,
-        DateTimeOffset timestamp
+        DateTimeOffsetRepr timestamp
     )
     {
         Sender = senderIdentity;
         Address = senderAddress;
-        Time = timestamp;
+        Time = timestamp.ToStd();
+        Rng = new Random((int)timestamp.MicrosecondsSinceEpoch);
     }
 }
 
@@ -112,7 +118,4 @@ public static class Runtime
             (uint)text_bytes.Length
         );
     }
-
-    // An instance of `System.Random` that is reseeded by each reducer's timestamp.
-    public static Random Random { get; internal set; } = new();
 }
