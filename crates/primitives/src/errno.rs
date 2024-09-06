@@ -13,10 +13,12 @@ macro_rules! errnos {
             BSATN_DECODE_ERROR(3, "Couldn't decode the BSATN to the expected type"),
             NO_SUCH_TABLE(4, "No such table"),
             NO_SUCH_ITER(6, "The provided row iterator is not valid"),
+            NO_SUCH_CONSOLE_TIMER(7, "The started console timer does not exist"),
             NO_SUCH_BYTES(8, "The provided bytes source or sink is not valid"),
             NO_SPACE(9, "The provided sink has no more space left"),
             BUFFER_TOO_SMALL(11, "The provided buffer is not large enough to store the data"),
             UNIQUE_ALREADY_EXISTS(12, "Value with given unique identifier already exists"),
+            SCHEDULE_AT_DELAY_TOO_LONG(13, "Specified delay in scheduling row was too long"),
         );
     };
 }

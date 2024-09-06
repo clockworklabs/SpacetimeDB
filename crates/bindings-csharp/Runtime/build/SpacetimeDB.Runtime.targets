@@ -3,9 +3,7 @@
   <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
     <NativeLibrary Include="$(MSBuildThisFileDirectory)..\bindings.c" />
     <UnmanagedEntryPointsAssembly Include="SpacetimeDB.Runtime" />
-    <WasmImport Include="$(SpacetimeNamespace)!_console_log" />
     <WasmImport Include="$(SpacetimeNamespace)!_iter_by_col_eq" />
-    <WasmImport Include="$(SpacetimeNamespace)!_insert" />
     <WasmImport Include="$(SpacetimeNamespace)!_delete_by_col_eq" />
     <WasmImport Include="$(SpacetimeNamespace)!_iter_start_filtered" />
     <WasmImport Include="$(SpacetimeNamespace)!_table_id_from_name" />
@@ -13,9 +11,11 @@
     <WasmImport Include="$(SpacetimeNamespace)!_datastore_table_scan_bsatn" />
     <WasmImport Include="$(SpacetimeNamespace)!_row_iter_bsatn_advance" />
     <WasmImport Include="$(SpacetimeNamespace)!_row_iter_bsatn_close" />
+    <WasmImport Include="$(SpacetimeNamespace)!_datastore_insert_bsatn" />
     <WasmImport Include="$(SpacetimeNamespace)!_datastore_delete_all_by_eq_bsatn" />
     <WasmImport Include="$(SpacetimeNamespace)!_bytes_source_read" />
     <WasmImport Include="$(SpacetimeNamespace)!_bytes_sink_write" />
+    <WasmImport Include="$(SpacetimeNamespace)!_console_log" />
 
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
     <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />

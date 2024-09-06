@@ -513,9 +513,9 @@ impl MutTxDatastore for Locking {
         tx: &'a mut Self::MutTx,
         table_id: TableId,
         mut row: ProductValue,
-    ) -> Result<ProductValue> {
-        tx.insert(table_id, &mut row, self.database_address)?;
-        Ok(row)
+    ) -> Result<(AlgebraicValue, RowRef<'a>)> {
+        let (gens, row_ref) = tx.insert(table_id, &mut row, self.database_address)?;
+        Ok((gens, row_ref.collapse()))
     }
 
     fn table_id_exists_mut_tx(&self, tx: &Self::MutTx, table_id: &TableId) -> bool {
@@ -1903,7 +1903,7 @@ mod tests {
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
                                              // Because of autoinc columns, we will get a slightly different
                                              // value than the one we inserted.
-        let row = datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        let row = datastore.insert_mut_tx(&mut tx, table_id, row)?.1.to_product_value();
         datastore.commit_mut_tx_for_test(tx)?;
 
         let all_rows_col_0_eq_1 = |tx: &MutTxId| {
@@ -1934,7 +1934,10 @@ mod tests {
         assert_eq!(all_rows_col_0_eq_1(&tx).len(), 0);
 
         // Reinsert the row.
-        let reinserted_row = datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
+        let reinserted_row = datastore
+            .insert_mut_tx(&mut tx, table_id, row.clone())?
+            .1
+            .to_product_value();
         assert_eq!(reinserted_row, row);
 
         // The actual test: we should be able to iterate again, while still in the

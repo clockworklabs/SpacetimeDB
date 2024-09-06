@@ -678,7 +678,7 @@ SELECT * FROM inventory",
         ];
         let table_id = db.create_table_for_test_multi_column("test", schema, col_list![0, 1])?;
         db.with_auto_commit(&ExecutionContext::default(), |tx| {
-            db.insert(tx, table_id, product![1, 1, 1, 1])
+            db.insert(tx, table_id, product![1, 1, 1, 1]).map(drop)
         })?;
 
         let result = run_for_testing(&db, "select * from test where b = 1 and a = 1")?;
@@ -756,7 +756,9 @@ SELECT * FROM inventory",
         let schema = &[("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
         let table_id = db.create_table_for_test_multi_column("test", schema, col_list![0, 1])?;
         let row = product![4u8, 8u8];
-        db.with_auto_commit(&ExecutionContext::default(), |tx| db.insert(tx, table_id, row.clone()))?;
+        db.with_auto_commit(&ExecutionContext::default(), |tx| {
+            db.insert(tx, table_id, row.clone()).map(drop)
+        })?;
 
         let result = run_for_testing(&db, "select * from test where a >= 3 and a <= 5 and b >= 3 and b <= 5")?;
 

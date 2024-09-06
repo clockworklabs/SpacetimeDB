@@ -95,23 +95,6 @@ pub mod raw {
             out: *mut RowIter,
         ) -> u16;
 
-        /// Inserts a row into the table identified by `table_id`,
-        /// where the row is read from the byte slice `row` in WASM memory,
-        /// lasting `row_len` bytes.
-        ///
-        /// The `(row, row_len)` slice must be a BSATN-encoded `ProductValue`
-        /// matching the table's `ProductType` row-schema.
-        /// The `row` pointer is written to with the inserted row re-encoded.
-        /// This is due to auto-incrementing columns.
-        ///
-        /// Returns an error if
-        /// - a table with the provided `table_id` doesn't exist
-        /// - there were unique constraint violations
-        /// - `row + row_len` overflows a 64-bit integer
-        /// - `(row, row_len)` doesn't decode from BSATN to a `ProductValue`
-        ///   according to the `ProductType` that the table's schema specifies.
-        pub fn _insert(table_id: TableId, row: *mut u8, row_len: usize) -> u16;
-
         /// Deletes all rows in the table identified by `table_id`
         /// where the column identified by `col_id` matches the byte string,
         /// in WASM memory, pointed to at by `value`.
@@ -229,30 +212,40 @@ pub mod raw {
         /// - `NO_SUCH_ITER`, when `iter` is not a valid iterator.
         pub fn _row_iter_bsatn_close(iter: RowIter) -> u16;
 
-        /// Log at `level` a `message` message occuring in `filename:line_number`
-        /// with [`target`] being the module path at the `log!` invocation site.
+        /// Inserts a row into the table identified by `table_id`,
+        /// where the row is read from the byte string `row = row_ptr[..row_len]` in WASM memory
+        /// where `row_len = row_len_ptr[..size_of::<usize>()]` stores the capacity of `row`.
         ///
-        /// These various pointers are interpreted lossily as UTF-8 strings with a corresponding `_len`.
+        /// The byte string `row` must be a BSATN-encoded `ProductValue`
+        /// typed at the table's `ProductType` row-schema.
         ///
-        /// The `target` and `filename` pointers are ignored by passing `NULL`.
-        /// The line number is ignored if `line_number == u32::MAX`.
+        /// To handle auto-incrementing columns,
+        /// when the call is successful,
+        /// the `row` is written back to with the generated sequence values.
+        /// These values are written as a BSATN-encoded `pv: ProductValue`.
+        /// Each `v: AlgebraicValue` in `pv` is typed at the sequence's column type.
+        /// The `v`s in `pv` are ordered by the order of the columns, in the schema of the table.
+        /// When the table has no sequences,
+        /// this implies that the `pv`, and thus `row`, will be empty.
+        /// The `row_len` is set to the length of `bsatn(pv)`.
         ///
-        /// No message is logged if
-        /// - `target != NULL && target + target_len > u64::MAX`
-        /// - `filename != NULL && filename + filename_len > u64::MAX`
-        /// - `message + message_len > u64::MAX`
+        /// # Traps
         ///
-        /// [`target`]: https://docs.rs/log/latest/log/struct.Record.html#method.target
-        pub fn _console_log(
-            level: u8,
-            target: *const u8,
-            target_len: usize,
-            filename: *const u8,
-            filename_len: usize,
-            line_number: u32,
-            message: *const u8,
-            message_len: usize,
-        );
+        /// Traps if:
+        /// - `row_len_ptr` is NULL or `row_len` is not in bounds of WASM memory.
+        /// - `row_ptr` is NULL or `row` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+        /// - `BSATN_DECODE_ERROR`, when `row` cannot be decoded to a `ProductValue`.
+        ///   typed at the `ProductType` the table's schema specifies.
+        /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
+        /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
+        pub fn _datastore_insert_bsatn(table_id: TableId, row_ptr: *mut u8, row_len_ptr: *mut usize) -> u16;
 
         /// Schedules a reducer to be called asynchronously, nonatomically,
         /// and immediately on a best effort basis.
@@ -356,23 +349,66 @@ pub mod raw {
         /// ```
         pub fn _bytes_source_read(source: BytesSource, buffer_ptr: *mut u8, buffer_len_ptr: *mut usize) -> i16;
 
-        /// Begin a timing span.
+        /// Logs at `level` a `message` message occuring in `filename:line_number`
+        /// with [`target`](target) being the module path at the `log!` invocation site.
         ///
-        /// When the returned `u32` span ID is passed to [`_span_end`],
+        /// These various pointers are interpreted lossily as UTF-8 strings with a corresponding `_len`.
+        ///
+        /// The `target` and `filename` pointers are ignored by passing `NULL`.
+        /// The line number is ignored if `line_number == u32::MAX`.
+        ///
+        /// No message is logged if
+        /// - `target != NULL && target + target_len > u64::MAX`
+        /// - `filename != NULL && filename + filename_len > u64::MAX`
+        /// - `message + message_len > u64::MAX`
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `target` is not NULL and `target_ptr[..target_len]` is not in bounds of WASM memory.
+        /// - `filename` is not NULL and `filename_ptr[..filename_len]` is not in bounds of WASM memory.
+        /// - `message` is not NULL and `message_ptr[..message_len]` is not in bounds of WASM memory.
+        ///
+        /// [target]: https://docs.rs/log/latest/log/struct.Record.html#method.target
+        pub fn _console_log(
+            level: u8,
+            target_ptr: *const u8,
+            target_len: usize,
+            filename_ptr: *const u8,
+            filename_len: usize,
+            line_number: u32,
+            message_ptr: *const u8,
+            message_len: usize,
+        );
+
+        /// Begins a timing span with `name = name_ptr[..name_len]`.
+        ///
+        /// When the returned `ConsoleTimerId` is passed to [`console_timer_end`],
         /// the duration between the calls will be printed to the module's logs.
         ///
-        /// The slice (`name`, `name_len`) must be valid UTF-8 bytes.
-        pub fn _span_start(name: *const u8, name_len: usize) -> u32;
+        /// The `name` is interpreted lossily as UTF-8.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `name_ptr` is NULL or `name` is not in bounds of WASM memory.
+        pub fn _console_timer_start(name_ptr: *const u8, name_len: usize) -> u32;
 
         /// End a timing span.
         ///
-        /// The `span_id` must be the result of a call to `_span_start`.
+        /// The `timer_id` must be the result of a call to `console_timer_start`.
         /// The duration between the two calls will be computed and printed to the module's logs.
+        /// Once `console_timer_end` is called on `id: ConsoleTimerId`, the `id` is invalid.
+        /// That is, `console_timer_end(id)` the second time will yield `NO_SUCH_CONSOLE_TIMER`.
         ///
-        /// Behavior is unspecified
-        /// if `_span_end` is called on a `span_id` which is not the result of a call to `_span_start`,
-        /// or if `_span_end` is called multiple times with the same `span_id`.
-        pub fn _span_end(span_id: u32);
+        /// Note that the host is free to reuse allocations in a pool,
+        /// destroying the handle logically does not entail that memory is necessarily reclaimed.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        /// - `NO_SUCH_CONSOLE_TIMER`, when `timer_id` does not exist.
+        pub fn _console_timer_end(timer_id: u32) -> u16;
     }
 
     /// What strategy does the database index use?
@@ -615,8 +651,10 @@ pub fn iter_by_col_eq(table_id: TableId, col_id: ColId, val: &[u8]) -> Result<Ro
 /// - `row` doesn't decode from BSATN to a `ProductValue`
 ///   according to the `ProductType` that the table's schema specifies.
 #[inline]
-pub fn insert(table_id: TableId, row: &mut [u8]) -> Result<(), Errno> {
-    cvt(unsafe { raw::_insert(table_id, row.as_mut_ptr(), row.len()) })
+pub fn insert(table_id: TableId, row: &mut [u8]) -> Result<&[u8], Errno> {
+    let row_ptr = row.as_mut_ptr();
+    let row_len = &mut row.len();
+    cvt(unsafe { raw::_datastore_insert_bsatn(table_id, row_ptr, row_len) }).map(|()| &row[..*row_len])
 }
 
 /// Deletes all rows in the table identified by `table_id`
