@@ -41,7 +41,7 @@ impl_deserialize!([] StAccess, de => {
         ))
     })
 });
-impl_st!([] StAccess, _ts => AlgebraicType::String);
+impl_st!([] StAccess, AlgebraicType::String);
 
 /// Describe is the table is a `system table` or not.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -84,4 +84,4 @@ impl_deserialize!([] StTableType, de => {
         ))
     })
 });
-impl_st!([] StTableType, _ts => AlgebraicType::String);
+impl_st!([] StTableType, AlgebraicType::String);

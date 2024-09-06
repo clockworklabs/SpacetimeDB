@@ -21,7 +21,7 @@ impl AlgebraicTypeRef {
 
 impl_serialize!([] AlgebraicTypeRef, (self, ser) => self.0.serialize(ser));
 impl_deserialize!([] AlgebraicTypeRef, de => u32::deserialize(de).map(Self));
-impl_st!([] AlgebraicTypeRef, _ts => AlgebraicType::U32);
+impl_st!([] AlgebraicTypeRef, AlgebraicType::U32);
 
 impl Display for AlgebraicTypeRef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
