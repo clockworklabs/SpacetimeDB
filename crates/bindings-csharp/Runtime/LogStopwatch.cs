@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace SpacetimeDB
 {
-    public class LogStopwatch
+    public sealed class LogStopwatch : IDisposable
     {
         private uint StopwatchId;
 
@@ -20,6 +20,11 @@ namespace SpacetimeDB
             var name_bytes = Encoding.UTF8.GetBytes(name);
             var id = Internal.FFI._log_stopwatch_start(name_bytes, (uint)name_bytes.Length);
             return id;
+        }
+
+        void IDisposable.Dispose()
+        {
+            End();
         }
 
         public void End()
