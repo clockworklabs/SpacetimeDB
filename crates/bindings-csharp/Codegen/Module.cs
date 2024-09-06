@@ -445,7 +445,7 @@ public class Module : IIncrementalGenerator
                         public static void __describe_module__(SpacetimeDB.Internal.BytesSink d) => SpacetimeDB.Internal.Module.__describe_module__(d);
 
                         [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
-                        public static short __call_reducer__(
+                        public static SpacetimeDB.Internal.Errno __call_reducer__(
                             uint id,
                             ulong sender_0,
                             ulong sender_1,
