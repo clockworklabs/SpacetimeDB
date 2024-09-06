@@ -352,6 +352,15 @@ namespace SpacetimeDB
                                 }
                                 break;
                             case UpdateStatus.Failed(var failed):
+                                // Convert the generic event arguments in to a domain specific event object
+                                try
+                                {
+                                    reducerEvent = ReducerEventFromDbEvent(transactionUpdate);
+                                }
+                                catch (Exception e)
+                                {
+                                    Logger.LogException(e);
+                                }
                                 break;
                             case UpdateStatus.OutOfEnergy(var outOfEnergy):
                                 Logger.LogWarning("Failed to execute reducer: out of energy.");
