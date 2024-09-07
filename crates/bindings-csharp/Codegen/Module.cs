@@ -424,7 +424,9 @@ public class Module : IIncrementalGenerator
                 var addReducers = tuple.Right.Sort((a, b) => a.Key.CompareTo(b.Key));
                 // Don't generate the FFI boilerplate if there are no tables or reducers.
                 if (tableNames.IsEmpty && addReducers.IsEmpty)
+                {
                     return;
+                }
                 context.AddSource(
                     "FFI.cs",
                     $$"""

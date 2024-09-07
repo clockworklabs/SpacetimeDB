@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Runtime.InteropServices;
 using SpacetimeDB;
+
+#pragma warning disable CA1050 // Declare types in namespaces - this is a test fixture, no need for a namespace.
 
 [SpacetimeDB.Type]
 public partial struct CustomStruct
@@ -12,6 +12,7 @@ public partial struct CustomStruct
     public static readonly string IGNORE_ME_TOO = "";
     public int IntField;
     public string StringField;
+    //public DateTime DateTimeField;
 }
 
 [SpacetimeDB.Type]
