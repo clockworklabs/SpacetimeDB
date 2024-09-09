@@ -14,7 +14,7 @@ public class ReducerContext
     /// <summary>
     /// A reducer-specific instance of `System.Random` that is seeded by current reducer's timestamp. This object is unchanged throught the entire reducer call
     /// </summary>
-    public Random Rng { get; private set; }
+    public readonly Random Rng;
 
     internal ReducerContext(
         Identity senderIdentity,

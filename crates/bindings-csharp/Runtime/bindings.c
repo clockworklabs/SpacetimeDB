@@ -21,6 +21,7 @@ OPAQUE_TYPEDEF(LogLevel, uint8_t);
 OPAQUE_TYPEDEF(BytesSink, uint32_t);
 OPAQUE_TYPEDEF(BytesSource, uint32_t);
 OPAQUE_TYPEDEF(RowIter, uint32_t);
+OPAQUE_TYPEDEF(ConsoleTimerId, uint32_t);
 
 #define CSTR(s) (uint8_t*)s, sizeof(s) - 1
 
@@ -79,11 +80,11 @@ IMPORT(int16_t, _bytes_source_read, (BytesSource source, uint8_t* buffer_ptr, si
        (source, buffer_ptr, buffer_len_ptr));
 IMPORT(uint16_t, _bytes_sink_write, (BytesSink sink, const uint8_t* buffer_ptr, size_t* buffer_len_ptr),
        (sink, buffer_ptr, buffer_len_ptr));
-IMPORT(uint32_t, _console_timer_start,
+IMPORT(ConsoleTimerId, _console_timer_start,
        (const uint8_t* name, size_t name_len),
        (name, name_len));
 IMPORT(Status, _console_timer_end,
-       (uint32_t stopwatch_id),
+       (ConsoleTimerId stopwatch_id),
        (stopwatch_id));
 
 #ifndef EXPERIMENTAL_WASM_AOT

@@ -224,9 +224,34 @@ internal static partial class FFI
         ref uint buffer_len
     );
 
-    [LibraryImport(StdbNamespace)]
-    public static partial uint _console_timer_start([In] byte[] name, uint name_len);
+
+    [NativeMarshalling(typeof(ConsoleTimerIdMarshaller))]
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct ConsoleTimerId
+    {
+        private readonly uint timer_id;
+
+        private ConsoleTimerId(uint id)
+        {
+            timer_id = id;
+        }
+
+        //LayoutKind.Sequential is apparently not enough for this struct to be returnable in PInvoke, so we need a custom marshaller unfortunately
+        [CustomMarshaller(
+            typeof(ConsoleTimerId),
+            MarshalMode.Default,
+            typeof(ConsoleTimerIdMarshaller)
+        )]
+        internal static class ConsoleTimerIdMarshaller
+        {
+            public static ConsoleTimerId ConvertToManaged(uint id) => new ConsoleTimerId(id);
+            public static uint ConvertToUnmanaged(ConsoleTimerId id) => id.timer_id;
+        }
+    }
 
     [LibraryImport(StdbNamespace)]
-    public static partial CheckedStatus _console_timer_end(uint stopwatch_id);
+    public static partial ConsoleTimerId _console_timer_start([In] byte[] name, uint name_len);
+
+    [LibraryImport(StdbNamespace)]
+    public static partial CheckedStatus _console_timer_end(ConsoleTimerId stopwatch_id);
 }
