@@ -1,14 +1,14 @@
-use spacetimedb::{spacetimedb, Identity, ReducerContext, Timestamp};
+use spacetimedb::{Identity, ReducerContext, Timestamp};
 
-#[spacetimedb(table(public))]
+#[spacetimedb::table(name = users, public)]
 pub struct User {
-    #[primarykey]
+    #[primary_key]
     identity: Identity,
     name: Option<String>,
     online: bool,
 }
 
-#[spacetimedb(table(public))]
+#[spacetimedb::table(name = messages, public)]
 pub struct Message {
     sender: Identity,
     sent: Timestamp,
@@ -23,7 +23,7 @@ fn validate_name(name: String) -> Result<String, String> {
     }
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn set_name(ctx: ReducerContext, name: String) -> Result<(), String> {
     let name = validate_name(name)?;
     if let Some(user) = User::filter_by_identity(&ctx.sender) {
@@ -48,7 +48,7 @@ fn validate_message(text: String) -> Result<String, String> {
     }
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn send_message(ctx: ReducerContext, text: String) -> Result<(), String> {
     // Things to consider:
     // - Rate-limit messages per-user.
@@ -62,11 +62,11 @@ pub fn send_message(ctx: ReducerContext, text: String) -> Result<(), String> {
     Ok(())
 }
 
-#[spacetimedb(init)]
+#[spacetimedb::reducer(init)]
 // Called when the module is initially published
 pub fn init() {}
 
-#[spacetimedb(connect)]
+#[spacetimedb::reducer(client_connected)]
 pub fn identity_connected(ctx: ReducerContext) {
     if let Some(user) = User::filter_by_identity(&ctx.sender) {
         // If this is a returning user, i.e. we already have a `User` with this `Identity`,
@@ -84,7 +84,7 @@ pub fn identity_connected(ctx: ReducerContext) {
     }
 }
 
-#[spacetimedb(disconnect)]
+#[spacetimedb::reducer(client_disconnected)]
 pub fn identity_disconnected(ctx: ReducerContext) {
     if let Some(user) = User::filter_by_identity(&ctx.sender) {
         User::update_by_identity(&ctx.sender, User { online: false, ..user });

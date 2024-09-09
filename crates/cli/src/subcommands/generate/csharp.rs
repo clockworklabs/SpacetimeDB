@@ -283,7 +283,7 @@ pub fn autogen_csharp_table(ctx: &GenCtx, table: &TableDesc, namespace: &str) ->
     let tuple = ctx.typespace[table.data].as_product().unwrap();
     autogen_csharp_product_table_common(
         ctx,
-        &table.schema.table_name,
+        csharp_typename(ctx, table.data),
         tuple,
         Some(
             TableSchema::from_def(0.into(), table.schema.clone())
@@ -624,7 +624,7 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
     output.into_inner()
 }
 
-pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String, String)> {
+pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) -> Vec<(String, String)> {
     let mut results = Vec::new();
 
     let reducers: Vec<&ReducerDef> = items
@@ -716,7 +716,7 @@ pub fn autogen_csharp_globals(items: &[GenItem], namespace: &str) -> Vec<(String
                     writeln!(
                         output,
                         "clientDB.AddTable<{table_name}>();",
-                        table_name = table.schema.table_name
+                        table_name = csharp_typename(ctx, table.data)
                     );
                 }
             }

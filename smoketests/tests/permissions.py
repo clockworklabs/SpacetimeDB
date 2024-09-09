@@ -44,7 +44,7 @@ class Permissions(Smoketest):
         self.new_identity(email=None)
         self.spacetime("describe", self.address)
 
-    def test_describe(self):
+    def test_logs(self):
         """Ensure that we are not able to view the logs of a module that we don't have permission to view"""
 
         self.new_identity(email=None)
@@ -77,24 +77,22 @@ class Permissions(Smoketest):
 
 class PrivateTablePermissions(Smoketest):
     MODULE_CODE = """
-use spacetimedb::spacetimedb;
-
-#[spacetimedb(table)]
+#[spacetimedb::table(name = secrets)]
 pub struct Secret {
     answer: u8,
 }
 
-#[spacetimedb(table(public))]
+#[spacetimedb::table(name = common_knowledge, public)]
 pub struct CommonKnowledge {
     thing: String,
 }
 
-#[spacetimedb(init)]
+#[spacetimedb::reducer(init)]
 pub fn init() {
     Secret::insert(Secret { answer: 42 });
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn do_thing() {
     Secret::insert(Secret { answer: 20 });
     CommonKnowledge::insert(CommonKnowledge { thing: "howdy".to_owned() });
@@ -104,7 +102,7 @@ pub fn do_thing() {
     def test_private_table(self):
         """Ensure that a private table can only be queried by the database owner"""
 
-        out = self.spacetime("sql", self.address, "select * from Secret")
+        out = self.spacetime("sql", self.address, "select * from secrets")
         self.assertMultiLineEqual(out, """\
  answer 
 --------
@@ -115,14 +113,14 @@ pub fn do_thing() {
         self.new_identity(email=None)
 
         with self.assertRaises(Exception):
-            self.spacetime("sql", self.address, "select * from Secret")
+            self.spacetime("sql", self.address, "select * from secrets")
 
         with self.assertRaises(Exception):
-            self.subscribe("SELECT * FROM Secret", n=0)
+            self.subscribe("SELECT * FROM secrets", n=0)
 
         sub = self.subscribe("SELECT * FROM *", n=1)
         self.call("do_thing", anon=True)
-        self.assertEqual(sub(), [{'CommonKnowledge': {'deletes': [], 'inserts': [{'thing': 'howdy'}]}}])
+        self.assertEqual(sub(), [{'common_knowledge': {'deletes': [], 'inserts': [{'thing': 'howdy'}]}}])
 
 
 class LifecycleReducers(Smoketest):

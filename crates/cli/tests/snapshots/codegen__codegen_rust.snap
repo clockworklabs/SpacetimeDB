@@ -299,7 +299,7 @@ pub struct HasSpecialStuff {
 }
 
 impl TableType for HasSpecialStuff {
-	const TABLE_NAME: &'static str = "HasSpecialStuff";
+	const TABLE_NAME: &'static str = "has_special_stuff";
 	type ReducerEvent = super::ReducerEvent;
 }
 
@@ -337,8 +337,8 @@ use spacetimedb_sdk::global_connection::with_connection_mut;
 use spacetimedb_sdk::spacetime_module::SpacetimeModule;
 use std::sync::Arc;
 
-pub mod namespace.test_c;
 pub mod test_b;
+pub mod namespace.test_c;
 pub mod namespace.test_f;
 pub mod has_special_stuff;
 pub mod pk_multi_identity;
@@ -356,8 +356,8 @@ pub mod query_private_reducer;
 pub mod repeating_test_reducer;
 pub mod test_reducer;
 
-pub use namespace.test_c::*;
 pub use test_b::*;
+pub use namespace.test_c::*;
 pub use namespace.test_f::*;
 pub use has_special_stuff::*;
 pub use pk_multi_identity::*;
@@ -526,7 +526,7 @@ pub struct PkMultiIdentity {
 }
 
 impl TableType for PkMultiIdentity {
-	const TABLE_NAME: &'static str = "PkMultiIdentity";
+	const TABLE_NAME: &'static str = "pk_multi_identity";
 	type ReducerEvent = super::ReducerEvent;
 }
 
@@ -577,7 +577,7 @@ pub struct Point {
 }
 
 impl TableType for Point {
-	const TABLE_NAME: &'static str = "Point";
+	const TABLE_NAME: &'static str = "points";
 	type ReducerEvent = super::ReducerEvent;
 }
 
@@ -613,7 +613,7 @@ pub struct Private {
 }
 
 impl TableType for Private {
-	const TABLE_NAME: &'static str = "Private";
+	const TABLE_NAME: &'static str = "private";
 	type ReducerEvent = super::ReducerEvent;
 }
 
@@ -709,7 +709,7 @@ pub struct RepeatingTestArg {
 }
 
 impl TableType for RepeatingTestArg {
-	const TABLE_NAME: &'static str = "RepeatingTestArg";
+	const TABLE_NAME: &'static str = "repeating_test_args";
 	type ReducerEvent = super::ReducerEvent;
 }
 
@@ -827,7 +827,7 @@ pub struct TestA {
 }
 
 impl TableType for TestA {
-	const TABLE_NAME: &'static str = "TestA";
+	const TABLE_NAME: &'static str = "test_a";
 	type ReducerEvent = super::ReducerEvent;
 }
 
@@ -887,7 +887,7 @@ pub struct TestD {
 }
 
 impl TableType for TestD {
-	const TABLE_NAME: &'static str = "TestD";
+	const TABLE_NAME: &'static str = "test_d";
 	type ReducerEvent = super::ReducerEvent;
 }
 
@@ -916,7 +916,7 @@ pub struct TestE {
 }
 
 impl TableType for TestE {
-	const TABLE_NAME: &'static str = "TestE";
+	const TABLE_NAME: &'static str = "test_e";
 	type ReducerEvent = super::ReducerEvent;
 }
 

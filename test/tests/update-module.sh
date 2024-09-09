@@ -10,22 +10,22 @@ set -euox pipefail
 source "./test/lib.include"
 
 cat > "${PROJECT_PATH}/src/lib.rs" << EOF
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
+#[spacetimedb::table(name = people)]
 pub struct Person {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u64,
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add(name: String) {
     Person::insert(Person { id: 0, name }).unwrap();
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn say_hello() {
     for person in Person::iter() {
         println!("Hello, {}!", person.name);
@@ -54,12 +54,10 @@ run_test cargo run publish --skip_clippy --project-path "$PROJECT_PATH" "$IDENT"
 
 # Changing an existing table isn't
 cat > "${PROJECT_PATH}/src/lib.rs" <<EOF
-use spacetimedb::spacetimedb;
-
-#[spacetimedb(table)]
+#[spacetimedb::table(name = people)]
 pub struct Person {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u64,
     name: String,
     age: u8,
@@ -73,22 +71,22 @@ run_test cargo run call "$IDENT" say_hello
 
 # Adding a table is ok, and invokes update
 cat > "${PROJECT_PATH}/src/lib.rs" <<EOF
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
+#[spacetimedb::table(name = people)]
 pub struct Person {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u64,
     name: String,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table(name = pets)]
 pub struct Pet {
     species: String,
 }
 
-#[spacetimedb(update)]
+#[spacetimedb::reducer(update)]
 pub fn on_module_update() {
     println!("MODULE UPDATED");
 }

@@ -329,7 +329,7 @@ pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDesc) -> String {
     let mut output = CodeIndenter::new(String::new());
     let out = &mut output;
 
-    let type_name = table.schema.table_name.deref().to_case(Case::Pascal);
+    let type_name = type_name(ctx, table.data);
 
     begin_rust_struct_def_shared(ctx, out, &type_name, &find_product_type(ctx, table.data).elements);
 
@@ -338,7 +338,7 @@ pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDesc) -> String {
     let table = TableSchema::from_def(0.into(), table.schema.clone())
         .validated()
         .expect("Failed to generate table due to validation errors");
-    print_impl_tabletype(ctx, out, &table);
+    print_impl_tabletype(ctx, out, &type_name, &table);
 
     output.into_inner()
 }
@@ -400,9 +400,7 @@ fn find_primary_key_column_index(table: &TableSchema) -> Option<usize> {
     table.pk().map(|x| x.col_pos.idx())
 }
 
-fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableSchema) {
-    let type_name = table.table_name.deref().to_case(Case::Pascal);
-
+fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, type_name: &str, table: &TableSchema) {
     write!(out, "impl TableType for {type_name} ");
 
     out.delimited_block(
@@ -439,7 +437,7 @@ fn print_impl_tabletype(ctx: &GenCtx, out: &mut Indenter, table: &TableSchema) {
 
     out.newline();
 
-    print_table_filter_methods(ctx, out, &type_name, table);
+    print_table_filter_methods(ctx, out, type_name, table);
 }
 
 fn print_table_filter_methods(ctx: &GenCtx, out: &mut Indenter, table_type_name: &str, table: &TableSchema) {
@@ -731,12 +729,12 @@ pub fn autogen_rust_globals(ctx: &GenCtx, items: &[GenItem]) -> Vec<(String, Str
     out.newline();
 
     // Declare `pub mod` for each of the files generated.
-    print_module_decls(out, items);
+    print_module_decls(ctx, out, items);
 
     out.newline();
 
     // Re-export all the modules for the generated files.
-    print_module_reexports(out, items);
+    print_module_reexports(ctx, out, items);
 
     out.newline();
 
@@ -785,24 +783,24 @@ fn iter_table_items(items: &[GenItem]) -> impl Iterator<Item = &TableDesc> {
     })
 }
 
-fn iter_module_names(items: &[GenItem]) -> impl Iterator<Item = String> + '_ {
+fn iter_module_names<'a>(ctx: &'a GenCtx, items: &'a [GenItem]) -> impl Iterator<Item = String> + 'a {
     items.iter().map(|item| match item {
-        GenItem::Table(table) => table.schema.table_name.deref().to_case(Case::Snake),
+        GenItem::Table(table) => type_name(ctx, table.data).to_case(Case::Snake),
         GenItem::TypeAlias(ty) => ty.name.to_case(Case::Snake),
         GenItem::Reducer(reducer) => reducer_module_name(reducer),
     })
 }
 
 /// Print `pub mod` declarations for all the files that will be generated for `items`.
-fn print_module_decls(out: &mut Indenter, items: &[GenItem]) {
-    for module_name in iter_module_names(items) {
+fn print_module_decls(ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
+    for module_name in iter_module_names(ctx, items) {
         writeln!(out, "pub mod {module_name};");
     }
 }
 
 /// Print `pub use *` declarations for all the files that will be generated for `items`.
-fn print_module_reexports(out: &mut Indenter, items: &[GenItem]) {
-    for module_name in iter_module_names(items) {
+fn print_module_reexports(ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
+    for module_name in iter_module_names(ctx, items) {
         writeln!(out, "pub use {module_name}::*;");
     }
 }
@@ -837,9 +835,9 @@ fn print_spacetime_module_struct_defn(ctx: &GenCtx, out: &mut Indenter, items: &
         "impl SpacetimeModule for Module {",
         |out| {
             print_handle_table_update_defn(ctx, out, items);
-            print_invoke_row_callbacks_defn(out, items);
+            print_invoke_row_callbacks_defn(ctx, out, items);
             print_handle_event_defn(out, items);
-            print_handle_resubscribe_defn(out, items);
+            print_handle_resubscribe_defn(ctx, out, items);
         },
         "}\n",
     );
@@ -849,7 +847,7 @@ fn print_spacetime_module_struct_defn(ctx: &GenCtx, out: &mut Indenter, items: &
 /// which dispatches on the table name in a `TableUpdate` message
 /// to call an appropriate method on the `ClientCache`.
 #[allow(deprecated)]
-fn print_handle_table_update_defn(_ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
+fn print_handle_table_update_defn(ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
     out.delimited_block(
         "fn handle_table_update(&self, table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
         |out| {
@@ -857,19 +855,19 @@ fn print_handle_table_update_defn(_ctx: &GenCtx, out: &mut Indenter, items: &[Ge
             out.delimited_block(
                 "match table_name {",
                 |out| {
-                    for table in iter_table_items(items) {
-                        let table = TableSchema::from_def(0.into(), table.schema.clone()).validated().unwrap();
+                    for table_desc in iter_table_items(items) {
+                        let table = TableSchema::from_def(0.into(), table_desc.schema.clone()).validated().unwrap();
                         writeln!(
                             out,
                             "{:?} => client_cache.{}::<{}::{}>(callbacks, table_update),",
-                            table.table_name,
+                            type_name(ctx, table_desc.data),
                             if find_primary_key_column_index(&table).is_some() {
                                 "handle_table_update_with_primary_key"
                             } else {
                                 "handle_table_update_no_primary_key"
                             },
-                            table.table_name.deref().to_case(Case::Snake),
-                            table.table_name.deref().to_case(Case::Pascal),
+                            type_name(ctx, table_desc.data).to_case(Case::Snake),
+                            type_name(ctx, table_desc.data).to_case(Case::Pascal),
                         );
                     }
                     writeln!(
@@ -886,7 +884,7 @@ fn print_handle_table_update_defn(_ctx: &GenCtx, out: &mut Indenter, items: &[Ge
 
 /// Define the `invoke_row_callbacks` function,
 /// which does `RowCallbackReminders::invoke_callbacks` on each table type defined in the `items`.
-fn print_invoke_row_callbacks_defn(out: &mut Indenter, items: &[GenItem]) {
+fn print_invoke_row_callbacks_defn(ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
     out.delimited_block(
         "fn invoke_row_callbacks(&self, reminders: &mut RowCallbackReminders, worker: &mut DbCallbacks, reducer_event: Option<Arc<AnyReducerEvent>>, state: &Arc<ClientCache>) {",
         |out| {
@@ -894,8 +892,8 @@ fn print_invoke_row_callbacks_defn(out: &mut Indenter, items: &[GenItem]) {
                 writeln!(
                     out,
                     "reminders.invoke_callbacks::<{}::{}>(worker, &reducer_event, state);",
-                    table.schema.table_name.deref().to_case(Case::Snake),
-                    table.schema.table_name.deref().to_case(Case::Pascal),
+                    type_name(ctx, table.data).to_case(Case::Snake),
+                    type_name(ctx, table.data).to_case(Case::Pascal),
                 );
             }
         },
@@ -906,7 +904,7 @@ fn print_invoke_row_callbacks_defn(out: &mut Indenter, items: &[GenItem]) {
 /// Define the `handle_resubscribe` function,
 /// which dispatches on the table name in a `TableUpdate`
 /// to invoke `ClientCache::handle_resubscribe_for_type` with an appropriate type arg.
-fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
+fn print_handle_resubscribe_defn(ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
     out.delimited_block(
         "fn handle_resubscribe(&self, new_subs: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
         |out| {
@@ -918,9 +916,9 @@ fn print_handle_resubscribe_defn(out: &mut Indenter, items: &[GenItem]) {
                         writeln!(
                             out,
                             "{:?} => client_cache.handle_resubscribe_for_type::<{}::{}>(callbacks, new_subs),",
-                            table.schema.table_name,
-                            table.schema.table_name.deref().to_case(Case::Snake),
-                            table.schema.table_name.deref().to_case(Case::Pascal),
+                            type_name(ctx, table.data),
+                            type_name(ctx, table.data).to_case(Case::Snake),
+                            type_name(ctx, table.data).to_case(Case::Pascal),
                         );
                     }
                     writeln!(

@@ -32,6 +32,7 @@ spacetimedb
 ├── scoped_tls
 ├── spacetimedb_bindings_macro
 │   ├── bitflags
+│   ├── heck
 │   ├── humantime
 │   ├── proc_macro2 (*)
 │   ├── quote (*)

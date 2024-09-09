@@ -2,9 +2,9 @@ from .. import Smoketest
 
 class Filtering(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb, Identity};
+use spacetimedb::{println, Identity};
 
-#[spacetimedb(table)]
+#[spacetimedb::table(name = people)]
 pub struct Person {
     #[unique]
     id: i32,
@@ -14,12 +14,12 @@ pub struct Person {
     nick: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn insert_person(id: i32, name: String, nick: String) {
     Person::insert(Person { id, name, nick} );
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn insert_person_twice(id: i32, name: String, nick: String) {
     Person::insert(Person { id, name: name.clone(), nick: nick.clone()} );
     match Person::insert(Person { id, name: name.clone(), nick: nick.clone()}) {
@@ -30,12 +30,12 @@ pub fn insert_person_twice(id: i32, name: String, nick: String) {
     }
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn delete_person(id: i32) {
     Person::delete_by_id(&id);
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn find_person(id: i32) {
     match Person::filter_by_id(&id) {
         Some(person) => println!("UNIQUE FOUND: id {}: {}", id, person.name),
@@ -43,14 +43,14 @@ pub fn find_person(id: i32) {
     }
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn find_person_by_name(name: String) {
     for person in Person::filter_by_name(&name) {
         println!("UNIQUE FOUND: id {}: {} aka {}", person.id, person.name, person.nick);
     }
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn find_person_by_nick(nick: String) {
     match Person::filter_by_nick(&nick) {
         Some(person) => println!("UNIQUE FOUND: id {}: {}", person.id, person.nick),
@@ -58,34 +58,34 @@ pub fn find_person_by_nick(nick: String) {
     }
 }
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "by_id", id))]
+#[spacetimedb::table(name = nonunique_people)]
 pub struct NonuniquePerson {
+    #[index(btree)]
     id: i32,
     name: String,
     is_human: bool,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn insert_nonunique_person(id: i32, name: String, is_human: bool) {
     NonuniquePerson::insert(NonuniquePerson { id, name, is_human } );
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn find_nonunique_person(id: i32) {
     for person in NonuniquePerson::filter_by_id(&id) {
         println!("NONUNIQUE FOUND: id {}: {}", id, person.name)
     }
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn find_nonunique_humans() {
     for person in NonuniquePerson::filter_by_is_human(&true) {
         println!("HUMAN FOUND: id {}: {}", person.id, person.name);
     }
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn find_nonunique_non_humans() {
     for person in NonuniquePerson::filter_by_is_human(&false) {
         println!("NON-HUMAN FOUND: id {}: {}", person.id, person.name);
@@ -93,7 +93,7 @@ pub fn find_nonunique_non_humans() {
 }
 
 // Ensure that [Identity] is filterable and a legal unique column.
-#[spacetimedb(table)]
+#[spacetimedb::table(name = identified_people)]
 struct IdentifiedPerson {
     #[unique]
     identity: Identity,
@@ -106,13 +106,13 @@ fn identify(id_number: u64) -> Identity {
     Identity::from_byte_array(bytes)
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_identified_person(id_number: u64, name: String) {
     let identity = identify(id_number);
     IdentifiedPerson::insert(IdentifiedPerson { identity, name });
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn find_identified_person(id_number: u64) {
     let identity = identify(id_number);
     match IdentifiedPerson::filter_by_identity(&identity) {
@@ -122,26 +122,26 @@ fn find_identified_person(id_number: u64) {
 }
 
 // Ensure that indices on non-unique columns behave as we expect.
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name="person_surname", surname))]
+#[spacetimedb::table(name = indexed_person)]
 struct IndexedPerson {
     #[unique]
     id: i32,
     given_name: String,
+    #[index(btree)]
     surname: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_indexed_person(id: i32, given_name: String, surname: String) {
     IndexedPerson::insert(IndexedPerson { id, given_name, surname });
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn delete_indexed_person(id: i32) {
     IndexedPerson::delete_by_id(&id);
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn find_indexed_people(surname: String) {
     for person in IndexedPerson::filter_by_surname(&surname) {
         println!("INDEXED FOUND: id {}: {}, {}", person.id, person.surname, person.given_name);
