@@ -241,7 +241,7 @@ public abstract record BaseTypeDeclaration<M>
     }
 }
 
-record TypeDeclaration : BaseTypeDeclaration<MemberDeclaration>
+public record TypeDeclaration : BaseTypeDeclaration<MemberDeclaration>
 {
     public TypeDeclaration(GeneratorAttributeSyntaxContext context)
         : base(context) { }

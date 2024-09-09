@@ -238,7 +238,8 @@ public static partial class Module
         where T : struct, IStructuralReadWrite
     {
         var bytes = IStructuralReadWrite.ToBytes(row);
-        FFI._insert(id, bytes, (uint)bytes.Length);
+        var len = (uint)bytes.Length;
+        FFI._datastore_insert_bsatn(id, bytes, ref len);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

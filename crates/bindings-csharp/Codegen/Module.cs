@@ -22,16 +22,23 @@ public class Module : IIncrementalGenerator
         var rowTypes = context.SyntaxProvider.ForAttributeWithMetadataName(
             fullyQualifiedMetadataName: "SpacetimeDB.TableAttribute",
             predicate: Utils.Always,
-            transform: (c, ct) =>
-                c.SemanticModel.GetDeclaredSymbol((TypeDeclarationSyntax)c.TargetNode, ct)!
+            transform: (c, ct) => {
+                var sym = (ITypeSymbol)c.SemanticModel.GetDeclaredSymbol((TypeDeclarationSyntax)c.TargetNode, ct)!;
+                var decl = new TypeDeclaration(c);
+                return (sym, decl);
+            }
         );
+
+        rowTypes
+            .Select((x, ct) => x.decl.ToExtensions())
+            .RegisterSourceOutputs(context);
 
         var reducers = context.SyntaxProvider.ForAttributeWithMetadataName(
             fullyQualifiedMetadataName: "SpacetimeDB.ReducerAttribute",
             predicate: Utils.Always,
             transform: (c, ct) =>
             {
-                var sym = c.SemanticModel.GetDeclaredSymbol(
+                var sym = (IMethodSymbol)c.SemanticModel.GetDeclaredSymbol(
                     (MethodDeclarationSyntax)c.TargetNode,
                     ct
                 )!;
@@ -64,6 +71,7 @@ public class Module : IIncrementalGenerator
         );
 
         var source = rowTypes
+            .Select((x, ct) => x.sym)
             .Collect()
             .Combine(reducers.Collect())
             .WithTrackingName("SpacetimeDB.Codegen.Analyze")
