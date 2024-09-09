@@ -127,20 +127,20 @@
 //!     ;
 //! ```
 
-use sqlparser::{
-    ast::{
-        Assignment, Distinct, Expr, GroupByExpr, ObjectName, OrderByExpr, Query, Select, SetExpr, SetOperator,
-        SetQuantifier, Statement, TableFactor, TableWithJoins, Values,
-    },
-    dialect::PostgreSqlDialect,
-    parser::Parser,
-};
-
 use crate::ast::{
     sql::{
         OrderByElem, QueryAst, SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlSetOp, SqlShow, SqlUpdate, SqlValues,
     },
     SqlIdent, SqlLiteral,
+};
+use sqlparser::ast::{AssignmentTarget, Delete, FromTable, Insert, OneOrManyWithParens, OrderBy};
+use sqlparser::{
+    ast::{
+        Assignment, Distinct, Expr, GroupByExpr, ObjectName, Query, Select, SetExpr, SetOperator, SetQuantifier,
+        Statement, TableFactor, TableWithJoins, Values,
+    },
+    dialect::PostgreSqlDialect,
+    parser::Parser,
 };
 
 use super::{
@@ -161,19 +161,19 @@ pub fn parse_sql(sql: &str) -> SqlParseResult<SqlAst> {
 fn parse_statement(stmt: Statement) -> SqlParseResult<SqlAst> {
     match stmt {
         Statement::Query(query) => Ok(SqlAst::Query(SqlParser::parse_query(*query)?)),
-        Statement::Insert {
+        Statement::Insert(Insert {
             or: None,
             table_name,
             columns,
             overwrite: false,
-            source,
+            source: Some(source),
             partitioned: None,
             after_columns,
             table: false,
             on: None,
             returning: None,
             ..
-        } if after_columns.is_empty() => Ok(SqlAst::Insert(SqlInsert {
+        }) if after_columns.is_empty() => Ok(SqlAst::Insert(SqlInsert {
             table: parse_ident(table_name)?,
             fields: columns.into_iter().map(SqlIdent::from).collect(),
             values: parse_values(*source)?,
@@ -188,6 +188,7 @@ fn parse_statement(stmt: Statement) -> SqlParseResult<SqlAst> {
                             args: None,
                             with_hints,
                             version: None,
+                            with_ordinality: false,
                             partitions,
                         },
                     joins,
@@ -201,17 +202,19 @@ fn parse_statement(stmt: Statement) -> SqlParseResult<SqlAst> {
             assignments: parse_assignments(assignments)?,
             filter: parse_expr_opt(selection)?,
         })),
-        Statement::Delete {
+        Statement::Delete(Delete {
             tables,
-            from,
+            from: FromTable::WithFromKeyword(from),
             using: None,
             selection,
             returning: None,
-        } if tables.is_empty() => Ok(SqlAst::Delete(parse_delete(from, selection)?)),
+            order_by,
+            limit: None,
+        }) if tables.is_empty() && order_by.is_empty() => Ok(SqlAst::Delete(parse_delete(from, selection)?)),
         Statement::SetVariable {
             local: false,
             hivevar: false,
-            variable,
+            variables: OneOrManyWithParens::One(variable),
             value,
         } => Ok(SqlAst::Set(parse_set_var(variable, value)?)),
         Statement::ShowVariable { variable } => Ok(SqlAst::Show(SqlShow(parse_parts(variable)?))),
@@ -225,12 +228,16 @@ fn parse_values(values: Query) -> SqlParseResult<SqlValues> {
         Query {
             with: None,
             body,
-            order_by,
+            order_by: None,
             limit: None,
+            limit_by,
             offset: None,
             fetch: None,
             locks,
-        } if order_by.is_empty() && locks.is_empty() => match *body {
+            for_clause: None,
+            settings: None,
+            format_clause: None,
+        } if locks.is_empty() && limit_by.is_empty() => match *body {
             SetExpr::Values(Values {
                 explicit_row: false,
                 rows,
@@ -252,11 +259,15 @@ fn parse_values(values: Query) -> SqlParseResult<SqlValues> {
             _ => Err(SqlUnsupported::Insert(Query {
                 with: None,
                 body,
-                order_by,
+                order_by: None,
                 limit: None,
+                limit_by,
                 offset: None,
                 fetch: None,
                 locks,
+                for_clause: None,
+                settings: None,
+                format_clause: None,
             })
             .into()),
         },
@@ -270,9 +281,11 @@ fn parse_assignments(assignments: Vec<Assignment>) -> SqlParseResult<Vec<SqlSet>
 }
 
 /// Parse a column/variable assignment in an UPDATE or SET statement
-fn parse_assignment(Assignment { id, value }: Assignment) -> SqlParseResult<SqlSet> {
-    match value {
-        Expr::Value(value) => Ok(SqlSet(parse_parts(id)?, parse_literal(value)?)),
+fn parse_assignment(Assignment { target, value }: Assignment) -> SqlParseResult<SqlSet> {
+    match (target, &value) {
+        (AssignmentTarget::ColumnName(target), Expr::Value(value)) => {
+            Ok(SqlSet(parse_ident(target)?, parse_literal(value.clone())?))
+        }
         _ => Err(SqlUnsupported::Assignment(value).into()),
     }
 }
@@ -289,6 +302,7 @@ fn parse_delete(mut from: Vec<TableWithJoins>, selection: Option<Expr>) -> SqlPa
                         args: None,
                         with_hints,
                         version: None,
+                        with_ordinality: false,
                         partitions,
                     },
                 joins,
@@ -318,7 +332,7 @@ fn parse_set_var(variable: ObjectName, mut value: Vec<Expr>) -> SqlParseResult<S
         Err(SqlUnsupported::feature(Statement::SetVariable {
             local: false,
             hivevar: false,
-            variable,
+            variables: OneOrManyWithParens::One(variable),
             value,
         })
         .into())
@@ -337,28 +351,40 @@ impl RelParser for SqlParser {
                 body,
                 order_by,
                 limit,
+                limit_by,
                 offset: None,
                 fetch: None,
                 locks,
-            } if locks.is_empty() => Ok(QueryAst {
-                query: parse_set_op(*body)?,
-                order: parse_order_by(order_by)?,
-                limit: parse_limit(limit)?,
-            }),
+                for_clause: None,
+                settings: None,
+                format_clause: None,
+            } if locks.is_empty()
+                && limit_by.is_empty()
+                && order_by.as_ref().map(|x| x.interpolate.is_none()).unwrap_or(true) =>
+            {
+                Ok(QueryAst {
+                    query: parse_set_op(*body)?,
+                    order: parse_order_by(order_by)?,
+                    limit: parse_limit(limit)?,
+                })
+            }
             _ => Err(SqlUnsupported::feature(query).into()),
         }
     }
 }
 
 /// Parse ORDER BY
-fn parse_order_by(items: Vec<OrderByExpr>) -> SqlParseResult<Vec<OrderByElem>> {
+fn parse_order_by(items: Option<OrderBy>) -> SqlParseResult<Vec<OrderByElem>> {
     let mut elems = Vec::new();
-    for item in items {
-        elems.push(OrderByElem(
-            parse_expr(item.expr)?,
-            matches!(item.asc, Some(true)) || item.asc.is_none(),
-        ));
+    if let Some(order) = items {
+        for item in order.exprs {
+            elems.push(OrderByElem(
+                parse_expr(item.expr)?,
+                matches!(item.asc, Some(true)) || item.asc.is_none(),
+            ));
+        }
     }
+
     Ok(elems)
 }
 
@@ -434,20 +460,25 @@ fn parse_select(select: Select) -> SqlParseResult<SqlSelect> {
             into: None,
             from,
             lateral_views,
+            prewhere: None,
             selection,
-            group_by: GroupByExpr::Expressions(exprs),
+            group_by: GroupByExpr::Expressions(exprs, modifiers),
             cluster_by,
             distribute_by,
             sort_by,
             having: None,
             named_window,
             qualify: None,
+            window_before_qualify: false,
+            value_table_mode: None,
+            connect_by: None,
         } if lateral_views.is_empty()
             && exprs.is_empty()
             && cluster_by.is_empty()
             && distribute_by.is_empty()
             && sort_by.is_empty()
-            && named_window.is_empty() =>
+            && named_window.is_empty()
+            && modifiers.is_empty() =>
         {
             Ok(SqlSelect {
                 project: parse_projection(projection)?,
@@ -486,7 +517,7 @@ mod tests {
             // Implicit joins
             "select a.* from t as a, s as b where a.id = b.id and b.c = 1",
         ] {
-            assert!(parse_sql(sql).is_err());
+            assert!(parse_sql(sql).is_err(), "{sql}");
         }
     }
 
@@ -504,7 +535,7 @@ mod tests {
             "update t set a = 1, b = 2",
             "update t set a = 1, b = 2 where c = 3",
         ] {
-            assert!(parse_sql(sql).is_ok());
+            assert!(parse_sql(sql).is_ok(), "{sql}");
         }
     }
 
@@ -520,7 +551,7 @@ mod tests {
             // Empty GROUP BY
             "select a, count(*) from t group by",
         ] {
-            assert!(parse_sql(sql).is_err());
+            assert!(parse_sql(sql).is_err(), "{sql}");
         }
     }
 }

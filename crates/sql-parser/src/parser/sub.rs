@@ -93,12 +93,16 @@ impl RelParser for SubParser {
             Query {
                 with: None,
                 body,
-                order_by,
+                order_by: None,
                 limit: None,
+                limit_by,
                 offset: None,
                 fetch: None,
                 locks,
-            } if order_by.is_empty() && locks.is_empty() => parse_set_op(*body),
+                for_clause: None,
+                settings: None,
+                format_clause: None,
+            } if locks.is_empty() && limit_by.is_empty() => parse_set_op(*body),
             _ => Err(SubscriptionUnsupported::feature(query).into()),
         }
     }
@@ -141,20 +145,25 @@ fn parse_select(select: Select) -> SqlParseResult<SqlSelect> {
             into: None,
             from,
             lateral_views,
+            prewhere: None,
             selection,
-            group_by: GroupByExpr::Expressions(exprs),
+            group_by: GroupByExpr::Expressions(exprs, modifiers),
             cluster_by,
             distribute_by,
             sort_by,
             having: None,
             named_window,
             qualify: None,
+            window_before_qualify: false,
+            value_table_mode: None,
+            connect_by: None,
         } if lateral_views.is_empty()
             && exprs.is_empty()
             && cluster_by.is_empty()
             && distribute_by.is_empty()
             && sort_by.is_empty()
-            && named_window.is_empty() =>
+            && named_window.is_empty()
+            && modifiers.is_empty() =>
         {
             Ok(SqlSelect {
                 from: SubParser::parse_from(from)?,
@@ -177,7 +186,7 @@ mod tests {
             "select distinct a from t",
             "select * from (select * from t) join (select * from s) on a = b",
         ] {
-            assert!(parse_subscription(sql).is_err());
+            assert!(parse_subscription(sql).is_err(), "{sql}");
         }
     }
 
@@ -195,7 +204,7 @@ mod tests {
             "select * from (select a.* from t as a join s as b on a.c = b.d)",
             "select * from (select t.* from (select * from t) t join (select * from s) s on s.id = t.id)",
         ] {
-            assert!(parse_subscription(sql).is_ok());
+            assert!(parse_subscription(sql).is_ok(), "{sql}");
         }
     }
 }

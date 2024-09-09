@@ -8,5 +8,8 @@ description = "The SpacetimeDB SQL AST and Parser"
 
 [dependencies]
 derive_more.workspace = true
-sqlparser.workspace = true
+#TODO: Remove this once the sqlparser crate is integrated
+#sqlparser.workspace = true
+ariadne = "0.4.1"
+sqlparser = { git = "https://github.com/mamcx/sqlparser-rs.git", branch = "main" }
 thiserror.workspace = true

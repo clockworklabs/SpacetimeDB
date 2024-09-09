@@ -23,9 +23,11 @@ pub struct SqlJoin<Ast> {
 }
 
 /// A projection expression in a SELECT clause
+#[derive(Debug, Clone)]
 pub struct ProjectElem(pub SqlExpr, pub Option<SqlIdent>);
 
 /// A SQL SELECT clause
+#[derive(Debug, Clone)]
 pub enum Project {
     /// SELECT *
     /// SELECT a.*
@@ -35,6 +37,7 @@ pub enum Project {
 }
 
 /// A scalar SQL expression
+#[derive(Debug, Clone)]
 pub enum SqlExpr {
     /// A constant expression
     Lit(SqlLiteral),
@@ -47,7 +50,7 @@ pub enum SqlExpr {
 }
 
 /// A SQL identifier or named reference
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SqlIdent {
     pub name: String,
     pub case_sensitive: bool,
@@ -75,6 +78,7 @@ impl From<Ident> for SqlIdent {
 }
 
 /// A SQL constant expression
+#[derive(Debug, Clone)]
 pub enum SqlLiteral {
     /// A boolean constant
     Bool(bool),
@@ -87,6 +91,7 @@ pub enum SqlLiteral {
 }
 
 /// Binary infix operators
+#[derive(Debug, Clone, Copy)]
 pub enum BinOp {
     Eq,
     Ne,

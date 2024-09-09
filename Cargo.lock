@@ -171,6 +171,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2e1373abdaa212b704512ec2bd8b26bd0b7d5c3f70117411a5d9a451383c859"
 
 [[package]]
+name = "ariadne"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44055e597c674aef7cb903b2b9f6e4cba1277ed0d2d61dae7cd52d7ffa81f8e2"
+dependencies = [
+ "unicode-width",
+ "yansi 1.0.1",
+]
+
+[[package]]
 name = "arrayref"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3037,7 +3047,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af7cee1a6c8a5b9208b3cb1061f10c0cb689087b3d8ce85fb9d2dd7a29b6ba66"
 dependencies = [
  "diff",
- "yansi",
+ "yansi 0.5.1",
 ]
 
 [[package]]
@@ -4371,7 +4381,7 @@ dependencies = [
  "spacetimedb-snapshot",
  "spacetimedb-table",
  "spacetimedb-vm",
- "sqlparser",
+ "sqlparser 0.38.0",
  "strum",
  "tempfile",
  "thiserror",
@@ -4578,8 +4588,9 @@ dependencies = [
 name = "spacetimedb-sql-parser"
 version = "0.12.0"
 dependencies = [
+ "ariadne",
  "derive_more",
- "sqlparser",
+ "sqlparser 0.50.0",
  "thiserror",
 ]
 
@@ -4748,6 +4759,14 @@ name = "sqlparser"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0272b7bb0a225320170c99901b4b5fb3a4384e255a7f2cc228f61e2ba3893e75"
+dependencies = [
+ "log",
+]
+
+[[package]]
+name = "sqlparser"
+version = "0.50.0"
+source = "git+https://github.com/mamcx/sqlparser-rs.git?branch=main#95add41aa1b9f59371726f9dd3918ba8f2681f31"
 dependencies = [
  "log",
 ]
@@ -6353,6 +6372,12 @@ name = "yansi"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09041cd90cf85f7f8b2df60c646f853b7f535ce68f85244eb6731cf89fa498ec"
+
+[[package]]
+name = "yansi"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
 
 [[package]]
 name = "zerocopy"

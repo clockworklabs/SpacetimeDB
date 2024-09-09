@@ -44,6 +44,7 @@ pub struct SqlSelect {
 }
 
 /// ORDER BY cols [ ASC | DESC ]
+#[derive(Debug, Clone)]
 pub struct OrderByElem(pub SqlExpr, pub bool);
 
 /// INSERT INTO table cols VALUES literals
