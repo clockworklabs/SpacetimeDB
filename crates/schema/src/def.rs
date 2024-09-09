@@ -20,7 +20,9 @@ use std::hash::Hash;
 
 use crate::error::{IdentifierError, ValidationErrors};
 use crate::identifier::Identifier;
+use crate::schema::{Schema, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
+use deserialize::ReducerArgsDeserializeSeed;
 use hashbrown::Equivalent;
 use itertools::Itertools;
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors, ErrorStream};
@@ -32,10 +34,11 @@ use spacetimedb_lib::db::raw_def::v9::{
     RawTypeDefV9, RawUniqueConstraintDataV9, TableAccess, TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
-use spacetimedb_primitives::{ColId, ColList};
+use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
 use spacetimedb_sats::AlgebraicType;
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace};
 
+pub mod deserialize;
 pub mod validate;
 
 /// A map from `Identifier`s to values of type `T`.
@@ -185,6 +188,22 @@ impl ModuleDef {
         self.tables.get(name)
     }
 
+    /// Convenience method to look up a reducer, possibly by a string.
+    pub fn reducer<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&ReducerDef> {
+        // If the string IS a valid identifier, we can just look it up.
+        self.reducers.get(name)
+    }
+
+    /// Get a `DeserializeSeed` that can pull data from a `Deserializer` and format it into a `ProductType`
+    /// at the parameter type of the reducer named `name`.
+    pub fn reducer_arg_deserialize_seed<K: ?Sized + Hash + Equivalent<Identifier>>(
+        &self,
+        name: &K,
+    ) -> Option<ReducerArgsDeserializeSeed> {
+        let reducer = self.reducer(name)?;
+        Some(ReducerArgsDeserializeSeed(self.typespace.with_type(reducer)))
+    }
+
     /// Look up the name corresponding to an `AlgebraicTypeRef`.
     pub fn type_def_from_ref(&self, r: AlgebraicTypeRef) -> Option<(&ScopedTypeName, &TypeDef)> {
         let name = self.refmap.get(&r)?;
@@ -194,6 +213,18 @@ impl ModuleDef {
             .expect("if it was in refmap, it should be in types");
 
         Some((name, def))
+    }
+
+    /// Convenience method to look up a table and convert it to a `TableSchema`.
+    /// All indexes, constraints, etc inside the table will have ID 0!
+    pub fn table_schema<K: ?Sized + Hash + Equivalent<Identifier>>(
+        &self,
+        name: &K,
+        table_id: TableId,
+    ) -> Option<TableSchema> {
+        // If the string IS a valid identifier, we can just look it up.
+        let table_def = self.tables.get(name)?;
+        Some(TableSchema::from_module_def(self, table_def, (), table_id))
     }
 
     /// Generate indexes for the module definition.
@@ -208,11 +239,11 @@ impl ModuleDef {
                 // if we have a constraint for the index, we're fine.
                 if table.indexes.values().any(|index| {
                     let IndexDef {
-                        algorithm: IndexAlgorithm::BTree { columns: index_columns },
+                        algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: index_columns }),
                         ..
                     } = index;
 
-                    index_columns == columns
+                    index_columns == &**columns
                 }) {
                     continue;
                 }
@@ -236,9 +267,9 @@ impl ModuleDef {
                     index_name.clone(),
                     IndexDef {
                         name: index_name.clone(),
-                        algorithm: IndexAlgorithm::BTree {
-                            columns: columns.clone(),
-                        },
+                        algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
+                            columns: columns.clone().into(),
+                        }),
                         accessor_name: None, // this is a generated index.
                     },
                 );
@@ -515,7 +546,7 @@ impl From<IndexDef> for RawIndexDefV9 {
         RawIndexDefV9 {
             name: val.name.into(),
             algorithm: match val.algorithm {
-                IndexAlgorithm::BTree { columns } => RawIndexAlgorithm::BTree { columns },
+                IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => RawIndexAlgorithm::BTree { columns },
             },
             accessor_name: val.accessor_name.map(Into::into),
         }
@@ -527,17 +558,36 @@ impl From<IndexDef> for RawIndexDefV9 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum IndexAlgorithm {
     /// Implemented using a rust `std::collections::BTreeMap`.
-    BTree {
-        /// The columns to index on. These are ordered.
-        columns: ColList,
-    },
+    BTree(BTreeAlgorithm),
+}
+
+impl IndexAlgorithm {
+    /// Get the columns of the index.
+    pub fn columns(&self) -> &ColList {
+        match self {
+            IndexAlgorithm::BTree(btree) => &btree.columns,
+        }
+    }
 }
 
 impl From<IndexAlgorithm> for RawIndexAlgorithm {
     fn from(val: IndexAlgorithm) -> Self {
         match val {
-            IndexAlgorithm::BTree { columns } => RawIndexAlgorithm::BTree { columns },
+            IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => RawIndexAlgorithm::BTree { columns },
         }
+    }
+}
+
+/// Data specifying a BTree index.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct BTreeAlgorithm {
+    /// The columns to index.
+    pub columns: ColList,
+}
+
+impl From<BTreeAlgorithm> for IndexAlgorithm {
+    fn from(val: BTreeAlgorithm) -> Self {
+        IndexAlgorithm::BTree(val)
     }
 }
 
@@ -597,6 +647,16 @@ pub enum ConstraintData {
     Unique(UniqueConstraintData),
 }
 
+impl ConstraintData {
+    /// If this is a unique constraint, returns the columns that must be unique.
+    /// Otherwise, returns `None`.
+    pub fn unique_columns(&self) -> Option<&ColSet> {
+        match &self {
+            ConstraintData::Unique(UniqueConstraintData { columns }) => Some(columns),
+        }
+    }
+}
+
 impl From<ConstraintData> for RawConstraintDataV9 {
     fn from(val: ConstraintData) -> Self {
         match val {
@@ -611,12 +671,20 @@ impl From<ConstraintData> for RawConstraintDataV9 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct UniqueConstraintData {
     /// The columns on the containing `TableDef`
-    pub columns: ColList,
+    pub columns: ColSet,
 }
 
 impl From<UniqueConstraintData> for RawUniqueConstraintDataV9 {
     fn from(val: UniqueConstraintData) -> Self {
-        RawUniqueConstraintDataV9 { columns: val.columns }
+        RawUniqueConstraintDataV9 {
+            columns: val.columns.into(),
+        }
+    }
+}
+
+impl From<UniqueConstraintData> for ConstraintData {
+    fn from(val: UniqueConstraintData) -> Self {
+        ConstraintData::Unique(val)
     }
 }
 

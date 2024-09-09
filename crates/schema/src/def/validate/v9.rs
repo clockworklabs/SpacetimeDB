@@ -204,7 +204,15 @@ impl ModuleValidator<'_> {
             .map(|schedule| table_in_progress.validate_schedule_def(schedule))
             .transpose();
 
-        let name = table_in_progress.add_to_global_namespace(raw_table_name.clone());
+        let name = table_in_progress
+            .add_to_global_namespace(raw_table_name.clone())
+            .and_then(|name| {
+                if name.starts_with("st_") {
+                    Err(ValidationError::TableNameReserved { table: name }.into())
+                } else {
+                    Ok(name)
+                }
+            });
 
         let (name, columns, indexes, (constraints, primary_key), sequences, schedule) =
             (name, columns, indexes, constraints_primary_key, sequences, schedule).combine_errors()?;
@@ -445,7 +453,7 @@ impl TableValidator<'_, '_> {
         let pk = primary_key
             .map(|pk| -> Result<ColId> {
                 let pk = self.validate_col_id(&self.raw_name, pk)?;
-                let pk_col_list = ColList::from(pk);
+                let pk_col_list = ColSet::from(pk);
                 if validated_constraints.values().any(|constraint| {
                     let ConstraintData::Unique(UniqueConstraintData { columns }) = &constraint.data;
                     columns == &pk_col_list
@@ -540,7 +548,7 @@ impl TableValidator<'_, '_> {
         let algorithm: Result<IndexAlgorithm> = match algorithm {
             RawIndexAlgorithm::BTree { columns } => self
                 .validate_col_ids(&name, columns)
-                .map(|columns| IndexAlgorithm::BTree { columns }),
+                .map(|columns| BTreeAlgorithm { columns }.into()),
             _ => Err(ValidationError::OnlyBtree { index: name.clone() }.into()),
         };
         let name = self.add_to_global_namespace(name);
@@ -560,10 +568,11 @@ impl TableValidator<'_, '_> {
         let RawConstraintDefV9 { name, data } = constraint;
 
         if let RawConstraintDataV9::Unique(RawUniqueConstraintDataV9 { columns }) = data {
-            let columns = self.validate_col_ids(&name, columns);
+            let columns: Result<ColList> = self.validate_col_ids(&name, columns);
             let name = self.add_to_global_namespace(name);
 
             let (name, columns) = (name, columns).combine_errors()?;
+            let columns: ColSet = columns.into();
             Ok(ConstraintDef {
                 name,
                 data: ConstraintData::Unique(UniqueConstraintData { columns }),
@@ -741,7 +750,7 @@ mod tests {
         check_product_type, expect_identifier, expect_raw_type_name, expect_resolve, expect_type_name,
     };
     use crate::def::{validate::Result, ModuleDef};
-    use crate::def::{ConstraintData, IndexAlgorithm, UniqueConstraintData};
+    use crate::def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData};
     use crate::error::*;
     use crate::type_for_generate::ClientCodegenError;
 
@@ -892,15 +901,16 @@ mod tests {
                 "Apples_index" => {
                     assert_eq!(
                         index.algorithm,
-                        IndexAlgorithm::BTree {
+                        BTreeAlgorithm {
                             columns: ColList::from_iter([1, 2])
                         }
+                        .into()
                     );
                     assert_eq!(index.accessor_name, Some(expect_identifier("apples_id")));
                 }
                 // auto-generated for the unique constraint
                 _ => {
-                    assert_eq!(index.algorithm, IndexAlgorithm::BTree { columns: 3.into() });
+                    assert_eq!(index.algorithm, BTreeAlgorithm { columns: 3.into() }.into());
                     assert_eq!(index.accessor_name, None);
                 }
             }

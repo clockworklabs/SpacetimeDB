@@ -2120,7 +2120,7 @@ mod tests {
 
     use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, relation::Column};
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
-    use spacetimedb_schema::def::ModuleDef;
+    use spacetimedb_schema::{def::ModuleDef, schema::Schema};
     use typed_arena::Arena;
 
     const ALICE: Identity = Identity::from_byte_array([1; 32]);
@@ -2147,7 +2147,7 @@ mod tests {
                     table_id: 42.into(),
                     table_name: "foo".into(),
                     fields: vec![],
-                    constraints: vec![(ColId(42).into(), Constraints::indexed())],
+                    constraints: [(ColId(42).into(), Constraints::indexed())].into_iter().collect(),
                 }),
                 table_id: 42.into(),
                 table_type: StTableType::User,
@@ -2227,8 +2227,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .filter(|(_, (_, _, indexed))| *indexed)
-                .map(|(i, _)| (ColId::from(i).into(), Constraints::indexed()))
-                .collect(),
+                .map(|(i, _)| (ColId::from(i).into(), Constraints::indexed())),
         );
         SourceExpr::InMemory {
             source_id: SourceId(0),
@@ -2593,8 +2592,8 @@ mod tests {
     /// Tests that [`QueryExpr::optimize`] can rewrite inner joins followed by projections into semijoins.
     fn optimize_inner_join_to_semijoin() {
         let def: ModuleDef = test_def();
-        let lhs = TableSchema::from_module_def(def.table("lhs").unwrap(), 0.into());
-        let rhs = TableSchema::from_module_def(def.table("rhs").unwrap(), 1.into());
+        let lhs = TableSchema::from_module_def(&def, def.table("lhs").unwrap(), (), 0.into());
+        let rhs = TableSchema::from_module_def(&def, def.table("rhs").unwrap(), (), 1.into());
 
         let lhs_source = SourceExpr::from(&lhs);
         let rhs_source = SourceExpr::from(&rhs);
@@ -2634,8 +2633,8 @@ mod tests {
     /// Tests that [`QueryExpr::optimize`] will not rewrite inner joins which are not followed by projections to the LHS table.
     fn optimize_inner_join_no_project() {
         let def: ModuleDef = test_def();
-        let lhs = TableSchema::from_module_def(def.table("lhs").unwrap(), 0.into());
-        let rhs = TableSchema::from_module_def(def.table("rhs").unwrap(), 1.into());
+        let lhs = TableSchema::from_module_def(&def, def.table("lhs").unwrap(), (), 0.into());
+        let rhs = TableSchema::from_module_def(&def, def.table("rhs").unwrap(), (), 1.into());
 
         let lhs_source = SourceExpr::from(&lhs);
         let rhs_source = SourceExpr::from(&rhs);
@@ -2649,8 +2648,8 @@ mod tests {
     /// Tests that [`QueryExpr::optimize`] will not rewrite inner joins followed by projections to the RHS rather than LHS table.
     fn optimize_inner_join_wrong_project() {
         let def: ModuleDef = test_def();
-        let lhs = TableSchema::from_module_def(def.table("lhs").unwrap(), 0.into());
-        let rhs = TableSchema::from_module_def(def.table("rhs").unwrap(), 1.into());
+        let lhs = TableSchema::from_module_def(&def, def.table("lhs").unwrap(), (), 0.into());
+        let rhs = TableSchema::from_module_def(&def, def.table("rhs").unwrap(), (), 1.into());
 
         let lhs_source = SourceExpr::from(&lhs);
         let rhs_source = SourceExpr::from(&rhs);

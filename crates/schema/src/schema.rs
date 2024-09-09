@@ -1,30 +1,30 @@
 //! Schema data structures.
 //! These are used at runtime by the vm to store the schema of the database.
+//! They are mirrored in the system tables -- see `spacetimedb_core::db::datastore::system_tables`.
+//! Types in this file are not public ABI or API and may be changed at any time; it's the system tables that cannot.
+
+// TODO(1.0): change all the `Box<str>`s in this file to `Identifier`.
+// This doesn't affect the ABI so can wait until 1.0.
 
 use itertools::Itertools;
-use spacetimedb_data_structures::map::{HashMap, HashSet};
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::error::{DefType, SchemaError};
-use spacetimedb_lib::db::raw_def::{
-    generate_cols_name, IndexType, RawColumnDefV8, RawConstraintDefV8, RawIndexDefV8, RawSequenceDefV8, RawTableDefV8,
-};
+use spacetimedb_lib::db::raw_def::{generate_cols_name, RawConstraintDefV8};
 use spacetimedb_lib::relation::{Column, DbTable, FieldName, Header};
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductTypeElement};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::WithTypespace;
 use std::sync::Arc;
 
 use crate::def::{
-    ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, SequenceDef,
-    TableDef, UniqueConstraintData,
+    ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, ScheduleDef,
+    SequenceDef, TableDef, UniqueConstraintData,
 };
 use crate::identifier::Identifier;
 
 /// Helper trait documenting allowing schema entities to be built from a validated `ModuleDef`.
-/// Currently private, because the `TableSchema` constructor needs to do some fixing-up after calling some of these
-/// and it isn't obvious how to incorporate that in a generic way.
-/// Once `TableSchema` is closer to `ModuleDef` this shouldn't be a problem and this trait can be made public.
-trait Schema: Sized {
+pub trait Schema: Sized {
     /// The `Def` type corresponding to this schema type.
     type Def: ModuleDefLookup;
     /// The `Id` type corresponding to this schema type.
@@ -35,7 +35,10 @@ trait Schema: Sized {
 
     /// Construct a schema entity from a validated `ModuleDef`.
     /// Panics if `module_def` does not contain `def`.
-    fn from_module_def(def: &Self::Def, parent_id: Self::ParentId, id: Self::Id) -> Self;
+    fn from_module_def(module_def: &ModuleDef, def: &Self::Def, parent_id: Self::ParentId, id: Self::Id) -> Self;
+
+    /// Check that a schema entity is compatible with a definition.
+    fn check_compatible(&self, def: &Self::Def) -> Result<(), anyhow::Error>;
 }
 
 /// A data structure representing the schema of a database table.
@@ -46,23 +49,41 @@ trait Schema: Sized {
 pub struct TableSchema {
     /// The unique identifier of the table within the database.
     pub table_id: TableId,
+
     /// The name of the table.
     pub table_name: Box<str>,
+
     /// The columns of the table.
     /// Inaccessible to prevent mutation.
     /// The ordering of the columns is significant. Columns are frequently identified by `ColId`, that is, position in this list.
     columns: Vec<ColumnSchema>,
+
+    /// The primary key of the table, if present. Must refer to a valid column.
+    ///
+    /// Currently, there must be a unique constraint and an index corresponding to the primary key.
+    /// Eventually, we may remove the requirement for an index.
+    ///
+    /// The database engine does not actually care about this, but client code generation does.
+    pub primary_key: Option<ColId>,
+
     /// The indexes on the table.
     pub indexes: Vec<IndexSchema>,
+
     /// The constraints on the table.
     pub constraints: Vec<ConstraintSchema>,
+
     /// The sequences on the table.
     pub sequences: Vec<SequenceSchema>,
+
     /// Whether the table was created by a user or by the system.
     pub table_type: StTableType,
+
     /// The visibility of the table.
     pub table_access: StAccess,
-    pub scheduled: Option<Box<str>>,
+
+    /// The schedule for the table, if present.
+    pub schedule: Option<ScheduleSchema>,
+
     /// Cache for `row_type_for_table` in the data store.
     row_type: ProductType,
 }
@@ -79,7 +100,8 @@ impl TableSchema {
         sequences: Vec<SequenceSchema>,
         table_type: StTableType,
         table_access: StAccess,
-        scheduled: Option<Box<str>>,
+        schedule: Option<ScheduleSchema>,
+        primary_key: Option<ColId>,
     ) -> Self {
         let row_type = ProductType::new(
             columns
@@ -101,8 +123,39 @@ impl TableSchema {
             table_type,
             table_access,
             row_type,
-            scheduled,
+            schedule,
+            primary_key,
         }
+    }
+
+    /// Create a `TableSchema` corresponding to a product type.
+    /// For use in tests.
+    #[cfg(feature = "test")]
+    pub fn from_product_type(ty: ProductType) -> TableSchema {
+        let columns = ty
+            .elements
+            .iter()
+            .enumerate()
+            .map(|(col_pos, element)| ColumnSchema {
+                table_id: TableId(0),
+                col_pos: ColId(col_pos as _),
+                col_name: element.name.clone().unwrap_or_else(|| format!("col{}", col_pos).into()),
+                col_type: element.algebraic_type.clone(),
+            })
+            .collect();
+
+        TableSchema::new(
+            TableId(0),
+            "TestTable".into(),
+            columns,
+            vec![],
+            vec![],
+            vec![],
+            StTableType::User,
+            StAccess::Public,
+            None,
+            None,
+        )
     }
 
     /// Convert a table schema into a list of columns.
@@ -239,96 +292,8 @@ impl TableSchema {
     }
 
     /// Get the constraints on this table.
-    pub fn get_constraints(&self) -> Vec<(ColList, Constraints)> {
-        self.constraints
-            .iter()
-            .map(|x| (x.columns.clone(), x.constraints))
-            .collect()
-    }
-
-    /// Create a new [TableSchema] from a [RawTableDefV8] and a `table_id`.
-    ///
-    /// # Parameters
-    ///
-    /// - `table_id`: The unique identifier for the table.
-    /// - `schema`: The `TableDef` containing the schema information.
-    #[deprecated]
-    #[allow(deprecated)]
-    pub fn from_def(table_id: TableId, schema: RawTableDefV8) -> Self {
-        let indexes = schema.generated_indexes().collect::<Vec<_>>();
-        let sequences = schema.generated_sequences().collect::<Vec<_>>();
-        let constraints = schema.generated_constraints().collect::<Vec<_>>();
-        //Sort by columns so is likely to get PK first then the rest and maintain the order for
-        //testing.
-        TableSchema::new(
-            table_id,
-            schema.table_name.trim().into(),
-            schema
-                .columns
-                .into_iter()
-                .enumerate()
-                .map(|(col_pos, x)| ColumnSchema::from_def(table_id, col_pos.into(), x))
-                .collect(),
-            schema
-                .indexes
-                .into_iter()
-                .chain(indexes)
-                .sorted_by_key(|x| x.columns.clone())
-                .map(|x| IndexSchema::from_def(table_id, x))
-                .collect(),
-            schema
-                .constraints
-                .into_iter()
-                .chain(constraints)
-                .filter(|x| x.constraints.kind() != ConstraintKind::UNSET)
-                .sorted_by_key(|x| x.columns.clone())
-                .map(|x| ConstraintSchema::from_def(table_id, x))
-                .collect(),
-            schema
-                .sequences
-                .into_iter()
-                .chain(sequences)
-                .sorted_by_key(|x| x.col_pos)
-                .map(|x| SequenceSchema::from_def(table_id, x))
-                .collect(),
-            schema.table_type,
-            schema.table_access,
-            schema.scheduled,
-        )
-    }
-
-    /// Iterate all constraints on the table.
-    pub fn column_constraints_iter(&self) -> impl Iterator<Item = (ColList, &Constraints)> {
-        self.constraints.iter().map(|x| (x.columns.clone(), &x.constraints))
-    }
-
-    /// Resolves the constraints per each column. If the column don't have one, auto-generate [Constraints::unset()].
-    ///
-    /// This guarantee all columns can be queried for it constraints.
-    pub fn column_constraints(&self) -> HashMap<ColList, Constraints> {
-        let mut constraints: HashMap<ColList, Constraints> =
-            self.column_constraints_iter().map(|(col, ct)| (col, *ct)).collect();
-
-        for col in &self.columns {
-            constraints
-                .entry(ColList::new(col.col_pos))
-                .or_insert(Constraints::unset());
-        }
-
-        constraints
-    }
-
-    /// Find the `pk` column. Because we run [Self::validated], only exist one `pk`.
-    pub fn pk(&self) -> Option<&ColumnSchema> {
-        self.column_constraints_iter()
-            .find_map(|(col, x)| {
-                if x.has_primary_key() {
-                    Some(self.columns.iter().find(|x| ColList::new(x.col_pos) == col))
-                } else {
-                    None
-                }
-            })
-            .flatten()
+    pub fn get_constraints(&self) -> impl Iterator<Item = &ConstraintData> {
+        self.constraints.iter().map(|x| &x.data)
     }
 
     /// Verify the definitions of this schema are valid:
@@ -342,34 +307,6 @@ impl TableSchema {
     pub fn validated(self) -> Result<Self, Vec<SchemaError>> {
         let mut errors = Vec::new();
 
-        let pks: Vec<_> = self
-            .column_constraints_iter()
-            .filter_map(|(cols, ct)| {
-                if ct.has_primary_key() {
-                    Some(
-                        self.get_columns(&cols)
-                            .iter()
-                            .map(|(col, schema)| {
-                                if let Some(col) = schema {
-                                    col.col_name.clone()
-                                } else {
-                                    format!("col_{col}").into()
-                                }
-                            })
-                            .collect(),
-                    )
-                } else {
-                    None
-                }
-            })
-            .collect();
-        if pks.len() > 1 {
-            errors.push(SchemaError::MultiplePrimaryKeys {
-                table: self.table_name.clone(),
-                pks,
-            });
-        }
-
         if self.table_name.is_empty() {
             errors.push(SchemaError::EmptyTableName {
                 table_id: self.table_id,
@@ -380,16 +317,18 @@ impl TableSchema {
             .sequences
             .iter()
             .map(|x| (DefType::Sequence, x.sequence_name.clone(), ColList::new(x.col_pos)))
-            .chain(
-                self.indexes
-                    .iter()
-                    .map(|x| (DefType::Index, x.index_name.clone(), x.columns.clone())),
-            )
-            .chain(
-                self.constraints
-                    .iter()
-                    .map(|x| (DefType::Constraint, x.constraint_name.clone(), x.columns.clone())),
-            )
+            .chain(self.indexes.iter().map(|x| match &x.index_algorithm {
+                IndexAlgorithm::BTree(btree) => (DefType::Index, x.index_name.clone(), btree.columns.clone()),
+            }))
+            .chain(self.constraints.iter().map(|x| {
+                (
+                    DefType::Constraint,
+                    x.constraint_name.clone(),
+                    match &x.data {
+                        ConstraintData::Unique(unique) => unique.columns.clone().into(),
+                    },
+                )
+            }))
             .filter_map(|(ty, name, cols)| {
                 let empty: Vec<_> = self
                     .get_columns(&cols)
@@ -434,20 +373,6 @@ impl TableSchema {
                 None
             }
         }));
-
-        //Verify not exist  'Constraints::unset()` they are equivalent to 'None'
-        errors.extend(self.constraints.iter().filter_map(|x| {
-            if x.constraints.kind() == ConstraintKind::UNSET {
-                Some(SchemaError::ConstraintUnset {
-                    table: self.table_name.clone(),
-                    name: x.constraint_name.clone(),
-                    columns: x.columns.clone(),
-                })
-            } else {
-                None
-            }
-        }));
-
         errors.extend(self.constraints.iter().filter_map(|x| {
             if x.constraint_name.is_empty() {
                 Some(SchemaError::EmptyName {
@@ -466,19 +391,6 @@ impl TableSchema {
                     table: self.table_name.clone(),
                     ty: DefType::Sequence,
                     id: x.sequence_id.0,
-                })
-            } else {
-                None
-            }
-        }));
-
-        // We only support BTree indexes
-        errors.extend(self.indexes.iter().filter_map(|x| {
-            if x.index_type != IndexType::BTree {
-                Some(SchemaError::OnlyBtree {
-                    table: self.table_name.clone(),
-                    index: x.index_name.clone(),
-                    index_type: x.index_type,
                 })
             } else {
                 None
@@ -513,97 +425,6 @@ impl TableSchema {
         }
     }
 
-    /// Create a `TableSchema` from a validated `ModuleDef`.
-    pub fn from_module_def(def: &TableDef, table_id: TableId) -> Self {
-        let TableDef {
-            name,
-            product_type_ref: _,
-            primary_key,
-            columns,
-            indexes,
-            constraints,
-            sequences,
-            schedule,
-            table_type,
-            table_access,
-        } = def;
-
-        let columns: Vec<ColumnSchema> = columns
-            .iter()
-            .enumerate()
-            .map(|(col_pos, def)| ColumnSchema::from_module_def(def, (), (table_id, col_pos.into())))
-            .collect();
-
-        let unique_col_lists = constraints
-            .values()
-            .map(|x| match &x.data {
-                ConstraintData::Unique(UniqueConstraintData { columns }) => columns.clone(),
-            })
-            .collect::<HashSet<_>>();
-
-        let mut constraint_schemas: Vec<ConstraintSchema> = vec![];
-
-        // note: these Ids are fixed up somewhere else, so we can just use 0 here...
-        // but it would be nice to pass the correct values into this method.
-        let indexes = indexes
-            .values()
-            .map(|def| {
-                let mut result = IndexSchema::from_module_def(def, table_id, IndexId(0));
-                // TODO: do we need to worry about ordering here?
-                if unique_col_lists.contains(&result.columns) {
-                    result.is_unique = true;
-                } else {
-                    let cols_name = generate_cols_name(&result.columns, |x| columns.get(x.idx()).map(|x| &*x.col_name));
-                    #[allow(deprecated)]
-                    constraint_schemas.push(ConstraintSchema::from_def(
-                        table_id,
-                        RawConstraintDefV8::for_column(
-                            name,
-                            &cols_name,
-                            Constraints::indexed(),
-                            result.columns.clone(),
-                        ),
-                    ));
-                }
-                result
-            })
-            .collect();
-
-        let sequence_col_lists: HashSet<ColList> = sequences.values().map(|x| ColList::new(x.column)).collect();
-
-        let sequences = sequences
-            .values()
-            .map(|def| SequenceSchema::from_module_def(def, table_id, SequenceId(0)))
-            .collect();
-
-        let pk_col_list = primary_key.map(ColList::from).unwrap_or(ColList::empty());
-
-        constraint_schemas.extend(constraints.values().map(|def| {
-            let mut result = ConstraintSchema::from_module_def(def, table_id, ConstraintId(0));
-            if result.columns == pk_col_list {
-                result.constraints = result.constraints.push(Constraints::primary_key());
-            }
-            if sequence_col_lists.contains(&result.columns) {
-                result.constraints = result.constraints.push_auto_inc().expect("could not set auto_inc?");
-            }
-            result
-        }));
-
-        let scheduled = schedule.as_ref().map(|schedule| (*schedule.reducer_name).into());
-
-        TableSchema::new(
-            table_id,
-            (*name).clone().into(),
-            columns,
-            indexes,
-            constraint_schemas,
-            sequences,
-            (*table_type).into(),
-            (*table_access).into(),
-            scheduled,
-        )
-    }
-
     /// The C# and Rust SDKs are inconsistent about whether v8 column defs store resolved or unresolved algebraic types.
     /// This method works around this problem by copying the column types from the module def into the table schema.
     /// It can be removed once v8 is removed, since v9 will reject modules with an inconsistency like this.
@@ -630,6 +451,154 @@ impl TableSchema {
         self.constraints
             .sort_by(|a, b| a.constraint_name.cmp(&b.constraint_name));
         self.sequences.sort_by(|a, b| a.sequence_name.cmp(&b.sequence_name));
+    }
+}
+
+/// Like `assert_eq!` for `anyhow`, but `$msg` is just a string, not a format string.
+macro_rules! ensure_eq {
+    ($a:expr, $b:expr, $msg:expr) => {
+        if $a != $b {
+            anyhow::bail!(
+                "{0}: expected {1} == {2}:\n   {1}: {3:?}\n   {2}: {4:?}",
+                $msg,
+                stringify!($a),
+                stringify!($b),
+                $a,
+                $b
+            );
+        }
+    };
+}
+
+impl Schema for TableSchema {
+    type Def = TableDef;
+    type Id = TableId;
+    type ParentId = ();
+
+    // N.B. This implementation gives all children ID 0 (the auto-inc sentinel value.)
+    fn from_module_def(
+        module_def: &ModuleDef,
+        def: &Self::Def,
+        _parent_id: Self::ParentId,
+        table_id: Self::Id,
+    ) -> Self {
+        module_def.expect_contains(def);
+
+        let TableDef {
+            name,
+            product_type_ref: _,
+            primary_key,
+            columns,
+            indexes,
+            constraints,
+            sequences,
+            schedule,
+            table_type,
+            table_access,
+        } = def;
+
+        let columns: Vec<ColumnSchema> = columns
+            .iter()
+            .enumerate()
+            .map(|(col_pos, def)| ColumnSchema::from_module_def(module_def, def, (), (table_id, col_pos.into())))
+            .collect();
+
+        // note: these Ids are fixed up somewhere else, so we can just use 0 here...
+        // but it would be nice to pass the correct values into this method.
+        let indexes = indexes
+            .values()
+            .map(|def| IndexSchema::from_module_def(module_def, def, table_id, IndexId(0)))
+            .collect();
+
+        let sequences = sequences
+            .values()
+            .map(|def| SequenceSchema::from_module_def(module_def, def, table_id, SequenceId(0)))
+            .collect();
+
+        let constraints = constraints
+            .values()
+            .map(|def| ConstraintSchema::from_module_def(module_def, def, table_id, ConstraintId(0)))
+            .collect();
+
+        let schedule = schedule
+            .as_ref()
+            .map(|schedule| ScheduleSchema::from_module_def(module_def, schedule, table_id, ScheduleId(0)));
+
+        TableSchema::new(
+            table_id,
+            (*name).clone().into(),
+            columns,
+            indexes,
+            constraints,
+            sequences,
+            (*table_type).into(),
+            (*table_access).into(),
+            schedule,
+            primary_key.clone(),
+        )
+    }
+
+    fn check_compatible(&self, def: &Self::Def) -> Result<(), anyhow::Error> {
+        ensure_eq!(&self.table_name[..], &def.name[..], "Table name mismatch");
+        ensure_eq!(self.primary_key, def.primary_key, "Primary key mismatch");
+        let def_table_access: StAccess = (def.table_access).into();
+        ensure_eq!(self.table_access, def_table_access, "Table access mismatch");
+        let def_table_type: StTableType = (def.table_type).into();
+        ensure_eq!(self.table_type, def_table_type, "Table type mismatch");
+
+        for col in &self.columns {
+            let col_def = def
+                .columns
+                .get(col.col_pos.0 as usize)
+                .ok_or_else(|| anyhow::anyhow!("Column {} not found in definition", col.col_pos.0))?;
+            col.check_compatible(col_def)?;
+        }
+        ensure_eq!(self.columns.len(), def.columns.len(), "Column count mismatch");
+
+        for index in &self.indexes {
+            let index_def = def
+                .indexes
+                .get(&index.index_name[..])
+                .ok_or_else(|| anyhow::anyhow!("Index {} not found in definition", index.index_id.0))?;
+            index.check_compatible(index_def)?;
+        }
+        ensure_eq!(self.indexes.len(), def.indexes.len(), "Index count mismatch");
+
+        for constraint in &self.constraints {
+            let constraint_def = def
+                .constraints
+                .get(&constraint.constraint_name[..])
+                .ok_or_else(|| anyhow::anyhow!("Constraint {} not found in definition", constraint.constraint_id.0))?;
+            constraint.check_compatible(constraint_def)?;
+        }
+        ensure_eq!(
+            self.constraints.len(),
+            def.constraints.len(),
+            "Constraint count mismatch"
+        );
+
+        for sequence in &self.sequences {
+            let sequence_def = def
+                .sequences
+                .get(&sequence.sequence_name[..])
+                .ok_or_else(|| anyhow::anyhow!("Sequence {} not found in definition", sequence.sequence_id.0))?;
+            sequence.check_compatible(sequence_def)?;
+        }
+        ensure_eq!(self.sequences.len(), def.sequences.len(), "Sequence count mismatch");
+
+        if let Some(schedule) = &self.schedule {
+            let schedule_def = def
+                .schedule
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Schedule not found in definition"))?;
+            schedule.check_compatible(schedule_def)?;
+        }
+        ensure_eq!(
+            self.schedule.is_some(),
+            def.schedule.is_some(),
+            "Schedule presence mismatch"
+        );
+        Ok(())
     }
 }
 
@@ -661,12 +630,35 @@ impl From<&TableSchema> for DbTable {
 
 impl From<&TableSchema> for Header {
     fn from(value: &TableSchema) -> Self {
-        let constraints = value.get_constraints();
         let fields = value
             .columns
             .iter()
             .map(|x| Column::new(FieldName::new(value.table_id, x.col_pos), x.col_type.clone()))
             .collect();
+
+        // Note that repeated col lists here will be flattened by the `Header` constructor.
+        let constraints = value
+            .get_constraints()
+            .map(|x| -> (ColList, Constraints) {
+                match x {
+                    ConstraintData::Unique(unique) => (unique.columns.clone().into(), Constraints::unique()),
+                }
+            })
+            .chain(value.indexes.iter().map(|x| match &x.index_algorithm {
+                IndexAlgorithm::BTree(btree) => (btree.columns.clone(), Constraints::indexed()),
+            }))
+            .chain(
+                value
+                    .sequences
+                    .iter()
+                    .map(|x| (ColList::new(x.col_pos), Constraints::auto_inc())),
+            )
+            .chain(
+                value
+                    .primary_key
+                    .iter()
+                    .map(|x| (col_list![*x], Constraints::primary_key())),
+            );
 
         Header::new(value.table_id, value.table_name.clone(), fields, constraints)
     }
@@ -674,36 +666,8 @@ impl From<&TableSchema> for Header {
 
 impl From<TableSchema> for Header {
     fn from(schema: TableSchema) -> Self {
-        Header {
-            table_id: schema.table_id,
-            table_name: schema.table_name.clone(),
-            fields: schema
-                .columns()
-                .iter()
-                .cloned()
-                .map(|schema| schema.into())
-                .collect_vec(),
-            constraints: schema
-                .constraints
-                .into_iter()
-                .map(|schema| (schema.columns, schema.constraints))
-                .collect_vec(),
-        }
-    }
-}
-
-impl From<TableSchema> for RawTableDefV8 {
-    fn from(value: TableSchema) -> Self {
-        Self {
-            table_name: value.table_name,
-            columns: value.columns.into_iter().map(Into::into).collect(),
-            indexes: value.indexes.into_iter().map(Into::into).collect(),
-            constraints: value.constraints.into_iter().map(Into::into).collect(),
-            sequences: value.sequences.into_iter().map(Into::into).collect(),
-            table_type: value.table_type,
-            table_access: value.table_access,
-            scheduled: value.scheduled,
-        }
+        // TODO: optimize.
+        Header::from(&schema)
     }
 }
 
@@ -716,27 +680,9 @@ pub struct ColumnSchema {
     pub col_pos: ColId,
     /// The name of the column. Unique within the table.
     pub col_name: Box<str>,
-    /// The type of the column.
+    /// The type of the column. This will never contain any `AlgebraicTypeRef`s,
+    /// that is, it will be resolved.
     pub col_type: AlgebraicType,
-}
-
-impl ColumnSchema {
-    /// Constructs a [ColumnSchema] from a given [ColumnDef] and `table_id`.
-    ///
-    /// # Parameters
-    ///
-    /// * `table_id`: Identifier of the table to which the column belongs.
-    /// * `col_pos`: Position of the column within the table.
-    /// * `column`: The `ColumnDef` containing column information.
-    #[deprecated]
-    pub fn from_def(table_id: TableId, col_pos: ColId, column: RawColumnDefV8) -> Self {
-        ColumnSchema {
-            table_id,
-            col_pos,
-            col_name: column.col_name.trim().into(),
-            col_type: column.col_type,
-        }
-    }
 }
 
 impl Schema for ColumnSchema {
@@ -746,22 +692,28 @@ impl Schema for ColumnSchema {
     // A `ColId` alone does NOT suffice to identify a column!
     type Id = (TableId, ColId);
 
-    fn from_module_def(def: &ColumnDef, _parent_id: (), (table_id, col_pos): (TableId, ColId)) -> Self {
+    fn from_module_def(
+        module_def: &ModuleDef,
+        def: &ColumnDef,
+        _parent_id: (),
+        (table_id, col_pos): (TableId, ColId),
+    ) -> Self {
+        let col_type = WithTypespace::new(module_def.typespace(), &def.ty)
+            .resolve_refs()
+            .expect("validated module should have all types resolve");
         ColumnSchema {
             table_id,
             col_pos,
             col_name: (*def.name).into(),
-            col_type: def.ty.clone(),
+            col_type,
         }
     }
-}
 
-impl From<ColumnSchema> for RawColumnDefV8 {
-    fn from(value: ColumnSchema) -> Self {
-        Self {
-            col_name: value.col_name,
-            col_type: value.col_type,
-        }
+    fn check_compatible(&self, def: &Self::Def) -> Result<(), anyhow::Error> {
+        ensure_eq!(&self.col_name[..], &def.name[..], "Column name mismatch");
+        ensure_eq!(self.col_type, def.ty, "Column type mismatch");
+        ensure_eq!(self.col_pos, def.col_id, "Columnh ID mismatch");
+        Ok(())
     }
 }
 
@@ -825,47 +777,14 @@ pub struct SequenceSchema {
     pub allocated: i128,
 }
 
-impl SequenceSchema {
-    /// Creates a new [SequenceSchema] instance from a [RawSequenceDefV8] and a `table_id`.
-    ///
-    /// # Parameters
-    ///
-    /// * `table_id` - The ID of the table associated with the sequence.
-    /// * `sequence` - The [RawSequenceDefV8] to derive the schema from.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use spacetimedb_schema::schema::*;
-    /// use spacetimedb_lib::db::raw_def::*;
-    ///
-    /// let sequence_def = RawSequenceDefV8::for_column("my_table".into(), "my_sequence".into(), 1.into());
-    /// let schema = SequenceSchema::from_def(42.into(), sequence_def);
-    ///
-    /// assert_eq!(&*schema.sequence_name, "seq_my_table_my_sequence");
-    /// assert_eq!(schema.table_id, 42.into());
-    /// ```
-    pub fn from_def(table_id: TableId, sequence: RawSequenceDefV8) -> Self {
-        Self {
-            sequence_id: SequenceId(0), // Will be replaced later when created
-            sequence_name: sequence.sequence_name.trim().into(),
-            table_id,
-            col_pos: sequence.col_pos,
-            increment: sequence.increment,
-            start: sequence.start.unwrap_or(1),
-            min_value: sequence.min_value.unwrap_or(1),
-            max_value: sequence.max_value.unwrap_or(i128::MAX),
-            allocated: sequence.allocated,
-        }
-    }
-}
-
 impl Schema for SequenceSchema {
     type Def = SequenceDef;
     type Id = SequenceId;
     type ParentId = TableId;
 
-    fn from_module_def(def: &Self::Def, parent_id: Self::ParentId, id: Self::Id) -> Self {
+    fn from_module_def(module_def: &ModuleDef, def: &Self::Def, parent_id: Self::ParentId, id: Self::Id) -> Self {
+        module_def.expect_contains(def);
+
         SequenceSchema {
             sequence_id: id,
             sequence_name: (*def.name).into(),
@@ -878,19 +797,67 @@ impl Schema for SequenceSchema {
             allocated: 0, // TODO: information not available in the `Def`s anymore, which is correct, but this may need to be overridden later.
         }
     }
+
+    fn check_compatible(&self, def: &Self::Def) -> Result<(), anyhow::Error> {
+        ensure_eq!(&self.sequence_name[..], &def.name[..], "Sequence name mismatch");
+        ensure_eq!(self.col_pos, def.column, "Sequence column mismatch");
+        ensure_eq!(self.increment, def.increment, "Sequence increment mismatch");
+        if let Some(start) = &def.start {
+            ensure_eq!(self.start, *start, "Sequence start mismatch");
+        }
+        if let Some(min_value) = &def.min_value {
+            ensure_eq!(self.min_value, *min_value, "Sequence min_value mismatch");
+        }
+        if let Some(max_value) = &def.max_value {
+            ensure_eq!(self.max_value, *max_value, "Sequence max_value mismatch");
+        }
+        Ok(())
+    }
 }
 
-impl From<SequenceSchema> for RawSequenceDefV8 {
-    fn from(value: SequenceSchema) -> Self {
-        RawSequenceDefV8 {
-            sequence_name: value.sequence_name,
-            col_pos: value.col_pos,
-            increment: value.increment,
-            start: Some(value.start),
-            min_value: Some(value.min_value),
-            max_value: Some(value.max_value),
-            allocated: value.allocated,
+/// Marks a table as a timer table for a scheduled reducer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScheduleSchema {
+    /// The identifier of the table.
+    pub table_id: TableId,
+
+    /// The identifier of the schedule.
+    pub schedule_id: ScheduleId,
+
+    /// The name of the schedule.
+    pub schedule_name: Box<str>,
+
+    // The name of the reducer to call.
+    pub reducer_name: Box<str>,
+}
+
+impl Schema for ScheduleSchema {
+    type Def = ScheduleDef;
+
+    type Id = ScheduleId;
+
+    type ParentId = TableId;
+
+    fn from_module_def(module_def: &ModuleDef, def: &Self::Def, parent_id: Self::ParentId, id: Self::Id) -> Self {
+        module_def.expect_contains(def);
+
+        ScheduleSchema {
+            table_id: parent_id,
+            schedule_id: id,
+            schedule_name: (*def.name).into(),
+            reducer_name: (*def.reducer_name).into(),
+            // Ignore def.at_column and id_column. Those are recovered at runtime.
         }
+    }
+
+    fn check_compatible(&self, def: &Self::Def) -> Result<(), anyhow::Error> {
+        ensure_eq!(&self.schedule_name[..], &def.name[..], "Schedule name mismatch");
+        ensure_eq!(
+            &self.reducer_name[..],
+            &def.reducer_name[..],
+            "Schedule reducer name mismatch"
+        );
+        Ok(())
     }
 }
 
@@ -901,64 +868,36 @@ pub struct IndexSchema {
     pub index_id: IndexId,
     /// The ID of the table associated with the index.
     pub table_id: TableId,
-    /// The type of the index.
-    pub index_type: IndexType,
     /// The name of the index. This should not be assumed to follow any particular format.
-    /// Unique within the table.
-    // TODO(jgilles): check and/or specify if this is currently unique within the database.
+    /// Unique within the database.
     pub index_name: Box<str>,
-    /// If the index is unique.
-    pub is_unique: bool,
-    /// The list of columns associated with the index.
-    /// This is truly a list: the order of the columns is significant.
-    /// The columns are projected and serialized to bitstrings in this order,
-    /// which affects the order of elements within a BTreeIndex.
-    pub columns: ColList,
+    /// The data for the schema.
+    pub index_algorithm: IndexAlgorithm,
 }
 
-impl IndexSchema {
-    /// Constructs an [IndexSchema] from a given [IndexDef] and `table_id`.
-    #[deprecated(note = "Use TableSchema::from_module_def instead")]
-    pub fn from_def(table_id: TableId, index: RawIndexDefV8) -> Self {
-        IndexSchema {
-            index_id: IndexId(0), // Set to 0 as it may be assigned later.
-            table_id,
-            index_type: index.index_type,
-            index_name: index.index_name.trim().into(),
-            is_unique: index.is_unique,
-            columns: index.columns,
-        }
-    }
-}
+impl IndexSchema {}
 
 impl Schema for IndexSchema {
     type Def = IndexDef;
     type Id = IndexId;
     type ParentId = TableId;
 
-    fn from_module_def(def: &Self::Def, parent_id: Self::ParentId, id: Self::Id) -> Self {
-        let (index_type, columns) = match &def.algorithm {
-            IndexAlgorithm::BTree { columns } => (IndexType::BTree, columns.clone()),
-        };
+    fn from_module_def(module_def: &ModuleDef, def: &Self::Def, parent_id: Self::ParentId, id: Self::Id) -> Self {
+        module_def.expect_contains(def);
+
+        let index_algorithm = def.algorithm.clone();
         IndexSchema {
             index_id: id,
             table_id: parent_id,
-            index_type,
             index_name: (*def.name).into(),
-            is_unique: false,
-            columns,
+            index_algorithm,
         }
     }
-}
 
-impl From<IndexSchema> for RawIndexDefV8 {
-    fn from(value: IndexSchema) -> Self {
-        Self {
-            index_name: value.index_name,
-            columns: value.columns,
-            is_unique: value.is_unique,
-            index_type: value.index_type,
-        }
+    fn check_compatible(&self, def: &Self::Def) -> Result<(), anyhow::Error> {
+        ensure_eq!(&self.index_name[..], &def.name[..], "Index name mismatch");
+        ensure_eq!(&self.index_algorithm, &def.algorithm, "Index algorithm mismatch");
+        Ok(())
     }
 }
 
@@ -968,17 +907,14 @@ impl From<IndexSchema> for RawIndexDefV8 {
 /// name, the table it belongs to, and the columns it is associated with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConstraintSchema {
+    /// The ID of the table the constraint applies to.
+    pub table_id: TableId,
     /// The unique ID of the constraint within the database.
     pub constraint_id: ConstraintId,
     /// The name of the constraint.
-    /// Deprecated, in the future constraints will be identified by the columns they refer to and their constraint type.
     pub constraint_name: Box<str>,
-    /// The constraints applied to the columns
-    pub constraints: Constraints,
-    /// The ID of the table the constraint applies to.
-    pub table_id: TableId,
-    /// The columns the constraint applies to.
-    pub columns: ColList,
+    /// The data for the constraint.
+    pub data: ConstraintData, // this reuses the type from Def, which is fine, neither of `schema` nor `def` are ABI modules.
 }
 
 impl ConstraintSchema {
@@ -989,13 +925,18 @@ impl ConstraintSchema {
     /// * `table_id`: Identifier of the table to which the constraint belongs.
     /// * `constraint`: The `ConstraintDef` containing constraint information.
     #[deprecated(note = "Use TableSchema::from_module_def instead")]
-    pub fn from_def(table_id: TableId, constraint: RawConstraintDefV8) -> Self {
-        ConstraintSchema {
-            constraint_id: ConstraintId(0), // Set to 0 as it may be assigned later.
-            constraint_name: constraint.constraint_name.trim().into(),
-            constraints: constraint.constraints,
-            table_id,
-            columns: constraint.columns,
+    pub fn from_def(table_id: TableId, constraint: RawConstraintDefV8) -> Option<Self> {
+        if constraint.constraints.has_unique() {
+            Some(ConstraintSchema {
+                constraint_id: ConstraintId(0), // Set to 0 as it may be assigned later.
+                constraint_name: constraint.constraint_name.trim().into(),
+                table_id,
+                data: ConstraintData::Unique(UniqueConstraintData {
+                    columns: constraint.columns.into(),
+                }),
+            })
+        } else {
+            None
         }
     }
 }
@@ -1005,26 +946,21 @@ impl Schema for ConstraintSchema {
     type Id = ConstraintId;
     type ParentId = TableId;
 
-    fn from_module_def(def: &Self::Def, parent_id: Self::ParentId, id: Self::Id) -> Self {
-        match &def.data {
-            ConstraintData::Unique(UniqueConstraintData { columns }) => ConstraintSchema {
-                constraint_id: id,
-                constraint_name: (*def.name).into(),
-                constraints: Constraints::unique(),
-                table_id: parent_id,
-                columns: columns.clone(),
-            },
+    fn from_module_def(module_def: &ModuleDef, def: &Self::Def, parent_id: Self::ParentId, id: Self::Id) -> Self {
+        module_def.expect_contains(def);
+
+        ConstraintSchema {
+            constraint_id: id,
+            constraint_name: (*def.name).into(),
+            table_id: parent_id,
+            data: def.data.clone(),
         }
     }
-}
 
-impl From<ConstraintSchema> for RawConstraintDefV8 {
-    fn from(value: ConstraintSchema) -> Self {
-        Self {
-            constraint_name: value.constraint_name,
-            constraints: value.constraints,
-            columns: value.columns,
-        }
+    fn check_compatible(&self, def: &Self::Def) -> Result<(), anyhow::Error> {
+        ensure_eq!(&self.constraint_name[..], &def.name[..], "Constraint name mismatch");
+        ensure_eq!(&self.data, &def.data, "Constraint data mismatch");
+        Ok(())
     }
 }
 

@@ -1,6 +1,6 @@
-use super::module_host::{EntityDef, EventStatus, ModuleHost, NoSuchModule, UpdateDatabaseResult};
+use super::module_host::{EventStatus, ModuleHost, ModuleInfo, NoSuchModule};
 use super::scheduler::SchedulerStarter;
-use super::Scheduler;
+use super::{Scheduler, UpdateDatabaseResult};
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::DatabaseLogger;
 use crate::db::datastore::traits::Program;
@@ -91,12 +91,6 @@ impl DescribedEntityType {
         match self {
             DescribedEntityType::Table => "table",
             DescribedEntityType::Reducer => "reducer",
-        }
-    }
-    pub fn from_entitydef(def: &EntityDef) -> Self {
-        match def {
-            EntityDef::Table(_) => Self::Table,
-            EntityDef::Reducer(_) => Self::Reducer,
         }
     }
 }
@@ -393,11 +387,10 @@ impl HostController {
             let program = load_program(&self.program_storage, program_hash).await?;
             let update_result = host
                 .update_module(host_type, program, self.unregister_fn(instance_id))
-                .await?;
+                .await;
             if update_result.is_ok() {
                 *guard = Some(host);
             }
-            update_result.map(drop)?;
         }
 
         Ok(module)
@@ -514,6 +507,8 @@ async fn make_dbic(
     })
 }
 
+/// Initialize a module host for the given program.
+/// The passed dbic may not be configured for this version of the program's database schema yet.
 async fn make_module_host(
     host_type: HostType,
     dbic: Arc<DatabaseInstanceContext>,
@@ -606,6 +601,7 @@ async fn update_module(
     db: &RelationalDB,
     module: &ModuleHost,
     program: Program,
+    old_module_info: Arc<ModuleInfo>,
 ) -> anyhow::Result<UpdateDatabaseResult> {
     let addr = db.address();
     match stored_program_hash(db)? {
@@ -613,10 +609,10 @@ async fn update_module(
         Some(stored) => {
             let res = if stored == program.hash {
                 info!("database `{}` up to date with program `{}`", addr, program.hash);
-                Ok(())
+                UpdateDatabaseResult::NoUpdateNeeded
             } else {
                 info!("updating `{}` from {} to {}", addr, stored, program.hash);
-                module.update_database(program).await?
+                module.update_database(program, old_module_info).await?
             };
 
             Ok(res)
@@ -781,6 +777,7 @@ impl Host {
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let dbic = &self.dbic;
         let (scheduler, scheduler_starter) = self.scheduler.new_with_same_db();
+
         let (program, module) = make_module_host(
             host_type,
             dbic.clone(),
@@ -791,11 +788,14 @@ impl Host {
         )
         .await?;
 
-        let update_result = update_module(&dbic.relational_db, &module, program).await?;
+        // Get the old module info to diff against when building a migration plan.
+        let old_module_info = self.module.borrow().info.clone();
+
+        let update_result = update_module(&dbic.relational_db, &module, program, old_module_info).await?;
         trace!("update result: {update_result:?}");
         // Only replace the module + scheduler if the update succeeded.
         // Otherwise, we want the database to continue running with the old state.
-        if update_result.is_ok() {
+        if update_result.was_successful() {
             self.scheduler = scheduler;
             scheduler_starter.start(&module)?;
             let old_module = self.module.send_replace(module);

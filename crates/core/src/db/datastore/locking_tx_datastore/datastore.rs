@@ -11,8 +11,8 @@ use crate::{
         datastore::{
             system_tables::{
                 read_addr_from_col, read_bytes_from_col, read_hash_from_col, read_identity_from_col,
-                system_table_schema, ModuleKind, StClientsRow, StModuleFields, StModuleRow, StTableFields,
-                ST_CLIENT_ID, ST_MODULE_ID, ST_TABLE_ID,
+                system_table_schema, ModuleKind, StClientRow, StModuleFields, StModuleRow, StTableFields, ST_CLIENT_ID,
+                ST_MODULE_ID, ST_TABLE_ID,
             },
             traits::{
                 DataRow, IsolationLevel, Metadata, MutTx, MutTxDatastore, Program, RowTypeForTable, Tx, TxData,
@@ -28,14 +28,11 @@ use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
 use parking_lot::{Mutex, RwLock};
 use spacetimedb_commitlog::payload::{txdata, Txdata};
-use spacetimedb_lib::db::{
-    auth::StAccess,
-    raw_def::{RawIndexDefV8, RawSequenceDefV8, RawTableDefV8},
-};
+use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{bsatn, buffer::BufReader, AlgebraicValue, ProductValue};
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::ReconstructedSnapshot;
 use spacetimedb_table::{
     indexes::RowPointer,
@@ -218,7 +215,7 @@ impl Locking {
         tx: &'a TxId,
     ) -> Result<impl Iterator<Item = Result<(Identity, Address)>> + 'a> {
         let iter = self.iter_tx(ctx, tx, ST_CLIENT_ID)?.map(|row_ref| {
-            let row = StClientsRow::try_from(row_ref)?;
+            let row = StClientRow::try_from(row_ref)?;
             Ok((row.identity, row.address))
         });
 
@@ -339,7 +336,7 @@ impl TxDatastore for Locking {
 }
 
 impl MutTxDatastore for Locking {
-    fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: RawTableDefV8) -> Result<TableId> {
+    fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: TableSchema) -> Result<TableId> {
         tx.create_table(schema, self.database_address)
     }
 
@@ -392,12 +389,16 @@ impl MutTxDatastore for Locking {
             .map(|opt| opt.map(|s| Cow::Owned(s.into())))
     }
 
-    fn create_index_mut_tx(&self, tx: &mut Self::MutTx, table_id: TableId, index: RawIndexDefV8) -> Result<IndexId> {
-        tx.create_index(table_id, index, self.database_address)
+    /// Create an index.
+    /// `is_unique` should be true if there will be a unique constraint on `ColSet::from(index_schema.columns())`
+    /// after this transaction is committed.
+    fn create_index_mut_tx(&self, tx: &mut Self::MutTx, index_schema: IndexSchema, is_unique: bool) -> Result<IndexId> {
+        let ctx = &ExecutionContext::internal(self.database_address);
+        tx.create_index(ctx, index_schema, is_unique)
     }
 
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTx, index_id: IndexId) -> Result<()> {
-        tx.drop_index(index_id, true, self.database_address)
+        tx.drop_index(index_id, self.database_address)
     }
 
     fn index_id_from_name_mut_tx(&self, tx: &Self::MutTx, index_name: &str) -> Result<Option<IndexId>> {
@@ -408,13 +409,8 @@ impl MutTxDatastore for Locking {
         tx.get_next_sequence_value(seq_id, self.database_address)
     }
 
-    fn create_sequence_mut_tx(
-        &self,
-        tx: &mut Self::MutTx,
-        table_id: TableId,
-        seq: RawSequenceDefV8,
-    ) -> Result<SequenceId> {
-        tx.create_sequence(table_id, seq, self.database_address)
+    fn create_sequence_mut_tx(&self, tx: &mut Self::MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId> {
+        tx.create_sequence(sequence_schema, self.database_address)
     }
 
     fn drop_sequence_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<()> {
@@ -933,10 +929,11 @@ fn metadata_from_row(row: RowRef<'_>) -> Result<Metadata> {
 mod tests {
     use super::*;
     use crate::db::datastore::system_tables::{
-        system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, StVarValue, ST_CLIENT_NAME,
-        ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_NAME, ST_MODULE_NAME,
-        ST_RESERVED_SEQUENCE_RANGE, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID, ST_SEQUENCE_NAME,
-        ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME,
+        system_tables, StColumnRow, StConstraintData, StConstraintFields, StConstraintRow, StIndexAlgorithm,
+        StIndexFields, StIndexRow, StScheduledFields, StSequenceFields, StSequenceRow, StTableRow, StVarFields,
+        StVarValue, ST_CLIENT_NAME, ST_COLUMN_ID, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_NAME, ST_INDEX_ID,
+        ST_INDEX_NAME, ST_MODULE_NAME, ST_RESERVED_SEQUENCE_RANGE, ST_SCHEDULED_ID, ST_SCHEDULED_NAME, ST_SEQUENCE_ID,
+        ST_SEQUENCE_NAME, ST_TABLE_NAME, ST_VAR_ID, ST_VAR_NAME,
     };
     use crate::db::datastore::traits::{IsolationLevel, MutTx};
     use crate::db::datastore::Result;
@@ -945,10 +942,11 @@ mod tests {
     use pretty_assertions::assert_eq;
     use spacetimedb_lib::address::Address;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
-    use spacetimedb_lib::db::raw_def::{IndexType, RawColumnDefV8};
     use spacetimedb_lib::error::ResultTest;
-    use spacetimedb_primitives::{col_list, ColId, Constraints};
+    use spacetimedb_lib::resolved_type_via_v9;
+    use spacetimedb_primitives::{col_list, ColId};
     use spacetimedb_sats::{product, AlgebraicType, GroundSpacetimeType};
+    use spacetimedb_schema::def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData};
     use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema};
     use spacetimedb_table::table::UniqueConstraintViolation;
 
@@ -967,7 +965,7 @@ mod tests {
     }
 
     impl SystemTableQuery<'_> {
-        pub fn scan_st_tables(&self) -> Result<Vec<StTableRow<Box<str>>>> {
+        pub fn scan_st_tables(&self) -> Result<Vec<StTableRow>> {
             Ok(self
                 .db
                 .iter(self.ctx, ST_TABLE_ID)?
@@ -980,7 +978,7 @@ mod tests {
             &self,
             cols: impl Into<ColList>,
             value: &AlgebraicValue,
-        ) -> Result<Vec<StTableRow<Box<str>>>> {
+        ) -> Result<Vec<StTableRow>> {
             Ok(self
                 .db
                 .iter_by_col_eq(self.ctx, ST_TABLE_ID, cols.into(), value)?
@@ -989,7 +987,7 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_columns(&self) -> Result<Vec<StColumnRow<Box<str>>>> {
+        pub fn scan_st_columns(&self) -> Result<Vec<StColumnRow>> {
             Ok(self
                 .db
                 .iter(self.ctx, ST_COLUMN_ID)?
@@ -1002,7 +1000,7 @@ mod tests {
             &self,
             cols: impl Into<ColList>,
             value: &AlgebraicValue,
-        ) -> Result<Vec<StColumnRow<Box<str>>>> {
+        ) -> Result<Vec<StColumnRow>> {
             Ok(self
                 .db
                 .iter_by_col_eq(self.ctx, ST_COLUMN_ID, cols.into(), value)?
@@ -1011,7 +1009,7 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_constraints(&self) -> Result<Vec<StConstraintRow<Box<str>>>> {
+        pub fn scan_st_constraints(&self) -> Result<Vec<StConstraintRow>> {
             Ok(self
                 .db
                 .iter(self.ctx, ST_CONSTRAINT_ID)?
@@ -1020,7 +1018,7 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_sequences(&self) -> Result<Vec<StSequenceRow<Box<str>>>> {
+        pub fn scan_st_sequences(&self) -> Result<Vec<StSequenceRow>> {
             Ok(self
                 .db
                 .iter(self.ctx, ST_SEQUENCE_ID)?
@@ -1029,7 +1027,7 @@ mod tests {
                 .collect::<Vec<_>>())
         }
 
-        pub fn scan_st_indexes(&self) -> Result<Vec<StIndexRow<Box<str>>>> {
+        pub fn scan_st_indexes(&self) -> Result<Vec<StIndexRow>> {
             Ok(self
                 .db
                 .iter(self.ctx, ST_INDEX_ID)?
@@ -1064,18 +1062,21 @@ mod tests {
         table: u32,
         col: ColList,
         name: &'a str,
-        unique: bool,
     }
-    impl From<IndexRow<'_>> for StIndexRow<Box<str>> {
+    impl From<IndexRow<'_>> for StIndexRow {
         fn from(value: IndexRow<'_>) -> Self {
             Self {
                 index_id: value.id.into(),
                 table_id: value.table.into(),
-                columns: value.col,
                 index_name: value.name.into(),
-                is_unique: value.unique,
-                index_type: IndexType::BTree,
+                index_algorithm: StIndexAlgorithm::BTree { columns: value.col },
             }
+        }
+    }
+    impl From<IndexRow<'_>> for IndexSchema {
+        fn from(value: IndexRow<'_>) -> Self {
+            let st = StIndexRow::from(value);
+            st.into()
         }
     }
 
@@ -1084,14 +1085,16 @@ mod tests {
         name: &'a str,
         ty: StTableType,
         access: StAccess,
+        primary_key: Option<ColId>,
     }
-    impl From<TableRow<'_>> for StTableRow<Box<str>> {
+    impl From<TableRow<'_>> for StTableRow {
         fn from(value: TableRow<'_>) -> Self {
             Self {
                 table_id: value.id.into(),
                 table_name: value.name.into(),
                 table_type: value.ty,
                 table_access: value.access,
+                table_primary_key: value.primary_key.map(ColList::new),
             }
         }
     }
@@ -1102,13 +1105,13 @@ mod tests {
         name: &'a str,
         ty: AlgebraicType,
     }
-    impl From<ColRow<'_>> for StColumnRow<Box<str>> {
+    impl From<ColRow<'_>> for StColumnRow {
         fn from(value: ColRow<'_>) -> Self {
             Self {
                 table_id: value.table.into(),
                 col_pos: value.pos.into(),
                 col_name: value.name.into(),
-                col_type: value.ty,
+                col_type: value.ty.into(),
             }
         }
     }
@@ -1122,14 +1125,6 @@ mod tests {
             }
         }
     }
-    impl From<ColRow<'_>> for RawColumnDefV8 {
-        fn from(value: ColRow<'_>) -> Self {
-            Self {
-                col_name: value.name.into(),
-                col_type: value.ty,
-            }
-        }
-    }
 
     struct SequenceRow<'a> {
         id: u32,
@@ -1138,7 +1133,7 @@ mod tests {
         col_pos: u16,
         start: i128,
     }
-    impl From<SequenceRow<'_>> for StSequenceRow<Box<str>> {
+    impl From<SequenceRow<'_>> for StSequenceRow {
         fn from(value: SequenceRow<'_>) -> Self {
             Self {
                 sequence_id: value.id.into(),
@@ -1170,54 +1165,29 @@ mod tests {
         }
     }
 
-    struct IdxSchema<'a> {
-        id: u32,
-        table: u32,
-        col: u16,
-        name: &'a str,
-        unique: bool,
-    }
-    impl From<IdxSchema<'_>> for IndexSchema {
-        fn from(value: IdxSchema<'_>) -> Self {
-            Self {
-                index_id: value.id.into(),
-                table_id: value.table.into(),
-                columns: value.col.into(),
-                index_name: value.name.into(),
-                is_unique: value.unique,
-                index_type: IndexType::BTree,
-            }
-        }
-    }
-
     struct ConstraintRow<'a> {
         constraint_id: u32,
         constraint_name: &'a str,
-        constraints: Constraints,
         table_id: u32,
-        columns: ColList,
+        unique_columns: ColList,
     }
-    impl From<ConstraintRow<'_>> for StConstraintRow<Box<str>> {
+    impl From<ConstraintRow<'_>> for StConstraintRow {
         fn from(value: ConstraintRow<'_>) -> Self {
             Self {
                 constraint_id: value.constraint_id.into(),
                 constraint_name: value.constraint_name.into(),
-                constraints: value.constraints,
                 table_id: value.table_id.into(),
-                columns: value.columns,
+                constraint_data: StConstraintData::Unique {
+                    columns: value.unique_columns.into(),
+                },
             }
         }
     }
 
     impl From<ConstraintRow<'_>> for ConstraintSchema {
         fn from(value: ConstraintRow<'_>) -> Self {
-            Self {
-                constraint_id: value.constraint_id.into(),
-                constraint_name: value.constraint_name.into(),
-                constraints: value.constraints,
-                table_id: value.table_id.into(),
-                columns: value.columns,
-            }
+            let st = StConstraintRow::from(value);
+            st.into()
         }
     }
 
@@ -1231,23 +1201,60 @@ mod tests {
         ]
     }
 
-    fn basic_table_schema() -> RawTableDefV8 {
-        RawTableDefV8::new("Foo".into(), map_array(basic_table_schema_cols()))
-            .with_indexes(vec![
-                RawIndexDefV8 {
-                    columns: ColList::new(0.into()),
+    fn basic_table_schema() -> TableSchema {
+        TableSchema::new(
+            TableId(0),
+            "Foo".into(),
+            map_array(basic_table_schema_cols()),
+            vec![
+                IndexSchema {
+                    // 0 here means the system will assign IDs on creation
+                    index_id: IndexId(0),
+                    table_id: TableId(0),
                     index_name: "id_idx".into(),
-                    is_unique: true,
-                    index_type: IndexType::BTree,
+                    index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![0] }),
                 },
-                RawIndexDefV8 {
-                    columns: ColList::new(1.into()),
+                IndexSchema {
+                    index_id: IndexId(0),
+                    table_id: TableId(0),
                     index_name: "name_idx".into(),
-                    is_unique: true,
-                    index_type: IndexType::BTree,
+                    index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![1] }),
                 },
-            ])
-            .with_column_sequence(ColId(0))
+            ],
+            vec![
+                ConstraintSchema {
+                    table_id: TableId(0),
+                    constraint_id: ConstraintId(0),
+                    constraint_name: "id_constraint".into(),
+                    data: ConstraintData::Unique(UniqueConstraintData {
+                        columns: col_list![0].into(),
+                    }),
+                },
+                ConstraintSchema {
+                    table_id: TableId(0),
+                    constraint_id: ConstraintId(0),
+                    constraint_name: "name_constraint".into(),
+                    data: ConstraintData::Unique(UniqueConstraintData {
+                        columns: col_list![1].into(),
+                    }),
+                },
+            ],
+            vec![SequenceSchema {
+                sequence_id: SequenceId(0),
+                table_id: TableId(0),
+                col_pos: 0.into(),
+                sequence_name: "id_sequence".into(),
+                start: 1,
+                increment: 1,
+                min_value: 1,
+                max_value: 170141183460469231731687303715884105727,
+                allocated: 0,
+            }],
+            StTableType::User,
+            StAccess::Public,
+            None,
+            None,
+        )
     }
 
     #[rustfmt::skip]
@@ -1260,19 +1267,20 @@ mod tests {
             "Foo".into(),
             map_array(basic_table_schema_cols()),
              map_array([
-                IdxSchema { id: seq_start,     table, col: 0, name: "id_idx", unique: true },
-                IdxSchema { id: seq_start + 1, table, col: 1, name: "name_idx", unique: true },
+                IndexRow { id: seq_start,     table, col: ColList::new(0.into()), name: "id_idx", },
+                IndexRow { id: seq_start + 1, table, col: ColList::new(1.into()), name: "name_idx", },
             ]),
             map_array([
-                ConstraintRow { constraint_id: seq_start,     table_id: table, columns: col(0), constraints: Constraints::unique(), constraint_name: "ct_Foo_id_unique" },
-                ConstraintRow { constraint_id: seq_start + 1, table_id: table, columns: col(1), constraints: Constraints::unique(), constraint_name: "ct_Foo_name_unique" }
+                ConstraintRow { constraint_id: seq_start,     table_id: table, unique_columns: col(0), constraint_name: "id_constraint" },
+                ConstraintRow { constraint_id: seq_start + 1, table_id: table, unique_columns: col(1), constraint_name: "name_constraint" }
             ]),
              map_array([
-                SequenceRow { id: seq_start, table, col_pos: 0, name: "seq_Foo_id", start: 1 }
+                SequenceRow { id: seq_start, table, col_pos: 0, name: "id_sequence", start: 1 }
             ]),
             StTableType::User,
             StAccess::Public,
             None,
+            None
         )
     }
 
@@ -1307,15 +1315,15 @@ mod tests {
         let query = query_st_tables(&ctx, &tx);
         #[rustfmt::skip]
         assert_eq!(query.scan_st_tables()?, map_array([
-            TableRow { id: ST_TABLE_ID.into(), name: ST_TABLE_NAME, ty: StTableType::System, access: StAccess::Public },
-            TableRow { id: ST_COLUMN_ID.into(), name: ST_COLUMN_NAME, ty: StTableType::System, access: StAccess::Public },
-            TableRow { id: ST_SEQUENCE_ID.into(), name: ST_SEQUENCE_NAME, ty: StTableType::System, access: StAccess::Public },
-            TableRow { id: ST_INDEX_ID.into(), name: ST_INDEX_NAME, ty: StTableType::System, access: StAccess::Public },
-            TableRow { id: ST_CONSTRAINT_ID.into(), name: ST_CONSTRAINT_NAME, ty: StTableType::System, access: StAccess::Public },
-            TableRow { id: ST_MODULE_ID.into(), name: ST_MODULE_NAME, ty: StTableType::System, access: StAccess::Public },
-            TableRow { id: ST_CLIENT_ID.into(), name: ST_CLIENT_NAME, ty: StTableType::System, access: StAccess::Public },
-            TableRow { id: ST_VAR_ID.into(), name: ST_VAR_NAME, ty: StTableType::System, access: StAccess::Public },
-            TableRow { id: ST_SCHEDULED_ID.into(), name: ST_SCHEDULED_NAME, ty: StTableType::System, access: StAccess::Public },
+            TableRow { id: ST_TABLE_ID.into(), name: ST_TABLE_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StTableFields::TableId.into()) },
+            TableRow { id: ST_COLUMN_ID.into(), name: ST_COLUMN_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
+            TableRow { id: ST_SEQUENCE_ID.into(), name: ST_SEQUENCE_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StSequenceFields::SequenceId.into()) },
+            TableRow { id: ST_INDEX_ID.into(), name: ST_INDEX_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StIndexFields::IndexId.into()) },
+            TableRow { id: ST_CONSTRAINT_ID.into(), name: ST_CONSTRAINT_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StConstraintFields::ConstraintId.into()) },
+            TableRow { id: ST_MODULE_ID.into(), name: ST_MODULE_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
+            TableRow { id: ST_CLIENT_ID.into(), name: ST_CLIENT_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
+            TableRow { id: ST_VAR_ID.into(), name: ST_VAR_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StVarFields::Name.into()) },
+            TableRow { id: ST_SCHEDULED_ID.into(), name: ST_SCHEDULED_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StScheduledFields::ScheduleId.into()) },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_columns()?, map_array([
@@ -1362,22 +1370,22 @@ mod tests {
             ColRow { table: ST_CLIENT_ID.into(), pos: 1, name: "address", ty: AlgebraicType::bytes()},
 
             ColRow { table: ST_VAR_ID.into(), pos: 0, name: "name", ty: AlgebraicType::String },
-            ColRow { table: ST_VAR_ID.into(), pos: 1, name: "value", ty: StVarValue::type_of() },
+            ColRow { table: ST_VAR_ID.into(), pos: 1, name: "value", ty: resolved_type_via_v9::<StVarValue>() },
 
             ColRow { table: ST_SCHEDULED_ID.into(), pos: 0, name: "table_id", ty: TableId::get_type() },
             ColRow { table: ST_SCHEDULED_ID.into(), pos: 1, name: "reducer_name", ty: AlgebraicType::String },
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_indexes()?, map_array([
-            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "idx_st_column_table_id_col_pos_unique", unique: true },
-            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "idx_st_index_index_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "idx_st_constraint_constraint_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "idx_st_client_identity_address_unique", unique: true },
-            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "idx_st_var_name_primary_key_unique", unique: true },
-            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "idx_st_scheduled_table_id_unique", unique: true },
+            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique",  },
+            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "idx_st_table_table_name_unique",  },
+            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "idx_st_column_table_id_col_pos_unique",  },
+            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique",  },
+            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "idx_st_index_index_id_primary_key_auto_unique",  },
+            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "idx_st_constraint_constraint_id_primary_key_auto_unique",  },
+            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "idx_st_client_identity_address_unique",  },
+            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "idx_st_var_name_primary_key_unique",  },
+            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "idx_st_scheduled_table_id_unique",  },
         ]));
         let start = FIRST_NON_SYSTEM_ID as i128;
         #[rustfmt::skip]
@@ -1395,15 +1403,15 @@ mod tests {
         ));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_constraints()?, map_array([
-            ConstraintRow { constraint_id: 1, table_id: ST_TABLE_ID.into(), columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_table_table_id_primary_key_auto" },
-            ConstraintRow { constraint_id: 2, table_id: ST_TABLE_ID.into(), columns: col(1), constraints: Constraints::unique(), constraint_name: "ct_st_table_table_name_unique" },
-            ConstraintRow { constraint_id: 3, table_id: ST_COLUMN_ID.into(), columns: col_list![0, 1], constraints: Constraints::unique(), constraint_name: "ct_st_column_table_id_col_pos_unique" },
-            ConstraintRow { constraint_id: 4, table_id: ST_SEQUENCE_ID.into(), columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_sequence_sequence_id_primary_key_auto" },
-            ConstraintRow { constraint_id: 5, table_id: ST_INDEX_ID.into(), columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_index_index_id_primary_key_auto" },
-            ConstraintRow { constraint_id: 6, table_id: ST_CONSTRAINT_ID.into(), columns: col(0), constraints: Constraints::primary_key_auto(), constraint_name: "ct_st_constraint_constraint_id_primary_key_auto" },
-            ConstraintRow { constraint_id: 7, table_id: ST_CLIENT_ID.into(), columns: col_list![0, 1], constraints: Constraints::unique(), constraint_name: "ct_st_client_identity_address_unique" },
-            ConstraintRow { constraint_id: 8, table_id: ST_VAR_ID.into(), columns: col(0), constraints: Constraints::primary_key(), constraint_name: "ct_st_var_name_primary_key" },
-            ConstraintRow { constraint_id: 9, table_id: ST_SCHEDULED_ID.into(), columns: col(0), constraints: Constraints::unique(), constraint_name: "ct_st_scheduled_table_id_unique" },
+            ConstraintRow { constraint_id: 1, table_id: ST_TABLE_ID.into(), unique_columns: col(0), constraint_name: "ct_st_table_table_id_primary_key_auto" },
+            ConstraintRow { constraint_id: 2, table_id: ST_TABLE_ID.into(), unique_columns: col(1), constraint_name: "ct_st_table_table_name_unique" },
+            ConstraintRow { constraint_id: 3, table_id: ST_COLUMN_ID.into(), unique_columns: col_list![0, 1], constraint_name: "ct_st_column_table_id_col_pos_unique" },
+            ConstraintRow { constraint_id: 4, table_id: ST_SEQUENCE_ID.into(), unique_columns: col(0), constraint_name: "ct_st_sequence_sequence_id_primary_key_auto" },
+            ConstraintRow { constraint_id: 5, table_id: ST_INDEX_ID.into(), unique_columns: col(0), constraint_name: "ct_st_index_index_id_primary_key_auto" },
+            ConstraintRow { constraint_id: 6, table_id: ST_CONSTRAINT_ID.into(), unique_columns: col(0), constraint_name: "ct_st_constraint_constraint_id_primary_key_auto" },
+            ConstraintRow { constraint_id: 7, table_id: ST_CLIENT_ID.into(), unique_columns: col_list![0, 1], constraint_name: "ct_st_client_identity_address_unique" },
+            ConstraintRow { constraint_id: 8, table_id: ST_VAR_ID.into(), unique_columns: col(0), constraint_name: "ct_st_var_name_primary_key" },
+            ConstraintRow { constraint_id: 9, table_id: ST_SCHEDULED_ID.into(), unique_columns: col(0), constraint_name: "ct_st_scheduled_table_id_unique" },
         ]));
 
         // Verify we get back the tables correctly with the proper ids...
@@ -1472,7 +1480,7 @@ mod tests {
         let table_rows = query.scan_st_tables_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
         assert_eq!(table_rows, map_array([
-            TableRow { id: FIRST_NON_SYSTEM_ID, name: "Foo", ty: StTableType::User, access: StAccess::Public }
+            TableRow { id: FIRST_NON_SYSTEM_ID, name: "Foo", ty: StTableType::User, access: StAccess::Public, primary_key: None }
         ]));
         let column_rows = query.scan_st_columns_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
@@ -1491,7 +1499,7 @@ mod tests {
         let table_rows = query.scan_st_tables_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
         assert_eq!(table_rows, map_array([
-            TableRow { id: FIRST_NON_SYSTEM_ID, name: "Foo", ty: StTableType::User, access: StAccess::Public }
+            TableRow { id: FIRST_NON_SYSTEM_ID, name: "Foo", ty: StTableType::User, access: StAccess::Public, primary_key: None }
         ]));
         let column_rows = query.scan_st_columns_by_col(ColId(0), &table_id.into())?;
         #[rustfmt::skip]
@@ -1566,16 +1574,20 @@ mod tests {
 
         datastore.create_index_mut_tx(
             &mut tx,
-            schema.table_id,
-            RawIndexDefV8::btree("id_idx".into(), ColId(0), true),
+            IndexSchema {
+                index_id: IndexId(0),
+                table_id,
+                index_name: "id_index".into(),
+                index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![0] }),
+            },
+            true,
         )?;
 
-        let expected_indexes = [IdxSchema {
+        let expected_indexes = [IndexRow {
             id: ST_RESERVED_SEQUENCE_RANGE + dropped_indexes + 1,
             table: FIRST_NON_SYSTEM_ID,
-            col: 0,
+            col: col_list![0],
             name: "id_idx",
-            unique: true,
         }]
         .map(Into::into);
         assert_eq!(
@@ -1771,26 +1783,31 @@ mod tests {
         datastore.commit_mut_tx_for_test(tx)?;
 
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
-        let index_def = RawIndexDefV8::btree("age_idx".into(), ColId(2), true);
-        datastore.create_index_mut_tx(&mut tx, table_id, index_def)?;
+        let index_def = IndexSchema {
+            index_id: IndexId(0),
+            table_id,
+            index_name: "age_idx".into(),
+            index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![2] }),
+        };
+        datastore.create_index_mut_tx(&mut tx, index_def, false)?;
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
         let seq_start = FIRST_NON_SYSTEM_ID;
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
         assert_eq!(index_rows, [
-            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "idx_st_column_table_id_col_pos_unique", unique: true },
-            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "idx_st_index_index_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "idx_st_constraint_constraint_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "idx_st_client_identity_address_unique", unique: true },
-            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "idx_st_var_name_primary_key_unique", unique: true },
-            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "idx_st_scheduled_table_id_unique", unique: true },
-            IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },
-            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx", unique: true },
-            IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "age_idx", unique: true },
+            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique",  },
+            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "idx_st_table_table_name_unique",  },
+            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "idx_st_column_table_id_col_pos_unique",  },
+            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique",  },
+            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "idx_st_index_index_id_primary_key_auto_unique",  },
+            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "idx_st_constraint_constraint_id_primary_key_auto_unique",  },
+            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "idx_st_client_identity_address_unique",  },
+            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "idx_st_var_name_primary_key_unique",  },
+            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "idx_st_scheduled_table_id_unique",  },
+            IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx",  },
+            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx",  },
+            IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "age_idx",  },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
@@ -1815,8 +1832,13 @@ mod tests {
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
-        let index_def = RawIndexDefV8::btree("age_idx".into(), ColId(2), true);
-        datastore.create_index_mut_tx(&mut tx, table_id, index_def)?;
+        let index_def = IndexSchema {
+            index_id: IndexId(0),
+            table_id,
+            index_name: "age_idx".into(),
+            index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![2] }),
+        };
+        datastore.create_index_mut_tx(&mut tx, index_def, false)?;
         datastore.commit_mut_tx_for_test(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
@@ -1826,18 +1848,18 @@ mod tests {
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
         assert_eq!(index_rows, [
-            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "idx_st_column_table_id_col_pos_unique", unique: true },
-            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "idx_st_index_index_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "idx_st_constraint_constraint_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "idx_st_client_identity_address_unique", unique: true },
-            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "idx_st_var_name_primary_key_unique", unique: true },
-            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "idx_st_scheduled_table_id_unique", unique: true },
-            IndexRow { id: seq_start    , table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },
-            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx", unique: true },
-            IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "age_idx", unique: true },
+            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique" },
+            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "idx_st_table_table_name_unique" },
+            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "idx_st_column_table_id_col_pos_unique" },
+            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique" },
+            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "idx_st_index_index_id_primary_key_auto_unique" },
+            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "idx_st_constraint_constraint_id_primary_key_auto_unique" },
+            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "idx_st_client_identity_address_unique" },
+            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "idx_st_var_name_primary_key_unique" },
+            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "idx_st_scheduled_table_id_unique" },
+            IndexRow { id: seq_start    , table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx" },
+            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx" },
+            IndexRow { id: seq_start + 2, table: FIRST_NON_SYSTEM_ID, col: col(2), name: "age_idx" },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         let result = datastore.insert_mut_tx(&mut tx, table_id, row);
@@ -1862,8 +1884,14 @@ mod tests {
         datastore.insert_mut_tx(&mut tx, table_id, row)?;
         datastore.commit_mut_tx_for_test(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
-        let index_def = RawIndexDefV8::btree("age_idx".into(), ColId(2), true);
-        datastore.create_index_mut_tx(&mut tx, table_id, index_def)?;
+        let index_def = IndexSchema {
+            index_id: IndexId(0),
+            table_id,
+            index_name: "age_idx".into(),
+            index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![2] }),
+        };
+        datastore.create_index_mut_tx(&mut tx, index_def, false)?;
+
         datastore.rollback_mut_tx_for_test(tx);
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
@@ -1873,17 +1901,17 @@ mod tests {
         let index_rows = query.scan_st_indexes()?;
         #[rustfmt::skip]
         assert_eq!(index_rows, [
-            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "idx_st_table_table_name_unique", unique: true },
-            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "idx_st_column_table_id_col_pos_unique", unique: true },
-            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "idx_st_index_index_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "idx_st_constraint_constraint_id_primary_key_auto_unique", unique: true },
-            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "idx_st_client_identity_address_unique", unique: true },
-            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "idx_st_var_name_primary_key_unique", unique: true },
-            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "idx_st_scheduled_table_id_unique", unique: true },
-            IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx", unique: true },
-            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx", unique: true },
+            IndexRow { id: 1, table: ST_TABLE_ID.into(), col: col(0), name: "idx_st_table_table_id_primary_key_auto_unique" },
+            IndexRow { id: 2, table: ST_TABLE_ID.into(), col: col(1), name: "idx_st_table_table_name_unique" },
+            IndexRow { id: 3, table: ST_COLUMN_ID.into(), col: col_list![0, 1], name: "idx_st_column_table_id_col_pos_unique" },
+            IndexRow { id: 4, table: ST_SEQUENCE_ID.into(), col: col(0), name: "idx_st_sequence_sequence_id_primary_key_auto_unique" },
+            IndexRow { id: 5, table: ST_INDEX_ID.into(), col: col(0), name: "idx_st_index_index_id_primary_key_auto_unique" },
+            IndexRow { id: 6, table: ST_CONSTRAINT_ID.into(), col: col(0), name: "idx_st_constraint_constraint_id_primary_key_auto_unique" },
+            IndexRow { id: 7, table: ST_CLIENT_ID.into(), col: col_list![0, 1], name: "idx_st_client_identity_address_unique" },
+            IndexRow { id: 8, table: ST_VAR_ID.into(), col: col(0), name: "idx_st_var_name_primary_key_unique" },
+            IndexRow { id: 9, table: ST_SCHEDULED_ID.into(), col: col(0), name: "idx_st_scheduled_table_id_unique" },
+            IndexRow { id: seq_start,     table: FIRST_NON_SYSTEM_ID, col: col(0), name: "id_idx" },
+            IndexRow { id: seq_start + 1, table: FIRST_NON_SYSTEM_ID, col: col(1), name: "name_idx" },
         ].map(Into::into));
         let row = u32_str_u32(0, "Bar", 18); // 0 will be ignored.
         datastore.insert_mut_tx(&mut tx, table_id, row)?;

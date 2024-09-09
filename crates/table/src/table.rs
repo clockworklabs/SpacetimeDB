@@ -23,6 +23,7 @@ use core::ops::RangeBounds;
 use core::{fmt, ptr};
 use derive_more::{Add, AddAssign, From, Sub};
 use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_lib::{bsatn::DecodeError, de::DeserializeOwned};
 use spacetimedb_primitives::{ColId, ColList, IndexId};
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
@@ -138,6 +139,16 @@ pub enum InsertError {
     /// Some index related error occurred.
     #[error(transparent)]
     IndexError(#[from] UniqueConstraintViolation),
+}
+
+/// Errors that can occur while trying to read a value via bsatn.
+#[derive(Error, Debug)]
+pub enum ReadViaBsatnError {
+    #[error(transparent)]
+    BSatnError(#[from] BsatnError),
+
+    #[error(transparent)]
+    DecodeError(#[from] DecodeError),
 }
 
 // Public API:
@@ -800,6 +811,17 @@ impl<'a> RowRef<'a> {
         }
     }
 
+    /// Encode the row referred to by `self` into a `Vec<u8>` using BSATN and then deserialize it.
+    /// The passed buffer is allowed to be in an arbitrary state before and after this operation.
+    pub fn read_via_bsatn<T>(&self, scratch: &mut Vec<u8>) -> Result<T, ReadViaBsatnError>
+    where
+        T: DeserializeOwned,
+    {
+        scratch.clear();
+        self.to_bsatn_extend(scratch)?;
+        Ok(bsatn::from_slice::<T>(scratch)?)
+    }
+
     /// Return the number of bytes in the blob store to which this object holds a reference.
     ///
     /// Used to compute the table's `blob_store_bytes` when reconstructing a snapshot.
@@ -1151,40 +1173,47 @@ pub(crate) mod test {
     use crate::var_len::VarLenGranule;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
-    use spacetimedb_lib::db::raw_def::{IndexType, RawColumnDefV8, RawIndexDefV8, RawTableDefV8};
+    use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder};
+    use spacetimedb_primitives::{col_list, TableId};
     use spacetimedb_sats::bsatn::to_vec;
     use spacetimedb_sats::proptest::generate_typed_row;
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
+    use spacetimedb_schema::def::ModuleDef;
+    use spacetimedb_schema::schema::Schema as _;
 
+    /// Create a `Table` from a `ProductType` without validation.
     pub(crate) fn table(ty: ProductType) -> Table {
-        let def = RawTableDefV8::from_product("", ty);
-        #[allow(deprecated)]
-        let schema = TableSchema::from_def(0.into(), def);
+        // Use a fast path here to avoid slowing down Miri in the proptests.
+        // Does not perform validation.
+        let schema = TableSchema::from_product_type(ty);
         Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
     }
 
     #[test]
     fn unique_violation_error() {
-        let index_name = "my_unique_constraint";
-        // Build a table for (I32, I32) with a unique index on the 0th column.
-        let table_def = RawTableDefV8::new(
-            "UniqueIndexed".into(),
-            ["unique_col", "other_col"]
-                .map(|c| RawColumnDefV8 {
-                    col_name: c.into(),
-                    col_type: AlgebraicType::I32,
-                })
-                .into(),
-        )
-        .with_indexes(vec![RawIndexDefV8 {
-            columns: 0.into(),
-            index_name: index_name.into(),
-            is_unique: true,
-            index_type: IndexType::BTree,
-        }]);
-        #[allow(deprecated)]
-        let schema = TableSchema::from_def(0.into(), table_def);
+        let table_name = "UniqueIndexed";
+        let constraint_name = "my_unique_constraint";
+        let index_name = "my_index";
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(
+                table_name,
+                ProductType::from([("unique_col", AlgebraicType::I32), ("other_col", AlgebraicType::I32)]),
+                true,
+            )
+            .with_unique_constraint(0, Some(constraint_name.into()))
+            .with_index(
+                RawIndexAlgorithm::BTree { columns: col_list![0] },
+                "accessor_name_doesnt_matter",
+                Some(index_name.into()),
+            );
+
+        let def: ModuleDef = builder.finish().try_into().expect("Failed to build schema");
+
+        let schema = TableSchema::from_module_def(&def, def.table(table_name).unwrap(), (), TableId(0));
+        assert_eq!(schema.indexes.len(), 1);
         let index_schema = schema.indexes[0].clone();
+
         let mut table = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
         let cols = ColList::new(0.into());
 

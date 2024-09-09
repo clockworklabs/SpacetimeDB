@@ -7,6 +7,7 @@ use spacetimedb_primitives::{ColId, ColList, Constraints, TableId};
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{algebraic_type, AlgebraicType};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -92,16 +93,26 @@ pub struct Header {
     pub table_id: TableId,
     pub table_name: Box<str>,
     pub fields: Vec<Column>,
-    pub constraints: Vec<(ColList, Constraints)>,
+    pub constraints: BTreeMap<ColList, Constraints>,
 }
 
 impl Header {
+    /// Create a new header.
+    /// Note that equal ColLists with different Constraints will have their constraints unioned.
     pub fn new(
         table_id: TableId,
         table_name: Box<str>,
         fields: Vec<Column>,
-        constraints: Vec<(ColList, Constraints)>,
+        uncompressed_constraints: impl IntoIterator<Item = (ColList, Constraints)>,
     ) -> Self {
+        let mut constraints = BTreeMap::new();
+        for (col_list, constraint) in uncompressed_constraints {
+            constraints
+                .entry(col_list)
+                .or_insert(Constraints::unset())
+                .push(constraint);
+        }
+
         Self {
             table_id,
             table_name,
@@ -140,13 +151,13 @@ impl Header {
     }
 
     /// Copy the [Constraints] that are referenced in the list of `for_columns`
-    fn retain_constraints(&self, for_columns: &ColList) -> Vec<(ColList, Constraints)> {
+    fn retain_constraints(&self, for_columns: &ColList) -> BTreeMap<ColList, Constraints> {
         // Copy the constraints of the selected columns and retain the multi-column ones...
         self.constraints
             .iter()
             // Keep constraints with a col list where at least one col is in `for_columns`.
             .filter(|(cols, _)| cols.iter().any(|c| for_columns.contains(c)))
-            .cloned()
+            .map(|(cols, constraints)| (cols.clone(), constraints.clone()))
             .collect()
     }
 
@@ -158,28 +169,43 @@ impl Header {
 
     /// Project the [ColExpr]s & the [Constraints] that referenced them
     pub fn project(&self, cols: &[ColExpr]) -> Result<Self, RelationError> {
-        let mut p = Vec::with_capacity(cols.len());
+        let mut fields = Vec::with_capacity(cols.len());
         let mut to_keep = ColList::with_capacity(cols.len() as _);
 
         for (pos, col) in cols.iter().enumerate() {
             match col {
                 ColExpr::Col(col) => {
                     to_keep.push(*col);
-                    p.push(self.fields[col.idx()].clone());
+                    fields.push(self.fields[col.idx()].clone());
                 }
                 ColExpr::Value(val) => {
+                    // TODO: why should this field name be relevant?
+                    // We should generate immediate names instead.
                     let field = FieldName::new(self.table_id, pos.into());
                     let ty = val.type_of().ok_or_else(|| {
                         RelationError::TypeInference(field, TypeError::CannotInferType { value: val.clone() })
                     })?;
-                    p.push(Column::new(field, ty));
+                    fields.push(Column::new(field, ty));
                 }
             }
         }
 
         let constraints = self.retain_constraints(&to_keep);
 
-        Ok(Self::new(self.table_id, self.table_name.clone(), p, constraints))
+        Ok(Self::new(self.table_id, self.table_name.clone(), fields, constraints))
+    }
+
+    /// Project the ourself onto the `ColList`, keeping constraints that reference the columns in the ColList.
+    /// Does not change `ColIDs`.
+    pub fn project_col_list(&self, cols: &ColList) -> Self {
+        let mut fields = Vec::with_capacity(cols.len() as usize);
+
+        for col in cols.iter() {
+            fields.push(self.fields[col.idx()].clone());
+        }
+
+        let constraints = self.retain_constraints(cols);
+        Self::new(self.table_id, self.table_name.clone(), fields, constraints)
     }
 
     /// Adds the fields &  [Constraints] from `right` to this [`Header`],

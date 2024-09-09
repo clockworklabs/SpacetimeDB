@@ -247,6 +247,7 @@ pub struct RawIndexDefV9 {
 }
 
 /// Data specifying an index algorithm.
+/// New fields MUST be added to the END of this enum, to maintain ABI compatibility.
 #[non_exhaustive]
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
@@ -308,6 +309,8 @@ pub struct RawConstraintDefV9 {
     pub data: RawConstraintDataV9,
 }
 
+/// Raw data attached to a constraint.
+/// New fields MUST be added to the END of this enum, to maintain ABI compatibility.
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
@@ -436,7 +439,12 @@ impl RawModuleDefV9Builder {
     /// Create a table builder.
     ///
     /// Does not validate that the product_type_ref is valid; this is left to the module validation code.
-    pub fn build_table(&mut self, name: RawIdentifier, product_type_ref: AlgebraicTypeRef) -> RawTableDefBuilder {
+    pub fn build_table(
+        &mut self,
+        name: impl Into<RawIdentifier>,
+        product_type_ref: AlgebraicTypeRef,
+    ) -> RawTableDefBuilder {
+        let name = name.into();
         RawTableDefBuilder {
             module_def: &mut self.module,
             table: RawTableDefV9 {
@@ -613,7 +621,8 @@ impl<'a> RawTableDefBuilder<'a> {
     }
 
     /// Generates a [UniqueConstraintDef] using the supplied `columns`.
-    pub fn with_unique_constraint(mut self, columns: ColList, name: Option<RawIdentifier>) -> Self {
+    pub fn with_unique_constraint(mut self, columns: impl Into<ColList>, name: Option<RawIdentifier>) -> Self {
+        let columns = columns.into();
         let name = name.unwrap_or_else(|| self.generate_unique_constraint_name(&columns));
         self.table.constraints.push(RawConstraintDefV9 {
             name,
@@ -633,10 +642,11 @@ impl<'a> RawTableDefBuilder<'a> {
     pub fn with_index(
         mut self,
         algorithm: RawIndexAlgorithm,
-        accessor_name: RawIdentifier,
+        accessor_name: impl Into<RawIdentifier>,
         name: Option<RawIdentifier>,
     ) -> Self {
         let name = name.unwrap_or_else(|| self.generate_index_name(&algorithm));
+        let accessor_name = accessor_name.into();
 
         self.table.indexes.push(RawIndexDefV9 {
             name,

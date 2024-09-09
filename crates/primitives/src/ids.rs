@@ -53,3 +53,4 @@ system_id!(SequenceId, u32);
 system_id!(IndexId, u32);
 system_id!(ConstraintId, u32);
 system_id!(ColId, u16);
+system_id!(ScheduleId, u32);

@@ -2,26 +2,28 @@ use anyhow::Context;
 use bytes::Bytes;
 use once_cell::unsync::Lazy;
 use spacetimedb_client_api_messages::timestamp::Timestamp;
+use spacetimedb_schema::auto_migrate::ponder_migrate;
+use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::schema::{Schema, TableSchema};
 use std::sync::Arc;
 use std::time::Duration;
 
 use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::{bsatn, Address, ModuleValidationError, RawModuleDef, RawModuleDefV8, TableDesc};
+use spacetimedb_lib::{bsatn, Address, RawModuleDef};
 
 use super::instrumentation::CallTimes;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::SystemLogger;
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::system_tables::{StClientsRow, ST_CLIENT_ID};
+use crate::db::datastore::system_tables::{StClientRow, ST_CLIENT_ID};
 use crate::db::datastore::traits::{IsolationLevel, Program};
 use crate::energy::{EnergyMonitor, EnergyQuanta, ReducerBudget, ReducerFingerprint};
 use crate::execution_context::{self, ExecutionContext, ReducerContext};
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_host::{
-    CallReducerParams, DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo,
-    ModuleInstance, ReducersMap, UpdateDatabaseResult,
+    CallReducerParams, DatabaseUpdate, EventStatus, Module, ModuleEvent, ModuleFunctionCall, ModuleInfo, ModuleInstance,
 };
-use crate::host::{ArgsTuple, EntityDef, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler};
+use crate::host::{ArgsTuple, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult};
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContext;
@@ -29,7 +31,6 @@ use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::const_unwrap;
 use crate::util::prometheus_handle::HistogramExt;
 use crate::worker_metrics::WORKER_METRICS;
-use spacetimedb_lib::db::raw_def::RawTableDefV8;
 
 use super::*;
 
@@ -92,7 +93,7 @@ pub enum InitializationError {
     #[error(transparent)]
     Validation(#[from] ValidationError),
     #[error(transparent)]
-    ModuleValidation(#[from] ModuleValidationError),
+    ModuleValidation(#[from] spacetimedb_schema::error::ValidationErrors),
     #[error("setup function returned an error: {0}")]
     Setup(Box<str>),
     #[error("wasm trap while calling {func:?}")]
@@ -154,54 +155,19 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         let desc = instance.extract_descriptions()?;
         let desc: RawModuleDef = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
-        let desc: RawModuleDefV8 = match desc {
-            RawModuleDef::V8BackCompat(v8) => v8,
-            _ => {
-                return Err(InitializationError::Describe(
-                    DescribeError::UnimplementedRawModuleDefVersion,
-                ))
-            }
-        };
-        desc.validate_reducers()?;
-        let orig_module_def = desc.clone();
-        let RawModuleDefV8 {
-            mut typespace,
-            mut tables,
-            reducers,
-            misc_exports: _,
-        } = desc;
-        // Tables can't handle typerefs, let alone recursive types, so we need
-        // to walk over the columns and inline all typerefs as the resolved
-        // types to prevent runtime panics when trying to e.g. insert rows.
-        // TODO: support type references properly in the future.
-        for table in &mut tables {
-            for col in &mut table.schema.columns {
-                typespace.inline_typerefs_in_type(&mut col.col_type)?;
-            }
-        }
-        let catalog = itertools::chain(
-            tables
-                .into_iter()
-                .map(|x| (x.schema.table_name.clone(), EntityDef::Table(x))),
-            reducers
-                .iter()
-                .filter(|r| !(r.name.starts_with("__") && r.name.ends_with("__")))
-                .map(|x| (x.name.clone(), EntityDef::Reducer(x.clone()))),
-        )
-        .collect();
-        let reducers = ReducersMap(reducers.into_iter().map(|x| (x.name.clone(), x)).collect());
 
-        let info = Arc::new(ModuleInfo {
-            module_def: orig_module_def,
-            identity: database_instance_context.owner_identity,
-            address: database_instance_context.address,
+        // Perform a bunch of validation on the raw definition.
+        let def: ModuleDef = desc.try_into()?;
+
+        // Note: assigns Reducer IDs based on the alphabetical order of reducer names.
+        let info = ModuleInfo::new(
+            def,
+            database_instance_context.owner_identity,
+            database_instance_context.address,
             module_hash,
-            typespace,
-            reducers,
-            catalog,
             log_tx,
-            subscriptions: database_instance_context.subscriptions.clone(),
-        });
+            database_instance_context.subscriptions.clone(),
+        );
 
         let func_names = Arc::new(func_names);
         let mut module = WasmModuleHostActor {
@@ -285,13 +251,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 }
 
-fn get_tabledefs(info: &ModuleInfo) -> impl Iterator<Item = anyhow::Result<RawTableDefV8>> + '_ {
-    info.catalog
-        .values()
-        .filter_map(EntityDef::as_table)
-        .map(|table| TableDesc::into_table_def(info.typespace.with_type(table)))
-}
-
 impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     fn trapped(&self) -> bool {
         self.trapped
@@ -306,10 +265,13 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let (tx, ()) = stdb
             .with_auto_rollback(&ctx, tx, |tx| {
-                for schema in get_tabledefs(&self.info) {
-                    let schema = schema?;
-                    let table_name = schema.table_name.clone();
+                let mut table_defs: Vec<_> = self.info.module_def.tables().collect();
+                table_defs.sort_by(|a, b| a.name.cmp(&b.name));
+
+                for def in table_defs {
+                    let table_name = &def.name;
                     self.system_logger().info(&format!("Creating table `{table_name}`"));
+                    let schema = TableSchema::from_module_def(&self.info.module_def, def, (), 0.into());
                     stdb.create_table(tx, schema)
                         .with_context(|| format!("failed to create table {table_name}"))?;
                 }
@@ -320,7 +282,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
             })
             .inspect_err(|e| log::error!("{e:?}"))?;
 
-        let rcr = match self.info.reducers.lookup_id(INIT_DUNDER) {
+        let rcr = match self.info.reducers_map.lookup_id(INIT_DUNDER) {
             None => {
                 stdb.commit_tx(&ctx, tx)?;
                 None
@@ -352,9 +314,18 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
     }
 
     #[tracing::instrument(skip_all)]
-    fn update_database(&mut self, program: Program) -> Result<UpdateDatabaseResult, anyhow::Error> {
-        let proposed_tables = get_tabledefs(&self.info).collect::<anyhow::Result<Vec<_>>>()?;
-
+    fn update_database(
+        &mut self,
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
+    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        let plan = ponder_migrate(&old_module_info.module_def, &self.info.module_def);
+        let plan = match plan {
+            Ok(plan) => plan,
+            Err(errs) => {
+                return Ok(UpdateDatabaseResult::AutoMigrateError(errs));
+            }
+        };
         let stdb = &*self.database_instance_context().relational_db;
         let ctx = Lazy::new(|| ExecutionContext::internal(stdb.address()));
 
@@ -363,21 +334,17 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
         let (tx, _) = stdb.with_auto_rollback(&ctx, tx, |tx| stdb.update_program(tx, HostType::Wasm, program))?;
         self.system_logger().info(&format!("Updated program to {program_hash}"));
 
-        let (tx, res) = stdb.with_auto_rollback(&ctx, tx, |tx| {
-            crate::db::update::update_database(stdb, tx, proposed_tables, self.system_logger())
-        })?;
-        match res {
-            Err(e) => {
-                self.system_logger().warn("Database update failed");
-                stdb.rollback_mut_tx(&ctx, tx);
-                Ok(Err(e))
-            }
-            Ok(()) => {
-                stdb.commit_tx(&ctx, tx)?;
+        stdb.with_auto_rollback(&ctx, tx, |tx| {
+            let result = crate::db::update::update_database(stdb, tx, plan, self.system_logger());
+
+            if let Err(e) = &result {
+                self.system_logger().warn(&format!("Database update failed: {e}"));
+            } else {
                 self.system_logger().info("Database updated");
-                Ok(Ok(()))
             }
-        }
+            result
+        })?;
+        Ok(UpdateDatabaseResult::UpdatePerformed)
     }
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
@@ -419,7 +386,11 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let dbic = self.database_instance_context();
         let stdb = &*dbic.relational_db.clone();
         let address = dbic.address;
-        let reducer_name = &*self.info.reducers[reducer_id].name;
+        let reducer_name = &*self
+            .info
+            .reducers_map
+            .lookup_name(reducer_id)
+            .expect("reducer not found");
 
         let _outer_span = tracing::trace_span!("call_reducer",
             reducer_name,
@@ -566,7 +537,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
     fn insert_st_client(&self, tx: &mut MutTxId, identity: Identity, address: Address) -> Result<(), DBError> {
         let db = &*self.database_instance_context().relational_db;
-        let row = &StClientsRow { identity, address };
+        let row = &StClientRow { identity, address };
 
         db.insert(tx, ST_CLIENT_ID, row.into()).map(|_| ())
     }

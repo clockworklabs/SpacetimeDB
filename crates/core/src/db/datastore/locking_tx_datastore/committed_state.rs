@@ -8,11 +8,12 @@ use crate::{
     db::{
         datastore::{
             system_tables::{
-                system_tables, StColumnRow, StConstraintRow, StIndexRow, StSequenceRow, StTableFields, StTableRow,
-                SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME,
-                ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX, ST_INDEX_NAME,
-                ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE, ST_SCHEDULED_ID, ST_SCHEDULED_IDX,
-                ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX,
+                system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexAlgorithm, StIndexRow,
+                StSequenceRow, StTableFields, StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID,
+                ST_COLUMN_IDX, ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_CONSTRAINT_NAME, ST_INDEX_ID,
+                ST_INDEX_IDX, ST_INDEX_NAME, ST_MODULE_ID, ST_MODULE_IDX, ST_RESERVED_SEQUENCE_RANGE, ST_SCHEDULED_ID,
+                ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX,
+                ST_VAR_ID, ST_VAR_IDX,
             },
             traits::TxData,
         },
@@ -24,12 +25,12 @@ use crate::{
 use anyhow::anyhow;
 use core::ops::RangeBounds;
 use itertools::Itertools;
-use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_data_structures::map::{HashSet, IntMap};
 use spacetimedb_lib::{
     address::Address,
     db::auth::{StAccess, StTableType},
 };
-use spacetimedb_primitives::{ColList, IndexId, TableId};
+use spacetimedb_primitives::{ColList, ColSet, IndexId, TableId};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_table::{
@@ -107,6 +108,8 @@ fn ignore_duplicate_insert_error<T>(res: std::result::Result<T, InsertError>) ->
 }
 
 impl CommittedState {
+    /// Extremely delicate function to bootstrap the system tables.
+    /// Don't update this unless you know what you're doing.
     pub(super) fn bootstrap_system_tables(&mut self, database_address: Address) -> Result<()> {
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
@@ -132,6 +135,7 @@ impl CommittedState {
                 table_name: schema.table_name.clone(),
                 table_type: StTableType::System,
                 table_access: StAccess::Public,
+                table_primary_key: None,
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_TABLES.
@@ -146,7 +150,7 @@ impl CommittedState {
                 table_id: col.table_id,
                 col_pos: col.col_pos,
                 col_name: col.col_name,
-                col_type: col.col_type,
+                col_type: col.col_type.into(),
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_COLUMNS.
@@ -164,7 +168,7 @@ impl CommittedState {
         for (i, constraint) in ref_schemas
             .iter()
             .flat_map(|x| &x.constraints)
-            .sorted_by_key(|x| (x.table_id, &x.columns))
+            .sorted_by_key(|x| (x.table_id, x.data.unique_columns()))
             .cloned()
             .enumerate()
         {
@@ -173,10 +177,9 @@ impl CommittedState {
             let constraint_id = (i + 1).into();
             let row = StConstraintRow {
                 constraint_id,
-                columns: constraint.columns,
                 constraint_name: constraint.constraint_name,
-                constraints: constraint.constraints,
                 table_id: constraint.table_id,
+                constraint_data: constraint.data.into(),
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_CONSTRAINTS.
@@ -191,7 +194,7 @@ impl CommittedState {
         for (i, index) in ref_schemas
             .iter()
             .flat_map(|x| &x.indexes)
-            .sorted_by_key(|x| (x.table_id, &x.columns))
+            .sorted_by_key(|x| (x.table_id, x.index_algorithm.columns()))
             .cloned()
             .enumerate()
         {
@@ -201,10 +204,8 @@ impl CommittedState {
             let row = StIndexRow {
                 index_id,
                 table_id: index.table_id,
-                index_type: index.index_type,
-                columns: index.columns,
                 index_name: index.index_name,
-                is_unique: index.is_unique,
+                index_algorithm: index.index_algorithm.into(),
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_INDEXES.
@@ -223,6 +224,7 @@ impl CommittedState {
         self.create_table(ST_VAR_ID, schemas[ST_VAR_IDX].clone());
 
         self.create_table(ST_SCHEDULED_ID, schemas[ST_SCHEDULED_IDX].clone());
+
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store) =
             self.get_table_and_blob_store_or_create(ST_SEQUENCE_ID, &schemas[ST_SEQUENCE_IDX]);
@@ -327,14 +329,32 @@ impl CommittedState {
             .scan_rows(&self.blob_store)
             .map(StIndexRow::try_from)
             .collect::<Result<Vec<_>>>()?;
+
+        let st_constraints = self.tables.get(&ST_CONSTRAINT_ID).unwrap();
+        let unique_constraints: HashSet<(TableId, ColSet)> = st_constraints
+            .scan_rows(&self.blob_store)
+            .map(StConstraintRow::try_from)
+            .filter_map(Result::ok)
+            .filter_map(|constraint| match constraint.constraint_data {
+                StConstraintData::Unique { columns } => Some((constraint.table_id, columns)),
+                _ => None,
+            })
+            .collect();
+
         for index_row in rows {
             let Some((table, blob_store)) = self.get_table_and_blob_store(index_row.table_id) else {
                 panic!("Cannot create index for table which doesn't exist in committed state");
             };
-            let index = table.new_index(index_row.index_id, &index_row.columns, index_row.is_unique)?;
-            table.insert_index(blob_store, index_row.columns.clone(), index);
+            let columns = match index_row.index_algorithm {
+                StIndexAlgorithm::BTree { columns } => columns,
+                _ => unimplemented!("Only BTree indexes are supported"),
+            };
+            let is_unique = unique_constraints.contains(&(index_row.table_id, (&columns).into()));
+
+            let index = table.new_index(index_row.index_id, &columns, is_unique)?;
+            table.insert_index(blob_store, columns.clone(), index);
             self.index_id_map
-                .insert(index_row.index_id, (index_row.table_id, index_row.columns));
+                .insert(index_row.index_id, (index_row.table_id, columns));
         }
         Ok(())
     }

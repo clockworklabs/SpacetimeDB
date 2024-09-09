@@ -5,9 +5,10 @@ use std::sync::{MutexGuard, PoisonError};
 
 use hex::FromHexError;
 use spacetimedb_sats::AlgebraicType;
+use spacetimedb_schema::error::ValidationErrors;
 use spacetimedb_snapshot::SnapshotError;
 use spacetimedb_table::read_column;
-use spacetimedb_table::table::{self, UniqueConstraintViolation};
+use spacetimedb_table::table::{self, ReadViaBsatnError, UniqueConstraintViolation};
 use thiserror::Error;
 
 use crate::client::ClientActorId;
@@ -210,6 +211,10 @@ pub enum DBError {
     #[error(transparent)]
     // Box the inner [`SnapshotError`] to keep Clippy quiet about large `Err` variants.
     Snapshot(#[from] Box<SnapshotError>),
+    #[error("Error reading a value from a table through BSATN: {0}")]
+    ReadViaBsatnError(#[from] ReadViaBsatnError),
+    #[error("Module validation errors: {0}")]
+    ModuleValidationErrors(#[from] ValidationErrors),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

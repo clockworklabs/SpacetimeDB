@@ -5,6 +5,39 @@ use spacetimedb_sats::WithTypespace;
 
 pub type Result<T> = std::result::Result<T, ErrorStream<AutoMigrateError>>;
 
+/// A plan for a migration.
+#[derive(Debug)]
+pub enum MigratePlan<'def> {
+    Manual(ManualMigratePlan<'def>),
+    Auto(AutoMigratePlan<'def>),
+}
+
+impl<'def> MigratePlan<'def> {
+    /// Get the old `ModuleDef` for this migration plan.
+    pub fn old_def(&self) -> &'def ModuleDef {
+        match self {
+            MigratePlan::Manual(plan) => plan.old,
+            MigratePlan::Auto(plan) => plan.old,
+        }
+    }
+
+    /// Get the new `ModuleDef` for this migration plan.
+    pub fn new_def(&self) -> &'def ModuleDef {
+        match self {
+            MigratePlan::Manual(plan) => plan.new,
+            MigratePlan::Auto(plan) => plan.new,
+        }
+    }
+}
+
+/// A plan for a manual migration.
+/// `new` must have a reducer marked with `Lifecycle::Update`.
+#[derive(Debug)]
+pub struct ManualMigratePlan<'def> {
+    pub old: &'def ModuleDef,
+    pub new: &'def ModuleDef,
+}
+
 /// A plan for an automatic migration.
 #[derive(Debug)]
 pub struct AutoMigratePlan<'def> {
@@ -13,6 +46,7 @@ pub struct AutoMigratePlan<'def> {
     /// The new database definition.
     pub new: &'def ModuleDef,
     /// The checks to perform before the automatic migration.
+    /// There is also an implied check: that the schema in the database is compatible with the old ModuleDef.
     pub prechecks: Vec<AutoMigratePrecheck<'def>>,
     /// The migration steps to perform.
     /// Order should not matter, as the steps are independent.
@@ -98,6 +132,15 @@ pub enum AutoMigrateError {
         old_accessor: Option<Identifier>,
         new_accessor: Option<Identifier>,
     },
+}
+
+/// Construct a migration plan.
+/// If `new` has an `__update__` reducer, return a manual migration plan.
+/// Otherwise, try to plan an automatic migration. This may fail.
+pub fn ponder_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> Result<MigratePlan<'def>> {
+    // TODO(1.0): Implement this function.
+    // Currently we only can do automatic migrations.
+    ponder_auto_migrate(old, new).map(MigratePlan::Auto)
 }
 
 /// Construct an automatic migration plan, or reject with reasons why automatic migration can't be performed.

@@ -26,12 +26,13 @@ use parking_lot::RwLock;
 use spacetimedb_commitlog as commitlog;
 use spacetimedb_durability::{self as durability, Durability, TxOffset};
 use spacetimedb_lib::address::Address;
-use spacetimedb_lib::db::auth::{StAccess, StTableType};
-use spacetimedb_lib::db::raw_def::{RawColumnDefV8, RawIndexDefV8, RawSequenceDefV8, RawTableDefV8};
+use spacetimedb_lib::db::auth::StAccess;
+use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::def::{ModuleDef, TableDef};
+use spacetimedb_schema::schema::{IndexSchema, Schema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
@@ -59,6 +60,9 @@ type RowCountFn = Arc<dyn Fn(TableId, &str) -> i64 + Send + Sync>;
 pub type DiskSizeFn = Arc<dyn Fn() -> io::Result<u64> + Send + Sync>;
 
 pub type Txdata = commitlog::payload::Txdata<ProductValue>;
+
+/// The only version modules can have at the moment.
+pub const ONLY_MODULE_VERSION: &str = "0.0.1";
 
 /// The set of clients considered connected to the database.
 ///
@@ -350,14 +354,15 @@ impl RelationalDB {
             return Err(anyhow!("database {} already initialized", self.address).into());
         }
         let row = StModuleRow {
-            database_address: self.address,
-            owner_identity: self.owner_identity,
+            database_address: self.address.into(),
+            owner_identity: self.owner_identity.into(),
 
             program_kind: match host_type {
                 HostType::Wasm => WASM_MODULE,
             },
             program_hash: program.hash,
             program_bytes: program.bytes,
+            module_version: ONLY_MODULE_VERSION.into(),
         };
         self.insert(tx, ST_MODULE_ID, row.into()).map(drop)
     }
@@ -520,7 +525,7 @@ impl RelationalDB {
         table_id: TableId,
     ) -> Result<bool, DBError> {
         tx.schema_for_table(ctx, table_id)
-            .map(|schema| schema.scheduled.is_some())
+            .map(|schema| schema.schedule.is_some())
     }
 
     pub fn decode_column(
@@ -805,19 +810,42 @@ impl RelationalDB {
 }
 
 impl RelationalDB {
-    pub fn create_table<T: Into<RawTableDefV8>>(&self, tx: &mut MutTx, schema: T) -> Result<TableId, DBError> {
-        self.inner.create_table_mut_tx(tx, schema.into())
+    /// Create a table with a given schema.
+    /// The schema should have all IDs set to 0.
+    pub fn create_table(&self, tx: &mut MutTx, schema: TableSchema) -> Result<TableId, DBError> {
+        self.inner.create_table_mut_tx(tx, schema)
     }
 
-    fn col_def_for_test(schema: &[(&str, AlgebraicType)]) -> Vec<RawColumnDefV8> {
-        schema
-            .iter()
-            .cloned()
-            .map(|(col_name, col_type)| RawColumnDefV8 {
-                col_name: col_name.into(),
-                col_type,
-            })
-            .collect()
+    pub fn create_table_for_test_with_the_works(
+        &self,
+        name: &str,
+        schema: &[(&str, AlgebraicType)],
+        indexes: &[(ColList, &str)],
+        access: StAccess,
+    ) -> Result<TableId, DBError> {
+        let mut module_def_builder = RawModuleDefV9Builder::new();
+        let mut table_builder = module_def_builder
+            .build_table_with_new_type(name, ProductType::from_iter(schema.iter().cloned()), true)
+            .with_access(access.into());
+
+        for (columns, name) in indexes {
+            table_builder = table_builder.with_index(
+                RawIndexAlgorithm::BTree {
+                    columns: columns.clone(),
+                },
+                "accessor_name_doesnt_matter",
+                Some((*name).into()),
+            );
+        }
+        table_builder.finish();
+        let module_def: ModuleDef = module_def_builder.finish().try_into()?;
+
+        let table: &TableDef = module_def.table(name).expect("table not found");
+
+        // Recursively sets all IDs to 0.
+        let schema = TableSchema::from_module_def(&module_def, table, (), 0.into());
+
+        self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
     }
 
     pub fn create_table_for_test_with_access(
@@ -827,18 +855,11 @@ impl RelationalDB {
         indexes: &[(ColId, &str)],
         access: StAccess,
     ) -> Result<TableId, DBError> {
-        let indexes = indexes
-            .iter()
-            .copied()
-            .map(|(col_id, index_name)| RawIndexDefV8::btree(index_name.into(), col_id, false))
+        let indexes: Vec<(ColList, &str)> = indexes
+            .into_iter()
+            .map(|(col_id, index_name)| ((*col_id).into(), *index_name))
             .collect();
-
-        let schema = RawTableDefV8::new(name.into(), Self::col_def_for_test(schema))
-            .with_indexes(indexes)
-            .with_type(StTableType::User)
-            .with_access(access);
-
-        self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
+        self.create_table_for_test_with_the_works(name, schema, &indexes[..], access)
     }
 
     pub fn create_table_for_test(
@@ -856,12 +877,7 @@ impl RelationalDB {
         schema: &[(&str, AlgebraicType)],
         idx_cols: ColList,
     ) -> Result<TableId, DBError> {
-        let schema = RawTableDefV8::new(name.into(), Self::col_def_for_test(schema))
-            .with_column_index(idx_cols, false)
-            .with_type(StTableType::User)
-            .with_access(StAccess::Public);
-
-        self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
+        self.create_table_for_test_with_the_works(name, schema, &[(idx_cols, "the_index")], StAccess::Public)
     }
 
     pub fn create_table_for_test_mix_indexes(
@@ -871,19 +887,13 @@ impl RelationalDB {
         idx_cols_single: &[(ColId, &str)],
         idx_cols_multi: ColList,
     ) -> Result<TableId, DBError> {
-        let idx_cols_single = idx_cols_single
+        let indexes: Vec<(ColList, &str)> = idx_cols_single
             .iter()
-            .copied()
-            .map(|(col_id, index_name)| RawIndexDefV8::btree(index_name.into(), col_id, false))
+            .map(|(col_id, name)| ((*col_id).into(), *name))
+            .chain(std::iter::once((idx_cols_multi, "the_only_multi_index")))
             .collect();
 
-        let schema = RawTableDefV8::new(name.into(), Self::col_def_for_test(schema))
-            .with_indexes(idx_cols_single)
-            .with_column_index(idx_cols_multi, false)
-            .with_type(StTableType::User)
-            .with_access(StAccess::Public);
-
-        self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
+        self.create_table_for_test_with_the_works(name, schema, &indexes[..], StAccess::Public)
     }
 
     pub fn drop_table(&self, ctx: &ExecutionContext, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
@@ -948,6 +958,8 @@ impl RelationalDB {
         tx.table_row_count(table_id)
     }
 
+    /// Returns the constraints on the input `ColList`.
+    /// Note that this is ORDER-SENSITIVE: the order of the columns in the input `ColList` matters.
     pub fn column_constraints(
         &self,
         tx: &mut MutTx,
@@ -956,12 +968,20 @@ impl RelationalDB {
     ) -> Result<Constraints, DBError> {
         let table = self.inner.schema_for_table_mut_tx(tx, table_id)?;
 
-        let unique_index = table.indexes.iter().find(|x| &x.columns == cols).map(|x| x.is_unique);
-        let mut attr = Constraints::unset();
-        if let Some(is_unique) = unique_index {
-            attr = attr.push(Constraints::from_is_unique(is_unique));
+        let index = table.indexes.iter().find(|i| i.index_algorithm.columns() == cols);
+        let cols_set = ColSet::from(cols);
+        let unique_constraint = table
+            .constraints
+            .iter()
+            .find(|c| c.data.unique_columns() == Some(&cols_set));
+
+        if index.is_some() {
+            Ok(Constraints::from_is_unique(unique_constraint.is_some()))
+        } else if unique_constraint.is_some() {
+            Ok(Constraints::unique())
+        } else {
+            Ok(Constraints::unset())
         }
-        Ok(attr)
     }
 
     pub fn index_id_from_name(&self, tx: &MutTx, index_name: &str) -> Result<Option<IndexId>, DBError> {
@@ -976,13 +996,14 @@ impl RelationalDB {
         self.inner.constraint_id_from_name(tx, constraint_name)
     }
 
-    /// Adds the [index::BTreeIndex] into the [ST_INDEXES_NAME] table
+    /// Adds the index into the [ST_INDEXES_NAME] table
+    /// The index should have zero `index_id` and nonzero `table_id`.
     ///
     /// Returns the `index_id`
     ///
     /// NOTE: It loads the data from the table into it before returning
-    pub fn create_index(&self, tx: &mut MutTx, table_id: TableId, index: RawIndexDefV8) -> Result<IndexId, DBError> {
-        self.inner.create_index_mut_tx(tx, table_id, index)
+    pub fn create_index(&self, tx: &mut MutTx, schema: IndexSchema, is_unique: bool) -> Result<IndexId, DBError> {
+        self.inner.create_index_mut_tx(tx, schema, is_unique)
     }
 
     /// Removes the [index::BTreeIndex] from the database by their `index_id`
@@ -1123,14 +1144,11 @@ impl RelationalDB {
         self.inner.get_next_sequence_value_mut_tx(tx, seq_id)
     }
 
-    /// Add a [Sequence] into the database instance, generates a stable [SequenceId] for it that will persist on restart.
-    pub fn create_sequence(
-        &mut self,
-        tx: &mut MutTx,
-        table_id: TableId,
-        seq: RawSequenceDefV8,
-    ) -> Result<SequenceId, DBError> {
-        self.inner.create_sequence_mut_tx(tx, table_id, seq)
+    /// Add a Sequence into the database instance, generates a stable [SequenceId] for it that will persist on restart.
+    ///
+    /// The sequence should have nonzero `table_id` and zero `sequence_id`.
+    pub fn create_sequence(&self, tx: &mut MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId, DBError> {
+        self.inner.create_sequence_mut_tx(tx, sequence_schema)
     }
 
     ///Removes the [Sequence] from database instance
@@ -1488,7 +1506,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use spacetimedb_client_api_messages::timestamp::Timestamp;
     use spacetimedb_data_structures::map::IntMap;
-    use spacetimedb_lib::db::raw_def::{RawColumnDefV8, RawConstraintDefV8};
+    use spacetimedb_lib::db::raw_def::v9::RawTableDefBuilder;
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
     use spacetimedb_sats::bsatn;
@@ -1497,35 +1515,47 @@ mod tests {
     use spacetimedb_table::read_column::ReadColumn;
     use spacetimedb_table::table::RowRef;
 
-    fn column(name: &str, ty: AlgebraicType) -> RawColumnDefV8 {
-        RawColumnDefV8 {
-            col_name: name.into(),
-            col_type: ty,
-        }
-    }
-
-    fn index(name: &str, cols: &[u16]) -> RawIndexDefV8 {
-        RawIndexDefV8::btree(name.into(), cols.iter().copied().map(ColId).collect::<ColList>(), false)
+    fn my_table(col_type: AlgebraicType) -> TableSchema {
+        table("MyTable", ProductType::from([("my_col", col_type)]), |builder| builder)
     }
 
     fn table(
         name: &str,
-        columns: Vec<RawColumnDefV8>,
-        indexes: Vec<RawIndexDefV8>,
-        constraints: Vec<RawConstraintDefV8>,
-    ) -> RawTableDefV8 {
-        RawTableDefV8::new(name.into(), columns)
-            .with_indexes(indexes)
-            .with_constraints(constraints)
+        columns: ProductType,
+        f: impl FnOnce(RawTableDefBuilder) -> RawTableDefBuilder,
+    ) -> TableSchema {
+        let mut builder = RawModuleDefV9Builder::new();
+        f(builder.build_table_with_new_type(name, columns, true));
+        let def: ModuleDef = builder.finish().try_into().expect("table validation failed");
+        let table = def.table(name).expect("table not found");
+        TableSchema::from_module_def(&def, table, (), 0.into())
     }
 
-    fn my_table(col_type: AlgebraicType) -> RawTableDefV8 {
-        RawTableDefV8::new(
-            "MyTable".into(),
-            vec![RawColumnDefV8 {
-                col_name: "my_col".into(),
-                col_type,
-            }],
+    fn table_auto_inc() -> TableSchema {
+        table(
+            "MyTable",
+            ProductType::from([("my_col", AlgebraicType::I32)]),
+            |builder| builder.with_primary_key(0).with_column_sequence(0, None),
+        )
+    }
+
+    fn table_indexed(is_unique: bool) -> TableSchema {
+        table(
+            "MyTable_my_col_idx",
+            ProductType::from([("my_col", AlgebraicType::I32)]),
+            |builder| {
+                let builder = builder.with_index(
+                    RawIndexAlgorithm::BTree { columns: 0.into() },
+                    "accessor_name_doesnt_matter",
+                    None,
+                );
+
+                if is_unique {
+                    builder.with_unique_constraint(col_list![0], None)
+                } else {
+                    builder
+                }
+            },
         )
     }
 
@@ -1742,10 +1772,6 @@ mod tests {
         Ok(())
     }
 
-    fn table_auto_inc() -> RawTableDefV8 {
-        my_table(AlgebraicType::I64).with_column_constraint(Constraints::primary_key_auto(), 0)
-    }
-
     #[test]
     fn test_auto_inc() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
@@ -1782,10 +1808,6 @@ mod tests {
         Ok(())
     }
 
-    fn table_indexed(is_unique: bool) -> RawTableDefV8 {
-        my_table(AlgebraicType::I64).with_indexes(vec![RawIndexDefV8::btree("MyTable_my_col_idx".into(), 0, is_unique)])
-    }
-
     #[test]
     fn test_auto_inc_reload() -> ResultTest<()> {
         let _ = env_logger::builder()
@@ -1797,7 +1819,7 @@ mod tests {
         let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        let schema = my_table(AlgebraicType::I64).with_column_sequence(0.into());
+        let schema = table_auto_inc();
 
         let table_id = stdb.create_table(&mut tx, schema)?;
 
@@ -1897,7 +1919,11 @@ mod tests {
         let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        let schema = table_indexed(true).with_column_constraint(Constraints::identity(), 0);
+        let schema = table(
+            "MyTable",
+            ProductType::from([("my_col", AlgebraicType::I64)]),
+            |builder| builder.with_column_sequence(0, None).with_unique_constraint(0, None),
+        );
 
         let table_id = stdb.create_table(&mut tx, schema)?;
 
@@ -1921,31 +1947,35 @@ mod tests {
         let stdb = TestDB::durable()?;
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        let schema = RawTableDefV8::new(
-            "MyTable".into(),
-            ["col1", "col2", "col3", "col4"]
-                .map(|c| RawColumnDefV8 {
-                    col_name: c.into(),
-                    col_type: AlgebraicType::I64,
-                })
-                .into(),
-        )
-        .with_indexes(
-            [
-                ("MyTable_col1_idx", true),
-                ("MyTable_col3_idx", false),
-                ("MyTable_col4_idx", true),
-            ]
-            .map(|(name, unique)| RawIndexDefV8::btree(name.into(), 0, unique))
-            .into(),
-        )
-        .with_sequences(vec![RawSequenceDefV8::for_column("MyTable", "col1", 0.into())])
-        .with_constraints(vec![RawConstraintDefV8::for_column(
+
+        let schema = table(
             "MyTable",
-            "col2",
-            Constraints::indexed(),
-            1,
-        )]);
+            ProductType::from([
+                ("col1", AlgebraicType::I64),
+                ("col2", AlgebraicType::I64),
+                ("col3", AlgebraicType::I64),
+                ("col4", AlgebraicType::I64),
+            ]),
+            |builder| {
+                builder
+                    .with_index(
+                        RawIndexAlgorithm::BTree { columns: col_list![0] },
+                        "MyTable_col1_idx",
+                        None,
+                    )
+                    .with_index(
+                        RawIndexAlgorithm::BTree { columns: col_list![2] },
+                        "MyTable_col3_idx",
+                        None,
+                    )
+                    .with_index(
+                        RawIndexAlgorithm::BTree { columns: col_list![3] },
+                        "MyTable_col4_idx",
+                        None,
+                    )
+                    .with_column_sequence(0, None)
+            },
+        );
 
         let ctx = ExecutionContext::default();
         let table_id = stdb.create_table(&mut tx, schema)?;
@@ -2026,10 +2056,21 @@ mod tests {
     fn test_multi_column_index() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
 
-        let columns = ["a", "b", "c"].map(|n| column(n, AlgebraicType::U64)).into();
+        let columns = ProductType::from([
+            ("a", AlgebraicType::U64),
+            ("b", AlgebraicType::U64),
+            ("c", AlgebraicType::U64),
+        ]);
 
-        let indexes = vec![index("0", &[0, 1])];
-        let schema = table("t", columns, indexes, vec![]);
+        let schema = table("t", columns, |builder| {
+            builder.with_index(
+                RawIndexAlgorithm::BTree {
+                    columns: col_list![0, 1],
+                },
+                "accessor_name_doesnt_matter",
+                None,
+            )
+        });
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let table_id = stdb.create_table(&mut tx, schema)?;
@@ -2058,24 +2099,6 @@ mod tests {
         Ok(())
     }
 
-    // #[test]
-    // fn test_rename_column() -> ResultTest<()> {
-    //     let (mut stdb, _tmp_dir) = make_test_db()?;
-
-    //     let mut tx_ = stdb.begin_mut_tx(IsolationLevel::Serializable);
-    //     let (tx, stdb) = tx_.get();
-
-    //     let schema = &[("col1", AlgebraicType::U64, ColumnIndexAttribute::Identity)];
-    //     let table_id = stdb.create_table(tx, "MyTable", ProductTypeMeta::from_iter(&schema[..1]))?;
-    //     let column_id = stdb.column_id_from_name(tx, table_id, "col1")?.unwrap();
-    //     stdb.rename_column(tx, table_id, column_id, "id")?;
-
-    //     assert_eq!(Some(column_id), stdb.column_id_from_name(tx, table_id, "id")?);
-    //     assert_eq!(None, stdb.column_id_from_name(tx, table_id, "col1")?);
-
-    //     Ok(())
-    // }
-
     #[test]
     /// Test that iteration yields each row only once
     /// in the edge case where a row is committed and has been deleted and re-inserted within the iterating TX.
@@ -2084,8 +2107,8 @@ mod tests {
         let ctx = ExecutionContext::default();
 
         let mut initial_tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        let schema =
-            RawTableDefV8::from_product("test_table", ProductType::from_iter([("my_col", AlgebraicType::I32)]));
+        let schema = my_table(AlgebraicType::I32);
+
         let table_id = stdb.create_table(&mut initial_tx, schema).expect("create_table failed");
 
         stdb.commit_tx(&ctx, initial_tx).expect("Commit initial_tx failed");
@@ -2145,7 +2168,7 @@ mod tests {
         );
 
         let row_ty = ProductType::from([("le_boeuf", AlgebraicType::I32)]);
-        let schema = RawTableDefV8::from_product("test_table", row_ty.clone());
+        let schema = table("test_table", row_ty.clone(), |builder| builder);
 
         // Create an empty transaction
         {
