@@ -28,7 +28,7 @@ use std::hint::black_box;
 
 // ---------- schemas ----------
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = unique_0_u32_u64_str)]
 pub struct unique_0_u32_u64_str {
     #[unique]
     id: u32,
@@ -36,14 +36,14 @@ pub struct unique_0_u32_u64_str {
     name: String,
 }
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = no_index_u32_u64_str)]
 pub struct no_index_u32_u64_str {
     id: u32,
     age: u64,
     name: String,
 }
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = btree_each_column_u32_u64_str)]
 pub struct btree_each_column_u32_u64_str {
     #[index(btree)]
     id: u32,
@@ -53,7 +53,7 @@ pub struct btree_each_column_u32_u64_str {
     name: String,
 }
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = unique_0_u32_u64_u64)]
 pub struct unique_0_u32_u64_u64 {
     #[unique]
     id: u32,
@@ -61,14 +61,14 @@ pub struct unique_0_u32_u64_u64 {
     y: u64,
 }
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = no_index_u32_u64_u64)]
 pub struct no_index_u32_u64_u64 {
     id: u32,
     x: u64,
     y: u64,
 }
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = btree_each_column_u32_u64_u64)]
 pub struct btree_each_column_u32_u64_u64 {
     #[index(btree)]
     id: u32,

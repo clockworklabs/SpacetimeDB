@@ -9,7 +9,7 @@ class UpdateModule(Smoketest):
     MODULE_CODE = """
 use spacetimedb::println;
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = people)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -31,7 +31,7 @@ pub fn say_hello() {
 }
 """
     MODULE_CODE_B = """
-#[spacetimedb::table]
+#[spacetimedb::table(name = people)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -44,7 +44,7 @@ pub struct Person {
     MODULE_CODE_C = """
 use spacetimedb::println;
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = people)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -52,7 +52,7 @@ pub struct Person {
     name: String,
 }
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = pets)]
 pub struct Pet {
     species: String,
 }
@@ -104,7 +104,7 @@ class UploadModule1(Smoketest):
     MODULE_CODE = """
 use spacetimedb::println;
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = people)]
 pub struct Person {
     name: String,
 }
@@ -142,7 +142,7 @@ class UploadModule2(Smoketest):
 use spacetimedb::{println, duration, Timestamp, ReducerContext};
 
 
-#[spacetimedb::table(public, scheduled(my_repeating_reducer))]
+#[spacetimedb::table(name = scheduled_messages, public, scheduled(my_repeating_reducer))]
 pub struct ScheduledMessage {
     prev: Timestamp,
 }
@@ -171,10 +171,10 @@ class HotswapModule(Smoketest):
     AUTOPUBLISH = False
 
     MODULE_CODE = """
-#[spacetimedb::table]
+#[spacetimedb::table(name = people)]
 pub struct Person {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u64,
     name: String,
 }
@@ -186,12 +186,12 @@ pub fn add_person(name: String) {
 """
 
     MODULE_CODE_B = """
-use spacetimedb::spacetimedb;
+use spacetimedb;
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = people)]
 pub struct Person {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u64,
     name: String,
 }
@@ -201,9 +201,9 @@ pub fn add_person(name: String) {
     Person::insert(Person { id: 0, name }).ok();
 }
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = pet)]
 pub struct Pet {
-    #[primarykey]
+    #[primary_key]
     species: String,
 }
 
@@ -236,6 +236,6 @@ pub fn add_pet(species: String) {
         # Note that 'SELECT * FROM *' does NOT get refreshed to include the
         # new table (this is a known limitation).
         self.assertEqual(sub(), [
-            {'Person': {'deletes': [], 'inserts': [{'id': 1, 'name': 'Horst'}]}},
-            {'Person': {'deletes': [], 'inserts': [{'id': 2, 'name': 'Cindy'}]}}
+            {'people': {'deletes': [], 'inserts': [{'id': 1, 'name': 'Horst'}]}},
+            {'people': {'deletes': [], 'inserts': [{'id': 2, 'name': 'Cindy'}]}}
         ])

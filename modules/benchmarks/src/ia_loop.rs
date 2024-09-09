@@ -6,7 +6,7 @@ use crate::Load;
 use spacetimedb::{log, SpacetimeType, Timestamp};
 use std::hash::{Hash, Hasher};
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = velocity)]
 pub struct Velocity {
     #[primary_key]
     pub entity_id: u32,
@@ -21,7 +21,7 @@ impl Velocity {
     }
 }
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = position)]
 pub struct Position {
     #[primary_key]
     pub entity_id: u32,
@@ -65,7 +65,7 @@ pub enum AgentAction {
     Fighting,
 }
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = game_enemy_ai_agent_state)]
 #[derive(Clone)]
 pub struct GameEnemyAiAgentState {
     #[primary_key]
@@ -75,7 +75,7 @@ pub struct GameEnemyAiAgentState {
     pub action: AgentAction,
 }
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = game_targetable_state)]
 #[derive(Clone)]
 pub struct GameTargetableState {
     #[primary_key]
@@ -83,7 +83,7 @@ pub struct GameTargetableState {
     pub quad: i64,
 }
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = game_live_targetable_state)]
 pub struct GameLiveTargetableState {
     #[unique]
     pub entity_id: u64,
@@ -91,7 +91,7 @@ pub struct GameLiveTargetableState {
     pub quad: i64,
 }
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = game_mobile_entity_state)]
 pub struct GameMobileEntityState {
     #[primary_key]
     pub entity_id: u64,
@@ -102,7 +102,7 @@ pub struct GameMobileEntityState {
     pub timestamp: u64,
 }
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = game_enemy_state)]
 #[derive(Clone)]
 pub struct GameEnemyState {
     #[primary_key]
@@ -117,7 +117,7 @@ pub struct SmallHexTile {
     pub dimension: u32,
 }
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = game_herd_cache)]
 #[derive(Clone, Debug)]
 pub struct GameHerdCache {
     #[primary_key]

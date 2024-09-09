@@ -7,7 +7,7 @@ class AddTablePseudomigration(Smoketest):
     MODULE_CODE = """
 use spacetimedb::println;
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = people)]
 pub struct Person {
     name: String,
 }
@@ -28,7 +28,7 @@ pub fn print_persons(prefix: String) {
     MODULE_CODE_UPDATED = (
         MODULE_CODE
         + """
-#[spacetimedb::table]
+#[spacetimedb::table(name = books)]
 pub struct Book {
     isbn: String,
 }
@@ -89,7 +89,7 @@ class RejectTableChanges(Smoketest):
     MODULE_CODE = """
 use spacetimedb::println;
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = people)]
 pub struct Person {
     name: String,
 }
@@ -110,7 +110,7 @@ pub fn print_persons(prefix: String) {
     MODULE_CODE_UPDATED = """
 use spacetimedb::println;
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = people)]
 pub struct Person {
     name: String,
     age: u128,

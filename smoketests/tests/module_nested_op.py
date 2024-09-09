@@ -4,14 +4,14 @@ class ModuleNestedOp(Smoketest):
     MODULE_CODE = """
 use spacetimedb::println;
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = accounts)]
 pub struct Account {
     name: String,
     #[unique]
     id: i32,
 }
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = friends)]
 pub struct Friends {
     friend_1: i32,
     friend_2: i32,

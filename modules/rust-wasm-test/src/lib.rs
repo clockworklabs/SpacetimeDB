@@ -25,7 +25,7 @@ pub enum TestC {
     Bar,
 }
 
-#[table(public)]
+#[table(name = test_d, public)]
 pub struct TestD {
     test_c: Option<TestC>,
 }
@@ -33,7 +33,7 @@ pub struct TestD {
 // This table was specified as public.
 const _: () = assert!(matches!(TestD::TABLE_ACCESS, StAccess::Public));
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = test_e)]
 #[derive(Debug)]
 pub struct TestE {
     #[primary_key]
@@ -53,12 +53,12 @@ pub enum TestF {
 // All tables are private by default.
 const _: () = assert!(matches!(TestE::TABLE_ACCESS, StAccess::Private));
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = private)]
 pub struct Private {
     name: String,
 }
 
-#[spacetimedb::table(private, index(name = multi_column_index, btree(columns = [x, y])))]
+#[spacetimedb::table(name = points, private, index(name = multi_column_index, btree(columns = [x, y])))]
 pub struct Point {
     x: i64,
     y: i64,
@@ -68,7 +68,7 @@ pub struct Point {
 const _: () = assert!(matches!(Point::TABLE_ACCESS, StAccess::Private));
 
 // Test we can compile multiple constraints
-#[spacetimedb::table]
+#[spacetimedb::table(name = pk_multi_identity)]
 struct PkMultiIdentity {
     #[primary_key]
     id: u32,
@@ -81,12 +81,12 @@ pub type TestAlias = TestA;
 // #[spacetimedb::migrate]
 // pub fn migrate() {}
 
-#[spacetimedb::table(scheduled(repeating_test))]
+#[spacetimedb::table(name = repeating_test_args, scheduled(repeating_test))]
 pub struct RepeatingTestArg {
     prev_time: Timestamp,
 }
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = has_special_stuff)]
 pub struct HasSpecialStuff {
     identity: Identity,
     address: Address,

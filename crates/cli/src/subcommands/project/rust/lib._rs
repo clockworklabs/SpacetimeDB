@@ -1,6 +1,6 @@
 use spacetimedb::ReducerContext;
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = people)]
 pub struct Person {
     name: String
 }

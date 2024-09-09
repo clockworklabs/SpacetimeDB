@@ -1,6 +1,6 @@
 use spacetimedb::{query, time_span::Span};
 
-#[spacetimedb::table(index(name = coordinates, btree(columns = [x, z, dimension])))]
+#[spacetimedb::table(name = locations, index(name = coordinates, btree(columns = [x, z, dimension])))]
 #[derive(Debug, PartialEq, Eq)]
 pub struct Location {
     #[primary_key]

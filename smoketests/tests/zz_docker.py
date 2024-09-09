@@ -47,7 +47,7 @@ class DockerRestartModule(Smoketest):
     MODULE_CODE = """
 use spacetimedb::println;
 
-#[spacetimedb::table(index(name = name_idx, btree(columns = [name])))]
+#[spacetimedb::table(name = people, index(name = name_idx, btree(columns = [name])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -93,7 +93,7 @@ class DockerRestartSql(Smoketest):
     MODULE_CODE = """
 use spacetimedb::println;
 
-#[spacetimedb::table(index(name = name_idx, btree(columns = [name])))]
+#[spacetimedb::table(name = people, index(name = name_idx, btree(columns = [name])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -130,7 +130,7 @@ pub fn say_hello() {
 
         restart_docker()
 
-        sql_out = self.spacetime("sql", self.address, "SELECT name FROM Person WHERE id = 3")
+        sql_out = self.spacetime("sql", self.address, "SELECT name FROM people WHERE id = 3")
         self.assertMultiLineEqual(sql_out, """ name       \n------------\n "Samantha" \n""")
 
 @requires_docker
@@ -139,7 +139,7 @@ class DockerRestartAutoDisconnect(Smoketest):
 use log::info;
 use spacetimedb::{Address, Identity, ReducerContext, TableType};
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = connected_clients)]
 pub struct ConnectedClients {
     identity: Identity,
     address: Address,
@@ -176,8 +176,8 @@ fn print_num_connected() {
         """Tests if clients are automatically disconnected after a restart"""
 
         # Start two subscribers
-        self.subscribe("SELECT * FROM ConnectedClients", n=2)
-        self.subscribe("SELECT * FROM ConnectedClients", n=2)
+        self.subscribe("SELECT * FROM connected_clients", n=2)
+        self.subscribe("SELECT * FROM connected_clients", n=2)
 
         # Assert that we have two clients + the reducer call
         self.call("print_num_connected")

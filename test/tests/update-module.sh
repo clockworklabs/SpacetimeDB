@@ -12,7 +12,7 @@ source "./test/lib.include"
 cat > "${PROJECT_PATH}/src/lib.rs" << EOF
 use spacetimedb::println;
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = people)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -54,7 +54,7 @@ run_test cargo run publish --skip_clippy --project-path "$PROJECT_PATH" "$IDENT"
 
 # Changing an existing table isn't
 cat > "${PROJECT_PATH}/src/lib.rs" <<EOF
-#[spacetimedb::table]
+#[spacetimedb::table(name = people)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -73,7 +73,7 @@ run_test cargo run call "$IDENT" say_hello
 cat > "${PROJECT_PATH}/src/lib.rs" <<EOF
 use spacetimedb::println;
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = people)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -81,7 +81,7 @@ pub struct Person {
     name: String,
 }
 
-#[spacetimedb::table]
+#[spacetimedb::table(name = pets)]
 pub struct Pet {
     species: String,
 }

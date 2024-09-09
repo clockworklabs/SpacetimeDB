@@ -12,6 +12,7 @@ extern crate core;
 extern crate proc_macro;
 
 use bitflags::Flags;
+use heck::ToSnakeCase;
 use module::{derive_deserialize, derive_satstype, derive_serialize};
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::{Span, TokenStream};
@@ -19,6 +20,7 @@ use quote::{format_ident, quote, quote_spanned};
 use spacetimedb_primitives::ColumnAttribute;
 use std::collections::HashMap;
 use std::time::Duration;
+use syn::ext::IdentExt;
 use syn::meta::ParseNestedMeta;
 use syn::parse::{Parse, ParseStream, Parser};
 use syn::punctuated::Punctuated;
@@ -189,8 +191,8 @@ impl LifecycleReducer {
     fn reducer_name(&self) -> &'static str {
         match self {
             Self::Init => "__init__",
-            Self::ClientConnected => "__client_connected__",
-            Self::ClientDisconnected => "__client_disconnected__",
+            Self::ClientConnected => "__identity_connected__",
+            Self::ClientDisconnected => "__identity_disconnected__",
             Self::Update => "__update__",
         }
     }
@@ -316,26 +318,6 @@ fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn::Result<To
         }
     };
 
-    // let errmsg = "reducer should have at least 2 arguments: (identity: Identity, timestamp: u64, ...)";
-    // let ([arg1, arg2], args) = validate_reducer_args(&original_function.sig, errmsg)?;
-
-    // // TODO: better (non-string-based) validation for these
-    // if !matches!(
-    //     &*arg1.to_token_stream().to_string(),
-    //     "spacetimedb::spacetimedb_sats::hash::Hash" | "Hash"
-    // ) {
-    //     return Err(syn::Error::new_spanned(
-    //         &arg1,
-    //         "1st parameter of a reducer must be of type \'u64\'.",
-    //     ));
-    // }
-    // if arg2.to_token_stream().to_string() != "u64" {
-    //     return Err(syn::Error::new_spanned(
-    //         &arg2,
-    //         "2nd parameter of a reducer must be of type \'u64\'.",
-    //     ));
-    // }
-
     // Extract all function parameters, except for `self` ones that aren't allowed.
     let typed_args = original_function
         .sig
@@ -400,11 +382,10 @@ fn reducer_impl(args: ReducerArgs, original_function: &ItemFn) -> syn::Result<To
     })
 }
 
-#[derive(Default)]
 struct TableArgs {
     public: Option<Span>,
     scheduled: Option<Path>,
-    name: Option<Ident>,
+    name: Ident,
     indices: Vec<IndexArg>,
 }
 
@@ -443,9 +424,12 @@ enum IndexType {
 }
 
 impl TableArgs {
-    fn parse(input: TokenStream) -> syn::Result<Self> {
+    fn parse(input: TokenStream, struct_ident: &Ident) -> syn::Result<Self> {
         let mut specified_access = false;
-        let mut args = TableArgs::default();
+        let mut public = None;
+        let mut scheduled = None;
+        let mut name = None;
+        let mut indices = Vec::new();
         syn::meta::parser(|meta| {
             let mut specified_access = || {
                 if specified_access {
@@ -457,28 +441,40 @@ impl TableArgs {
             match_meta!(match meta {
                 sym::public => {
                     specified_access()?;
-                    args.public = Some(meta.path.span());
+                    public = Some(meta.path.span());
                 }
                 sym::private => {
                     specified_access()?;
                 }
                 sym::name => {
-                    check_duplicate(&args.name, &meta)?;
+                    check_duplicate(&name, &meta)?;
                     let value = meta.value()?;
-                    args.name = Some(value.parse()?);
+                    name = Some(value.parse()?);
                 }
-                sym::index => args.indices.push(IndexArg::parse_meta(meta)?),
+                sym::index => indices.push(IndexArg::parse_meta(meta)?),
                 sym::scheduled => {
-                    check_duplicate(&args.scheduled, &meta)?;
+                    check_duplicate(&scheduled, &meta)?;
                     let in_parens;
                     syn::parenthesized!(in_parens in meta.input);
-                    args.scheduled = Some(in_parens.parse::<Path>()?);
+                    scheduled = Some(in_parens.parse::<Path>()?);
                 }
             });
             Ok(())
         })
         .parse2(input)?;
-        Ok(args)
+        let name = name.ok_or_else(|| {
+            let table = struct_ident.to_string().to_snake_case();
+            syn::Error::new(
+                Span::call_site(),
+                format_args!("must specify table name, e.g. `#[spacetimedb::table(name = {table})]"),
+            )
+        })?;
+        Ok(TableArgs {
+            public,
+            scheduled,
+            name,
+            indices,
+        })
     }
 }
 
@@ -586,7 +582,7 @@ impl IndexArg {
 /// # Example
 ///
 /// ```ignore
-/// #[spacetimedb::table(public, name = Users)]
+/// #[spacetimedb::table(name = users, public)]
 /// pub struct User {
 ///     #[auto_inc]
 ///     #[primary_key]
@@ -654,7 +650,7 @@ pub fn table(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     // put this on the struct so we don't get unknown attribute errors
     let extra_attr = quote!(#[derive(spacetimedb::__TableHelper)]);
     cvt_attr::<syn::DeriveInput>(args, item, extra_attr, |args, item| {
-        let args = TableArgs::parse(args)?;
+        let args = TableArgs::parse(args, &item.ident)?;
         table_impl(args, item)
     })
 }
@@ -717,15 +713,10 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
         reducer_type_check(&item, reducer)
     });
 
-    let mut sats_ty = module::sats_type_from_derive(&item, quote!(spacetimedb::spacetimedb_lib))?;
+    let sats_ty = module::sats_type_from_derive(&item, quote!(spacetimedb::spacetimedb_lib))?;
 
     let original_struct_ident = sats_ty.ident;
-    // TODO: error on setting sats name for a table
-    let table_name = args
-        .name
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| original_struct_ident.to_string());
-    sats_ty.name.clone_from(&table_name);
+    let table_name = args.name.unraw().to_string();
     let module::SatsTypeData::Product(fields) = &sats_ty.data else {
         return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
     };
@@ -858,7 +849,7 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
 
         Some(quote! {
             // TODO: should we expose spacetimedb::query::FilterByIter ?
-            #vis fn #filter_func_ident<'a>(#column_ident: &#column_type) -> impl Iterator<Item = Self> {
+            #vis fn #filter_func_ident(#column_ident: &#column_type) -> impl Iterator<Item = Self> {
                 spacetimedb::query::filter_by_field::<Self, #column_type, #column_index>(#column_ident)
             }
             #vis fn #delete_func_ident(#column_ident: &#column_type) -> u32 {
@@ -896,7 +887,7 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
 
     let deserialize_impl = derive_deserialize(&sats_ty);
     let serialize_impl = derive_serialize(&sats_ty);
-    let schema_impl = derive_satstype(&sats_ty, false);
+    let schema_impl = derive_satstype(&sats_ty, *original_struct_ident != table_name);
     let column_attrs = columns.iter().map(|col| {
         Ident::new(
             ColumnAttribute::FLAGS
@@ -1309,7 +1300,7 @@ impl ClosureLike {
 /// ```ignore // unfortunately, doctest doesn't work well inside proc-macro
 /// use spacetimedb::query;
 ///
-/// #[spacetimedb::table]
+/// #[spacetimedb::table(name = people)]
 /// pub struct Person {
 ///     name: String,
 ///     age: u32,

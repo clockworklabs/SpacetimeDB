@@ -4,7 +4,7 @@ import time
 class CancelReducer(Smoketest):
 
     MODULE_CODE = """
-    use spacetimedb::{duration, println, spacetimedb, spacetimedb_lib::ScheduleAt, ReducerContext};
+    use spacetimedb::{duration, println, ReducerContext};
 
 #[spacetimedb::reducer(init)]
 fn init() {
@@ -23,7 +23,7 @@ fn init() {
      do_cancel(schedule.unwrap().scheduled_id);
 }
 
-#[spacetimedb::table(public, scheduled(reducer))]
+#[spacetimedb::table(name = scheduled_reducer_args, public, scheduled(reducer))]
 pub struct ScheuledReducerArgs {
     num: i32,
 }
@@ -49,10 +49,10 @@ fn reducer(_ctx: ReducerContext, args: ScheuledReducerArgs) {
 
 class SubscribeScheduledTable(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, duration, spacetimedb, Timestamp, spacetimedb_lib::ScheduleAt, ReducerContext};
+use spacetimedb::{println, duration, Timestamp, ReducerContext};
 
 
-#[spacetimedb::table(public, scheduled(my_reducer))]
+#[spacetimedb::table(name = scheduled_table, public, scheduled(my_reducer))]
 pub struct ScheduledTable {
     prev: Timestamp,
 }
@@ -74,8 +74,8 @@ pub fn my_reducer(_ctx: ReducerContext, arg: ScheduledTable) {
 """
     def test_scheduled_table_subscription(self):
         """This test deploys a module with a scheduled reducer and check if client receives subscription update for scheduled table entry and deletion of reducer once it ran"""
-        # subscribe to empy ScheduledTable
-        sub = self.subscribe("SELECT * FROM ScheduledTable", n=2)
+        # subscribe to empy scheduled_table
+        sub = self.subscribe("SELECT * FROM scheduled_table", n=2)
         # call a reducer to schedule a reducer
         self.call("schedule_reducer")
 
@@ -86,14 +86,14 @@ pub fn my_reducer(_ctx: ReducerContext, arg: ScheduledTable) {
 
         row_entry = {'prev': 0, 'scheduled_id': 2, 'scheduled_at': {'Time': 0}}
         # subscription should have 2 updates, first for row insert in scheduled table and second for row deletion.
-        self.assertEqual(sub(), [{'ScheduledTable': {'deletes': [], 'inserts': [row_entry]}}, {'ScheduledTable': {'deletes': [row_entry], 'inserts': []}}])
+        self.assertEqual(sub(), [{'scheduled_table': {'deletes': [], 'inserts': [row_entry]}}, {'scheduled_table': {'deletes': [row_entry], 'inserts': []}}])
 
 
 
     def test_scheduled_table_subscription_repeated_reducer(self):
         """This test deploys a module with a  repeated reducer and check if client receives subscription update for scheduled table entry and no delete entry"""
-        # subscribe to emptry ScheduledTable
-        sub = self.subscribe("SELECT * FROM ScheduledTable", n=2)
+        # subscribe to emptry scheduled_table
+        sub = self.subscribe("SELECT * FROM scheduled_table", n=2)
         # call a reducer to schedule a reducer
         self.call("schedule_repeated_reducer")
 
@@ -109,15 +109,13 @@ pub fn my_reducer(_ctx: ReducerContext, arg: ScheduledTable) {
         row_entry = {'prev': 0, 'scheduled_id': 2, 'scheduled_at': {'Time': 0}}
 
         # subscription should have 2 updates and should not have any deletes
-        self.assertEqual(sub(), [{'ScheduledTable': {'deletes': [], 'inserts': [repeated_row_entry]}}, {'ScheduledTable': {'deletes': [], 'inserts': [row_entry]}}])
+        self.assertEqual(sub(), [{'scheduled_table': {'deletes': [], 'inserts': [repeated_row_entry]}}, {'scheduled_table': {'deletes': [], 'inserts': [row_entry]}}])
 
 
 class VolatileNonatomicScheduleImmediate(Smoketest):
     BINDINGS_FEATURES = ["unstable_abi"]
     MODULE_CODE = """
-use spacetimedb::spacetimedb;
-
-#[spacetimedb::table(public)]
+#[spacetimedb::table(name = my_table, public)]
 pub struct MyTable {
     x: String,
 }
@@ -135,9 +133,9 @@ fn do_insert(x: String) {
     def test_volatile_nonatomic_schedule_immediate(self):
         """Check that volatile_nonatomic_schedule_immediate works"""
 
-        sub = self.subscribe("SELECT * FROM MyTable", n=2)
+        sub = self.subscribe("SELECT * FROM my_table", n=2)
 
         self.call("do_insert", "yay!")
         self.call("do_schedule")
 
-        self.assertEqual(sub(), [{'MyTable': {'deletes': [], 'inserts': [{'x': 'yay!'}]}}, {'MyTable': {'deletes': [], 'inserts': [{'x': 'hello'}]}}])
+        self.assertEqual(sub(), [{'my_table': {'deletes': [], 'inserts': [{'x': 'yay!'}]}}, {'my_table': {'deletes': [], 'inserts': [{'x': 'hello'}]}}])

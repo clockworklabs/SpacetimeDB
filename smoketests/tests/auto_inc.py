@@ -14,7 +14,7 @@ class IntTests:
 
 
 autoinc1_template = string.Template("""
-#[spacetimedb::table]
+#[spacetimedb::table(name = people_$KEY_TY)]
 pub struct Person_$KEY_TY {
     #[auto_inc]
     key_col: $KEY_TY,
@@ -61,7 +61,7 @@ use spacetimedb::println;
 
 
 autoinc2_template = string.Template("""
-#[spacetimedb::table]
+#[spacetimedb::table(name = people_$KEY_TY)]
 pub struct Person_$KEY_TY {
     #[auto_inc]
     #[unique]
