@@ -96,25 +96,23 @@ fn ty_fmt<'a>(ctx: &'a GenCtx, ty: &'a AlgebraicType, namespace: &'a str) -> imp
     })
 }
 
-fn default_init(ctx: &GenCtx, ty: &AlgebraicType) -> &'static str {
+fn default_init(ctx: &GenCtx, ty: &AlgebraicType) -> Option<&'static str> {
     match ty {
-        AlgebraicType::Sum(sum_type) => {
-            // Options have a default value of null which is fine for us, and simple enums have their own default.
-            if sum_type.as_option().is_some() || sum_type.is_simple_enum() {
-                ""
-            } else {
-                // TODO: generate some proper default here (what would it be for tagged enums?).
-                " = null!"
-            }
-        }
+        // Options have a default value of null which is fine for us, and simple enums have their own default.
+        AlgebraicType::Sum(sum_type) if sum_type.is_option() || sum_type.is_simple_enum() => None,
+        // TODO: generate some proper default here (what would it be for tagged enums?).
+        AlgebraicType::Sum(_) => Some("null!"),
         // Byte arrays must be initialized to an empty array.
-        ty if ty.is_bytes() => " = Array.Empty<byte>()",
+        ty if ty.is_bytes() => Some("Array.Empty<byte>()"),
         // For product types, arrays, and maps, we can use the default constructor.
-        AlgebraicType::Product(_) | AlgebraicType::Array(_) | AlgebraicType::Map(_) => " = new()",
+        AlgebraicType::Product(_) | AlgebraicType::Array(_) | AlgebraicType::Map(_) => Some("new()"),
         // Strings must have explicit default value of "".
-        AlgebraicType::String => r#" = """#,
+        AlgebraicType::String => Some(r#""""#),
         AlgebraicType::Ref(r) => default_init(ctx, &ctx.typespace[*r]),
-        _ => "",
+        _ => {
+            debug_assert!(ty.is_scalar());
+            None
+        }
     }
 }
 
@@ -248,6 +246,19 @@ pub fn autogen_csharp_sum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespac
                     .replace("r#", "");
                 write!(output, " {variant_name}");
             }
+            // If we have less than 2 variants, we need to add some dummy variants to make the tuple work.
+            match sum_type.variants.len() {
+                0 => {
+                    writeln!(output);
+                    writeln!(output, "SpacetimeDB.Unit _Reserved1,");
+                    write!(output, "SpacetimeDB.Unit _Reserved2");
+                }
+                1 => {
+                    writeln!(output, ",");
+                    write!(output, "SpacetimeDB.Unit _Reserved");
+                }
+                _ => {}
+            }
         }
         writeln!(output);
         writeln!(output, ")>;");
@@ -315,23 +326,60 @@ fn autogen_csharp_product_table_common(
     }
     writeln!(output);
     indented_block(&mut output, |output| {
-        for field in &*product_type.elements {
-            let field_name = field
-                .name
-                .as_ref()
-                .expect("autogen'd tuples should have field names")
-                .replace("r#", "");
+        let fields = product_type
+            .elements
+            .iter()
+            .map(|field| {
+                let orig_name = field
+                    .name
+                    .as_ref()
+                    .expect("autogen'd tuples should have field names")
+                    .replace("r#", "");
 
-            writeln!(output, "[DataMember(Name = \"{field_name}\")]");
-            writeln!(
-                output,
-                "public {} {}{};",
-                ty_fmt(ctx, &field.algebraic_type, namespace),
-                field_name.to_case(Case::Pascal),
-                default_init(ctx, &field.algebraic_type)
-            );
+                writeln!(output, "[DataMember(Name = \"{orig_name}\")]");
+
+                let field_name = orig_name.to_case(Case::Pascal);
+                let ty = ty_fmt(ctx, &field.algebraic_type, namespace).to_string();
+
+                writeln!(output, "public {ty} {field_name};");
+
+                (field_name, ty)
+            })
+            .collect::<Vec<_>>();
+
+        // Generate fully-parameterized constructor.
+        writeln!(output);
+        writeln!(output, "public {name}(");
+        {
+            indent_scope!(output);
+            for (i, (field_name, ty)) in fields.iter().enumerate() {
+                if i != 0 {
+                    writeln!(output, ",");
+                }
+                write!(output, "{ty} {field_name}");
+            }
         }
         writeln!(output);
+        writeln!(output, ")");
+        indented_block(output, |output| {
+            for (field_name, _ty) in fields.iter() {
+                writeln!(output, "this.{field_name} = {field_name};");
+            }
+        });
+        writeln!(output);
+
+        // Generate default constructor (if the one above is not already parameterless).
+        if !fields.is_empty() {
+            writeln!(output, "public {name}()");
+            indented_block(output, |output| {
+                for ((field_name, _ty), field) in fields.iter().zip(&*product_type.elements) {
+                    if let Some(default) = default_init(ctx, &field.algebraic_type) {
+                        writeln!(output, "this.{field_name} = {default};");
+                    }
+                }
+            });
+            writeln!(output);
+        }
 
         // If this is a table, we want to generate event accessor and indexes
         if let Some(schema) = &schema {
@@ -510,11 +558,12 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
                 func_params.push_str(", ");
                 field_inits.push_str(", ");
             }
-            writeln!(
-                output,
-                "public {arg_type_str} {field_name}{};",
-                default_init(ctx, &arg.algebraic_type)
-            );
+            write!(output, "public {arg_type_str} {field_name}");
+            // Skip default initializer if it's the same as the implicit default.
+            if let Some(default) = default_init(ctx, &arg.algebraic_type) {
+                write!(output, " = {default}");
+            }
+            writeln!(output, ";");
             write!(func_params, "{arg_type_str} {arg_name}").unwrap();
             write!(field_inits, "{field_name} = {arg_name}").unwrap();
         }

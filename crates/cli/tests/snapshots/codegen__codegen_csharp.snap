@@ -197,9 +197,24 @@ namespace SpacetimeDB
 	public partial class HasSpecialStuff : SpacetimeDB.DatabaseTable<HasSpecialStuff, SpacetimeDB.ReducerEvent>
 	{
 		[DataMember(Name = "identity")]
-		public SpacetimeDB.Identity Identity = new();
+		public SpacetimeDB.Identity Identity;
 		[DataMember(Name = "address")]
-		public SpacetimeDB.Address Address = new();
+		public SpacetimeDB.Address Address;
+
+		public HasSpecialStuff(
+			SpacetimeDB.Identity Identity,
+			SpacetimeDB.Address Address
+		)
+		{
+			this.Identity = Identity;
+			this.Address = Address;
+		}
+
+		public HasSpecialStuff()
+		{
+			this.Identity = new();
+			this.Address = new();
+		}
 
 		public static IEnumerable<HasSpecialStuff> FilterByIdentity(SpacetimeDB.Identity value)
 		{
@@ -288,6 +303,19 @@ namespace SpacetimeDB
 		[DataMember(Name = "other")]
 		public uint Other;
 
+		public PkMultiIdentity(
+			uint Id,
+			uint Other
+		)
+		{
+			this.Id = Id;
+			this.Other = Other;
+		}
+
+		public PkMultiIdentity()
+		{
+		}
+
 		private static Dictionary<uint, PkMultiIdentity> Id_Index = new(16);
 		private static Dictionary<uint, PkMultiIdentity> Other_Index = new(16);
 
@@ -359,6 +387,19 @@ namespace SpacetimeDB
 		[DataMember(Name = "y")]
 		public long Y;
 
+		public Point(
+			long X,
+			long Y
+		)
+		{
+			this.X = X;
+			this.Y = Y;
+		}
+
+		public Point()
+		{
+		}
+
 		public static IEnumerable<Point> FilterByX(long value)
 		{
 			return Query(x => x.X == value);
@@ -392,7 +433,19 @@ namespace SpacetimeDB
 	public partial class Private : SpacetimeDB.DatabaseTable<Private, SpacetimeDB.ReducerEvent>
 	{
 		[DataMember(Name = "name")]
-		public string Name = "";
+		public string Name;
+
+		public Private(
+			string Name
+		)
+		{
+			this.Name = Name;
+		}
+
+		public Private()
+		{
+			this.Name = "";
+		}
 
 		public static IEnumerable<Private> FilterByName(string value)
 		{
@@ -467,7 +520,23 @@ namespace SpacetimeDB
 		[DataMember(Name = "scheduled_id")]
 		public ulong ScheduledId;
 		[DataMember(Name = "scheduled_at")]
-		public SpacetimeDB.ScheduleAt ScheduledAt = null!;
+		public SpacetimeDB.ScheduleAt ScheduledAt;
+
+		public RepeatingTestArg(
+			ulong PrevTime,
+			ulong ScheduledId,
+			SpacetimeDB.ScheduleAt ScheduledAt
+		)
+		{
+			this.PrevTime = PrevTime;
+			this.ScheduledId = ScheduledId;
+			this.ScheduledAt = ScheduledAt;
+		}
+
+		public RepeatingTestArg()
+		{
+			this.ScheduledAt = null!;
+		}
 
 		private static Dictionary<ulong, RepeatingTestArg> ScheduledId_Index = new(16);
 
@@ -572,7 +641,23 @@ namespace SpacetimeDB
 		[DataMember(Name = "y")]
 		public uint Y;
 		[DataMember(Name = "z")]
-		public string Z = "";
+		public string Z;
+
+		public TestA(
+			uint X,
+			uint Y,
+			string Z
+		)
+		{
+			this.X = X;
+			this.Y = Y;
+			this.Z = Z;
+		}
+
+		public TestA()
+		{
+			this.Z = "";
+		}
 
 		public static IEnumerable<TestA> FilterByX(uint value)
 		{
@@ -612,7 +697,19 @@ namespace SpacetimeDB
 	public partial class TestB
 	{
 		[DataMember(Name = "foo")]
-		public string Foo = "";
+		public string Foo;
+
+		public TestB(
+			string Foo
+		)
+		{
+			this.Foo = Foo;
+		}
+
+		public TestB()
+		{
+			this.Foo = "";
+		}
 
 	}
 }
@@ -637,6 +734,17 @@ namespace SpacetimeDB
 	{
 		[DataMember(Name = "test_c")]
 		public SpacetimeDB.Namespace.Types.TestC? TestC;
+
+		public TestD(
+			SpacetimeDB.Namespace.Types.TestC? TestC
+		)
+		{
+			this.TestC = TestC;
+		}
+
+		public TestD()
+		{
+		}
 
 
 	}
@@ -663,7 +771,21 @@ namespace SpacetimeDB
 		[DataMember(Name = "id")]
 		public ulong Id;
 		[DataMember(Name = "name")]
-		public string Name = "";
+		public string Name;
+
+		public TestE(
+			ulong Id,
+			string Name
+		)
+		{
+			this.Id = Id;
+			this.Name = Name;
+		}
+
+		public TestE()
+		{
+			this.Name = "";
+		}
 
 		private static Dictionary<ulong, TestE> Id_Index = new(16);
 
