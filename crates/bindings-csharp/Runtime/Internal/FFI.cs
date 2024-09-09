@@ -224,7 +224,6 @@ internal static partial class FFI
         ref uint buffer_len
     );
 
-
     [NativeMarshalling(typeof(ConsoleTimerIdMarshaller))]
     [StructLayout(LayoutKind.Sequential)]
     public readonly struct ConsoleTimerId
