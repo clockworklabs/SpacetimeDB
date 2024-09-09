@@ -15,7 +15,7 @@ use bitflags::Flags;
 use module::{derive_deserialize, derive_satstype, derive_serialize};
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote, quote_spanned, TokenStreamExt};
+use quote::{format_ident, quote, quote_spanned};
 use spacetimedb_primitives::ColumnAttribute;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -433,21 +433,13 @@ fn reducer_type_check(item: &syn::DeriveInput, reducer_name: &Path) -> TokenStre
 }
 
 struct IndexArg {
-    name: Option<Ident>,
+    #[allow(unused)]
+    name: Ident,
     kind: IndexType,
 }
 
 enum IndexType {
     BTree { columns: Vec<Ident> },
-}
-
-impl quote::ToTokens for IndexType {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        let kind = match self {
-            IndexType::BTree { .. } => "BTree",
-        };
-        tokens.append(Ident::new(kind, Span::call_site()))
-    }
 }
 
 impl TableArgs {
@@ -508,6 +500,7 @@ impl IndexArg {
             });
             Ok(())
         })?;
+        let name = name.ok_or_else(|| meta.error("missing index name, e.g. name = my_index"))?;
         let kind = algo.ok_or_else(|| meta.error("missing index algorithm, e.g., `btree(columns = [col1, col2])`"))?;
 
         Ok(IndexArg { name, kind })
@@ -536,7 +529,7 @@ impl IndexArg {
         Ok(IndexType::BTree { columns })
     }
 
-    /// Parses an inline `#[index(btree | hash)]` attribute on a field.
+    /// Parses an inline `#[index(btree)]` attribute on a field.
     fn parse_index_attr(field: &Ident, attr: &syn::Attribute) -> syn::Result<Self> {
         let mut kind = None;
         attr.parse_nested_meta(|meta| {
@@ -551,22 +544,37 @@ impl IndexArg {
             Ok(())
         })?;
         let kind = kind.ok_or_else(|| syn::Error::new_spanned(&attr.meta, "must specify kind of index (`btree`)"))?;
-        Ok(IndexArg { kind, name: None })
+        let name = field.clone();
+        Ok(IndexArg { kind, name })
     }
 
-    /// Returns the name the index will have
-    /// assuming the table is named `table_name`
-    /// and that the columns of the table are in `cols`.
-    fn normalized_name(&self, table_name: &str, cols: &[&Column]) -> String {
-        self.name
-            .as_ref()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| match &self.kind {
-                IndexType::BTree { .. } => (["btree", table_name].into_iter())
+    fn to_index_desc(&self, table_name: &str, cols: &[Column]) -> Result<TokenStream, syn::Error> {
+        match &self.kind {
+            IndexType::BTree { columns } => {
+                let cols = columns
+                    .iter()
+                    .map(|ident| {
+                        let col = cols
+                            .iter()
+                            .find(|col| col.field.ident == Some(ident))
+                            .ok_or_else(|| syn::Error::new(ident.span(), "not a column of the table"))?;
+                        Ok(col)
+                    })
+                    .collect::<syn::Result<Vec<_>>>()?;
+
+                let name = (["btree", table_name].into_iter())
                     .chain(cols.iter().map(|col| col.field.name.as_deref().unwrap()))
                     .collect::<Vec<_>>()
-                    .join("_"),
-            })
+                    .join("_");
+
+                let col_ids = cols.iter().map(|col| col.index);
+                Ok(quote!(spacetimedb::IndexDesc {
+                    name: #name,
+                    ty: spacetimedb::spacetimedb_lib::db::raw_def::IndexType::BTree,
+                    col_ids: &[#(#col_ids),*],
+                }))
+            }
+        }
     }
 }
 
@@ -601,13 +609,13 @@ impl IndexArg {
 ///    system; `pub struct` or `pub(crate) struct` do not affect the table visibility, only
 ///    the visibility of the items in your own source code.
 ///
-/// * `index(name = "...", btree | hash = [a, b, c])`
+/// * `index(name = my_index, btree(columns = [a, b, c]))`
 ///
 ///    You can specify an index on 1 or more of the table's columns with the above syntax.
-///    You can also just put `#[index(btree | hash)]` on the field itself if you only need
+///    You can also just put `#[index(btree)]` on the field itself if you only need
 ///    a single-column attribute; see column attributes below.
 ///
-/// * `name = "..."`
+/// * `name = my_table`
 ///
 ///    Specify the name of the table in the database, if you want it to be different from
 ///    the name of the struct.
@@ -633,7 +641,7 @@ impl IndexArg {
 ///
 ///    Similar to `#[unique]`, but generates additional CRUD methods.
 ///
-/// * `#[index(btree | hash)]`
+/// * `#[index(btree)]`
 ///
 ///    Creates a single-column index with the specified algorithm.
 ///
@@ -778,29 +786,11 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
         columns.push(column);
     }
 
-    let mut indexes = vec![];
-
-    for index in args.indices {
-        let IndexType::BTree { columns: cols } = &index.kind;
-        let cols = cols
-            .iter()
-            .map(|ident| {
-                let col = columns
-                    .iter()
-                    .find(|col| col.field.ident == Some(ident))
-                    .ok_or_else(|| syn::Error::new(ident.span(), "not a column of the table"))?;
-                Ok(col)
-            })
-            .collect::<syn::Result<Vec<_>>>()?;
-        let name = index.normalized_name(&table_name, &cols);
-        let col_ids = cols.iter().map(|col| col.index);
-        let ty = &index.kind;
-        indexes.push(quote!(spacetimedb::IndexDesc {
-            name: #name,
-            ty: spacetimedb::spacetimedb_lib::db::raw_def::IndexType::#ty,
-            col_ids: &[#(#col_ids),*],
-        }));
-    }
+    let indexes = args
+        .indices
+        .iter()
+        .map(|index| index.to_index_desc(&table_name, &columns))
+        .collect::<syn::Result<Vec<_>>>()?;
 
     let (unique_columns, nonunique_columns): (Vec<_>, Vec<_>) =
         columns.iter().partition(|x| x.attr.contains(ColumnAttribute::UNIQUE));
