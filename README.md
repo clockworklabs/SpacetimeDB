@@ -6,10 +6,9 @@ This repository contains the [Unity](https://unity.com/) SDK for SpacetimeDB. Th
 
 ## Documentation
 
-The Unity SDK uses the same code as the C# SDK. You can find the documentation for the C# SDK in the [C# SDK Reference](README.dotnet.md).
+The Unity SDK uses the same code as the C# SDK. You can find the documentation for the C# SDK in the [C# SDK Reference](https://spacetimedb.com/docs/sdks/c-sharp)
 
 There is also a comprehensive Unity tutorial/demo available:
-
 - [Unity Tutorial](https://spacetimedb.com/docs/unity/part-1) Doc
 - [Unity Demo](https://github.com/clockworklabs/SpacetimeDBUnityTutorial) Repo
 
