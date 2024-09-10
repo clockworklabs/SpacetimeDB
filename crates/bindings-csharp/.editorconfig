@@ -95,7 +95,6 @@ dotnet_style_explicit_tuple_names = true:suggestion
 dotnet_style_operator_placement_when_wrapping = beginning_of_line
 tab_width = 4
 indent_size = 4
-end_of_line = crlf
 dotnet_style_qualification_for_event = false:silent
 dotnet_style_qualification_for_method = false:silent
 dotnet_style_qualification_for_property = false:silent
