@@ -2,7 +2,7 @@ use std::{io, num::NonZeroU16, path::PathBuf, sync::RwLock};
 
 use log::trace;
 
-mod commit;
+pub mod commit;
 pub mod commitlog;
 pub mod repo;
 pub mod segment;
