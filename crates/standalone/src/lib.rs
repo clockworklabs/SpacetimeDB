@@ -11,9 +11,7 @@ use anyhow::{ensure, Context};
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use energy_monitor::StandaloneEnergyMonitor;
-use openssl::ec::{EcGroup, EcKey};
-use openssl::nid::Nid;
-use openssl::pkey::PKey;
+use rcgen::{KeyPair, PKCS_ECDSA_P256_SHA256};
 use spacetimedb::address::Address;
 use spacetimedb::auth::identity::{DecodingKey, EncodingKey};
 use spacetimedb::client::ClientActorIndex;
@@ -114,34 +112,24 @@ fn read_key(path: &Path) -> anyhow::Result<Vec<u8>> {
 }
 
 fn create_keys(public_key_path: &Path, private_key_path: &Path) -> anyhow::Result<()> {
-    // Create a new EC group from a named curve.
-    let group = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)?;
-
-    // Create a new EC key with the specified group.
-    let eckey = EcKey::generate(&group)?;
-
-    // Create a new PKey from the EC key.
-    let pkey = PKey::from_ec_key(eckey.clone())?;
-
-    // Get the private key in PKCS#8 PEM format.
-    let private_key = pkey.private_key_to_pem_pkcs8()?;
+    // Set the elliptic curve to P-256 (equivalent to `Nid::X9_62_PRIME256V1`)
+    let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)?;
 
     // Write the private key to a file.
     if let Some(parent) = private_key_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let mut priv_file = File::create(private_key_path)?;
-    priv_file.write_all(&private_key)?;
 
-    // Get the public key in PEM format.
-    let public_key = eckey.public_key_to_pem()?;
+    // Save in PKCS#8 PEM format.
+    priv_file.write_all(key_pair.serialize_pem().as_bytes())?;
 
     // Write the public key to a file.
     if let Some(parent) = public_key_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let mut pub_file = File::create(public_key_path)?;
-    pub_file.write_all(&public_key)?;
+    pub_file.write_all(key_pair.public_key_pem().as_bytes())?;
     Ok(())
 }
 

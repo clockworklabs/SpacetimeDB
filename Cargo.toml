@@ -187,8 +187,9 @@ quote = "1.0.8"
 rand = "0.8.5"
 rayon = "1.8"
 rayon-core = "1.11.0"
+rcgen = "0.13.1"
 regex = "1"
-reqwest = { version = "0.12", features = ["stream", "json"] }
+reqwest = { version = "0.12", features = ["stream", "json", "rustls-tls"] }
 rusqlite = { version = "0.29.0", features = ["bundled", "column_decltype"] }
 rust_decimal = { version = "1.29.1", features = ["db-tokio-postgres"] }
 rustc-demangle = "0.1.21"
@@ -242,8 +243,6 @@ urlencoding = "2.1.2"
 uuid = { version = "1.2.1", features = ["v4"] }
 walkdir = "2.2.5"
 wasmbin = "0.6"
-
-
 wasmtime = { version = "15", default-features = false, features = ["cranelift", "demangle", "addr2line", "cache"] }
 
 # We use the "ondemand" feature to allow connecting after the start,
@@ -258,7 +257,3 @@ tracing-tracy = { version = "0.10.4", features = [
    "broadcast",
    "ondemand",
  ] }
-
-# Vendor the openssl we rely on, rather than depend on a
-# potentially very old system version.
-openssl = { version = "0.10", features = ["vendored"] }
