@@ -2,7 +2,6 @@ pub mod build;
 pub mod call;
 pub mod delete;
 pub mod describe;
-pub mod dns;
 pub mod energy;
 pub mod generate;
 pub mod identity;
