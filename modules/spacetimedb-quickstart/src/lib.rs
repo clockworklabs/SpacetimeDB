@@ -1,6 +1,6 @@
 use spacetimedb::{println, query};
 
-#[spacetimedb::table(name = people, public)]
+#[spacetimedb::table(name = person, public)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]

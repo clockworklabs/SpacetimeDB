@@ -6,7 +6,7 @@ class NewUserFlow(Smoketest):
     MODULE_CODE = """
 use spacetimedb::println;
 
-#[spacetimedb::table(name = people)]
+#[spacetimedb::table(name = person)]
 pub struct Person {
     name: String
 }
@@ -43,7 +43,7 @@ pub fn say_hello() {
         self.assertEqual(self.logs(5).count("Hello, World!"), 2)
         self.assertEqual(self.logs(5).count("Hello, Tyler!"), 1)
 
-        out = self.spacetime("sql", self.address, "SELECT * FROM people")
+        out = self.spacetime("sql", self.address, "SELECT * FROM person")
         # The spaces after the name are important
         self.assertMultiLineEqual(out, """\
  name    

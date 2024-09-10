@@ -81,7 +81,7 @@ pub type TestAlias = TestA;
 // #[spacetimedb::migrate]
 // pub fn migrate() {}
 
-#[spacetimedb::table(name = repeating_test_args, scheduled(repeating_test))]
+#[spacetimedb::table(name = repeating_test_arg, scheduled(repeating_test))]
 pub struct RepeatingTestArg {
     prev_time: Timestamp,
 }

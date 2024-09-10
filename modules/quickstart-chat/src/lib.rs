@@ -1,6 +1,6 @@
 use spacetimedb::{Identity, ReducerContext, Timestamp};
 
-#[spacetimedb::table(name = users, public)]
+#[spacetimedb::table(name = user, public)]
 pub struct User {
     #[primary_key]
     identity: Identity,
@@ -8,7 +8,7 @@ pub struct User {
     online: bool,
 }
 
-#[spacetimedb::table(name = messages, public)]
+#[spacetimedb::table(name = message, public)]
 pub struct Message {
     sender: Identity,
     sent: Timestamp,
