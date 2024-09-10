@@ -26,7 +26,7 @@ partial class PrivateTable : SpacetimeDB.Internal.ITable<PrivateTable>
             ));
     }
 
-    public void ReadGenFields(System.IO.BinaryReader reader) { }
+    void SpacetimeDB.Internal.ITable<PrivateTable>.ReadGenFields(System.IO.BinaryReader reader) { }
 
     static SpacetimeDB.Internal.Module.TableDesc SpacetimeDB.Internal.ITable<PrivateTable>.MakeTableDesc(
         SpacetimeDB.BSATN.ITypeRegistrar registrar

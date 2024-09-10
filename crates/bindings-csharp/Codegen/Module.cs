@@ -188,7 +188,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
         extensions.Contents.Append(
             $$"""
-            public void ReadGenFields(System.IO.BinaryReader reader) {
+            void {{iTable}}.ReadGenFields(System.IO.BinaryReader reader) {
                 {{string.Join(
                     "\n",
                     autoIncFields.Select(name =>
