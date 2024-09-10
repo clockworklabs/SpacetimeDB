@@ -714,182 +714,198 @@ impl SpacetimeModule for Module {
     ) {
         let table_name = &table_update.table_name[..];
         match table_name {
-            "LargeTable" => {
+            "large_table" => {
                 client_cache.handle_table_update_no_primary_key::<large_table::LargeTable>(callbacks, table_update)
             }
-            "OneAddress" => {
+            "one_address" => {
                 client_cache.handle_table_update_no_primary_key::<one_address::OneAddress>(callbacks, table_update)
             }
-            "OneBool" => client_cache.handle_table_update_no_primary_key::<one_bool::OneBool>(callbacks, table_update),
-            "OneByteStruct" => client_cache
+            "one_bool" => client_cache.handle_table_update_no_primary_key::<one_bool::OneBool>(callbacks, table_update),
+            "one_byte_struct" => client_cache
                 .handle_table_update_no_primary_key::<one_byte_struct::OneByteStruct>(callbacks, table_update),
-            "OneEnumWithPayload" => client_cache
+            "one_enum_with_payload" => client_cache
                 .handle_table_update_no_primary_key::<one_enum_with_payload::OneEnumWithPayload>(
                     callbacks,
                     table_update,
                 ),
-            "OneEveryPrimitiveStruct" => client_cache
+            "one_every_primitive_struct" => client_cache
                 .handle_table_update_no_primary_key::<one_every_primitive_struct::OneEveryPrimitiveStruct>(
                     callbacks,
                     table_update,
                 ),
-            "OneEveryVecStruct" => client_cache
+            "one_every_vec_struct" => client_cache
                 .handle_table_update_no_primary_key::<one_every_vec_struct::OneEveryVecStruct>(callbacks, table_update),
-            "OneF32" => client_cache.handle_table_update_no_primary_key::<one_f_32::OneF32>(callbacks, table_update),
-            "OneF64" => client_cache.handle_table_update_no_primary_key::<one_f_64::OneF64>(callbacks, table_update),
-            "OneI128" => client_cache.handle_table_update_no_primary_key::<one_i_128::OneI128>(callbacks, table_update),
-            "OneI16" => client_cache.handle_table_update_no_primary_key::<one_i_16::OneI16>(callbacks, table_update),
-            "OneI256" => client_cache.handle_table_update_no_primary_key::<one_i_256::OneI256>(callbacks, table_update),
-            "OneI32" => client_cache.handle_table_update_no_primary_key::<one_i_32::OneI32>(callbacks, table_update),
-            "OneI64" => client_cache.handle_table_update_no_primary_key::<one_i_64::OneI64>(callbacks, table_update),
-            "OneI8" => client_cache.handle_table_update_no_primary_key::<one_i_8::OneI8>(callbacks, table_update),
-            "OneIdentity" => {
+            "one_f32" => client_cache.handle_table_update_no_primary_key::<one_f_32::OneF32>(callbacks, table_update),
+            "one_f64" => client_cache.handle_table_update_no_primary_key::<one_f_64::OneF64>(callbacks, table_update),
+            "one_i128" => {
+                client_cache.handle_table_update_no_primary_key::<one_i_128::OneI128>(callbacks, table_update)
+            }
+            "one_i16" => client_cache.handle_table_update_no_primary_key::<one_i_16::OneI16>(callbacks, table_update),
+            "one_i256" => {
+                client_cache.handle_table_update_no_primary_key::<one_i_256::OneI256>(callbacks, table_update)
+            }
+            "one_i32" => client_cache.handle_table_update_no_primary_key::<one_i_32::OneI32>(callbacks, table_update),
+            "one_i64" => client_cache.handle_table_update_no_primary_key::<one_i_64::OneI64>(callbacks, table_update),
+            "one_i8" => client_cache.handle_table_update_no_primary_key::<one_i_8::OneI8>(callbacks, table_update),
+            "one_identity" => {
                 client_cache.handle_table_update_no_primary_key::<one_identity::OneIdentity>(callbacks, table_update)
             }
-            "OneSimpleEnum" => client_cache
+            "one_simple_enum" => client_cache
                 .handle_table_update_no_primary_key::<one_simple_enum::OneSimpleEnum>(callbacks, table_update),
-            "OneString" => {
+            "one_string" => {
                 client_cache.handle_table_update_no_primary_key::<one_string::OneString>(callbacks, table_update)
             }
-            "OneU128" => client_cache.handle_table_update_no_primary_key::<one_u_128::OneU128>(callbacks, table_update),
-            "OneU16" => client_cache.handle_table_update_no_primary_key::<one_u_16::OneU16>(callbacks, table_update),
-            "OneU256" => client_cache.handle_table_update_no_primary_key::<one_u_256::OneU256>(callbacks, table_update),
-            "OneU32" => client_cache.handle_table_update_no_primary_key::<one_u_32::OneU32>(callbacks, table_update),
-            "OneU64" => client_cache.handle_table_update_no_primary_key::<one_u_64::OneU64>(callbacks, table_update),
-            "OneU8" => client_cache.handle_table_update_no_primary_key::<one_u_8::OneU8>(callbacks, table_update),
-            "OneUnitStruct" => client_cache
+            "one_u128" => {
+                client_cache.handle_table_update_no_primary_key::<one_u_128::OneU128>(callbacks, table_update)
+            }
+            "one_u16" => client_cache.handle_table_update_no_primary_key::<one_u_16::OneU16>(callbacks, table_update),
+            "one_u256" => {
+                client_cache.handle_table_update_no_primary_key::<one_u_256::OneU256>(callbacks, table_update)
+            }
+            "one_u32" => client_cache.handle_table_update_no_primary_key::<one_u_32::OneU32>(callbacks, table_update),
+            "one_u64" => client_cache.handle_table_update_no_primary_key::<one_u_64::OneU64>(callbacks, table_update),
+            "one_u8" => client_cache.handle_table_update_no_primary_key::<one_u_8::OneU8>(callbacks, table_update),
+            "one_unit_struct" => client_cache
                 .handle_table_update_no_primary_key::<one_unit_struct::OneUnitStruct>(callbacks, table_update),
-            "OptionEveryPrimitiveStruct" => client_cache
+            "option_every_primitive_struct" => client_cache
                 .handle_table_update_no_primary_key::<option_every_primitive_struct::OptionEveryPrimitiveStruct>(
                     callbacks,
                     table_update,
                 ),
-            "OptionI32" => {
+            "option_i32" => {
                 client_cache.handle_table_update_no_primary_key::<option_i_32::OptionI32>(callbacks, table_update)
             }
-            "OptionIdentity" => client_cache
+            "option_identity" => client_cache
                 .handle_table_update_no_primary_key::<option_identity::OptionIdentity>(callbacks, table_update),
-            "OptionSimpleEnum" => client_cache
+            "option_simple_enum" => client_cache
                 .handle_table_update_no_primary_key::<option_simple_enum::OptionSimpleEnum>(callbacks, table_update),
-            "OptionString" => {
+            "option_string" => {
                 client_cache.handle_table_update_no_primary_key::<option_string::OptionString>(callbacks, table_update)
             }
-            "OptionVecOptionI32" => client_cache
+            "option_vec_option_i32" => client_cache
                 .handle_table_update_no_primary_key::<option_vec_option_i_32::OptionVecOptionI32>(
                     callbacks,
                     table_update,
                 ),
-            "PkAddress" => {
+            "pk_address" => {
                 client_cache.handle_table_update_with_primary_key::<pk_address::PkAddress>(callbacks, table_update)
             }
-            "PkBool" => client_cache.handle_table_update_with_primary_key::<pk_bool::PkBool>(callbacks, table_update),
-            "PkI128" => client_cache.handle_table_update_with_primary_key::<pk_i_128::PkI128>(callbacks, table_update),
-            "PkI16" => client_cache.handle_table_update_with_primary_key::<pk_i_16::PkI16>(callbacks, table_update),
-            "PkI256" => client_cache.handle_table_update_with_primary_key::<pk_i_256::PkI256>(callbacks, table_update),
-            "PkI32" => client_cache.handle_table_update_with_primary_key::<pk_i_32::PkI32>(callbacks, table_update),
-            "PkI64" => client_cache.handle_table_update_with_primary_key::<pk_i_64::PkI64>(callbacks, table_update),
-            "PkI8" => client_cache.handle_table_update_with_primary_key::<pk_i_8::PkI8>(callbacks, table_update),
-            "PkIdentity" => {
+            "pk_bool" => client_cache.handle_table_update_with_primary_key::<pk_bool::PkBool>(callbacks, table_update),
+            "pk_i128" => client_cache.handle_table_update_with_primary_key::<pk_i_128::PkI128>(callbacks, table_update),
+            "pk_i16" => client_cache.handle_table_update_with_primary_key::<pk_i_16::PkI16>(callbacks, table_update),
+            "pk_i256" => client_cache.handle_table_update_with_primary_key::<pk_i_256::PkI256>(callbacks, table_update),
+            "pk_i32" => client_cache.handle_table_update_with_primary_key::<pk_i_32::PkI32>(callbacks, table_update),
+            "pk_i64" => client_cache.handle_table_update_with_primary_key::<pk_i_64::PkI64>(callbacks, table_update),
+            "pk_i8" => client_cache.handle_table_update_with_primary_key::<pk_i_8::PkI8>(callbacks, table_update),
+            "pk_identity" => {
                 client_cache.handle_table_update_with_primary_key::<pk_identity::PkIdentity>(callbacks, table_update)
             }
-            "PkString" => {
+            "pk_string" => {
                 client_cache.handle_table_update_with_primary_key::<pk_string::PkString>(callbacks, table_update)
             }
-            "PkU128" => client_cache.handle_table_update_with_primary_key::<pk_u_128::PkU128>(callbacks, table_update),
-            "PkU16" => client_cache.handle_table_update_with_primary_key::<pk_u_16::PkU16>(callbacks, table_update),
-            "PkU256" => client_cache.handle_table_update_with_primary_key::<pk_u_256::PkU256>(callbacks, table_update),
-            "PkU32" => client_cache.handle_table_update_with_primary_key::<pk_u_32::PkU32>(callbacks, table_update),
-            "PkU64" => client_cache.handle_table_update_with_primary_key::<pk_u_64::PkU64>(callbacks, table_update),
-            "PkU8" => client_cache.handle_table_update_with_primary_key::<pk_u_8::PkU8>(callbacks, table_update),
-            "TableHoldsTable" => client_cache
+            "pk_u128" => client_cache.handle_table_update_with_primary_key::<pk_u_128::PkU128>(callbacks, table_update),
+            "pk_u16" => client_cache.handle_table_update_with_primary_key::<pk_u_16::PkU16>(callbacks, table_update),
+            "pk_u256" => client_cache.handle_table_update_with_primary_key::<pk_u_256::PkU256>(callbacks, table_update),
+            "pk_u32" => client_cache.handle_table_update_with_primary_key::<pk_u_32::PkU32>(callbacks, table_update),
+            "pk_u64" => client_cache.handle_table_update_with_primary_key::<pk_u_64::PkU64>(callbacks, table_update),
+            "pk_u8" => client_cache.handle_table_update_with_primary_key::<pk_u_8::PkU8>(callbacks, table_update),
+            "table_holds_table" => client_cache
                 .handle_table_update_no_primary_key::<table_holds_table::TableHoldsTable>(callbacks, table_update),
-            "UniqueAddress" => client_cache
+            "unique_address" => client_cache
                 .handle_table_update_no_primary_key::<unique_address::UniqueAddress>(callbacks, table_update),
-            "UniqueBool" => {
+            "unique_bool" => {
                 client_cache.handle_table_update_no_primary_key::<unique_bool::UniqueBool>(callbacks, table_update)
             }
-            "UniqueI128" => {
+            "unique_i128" => {
                 client_cache.handle_table_update_no_primary_key::<unique_i_128::UniqueI128>(callbacks, table_update)
             }
-            "UniqueI16" => {
+            "unique_i16" => {
                 client_cache.handle_table_update_no_primary_key::<unique_i_16::UniqueI16>(callbacks, table_update)
             }
-            "UniqueI256" => {
+            "unique_i256" => {
                 client_cache.handle_table_update_no_primary_key::<unique_i_256::UniqueI256>(callbacks, table_update)
             }
-            "UniqueI32" => {
+            "unique_i32" => {
                 client_cache.handle_table_update_no_primary_key::<unique_i_32::UniqueI32>(callbacks, table_update)
             }
-            "UniqueI64" => {
+            "unique_i64" => {
                 client_cache.handle_table_update_no_primary_key::<unique_i_64::UniqueI64>(callbacks, table_update)
             }
-            "UniqueI8" => {
+            "unique_i8" => {
                 client_cache.handle_table_update_no_primary_key::<unique_i_8::UniqueI8>(callbacks, table_update)
             }
-            "UniqueIdentity" => client_cache
+            "unique_identity" => client_cache
                 .handle_table_update_no_primary_key::<unique_identity::UniqueIdentity>(callbacks, table_update),
-            "UniqueString" => {
+            "unique_string" => {
                 client_cache.handle_table_update_no_primary_key::<unique_string::UniqueString>(callbacks, table_update)
             }
-            "UniqueU128" => {
+            "unique_u128" => {
                 client_cache.handle_table_update_no_primary_key::<unique_u_128::UniqueU128>(callbacks, table_update)
             }
-            "UniqueU16" => {
+            "unique_u16" => {
                 client_cache.handle_table_update_no_primary_key::<unique_u_16::UniqueU16>(callbacks, table_update)
             }
-            "UniqueU256" => {
+            "unique_u256" => {
                 client_cache.handle_table_update_no_primary_key::<unique_u_256::UniqueU256>(callbacks, table_update)
             }
-            "UniqueU32" => {
+            "unique_u32" => {
                 client_cache.handle_table_update_no_primary_key::<unique_u_32::UniqueU32>(callbacks, table_update)
             }
-            "UniqueU64" => {
+            "unique_u64" => {
                 client_cache.handle_table_update_no_primary_key::<unique_u_64::UniqueU64>(callbacks, table_update)
             }
-            "UniqueU8" => {
+            "unique_u8" => {
                 client_cache.handle_table_update_no_primary_key::<unique_u_8::UniqueU8>(callbacks, table_update)
             }
-            "VecAddress" => {
+            "vec_address" => {
                 client_cache.handle_table_update_no_primary_key::<vec_address::VecAddress>(callbacks, table_update)
             }
-            "VecBool" => client_cache.handle_table_update_no_primary_key::<vec_bool::VecBool>(callbacks, table_update),
-            "VecByteStruct" => client_cache
+            "vec_bool" => client_cache.handle_table_update_no_primary_key::<vec_bool::VecBool>(callbacks, table_update),
+            "vec_byte_struct" => client_cache
                 .handle_table_update_no_primary_key::<vec_byte_struct::VecByteStruct>(callbacks, table_update),
-            "VecEnumWithPayload" => client_cache
+            "vec_enum_with_payload" => client_cache
                 .handle_table_update_no_primary_key::<vec_enum_with_payload::VecEnumWithPayload>(
                     callbacks,
                     table_update,
                 ),
-            "VecEveryPrimitiveStruct" => client_cache
+            "vec_every_primitive_struct" => client_cache
                 .handle_table_update_no_primary_key::<vec_every_primitive_struct::VecEveryPrimitiveStruct>(
                     callbacks,
                     table_update,
                 ),
-            "VecEveryVecStruct" => client_cache
+            "vec_every_vec_struct" => client_cache
                 .handle_table_update_no_primary_key::<vec_every_vec_struct::VecEveryVecStruct>(callbacks, table_update),
-            "VecF32" => client_cache.handle_table_update_no_primary_key::<vec_f_32::VecF32>(callbacks, table_update),
-            "VecF64" => client_cache.handle_table_update_no_primary_key::<vec_f_64::VecF64>(callbacks, table_update),
-            "VecI128" => client_cache.handle_table_update_no_primary_key::<vec_i_128::VecI128>(callbacks, table_update),
-            "VecI16" => client_cache.handle_table_update_no_primary_key::<vec_i_16::VecI16>(callbacks, table_update),
-            "VecI256" => client_cache.handle_table_update_no_primary_key::<vec_i_256::VecI256>(callbacks, table_update),
-            "VecI32" => client_cache.handle_table_update_no_primary_key::<vec_i_32::VecI32>(callbacks, table_update),
-            "VecI64" => client_cache.handle_table_update_no_primary_key::<vec_i_64::VecI64>(callbacks, table_update),
-            "VecI8" => client_cache.handle_table_update_no_primary_key::<vec_i_8::VecI8>(callbacks, table_update),
-            "VecIdentity" => {
+            "vec_f32" => client_cache.handle_table_update_no_primary_key::<vec_f_32::VecF32>(callbacks, table_update),
+            "vec_f64" => client_cache.handle_table_update_no_primary_key::<vec_f_64::VecF64>(callbacks, table_update),
+            "vec_i128" => {
+                client_cache.handle_table_update_no_primary_key::<vec_i_128::VecI128>(callbacks, table_update)
+            }
+            "vec_i16" => client_cache.handle_table_update_no_primary_key::<vec_i_16::VecI16>(callbacks, table_update),
+            "vec_i256" => {
+                client_cache.handle_table_update_no_primary_key::<vec_i_256::VecI256>(callbacks, table_update)
+            }
+            "vec_i32" => client_cache.handle_table_update_no_primary_key::<vec_i_32::VecI32>(callbacks, table_update),
+            "vec_i64" => client_cache.handle_table_update_no_primary_key::<vec_i_64::VecI64>(callbacks, table_update),
+            "vec_i8" => client_cache.handle_table_update_no_primary_key::<vec_i_8::VecI8>(callbacks, table_update),
+            "vec_identity" => {
                 client_cache.handle_table_update_no_primary_key::<vec_identity::VecIdentity>(callbacks, table_update)
             }
-            "VecSimpleEnum" => client_cache
+            "vec_simple_enum" => client_cache
                 .handle_table_update_no_primary_key::<vec_simple_enum::VecSimpleEnum>(callbacks, table_update),
-            "VecString" => {
+            "vec_string" => {
                 client_cache.handle_table_update_no_primary_key::<vec_string::VecString>(callbacks, table_update)
             }
-            "VecU128" => client_cache.handle_table_update_no_primary_key::<vec_u_128::VecU128>(callbacks, table_update),
-            "VecU16" => client_cache.handle_table_update_no_primary_key::<vec_u_16::VecU16>(callbacks, table_update),
-            "VecU256" => client_cache.handle_table_update_no_primary_key::<vec_u_256::VecU256>(callbacks, table_update),
-            "VecU32" => client_cache.handle_table_update_no_primary_key::<vec_u_32::VecU32>(callbacks, table_update),
-            "VecU64" => client_cache.handle_table_update_no_primary_key::<vec_u_64::VecU64>(callbacks, table_update),
-            "VecU8" => client_cache.handle_table_update_no_primary_key::<vec_u_8::VecU8>(callbacks, table_update),
-            "VecUnitStruct" => client_cache
+            "vec_u128" => {
+                client_cache.handle_table_update_no_primary_key::<vec_u_128::VecU128>(callbacks, table_update)
+            }
+            "vec_u16" => client_cache.handle_table_update_no_primary_key::<vec_u_16::VecU16>(callbacks, table_update),
+            "vec_u256" => {
+                client_cache.handle_table_update_no_primary_key::<vec_u_256::VecU256>(callbacks, table_update)
+            }
+            "vec_u32" => client_cache.handle_table_update_no_primary_key::<vec_u_32::VecU32>(callbacks, table_update),
+            "vec_u64" => client_cache.handle_table_update_no_primary_key::<vec_u_64::VecU64>(callbacks, table_update),
+            "vec_u8" => client_cache.handle_table_update_no_primary_key::<vec_u_8::VecU8>(callbacks, table_update),
+            "vec_unit_struct" => client_cache
                 .handle_table_update_no_primary_key::<vec_unit_struct::VecUnitStruct>(callbacks, table_update),
             _ => spacetimedb_sdk::log::error!("TableRowOperation on unknown table {:?}", table_name),
         }
@@ -1184,134 +1200,138 @@ match &reducer_call.reducer_name[..] {
     ) {
         let table_name = &new_subs.table_name[..];
         match table_name {
-            "LargeTable" => client_cache.handle_resubscribe_for_type::<large_table::LargeTable>(callbacks, new_subs),
-            "OneAddress" => client_cache.handle_resubscribe_for_type::<one_address::OneAddress>(callbacks, new_subs),
-            "OneBool" => client_cache.handle_resubscribe_for_type::<one_bool::OneBool>(callbacks, new_subs),
-            "OneByteStruct" => {
+            "large_table" => client_cache.handle_resubscribe_for_type::<large_table::LargeTable>(callbacks, new_subs),
+            "one_address" => client_cache.handle_resubscribe_for_type::<one_address::OneAddress>(callbacks, new_subs),
+            "one_bool" => client_cache.handle_resubscribe_for_type::<one_bool::OneBool>(callbacks, new_subs),
+            "one_byte_struct" => {
                 client_cache.handle_resubscribe_for_type::<one_byte_struct::OneByteStruct>(callbacks, new_subs)
             }
-            "OneEnumWithPayload" => client_cache
+            "one_enum_with_payload" => client_cache
                 .handle_resubscribe_for_type::<one_enum_with_payload::OneEnumWithPayload>(callbacks, new_subs),
-            "OneEveryPrimitiveStruct" => client_cache
+            "one_every_primitive_struct" => client_cache
                 .handle_resubscribe_for_type::<one_every_primitive_struct::OneEveryPrimitiveStruct>(
                     callbacks, new_subs,
                 ),
-            "OneEveryVecStruct" => {
+            "one_every_vec_struct" => {
                 client_cache.handle_resubscribe_for_type::<one_every_vec_struct::OneEveryVecStruct>(callbacks, new_subs)
             }
-            "OneF32" => client_cache.handle_resubscribe_for_type::<one_f_32::OneF32>(callbacks, new_subs),
-            "OneF64" => client_cache.handle_resubscribe_for_type::<one_f_64::OneF64>(callbacks, new_subs),
-            "OneI128" => client_cache.handle_resubscribe_for_type::<one_i_128::OneI128>(callbacks, new_subs),
-            "OneI16" => client_cache.handle_resubscribe_for_type::<one_i_16::OneI16>(callbacks, new_subs),
-            "OneI256" => client_cache.handle_resubscribe_for_type::<one_i_256::OneI256>(callbacks, new_subs),
-            "OneI32" => client_cache.handle_resubscribe_for_type::<one_i_32::OneI32>(callbacks, new_subs),
-            "OneI64" => client_cache.handle_resubscribe_for_type::<one_i_64::OneI64>(callbacks, new_subs),
-            "OneI8" => client_cache.handle_resubscribe_for_type::<one_i_8::OneI8>(callbacks, new_subs),
-            "OneIdentity" => client_cache.handle_resubscribe_for_type::<one_identity::OneIdentity>(callbacks, new_subs),
-            "OneSimpleEnum" => {
+            "one_f32" => client_cache.handle_resubscribe_for_type::<one_f_32::OneF32>(callbacks, new_subs),
+            "one_f64" => client_cache.handle_resubscribe_for_type::<one_f_64::OneF64>(callbacks, new_subs),
+            "one_i128" => client_cache.handle_resubscribe_for_type::<one_i_128::OneI128>(callbacks, new_subs),
+            "one_i16" => client_cache.handle_resubscribe_for_type::<one_i_16::OneI16>(callbacks, new_subs),
+            "one_i256" => client_cache.handle_resubscribe_for_type::<one_i_256::OneI256>(callbacks, new_subs),
+            "one_i32" => client_cache.handle_resubscribe_for_type::<one_i_32::OneI32>(callbacks, new_subs),
+            "one_i64" => client_cache.handle_resubscribe_for_type::<one_i_64::OneI64>(callbacks, new_subs),
+            "one_i8" => client_cache.handle_resubscribe_for_type::<one_i_8::OneI8>(callbacks, new_subs),
+            "one_identity" => {
+                client_cache.handle_resubscribe_for_type::<one_identity::OneIdentity>(callbacks, new_subs)
+            }
+            "one_simple_enum" => {
                 client_cache.handle_resubscribe_for_type::<one_simple_enum::OneSimpleEnum>(callbacks, new_subs)
             }
-            "OneString" => client_cache.handle_resubscribe_for_type::<one_string::OneString>(callbacks, new_subs),
-            "OneU128" => client_cache.handle_resubscribe_for_type::<one_u_128::OneU128>(callbacks, new_subs),
-            "OneU16" => client_cache.handle_resubscribe_for_type::<one_u_16::OneU16>(callbacks, new_subs),
-            "OneU256" => client_cache.handle_resubscribe_for_type::<one_u_256::OneU256>(callbacks, new_subs),
-            "OneU32" => client_cache.handle_resubscribe_for_type::<one_u_32::OneU32>(callbacks, new_subs),
-            "OneU64" => client_cache.handle_resubscribe_for_type::<one_u_64::OneU64>(callbacks, new_subs),
-            "OneU8" => client_cache.handle_resubscribe_for_type::<one_u_8::OneU8>(callbacks, new_subs),
-            "OneUnitStruct" => {
+            "one_string" => client_cache.handle_resubscribe_for_type::<one_string::OneString>(callbacks, new_subs),
+            "one_u128" => client_cache.handle_resubscribe_for_type::<one_u_128::OneU128>(callbacks, new_subs),
+            "one_u16" => client_cache.handle_resubscribe_for_type::<one_u_16::OneU16>(callbacks, new_subs),
+            "one_u256" => client_cache.handle_resubscribe_for_type::<one_u_256::OneU256>(callbacks, new_subs),
+            "one_u32" => client_cache.handle_resubscribe_for_type::<one_u_32::OneU32>(callbacks, new_subs),
+            "one_u64" => client_cache.handle_resubscribe_for_type::<one_u_64::OneU64>(callbacks, new_subs),
+            "one_u8" => client_cache.handle_resubscribe_for_type::<one_u_8::OneU8>(callbacks, new_subs),
+            "one_unit_struct" => {
                 client_cache.handle_resubscribe_for_type::<one_unit_struct::OneUnitStruct>(callbacks, new_subs)
             }
-            "OptionEveryPrimitiveStruct" => client_cache
+            "option_every_primitive_struct" => client_cache
                 .handle_resubscribe_for_type::<option_every_primitive_struct::OptionEveryPrimitiveStruct>(
                     callbacks, new_subs,
                 ),
-            "OptionI32" => client_cache.handle_resubscribe_for_type::<option_i_32::OptionI32>(callbacks, new_subs),
-            "OptionIdentity" => {
+            "option_i32" => client_cache.handle_resubscribe_for_type::<option_i_32::OptionI32>(callbacks, new_subs),
+            "option_identity" => {
                 client_cache.handle_resubscribe_for_type::<option_identity::OptionIdentity>(callbacks, new_subs)
             }
-            "OptionSimpleEnum" => {
+            "option_simple_enum" => {
                 client_cache.handle_resubscribe_for_type::<option_simple_enum::OptionSimpleEnum>(callbacks, new_subs)
             }
-            "OptionString" => {
+            "option_string" => {
                 client_cache.handle_resubscribe_for_type::<option_string::OptionString>(callbacks, new_subs)
             }
-            "OptionVecOptionI32" => client_cache
+            "option_vec_option_i32" => client_cache
                 .handle_resubscribe_for_type::<option_vec_option_i_32::OptionVecOptionI32>(callbacks, new_subs),
-            "PkAddress" => client_cache.handle_resubscribe_for_type::<pk_address::PkAddress>(callbacks, new_subs),
-            "PkBool" => client_cache.handle_resubscribe_for_type::<pk_bool::PkBool>(callbacks, new_subs),
-            "PkI128" => client_cache.handle_resubscribe_for_type::<pk_i_128::PkI128>(callbacks, new_subs),
-            "PkI16" => client_cache.handle_resubscribe_for_type::<pk_i_16::PkI16>(callbacks, new_subs),
-            "PkI256" => client_cache.handle_resubscribe_for_type::<pk_i_256::PkI256>(callbacks, new_subs),
-            "PkI32" => client_cache.handle_resubscribe_for_type::<pk_i_32::PkI32>(callbacks, new_subs),
-            "PkI64" => client_cache.handle_resubscribe_for_type::<pk_i_64::PkI64>(callbacks, new_subs),
-            "PkI8" => client_cache.handle_resubscribe_for_type::<pk_i_8::PkI8>(callbacks, new_subs),
-            "PkIdentity" => client_cache.handle_resubscribe_for_type::<pk_identity::PkIdentity>(callbacks, new_subs),
-            "PkString" => client_cache.handle_resubscribe_for_type::<pk_string::PkString>(callbacks, new_subs),
-            "PkU128" => client_cache.handle_resubscribe_for_type::<pk_u_128::PkU128>(callbacks, new_subs),
-            "PkU16" => client_cache.handle_resubscribe_for_type::<pk_u_16::PkU16>(callbacks, new_subs),
-            "PkU256" => client_cache.handle_resubscribe_for_type::<pk_u_256::PkU256>(callbacks, new_subs),
-            "PkU32" => client_cache.handle_resubscribe_for_type::<pk_u_32::PkU32>(callbacks, new_subs),
-            "PkU64" => client_cache.handle_resubscribe_for_type::<pk_u_64::PkU64>(callbacks, new_subs),
-            "PkU8" => client_cache.handle_resubscribe_for_type::<pk_u_8::PkU8>(callbacks, new_subs),
-            "TableHoldsTable" => {
+            "pk_address" => client_cache.handle_resubscribe_for_type::<pk_address::PkAddress>(callbacks, new_subs),
+            "pk_bool" => client_cache.handle_resubscribe_for_type::<pk_bool::PkBool>(callbacks, new_subs),
+            "pk_i128" => client_cache.handle_resubscribe_for_type::<pk_i_128::PkI128>(callbacks, new_subs),
+            "pk_i16" => client_cache.handle_resubscribe_for_type::<pk_i_16::PkI16>(callbacks, new_subs),
+            "pk_i256" => client_cache.handle_resubscribe_for_type::<pk_i_256::PkI256>(callbacks, new_subs),
+            "pk_i32" => client_cache.handle_resubscribe_for_type::<pk_i_32::PkI32>(callbacks, new_subs),
+            "pk_i64" => client_cache.handle_resubscribe_for_type::<pk_i_64::PkI64>(callbacks, new_subs),
+            "pk_i8" => client_cache.handle_resubscribe_for_type::<pk_i_8::PkI8>(callbacks, new_subs),
+            "pk_identity" => client_cache.handle_resubscribe_for_type::<pk_identity::PkIdentity>(callbacks, new_subs),
+            "pk_string" => client_cache.handle_resubscribe_for_type::<pk_string::PkString>(callbacks, new_subs),
+            "pk_u128" => client_cache.handle_resubscribe_for_type::<pk_u_128::PkU128>(callbacks, new_subs),
+            "pk_u16" => client_cache.handle_resubscribe_for_type::<pk_u_16::PkU16>(callbacks, new_subs),
+            "pk_u256" => client_cache.handle_resubscribe_for_type::<pk_u_256::PkU256>(callbacks, new_subs),
+            "pk_u32" => client_cache.handle_resubscribe_for_type::<pk_u_32::PkU32>(callbacks, new_subs),
+            "pk_u64" => client_cache.handle_resubscribe_for_type::<pk_u_64::PkU64>(callbacks, new_subs),
+            "pk_u8" => client_cache.handle_resubscribe_for_type::<pk_u_8::PkU8>(callbacks, new_subs),
+            "table_holds_table" => {
                 client_cache.handle_resubscribe_for_type::<table_holds_table::TableHoldsTable>(callbacks, new_subs)
             }
-            "UniqueAddress" => {
+            "unique_address" => {
                 client_cache.handle_resubscribe_for_type::<unique_address::UniqueAddress>(callbacks, new_subs)
             }
-            "UniqueBool" => client_cache.handle_resubscribe_for_type::<unique_bool::UniqueBool>(callbacks, new_subs),
-            "UniqueI128" => client_cache.handle_resubscribe_for_type::<unique_i_128::UniqueI128>(callbacks, new_subs),
-            "UniqueI16" => client_cache.handle_resubscribe_for_type::<unique_i_16::UniqueI16>(callbacks, new_subs),
-            "UniqueI256" => client_cache.handle_resubscribe_for_type::<unique_i_256::UniqueI256>(callbacks, new_subs),
-            "UniqueI32" => client_cache.handle_resubscribe_for_type::<unique_i_32::UniqueI32>(callbacks, new_subs),
-            "UniqueI64" => client_cache.handle_resubscribe_for_type::<unique_i_64::UniqueI64>(callbacks, new_subs),
-            "UniqueI8" => client_cache.handle_resubscribe_for_type::<unique_i_8::UniqueI8>(callbacks, new_subs),
-            "UniqueIdentity" => {
+            "unique_bool" => client_cache.handle_resubscribe_for_type::<unique_bool::UniqueBool>(callbacks, new_subs),
+            "unique_i128" => client_cache.handle_resubscribe_for_type::<unique_i_128::UniqueI128>(callbacks, new_subs),
+            "unique_i16" => client_cache.handle_resubscribe_for_type::<unique_i_16::UniqueI16>(callbacks, new_subs),
+            "unique_i256" => client_cache.handle_resubscribe_for_type::<unique_i_256::UniqueI256>(callbacks, new_subs),
+            "unique_i32" => client_cache.handle_resubscribe_for_type::<unique_i_32::UniqueI32>(callbacks, new_subs),
+            "unique_i64" => client_cache.handle_resubscribe_for_type::<unique_i_64::UniqueI64>(callbacks, new_subs),
+            "unique_i8" => client_cache.handle_resubscribe_for_type::<unique_i_8::UniqueI8>(callbacks, new_subs),
+            "unique_identity" => {
                 client_cache.handle_resubscribe_for_type::<unique_identity::UniqueIdentity>(callbacks, new_subs)
             }
-            "UniqueString" => {
+            "unique_string" => {
                 client_cache.handle_resubscribe_for_type::<unique_string::UniqueString>(callbacks, new_subs)
             }
-            "UniqueU128" => client_cache.handle_resubscribe_for_type::<unique_u_128::UniqueU128>(callbacks, new_subs),
-            "UniqueU16" => client_cache.handle_resubscribe_for_type::<unique_u_16::UniqueU16>(callbacks, new_subs),
-            "UniqueU256" => client_cache.handle_resubscribe_for_type::<unique_u_256::UniqueU256>(callbacks, new_subs),
-            "UniqueU32" => client_cache.handle_resubscribe_for_type::<unique_u_32::UniqueU32>(callbacks, new_subs),
-            "UniqueU64" => client_cache.handle_resubscribe_for_type::<unique_u_64::UniqueU64>(callbacks, new_subs),
-            "UniqueU8" => client_cache.handle_resubscribe_for_type::<unique_u_8::UniqueU8>(callbacks, new_subs),
-            "VecAddress" => client_cache.handle_resubscribe_for_type::<vec_address::VecAddress>(callbacks, new_subs),
-            "VecBool" => client_cache.handle_resubscribe_for_type::<vec_bool::VecBool>(callbacks, new_subs),
-            "VecByteStruct" => {
+            "unique_u128" => client_cache.handle_resubscribe_for_type::<unique_u_128::UniqueU128>(callbacks, new_subs),
+            "unique_u16" => client_cache.handle_resubscribe_for_type::<unique_u_16::UniqueU16>(callbacks, new_subs),
+            "unique_u256" => client_cache.handle_resubscribe_for_type::<unique_u_256::UniqueU256>(callbacks, new_subs),
+            "unique_u32" => client_cache.handle_resubscribe_for_type::<unique_u_32::UniqueU32>(callbacks, new_subs),
+            "unique_u64" => client_cache.handle_resubscribe_for_type::<unique_u_64::UniqueU64>(callbacks, new_subs),
+            "unique_u8" => client_cache.handle_resubscribe_for_type::<unique_u_8::UniqueU8>(callbacks, new_subs),
+            "vec_address" => client_cache.handle_resubscribe_for_type::<vec_address::VecAddress>(callbacks, new_subs),
+            "vec_bool" => client_cache.handle_resubscribe_for_type::<vec_bool::VecBool>(callbacks, new_subs),
+            "vec_byte_struct" => {
                 client_cache.handle_resubscribe_for_type::<vec_byte_struct::VecByteStruct>(callbacks, new_subs)
             }
-            "VecEnumWithPayload" => client_cache
+            "vec_enum_with_payload" => client_cache
                 .handle_resubscribe_for_type::<vec_enum_with_payload::VecEnumWithPayload>(callbacks, new_subs),
-            "VecEveryPrimitiveStruct" => client_cache
+            "vec_every_primitive_struct" => client_cache
                 .handle_resubscribe_for_type::<vec_every_primitive_struct::VecEveryPrimitiveStruct>(
                     callbacks, new_subs,
                 ),
-            "VecEveryVecStruct" => {
+            "vec_every_vec_struct" => {
                 client_cache.handle_resubscribe_for_type::<vec_every_vec_struct::VecEveryVecStruct>(callbacks, new_subs)
             }
-            "VecF32" => client_cache.handle_resubscribe_for_type::<vec_f_32::VecF32>(callbacks, new_subs),
-            "VecF64" => client_cache.handle_resubscribe_for_type::<vec_f_64::VecF64>(callbacks, new_subs),
-            "VecI128" => client_cache.handle_resubscribe_for_type::<vec_i_128::VecI128>(callbacks, new_subs),
-            "VecI16" => client_cache.handle_resubscribe_for_type::<vec_i_16::VecI16>(callbacks, new_subs),
-            "VecI256" => client_cache.handle_resubscribe_for_type::<vec_i_256::VecI256>(callbacks, new_subs),
-            "VecI32" => client_cache.handle_resubscribe_for_type::<vec_i_32::VecI32>(callbacks, new_subs),
-            "VecI64" => client_cache.handle_resubscribe_for_type::<vec_i_64::VecI64>(callbacks, new_subs),
-            "VecI8" => client_cache.handle_resubscribe_for_type::<vec_i_8::VecI8>(callbacks, new_subs),
-            "VecIdentity" => client_cache.handle_resubscribe_for_type::<vec_identity::VecIdentity>(callbacks, new_subs),
-            "VecSimpleEnum" => {
+            "vec_f32" => client_cache.handle_resubscribe_for_type::<vec_f_32::VecF32>(callbacks, new_subs),
+            "vec_f64" => client_cache.handle_resubscribe_for_type::<vec_f_64::VecF64>(callbacks, new_subs),
+            "vec_i128" => client_cache.handle_resubscribe_for_type::<vec_i_128::VecI128>(callbacks, new_subs),
+            "vec_i16" => client_cache.handle_resubscribe_for_type::<vec_i_16::VecI16>(callbacks, new_subs),
+            "vec_i256" => client_cache.handle_resubscribe_for_type::<vec_i_256::VecI256>(callbacks, new_subs),
+            "vec_i32" => client_cache.handle_resubscribe_for_type::<vec_i_32::VecI32>(callbacks, new_subs),
+            "vec_i64" => client_cache.handle_resubscribe_for_type::<vec_i_64::VecI64>(callbacks, new_subs),
+            "vec_i8" => client_cache.handle_resubscribe_for_type::<vec_i_8::VecI8>(callbacks, new_subs),
+            "vec_identity" => {
+                client_cache.handle_resubscribe_for_type::<vec_identity::VecIdentity>(callbacks, new_subs)
+            }
+            "vec_simple_enum" => {
                 client_cache.handle_resubscribe_for_type::<vec_simple_enum::VecSimpleEnum>(callbacks, new_subs)
             }
-            "VecString" => client_cache.handle_resubscribe_for_type::<vec_string::VecString>(callbacks, new_subs),
-            "VecU128" => client_cache.handle_resubscribe_for_type::<vec_u_128::VecU128>(callbacks, new_subs),
-            "VecU16" => client_cache.handle_resubscribe_for_type::<vec_u_16::VecU16>(callbacks, new_subs),
-            "VecU256" => client_cache.handle_resubscribe_for_type::<vec_u_256::VecU256>(callbacks, new_subs),
-            "VecU32" => client_cache.handle_resubscribe_for_type::<vec_u_32::VecU32>(callbacks, new_subs),
-            "VecU64" => client_cache.handle_resubscribe_for_type::<vec_u_64::VecU64>(callbacks, new_subs),
-            "VecU8" => client_cache.handle_resubscribe_for_type::<vec_u_8::VecU8>(callbacks, new_subs),
-            "VecUnitStruct" => {
+            "vec_string" => client_cache.handle_resubscribe_for_type::<vec_string::VecString>(callbacks, new_subs),
+            "vec_u128" => client_cache.handle_resubscribe_for_type::<vec_u_128::VecU128>(callbacks, new_subs),
+            "vec_u16" => client_cache.handle_resubscribe_for_type::<vec_u_16::VecU16>(callbacks, new_subs),
+            "vec_u256" => client_cache.handle_resubscribe_for_type::<vec_u_256::VecU256>(callbacks, new_subs),
+            "vec_u32" => client_cache.handle_resubscribe_for_type::<vec_u_32::VecU32>(callbacks, new_subs),
+            "vec_u64" => client_cache.handle_resubscribe_for_type::<vec_u_64::VecU64>(callbacks, new_subs),
+            "vec_u8" => client_cache.handle_resubscribe_for_type::<vec_u_8::VecU8>(callbacks, new_subs),
+            "vec_unit_struct" => {
                 client_cache.handle_resubscribe_for_type::<vec_unit_struct::VecUnitStruct>(callbacks, new_subs)
             }
             _ => spacetimedb_sdk::log::error!("TableRowOperation on unknown table {:?}", table_name),

@@ -19,7 +19,7 @@ pub struct UniqueU64 {
 }
 
 impl TableType for UniqueU64 {
-    const TABLE_NAME: &'static str = "UniqueU64";
+    const TABLE_NAME: &'static str = "unique_u64";
     type ReducerEvent = super::ReducerEvent;
 }
 

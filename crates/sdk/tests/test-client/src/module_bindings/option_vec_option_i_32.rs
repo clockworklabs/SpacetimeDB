@@ -18,7 +18,7 @@ pub struct OptionVecOptionI32 {
 }
 
 impl TableType for OptionVecOptionI32 {
-    const TABLE_NAME: &'static str = "OptionVecOptionI32";
+    const TABLE_NAME: &'static str = "option_vec_option_i32";
     type ReducerEvent = super::ReducerEvent;
 }
 

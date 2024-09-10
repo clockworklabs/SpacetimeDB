@@ -19,7 +19,7 @@ pub struct VecByteStruct {
 }
 
 impl TableType for VecByteStruct {
-    const TABLE_NAME: &'static str = "VecByteStruct";
+    const TABLE_NAME: &'static str = "vec_byte_struct";
     type ReducerEvent = super::ReducerEvent;
 }
 

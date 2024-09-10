@@ -18,7 +18,7 @@ pub struct OptionString {
 }
 
 impl TableType for OptionString {
-    const TABLE_NAME: &'static str = "OptionString";
+    const TABLE_NAME: &'static str = "option_string";
     type ReducerEvent = super::ReducerEvent;
 }
 

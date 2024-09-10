@@ -45,7 +45,7 @@ pub struct LargeTable {
 }
 
 impl TableType for LargeTable {
-    const TABLE_NAME: &'static str = "LargeTable";
+    const TABLE_NAME: &'static str = "large_table";
     type ReducerEvent = super::ReducerEvent;
 }
 

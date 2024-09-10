@@ -19,7 +19,7 @@ pub struct PkU8 {
 }
 
 impl TableType for PkU8 {
-    const TABLE_NAME: &'static str = "PkU8";
+    const TABLE_NAME: &'static str = "pk_u8";
     type ReducerEvent = super::ReducerEvent;
 }
 

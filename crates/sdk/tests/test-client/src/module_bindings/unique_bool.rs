@@ -19,7 +19,7 @@ pub struct UniqueBool {
 }
 
 impl TableType for UniqueBool {
-    const TABLE_NAME: &'static str = "UniqueBool";
+    const TABLE_NAME: &'static str = "unique_bool";
     type ReducerEvent = super::ReducerEvent;
 }
 

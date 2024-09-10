@@ -18,7 +18,7 @@ pub struct OneAddress {
 }
 
 impl TableType for OneAddress {
-    const TABLE_NAME: &'static str = "OneAddress";
+    const TABLE_NAME: &'static str = "one_address";
     type ReducerEvent = super::ReducerEvent;
 }
 

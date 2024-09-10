@@ -35,7 +35,7 @@ fn main() {
         sub_applied_one_row_result(check());
     });
     once_on_connect(move |_, _| {
-        subscribe_result(subscribe(&["SELECT * FROM Connected;"]));
+        subscribe_result(subscribe(&["SELECT * FROM connected;"]));
     });
 
     connect_result(connect(LOCALHOST, &db_name_or_panic(), None));
@@ -68,7 +68,7 @@ fn main() {
         sub_applied_one_row_result(check());
     });
     once_on_connect(move |_, _| {
-        subscribe_result(subscribe(&["SELECT * FROM Disconnected;"]));
+        subscribe_result(subscribe(&["SELECT * FROM disconnected;"]));
     });
 
     connect_result(connect(LOCALHOST, &db_name_or_panic(), Some(credentials().unwrap())));

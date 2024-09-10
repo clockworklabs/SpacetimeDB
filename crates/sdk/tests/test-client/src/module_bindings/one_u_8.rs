@@ -18,7 +18,7 @@ pub struct OneU8 {
 }
 
 impl TableType for OneU8 {
-    const TABLE_NAME: &'static str = "OneU8";
+    const TABLE_NAME: &'static str = "one_u8";
     type ReducerEvent = super::ReducerEvent;
 }
 

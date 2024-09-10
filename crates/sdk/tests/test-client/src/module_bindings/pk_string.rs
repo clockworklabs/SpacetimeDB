@@ -19,7 +19,7 @@ pub struct PkString {
 }
 
 impl TableType for PkString {
-    const TABLE_NAME: &'static str = "PkString";
+    const TABLE_NAME: &'static str = "pk_string";
     type ReducerEvent = super::ReducerEvent;
 }
 
