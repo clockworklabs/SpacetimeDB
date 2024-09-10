@@ -1,11 +1,10 @@
-use crate::identity::Credentials;
 use crate::ws_messages::{ClientMessage, ServerMessage};
 use anyhow::{bail, Context, Result};
 use brotli::BrotliDecompress;
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{Scheme, Uri};
-use spacetimedb_lib::{bsatn, Address};
+use spacetimedb_lib::{bsatn, Address, Identity};
 use tokio::task::JoinHandle;
 use tokio::{net::TcpStream, runtime};
 use tokio_tungstenite::{
@@ -15,7 +14,7 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 
-pub(crate) struct DbConnection {
+pub(crate) struct WsConnection {
     sock: WebSocketStream<MaybeTlsStream<TcpStream>>,
 }
 
@@ -72,7 +71,7 @@ where
 fn make_request<Host>(
     host: Host,
     db_name: &str,
-    credentials: Option<&Credentials>,
+    credentials: Option<&(Identity, String)>,
     client_address: Address,
 ) -> Result<http::Request<()>>
 where
@@ -104,12 +103,12 @@ fn request_insert_protocol_header(req: &mut http::Request<()>) {
 
 const AUTH_HEADER_KEY: &str = "Authorization";
 
-fn request_insert_auth_header(req: &mut http::Request<()>, credentials: Option<&Credentials>) {
+fn request_insert_auth_header(req: &mut http::Request<()>, credentials: Option<&(Identity, String)>) {
     // TODO: figure out how the token is supposed to be encoded in the request
-    if let Some(Credentials { token, .. }) = credentials {
+    if let Some((_, token)) = credentials {
         use base64::Engine;
 
-        let auth_bytes = format!("token:{}", token.string);
+        let auth_bytes = format!("token:{}", token);
         let encoded = base64::prelude::BASE64_STANDARD.encode(auth_bytes);
         let auth_header_val = format!("Basic {}", encoded);
         request_add_header(
@@ -122,11 +121,11 @@ fn request_insert_auth_header(req: &mut http::Request<()>, credentials: Option<&
     };
 }
 
-impl DbConnection {
+impl WsConnection {
     pub(crate) async fn connect<Host>(
         host: Host,
         db_name: &str,
-        credentials: Option<&Credentials>,
+        credentials: Option<&(Identity, String)>,
         client_address: Address,
     ) -> Result<Self>
     where
@@ -147,7 +146,7 @@ impl DbConnection {
             false,
         )
         .await?;
-        Ok(DbConnection { sock })
+        Ok(WsConnection { sock })
     }
 
     pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage> {

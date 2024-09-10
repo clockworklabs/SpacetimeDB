@@ -108,6 +108,10 @@ impl Address {
     pub fn to_u128(&self) -> u128 {
         u128::from_be_bytes(self.__address_bytes)
     }
+
+    pub fn none_if_zero(self) -> Option<Self> {
+        (self != Self::ZERO).then_some(self)
+    }
 }
 
 impl From<u128> for Address {

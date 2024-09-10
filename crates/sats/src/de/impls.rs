@@ -629,3 +629,5 @@ impl_deserialize!([] bytes::Bytes, de => <Vec<u8>>::deserialize(de).map(Into::in
 
 #[cfg(feature = "bytestring")]
 impl_deserialize!([] bytestring::ByteString, de => <String>::deserialize(de).map(Into::into));
+
+impl_deserialize!([] std::time::SystemTime, de => u64::deserialize(de).map(|micros| std::time::SystemTime::UNIX_EPOCH.checked_add(std::time::Duration::from_micros(micros)).unwrap()));
