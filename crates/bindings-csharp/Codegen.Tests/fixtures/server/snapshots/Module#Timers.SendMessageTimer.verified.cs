@@ -53,7 +53,9 @@ partial class Timers
         public ulong ScheduledId;
         public SpacetimeDB.ScheduleAt ScheduledAt;
 
-        public void ReadGenFields(System.IO.BinaryReader reader)
+        void SpacetimeDB.Internal.ITable<SendMessageTimer>.ReadGenFields(
+            System.IO.BinaryReader reader
+        )
         {
             if (ScheduledId == default)
             {
