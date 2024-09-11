@@ -200,8 +200,9 @@ impl ColList {
         self.push_inner(col, self.last().map_or(true, |l| l < col));
     }
 
-    /// Sort and deduplicate the list in place.
-    /// This will typically result in an inline list if it wasn't already.
+    /// Sort and deduplicate the list.
+    /// If the list is already sorted and deduplicated, does nothing.
+    /// This will typically result in an inline list unless there are large `ColId`s in play.
     fn sort_dedup(&mut self) {
         if let Err(heap) = self.as_inline_mut() {
             heap.sort();
@@ -353,7 +354,8 @@ impl ColSet {
         }
     }
 
-    // Don't implement `insert` because it'll be O(n^2) if we want to keep the set sorted on the heap.
+    // Don't implement `insert` because repeated insertions will be O(n^2) if we want to keep the set sorted on the heap.
+    // Use iterator methods to create a new `ColSet` instead.
 }
 
 impl<C: Into<ColId>> FromIterator<C> for ColSet {
@@ -620,8 +622,8 @@ fn is_sorted_and_deduped(data: &[ColId]) -> bool {
     match data {
         [] => true,
         [mut prev, rest @ ..] => !rest.iter().any(|elem| {
-            let bad = prev >= elem;
-            prev = elem;
+            let bad = prev >= *elem;
+            prev = *elem;
             bad
         }),
     }
@@ -723,6 +725,24 @@ mod tests {
             prop_assert!(!list.is_inline());
             let set = ColSet::from(list);
             prop_assert!(set.is_inline());
+
+            for col in cols.iter() {
+                prop_assert!(set.contains(*col));
+            }
+
+            cols.sort();
+            cols.dedup();
+            prop_assert_eq!(set.iter().collect::<Vec<_>>(), cols);
+        }
+
+        #[test]
+        fn test_set_heap(mut cols in vec((ColList::FIRST_HEAP_COL_U16..).prop_map_into(), 1..100)) {
+            prop_assume!(!is_sorted_and_deduped(&cols[..]));
+
+            let list = ColList::from_iter(cols.iter().copied());
+            prop_assert!(!list.is_inline());
+            let set = ColSet::from(list);
+            prop_assert!(!set.is_inline());
 
             for col in cols.iter() {
                 prop_assert!(set.contains(*col));
