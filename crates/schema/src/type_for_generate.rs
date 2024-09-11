@@ -627,9 +627,9 @@ impl TypespaceForGenerateBuilder<'_> {
         scratch: &mut HashSet<AlgebraicTypeRef>,
     ) {
         // Mark who we're touching right now.
-        let correct = self.currently_touching.insert(def);
+        let not_already_present = self.currently_touching.insert(def);
         assert!(
-            correct,
+            not_already_present,
             "mark_allowed_cycles_rec should never be called on a ref that is already being touched"
         );
 
@@ -683,9 +683,9 @@ impl TypespaceForGenerateBuilder<'_> {
 
         // We're done with this def.
         // Clean up our state.
-        let correct = self.currently_touching.remove(&def);
+        let was_present = self.currently_touching.remove(&def);
         assert!(
-            correct,
+            was_present,
             "mark_allowed_cycles_rec is finishing, we should be touching that ref."
         );
         // Only remove a def from `to_process` once we've explored all the paths leaving it.
