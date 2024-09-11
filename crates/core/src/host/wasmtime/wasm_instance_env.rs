@@ -484,6 +484,18 @@ impl WasmInstanceEnv {
     /// On success, the iterator handle is written to the `out` pointer.
     /// This handle can be advanced by [`row_iter_bsatn_advance`].
     ///
+    /// # Non-obvious queries
+    ///
+    /// For an index on columns `[a, b, c]`:
+    ///
+    /// - `a = x, b = y` is encoded as a prefix `[x, y]`
+    ///   and a range `Range::Unbounded`,
+    ///   or as a  prefix `[x]` and a range `rstart = rend = Range::Inclusive(y)`.
+    /// - `a = x, b = y, c = z` is encoded as a prefix `[x, y]`
+    ///   and a  range `rstart = rend = Range::Inclusive(z)`.
+    /// - A sorted full scan is encoded as an empty prefix
+    ///   and a range `Range::Unbounded`.
+    ///
     /// # Traps
     ///
     /// Traps if:
