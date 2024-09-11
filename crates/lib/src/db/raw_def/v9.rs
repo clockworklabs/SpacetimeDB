@@ -17,7 +17,7 @@ use spacetimedb_sats::AlgebraicTypeRef;
 use spacetimedb_sats::ProductType;
 use spacetimedb_sats::ProductTypeElement;
 use spacetimedb_sats::SpacetimeType;
-use spacetimedb_sats::{de, ser, Typespace};
+use spacetimedb_sats::Typespace;
 
 use crate::db::auth::StAccess;
 use crate::db::auth::StTableType;
@@ -48,7 +48,8 @@ pub type RawIdentifier = Box<str>;
 ///
 /// All of these types of objects must have unique names within the module.
 /// The exception is columns, which need unique names only within a table.
-#[derive(Debug, Clone, Default, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, Default, SpacetimeType)]
+#[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawModuleDefV9 {
     /// The `Typespace` used by the module.
@@ -90,7 +91,8 @@ pub struct RawModuleDefV9 {
 /// - The table's indexes, constraints, and sequences need not be sorted; they will be sorted according to their respective ordering rules.
 /// - The table's column types may refer only to types in the containing RawDatabaseDef's typespace.
 /// - The table's column names must be unique.
-#[derive(Debug, Clone, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawTableDefV9 {
     /// The name of the table.
@@ -134,7 +136,8 @@ pub struct RawTableDefV9 {
 }
 
 /// Whether the table was created by the system or the user.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, SpacetimeType)]
+#[sats(crate = crate)]
 pub enum TableType {
     /// Created by the system.
     System,
@@ -159,7 +162,8 @@ impl From<TableType> for StTableType {
 }
 
 /// The visibility of the table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, SpacetimeType)]
+#[sats(crate = crate)]
 pub enum TableAccess {
     /// Visible to all
     Public,
@@ -184,7 +188,8 @@ impl From<TableAccess> for StAccess {
 }
 
 /// A sequence definition for a database table column.
-#[derive(Debug, Clone, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawSequenceDefV9 {
     /// The name of the sequence. Must be unique within the containing `RawDatabaseDef`.
@@ -214,7 +219,8 @@ pub struct RawSequenceDefV9 {
 }
 
 /// The definition of a database index.
-#[derive(Debug, Clone, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawIndexDefV9 {
     /// The name of the index.
@@ -242,7 +248,8 @@ pub struct RawIndexDefV9 {
 
 /// Data specifying an index algorithm.
 #[non_exhaustive]
-#[derive(Debug, Clone, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub enum RawIndexAlgorithm {
     /// Implemented using a B-Tree.
@@ -262,7 +269,8 @@ pub enum RawIndexAlgorithm {
 /// Requires that the projection of the table onto these `columns` is a bijection.
 ///
 /// That is, there must be a one-to-one relationship between a row and the `columns` of that row.
-#[derive(Debug, Clone, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawUniqueConstraintDefV9 {
     /// The name of the unique constraint. Must be unique within the containing `RawDatabaseDef`.
@@ -277,7 +285,8 @@ pub struct RawUniqueConstraintDefV9 {
 /// The table must have columns:
 /// - `scheduled_id` of type `u64`.
 /// - `scheduled_at` of type `ScheduleAt`.
-#[derive(Debug, Clone, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawScheduleDefV9 {
     /// The name of the schedule. Must be unique within the containing `RawDatabaseDef`.
@@ -288,7 +297,8 @@ pub struct RawScheduleDefV9 {
 }
 
 /// A miscellaneous module export.
-#[derive(Debug, Clone, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[non_exhaustive]
 pub enum RawMiscModuleExportV9 {}
@@ -296,7 +306,8 @@ pub enum RawMiscModuleExportV9 {}
 /// A type declaration.
 ///
 /// Exactly of these must be attached to every `Product` and `Sum` type used by a module.
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawTypeDefV9 {
     /// The name of the type declaration.
@@ -313,7 +324,8 @@ pub struct RawTypeDefV9 {
 ///
 /// These are the names that will be used *in client code generation*, NOT the names used for types
 /// in the module source code.
-#[derive(Clone, de::Deserialize, ser::Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, SpacetimeType, PartialEq, Eq, PartialOrd, Ord)]
+#[sats(crate = crate)]
 pub struct RawScopedTypeNameV9 {
     /// The scope for this type.
     ///
@@ -339,7 +351,8 @@ impl fmt::Debug for RawScopedTypeNameV9 {
 }
 
 /// A reducer definition.
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawReducerDefV9 {
     /// The name of the reducer.
@@ -354,7 +367,8 @@ pub struct RawReducerDefV9 {
 }
 
 /// Special roles a reducer can play in the module lifecycle.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, SpacetimeType)]
+#[sats(crate = crate)]
 #[non_exhaustive]
 pub enum Lifecycle {
     /// The reducer will be invoked upon module initialization.

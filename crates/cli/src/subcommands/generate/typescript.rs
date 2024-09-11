@@ -503,7 +503,7 @@ pub fn autogen_typescript_table(ctx: &GenCtx, table: &TableDesc) -> String {
     let tuple = ctx.typespace[table.data].as_product().unwrap();
     autogen_typescript_product_table_common(
         ctx,
-        &table.schema.table_name,
+        typescript_typename(ctx, table.data),
         tuple,
         Some(TableSchema::from_def(0.into(), table.schema.clone())),
     )
@@ -697,7 +697,7 @@ fn autogen_typescript_product_table_common(
                 &mut output,
                 &struct_name_pascal_case,
                 product_type,
-                name,
+                &schema.table_name,
                 schema,
             );
 

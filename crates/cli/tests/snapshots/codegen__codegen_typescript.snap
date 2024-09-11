@@ -210,7 +210,7 @@ export class HasSpecialStuff extends DatabaseTable
 
 	public static *filterByIdentity(value: Identity): IterableIterator<HasSpecialStuff>
 	{
-		for (let instance of this.db.getTable("HasSpecialStuff").getInstances())
+		for (let instance of this.db.getTable("has_special_stuff").getInstances())
 		{
 			if (instance.identity.isEqual(value)) {
 				yield instance;
@@ -220,7 +220,7 @@ export class HasSpecialStuff extends DatabaseTable
 
 	public static *filterByAddress(value: Address): IterableIterator<HasSpecialStuff>
 	{
-		for (let instance of this.db.getTable("HasSpecialStuff").getInstances())
+		for (let instance of this.db.getTable("has_special_stuff").getInstances())
 		{
 			if (instance.address.isEqual(value)) {
 				yield instance;
@@ -374,7 +374,7 @@ export class PkMultiIdentity extends DatabaseTable
 
 	public static *filterById(value: number): IterableIterator<PkMultiIdentity>
 	{
-		for (let instance of this.db.getTable("PkMultiIdentity").getInstances())
+		for (let instance of this.db.getTable("pk_multi_identity").getInstances())
 		{
 			if (instance.id === value) {
 				yield instance;
@@ -389,7 +389,7 @@ export class PkMultiIdentity extends DatabaseTable
 
 	public static *filterByOther(value: number): IterableIterator<PkMultiIdentity>
 	{
-		for (let instance of this.db.getTable("PkMultiIdentity").getInstances())
+		for (let instance of this.db.getTable("pk_multi_identity").getInstances())
 		{
 			if (instance.other === value) {
 				yield instance;
@@ -451,7 +451,7 @@ export class Point extends DatabaseTable
 
 	public static *filterByX(value: BigInt): IterableIterator<Point>
 	{
-		for (let instance of this.db.getTable("Point").getInstances())
+		for (let instance of this.db.getTable("points").getInstances())
 		{
 			if (instance.x === value) {
 				yield instance;
@@ -461,7 +461,7 @@ export class Point extends DatabaseTable
 
 	public static *filterByY(value: BigInt): IterableIterator<Point>
 	{
-		for (let instance of this.db.getTable("Point").getInstances())
+		for (let instance of this.db.getTable("points").getInstances())
 		{
 			if (instance.y === value) {
 				yield instance;
@@ -514,7 +514,7 @@ export class Private extends DatabaseTable
 
 	public static *filterByName(value: string): IterableIterator<Private>
 	{
-		for (let instance of this.db.getTable("Private").getInstances())
+		for (let instance of this.db.getTable("private").getInstances())
 		{
 			if (instance.name === value) {
 				yield instance;
@@ -612,7 +612,7 @@ export class RepeatingTestArg extends DatabaseTable
 
 	public static *filterByPrevTime(value: BigInt): IterableIterator<RepeatingTestArg>
 	{
-		for (let instance of this.db.getTable("RepeatingTestArg").getInstances())
+		for (let instance of this.db.getTable("repeating_test_arg").getInstances())
 		{
 			if (instance.prevTime === value) {
 				yield instance;
@@ -622,7 +622,7 @@ export class RepeatingTestArg extends DatabaseTable
 
 	public static *filterByScheduledId(value: BigInt): IterableIterator<RepeatingTestArg>
 	{
-		for (let instance of this.db.getTable("RepeatingTestArg").getInstances())
+		for (let instance of this.db.getTable("repeating_test_arg").getInstances())
 		{
 			if (instance.scheduledId === value) {
 				yield instance;
@@ -730,7 +730,7 @@ export class TestA extends DatabaseTable
 
 	public static *filterByX(value: number): IterableIterator<TestA>
 	{
-		for (let instance of this.db.getTable("TestA").getInstances())
+		for (let instance of this.db.getTable("test_a").getInstances())
 		{
 			if (instance.x === value) {
 				yield instance;
@@ -740,7 +740,7 @@ export class TestA extends DatabaseTable
 
 	public static *filterByY(value: number): IterableIterator<TestA>
 	{
-		for (let instance of this.db.getTable("TestA").getInstances())
+		for (let instance of this.db.getTable("test_a").getInstances())
 		{
 			if (instance.y === value) {
 				yield instance;
@@ -750,7 +750,7 @@ export class TestA extends DatabaseTable
 
 	public static *filterByZ(value: string): IterableIterator<TestA>
 	{
-		for (let instance of this.db.getTable("TestA").getInstances())
+		for (let instance of this.db.getTable("test_a").getInstances())
 		{
 			if (instance.z === value) {
 				yield instance;
@@ -902,7 +902,7 @@ export class TestE extends DatabaseTable
 
 	public static *filterById(value: BigInt): IterableIterator<TestE>
 	{
-		for (let instance of this.db.getTable("TestE").getInstances())
+		for (let instance of this.db.getTable("test_e").getInstances())
 		{
 			if (instance.id === value) {
 				yield instance;
@@ -917,7 +917,7 @@ export class TestE extends DatabaseTable
 
 	public static *filterByName(value: string): IterableIterator<TestE>
 	{
-		for (let instance of this.db.getTable("TestE").getInstances())
+		for (let instance of this.db.getTable("test_e").getInstances())
 		{
 			if (instance.name === value) {
 				yield instance;

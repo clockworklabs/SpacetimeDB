@@ -173,7 +173,7 @@ fn connect_to_db() {
 
 /// Register subscriptions for all rows of both tables.
 fn subscribe_to_tables() {
-    subscribe(&["SELECT * FROM User;", "SELECT * FROM Message;"]).unwrap();
+    subscribe(&["SELECT * FROM user;", "SELECT * FROM message;"]).unwrap();
 }
 
 // # Handle user input

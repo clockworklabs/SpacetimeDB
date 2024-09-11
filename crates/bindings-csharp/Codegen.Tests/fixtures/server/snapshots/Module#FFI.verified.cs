@@ -10,12 +10,9 @@ static class ModuleRegistration
 {
     class Init : SpacetimeDB.Internal.IReducer
     {
-        public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        )
-        {
-            return new("__init__");
-        }
+        ) => new("__init__", []);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
         {
@@ -25,20 +22,11 @@ static class ModuleRegistration
 
     class InsertData : SpacetimeDB.Internal.IReducer
     {
-        private static PublicTable.BSATN data = new();
+        private static readonly PublicTable.BSATN data = new();
 
-        public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        )
-        {
-            return new(
-                "InsertData",
-                new SpacetimeDB.BSATN.AggregateElement(
-                    nameof(data),
-                    data.GetAlgebraicType(registrar)
-                )
-            );
-        }
+        ) => new("InsertData", [new(nameof(data), data.GetAlgebraicType(registrar))]);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
         {
@@ -48,20 +36,15 @@ static class ModuleRegistration
 
     class InsertData2 : SpacetimeDB.Internal.IReducer
     {
-        private static PublicTable.BSATN data = new();
+        private static readonly PublicTable.BSATN data = new();
 
-        public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        )
-        {
-            return new(
+        ) =>
+            new(
                 "test_custom_name_and_reducer_ctx",
-                new SpacetimeDB.BSATN.AggregateElement(
-                    nameof(data),
-                    data.GetAlgebraicType(registrar)
-                )
+                [new(nameof(data), data.GetAlgebraicType(registrar))]
             );
-        }
 
         public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
         {
@@ -71,20 +54,11 @@ static class ModuleRegistration
 
     class ScheduleImmediate : SpacetimeDB.Internal.IReducer
     {
-        private static PublicTable.BSATN data = new();
+        private static readonly PublicTable.BSATN data = new();
 
-        public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        )
-        {
-            return new(
-                "ScheduleImmediate",
-                new SpacetimeDB.BSATN.AggregateElement(
-                    nameof(data),
-                    data.GetAlgebraicType(registrar)
-                )
-            );
-        }
+        ) => new("ScheduleImmediate", [new(nameof(data), data.GetAlgebraicType(registrar))]);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
         {
@@ -94,17 +68,11 @@ static class ModuleRegistration
 
     class SendScheduledMessage : SpacetimeDB.Internal.IReducer
     {
-        private static Timers.SendMessageTimer.BSATN arg = new();
+        private static readonly Timers.SendMessageTimer.BSATN arg = new();
 
-        public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(
+        public SpacetimeDB.Internal.ReducerDef MakeReducerDef(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
-        )
-        {
-            return new(
-                "SendScheduledMessage",
-                new SpacetimeDB.BSATN.AggregateElement(nameof(arg), arg.GetAlgebraicType(registrar))
-            );
-        }
+        ) => new("SendScheduledMessage", [new(nameof(arg), arg.GetAlgebraicType(registrar))]);
 
         public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx)
         {
@@ -142,7 +110,7 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.__describe_module__(d);
 
     [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
-    public static short __call_reducer__(
+    public static SpacetimeDB.Internal.Errno __call_reducer__(
         uint id,
         ulong sender_0,
         ulong sender_1,

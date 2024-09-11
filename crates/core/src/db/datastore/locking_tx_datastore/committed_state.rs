@@ -262,7 +262,7 @@ impl CommittedState {
     /// Compute the system table schemas from the system tables,
     /// and store those schemas in the in-memory [`Table`] structures.
     ///
-    /// Necessary during bootstrap because system tables include autoinc IDs
+    /// Necessary during bootstrap because system tables include auto_inc IDs
     /// for objects like indexes and constraints
     /// which are computed at insert-time,
     /// and therefore not included in the hardcoded schemas.

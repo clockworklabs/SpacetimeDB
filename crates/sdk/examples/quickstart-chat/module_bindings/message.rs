@@ -6,10 +6,10 @@ use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,
     reducer::{Reducer, ReducerCallbackId, Status},
-    sats::{de::Deserialize, ser::Serialize},
+    sats::{de::Deserialize, i256, ser::Serialize, u256},
     spacetimedb_lib,
     table::{TableIter, TableType, TableWithPrimaryKey},
-    Address,
+    Address, ScheduleAt,
 };
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
@@ -20,7 +20,7 @@ pub struct Message {
 }
 
 impl TableType for Message {
-    const TABLE_NAME: &'static str = "Message";
+    const TABLE_NAME: &'static str = "message";
     type ReducerEvent = super::ReducerEvent;
 }
 

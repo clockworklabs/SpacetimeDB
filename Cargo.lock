@@ -4148,6 +4148,7 @@ name = "spacetimedb-bindings-macro"
 version = "0.12.0"
 dependencies = [
  "bitflags 2.4.1",
+ "heck",
  "humantime",
  "proc-macro2",
  "quote",
@@ -4178,6 +4179,7 @@ dependencies = [
  "duct",
  "email_address",
  "flate2",
+ "fs-err",
  "futures",
  "http",
  "indicatif",

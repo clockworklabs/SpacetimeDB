@@ -4,11 +4,10 @@
 
 use crate::db::auth::{StAccess, StTableType};
 use crate::relation::FieldName;
-use crate::{AlgebraicType, ProductType};
+use crate::{AlgebraicType, ProductType, SpacetimeType};
 use derive_more::Display;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_primitives::*;
-use spacetimedb_sats::{de, ser};
 
 // TODO(1.0): move these definitions into this file,
 // along with the other structs contained in it,
@@ -23,7 +22,8 @@ pub use crate::RawModuleDefV8;
 pub const SEQUENCE_ALLOCATION_STEP: i128 = 4096;
 
 /// Represents a sequence definition for a database table column.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct RawSequenceDefV8 {
     /// The name of the sequence.
     pub sequence_name: Box<str>,
@@ -80,7 +80,8 @@ impl RawSequenceDefV8 {
 /// Which type of index to create.
 ///
 /// Currently only `IndexType::BTree` is allowed.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Display, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Ord, Display, SpacetimeType)]
+#[sats(crate = crate)]
 pub enum IndexType {
     /// A BTree index.
     BTree = 0,
@@ -106,7 +107,8 @@ impl TryFrom<u8> for IndexType {
 }
 
 /// A struct representing the definition of a database index.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct RawIndexDefV8 {
     /// The name of the index.
     /// This should not be assumed to follow any particular format.
@@ -169,7 +171,8 @@ impl RawIndexDefV8 {
 }
 
 /// A struct representing the definition of a database column.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct RawColumnDefV8 {
     /// The name of the column.
     pub col_name: Box<str>,
@@ -222,7 +225,8 @@ impl RawColumnDefV8 {
 
 /// A struct representing the definition of a database constraint.
 /// Associated with a unique `TableDef`, the one that contains it.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct RawConstraintDefV8 {
     /// The name of the constraint.
     pub constraint_name: Box<str>,
@@ -302,7 +306,8 @@ pub fn generate_cols_name<'a>(columns: &ColList, col_name: impl Fn(ColId) -> Opt
 ///
 /// This struct holds information about the table, including its name, columns, indexes,
 /// constraints, sequences, type, and access rights.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, ser::Serialize, de::Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct RawTableDefV8 {
     /// The name of the table.
     pub table_name: Box<str>,

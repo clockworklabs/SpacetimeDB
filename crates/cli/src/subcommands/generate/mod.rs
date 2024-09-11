@@ -254,7 +254,7 @@ pub fn generate(module: RawModuleDefV8, lang: Language, namespace: &str) -> anyh
 
 fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenItem]) -> Vec<(String, String)> {
     match lang {
-        Language::Csharp => csharp::autogen_csharp_globals(items, namespace),
+        Language::Csharp => csharp::autogen_csharp_globals(ctx, items, namespace),
         Language::TypeScript => typescript::autogen_typescript_globals(ctx, items),
         Language::Rust => rust::autogen_rust_globals(ctx, items),
     }
@@ -277,6 +277,10 @@ pub fn extract_from_moduledef(module: RawModuleDefV8) -> (GenCtx, impl Iterator<
             x
         })
         .collect();
+    let tableset = tables
+        .iter()
+        .map(|t| t.data)
+        .collect::<spacetimedb_data_structures::map::HashSet<_>>();
 
     let mut names = vec![None; typespace.types.len()];
     let name_info = itertools::chain!(
@@ -290,7 +294,10 @@ pub fn extract_from_moduledef(module: RawModuleDefV8) -> (GenCtx, impl Iterator<
     }
     let ctx = GenCtx { typespace, names };
     let iter = itertools::chain!(
-        misc_exports.into_iter().map(GenItem::from_misc_export),
+        misc_exports
+            .into_iter()
+            .filter(move |MiscModuleExport::TypeAlias(a)| !tableset.contains(&a.ty))
+            .map(GenItem::from_misc_export),
         tables.into_iter().map(GenItem::Table),
         reducers
             .into_iter()
@@ -325,7 +332,9 @@ impl GenItem {
         match self {
             GenItem::Table(table) => {
                 let code = rust::autogen_rust_table(ctx, table);
-                Some((rust::rust_type_file_name(&table.schema.table_name), code))
+                // TODO: this is not ideal (should use table name, not row type name)
+                let tyname = ctx.names[table.data.idx()].as_ref().unwrap();
+                Some((rust::rust_type_file_name(tyname), code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => {
                 let code = match &ctx.typespace[*ty] {
@@ -346,7 +355,8 @@ impl GenItem {
         match self {
             GenItem::Table(table) => {
                 let code = typescript::autogen_typescript_table(ctx, table);
-                let name = table.schema.table_name.deref().to_case(Case::Snake);
+                // TODO: this is not ideal (should use table name, not row type name)
+                let name = ctx.names[table.data.idx()].as_ref().unwrap().to_case(Case::Snake);
                 Some((name + ".ts", code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
@@ -374,7 +384,7 @@ impl GenItem {
         match self {
             GenItem::Table(table) => {
                 let code = csharp::autogen_csharp_table(ctx, table, namespace);
-                Some((table.schema.table_name.to_string() + ".cs", code))
+                Some((table.schema.table_name.as_ref().to_case(Case::Pascal) + ".cs", code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => match &ctx.typespace[*ty] {
                 AlgebraicType::Sum(sum) => {
@@ -415,15 +425,15 @@ pub fn extract_descriptions(wasm_file: &Path) -> anyhow::Result<RawModuleDefV8> 
         "_console_log",
         |mut caller: Caller<'_, WasmCtx>,
          _level: u32,
-         _target: u32,
+         _target_ptr: u32,
          _target_len: u32,
-         _filename: u32,
+         _filename_ptr: u32,
          _filename_len: u32,
          _line_number: u32,
-         message: u32,
+         message_ptr: u32,
          message_len: u32| {
             let (mem, _) = WasmCtx::mem_env(&mut caller);
-            let slice = mem.deref_slice(message, message_len).unwrap();
+            let slice = mem.deref_slice(message_ptr, message_len).unwrap();
             println!("from wasm: {}", String::from_utf8_lossy(slice));
         },
     )?;

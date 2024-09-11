@@ -192,7 +192,7 @@ pub struct UpdateCallbackId<T: TableWithPrimaryKey> {
     id: CallbackId<(T, T, Option<Arc<AnyReducerEvent>>)>,
 }
 
-/// A `TableType` with a column annotated `#[primarykey]`, allowing `on_update` callbacks.
+/// A `TableType` with a column annotated `#[primary_key]`, allowing `on_update` callbacks.
 pub trait TableWithPrimaryKey: TableType {
     type PrimaryKey: std::hash::Hash + Eq + Clone + 'static;
 

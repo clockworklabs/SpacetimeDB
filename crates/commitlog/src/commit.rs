@@ -9,9 +9,9 @@ use spacetimedb_sats::buffer::{BufReader, Cursor, DecodeError};
 use crate::{error::ChecksumMismatch, payload::Decoder, segment::CHECKSUM_ALGORITHM_CRC32C, Transaction};
 
 pub struct Header {
-    min_tx_offset: u64,
-    n: u16,
-    len: u32,
+    pub min_tx_offset: u64,
+    pub n: u16,
+    pub len: u32,
 }
 
 impl Header {

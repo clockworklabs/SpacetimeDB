@@ -34,6 +34,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue}
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_snapshot::{SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
+use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
@@ -1060,18 +1061,26 @@ impl RelationalDB {
         self.inner.iter_by_col_range_tx(ctx, tx, table_id.into(), cols, range)
     }
 
-    pub fn insert(&self, tx: &mut MutTx, table_id: TableId, row: ProductValue) -> Result<ProductValue, DBError> {
+    pub fn insert<'a>(
+        &'a self,
+        tx: &'a mut MutTx,
+        table_id: TableId,
+        row: ProductValue,
+    ) -> Result<(AlgebraicValue, RowRef<'a>), DBError> {
         self.inner.insert_mut_tx(tx, table_id, row)
     }
 
-    pub fn insert_bytes_as_row(
-        &self,
-        tx: &mut MutTx,
+    pub fn insert_bytes_as_row<'a>(
+        &'a self,
+        tx: &'a mut MutTx,
         table_id: TableId,
         row_bytes: &[u8],
-    ) -> Result<ProductValue, DBError> {
+    ) -> Result<(AlgebraicValue, RowRef<'a>), DBError> {
+        // Decode the `row_bytes` as a `ProductValue` according to the schema.
         let ty = self.inner.row_type_for_table_mut_tx(tx, table_id)?;
         let row = ProductValue::decode(&ty, &mut &row_bytes[..])?;
+
+        // Insert the row.
         self.insert(tx, table_id, row)
     }
 
