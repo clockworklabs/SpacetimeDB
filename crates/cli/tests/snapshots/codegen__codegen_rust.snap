@@ -709,7 +709,7 @@ pub struct RepeatingTestArg {
 }
 
 impl TableType for RepeatingTestArg {
-	const TABLE_NAME: &'static str = "repeating_test_args";
+	const TABLE_NAME: &'static str = "repeating_test_arg";
 	type ReducerEvent = super::ReducerEvent;
 }
 
