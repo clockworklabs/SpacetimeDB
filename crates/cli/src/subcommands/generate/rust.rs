@@ -860,7 +860,7 @@ fn print_handle_table_update_defn(ctx: &GenCtx, out: &mut Indenter, items: &[Gen
                         writeln!(
                             out,
                             "{:?} => client_cache.{}::<{}::{}>(callbacks, table_update),",
-                            type_name(ctx, table_desc.data),
+                            table.table_name,
                             if find_primary_key_column_index(&table).is_some() {
                                 "handle_table_update_with_primary_key"
                             } else {
@@ -916,7 +916,7 @@ fn print_handle_resubscribe_defn(ctx: &GenCtx, out: &mut Indenter, items: &[GenI
                         writeln!(
                             out,
                             "{:?} => client_cache.handle_resubscribe_for_type::<{}::{}>(callbacks, new_subs),",
-                            type_name(ctx, table.data),
+                            table.schema.table_name,
                             type_name(ctx, table.data).to_case(Case::Snake),
                             type_name(ctx, table.data).to_case(Case::Pascal),
                         );
