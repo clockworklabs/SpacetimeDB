@@ -50,14 +50,10 @@ namespace SpacetimeDB.Internal
 			this.Allocated = Allocated;
 		}
 
-		public RawSequenceDefV8() : this(
-			"",
-			default!,
-			default!,
-			default!,
-			default!,
-			default!,
-			default!
-		) { }
+		public RawSequenceDefV8()
+		{
+			this.SequenceName = "";
+		}
+
 	}
 }

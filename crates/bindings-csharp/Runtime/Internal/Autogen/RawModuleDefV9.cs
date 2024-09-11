@@ -42,12 +42,14 @@ namespace SpacetimeDB.Internal
 			this.MiscExports = MiscExports;
 		}
 
-		public RawModuleDefV9() : this(
-			new(),
-			new(),
-			new(),
-			new(),
-			new()
-		) { }
+		public RawModuleDefV9()
+		{
+			this.Typespace = new();
+			this.Tables = new();
+			this.Reducers = new();
+			this.Types = new();
+			this.MiscExports = new();
+		}
+
 	}
 }

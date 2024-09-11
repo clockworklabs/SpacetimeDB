@@ -87,9 +87,9 @@ pub struct RawModuleDefV9 {
 /// constraints, sequences, type, and access rights.
 ///
 /// Validation rules:
-/// - The table name must be a valid [crate::db::identifier::Identifier].
+/// - The table name must be a valid [`crate::db::identifier::Identifier`].
 /// - The table's indexes, constraints, and sequences need not be sorted; they will be sorted according to their respective ordering rules.
-/// - The table's column types may refer only to types in the containing RawDatabaseDef's typespace.
+/// - The table's column types may refer only to types in the containing `RawModuleDefV9`'s typespace.
 /// - The table's column names must be unique.
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
@@ -120,7 +120,7 @@ pub struct RawTableDefV9 {
     pub indexes: Vec<RawIndexDefV9>,
 
     /// Any unique constraints on the table.
-    pub unique_constraints: Vec<RawUniqueConstraintDefV9>,
+    pub constraints: Vec<RawConstraintDefV9>,
 
     /// The sequences for the table.
     pub sequences: Vec<RawSequenceDefV9>,
@@ -192,7 +192,7 @@ impl From<TableAccess> for StAccess {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawSequenceDefV9 {
-    /// The name of the sequence. Must be unique within the containing `RawDatabaseDef`.
+    /// The name of the sequence. Must be unique within the containing `RawModuleDefV9`.
     pub name: RawIdentifier,
 
     /// The position of the column associated with this sequence.
@@ -273,7 +273,7 @@ pub enum RawIndexAlgorithm {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawUniqueConstraintDefV9 {
-    /// The name of the unique constraint. Must be unique within the containing `RawDatabaseDef`.
+    /// The name of the unique constraint. Must be unique within the containing `RawModuleDefV9`.
     pub name: RawIdentifier,
 
     /// The columns that must be unique.
@@ -289,11 +289,42 @@ pub struct RawUniqueConstraintDefV9 {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawScheduleDefV9 {
-    /// The name of the schedule. Must be unique within the containing `RawDatabaseDef`.
+    /// The name of the schedule. Must be unique within the containing `RawModuleDefV9`.
     pub name: RawIdentifier,
 
     /// The name of the reducer to call.
     pub reducer_name: RawIdentifier,
+}
+
+/// A constraint definition attached to a table.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawConstraintDefV9 {
+    /// The name of the constraint. Must be unique within the containing `RawModuleDefV9`.
+    pub name: RawIdentifier,
+
+    /// The data for the constraint.
+    pub data: RawConstraintDataV9,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+#[non_exhaustive]
+pub enum RawConstraintDataV9 {
+    Unique(RawUniqueConstraintDataV9),
+}
+
+/// Requires that the projection of the table onto these `columns` is a bijection.
+///
+/// That is, there must be a one-to-one relationship between a row and the `columns` of that row.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawUniqueConstraintDataV9 {
+    /// The columns that must be unique.
+    pub columns: ColList,
 }
 
 /// A miscellaneous module export.
@@ -314,6 +345,7 @@ pub struct RawTypeDefV9 {
     pub name: RawScopedTypeNameV9,
 
     /// The type to which the declaration refers.
+    /// This must point to an `AlgebraicType::Product` or an `AlgebraicType::Sum` in the module's typespace.
     pub ty: AlgebraicTypeRef,
 
     /// Whether this type has a custom ordering.
@@ -411,7 +443,7 @@ impl RawModuleDefV9Builder {
                 name,
                 product_type_ref,
                 indexes: vec![],
-                unique_constraints: vec![],
+                constraints: vec![],
                 sequences: vec![],
                 schedule: None,
                 primary_key: None,
@@ -583,9 +615,10 @@ impl<'a> RawTableDefBuilder<'a> {
     /// Generates a [UniqueConstraintDef] using the supplied `columns`.
     pub fn with_unique_constraint(mut self, columns: ColList, name: Option<RawIdentifier>) -> Self {
         let name = name.unwrap_or_else(|| self.generate_unique_constraint_name(&columns));
-        self.table
-            .unique_constraints
-            .push(RawUniqueConstraintDefV9 { name, columns });
+        self.table.constraints.push(RawConstraintDefV9 {
+            name,
+            data: RawConstraintDataV9::Unique(RawUniqueConstraintDataV9 { columns }),
+        });
         self
     }
 

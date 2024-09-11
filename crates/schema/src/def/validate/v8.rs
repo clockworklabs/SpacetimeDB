@@ -73,7 +73,6 @@ fn upgrade_table(
 ) -> RawTableDefV9 {
     // First, generate all the various things that are needed.
     // This is the hairiest part of v8.
-    let generated_indexes = table.schema.generated_indexes().collect::<Vec<_>>();
     let generated_constraints = table.schema.generated_constraints().collect::<Vec<_>>();
     let generated_sequences = table.schema.generated_sequences().collect::<Vec<_>>();
 
@@ -96,13 +95,7 @@ fn upgrade_table(
     check_all_column_defs(product_type_ref, columns, &table_name, typespace, extra_errors);
 
     // Now we're ready to go through the various definitions and upgrade them.
-    let indexes = convert_all(
-        indexes
-            .into_iter()
-            .map(|idx| (idx, false))
-            .chain(generated_indexes.into_iter().map(|idx| (idx, true))),
-        |(idx, is_generated)| upgrade_index(idx, is_generated),
-    );
+    let indexes = convert_all(indexes, upgrade_index);
     let sequences = convert_all(sequences.into_iter().chain(generated_sequences), upgrade_sequence);
     let schedule = upgrade_schedule(scheduled, &table_name);
 
@@ -111,9 +104,7 @@ fn upgrade_table(
     let unique_constraints = constraints
         .into_iter()
         .chain(generated_constraints)
-        .filter_map(|constraint| {
-            upgrade_constraint_to_unique_constraint(constraint, &table_name, &mut primary_key, extra_errors)
-        })
+        .filter_map(|constraint| upgrade_constraint(constraint, &table_name, &mut primary_key, extra_errors))
         .collect();
 
     let table_type = table_type.into();
@@ -124,7 +115,7 @@ fn upgrade_table(
         product_type_ref,
         primary_key,
         indexes,
-        unique_constraints,
+        constraints: unique_constraints,
         sequences,
         schedule,
         table_type,
@@ -225,7 +216,7 @@ fn check_column(
 }
 
 /// Upgrade an index.
-fn upgrade_index(index: RawIndexDefV8, is_generated: bool) -> RawIndexDefV9 {
+fn upgrade_index(index: RawIndexDefV8) -> RawIndexDefV9 {
     let RawIndexDefV8 {
         index_name,
         is_unique: _, // handled by generated_constraints
@@ -239,7 +230,7 @@ fn upgrade_index(index: RawIndexDefV8, is_generated: bool) -> RawIndexDefV9 {
     };
     // The updated bindings macros will correctly distinguish between accessor name and index name as specified in the
     // ABI stability proposal. The old macros don't make this distinction, so we just reuse the name for them.
-    let accessor_name = if is_generated { None } else { Some(index_name.clone()) };
+    let accessor_name = Some(index_name.clone());
     RawIndexDefV9 {
         name: index_name.clone(),
         // Set the accessor name to be the same as the index name.
@@ -252,12 +243,12 @@ fn upgrade_index(index: RawIndexDefV8, is_generated: bool) -> RawIndexDefV9 {
 ///
 /// `primary_key` is mutable and will be set to `Some(constraint.columns.as_singleton())` if the constraint is a primary key.
 /// If it has already been set, an error will be pushed to `extra_errors`.
-fn upgrade_constraint_to_unique_constraint(
+fn upgrade_constraint(
     constraint: RawConstraintDefV8,
     table_name: &RawIdentifier,
     primary_key: &mut Option<ColId>,
     extra_errors: &mut Vec<ValidationError>,
-) -> Option<RawUniqueConstraintDefV9> {
+) -> Option<RawConstraintDefV9> {
     let RawConstraintDefV8 {
         constraint_name,
         constraints,
@@ -282,12 +273,12 @@ fn upgrade_constraint_to_unique_constraint(
     }
 
     if constraints.has_unique() {
-        Some(RawUniqueConstraintDefV9 {
+        Some(RawConstraintDefV9 {
             name: constraint_name,
-            columns,
+            data: RawConstraintDataV9::Unique(RawUniqueConstraintDataV9 { columns }),
         })
     } else {
-        // other constraints are implemented by `generated_indexes` and `generated_sequences`.
+        // other constraints are implemented by `generated_sequences`.
         // Note that `Constraints::unset` will not trigger any of the preceding branches, so will be ignored.
         // This is consistent with the original `TableSchema::from_(raw_)def`, which also ignored `Constraints::unset`.
         None
@@ -362,12 +353,12 @@ mod tests {
     use crate::def::validate::v8::{IDENTITY_CONNECTED_NAME, IDENTITY_DISCONNECTED_NAME, INIT_NAME};
     use crate::def::{validate::Result, ModuleDef};
     use crate::error::*;
+    use crate::type_for_generate::ClientCodegenError;
 
     use spacetimedb_data_structures::expect_error_matching;
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::{ScheduleAt, TableDesc};
     use spacetimedb_primitives::{ColId, ColList, Constraints};
-    use spacetimedb_sats::typespace::TypeRefError;
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductType};
     use v8::RawModuleDefV8Builder;
     use v9::Lifecycle;
@@ -699,79 +690,49 @@ mod tests {
     }
 
     #[test]
-    fn recursive_type_ref() {
+    fn recursive_ref() {
         let recursive_type = AlgebraicType::product([("a", AlgebraicTypeRef(0).into())]);
 
         let mut builder = RawModuleDefV8Builder::default();
-        builder.add_type_for_tests("Recursive", recursive_type.clone());
-        builder.add_reducer_for_tests("silly", ProductType::from([("a", recursive_type.clone())]));
-        let result: Result<ModuleDef> = builder.finish().try_into();
+        let ref_ = builder.add_type_for_tests("Recursive", recursive_type.clone());
+        builder.add_reducer_for_tests("silly", ProductType::from([("a", ref_.into())]));
+        let result: ModuleDef = builder.finish().try_into().unwrap();
 
-        // If you use a recursive type as a reducer argument, you get two errors.
-        // One for the reducer argument, and one for the type itself.
-        // This seems fine...
-        expect_error_matching!(result, ValidationError::ResolutionFailure { location, ty, error } => {
-            location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) } &&
-            ty.0 == recursive_type &&
-            error == &TypeRefError::RecursiveTypeRef(AlgebraicTypeRef(0))
-        });
-        expect_error_matching!(result, ValidationError::ResolutionFailure { location, ty, error } => {
-            location == &TypeLocation::ReducerArg {
-                reducer_name: "silly".into(),
-                position: 0,
-                arg_name: Some("a".into())
-            } &&
-            ty.0 == recursive_type &&
-            error == &TypeRefError::RecursiveTypeRef(AlgebraicTypeRef(0))
-        });
+        assert!(result.typespace_for_generate[ref_].is_recursive());
     }
 
     #[test]
-    fn invalid_type_ref() {
+    fn out_of_bounds_ref() {
         let invalid_type_1 = AlgebraicType::product([("a", AlgebraicTypeRef(31).into())]);
-        let invalid_type_2 = AlgebraicType::option(AlgebraicTypeRef(55).into());
         let mut builder = RawModuleDefV8Builder::default();
-        builder.add_type_for_tests("Invalid", invalid_type_1.clone());
-        builder.add_reducer_for_tests("silly", ProductType::from([("a", invalid_type_2.clone())]));
+        let ref_ = builder.add_type_for_tests("Invalid", invalid_type_1.clone());
+        builder.add_reducer_for_tests("silly", ProductType::from([("a", ref_.into())]));
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        expect_error_matching!(result, ValidationError::ResolutionFailure { location, ty, error } => {
-            location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) } &&
-            ty.0 == invalid_type_1 &&
-            error == &TypeRefError::InvalidTypeRef(AlgebraicTypeRef(31))
-        });
-        expect_error_matching!(result, ValidationError::ResolutionFailure { location, ty, error } => {
-            location == &TypeLocation::ReducerArg {
-                reducer_name: "silly".into(),
-                position: 0,
-                arg_name: Some("a".into())
-            } &&
-            ty.0 == invalid_type_2 &&
-            error == &TypeRefError::InvalidTypeRef(AlgebraicTypeRef(55))
+        expect_error_matching!(result, ValidationError::ClientCodegenError { location, error: ClientCodegenError::TypeRefError(_)  } => {
+            location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) }
         });
     }
 
     #[test]
-    fn type_invalid() {
+    fn invalid_use() {
         let inner_type_invalid_for_use = AlgebraicType::product([("b", AlgebraicType::U32)]);
         let invalid_type = AlgebraicType::product([("a", inner_type_invalid_for_use.clone())]);
         let mut builder = RawModuleDefV8Builder::default();
-        builder.add_type_for_tests("Invalid", invalid_type.clone());
-        builder.add_reducer_for_tests("silly", ProductType::from([("a", invalid_type.clone())]));
+        let ref_ = builder.add_type_for_tests("Invalid", invalid_type.clone());
+        builder.add_reducer_for_tests("silly", ProductType::from([("a", ref_.into())]));
         let result: Result<ModuleDef> = builder.finish().try_into();
 
-        expect_error_matching!(result, ValidationError::NotValidForTypeDefinition { ref_, ty } => {
-            ref_ == &AlgebraicTypeRef(0) &&
-            ty == &invalid_type
-        });
-        expect_error_matching!(result, ValidationError::NotValidForTypeUse { location, ty } => {
-            location == &TypeLocation::ReducerArg {
-                reducer_name: "silly".into(),
-                position: 0,
-                arg_name: Some("a".into())
-            } &&
-            ty.0 == invalid_type
-        });
+        expect_error_matching!(
+            result,
+            ValidationError::ClientCodegenError {
+                location,
+                error: ClientCodegenError::NonSpecialTypeNotAUse { ty }
+            } => {
+                location == &TypeLocation::InTypespace { ref_: AlgebraicTypeRef(0) } &&
+                ty.0 == inner_type_invalid_for_use
+            }
+        );
     }
 
     #[test]

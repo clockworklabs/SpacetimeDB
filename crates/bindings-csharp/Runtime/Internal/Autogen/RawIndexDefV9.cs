@@ -34,10 +34,11 @@ namespace SpacetimeDB.Internal
 			this.Algorithm = Algorithm;
 		}
 
-		public RawIndexDefV9() : this(
-			"",
-			default!,
-			default!
-		) { }
+		public RawIndexDefV9()
+		{
+			this.Name = "";
+			this.Algorithm = null!;
+		}
+
 	}
 }

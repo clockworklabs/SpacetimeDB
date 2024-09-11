@@ -30,9 +30,11 @@ namespace SpacetimeDB.Internal
 			this.Name = Name;
 		}
 
-		public RawScopedTypeNameV9() : this(
-			new(),
-			""
-		) { }
+		public RawScopedTypeNameV9()
+		{
+			this.Scope = new();
+			this.Name = "";
+		}
+
 	}
 }
