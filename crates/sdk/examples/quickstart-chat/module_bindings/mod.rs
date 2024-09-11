@@ -13,10 +13,10 @@ use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,
     reducer::{Reducer, ReducerCallbackId, Status},
-    sats::{de::Deserialize, ser::Serialize},
+    sats::{de::Deserialize, i256, ser::Serialize, u256},
     spacetimedb_lib,
     table::{TableIter, TableType, TableWithPrimaryKey},
-    Address,
+    Address, ScheduleAt,
 };
 use std::sync::Arc;
 
@@ -48,8 +48,8 @@ impl SpacetimeModule for Module {
     ) {
         let table_name = &table_update.table_name[..];
         match table_name {
-            "Message" => client_cache.handle_table_update_no_primary_key::<message::Message>(callbacks, table_update),
-            "User" => client_cache.handle_table_update_with_primary_key::<user::User>(callbacks, table_update),
+            "message" => client_cache.handle_table_update_no_primary_key::<message::Message>(callbacks, table_update),
+            "user" => client_cache.handle_table_update_with_primary_key::<user::User>(callbacks, table_update),
             _ => spacetimedb_sdk::log::error!("TableRowOperation on unknown table {:?}", table_name),
         }
     }
@@ -97,8 +97,8 @@ impl SpacetimeModule for Module {
     ) {
         let table_name = &new_subs.table_name[..];
         match table_name {
-            "Message" => client_cache.handle_resubscribe_for_type::<message::Message>(callbacks, new_subs),
-            "User" => client_cache.handle_resubscribe_for_type::<user::User>(callbacks, new_subs),
+            "message" => client_cache.handle_resubscribe_for_type::<message::Message>(callbacks, new_subs),
+            "user" => client_cache.handle_resubscribe_for_type::<user::User>(callbacks, new_subs),
             _ => spacetimedb_sdk::log::error!("TableRowOperation on unknown table {:?}", table_name),
         }
     }

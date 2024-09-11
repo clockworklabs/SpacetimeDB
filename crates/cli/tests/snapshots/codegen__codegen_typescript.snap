@@ -612,7 +612,7 @@ export class RepeatingTestArg extends DatabaseTable
 
 	public static *filterByPrevTime(value: BigInt): IterableIterator<RepeatingTestArg>
 	{
-		for (let instance of this.db.getTable("repeating_test_args").getInstances())
+		for (let instance of this.db.getTable("repeating_test_arg").getInstances())
 		{
 			if (instance.prevTime === value) {
 				yield instance;
@@ -622,7 +622,7 @@ export class RepeatingTestArg extends DatabaseTable
 
 	public static *filterByScheduledId(value: BigInt): IterableIterator<RepeatingTestArg>
 	{
-		for (let instance of this.db.getTable("repeating_test_args").getInstances())
+		for (let instance of this.db.getTable("repeating_test_arg").getInstances())
 		{
 			if (instance.scheduledId === value) {
 				yield instance;

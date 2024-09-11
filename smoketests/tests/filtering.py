@@ -4,7 +4,7 @@ class Filtering(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{println, Identity};
 
-#[spacetimedb::table(name = people)]
+#[spacetimedb::table(name = person)]
 pub struct Person {
     #[unique]
     id: i32,
@@ -58,7 +58,7 @@ pub fn find_person_by_nick(nick: String) {
     }
 }
 
-#[spacetimedb::table(name = nonunique_people)]
+#[spacetimedb::table(name = nonunique_person)]
 pub struct NonuniquePerson {
     #[index(btree)]
     id: i32,
@@ -93,7 +93,7 @@ pub fn find_nonunique_non_humans() {
 }
 
 // Ensure that [Identity] is filterable and a legal unique column.
-#[spacetimedb::table(name = identified_people)]
+#[spacetimedb::table(name = identified_person)]
 struct IdentifiedPerson {
     #[unique]
     identity: Identity,

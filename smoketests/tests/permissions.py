@@ -77,7 +77,7 @@ class Permissions(Smoketest):
 
 class PrivateTablePermissions(Smoketest):
     MODULE_CODE = """
-#[spacetimedb::table(name = secrets)]
+#[spacetimedb::table(name = secret)]
 pub struct Secret {
     answer: u8,
 }
@@ -102,7 +102,7 @@ pub fn do_thing() {
     def test_private_table(self):
         """Ensure that a private table can only be queried by the database owner"""
 
-        out = self.spacetime("sql", self.address, "select * from secrets")
+        out = self.spacetime("sql", self.address, "select * from secret")
         self.assertMultiLineEqual(out, """\
  answer 
 --------
@@ -113,10 +113,10 @@ pub fn do_thing() {
         self.new_identity(email=None)
 
         with self.assertRaises(Exception):
-            self.spacetime("sql", self.address, "select * from secrets")
+            self.spacetime("sql", self.address, "select * from secret")
 
         with self.assertRaises(Exception):
-            self.subscribe("SELECT * FROM secrets", n=0)
+            self.subscribe("SELECT * FROM secret", n=0)
 
         sub = self.subscribe("SELECT * FROM *", n=1)
         self.call("do_thing", anon=True)

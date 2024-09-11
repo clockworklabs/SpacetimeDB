@@ -9,7 +9,7 @@ class UpdateModule(Smoketest):
     MODULE_CODE = """
 use spacetimedb::println;
 
-#[spacetimedb::table(name = people)]
+#[spacetimedb::table(name = person)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -31,7 +31,7 @@ pub fn say_hello() {
 }
 """
     MODULE_CODE_B = """
-#[spacetimedb::table(name = people)]
+#[spacetimedb::table(name = person)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -44,7 +44,7 @@ pub struct Person {
     MODULE_CODE_C = """
 use spacetimedb::println;
 
-#[spacetimedb::table(name = people)]
+#[spacetimedb::table(name = person)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -104,7 +104,7 @@ class UploadModule1(Smoketest):
     MODULE_CODE = """
 use spacetimedb::println;
 
-#[spacetimedb::table(name = people)]
+#[spacetimedb::table(name = person)]
 pub struct Person {
     name: String,
 }
@@ -171,7 +171,7 @@ class HotswapModule(Smoketest):
     AUTOPUBLISH = False
 
     MODULE_CODE = """
-#[spacetimedb::table(name = people)]
+#[spacetimedb::table(name = person)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -188,7 +188,7 @@ pub fn add_person(name: String) {
     MODULE_CODE_B = """
 use spacetimedb;
 
-#[spacetimedb::table(name = people)]
+#[spacetimedb::table(name = person)]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -236,6 +236,6 @@ pub fn add_pet(species: String) {
         # Note that 'SELECT * FROM *' does NOT get refreshed to include the
         # new table (this is a known limitation).
         self.assertEqual(sub(), [
-            {'people': {'deletes': [], 'inserts': [{'id': 1, 'name': 'Horst'}]}},
-            {'people': {'deletes': [], 'inserts': [{'id': 2, 'name': 'Cindy'}]}}
+            {'person': {'deletes': [], 'inserts': [{'id': 1, 'name': 'Horst'}]}},
+            {'person': {'deletes': [], 'inserts': [{'id': 2, 'name': 'Cindy'}]}}
         ])

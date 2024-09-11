@@ -4,7 +4,7 @@ class ModuleDescription(Smoketest):
     MODULE_CODE = """
 use spacetimedb::println;
 
-#[spacetimedb::table(name = people)]
+#[spacetimedb::table(name = person)]
 pub struct Person {
     name: String,
 }
@@ -28,4 +28,4 @@ pub fn say_hello() {
 
         self.spacetime("describe", self.address)
         self.spacetime("describe", self.address, "reducer", "say_hello")
-        self.spacetime("describe", self.address, "table", "people")
+        self.spacetime("describe", self.address, "table", "person")

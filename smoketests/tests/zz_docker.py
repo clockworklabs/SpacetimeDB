@@ -47,7 +47,7 @@ class DockerRestartModule(Smoketest):
     MODULE_CODE = """
 use spacetimedb::println;
 
-#[spacetimedb::table(name = people, index(name = name_idx, btree(columns = [name])))]
+#[spacetimedb::table(name = person, index(name = name_idx, btree(columns = [name])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -93,7 +93,7 @@ class DockerRestartSql(Smoketest):
     MODULE_CODE = """
 use spacetimedb::println;
 
-#[spacetimedb::table(name = people, index(name = name_idx, btree(columns = [name])))]
+#[spacetimedb::table(name = person, index(name = name_idx, btree(columns = [name])))]
 pub struct Person {
     #[primary_key]
     #[auto_inc]
@@ -130,7 +130,7 @@ pub fn say_hello() {
 
         restart_docker()
 
-        sql_out = self.spacetime("sql", self.address, "SELECT name FROM people WHERE id = 3")
+        sql_out = self.spacetime("sql", self.address, "SELECT name FROM person WHERE id = 3")
         self.assertMultiLineEqual(sql_out, """ name       \n------------\n "Samantha" \n""")
 
 @requires_docker
@@ -139,15 +139,15 @@ class DockerRestartAutoDisconnect(Smoketest):
 use log::info;
 use spacetimedb::{Address, Identity, ReducerContext, TableType};
 
-#[spacetimedb::table(name = connected_clients)]
-pub struct ConnectedClients {
+#[spacetimedb::table(name = connected_client)]
+pub struct ConnectedClient {
     identity: Identity,
     address: Address,
 }
 
 #[spacetimedb::reducer(client_connected)]
 fn on_connect(ctx: ReducerContext) {
-    ConnectedClients::insert(ConnectedClients {
+    ConnectedClient::insert(ConnectedClient {
         identity: ctx.sender,
         address: ctx.address.expect("sender address unset"),
     });
@@ -157,17 +157,17 @@ fn on_connect(ctx: ReducerContext) {
 fn on_disconnect(ctx: ReducerContext) {
     let sender_identity = &ctx.sender;
     let sender_address = ctx.address.as_ref().expect("sender address unset");
-    let match_client = |row: &ConnectedClients| {
+    let match_client = |row: &ConnectedClient| {
         &row.identity == sender_identity && &row.address == sender_address
     };
-    if let Some(client) = ConnectedClients::iter().find(match_client) {
-        ConnectedClients::delete(&client);
+    if let Some(client) = ConnectedClient::iter().find(match_client) {
+        ConnectedClient::delete(&client);
     }
 }
 
 #[spacetimedb::reducer]
 fn print_num_connected() {
-    let n = ConnectedClients::iter().count();
+    let n = ConnectedClient::iter().count();
     info!("CONNECTED CLIENTS: {n}")
 }
 """
@@ -176,8 +176,8 @@ fn print_num_connected() {
         """Tests if clients are automatically disconnected after a restart"""
 
         # Start two subscribers
-        self.subscribe("SELECT * FROM connected_clients", n=2)
-        self.subscribe("SELECT * FROM connected_clients", n=2)
+        self.subscribe("SELECT * FROM connected_client", n=2)
+        self.subscribe("SELECT * FROM connected_client", n=2)
 
         # Assert that we have two clients + the reducer call
         self.call("print_num_connected")
