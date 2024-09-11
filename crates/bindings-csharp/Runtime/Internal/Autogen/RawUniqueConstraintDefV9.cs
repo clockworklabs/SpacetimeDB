@@ -30,9 +30,11 @@ namespace SpacetimeDB.Internal
 			this.Columns = Columns;
 		}
 
-		public RawUniqueConstraintDefV9() : this(
-			"",
-			new()
-		) { }
+		public RawUniqueConstraintDefV9()
+		{
+			this.Name = "";
+			this.Columns = new();
+		}
+
 	}
 }

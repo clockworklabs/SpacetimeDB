@@ -34,10 +34,11 @@ namespace SpacetimeDB.Internal
 			this.Columns = Columns;
 		}
 
-		public RawConstraintDefV8() : this(
-			"",
-			default!,
-			new()
-		) { }
+		public RawConstraintDefV8()
+		{
+			this.ConstraintName = "";
+			this.Columns = new();
+		}
+
 	}
 }

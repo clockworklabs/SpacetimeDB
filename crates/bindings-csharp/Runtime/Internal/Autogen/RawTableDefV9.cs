@@ -58,16 +58,13 @@ namespace SpacetimeDB.Internal
 			this.TableAccess = TableAccess;
 		}
 
-		public RawTableDefV9() : this(
-			"",
-			default!,
-			default!,
-			new(),
-			new(),
-			new(),
-			default!,
-			default!,
-			default!
-		) { }
+		public RawTableDefV9()
+		{
+			this.Name = "";
+			this.Indexes = new();
+			this.UniqueConstraints = new();
+			this.Sequences = new();
+		}
+
 	}
 }

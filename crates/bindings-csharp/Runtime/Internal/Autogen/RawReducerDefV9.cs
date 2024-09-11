@@ -34,10 +34,11 @@ namespace SpacetimeDB.Internal
 			this.Lifecycle = Lifecycle;
 		}
 
-		public RawReducerDefV9() : this(
-			"",
-			new(),
-			default!
-		) { }
+		public RawReducerDefV9()
+		{
+			this.Name = "";
+			this.Params = new();
+		}
+
 	}
 }
