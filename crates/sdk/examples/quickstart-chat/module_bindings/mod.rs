@@ -237,8 +237,8 @@ impl TryFrom<spacetimedb_sdk::ws_messages::DatabaseUpdate> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
             match &table_update.table_name[..] {
-                "User" => db_update.user = user_table::parse_table_update(table_update.deletes, table_update.inserts)?,
-                "Message" => {
+                "user" => db_update.user = user_table::parse_table_update(table_update.deletes, table_update.inserts)?,
+                "message" => {
                     db_update.message = message_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
                 unknown => spacetimedb_sdk::anyhow::bail!("Unknown table {unknown:?} in DatabaseUpdate"),
@@ -254,12 +254,12 @@ impl InModule for DbUpdate {
 
 impl impl_traits::DbUpdate for DbUpdate {
     fn apply_to_client_cache(&self, cache: &mut ClientCache<RemoteModule>) {
-        cache.apply_diff_to_table::<User>("User", &self.user);
-        cache.apply_diff_to_table::<Message>("Message", &self.message);
+        cache.apply_diff_to_table::<User>("user", &self.user);
+        cache.apply_diff_to_table::<Message>("message", &self.message);
     }
     fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut DbCallbacks<RemoteModule>) {
-        callbacks.invoke_table_row_callbacks::<User>("User", &self.user, event);
-        callbacks.invoke_table_row_callbacks::<Message>("Message", &self.message, event);
+        callbacks.invoke_table_row_callbacks::<User>("user", &self.user, event);
+        callbacks.invoke_table_row_callbacks::<Message>("message", &self.message, event);
     }
 }
 

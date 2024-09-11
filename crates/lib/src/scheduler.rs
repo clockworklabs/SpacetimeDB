@@ -2,8 +2,10 @@ use std::{fmt::Debug, time::Duration};
 
 use spacetimedb_sats::{
     algebraic_value::de::{ValueDeserializeError, ValueDeserializer},
-    de::Deserialize as _,
-    AlgebraicValue, SpacetimeType,
+    de::Deserialize,
+    impl_st,
+    ser::Serialize,
+    AlgebraicType, AlgebraicValue,
 };
 
 /// When a scheduled reducer should execute,
@@ -11,16 +13,18 @@ use spacetimedb_sats::{
 /// or at regular intervals for repeating schedules.
 ///
 /// Stored in reducer-scheduling tables as a column.
-#[derive(SpacetimeType, Copy, Clone, PartialEq, Eq, Debug)]
-#[sats(crate = spacetimedb_sats)]
+///
+/// This is a special type.
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum ScheduleAt {
-    /// A specific time to which the reducer is scheduled.
-    /// Value is a UNIX timestamp in microseconds.
-    Time(u64),
     /// A regular interval at which the repeated reducer is scheduled.
     /// Value is a duration in microseconds.
     Interval(u64),
+    /// A specific time to which the reducer is scheduled.
+    /// Value is a UNIX timestamp in microseconds.
+    Time(u64),
 }
+impl_st!([] ScheduleAt, ScheduleAt::get_type());
 
 impl ScheduleAt {
     /// Converts the `ScheduleAt` to a `std::time::Duration` from now.
@@ -35,6 +39,11 @@ impl ScheduleAt {
             }
             ScheduleAt::Interval(dur) => Duration::from_micros(*dur),
         }
+    }
+
+    /// Get the special `AlgebraicType` for `ScheduleAt`.
+    pub fn get_type() -> AlgebraicType {
+        AlgebraicType::sum([("Interval", AlgebraicType::U64), ("Time", AlgebraicType::U64)])
     }
 }
 
@@ -62,5 +71,10 @@ mod tests {
         let ser = bsatn::to_vec(&schedule_at).unwrap();
         let de = bsatn::from_slice(&ser).unwrap();
         assert_eq!(schedule_at, de);
+    }
+
+    #[test]
+    fn schedule_at_is_special() {
+        assert!(ScheduleAt::get_type().is_special());
     }
 }

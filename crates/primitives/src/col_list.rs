@@ -64,14 +64,32 @@ impl<C: Into<ColId>> FromIterator<C> for ColList {
         let iter = iter.into_iter();
         let (lower_bound, _) = iter.size_hint();
         let mut list = Self::with_capacity(lower_bound as u16);
-        for col in iter {
-            list.push(col.into());
-        }
+        list.extend(iter);
         list
     }
 }
 
+impl<C: Into<ColId>> Extend<C> for ColList {
+    fn extend<T: IntoIterator<Item = C>>(&mut self, iter: T) {
+        let iter = iter.into_iter();
+        for col in iter {
+            self.push(col.into());
+        }
+    }
+}
+
+impl Default for ColList {
+    fn default() -> Self {
+        Self::with_capacity(0)
+    }
+}
+
 impl ColList {
+    /// Returns an empty list.
+    pub fn empty() -> Self {
+        Self::from_inline(0)
+    }
+
     /// Returns a list with a single column.
     /// As long `col` is below `62`, this will not allocate.
     pub fn new(col: ColId) -> Self {

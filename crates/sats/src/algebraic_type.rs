@@ -3,11 +3,14 @@ pub mod map_notation;
 
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
+use crate::de::Deserialize;
 use crate::meta_type::MetaType;
 use crate::product_type::{ADDRESS_TAG, IDENTITY_TAG};
-use crate::{de::Deserialize, ser::Serialize, MapType};
+use crate::sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG};
 use crate::{i256, u256};
-use crate::{AlgebraicTypeRef, AlgebraicValue, ArrayType, ProductType, SumType, SumTypeVariant};
+use crate::{
+    AlgebraicTypeRef, AlgebraicValue, ArrayType, MapType, ProductType, SpacetimeType, SumType, SumTypeVariant,
+};
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 
@@ -17,7 +20,7 @@ use enum_as_inner::EnumAsInner;
 /// The type system unifies the concepts sum types, product types, scalar value types,
 /// and convenience types strings, arrays, and maps,
 /// into a single type system.
-#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, From)]
+#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType, From)]
 #[sats(crate = crate)]
 pub enum AlgebraicType {
     /// A type where the definition is given by the typing context (`Typespace`).
@@ -174,6 +177,11 @@ impl AlgebraicType {
         matches!(self, Self::Product(p) if p.is_identity())
     }
 
+    /// Returns whether this type is the conventional `ScheduleAt` type.
+    pub fn is_schedule_at(&self) -> bool {
+        matches!(self, Self::Sum(p) if p.is_schedule_at())
+    }
+
     /// Returns whether this type is scalar or a string type.
     pub fn is_scalar_or_string(&self) -> bool {
         self.is_scalar() || self.is_string()
@@ -265,7 +273,7 @@ impl AlgebraicType {
 
     /// Returns a structural option type where `some_type` is the type for the `some` variant.
     pub fn option(some_type: Self) -> Self {
-        Self::sum([("some", some_type), ("none", AlgebraicType::unit())])
+        Self::sum([(OPTION_SOME_TAG, some_type), (OPTION_NONE_TAG, AlgebraicType::unit())])
     }
 
     /// Returns an unsized array type where the element type is `ty`.
@@ -345,31 +353,68 @@ impl AlgebraicType {
         }
     }
 
-    /// Non-recursively validates that the type is in "nominal normal form".
+    /// Check if the type is one of a small number of special, known types
+    /// with specific layouts.
+    /// See also [`ProductType::is_special`] and [`SumType::is_special`].
+    pub fn is_special(&self) -> bool {
+        match self {
+            AlgebraicType::Product(product) => product.is_special(),
+            AlgebraicType::Sum(sum) => sum.is_special(),
+            _ => false,
+        }
+    }
+
+    /// Validates that the type can be used to generate a type definition
+    /// in a `SpacetimeDB` client module.
     ///
-    /// Nominal normal form is intended for use when generating code in languages with nominal type systems.
+    /// Such a type must be a non-special sum or product type.
+    /// All of the elements of the type must be [`valid_for_client_type_use`](AlgebraicType::valid_for_client_type_use).
     ///
-    /// A nominal normal form type may not directly contain `Sum`s or `Product`s. All `Sum` and `Product` types must be referred to via `Ref`s. This is a recursive check, so all nested types must also be in nominal normal form.
+    /// This method does not actually follow `Ref`s to check the types they point to,
+    /// it only checks the structure of this type.
+    pub fn is_valid_for_client_type_definition(&self) -> bool {
+        // Special types should not be used to generate type definitions.
+        if self.is_special() {
+            return false;
+        }
+        match self {
+            AlgebraicType::Sum(sum) => sum
+                .variants
+                .iter()
+                .all(|variant| variant.algebraic_type.is_valid_for_client_type_use()),
+            AlgebraicType::Product(product) => product
+                .elements
+                .iter()
+                .all(|elem| elem.algebraic_type.is_valid_for_client_type_use()),
+            _ => false,
+        }
+    }
+
+    /// Validates that the type can be used to generate a *use* of a type in a `SpacetimeDB` client module.
+    /// (As opposed to a *definition* of a type.)
     ///
-    /// Currently, certain types are exceptions to this rule and are allowed to not be behind `Ref`s:
-    /// - Unit `Product`s and empty `Sum`s.
-    /// - Specially tagged `ProductType`s, determined by `ProductType::is_special`.
-    /// - Structural option `SumType`s, determined by `SumType::as_option`.
-    /// Chains of refs are permitted.
+    /// This means that the type is either:
+    /// - a reference
+    /// - a special, known type
+    /// - a non-compound type like `U8`, `I32`, `F64`, etc.
+    /// - or a map, array, or option built from types that are [`valid_for_client_type_use`](AlgebraicType::valid_for_client_type_use).
     ///
-    /// This method does not follow `Ref`s.
-    pub fn is_nominal_normal_form(&self) -> bool {
+    /// This method does not actually follow `Ref`s to check the types they point to,
+    /// it only checks the structure of the type.
+    pub fn is_valid_for_client_type_use(&self) -> bool {
         match self {
             AlgebraicType::Sum(sum) => {
                 if let Some(wrapped) = sum.as_option() {
-                    wrapped.is_nominal_normal_form()
+                    wrapped.is_valid_for_client_type_use()
                 } else {
-                    sum.is_empty()
+                    sum.is_special() || sum.is_empty()
                 }
             }
             AlgebraicType::Product(product) => product.is_special() || product.is_unit(),
-            AlgebraicType::Array(array) => array.elem_ty.is_nominal_normal_form(),
-            AlgebraicType::Map(map) => map.key_ty.is_nominal_normal_form() && map.ty.is_nominal_normal_form(),
+            AlgebraicType::Array(array) => array.elem_ty.is_valid_for_client_type_use(),
+            AlgebraicType::Map(map) => {
+                map.key_ty.is_valid_for_client_type_use() && map.ty.is_valid_for_client_type_use()
+            }
             AlgebraicType::Ref(_) => true,
             _ => true,
         }

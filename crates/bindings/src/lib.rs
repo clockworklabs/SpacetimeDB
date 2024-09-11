@@ -32,7 +32,9 @@ pub use rand;
 #[cfg(feature = "rand")]
 pub use rng::{random, rng, StdbRng};
 pub use sats::SpacetimeType;
-pub use spacetimedb_bindings_macro::{duration, query, spacetimedb, TableType};
+#[doc(hidden)]
+pub use spacetimedb_bindings_macro::__TableHelper;
+pub use spacetimedb_bindings_macro::{duration, query, reducer, table};
 pub use spacetimedb_bindings_sys as sys;
 pub use spacetimedb_lib;
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
@@ -46,6 +48,8 @@ pub use sys::Errno;
 pub use timestamp::Timestamp;
 
 pub type Result<T = (), E = Errno> = core::result::Result<T, E>;
+
+pub type ReducerResult = core::result::Result<(), Box<str>>;
 
 /// A context that any reducer is provided with.
 #[non_exhaustive]
@@ -114,48 +118,37 @@ pub fn decode_schema<'a>(bytes: &mut impl BufReader<'a>) -> Result<ProductType, 
 /// Queries and returns the `table_id` associated with the given (table) `name`.
 ///
 /// Panics if the table does not exist.
-pub fn get_table_id(table_name: &str) -> TableId {
-    sys::get_table_id(table_name).unwrap_or_else(|_| {
+pub fn table_id_from_name(table_name: &str) -> TableId {
+    sys::table_id_from_name(table_name).unwrap_or_else(|_| {
         panic!("Failed to get table with name: {}", table_name);
     })
 }
 
 /// Insert a row of type `T` into the table identified by `table_id`.
-pub fn insert<T: TableType>(table_id: TableId, row: T) -> T::InsertResult {
-    trait HasAutoinc: TableType {
-        const HAS_AUTOINC: bool;
-    }
-    impl<T: TableType> HasAutoinc for T {
-        const HAS_AUTOINC: bool = {
-            // NOTE: Written this way to work on a stable compiler since we don't use nightly.
-            // Same as `T::COLUMN_ATTRS.iter().any(|attr| attr.is_auto_inc())`.
-            let mut i = 0;
-            let mut x = false;
-            while i < T::COLUMN_ATTRS.len() {
-                if T::COLUMN_ATTRS[i].has_autoinc() {
-                    x = true;
-                    break;
-                }
-                i += 1;
-            }
-            x
-        };
-    }
+/// This will call `handle_gen_cols` to write back the generated column values passed in the `&[u8]`.
+pub fn insert_raw<T: Serialize>(
+    table_id: TableId,
+    row: T,
+    handle_gen_cols: impl FnOnce(&mut T, &[u8]),
+) -> Result<T, Errno> {
     with_row_buf(|bytes| {
         // Encode the row as bsatn into the buffer `bytes`.
         bsatn::to_writer(bytes, &row).unwrap();
 
         // Insert row into table.
-        // When table has an auto-incrementing column, we must re-decode the changed `bytes`.
-        let res = sys::insert(table_id, bytes).map(|()| {
-            if <T as HasAutoinc>::HAS_AUTOINC {
-                bsatn::from_slice(bytes).expect("decode error")
-            } else {
-                row
-            }
-        });
-        sealed::InsertResult::from_res(res)
+        sys::insert(table_id, bytes).map(|gen_cols| {
+            let mut row = row;
+            // Let the caller handle any generated columns written back by `sys::insert` to `bytes`.
+            handle_gen_cols(&mut row, gen_cols);
+            row
+        })
     })
+}
+
+/// Insert a row of type `T` into the table identified by `table_id`.
+pub fn insert<T: TableType>(table_id: TableId, row: T) -> T::InsertResult {
+    let res = insert_raw(table_id, row, T::integrate_generated_columns);
+    sealed::InsertResult::from_res(res)
 }
 
 /// Finds all rows in the table identified by `table_id`,
@@ -223,19 +216,20 @@ pub fn delete_by_col_eq(table_id: TableId, col_id: ColId, value: &impl Serialize
 /// Returns an error if
 /// - a table with the provided `table_id` doesn't exist
 /// - `(relation, relation_len)` doesn't decode from BSATN to a `Vec<ProductValue>`
+/// - this is called outside a transaction
 ///
 /// Panics when serialization fails.
 pub fn delete_by_rel(table_id: TableId, relation: &[impl Serialize]) -> Result<u32> {
     with_row_buf(|bytes| {
         // Encode `value` as BSATN into `bytes` and then use that.
         bsatn::to_writer(bytes, relation).unwrap();
-        sys::delete_by_rel(table_id, bytes)
+        sys::datastore_delete_all_by_eq_bsatn(table_id, bytes)
     })
 }
 
 // Get the iterator for this table with an optional filter,
 fn table_iter<T: TableType>(table_id: TableId) -> Result<TableIter<T>> {
-    sys::iter(table_id).map(TableIter::new)
+    sys::datastore_table_scan_bsatn(table_id).map(TableIter::new)
 }
 
 fn table_iter_filtered<T: TableType>(
@@ -298,23 +292,33 @@ impl<T: TableType> Drop for TableIter<T> {
     }
 }
 
+impl<T: TableType> TableIter<T> {
+    fn decode(&mut self) -> T {
+        bsatn::from_reader(&mut &self.reader).expect("Failed to decode row!")
+    }
+}
+
 impl<T: TableType> Iterator for TableIter<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            // If we currently have some bytes in the buffer to still decode, do that.
-            if (&self.reader).remaining() > 0 {
-                let row = bsatn::from_reader(&mut &self.reader).expect("Failed to decode row!");
-                return Some(row);
-            }
-            // Otherwise, try to fetch the next chunk while reusing the buffer.
-            self.reader.buf.clear();
-            self.reader.pos.set(0);
-            if self.inner.read(&mut self.reader.buf) == 0 {
-                return None;
-            }
+        // If we currently have some bytes in the buffer to still decode, do that.
+        if (&self.reader).remaining() > 0 {
+            return Some(self.decode());
         }
+
+        // Don't fetch the next chunk if there is none.
+        if self.inner.is_exhausted() {
+            return None;
+        }
+
+        // Otherwise, try to fetch the next chunk while reusing the buffer.
+        self.reader.buf.clear();
+        self.reader.pos.set(0);
+        if self.inner.read(&mut self.reader.buf) == 0 {
+            return None;
+        }
+        Some(self.decode())
     }
 }
 
@@ -343,6 +347,9 @@ pub trait TableType: SpacetimeType + DeserializeOwned + Serialize {
 
     /// Returns the ID of this table.
     fn table_id() -> TableId;
+
+    // Re-integrates the BSATN of the `generated_cols` into `row`.
+    fn integrate_generated_columns(row: &mut Self, generated_cols: &[u8]);
 
     /// Insert `ins` as a row in this table.
     fn insert(ins: Self) -> Self::InsertResult {
@@ -422,6 +429,17 @@ impl<T: TableType> sealed::InsertResult for T {
     }
 }
 
+/// A trait for types that know if their value will trigger a sequence.
+/// This is used for auto-inc columns to determine if an insertion of a row
+/// will require the column to be updated in the row.
+///
+/// For now, this is equivalent to a "is zero" test.
+pub trait IsSequenceTrigger {
+    /// Is this value one that will trigger a sequence, if any,
+    /// when used as a column value.
+    fn is_sequence_trigger(&self) -> bool;
+}
+
 /// A trait for types that can be serialized and tested for equality.
 ///
 /// A type `T` implementing this trait should uphold the invariant:
@@ -453,7 +471,7 @@ pub mod query {
     /// according to the column's schema and then `Ord for AlgebraicValue`.
     ///
     /// **NOTE:** Do not use directly.
-    /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb(table)]`.
+    /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb::table]`.
     #[doc(hidden)]
     pub fn filter_by_unique_field<
         Table: TableType + FieldAccess<COL_IDX, Field = T>,
@@ -463,10 +481,12 @@ pub mod query {
         val: &T,
     ) -> Option<Table> {
         // Find the row with a match.
-        let iter = iter_by_col_eq(Table::table_id(), COL_IDX.into(), val).unwrap();
+        let mut iter = iter_by_col_eq(Table::table_id(), COL_IDX.into(), val).unwrap();
         with_row_buf(|buf| {
             // We will always find either 0 or 1 rows here due to the unique constraint.
             iter.read(buf);
+            debug_assert!(iter.is_exhausted());
+
             if buf.is_empty() {
                 return None;
             }
@@ -485,7 +505,7 @@ pub mod query {
     /// according to the column's schema and then `Ord for AlgebraicValue`.
     ///
     /// **NOTE:** Do not use directly.
-    /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb(table)]`.
+    /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb::table]`.
     #[doc(hidden)]
     pub fn filter_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(val: &T) -> TableIter<Table> {
         let iter = iter_by_col_eq(Table::table_id(), COL_IDX.into(), val).expect("iter_by_col_eq failed");
@@ -499,7 +519,7 @@ pub mod query {
     /// Returns the number of deleted rows.
     ///
     /// **NOTE:** Do not use directly.
-    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb(table)]`
+    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb::table]`
     /// where the field does not have a unique constraint.
     #[doc(hidden)]
     pub fn delete_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(val: &T) -> u32 {
@@ -516,7 +536,7 @@ pub mod query {
     /// Returns whether any rows were deleted.
     ///
     /// **NOTE:** Do not use directly.
-    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb(table)]`
+    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb::table]`
     /// where the field has a unique constraint.
     pub fn delete_by_unique_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(val: &T) -> bool {
         let count = delete_by_field::<Table, T, COL_IDX>(val);
@@ -530,7 +550,7 @@ pub mod query {
     /// according to the column's schema and then `Ord for AlgebraicValue`.
     ///
     /// **NOTE:** Do not use directly.
-    /// This is exposed as `update_by_{$field_name}` on types with `#[spacetimedb(table)]`.
+    /// This is exposed as `update_by_{$field_name}` on types with `#[spacetimedb::table]`.
     #[doc(hidden)]
     pub fn update_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(old: &T, new: Table) -> bool {
         // Delete the existing row, if any.
@@ -571,7 +591,35 @@ pub mod query {
     }
 }
 
-/// An erased reducer.
-pub struct AnyReducer {
-    _never: std::convert::Infallible,
+#[cfg(feature = "unstable_abi")]
+#[macro_export]
+macro_rules! volatile_nonatomic_schedule_immediate {
+    ($($args:tt)*) => {
+        $crate::__volatile_nonatomic_schedule_immediate_impl!([] [$($args)*])
+    };
+}
+
+#[cfg(feature = "unstable_abi")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __volatile_nonatomic_schedule_immediate_impl {
+    ([$repeater:path] [($($args:tt)*)]) => {
+        $crate::__volatile_nonatomic_schedule_immediate_impl!(@process_args $repeater, ($($args)*))
+    };
+    ([$($cur:tt)*] [$next:tt $($rest:tt)*]) => {
+        $crate::__volatile_nonatomic_schedule_immediate_impl!([$($cur)* $next] [$($rest)*])
+    };
+    (@process_args $repeater:path, (_$(, $args:expr)* $(,)?)) => {
+        $crate::__volatile_nonatomic_schedule_immediate_impl!(@call $repeater, ($crate::ReducerContext::__dummy(), $($args),*))
+    };
+    (@process_args $repeater:path, ($($args:expr),* $(,)?)) => {
+        $crate::__volatile_nonatomic_schedule_immediate_impl!(@call $repeater, ($($args),*))
+    };
+    (@call $repeater:path, ($($args:expr),*)) => {
+        if false {
+            let _ = $repeater($($args,)*);
+        } else {
+            $crate::rt::volatile_nonatomic_schedule_immediate::<_, _, $repeater, _>($repeater, ($($args,)*))
+        }
+    };
 }

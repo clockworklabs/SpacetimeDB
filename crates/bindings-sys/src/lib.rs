@@ -20,31 +20,57 @@ pub mod raw {
     // For breaking changes, all functions should be moved into one new `spacetime_X.0` block.
     #[link(wasm_import_module = "spacetime_10.0")]
     extern "C" {
-        /*
-        /// Create a table with `name`, a UTF-8 slice in WASM memory lasting `name_len` bytes,
-        /// and with the table's `schema` in a slice in WASM memory lasting `schema_len` bytes.
-        ///
-        /// Writes the table id of the new table into the WASM pointer `out`.
-        pub fn _create_table(
-            name: *const u8,
-            name_len: usize,
-            schema: *const u8,
-            schema_len: usize,
-            out: *mut TableId,
-        ) -> u16;
-        */
-
         /// Queries the `table_id` associated with the given (table) `name`
-        /// where `name` points to a UTF-8 slice in WASM memory of `name_len` bytes.
+        /// where `name` is the UTF-8 slice in WASM memory at `name_ptr[..name_len]`.
         ///
         /// The table id is written into the `out` pointer.
         ///
-        /// Returns an error if
-        /// - a table with the provided `table_id` doesn't exist
-        /// - the slice `(name, name_len)` is not valid UTF-8
-        /// - `name + name_len` overflows a 64-bit address.
-        /// - writing to `out` overflows a 32-bit integer
-        pub fn _get_table_id(name: *const u8, name_len: usize, out: *mut TableId) -> u16;
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `name_ptr` is NULL or `name` is not in bounds of WASM memory.
+        /// - `name` is not valid UTF-8.
+        /// - `out` is NULL or `out[..size_of::<TableId>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_TABLE`, when `name` is not the name of a table.
+        pub fn _table_id_from_name(name: *const u8, name_len: usize, out: *mut TableId) -> u16;
+
+        /// Writes the number of rows currently in table identified by `table_id` to `out`.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `out` is NULL or `out[..size_of::<u64>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+        pub fn _datastore_table_row_count(table_id: TableId, out: *mut u64) -> u16;
+
+        /// Starts iteration on each row, as BSATN-encoded, of a table identified by `table_id`.
+        ///
+        /// On success, the iterator handle is written to the `out` pointer.
+        /// This handle can be advanced by [`row_iter_bsatn_advance`].
+        ///
+        /// # Traps
+        ///
+        /// This function does not trap.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+        pub fn _datastore_table_scan_bsatn(table_id: TableId, out: *mut RowIter) -> u16;
 
         /// Finds all rows in the table identified by `table_id`,
         /// where the row has a column, identified by `col_id`,
@@ -68,23 +94,6 @@ pub mod raw {
             val_len: usize,
             out: *mut RowIter,
         ) -> u16;
-
-        /// Inserts a row into the table identified by `table_id`,
-        /// where the row is read from the byte slice `row` in WASM memory,
-        /// lasting `row_len` bytes.
-        ///
-        /// The `(row, row_len)` slice must be a BSATN-encoded `ProductValue`
-        /// matching the table's `ProductType` row-schema.
-        /// The `row` pointer is written to with the inserted row re-encoded.
-        /// This is due to auto-incrementing columns.
-        ///
-        /// Returns an error if
-        /// - a table with the provided `table_id` doesn't exist
-        /// - there were unique constraint violations
-        /// - `row + row_len` overflows a 64-bit integer
-        /// - `(row, row_len)` doesn't decode from BSATN to a `ProductValue`
-        ///   according to the `ProductType` that the table's schema specifies.
-        pub fn _insert(table_id: TableId, row: *mut u8, row_len: usize) -> u16;
 
         /// Deletes all rows in the table identified by `table_id`
         /// where the column identified by `col_id` matches the byte string,
@@ -112,33 +121,39 @@ pub mod raw {
         ) -> u16;
 
         /// Deletes those rows, in the table identified by `table_id`,
-        /// that match any row in `relation`.
+        /// that match any row in the byte string `rel = rel_ptr[..rel_len]` in WASM memory.
         ///
         /// Matching is defined by first BSATN-decoding
         /// the byte string pointed to at by `relation` to a `Vec<ProductValue>`
         /// according to the row schema of the table
         /// and then using `Ord for AlgebraicValue`.
+        /// A match happens when `Ordering::Equal` is returned from `fn cmp`.
+        /// This occurs exactly when the row's BSATN-encoding is equal to the encoding of the `ProductValue`.
         ///
         /// The number of rows deleted is written to the WASM pointer `out`.
         ///
-        /// Returns an error if
-        /// - a table with the provided `table_id` doesn't exist
-        /// - `(relation, relation_len)` doesn't decode from BSATN to a `Vec<ProductValue>`
-        ///   according to the `ProductValue` that the table's schema specifies for rows.
-        /// - `relation + relation_len` overflows a 64-bit integer
-        /// - writing to `out` would overflow a 32-bit integer
-        pub fn _delete_by_rel(table_id: TableId, relation: *const u8, relation_len: usize, out: *mut u32) -> u16;
-
-        /// Start iteration on each row, as bytes, of a table identified by `table_id`.
+        /// # Traps
         ///
-        /// On success, the iterator handle is written to the `out` pointer.
+        /// Traps if:
+        /// - `rel_ptr` is NULL or `rel` is not in bounds of WASM memory.
+        /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
         ///
         /// # Errors
         ///
-        /// - `NO_SUCH_TABLE`, if a table with the provided `table_id` doesn't exist
-        pub fn _iter_start(table_id: TableId, out: *mut RowIter) -> u16;
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+        /// - `BSATN_DECODE_ERROR`, when `rel` cannot be decoded to `Vec<ProductValue>`
+        ///   where each `ProductValue` is typed at the `ProductType` the table's schema specifies.
+        pub fn _datastore_delete_all_by_eq_bsatn(
+            table_id: TableId,
+            rel_ptr: *const u8,
+            rel_len: usize,
+            out: *mut u32,
+        ) -> u16;
 
-        /// Like [`_iter_start`], start iteration on each row,
+        /// Like [`_datastore_table_scan_bsatn`], start iteration on each row,
         /// as bytes, of a table identified by `table_id`.
         ///
         /// The rows are filtered through `filter`, which is read from WASM memory
@@ -153,102 +168,121 @@ pub mod raw {
         /// - `filter + filter_len` overflows a 64-bit integer
         pub fn _iter_start_filtered(table_id: TableId, filter: *const u8, filter_len: usize, out: *mut RowIter) -> u16;
 
-        /// Reads rows from the given iterator.
+        /// Reads rows from the given iterator registered under `iter`.
         ///
-        /// Takes rows from the iterator and stores them in the memory pointed to by `buffer`,
-        /// encoded in BSATN format. `buffer_len` should be a pointer to the capacity of `buffer`,
-        /// and on success it is set to the combined length of the encoded rows. If it is `0`,
-        /// the iterator is exhausted and there are no more rows to read.
+        /// Takes rows from the iterator
+        /// and stores them in the memory pointed to by `buffer = buffer_ptr[..buffer_len]`,
+        /// encoded in BSATN format.
         ///
-        /// If no rows can fit in the buffer, `BUFFER_TOO_SMALL` is returned and `buffer_len` is
-        /// set to the size of the next row in the iterator. The caller should reallocate the
-        /// buffer to at least that size and try again.
+        /// The `buffer_len = buffer_len_ptr[..size_of::<usize>()]` stores the capacity of `buffer`.
+        /// On success (`0` or `-1` is returned),
+        /// `buffer_len` is set to the combined length of the encoded rows.
+        /// When `-1` is returned, the iterator has been exhausted
+        /// and there are no more rows to read,
+        /// leading to the iterator being immediately destroyed.
+        /// Note that the host is free to reuse allocations in a pool,
+        /// destroying the handle logically does not entail that memory is necessarily reclaimed.
         ///
-        /// `iter` must be a valid iterator, or the module will trap.
-        pub fn _iter_advance(iter: RowIter, buffer: *mut u8, buffer_len: *mut usize) -> u16;
+        /// # Traps
+        ///
+        /// Traps if:
+        ///
+        /// - `buffer_len_ptr` is NULL or `buffer_len` is not in bounds of WASM memory.
+        /// - `buffer_ptr` is NULL or `buffer` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NO_SUCH_ITER`, when `iter` is not a valid iterator.
+        /// - `BUFFER_TOO_SMALL`, when there are rows left but they cannot fit in `buffer`.
+        ///   When this occurs, `buffer_len` is set to the size of the next item in the iterator.
+        ///   To make progress, the caller should reallocate the buffer to at least that size and try again.
+        pub fn _row_iter_bsatn_advance(iter: RowIter, buffer_ptr: *mut u8, buffer_len_ptr: *mut usize) -> i16;
 
-        /// Destroys the iterator.
+        /// Destroys the iterator registered under `iter`.
         ///
-        /// `iter` must be a valid iterator, or the module will trap.
-        pub fn _iter_drop(iter: RowIter);
+        /// Once `row_iter_bsatn_close` is called on `iter`, the `iter` is invalid.
+        /// That is, `row_iter_bsatn_close(iter)` the second time will yield `NO_SUCH_ITER`.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NO_SUCH_ITER`, when `iter` is not a valid iterator.
+        pub fn _row_iter_bsatn_close(iter: RowIter) -> u16;
 
-        /// Log at `level` a `message` message occuring in `filename:line_number`
-        /// with [`target`] being the module path at the `log!` invocation site.
+        /// Inserts a row into the table identified by `table_id`,
+        /// where the row is read from the byte string `row = row_ptr[..row_len]` in WASM memory
+        /// where `row_len = row_len_ptr[..size_of::<usize>()]` stores the capacity of `row`.
         ///
-        /// These various pointers are interpreted lossily as UTF-8 strings with a corresponding `_len`.
+        /// The byte string `row` must be a BSATN-encoded `ProductValue`
+        /// typed at the table's `ProductType` row-schema.
         ///
-        /// The `target` and `filename` pointers are ignored by passing `NULL`.
-        /// The line number is ignored if `line_number == u32::MAX`.
+        /// To handle auto-incrementing columns,
+        /// when the call is successful,
+        /// the `row` is written back to with the generated sequence values.
+        /// These values are written as a BSATN-encoded `pv: ProductValue`.
+        /// Each `v: AlgebraicValue` in `pv` is typed at the sequence's column type.
+        /// The `v`s in `pv` are ordered by the order of the columns, in the schema of the table.
+        /// When the table has no sequences,
+        /// this implies that the `pv`, and thus `row`, will be empty.
+        /// The `row_len` is set to the length of `bsatn(pv)`.
         ///
-        /// No message is logged if
-        /// - `target != NULL && target + target_len > u64::MAX`
-        /// - `filename != NULL && filename + filename_len > u64::MAX`
-        /// - `message + message_len > u64::MAX`
+        /// # Traps
         ///
-        /// [`target`]: https://docs.rs/log/latest/log/struct.Record.html#method.target
-        pub fn _console_log(
-            level: u8,
-            target: *const u8,
-            target_len: usize,
-            filename: *const u8,
-            filename_len: usize,
-            line_number: u32,
-            message: *const u8,
-            message_len: usize,
-        );
+        /// Traps if:
+        /// - `row_len_ptr` is NULL or `row_len` is not in bounds of WASM memory.
+        /// - `row_ptr` is NULL or `row` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+        /// - `BSATN_DECODE_ERROR`, when `row` cannot be decoded to a `ProductValue`.
+        ///   typed at the `ProductType` the table's schema specifies.
+        /// - `UNIQUE_ALREADY_EXISTS`, when inserting `row` would violate a unique constraint.
+        /// - `SCHEDULE_AT_DELAY_TOO_LONG`, when the delay specified in the row was too long.
+        pub fn _datastore_insert_bsatn(table_id: TableId, row_ptr: *mut u8, row_len_ptr: *mut usize) -> u16;
 
-        /// Schedules a reducer to be called asynchronously at `time`.
+        /// Schedules a reducer to be called asynchronously, nonatomically,
+        /// and immediately on a best effort basis.
         ///
         /// The reducer is named as the valid UTF-8 slice `(name, name_len)`,
         /// and is passed the slice `(args, args_len)` as its argument.
         ///
-        /// A generated schedule id is assigned to the reducer.
-        /// This id is written to the pointer `out`.
-        ///
         /// Traps if
-        /// - the `time` delay exceeds `64^6 - 1` milliseconds from now
         /// - `name` does not point to valid UTF-8
         /// - `name + name_len` or `args + args_len` overflow a 64-bit integer
-        pub fn _schedule_reducer(
+        #[cfg(feature = "unstable_abi")]
+        pub fn _volatile_nonatomic_schedule_immediate(
             name: *const u8,
             name_len: usize,
             args: *const u8,
             args_len: usize,
-            time: u64,
-            out: *mut u64,
         );
 
-        /// Unschedule a reducer using the same `id` generated as when it was scheduled.
+        /// Writes up to `buffer_len` bytes from `buffer = buffer_ptr[..buffer_len]`,
+        /// to the `sink`, registered in the host environment.
         ///
-        /// This assumes that the reducer hasn't already been executed.
-        pub fn _cancel_reducer(id: u64);
-
-        /// Returns the length (number of bytes) of buffer `bufh` without
-        /// transferring ownership of the data into the function.
+        /// The `buffer_len = buffer_len_ptr[..size_of::<usize>()]` stores the capacity of `buffer`.
+        /// On success (`0` is returned),
+        /// `buffer_len` is set to the number of bytes written to `sink`.
         ///
-        /// The `bufh` must have previously been allocating using `_buffer_alloc`.
+        /// # Traps
         ///
-        /// Traps if the buffer does not exist.
-        pub fn _buffer_len(bufh: Buffer) -> usize;
-
-        /// Consumes the `buffer`,
-        /// moving its contents to the slice `(dst, dst_len)`.
+        /// - `buffer_len_ptr` is NULL or `buffer_len` is not in bounds of WASM memory.
+        /// - `buffer_ptr` is NULL or `buffer` is not in bounds of WASM memory.
         ///
-        /// Traps if
-        /// - the buffer does not exist
-        /// - `dst + dst_len` overflows a 64-bit integer
-        pub fn _buffer_consume(buffer: Buffer, dst: *mut u8, dst_len: usize);
-
-        /// Creates a buffer of size `data_len` in the host environment.
+        /// # Errors
         ///
-        /// The contents of the byte slice pointed to by `data`
-        /// and lasting `data_len` bytes
-        /// is written into the newly initialized buffer.
+        /// Returns an error:
         ///
-        /// The buffer is registered in the host environment and is indexed by the returned `u32`.
-        ///
-        /// Traps if `data + data_len` overflows a 64-bit integer.
-        pub fn _buffer_alloc(data: *const u8, data_len: usize) -> Buffer;
+        /// - `NO_SUCH_BYTES`, when `sink` is not a valid bytes sink.
+        /// - `NO_SPACE`, when there is no room for more bytes in `sink`.
+        pub fn _bytes_sink_write(sink: BytesSink, buffer_ptr: *const u8, buffer_len_ptr: *mut usize) -> u16;
 
         /// Reads bytes from `source`, registered in the host environment,
         /// and stores them in the memory pointed to by `buffer = buffer_ptr[..buffer_len]`.
@@ -315,23 +349,66 @@ pub mod raw {
         /// ```
         pub fn _bytes_source_read(source: BytesSource, buffer_ptr: *mut u8, buffer_len_ptr: *mut usize) -> i16;
 
-        /// Begin a timing span.
+        /// Logs at `level` a `message` message occuring in `filename:line_number`
+        /// with [`target`](target) being the module path at the `log!` invocation site.
         ///
-        /// When the returned `u32` span ID is passed to [`_span_end`],
+        /// These various pointers are interpreted lossily as UTF-8 strings with a corresponding `_len`.
+        ///
+        /// The `target` and `filename` pointers are ignored by passing `NULL`.
+        /// The line number is ignored if `line_number == u32::MAX`.
+        ///
+        /// No message is logged if
+        /// - `target != NULL && target + target_len > u64::MAX`
+        /// - `filename != NULL && filename + filename_len > u64::MAX`
+        /// - `message + message_len > u64::MAX`
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `target` is not NULL and `target_ptr[..target_len]` is not in bounds of WASM memory.
+        /// - `filename` is not NULL and `filename_ptr[..filename_len]` is not in bounds of WASM memory.
+        /// - `message` is not NULL and `message_ptr[..message_len]` is not in bounds of WASM memory.
+        ///
+        /// [target]: https://docs.rs/log/latest/log/struct.Record.html#method.target
+        pub fn _console_log(
+            level: u8,
+            target_ptr: *const u8,
+            target_len: usize,
+            filename_ptr: *const u8,
+            filename_len: usize,
+            line_number: u32,
+            message_ptr: *const u8,
+            message_len: usize,
+        );
+
+        /// Begins a timing span with `name = name_ptr[..name_len]`.
+        ///
+        /// When the returned `ConsoleTimerId` is passed to [`console_timer_end`],
         /// the duration between the calls will be printed to the module's logs.
         ///
-        /// The slice (`name`, `name_len`) must be valid UTF-8 bytes.
-        pub fn _span_start(name: *const u8, name_len: usize) -> u32;
+        /// The `name` is interpreted lossily as UTF-8.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `name_ptr` is NULL or `name` is not in bounds of WASM memory.
+        pub fn _console_timer_start(name_ptr: *const u8, name_len: usize) -> u32;
 
         /// End a timing span.
         ///
-        /// The `span_id` must be the result of a call to `_span_start`.
+        /// The `timer_id` must be the result of a call to `console_timer_start`.
         /// The duration between the two calls will be computed and printed to the module's logs.
+        /// Once `console_timer_end` is called on `id: ConsoleTimerId`, the `id` is invalid.
+        /// That is, `console_timer_end(id)` the second time will yield `NO_SUCH_CONSOLE_TIMER`.
         ///
-        /// Behavior is unspecified
-        /// if `_span_end` is called on a `span_id` which is not the result of a call to `_span_start`,
-        /// or if `_span_end` is called multiple times with the same `span_id`.
-        pub fn _span_end(span_id: u32);
+        /// Note that the host is free to reuse allocations in a pool,
+        /// destroying the handle logically does not entail that memory is necessarily reclaimed.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        /// - `NO_SUCH_CONSOLE_TIMER`, when `timer_id` does not exist.
+        pub fn _console_timer_end(timer_id: u32) -> u16;
     }
 
     /// What strategy does the database index use?
@@ -373,24 +450,22 @@ pub mod raw {
         pub const INVALID: Self = Self(0);
     }
 
-    /// A handle into a buffer of bytes in the host environment.
+    /// A handle into a buffer of bytes in the host environment that can be written to.
     ///
-    /// Used for transporting bytes host <-> WASM linear memory.
+    /// Used for transporting bytes from WASM linear memory to host.
     #[derive(PartialEq, Eq, Copy, Clone)]
     #[repr(transparent)]
-    pub struct Buffer(u32);
-
-    /// An invalid buffer handle.
-    ///
-    /// Could happen if too many buffers exist, making the key overflow a `u32`.
-    /// `INVALID_BUFFER` is also used for parts of the protocol
-    /// that are "morally" sending a `None`s in `Option<Box<[u8]>>`s.
-    pub const INVALID_BUFFER: Buffer = Buffer(u32::MAX);
+    pub struct BytesSink(u32);
 
     /// Represents table iterators.
     #[derive(PartialEq, Eq, Copy, Clone)]
     #[repr(transparent)]
     pub struct RowIter(u32);
+
+    impl RowIter {
+        /// An invalid handle, used e.g., when the iterator has been exhausted.
+        pub const INVALID: Self = Self(0);
+    }
 
     #[cfg(any())]
     mod module_exports {
@@ -506,26 +581,39 @@ fn cvt(x: u16) -> Result<(), Errno> {
 ///   It's not required to write to `out` when `f(out)` returns an error code.
 /// - The function `f` never reads a safe and valid `T` from the `out` pointer
 ///   before writing a safe and valid `T` to it.
-/// - If running `Drop` on `T` is required for safety,
-///   `f` must never panic nor return an error once `out` has been written to.
 #[inline]
-unsafe fn call<T>(f: impl FnOnce(*mut T) -> u16) -> Result<T, Errno> {
+unsafe fn call<T: Copy>(f: impl FnOnce(*mut T) -> u16) -> Result<T, Errno> {
     let mut out = MaybeUninit::uninit();
-    // TODO: If we have a panic here after writing a safe `T` to `out`,
-    // we will may have a memory leak if `T` requires running `Drop` for cleanup.
     let f_code = f(out.as_mut_ptr());
-    // TODO: A memory leak may also result due to an error code from `f(out)`
-    // if `out` has been written to.
     cvt(f_code)?;
     Ok(out.assume_init())
 }
 
-/// Queries and returns the `table_id` associated with the given (table) `name`.
+/// Queries the `table_id` associated with the given (table) `name`.
 ///
-/// Returns an error if the table does not exist.
+/// The table id is returned.
+///
+/// # Errors
+///
+/// Returns an error:
+///
+/// - `NO_SUCH_TABLE`, when `name` is not the name of a table.
 #[inline]
-pub fn get_table_id(name: &str) -> Result<TableId, Errno> {
-    unsafe { call(|out| raw::_get_table_id(name.as_ptr(), name.len(), out)) }
+pub fn table_id_from_name(name: &str) -> Result<TableId, Errno> {
+    unsafe { call(|out| raw::_table_id_from_name(name.as_ptr(), name.len(), out)) }
+}
+
+/// Returns the number of rows currently in table identified by `table_id`.
+///
+/// # Errors
+///
+/// Returns an error:
+///
+/// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+/// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+#[inline]
+pub fn datastore_table_row_count(table_id: TableId) -> Result<u64, Errno> {
+    unsafe { call(|out| raw::_datastore_table_row_count(table_id, out)) }
 }
 
 /// Finds all rows in the table identified by `table_id`,
@@ -563,8 +651,10 @@ pub fn iter_by_col_eq(table_id: TableId, col_id: ColId, val: &[u8]) -> Result<Ro
 /// - `row` doesn't decode from BSATN to a `ProductValue`
 ///   according to the `ProductType` that the table's schema specifies.
 #[inline]
-pub fn insert(table_id: TableId, row: &mut [u8]) -> Result<(), Errno> {
-    cvt(unsafe { raw::_insert(table_id, row.as_mut_ptr(), row.len()) })
+pub fn insert(table_id: TableId, row: &mut [u8]) -> Result<&[u8], Errno> {
+    let row_ptr = row.as_mut_ptr();
+    let row_len = &mut row.len();
+    cvt(unsafe { raw::_datastore_insert_bsatn(table_id, row_ptr, row_len) }).map(|()| &row[..*row_len])
 }
 
 /// Deletes all rows in the table identified by `table_id`
@@ -585,30 +675,42 @@ pub fn delete_by_col_eq(table_id: TableId, col_id: ColId, value: &[u8]) -> Resul
 }
 
 /// Deletes those rows, in the table identified by `table_id`,
-/// that match any row in `relation`.
+/// that match any row in the byte string `relation`.
 ///
 /// Matching is defined by first BSATN-decoding
 /// the byte string pointed to at by `relation` to a `Vec<ProductValue>`
 /// according to the row schema of the table
 /// and then using `Ord for AlgebraicValue`.
+/// A match happens when `Ordering::Equal` is returned from `fn cmp`.
+/// This occurs exactly when the row's BSATN-encoding is equal to the encoding of the `ProductValue`.
 ///
-/// Returns the number of rows deleted.
-///
-/// Returns an error if
-/// - a table with the provided `table_id` doesn't exist
-/// - `(relation, relation_len)` doesn't decode from BSATN to a `Vec<ProductValue>`
-#[inline]
-pub fn delete_by_rel(table_id: TableId, relation: &[u8]) -> Result<u32, Errno> {
-    unsafe { call(|out| raw::_delete_by_rel(table_id, relation.as_ptr(), relation.len(), out)) }
-}
-
-/// Returns an iterator of a table identified by `table_id`.
+/// The number of rows deleted is returned.
 ///
 /// # Errors
 ///
-/// - `NO_SUCH_TABLE`, if `table_id` doesn't exist.
-pub fn iter(table_id: TableId) -> Result<RowIter, Errno> {
-    let raw = unsafe { call(|out| raw::_iter_start(table_id, out))? };
+/// Returns an error:
+///
+/// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+/// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+/// - `BSATN_DECODE_ERROR`, when `rel` cannot be decoded to `Vec<ProductValue>`
+///   where each `ProductValue` is typed at the `ProductType` the table's schema specifies.
+#[inline]
+pub fn datastore_delete_all_by_eq_bsatn(table_id: TableId, relation: &[u8]) -> Result<u32, Errno> {
+    unsafe { call(|out| raw::_datastore_delete_all_by_eq_bsatn(table_id, relation.as_ptr(), relation.len(), out)) }
+}
+
+/// Starts iteration on each row, as BSATN-encoded, of a table identified by `table_id`.
+/// Returns iterator handle is written to the `out` pointer.
+/// This handle can be advanced by [`row_iter_bsatn_advance`].
+///
+/// # Errors
+///
+/// Returns an error:
+///
+/// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+/// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
+pub fn datastore_table_scan_bsatn(table_id: TableId) -> Result<RowIter, Errno> {
+    let raw = unsafe { call(|out| raw::_datastore_table_scan_bsatn(table_id, out))? };
     Ok(RowIter { raw })
 }
 
@@ -671,47 +773,14 @@ pub fn console_log(
     }
 }
 
-/// Schedule a reducer to be called asynchronously at `time`.
+/// Schedule a reducer to be called asynchronously, nonatomically, and immediately
+/// on a best-effort basis.
 ///
 /// The reducer is assigned `name` and is provided `args` as its argument.
-///
-/// A generated schedule id is assigned to the reducer which is returned.
-///
-/// Returns an error if the `time` delay exceeds `64^6 - 1` milliseconds from now.
-///
-/// TODO: not fully implemented yet
-/// TODO(Centril): Unsure what is unimplemented; perhaps it refers to a new
-///   implementation with a special system table rather than a special sys call.
+#[cfg(feature = "unstable_abi")]
 #[inline]
-pub fn schedule(name: &str, args: &[u8], time: u64) -> u64 {
-    let mut out = 0;
-    unsafe { raw::_schedule_reducer(name.as_ptr(), name.len(), args.as_ptr(), args.len(), time, &mut out) }
-    out
-}
-
-/// Unschedule a reducer using the same `id` generated as when it was scheduled.
-///
-/// This assumes that the reducer hasn't already been executed.
-pub fn cancel_reducer(id: u64) {
-    unsafe { raw::_cancel_reducer(id) }
-}
-
-/// A RAII wrapper around [`raw::Buffer`].
-#[repr(transparent)]
-pub struct Buffer {
-    raw: raw::Buffer,
-}
-
-impl Buffer {
-    pub const INVALID: Self = Buffer {
-        raw: raw::INVALID_BUFFER,
-    };
-
-    /// Allocates a buffer with the contents of `data`.
-    pub fn alloc(data: &[u8]) -> Self {
-        let raw = unsafe { raw::_buffer_alloc(data.as_ptr(), data.len()) };
-        Buffer { raw }
-    }
+pub fn volatile_nonatomic_schedule_immediate(name: &str, args: &[u8]) {
+    unsafe { raw::_volatile_nonatomic_schedule_immediate(name.as_ptr(), name.len(), args.as_ptr(), args.len()) }
 }
 
 pub struct RowIter {
@@ -719,29 +788,49 @@ pub struct RowIter {
 }
 
 impl RowIter {
-    /// Read some number of bsatn-encoded rows into the provided buffer.
+    /// Read some number of BSATN-encoded rows into the provided buffer.
     ///
-    /// If the iterator is exhausted and did not read anything into buf, 0 is returned. Otherwise,
-    /// it's the number of new bytes that were added to the end of the buffer.
-    pub fn read(&self, buf: &mut Vec<u8>) -> usize {
+    /// Returns the number of new bytes added to the end of the buffer.
+    /// When the iterator has been exhausted,
+    /// `self.is_exhausted()` will return `true`.
+    pub fn read(&mut self, buf: &mut Vec<u8>) -> usize {
         loop {
             let buf_ptr = buf.spare_capacity_mut();
             let mut buf_len = buf_ptr.len();
-            match cvt(unsafe { raw::_iter_advance(self.raw, buf_ptr.as_mut_ptr().cast(), &mut buf_len) }) {
-                Ok(()) => {
-                    // SAFETY: iter_advance just wrote `buf_len` bytes into the end of `buf`.
-                    unsafe { buf.set_len(buf.len() + buf_len) };
+            let ret = unsafe { raw::_row_iter_bsatn_advance(self.raw, buf_ptr.as_mut_ptr().cast(), &mut buf_len) };
+            if let -1 | 0 = ret {
+                // SAFETY: `_row_iter_bsatn_advance` just wrote `buf_len` bytes into the end of `buf`.
+                unsafe { buf.set_len(buf.len() + buf_len) };
+            }
+
+            const TOO_SMALL: i16 = errno::BUFFER_TOO_SMALL.get() as i16;
+            match ret {
+                -1 => {
+                    self.raw = raw::RowIter::INVALID;
                     return buf_len;
                 }
-                Err(Errno::BUFFER_TOO_SMALL) => buf.reserve(buf_len),
-                Err(e) => panic!("unexpected error from _iter_advance: {e}"),
+                0 => return buf_len,
+                TOO_SMALL => buf.reserve(buf_len),
+                e => panic!("unexpected error from `_row_iter_bsatn_advance`: {e}"),
             }
         }
+    }
+
+    /// Returns whether the iterator is exhausted or not.
+    pub fn is_exhausted(&self) -> bool {
+        self.raw == raw::RowIter::INVALID
     }
 }
 
 impl Drop for RowIter {
     fn drop(&mut self) {
-        unsafe { raw::_iter_drop(self.raw) }
+        // Avoid this syscall when `_row_iter_bsatn_advance` above
+        // notifies us that the iterator is exhausted.
+        if self.is_exhausted() {
+            return;
+        }
+        unsafe {
+            raw::_row_iter_bsatn_close(self.raw);
+        }
     }
 }

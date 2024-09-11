@@ -1,14 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use std::fmt;
-use std::marker::PhantomData;
-use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
-use sys::raw::BytesSource;
-use sys::Buffer;
-
 use crate::timestamp::with_timestamp_set;
-use crate::{return_iter_buf, sys, take_iter_buf, ReducerContext, SpacetimeType, TableType, Timestamp};
+use crate::{return_iter_buf, sys, take_iter_buf, ReducerContext, ReducerResult, SpacetimeType, TableType, Timestamp};
 use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::db::raw_def::{
     RawColumnDefV8, RawConstraintDefV8, RawIndexDefV8, RawSequenceDefV8, RawTableDefV8,
@@ -19,6 +12,11 @@ use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
 use spacetimedb_lib::{bsatn, Address, Identity, ModuleDefBuilder, RawModuleDef, ReducerDef, TableDesc};
 use spacetimedb_primitives::*;
+use std::fmt;
+use std::marker::PhantomData;
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
+use sys::raw::{BytesSink, BytesSource};
 
 /// The `sender` invokes `reducer` at `timestamp` and provides it with the given `args`.
 ///
@@ -28,7 +26,7 @@ pub fn invoke_reducer<'a, A: Args<'a>, T>(
     reducer: impl Reducer<'a, A, T>,
     ctx: ReducerContext,
     args: &'a [u8],
-) -> Buffer {
+) -> Result<(), Box<str>> {
     // Deserialize the arguments from a bsatn encoding.
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
@@ -36,26 +34,16 @@ pub fn invoke_reducer<'a, A: Args<'a>, T>(
     let invoke = || reducer.invoke(ctx, args);
     #[cfg(feature = "rand")]
     let invoke = || crate::rng::with_rng_set(invoke);
-    let res = with_timestamp_set(ctx.timestamp, invoke);
-
-    // Any error is pushed into a `Buffer`.
-    cvt_result(res)
+    with_timestamp_set(ctx.timestamp, invoke)
 }
-
-/// Converts `res` into a `Buffer` where `Ok(_)` results in an invalid buffer
-/// and an error message is moved into a fresh buffer.
-fn cvt_result(res: Result<(), Box<str>>) -> Buffer {
-    match res {
-        Ok(()) => Buffer::INVALID,
-        Err(errmsg) => Buffer::alloc(errmsg.as_bytes()),
-    }
-}
-
 /// A trait for types representing the *execution logic* of a reducer.
 ///
 /// The type parameter `T` is used for determining whether there is a context argument.
 pub trait Reducer<'de, A: Args<'de>, T> {
-    fn invoke(&self, ctx: ReducerContext, args: A) -> Result<(), Box<str>>;
+    fn invoke(&self, ctx: ReducerContext, args: A) -> ReducerResult;
+
+    type ArgsWithContext;
+    fn extract_args(args: Self::ArgsWithContext) -> A;
 }
 
 /// A trait for types that can *describe* a reducer.
@@ -92,18 +80,18 @@ pub trait Args<'de>: Sized {
 }
 
 /// A trait of types representing the result of executing a reducer.
-pub trait ReducerResult {
+pub trait IntoReducerResult {
     /// Convert the result into form where there is no value
     /// and the error message is a string.
     fn into_result(self) -> Result<(), Box<str>>;
 }
-impl ReducerResult for () {
+impl IntoReducerResult for () {
     #[inline]
     fn into_result(self) -> Result<(), Box<str>> {
         Ok(self)
     }
 }
-impl<E: fmt::Debug> ReducerResult for Result<(), E> {
+impl<E: fmt::Debug> IntoReducerResult for Result<(), E> {
     #[inline]
     fn into_result(self) -> Result<(), Box<str>> {
         self.map_err(|e| format!("{e:?}").into())
@@ -116,10 +104,9 @@ impl<'de, T: Deserialize<'de>> ReducerArg<'de> for T {}
 impl ReducerArg<'_> for ReducerContext {}
 /// Assert that `T: ReducerArg`.
 pub fn assert_reducer_arg<'de, T: ReducerArg<'de>>() {}
-/// Assert that `T: ReducerResult`.
-pub fn assert_reducer_ret<T: ReducerResult>() {}
-/// Assert that `T: TableType`.
-pub const fn assert_table<T: TableType>() {}
+/// Assert that `T: IntoReducerResult`.
+pub fn assert_reducer_ret<T: IntoReducerResult>() {}
+pub const fn assert_reducer_typecheck<'de, A: Args<'de>, T>(_: impl Reducer<'de, A, T> + Copy) {}
 
 /// Used in the last type parameter of `Reducer` to indicate that the
 /// context argument *should* be passed to the reducer logic.
@@ -177,18 +164,18 @@ macro_rules! impl_reducer {
                 Ok(($($T,)*))
             }
 
+            #[allow(non_snake_case)]
             fn serialize_seq_product<Ser: SerializeSeqProduct>(&self, _prod: &mut Ser) -> Result<(), Ser::Error> {
                 // For every element in the product, serialize.
-                #[allow(non_snake_case)]
                 let ($($T,)*) = self;
                 $(_prod.serialize_element($T)?;)*
                 Ok(())
             }
 
             #[inline]
+            #[allow(non_snake_case, irrefutable_let_patterns)]
             fn schema<Info: ReducerInfo>(_typespace: &mut impl TypespaceBuilder) -> ReducerDef {
                 // Extract the names of the arguments.
-                #[allow(non_snake_case, irrefutable_let_patterns)]
                 let [.., $($T),*] = Info::ARG_NAMES else { panic!() };
                 ReducerDef {
                     name: Info::NAME.into(),
@@ -206,12 +193,19 @@ macro_rules! impl_reducer {
         impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Reducer<'de, ($($T,)*), ContextArg> for Func
         where
             Func: Fn(ReducerContext, $($T),*) -> Ret,
-            Ret: ReducerResult
+            Ret: IntoReducerResult
         {
+            #[allow(non_snake_case)]
             fn invoke(&self, ctx: ReducerContext, args: ($($T,)*)) -> Result<(), Box<str>> {
-                #[allow(non_snake_case)]
                 let ($($T,)*) = args;
                 self(ctx, $($T),*).into_result()
+            }
+
+            type ArgsWithContext = (ReducerContext, $($T,)*);
+            #[allow(non_snake_case, clippy::unused_unit)]
+            fn extract_args(args: Self::ArgsWithContext) -> ($($T,)*) {
+                let (_ctx, $($T,)*) = args;
+                ($($T,)*)
             }
         }
 
@@ -219,12 +213,17 @@ macro_rules! impl_reducer {
         impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Reducer<'de, ($($T,)*), NoContextArg> for Func
         where
             Func: Fn($($T),*) -> Ret,
-            Ret: ReducerResult
+            Ret: IntoReducerResult
         {
+            #[allow(non_snake_case)]
             fn invoke(&self, _ctx: ReducerContext, args: ($($T,)*)) -> Result<(), Box<str>> {
-                #[allow(non_snake_case)]
                 let ($($T,)*) = args;
                 self($($T),*).into_result()
+            }
+
+            type ArgsWithContext = ($($T,)*);
+            fn extract_args(args: Self::ArgsWithContext) -> ($($T,)*) {
+                args
             }
         }
     };
@@ -376,13 +375,28 @@ struct ModuleBuilder {
 // Not actually a mutex; because WASM is single-threaded this basically just turns into a refcell.
 static DESCRIBERS: Mutex<Vec<fn(&mut ModuleBuilder)>> = Mutex::new(Vec::new());
 
-/// A reducer function takes in `(Sender, Timestamp, Args)` and writes to a new `Buffer`.
-pub type ReducerFn = fn(ReducerContext, &[u8]) -> Buffer;
+/// A reducer function takes in `(Sender, Timestamp, Args)`
+/// and returns a result with a possible error message.
+pub type ReducerFn = fn(ReducerContext, &[u8]) -> ReducerResult;
 static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
 
-/// Describes the module into a serialized form that is returned and writes the set of `REDUCERS`.
+/// Called by the host when the module is initialized
+/// to describe the module into a serialized form that is returned.
+///
+/// This is also the module's opportunity to ready `__call_reducer__`
+/// (by writing the set of `REDUCERS`).
+///
+/// To `description`, a BSATN-encoded ModuleDef` should be written,.
+/// For the time being, the definition of `ModuleDef` is not stabilized,
+/// as it is being changed by the schema proposal.
+///
+/// The `ModuleDef` is used to define tables, constraints, indices, reducers, etc.
+/// This affords the module the opportunity
+/// to define and, to a limited extent, alter the schema at initialization time,
+/// including when modules are updated (re-publishing).
+/// After initialization, the module cannot alter the schema.
 #[no_mangle]
-extern "C" fn __describe_module__() -> Buffer {
+extern "C" fn __describe_module__(description: BytesSink) {
     // Collect the `module`.
     let mut module = ModuleBuilder::default();
     for describer in &*DESCRIBERS.lock().unwrap() {
@@ -397,8 +411,8 @@ extern "C" fn __describe_module__() -> Buffer {
     // Write the set of reducers.
     REDUCERS.set(module.reducers).ok().unwrap();
 
-    // Allocate the bsatn data into a fresh buffer.
-    Buffer::alloc(&bytes)
+    // Write the bsatn data into the sink.
+    write_to_sink(description, &bytes);
 }
 
 // TODO(1.0): update `__call_reducer__` docs + for `BytesSink`.
@@ -423,7 +437,12 @@ extern "C" fn __describe_module__() -> Buffer {
 /// The contents of the buffer are the BSATN-encoding of the arguments to the reducer.
 /// In the case of empty arguments, `args` will be 0, that is, invalid.
 ///
-/// The result of the reducer is written into a fresh buffer.
+/// The `error` is a `BytesSink`, registered on the host side,
+/// which can be written to with `bytes_sink_write`.
+/// When `error` is written to,
+/// it is expected that `HOST_CALL_FAILURE` is returned.
+/// Otherwise, `0` should be returned, i.e., the reducer completed successfully.
+/// Note that in the future, more failure codes could be supported.
 #[no_mangle]
 extern "C" fn __call_reducer__(
     id: usize,
@@ -435,7 +454,8 @@ extern "C" fn __call_reducer__(
     address_1: u64,
     timestamp: u64,
     args: BytesSource,
-) -> Buffer {
+    error: BytesSink,
+) -> i16 {
     // Piece together `sender_i` into an `Identity`.
     let sender = [sender_0, sender_1, sender_2, sender_3];
     let sender: [u8; 32] = bytemuck::must_cast(sender);
@@ -456,8 +476,18 @@ extern "C" fn __call_reducer__(
         address,
     };
 
+    // Fetch reducer function.
     let reducers = REDUCERS.get().unwrap();
-    with_read_args(args, |args| reducers[id](ctx, args))
+    // Dispatch to it with the arguments read.
+    let res = with_read_args(args, |args| reducers[id](ctx, args));
+    // Convert any error message to an error code and writes to the `error` sink.
+    match res {
+        Ok(()) => 0,
+        Err(msg) => {
+            write_to_sink(error, msg.as_bytes());
+            errno::HOST_CALL_FAILURE.get() as i16
+        }
+    }
 }
 
 /// Run `logic` with `args` read from the host into a `&[u8]`.
@@ -485,8 +515,13 @@ fn with_read_args<R>(args: BytesSource, logic: impl FnOnce(&[u8]) -> R) -> R {
     ret
 }
 
+const NO_SPACE: u16 = errno::NO_SPACE.get();
+const NO_SUCH_BYTES: u16 = errno::NO_SUCH_BYTES.get();
+
 /// Read `source` from the host fully into `buf`.
 fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
+    const INVALID: i16 = NO_SUCH_BYTES as i16;
+
     loop {
         // Write into the spare capacity of the buffer.
         let buf_ptr = buf.spare_capacity_mut();
@@ -494,8 +529,10 @@ fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
         let mut buf_len = buf_ptr.len();
         let buf_ptr = buf_ptr.as_mut_ptr().cast();
         let ret = unsafe { sys::raw::_bytes_source_read(source, buf_ptr, &mut buf_len) };
-        // SAFETY: `bytes_source_read` just appended `spare_len` bytes to `buf`.
-        unsafe { buf.set_len(buf.len() + spare_len) };
+        if ret <= 0 {
+            // SAFETY: `bytes_source_read` just appended `spare_len` bytes to `buf`.
+            unsafe { buf.set_len(buf.len() + spare_len) };
+        }
         match ret {
             // Host side source exhausted, we're done.
             -1 => break,
@@ -507,6 +544,26 @@ fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
             // The host will likely not trigger this branch (current host doesn't),
             // but a module should be prepared for it.
             0 => {}
+            INVALID => panic!("invalid source passed"),
+            _ => unreachable!(),
+        }
+    }
+}
+
+/// Write `buf` to `sink`.
+fn write_to_sink(sink: BytesSink, mut buf: &[u8]) {
+    loop {
+        let len = &mut buf.len();
+        match unsafe { sys::raw::_bytes_sink_write(sink, buf.as_ptr(), len) } {
+            0 => {
+                // Set `buf` to remainder and bail if it's empty.
+                (_, buf) = buf.split_at(*len);
+                if buf.is_empty() {
+                    break;
+                }
+            }
+            NO_SUCH_BYTES => panic!("invalid sink passed"),
+            NO_SPACE => panic!("no space left at sink"),
             _ => unreachable!(),
         }
     }
@@ -523,4 +580,17 @@ macro_rules! __make_register_reftype {
             }
         };
     };
+}
+
+#[cfg(feature = "unstable_abi")]
+#[doc(hidden)]
+pub fn volatile_nonatomic_schedule_immediate<'de, A: Args<'de>, R: Reducer<'de, A, T>, R2: ReducerInfo, T>(
+    _reducer: R,
+    args: R::ArgsWithContext,
+) {
+    let args = R::extract_args(args);
+    let arg_bytes = bsatn::to_vec(&SerDeArgs(args)).unwrap();
+
+    // Schedule the reducer.
+    sys::volatile_nonatomic_schedule_immediate(R2::NAME, &arg_bytes)
 }

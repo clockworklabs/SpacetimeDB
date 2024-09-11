@@ -19,7 +19,7 @@ pub trait user {
 impl user for super::RemoteTables {
     fn user(&self) -> UserTableHandle<'_> {
         UserTableHandle {
-            imp: self.imp.get_table::<User>("User"),
+            imp: self.imp.get_table::<User>("user"),
             ctx: PhantomData,
         }
     }
@@ -148,5 +148,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<ws::EncodedValue>,
 ) -> spacetimedb_sdk::anyhow::Result<TableUpdate<User>> {
     TableUpdate::parse_table_update_with_primary_key::<Identity>(deletes, inserts, |user: &User| &user.identity)
-        .with_context(|| format!("Failed to parse table update for table {:?}", "User"))
+        .with_context(|| format!("Failed to parse table update for table {:?}", "user"))
 }

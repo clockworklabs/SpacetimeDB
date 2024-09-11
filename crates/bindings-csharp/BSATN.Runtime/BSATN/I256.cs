@@ -4,13 +4,12 @@
 namespace SpacetimeDB;
 
 using System;
-using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
 /// <summary>Represents a 256-bit signed integer.</summary>
 [StructLayout(LayoutKind.Sequential)]
-public readonly struct I256 : IEquatable<I256>, IComparable, IComparable<I256>
+public readonly record struct I256 : IEquatable<I256>, IComparable, IComparable<I256>
 {
     internal const int Size = 32;
 
@@ -48,7 +47,7 @@ public readonly struct I256 : IEquatable<I256>, IComparable, IComparable<I256>
         }
         else
         {
-            throw new ArgumentException();
+            throw new ArgumentException("Argument must be a I256", nameof(value));
         }
     }
 
@@ -100,30 +99,6 @@ public readonly struct I256 : IEquatable<I256>, IComparable, IComparable<I256>
     /// <inheritdoc cref="INumberBase{TSelf}.IsNegative(TSelf)" />
 
     public static bool IsNegative(I256 value) => (long)value._upper.Upper < 0;
-
-    //
-    // IEqualityOperators
-    //
-
-    /// <inheritdoc cref="IEqualityOperators{TSelf, TOther, TResult}.op_Equality(TSelf, TOther)" />
-    public static bool operator ==(I256 left, I256 right) =>
-        (left._lower == right._lower) && (left._upper == right._upper);
-
-    /// <inheritdoc cref="IEqualityOperators{TSelf, TOther, TResult}.op_Inequality(TSelf, TOther)" />
-    public static bool operator !=(I256 left, I256 right) =>
-        (left._lower != right._lower) || (left._upper != right._upper);
-
-    /// <inheritdoc cref="object.Equals(object?)" />
-    public override bool Equals([NotNullWhen(true)] object? obj)
-    {
-        return (obj is I256 other) && Equals(other);
-    }
-
-    /// <inheritdoc cref="IEquatable{T}.Equals(T)" />
-    public bool Equals(I256 x) => _upper == x._upper && _lower == x._lower;
-
-    /// <inheritdoc cref="object.GetHashCode()" />
-    public override int GetHashCode() => HashCode.Combine(_lower, _upper);
 
     private BigInteger AsBigInt() =>
         new(

@@ -11,12 +11,20 @@ spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-data-structures.workspace = true
+
 itertools.workspace = true
+lazy_static.workspace = true
 thiserror.workspace = true
 unicode-ident.workspace = true
 unicode-normalization.workspace = true
-lazy_static.workspace = true
+serde_json.workspace = true
+smallvec.workspace = true
+hashbrown.workspace = true
 
 [dev-dependencies]
 spacetimedb-lib = { workspace = true, features = ["test"] }
+# these are circular dependencies, but only in tests, so it's fine
+spacetimedb-testing = { path = "../testing" }
+spacetimedb-cli.workspace = true
+
 proptest.workspace = true

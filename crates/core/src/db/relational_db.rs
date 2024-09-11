@@ -34,6 +34,7 @@ use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue}
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_snapshot::{SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
+use spacetimedb_table::table::RowRef;
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fmt;
@@ -937,6 +938,12 @@ impl RelationalDB {
         self.inner.table_name_from_id_mut_tx(ctx, tx, table_id)
     }
 
+    pub fn table_row_count_mut(&self, tx: &MutTx, table_id: TableId) -> Option<u64> {
+        // TODO(Centril): Go via MutTxDatastore trait instead.
+        // Doing this for now to ship this quicker.
+        tx.table_row_count(table_id)
+    }
+
     pub fn column_constraints(
         &self,
         tx: &mut MutTx,
@@ -1054,18 +1061,26 @@ impl RelationalDB {
         self.inner.iter_by_col_range_tx(ctx, tx, table_id.into(), cols, range)
     }
 
-    pub fn insert(&self, tx: &mut MutTx, table_id: TableId, row: ProductValue) -> Result<ProductValue, DBError> {
+    pub fn insert<'a>(
+        &'a self,
+        tx: &'a mut MutTx,
+        table_id: TableId,
+        row: ProductValue,
+    ) -> Result<(AlgebraicValue, RowRef<'a>), DBError> {
         self.inner.insert_mut_tx(tx, table_id, row)
     }
 
-    pub fn insert_bytes_as_row(
-        &self,
-        tx: &mut MutTx,
+    pub fn insert_bytes_as_row<'a>(
+        &'a self,
+        tx: &'a mut MutTx,
         table_id: TableId,
         row_bytes: &[u8],
-    ) -> Result<ProductValue, DBError> {
+    ) -> Result<(AlgebraicValue, RowRef<'a>), DBError> {
+        // Decode the `row_bytes` as a `ProductValue` according to the schema.
         let ty = self.inner.row_type_for_table_mut_tx(tx, table_id)?;
         let row = ProductValue::decode(&ty, &mut &row_bytes[..])?;
+
+        // Insert the row.
         self.insert(tx, table_id, row)
     }
 
@@ -1821,7 +1836,7 @@ mod tests {
 
         let stdb = stdb.reopen()?;
         let tx = stdb.begin_tx();
-        assert_eq!(tx.get_row_count(table_id).unwrap(), 2);
+        assert_eq!(tx.table_row_count(table_id).unwrap(), 2);
         Ok(())
     }
 

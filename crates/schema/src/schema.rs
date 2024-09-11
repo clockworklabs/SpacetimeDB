@@ -2,15 +2,40 @@
 //! These are used at runtime by the vm to store the schema of the database.
 
 use itertools::Itertools;
-use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_data_structures::map::{HashMap, HashSet};
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::error::{DefType, SchemaError};
-use spacetimedb_lib::db::raw_def::*;
+use spacetimedb_lib::db::raw_def::{
+    generate_cols_name, IndexType, RawColumnDefV8, RawConstraintDefV8, RawIndexDefV8, RawSequenceDefV8, RawTableDefV8,
+};
 use spacetimedb_lib::relation::{Column, DbTable, FieldName, Header};
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductTypeElement};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use std::sync::Arc;
+
+use crate::def::{
+    ColumnDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, SequenceDef, TableDef, UniqueConstraintDef,
+};
+use crate::identifier::Identifier;
+
+/// Helper trait documenting allowing schema entities to be built from a validated `ModuleDef`.
+/// Currently private, because the `TableSchema` constructor needs to do some fixing-up after calling some of these
+/// and it isn't obvious how to incorporate that in a generic way.
+/// Once `TableSchema` is closer to `ModuleDef` this shouldn't be a problem and this trait can be made public.
+trait Schema: Sized {
+    /// The `Def` type corresponding to this schema type.
+    type Def: ModuleDefLookup;
+    /// The `Id` type corresponding to this schema type.
+    type Id;
+    /// The `Id` type corresponding to the parent of this schema type.
+    /// Set to `()` if there is no parent.
+    type ParentId;
+
+    /// Construct a schema entity from a validated `ModuleDef`.
+    /// Panics if `module_def` does not contain `def`.
+    fn from_module_def(def: &Self::Def, parent_id: Self::ParentId, id: Self::Id) -> Self;
+}
 
 /// A data structure representing the schema of a database table.
 ///
@@ -226,6 +251,8 @@ impl TableSchema {
     ///
     /// - `table_id`: The unique identifier for the table.
     /// - `schema`: The `TableDef` containing the schema information.
+    #[deprecated]
+    #[allow(deprecated)]
     pub fn from_def(table_id: TableId, schema: RawTableDefV8) -> Self {
         let indexes = schema.generated_indexes().collect::<Vec<_>>();
         let sequences = schema.generated_sequences().collect::<Vec<_>>();
@@ -484,6 +511,123 @@ impl TableSchema {
             Err(errors)
         }
     }
+
+    /// Create a `TableSchema` from a validated `ModuleDef`.
+    pub fn from_module_def(def: &TableDef, table_id: TableId) -> Self {
+        let TableDef {
+            name,
+            product_type_ref: _,
+            primary_key,
+            columns,
+            indexes,
+            unique_constraints,
+            sequences,
+            schedule,
+            table_type,
+            table_access,
+        } = def;
+
+        let columns: Vec<ColumnSchema> = columns
+            .iter()
+            .enumerate()
+            .map(|(col_pos, def)| ColumnSchema::from_module_def(def, (), (table_id, col_pos.into())))
+            .collect();
+
+        let unique_col_lists = unique_constraints
+            .values()
+            .map(|x| x.columns.clone())
+            .collect::<HashSet<_>>();
+
+        let mut constraints: Vec<ConstraintSchema> = vec![];
+
+        // note: these Ids are fixed up somewhere else, so we can just use 0 here...
+        // but it would be nice to pass the correct values into this method.
+        let indexes = indexes
+            .values()
+            .map(|def| {
+                let mut result = IndexSchema::from_module_def(def, table_id, IndexId(0));
+                // TODO: do we need to worry about ordering here?
+                if unique_col_lists.contains(&result.columns) {
+                    result.is_unique = true;
+                } else {
+                    let cols_name = generate_cols_name(&result.columns, |x| columns.get(x.idx()).map(|x| &*x.col_name));
+                    #[allow(deprecated)]
+                    constraints.push(ConstraintSchema::from_def(
+                        table_id,
+                        RawConstraintDefV8::for_column(
+                            name,
+                            &cols_name,
+                            Constraints::indexed(),
+                            result.columns.clone(),
+                        ),
+                    ));
+                }
+                result
+            })
+            .collect();
+
+        let sequence_col_lists: HashSet<ColList> = sequences.values().map(|x| ColList::new(x.column)).collect();
+
+        let sequences = sequences
+            .values()
+            .map(|def| SequenceSchema::from_module_def(def, table_id, SequenceId(0)))
+            .collect();
+
+        let pk_col_list = primary_key.map(ColList::from).unwrap_or(ColList::empty());
+
+        constraints.extend(unique_constraints.values().map(|def| {
+            let mut result = ConstraintSchema::from_module_def(def, table_id, ConstraintId(0));
+            if result.columns == pk_col_list {
+                result.constraints = result.constraints.push(Constraints::primary_key());
+            }
+            if sequence_col_lists.contains(&result.columns) {
+                result.constraints = result.constraints.push_auto_inc().expect("could not set auto_inc?");
+            }
+            result
+        }));
+
+        let scheduled = schedule.as_ref().map(|schedule| (*schedule.reducer_name).into());
+
+        TableSchema::new(
+            table_id,
+            (*name).clone().into(),
+            columns,
+            indexes,
+            constraints,
+            sequences,
+            (*table_type).into(),
+            (*table_access).into(),
+            scheduled,
+        )
+    }
+
+    /// The C# and Rust SDKs are inconsistent about whether v8 column defs store resolved or unresolved algebraic types.
+    /// This method works around this problem by copying the column types from the module def into the table schema.
+    /// It can be removed once v8 is removed, since v9 will reject modules with an inconsistency like this.
+    pub fn janky_fix_column_defs(&mut self, module_def: &ModuleDef) {
+        let table_name = Identifier::new(self.table_name.clone()).unwrap();
+        for col in &mut self.columns {
+            let def: &ColumnDef = module_def
+                .lookup((&table_name, &Identifier::new(col.col_name.clone()).unwrap()))
+                .unwrap();
+            col.col_type = def.ty.clone();
+        }
+        let table_def: &TableDef = module_def.expect_lookup(&table_name);
+        self.row_type = module_def.typespace()[table_def.product_type_ref]
+            .as_product()
+            .unwrap()
+            .clone();
+    }
+
+    /// Normalize a `TableSchema`.
+    /// The result is semantically equivalent, but may have reordered indexes, constraints, or sequences.
+    /// Columns will not be reordered.
+    pub fn normalize(&mut self) {
+        self.indexes.sort_by(|a, b| a.index_name.cmp(&b.index_name));
+        self.constraints
+            .sort_by(|a, b| a.constraint_name.cmp(&b.constraint_name));
+        self.sequences.sort_by(|a, b| a.sequence_name.cmp(&b.sequence_name));
+    }
 }
 
 impl From<&TableSchema> for ProductType {
@@ -581,12 +725,30 @@ impl ColumnSchema {
     /// * `table_id`: Identifier of the table to which the column belongs.
     /// * `col_pos`: Position of the column within the table.
     /// * `column`: The `ColumnDef` containing column information.
+    #[deprecated]
     pub fn from_def(table_id: TableId, col_pos: ColId, column: RawColumnDefV8) -> Self {
         ColumnSchema {
             table_id,
             col_pos,
             col_name: column.col_name.trim().into(),
             col_type: column.col_type,
+        }
+    }
+}
+
+impl Schema for ColumnSchema {
+    type Def = ColumnDef;
+    type ParentId = ();
+    // This is not like the other ID types: it's a tuple of the table ID and the column position.
+    // A `ColId` alone does NOT suffice to identify a column!
+    type Id = (TableId, ColId);
+
+    fn from_module_def(def: &ColumnDef, _parent_id: (), (table_id, col_pos): (TableId, ColId)) -> Self {
+        ColumnSchema {
+            table_id,
+            col_pos,
+            col_name: (*def.name).into(),
+            col_type: def.ty.clone(),
         }
     }
 }
@@ -695,6 +857,26 @@ impl SequenceSchema {
     }
 }
 
+impl Schema for SequenceSchema {
+    type Def = SequenceDef;
+    type Id = SequenceId;
+    type ParentId = TableId;
+
+    fn from_module_def(def: &Self::Def, parent_id: Self::ParentId, id: Self::Id) -> Self {
+        SequenceSchema {
+            sequence_id: id,
+            sequence_name: (*def.name).into(),
+            table_id: parent_id,
+            col_pos: def.column,
+            increment: def.increment,
+            start: def.start.unwrap_or(1),
+            min_value: def.min_value.unwrap_or(1),
+            max_value: def.max_value.unwrap_or(i128::MAX),
+            allocated: 0, // TODO: information not available in the `Def`s anymore, which is correct, but this may need to be overridden later.
+        }
+    }
+}
+
 impl From<SequenceSchema> for RawSequenceDefV8 {
     fn from(value: SequenceSchema) -> Self {
         RawSequenceDefV8 {
@@ -733,6 +915,7 @@ pub struct IndexSchema {
 
 impl IndexSchema {
     /// Constructs an [IndexSchema] from a given [IndexDef] and `table_id`.
+    #[deprecated(note = "Use TableSchema::from_module_def instead")]
     pub fn from_def(table_id: TableId, index: RawIndexDefV8) -> Self {
         IndexSchema {
             index_id: IndexId(0), // Set to 0 as it may be assigned later.
@@ -741,6 +924,26 @@ impl IndexSchema {
             index_name: index.index_name.trim().into(),
             is_unique: index.is_unique,
             columns: index.columns,
+        }
+    }
+}
+
+impl Schema for IndexSchema {
+    type Def = IndexDef;
+    type Id = IndexId;
+    type ParentId = TableId;
+
+    fn from_module_def(def: &Self::Def, parent_id: Self::ParentId, id: Self::Id) -> Self {
+        let (index_type, columns) = match &def.algorithm {
+            IndexAlgorithm::BTree { columns } => (IndexType::BTree, columns.clone()),
+        };
+        IndexSchema {
+            index_id: id,
+            table_id: parent_id,
+            index_type,
+            index_name: (*def.name).into(),
+            is_unique: false,
+            columns,
         }
     }
 }
@@ -782,6 +985,7 @@ impl ConstraintSchema {
     ///
     /// * `table_id`: Identifier of the table to which the constraint belongs.
     /// * `constraint`: The `ConstraintDef` containing constraint information.
+    #[deprecated(note = "Use TableSchema::from_module_def instead")]
     pub fn from_def(table_id: TableId, constraint: RawConstraintDefV8) -> Self {
         ConstraintSchema {
             constraint_id: ConstraintId(0), // Set to 0 as it may be assigned later.
@@ -789,6 +993,22 @@ impl ConstraintSchema {
             constraints: constraint.constraints,
             table_id,
             columns: constraint.columns,
+        }
+    }
+}
+
+impl Schema for ConstraintSchema {
+    type Def = UniqueConstraintDef;
+    type Id = ConstraintId;
+    type ParentId = TableId;
+
+    fn from_module_def(def: &Self::Def, parent_id: Self::ParentId, id: Self::Id) -> Self {
+        ConstraintSchema {
+            constraint_id: id,
+            constraint_name: (*def.name).into(),
+            constraints: Constraints::unique(),
+            table_id: parent_id,
+            columns: def.columns.clone(),
         }
     }
 }
@@ -804,6 +1024,7 @@ impl From<ConstraintSchema> for RawConstraintDefV8 {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use spacetimedb_primitives::col_list;

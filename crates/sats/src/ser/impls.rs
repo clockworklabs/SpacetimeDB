@@ -1,7 +1,8 @@
 use super::{Serialize, SerializeArray, SerializeMap, SerializeNamedProduct, SerializeSeqProduct, Serializer};
 use crate::{i256, u256};
 use crate::{
-    AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType, F32, F64,
+    impl_st, AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType, F32,
+    F64,
 };
 use spacetimedb_primitives::ColList;
 use std::collections::BTreeMap;
@@ -250,6 +251,8 @@ impl_serialize!([] ColList, (self, ser) => {
        }
        arr.end()
 });
+
+impl_st!([] ColList, ts => AlgebraicType::array(spacetimedb_primitives::ColId::make_type(ts)));
 
 #[cfg(feature = "blake3")]
 impl_serialize!([] blake3::Hash, (self, ser) => self.as_bytes().serialize(ser));

@@ -29,7 +29,7 @@ public partial struct CustomClass
 public enum CustomEnum
 {
     EnumVariant1,
-    EnumVariant2
+    EnumVariant2,
 }
 
 [SpacetimeDB.Type]
@@ -88,6 +88,12 @@ public static partial class Reducers
             Runtime.Log($"Item: {item.StringField}");
         }
     }
+
+    [SpacetimeDB.Reducer]
+    public static void ScheduleImmediate(PublicTable data)
+    {
+        VolatileNonatomicScheduleImmediateInsertData(data);
+    }
 }
 
 namespace Test
@@ -128,7 +134,7 @@ public static partial class Timers
         new SendMessageTimer
         {
             Text = "bot sending a message",
-            ScheduledAt = ctx.Time.AddSeconds(10)
+            ScheduledAt = ctx.Time.AddSeconds(10),
         }.Insert();
     }
 }

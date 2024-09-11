@@ -4148,6 +4148,7 @@ name = "spacetimedb-bindings-macro"
 version = "0.12.0"
 dependencies = [
  "bitflags 2.4.1",
+ "heck",
  "humantime",
  "proc-macro2",
  "quote",
@@ -4178,6 +4179,7 @@ dependencies = [
  "duct",
  "email_address",
  "flate2",
+ "fs-err",
  "futures",
  "http",
  "indicatif",
@@ -4512,13 +4514,18 @@ dependencies = [
 name = "spacetimedb-schema"
 version = "0.12.0"
 dependencies = [
+ "hashbrown 0.14.1",
  "itertools 0.12.0",
  "lazy_static",
  "proptest",
+ "serde_json",
+ "smallvec",
+ "spacetimedb-cli",
  "spacetimedb-data-structures",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",
+ "spacetimedb-testing",
  "thiserror",
  "unicode-ident",
  "unicode-normalization",
@@ -4565,6 +4572,15 @@ dependencies = [
  "spacetimedb-primitives",
  "spacetimedb-sats",
  "spacetimedb-table",
+ "thiserror",
+]
+
+[[package]]
+name = "spacetimedb-sql-parser"
+version = "0.12.0"
+dependencies = [
+ "derive_more",
+ "sqlparser",
  "thiserror",
 ]
 

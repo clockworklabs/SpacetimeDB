@@ -1,11 +1,13 @@
 #![allow(clippy::disallowed_names)]
 use spacetimedb::spacetimedb_lib::db::auth::StAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
-use spacetimedb::{duration, query, spacetimedb, Deserialize, ReducerContext, SpacetimeType, TableType, Timestamp};
+use spacetimedb::{
+    duration, query, table, Address, Deserialize, Identity, ReducerContext, SpacetimeType, TableType, Timestamp,
+};
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "foo", x))]
+#[spacetimedb::table(name = test_a)]
 pub struct TestA {
+    #[index(btree)]
     pub x: u32,
     pub y: u32,
     pub z: String,
@@ -23,7 +25,7 @@ pub enum TestC {
     Bar,
 }
 
-#[spacetimedb(table(public))]
+#[table(name = test_d, public)]
 pub struct TestD {
     test_c: Option<TestC>,
 }
@@ -31,11 +33,11 @@ pub struct TestD {
 // This table was specified as public.
 const _: () = assert!(matches!(TestD::TABLE_ACCESS, StAccess::Public));
 
-#[spacetimedb(table)]
+#[spacetimedb::table(name = test_e)]
 #[derive(Debug)]
 pub struct TestE {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u64,
     name: String,
 }
@@ -51,13 +53,12 @@ pub enum TestF {
 // All tables are private by default.
 const _: () = assert!(matches!(TestE::TABLE_ACCESS, StAccess::Private));
 
-#[spacetimedb(table)]
+#[spacetimedb::table(name = private)]
 pub struct Private {
     name: String,
 }
 
-#[spacetimedb(table(private))]
-#[spacetimedb(index(btree, name = "multi_column_index", x, y))]
+#[spacetimedb::table(name = points, private, index(name = multi_column_index, btree(columns = [x, y])))]
 pub struct Point {
     x: i64,
     y: i64,
@@ -67,25 +68,31 @@ pub struct Point {
 const _: () = assert!(matches!(Point::TABLE_ACCESS, StAccess::Private));
 
 // Test we can compile multiple constraints
-#[spacetimedb(table)]
+#[spacetimedb::table(name = pk_multi_identity)]
 struct PkMultiIdentity {
-    #[primarykey]
+    #[primary_key]
     id: u32,
     #[unique]
-    #[autoinc]
+    #[auto_inc]
     other: u32,
 }
 pub type TestAlias = TestA;
 
-// #[spacetimedb(migrate)]
+// #[spacetimedb::migrate]
 // pub fn migrate() {}
 
-#[spacetimedb(table, scheduled(repeating_test))]
+#[spacetimedb::table(name = repeating_test_arg, scheduled(repeating_test))]
 pub struct RepeatingTestArg {
     prev_time: Timestamp,
 }
 
-#[spacetimedb(init)]
+#[spacetimedb::table(name = has_special_stuff)]
+pub struct HasSpecialStuff {
+    identity: Identity,
+    address: Address,
+}
+
+#[spacetimedb::reducer(init)]
 pub fn init() {
     let _ = RepeatingTestArg::insert(RepeatingTestArg {
         prev_time: Timestamp::now(),
@@ -94,13 +101,13 @@ pub fn init() {
     });
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn repeating_test(ctx: ReducerContext, arg: RepeatingTestArg) {
     let delta_time = arg.prev_time.elapsed();
     log::trace!("Timestamp: {:?}, Delta time: {:?}", ctx.timestamp, delta_time);
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4: TestF) -> anyhow::Result<()> {
     log::info!("BEGIN");
     log::info!("sender: {:?}", ctx.sender);
@@ -175,13 +182,13 @@ pub fn test(ctx: ReducerContext, arg: TestAlias, arg2: TestB, arg3: TestC, arg4:
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add_player(name: String) -> Result<(), String> {
     TestE::insert(TestE { id: 0, name })?;
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn delete_player(id: u64) -> Result<(), String> {
     if TestE::delete_by_id(&id) {
         Ok(())
@@ -190,7 +197,7 @@ pub fn delete_player(id: u64) -> Result<(), String> {
     }
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn delete_players_by_name(name: String) -> Result<(), String> {
     match TestE::delete_by_name(&name) {
         0 => Err(format!("No TestE row with name {:?}", name)),
@@ -201,7 +208,7 @@ pub fn delete_players_by_name(name: String) -> Result<(), String> {
     }
 }
 
-#[spacetimedb(connect)]
+#[spacetimedb::reducer(client_connected)]
 fn on_connect(_ctx: ReducerContext) {}
 
 // We can derive `Deserialize` for lifetime generic types:
@@ -217,12 +224,12 @@ impl Foo<'_> {
     }
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add_private(name: String) {
     Private::insert(Private { name });
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn query_private() {
     for person in Private::iter() {
         log::info!("Private, {}!", person.name);

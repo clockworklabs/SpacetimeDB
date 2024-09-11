@@ -450,6 +450,7 @@ criterion_group!(
 );
 
 fn schema_from_ty(ty: ProductType, name: &str) -> TableSchema {
+    #[allow(deprecated)]
     TableSchema::from_def(TableId(0), RawTableDefV8::from_product(name, ty))
 }
 
@@ -654,6 +655,7 @@ trait IndexedRow: Row + Sized {
             .with_column_index(Self::indexed_columns(), false)
     }
     fn make_schema() -> TableSchema {
+        #[allow(deprecated)]
         TableSchema::from_def(TableId(0), Self::make_table_def())
     }
     fn throughput() -> Throughput {

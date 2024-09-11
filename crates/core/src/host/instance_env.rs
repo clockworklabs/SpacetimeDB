@@ -4,7 +4,7 @@ use spacetimedb_table::table::UniqueConstraintViolation;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
-use super::scheduler::{get_schedule_from_pv, ScheduleError, Scheduler};
+use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::client::messages::ToBsatn;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
@@ -15,9 +15,9 @@ use crate::vm::{build_query, TxMode};
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::relation::FieldName;
-use spacetimedb_lib::ProductValue;
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::Typespace;
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::expr::{FieldExpr, FieldOp, NoInMemUsed, QueryExpr};
 
 #[derive(Clone)]
@@ -103,11 +103,18 @@ impl InstanceEnv {
         log::trace!("MOD({}): {}", self.dbic.address.to_abbreviated_hex(), record.message);
     }
 
-    pub fn insert(&self, ctx: &ExecutionContext, table_id: TableId, buffer: &[u8]) -> Result<ProductValue, NodesError> {
+    pub fn insert(
+        &self,
+        ctx: &ExecutionContext,
+        table_id: TableId,
+        buffer: &[u8],
+    ) -> Result<AlgebraicValue, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
-        let ret = stdb
+
+        let (gen_cols, row_ptr) = stdb
             .insert_bytes_as_row(tx, table_id, buffer)
+            .map(|(gc, rr)| (gc, rr.pointer()))
             .inspect_err(|e| match e {
                 crate::error::DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
                     constraint_name: _,
@@ -126,14 +133,17 @@ impl InstanceEnv {
             })?;
 
         if stdb.is_scheduled_table(ctx, tx, table_id)? {
-            let (schedule_id, schedule_at) = get_schedule_from_pv(tx, stdb, table_id, &ret)
+            let row_ref = tx.get(table_id, row_ptr)?.unwrap();
+            let (schedule_id, schedule_at) = get_schedule_from_row(tx, stdb, table_id, &row_ref)
+                // NOTE(centril): Should never happen,
+                // as we successfully inserted and thus `ret` is verified against the table schema.
                 .map_err(|e| NodesError::ScheduleError(ScheduleError::DecodingError(e)))?;
             self.scheduler
                 .schedule(table_id, schedule_id, schedule_at)
                 .map_err(NodesError::ScheduleError)?;
         }
 
-        Ok(ret)
+        Ok(gen_cols)
     }
 
     /// Deletes all rows in the table identified by `table_id`
@@ -169,9 +179,12 @@ impl InstanceEnv {
     /// where the rows match one in `relation`
     /// which is a bsatn encoding of `Vec<ProductValue>`.
     ///
-    /// Returns an error if no rows were deleted.
+    /// Returns an error if
+    /// - not in a transaction.
+    /// - the table didn't exist.
+    /// - a row couldn't be decoded to the table schema type.
     #[tracing::instrument(skip(self, relation))]
-    pub fn delete_by_rel(&self, table_id: TableId, relation: &[u8]) -> Result<u32, NodesError> {
+    pub fn datastore_delete_all_by_eq_bsatn(&self, table_id: TableId, relation: &[u8]) -> Result<u32, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
@@ -187,18 +200,29 @@ impl InstanceEnv {
 
     /// Returns the `table_id` associated with the given `table_name`.
     ///
-    /// Errors with `TableNotFound` if the table does not exist.
+    /// Errors with `GetTxError` if not in a transaction
+    /// and `TableNotFound` if the table does not exist.
     #[tracing::instrument(skip_all)]
-    pub fn get_table_id(&self, table_name: &str) -> Result<TableId, NodesError> {
+    pub fn table_id_from_name(&self, table_name: &str) -> Result<TableId, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.get_tx()?;
 
         // Query the table id from the name.
-        let table_id = stdb
-            .table_id_from_name_mut(tx, table_name)?
-            .ok_or(NodesError::TableNotFound)?;
+        stdb.table_id_from_name_mut(tx, table_name)?
+            .ok_or(NodesError::TableNotFound)
+    }
 
-        Ok(table_id)
+    /// Returns the number of rows in the table identified by `table_id`.
+    ///
+    /// Errors with `GetTxError` if not in a transaction
+    /// and `TableNotFound` if the table does not exist.
+    #[tracing::instrument(skip_all)]
+    pub fn datastore_table_row_count(&self, table_id: TableId) -> Result<u64, NodesError> {
+        let stdb = &*self.dbic.relational_db;
+        let tx = &mut *self.get_tx()?;
+
+        // Query the row count for id.
+        stdb.table_row_count_mut(tx, table_id).ok_or(NodesError::TableNotFound)
     }
 
     /// Finds all rows in the table identified by `table_id`
@@ -227,7 +251,11 @@ impl InstanceEnv {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn iter_chunks(&self, ctx: &ExecutionContext, table_id: TableId) -> Result<Vec<Box<[u8]>>, NodesError> {
+    pub fn datastore_table_scan_bsatn_chunks(
+        &self,
+        ctx: &ExecutionContext,
+        table_id: TableId,
+    ) -> Result<Vec<Box<[u8]>>, NodesError> {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.tx.get()?;
 

@@ -7,22 +7,20 @@ use super::{
     tx_state::TxState,
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::db::{
-    datastore::{
-        system_tables::{
-            table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StFields as _,
-            StIndexFields, StIndexRow, StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow,
-            SystemTable, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
-        },
-        traits::{RowTypeForTable, TxData},
+use crate::db::datastore::{
+    system_tables::{
+        table_name_is_system, StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StFields as _,
+        StIndexFields, StIndexRow, StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow,
+        SystemTable, ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
     },
-    db_metrics::table_num_rows,
+    traits::{RowTypeForTable, TxData},
 };
 use crate::{
     error::{DBError, IndexError, SequenceError, TableError},
     execution_context::ExecutionContext,
 };
 use core::ops::RangeBounds;
+use smallvec::SmallVec;
 use spacetimedb_lib::{
     address::Address,
     db::{
@@ -87,6 +85,7 @@ impl MutTxId {
             return Err(TableError::System(table_schema.table_name.clone()).into());
         }
 
+        #[allow(deprecated)]
         TableSchema::from_def(0.into(), table_schema.clone())
             .validated()
             .map_err(|err| DBError::Schema(SchemaErrors(err)))?;
@@ -110,10 +109,12 @@ impl MutTxId {
         };
         let table_id = self
             .insert(ST_TABLE_ID, &mut row.into(), database_address)?
+            .1
             .collapse()
             .read_col(StTableFields::TableId)?;
 
         // Generate the full definition of the table, with the generated indexes, constraints, sequences...
+        #[allow(deprecated)]
         let table_schema = TableSchema::from_def(table_id, table_schema);
 
         // Insert the columns into `st_columns`
@@ -345,10 +346,12 @@ impl MutTxId {
         };
         let index_id = self
             .insert(ST_INDEX_ID, &mut row.into(), ctx.database())?
+            .1
             .collapse()
             .read_col(StIndexFields::IndexId)?;
 
         // Construct the index schema.
+        #[allow(deprecated)]
         let mut index = IndexSchema::from_def(table_id, index.clone());
         index.index_id = index_id;
 
@@ -553,7 +556,7 @@ impl MutTxId {
             max_value: seq.max_value.unwrap_or(i128::MAX),
         };
         let row = self.insert(ST_SEQUENCE_ID, &mut sequence_row.clone().into(), database_address)?;
-        let seq_id = row.collapse().read_col(StSequenceFields::SequenceId)?;
+        let seq_id = row.1.collapse().read_col(StSequenceFields::SequenceId)?;
         sequence_row.sequence_id = seq_id;
 
         let schema: SequenceSchema = sequence_row.into();
@@ -635,11 +638,12 @@ impl MutTxId {
             &mut ProductValue::from(constraint_row),
             ctx.database(),
         )?;
-        let constraint_id = constraint_row.collapse().read_col(StConstraintFields::ConstraintId)?;
-        let existed = matches!(constraint_row, RowRefInsertion::Existed(_));
+        let constraint_id = constraint_row.1.collapse().read_col(StConstraintFields::ConstraintId)?;
+        let existed = matches!(constraint_row.1, RowRefInsertion::Existed(_));
         // TODO: Can we return early here?
 
         let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
+        #[allow(deprecated)]
         let mut constraint = ConstraintSchema::from_def(table_id, constraint);
         constraint.constraint_id = constraint_id;
         // This won't clone-write when creating a table but likely to otherwise.
@@ -760,7 +764,7 @@ impl MutTxId {
             ctx,
             self.timer,
             self.lock_wait_time,
-            false,
+            true,
             Some(&tx_data),
             Some(&committed_state_write_lock),
         );
@@ -780,7 +784,7 @@ impl MutTxId {
             ctx,
             self.timer,
             self.lock_wait_time,
-            false,
+            true,
             Some(&tx_data),
             Some(&committed_state_write_lock),
         );
@@ -819,61 +823,59 @@ pub(super) enum RowRefInsertion<'a> {
     Existed(RowRef<'a>),
 }
 
-impl RowRefInsertion<'_> {
+impl<'a> RowRefInsertion<'a> {
     /// Returns a row,
     /// collapsing the distinction between inserted and existing rows.
-    fn collapse(&self) -> RowRef<'_> {
+    pub(super) fn collapse(&self) -> RowRef<'a> {
         let (Self::Inserted(row) | Self::Existed(row)) = *self;
         row
     }
 }
 
 impl MutTxId {
-    pub(super) fn insert(
+    pub(super) fn insert<'a>(
+        &'a mut self,
+        table_id: TableId,
+        row: &mut ProductValue,
+        database_address: Address,
+    ) -> Result<(AlgebraicValue, RowRefInsertion<'a>)> {
+        let generated = self.write_sequence_values(table_id, row, database_address)?;
+        let row_ref = self.insert_row_internal(table_id, row)?;
+        Ok((generated, row_ref))
+    }
+
+    /// Generate and write sequence values to `row`
+    /// and return a projection of `row` with only the generated column values.
+    fn write_sequence_values(
         &mut self,
         table_id: TableId,
         row: &mut ProductValue,
         database_address: Address,
-    ) -> Result<RowRefInsertion<'_>> {
+    ) -> Result<AlgebraicValue> {
         let ctx = ExecutionContext::internal(database_address);
 
         // TODO: Executing schema_for_table for every row insert is expensive.
         // However we ask for the schema in the [Table] struct instead.
         let schema = self.schema_for_table(&ctx, table_id)?;
 
-        let mut col_to_update = None;
-        for seq in schema
+        // Collect all the columns with sequences that need generation.
+        let (cols_to_update, seqs_to_use): (ColList, SmallVec<[_; 1]>) = schema
             .sequences
             .iter()
             .filter(|seq| row.elements[seq.col_pos.idx()].is_numeric_zero())
-        {
-            for seq_row in self.iter_by_col_eq(&ctx, ST_SEQUENCE_ID, StSequenceFields::TableId, &table_id.into())? {
-                let seq_col_pos: ColId = seq_row.read_col(StSequenceFields::ColPos)?;
-                if seq_col_pos == seq.col_pos {
-                    let seq_id = seq_row.read_col(StSequenceFields::SequenceId)?;
-                    col_to_update = Some((seq.col_pos, seq_id));
-                    break;
-                }
-            }
-        }
+            .map(|seq| (seq.col_pos, seq.sequence_id))
+            .unzip();
 
-        if let Some((col_id, sequence_id)) = col_to_update {
-            let col_idx = col_id.idx();
-            let col = &schema.columns()[col_idx];
-            if !col.col_type.is_integer() {
-                return Err(SequenceError::NotInteger {
-                    col: format!("{}.{}", &schema.table_name, &col.col_name),
-                    found: col.col_type.clone(),
-                }
-                .into());
-            }
-            // At this point, we know this will be essentially a cheap copy.
-            let col_ty = col.col_type.clone();
+        // Update every column in the row that needs it.
+        // We assume here that column with a sequence is of a sequence-compatible type.
+        for (col_id, sequence_id) in cols_to_update.iter().zip(seqs_to_use) {
             let seq_val = self.get_next_sequence_value(sequence_id, database_address)?;
-            row.elements[col_idx] = AlgebraicValue::from_sequence_value(&col_ty, seq_val);
+            let col_typ = &schema.columns()[col_id.idx()].col_type;
+            let gen_val = AlgebraicValue::from_sequence_value(col_typ, seq_val);
+            row.elements[col_id.idx()] = gen_val;
         }
 
-        self.insert_row_internal(table_id, row)
+        Ok(row.project(&cols_to_update)?)
     }
 
     pub(super) fn insert_row_internal(&mut self, table_id: TableId, row: &ProductValue) -> Result<RowRefInsertion<'_>> {
@@ -1082,6 +1084,18 @@ impl StateView for MutTxId {
             .map(|table| table.get_schema())
     }
 
+    fn table_row_count(&self, table_id: TableId) -> Option<u64> {
+        let commit_count = self.committed_state_write_lock.table_row_count(table_id);
+        let (tx_ins_count, tx_del_count) = self.tx_state.table_row_count(table_id);
+        let commit_count = commit_count.map(|cc| cc - tx_del_count);
+        // Keep track of whether `table_id` exists.
+        match (commit_count, tx_ins_count) {
+            (Some(cc), Some(ic)) => Some(cc + ic),
+            (Some(c), None) | (None, Some(c)) => Some(c),
+            (None, None) => None,
+        }
+    }
+
     fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Iter<'a>> {
         if let Some(table_name) = self.table_name(table_id) {
             return Ok(Iter::new(
@@ -1137,29 +1151,31 @@ impl StateView for MutTxId {
                 ))),
                 None => {
                     #[cfg(feature = "unindexed_iter_by_col_range_warn")]
-                    match self.schema_for_table(ctx, table_id) {
+                    match self.table_row_count(table_id) {
                         // TODO(ux): log these warnings to the module logs rather than host logs.
-                        Err(e) => log::error!(
-                            "iter_by_col_range on unindexed column, but got error from `schema_for_table` during diagnostics: {e:?}",
+                        None => log::error!(
+                            "iter_by_col_range on unindexed column, but couldn't fetch table `{table_id}`s row count",
                         ),
-                        Ok(schema) => {
+                        Some(num_rows) => {
                             const TOO_MANY_ROWS_FOR_SCAN: u64 = 1000;
-
-                            let table_name = &schema.table_name;
-                            let num_rows = table_num_rows(ctx.database(), table_id, table_name);
-
                             if num_rows >= TOO_MANY_ROWS_FOR_SCAN {
-                                let col_names = cols.iter()
-                                    .map(|col_id| schema.columns()
-                                         .get(col_id.idx())
-                                         .map(|col| &col.col_name[..])
-                                         .unwrap_or("[unknown column]"))
+                                let schema = self.schema_for_table(ctx, table_id).unwrap();
+                                let table_name = &schema.table_name;
+                                let col_names = cols
+                                    .iter()
+                                    .map(|col_id| {
+                                        schema
+                                            .columns()
+                                            .get(col_id.idx())
+                                            .map(|col| &col.col_name[..])
+                                            .unwrap_or("[unknown column]")
+                                    })
                                     .collect::<Vec<_>>();
                                 log::warn!(
                                     "iter_by_col_range without index: table {table_name} has {num_rows} rows; scanning columns {col_names:?}",
                                 );
                             }
-                        },
+                        }
                     }
 
                     Ok(IterByColRange::Scan(ScanIterByColRange::new(

@@ -83,7 +83,8 @@ impl std::fmt::Display for VersionTuple {
 extern crate self as spacetimedb_lib;
 
 //WARNING: Change this structure(or any of their members) is an ABI change.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct TableDesc {
     pub schema: RawTableDefV8,
     /// data should always point to a ProductType in the typespace
@@ -107,7 +108,8 @@ impl TableDesc {
     }
 }
 
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct ReducerDef {
     pub name: Box<str>,
     pub args: Vec<ProductTypeElement>,
@@ -176,7 +178,8 @@ impl_serialize!([] ReducerArgsWithSchema<'_>, (self, ser) => {
 });
 
 //WARNING: Change this structure(or any of their members) is an ABI change.
-#[derive(Debug, Clone, Default, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, Default, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct RawModuleDefV8 {
     pub typespace: sats::Typespace,
     pub tables: Vec<TableDesc>,
@@ -199,7 +202,8 @@ impl RawModuleDefV8 {
 /// A versioned raw module definition.
 ///
 /// This is what is actually returned by the module when `__describe_module__` is called, serialized to BSATN.
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 #[non_exhaustive]
 pub enum RawModuleDef {
     V8BackCompat(RawModuleDefV8),
@@ -222,12 +226,52 @@ impl ModuleDefBuilder {
         TypespaceBuilder::add_type::<T>(self)
     }
 
+    /// Add a type that may not correspond to a Rust type.
+    /// Used only in tests.
+    #[cfg(feature = "test")]
+    pub fn add_type_for_tests(&mut self, name: &str, ty: AlgebraicType) -> spacetimedb_sats::AlgebraicTypeRef {
+        let slot_ref = self.module.typespace.add(ty);
+        self.module.misc_exports.push(MiscModuleExport::TypeAlias(TypeAlias {
+            name: name.to_owned(),
+            ty: slot_ref,
+        }));
+        slot_ref
+    }
+
+    /// Add a table that may not correspond to a Rust type.
+    /// Wraps it in a `TableDesc` and generates a corresponding `ProductType` in the typespace.
+    /// Used only in tests.
+    /// Returns the `AlgebraicTypeRef` of the generated `ProductType`.
+    #[cfg(feature = "test")]
+    pub fn add_table_for_tests(&mut self, schema: RawTableDefV8) -> spacetimedb_sats::AlgebraicTypeRef {
+        let ty: ProductType = schema
+            .columns
+            .iter()
+            .map(|c| ProductTypeElement {
+                name: Some(c.col_name.clone()),
+                algebraic_type: c.col_type.clone(),
+            })
+            .collect();
+        // do NOT add a `TypeAlias`: in v8, the `RawTableDef` itself serves as a `TypeAlias`.
+        let data = self.module.typespace.add(ty.into());
+        self.add_table(TableDesc { schema, data });
+        data
+    }
+
     pub fn add_table(&mut self, table: TableDesc) {
         self.module.tables.push(table)
     }
 
     pub fn add_reducer(&mut self, reducer: ReducerDef) {
         self.module.reducers.push(reducer)
+    }
+
+    #[cfg(feature = "test")]
+    pub fn add_reducer_for_tests(&mut self, name: impl Into<Box<str>>, args: ProductType) {
+        self.add_reducer(ReducerDef {
+            name: name.into(),
+            args: args.elements.to_vec(),
+        });
     }
 
     pub fn add_misc_export(&mut self, misc_export: MiscModuleExport) {
@@ -281,12 +325,14 @@ impl TypespaceBuilder for ModuleDefBuilder {
 }
 
 // an enum to keep it extensible without breaking abi
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 pub enum MiscModuleExport {
     TypeAlias(TypeAlias),
 }
 
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct TypeAlias {
     pub name: String,
     pub ty: sats::AlgebraicTypeRef,

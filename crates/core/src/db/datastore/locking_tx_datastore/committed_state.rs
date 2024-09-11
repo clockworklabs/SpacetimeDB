@@ -57,6 +57,11 @@ impl StateView for CommittedState {
     fn get_schema(&self, table_id: TableId) -> Option<&Arc<TableSchema>> {
         self.tables.get(&table_id).map(|table| table.get_schema())
     }
+
+    fn table_row_count(&self, table_id: TableId) -> Option<u64> {
+        self.get_table(table_id).map(|table| table.row_count)
+    }
+
     fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Iter<'a>> {
         if let Some(table_name) = self.table_name(table_id) {
             return Ok(Iter::new(ctx, table_id, table_name, None, self));
@@ -257,7 +262,7 @@ impl CommittedState {
     /// Compute the system table schemas from the system tables,
     /// and store those schemas in the in-memory [`Table`] structures.
     ///
-    /// Necessary during bootstrap because system tables include autoinc IDs
+    /// Necessary during bootstrap because system tables include auto_inc IDs
     /// for objects like indexes and constraints
     /// which are computed at insert-time,
     /// and therefore not included in the hardcoded schemas.

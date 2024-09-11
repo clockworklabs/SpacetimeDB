@@ -168,21 +168,35 @@ impl ModuleSubscriptions {
         let subscriptions = self.subscriptions.read();
         let stdb = &self.relational_db;
 
-        let read_tx = match &mut event.status {
-            EventStatus::Committed(db_update) => {
-                let Some((tx_data, read_tx)) = stdb.commit_tx_downgrade(ctx, tx)? else {
-                    return Ok(Err(WriteConflict));
-                };
-                *db_update = DatabaseUpdate::from_writes(&tx_data);
-                read_tx
-            }
-            EventStatus::Failed(_) | EventStatus::OutOfEnergy => stdb.rollback_mut_tx_downgrade(ctx, tx),
-        };
+        // Downgrade mutable tx.
+        // Ensure tx is released/cleaned up once out of scope.
+        let read_tx = scopeguard::guard(
+            match &mut event.status {
+                EventStatus::Committed(db_update) => {
+                    let Some((tx_data, read_tx)) = stdb.commit_tx_downgrade(ctx, tx)? else {
+                        return Ok(Err(WriteConflict));
+                    };
+                    *db_update = DatabaseUpdate::from_writes(&tx_data);
+                    read_tx
+                }
+                EventStatus::Failed(_) | EventStatus::OutOfEnergy => stdb.rollback_mut_tx_downgrade(ctx, tx),
+            },
+            |tx| {
+                self.relational_db.release_tx(ctx, tx);
+            },
+        );
         let event = Arc::new(event);
+
+        // New execution context for the incremental subscription update.
+        // TODO: The tx and the ExecutionContext should be coupled together.
+        let ctx = if let Some(reducer_ctx) = ctx.reducer_context() {
+            ExecutionContext::incremental_update_for_reducer(stdb.address(), reducer_ctx.clone())
+        } else {
+            ExecutionContext::incremental_update(stdb.address())
+        };
 
         match &event.status {
             EventStatus::Committed(_) => {
-                let ctx = ExecutionContext::incremental_update(stdb.address());
                 let slow_query_threshold = StVarTable::incr_limit(&ctx, stdb, &read_tx)?.map(Duration::from_millis);
                 subscriptions.eval_updates(&ctx, stdb, &read_tx, event.clone(), client, slow_query_threshold)
             }
@@ -247,7 +261,7 @@ mod tests {
         // Create table with one row
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
         db.with_auto_commit(&ExecutionContext::default(), |tx| {
-            db.insert(tx, table_id, product!(1_u8))
+            db.insert(tx, table_id, product!(1_u8)).map(drop)
         })?;
 
         let (send, mut recv) = mpsc::unbounded_channel();
@@ -276,7 +290,7 @@ mod tests {
         let write_handle = runtime.spawn(async move {
             let _ = recv.recv().await;
             db2.with_auto_commit(&ExecutionContext::default(), |tx| {
-                db2.insert(tx, table_id, product!(2_u8))
+                db2.insert(tx, table_id, product!(2_u8)).map(drop)
             })
         });
 

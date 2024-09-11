@@ -7,9 +7,9 @@ public interface ITable<T> : IStructuralReadWrite
     where T : ITable<T>, new()
 {
     // These are the methods that codegen needs to implement.
-    static abstract Module.TableDesc MakeTableDesc(ITypeRegistrar registrar);
+    void ReadGenFields(BinaryReader reader);
+    static abstract TableDesc MakeTableDesc(ITypeRegistrar registrar);
     static abstract Filter CreateFilter();
-    static abstract bool HasAutoIncFields { get; }
 
     // These are static helpers that codegen can use.
 
@@ -22,31 +22,53 @@ public interface ITable<T> : IStructuralReadWrite
 
             public bool MoveNext()
             {
+                if (handle == FFI.RowIter.INVALID)
+                {
+                    return false;
+                }
+
                 uint buffer_len;
                 while (true)
                 {
                     buffer_len = (uint)buffer.Length;
-                    try
+                    var ret = FFI._row_iter_bsatn_advance(handle, buffer, ref buffer_len);
+                    if (ret == Errno.EXHAUSTED)
                     {
-                        FFI._iter_advance(handle, buffer, ref buffer_len);
+                        handle = FFI.RowIter.INVALID;
                     }
-                    catch (BufferTooSmallException)
+                    // On success, the only way `buffer_len == 0` is for the iterator to be exhausted.
+                    // This happens when the host iterator was empty from the start.
+                    System.Diagnostics.Debug.Assert(!(ret == Errno.OK && buffer_len == 0));
+                    switch (ret)
                     {
-                        buffer = new byte[buffer_len];
-                        continue;
+                        // Iterator advanced and may also be `EXHAUSTED`.
+                        // When `OK`, we'll need to advance the iterator in the next call to `MoveNext`.
+                        // In both cases, copy over the row data to `Current` from the scratch `buffer`.
+                        case Errno.EXHAUSTED
+                        or Errno.OK:
+                            Current = new byte[buffer_len];
+                            Array.Copy(buffer, 0, Current, 0, buffer_len);
+                            return buffer_len != 0;
+                        // Couldn't find the iterator, error!
+                        case Errno.NO_SUCH_ITER:
+                            throw new NoSuchIterException();
+                        // The scratch `buffer` is too small to fit a row / chunk.
+                        // Grow `buffer` and try again.
+                        // The `buffer_len` will have been updated with the necessary size.
+                        case Errno.BUFFER_TOO_SMALL:
+                            buffer = new byte[buffer_len];
+                            continue;
+                        default:
+                            throw new UnknownException(ret);
                     }
-                    break;
                 }
-                Current = new byte[buffer_len];
-                Array.Copy(buffer, 0, Current, 0, buffer_len);
-                return buffer_len != 0;
             }
 
             public void Dispose()
             {
-                if (!handle.Equals(FFI.RowIter.INVALID))
+                if (handle != FFI.RowIter.INVALID)
                 {
-                    FFI._iter_drop(handle);
+                    FFI._row_iter_bsatn_close(handle);
                     handle = FFI.RowIter.INVALID;
                     // Avoid running ~RowIter if Dispose was executed successfully.
                     GC.SuppressFinalize(this);
@@ -92,7 +114,7 @@ public interface ITable<T> : IStructuralReadWrite
     private class RawTableIter(FFI.TableId tableId) : RawTableIterBase
     {
         protected override void IterStart(out FFI.RowIter handle) =>
-            FFI._iter_start(tableId, out handle);
+            FFI._datastore_table_scan_bsatn(tableId, out handle);
     }
 
     private class RawTableIterFiltered(FFI.TableId tableId, byte[] filterBytes) : RawTableIterBase
@@ -113,7 +135,7 @@ public interface ITable<T> : IStructuralReadWrite
         new(() =>
         {
             var name_bytes = System.Text.Encoding.UTF8.GetBytes(typeof(T).Name);
-            FFI._get_table_id(name_bytes, (uint)name_bytes.Length, out var out_);
+            FFI._table_id_from_name(name_bytes, (uint)name_bytes.Length, out var out_);
             return out_;
         });
 
@@ -128,14 +150,15 @@ public interface ITable<T> : IStructuralReadWrite
 
     protected static void Insert(T row)
     {
+        // Insert the row.
         var bytes = ToBytes(row);
-        FFI._insert(tableId, bytes, (uint)bytes.Length);
-        if (T.HasAutoIncFields)
-        {
-            using var stream = new MemoryStream(bytes);
-            using var reader = new BinaryReader(stream);
-            row.ReadFields(reader);
-        }
+        var bytes_len = (uint)bytes.Length;
+        FFI._datastore_insert_bsatn(tableId, bytes, ref bytes_len);
+
+        // Write back any generated column values.
+        using var stream = new MemoryStream(bytes, 0, (int)bytes_len);
+        using var reader = new BinaryReader(stream);
+        row.ReadGenFields(reader);
     }
 
     protected readonly ref struct ColEq

@@ -350,6 +350,7 @@ mod test {
 
     fn table(ty: ProductType) -> Table {
         let def = RawTableDefV8::from_product("", ty);
+        #[allow(deprecated)]
         let schema = TableSchema::from_def(0.into(), def);
         Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
     }

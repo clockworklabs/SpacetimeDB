@@ -480,13 +480,14 @@ mod test {
 
     fn table(ty: ProductType) -> Table {
         let def = RawTableDefV8::from_product("", ty);
+        #[allow(deprecated)]
         let schema = TableSchema::from_def(0.into(), def);
         Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
     }
 
     /// Extracts from `row` the relevant column values according to what columns are indexed.
     fn get_fields(cols: &ColList, row: &ProductValue) -> AlgebraicValue {
-        row.project_not_empty(cols).unwrap()
+        row.project(cols).unwrap()
     }
 
     /// Returns whether indexing `row` again would violate a unique constraint, if any.

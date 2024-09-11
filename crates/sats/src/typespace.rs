@@ -4,9 +4,9 @@ use std::ops::{Index, IndexMut};
 use crate::algebraic_type::AlgebraicType;
 use crate::algebraic_type_ref::AlgebraicTypeRef;
 use crate::WithTypespace;
-use crate::{de::Deserialize, ser::Serialize};
 
-#[derive(thiserror::Error, Debug)]
+/// An error that occurs when attempting to resolve a type.
+#[derive(thiserror::Error, Debug, PartialOrd, Ord, PartialEq, Eq)]
 pub enum TypeRefError {
     // TODO: ideally this should give some useful type name or path.
     // Figure out if we can provide that even though it's not encoded in SATS.
@@ -33,7 +33,7 @@ pub enum TypeRefError {
 /// where `&0` is the type reference at index `0`.
 ///
 /// [System F]: https://en.wikipedia.org/wiki/System_F
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, SpacetimeType)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 pub struct Typespace {
@@ -185,28 +185,19 @@ impl Typespace {
         Ok(())
     }
 
-    /// Check that the entire typespace is in nominal normal form.
+    /// Check that the entire typespace is valid for generating a `SpacetimeDB` client module.
+    /// See also the `spacetimedb_schema` crate, which layers additional validation on top
+    /// of these checks.
     ///
-    /// Types directly contained in `self.types` are allowed to be sums or products.
-    /// The *fields* of these must be in nominal form, as determined by
-    /// (AlgebraicType::is_nominal_normal_form).
-    ///
-    /// Any type in `self.types` that is not a sum or products must also be in nominal form.
-    /// (TODO(1.0): should we forbid these types entirely?)
-    pub fn is_nominal_normal_form(&self) -> bool {
-        self.types.iter().all(|ty| match ty {
-            AlgebraicType::Sum(sum_ty) => sum_ty
-                .variants
-                .iter()
-                .all(|variant| variant.algebraic_type.is_nominal_normal_form()),
-
-            AlgebraicType::Product(product_ty) => product_ty
-                .elements
-                .iter()
-                .all(|element| element.algebraic_type.is_nominal_normal_form()),
-
-            other => other.is_nominal_normal_form(),
-        })
+    /// All types in the typespace must either be
+    /// [`valid_for_client_type_definition`](AlgebraicType::valid_for_client_type_definition) or
+    /// [`valid_for_client_type_use`](AlgebraicType::valid_for_client_type_definition).
+    /// (Only the types that are `valid_for_client_type_definition` will have types generated in
+    /// the client, but the other types are allowed for the convenience of module binding codegen.)
+    pub fn is_valid_for_client_code_generation(&self) -> bool {
+        self.types
+            .iter()
+            .all(|ty| ty.is_valid_for_client_type_definition() || ty.is_valid_for_client_type_use())
     }
 }
 
@@ -234,12 +225,6 @@ pub trait SpacetimeType {
     /// Returns an `AlgebraicType` representing the type for `Self` in SATS
     /// and in the typing context in `typespace`.
     fn make_type<S: TypespaceBuilder>(typespace: &mut S) -> AlgebraicType;
-}
-
-impl<T: GroundSpacetimeType> SpacetimeType for T {
-    fn make_type<S: TypespaceBuilder>(_: &mut S) -> AlgebraicType {
-        T::get_type()
-    }
 }
 
 use ethnum::{i256, u256};
@@ -281,15 +266,21 @@ pub trait TypespaceBuilder {
 /// ```
 #[macro_export]
 macro_rules! impl_st {
-    ([ $($rgenerics:tt)* ] $rty:ty, $stty:expr) => {
-        impl<$($rgenerics)*> $crate::GroundSpacetimeType for $rty {
+    ([ $($generic_wrapped:ident $($other_generics:tt)*)? ] $rty:ty, $stty:expr) => {
+        impl<$($generic_wrapped $($other_generics)*)?> $crate::GroundSpacetimeType for $rty
+            $(where $generic_wrapped: $crate::GroundSpacetimeType)?
+        {
             fn get_type() -> $crate::AlgebraicType {
                 $stty
             }
         }
+
+        impl_st!([ $($generic $($other_generics)*)? ] $rty, _ts => $stty);
     };
-    ([ $($rgenerics:tt)* ] $rty:ty, $ts:ident => $stty:expr) => {
-        impl<$($rgenerics)*> $crate::SpacetimeType for $rty {
+    ([ $($generic_wrapped:ident $($other_generics:tt)*)? ] $rty:ty, $ts:ident => $stty:expr) => {
+        impl<$($generic_wrapped $($other_generics)*)?> $crate::SpacetimeType for $rty
+            $(where $generic_wrapped: $crate::SpacetimeType)?
+        {
             fn make_type<S: $crate::typespace::TypespaceBuilder>($ts: &mut S) -> $crate::AlgebraicType {
                 $stty
             }
@@ -323,9 +314,11 @@ impl_primitives! {
 }
 
 impl_st!([](), AlgebraicType::unit());
-impl_st!([] & str, AlgebraicType::String);
-impl_st!([T: SpacetimeType] Vec<T>, ts => AlgebraicType::array(T::make_type(ts)));
-impl_st!([T: SpacetimeType] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));
+impl_st!([] str, AlgebraicType::String);
+impl_st!([T] [T], ts => AlgebraicType::array(T::make_type(ts)));
+impl_st!([T: ?Sized] Box<T>, ts => T::make_type(ts));
+impl_st!([T] Vec<T>, ts => <[T]>::make_type(ts));
+impl_st!([T] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));
 
 impl_st!([] spacetimedb_primitives::ColId, AlgebraicType::U16);
 impl_st!([] spacetimedb_primitives::TableId, AlgebraicType::U32);
@@ -340,7 +333,7 @@ impl_st!([] bytestring::ByteString, AlgebraicType::String);
 
 #[cfg(test)]
 mod tests {
-    use crate::proptest::generate_nominal_typespace;
+    use crate::proptest::generate_typespace_valid_for_codegen;
     use proptest::prelude::*;
 
     use super::*;
@@ -348,39 +341,39 @@ mod tests {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(512))]
         #[test]
-        fn is_nominal(typespace in generate_nominal_typespace(5)) {
-            prop_assert!(typespace.is_nominal_normal_form());
+        fn is_valid_for_client_code_generation(typespace in generate_typespace_valid_for_codegen(5)) {
+            prop_assert!(typespace.is_valid_for_client_code_generation());
         }
     }
 
     #[test]
-    fn is_not_nominal() {
+    fn is_not_valid_for_client_code_generation() {
         let bad_inner_1 = AlgebraicType::sum([("red", AlgebraicType::U8), ("green", AlgebraicType::U8)]);
         let bad_inner_2 = AlgebraicType::product([("red", AlgebraicType::U8), ("green", AlgebraicType::U8)]);
 
-        fn assert_not_nominal(ty: AlgebraicType) {
+        fn assert_not_valid(ty: AlgebraicType) {
             let typespace = Typespace::new(vec![ty.clone()]);
-            assert!(!typespace.is_nominal_normal_form(), "{:?}", ty);
+            assert!(!typespace.is_valid_for_client_code_generation(), "{:?}", ty);
         }
-        assert_not_nominal(AlgebraicType::product([AlgebraicType::U8, bad_inner_1.clone()]));
-        assert_not_nominal(AlgebraicType::product([AlgebraicType::U8, bad_inner_2.clone()]));
+        assert_not_valid(AlgebraicType::product([AlgebraicType::U8, bad_inner_1.clone()]));
+        assert_not_valid(AlgebraicType::product([AlgebraicType::U8, bad_inner_2.clone()]));
 
-        assert_not_nominal(AlgebraicType::sum([AlgebraicType::U8, bad_inner_1.clone()]));
-        assert_not_nominal(AlgebraicType::sum([AlgebraicType::U8, bad_inner_2.clone()]));
+        assert_not_valid(AlgebraicType::sum([AlgebraicType::U8, bad_inner_1.clone()]));
+        assert_not_valid(AlgebraicType::sum([AlgebraicType::U8, bad_inner_2.clone()]));
 
-        assert_not_nominal(AlgebraicType::array(bad_inner_1.clone()));
-        assert_not_nominal(AlgebraicType::array(bad_inner_2.clone()));
+        assert_not_valid(AlgebraicType::array(bad_inner_1.clone()));
+        assert_not_valid(AlgebraicType::array(bad_inner_2.clone()));
 
-        assert_not_nominal(AlgebraicType::option(bad_inner_1.clone()));
-        assert_not_nominal(AlgebraicType::option(bad_inner_2.clone()));
+        assert_not_valid(AlgebraicType::option(bad_inner_1.clone()));
+        assert_not_valid(AlgebraicType::option(bad_inner_2.clone()));
 
-        assert_not_nominal(AlgebraicType::map(AlgebraicType::U8, bad_inner_1.clone()));
-        assert_not_nominal(AlgebraicType::map(AlgebraicType::U8, bad_inner_2.clone()));
+        assert_not_valid(AlgebraicType::map(AlgebraicType::U8, bad_inner_1.clone()));
+        assert_not_valid(AlgebraicType::map(AlgebraicType::U8, bad_inner_2.clone()));
 
-        assert_not_nominal(AlgebraicType::map(bad_inner_1.clone(), AlgebraicType::U8));
-        assert_not_nominal(AlgebraicType::map(bad_inner_2.clone(), AlgebraicType::U8));
+        assert_not_valid(AlgebraicType::map(bad_inner_1.clone(), AlgebraicType::U8));
+        assert_not_valid(AlgebraicType::map(bad_inner_2.clone(), AlgebraicType::U8));
 
-        assert_not_nominal(AlgebraicType::option(AlgebraicType::array(AlgebraicType::option(
+        assert_not_valid(AlgebraicType::option(AlgebraicType::array(AlgebraicType::option(
             bad_inner_1.clone(),
         ))));
     }

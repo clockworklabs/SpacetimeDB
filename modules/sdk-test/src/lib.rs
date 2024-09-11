@@ -9,7 +9,7 @@
 use anyhow::{Context, Result};
 use spacetimedb::{
     sats::{i256, u256},
-    spacetimedb, Address, Identity, ReducerContext, SpacetimeType,
+    Address, Identity, ReducerContext, SpacetimeType,
 };
 
 #[derive(SpacetimeType)]
@@ -137,8 +137,8 @@ pub struct EveryVecStruct {
 ///     insert_or_panic insert_my_table,
 ///     update_by update_my_table = update_by_name(name),
 ///     delete_by delete_my_table = delete_by_name(name: String),
-/// } #[primarykey] name String,
-///   #[autoinc] #[unique] id u32,
+/// } #[primary_key] name String,
+///   #[auto_inc] #[unique] id u32,
 ///   count i64;
 //
 // Internal rules are prefixed with @.
@@ -152,7 +152,7 @@ macro_rules! define_tables {
      { insert $insert:ident
        $(, $($ops:tt)* )? }
      $($field_name:ident $ty:ty),* $(,)*) => {
-        #[spacetimedb(reducer)]
+        #[spacetimedb::reducer]
         pub fn $insert ($($field_name : $ty,)*) {
             $name::insert($name { $($field_name,)* });
         }
@@ -166,7 +166,7 @@ macro_rules! define_tables {
      { insert_or_panic $insert:ident
        $(, $($ops:tt)* )? }
      $($field_name:ident $ty:ty),* $(,)*) => {
-        #[spacetimedb(reducer)]
+        #[spacetimedb::reducer]
         pub fn $insert ($($field_name : $ty,)*) {
             $name::insert($name { $($field_name,)* }).expect(concat!("Failed to insert row for table: ", stringify!($name)));
         }
@@ -180,7 +180,7 @@ macro_rules! define_tables {
      { update_by $update:ident = $update_method:ident($unique_field:ident)
        $(, $($ops:tt)* )? }
      $($field_name:ident $ty:ty),* $(,)*) => {
-        #[spacetimedb(reducer)]
+        #[spacetimedb::reducer]
         pub fn $update ($($field_name : $ty,)*) {
             let key = $unique_field.clone();
             $name::$update_method(&key, $name { $($field_name,)* });
@@ -195,7 +195,7 @@ macro_rules! define_tables {
      { delete_by $delete:ident = $delete_method:ident($unique_field:ident : $unique_ty:ty)
        $(, $($ops:tt)*)? }
      $($other_fields:tt)* ) => {
-        #[spacetimedb(reducer)]
+        #[spacetimedb::reducer]
         pub fn $delete ($unique_field : $unique_ty) {
             $name::$delete_method(&$unique_field);
         }
@@ -205,7 +205,7 @@ macro_rules! define_tables {
 
     // Define a table.
     (@one $name:ident { $($ops:tt)* } $($(#[$attr:meta])* $field_name:ident $ty:ty),* $(,)*) => {
-        #[spacetimedb(table(public))]
+        #[spacetimedb::table(name = $name, public)]
         pub struct $name {
             $($(#[$attr])* pub $field_name : $ty,)*
         }
@@ -411,124 +411,124 @@ define_tables! {
         insert_or_panic insert_pk_u8,
         update_by update_pk_u8 = update_by_n(n),
         delete_by delete_pk_u8 = delete_by_n(n: u8),
-    } #[primarykey] n u8, data i32;
+    } #[primary_key] n u8, data i32;
 
     PkU16 {
         insert_or_panic insert_pk_u16,
         update_by update_pk_u16 = update_by_n(n),
         delete_by delete_pk_u16 = delete_by_n(n: u16),
-    } #[primarykey] n u16, data i32;
+    } #[primary_key] n u16, data i32;
 
     PkU32 {
         insert_or_panic insert_pk_u32,
         update_by update_pk_u32 = update_by_n(n),
         delete_by delete_pk_u32 = delete_by_n(n: u32),
-    } #[primarykey] n u32, data i32;
+    } #[primary_key] n u32, data i32;
 
     PkU64 {
         insert_or_panic insert_pk_u64,
         update_by update_pk_u64 = update_by_n(n),
         delete_by delete_pk_u64 = delete_by_n(n: u64),
-    } #[primarykey] n u64, data i32;
+    } #[primary_key] n u64, data i32;
 
     PkU128 {
         insert_or_panic insert_pk_u128,
         update_by update_pk_u128 = update_by_n(n),
         delete_by delete_pk_u128 = delete_by_n(n: u128),
-    } #[primarykey] n u128, data i32;
+    } #[primary_key] n u128, data i32;
 
     PkU256 {
         insert_or_panic insert_pk_u256,
         update_by update_pk_u256 = update_by_n(n),
         delete_by delete_pk_u256 = delete_by_n(n: u256),
-    } #[primarykey] n u256, data i32;
+    } #[primary_key] n u256, data i32;
 
     PkI8 {
         insert_or_panic insert_pk_i8,
         update_by update_pk_i8 = update_by_n(n),
         delete_by delete_pk_i8 = delete_by_n(n: i8),
-    } #[primarykey] n i8, data i32;
+    } #[primary_key] n i8, data i32;
 
     PkI16 {
         insert_or_panic insert_pk_i16,
         update_by update_pk_i16 = update_by_n(n),
         delete_by delete_pk_i16 = delete_by_n(n: i16),
-    } #[primarykey] n i16, data i32;
+    } #[primary_key] n i16, data i32;
 
     PkI32 {
         insert_or_panic insert_pk_i32,
         update_by update_pk_i32 = update_by_n(n),
         delete_by delete_pk_i32 = delete_by_n(n: i32),
-    } #[primarykey] n i32, data i32;
+    } #[primary_key] n i32, data i32;
 
     PkI64 {
         insert_or_panic insert_pk_i64,
         update_by update_pk_i64 = update_by_n(n),
         delete_by delete_pk_i64 = delete_by_n(n: i64),
-    } #[primarykey] n i64, data i32;
+    } #[primary_key] n i64, data i32;
 
     PkI128 {
         insert_or_panic insert_pk_i128,
         update_by update_pk_i128 = update_by_n(n),
         delete_by delete_pk_i128 = delete_by_n(n: i128),
-    } #[primarykey] n i128, data i32;
+    } #[primary_key] n i128, data i32;
 
     PkI256 {
         insert_or_panic insert_pk_i256,
         update_by update_pk_i256 = update_by_n(n),
         delete_by delete_pk_i256 = delete_by_n(n: i256),
-    } #[primarykey] n i256, data i32;
+    } #[primary_key] n i256, data i32;
 
     PkBool {
         insert_or_panic insert_pk_bool,
         update_by update_pk_bool = update_by_b(b),
         delete_by delete_pk_bool = delete_by_b(b: bool),
-    } #[primarykey] b bool, data i32;
+    } #[primary_key] b bool, data i32;
 
     PkString {
         insert_or_panic insert_pk_string,
         update_by update_pk_string = update_by_s(s),
         delete_by delete_pk_string = delete_by_s(s: String),
-    } #[primarykey] s String, data i32;
+    } #[primary_key] s String, data i32;
 
     PkIdentity {
         insert_or_panic insert_pk_identity,
         update_by update_pk_identity = update_by_i(i),
         delete_by delete_pk_identity = delete_by_i(i: Identity),
-    } #[primarykey] i Identity, data i32;
+    } #[primary_key] i Identity, data i32;
 
     PkAddress {
         insert_or_panic insert_pk_address,
         update_by update_pk_address = update_by_a(a),
         delete_by delete_pk_address = delete_by_a(a: Address),
-    } #[primarykey] a Address, data i32;
+    } #[primary_key] a Address, data i32;
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_caller_one_identity(ctx: ReducerContext) -> anyhow::Result<()> {
     OneIdentity::insert(OneIdentity { i: ctx.sender });
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_caller_vec_identity(ctx: ReducerContext) -> anyhow::Result<()> {
     VecIdentity::insert(VecIdentity { i: vec![ctx.sender] });
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_caller_unique_identity(ctx: ReducerContext, data: i32) -> anyhow::Result<()> {
     UniqueIdentity::insert(UniqueIdentity { i: ctx.sender, data })?;
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_caller_pk_identity(ctx: ReducerContext, data: i32) -> anyhow::Result<()> {
     PkIdentity::insert(PkIdentity { i: ctx.sender, data })?;
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_caller_one_address(ctx: ReducerContext) -> anyhow::Result<()> {
     OneAddress::insert(OneAddress {
         a: ctx.address.context("No address in reducer context")?,
@@ -536,7 +536,7 @@ fn insert_caller_one_address(ctx: ReducerContext) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_caller_vec_address(ctx: ReducerContext) -> anyhow::Result<()> {
     VecAddress::insert(VecAddress {
         a: vec![ctx.address.context("No address in reducer context")?],
@@ -544,7 +544,7 @@ fn insert_caller_vec_address(ctx: ReducerContext) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_caller_unique_address(ctx: ReducerContext, data: i32) -> anyhow::Result<()> {
     UniqueAddress::insert(UniqueAddress {
         a: ctx.address.context("No address in reducer context")?,
@@ -553,7 +553,7 @@ fn insert_caller_unique_address(ctx: ReducerContext, data: i32) -> anyhow::Resul
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_caller_pk_address(ctx: ReducerContext, data: i32) -> anyhow::Result<()> {
     PkAddress::insert(PkAddress {
         a: ctx.address.context("No address in reducer context")?,
@@ -562,7 +562,7 @@ fn insert_caller_pk_address(ctx: ReducerContext, data: i32) -> anyhow::Result<()
     Ok(())
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn insert_primitives_as_strings(s: EveryPrimitiveStruct) {
     VecString::insert(VecString {
         s: vec![
@@ -628,5 +628,5 @@ define_tables! {
     ;
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn no_op_succeeds() {}

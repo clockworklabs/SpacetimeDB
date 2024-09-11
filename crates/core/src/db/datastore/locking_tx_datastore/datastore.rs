@@ -143,7 +143,7 @@ impl Locking {
     /// - Populate those tables with all rows in `snapshot`.
     /// - Construct a [`HashMapBlobStore`] containing all the large blobs referenced by `snapshot`,
     ///   with reference counts specified in `snapshot`.
-    /// - Do [`CommittedState::reset_system_table_schemas`] to fix-up autoinc IDs in the system tables,
+    /// - Do [`CommittedState::reset_system_table_schemas`] to fix-up auto_inc IDs in the system tables,
     ///   to ensure those schemas match what [`Self::bootstrap`] would install.
     /// - Notably, **do not** construct indexes or sequences.
     ///   This should be done by [`Self::rebuild_state_after_replay`],
@@ -201,7 +201,7 @@ impl Locking {
                 .set(table_size as i64);
         }
 
-        // Fix up autoinc IDs in the cached system table schemas.
+        // Fix up auto_inc IDs in the cached system table schemas.
         committed_state.reset_system_table_schemas(database_address)?;
 
         // The next TX offset after restoring from a snapshot is one greater than the snapshotted offset.
@@ -513,9 +513,9 @@ impl MutTxDatastore for Locking {
         tx: &'a mut Self::MutTx,
         table_id: TableId,
         mut row: ProductValue,
-    ) -> Result<ProductValue> {
-        tx.insert(table_id, &mut row, self.database_address)?;
-        Ok(row)
+    ) -> Result<(AlgebraicValue, RowRef<'a>)> {
+        let (gens, row_ref) = tx.insert(table_id, &mut row, self.database_address)?;
+        Ok((gens, row_ref.collapse()))
     }
 
     fn table_id_exists_mut_tx(&self, tx: &Self::MutTx, table_id: &TableId) -> bool {
@@ -1901,9 +1901,9 @@ mod tests {
 
         // Insert a row and commit the tx.
         let row = u32_str_u32(0, "Foo", 18); // 0 will be ignored.
-                                             // Because of autoinc columns, we will get a slightly different
+                                             // Because of auto_inc columns, we will get a slightly different
                                              // value than the one we inserted.
-        let row = datastore.insert_mut_tx(&mut tx, table_id, row)?;
+        let row = datastore.insert_mut_tx(&mut tx, table_id, row)?.1.to_product_value();
         datastore.commit_mut_tx_for_test(tx)?;
 
         let all_rows_col_0_eq_1 = |tx: &MutTxId| {
@@ -1922,7 +1922,7 @@ mod tests {
 
         // Update the db with the same actual value for that row, in a new tx.
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
-        // Iterate over all rows with the value 1 (from the autoinc) in column 0.
+        // Iterate over all rows with the value 1 (from the auto_inc) in column 0.
         let rows = all_rows_col_0_eq_1(&tx);
         assert_eq!(rows.len(), 1);
         assert_eq!(row, rows[0]);
@@ -1934,7 +1934,10 @@ mod tests {
         assert_eq!(all_rows_col_0_eq_1(&tx).len(), 0);
 
         // Reinsert the row.
-        let reinserted_row = datastore.insert_mut_tx(&mut tx, table_id, row.clone())?;
+        let reinserted_row = datastore
+            .insert_mut_tx(&mut tx, table_id, row.clone())?
+            .1
+            .to_product_value();
         assert_eq!(reinserted_row, row);
 
         // The actual test: we should be able to iterate again, while still in the
@@ -1970,7 +1973,7 @@ mod tests {
 
     // TODO: Add the following tests
     // - Create index with unique constraint and immediately insert a row that violates the constraint before committing.
-    // - Create a tx that inserts 2000 rows with an autoinc column
-    // - Create a tx that inserts 2000 rows with an autoinc column and then rolls back
+    // - Create a tx that inserts 2000 rows with an auto_inc column
+    // - Create a tx that inserts 2000 rows with an auto_inc column and then rolls back
     // - Test creating sequences pre_commit, post_commit, post_rollback
 }

@@ -7,17 +7,11 @@ use spacetimedb_sdk::{DbContext, Event, Identity, ReducerEvent, Status};
 
 fn main() {
     let ctx = connect_to_db();
-    println!("connect_to_db returned");
     register_callbacks(&ctx);
-    println!("register_callbacks returned");
     subscribe_to_tables(&ctx);
-    println!("subscribe_to_tables returned");
     ctx.run_threaded();
-    println!("run_threaded returned");
     user_input_loop(&ctx);
-    println!("user_input_loop returned");
     ctx.disconnect().unwrap();
-    println!("disconnect returned");
 }
 
 // # Register callbacks
@@ -187,8 +181,8 @@ fn connect_to_db() -> DbConnection {
 /// Register subscriptions for all rows of both tables.
 fn subscribe_to_tables(ctx: &DbConnection) {
     ctx.subscription_builder().on_applied(on_sub_applied).subscribe(vec![
-        "SELECT * FROM User;".to_string(),
-        "SELECT * FROM Message;".to_string(),
+        "SELECT * FROM user;".to_string(),
+        "SELECT * FROM message;".to_string(),
     ]);
 }
 

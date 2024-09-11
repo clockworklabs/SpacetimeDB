@@ -67,6 +67,7 @@ wasmtime.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+fs-err.workspace = true
 spacetimedb-testing = { path = "../testing" }
 
 [features]

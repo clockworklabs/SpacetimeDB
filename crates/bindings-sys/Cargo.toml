@@ -10,5 +10,8 @@ rust-version.workspace = true
 # Benching off, because of https://bheisler.github.io/criterion.rs/book/faq.html#cargo-bench-gives-unrecognized-option-errors-for-valid-command-line-options
 bench = false
 
+[features]
+unstable_abi = []
+
 [dependencies]
 spacetimedb-primitives.workspace = true

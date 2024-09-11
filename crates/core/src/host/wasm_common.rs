@@ -5,7 +5,7 @@ pub mod module_host_actor;
 use std::num::NonZeroU16;
 use std::time::Instant;
 
-use super::AbiCall;
+use super::{scheduler::ScheduleError, AbiCall};
 use crate::error::{DBError, IndexError, NodesError};
 use spacetimedb_primitives::errno;
 use spacetimedb_sats::typespace::TypeRefError;
@@ -113,8 +113,8 @@ pub trait FuncSigLike: PartialEq<StaticFuncSig> {
 }
 
 const PREINIT_SIG: StaticFuncSig = FuncSig::new(&[], &[]);
-const INIT_SIG: StaticFuncSig = FuncSig::new(&[], &[WasmType::I32]);
-const DESCRIBE_MODULE_SIG: StaticFuncSig = FuncSig::new(&[], &[WasmType::I32]);
+const INIT_SIG: StaticFuncSig = FuncSig::new(&[WasmType::I32], &[WasmType::I32]);
+const DESCRIBE_MODULE_SIG: StaticFuncSig = FuncSig::new(&[WasmType::I32], &[]);
 const CALL_REDUCER_SIG: StaticFuncSig = FuncSig::new(
     &[
         WasmType::I32, // Reducer ID
@@ -131,10 +131,11 @@ const CALL_REDUCER_SIG: StaticFuncSig = FuncSig::new(
         WasmType::I64, // `address_1` contains bytes `[8..16]`.
         // ----------------------------------------------------
         WasmType::I64, // Timestamp
-        WasmType::I32, // Args buffer
+        WasmType::I32, // Args source buffer
+        WasmType::I32, // Errors sink buffer
     ],
     &[
-        WasmType::I32, // Result buffer
+        WasmType::I32, // Result code
     ],
 );
 
@@ -246,10 +247,10 @@ macro_rules! decl_index {
         impl ResourceIndex for $name {
             type Resource = $resource;
             fn from_u32(i: u32) -> Self {
-                Self(i)
+                Self(i + 1)
             }
             fn to_u32(&self) -> u32 {
-                self.0
+                self.0 - 1
             }
         }
 
@@ -294,21 +295,6 @@ impl<I: ResourceIndex> ResourceSlab<I> {
     pub fn take(&mut self, handle: I) -> Option<I::Resource> {
         self.slab.try_remove(handle.to_u32() as usize)
     }
-
-    pub fn clear(&mut self) {
-        self.slab.clear()
-    }
-}
-
-decl_index!(BufferIdx => bytes::Bytes);
-pub(super) type Buffers = ResourceSlab<BufferIdx>;
-
-impl BufferIdx {
-    pub const INVALID: Self = Self(u32::MAX);
-
-    pub const fn is_invalid(&self) -> bool {
-        self.0 == Self::INVALID.0
-    }
 }
 
 decl_index!(RowIterIdx => std::vec::IntoIter<Box<[u8]>>);
@@ -316,11 +302,11 @@ pub(super) type RowIters = ResourceSlab<RowIterIdx>;
 
 pub(super) struct TimingSpan {
     pub start: Instant,
-    pub name: Vec<u8>,
+    pub name: String,
 }
 
 impl TimingSpan {
-    pub fn new(name: Vec<u8>) -> Self {
+    pub fn new(name: String) -> Self {
         Self {
             start: Instant::now(),
             name,
@@ -333,8 +319,10 @@ pub(super) type TimingSpanSet = ResourceSlab<TimingSpanIdx>;
 
 pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
     match err {
+        NodesError::NotInTransaction => Some(errno::NOT_IN_TRANSACTION),
+        NodesError::DecodeRow(_) => Some(errno::BSATN_DECODE_ERROR),
         NodesError::TableNotFound => Some(errno::NO_SUCH_TABLE),
-        NodesError::ColumnValueNotFound | NodesError::RangeNotFound => Some(errno::LOOKUP_NOT_FOUND),
+        NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => Some(errno::SCHEDULE_AT_DELAY_TOO_LONG),
         NodesError::AlreadyExists(_) => Some(errno::UNIQUE_ALREADY_EXISTS),
         NodesError::Internal(internal) => match **internal {
             DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
@@ -360,20 +348,23 @@ pub struct AbiRuntimeError {
 macro_rules! abi_funcs {
     ($mac:ident) => {
         $mac! {
-            "spacetime_10.0"::buffer_alloc,
+            "spacetime_10.0"::table_id_from_name,
+            "spacetime_10.0"::datastore_table_row_count,
+            "spacetime_10.0"::datastore_table_scan_bsatn,
+            "spacetime_10.0"::row_iter_bsatn_advance,
+            "spacetime_10.0"::row_iter_bsatn_close,
+            "spacetime_10.0"::datastore_insert_bsatn,
+            "spacetime_10.0"::datastore_delete_all_by_eq_bsatn,
             "spacetime_10.0"::bytes_source_read,
+            "spacetime_10.0"::bytes_sink_write,
             "spacetime_10.0"::console_log,
+            "spacetime_10.0"::console_timer_start,
+            "spacetime_10.0"::console_timer_end,
+
             "spacetime_10.0"::delete_by_col_eq,
-            "spacetime_10.0"::delete_by_rel,
-            "spacetime_10.0"::get_table_id,
-            "spacetime_10.0"::insert,
             "spacetime_10.0"::iter_by_col_eq,
-            "spacetime_10.0"::iter_drop,
-            "spacetime_10.0"::iter_advance,
-            "spacetime_10.0"::iter_start,
             "spacetime_10.0"::iter_start_filtered,
-            "spacetime_10.0"::span_end,
-            "spacetime_10.0"::span_start,
+            "spacetime_10.0"::volatile_nonatomic_schedule_immediate,
         }
     };
 }

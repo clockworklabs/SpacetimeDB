@@ -26,6 +26,10 @@ impl StateView for TxId {
         self.committed_state_shared_lock.get_schema(table_id)
     }
 
+    fn table_row_count(&self, table_id: TableId) -> Option<u64> {
+        self.committed_state_shared_lock.table_row_count(table_id)
+    }
+
     fn iter<'a>(&'a self, ctx: &'a ExecutionContext, table_id: TableId) -> Result<Iter<'a>> {
         self.committed_state_shared_lock.iter(ctx, table_id)
     }
@@ -58,12 +62,6 @@ impl StateView for TxId {
 impl TxId {
     pub(super) fn release(self, ctx: &ExecutionContext) {
         record_metrics(ctx, self.timer, self.lock_wait_time, true, None, None);
-    }
-
-    pub(crate) fn get_row_count(&self, table_id: TableId) -> Option<u64> {
-        self.committed_state_shared_lock
-            .get_table(table_id)
-            .map(|table| table.row_count)
     }
 
     /// The Number of Distinct Values (NDV) for a column or list of columns,

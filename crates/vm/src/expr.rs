@@ -2118,11 +2118,9 @@ impl From<Code> for CodeResult {
 mod tests {
     use super::*;
 
-    use spacetimedb_lib::{
-        db::raw_def::{RawColumnDefV8, RawTableDefV8},
-        relation::Column,
-    };
+    use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, relation::Column};
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
+    use spacetimedb_schema::def::ModuleDef;
     use typed_arena::Arena;
 
     const ALICE: Identity = Identity::from_byte_array([1; 32]);
@@ -2576,23 +2574,27 @@ mod tests {
         }
     }
 
+    fn test_def() -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+        builder.build_table_with_new_type(
+            "lhs",
+            ProductType::from([("a", AlgebraicType::I32), ("b", AlgebraicType::String)]),
+            true,
+        );
+        builder.build_table_with_new_type(
+            "rhs",
+            ProductType::from([("c", AlgebraicType::I32), ("d", AlgebraicType::I64)]),
+            true,
+        );
+        builder.finish().try_into().expect("test def should be valid")
+    }
+
     #[test]
     /// Tests that [`QueryExpr::optimize`] can rewrite inner joins followed by projections into semijoins.
     fn optimize_inner_join_to_semijoin() {
-        let lhs = TableSchema::from_def(
-            TableId(0),
-            RawTableDefV8::new(
-                "lhs".into(),
-                RawColumnDefV8::from_product_type(ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String])),
-            ),
-        );
-        let rhs = TableSchema::from_def(
-            TableId(1),
-            RawTableDefV8::new(
-                "rhs".into(),
-                RawColumnDefV8::from_product_type(ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64])),
-            ),
-        );
+        let def: ModuleDef = test_def();
+        let lhs = TableSchema::from_module_def(def.table("lhs").unwrap(), 0.into());
+        let rhs = TableSchema::from_module_def(def.table("rhs").unwrap(), 1.into());
 
         let lhs_source = SourceExpr::from(&lhs);
         let rhs_source = SourceExpr::from(&rhs);
@@ -2631,20 +2633,9 @@ mod tests {
     #[test]
     /// Tests that [`QueryExpr::optimize`] will not rewrite inner joins which are not followed by projections to the LHS table.
     fn optimize_inner_join_no_project() {
-        let lhs = TableSchema::from_def(
-            TableId(0),
-            RawTableDefV8::new(
-                "lhs".into(),
-                RawColumnDefV8::from_product_type(ProductType::from_iter([AlgebraicType::I32, AlgebraicType::String])),
-            ),
-        );
-        let rhs = TableSchema::from_def(
-            TableId(1),
-            RawTableDefV8::new(
-                "rhs".into(),
-                RawColumnDefV8::from_product_type(ProductType::from_iter([AlgebraicType::I32, AlgebraicType::I64])),
-            ),
-        );
+        let def: ModuleDef = test_def();
+        let lhs = TableSchema::from_module_def(def.table("lhs").unwrap(), 0.into());
+        let rhs = TableSchema::from_module_def(def.table("rhs").unwrap(), 1.into());
 
         let lhs_source = SourceExpr::from(&lhs);
         let rhs_source = SourceExpr::from(&rhs);
@@ -2657,20 +2648,9 @@ mod tests {
     #[test]
     /// Tests that [`QueryExpr::optimize`] will not rewrite inner joins followed by projections to the RHS rather than LHS table.
     fn optimize_inner_join_wrong_project() {
-        let lhs = TableSchema::from_def(
-            TableId(0),
-            RawTableDefV8::new(
-                "lhs".into(),
-                RawColumnDefV8::from_product_type(ProductType::from([AlgebraicType::I32, AlgebraicType::String])),
-            ),
-        );
-        let rhs = TableSchema::from_def(
-            TableId(1),
-            RawTableDefV8::new(
-                "rhs".into(),
-                RawColumnDefV8::from_product_type(ProductType::from([AlgebraicType::I32, AlgebraicType::I64])),
-            ),
-        );
+        let def: ModuleDef = test_def();
+        let lhs = TableSchema::from_module_def(def.table("lhs").unwrap(), 0.into());
+        let rhs = TableSchema::from_module_def(def.table("rhs").unwrap(), 1.into());
 
         let lhs_source = SourceExpr::from(&lhs);
         let rhs_source = SourceExpr::from(&rhs);

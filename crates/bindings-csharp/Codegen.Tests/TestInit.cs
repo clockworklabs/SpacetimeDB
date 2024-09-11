@@ -23,16 +23,17 @@ static class TestInit
                     unformattedCode,
                     new() { IncludeGenerated = true, EndOfLine = CSharpier.EndOfLine.LF }
                 );
+                sb.Append(result.Code);
+                // Print errors in the end so that their line numbers are still meaningful.
                 if (result.CompilationErrors.Any())
                 {
+                    sb.AppendLine();
                     sb.AppendLine("// Generated code produced compilation errors:");
                     foreach (var diag in result.CompilationErrors)
                     {
                         sb.Append("// ").AppendLine(diag.ToString());
                     }
-                    sb.AppendLine();
                 }
-                sb.Append(result.Code);
             },
             ScrubberLocation.Last
         );

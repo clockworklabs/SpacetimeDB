@@ -20,7 +20,7 @@ pub trait message {
 impl message for super::RemoteTables {
     fn message(&self) -> MessageTableHandle<'_> {
         MessageTableHandle {
-            imp: self.imp.get_table::<Message>("Message"),
+            imp: self.imp.get_table::<Message>("message"),
             ctx: PhantomData,
         }
     }
@@ -100,5 +100,5 @@ pub(super) fn parse_table_update(
     inserts: Vec<ws::EncodedValue>,
 ) -> spacetimedb_sdk::anyhow::Result<TableUpdate<Message>> {
     TableUpdate::parse_table_update_no_primary_key(deletes, inserts)
-        .with_context(|| format!("Failed to parse table update for table {:?}", "Message"))
+        .with_context(|| format!("Failed to parse table update for table {:?}", "message"))
 }

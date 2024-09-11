@@ -245,6 +245,7 @@ st_fields_enum!(enum StScheduledFields {
 /// |----------|-------------|----------- |------------- |
 /// | 4        | "customers" | "user"     | "public"     |
 fn st_table_schema() -> TableSchema {
+    #[allow(deprecated)]
     TableSchema::from_def(
         ST_TABLE_ID,
         RawTableDefV8::new(
@@ -268,6 +269,7 @@ fn st_table_schema() -> TableSchema {
 /// |----------|---------|----------|--------------------|
 /// | 1        | 0       | "id"     | AlgebraicType::U32 |
 fn st_column_schema() -> TableSchema {
+    #[allow(deprecated)]
     TableSchema::from_def(
         ST_COLUMN_ID,
         RawTableDefV8::new(
@@ -293,6 +295,7 @@ fn st_column_schema() -> TableSchema {
 /// |----------|----------|-------------|---------|-----------|------------|
 /// | 1        |          | "ix_sample" | [1]     | false     | "btree"    |
 fn st_index_schema() -> TableSchema {
+    #[allow(deprecated)]
     TableSchema::from_def(
         ST_INDEX_ID,
         RawTableDefV8::new(
@@ -318,6 +321,7 @@ fn st_index_schema() -> TableSchema {
 /// |-------------|-------------------|-----------|-------|-----------|-----------|----------|--------|-----------|
 /// | 1           | "seq_customer_id" | 1         | 100   | 10        | 1200      | 1        | 1      | 200       |
 fn st_sequence_schema() -> TableSchema {
+    #[allow(deprecated)]
     TableSchema::from_def(
         ST_SEQUENCE_ID,
         RawTableDefV8::new(
@@ -336,6 +340,7 @@ fn st_sequence_schema() -> TableSchema {
         )
         .with_type(StTableType::System)
         // TODO: Unique constraint on sequence name?
+        // TODO: index on `TableId`?
         .with_column_constraint(Constraints::primary_key_auto(), StSequenceFields::SequenceId),
     )
 }
@@ -346,6 +351,7 @@ fn st_sequence_schema() -> TableSchema {
 /// |---------------|-------------------- -|-------------|-------|------------|
 /// | 1             | "unique_customer_id" | 1           | 100   | [1, 4]     |
 fn st_constraint_schema() -> TableSchema {
+    #[allow(deprecated)]
     TableSchema::from_def(
         ST_CONSTRAINT_ID,
         RawTableDefV8::new(
@@ -381,6 +387,7 @@ fn st_constraint_schema() -> TableSchema {
 /// |------------------|----------------|---------------|---------------|---------------------|
 /// | <bytes>          | <bytes>        |  0            | <bytes>       | <bytes>             |
 pub(crate) fn st_module_schema() -> TableSchema {
+    #[allow(deprecated)]
     TableSchema::from_def(
         ST_MODULE_ID,
         RawTableDefV8::new(
@@ -403,6 +410,7 @@ pub(crate) fn st_module_schema() -> TableSchema {
 // -----------------------------------------------------------------------------------------+--------------------------------------------------------
 //  (__identity_bytes = 0x7452047061ea2502003412941d85a42f89b0702588b823ab55fc4f12e9ea8363) | (__address_bytes = 0x6bdea3ab517f5857dc9b1b5fe99e1b14)
 fn st_client_schema() -> TableSchema {
+    #[allow(deprecated)]
     TableSchema::from_def(
         ST_CLIENT_ID,
         RawTableDefV8::new(
@@ -418,6 +426,7 @@ fn st_client_schema() -> TableSchema {
 }
 
 fn st_scheduled_schema() -> TableSchema {
+    #[allow(deprecated)]
     TableSchema::from_def(
         ST_SCHEDULED_ID,
         RawTableDefV8::new(
@@ -438,6 +447,7 @@ fn st_scheduled_schema() -> TableSchema {
 /// |-------------|-----------|
 /// | "row_limit" | (U64 = 5) |
 pub fn st_var_schema() -> TableSchema {
+    #[allow(deprecated)]
     TableSchema::from_def(
         ST_VAR_ID,
         RawTableDefV8::new(
