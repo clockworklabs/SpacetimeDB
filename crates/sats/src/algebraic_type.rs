@@ -195,7 +195,7 @@ impl AlgebraicType {
     /// If this type is the standard option type, returns the type of the `some` variant.
     /// Otherwise, returns `None`.
     pub fn as_option(&self) -> Option<&AlgebraicType> {
-        self.as_sum().and_then(SumType::as_option)
+        self.as_sum()?.as_option()
     }
 
     /// Returns whether this type is scalar or a string type.
