@@ -12,7 +12,6 @@ public partial struct CustomStruct
     public static readonly string IGNORE_ME_TOO = "";
     public int IntField;
     public string StringField;
-    //public DateTime DateTimeField;
 }
 
 [SpacetimeDB.Type]
