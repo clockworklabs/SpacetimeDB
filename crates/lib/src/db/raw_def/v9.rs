@@ -87,9 +87,9 @@ pub struct RawModuleDefV9 {
 /// constraints, sequences, type, and access rights.
 ///
 /// Validation rules:
-/// - The table name must be a valid [crate::db::identifier::Identifier].
+/// - The table name must be a valid [`crate::db::identifier::Identifier`].
 /// - The table's indexes, constraints, and sequences need not be sorted; they will be sorted according to their respective ordering rules.
-/// - The table's column types may refer only to types in the containing RawDatabaseDef's typespace.
+/// - The table's column types may refer only to types in the containing `RawModuleDefV9`'s typespace.
 /// - The table's column names must be unique.
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
@@ -192,7 +192,7 @@ impl From<TableAccess> for StAccess {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawSequenceDefV9 {
-    /// The name of the sequence. Must be unique within the containing `RawDatabaseDef`.
+    /// The name of the sequence. Must be unique within the containing `RawModuleDefV9`.
     pub name: RawIdentifier,
 
     /// The position of the column associated with this sequence.
@@ -273,7 +273,7 @@ pub enum RawIndexAlgorithm {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawUniqueConstraintDefV9 {
-    /// The name of the unique constraint. Must be unique within the containing `RawDatabaseDef`.
+    /// The name of the unique constraint. Must be unique within the containing `RawModuleDefV9`.
     pub name: RawIdentifier,
 
     /// The columns that must be unique.
@@ -289,7 +289,7 @@ pub struct RawUniqueConstraintDefV9 {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawScheduleDefV9 {
-    /// The name of the schedule. Must be unique within the containing `RawDatabaseDef`.
+    /// The name of the schedule. Must be unique within the containing `RawModuleDefV9`.
     pub name: RawIdentifier,
 
     /// The name of the reducer to call.
@@ -301,7 +301,7 @@ pub struct RawScheduleDefV9 {
 #[sats(crate = crate)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 pub struct RawConstraintDefV9 {
-    /// The name of the constraint. Must be unique within the containing `RawDatabaseDef`.
+    /// The name of the constraint. Must be unique within the containing `RawModuleDefV9`.
     pub name: RawIdentifier,
 
     /// The data for the constraint.

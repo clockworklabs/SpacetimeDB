@@ -312,7 +312,8 @@ pub trait ModuleDefLookup: Sized + Debug + 'static {
 
 /// A data structure representing the validated definition of a database table.
 ///
-/// Cannot be created directly. Instead, add a [spacetimedb_sats::db::raw_def::RawTableDef] to a [spacetimedb_sats::db::raw_def::RawDatabaseDef] and call [spacetimedb_sats::db::raw_def::RawDatabaseDef::validate].
+/// Cannot be created directly. Construct a [`ModuleDef`] by validating a [`RawModuleDef`] instead,
+/// and then access the tables from there.
 ///
 /// This struct holds information about the table, including its name, columns, indexes,
 /// constraints, sequences, type, and access rights.
@@ -412,7 +413,7 @@ impl From<TableDef> for RawTableDefV9 {
 /// A sequence definition for a database table column.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SequenceDef {
-    /// The name of the sequence. Must be unique within the containing `RawDatabaseDef`.
+    /// The name of the sequence. Must be unique within the containing `ModuleDef`.
     pub name: Identifier,
 
     /// The position of the column associated with this sequence.
@@ -453,11 +454,12 @@ impl From<SequenceDef> for RawSequenceDefV9 {
 
 /// A struct representing the validated definition of a database index.
 ///
-/// Cannot be created directly. Instead, add a [spacetimedb_sats::db::raw_def::RawIndexDef] to a [spacetimedb_sats::db::raw_def::RawDatabaseDef] and call [spacetimedb_sats::db::raw_def::RawDatabaseDef::validate].
+/// Cannot be created directly. Construct a [`ModuleDef`] by validating a [`RawModuleDef`] instead,
+/// and then access the index from there.
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct IndexDef {
-    /// The name of the index. Must be unique within the containing `RawDatabaseDef`.
+    /// The name of the index. Must be unique within the containing `ModuleDef`.
     pub name: Identifier,
 
     /// Accessor name for the index used in client codegen.
@@ -516,7 +518,8 @@ impl From<IndexAlgorithm> for RawIndexAlgorithm {
 
 /// A struct representing the validated definition of a database column.
 ///
-/// Cannot be created directly. Instead, add a [spacetimedb_sats::db::raw_def::RawColumnDef] to a [spacetimedb_sats::db::raw_def::RawDatabaseDef] and call [spacetimedb_sats::db::raw_def::RawDatabaseDef::validate].
+/// Cannot be created directly. Construct a [`ModuleDef`] by validating a [`RawModuleDef`] instead,
+/// and then access the column from there.
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ColumnDef {
@@ -546,7 +549,7 @@ pub struct ColumnDef {
 /// A constraint definition attached to a table.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ConstraintDef {
-    /// The name of the constraint. Unique within the containing `RawDatabaseDef`.
+    /// The name of the constraint. Unique within the containing `ModuleDef`.
     pub name: Identifier,
 
     /// The data for the constraint.
@@ -596,7 +599,7 @@ impl From<UniqueConstraintData> for RawUniqueConstraintDataV9 {
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct ScheduleDef {
-    /// The name of the schedule. Must be unique within the containing `RawDatabaseDef`.
+    /// The name of the schedule. Must be unique within the containing `ModuleDef`.
     pub name: Identifier,
 
     /// The name of the column that stores the desired invocation time.
