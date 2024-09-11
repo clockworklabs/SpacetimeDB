@@ -215,7 +215,7 @@ impl InstanceEnv {
     /// Returns the `index_id` associated with the given `index_name`.
     ///
     /// Errors with `GetTxError` if not in a transaction
-    /// and `TableNotFound` if the table does not exist.
+    /// and `IndexNotFound` if the index does not exist.
     #[tracing::instrument(skip_all)]
     pub fn index_id_from_name(&self, index_name: &str) -> Result<IndexId, NodesError> {
         let stdb = &*self.dbic.relational_db;
