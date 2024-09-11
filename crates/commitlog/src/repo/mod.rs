@@ -18,21 +18,7 @@ pub use fs::Fs;
 #[cfg(test)]
 pub use mem::Memory;
 
-#[derive(Debug, Default, Clone, Copy)]
-pub struct TxOffset(u64);
-
-impl From<TxOffset> for u64 {
-    fn from(value: TxOffset) -> Self {
-        value.0
-    }
-}
-
-impl From<u64> for TxOffset {
-    fn from(value: u64) -> Self {
-        Self(value)
-    }
-}
-
+pub type TxOffset = u64;
 pub type TxOffsetIndex = IndexFileMut<TxOffset>;
 
 /// A repository of log segments.
@@ -74,16 +60,27 @@ pub trait Repo: Clone {
 
     /// Create or get an existing `TxOffsetIndex` for the given `offset`.
     /// The `cap` parameter is the maximum number of entries in the index.
-    fn get_offset_index(&self, _offset: TxOffset, _cap: u64) -> Option<TxOffsetIndex> {
-        None
+    fn get_offset_index(&self, _offset: TxOffset, _cap: u64) -> io::Result<TxOffsetIndex> {
+        Err(io::Error::new(io::ErrorKind::Other, "not implemented"))
     }
 
     /// Remove `TxOffsetIndex` named with `offset`.
-    fn remove_offset_index(&self, _offset: TxOffset) {}
+    fn remove_offset_index(&self, _offset: TxOffset) -> io::Result<()> {
+        Err(io::Error::new(io::ErrorKind::Other, "not implemented"))
+    }
 }
 
 fn offset_index_len(opts: Options) -> u64 {
     opts.max_segment_size / opts.offset_index_interval_bytes
+}
+
+fn get_offset_index_writer<R: Repo>(repo: &R, offset: u64, opts: Options) -> Option<OffsetIndexWriter> {
+    repo.get_offset_index(offset, offset_index_len(opts))
+        .map(|index| OffsetIndexWriter::new(index, opts))
+        .map_err(|e| {
+            warn!("failed to get offset index for segment {offset}: {e}");
+        })
+        .ok()
 }
 
 /// Create a new segment [`Writer`] with `offset`.
@@ -101,7 +98,6 @@ pub fn create_segment_writer<R: Repo>(repo: &R, opts: Options, offset: u64) -> i
     .write(&mut storage)?;
     storage.fsync()?;
 
-    let offset_index_head = repo.get_offset_index(offset.into(), offset_index_len(opts));
     Ok(Writer {
         commit: Commit {
             min_tx_offset: offset,
@@ -115,7 +111,7 @@ pub fn create_segment_writer<R: Repo>(repo: &R, opts: Options, offset: u64) -> i
 
         max_records_in_commit: opts.max_records_in_commit,
 
-        offset_index_head: offset_index_head.map(|index| OffsetIndexWriter::new(index, opts)),
+        offset_index_head: get_offset_index_writer(repo, offset, opts),
     })
 }
 
@@ -157,8 +153,6 @@ pub fn resume_segment_writer<R: Repo>(
         .ensure_compatible(opts.log_format_version, Commit::CHECKSUM_ALGORITHM)
         .map_err(|msg| io::Error::new(io::ErrorKind::InvalidData, msg))?;
 
-    let offset_index_head = repo.get_offset_index(offset.into(), offset_index_len(opts));
-
     Ok(Ok(Writer {
         commit: Commit {
             min_tx_offset: tx_range.end,
@@ -172,7 +166,7 @@ pub fn resume_segment_writer<R: Repo>(
 
         max_records_in_commit: opts.max_records_in_commit,
 
-        offset_index_head: offset_index_head.map(|index| OffsetIndexWriter::new(index, opts)),
+        offset_index_head: get_offset_index_writer(repo, offset, opts),
     }))
 }
 

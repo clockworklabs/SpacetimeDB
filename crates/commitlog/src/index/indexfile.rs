@@ -14,8 +14,8 @@ const OFFSET_INDEX_FILE_EXT: &str = ".stdb.ofs";
 const KEY_SIZE: usize = mem::size_of::<u64>();
 const ENTRY_SIZE: usize = KEY_SIZE + mem::size_of::<u64>();
 
-/// Returns the offset index file name based on the root path and offset
-pub fn offset_index_file_name(root: &Path, offset: u64) -> PathBuf {
+/// Returns the offset index file path based on the root path and offset
+pub fn offset_index_file_path(root: &Path, offset: u64) -> PathBuf {
     root.join(format!("{offset:0>20}{OFFSET_INDEX_FILE_EXT}"))
 }
 
@@ -44,7 +44,7 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
                         return Ok(index);
                     }
                 }
-                Err(IndexError::OutOfMemory) => return Ok(index),
+                Err(IndexError::OutOfRange) => return Ok(index),
                 Err(e) => return Err(e),
             }
         }
@@ -58,23 +58,31 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     /// - `IndexError::KeyNotFound`: If the key is smaller than the first entry key
     // TODO: use binary search
     pub fn find_index(&self, key: Key) -> Result<(Key, u64), IndexError> {
-        let mut last: Option<(Key, u64)> = None;
         let key = key.into();
-        for index in 0.. {
-            match self.index_lookup(index) {
-                Ok((ret_key, _)) => {
-                    let ret_key = ret_key.into();
-                    if ret_key > key || ret_key == 0 {
-                        break;
-                    }
-                    last = Some((Key::from(ret_key), index as u64))
-                }
-                Err(IndexError::OutOfMemory) => break,
-                Err(e) => return Err(e),
+
+        let mut low = 0;
+        let mut high = self.num_entries;
+
+        while low < high {
+            let mid = low + (high - low) / 2;
+            let (mid_key, _) = self.index_lookup(mid)?;
+            if mid_key.into() > key {
+                high = mid;
+            } else {
+                low = mid;
+            }
+
+            if high - low == 1 {
+                break;
             }
         }
 
-        last.ok_or(IndexError::KeyNotFound)
+        let low_key = self.index_lookup(low).map(|(k, _)| k.into())?;
+        if low == 0 && key < low_key {
+            return Err(IndexError::KeyNotFound);
+        }
+
+        Ok((Key::from(low_key), low as u64))
     }
 
     /// Looks up the key-value pair at the specified index in the index file.
@@ -84,7 +92,7 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     fn index_lookup(&self, index: usize) -> Result<(Key, u64), IndexError> {
         let start = index * ENTRY_SIZE;
         if start + ENTRY_SIZE > self.inner.len() {
-            return Err(IndexError::OutOfMemory);
+            return Err(IndexError::OutOfRange);
         }
 
         let entry = &self.inner[start..start + ENTRY_SIZE];
@@ -103,6 +111,8 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
         Ok((Key::from(key), value))
     }
 
+    /// Returns the last key in the index file.
+    /// Or 0 if no key is present
     fn last_key(&self) -> Result<u64, IndexError> {
         if self.num_entries == 0 {
             return Ok(0);
@@ -131,17 +141,14 @@ impl<Key: Into<u64> + From<u64>> IndexWrite<Key> for IndexFileMut<Key> {
 
         let start = self.num_entries * ENTRY_SIZE;
         if start + ENTRY_SIZE > self.inner.len() {
-            return Err(IndexError::OutOfMemory);
+            return Err(IndexError::OutOfRange);
         }
 
         let key_bytes = key.to_le_bytes();
         let value_bytes = value.to_le_bytes();
 
-        let mut entry_bytes = [0u8; ENTRY_SIZE];
-        entry_bytes[..mem::size_of::<u64>()].copy_from_slice(&key_bytes);
-        entry_bytes[mem::size_of::<u64>()..].copy_from_slice(&value_bytes);
-
-        self.inner[start..start + ENTRY_SIZE].copy_from_slice(&entry_bytes);
+        self.inner[start..start + KEY_SIZE].copy_from_slice(&key_bytes);
+        self.inner[start + KEY_SIZE..start + ENTRY_SIZE].copy_from_slice(&value_bytes);
         self.num_entries += 1;
         Ok(())
     }
@@ -167,6 +174,8 @@ impl<Key: Into<u64> + From<u64>> IndexWrite<Key> for IndexFileMut<Key> {
             self.inner[start..].fill(0);
         }
 
+        self.inner.flush()?;
+
         Ok(())
     }
 }
@@ -175,12 +184,12 @@ pub fn create_index_file<Key: Into<u64> + From<u64>>(
     path: &Path,
     offset: u64,
     cap: u64,
-) -> Result<IndexFileMut<Key>, IndexError> {
+) -> io::Result<IndexFileMut<Key>> {
     File::options()
         .write(true)
         .read(true)
         .create_new(true)
-        .open(offset_index_file_name(path, offset))
+        .open(offset_index_file_path(path, offset))
         .and_then(|file| {
             file.set_len(cap * ENTRY_SIZE as u64)?;
             let mmap = unsafe { MmapMut::map_mut(&file) }?;
@@ -196,17 +205,16 @@ pub fn create_index_file<Key: Into<u64> + From<u64>>(
                 debug!("Index file {} already exists", path.display());
                 open_index_file(path, offset)
             } else {
-                debug!("Index file creation failed with error: {}", e);
-                Err(e.into())
+                Err(e)
             }
         })
 }
 
-pub fn open_index_file<Key: Into<u64> + From<u64>>(path: &Path, offset: u64) -> Result<IndexFileMut<Key>, IndexError> {
+pub fn open_index_file<Key: Into<u64> + From<u64>>(path: &Path, offset: u64) -> io::Result<IndexFileMut<Key>> {
     let file = File::options()
         .read(true)
         .write(true)
-        .open(offset_index_file_name(path, offset))?;
+        .open(offset_index_file_path(path, offset))?;
     let mmap = unsafe { MmapMut::map_mut(&file)? };
 
     let mut me = IndexFileMut {
@@ -215,12 +223,12 @@ pub fn open_index_file<Key: Into<u64> + From<u64>>(path: &Path, offset: u64) -> 
         _marker: PhantomData,
     };
 
-    me.num_entries = me.num_entries()?;
+    me.num_entries = me.num_entries().map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     Ok(me)
 }
 
-pub fn delete_index_file(path: &Path, offset: u64) -> Result<(), IndexError> {
-    fs::remove_file(offset_index_file_name(path, offset)).map_err(Into::into)
+pub fn delete_index_file(path: &Path, offset: u64) -> io::Result<()> {
+    fs::remove_file(offset_index_file_path(path, offset)).map_err(Into::into)
 }
 
 #[cfg(test)]
@@ -254,6 +262,9 @@ mod tests {
 
         // Should fetch smaller key
         assert_eq!(index.key_lookup(5)?, (4, 400));
+
+        // Key bigger than last entry should return last entry
+        assert_eq!(index.key_lookup(100)?, (8, 800));
 
         // key smaller than 1st entry should return error
         assert!(index.key_lookup(1).is_err());

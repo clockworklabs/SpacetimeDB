@@ -124,7 +124,7 @@ impl<W: io::Write> Writer<W> {
         let commit_len = self.commit.encoded_len() as u64;
         self.offset_index_head.as_mut().map(|index| {
             index
-                .append_after_commit(self.commit.min_tx_offset.into(), self.bytes_written, commit_len)
+                .append_after_commit(self.commit.min_tx_offset, self.bytes_written, commit_len)
                 .map_err(|e| {
                     info!("failed to append to offset index: {:?}", e);
                 })
@@ -276,7 +276,7 @@ impl FileLike for OffsetIndexWriter {
 
     fn ftruncate(&mut self, _tx_offset: u64, tx_offset: u64) -> io::Result<()> {
         self.reset();
-        let _ = self.head.truncate(tx_offset.into());
+        let _ = self.head.truncate(tx_offset);
         Ok(())
     }
 }
