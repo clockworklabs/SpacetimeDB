@@ -54,6 +54,7 @@ impl Hash for AlgebraicValue {
             AlgebraicValue::F32(x) => x.hash(state),
             AlgebraicValue::F64(x) => x.hash(state),
             AlgebraicValue::String(s) => s.hash(state),
+            AlgebraicValue::Min | AlgebraicValue::Max => panic!("not defined for Min/Max"),
         }
     }
 }

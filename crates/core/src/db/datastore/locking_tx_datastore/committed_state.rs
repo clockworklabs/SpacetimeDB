@@ -2,7 +2,7 @@ use super::{
     datastore::Result,
     sequence::{Sequence, SequencesState},
     state_view::{Iter, IterByColRange, ScanIterByColRange, StateView},
-    tx_state::{DeleteTable, TxState},
+    tx_state::{DeleteTable, IndexIdMap, TxState},
 };
 use crate::{
     db::{
@@ -29,10 +29,9 @@ use spacetimedb_lib::{
     address::Address,
     db::auth::{StAccess, StTableType},
 };
-use spacetimedb_primitives::{ColList, TableId};
+use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
-
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
@@ -51,6 +50,8 @@ pub struct CommittedState {
     pub(crate) next_tx_offset: u64,
     pub(crate) tables: IntMap<TableId, Table>,
     pub(crate) blob_store: HashMapBlobStore,
+    /// Provides fast lookup for index id -> an index.
+    pub(super) index_id_map: IndexIdMap,
 }
 
 impl StateView for CommittedState {
@@ -331,7 +332,9 @@ impl CommittedState {
                 panic!("Cannot create index for table which doesn't exist in committed state");
             };
             let index = table.new_index(index_row.index_id, &index_row.columns, index_row.is_unique)?;
-            table.insert_index(blob_store, index_row.columns, index);
+            table.insert_index(blob_store, index_row.columns.clone(), index);
+            self.index_id_map
+                .insert(index_row.index_id, (index_row.table_id, index_row.columns));
         }
         Ok(())
     }
@@ -443,8 +446,10 @@ impl CommittedState {
 
         // Then, apply inserts. This will re-fill the holes freed by deletions
         // before allocating new pages.
-
         self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store);
+
+        // Merge index id fast-lookup map changes.
+        self.merge_index_map(tx_state.index_id_map, &tx_state.index_id_map_removals);
 
         // If the TX will be logged, record its projected tx offset,
         // then increment the counter.
@@ -535,6 +540,13 @@ impl CommittedState {
             // None of the above operations will inspect the schema.
             commit_table.schema = tx_table.schema;
         }
+    }
+
+    fn merge_index_map(&mut self, index_id_map: IndexIdMap, index_id_map_removals: &[IndexId]) {
+        for index_id in index_id_map_removals {
+            self.index_id_map.remove(index_id);
+        }
+        self.index_id_map.extend(index_id_map);
     }
 
     pub(super) fn get_table(&self, table_id: TableId) -> Option<&Table> {

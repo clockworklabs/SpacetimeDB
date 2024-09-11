@@ -1,7 +1,7 @@
 use crate::buffer::{BufReader, BufWriter, CountWriter};
 use crate::de::{BasicSmallVecVisitor, Deserialize, DeserializeSeed, Deserializer as _};
 use crate::ser::Serialize;
-use crate::Typespace;
+use crate::{Typespace, WithTypespace};
 use smallvec::SmallVec;
 
 pub mod de;
@@ -42,6 +42,17 @@ pub fn from_slice<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T, Decod
     from_reader(&mut &*bytes)
 }
 
+/// Decode `bytes` to the value type of `ty: S`.
+pub fn decode<'a, 'de, S: ?Sized>(
+    ty: &'a S,
+    bytes: &mut impl BufReader<'de>,
+) -> Result<<WithTypespace<'a, S> as DeserializeSeed<'de>>::Output, DecodeError>
+where
+    WithTypespace<'a, S>: DeserializeSeed<'de>,
+{
+    crate::WithTypespace::empty(ty).deserialize(Deserializer::new(bytes))
+}
+
 macro_rules! codec_funcs {
     ($ty:ty) => {
         impl $ty {
@@ -61,7 +72,7 @@ macro_rules! codec_funcs {
                 ty: &<Self as crate::Value>::Type,
                 bytes: &mut impl BufReader<'a>,
             ) -> Result<Self, DecodeError> {
-                crate::WithTypespace::new(&Typespace::new(Vec::new()), ty).deserialize(Deserializer::new(bytes))
+                decode(ty, bytes)
             }
 
             /// Decode a vector of values from `bytes` with each value typed at `ty`.

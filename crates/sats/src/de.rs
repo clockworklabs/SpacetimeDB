@@ -6,7 +6,7 @@ mod impls;
 pub mod serde;
 
 #[doc(hidden)]
-pub use impls::{visit_named_product, visit_seq_product};
+pub use impls::{visit_named_product, visit_seq_product, WithBound};
 
 use crate::{i256, u256};
 use core::fmt;

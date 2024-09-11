@@ -80,6 +80,8 @@ pub enum IndexError {
     UniqueConstraintViolation(#[from] UniqueConstraintViolation),
     #[error("Attempt to define a index with more than 1 auto_inc column: Table: {0:?}, Columns: {1:?}")]
     OneAutoInc(TableId, Vec<String>),
+    #[error("Could not decode arguments to index scan")]
+    Decode(DecodeError),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -322,6 +324,8 @@ pub enum NodesError {
     DecodeFilter(#[source] DecodeError),
     #[error("table with provided name or id doesn't exist")]
     TableNotFound,
+    #[error("index with provided name or id doesn't exist")]
+    IndexNotFound,
     #[error("column is out of bounds")]
     BadColumn,
     #[error("can't perform operation; not inside transaction")]
@@ -347,6 +351,8 @@ impl From<DBError> for NodesError {
             DBError::Table(TableError::System(name)) => Self::SystemName(name),
             DBError::Table(TableError::IdNotFound(_, _) | TableError::NotFound(_)) => Self::TableNotFound,
             DBError::Table(TableError::ColumnNotFound(_)) => Self::BadColumn,
+            DBError::Index(IndexError::NotFound(_)) => Self::IndexNotFound,
+            DBError::Index(IndexError::Decode(e)) => Self::DecodeRow(e),
             _ => Self::Internal(Box::new(e)),
         }
     }
