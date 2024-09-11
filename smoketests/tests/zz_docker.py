@@ -143,7 +143,7 @@ use spacetimedb::{Address, Identity, ReducerContext, TableType};
 pub struct ConnectedClient {
     identity: Identity,
     address: Address,
-
+}
 
 #[spacetimedb::reducer(client_connected)]
 fn on_connect(ctx: ReducerContext) {
