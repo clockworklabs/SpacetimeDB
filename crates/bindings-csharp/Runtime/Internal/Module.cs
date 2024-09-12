@@ -121,7 +121,7 @@ public static class Module
             // Write into the spare capacity of the buffer.
             var spare = buffer.AsSpan((int)written);
             var buf_len = (uint)spare.Length;
-            var ret = FFI._bytes_source_read(source, spare, ref buf_len);
+            var ret = FFI.bytes_source_read(source, spare, ref buf_len);
             written += buf_len;
             switch (ret)
             {
@@ -155,7 +155,7 @@ public static class Module
         {
             var written = (uint)bytes.Length;
             var buffer = bytes.AsSpan((int)start);
-            FFI._bytes_sink_write(sink, buffer, ref written);
+            FFI.bytes_sink_write(sink, buffer, ref written);
             start += written;
         }
     }
