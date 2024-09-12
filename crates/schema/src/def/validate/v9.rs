@@ -47,23 +47,21 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         })
         .collect_all_errors();
 
-    let mut refmap = HashMap::default();
-
     let tables = tables
         .into_iter()
         .map(|table| {
-            validator.validate_table_def(table).map(|table_def| {
-                refmap.insert(table_def.product_type_ref, RefPointee::Table(table_def.name.clone()));
-                (table_def.name.clone(), table_def)
-            })
+            validator
+                .validate_table_def(table)
+                .map(|table_def| (table_def.name.clone(), table_def))
         })
         .collect_all_errors();
 
+    let mut refmap = HashMap::default();
     let types = types
         .into_iter()
         .map(|ty| {
             validator.validate_type_def(ty).map(|type_def| {
-                refmap.insert(type_def.ty, RefPointee::Type(type_def.name.clone()));
+                refmap.insert(type_def.ty, type_def.name.clone());
                 (type_def.name.clone(), type_def)
             })
         })

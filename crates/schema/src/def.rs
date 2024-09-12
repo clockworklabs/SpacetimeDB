@@ -98,8 +98,8 @@ pub struct ModuleDef {
     /// This map allows looking up which `TableDef` stores the `Def` you're looking for.
     stored_in_table_def: IdentifierMap<Identifier>,
 
-    /// A map from type refs to their names, if they have any.
-    refmap: HashMap<AlgebraicTypeRef, RefPointee>,
+    /// A map from type defs to their names.
+    refmap: HashMap<AlgebraicTypeRef, ScopedTypeName>,
 }
 
 impl ModuleDef {
@@ -108,21 +108,34 @@ impl ModuleDef {
         self.tables.values()
     }
 
+    /// The indexes of the module definition.
+    pub fn indexes(&self) -> impl Iterator<Item = &IndexDef> {
+        self.tables().flat_map(|table| table.indexes.values())
+    }
+
+    /// The constraints of the module definition.
+    pub fn constraints(&self) -> impl Iterator<Item = &ConstraintDef> {
+        self.tables().flat_map(|table| table.constraints.values())
+    }
+
+    /// The sequences of the module definition.
+    pub fn sequences(&self) -> impl Iterator<Item = &SequenceDef> {
+        self.tables().flat_map(|table| table.sequences.values())
+    }
+
+    /// The schedules of the module definition.
+    pub fn schedules(&self) -> impl Iterator<Item = &ScheduleDef> {
+        self.tables().filter_map(|table| table.schedule.as_ref())
+    }
+
     /// The reducers of the module definition.
     pub fn reducers(&self) -> impl Iterator<Item = &ReducerDef> {
         self.reducers.values()
     }
 
-    /// The named types of the module definition.
+    /// The type definitions of the module definition.
     pub fn types(&self) -> impl Iterator<Item = &TypeDef> {
         self.types.values()
-    }
-
-    /// The named types of the module definition that aren't table row type definitions.
-    pub fn types_not_tables(&self) -> impl Iterator<Item = &TypeDef> {
-        self.types
-            .values()
-            .filter(|typ| !typ.name.as_identifier().is_some_and(|name| self.table(name).is_some()))
     }
 
     /// The `Typespace` used by the module.
@@ -160,15 +173,27 @@ impl ModuleDef {
         T::lookup(self, key)
     }
 
+    /// Lookup a definition by its key in `self`, panicking if not found.
+    /// Only use this method if you are sure the key exists in the module definition.
+    pub fn lookup_expect<T: ModuleDefLookup>(&self, key: T::Key<'_>) -> &T {
+        T::lookup(self, key).expect("expected ModuleDef to contain key, but it does not")
+    }
+
     /// Convenience method to look up a table, possibly by a string.
     pub fn table<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&TableDef> {
         // If the string IS a valid identifier, we can just look it up.
         self.tables.get(name)
     }
 
-    /// Lookup a type's name from its `AlgebraicTypeRef`.
-    pub fn type_name_from_ref(&self, r: AlgebraicTypeRef) -> Option<&RefPointee> {
-        self.refmap.get(&r)
+    /// Look up the name corresponding to an `AlgebraicTypeRef`.
+    pub fn type_def_from_ref(&self, r: AlgebraicTypeRef) -> Option<(&ScopedTypeName, &TypeDef)> {
+        let name = self.refmap.get(&r)?;
+        let def = self
+            .types
+            .get(name)
+            .expect("if it was in refmap, it should be in types");
+
+        Some((name, def))
     }
 
     /// Generate indexes for the module definition.
@@ -647,41 +672,6 @@ impl From<TypeDef> for RawTypeDefV9 {
             name: val.name.into(),
             ty: val.ty,
             custom_ordering: val.custom_ordering,
-        }
-    }
-}
-
-/// The return value from [`ModuleDef::type_name_from_ref`].
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub enum RefPointee {
-    Table(Identifier),
-    Type(ScopedTypeName),
-}
-
-impl RefPointee {
-    /// Iterate over the segments of this name.
-    pub fn name_segments(&self) -> impl Iterator<Item = &Identifier> {
-        let (scope, name) = match self {
-            RefPointee::Table(id) => (None, id),
-            RefPointee::Type(ScopedTypeName { scope, name }) => (Some(&**scope), name),
-        };
-        scope.into_iter().flatten().chain(std::iter::once(name))
-    }
-
-    /// Get the least-significant segment of this name.
-    pub fn name(&self) -> &Identifier {
-        match self {
-            RefPointee::Table(id) => id,
-            RefPointee::Type(scoped) => &scoped.name,
-        }
-    }
-
-    /// Retrieve the `ScopedTypeName`, if this name is scoped.
-    pub fn scoped_name(&self) -> Option<&ScopedTypeName> {
-        match self {
-            RefPointee::Table(_) => None,
-            RefPointee::Type(scoped) => Some(scoped),
         }
     }
 }
