@@ -9,14 +9,14 @@ namespace SpacetimeDB
     {
         void InternalOnValueInserted();
         void InternalOnValueDeleted();
-        void OnInsertEvent(ReducerEventBase? update);
-        void OnBeforeDeleteEvent(ReducerEventBase? update);
-        void OnDeleteEvent(ReducerEventBase? update);
+        void OnInsertEvent(IEventContext? update);
+        void OnBeforeDeleteEvent(IEventContext? update);
+        void OnDeleteEvent(IEventContext? update);
     }
 
-    public abstract class DatabaseTable<T, ReducerEvent> : IDatabaseTable
-        where T : DatabaseTable<T, ReducerEvent>, IStructuralReadWrite, new()
-        where ReducerEvent : ReducerEventBase
+    public abstract class DatabaseTable<T, EventContext> : IDatabaseTable
+        where T : DatabaseTable<T, EventContext>, IStructuralReadWrite, new()
+        where EventContext : IEventContext
     {
         public virtual void InternalOnValueInserted() { }
 
@@ -37,46 +37,46 @@ namespace SpacetimeDB
             return ClientCache.TableCache<T>.Entries.Count;
         }
 
-        public delegate void InsertEventHandler(T insertedValue, ReducerEvent? dbEvent);
-        public delegate void DeleteEventHandler(T deletedValue, ReducerEvent? dbEvent);
+        public delegate void InsertEventHandler(T insertedValue, EventContext? dbEvent);
+        public delegate void DeleteEventHandler(T deletedValue, EventContext? dbEvent);
         public static event InsertEventHandler? OnInsert;
         public static event DeleteEventHandler? OnBeforeDelete;
         public static event DeleteEventHandler? OnDelete;
 
-        public void OnInsertEvent(ReducerEventBase? dbEvent)
+        public void OnInsertEvent(IEventContext? dbEvent)
         {
-            OnInsert?.Invoke((T)this, (ReducerEvent?)dbEvent);
+            OnInsert?.Invoke((T)this, (EventContext?)dbEvent);
         }
 
-        public void OnBeforeDeleteEvent(ReducerEventBase? dbEvent)
+        public void OnBeforeDeleteEvent(IEventContext? dbEvent)
         {
-            OnBeforeDelete?.Invoke((T)this, (ReducerEvent?)dbEvent);
+            OnBeforeDelete?.Invoke((T)this, (EventContext?)dbEvent);
         }
 
-        public void OnDeleteEvent(ReducerEventBase? dbEvent)
+        public void OnDeleteEvent(IEventContext? dbEvent)
         {
-            OnDelete?.Invoke((T)this, (ReducerEvent?)dbEvent);
+            OnDelete?.Invoke((T)this, (EventContext?)dbEvent);
         }
     }
 
     public interface IDatabaseTableWithPrimaryKey : IDatabaseTable
     {
-        void OnUpdateEvent(IDatabaseTableWithPrimaryKey newValue, ReducerEventBase? update);
+        void OnUpdateEvent(IDatabaseTableWithPrimaryKey newValue, IEventContext? update);
         object GetPrimaryKeyValue();
     }
 
-    public abstract class DatabaseTableWithPrimaryKey<T, ReducerEvent> : DatabaseTable<T, ReducerEvent>, IDatabaseTableWithPrimaryKey
-        where T : DatabaseTableWithPrimaryKey<T, ReducerEvent>, IStructuralReadWrite, new()
-        where ReducerEvent : ReducerEventBase
+    public abstract class DatabaseTableWithPrimaryKey<T, EventContext> : DatabaseTable<T, EventContext>, IDatabaseTableWithPrimaryKey
+        where T : DatabaseTableWithPrimaryKey<T, EventContext>, IStructuralReadWrite, new()
+        where EventContext : IEventContext
     {
         public abstract object GetPrimaryKeyValue();
 
-        public delegate void UpdateEventHandler(T oldValue, T newValue, ReducerEvent? update);
+        public delegate void UpdateEventHandler(T oldValue, T newValue, EventContext? update);
         public static event UpdateEventHandler? OnUpdate;
 
-        public void OnUpdateEvent(IDatabaseTableWithPrimaryKey newValue, ReducerEventBase? dbEvent)
+        public void OnUpdateEvent(IDatabaseTableWithPrimaryKey newValue, IEventContext? dbEvent)
         {
-            OnUpdate?.Invoke((T)this, (T)newValue, (ReducerEvent?)dbEvent);
+            OnUpdate?.Invoke((T)this, (T)newValue, (EventContext?)dbEvent);
         }
     }
 }

@@ -12,32 +12,9 @@ namespace SpacetimeDB.Types
 	[SpacetimeDB.Type]
 	public partial class SendMessageArgsStruct : IReducerArgs
 	{
-		ReducerType IReducerArgs.ReducerType => ReducerType.SendMessage;
 		string IReducerArgsBase.ReducerName => "send_message";
-		bool IReducerArgs.InvokeHandler(ReducerEvent reducerEvent) => Reducer.OnSendMessage(reducerEvent, this);
+		bool IReducerArgs.InvokeHandler(EventContext ctx) => ctx.Reducers.InvokeSendMessage(ctx, this);
 
 		public string Text = "";
 	}
-
-	public static partial class Reducer
-	{
-		public delegate void SendMessageHandler(ReducerEvent reducerEvent, string text);
-		public static event SendMessageHandler? OnSendMessageEvent;
-
-		public static void SendMessage(string text)
-		{
-			SpacetimeDBClient.instance.InternalCallReducer(new SendMessageArgsStruct { Text = text });
-		}
-
-		public static bool OnSendMessage(ReducerEvent reducerEvent, SendMessageArgsStruct args)
-		{
-			if (OnSendMessageEvent == null) return false;
-			OnSendMessageEvent(
-				reducerEvent,
-				args.Text
-			);
-			return true;
-		}
-	}
-
 }

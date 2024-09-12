@@ -10,59 +10,92 @@ using SpacetimeDB.ClientApi;
 
 namespace SpacetimeDB.Types
 {
-	public enum ReducerType
-	{
-		None,
-		SendMessage,
-		SetName,
-	}
-
 	public interface IReducerArgs : IReducerArgsBase
 	{
-		ReducerType ReducerType { get; }
-		bool InvokeHandler(ReducerEvent reducerEvent);
+		bool InvokeHandler(EventContext ctx);
 	}
 
-	public partial class ReducerEvent : ReducerEventBase
+	public sealed class RemoteTables
+	{
+		public readonly RemoteTableHandle<EventContext, Message> Message = new();
+		public readonly RemoteTableHandle<EventContext, User> User = new();
+	}
+
+	public sealed class RemoteReducers : RemoteBase<DbConnection>
+	{
+		public delegate void SendMessageHandler(EventContext ctx, string text);
+		public event SendMessageHandler? OnSendMessage;
+
+		public void SendMessage(string text)
+		{
+			conn.InternalCallReducer(new SendMessageArgsStruct { Text = text });
+		}
+
+		public bool InvokeSendMessage(EventContext ctx, SendMessageArgsStruct args)
+		{
+			if (OnSendMessage == null) return false;
+			OnSendMessage(
+				ctx,
+				args.Text
+			);
+			return true;
+		}
+		public delegate void SetNameHandler(EventContext ctx, string name);
+		public event SetNameHandler? OnSetName;
+
+		public void SetName(string name)
+		{
+			conn.InternalCallReducer(new SetNameArgsStruct { Name = name });
+		}
+
+		public bool InvokeSetName(EventContext ctx, SetNameArgsStruct args)
+		{
+			if (OnSetName == null) return false;
+			OnSetName(
+				ctx,
+				args.Name
+			);
+			return true;
+		}
+	}
+
+	public partial class EventContext : EventContextBase<RemoteTables, RemoteReducers>
 	{
 		public IReducerArgs? Args { get; }
 
 		public string ReducerName => Args?.ReducerName ?? "<none>";
 
-		[Obsolete("ReducerType is deprecated, please match directly on type of .Args instead.")]
-		public ReducerType Reducer => Args?.ReducerType ?? ReducerType.None;
-
-		public ReducerEvent(IReducerArgs? args) : base() => Args = args;
-		public ReducerEvent(TransactionUpdate dbEvent, IReducerArgs? args) : base(dbEvent) => Args = args;
-
-		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
-		public SendMessageArgsStruct SendMessageArgs => (SendMessageArgsStruct)Args!;
-		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
-		public SetNameArgsStruct SetNameArgs => (SetNameArgsStruct)Args!;
+		public EventContext(DbConnection conn, TransactionUpdate update, IReducerArgs? args) : base(conn.RemoteTables, conn.RemoteReducers, update) => Args = args;
 
 		public override bool InvokeHandler() => Args?.InvokeHandler(this) ?? false;
 	}
 
-	public class SpacetimeDBClient : SpacetimeDBClientBase<ReducerEvent>
+	public class DbConnection : DbConnectionBase<DbConnection, EventContext>
 	{
-		protected SpacetimeDBClient()
+		public readonly RemoteTables RemoteTables = new();
+		public readonly RemoteReducers RemoteReducers = new();
+
+		public DbConnection()
 		{
+			RemoteReducers.Init(this);
+
 			clientDB.AddTable<Message>();
 			clientDB.AddTable<User>();
 		}
 
-		public static readonly SpacetimeDBClient instance = new();
-
-		protected override ReducerEvent ReducerEventFromDbEvent(TransactionUpdate update)
+		protected override EventContext ReducerEventFromDbEvent(TransactionUpdate update)
 		{
-			var argBytes = update.ReducerCall.Args;
+			var encodedArgs = update.ReducerCall.Args;
 			IReducerArgs? args = update.ReducerCall.ReducerName switch {
-				"send_message" => BSATNHelpers.Decode<SendMessageArgsStruct>(argBytes),
-				"set_name" => BSATNHelpers.Decode<SetNameArgsStruct>(argBytes),
+				"send_message" => BSATNHelpers.Decode<SendMessageArgsStruct>(encodedArgs),
+				"set_name" => BSATNHelpers.Decode<SetNameArgsStruct>(encodedArgs),
 				"<none>" => null,
+				"__identity_connected__" => null,
+				"__identity_disconnected__" => null,
+				"" => null,
 				var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
 			};
-			return new ReducerEvent(update, args);
+			return new EventContext(this, update, args);
 		}
 	}
 }

@@ -14,9 +14,64 @@ using Thread = System.Threading.Thread;
 
 namespace SpacetimeDB
 {
-    public abstract class SpacetimeDBClientBase<ReducerEvent>
-        where ReducerEvent : ReducerEventBase
+    public sealed class DbConnectionBuilder<DbConnection, EventContext>
+        where DbConnection : DbConnectionBase<DbConnection, EventContext>, new()
+        where EventContext : class, IEventContext
     {
+        readonly DbConnection conn = new();
+
+        string? uri;
+        string? nameOrAddress;
+        string? token;
+
+        public DbConnection Build() {
+            if (uri == null) {
+                throw new InvalidOperationException("Building DbConnection with a null uri. Call WithUri() first.");
+            }
+            if (nameOrAddress == null) {
+                throw new InvalidOperationException("Building DbConnection with a null nameOrAddress. Call WithModuleName() first.");
+            }
+            conn.Connect(token, uri, nameOrAddress);
+            return conn;
+        }
+
+        public DbConnectionBuilder<DbConnection, EventContext> WithUri(string uri) {
+            this.uri = uri;
+            return this;
+        }
+
+        public DbConnectionBuilder<DbConnection, EventContext> WithModuleName(string nameOrAddress) {
+            this.nameOrAddress = nameOrAddress;
+            return this;
+        }
+
+        public DbConnectionBuilder<DbConnection, EventContext> WithCredentials(in (Identity identity, string token)? creds) {
+            token = creds?.token;
+            return this;
+        }
+
+        public DbConnectionBuilder<DbConnection, EventContext> OnConnect(Action<Identity, string> cb) {
+            conn.onConnect += cb;
+            return this;
+        }
+
+        public DbConnectionBuilder<DbConnection, EventContext> OnConnectError(Action<WebSocketError?, string> cb) {
+            conn.webSocket.OnConnectError += (a, b) => cb.Invoke(a, b);
+            return this;
+        }
+
+        public DbConnectionBuilder<DbConnection, EventContext> OnDisconnect(Action<DbConnection, WebSocketCloseStatus?, WebSocketError?> cb) {
+            conn.webSocket.OnClose += (code, error) => cb.Invoke(conn, code, error);
+            return this;
+        }
+    }
+
+    public abstract class DbConnectionBase<DbConnection, EventContext>
+        where DbConnection : DbConnectionBase<DbConnection, EventContext>, new()
+        where EventContext : class, IEventContext
+    {
+        public static DbConnectionBuilder<DbConnection, EventContext> Builder() => new();
+
         struct DbValue
         {
             public IDatabaseTable value;
@@ -36,25 +91,12 @@ namespace SpacetimeDB
             public DbValue? insert;
         }
 
-        /// <summary>
-        /// Called when a connection is established to a spacetimedb instance.
-        /// </summary>
-        public event Action? onConnect;
-
-        /// <summary>
-        /// Called when a connection attempt fails.
-        /// </summary>
-        public event Action<WebSocketError?, string>? onConnectError;
+        internal event Action<Identity, string>? onConnect;
 
         /// <summary>
         /// Called when an exception occurs when sending a message.
         /// </summary>
         public event Action<Exception>? onSendError;
-
-        /// <summary>
-        /// Called when a connection that was established has disconnected.
-        /// </summary>
-        public event Action<WebSocketCloseStatus?, WebSocketError?>? onDisconnect;
 
         /// <summary>
         /// Invoked when a subscription is about to start being processed. This is called even before OnBeforeDelete.
@@ -69,12 +111,7 @@ namespace SpacetimeDB
         /// <summary>
         /// Invoked when a reducer is returned with an error and has no client-side handler.
         /// </summary>
-        public event Action<ReducerEvent>? onUnhandledReducerError;
-
-        /// <summary>
-        /// Called when we receive an identity from the server
-        /// </summary>
-        public event Action<string, Identity, Address>? onIdentityReceived;
+        public event Action<EventContext>? onUnhandledReducerError;
 
         /// <summary>
         /// Invoked when an event message is received or at the end of a transaction update.
@@ -84,11 +121,11 @@ namespace SpacetimeDB
         public readonly Address clientAddress = Address.Random();
         public Identity? clientIdentity { get; private set; }
 
-        private SpacetimeDB.WebSocket webSocket;
+        internal WebSocket webSocket;
         private bool connectionClosed;
         protected readonly ClientCache clientDB = new();
 
-        protected abstract ReducerEvent ReducerEventFromDbEvent(TransactionUpdate dbEvent);
+        protected abstract EventContext ReducerEventFromDbEvent(TransactionUpdate dbEvent);
 
         private readonly Dictionary<Guid, TaskCompletionSource<OneOffQueryResponse>> waitingOneOffQueries = new();
 
@@ -96,7 +133,7 @@ namespace SpacetimeDB
         private readonly Thread networkMessageProcessThread;
         public readonly Stats stats = new();
 
-        protected SpacetimeDBClientBase()
+        protected DbConnectionBase()
         {
             var options = new ConnectOptions
             {
@@ -106,9 +143,6 @@ namespace SpacetimeDB
             };
             webSocket = new WebSocket(options);
             webSocket.OnMessage += OnMessageReceived;
-            webSocket.OnClose += (code, error) => onDisconnect?.Invoke(code, error);
-            webSocket.OnConnect += () => onConnect?.Invoke();
-            webSocket.OnConnectError += (a, b) => onConnectError?.Invoke(a, b);
             webSocket.OnSendError += a => onSendError?.Invoke(a);
 
             networkMessageProcessThread = new Thread(PreProcessMessages);
@@ -126,7 +160,7 @@ namespace SpacetimeDB
             public ServerMessage message;
             public List<DbOp> dbOps;
             public DateTime timestamp;
-            public ReducerEvent? reducerEvent;
+            public EventContext reducerEvent;
         }
 
         struct PreProcessedMessage
@@ -177,7 +211,7 @@ namespace SpacetimeDB
                 using var binaryReader = new BinaryReader(decompressedStream);
                 var message = new ServerMessage.BSATN().Read(binaryReader);
 
-                ReducerEvent? reducerEvent = null;
+                EventContext? reducerEvent = null;
 
                 // This is all of the inserts
                 Dictionary<System.Type, HashSet<byte[]>>? subscriptionInserts = null;
@@ -463,7 +497,7 @@ namespace SpacetimeDB
         }
 
 
-        private void OnMessageProcessCompleteUpdate(ReducerEvent? dbEvent, List<DbOp> dbOps)
+        private void OnMessageProcessCompleteUpdate(EventContext? dbEvent, List<DbOp> dbOps)
         {
             // First trigger OnBeforeDelete
             foreach (var update in dbOps)
@@ -627,7 +661,7 @@ namespace SpacetimeDB
                     {
                         clientIdentity = identityToken.Identity;
                         var address = identityToken.Address;
-                        onIdentityReceived?.Invoke(identityToken.Token, clientIdentity, address);
+                        onConnect?.Invoke(identityToken.Identity, identityToken.Token);
                     }
                     catch (Exception e)
                     {

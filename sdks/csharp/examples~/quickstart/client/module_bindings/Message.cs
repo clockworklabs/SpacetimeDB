@@ -14,14 +14,31 @@ namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class Message : SpacetimeDB.DatabaseTable<Message, SpacetimeDB.Types.ReducerEvent>
+	public partial class Message : SpacetimeDB.DatabaseTable<Message, SpacetimeDB.Types.EventContext>
 	{
 		[DataMember(Name = "sender")]
-		public SpacetimeDB.Identity Sender = new();
+		public SpacetimeDB.Identity Sender;
 		[DataMember(Name = "sent")]
 		public ulong Sent;
 		[DataMember(Name = "text")]
-		public string Text = "";
+		public string Text;
+
+		public Message(
+			SpacetimeDB.Identity Sender,
+			ulong Sent,
+			string Text
+		)
+		{
+			this.Sender = Sender;
+			this.Sent = Sent;
+			this.Text = Text;
+		}
+
+		public Message()
+		{
+			this.Sender = new();
+			this.Text = "";
+		}
 
 		public static IEnumerable<Message> FilterBySender(SpacetimeDB.Identity value)
 		{

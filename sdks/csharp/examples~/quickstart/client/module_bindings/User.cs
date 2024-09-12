@@ -14,14 +14,30 @@ namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class User : SpacetimeDB.DatabaseTableWithPrimaryKey<User, SpacetimeDB.Types.ReducerEvent>
+	public partial class User : SpacetimeDB.DatabaseTableWithPrimaryKey<User, SpacetimeDB.Types.EventContext>
 	{
 		[DataMember(Name = "identity")]
-		public SpacetimeDB.Identity Identity = new();
+		public SpacetimeDB.Identity Identity;
 		[DataMember(Name = "name")]
 		public string? Name;
 		[DataMember(Name = "online")]
 		public bool Online;
+
+		public User(
+			SpacetimeDB.Identity Identity,
+			string? Name,
+			bool Online
+		)
+		{
+			this.Identity = Identity;
+			this.Name = Name;
+			this.Online = Online;
+		}
+
+		public User()
+		{
+			this.Identity = new();
+		}
 
 		private static Dictionary<SpacetimeDB.Identity, User> Identity_Index = new(16);
 
