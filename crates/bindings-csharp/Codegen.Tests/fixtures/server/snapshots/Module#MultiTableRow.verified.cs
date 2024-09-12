@@ -58,14 +58,16 @@ partial struct MultiTableRow : SpacetimeDB.Internal.ITable<MultiTableRow>
                         new(nameof(Foo), BSATN.Foo.GetAlgebraicType(registrar)),
                         new(nameof(Bar), BSATN.Bar.GetAlgebraicType(registrar))
                     ],
-                    Indexes: [],
+                    Indexes:
+                    [
+                        new("bt_MultiTable1_Name", false, SpacetimeDB.Internal.IndexType.BTree, [0])
+                    ],
                     Constraints:
                     [
                         new(
-                            nameof(SpacetimeDB.Local.MultiTable1),
-                            1,
-                            nameof(Foo),
-                            SpacetimeDB.Internal.ColumnAttrs.PrimaryKeyAuto
+                            "MultiTable1_Foo",
+                            (byte)SpacetimeDB.Internal.ColumnAttrs.PrimaryKeyAuto,
+                            [1]
                         )
                     ],
                     Sequences: [],
@@ -92,18 +94,8 @@ partial struct MultiTableRow : SpacetimeDB.Internal.ITable<MultiTableRow>
                     Indexes: [],
                     Constraints:
                     [
-                        new(
-                            nameof(SpacetimeDB.Local.MultiTable2),
-                            1,
-                            nameof(Foo),
-                            SpacetimeDB.Internal.ColumnAttrs.AutoInc
-                        ),
-                        new(
-                            nameof(SpacetimeDB.Local.MultiTable2),
-                            2,
-                            nameof(Bar),
-                            SpacetimeDB.Internal.ColumnAttrs.Unique
-                        )
+                        new("MultiTable2_Foo", (byte)SpacetimeDB.Internal.ColumnAttrs.AutoInc, [1]),
+                        new("MultiTable2_Bar", (byte)SpacetimeDB.Internal.ColumnAttrs.Unique, [2])
                     ],
                     Sequences: [],
                     // "system" | "user"

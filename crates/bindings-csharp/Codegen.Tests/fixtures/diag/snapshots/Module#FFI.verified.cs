@@ -54,63 +54,37 @@ namespace SpacetimeDB
                 return row;
             }
 
+            public ulong Count =>
+                SpacetimeDB.Internal.ITableView<
+                    TestAutoIncNotInteger,
+                    global::TestAutoIncNotInteger
+                >.DoCount();
+
             public IEnumerable<global::TestAutoIncNotInteger> Iter() =>
                 SpacetimeDB.Internal.ITableView<
                     TestAutoIncNotInteger,
                     global::TestAutoIncNotInteger
-                >.Iter();
+                >.DoIter();
 
             public global::TestAutoIncNotInteger Insert(global::TestAutoIncNotInteger row) =>
                 SpacetimeDB.Internal.ITableView<
                     TestAutoIncNotInteger,
                     global::TestAutoIncNotInteger
-                >.Insert(row);
+                >.DoInsert(row);
 
-            public IEnumerable<global::TestAutoIncNotInteger> FilterByIdentityField(
-                string IdentityField
-            ) =>
-                SpacetimeDB
-                    .Internal.ITableView<
-                        TestAutoIncNotInteger,
-                        global::TestAutoIncNotInteger
-                    >.ColEq.Where(
-                        1,
-                        IdentityField,
-                        global::TestAutoIncNotInteger.BSATN.IdentityField
-                    )
-                    .Iter();
+            public bool Delete(global::TestAutoIncNotInteger row) =>
+                SpacetimeDB.Internal.ITableView<
+                    TestAutoIncNotInteger,
+                    global::TestAutoIncNotInteger
+                >.DoDelete(row);
 
-            public global::TestAutoIncNotInteger? FindByIdentityField(string IdentityField) =>
-                FilterByIdentityField(IdentityField)
-                    .Cast<global::TestAutoIncNotInteger?>()
-                    .SingleOrDefault();
-
-            public bool DeleteByIdentityField(string IdentityField) =>
-                SpacetimeDB
-                    .Internal.ITableView<
-                        TestAutoIncNotInteger,
-                        global::TestAutoIncNotInteger
-                    >.ColEq.Where(
-                        1,
-                        IdentityField,
-                        global::TestAutoIncNotInteger.BSATN.IdentityField
-                    )
-                    .Delete();
-
-            public bool UpdateByIdentityField(
-                string IdentityField,
-                global::TestAutoIncNotInteger @this
-            ) =>
-                SpacetimeDB
-                    .Internal.ITableView<
-                        TestAutoIncNotInteger,
-                        global::TestAutoIncNotInteger
-                    >.ColEq.Where(
-                        1,
-                        IdentityField,
-                        global::TestAutoIncNotInteger.BSATN.IdentityField
-                    )
-                    .Update(@this);
+            public UniqueIndex<
+                TestAutoIncNotInteger,
+                global::TestAutoIncNotInteger,
+                string,
+                SpacetimeDB.BSATN.String
+            > IdentityField =>
+                new(this, "idx_TestAutoIncNotInteger_TestAutoIncNotInteger_IdentityField_unique");
         }
 
         public readonly struct TestDuplicateTableName
@@ -127,17 +101,29 @@ namespace SpacetimeDB
                 return row;
             }
 
+            public ulong Count =>
+                SpacetimeDB.Internal.ITableView<
+                    TestDuplicateTableName,
+                    global::TestDuplicateTableName
+                >.DoCount();
+
             public IEnumerable<global::TestDuplicateTableName> Iter() =>
                 SpacetimeDB.Internal.ITableView<
                     TestDuplicateTableName,
                     global::TestDuplicateTableName
-                >.Iter();
+                >.DoIter();
 
             public global::TestDuplicateTableName Insert(global::TestDuplicateTableName row) =>
                 SpacetimeDB.Internal.ITableView<
                     TestDuplicateTableName,
                     global::TestDuplicateTableName
-                >.Insert(row);
+                >.DoInsert(row);
+
+            public bool Delete(global::TestDuplicateTableName row) =>
+                SpacetimeDB.Internal.ITableView<
+                    TestDuplicateTableName,
+                    global::TestDuplicateTableName
+                >.DoDelete(row);
         }
 
         public readonly struct TestIncompatibleSchedule1
@@ -160,63 +146,40 @@ namespace SpacetimeDB
                 return row;
             }
 
+            public ulong Count =>
+                SpacetimeDB.Internal.ITableView<
+                    TestIncompatibleSchedule1,
+                    global::TestIncompatibleSchedule
+                >.DoCount();
+
             public IEnumerable<global::TestIncompatibleSchedule> Iter() =>
                 SpacetimeDB.Internal.ITableView<
                     TestIncompatibleSchedule1,
                     global::TestIncompatibleSchedule
-                >.Iter();
+                >.DoIter();
 
             public global::TestIncompatibleSchedule Insert(global::TestIncompatibleSchedule row) =>
                 SpacetimeDB.Internal.ITableView<
                     TestIncompatibleSchedule1,
                     global::TestIncompatibleSchedule
-                >.Insert(row);
+                >.DoInsert(row);
 
-            public IEnumerable<global::TestIncompatibleSchedule> FilterByScheduledId(
-                ulong ScheduledId
-            ) =>
-                SpacetimeDB
-                    .Internal.ITableView<
-                        TestIncompatibleSchedule1,
-                        global::TestIncompatibleSchedule
-                    >.ColEq.Where(
-                        0,
-                        ScheduledId,
-                        global::TestIncompatibleSchedule.BSATN.ScheduledId
-                    )
-                    .Iter();
+            public bool Delete(global::TestIncompatibleSchedule row) =>
+                SpacetimeDB.Internal.ITableView<
+                    TestIncompatibleSchedule1,
+                    global::TestIncompatibleSchedule
+                >.DoDelete(row);
 
-            public global::TestIncompatibleSchedule? FindByScheduledId(ulong ScheduledId) =>
-                FilterByScheduledId(ScheduledId)
-                    .Cast<global::TestIncompatibleSchedule?>()
-                    .SingleOrDefault();
-
-            public bool DeleteByScheduledId(ulong ScheduledId) =>
-                SpacetimeDB
-                    .Internal.ITableView<
-                        TestIncompatibleSchedule1,
-                        global::TestIncompatibleSchedule
-                    >.ColEq.Where(
-                        0,
-                        ScheduledId,
-                        global::TestIncompatibleSchedule.BSATN.ScheduledId
-                    )
-                    .Delete();
-
-            public bool UpdateByScheduledId(
-                ulong ScheduledId,
-                global::TestIncompatibleSchedule @this
-            ) =>
-                SpacetimeDB
-                    .Internal.ITableView<
-                        TestIncompatibleSchedule1,
-                        global::TestIncompatibleSchedule
-                    >.ColEq.Where(
-                        0,
-                        ScheduledId,
-                        global::TestIncompatibleSchedule.BSATN.ScheduledId
-                    )
-                    .Update(@this);
+            public UniqueIndex<
+                TestIncompatibleSchedule1,
+                global::TestIncompatibleSchedule,
+                ulong,
+                SpacetimeDB.BSATN.U64
+            > ScheduledId =>
+                new(
+                    this,
+                    "idx_TestIncompatibleSchedule1_TestIncompatibleSchedule1_ScheduledId_unique"
+                );
         }
 
         public readonly struct TestIncompatibleSchedule2
@@ -239,63 +202,40 @@ namespace SpacetimeDB
                 return row;
             }
 
+            public ulong Count =>
+                SpacetimeDB.Internal.ITableView<
+                    TestIncompatibleSchedule2,
+                    global::TestIncompatibleSchedule
+                >.DoCount();
+
             public IEnumerable<global::TestIncompatibleSchedule> Iter() =>
                 SpacetimeDB.Internal.ITableView<
                     TestIncompatibleSchedule2,
                     global::TestIncompatibleSchedule
-                >.Iter();
+                >.DoIter();
 
             public global::TestIncompatibleSchedule Insert(global::TestIncompatibleSchedule row) =>
                 SpacetimeDB.Internal.ITableView<
                     TestIncompatibleSchedule2,
                     global::TestIncompatibleSchedule
-                >.Insert(row);
+                >.DoInsert(row);
 
-            public IEnumerable<global::TestIncompatibleSchedule> FilterByScheduledId(
-                ulong ScheduledId
-            ) =>
-                SpacetimeDB
-                    .Internal.ITableView<
-                        TestIncompatibleSchedule2,
-                        global::TestIncompatibleSchedule
-                    >.ColEq.Where(
-                        0,
-                        ScheduledId,
-                        global::TestIncompatibleSchedule.BSATN.ScheduledId
-                    )
-                    .Iter();
+            public bool Delete(global::TestIncompatibleSchedule row) =>
+                SpacetimeDB.Internal.ITableView<
+                    TestIncompatibleSchedule2,
+                    global::TestIncompatibleSchedule
+                >.DoDelete(row);
 
-            public global::TestIncompatibleSchedule? FindByScheduledId(ulong ScheduledId) =>
-                FilterByScheduledId(ScheduledId)
-                    .Cast<global::TestIncompatibleSchedule?>()
-                    .SingleOrDefault();
-
-            public bool DeleteByScheduledId(ulong ScheduledId) =>
-                SpacetimeDB
-                    .Internal.ITableView<
-                        TestIncompatibleSchedule2,
-                        global::TestIncompatibleSchedule
-                    >.ColEq.Where(
-                        0,
-                        ScheduledId,
-                        global::TestIncompatibleSchedule.BSATN.ScheduledId
-                    )
-                    .Delete();
-
-            public bool UpdateByScheduledId(
-                ulong ScheduledId,
-                global::TestIncompatibleSchedule @this
-            ) =>
-                SpacetimeDB
-                    .Internal.ITableView<
-                        TestIncompatibleSchedule2,
-                        global::TestIncompatibleSchedule
-                    >.ColEq.Where(
-                        0,
-                        ScheduledId,
-                        global::TestIncompatibleSchedule.BSATN.ScheduledId
-                    )
-                    .Update(@this);
+            public UniqueIndex<
+                TestIncompatibleSchedule2,
+                global::TestIncompatibleSchedule,
+                ulong,
+                SpacetimeDB.BSATN.U64
+            > ScheduledId =>
+                new(
+                    this,
+                    "idx_TestIncompatibleSchedule2_TestIncompatibleSchedule2_ScheduledId_unique"
+                );
         }
 
         public readonly struct TestTableTaggedEnum
@@ -309,33 +249,29 @@ namespace SpacetimeDB
                 return row;
             }
 
+            public ulong Count =>
+                SpacetimeDB.Internal.ITableView<
+                    TestTableTaggedEnum,
+                    global::TestTableTaggedEnum
+                >.DoCount();
+
             public IEnumerable<global::TestTableTaggedEnum> Iter() =>
                 SpacetimeDB.Internal.ITableView<
                     TestTableTaggedEnum,
                     global::TestTableTaggedEnum
-                >.Iter();
+                >.DoIter();
 
             public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) =>
                 SpacetimeDB.Internal.ITableView<
                     TestTableTaggedEnum,
                     global::TestTableTaggedEnum
-                >.Insert(row);
+                >.DoInsert(row);
 
-            public IEnumerable<global::TestTableTaggedEnum> FilterByX(int X) =>
-                SpacetimeDB
-                    .Internal.ITableView<
-                        TestTableTaggedEnum,
-                        global::TestTableTaggedEnum
-                    >.ColEq.Where(0, X, global::TestTableTaggedEnum.BSATN.X)
-                    .Iter();
-
-            public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
-                SpacetimeDB
-                    .Internal.ITableView<
-                        TestTableTaggedEnum,
-                        global::TestTableTaggedEnum
-                    >.ColEq.Where(1, Y, global::TestTableTaggedEnum.BSATN.Y)
-                    .Iter();
+            public bool Delete(global::TestTableTaggedEnum row) =>
+                SpacetimeDB.Internal.ITableView<
+                    TestTableTaggedEnum,
+                    global::TestTableTaggedEnum
+                >.DoDelete(row);
         }
 
         public readonly struct TestUniqueNotEquatable
@@ -352,17 +288,47 @@ namespace SpacetimeDB
                 return row;
             }
 
+            public ulong Count =>
+                SpacetimeDB.Internal.ITableView<
+                    TestUniqueNotEquatable,
+                    global::TestUniqueNotEquatable
+                >.DoCount();
+
             public IEnumerable<global::TestUniqueNotEquatable> Iter() =>
                 SpacetimeDB.Internal.ITableView<
                     TestUniqueNotEquatable,
                     global::TestUniqueNotEquatable
-                >.Iter();
+                >.DoIter();
 
             public global::TestUniqueNotEquatable Insert(global::TestUniqueNotEquatable row) =>
                 SpacetimeDB.Internal.ITableView<
                     TestUniqueNotEquatable,
                     global::TestUniqueNotEquatable
-                >.Insert(row);
+                >.DoInsert(row);
+
+            public bool Delete(global::TestUniqueNotEquatable row) =>
+                SpacetimeDB.Internal.ITableView<
+                    TestUniqueNotEquatable,
+                    global::TestUniqueNotEquatable
+                >.DoDelete(row);
+
+            public UniqueIndex<
+                TestUniqueNotEquatable,
+                global::TestUniqueNotEquatable,
+                int?,
+                SpacetimeDB.BSATN.ValueOption<int, SpacetimeDB.BSATN.I32>
+            > UniqueField =>
+                new(this, "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_UniqueField_unique");
+            public UniqueIndex<
+                TestUniqueNotEquatable,
+                global::TestUniqueNotEquatable,
+                TestEnumWithExplicitValues,
+                SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>
+            > PrimaryKeyField =>
+                new(
+                    this,
+                    "idx_TestUniqueNotEquatable_TestUniqueNotEquatable_PrimaryKeyField_unique"
+                );
         }
     }
 

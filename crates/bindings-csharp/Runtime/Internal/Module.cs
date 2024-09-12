@@ -5,16 +5,6 @@ using System.Runtime.InteropServices;
 using SpacetimeDB;
 using SpacetimeDB.BSATN;
 
-partial class RawConstraintDefV8
-{
-    public RawConstraintDefV8(string tableName, ushort colIndex, string colName, ColumnAttrs attrs)
-        : this(
-            ConstraintName: $"ct_{tableName}_{colName}_{attrs}",
-            Constraints: (byte)attrs,
-            Columns: [colIndex]
-        ) { }
-}
-
 partial class RawModuleDefV8
 {
     // Note: this intends to generate a valid identifier, but it's not guaranteed to be unique as it's not proper mangling.

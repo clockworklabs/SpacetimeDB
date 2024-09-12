@@ -70,10 +70,9 @@ partial class Timers
                         Constraints:
                         [
                             new(
-                                nameof(SpacetimeDB.Local.SendMessageTimer),
-                                1,
-                                nameof(ScheduledId),
-                                SpacetimeDB.Internal.ColumnAttrs.PrimaryKeyAuto
+                                "SendMessageTimer_ScheduledId",
+                                (byte)SpacetimeDB.Internal.ColumnAttrs.PrimaryKeyAuto,
+                                [1]
                             )
                         ],
                         Sequences: [],

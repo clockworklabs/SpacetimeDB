@@ -14,36 +14,12 @@ using System;
 namespace SpacetimeDB
 {
 	[SpacetimeDB.Type]
-	public partial class AddPlayerArgsStruct : IReducerArgs
+	public partial class AddPlayer : IReducerArgs
 	{
-		ReducerType IReducerArgs.ReducerType => ReducerType.AddPlayer;
-		string IReducerArgsBase.ReducerName => "add_player";
-		bool IReducerArgs.InvokeHandler(ReducerEvent reducerEvent) => Reducer.OnAddPlayer(reducerEvent, this);
+		string IReducerArgs.ReducerName => "add_player";
 
 		public string Name = "";
 	}
-
-	public static partial class Reducer
-	{
-		public delegate void AddPlayerHandler(ReducerEvent reducerEvent, string name);
-		public static event AddPlayerHandler? OnAddPlayerEvent;
-
-		public static void AddPlayer(string name)
-		{
-			SpacetimeDBClient.instance.InternalCallReducer(new AddPlayerArgsStruct { Name = name });
-		}
-
-		public static bool OnAddPlayer(ReducerEvent reducerEvent, AddPlayerArgsStruct args)
-		{
-			if (OnAddPlayerEvent == null) return false;
-			OnAddPlayerEvent(
-				reducerEvent,
-				args.Name
-			);
-			return true;
-		}
-	}
-
 }
 '''
 "AddPrivateReducer.cs" = '''
@@ -58,36 +34,12 @@ using System;
 namespace SpacetimeDB
 {
 	[SpacetimeDB.Type]
-	public partial class AddPrivateArgsStruct : IReducerArgs
+	public partial class AddPrivate : IReducerArgs
 	{
-		ReducerType IReducerArgs.ReducerType => ReducerType.AddPrivate;
-		string IReducerArgsBase.ReducerName => "add_private";
-		bool IReducerArgs.InvokeHandler(ReducerEvent reducerEvent) => Reducer.OnAddPrivate(reducerEvent, this);
+		string IReducerArgs.ReducerName => "add_private";
 
 		public string Name = "";
 	}
-
-	public static partial class Reducer
-	{
-		public delegate void AddPrivateHandler(ReducerEvent reducerEvent, string name);
-		public static event AddPrivateHandler? OnAddPrivateEvent;
-
-		public static void AddPrivate(string name)
-		{
-			SpacetimeDBClient.instance.InternalCallReducer(new AddPrivateArgsStruct { Name = name });
-		}
-
-		public static bool OnAddPrivate(ReducerEvent reducerEvent, AddPrivateArgsStruct args)
-		{
-			if (OnAddPrivateEvent == null) return false;
-			OnAddPrivateEvent(
-				reducerEvent,
-				args.Name
-			);
-			return true;
-		}
-	}
-
 }
 '''
 "Baz.cs" = '''
@@ -99,7 +51,6 @@ namespace SpacetimeDB
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB
@@ -138,36 +89,12 @@ using System;
 namespace SpacetimeDB
 {
 	[SpacetimeDB.Type]
-	public partial class DeletePlayerArgsStruct : IReducerArgs
+	public partial class DeletePlayer : IReducerArgs
 	{
-		ReducerType IReducerArgs.ReducerType => ReducerType.DeletePlayer;
-		string IReducerArgsBase.ReducerName => "delete_player";
-		bool IReducerArgs.InvokeHandler(ReducerEvent reducerEvent) => Reducer.OnDeletePlayer(reducerEvent, this);
+		string IReducerArgs.ReducerName => "delete_player";
 
 		public ulong Id;
 	}
-
-	public static partial class Reducer
-	{
-		public delegate void DeletePlayerHandler(ReducerEvent reducerEvent, ulong id);
-		public static event DeletePlayerHandler? OnDeletePlayerEvent;
-
-		public static void DeletePlayer(ulong id)
-		{
-			SpacetimeDBClient.instance.InternalCallReducer(new DeletePlayerArgsStruct { Id = id });
-		}
-
-		public static bool OnDeletePlayer(ReducerEvent reducerEvent, DeletePlayerArgsStruct args)
-		{
-			if (OnDeletePlayerEvent == null) return false;
-			OnDeletePlayerEvent(
-				reducerEvent,
-				args.Id
-			);
-			return true;
-		}
-	}
-
 }
 '''
 "DeletePlayersByNameReducer.cs" = '''
@@ -182,36 +109,12 @@ using System;
 namespace SpacetimeDB
 {
 	[SpacetimeDB.Type]
-	public partial class DeletePlayersByNameArgsStruct : IReducerArgs
+	public partial class DeletePlayersByName : IReducerArgs
 	{
-		ReducerType IReducerArgs.ReducerType => ReducerType.DeletePlayersByName;
-		string IReducerArgsBase.ReducerName => "delete_players_by_name";
-		bool IReducerArgs.InvokeHandler(ReducerEvent reducerEvent) => Reducer.OnDeletePlayersByName(reducerEvent, this);
+		string IReducerArgs.ReducerName => "delete_players_by_name";
 
 		public string Name = "";
 	}
-
-	public static partial class Reducer
-	{
-		public delegate void DeletePlayersByNameHandler(ReducerEvent reducerEvent, string name);
-		public static event DeletePlayersByNameHandler? OnDeletePlayersByNameEvent;
-
-		public static void DeletePlayersByName(string name)
-		{
-			SpacetimeDBClient.instance.InternalCallReducer(new DeletePlayersByNameArgsStruct { Name = name });
-		}
-
-		public static bool OnDeletePlayersByName(ReducerEvent reducerEvent, DeletePlayersByNameArgsStruct args)
-		{
-			if (OnDeletePlayersByNameEvent == null) return false;
-			OnDeletePlayersByNameEvent(
-				reducerEvent,
-				args.Name
-			);
-			return true;
-		}
-	}
-
 }
 '''
 "Foobar.cs" = '''
@@ -242,14 +145,13 @@ namespace SpacetimeDB
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class HasSpecialStuff : SpacetimeDB.DatabaseTable<HasSpecialStuff, SpacetimeDB.ReducerEvent>
+	public partial class HasSpecialStuff : IDatabaseRow
 	{
 		[DataMember(Name = "identity")]
 		public SpacetimeDB.Identity Identity;
@@ -270,17 +172,6 @@ namespace SpacetimeDB
 			this.Identity = new();
 			this.Address = new();
 		}
-
-		public static IEnumerable<HasSpecialStuff> FilterByIdentity(SpacetimeDB.Identity value)
-		{
-			return Query(x => x.Identity == value);
-		}
-
-		public static IEnumerable<HasSpecialStuff> FilterByAddress(SpacetimeDB.Address value)
-		{
-			return Query(x => x.Address == value);
-		}
-
 
 	}
 }
@@ -344,14 +235,13 @@ namespace SpacetimeDB
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class PkMultiIdentity : SpacetimeDB.DatabaseTableWithPrimaryKey<PkMultiIdentity, SpacetimeDB.ReducerEvent>
+	public partial class PkMultiIdentity : IDatabaseRow
 	{
 		[DataMember(Name = "id")]
 		public uint Id;
@@ -371,51 +261,6 @@ namespace SpacetimeDB
 		{
 		}
 
-		private static Dictionary<uint, PkMultiIdentity> Id_Index = new(16);
-		private static Dictionary<uint, PkMultiIdentity> Other_Index = new(16);
-
-		public override void InternalOnValueInserted()
-		{
-			Id_Index[Id] = this;
-			Other_Index[Other] = this;
-		}
-
-		public override void InternalOnValueDeleted()
-		{
-			Id_Index.Remove(Id);
-			Other_Index.Remove(Other);
-		}
-
-		public static PkMultiIdentity? FindById(uint value)
-		{
-			Id_Index.TryGetValue(value, out var r);
-			return r;
-		}
-
-		public static IEnumerable<PkMultiIdentity> FilterById(uint value)
-		{
-			if (FindById(value) is {} found)
-			{
-				yield return found;
-			}
-		}
-
-		public static PkMultiIdentity? FindByOther(uint value)
-		{
-			Other_Index.TryGetValue(value, out var r);
-			return r;
-		}
-
-		public static IEnumerable<PkMultiIdentity> FilterByOther(uint value)
-		{
-			if (FindByOther(value) is {} found)
-			{
-				yield return found;
-			}
-		}
-
-		public override object GetPrimaryKeyValue() => Id;
-
 	}
 }
 '''
@@ -428,14 +273,13 @@ namespace SpacetimeDB
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class Point : SpacetimeDB.DatabaseTable<Point, SpacetimeDB.ReducerEvent>
+	public partial class Point : IDatabaseRow
 	{
 		[DataMember(Name = "x")]
 		public long X;
@@ -455,17 +299,6 @@ namespace SpacetimeDB
 		{
 		}
 
-		public static IEnumerable<Point> FilterByX(long value)
-		{
-			return Query(x => x.X == value);
-		}
-
-		public static IEnumerable<Point> FilterByY(long value)
-		{
-			return Query(x => x.Y == value);
-		}
-
-
 	}
 }
 '''
@@ -478,14 +311,13 @@ namespace SpacetimeDB
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class Private : SpacetimeDB.DatabaseTable<Private, SpacetimeDB.ReducerEvent>
+	public partial class Private : IDatabaseRow
 	{
 		[DataMember(Name = "name")]
 		public string Name;
@@ -502,12 +334,6 @@ namespace SpacetimeDB
 			this.Name = "";
 		}
 
-		public static IEnumerable<Private> FilterByName(string value)
-		{
-			return Query(x => x.Name == value);
-		}
-
-
 	}
 }
 '''
@@ -523,33 +349,10 @@ using System;
 namespace SpacetimeDB
 {
 	[SpacetimeDB.Type]
-	public partial class QueryPrivateArgsStruct : IReducerArgs
+	public partial class QueryPrivate : IReducerArgs
 	{
-		ReducerType IReducerArgs.ReducerType => ReducerType.QueryPrivate;
-		string IReducerArgsBase.ReducerName => "query_private";
-		bool IReducerArgs.InvokeHandler(ReducerEvent reducerEvent) => Reducer.OnQueryPrivate(reducerEvent, this);
+		string IReducerArgs.ReducerName => "query_private";
 	}
-
-	public static partial class Reducer
-	{
-		public delegate void QueryPrivateHandler(ReducerEvent reducerEvent);
-		public static event QueryPrivateHandler? OnQueryPrivateEvent;
-
-		public static void QueryPrivate()
-		{
-			SpacetimeDBClient.instance.InternalCallReducer(new QueryPrivateArgsStruct {  });
-		}
-
-		public static bool OnQueryPrivate(ReducerEvent reducerEvent, QueryPrivateArgsStruct args)
-		{
-			if (OnQueryPrivateEvent == null) return false;
-			OnQueryPrivateEvent(
-				reducerEvent
-			);
-			return true;
-		}
-	}
-
 }
 '''
 "RepeatingTestArg.cs" = '''
@@ -561,14 +364,13 @@ namespace SpacetimeDB
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class RepeatingTestArg : SpacetimeDB.DatabaseTableWithPrimaryKey<RepeatingTestArg, SpacetimeDB.ReducerEvent>
+	public partial class RepeatingTestArg : IDatabaseRow
 	{
 		[DataMember(Name = "prev_time")]
 		public ulong PrevTime;
@@ -593,39 +395,6 @@ namespace SpacetimeDB
 			this.ScheduledAt = null!;
 		}
 
-		private static Dictionary<ulong, RepeatingTestArg> ScheduledId_Index = new(16);
-
-		public override void InternalOnValueInserted()
-		{
-			ScheduledId_Index[ScheduledId] = this;
-		}
-
-		public override void InternalOnValueDeleted()
-		{
-			ScheduledId_Index.Remove(ScheduledId);
-		}
-
-		public static IEnumerable<RepeatingTestArg> FilterByPrevTime(ulong value)
-		{
-			return Query(x => x.PrevTime == value);
-		}
-
-		public static RepeatingTestArg? FindByScheduledId(ulong value)
-		{
-			ScheduledId_Index.TryGetValue(value, out var r);
-			return r;
-		}
-
-		public static IEnumerable<RepeatingTestArg> FilterByScheduledId(ulong value)
-		{
-			if (FindByScheduledId(value) is {} found)
-			{
-				yield return found;
-			}
-		}
-
-		public override object GetPrimaryKeyValue() => ScheduledId;
-
 	}
 }
 '''
@@ -641,36 +410,12 @@ using System;
 namespace SpacetimeDB
 {
 	[SpacetimeDB.Type]
-	public partial class RepeatingTestArgsStruct : IReducerArgs
+	public partial class RepeatingTest : IReducerArgs
 	{
-		ReducerType IReducerArgs.ReducerType => ReducerType.RepeatingTest;
-		string IReducerArgsBase.ReducerName => "repeating_test";
-		bool IReducerArgs.InvokeHandler(ReducerEvent reducerEvent) => Reducer.OnRepeatingTest(reducerEvent, this);
+		string IReducerArgs.ReducerName => "repeating_test";
 
 		public SpacetimeDB.RepeatingTestArg Arg = new();
 	}
-
-	public static partial class Reducer
-	{
-		public delegate void RepeatingTestHandler(ReducerEvent reducerEvent, SpacetimeDB.RepeatingTestArg arg);
-		public static event RepeatingTestHandler? OnRepeatingTestEvent;
-
-		public static void RepeatingTest(SpacetimeDB.RepeatingTestArg arg)
-		{
-			SpacetimeDBClient.instance.InternalCallReducer(new RepeatingTestArgsStruct { Arg = arg });
-		}
-
-		public static bool OnRepeatingTest(ReducerEvent reducerEvent, RepeatingTestArgsStruct args)
-		{
-			if (OnRepeatingTestEvent == null) return false;
-			OnRepeatingTestEvent(
-				reducerEvent,
-				args.Arg
-			);
-			return true;
-		}
-	}
-
 }
 '''
 "TestA.cs" = '''
@@ -682,14 +427,13 @@ namespace SpacetimeDB
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class TestA : SpacetimeDB.DatabaseTable<TestA, SpacetimeDB.ReducerEvent>
+	public partial class TestA : IDatabaseRow
 	{
 		[DataMember(Name = "x")]
 		public uint X;
@@ -714,22 +458,6 @@ namespace SpacetimeDB
 			this.Z = "";
 		}
 
-		public static IEnumerable<TestA> FilterByX(uint value)
-		{
-			return Query(x => x.X == value);
-		}
-
-		public static IEnumerable<TestA> FilterByY(uint value)
-		{
-			return Query(x => x.Y == value);
-		}
-
-		public static IEnumerable<TestA> FilterByZ(string value)
-		{
-			return Query(x => x.Z == value);
-		}
-
-
 	}
 }
 '''
@@ -742,7 +470,6 @@ namespace SpacetimeDB
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB
@@ -778,14 +505,13 @@ namespace SpacetimeDB
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class TestD : SpacetimeDB.DatabaseTable<TestD, SpacetimeDB.ReducerEvent>
+	public partial class TestD : IDatabaseRow
 	{
 		[DataMember(Name = "test_c")]
 		public SpacetimeDB.Namespace.Types.TestC? TestC;
@@ -801,7 +527,6 @@ namespace SpacetimeDB
 		{
 		}
 
-
 	}
 }
 '''
@@ -814,14 +539,13 @@ namespace SpacetimeDB
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class TestE : SpacetimeDB.DatabaseTableWithPrimaryKey<TestE, SpacetimeDB.ReducerEvent>
+	public partial class TestE : IDatabaseRow
 	{
 		[DataMember(Name = "id")]
 		public ulong Id;
@@ -842,39 +566,6 @@ namespace SpacetimeDB
 			this.Name = "";
 		}
 
-		private static Dictionary<ulong, TestE> Id_Index = new(16);
-
-		public override void InternalOnValueInserted()
-		{
-			Id_Index[Id] = this;
-		}
-
-		public override void InternalOnValueDeleted()
-		{
-			Id_Index.Remove(Id);
-		}
-
-		public static TestE? FindById(ulong value)
-		{
-			Id_Index.TryGetValue(value, out var r);
-			return r;
-		}
-
-		public static IEnumerable<TestE> FilterById(ulong value)
-		{
-			if (FindById(value) is {} found)
-			{
-				yield return found;
-			}
-		}
-
-		public static IEnumerable<TestE> FilterByName(string value)
-		{
-			return Query(x => x.Name == value);
-		}
-
-		public override object GetPrimaryKeyValue() => Id;
-
 	}
 }
 '''
@@ -887,14 +578,13 @@ namespace SpacetimeDB
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.Serialization;
 
 namespace SpacetimeDB
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class TestFoobar : SpacetimeDB.DatabaseTable<TestFoobar, SpacetimeDB.ReducerEvent>
+	public partial class TestFoobar : IDatabaseRow
 	{
 		[DataMember(Name = "field")]
 		public SpacetimeDB.Foobar Field;
@@ -911,7 +601,6 @@ namespace SpacetimeDB
 			this.Field = null!;
 		}
 
-
 	}
 }
 '''
@@ -927,42 +616,15 @@ using System;
 namespace SpacetimeDB
 {
 	[SpacetimeDB.Type]
-	public partial class TestArgsStruct : IReducerArgs
+	public partial class Test : IReducerArgs
 	{
-		ReducerType IReducerArgs.ReducerType => ReducerType.Test;
-		string IReducerArgsBase.ReducerName => "test";
-		bool IReducerArgs.InvokeHandler(ReducerEvent reducerEvent) => Reducer.OnTest(reducerEvent, this);
+		string IReducerArgs.ReducerName => "test";
 
 		public SpacetimeDB.TestA Arg = new();
 		public SpacetimeDB.TestB Arg2 = new();
 		public SpacetimeDB.Namespace.Types.TestC Arg3;
 		public SpacetimeDB.Namespace.TestF Arg4 = null!;
 	}
-
-	public static partial class Reducer
-	{
-		public delegate void TestHandler(ReducerEvent reducerEvent, SpacetimeDB.TestA arg, SpacetimeDB.TestB arg2, SpacetimeDB.Namespace.Types.TestC arg3, SpacetimeDB.Namespace.TestF arg4);
-		public static event TestHandler? OnTestEvent;
-
-		public static void Test(SpacetimeDB.TestA arg, SpacetimeDB.TestB arg2, SpacetimeDB.Namespace.Types.TestC arg3, SpacetimeDB.Namespace.TestF arg4)
-		{
-			SpacetimeDBClient.instance.InternalCallReducer(new TestArgsStruct { Arg = arg, Arg2 = arg2, Arg3 = arg3, Arg4 = arg4 });
-		}
-
-		public static bool OnTest(ReducerEvent reducerEvent, TestArgsStruct args)
-		{
-			if (OnTestEvent == null) return false;
-			OnTestEvent(
-				reducerEvent,
-				args.Arg,
-				args.Arg2,
-				args.Arg3,
-				args.Arg4
-			);
-			return true;
-		}
-	}
-
 }
 '''
 "_Globals/SpacetimeDBClient.cs" = '''
@@ -974,115 +636,440 @@ namespace SpacetimeDB
 
 using System;
 using SpacetimeDB.ClientApi;
+using System.Collections.Generic;
 
 namespace SpacetimeDB
 {
-	public enum ReducerType
+	public sealed class RemoteTables
 	{
-		None,
-		AddPlayer,
-		AddPrivate,
-		DeletePlayer,
-		DeletePlayersByName,
-		QueryPrivate,
-		RepeatingTest,
-		Test,
-	}
-
-	public interface IReducerArgs : IReducerArgsBase
-	{
-		ReducerType ReducerType { get; }
-		bool InvokeHandler(ReducerEvent reducerEvent);
-	}
-
-	public partial class ReducerEvent : ReducerEventBase
-	{
-		public IReducerArgs? Args { get; }
-
-		public string ReducerName => Args?.ReducerName ?? "<none>";
-
-		[Obsolete("ReducerType is deprecated, please match directly on type of .Args instead.")]
-		public ReducerType Reducer => Args?.ReducerType ?? ReducerType.None;
-
-		public ReducerEvent(IReducerArgs? args) : base() => Args = args;
-		public ReducerEvent(TransactionUpdate update, IReducerArgs? args) : base(update) => Args = args;
-
-		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
-		public AddPlayerArgsStruct AddPlayerArgs => (AddPlayerArgsStruct)Args!;
-		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
-		public AddPrivateArgsStruct AddPrivateArgs => (AddPrivateArgsStruct)Args!;
-		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
-		public DeletePlayerArgsStruct DeletePlayerArgs => (DeletePlayerArgsStruct)Args!;
-		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
-		public DeletePlayersByNameArgsStruct DeletePlayersByNameArgs => (DeletePlayersByNameArgsStruct)Args!;
-		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
-		public QueryPrivateArgsStruct QueryPrivateArgs => (QueryPrivateArgsStruct)Args!;
-		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
-		public RepeatingTestArgsStruct RepeatingTestArgs => (RepeatingTestArgsStruct)Args!;
-		[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]
-		public TestArgsStruct TestArgs => (TestArgsStruct)Args!;
-
-		public override bool InvokeHandler() => Args?.InvokeHandler(this) ?? false;
-	}
-
-	public class SpacetimeDBClient : SpacetimeDBClientBase<ReducerEvent>
-	{
-		protected SpacetimeDBClient()
+		public class has_special_stuffHandle : RemoteTableHandle<EventContext, HasSpecialStuff>
 		{
-			clientDB.AddTable<HasSpecialStuff>();
-			clientDB.AddTable<PkMultiIdentity>();
-			clientDB.AddTable<Point>();
-			clientDB.AddTable<Private>();
-			clientDB.AddTable<RepeatingTestArg>();
-			clientDB.AddTable<TestA>();
-			clientDB.AddTable<TestD>();
-			clientDB.AddTable<TestE>();
-			clientDB.AddTable<TestFoobar>();
+			public IEnumerable<HasSpecialStuff> FilterByIdentity(SpacetimeDB.Identity value)
+			{
+				return Query(x => x.Identity == value);
+			}
+
+			public IEnumerable<HasSpecialStuff> FilterByAddress(SpacetimeDB.Address value)
+			{
+				return Query(x => x.Address == value);
+			}
+
+
 		}
 
-		public static readonly SpacetimeDBClient instance = new();
+		public readonly has_special_stuffHandle has_special_stuff = new();
 
-		protected override ReducerEvent ReducerEventFromDbEvent(TransactionUpdate update)
+		public class pk_multi_identityHandle : RemoteTableHandle<EventContext, PkMultiIdentity>
+		{
+			private Dictionary<uint, PkMultiIdentity> Id_Index = new(16);
+			private Dictionary<uint, PkMultiIdentity> Other_Index = new(16);
+
+			public override void InternalInvokeValueInserted(IDatabaseRow row)
+			{
+				var value = (PkMultiIdentity)row;
+				Id_Index[value.Id] = value;
+				Other_Index[value.Other] = value;
+			}
+
+			public override void InternalInvokeValueDeleted(IDatabaseRow row)
+			{
+				Id_Index.Remove(((PkMultiIdentity)row).Id);
+				Other_Index.Remove(((PkMultiIdentity)row).Other);
+			}
+
+			public PkMultiIdentity? FindById(uint value)
+			{
+				Id_Index.TryGetValue(value, out var r);
+				return r;
+			}
+
+			public IEnumerable<PkMultiIdentity> FilterById(uint value)
+			{
+				if (FindById(value) is {} found)
+				{
+					yield return found;
+				}
+			}
+
+			public PkMultiIdentity? FindByOther(uint value)
+			{
+				Other_Index.TryGetValue(value, out var r);
+				return r;
+			}
+
+			public IEnumerable<PkMultiIdentity> FilterByOther(uint value)
+			{
+				if (FindByOther(value) is {} found)
+				{
+					yield return found;
+				}
+			}
+
+			public override object GetPrimaryKey(IDatabaseRow row) => ((PkMultiIdentity)row).Id;
+
+		}
+
+		public readonly pk_multi_identityHandle pk_multi_identity = new();
+
+		public class pointsHandle : RemoteTableHandle<EventContext, Point>
+		{
+			public IEnumerable<Point> FilterByX(long value)
+			{
+				return Query(x => x.X == value);
+			}
+
+			public IEnumerable<Point> FilterByY(long value)
+			{
+				return Query(x => x.Y == value);
+			}
+
+
+		}
+
+		public readonly pointsHandle points = new();
+
+		public class privateHandle : RemoteTableHandle<EventContext, Private>
+		{
+			public IEnumerable<Private> FilterByName(string value)
+			{
+				return Query(x => x.Name == value);
+			}
+
+
+		}
+
+		public readonly privateHandle private = new();
+
+		public class repeating_test_argHandle : RemoteTableHandle<EventContext, RepeatingTestArg>
+		{
+			private Dictionary<ulong, RepeatingTestArg> ScheduledId_Index = new(16);
+
+			public override void InternalInvokeValueInserted(IDatabaseRow row)
+			{
+				var value = (RepeatingTestArg)row;
+				ScheduledId_Index[value.ScheduledId] = value;
+			}
+
+			public override void InternalInvokeValueDeleted(IDatabaseRow row)
+			{
+				ScheduledId_Index.Remove(((RepeatingTestArg)row).ScheduledId);
+			}
+
+			public IEnumerable<RepeatingTestArg> FilterByPrevTime(ulong value)
+			{
+				return Query(x => x.PrevTime == value);
+			}
+
+			public RepeatingTestArg? FindByScheduledId(ulong value)
+			{
+				ScheduledId_Index.TryGetValue(value, out var r);
+				return r;
+			}
+
+			public IEnumerable<RepeatingTestArg> FilterByScheduledId(ulong value)
+			{
+				if (FindByScheduledId(value) is {} found)
+				{
+					yield return found;
+				}
+			}
+
+			public override object GetPrimaryKey(IDatabaseRow row) => ((RepeatingTestArg)row).ScheduledId;
+
+		}
+
+		public readonly repeating_test_argHandle repeating_test_arg = new();
+
+		public class test_aHandle : RemoteTableHandle<EventContext, TestA>
+		{
+			public IEnumerable<TestA> FilterByX(uint value)
+			{
+				return Query(x => x.X == value);
+			}
+
+			public IEnumerable<TestA> FilterByY(uint value)
+			{
+				return Query(x => x.Y == value);
+			}
+
+			public IEnumerable<TestA> FilterByZ(string value)
+			{
+				return Query(x => x.Z == value);
+			}
+
+
+		}
+
+		public readonly test_aHandle test_a = new();
+
+		public class test_dHandle : RemoteTableHandle<EventContext, TestD>
+		{
+
+		}
+
+		public readonly test_dHandle test_d = new();
+
+		public class test_eHandle : RemoteTableHandle<EventContext, TestE>
+		{
+			private Dictionary<ulong, TestE> Id_Index = new(16);
+
+			public override void InternalInvokeValueInserted(IDatabaseRow row)
+			{
+				var value = (TestE)row;
+				Id_Index[value.Id] = value;
+			}
+
+			public override void InternalInvokeValueDeleted(IDatabaseRow row)
+			{
+				Id_Index.Remove(((TestE)row).Id);
+			}
+
+			public TestE? FindById(ulong value)
+			{
+				Id_Index.TryGetValue(value, out var r);
+				return r;
+			}
+
+			public IEnumerable<TestE> FilterById(ulong value)
+			{
+				if (FindById(value) is {} found)
+				{
+					yield return found;
+				}
+			}
+
+			public IEnumerable<TestE> FilterByName(string value)
+			{
+				return Query(x => x.Name == value);
+			}
+
+			public override object GetPrimaryKey(IDatabaseRow row) => ((TestE)row).Id;
+
+		}
+
+		public readonly test_eHandle test_e = new();
+
+		public class test_fHandle : RemoteTableHandle<EventContext, TestFoobar>
+		{
+
+		}
+
+		public readonly test_fHandle test_f = new();
+
+	}
+
+	public sealed class RemoteReducers : RemoteBase<DbConnection>
+	{
+		internal RemoteReducers(DbConnection conn) : base(conn) {}
+		public delegate void AddPlayerHandler(EventContext ctx, string name);
+		public event AddPlayerHandler? OnAddPlayer;
+
+		public void AddPlayer(string name)
+		{
+			conn.InternalCallReducer(new AddPlayer { Name = name });
+		}
+
+		public bool InvokeAddPlayer(EventContext ctx, AddPlayer args)
+		{
+			if (OnAddPlayer == null) return false;
+			OnAddPlayer(
+				ctx,
+				args.Name
+			);
+			return true;
+		}
+		public delegate void AddPrivateHandler(EventContext ctx, string name);
+		public event AddPrivateHandler? OnAddPrivate;
+
+		public void AddPrivate(string name)
+		{
+			conn.InternalCallReducer(new AddPrivate { Name = name });
+		}
+
+		public bool InvokeAddPrivate(EventContext ctx, AddPrivate args)
+		{
+			if (OnAddPrivate == null) return false;
+			OnAddPrivate(
+				ctx,
+				args.Name
+			);
+			return true;
+		}
+		public delegate void DeletePlayerHandler(EventContext ctx, ulong id);
+		public event DeletePlayerHandler? OnDeletePlayer;
+
+		public void DeletePlayer(ulong id)
+		{
+			conn.InternalCallReducer(new DeletePlayer { Id = id });
+		}
+
+		public bool InvokeDeletePlayer(EventContext ctx, DeletePlayer args)
+		{
+			if (OnDeletePlayer == null) return false;
+			OnDeletePlayer(
+				ctx,
+				args.Id
+			);
+			return true;
+		}
+		public delegate void DeletePlayersByNameHandler(EventContext ctx, string name);
+		public event DeletePlayersByNameHandler? OnDeletePlayersByName;
+
+		public void DeletePlayersByName(string name)
+		{
+			conn.InternalCallReducer(new DeletePlayersByName { Name = name });
+		}
+
+		public bool InvokeDeletePlayersByName(EventContext ctx, DeletePlayersByName args)
+		{
+			if (OnDeletePlayersByName == null) return false;
+			OnDeletePlayersByName(
+				ctx,
+				args.Name
+			);
+			return true;
+		}
+		public delegate void QueryPrivateHandler(EventContext ctx);
+		public event QueryPrivateHandler? OnQueryPrivate;
+
+		public void QueryPrivate()
+		{
+			conn.InternalCallReducer(new QueryPrivate {  });
+		}
+
+		public bool InvokeQueryPrivate(EventContext ctx, QueryPrivate args)
+		{
+			if (OnQueryPrivate == null) return false;
+			OnQueryPrivate(
+				ctx
+			);
+			return true;
+		}
+		public delegate void RepeatingTestHandler(EventContext ctx, SpacetimeDB.RepeatingTestArg arg);
+		public event RepeatingTestHandler? OnRepeatingTest;
+
+		public void RepeatingTest(SpacetimeDB.RepeatingTestArg arg)
+		{
+			conn.InternalCallReducer(new RepeatingTest { Arg = arg });
+		}
+
+		public bool InvokeRepeatingTest(EventContext ctx, RepeatingTest args)
+		{
+			if (OnRepeatingTest == null) return false;
+			OnRepeatingTest(
+				ctx,
+				args.Arg
+			);
+			return true;
+		}
+		public delegate void TestHandler(EventContext ctx, SpacetimeDB.TestA arg, SpacetimeDB.TestB arg2, SpacetimeDB.Namespace.Types.TestC arg3, SpacetimeDB.Namespace.TestF arg4);
+		public event TestHandler? OnTest;
+
+		public void Test(SpacetimeDB.TestA arg, SpacetimeDB.TestB arg2, SpacetimeDB.Namespace.Types.TestC arg3, SpacetimeDB.Namespace.TestF arg4)
+		{
+			conn.InternalCallReducer(new Test { Arg = arg, Arg2 = arg2, Arg3 = arg3, Arg4 = arg4 });
+		}
+
+		public bool InvokeTest(EventContext ctx, Test args)
+		{
+			if (OnTest == null) return false;
+			OnTest(
+				ctx,
+				args.Arg,
+				args.Arg2,
+				args.Arg3,
+				args.Arg4
+			);
+			return true;
+		}
+	}
+
+	public partial record EventContext : DbContext<RemoteTables>, IEventContext
+	{
+		public readonly RemoteReducers Reducers;
+		public readonly Event<Reducer> Reducer;
+
+		internal EventContext(DbConnection conn, Event<Reducer> reducer) : base(conn.RemoteTables)
+		{
+			Reducers = conn.RemoteReducers;
+			Reducer = reducer;
+		}
+	}
+
+	[Type]
+	public partial record Reducer : TaggedEnum<(
+		AddPlayer AddPlayer,
+		AddPrivate AddPrivate,
+		DeletePlayer DeletePlayer,
+		DeletePlayersByName DeletePlayersByName,
+		QueryPrivate QueryPrivate,
+		RepeatingTest RepeatingTest,
+		Test Test,
+		Unit StdbNone,
+		Unit StdbIdentityConnected,
+		Unit StdbIdentityDisconnected
+	)>;
+	public class DbConnection : DbConnectionBase<DbConnection, Reducer>
+	{
+		public readonly RemoteTables RemoteTables = new();
+		public readonly RemoteReducers RemoteReducers;
+
+		public DbConnection()
+		{
+			RemoteReducers = new(this);
+
+			clientDB.AddTable<HasSpecialStuff>("has_special_stuff", RemoteTables.has_special_stuff);
+			clientDB.AddTable<PkMultiIdentity>("pk_multi_identity", RemoteTables.pk_multi_identity);
+			clientDB.AddTable<Point>("points", RemoteTables.points);
+			clientDB.AddTable<Private>("private", RemoteTables.private);
+			clientDB.AddTable<RepeatingTestArg>("repeating_test_arg", RemoteTables.repeating_test_arg);
+			clientDB.AddTable<TestA>("test_a", RemoteTables.test_a);
+			clientDB.AddTable<TestD>("test_d", RemoteTables.test_d);
+			clientDB.AddTable<TestE>("test_e", RemoteTables.test_e);
+			clientDB.AddTable<TestFoobar>("test_f", RemoteTables.test_f);
+		}
+
+		protected override Reducer ToReducer(TransactionUpdate update)
 		{
 			var encodedArgs = update.ReducerCall.Args;
-			IReducerArgs? args = update.ReducerCall.ReducerName switch {
-				"add_player" => BSATNHelpers.Decode<AddPlayerArgsStruct>(encodedArgs),
-				"add_private" => BSATNHelpers.Decode<AddPrivateArgsStruct>(encodedArgs),
-				"delete_player" => BSATNHelpers.Decode<DeletePlayerArgsStruct>(encodedArgs),
-				"delete_players_by_name" => BSATNHelpers.Decode<DeletePlayersByNameArgsStruct>(encodedArgs),
-				"query_private" => BSATNHelpers.Decode<QueryPrivateArgsStruct>(encodedArgs),
-				"repeating_test" => BSATNHelpers.Decode<RepeatingTestArgsStruct>(encodedArgs),
-				"test" => BSATNHelpers.Decode<TestArgsStruct>(encodedArgs),
-				"<none>" => null,
-				"__identity_connected__" => null,
-				"__identity_disconnected__" => null,
-				"" => null,
+			return update.ReducerCall.ReducerName switch {
+				"add_player" => new Reducer.AddPlayer(BSATNHelpers.Decode<AddPlayer>(encodedArgs)),
+				"add_private" => new Reducer.AddPrivate(BSATNHelpers.Decode<AddPrivate>(encodedArgs)),
+				"delete_player" => new Reducer.DeletePlayer(BSATNHelpers.Decode<DeletePlayer>(encodedArgs)),
+				"delete_players_by_name" => new Reducer.DeletePlayersByName(BSATNHelpers.Decode<DeletePlayersByName>(encodedArgs)),
+				"query_private" => new Reducer.QueryPrivate(BSATNHelpers.Decode<QueryPrivate>(encodedArgs)),
+				"repeating_test" => new Reducer.RepeatingTest(BSATNHelpers.Decode<RepeatingTest>(encodedArgs)),
+				"test" => new Reducer.Test(BSATNHelpers.Decode<Test>(encodedArgs)),
+				"<none>" => new Reducer.StdbNone(default),
+				"__identity_connected__" => new Reducer.StdbIdentityConnected(default),
+				"__identity_disconnected__" => new Reducer.StdbIdentityDisconnected(default),
+				"" => new Reducer.StdbNone(default),
 				var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
 			};
-			return new ReducerEvent(update, args);
 		}
+
+		protected override IEventContext ToEventContext(Event<Reducer> reducerEvent) =>
+		new EventContext(this, reducerEvent);
+
+		protected override bool Dispatch(IEventContext context, Reducer reducer)
+		{
+			var eventContext = (EventContext)context;
+			return reducer switch {
+				Reducer.AddPlayer(var args) => RemoteReducers.InvokeAddPlayer(eventContext, args),
+				Reducer.AddPrivate(var args) => RemoteReducers.InvokeAddPrivate(eventContext, args),
+				Reducer.DeletePlayer(var args) => RemoteReducers.InvokeDeletePlayer(eventContext, args),
+				Reducer.DeletePlayersByName(var args) => RemoteReducers.InvokeDeletePlayersByName(eventContext, args),
+				Reducer.QueryPrivate(var args) => RemoteReducers.InvokeQueryPrivate(eventContext, args),
+				Reducer.RepeatingTest(var args) => RemoteReducers.InvokeRepeatingTest(eventContext, args),
+				Reducer.Test(var args) => RemoteReducers.InvokeTest(eventContext, args),
+				Reducer.StdbNone or
+				Reducer.StdbIdentityConnected or
+				Reducer.StdbIdentityDisconnected => true,
+				_ => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
+			};
+		}
+
+		public SubscriptionBuilder<EventContext> SubscriptionBuilder() => new(this);
 	}
-}
-'''
-"_Globals/UnityNetworkManager.cs" = '''
-// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
-// WILL NOT BE SAVED. MODIFY TABLES IN RUST INSTEAD.
-// <auto-generated />
-
-#nullable enable
-
-using System;
-
-namespace SpacetimeDB
-{
-	// This class is only used in Unity projects.
-	// Attach this to a gameobject in your scene to use SpacetimeDB.
-	#if UNITY_5_3_OR_NEWER
-	public class UnityNetworkManager : UnityEngine.MonoBehaviour
-	{
-		private void OnDestroy() => SpacetimeDBClient.instance.Close();
-		private void Update() => SpacetimeDBClient.instance.Update();
-	}
-	#endif
 }
 '''

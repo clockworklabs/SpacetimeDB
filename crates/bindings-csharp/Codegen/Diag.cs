@@ -34,6 +34,22 @@ internal static class ErrorDescriptor
             field => field
         );
 
+    public static readonly ErrorDescriptor<TypeDeclarationSyntax> EmptyIndexColumns =
+        new(
+            group,
+            "Index attribute must specify index Columns.",
+            table => $"Table {table.Identifier} has an Index.BTree attribute, but no columns.",
+            table => table.BaseList!
+        );
+
+    public static readonly ErrorDescriptor<TypeDeclarationSyntax> InvalidTableVisibility =
+        new(
+            group,
+            "Table row visibility must be public or internal, including container types.",
+            table => $"Table {table.Identifier} and its parent types must be public or internal.",
+            table => table.BaseList!
+        );
+
     public static readonly ErrorDescriptor<TypeDeclarationSyntax> TableTaggedEnum =
         new(
             group,

@@ -59,16 +59,14 @@ partial struct TestAutoIncNotInteger : SpacetimeDB.Internal.ITable<TestAutoIncNo
                     Constraints:
                     [
                         new(
-                            nameof(SpacetimeDB.Local.TestAutoIncNotInteger),
-                            0,
-                            nameof(AutoIncField),
-                            SpacetimeDB.Internal.ColumnAttrs.AutoInc
+                            "TestAutoIncNotInteger_AutoIncField",
+                            (byte)SpacetimeDB.Internal.ColumnAttrs.AutoInc,
+                            [0]
                         ),
                         new(
-                            nameof(SpacetimeDB.Local.TestAutoIncNotInteger),
-                            1,
-                            nameof(IdentityField),
-                            SpacetimeDB.Internal.ColumnAttrs.Identity
+                            "TestAutoIncNotInteger_IdentityField",
+                            (byte)SpacetimeDB.Internal.ColumnAttrs.Identity,
+                            [1]
                         )
                     ],
                     Sequences: [],
