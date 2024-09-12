@@ -175,6 +175,27 @@ impl InstanceEnv {
         Ok(stdb.delete(tx, table_id, rows_to_delete))
     }
 
+    #[tracing::instrument(skip_all)]
+    pub fn datastore_delete_by_btree_scan_bsatn(
+        &self,
+        index_id: IndexId,
+        prefix: &[u8],
+        prefix_elems: ColId,
+        rstart: &[u8],
+        rend: &[u8],
+    ) -> Result<u32, NodesError> {
+        let stdb = &*self.dbic.relational_db;
+        let tx = &mut *self.tx.get()?;
+
+        // Find all rows in the table to delete.
+        let (table_id, iter) = stdb.btree_scan(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
+        let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
+
+        // Delete them and count how many we deleted.
+        Ok(stdb.delete(tx, table_id, rows_to_delete))
+    }
+
     /// Deletes all rows in the table identified by `table_id`
     /// where the rows match one in `relation`
     /// which is a bsatn encoding of `Vec<ProductValue>`.
@@ -289,7 +310,7 @@ impl InstanceEnv {
         let stdb = &*self.dbic.relational_db;
         let tx = &mut *self.tx.get()?;
 
-        let iter = stdb.btree_scan(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        let (_, iter) = stdb.btree_scan(tx, index_id, prefix, prefix_elems, rstart, rend)?;
         let chunks = ChunkedWriter::collect_iter(iter);
         Ok(chunks)
     }
