@@ -516,7 +516,6 @@ fn autogen_csharp_access_funcs_for_struct(
 
 pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &str) -> String {
     let func_name = &*reducer.name;
-    // let reducer_pascal_name = func_name.to_case(Case::Pascal);
     let func_name_pascal_case = func_name.to_case(Case::Pascal);
 
     let mut output = CsharpAutogen::new(namespace, &[]);
@@ -528,100 +527,45 @@ pub fn autogen_csharp_reducer(ctx: &GenCtx, reducer: &ReducerDef, namespace: &st
         "public partial class {func_name_pascal_case}ArgsStruct : IReducerArgs"
     );
 
-    let mut func_params: String = String::new();
-    let mut field_inits: String = String::new();
-
     indented_block(&mut output, |output| {
-        writeln!(
-            output,
-            "ReducerType IReducerArgs.ReducerType => ReducerType.{func_name_pascal_case};"
-        );
         writeln!(output, "string IReducerArgsBase.ReducerName => \"{func_name}\";");
-        writeln!(output, "bool IReducerArgs.InvokeHandler(ReducerEvent reducerEvent) => Reducer.On{func_name_pascal_case}(reducerEvent, this);");
+        writeln!(output, "bool IReducerArgs.InvokeHandler(EventContext ctx) => ctx.Reducers.Invoke{func_name_pascal_case}(ctx, this);");
         if !reducer.args.is_empty() {
             writeln!(output);
         }
-        for (arg_i, arg) in reducer.args.iter().enumerate() {
+        for arg in reducer.args.iter() {
             let name = arg
                 .name
                 .as_deref()
                 .unwrap_or_else(|| panic!("reducer args should have names: {func_name}"));
-            let arg_name = name.to_case(Case::Camel);
-            let field_name = name.to_case(Case::Pascal);
             let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, namespace);
+            let field_name = name.to_case(Case::Pascal);
 
-            if arg_i != 0 {
-                func_params.push_str(", ");
-                field_inits.push_str(", ");
-            }
             write!(output, "public {arg_type_str} {field_name}");
             // Skip default initializer if it's the same as the implicit default.
             if let Some(default) = default_init(ctx, &arg.algebraic_type) {
                 write!(output, " = {default}");
             }
             writeln!(output, ";");
-            write!(func_params, "{arg_type_str} {arg_name}").unwrap();
-            write!(field_inits, "{field_name} = {arg_name}").unwrap();
         }
     });
-
-    writeln!(output);
-
-    writeln!(output, "public static partial class Reducer");
-    indented_block(&mut output, |output| {
-        let delegate_separator = if !reducer.args.is_empty() { ", " } else { "" };
-        writeln!(
-            output,
-            "public delegate void {func_name_pascal_case}Handler(ReducerEvent reducerEvent{delegate_separator}{func_params});"
-        );
-        writeln!(
-            output,
-            "public static event {func_name_pascal_case}Handler? On{func_name_pascal_case}Event;"
-        );
-
-        writeln!(output);
-
-        writeln!(output, "public static void {func_name_pascal_case}({func_params})");
-        indented_block(output, |output| {
-            writeln!(
-                output,
-                "SpacetimeDBClient.instance.InternalCallReducer(new {func_name_pascal_case}ArgsStruct {{ {field_inits} }});"
-            );
-        });
-        writeln!(output);
-
-        writeln!(
-            output,
-            "public static bool On{func_name_pascal_case}(ReducerEvent reducerEvent, {func_name_pascal_case}ArgsStruct args)"
-        );
-        indented_block(output, |output| {
-            writeln!(output, "if (On{func_name_pascal_case}Event == null) return false;");
-            writeln!(output, "On{func_name_pascal_case}Event(");
-            // Write out arguments one per line
-            {
-                indent_scope!(output);
-                write!(output, "reducerEvent");
-                for (i, arg) in reducer.args.iter().enumerate() {
-                    writeln!(output, ",");
-                    let arg_name = arg
-                        .name
-                        .as_deref()
-                        .map_or_else(|| format!("Arg{i}"), |name| name.to_case(Case::Pascal));
-                    write!(output, "args.{arg_name}");
-                }
-                writeln!(output);
-            }
-            writeln!(output, ");");
-            writeln!(output, "return true;");
-        });
-    });
-    writeln!(output);
 
     output.into_inner()
 }
 
 pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) -> Vec<(String, String)> {
     let mut results = Vec::new();
+
+    let tables = items
+        .iter()
+        .filter_map(|i| {
+            if let GenItem::Table(table) = i {
+                Some(table)
+            }
+            else {
+                None
+            }
+        });
 
     let reducers: Vec<&ReducerDef> = items
         .iter()
@@ -640,23 +584,98 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
 
     let mut output = CsharpAutogen::new(namespace, &["SpacetimeDB.ClientApi"]);
 
-    writeln!(output, "public enum ReducerType");
+    writeln!(output, "public interface IReducerArgs : IReducerArgsBase");
     indented_block(&mut output, |output| {
-        writeln!(output, "None,");
-        for reducer_name in &reducer_names {
-            writeln!(output, "{reducer_name},");
+        writeln!(output, "bool InvokeHandler(EventContext ctx);");
+    });
+    writeln!(output);
+
+    writeln!(output, "public sealed class RemoteTables");
+    indented_block(&mut output, |output| {
+        for table in tables {
+            let name = &table.schema.table_name;
+            writeln!(output, "public readonly RemoteTableHandle<EventContext, {}> {} = new();", name, name);
         }
     });
     writeln!(output);
 
-    writeln!(output, "public interface IReducerArgs : IReducerArgsBase");
+    writeln!(output, "public sealed class RemoteReducers : RemoteBase<DbConnection>");
     indented_block(&mut output, |output| {
-        writeln!(output, "ReducerType ReducerType {{ get; }}");
-        writeln!(output, "bool InvokeHandler(ReducerEvent reducerEvent);");
+        for reducer in &reducers {
+            let func_name = &*reducer.name;
+            let func_name_pascal_case = func_name.to_case(Case::Pascal);
+            let delegate_separator = if !reducer.args.is_empty() { ", " } else { "" };
+
+            let mut func_params: String = String::new();
+            let mut field_inits: String = String::new();
+
+            for (arg_i, arg) in reducer.args.iter().enumerate() {
+                if arg_i != 0 {
+                    func_params.push_str(", ");
+                    field_inits.push_str(", ");
+                }
+
+                let name = arg
+                    .name
+                    .as_deref()
+                    .unwrap_or_else(|| panic!("reducer args should have names: {func_name}"));
+                let arg_type_str = ty_fmt(ctx, &arg.algebraic_type, namespace);
+                let arg_name = name.to_case(Case::Camel);
+                let field_name = name.to_case(Case::Pascal);
+
+                write!(func_params, "{arg_type_str} {arg_name}").unwrap();
+                write!(field_inits, "{field_name} = {arg_name}").unwrap();
+            }
+
+            writeln!(
+                output,
+                "public delegate void {func_name_pascal_case}Handler(EventContext ctx{delegate_separator}{func_params});"
+            );
+            writeln!(
+                output,
+                "public event {func_name_pascal_case}Handler? On{func_name_pascal_case};"
+            );
+            writeln!(output);
+
+
+            writeln!(output, "public void {func_name_pascal_case}({func_params})");
+            indented_block(output, |output| {
+                writeln!(
+                    output,
+                    "conn.InternalCallReducer(new {func_name_pascal_case}ArgsStruct {{ {field_inits} }});"
+                );
+            });
+            writeln!(output);
+
+            writeln!(
+                output,
+                "public bool Invoke{func_name_pascal_case}(EventContext ctx, {func_name_pascal_case}ArgsStruct args)"
+            );
+            indented_block(output, |output| {
+                writeln!(output, "if (On{func_name_pascal_case} == null) return false;");
+                writeln!(output, "On{func_name_pascal_case}(");
+                // Write out arguments one per line
+                {
+                    indent_scope!(output);
+                    write!(output, "ctx");
+                    for (i, arg) in reducer.args.iter().enumerate() {
+                        writeln!(output, ",");
+                        let arg_name = arg
+                            .name
+                            .as_deref()
+                            .map_or_else(|| format!("Arg{i}"), |name| name.to_case(Case::Pascal));
+                        write!(output, "args.{arg_name}");
+                    }
+                    writeln!(output);
+                }
+                writeln!(output, ");");
+                writeln!(output, "return true;");
+            });
+        }
     });
     writeln!(output);
 
-    writeln!(output, "public partial class ReducerEvent : ReducerEventBase");
+    writeln!(output, "public partial class EventContext : EventContextBase<RemoteTables, RemoteReducers>");
     indented_block(&mut output, |output| {
         writeln!(output, "public IReducerArgs? Args {{ get; }}");
         writeln!(output);
@@ -664,33 +683,8 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
         writeln!(output);
         writeln!(
             output,
-            r#"[Obsolete("ReducerType is deprecated, please match directly on type of .Args instead.")]"#
+            "public EventContext(DbConnection conn, TransactionUpdate update, IReducerArgs? args) : base(conn.RemoteTables, conn.RemoteReducers, update) => Args = args;"
         );
-        writeln!(
-            output,
-            "public ReducerType Reducer => Args?.ReducerType ?? ReducerType.None;"
-        );
-        writeln!(output);
-        writeln!(
-            output,
-            "public ReducerEvent(IReducerArgs? args) : base() => Args = args;"
-        );
-        writeln!(
-            output,
-            "public ReducerEvent(TransactionUpdate update, IReducerArgs? args) : base(update) => Args = args;"
-        );
-        writeln!(output);
-        // Properties for reducer args
-        for reducer_name in &reducer_names {
-            writeln!(
-                output,
-                r#"[Obsolete("Accessors that implicitly cast `Args` are deprecated, please match `Args` against the desired type explicitly instead.")]"#
-            );
-            writeln!(
-                output,
-                "public {reducer_name}ArgsStruct {reducer_name}Args => ({reducer_name}ArgsStruct)Args!;"
-            );
-        }
         writeln!(output);
         // Event handlers.
         writeln!(
@@ -702,11 +696,18 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
 
     writeln!(
         output,
-        "public class SpacetimeDBClient : SpacetimeDBClientBase<ReducerEvent>"
+        "public class DbConnection : DbConnectionBase<DbConnection, EventContext>"
     );
     indented_block(&mut output, |output| {
-        writeln!(output, "protected SpacetimeDBClient()");
+        writeln!(output, "public readonly RemoteTables RemoteTables = new();");
+        writeln!(output, "public readonly RemoteReducers RemoteReducers = new();");
+        writeln!(output);
+
+        writeln!(output, "public DbConnection()");
         indented_block(output, |output| {
+            writeln!(output, "RemoteReducers.Init(this);");
+            writeln!(output);
+
             for item in items {
                 if let GenItem::Table(table) = item {
                     writeln!(
@@ -719,12 +720,9 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
         });
         writeln!(output);
 
-        writeln!(output, "public static readonly SpacetimeDBClient instance = new();");
-        writeln!(output);
-
         writeln!(
             output,
-            "protected override ReducerEvent ReducerEventFromDbEvent(TransactionUpdate update)"
+            "protected override EventContext ReducerEventFromDbEvent(TransactionUpdate update)"
         );
         indented_block(output, |output| {
             writeln!(output, "var encodedArgs = update.ReducerCall.Args;");
@@ -748,7 +746,7 @@ pub fn autogen_csharp_globals(ctx: &GenCtx, items: &[GenItem], namespace: &str) 
                 );
             }
             writeln!(output, "}};");
-            writeln!(output, "return new ReducerEvent(update, args);");
+            writeln!(output, "return new EventContext(this, update, args);");
         });
     });
 
