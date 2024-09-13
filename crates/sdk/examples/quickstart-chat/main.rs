@@ -1,7 +1,7 @@
 mod module_bindings;
 use module_bindings::*;
 
-use spacetimedb_sdk::{DbContext, Event, Identity, ReducerEvent, Status};
+use spacetimedb_sdk::{DbContext, Event, Identity, ReducerEvent, Status, Table, TableWithPrimaryKey};
 
 // # Our main function
 
@@ -96,7 +96,7 @@ fn print_message(ctx: &EventContext, message: &Message) {
         .db
         .user()
         .identity()
-        .find(message.sender)
+        .find(&message.sender)
         .map(|u| user_name_or_identity(&u))
         .unwrap_or_else(|| "unknown".to_string());
     println!("{}: {}", sender, message.text);

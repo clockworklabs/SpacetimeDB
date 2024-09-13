@@ -241,7 +241,7 @@ pub struct GenCtx {
 }
 
 pub fn generate(module: RawModuleDefV8, lang: Language, namespace: &str) -> anyhow::Result<Vec<(String, String)>> {
-    let (ctx, items) = extract_from_moduledef(module);
+    let (ctx, items) = extract_from_moduledef(module, lang == Language::Rust);
     let items: Vec<GenItem> = items.collect();
     let mut files: Vec<(String, String)> = items
         .iter()
@@ -260,7 +260,16 @@ fn generate_globals(ctx: &GenCtx, lang: Language, namespace: &str, items: &[GenI
     }
 }
 
-pub fn extract_from_moduledef(module: RawModuleDefV8) -> (GenCtx, impl Iterator<Item = GenItem>) {
+/// If `separate_types_for_tables` is true, yield [`GenItem::TypeAlias`]es
+/// for tables in addition to [`GenItem::Table`]s.
+/// If it is false, do not yield [`GenItem::TypeAlias`]es
+/// for types which are also referenced by [`GenItem::Table`]s.
+// TODO: remove `separate_typesrfor_tables` parameter (make it always true)
+// after the TypeScript and C# SDKs have been updated.
+pub fn extract_from_moduledef(
+    module: RawModuleDefV8,
+    separate_types_for_tables: bool,
+) -> (GenCtx, impl Iterator<Item = GenItem>) {
     let RawModuleDefV8 {
         typespace,
         tables,
@@ -296,7 +305,7 @@ pub fn extract_from_moduledef(module: RawModuleDefV8) -> (GenCtx, impl Iterator<
     let iter = itertools::chain!(
         misc_exports
             .into_iter()
-            .filter(move |MiscModuleExport::TypeAlias(a)| !tableset.contains(&a.ty))
+            .filter(move |MiscModuleExport::TypeAlias(a)| separate_types_for_tables || !tableset.contains(&a.ty))
             .map(GenItem::from_misc_export),
         tables.into_iter().map(GenItem::Table),
         reducers
@@ -331,22 +340,16 @@ impl GenItem {
     fn generate_rust(&self, ctx: &GenCtx) -> Option<(String, String)> {
         match self {
             GenItem::Table(table) => {
-                let code = rust::autogen_rust_table(ctx, table);
-                // TODO: this is not ideal (should use table name, not row type name)
-                let tyname = ctx.names[table.data.idx()].as_ref().unwrap();
-                Some((rust::rust_type_file_name(tyname), code))
+                let (filename, code) = rust::autogen_rust_table(ctx, table);
+                Some((filename, code))
             }
             GenItem::TypeAlias(TypeAlias { name, ty }) => {
-                let code = match &ctx.typespace[*ty] {
-                    AlgebraicType::Sum(sum) => rust::autogen_rust_sum(ctx, name, sum),
-                    AlgebraicType::Product(prod) => rust::autogen_rust_tuple(ctx, name, prod),
-                    _ => todo!(),
-                };
-                Some((rust::rust_type_file_name(name), code))
+                let (filename, code) = rust::autogen_rust_type(ctx, name, *ty);
+                Some((filename, code))
             }
             GenItem::Reducer(reducer) => {
-                let code = rust::autogen_rust_reducer(ctx, reducer);
-                Some((rust::rust_reducer_file_name(&reducer.name), code))
+                let (filename, code) = rust::autogen_rust_reducer(ctx, reducer);
+                Some((filename, code))
             }
         }
     }

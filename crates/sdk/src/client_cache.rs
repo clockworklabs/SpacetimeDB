@@ -130,11 +130,11 @@ pub struct UniqueConstraint<Row, Col> {
 }
 
 impl<Row: Clone, Col: PartialEq> UniqueConstraint<Row, Col> {
-    pub fn find(&self, col_val: Col) -> Option<Row> {
+    pub fn find(&self, col_val: &Col) -> Option<Row> {
         self.table
             .entries
             .values()
-            .find(|row| (self.get_unique_field)(row) == &col_val)
+            .find(|row| (self.get_unique_field)(row) == col_val)
             .cloned()
     }
 }
