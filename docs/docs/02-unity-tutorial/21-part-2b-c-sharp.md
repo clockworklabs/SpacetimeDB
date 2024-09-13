@@ -171,9 +171,9 @@ public static void CreatePlayer(ReducerContext ctx, string username)
 
 SpacetimeDB gives you the ability to define custom reducers that automatically trigger when certain events occur.
 
--   `Init` - Called the first time you publish your module and anytime you clear the database. We'll learn about publishing later.
--   `Connect` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `Sender` value of the `ReducerContext`.
--   `Disconnect` - Called when a user disconnects from the SpacetimeDB module.
+- `Init` - Called the first time you publish your module and anytime you clear the database. We'll learn about publishing later.
+- `Connect` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `Sender` value of the `ReducerContext`.
+- `Disconnect` - Called when a user disconnects from the SpacetimeDB module.
 
 Next, we are going to write a custom `Init` reducer that inserts the default message of the day into our `Config` table.
 
@@ -330,6 +330,7 @@ public static void SendChatMessage(ReducerContext ctx, string text)
 ## Wrapping Up
 
 ### Publishing a Module to SpacetimeDB
+
 💡View the [entire lib.cs file](https://gist.github.com/dylanh724/68067b4e843ea6e99fbd297fe1a87c49)
 
 Now that we've written the code for our server module and reached a clean checkpoint, we need to publish it to SpacetimeDB. This will create the database and call the init reducer. In your terminal or command window, run the following commands.

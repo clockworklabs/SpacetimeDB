@@ -7,52 +7,52 @@ The SpacetimeDB client C# for Rust contains all the tools you need to build nati
 
 ## Table of Contents
 
--   [The SpacetimeDB C# client SDK](#the-spacetimedb-c-client-sdk)
-    -   [Table of Contents](#table-of-contents)
-    -   [Install the SDK](#install-the-sdk)
-        -   [Using the `dotnet` CLI tool](#using-the-dotnet-cli-tool)
-        -   [Using Unity](#using-unity)
-    -   [Generate module bindings](#generate-module-bindings)
-    -   [Initialization](#initialization)
-        -   [Property `SpacetimeDBClient.instance`](#property-spacetimedbclientinstance)
-        -   [Class `NetworkManager`](#class-networkmanager)
-        -   [Method `SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect)
-        -   [Event `SpacetimeDBClient.onIdentityReceived`](#event-spacetimedbclientonidentityreceived)
-        -   [Event `SpacetimeDBClient.onConnect`](#event-spacetimedbclientonconnect)
-    -   [Query subscriptions & one-time actions](#subscribe-to-queries)
-        -   [Method `SpacetimeDBClient.Subscribe`](#method-spacetimedbclientsubscribe)
-        -   [Event `SpacetimeDBClient.onSubscriptionApplied`](#event-spacetimedbclientonsubscriptionapplied)
-        -   [Method `SpacetimeDBClient.OneOffQuery`](#method-spacetimedbclientoneoffquery)
-    -   [View rows of subscribed tables](#view-rows-of-subscribed-tables)
-        -   [Class `{TABLE}`](#class-table)
-            -   [Static Method `{TABLE}.Iter`](#static-method-tableiter)
-            -   [Static Method `{TABLE}.FilterBy{COLUMN}`](#static-method-tablefilterbycolumn)
-            -   [Static Method `{TABLE}.FindBy{COLUMN}`](#static-method-tablefindbycolumn)
-            -   [Static Method `{TABLE}.Count`](#static-method-tablecount)
-            -   [Static Event `{TABLE}.OnInsert`](#static-event-tableoninsert)
-            -   [Static Event `{TABLE}.OnBeforeDelete`](#static-event-tableonbeforedelete)
-            -   [Static Event `{TABLE}.OnDelete`](#static-event-tableondelete)
-            -   [Static Event `{TABLE}.OnUpdate`](#static-event-tableonupdate)
-    -   [Observe and invoke reducers](#observe-and-invoke-reducers)
-        -   [Class `Reducer`](#class-reducer)
-            -   [Static Method `Reducer.{REDUCER}`](#static-method-reducerreducer)
-            -   [Static Event `Reducer.On{REDUCER}`](#static-event-reduceronreducer)
-        -   [Class `ReducerEvent`](#class-reducerevent)
-            -   [Enum `Status`](#enum-status)
-                -   [Variant `Status.Committed`](#variant-statuscommitted)
-                -   [Variant `Status.Failed`](#variant-statusfailed)
-                -   [Variant `Status.OutOfEnergy`](#variant-statusoutofenergy)
-    -   [Identity management](#identity-management)
-        -   [Class `AuthToken`](#class-authtoken)
-            -   [Static Method `AuthToken.Init`](#static-method-authtokeninit)
-            -   [Static Property `AuthToken.Token`](#static-property-authtokentoken)
-            -   [Static Method `AuthToken.SaveToken`](#static-method-authtokensavetoken)
-        -   [Class `Identity`](#class-identity)
-        -   [Class `Identity`](#class-identity-1)
-    -   [Customizing logging](#customizing-logging)
-        -   [Interface `ISpacetimeDBLogger`](#interface-ispacetimedblogger)
-        -   [Class `ConsoleLogger`](#class-consolelogger)
-        -   [Class `UnityDebugLogger`](#class-unitydebuglogger)
+- [The SpacetimeDB C# client SDK](#the-spacetimedb-c-client-sdk)
+  - [Table of Contents](#table-of-contents)
+  - [Install the SDK](#install-the-sdk)
+    - [Using the `dotnet` CLI tool](#using-the-dotnet-cli-tool)
+    - [Using Unity](#using-unity)
+  - [Generate module bindings](#generate-module-bindings)
+  - [Initialization](#initialization)
+    - [Property `SpacetimeDBClient.instance`](#property-spacetimedbclientinstance)
+    - [Class `NetworkManager`](#class-networkmanager)
+    - [Method `SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect)
+    - [Event `SpacetimeDBClient.onIdentityReceived`](#event-spacetimedbclientonidentityreceived)
+    - [Event `SpacetimeDBClient.onConnect`](#event-spacetimedbclientonconnect)
+  - [Query subscriptions & one-time actions](#subscribe-to-queries)
+    - [Method `SpacetimeDBClient.Subscribe`](#method-spacetimedbclientsubscribe)
+    - [Event `SpacetimeDBClient.onSubscriptionApplied`](#event-spacetimedbclientonsubscriptionapplied)
+    - [Method `SpacetimeDBClient.OneOffQuery`](#method-spacetimedbclientoneoffquery)
+  - [View rows of subscribed tables](#view-rows-of-subscribed-tables)
+    - [Class `{TABLE}`](#class-table)
+      - [Static Method `{TABLE}.Iter`](#static-method-tableiter)
+      - [Static Method `{TABLE}.FilterBy{COLUMN}`](#static-method-tablefilterbycolumn)
+      - [Static Method `{TABLE}.FindBy{COLUMN}`](#static-method-tablefindbycolumn)
+      - [Static Method `{TABLE}.Count`](#static-method-tablecount)
+      - [Static Event `{TABLE}.OnInsert`](#static-event-tableoninsert)
+      - [Static Event `{TABLE}.OnBeforeDelete`](#static-event-tableonbeforedelete)
+      - [Static Event `{TABLE}.OnDelete`](#static-event-tableondelete)
+      - [Static Event `{TABLE}.OnUpdate`](#static-event-tableonupdate)
+  - [Observe and invoke reducers](#observe-and-invoke-reducers)
+    - [Class `Reducer`](#class-reducer)
+      - [Static Method `Reducer.{REDUCER}`](#static-method-reducerreducer)
+      - [Static Event `Reducer.On{REDUCER}`](#static-event-reduceronreducer)
+    - [Class `ReducerEvent`](#class-reducerevent)
+      - [Enum `Status`](#enum-status)
+        - [Variant `Status.Committed`](#variant-statuscommitted)
+        - [Variant `Status.Failed`](#variant-statusfailed)
+        - [Variant `Status.OutOfEnergy`](#variant-statusoutofenergy)
+  - [Identity management](#identity-management)
+    - [Class `AuthToken`](#class-authtoken)
+      - [Static Method `AuthToken.Init`](#static-method-authtokeninit)
+      - [Static Property `AuthToken.Token`](#static-property-authtokentoken)
+      - [Static Method `AuthToken.SaveToken`](#static-method-authtokensavetoken)
+    - [Class `Identity`](#class-identity)
+    - [Class `Identity`](#class-identity-1)
+  - [Customizing logging](#customizing-logging)
+    - [Interface `ISpacetimeDBLogger`](#interface-ispacetimedblogger)
+    - [Class `ConsoleLogger`](#class-consolelogger)
+    - [Class `UnityDebugLogger`](#class-unitydebuglogger)
 
 ## Install the SDK
 
@@ -319,17 +319,17 @@ For each table defined by a module, `spacetime generate` will generate a class [
 
 Static Methods:
 
--   [`{TABLE}.Iter()`](#static-method-tableiter) iterates all subscribed rows in the client cache.
--   [`{TABLE}.FilterBy{COLUMN}(value)`](#static-method-tablefilterbycolumn) filters subscribed rows in the client cache by a column value.
--   [`{TABLE}.FindBy{COLUMN}(value)`](#static-method-tablefindbycolumn) finds a subscribed row in the client cache by a unique column value.
--   [`{TABLE}.Count()`](#static-method-tablecount) counts the number of subscribed rows in the client cache.
+- [`{TABLE}.Iter()`](#static-method-tableiter) iterates all subscribed rows in the client cache.
+- [`{TABLE}.FilterBy{COLUMN}(value)`](#static-method-tablefilterbycolumn) filters subscribed rows in the client cache by a column value.
+- [`{TABLE}.FindBy{COLUMN}(value)`](#static-method-tablefindbycolumn) finds a subscribed row in the client cache by a unique column value.
+- [`{TABLE}.Count()`](#static-method-tablecount) counts the number of subscribed rows in the client cache.
 
 Static Events:
 
--   [`{TABLE}.OnInsert`](#static-event-tableoninsert) is called when a row is inserted into the client cache.
--   [`{TABLE}.OnBeforeDelete`](#static-event-tableonbeforedelete) is called when a row is about to be removed from the client cache.
--   If the table has a primary key attribute, [`{TABLE}.OnUpdate`](#static-event-tableonupdate) is called when a row is updated.
--   [`{TABLE}.OnDelete`](#static-event-tableondelete) is called while a row is being removed from the client cache. You should almost always use [`{TABLE}.OnBeforeDelete`](#static-event-tableonbeforedelete) instead.
+- [`{TABLE}.OnInsert`](#static-event-tableoninsert) is called when a row is inserted into the client cache.
+- [`{TABLE}.OnBeforeDelete`](#static-event-tableonbeforedelete) is called when a row is about to be removed from the client cache.
+- If the table has a primary key attribute, [`{TABLE}.OnUpdate`](#static-event-tableonupdate) is called when a row is updated.
+- [`{TABLE}.OnDelete`](#static-event-tableondelete) is called while a row is being removed from the client cache. You should almost always use [`{TABLE}.OnBeforeDelete`](#static-event-tableonbeforedelete) instead.
 
 Note that it is not possible to directly insert into the database from the client SDK! All insertion validation should be performed inside serverside modules for security reasons. You can instead [invoke reducers](#observe-and-invoke-reducers), which run code inside the database that can insert rows for you.
 
@@ -445,8 +445,8 @@ Register a delegate for when a subscribed row is newly inserted into the databas
 
 The delegate takes two arguments:
 
--   A [`{TABLE}`](#class-table) instance with the data of the inserted row
--   A [`ReducerEvent?`], which contains the data of the reducer that inserted the row, or `null` if the row is being inserted while initializing a subscription.
+- A [`{TABLE}`](#class-table) instance with the data of the inserted row
+- A [`ReducerEvent?`], which contains the data of the reducer that inserted the row, or `null` if the row is being inserted while initializing a subscription.
 
 ```cs
 using SpacetimeDB;
@@ -483,8 +483,8 @@ Register a delegate for when a subscribed row is about to be deleted from the da
 
 The delegate takes two arguments:
 
--   A [`{TABLE}`](#class-table) instance with the data of the deleted row
--   A [`ReducerEvent`](#class-reducerevent), which contains the data of the reducer that deleted the row.
+- A [`{TABLE}`](#class-table) instance with the data of the deleted row
+- A [`ReducerEvent`](#class-reducerevent), which contains the data of the reducer that deleted the row.
 
 This event should almost always be used instead of [`OnDelete`](#static-event-tableondelete). This is because often, many rows will be deleted at once, and `OnDelete` can be invoked in an arbitrary order on these rows. This means that data related to a row may already be missing when `OnDelete` is called. `OnBeforeDelete` does not have this problem.
 
@@ -519,8 +519,8 @@ Register a delegate for when a subscribed row is being deleted from the database
 
 The delegate takes two arguments:
 
--   A [`{TABLE}`](#class-table) instance with the data of the deleted row
--   A [`ReducerEvent`](#class-reducerevent), which contains the data of the reducer that deleted the row.
+- A [`{TABLE}`](#class-table) instance with the data of the deleted row
+- A [`ReducerEvent`](#class-reducerevent), which contains the data of the reducer that deleted the row.
 
 ```cs
 using SpacetimeDB;
@@ -554,9 +554,9 @@ Register a delegate for when a subscribed row is being updated. This event is on
 
 The delegate takes three arguments:
 
--   A [`{TABLE}`](#class-table) instance with the old data of the updated row
--   A [`{TABLE}`](#class-table) instance with the new data of the updated row
--   A [`ReducerEvent`](#class-reducerevent), which contains the data of the reducer that updated the row.
+- A [`{TABLE}`](#class-table) instance with the old data of the updated row
+- A [`{TABLE}`](#class-table) instance with the new data of the updated row
+- A [`ReducerEvent`](#class-reducerevent), which contains the data of the reducer that updated the row.
 
 ```cs
 using SpacetimeDB;

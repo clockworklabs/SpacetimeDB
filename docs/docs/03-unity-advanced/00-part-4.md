@@ -165,7 +165,6 @@ pub fn resource_spawner_agent(_ctx: ReducerContext, _arg: ResourceSpawnAgentSche
 }
 ```
 
-
 2. Since this reducer uses `rand::Rng` we need add include it. Add this `use` statement to the top of lib.rs.
 
 ```rust
@@ -182,6 +181,7 @@ use rand::Rng;
         scheduled_at: duration!(1000ms).into()
     }).expect();
 ```
+
 struct ResouceSpawnAgentSchedueler {
 
 4. Next we need to generate our client code and publish the module. Since we changed the schema we need to make sure we include the `--clear-database` flag. Run the following commands from your Server directory:

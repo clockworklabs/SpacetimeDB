@@ -14,14 +14,14 @@ module-host communication and for storing row data in the database.
 In this reference, we give a formal definition of the format.
 To do this, we use inductive definitions, and define the following notation:
 
--   `bsatn(x)` denotes a function converting some value `x` to a list of bytes.
--   `a: B` means that `a` is of type `B`.
--   `Foo(x)` denotes extracting `x` out of some variant or type `Foo`.
--   `a ++ b` denotes concatenating two byte lists `a` and `b`.
--   `bsatn(A) = bsatn(B) | ... | bsatn(Z)` where `B` to `Z` are variants of `A`
-    means that `bsatn(A)` is defined as e.g.,
-    `bsatn(B)`, `bsatn(C)`, .., `bsatn(Z)` depending on what variant of `A` it was.
--   `[]` denotes the empty list of bytes.
+- `bsatn(x)` denotes a function converting some value `x` to a list of bytes.
+- `a: B` means that `a` is of type `B`.
+- `Foo(x)` denotes extracting `x` out of some variant or type `Foo`.
+- `a ++ b` denotes concatenating two byte lists `a` and `b`.
+- `bsatn(A) = bsatn(B) | ... | bsatn(Z)` where `B` to `Z` are variants of `A`
+  means that `bsatn(A)` is defined as e.g.,
+  `bsatn(B)`, `bsatn(C)`, .., `bsatn(Z)` depending on what variant of `A` it was.
+- `[]` denotes the empty list of bytes.
 
 ## Values
 
@@ -102,11 +102,11 @@ bsatn(Map(map)) = bsatn(len(m) as u32)
 
 Where
 
--   `f32_to_raw_bits(x)` is the raw transmute of `x: f32` to `u32`
--   `f64_to_raw_bits(x)` is the raw transmute of `x: f64` to `u64`
--   `normalize(a)` for `a: ArrayValue` converts `a` to a list of `AlgebraicValue`s
--   `key(map_i)` extracts the key of the `i`th entry of `map`
--   `value(map_i)` extracts the value of the `i`th entry of `map`
+- `f32_to_raw_bits(x)` is the raw transmute of `x: f32` to `u32`
+- `f64_to_raw_bits(x)` is the raw transmute of `x: f64` to `u64`
+- `normalize(a)` for `a: ArrayValue` converts `a` to a list of `AlgebraicValue`s
+- `key(map_i)` extracts the key of the `i`th entry of `map`
+- `value(map_i)` extracts the value of the `i`th entry of `map`
 
 ## Types
 

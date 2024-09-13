@@ -60,10 +60,10 @@ use spacetimedb::{spacetimedb, ReducerContext, Identity, Timestamp};
 
 From `spacetimedb`, we import:
 
--   `spacetimedb`, an attribute macro we'll use to define tables and reducers.
--   `ReducerContext`, a special argument passed to each reducer.
--   `Identity`, a unique identifier for each user.
--   `Timestamp`, a point in time. Specifically, an unsigned 64-bit count of milliseconds since the UNIX epoch.
+- `spacetimedb`, an attribute macro we'll use to define tables and reducers.
+- `ReducerContext`, a special argument passed to each reducer.
+- `Identity`, a unique identifier for each user.
+- `Timestamp`, a point in time. Specifically, an unsigned 64-bit count of milliseconds since the UNIX epoch.
 
 ## Define tables
 
@@ -122,11 +122,11 @@ pub fn set_name(ctx: ReducerContext, name: String) -> Result<(), String> {
 
 For now, we'll just do a bare minimum of validation, rejecting the empty name. You could extend this in various ways, like:
 
--   Comparing against a blacklist for moderation purposes.
--   Unicode-normalizing names.
--   Rejecting names that contain non-printable characters, or removing characters or replacing them with a placeholder.
--   Rejecting or truncating long names.
--   Rejecting duplicate names.
+- Comparing against a blacklist for moderation purposes.
+- Unicode-normalizing names.
+- Rejecting names that contain non-printable characters, or removing characters or replacing them with a placeholder.
+- Rejecting or truncating long names.
+- Rejecting duplicate names.
 
 To `server/src/lib.rs`, add:
 
@@ -179,8 +179,8 @@ fn validate_message(text: String) -> Result<String, String> {
 
 You could extend the validation in `validate_message` in similar ways to `validate_name`, or add additional checks to `send_message`, like:
 
--   Rejecting messages from senders who haven't set their names.
--   Rate-limiting users so they can't send new messages too quickly.
+- Rejecting messages from senders who haven't set their names.
+- Rate-limiting users so they can't send new messages too quickly.
 
 ## Set users' online status
 

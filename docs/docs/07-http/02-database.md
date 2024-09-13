@@ -517,7 +517,7 @@ Returns JSON in the form:
 ```
 
 | Field               | Type   | Meaning                                                          |
-| --------------------| ------ | ---------------------------------------------------------------- |
+| ------------------- | ------ | ---------------------------------------------------------------- |
 | `"address"`         | String | The address of the database.                                     |
 | `"owner_identity"`  | String | The Spacetime identity of the database's owner.                  |
 | `"host_type"`       | String | The module host type; currently always `"wasm"`.                 |

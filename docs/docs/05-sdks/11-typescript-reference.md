@@ -13,11 +13,11 @@ First, create a new client project, and add the following to your `tsconfig.json
 
 ```json
 {
-    "compilerOptions": {
-        //You can use any target higher than this one
-        //https://www.typescriptlang.org/tsconfig#target
-        "target": "es2015"
-    }
+  "compilerOptions": {
+    //You can use any target higher than this one
+    //https://www.typescriptlang.org/tsconfig#target
+    "target": "es2015"
+  }
 }
 ```
 
@@ -151,10 +151,10 @@ const auth_token = undefined;
 const protocol = 'binary';
 
 var spacetimeDBClient = new SpacetimeDBClient(
-    host,
-    name_or_address,
-    auth_token,
-    protocol
+  host,
+  name_or_address,
+  auth_token,
+  protocol
 );
 ```
 
@@ -277,9 +277,9 @@ const name_or_address = 'database_name';
 const auth_token = undefined;
 
 var spacetimeDBClient = new SpacetimeDBClient(
-    host,
-    name_or_address,
-    auth_token
+  host,
+  name_or_address,
+  auth_token
 );
 // Connect with the initial parameters
 spacetimeDBClient.connect();
@@ -301,8 +301,8 @@ disconnect(): void
 
 ```ts
 var spacetimeDBClient = new SpacetimeDBClient(
-    'ws://localhost:3000',
-    'database_name'
+  'ws://localhost:3000',
+  'database_name'
 );
 
 spacetimeDBClient.disconnect();
@@ -358,10 +358,10 @@ The credentials passed to the callback can be saved and used to authenticate the
 
 ```ts
 spacetimeDBClient.onConnect((token, identity, address) => {
-    console.log('Connected to SpacetimeDB');
-    console.log('Token', token);
-    console.log('Identity', identity);
-    console.log('Address', address);
+  console.log('Connected to SpacetimeDB');
+  console.log('Token', token);
+  console.log('Identity', identity);
+  console.log('Address', address);
 });
 ```
 
@@ -385,7 +385,7 @@ onError(callback: (...args: any[]) => void): void
 
 ```ts
 spacetimeDBClient.onError((...args: any[]) => {
-    console.error('ERROR', args);
+  console.error('ERROR', args);
 });
 ```
 
@@ -612,16 +612,16 @@ Return all the subscribed rows in the table.
 
 ```ts
 var spacetimeDBClient = new SpacetimeDBClient(
-    'ws://localhost:3000',
-    'database_name'
+  'ws://localhost:3000',
+  'database_name'
 );
 
 spacetimeDBClient.onConnect((token, identity, address) => {
-    spacetimeDBClient.subscribe(['SELECT * FROM Person']);
+  spacetimeDBClient.subscribe(['SELECT * FROM Person']);
 
-    setTimeout(() => {
-        console.log(Person.all()); // Prints all the `Person` rows in the database.
-    }, 5000);
+  setTimeout(() => {
+    console.log(Person.all()); // Prints all the `Person` rows in the database.
+  }, 5000);
 });
 ```
 
@@ -643,16 +643,16 @@ Return the number of subscribed rows in the table, or 0 if there is no active co
 
 ```ts
 var spacetimeDBClient = new SpacetimeDBClient(
-    'ws://localhost:3000',
-    'database_name'
+  'ws://localhost:3000',
+  'database_name'
 );
 
 spacetimeDBClient.onConnect((token, identity, address) => {
-    spacetimeDBClient.subscribe(['SELECT * FROM Person']);
+  spacetimeDBClient.subscribe(['SELECT * FROM Person']);
 
-    setTimeout(() => {
-        console.log(Person.count());
-    }, 5000);
+  setTimeout(() => {
+    console.log(Person.count());
+  }, 5000);
 });
 ```
 
@@ -682,16 +682,16 @@ These methods are named `filterBy{COLUMN}`, where `{COLUMN}` is the column name 
 
 ```ts
 var spacetimeDBClient = new SpacetimeDBClient(
-    'ws://localhost:3000',
-    'database_name'
+  'ws://localhost:3000',
+  'database_name'
 );
 
 spacetimeDBClient.onConnect((token, identity, address) => {
-    spacetimeDBClient.subscribe(['SELECT * FROM Person']);
+  spacetimeDBClient.subscribe(['SELECT * FROM Person']);
 
-    setTimeout(() => {
-        console.log(...Person.filterByName('John')); // prints all the `Person` rows named John.
-    }, 5000);
+  setTimeout(() => {
+    console.log(...Person.filterByName('John')); // prints all the `Person` rows named John.
+  }, 5000);
 });
 ```
 
@@ -721,16 +721,16 @@ These methods are named `findBy{COLUMN}`, where `{COLUMN}` is the column name co
 
 ```ts
 var spacetimeDBClient = new SpacetimeDBClient(
-    'ws://localhost:3000',
-    'database_name'
+  'ws://localhost:3000',
+  'database_name'
 );
 
 spacetimeDBClient.onConnect((token, identity, address) => {
-    spacetimeDBClient.subscribe(['SELECT * FROM Person']);
+  spacetimeDBClient.subscribe(['SELECT * FROM Person']);
 
-    setTimeout(() => {
-        console.log(Person.findById(0)); // prints a `Person` row with id 0.
-    }, 5000);
+  setTimeout(() => {
+    console.log(Person.findById(0)); // prints a `Person` row with id 0.
+  }, 5000);
 });
 ```
 
@@ -790,19 +790,19 @@ Register an `onInsert` callback for when a subscribed row is newly inserted into
 
 ```ts
 var spacetimeDBClient = new SpacetimeDBClient(
-    'ws://localhost:3000',
-    'database_name'
+  'ws://localhost:3000',
+  'database_name'
 );
 spacetimeDBClient.onConnect((token, identity, address) => {
-    spacetimeDBClient.subscribe(['SELECT * FROM Person']);
+  spacetimeDBClient.subscribe(['SELECT * FROM Person']);
 });
 
 Person.onInsert((person, reducerEvent) => {
-    if (reducerEvent) {
-        console.log('New person inserted by reducer', reducerEvent, person);
-    } else {
-        console.log('New person received during subscription update', person);
-    }
+  if (reducerEvent) {
+    console.log('New person inserted by reducer', reducerEvent, person);
+  } else {
+    console.log('New person received during subscription update', person);
+  }
 });
 ```
 
@@ -844,20 +844,15 @@ Register an `onUpdate` callback to run when an existing row is modified by prima
 
 ```ts
 var spacetimeDBClient = new SpacetimeDBClient(
-    'ws://localhost:3000',
-    'database_name'
+  'ws://localhost:3000',
+  'database_name'
 );
 spacetimeDBClient.onConnect((token, identity, address) => {
-    spacetimeDBClient.subscribe(['SELECT * FROM Person']);
+  spacetimeDBClient.subscribe(['SELECT * FROM Person']);
 });
 
 Person.onUpdate((oldPerson, newPerson, reducerEvent) => {
-    console.log(
-        'Person updated by reducer',
-        reducerEvent,
-        oldPerson,
-        newPerson
-    );
+  console.log('Person updated by reducer', reducerEvent, oldPerson, newPerson);
 });
 ```
 
@@ -897,22 +892,22 @@ Register an `onDelete` callback for when a subscribed row is removed from the da
 
 ```ts
 var spacetimeDBClient = new SpacetimeDBClient(
-    'ws://localhost:3000',
-    'database_name'
+  'ws://localhost:3000',
+  'database_name'
 );
 spacetimeDBClient.onConnect((token, identity, address) => {
-    spacetimeDBClient.subscribe(['SELECT * FROM Person']);
+  spacetimeDBClient.subscribe(['SELECT * FROM Person']);
 });
 
 Person.onDelete((person, reducerEvent) => {
-    if (reducerEvent) {
-        console.log('Person deleted by reducer', reducerEvent, person);
-    } else {
-        console.log(
-            'Person no longer subscribed during subscription update',
-            person
-        );
-    }
+  if (reducerEvent) {
+    console.log('Person deleted by reducer', reducerEvent, person);
+  } else {
+    console.log(
+      'Person no longer subscribed during subscription update',
+      person
+    );
+  }
 });
 ```
 
@@ -972,8 +967,8 @@ Register a callback to run each time the reducer is invoked.
 
 Clients will only be notified of reducer runs if either of two criteria is met:
 
--   The reducer inserted, deleted or updated at least one row to which the client is subscribed.
--   The reducer invocation was requested by this client, and the run failed.
+- The reducer inserted, deleted or updated at least one row to which the client is subscribed.
+- The reducer invocation was requested by this client, and the run failed.
 
 #### Parameters
 
@@ -985,6 +980,6 @@ Clients will only be notified of reducer runs if either of two criteria is met:
 
 ```ts
 SayHelloReducer.on((reducerEvent, ...reducerArgs) => {
-    console.log('SayHelloReducer called', reducerEvent, reducerArgs);
+  console.log('SayHelloReducer called', reducerEvent, reducerArgs);
 });
 ```

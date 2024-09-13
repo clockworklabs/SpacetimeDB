@@ -156,9 +156,9 @@ pub fn create_player(ctx: ReducerContext, username: String) -> Result<(), String
 
 SpacetimeDB gives you the ability to define custom reducers that automatically trigger when certain events occur.
 
--   `init` - Called the first time you publish your module and anytime you clear the database. We'll learn about publishing later.
--   `connect` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `sender` value of the `ReducerContext`.
--   `disconnect` - Called when a user disconnects from the SpacetimeDB module.
+- `init` - Called the first time you publish your module and anytime you clear the database. We'll learn about publishing later.
+- `connect` - Called when a user connects to the SpacetimeDB module. Their identity can be found in the `sender` value of the `ReducerContext`.
+- `disconnect` - Called when a user disconnects from the SpacetimeDB module.
 
 Next, we are going to write a custom `Init` reducer that inserts the default message of the day into our `Config` table.
 

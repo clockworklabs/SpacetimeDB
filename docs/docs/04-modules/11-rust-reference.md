@@ -111,17 +111,17 @@ The fields of the struct have to be types that spacetimedb knows how to encode i
 
 This is automatically defined for built in numeric types:
 
--   `bool`
--   `u8`, `u16`, `u32`, `u64`, `u128`
--   `i8`, `i16`, `i32`, `i64`, `i128`
--   `f32`, `f64`
+- `bool`
+- `u8`, `u16`, `u32`, `u64`, `u128`
+- `i8`, `i16`, `i32`, `i64`, `i128`
+- `f32`, `f64`
 
 And common data structures:
 
--   `String` and `&str`, utf-8 string data
--   `()`, the unit type
--   `Option<T> where T: SpacetimeType`
--   `Vec<T> where T: SpacetimeType`
+- `String` and `&str`, utf-8 string data
+- `()`, the unit type
+- `Option<T> where T: SpacetimeType`
+- `Vec<T> where T: SpacetimeType`
 
 All `#[spacetimedb(table)]` types are `SpacetimeType`s, and accordingly, all of their fields have to be.
 
@@ -193,7 +193,6 @@ struct Item {
 
 Note that reducers can call non-reducer functions, including standard library functions.
 
-
 There are several macros which modify the semantics of a column, which are applied to the members of the table struct. `#[unique]` and `#[autoinc]` are covered below, describing how those attributes affect the semantics of inserting, filtering, and so on.
 
 #[SpacetimeType]
@@ -201,6 +200,7 @@ There are several macros which modify the semantics of a column, which are appli
 #[sats]
 
 ### Defining Scheduler Tables
+
 Tables can be used to schedule a reducer calls either at a specific timestamp or at regular intervals.
 
 ```rust
@@ -211,7 +211,8 @@ struct SendMessageTimer {
 }
 ```
 
-The `scheduled` attribute adds a couple of default fields and expands as follows: 
+The `scheduled` attribute adds a couple of default fields and expands as follows:
+
 ```rust
 #[spacetimedb(table)]
  struct SendMessageTimer {
@@ -233,10 +234,11 @@ pub enum ScheduleAt {
 ```
 
 Managing timers with scheduled table is as simple as inserting or deleting rows from table.
+
 ```rust
 #[spacetimedb(reducer)]
 
-// Reducers linked to the scheduler table should have their first argument as `ReducerContext` 
+// Reducers linked to the scheduler table should have their first argument as `ReducerContext`
 // and the second as an instance of the table struct it is linked to.
 fn send_message(ctx: ReducerContext, arg: SendMessageTimer) -> Result<(), String> {
     // ...
@@ -248,7 +250,7 @@ fn init() {
     SendMessageTimer::insert(SendMessageTimer {
         scheduled_id: 1,
         text:"bot sending a message".to_string(),
-        //`spacetimedb::Timestamp` implements `From` trait to `ScheduleAt::Time`. 
+        //`spacetimedb::Timestamp` implements `From` trait to `ScheduleAt::Time`.
         scheduled_at: ctx.timestamp.plus(Duration::from_secs(10)).into()
     });
 
@@ -256,12 +258,11 @@ fn init() {
     SendMessageTimer::insert(SendMessageTimer {
         scheduled_id: 0,
         text:"bot sending a message".to_string(),
-        //`std::time::Duration` implements `From` trait to `ScheduleAt::Duration`. 
+        //`std::time::Duration` implements `From` trait to `ScheduleAt::Duration`.
         scheduled_at: duration!(100ms).into(),
     });
 }
 ```
-
 
 ## Client API
 

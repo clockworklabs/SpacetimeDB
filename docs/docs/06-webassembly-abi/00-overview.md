@@ -7,12 +7,12 @@ This document specifies the _low level details_ of module-host interactions (_"M
 
 The Module ABI is defined in [`bindings_sys::raw`] and is used by modules to interact with their host and perform various operations like:
 
--   logging,
--   transporting data,
--   scheduling reducers,
--   altering tables,
--   inserting and deleting rows,
--   querying tables.
+- logging,
+- transporting data,
+- scheduling reducers,
+- altering tables,
+- inserting and deleting rows,
+- querying tables.
 
 In the next few sections, we'll define the functions that make up the ABI and what these functions do.
 

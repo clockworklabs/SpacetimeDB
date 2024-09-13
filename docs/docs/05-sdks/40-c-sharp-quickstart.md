@@ -142,8 +142,8 @@ For each table, we can register on-insert and on-delete callbacks to be run when
 
 These callbacks can fire in two contexts:
 
--   After a reducer runs, when the client's cache is updated about changes to subscribed rows.
--   After calling `subscribe`, when the client's cache is initialized with all existing matching rows.
+- After a reducer runs, when the client's cache is updated about changes to subscribed rows.
+- After calling `subscribe`, when the client's cache is initialized with all existing matching rows.
 
 This second case means that, even though the module only ever inserts online users, the client's `User.OnInsert` callbacks may be invoked with users who are offline. We'll only notify about online users.
 

@@ -7,8 +7,8 @@ Need help with the tutorial? [Join our Discord server](https://discord.gg/spacet
 
 This progressive tutorial is continued from one of the Part 2 tutorials:
 
--   [Rust Server Module](/docs/unity/part-2a-rust)
--   [C# Server Module](/docs/unity/part-2b-c-sharp)
+- [Rust Server Module](/docs/unity/part-2a-rust)
+- [C# Server Module](/docs/unity/part-2b-c-sharp)
 
 ## Updating our Unity Project Client to use SpacetimeDB
 
@@ -473,9 +473,9 @@ From here, the tutorial continues with more-advanced topics: The [next tutorial]
 
 ### Troubleshooting
 
--   If you get an error when running the generate command, make sure you have an empty subfolder in your Unity project Assets folder called `module_bindings`
+- If you get an error when running the generate command, make sure you have an empty subfolder in your Unity project Assets folder called `module_bindings`
 
--   If you get this exception when running the project:
+- If you get this exception when running the project:
 
 ```
 NullReferenceException: Object reference not set to an instance of an object
@@ -484,7 +484,7 @@ TutorialGameManager.Start () (at Assets/_Project/Game/TutorialGameManager.cs:26)
 
 Check to see if your GameManager object in the Scene has the NetworkManager component attached.
 
--   If you get an error in your Unity console when starting the game, double check your connection settings in the Inspector for the `GameManager` object in the scene.
+- If you get an error in your Unity console when starting the game, double check your connection settings in the Inspector for the `GameManager` object in the scene.
 
 ```
 Connection error: Unable to connect to the remote server

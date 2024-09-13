@@ -48,7 +48,7 @@ To work with SpacetimeDB and ensure compatibility, we need to add some essential
 1. Open the Unity Package Manager by going to **Window -> Package Manager**.
 2. In the Package Manager window, select the "Unity Registry" tab to view unity packages.
 3. Search for and install the following package:
-    - **Input System**: Enables the use of Unity's new Input system used by this project.
+   - **Input System**: Enables the use of Unity's new Input system used by this project.
 
 ![PackageManager-InputSystem](/images/unity-tutorial/PackageManager-InputSystem.JPG)
 
@@ -122,5 +122,5 @@ We chose ECS for this example project because it promotes scalability, modularit
 
 From here, the tutorial continues with your favorite server module language of choice:
 
--   [Rust](part-2a-rust)
--   [C#](part-2b-c-sharp)
+- [Rust](part-2a-rust)
+- [C#](part-2b-c-sharp)

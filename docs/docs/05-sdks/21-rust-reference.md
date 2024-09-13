@@ -443,8 +443,8 @@ Read the current connection's public [`Identity`](#type-identity).
 
 Returns an error if:
 
--   [`connect`](#function-connect) has not yet been called.
--   We connected anonymously, and we have not yet received our credentials.
+- [`connect`](#function-connect) has not yet been called.
+- We connected anonymously, and we have not yet received our credentials.
 
 ```rust
 connect(SPACETIMEDB_URI, DB_NAME, None)
@@ -467,8 +467,8 @@ Read the current connection's private [`Token`](#type-token).
 
 Returns an error if:
 
--   [`connect`](#function-connect) has not yet been called.
--   We connected anonymously, and we have not yet received our credentials.
+- [`connect`](#function-connect) has not yet been called.
+- We connected anonymously, and we have not yet received our credentials.
 
 ```rust
 connect(SPACETIMEDB_URI, DB_NAME, None)
@@ -491,8 +491,8 @@ Read the current connection's [`Credentials`](#type-credentials), including a pu
 
 Returns an error if:
 
--   [`connect`](#function-connect) has not yet been called.
--   We connected anonymously, and we have not yet received our credentials.
+- [`connect`](#function-connect) has not yet been called.
+- We connected anonymously, and we have not yet received our credentials.
 
 ```rust
 connect(SPACETIMEDB_URI, DB_NAME, None)
@@ -710,10 +710,10 @@ For each unique column of a table (those annotated `#[unique]` and `#[primarykey
 <<<<<<< HEAD:docs/05-sdks/21-rust-reference.md
 The method's return type depends on the column's attributes:
 
--   For unique columns, including those annotated `#[unique]` and `#[primarykey]`, the `filter_by` method returns an `Option<{TABLE}>`, where `{TABLE}` is the [table struct](#type-table).
--   # For non-unique columns, the `filter_by` method returns an `impl Iterator<Item = {TABLE}>`.
-    These methods are named `find_by_{COLUMN}`, where `{COLUMN}` is the column name converted to `snake_case`. The method's return type is `Option<{TABLE}>`.
-    > > > > > > > origin:docs/sdks/rust/index.md
+- For unique columns, including those annotated `#[unique]` and `#[primarykey]`, the `filter_by` method returns an `Option<{TABLE}>`, where `{TABLE}` is the [table struct](#type-table).
+- # For non-unique columns, the `filter_by` method returns an `impl Iterator<Item = {TABLE}>`.
+  These methods are named `find_by_{COLUMN}`, where `{COLUMN}` is the column name converted to `snake_case`. The method's return type is `Option<{TABLE}>`.
+  > > > > > > > origin:docs/sdks/rust/index.md
 
 ### Trait `TableType`
 
@@ -874,8 +874,8 @@ Register an `on_insert` callback for when a subscribed row is newly inserted int
 
 The callback takes two arguments:
 
--   `row: &Self`, the newly-inserted row value.
--   `reducer_event: Option<&ReducerEvent>`, the [`ReducerEvent`](#type-reducerevent) which caused this row to be inserted, or `None` if this row is being inserted while initializing a subscription.
+- `row: &Self`, the newly-inserted row value.
+- `reducer_event: Option<&ReducerEvent>`, the [`ReducerEvent`](#type-reducerevent) which caused this row to be inserted, or `None` if this row is being inserted while initializing a subscription.
 
 The returned `InsertCallbackId` can be passed to [`remove_on_insert`](#method-remove_on_insert) to remove the callback.
 
@@ -945,8 +945,8 @@ Register an `on_delete` callback for when a subscribed row is removed from the d
 
 The callback takes two arguments:
 
--   `row: &Self`, the previously-present row which is no longer resident in the database.
--   `reducer_event: Option<&ReducerEvent>`, the [`ReducerEvent`](#type-reducerevent) which caused this row to be deleted, or `None` if this row was previously subscribed but no longer matches the new queries while initializing a subscription.
+- `row: &Self`, the previously-present row which is no longer resident in the database.
+- `reducer_event: Option<&ReducerEvent>`, the [`ReducerEvent`](#type-reducerevent) which caused this row to be deleted, or `None` if this row was previously subscribed but no longer matches the new queries while initializing a subscription.
 
 The returned `DeleteCallbackId` can be passed to [`remove_on_delete`](#method-remove_on_delete) to remove the callback.
 
@@ -1033,9 +1033,9 @@ Register an `on_update` callback for when an existing row is modified.
 
 The callback takes three arguments:
 
--   `old: &Self`, the previous row value which has been replaced in the database.
--   `new: &Self`, the updated row value which is now resident in the database.
--   `reducer_event: Option<&ReducerEvent>`, the [`ReducerEvent`](#type-reducerevent) which caused this row to be inserted.
+- `old: &Self`, the previous row value which has been replaced in the database.
+- `new: &Self`, the updated row value which is now resident in the database.
+- `reducer_event: Option<&ReducerEvent>`, the [`ReducerEvent`](#type-reducerevent) which caused this row to be inserted.
 
 The returned `UpdateCallbackId` can be passed to [`remove_on_update`](#method-remove_on_update) to remove the callback.
 
@@ -1129,15 +1129,15 @@ For each reducer defined by a module, `spacetime generate` generates a function 
 
 The callback always accepts three arguments:
 
--   `caller_id: &Identity`, the [`Identity`](#type-identity) of the client which invoked the reducer.
--   `caller_address: Option<Address>`, the [`Address`](#type-address) of the client which invoked the reducer. This may be `None` for scheduled reducers.
+- `caller_id: &Identity`, the [`Identity`](#type-identity) of the client which invoked the reducer.
+- `caller_address: Option<Address>`, the [`Address`](#type-address) of the client which invoked the reducer. This may be `None` for scheduled reducers.
 
 In addition, the callback accepts a reference to each of the reducer's arguments.
 
 Clients will only be notified of reducer runs if either of two criteria is met:
 
--   The reducer inserted, deleted or updated at least one row to which the client is subscribed.
--   The reducer invocation was requested by this client, and the run failed.
+- The reducer inserted, deleted or updated at least one row to which the client is subscribed.
+- The reducer invocation was requested by this client, and the run failed.
 
 The `on_{REDUCER}` function returns a `ReducerCallbackId<{REDUCER}Args>`, where `{REDUCER}Args` is the [generated reducer arguments struct](#type-reducerargs). This `ReducerCallbackId` can be passed to the [generated `remove_on_{REDUCER}` function](#function-remove_on_reducer) to cancel the callback.
 

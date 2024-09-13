@@ -68,8 +68,8 @@ using SpacetimeDB.Module;
 using static SpacetimeDB.Runtime;
 ```
 
--   `SpacetimeDB.Module` contains the special attributes we'll use to define tables and reducers in our module.
--   `SpacetimeDB.Runtime` contains the raw API bindings SpacetimeDB uses to communicate with the database.
+- `SpacetimeDB.Module` contains the special attributes we'll use to define tables and reducers in our module.
+- `SpacetimeDB.Runtime` contains the raw API bindings SpacetimeDB uses to communicate with the database.
 
 We also need to create our static module class which all of the module code will live in. In `server/Lib.cs`, add:
 
@@ -139,11 +139,11 @@ public static void SetName(ReducerContext ctx, string name)
 
 For now, we'll just do a bare minimum of validation, rejecting the empty name. You could extend this in various ways, like:
 
--   Comparing against a blacklist for moderation purposes.
--   Unicode-normalizing names.
--   Rejecting names that contain non-printable characters, or removing characters or replacing them with a placeholder.
--   Rejecting or truncating long names.
--   Rejecting duplicate names.
+- Comparing against a blacklist for moderation purposes.
+- Unicode-normalizing names.
+- Rejecting names that contain non-printable characters, or removing characters or replacing them with a placeholder.
+- Rejecting or truncating long names.
+- Rejecting duplicate names.
 
 In `server/Lib.cs`, add to the `Module` class:
 
@@ -198,8 +198,8 @@ public static string ValidateMessage(string text)
 
 You could extend the validation in `ValidateMessage` in similar ways to `ValidateName`, or add additional checks to `SendMessage`, like:
 
--   Rejecting messages from senders who haven't set their names.
--   Rate-limiting users so they can't send new messages too quickly.
+- Rejecting messages from senders who haven't set their names.
+- Rate-limiting users so they can't send new messages too quickly.
 
 ## Set users' online status
 

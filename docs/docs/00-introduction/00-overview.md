@@ -70,21 +70,21 @@ Each client connection has an `Address`. These addresses are opaque, and do not 
 
 Currently, Rust is the best-supported language for writing SpacetimeDB modules. Support for lots of other languages is in the works!
 
--   [Rust](/docs/modules/rust) - [(Quickstart)](/docs/modules/rust/quickstart)
--   [C#](/docs/modules/c-sharp) - [(Quickstart)](/docs/modules/c-sharp/quickstart)
--   Python (Coming soon)
--   Typescript (Coming soon)
--   C++ (Planned)
--   Lua (Planned)
+- [Rust](/docs/modules/rust) - [(Quickstart)](/docs/modules/rust/quickstart)
+- [C#](/docs/modules/c-sharp) - [(Quickstart)](/docs/modules/c-sharp/quickstart)
+- Python (Coming soon)
+- Typescript (Coming soon)
+- C++ (Planned)
+- Lua (Planned)
 
 ### Client-side SDKs
 
--   [Rust](/docs/sdks/rust) - [(Quickstart)](/docs/sdks/rust/quickstart)
--   [C#](/docs/sdks/c-sharp) - [(Quickstart)](/docs/sdks/c-sharp/quickstart)
--   [TypeScript](/docs/sdks/typescript) - [(Quickstart)](/docs/sdks/typescript/quickstart)
--   Python (Planned)
--   C++ (Planned)
--   Lua (Planned)
+- [Rust](/docs/sdks/rust) - [(Quickstart)](/docs/sdks/rust/quickstart)
+- [C#](/docs/sdks/c-sharp) - [(Quickstart)](/docs/sdks/c-sharp/quickstart)
+- [TypeScript](/docs/sdks/typescript) - [(Quickstart)](/docs/sdks/typescript/quickstart)
+- Python (Planned)
+- C++ (Planned)
+- Lua (Planned)
 
 ### Unity
 
