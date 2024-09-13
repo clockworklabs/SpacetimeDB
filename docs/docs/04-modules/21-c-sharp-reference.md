@@ -25,7 +25,7 @@ static partial class Module
     // `[SpacetimeDB.Table]` registers a struct or a class as a SpacetimeDB table.
     //
     // It generates methods to insert, filter, update, and delete rows of the given type in the table.
-    [SpacetimeDB.Table]
+    [SpacetimeDB.Table(Public = true)]
     public partial struct Person
     {
         // `[SpacetimeDB.Column]` allows to specify column attributes / constraints such as
@@ -154,31 +154,64 @@ public enum Color
 
 SpacetimeDB has support for tagged enums which can be found in languages like Rust, but not C#.
 
-To bridge the gap, a special marker interface `SpacetimeDB.TaggedEnum` can be used on any `SpacetimeDB.Type`-marked `struct` or `class` to mark it as a SpacetimeDB tagged enum. It accepts a tuple of 2 or more named items and will generate methods to check which variant is currently active, as well as accessors for each variant.
+We provide a tagged enum support for C# modules via a special `record SpacetimeDB.TaggedEnum<(...types and names of the variants as a tuple...)>`.
 
-It is expected that you will use the `Is*` methods to check which variant is active before accessing the corresponding field, as the accessor will throw an exception on a state mismatch.
+When you inherit from the `SpacetimeDB.TaggedEnum` marker, it will generate variants as subclasses of the annotated type, so you can use regular C# pattern matching operators like `is` or `switch` to determine which variant a given tagged enum holds at any time.
+
+For unit variants (those without any data payload) you can use a built-in `SpacetimeDB.Unit` as the variant type.
+
+Example:
 
 ```csharp
-// Example declaration:
+// Define a tagged enum named `MyEnum` with three variants,
+// `MyEnum.String`, `MyEnum.Int` and `MyEnum.None`.
 [SpacetimeDB.Type]
-partial struct Option<T> : SpacetimeDB.TaggedEnum<(T Some, Unit None)> { }
+public partial record MyEnum : SpacetimeDB.TaggedEnum<(
+    string String,
+    int Int,
+    SpacetimeDB.Unit None
+)>;
 
-// Usage:
-var option = new Option<int> { Some = 42 };
-if (option.IsSome)
+// Print an instance of `MyEnum`, using `switch`/`case` to determine the active variant.
+void PrintEnum(MyEnum e)
 {
-    Log($"Value: {option.Some}");
+    switch (e)
+    {
+        case MyEnum.String(var s):
+            Console.WriteLine(s);
+            break;
+
+        case MyEnum.Int(var i):
+            Console.WriteLine(i);
+            break;
+
+        case MyEnum.None:
+            Console.WriteLine("(none)");
+            break;
+    }
 }
+
+// Test whether an instance of `MyEnum` holds some value (either a string or an int one).
+bool IsSome(MyEnum e) => e is not MyEnum.None;
+
+// Construct an instance of `MyEnum` with the `String` variant active.
+var myEnum = new MyEnum.String("Hello, world!");
+Console.WriteLine($"IsSome: {IsSome(myEnum)}");
+PrintEnum(myEnum);
 ```
 
 ### Tables
 
 `[SpacetimeDB.Table]` attribute can be used on any `struct` or `class` to mark it as a SpacetimeDB table. It will register a table in the database with the given name and fields as well as will generate C# methods to insert, filter, update, and delete rows of the given type.
+By default, tables are **private**. This means that they are only readable by the table owner, and by server module code.
+Adding `[SpacetimeDB.Table(Public = true))]` annotation makes a table public. **Public** tables are readable by all users, but can still only be modified by your server module code.
+
+_Coming soon: We plan to add much more robust access controls than just public or private. Stay tuned!_
 
 It implies `[SpacetimeDB.Type]`, so you must not specify both attributes on the same type.
 
 ```csharp
-[SpacetimeDB.Table]
+[SpacetimeDB.Table(Public = true)]
 public partial struct Person
 {
     [SpacetimeDB.Column(ColumnAttrs.Unique | ColumnAttrs.AutoInc)]
@@ -252,11 +285,11 @@ public static void Add(string name, int age)
 }
 ```
 
-If a reducer has an argument with a type `DbEventArgs` (`SpacetimeDB.Runtime.DbEventArgs`), it will be provided with event details such as the sender identity (`SpacetimeDB.Runtime.Identity`), sender address (`SpacetimeDB.Runtime.Address?`) and the time (`DateTimeOffset`) of the invocation:
+If a reducer has an argument with a type `ReducerContext` (`SpacetimeDB.Runtime.ReducerContext`), it will be provided with event details such as the sender identity (`SpacetimeDB.Runtime.Identity`), sender address (`SpacetimeDB.Runtime.Address?`) and the time (`DateTimeOffset`) of the invocation:
 
 ```csharp
 [SpacetimeDB.Reducer]
-public static void PrintInfo(DbEventArgs e)
+public static void PrintInfo(ReducerContext e)
 {
     Log($"Sender identity: {e.Sender}");
     Log($"Sender address: {e.Address}");
@@ -264,33 +297,80 @@ public static void PrintInfo(DbEventArgs e)
 }
 ```
 
-`[SpacetimeDB.Reducer]` also generates a function to schedule the given reducer in the future.
 
-Since it's not possible to generate extension methods on existing methods, the codegen will instead add a `Schedule`-prefixed method colocated in the same namespace as the original method instead. The generated method will accept `DateTimeOffset` argument for the time when the reducer should be invoked, followed by all the arguments of the reducer itself, except those that have type `DbEventArgs`.
+### Scheduler Tables
+Tables can be used to schedule a reducer calls either at a specific timestamp or at regular intervals.
 
 ```csharp
-// Example reducer:
-[SpacetimeDB.Reducer]
-public static void Add(string name, int age) { ... }
-
-// Auto-generated by the codegen:
-public static void ScheduleAdd(DateTimeOffset time, string name, int age) { ... }
-
-// Usage from another reducer:
-[SpacetimeDB.Reducer]
-public static void AddIn5Minutes(DbEventArgs e, string name, int age)
+public static partial class Timers
 {
-    // Note that we're using `e.Time` instead of `DateTimeOffset.Now` which is not allowed in modules.
-    var scheduleToken = ScheduleAdd(e.Time.AddMinutes(5), name, age);
+  
+    // The `Scheduled` attribute links this table to a reducer.
+    [SpacetimeDB.Table(Scheduled = nameof(SendScheduledMessage))]
+    public partial struct SendMessageTimer
+    {
+        public string Text;
+    }
 
-    // We can cancel the scheduled reducer by calling `Cancel()` on the returned token.
-    scheduleToken.Cancel();
+     
+    // Define the reducer that will be invoked by the scheduler table.
+    // The first parameter is always `ReducerContext`, and the second parameter is an instance of the linked table struct.
+    [SpacetimeDB.Reducer]
+    public static void SendScheduledMessage(ReducerContext ctx, SendMessageTimer arg)
+    {
+        // ...
+    }
+
+
+    // Scheduling reducers inside `init` reducer.
+    [SpacetimeDB.Reducer(ReducerKind.Init)]
+    public static void Init(ReducerContext ctx)
+    {
+
+        // Schedule a one-time reducer call by inserting a row.
+        new SendMessageTimer
+        {
+            Text = "bot sending a message",
+            ScheduledAt = ctx.Time.AddSeconds(10),
+            ScheduledId = 1,
+        }.Insert();
+
+
+        // Schedule a recurring reducer.
+        new SendMessageTimer
+        {
+            Text = "bot sending a message",
+            ScheduledAt = new TimeStamp(10),
+            ScheduledId = 2,
+        }.Insert();
+    }
 }
+```
+
+Annotating a struct with `Scheduled` automatically adds fields to support scheduling, It can be expanded as:
+
+```csharp
+public static partial class Timers
+{
+    [SpacetimeDB.Table]
+    public partial struct SendMessageTimer
+    {
+        public string Text;         // fields of original struct
+       
+        [SpacetimeDB.Column(ColumnAttrs.PrimaryKeyAuto)]
+        public ulong ScheduledId;   // unique identifier to be used internally
+        
+        public SpacetimeDB.ScheduleAt ScheduleAt;   // Scheduling details (Time or Inteval)
+    }
+}
+
+// `ScheduledAt` definition
+public abstract partial record ScheduleAt: SpacetimeDB.TaggedEnum<(DateTimeOffset Time, TimeSpan Interval)>
 ```
 
 #### Special reducers
 
-These are two special kinds of reducers that can be used to respond to module lifecycle events. They're stored in the `SpacetimeDB.Module.ReducerKind` class and can be used as an argument to the `[SpacetimeDB.Reducer]` attribute:
+These are four special kinds of reducers that can be used to respond to module lifecycle events. They're stored in the `SpacetimeDB.Module.ReducerKind` class and can be used as an argument to the `[SpacetimeDB.Reducer]` attribute:
 
 -   `ReducerKind.Init` - this reducer will be invoked when the module is first published.
 -   `ReducerKind.Update` - this reducer will be invoked when the module is updated.
@@ -305,4 +385,21 @@ public static void Init()
 {
     Log("...and we're live!");
 }
-```
+
+[SpacetimeDB.Reducer(ReducerKind.Update)]
+public static void Update()
+{
+    Log("Update get!");
+}
+
+[SpacetimeDB.Reducer(ReducerKind.Connect)]
+public static void OnConnect(DbEventArgs ctx)
+{
+    Log($"{ctx.Sender} has connected from {ctx.Address}!");
+}
+
+[SpacetimeDB.Reducer(ReducerKind.Disconnect)]
+public static void OnDisconnect(DbEventArgs ctx)
+{
+    Log($"{ctx.Sender} has disconnected.");
+}```

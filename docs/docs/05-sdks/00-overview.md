@@ -8,7 +8,6 @@ The SpacetimeDB Client SDKs provide a comprehensive interface to interact with t
 -   [Rust](/docs/sdks/rust) - [(Quickstart)](/docs/sdks/rust/quickstart)
 -   [C#](/docs/sdks/c-sharp) - [(Quickstart)](/docs/sdks/c-sharp/quickstart)
 -   [TypeScript](/docs/sdks/typescript) - [(Quickstart)](/docs/sdks/typescript/quickstart)
--   [Python](/docs/sdks/python) - [(Quickstart)](/docs/sdks/python/quickstart)
 
 ## Key Features
 
@@ -58,7 +57,7 @@ The familiarity of your development team with a particular language can greatly 
 
 ### Application Type
 
-Different languages are often better suited to different types of applications. For instance, if you are developing a web-based application, you might opt for TypeScript due to its seamless integration with web technologies. On the other hand, if you're developing a desktop application, you might choose C# or Python, depending on your requirements and platform. Python is also very useful for utility scripts and tools.
+Different languages are often better suited to different types of applications. For instance, if you are developing a web-based application, you might opt for TypeScript due to its seamless integration with web technologies. On the other hand, if you're developing a desktop application, you might choose C#, depending on your requirements and platform.
 
 ### Performance
 
@@ -74,4 +73,4 @@ Each language has its own ecosystem of libraries and tools that can help in deve
 
 Remember, the best language to use is the one that best fits your use case and the one you and your team are most comfortable with. It's worth noting that due to the consistent functionality across different SDKs, transitioning from one language to another should you need to in the future will primarily involve syntax changes rather than changes in the application's logic.
 
-You may want to use multiple languages in your application. For instance, you might want to use C# in Unity for your game logic, TypeScript for a web-based administration panel, and Python for utility scripts. This is perfectly fine, as the SpacetimeDB server is completely client-agnostic.
+You may want to use multiple languages in your application. For instance, you might want to use C# in Unity for your game logic and TypeScript for a web-based administration panel. This is perfectly fine, as the SpacetimeDB server is completely client-agnostic.

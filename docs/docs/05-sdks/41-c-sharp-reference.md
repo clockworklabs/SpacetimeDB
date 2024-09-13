@@ -14,7 +14,6 @@ The SpacetimeDB client C# for Rust contains all the tools you need to build nati
         -   [Using Unity](#using-unity)
     -   [Generate module bindings](#generate-module-bindings)
     -   [Initialization](#initialization)
-        -   [Static Method `SpacetimeDBClient.CreateInstance`](#static-method-spacetimedbclientcreateinstance)
         -   [Property `SpacetimeDBClient.instance`](#property-spacetimedbclientinstance)
         -   [Class `NetworkManager`](#class-networkmanager)
         -   [Method `SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect)
@@ -23,11 +22,12 @@ The SpacetimeDB client C# for Rust contains all the tools you need to build nati
     -   [Query subscriptions & one-time actions](#subscribe-to-queries)
         -   [Method `SpacetimeDBClient.Subscribe`](#method-spacetimedbclientsubscribe)
         -   [Event `SpacetimeDBClient.onSubscriptionApplied`](#event-spacetimedbclientonsubscriptionapplied)
-        -   [Method `SpacetimeDBClient.OneOffQuery`](#event-spacetimedbclientoneoffquery)
+        -   [Method `SpacetimeDBClient.OneOffQuery`](#method-spacetimedbclientoneoffquery)
     -   [View rows of subscribed tables](#view-rows-of-subscribed-tables)
         -   [Class `{TABLE}`](#class-table)
             -   [Static Method `{TABLE}.Iter`](#static-method-tableiter)
             -   [Static Method `{TABLE}.FilterBy{COLUMN}`](#static-method-tablefilterbycolumn)
+            -   [Static Method `{TABLE}.FindBy{COLUMN}`](#static-method-tablefindbycolumn)
             -   [Static Method `{TABLE}.Count`](#static-method-tablecount)
             -   [Static Event `{TABLE}.OnInsert`](#static-event-tableoninsert)
             -   [Static Event `{TABLE}.OnBeforeDelete`](#static-event-tableonbeforedelete)
@@ -87,32 +87,6 @@ Replace `PATH-TO-MODULE-DIRECTORY` with the path to your SpacetimeDB module.
 
 ## Initialization
 
-### Static Method `SpacetimeDBClient.CreateInstance`
-
-```cs
-namespace SpacetimeDB {
-
-public class SpacetimeDBClient {
-    public static void CreateInstance(ISpacetimeDBLogger loggerToUse);
-}
-
-}
-```
-
-Create a global SpacetimeDBClient instance, accessible via [`SpacetimeDBClient.instance`](#property-spacetimedbclientinstance)
-
-| Argument      | Type                                                  | Meaning                           |
-| ------------- | ----------------------------------------------------- | --------------------------------- |
-| `loggerToUse` | [`ISpacetimeDBLogger`](#interface-ispacetimedblogger) | The logger to use to log messages |
-
-There is a provided logger called [`ConsoleLogger`](#class-consolelogger) which logs to `System.Console`, and can be used as follows:
-
-```cs
-using SpacetimeDB;
-using SpacetimeDB.Types;
-SpacetimeDBClient.CreateInstance(new ConsoleLogger());
-```
-
 ### Property `SpacetimeDBClient.instance`
 
 ```cs
@@ -133,7 +107,7 @@ The Unity SpacetimeDB SDK relies on there being a `NetworkManager` somewhere in 
 
 ![Unity-AddNetworkManager](/images/unity-tutorial/Unity-AddNetworkManager.JPG)
 
-This component will handle calling [`SpacetimeDBClient.CreateInstance`](#static-method-spacetimedbclientcreateinstance) for you, but will not call [`SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect), you still need to handle that yourself. See the [Unity Quickstart](./UnityQuickStart) and [Unity Tutorial](./UnityTutorialPart1) for more information.
+This component will handle updating and closing the [`SpacetimeDBClient.instance`](#property-spacetimedbclientinstance) for you, but will not call [`SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect), you still need to handle that yourself. See the [Unity Quickstart](./UnityQuickStart) and [Unity Tutorial](./UnityTutorialPart1) for more information.
 
 ### Method `SpacetimeDBClient.Connect`
 
@@ -201,7 +175,7 @@ class SpacetimeDBClient {
 }
 ```
 
-+Called when we receive an auth token, [`Identity`](#class-identity) and [`Address`](#class-address) from the server. The [`Identity`](#class-identity) serves as a unique public identifier for a user of the database. It can be for several purposes, such as filtering rows in a database for the rows created by a particular user. The auth token is a private access token that allows us to assume an identity. The [`Address`](#class-address) is opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#class-identity).
+Called when we receive an auth token, [`Identity`](#class-identity) and [`Address`](#class-address) from the server. The [`Identity`](#class-identity) serves as a unique public identifier for a user of the database. It can be for several purposes, such as filtering rows in a database for the rows created by a particular user. The auth token is a private access token that allows us to assume an identity. The [`Address`](#class-address) is opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#class-identity).
 
 To store the auth token to the filesystem, use the static method [`AuthToken.SaveToken`](#static-method-authtokensavetoken). You may also want to store the returned [`Identity`](#class-identity) in a local variable.
 
@@ -254,11 +228,11 @@ class SpacetimeDBClient {
 
 Subscribe to a set of queries, to be notified when rows which match those queries are altered.
 
-`Subscribe` will return an error if called before establishing a connection with the [`SpacetimeDBClient.Connect`](#method-connect) function. In that case, the queries are not registered.
+`Subscribe` will return an error if called before establishing a connection with the [`SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect) function. In that case, the queries are not registered.
 
 The `Subscribe` method does not return data directly. `spacetime generate` will generate classes [`SpacetimeDB.Types.{TABLE}`](#class-table) for each table in your module. These classes are used to reecive information from the database. See the section [View Rows of Subscribed Tables](#view-rows-of-subscribed-tables) for more information.
 
-A new call to `Subscribe` will remove all previous subscriptions and replace them with the new `queries`. If any rows matched the previous subscribed queries but do not match the new queries, those rows will be removed from the client cache, and [`{TABLE}.OnDelete`](#event-tableondelete) callbacks will be invoked for them.
+A new call to `Subscribe` will remove all previous subscriptions and replace them with the new `queries`. If any rows matched the previous subscribed queries but do not match the new queries, those rows will be removed from the client cache, and [`{TABLE}.OnDelete`](#static-event-tableoninsert) callbacks will be invoked for them.
 
 ```cs
 using SpacetimeDB;
@@ -267,7 +241,6 @@ using SpacetimeDB.Types;
 void Main()
 {
     AuthToken.Init();
-    SpacetimeDBClient.CreateInstance(new ConsoleLogger());
 
     SpacetimeDBClient.instance.onConnect += OnConnect;
 
@@ -321,7 +294,7 @@ void Main()
 }
 ```
 
-### Method [`OneTimeQuery`](#method-spacetimedbclientsubscribe)
+### Method [`SpacetimeDBClient.OneOffQuery`]
 
 You may not want to subscribe to a query, but instead want to run a query once and receive the results immediately via a `Task` result:
 
@@ -348,6 +321,7 @@ Static Methods:
 
 -   [`{TABLE}.Iter()`](#static-method-tableiter) iterates all subscribed rows in the client cache.
 -   [`{TABLE}.FilterBy{COLUMN}(value)`](#static-method-tablefilterbycolumn) filters subscribed rows in the client cache by a column value.
+-   [`{TABLE}.FindBy{COLUMN}(value)`](#static-method-tablefindbycolumn) finds a subscribed row in the client cache by a unique column value.
 -   [`{TABLE}.Count()`](#static-method-tablecount) counts the number of subscribed rows in the client cache.
 
 Static Events:
@@ -365,7 +339,7 @@ Note that it is not possible to directly insert into the database from the clien
 namespace SpacetimeDB.Types {
 
 class TABLE {
-    public static System.Collections.Generic.IEnumerable<TABLE> Iter();
+    public static IEnumerable<TABLE> Iter();
 }
 
 }
@@ -373,7 +347,7 @@ class TABLE {
 
 Iterate over all the subscribed rows in the table. This method is only available after [`SpacetimeDBClient.onSubscriptionApplied`](#event-spacetimedbclientonsubscriptionapplied) has occurred.
 
-When iterating over rows and filtering for those containing a particular column, [`TableType::filter`](#method-filter) will be more efficient, so prefer it when possible.
+When iterating over rows and filtering for those containing a particular column, [`{TABLE}.FilterBy{COLUMN}`](#static-method-tablefilterbycolumn) and [`{TABLE}.FindBy{COLUMN}`](#static-method-tablefindbycolumn) will be more efficient, so prefer those when possible.
 
 ```cs
 using SpacetimeDB;
@@ -397,22 +371,32 @@ SpacetimeDBClient.instance.connect(/* ... */);
 namespace SpacetimeDB.Types {
 
 class TABLE {
-    // If the column has no #[unique] or #[primarykey] constraint
-    public static System.Collections.Generic.IEnumerable<TABLE> FilterBySender(COLUMNTYPE value);
-
-    // If the column has a #[unique] or #[primarykey] constraint
-    public static TABLE? FilterBySender(COLUMNTYPE value);
+    public static IEnumerable<TABLE> FilterBySender(COLUMNTYPE value);
 }
 
 }
 ```
 
-For each column of a table, `spacetime generate` generates a static method on the [table class](#class-table) to filter or seek subscribed rows where that column matches a requested value. These methods are named `filterBy{COLUMN}`, where `{COLUMN}` is the column name converted to `PascalCase`.
+For each column of a table, `spacetime generate` generates a static method on the [table class](#class-table) to filter subscribed rows where that column matches a requested value.
 
-The method's return type depends on the column's attributes:
+These methods are named `filterBy{COLUMN}`, where `{COLUMN}` is the column name converted to `PascalCase`. The method's return type is an `IEnumerable` over the [table class](#class-table).
 
--   For unique columns, including those annotated `#[unique]` and `#[primarykey]`, the `filterBy{COLUMN}` method returns a `{TABLE}?`, where `{TABLE}` is the [table class](#class-table).
--   For non-unique columns, the `filter_by` method returns an `IEnumerator<{TABLE}>`.
+#### Static Method `{TABLE}.FindBy{COLUMN}`
+
+```cs
+namespace SpacetimeDB.Types {
+
+class TABLE {
+    // If the column has a #[unique] or #[primarykey] constraint
+    public static TABLE? FindBySender(COLUMNTYPE value);
+}
+
+}
+```
+
+For each unique column of a table (those annotated `#[unique]` or `#[primarykey]`), `spacetime generate` generates a static method on the [table class](#class-table) to seek a subscribed row where that column matches a requested value.
+
+These methods are named `findBy{COLUMN}`, where `{COLUMN}` is the column name converted to `PascalCase`. Those methods return a single instance of the [table class](#class-table) if a row is found, or `null` if no row matches the query.
 
 #### Static Method `{TABLE}.Count`
 
@@ -887,8 +871,6 @@ A unique public identifier for a user of a database.
 
 Columns of type `Identity` inside a module will be represented in the C# SDK as properties of type `byte[]`. `Identity` is essentially just a wrapper around `byte[]`, and you can use the `Bytes` property to get a `byte[]` that can be used to filter tables and so on.
 
-### Class `Identity`
-
 ```cs
 namespace SpacetimeDB
 {
@@ -907,17 +889,11 @@ An opaque identifier for a client connection to a database, intended to differen
 
 ## Customizing logging
 
-The SpacetimeDB C# SDK performs internal logging. Instances of [`ISpacetimeDBLogger`](#interface-ispacetimedblogger) can be passed to [`SpacetimeDBClient.CreateInstance`](#static-method-spacetimedbclientcreateinstance) to customize how SDK logs are delivered to your application.
+The SpacetimeDB C# SDK performs internal logging.
 
-This is set up automatically for you if you use Unity-- adding a [`NetworkManager`](#class-networkmanager) component to your unity scene will automatically initialize the `SpacetimeDBClient` with a [`UnityDebugLogger`](#class-unitydebuglogger).
+A default logger is set up automatically for you - a [`ConsoleLogger`](#class-consolelogger) for C# projects and [`UnityDebugLogger`](#class-unitydebuglogger) for Unity projects.
 
-Outside of unity, all you need to do is the following:
-
-```cs
-using SpacetimeDB;
-using SpacetimeDB.Types;
-SpacetimeDBClient.CreateInstance(new ConsoleLogger());
-```
+If you want to redirect SDK logs elsewhere, you can inherit from the [`ISpacetimeDBLogger`](#interface-ispacetimedblogger) and assign an instance of your class to the `SpacetimeDB.Logger.Current` static property.
 
 ### Interface `ISpacetimeDBLogger`
 

@@ -510,20 +510,18 @@ Returns JSON in the form:
 ```typescript
 {
     "address": string,
-    "identity": string,
-    "host_type": "wasmer",
-    "num_replicas": number,
-    "program_bytes_address": string
+    "owner_identity": string,
+    "host_type": "wasm",
+    "initial_program": string
 }
 ```
 
-| Field                     | Type   | Meaning                                                     |
-| ------------------------- | ------ | ----------------------------------------------------------- |
-| `"address"`               | String | The address of the database.                                |
-| `"identity"`              | String | The Spacetime identity of the database's owner.             |
-| `"host_type"`             | String | The module host type; currently always `"wasmer"`.          |
-| `"num_replicas"`          | Number | The number of replicas of the database. Currently always 1. |
-| `"program_bytes_address"` | String | Hash of the WASM module for the database.                   |
+| Field               | Type   | Meaning                                                          |
+| --------------------| ------ | ---------------------------------------------------------------- |
+| `"address"`         | String | The address of the database.                                     |
+| `"owner_identity"`  | String | The Spacetime identity of the database's owner.                  |
+| `"host_type"`       | String | The module host type; currently always `"wasm"`.                 |
+| `"initial_program"` | String | Hash of the WASM module with which the database was initialized. |
 
 ## `/database/logs/:name_or_address GET`
 

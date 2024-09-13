@@ -37,9 +37,9 @@ The Unity SpacetimeDB SDK relies on there being a `NetworkManager` somewhere in 
 
 ![Unity-AddNetworkManager](/images/unity-tutorial/Unity-AddNetworkManager.JPG)
 
-Next we are going to connect to our SpacetimeDB module. Open `TutorialGameManager.cs` in your editor of choice and add the following code at the top of the file:
+Next we are going to connect to our SpacetimeDB module. Open `Assets/_Project/Game/BitcraftMiniGameManager.cs` in your editor of choice and add the following code at the top of the file:
 
-**Append to the top of TutorialGameManager.cs**
+**Append to the top of BitcraftMiniGameManager.cs**
 
 ```csharp
 using SpacetimeDB;
@@ -49,7 +49,7 @@ using System.Linq;
 
 At the top of the class definition add the following members:
 
-**Append to the top of TutorialGameManager class inside of TutorialGameManager.cs**
+**Append to the top of BitcraftMiniGameManager class inside of BitcraftMiniGameManager.cs**
 
 ```csharp
 // These are connection variables that are exposed on the GameManager
@@ -67,13 +67,15 @@ The first three fields will appear in your Inspector so you can update your conn
 
 Now add the following code to the `Start()` function. For clarity, replace your entire `Start()` function with the function below.
 
-**REPLACE the Start() function in TutorialGameManager.cs**
+**REPLACE the Start() function in BitcraftMiniGameManager.cs**
 
 ```csharp
 // Start is called before the first frame update
 void Start()
 {
     instance = this;
+
+    Application.runInBackground = true;
 
     SpacetimeDBClient.instance.onConnect += () =>
     {
@@ -89,7 +91,7 @@ void Start()
     // Called when we have an error connecting to SpacetimeDB
     SpacetimeDBClient.instance.onConnectError += (error, message) =>
     {
-        Debug.LogError($"Connection error: " + message);
+        Debug.LogError($"Connection error: {error} - {message}");
     };
 
     // Called when we are disconnected from SpacetimeDB
@@ -120,13 +122,13 @@ Subscribing to tables tells SpacetimeDB what rows we want in our local client ca
 
 **Local Client Cache**
 
-The "local client cache" is a client-side view of the database defined by the supplied queries to the `Subscribe` function. It contains the requested data which allows efficient access without unnecessary server queries. Accessing data from the client cache is done using the auto-generated iter and filter_by functions for each table, and it ensures that update and event callbacks are limited to the subscribed rows.
+The "local client cache" is a client-side view of the database defined by the supplied queries to the `Subscribe` function. It contains the requested data which allows efficient access without unnecessary server queries. Accessing data from the client cache is done using the auto-generated `Iter`, `FilterBy`, and `FindBy` functions for each table, and it ensures that update and event callbacks are limited to the subscribed rows.
 
 ---
 
 Next we write the `OnSubscriptionApplied` callback. When this event occurs for the first time, it signifies that our local client cache is fully populated. At this point, we can verify if a player entity already exists for the corresponding user. If we do not have a player entity, we need to show the `UserNameChooser` dialog so the user can enter a username. We also put the message of the day into the chat window. Finally we unsubscribe from the callback since we only need to do this once.
 
-**Append after the Start() function in TutorialGameManager.cs**
+**Append after the Start() function in BitcraftMiniGameManager.cs**
 
 ```csharp
 void OnSubscriptionApplied()
@@ -134,7 +136,7 @@ void OnSubscriptionApplied()
     // If we don't have any data for our player, then we are creating a
     // new one. Let's show the username dialog, which will then call the
     // create player reducer
-    var player = PlayerComponent.FilterByOwnerId(local_identity);
+    var player = PlayerComponent.FindByOwnerId(local_identity);
     if (player == null)
     {
        // Show username selection
@@ -142,7 +144,7 @@ void OnSubscriptionApplied()
     }
 
     // Show the Message of the Day in our Config table of the Client Cache
-    UIChatController.instance.OnChatMessageReceived("Message of the Day: " + Config.FilterByVersion(0).MessageOfTheDay);
+    UIChatController.instance.OnChatMessageReceived("Message of the Day: " + Config.FindByVersion(0).MessageOfTheDay);
 
     // Now that we've done this work we can unregister this callback
     SpacetimeDBClient.instance.onSubscriptionApplied -= OnSubscriptionApplied;
@@ -151,7 +153,7 @@ void OnSubscriptionApplied()
 
 ### Adding the Multiplayer Functionality
 
-Now we have to change what happens when you press the "Continue" button in the name dialog window. Instead of calling start game like we did in the single player version, we call the `create_player` reducer on the SpacetimeDB module using the auto-generated code. Open `UIUsernameChooser.cs`.
+Now we have to change what happens when you press the "Continue" button in the name dialog window. Instead of calling start game like we did in the single player version, we call the `create_player` reducer on the SpacetimeDB module using the auto-generated code. Open `Assets/_Project/Username/UIUsernameChooser.cs`.
 
 **Append to the top of UIUsernameChooser.cs**
 
@@ -174,7 +176,7 @@ public void ButtonPressed()
 }
 ```
 
-We need to create a `RemotePlayer` script that we attach to remote player objects. In the same folder as `LocalPlayer.cs`, create a new C# script called `RemotePlayer`. In the start function, we will register an OnUpdate callback for the `EntityComponent` and query the local cache to get the player’s initial position. **Make sure you include a `using SpacetimeDB.Types;`** at the top of the file.
+We need to create a `RemotePlayer` script that we attach to remote player objects. In the same folder as `Assets/_Project/Player/LocalPlayer.cs`, create a new C# script called `RemotePlayer`. In the start function, we will register an OnUpdate callback for the `EntityComponent` and query the local cache to get the player’s initial position. **Make sure you include a `using SpacetimeDB.Types;`** at the top of the file.
 
 First append this using to the top of `RemotePlayer.cs`
 
@@ -203,21 +205,21 @@ public class RemotePlayer : MonoBehaviour
         canvas.worldCamera = Camera.main;
 
         // Get the username from the PlayerComponent for this object and set it in the UI
-        PlayerComponent? playerComp = PlayerComponent.FilterByEntityId(EntityId).FirstOrDefault();
+        PlayerComponent? playerComp = PlayerComponent.FindByEntityId(EntityId);
         if (playerComp is null)
         {
-            string inputUsername = UsernameElement.Text;
+            string inputUsername = UsernameElement.text;
             Debug.Log($"PlayerComponent not found - Creating a new player ({inputUsername})");
             Reducer.CreatePlayer(inputUsername);
 
             // Try again, optimistically assuming success for simplicity
-            PlayerComponent? playerComp = PlayerComponent.FilterByEntityId(EntityId).FirstOrDefault();
+            PlayerComponent? playerComp = PlayerComponent.FindByEntityId(EntityId);
         }
 
         Username = playerComp.Username;
 
         // Get the last location for this player and set the initial position
-        EntityComponent entity = EntityComponent.FilterByEntityId(EntityId);
+        EntityComponent entity = EntityComponent.FindByEntityId(EntityId);
         transform.position = new Vector3(entity.Position.X, entity.Position.Y, entity.Position.Z);
 
         // Register for a callback that is called when the client gets an
@@ -249,7 +251,7 @@ private void EntityComponent_OnUpdate(EntityComponent oldObj, EntityComponent ob
 
 Next we need to handle what happens when a `PlayerComponent` is added to our local cache. We will handle it differently based on if it’s our local player entity or a remote player. We are going to register for the `OnInsert` event for our `PlayerComponent` table. Add the following code to the `Start` function in `TutorialGameManager`.
 
-**Append to bottom of Start() function in TutorialGameManager.cs:**
+**Append to bottom of Start() function in BitcraftMiniGameManager.cs:**
 
 ```csharp
 PlayerComponent.OnInsert += PlayerComponent_OnInsert;
@@ -257,13 +259,13 @@ PlayerComponent.OnInsert += PlayerComponent_OnInsert;
 
 Create the `PlayerComponent_OnInsert` function which does something different depending on if it's the component for the local player or a remote player. If it's the local player, we set the local player object's initial position and call `StartGame`. If it's a remote player, we instantiate a `PlayerPrefab` with the `RemotePlayer` component. The start function of `RemotePlayer` handles initializing the player position.
 
-**Append to bottom of TutorialGameManager class in TutorialGameManager.cs:**
+**Append to bottom of TutorialGameManager class in BitcraftMiniGameManager.cs:**
 
 ```csharp
 private void PlayerComponent_OnInsert(PlayerComponent obj, ReducerEvent callInfo)
 {
     // If the identity of the PlayerComponent matches our user identity then this is the local player
-    if(obj.OwnerId == local_identity)
+    if(obj.Identity == local_identity)
     {
         // Now that we have our initial position we can start the game
         StartGame();
@@ -274,7 +276,7 @@ private void PlayerComponent_OnInsert(PlayerComponent obj, ReducerEvent callInfo
         var remotePlayer = Instantiate(PlayerPrefab);
 
         // Lookup and apply the position for this new player
-        var entity = EntityComponent.FilterByEntityId(obj.EntityId);
+        var entity = EntityComponent.FindByEntityId(obj.EntityId);
         var position = new Vector3(entity.Position.X, entity.Position.Y, entity.Position.Z);
         remotePlayer.transform.position = position;
 
@@ -385,7 +387,7 @@ private void OnPlayerComponentChanged(PlayerComponent obj)
                 var remotePlayer = Instantiate(PlayerPrefab);
 
                 // Lookup and apply the position for this new player
-                var entity = EntityComponent.FilterByEntityId(obj.EntityId);
+                var entity = EntityComponent.FindByEntityId(obj.EntityId);
                 var position = new Vector3(entity.Position.X, entity.Position.Y, entity.Position.Z);
                 remotePlayer.transform.position = position;
 
@@ -451,7 +453,7 @@ Now we write the `OnSendChatMessageEvent` function. We can find the `PlayerCompo
 ```csharp
 private void OnSendChatMessageEvent(ReducerEvent dbEvent, string message)
 {
-    var player = PlayerComponent.FilterByOwnerId(dbEvent.Identity);
+    var player = PlayerComponent.FindByOwnerId(dbEvent.Identity);
     if (player != null)
     {
         UIChatController.instance.OnChatMessageReceived(player.Username + ": " + message);

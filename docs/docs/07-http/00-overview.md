@@ -23,16 +23,7 @@ To construct an appropriate `Authorization` header value for a `token`:
 2. Base64-encode.
 3. Prepend the string `Basic `.
 
-### Python
-
-```python
-def auth_header_value(token):
-    username_and_password = f"token:{token}".encode("utf-8")
-    base64_encoded = base64.b64encode(username_and_password).decode("utf-8")
-    return f"Basic {base64_encoded}"
-```
-
-### Rust
+#### Rust
 
 ```rust
 fn auth_header_value(token: &str) -> String {

@@ -92,9 +92,6 @@ void Main()
 {
     AuthToken.Init(".spacetime_csharp_quickstart");
 
-    // create the client, pass in a logger to see debug messages
-    SpacetimeDBClient.CreateInstance(new ConsoleLogger());
-
     RegisterCallbacks();
 
     // spawn a thread to call process updates and process commands
@@ -206,14 +203,14 @@ void User_OnUpdate(User oldValue, User newValue, ReducerEvent dbEvent)
 
 When we receive a new message, we'll print it to standard output, along with the name of the user who sent it. Keep in mind that we only want to do this for new messages, i.e. those inserted by a `SendMessage` reducer invocation. We have to handle the backlog we receive when our subscription is initialized separately, to ensure they're printed in the correct order. To that effect, our `OnInsert` callback will check if its `ReducerEvent` argument is not `null`, and only print in that case.
 
-To find the `User` based on the message's `Sender` identity, we'll use `User::FilterByIdentity`, which behaves like the same function on the server. The key difference is that, unlike on the module side, the client's `FilterByIdentity` accepts a `byte[]`, rather than an `Identity`. The `Sender` identity stored in the message is also a `byte[]`, not an `Identity`, so we can just pass it to the filter method.
+To find the `User` based on the message's `Sender` identity, we'll use `User::FindByIdentity`, which behaves like the same function on the server.
 
 We'll print the user's name or identity in the same way as we did when notifying about `User` table events, but here we have to handle the case where we don't find a matching `User` row. This can happen when the module owner sends a message using the CLI's `spacetime call`. In this case, we'll print `unknown`.
 
 ```csharp
 void PrintMessage(Message message)
 {
-    var sender = User.FilterByIdentity(message.Sender);
+    var sender = User.FindByIdentity(message.Sender);
     var senderName = "unknown";
     if (sender != null)
     {

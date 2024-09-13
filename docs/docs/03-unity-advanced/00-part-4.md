@@ -37,7 +37,7 @@ pub enum ResourceNodeType {
     Iron,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb(table(public))]
 #[derive(Clone)]
 pub struct ResourceNodeComponent {
     #[primarykey]
@@ -51,7 +51,7 @@ pub struct ResourceNodeComponent {
 Because resource nodes never move, the `MobileEntityComponent` is overkill. Instead, we will add a new entity component named `StaticLocationComponent` that only stores the position and rotation.
 
 ```rust
-#[spacetimedb(table)]
+#[spacetimedb(table(public))]
 #[derive(Clone)]
 pub struct StaticLocationComponent {
     #[primarykey]
@@ -65,7 +65,7 @@ pub struct StaticLocationComponent {
 3. We are also going to add a couple of additional column to our Config table. `map_extents` let's our spawner know where it can spawn the nodes. `num_resource_nodes` is the maximum number of nodes to spawn on the map. Update the config table in lib.rs.
 
 ```rust
-#[spacetimedb(table)]
+#[spacetimedb(table(public))]
 pub struct Config {
     // Config is a global table with a single row. This table will be used to
     // store configuration or global variables
@@ -101,12 +101,17 @@ pub struct Config {
 
 ### Step 2: Write our Resource Spawner Repeating Reducer
 
-1. Add the following code to lib.rs. We are using a special attribute argument called repeat which will automatically schedule the reducer to run every 1000ms.
+1. Add the following code to lib.rs. As we want to schedule `resource_spawn_agent` to run later, It will require to implement a scheduler table.
 
 ```rust
-#[spacetimedb(reducer, repeat = 1000ms)]
-pub fn resource_spawner_agent(_ctx: ReducerContext, _prev_time: Timestamp) -> Result<(), String> {
-    let config = Config::filter_by_version(&0).unwrap();
+#[spacetimedb(table, scheduled(resource_spawner_agent))]
+struct ResouceSpawnAgentSchedueler {
+    _prev_time: Timestamp,
+}
+
+#[spacetimedb(reducer)
+pub fn resource_spawner_agent(_ctx: ReducerContext, _arg: ResourceSpawnAgentScheduler) -> Result<(), String> {
+    let config = Config::find_by_version(&0).unwrap();
 
     // Retrieve the maximum number of nodes we want to spawn from the Config table
     let num_resource_nodes = config.num_resource_nodes as usize;
@@ -160,18 +165,24 @@ pub fn resource_spawner_agent(_ctx: ReducerContext, _prev_time: Timestamp) -> Re
 }
 ```
 
+
 2. Since this reducer uses `rand::Rng` we need add include it. Add this `use` statement to the top of lib.rs.
 
 ```rust
 use rand::Rng;
 ```
 
-3. Even though our reducer is set to repeat, we still need to schedule it the first time. Add the following code to the end of the `init` reducer. You can use this `schedule!` macro to schedule any reducer to run in the future after a certain amount of time.
+3. Add the following code to the end of the `init` reducer to set the reducer to repeat at every regular interval.
 
 ```rust
     // Start our resource spawner repeating reducer
-    spacetimedb::schedule!("1000ms", resource_spawner_agent(_, Timestamp::now()));
+    ResouceSpawnAgentSchedueler::insert(ResouceSpawnAgentSchedueler {
+        _prev_time: TimeStamp::now(),
+        scheduled_id: 1,
+        scheduled_at: duration!(1000ms).into()
+    }).expect();
 ```
+struct ResouceSpawnAgentSchedueler {
 
 4. Next we need to generate our client code and publish the module. Since we changed the schema we need to make sure we include the `--clear-database` flag. Run the following commands from your Server directory:
 
@@ -250,7 +261,7 @@ To get the position and the rotation of the node, we look up the `StaticLocation
         {
             case ResourceNodeType.Iron:
                 var iron = Instantiate(IronPrefab);
-                StaticLocationComponent loc = StaticLocationComponent.FilterByEntityId(insertedValue.EntityId);
+                StaticLocationComponent loc = StaticLocationComponent.FindByEntityId(insertedValue.EntityId);
                 Vector3 nodePos = new Vector3(loc.Location.X, 0.0f, loc.Location.Z);
                 iron.transform.position = new Vector3(nodePos.x, MathUtil.GetTerrainHeight(nodePos), nodePos.z);
                 iron.transform.rotation = Quaternion.Euler(0.0f, loc.Rotation, 0.0f);
