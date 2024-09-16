@@ -188,7 +188,7 @@ impl AlgebraicTypeDef {
                 }
                 AlgebraicTypeDef::PlainEnum(_) => {}
             }
-            buf.iter().cloned().collect()
+            buf.drain().collect()
         })
     }
 
