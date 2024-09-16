@@ -37,5 +37,5 @@ jobs:
           CHECK_RESULT: ${{ env.CHECK_RESULT }}
         run: |
           curl -X POST -H 'Content-Type: application/json' -d '{
-            "content": "PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](${PR_URL})\\n${CHECK_NAME} result: ${CHECK_RESULT}"
+            "content": "'"PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](${PR_URL})\\n${CHECK_NAME} result: ${CHECK_RESULT}"'"
           }' ${DISCORD_WEBHOOK_URL}
