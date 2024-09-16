@@ -303,7 +303,7 @@ impl Snapshot {
     /// - `path` does not refer to a readable file.
     /// - The file at `path` is corrupted,
     ///   as detected by comparing the hash of its bytes to a hash recorded in the file.
-    fn read_from_file(path: &Path) -> Result<Self, SnapshotError> {
+    pub fn read_from_file(path: &Path) -> Result<Self, SnapshotError> {
         let err_read_object = |cause| SnapshotError::ReadObject {
             ty: ObjectType::Snapshot,
             source_repo: path.to_path_buf(),
@@ -562,17 +562,17 @@ impl SnapshotRepository {
         }
     }
 
-    fn snapshot_dir_path(&self, tx_offset: TxOffset) -> PathBuf {
+    pub fn snapshot_dir_path(&self, tx_offset: TxOffset) -> PathBuf {
         let dir_name = format!("{tx_offset:0>20}.{SNAPSHOT_DIR_EXT}");
         self.root.join(dir_name)
     }
 
-    fn snapshot_file_path(tx_offset: TxOffset, snapshot_dir: &Path) -> PathBuf {
+    pub fn snapshot_file_path(tx_offset: TxOffset, snapshot_dir: &Path) -> PathBuf {
         let file_name = format!("{tx_offset:0>20}.{SNAPSHOT_FILE_EXT}");
         snapshot_dir.join(file_name)
     }
 
-    fn object_repo(snapshot_dir: &Path) -> Result<DirTrie, std::io::Error> {
+    pub fn object_repo(snapshot_dir: &Path) -> Result<DirTrie, std::io::Error> {
         DirTrie::open(snapshot_dir.join("objects"))
     }
 
