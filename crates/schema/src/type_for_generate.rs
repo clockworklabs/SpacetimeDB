@@ -1,6 +1,10 @@
 //! `AlgebraicType` extensions for generating client code.
 
 use enum_as_inner::EnumAsInner;
+use petgraph::{
+    algo::tarjan_scc,
+    visit::{GraphBase, IntoNeighbors, IntoNodeIdentifiers, NodeIndexable},
+};
 use smallvec::SmallVec;
 use spacetimedb_data_structures::{
     error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
@@ -8,7 +12,7 @@ use spacetimedb_data_structures::{
 };
 use spacetimedb_lib::{AlgebraicType, ProductTypeElement};
 use spacetimedb_sats::{typespace::TypeRefError, AlgebraicTypeRef, ArrayType, SumTypeVariant, Typespace};
-use std::{ops::Index, sync::Arc};
+use std::{cell::RefCell, ops::Index, sync::Arc};
 
 use crate::{
     error::{IdentifierError, PrettyAlgebraicType},
@@ -151,6 +155,11 @@ pub enum AlgebraicTypeDef {
     PlainEnum(PlainEnumTypeDef),
 }
 
+thread_local! {
+    /// Used to efficiently extract refs from a def.
+    static EXTRACT_REFS_BUF: RefCell<HashSet<AlgebraicTypeRef>> = RefCell::new(HashSet::new());
+}
+
 impl AlgebraicTypeDef {
     /// Check if a def is recursive.
     pub fn is_recursive(&self) -> bool {
@@ -161,8 +170,17 @@ impl AlgebraicTypeDef {
         }
     }
 
-    /// Extract all `AlgebraicTypeRef`s that are used in this type into the buffer.
-    fn extract_refs(&self, buf: &mut HashSet<AlgebraicTypeRef>) {
+    /// Extract all `AlgebraicTypeRef`s that are used in this type into a buffer.
+    /// The buffer may be in arbitrary order, but will not contain duplicates.
+    fn extract_refs(&self) -> SmallVec<[AlgebraicTypeRef; 16]> {
+        EXTRACT_REFS_BUF.with_borrow_mut(|buf| {
+            buf.clear();
+            self.extract_refs_rec(buf);
+            buf.iter().cloned().collect()
+        })
+    }
+
+    fn extract_refs_rec(&self, buf: &mut HashSet<AlgebraicTypeRef>) {
         match self {
             AlgebraicTypeDef::Product(ProductTypeDef { elements, .. }) => {
                 for (_, ty) in elements.iter() {
@@ -608,114 +626,62 @@ impl TypespaceForGenerateBuilder<'_> {
     /// Cycles passing through definitions are allowed.
     /// This function is called after all definitions have been processed.
     fn mark_allowed_cycles(&mut self) {
-        let mut to_process = self.is_def.clone();
-        let mut scratch = HashSet::new();
-        // We reuse this here as well.
-        self.currently_touching.clear();
-
-        while let Some(ref_) = to_process.iter().next().cloned() {
-            self.mark_allowed_cycles_rec(None, ref_, &mut to_process, &mut scratch);
-        }
-    }
-
-    /// Recursively mark allowed cycles.
-    fn mark_allowed_cycles_rec(
-        &mut self,
-        parent: Option<&ParentChain>,
-        def: AlgebraicTypeRef,
-        to_process: &mut HashSet<AlgebraicTypeRef>,
-        scratch: &mut HashSet<AlgebraicTypeRef>,
-    ) {
-        // Mark who we're touching right now.
-        let not_already_present = self.currently_touching.insert(def);
-        assert!(
-            not_already_present,
-            "mark_allowed_cycles_rec should never be called on a ref that is already being touched"
-        );
-
-        // Figure out who to look at.
-        // Note: this skips over refs in the original typespace that
-        // didn't point to definitions; those have already been removed.
-        scratch.clear();
-        let to_examine = scratch;
-        self.result.defs[&def].extract_refs(to_examine);
-
-        // Update the parent chain with the current def, for passing to children.
-        let chain = ParentChain { parent, ref_: def };
-
-        // First, check for finished cycles.
-        for element in to_examine.iter() {
-            if self.currently_touching.contains(element) {
-                // We have a cycle.
-                for parent_ref in chain.iter() {
-                    // For each def participating in the cycle, mark it as recursive.
-                    self.result
-                        .defs
-                        .get_mut(&parent_ref)
-                        .expect("all defs should have been processed by now")
-                        .mark_recursive();
-                    // It's tempting to also remove `parent_ref` from `to_process` here,
-                    // but that's wrong, because it might participate in other cycles.
-
-                    // We want to mark the start of the cycle as recursive too.
-                    // If we've just done that, break.
-                    if parent_ref == *element {
-                        break;
-                    }
-                }
+        let strongly_connected_components: Vec<Vec<AlgebraicTypeRef>> = tarjan_scc(&*self);
+        for component in strongly_connected_components {
+            for ref_ in component {
+                self.result
+                    .defs
+                    .get_mut(&ref_)
+                    .expect("all defs should be processed by now")
+                    .mark_recursive();
             }
         }
-
-        // Now that we've marked everything possible, we need to recurse.
-        // Need a buffer to iterate from because we reuse `to_examine` in children.
-        // This will usually not allocate. Most defs have less than 16 refs.
-        let to_recurse = to_examine
-            .iter()
-            .cloned()
-            .filter(|element| to_process.contains(element) && !self.currently_touching.contains(element))
-            .collect::<SmallVec<[AlgebraicTypeRef; 16]>>();
-
-        // Recurse.
-        let scratch = to_examine;
-        for element in to_recurse {
-            self.mark_allowed_cycles_rec(Some(&chain), element, to_process, scratch);
-        }
-
-        // We're done with this def.
-        // Clean up our state.
-        let was_present = self.currently_touching.remove(&def);
-        assert!(
-            was_present,
-            "mark_allowed_cycles_rec is finishing, we should be touching that ref."
-        );
-        // Only remove a def from `to_process` once we've explored all the paths leaving it.
-        to_process.remove(&def);
     }
 }
 
-/// A chain of parent type definitions.
-/// If type T uses type U, then T is a parent of U.
-struct ParentChain<'a> {
-    parent: Option<&'a ParentChain<'a>>,
-    ref_: AlgebraicTypeRef,
+// We implement some `petgraph` traits for `TypespaceForGenerate` to allow using
+// petgraph's implementation of Tarjan's strongly-connected-components algorithm.
+// This is used in `mark_allowed_cycles`.
+// We don't implement all the traits, only the ones we need.
+// The traits are intended to be used *after* all defs have been processed.
+
+impl GraphBase for TypespaceForGenerateBuilder<'_> {
+    /// Specifically, definition IDs.
+    type NodeId = AlgebraicTypeRef;
+
+    /// Definition `.0` uses definition `.1`.
+    type EdgeId = (AlgebraicTypeRef, AlgebraicTypeRef);
 }
-impl<'a> ParentChain<'a> {
-    fn iter(&'a self) -> ParentChainIter<'a> {
-        ParentChainIter { current: Some(self) }
+impl NodeIndexable for TypespaceForGenerateBuilder<'_> {
+    fn node_bound(&self) -> usize {
+        self.typespace.types.len()
+    }
+
+    fn to_index(&self, a: Self::NodeId) -> usize {
+        a.idx()
+    }
+
+    fn from_index(&self, i: usize) -> Self::NodeId {
+        AlgebraicTypeRef(i as _)
     }
 }
+impl<'a> IntoNodeIdentifiers for &'a TypespaceForGenerateBuilder<'a> {
+    type NodeIdentifiers = std::iter::Cloned<hashbrown::hash_set::Iter<'a, spacetimedb_sats::AlgebraicTypeRef>>;
 
-/// An iterator over a chain of parent type definitions.
-struct ParentChainIter<'a> {
-    current: Option<&'a ParentChain<'a>>,
+    fn node_identifiers(self) -> Self::NodeIdentifiers {
+        self.is_def.iter().cloned()
+    }
 }
-impl Iterator for ParentChainIter<'_> {
-    type Item = AlgebraicTypeRef;
+impl<'a> IntoNeighbors for &'a TypespaceForGenerateBuilder<'a> {
+    type Neighbors = <SmallVec<[AlgebraicTypeRef; 16]> as IntoIterator>::IntoIter;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let current = self.current?;
-        self.current = current.parent;
-        Some(current.ref_)
+    fn neighbors(self, a: Self::NodeId) -> Self::Neighbors {
+        self.result
+            .defs
+            .get(&a)
+            .expect("all defs should have been processed by now")
+            .extract_refs()
+            .into_iter()
     }
 }
 
@@ -805,7 +771,7 @@ mod tests {
     }
 
     #[test]
-    fn test_detects_cycles() {
+    fn test_detects_cycles_1() {
         let cyclic_1 = Typespace::new(vec![AlgebraicType::Ref(AlgebraicTypeRef(0))]);
         let mut for_generate = TypespaceForGenerate::builder(&cyclic_1, []);
         let err1 = for_generate.parse_use(&AlgebraicType::Ref(AlgebraicTypeRef(0)));
@@ -814,7 +780,10 @@ mod tests {
             err1,
             ClientCodegenError::TypeRefError(TypeRefError::RecursiveTypeRef(AlgebraicTypeRef(0)))
         );
+    }
 
+    #[test]
+    fn test_detects_cycles_2() {
         let cyclic_2 = Typespace::new(vec![
             AlgebraicType::Ref(AlgebraicTypeRef(1)),
             AlgebraicType::Ref(AlgebraicTypeRef(0)),
@@ -826,7 +795,10 @@ mod tests {
             err2,
             ClientCodegenError::TypeRefError(TypeRefError::RecursiveTypeRef(AlgebraicTypeRef(0)))
         );
+    }
 
+    #[test]
+    fn test_detects_cycles_3() {
         let cyclic_3 = Typespace::new(vec![
             AlgebraicType::Ref(AlgebraicTypeRef(1)),
             AlgebraicType::product([("field", AlgebraicType::Ref(AlgebraicTypeRef(0)))]),
@@ -842,7 +814,10 @@ mod tests {
         let table = result.defs().get(&AlgebraicTypeRef(1)).expect("should be defined");
 
         assert!(table.is_recursive(), "recursion not detected? table: {table:?}");
+    }
 
+    #[test]
+    fn test_detects_cycles_4() {
         let cyclic_4 = Typespace::new(vec![
             AlgebraicType::product([("field", AlgebraicTypeRef(1).into())]),
             AlgebraicType::product([("field", AlgebraicTypeRef(2).into())]),
@@ -878,7 +853,10 @@ mod tests {
             !result[AlgebraicTypeRef(4)].is_recursive(),
             "recursion detected incorrectly"
         );
+    }
 
+    #[test]
+    fn test_detects_cycles_5() {
         // Branching cycles.
         let cyclic_5 = Typespace::new(vec![
             // cyclic component.
