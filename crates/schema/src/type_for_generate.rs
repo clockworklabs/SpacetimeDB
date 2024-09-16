@@ -175,25 +175,21 @@ impl AlgebraicTypeDef {
     fn extract_refs(&self) -> SmallVec<[AlgebraicTypeRef; 16]> {
         EXTRACT_REFS_BUF.with_borrow_mut(|buf| {
             buf.clear();
-            self.extract_refs_rec(buf);
+            match self {
+                AlgebraicTypeDef::Product(ProductTypeDef { elements, .. }) => {
+                    for (_, use_) in elements.iter() {
+                        use_.extract_refs(buf);
+                    }
+                }
+                AlgebraicTypeDef::Sum(SumTypeDef { variants, .. }) => {
+                    for (_, use_) in variants.iter() {
+                        use_.extract_refs(buf);
+                    }
+                }
+                AlgebraicTypeDef::PlainEnum(_) => {}
+            }
             buf.iter().cloned().collect()
         })
-    }
-
-    fn extract_refs_rec(&self, buf: &mut HashSet<AlgebraicTypeRef>) {
-        match self {
-            AlgebraicTypeDef::Product(ProductTypeDef { elements, .. }) => {
-                for (_, ty) in elements.iter() {
-                    ty.extract_refs(buf);
-                }
-            }
-            AlgebraicTypeDef::Sum(SumTypeDef { variants, .. }) => {
-                for (_, ty) in variants.iter() {
-                    ty.extract_refs(buf);
-                }
-            }
-            AlgebraicTypeDef::PlainEnum(_) => {}
-        }
     }
 
     /// Mark a def recursive.
@@ -628,12 +624,29 @@ impl TypespaceForGenerateBuilder<'_> {
     fn mark_allowed_cycles(&mut self) {
         let strongly_connected_components: Vec<Vec<AlgebraicTypeRef>> = tarjan_scc(&*self);
         for component in strongly_connected_components {
+            if component.len() == 1 {
+                // petgraph's implementation returns a vector for all nodes, not distinguishing between
+                // self referential and non-self-referential nodes. ignore this for now.
+                continue;
+            }
             for ref_ in component {
                 self.result
                     .defs
                     .get_mut(&ref_)
                     .expect("all defs should be processed by now")
                     .mark_recursive();
+            }
+        }
+
+        // Now, fix up directly self-referential nodes.
+        for (ref_, def_) in &mut self.result.defs {
+            let ref_ = *ref_;
+            if def_.is_recursive() {
+                continue;
+            }
+            let refs = def_.extract_refs();
+            if refs.contains(&ref_) {
+                def_.mark_recursive();
             }
         }
     }
