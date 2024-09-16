@@ -58,8 +58,8 @@ record ColumnDeclaration : MemberDeclaration
     private static ColumnAttrs CombineColumnAttrs(IEnumerable<ColumnAttr> attrs) =>
         attrs.Aggregate(ColumnAttrs.UnSet, (mask, attr) => mask | attr.Mask);
 
-    public ColumnDeclaration(string tableName, IFieldSymbol field)
-        : base(field)
+    public ColumnDeclaration(string tableName, IFieldSymbol field, DiagReporter diag)
+        : base(field, diag)
     {
         FullTableName = tableName;
 
@@ -101,9 +101,7 @@ record ColumnDeclaration : MemberDeclaration
 
         if (attrs.HasFlag(ColumnAttrs.AutoInc) && !isInteger)
         {
-            throw new Exception(
-                $"{type} {Name} is not valid for AutoInc or Identity as it's not an integer."
-            );
+            diag.Report(ErrorDescriptor.AutoIncNotInteger, field);
         }
 
         IsEquatable =
@@ -122,9 +120,7 @@ record ColumnDeclaration : MemberDeclaration
 
         if (attrs.HasFlag(ColumnAttrs.Unique) && !IsEquatable)
         {
-            throw new Exception(
-                $"{type} {Name} is not valid for Identity, PrimaryKey or PrimaryKeyAuto as it's not an equatable primitive."
-            );
+            diag.Report(ErrorDescriptor.UniqueNotEquatable, field);
         }
     }
 
@@ -182,12 +178,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             ),
         ];
 
-    public TableDeclaration(GeneratorAttributeSyntaxContext context)
-        : base(context)
+    public TableDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
+        : base(context, diag)
     {
         if (Kind is TypeKind.Sum)
         {
-            throw new InvalidOperationException("Tagged enums cannot be tables.");
+            diag.Report(ErrorDescriptor.TableTaggedEnum, (TypeDeclarationSyntax)context.TargetNode);
         }
 
         Visibility = context.TargetSymbol.DeclaredAccessibility;
@@ -232,7 +228,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
     }
 
-    protected override ColumnDeclaration ConvertMember(IFieldSymbol field) => new(FullName, field);
+    protected override ColumnDeclaration ConvertMember(IFieldSymbol field, DiagReporter diag) =>
+        new(FullName, field, diag);
 
     public IEnumerable<string> GenerateViewFilters(string viewName, string iTable)
     {
@@ -332,6 +329,13 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             );
         }
 
+        // If it's a tagged enum, then attempting to generate table methods will result in more noisy errors than it's worth.
+        // We already reported useful diagnostic while parsing, and we generated what we could (type-level methods), so let's stop here.
+        if (Kind is TypeKind.Sum)
+        {
+            return extensions;
+        }
+
         var iTable = $"SpacetimeDB.Internal.ITable<{ShortName}>";
 
         // ITable inherits IStructuralReadWrite, so we can replace the base type instead of appending another one.
@@ -398,7 +402,7 @@ record ReducerDeclaration
     public readonly EquatableArray<MemberDeclaration> Args;
     public readonly Scope Scope;
 
-    public ReducerDeclaration(GeneratorAttributeSyntaxContext context)
+    public ReducerDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
         var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
         var method = (IMethodSymbol)context.TargetSymbol;
@@ -406,7 +410,7 @@ record ReducerDeclaration
 
         if (!method.ReturnsVoid)
         {
-            throw new Exception($"Reducer {method} must return void");
+            diag.Report(ErrorDescriptor.ReducerReturnType, methodSyntax);
         }
         if (
             method.Parameters.FirstOrDefault()?.Type is not INamedTypeSymbol namedType
@@ -424,7 +428,7 @@ record ReducerDeclaration
         Args = new(
             method
                 .Parameters.Skip(1)
-                .Select(p => new MemberDeclaration(p.Name, p.Type))
+                .Select(p => new MemberDeclaration(p, p.Type, diag))
                 .ToImmutableArray()
         );
         Scope = new Scope(methodSyntax.Parent as MemberDeclarationSyntax);
@@ -488,8 +492,10 @@ public class Module : IIncrementalGenerator
             .SyntaxProvider.ForAttributeWithMetadataName(
                 fullyQualifiedMetadataName: typeof(TableAttribute).FullName,
                 predicate: (node, ct) => true, // already covered by attribute restrictions
-                transform: (context, ct) => new TableDeclaration(context)
+                transform: (context, ct) =>
+                    context.ParseWithDiags(diag => new TableDeclaration(context, diag))
             )
+            .ReportDiagnostics(context)
             .WithTrackingName("SpacetimeDB.Table.Parse");
 
         tables
@@ -501,8 +507,10 @@ public class Module : IIncrementalGenerator
             .SyntaxProvider.ForAttributeWithMetadataName(
                 fullyQualifiedMetadataName: typeof(ReducerAttribute).FullName,
                 predicate: (node, ct) => true, // already covered by attribute restrictions
-                transform: (context, ct) => new ReducerDeclaration(context)
+                transform: (context, ct) =>
+                    context.ParseWithDiags(diag => new ReducerDeclaration(context, diag))
             )
+            .ReportDiagnostics(context)
             .WithTrackingName("SpacetimeDB.Reducer.Parse");
 
         reducers

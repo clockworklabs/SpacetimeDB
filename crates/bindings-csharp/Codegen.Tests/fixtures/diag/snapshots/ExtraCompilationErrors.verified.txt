@@ -1,0 +1,842 @@
+﻿[
+  {/*
+    public Exception UnsupportedSystemType;
+    public UnresolvedType UnresolvedType;
+           ^^^^^^^^^^^^^^
+    public LocalEnum UnsupportedEnum;
+*/
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (9,11)-(9,25),
+    Message: The type or namespace name 'UnresolvedType' could not be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0246,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
+      MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+{
+    [SpacetimeDB.Column(ColumnAttrs.AutoInc)]
+                 ^^^^^^
+    public float AutoIncField;
+*/
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (309,17)-(309,23),
+    Message: The type or namespace name 'ColumnAttribute' does not exist in the namespace 'SpacetimeDB' (are you missing an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0234,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0234),
+      MessageFormat: The type or namespace name '{0}' does not exist in the namespace '{1}' (are you missing an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+{
+    [SpacetimeDB.Column(ColumnAttrs.AutoInc)]
+                 ^^^^^^
+    public float AutoIncField;
+*/
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (309,17)-(309,23),
+    Message: The type or namespace name 'Column' does not exist in the namespace 'SpacetimeDB' (are you missing an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0234,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0234),
+      MessageFormat: The type or namespace name '{0}' does not exist in the namespace '{1}' (are you missing an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+{
+    [SpacetimeDB.Column(ColumnAttrs.AutoInc)]
+                        ^^^^^^^^^^^
+    public float AutoIncField;
+*/
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (309,24)-(309,35),
+    Message: The name 'ColumnAttrs' does not exist in the current context,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0103,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0103),
+      MessageFormat: The name '{0}' does not exist in the current context,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+    [SpacetimeDB.Column(ColumnAttrs.Identity)]
+                 ^^^^^^
+    public string IdentityField;
+*/
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (312,17)-(312,23),
+    Message: The type or namespace name 'ColumnAttribute' does not exist in the namespace 'SpacetimeDB' (are you missing an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0234,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0234),
+      MessageFormat: The type or namespace name '{0}' does not exist in the namespace '{1}' (are you missing an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+    [SpacetimeDB.Column(ColumnAttrs.Identity)]
+                 ^^^^^^
+    public string IdentityField;
+*/
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (312,17)-(312,23),
+    Message: The type or namespace name 'Column' does not exist in the namespace 'SpacetimeDB' (are you missing an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0234,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0234),
+      MessageFormat: The type or namespace name '{0}' does not exist in the namespace '{1}' (are you missing an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+    [SpacetimeDB.Column(ColumnAttrs.Identity)]
+                        ^^^^^^^^^^^
+    public string IdentityField;
+*/
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (312,24)-(312,35),
+    Message: The name 'ColumnAttrs' does not exist in the current context,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0103,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0103),
+      MessageFormat: The name '{0}' does not exist in the current context,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+{
+    [SpacetimeDB.Column(ColumnAttrs.Unique)]
+                 ^^^^^^
+    public int? UniqueField;
+*/
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (319,17)-(319,23),
+    Message: The type or namespace name 'ColumnAttribute' does not exist in the namespace 'SpacetimeDB' (are you missing an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0234,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0234),
+      MessageFormat: The type or namespace name '{0}' does not exist in the namespace '{1}' (are you missing an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+{
+    [SpacetimeDB.Column(ColumnAttrs.Unique)]
+                 ^^^^^^
+    public int? UniqueField;
+*/
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (319,17)-(319,23),
+    Message: The type or namespace name 'Column' does not exist in the namespace 'SpacetimeDB' (are you missing an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0234,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0234),
+      MessageFormat: The type or namespace name '{0}' does not exist in the namespace '{1}' (are you missing an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+{
+    [SpacetimeDB.Column(ColumnAttrs.Unique)]
+                        ^^^^^^^^^^^
+    public int? UniqueField;
+*/
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (319,24)-(319,35),
+    Message: The name 'ColumnAttrs' does not exist in the current context,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0103,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0103),
+      MessageFormat: The name '{0}' does not exist in the current context,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+    [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+                 ^^^^^^
+    public TestEnumWithExplicitValues PrimaryKeyField;
+*/
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (322,17)-(322,23),
+    Message: The type or namespace name 'ColumnAttribute' does not exist in the namespace 'SpacetimeDB' (are you missing an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0234,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0234),
+      MessageFormat: The type or namespace name '{0}' does not exist in the namespace '{1}' (are you missing an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+    [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+                 ^^^^^^
+    public TestEnumWithExplicitValues PrimaryKeyField;
+*/
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (322,17)-(322,23),
+    Message: The type or namespace name 'Column' does not exist in the namespace 'SpacetimeDB' (are you missing an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0234,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0234),
+      MessageFormat: The type or namespace name '{0}' does not exist in the namespace '{1}' (are you missing an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+
+    [SpacetimeDB.Column(ColumnAttrs.PrimaryKey)]
+                        ^^^^^^^^^^^
+    public TestEnumWithExplicitValues PrimaryKeyField;
+*/
+    Location: {ProjectDirectory}fixtures\diag\Lib.cs: (322,24)-(322,35),
+    Message: The name 'ColumnAttrs' does not exist in the current context,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0103,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0103),
+      MessageFormat: The name '{0}' does not exist in the current context,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+{
+    internal static readonly TRW Field = new();
+                             ^^^
+
+*/
+    Location: SpacetimeDB.BSATN.Codegen\SpacetimeDB.Codegen.Type\TestTypeParams_T_.cs: (13,29)-(13,32),
+    Message: The type or namespace name 'TRW' could not be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0246,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
+      MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    internal static readonly SpacetimeDB.BSATN.IReadWrite<System.DateTime> UnsupportedSpecialTime = new();
+internal static readonly SpacetimeDB.BSATN.IReadWrite<System.Exception> UnsupportedSystemType = new();
+                                                                                                ^^^^^
+internal static readonly SpacetimeDB.BSATN.IReadWrite<UnresolvedType> UnresolvedType = new();
+*/
+    Location: SpacetimeDB.BSATN.Codegen\SpacetimeDB.Codegen.Type\TestUnsupportedType.cs: (20,96)-(20,101),
+    Message: Cannot create an instance of the abstract type or interface 'IReadWrite<Exception>',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0144,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0144),
+      MessageFormat: Cannot create an instance of the abstract type or interface '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+internal static readonly SpacetimeDB.BSATN.IReadWrite<System.Exception> UnsupportedSystemType = new();
+internal static readonly SpacetimeDB.BSATN.IReadWrite<UnresolvedType> UnresolvedType = new();
+                                                      ^^^^^^^^^^^^^^
+internal static readonly SpacetimeDB.BSATN.IReadWrite<LocalEnum> UnsupportedEnum = new();
+*/
+    Location: SpacetimeDB.BSATN.Codegen\SpacetimeDB.Codegen.Type\TestUnsupportedType.cs: (21,54)-(21,68),
+    Message: The type or namespace name 'UnresolvedType' could not be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS0246,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0246),
+      MessageFormat: The type or namespace name '{0}' could not be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+internal static readonly SpacetimeDB.BSATN.IReadWrite<System.Exception> UnsupportedSystemType = new();
+internal static readonly SpacetimeDB.BSATN.IReadWrite<UnresolvedType> UnresolvedType = new();
+                                                                                       ^^^^^
+internal static readonly SpacetimeDB.BSATN.IReadWrite<LocalEnum> UnsupportedEnum = new();
+*/
+    Location: SpacetimeDB.BSATN.Codegen\SpacetimeDB.Codegen.Type\TestUnsupportedType.cs: (21,87)-(21,92),
+    Message: Cannot create an instance of the abstract type or interface 'IReadWrite<UnresolvedType>',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0144,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0144),
+      MessageFormat: Cannot create an instance of the abstract type or interface '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+internal static readonly SpacetimeDB.BSATN.IReadWrite<UnresolvedType> UnresolvedType = new();
+internal static readonly SpacetimeDB.BSATN.IReadWrite<LocalEnum> UnsupportedEnum = new();
+                                                                                   ^^^^^
+
+*/
+    Location: SpacetimeDB.BSATN.Codegen\SpacetimeDB.Codegen.Type\TestUnsupportedType.cs: (22,83)-(22,88),
+    Message: Cannot create an instance of the abstract type or interface 'IReadWrite<LocalEnum>',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0144,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0144),
+      MessageFormat: Cannot create an instance of the abstract type or interface '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+{
+    internal static readonly SpacetimeDB.BSATN.IReadWrite<System.DateTime> UnsupportedSpecialTime = new();
+                                                                                                    ^^^^^
+internal static readonly SpacetimeDB.BSATN.IReadWrite<System.Exception> UnsupportedSystemType = new();
+*/
+    Location: SpacetimeDB.BSATN.Codegen\SpacetimeDB.Codegen.Type\TestUnsupportedType.cs: (19,100)-(19,105),
+    Message: Cannot create an instance of the abstract type or interface 'IReadWrite<DateTime>',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0144,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0144),
+      MessageFormat: Cannot create an instance of the abstract type or interface '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+}
+public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum> {
+                       ^^^^^^^^^^^^^^^^^^^
+    static global::TestTableTaggedEnum SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.ReadGenFields(System.IO.BinaryReader reader, global::TestTableTaggedEnum row) {
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (34,23)-(34,42),
+    Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0311,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0311),
+      MessageFormat: The type '{3}' cannot be used as type parameter '{2}' in the generic type or method '{0}'. There is no implicit reference conversion from '{3}' to '{1}'.,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+}
+public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum> {
+                       ^^^^^^^^^^^^^^^^^^^
+    static global::TestTableTaggedEnum SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.ReadGenFields(System.IO.BinaryReader reader, global::TestTableTaggedEnum row) {
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (34,23)-(34,42),
+    Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0310,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0310),
+      MessageFormat: '{2}' must be a non-abstract type with a public parameterless constructor in order to use it as parameter '{1}' in the generic type or method '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum> {
+    static global::TestTableTaggedEnum SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.ReadGenFields(System.IO.BinaryReader reader, global::TestTableTaggedEnum row) {
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (35,39)-(35,120),
+    Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0311,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0311),
+      MessageFormat: The type '{3}' cannot be used as type parameter '{2}' in the generic type or method '{0}'. There is no implicit reference conversion from '{3}' to '{1}'.,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+public readonly struct TestTableTaggedEnum : SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum> {
+    static global::TestTableTaggedEnum SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.ReadGenFields(System.IO.BinaryReader reader, global::TestTableTaggedEnum row) {
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (35,39)-(35,120),
+    Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0310,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0310),
+      MessageFormat: '{2}' must be a non-abstract type with a public parameterless constructor in order to use it as parameter '{1}' in the generic type or method '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    }
+    public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Iter();
+                                                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public IEnumerable<global::TestTableTaggedEnum> Query(System.Linq.Expressions.Expression<Func<global::TestTableTaggedEnum, bool>> predicate) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Query(predicate);
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (39,115)-(39,142),
+    Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0311,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0311),
+      MessageFormat: The type '{3}' cannot be used as type parameter '{2}' in the generic type or method '{0}'. There is no implicit reference conversion from '{3}' to '{1}'.,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    }
+    public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Iter();
+                                                                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public IEnumerable<global::TestTableTaggedEnum> Query(System.Linq.Expressions.Expression<Func<global::TestTableTaggedEnum, bool>> predicate) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Query(predicate);
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (39,115)-(39,142),
+    Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0310,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0310),
+      MessageFormat: '{2}' must be a non-abstract type with a public parameterless constructor in order to use it as parameter '{1}' in the generic type or method '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Iter();
+    public IEnumerable<global::TestTableTaggedEnum> Query(System.Linq.Expressions.Expression<Func<global::TestTableTaggedEnum, bool>> predicate) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Query(predicate);
+                                                                                                                                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Insert(row);
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (40,201)-(40,228),
+    Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0311,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0311),
+      MessageFormat: The type '{3}' cannot be used as type parameter '{2}' in the generic type or method '{0}'. There is no implicit reference conversion from '{3}' to '{1}'.,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public IEnumerable<global::TestTableTaggedEnum> Iter() => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Iter();
+    public IEnumerable<global::TestTableTaggedEnum> Query(System.Linq.Expressions.Expression<Func<global::TestTableTaggedEnum, bool>> predicate) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Query(predicate);
+                                                                                                                                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Insert(row);
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (40,201)-(40,228),
+    Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0310,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0310),
+      MessageFormat: '{2}' must be a non-abstract type with a public parameterless constructor in order to use it as parameter '{1}' in the generic type or method '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public IEnumerable<global::TestTableTaggedEnum> Query(System.Linq.Expressions.Expression<Func<global::TestTableTaggedEnum, bool>> predicate) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Query(predicate);
+    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Insert(row);
+                                                                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public IEnumerable<global::TestTableTaggedEnum> FilterByX(int X) =>
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (41,135)-(41,162),
+    Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0311,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0311),
+      MessageFormat: The type '{3}' cannot be used as type parameter '{2}' in the generic type or method '{0}'. There is no implicit reference conversion from '{3}' to '{1}'.,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public IEnumerable<global::TestTableTaggedEnum> Query(System.Linq.Expressions.Expression<Func<global::TestTableTaggedEnum, bool>> predicate) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Query(predicate);
+    public global::TestTableTaggedEnum Insert(global::TestTableTaggedEnum row) => SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.Insert(row);
+                                                                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public IEnumerable<global::TestTableTaggedEnum> FilterByX(int X) =>
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (41,135)-(41,162),
+    Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0310,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0310),
+      MessageFormat: '{2}' must be a non-abstract type with a public parameterless constructor in order to use it as parameter '{1}' in the generic type or method '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public IEnumerable<global::TestTableTaggedEnum> FilterByX(int X) =>
+    SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.ColEq.Where(0, X, global::TestTableTaggedEnum.BSATN.X).Iter();
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (43,57)-(43,84),
+    Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0311,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0311),
+      MessageFormat: The type '{3}' cannot be used as type parameter '{2}' in the generic type or method '{0}'. There is no implicit reference conversion from '{3}' to '{1}'.,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    public IEnumerable<global::TestTableTaggedEnum> FilterByX(int X) =>
+    SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.ColEq.Where(0, X, global::TestTableTaggedEnum.BSATN.X).Iter();
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (43,57)-(43,84),
+    Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0310,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0310),
+      MessageFormat: '{2}' must be a non-abstract type with a public parameterless constructor in order to use it as parameter '{1}' in the generic type or method '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
+    SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.ColEq.Where(1, Y, global::TestTableTaggedEnum.BSATN.Y).Iter();
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (45,57)-(45,84),
+    Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'ITableView<View, T>'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0311,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0311),
+      MessageFormat: The type '{3}' cannot be used as type parameter '{2}' in the generic type or method '{0}'. There is no implicit reference conversion from '{3}' to '{1}'.,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+public IEnumerable<global::TestTableTaggedEnum> FilterByY(int Y) =>
+    SpacetimeDB.Internal.ITableView<TestTableTaggedEnum, global::TestTableTaggedEnum>.ColEq.Where(1, Y, global::TestTableTaggedEnum.BSATN.Y).Iter();
+                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+}
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (45,57)-(45,84),
+    Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'ITableView<View, T>',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0310,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0310),
+      MessageFormat: '{2}' must be a non-abstract type with a public parameterless constructor in order to use it as parameter '{1}' in the generic type or method '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+        SpacetimeDB.Internal.Module.RegisterTable<global::TestAutoIncNotInteger>();
+SpacetimeDB.Internal.Module.RegisterTable<global::TestTableTaggedEnum>();
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable>();
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (82,28)-(82,70),
+    Message: The type 'TestTableTaggedEnum' cannot be used as type parameter 'T' in the generic type or method 'Module.RegisterTable<T>()'. There is no implicit reference conversion from 'TestTableTaggedEnum' to 'SpacetimeDB.Internal.ITable<TestTableTaggedEnum>'.,
+    Severity: Error,
+    Descriptor: {
+      Id: CS0311,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0311),
+      MessageFormat: The type '{3}' cannot be used as type parameter '{2}' in the generic type or method '{0}'. There is no implicit reference conversion from '{3}' to '{1}'.,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+        SpacetimeDB.Internal.Module.RegisterTable<global::TestAutoIncNotInteger>();
+SpacetimeDB.Internal.Module.RegisterTable<global::TestTableTaggedEnum>();
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable>();
+*/
+    Location: SpacetimeDB.Codegen\SpacetimeDB.Codegen.Module\FFI.cs: (82,28)-(82,70),
+    Message: 'TestTableTaggedEnum' must be a non-abstract type with a public parameterless constructor in order to use it as parameter 'T' in the generic type or method 'Module.RegisterTable<T>()',
+    Severity: Error,
+    Descriptor: {
+      Id: CS0310,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0310),
+      MessageFormat: '{2}' must be a non-abstract type with a public parameterless constructor in order to use it as parameter '{1}' in the generic type or method '{0}',
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  }
+]

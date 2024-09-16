@@ -21,16 +21,16 @@ partial class Timers
             BSATN.ScheduledAt.Write(writer, ScheduledAt);
         }
 
-        public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<SendMessageTimer>
+        public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<Timers.SendMessageTimer>
         {
             internal static readonly SpacetimeDB.BSATN.String Text = new();
             internal static readonly SpacetimeDB.BSATN.U64 ScheduledId = new();
             internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduledAt = new();
 
-            public SendMessageTimer Read(System.IO.BinaryReader reader) =>
-                SpacetimeDB.BSATN.IStructuralReadWrite.Read<SendMessageTimer>(reader);
+            public Timers.SendMessageTimer Read(System.IO.BinaryReader reader) =>
+                SpacetimeDB.BSATN.IStructuralReadWrite.Read<Timers.SendMessageTimer>(reader);
 
-            public void Write(System.IO.BinaryWriter writer, SendMessageTimer value)
+            public void Write(System.IO.BinaryWriter writer, Timers.SendMessageTimer value)
             {
                 value.WriteFields(writer);
             }
@@ -38,7 +38,7 @@ partial class Timers
             public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
                 SpacetimeDB.BSATN.ITypeRegistrar registrar
             ) =>
-                registrar.RegisterType<SendMessageTimer>(
+                registrar.RegisterType<Timers.SendMessageTimer>(
                     _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
                         new SpacetimeDB.BSATN.AggregateElement[]
                         {
