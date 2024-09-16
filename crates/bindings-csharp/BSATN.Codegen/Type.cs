@@ -257,7 +257,9 @@ public class Type : IIncrementalGenerator
                 {
                     // structs and classes should be always processed
                     if (node is not EnumDeclarationSyntax enumType)
+                    {
                         return true;
+                    }
 
                     // Ensure variants are contiguous as SATS enums don't support explicit tags.
                     if (enumType.Members.Any(m => m.EqualsValue is not null))
