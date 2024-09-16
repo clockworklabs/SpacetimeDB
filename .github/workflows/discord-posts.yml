@@ -9,14 +9,33 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.pull_request.merged == true &&
       github.event.pull_request.base.ref == 'master'
+    env:
+      CHECK_NAME: Internal Tests
     steps:
+      - name: Set up GitHub CLI
+        uses: actions/setup-gh@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch Check Run Results
+        run: |
+          RESULT="$(gh pr checks "${{github.event.pull_request.number}}" --json 'name,state' |
+            jq -r ".[] | select(.name==\"${CHECK_NAME}\").state")"
+
+          if [ -z "$RESULT" ]; then
+            RESULT="The check did not run!"
+          fi
+
+          echo "CHECK_RESULT=${RESULT}" >> $GITHUB_ENV
+
       - name: Send Discord notification
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          CHECK_RESULT: ${{ env.CHECK_RESULT }}
         run: |
           curl -X POST -H 'Content-Type: application/json' -d '{
-            "content": "'"PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](${PR_URL})"'"
+            "content": "PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](${PR_URL})\\n${CHECK_NAME} result: ${CHECK_RESULT}"
           }' ${DISCORD_WEBHOOK_URL}
