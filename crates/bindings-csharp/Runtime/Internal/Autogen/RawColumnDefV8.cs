@@ -30,9 +30,11 @@ namespace SpacetimeDB.Internal
 			this.ColType = ColType;
 		}
 
-		public RawColumnDefV8() : this(
-			"",
-			default!
-		) { }
+		public RawColumnDefV8()
+		{
+			this.ColName = "";
+			this.ColType = null!;
+		}
+
 	}
 }

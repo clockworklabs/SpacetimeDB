@@ -4469,6 +4469,7 @@ version = "0.12.0"
 dependencies = [
  "bitflags 2.4.1",
  "either",
+ "itertools 0.12.0",
  "nohash-hasher",
  "proptest",
 ]
@@ -4515,6 +4516,7 @@ dependencies = [
 name = "spacetimedb-schema"
 version = "0.12.0"
 dependencies = [
+ "enum-as-inner",
  "hashbrown 0.14.1",
  "itertools 0.12.0",
  "lazy_static",

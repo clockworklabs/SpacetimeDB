@@ -15,7 +15,8 @@ use spacetimedb_sats::product_value::InvalidFieldError;
 use std::sync::Arc;
 
 use crate::def::{
-    ColumnDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, SequenceDef, TableDef, UniqueConstraintDef,
+    ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, SequenceDef,
+    TableDef, UniqueConstraintData,
 };
 use crate::identifier::Identifier;
 
@@ -520,7 +521,7 @@ impl TableSchema {
             primary_key,
             columns,
             indexes,
-            unique_constraints,
+            constraints,
             sequences,
             schedule,
             table_type,
@@ -533,12 +534,14 @@ impl TableSchema {
             .map(|(col_pos, def)| ColumnSchema::from_module_def(def, (), (table_id, col_pos.into())))
             .collect();
 
-        let unique_col_lists = unique_constraints
+        let unique_col_lists = constraints
             .values()
-            .map(|x| x.columns.clone())
+            .map(|x| match &x.data {
+                ConstraintData::Unique(UniqueConstraintData { columns }) => columns.clone(),
+            })
             .collect::<HashSet<_>>();
 
-        let mut constraints: Vec<ConstraintSchema> = vec![];
+        let mut constraint_schemas: Vec<ConstraintSchema> = vec![];
 
         // note: these Ids are fixed up somewhere else, so we can just use 0 here...
         // but it would be nice to pass the correct values into this method.
@@ -552,7 +555,7 @@ impl TableSchema {
                 } else {
                     let cols_name = generate_cols_name(&result.columns, |x| columns.get(x.idx()).map(|x| &*x.col_name));
                     #[allow(deprecated)]
-                    constraints.push(ConstraintSchema::from_def(
+                    constraint_schemas.push(ConstraintSchema::from_def(
                         table_id,
                         RawConstraintDefV8::for_column(
                             name,
@@ -575,7 +578,7 @@ impl TableSchema {
 
         let pk_col_list = primary_key.map(ColList::from).unwrap_or(ColList::empty());
 
-        constraints.extend(unique_constraints.values().map(|def| {
+        constraint_schemas.extend(constraints.values().map(|def| {
             let mut result = ConstraintSchema::from_module_def(def, table_id, ConstraintId(0));
             if result.columns == pk_col_list {
                 result.constraints = result.constraints.push(Constraints::primary_key());
@@ -593,7 +596,7 @@ impl TableSchema {
             (*name).clone().into(),
             columns,
             indexes,
-            constraints,
+            constraint_schemas,
             sequences,
             (*table_type).into(),
             (*table_access).into(),
@@ -998,17 +1001,19 @@ impl ConstraintSchema {
 }
 
 impl Schema for ConstraintSchema {
-    type Def = UniqueConstraintDef;
+    type Def = ConstraintDef;
     type Id = ConstraintId;
     type ParentId = TableId;
 
     fn from_module_def(def: &Self::Def, parent_id: Self::ParentId, id: Self::Id) -> Self {
-        ConstraintSchema {
-            constraint_id: id,
-            constraint_name: (*def.name).into(),
-            constraints: Constraints::unique(),
-            table_id: parent_id,
-            columns: def.columns.clone(),
+        match &def.data {
+            ConstraintData::Unique(UniqueConstraintData { columns }) => ConstraintSchema {
+                constraint_id: id,
+                constraint_name: (*def.name).into(),
+                constraints: Constraints::unique(),
+                table_id: parent_id,
+                columns: columns.clone(),
+            },
         }
     }
 }

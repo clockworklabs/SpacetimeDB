@@ -30,9 +30,10 @@ namespace SpacetimeDB.Internal
 			this.Ty = Ty;
 		}
 
-		public TypeAlias() : this(
-			"",
-			default!
-		) { }
+		public TypeAlias()
+		{
+			this.Name = "";
+		}
+
 	}
 }

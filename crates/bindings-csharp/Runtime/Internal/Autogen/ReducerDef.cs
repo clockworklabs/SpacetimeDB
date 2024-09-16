@@ -30,9 +30,11 @@ namespace SpacetimeDB.Internal
 			this.Args = Args;
 		}
 
-		public ReducerDef() : this(
-			"",
-			new()
-		) { }
+		public ReducerDef()
+		{
+			this.Name = "";
+			this.Args = new();
+		}
+
 	}
 }

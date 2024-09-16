@@ -30,9 +30,11 @@ namespace SpacetimeDB.Internal
 			this.ReducerName = ReducerName;
 		}
 
-		public RawScheduleDefV9() : this(
-			"",
-			""
-		) { }
+		public RawScheduleDefV9()
+		{
+			this.Name = "";
+			this.ReducerName = "";
+		}
+
 	}
 }

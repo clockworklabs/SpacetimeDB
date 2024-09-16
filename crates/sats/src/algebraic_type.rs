@@ -182,6 +182,22 @@ impl AlgebraicType {
         matches!(self, Self::Sum(p) if p.is_schedule_at())
     }
 
+    /// Returns whether this type is a unit type.
+    pub fn is_unit(&self) -> bool {
+        matches!(self, Self::Product(p) if p.is_unit())
+    }
+
+    /// Returns whether this type is a never type.
+    pub fn is_never(&self) -> bool {
+        matches!(self, Self::Sum(p) if p.is_empty())
+    }
+
+    /// If this type is the standard option type, returns the type of the `some` variant.
+    /// Otherwise, returns `None`.
+    pub fn as_option(&self) -> Option<&AlgebraicType> {
+        self.as_sum()?.as_option()
+    }
+
     /// Returns whether this type is scalar or a string type.
     pub fn is_scalar_or_string(&self) -> bool {
         self.is_scalar() || self.is_string()

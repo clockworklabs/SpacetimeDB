@@ -14,30 +14,26 @@ namespace SpacetimeDB.Internal
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class RawReducerDefV9
+	public partial class RawConstraintDefV9
 	{
 		[DataMember(Name = "name")]
 		public string Name;
-		[DataMember(Name = "params")]
-		public List<SpacetimeDB.BSATN.AggregateElement> Params;
-		[DataMember(Name = "lifecycle")]
-		public SpacetimeDB.Internal.Lifecycle? Lifecycle;
+		[DataMember(Name = "data")]
+		public SpacetimeDB.Internal.RawConstraintDataV9 Data;
 
-		public RawReducerDefV9(
+		public RawConstraintDefV9(
 			string Name,
-			List<SpacetimeDB.BSATN.AggregateElement> Params,
-			SpacetimeDB.Internal.Lifecycle? Lifecycle
+			SpacetimeDB.Internal.RawConstraintDataV9 Data
 		)
 		{
 			this.Name = Name;
-			this.Params = Params;
-			this.Lifecycle = Lifecycle;
+			this.Data = Data;
 		}
 
-		public RawReducerDefV9()
+		public RawConstraintDefV9()
 		{
 			this.Name = "";
-			this.Params = new();
+			this.Data = null!;
 		}
 
 	}

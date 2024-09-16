@@ -26,8 +26,10 @@ namespace SpacetimeDB.Internal
 			this.Types = Types;
 		}
 
-		public Typespace() : this(
-			new()
-		) { }
+		public Typespace()
+		{
+			this.Types = new();
+		}
+
 	}
 }
