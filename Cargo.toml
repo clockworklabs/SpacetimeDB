@@ -175,6 +175,7 @@ nohash-hasher = "0.2"
 once_cell = "1.16"
 parking_lot = { version = "0.12.1", features = ["send_guard", "arc_lock"] }
 paste = "1.0"
+petgraph = { version = "0.6.5", default-features = false }
 pin-project-lite = "0.2.9"
 postgres-types = "0.2.5"
 pretty_assertions = "1.4"

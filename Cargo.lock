@@ -1520,6 +1520,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fcfdc7a0362c9f4444381a9e697c79d435fe65b52a37466fc2c1184cee9edc6"
 
 [[package]]
+name = "fixedbitset"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
+
+[[package]]
 name = "flate2"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2850,6 +2856,16 @@ version = "0.1.0"
 dependencies = [
  "log",
  "spacetimedb",
+]
+
+[[package]]
+name = "petgraph"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4c5cc86750666a3ed20bdaf5ca2a0344f9c67674cae0515bec2da16fbaa47db"
+dependencies = [
+ "fixedbitset",
+ "indexmap 2.0.2",
 ]
 
 [[package]]
@@ -4520,6 +4536,7 @@ dependencies = [
  "hashbrown 0.14.1",
  "itertools 0.12.0",
  "lazy_static",
+ "petgraph",
  "proptest",
  "serde_json",
  "smallvec",
