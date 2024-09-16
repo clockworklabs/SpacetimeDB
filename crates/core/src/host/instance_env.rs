@@ -15,7 +15,7 @@ use crate::vm::{build_query, TxMode};
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::relation::FieldName;
-use spacetimedb_primitives::{ColId, TableId};
+use spacetimedb_primitives::{ColId, IndexId, TableId};
 use spacetimedb_sats::Typespace;
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_vm::expr::{FieldExpr, FieldOp, NoInMemUsed, QueryExpr};
@@ -212,6 +212,20 @@ impl InstanceEnv {
             .ok_or(NodesError::TableNotFound)
     }
 
+    /// Returns the `index_id` associated with the given `index_name`.
+    ///
+    /// Errors with `GetTxError` if not in a transaction
+    /// and `IndexNotFound` if the index does not exist.
+    #[tracing::instrument(skip_all)]
+    pub fn index_id_from_name(&self, index_name: &str) -> Result<IndexId, NodesError> {
+        let stdb = &*self.dbic.relational_db;
+        let tx = &mut *self.get_tx()?;
+
+        // Query the index id from the name.
+        stdb.index_id_from_name_mut(tx, index_name)?
+            .ok_or(NodesError::IndexNotFound)
+    }
+
     /// Returns the number of rows in the table identified by `table_id`.
     ///
     /// Errors with `GetTxError` if not in a transaction
@@ -260,6 +274,23 @@ impl InstanceEnv {
         let tx = &mut *self.tx.get()?;
 
         let chunks = ChunkedWriter::collect_iter(stdb.iter_mut(ctx, tx, table_id)?);
+        Ok(chunks)
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub fn datastore_btree_scan_bsatn_chunks(
+        &self,
+        index_id: IndexId,
+        prefix: &[u8],
+        prefix_elems: ColId,
+        rstart: &[u8],
+        rend: &[u8],
+    ) -> Result<Vec<Box<[u8]>>, NodesError> {
+        let stdb = &*self.dbic.relational_db;
+        let tx = &mut *self.tx.get()?;
+
+        let iter = stdb.btree_scan(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        let chunks = ChunkedWriter::collect_iter(iter);
         Ok(chunks)
     }
 

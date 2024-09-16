@@ -322,6 +322,7 @@ pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
         NodesError::NotInTransaction => Some(errno::NOT_IN_TRANSACTION),
         NodesError::DecodeRow(_) => Some(errno::BSATN_DECODE_ERROR),
         NodesError::TableNotFound => Some(errno::NO_SUCH_TABLE),
+        NodesError::IndexNotFound => Some(errno::NO_SUCH_INDEX),
         NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => Some(errno::SCHEDULE_AT_DELAY_TOO_LONG),
         NodesError::AlreadyExists(_) => Some(errno::UNIQUE_ALREADY_EXISTS),
         NodesError::Internal(internal) => match **internal {

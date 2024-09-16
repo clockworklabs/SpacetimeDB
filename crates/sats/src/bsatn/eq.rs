@@ -29,6 +29,7 @@ pub fn eq_bsatn<'r>(lhs: &AlgebraicValue, rhs: Deserializer<'_, impl BufReader<'
         AlgebraicValue::F32(lhs) => eq_bsatn_de(lhs, rhs),
         AlgebraicValue::F64(lhs) => eq_bsatn_de(lhs, rhs),
         AlgebraicValue::String(lhs) => eq_bsatn_str(lhs, rhs),
+        AlgebraicValue::Min | AlgebraicValue::Max => panic!("not defined for Min/Max"),
     }
 }
 

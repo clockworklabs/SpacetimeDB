@@ -8,11 +8,11 @@ use core::mem::MaybeUninit;
 use core::num::NonZeroU16;
 use std::ptr;
 
-use spacetimedb_primitives::{errno, errnos, ColId, TableId};
+use spacetimedb_primitives::{errno, errnos, ColId, IndexId, TableId};
 
 /// Provides a raw set of sys calls which abstractions can be built atop of.
 pub mod raw {
-    use spacetimedb_primitives::{ColId, TableId};
+    use spacetimedb_primitives::{ColId, IndexId, TableId};
 
     // this module identifier determines the abi version that modules built with this crate depend
     // on. Any non-breaking additions to the abi surface should be put in a new `extern {}` block
@@ -39,6 +39,26 @@ pub mod raw {
         /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
         /// - `NO_SUCH_TABLE`, when `name` is not the name of a table.
         pub fn _table_id_from_name(name: *const u8, name_len: usize, out: *mut TableId) -> u16;
+
+        /// Queries the `index_id` associated with the given (index) `name`
+        /// where `name` is the UTF-8 slice in WASM memory at `name_ptr[..name_len]`.
+        ///
+        /// The index id is written into the `out` pointer.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `name_ptr` is NULL or `name` is not in bounds of WASM memory.
+        /// - `name` is not valid UTF-8.
+        /// - `out` is NULL or `out[..size_of::<IndexId>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_INDEX`, when `name` is not the name of an index.
+        pub fn _index_id_from_name(name_ptr: *const u8, name_len: usize, out: *mut IndexId) -> u16;
 
         /// Writes the number of rows currently in table identified by `table_id` to `out`.
         ///
@@ -71,6 +91,80 @@ pub mod raw {
         /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
         /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
         pub fn _datastore_table_scan_bsatn(table_id: TableId, out: *mut RowIter) -> u16;
+
+        /// Finds all rows in the index identified by `index_id`,
+        /// according to the:
+        /// - `prefix = prefix_ptr[..prefix_len]`,
+        /// - `rstart = rstart_ptr[..rstart_len]`,
+        /// - `rend = rend_ptr[..rend_len]`,
+        /// in WASM memory.
+        ///
+        /// The index itself has a schema/type.
+        /// The `prefix` is decoded to the initial `prefix_elems` `AlgebraicType`s
+        /// whereas `rstart` and `rend` are decoded to the `prefix_elems + 1` `AlgebraicType`
+        /// where the `AlgebraicValue`s are wrapped in `Bound`.
+        /// That is, `rstart, rend` are BSATN-encoded `Bound<AlgebraicValue>`s.
+        ///
+        /// Matching is then defined by equating `prefix`
+        /// to the initial `prefix_elems` columns of the index
+        /// and then imposing `rstart` as the starting bound
+        /// and `rend` as the ending bound on the `prefix_elems + 1` column of the index.
+        /// Remaining columns of the index are then unbounded.
+        /// Note that the `prefix` in this case can be empty (`prefix_elems = 0`),
+        /// in which case this becomes a ranged index scan on a single-col index
+        /// or even a full table scan if `rstart` and `rend` are both unbounded.
+        ///
+        /// The relevant table for the index is found implicitly via the `index_id`,
+        /// which is unique for the module.
+        ///
+        /// On success, the iterator handle is written to the `out` pointer.
+        /// This handle can be advanced by [`row_iter_bsatn_advance`].
+        ///
+        /// # Non-obvious queries
+        ///
+        /// For an index on columns `[a, b, c]`:
+        ///
+        /// - `a = x, b = y` is encoded as a prefix `[x, y]`
+        ///   and a range `Range::Unbounded`,
+        ///   or as a  prefix `[x]` and a range `rstart = rend = Range::Inclusive(y)`.
+        /// - `a = x, b = y, c = z` is encoded as a prefix `[x, y]`
+        ///   and a  range `rstart = rend = Range::Inclusive(z)`.
+        /// - A sorted full scan is encoded as an empty prefix
+        ///   and a range `Range::Unbounded`.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `prefix_elems > 0`
+        ///    and (`prefix_ptr` is NULL or `prefix` is not in bounds of WASM memory).
+        /// - `rstart` is NULL or `rstart` is not in bounds of WASM memory.
+        /// - `rend` is NULL or `rend` is not in bounds of WASM memory.
+        /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+        /// - `WRONG_INDEX_ALGO` if the index is not a btree index.
+        /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
+        ///    a `prefix_elems` number of `AlgebraicValue`
+        ///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
+        ///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
+        ///    where the inner `AlgebraicValue`s are
+        ///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
+        pub fn _datastore_btree_scan_bsatn(
+            index_id: IndexId,
+            prefix_ptr: *const u8,
+            prefix_len: usize,
+            prefix_elems: ColId,
+            rstart_ptr: *const u8, // Bound<AlgebraicValue>
+            rstart_len: usize,
+            rend_ptr: *const u8, // Bound<AlgebraicValue>
+            rend_len: usize,
+            out: *mut RowIter,
+        ) -> u16;
 
         /// Finds all rows in the table identified by `table_id`,
         /// where the row has a column, identified by `col_id`,
@@ -597,10 +691,26 @@ unsafe fn call<T: Copy>(f: impl FnOnce(*mut T) -> u16) -> Result<T, Errno> {
 ///
 /// Returns an error:
 ///
+/// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
 /// - `NO_SUCH_TABLE`, when `name` is not the name of a table.
 #[inline]
 pub fn table_id_from_name(name: &str) -> Result<TableId, Errno> {
     unsafe { call(|out| raw::_table_id_from_name(name.as_ptr(), name.len(), out)) }
+}
+
+/// Queries the `index_id` associated with the given (index) `name`.
+///
+/// The index id is returned.
+///
+/// # Errors
+///
+/// Returns an error:
+///
+/// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+/// - `NO_SUCH_INDEX`, when `name` is not the name of an index.
+#[inline]
+pub fn index_id_from_name(name: &str) -> Result<IndexId, Errno> {
+    unsafe { call(|out| raw::_index_id_from_name(name.as_ptr(), name.len(), out)) }
 }
 
 /// Returns the number of rows currently in table identified by `table_id`.
@@ -711,6 +821,80 @@ pub fn datastore_delete_all_by_eq_bsatn(table_id: TableId, relation: &[u8]) -> R
 /// - `NO_SUCH_TABLE`, when `table_id` is not a known ID of a table.
 pub fn datastore_table_scan_bsatn(table_id: TableId) -> Result<RowIter, Errno> {
     let raw = unsafe { call(|out| raw::_datastore_table_scan_bsatn(table_id, out))? };
+    Ok(RowIter { raw })
+}
+
+/// Finds all rows in the index identified by `index_id`,
+/// according to the `prefix`, `rstart`, and `rend`.
+///
+/// The index itself has a schema/type.
+/// The `prefix` is decoded to the initial `prefix_elems` `AlgebraicType`s
+/// whereas `rstart` and `rend` are decoded to the `prefix_elems + 1` `AlgebraicType`
+/// where the `AlgebraicValue`s are wrapped in `Bound`.
+/// That is, `rstart, rend` are BSATN-encoded `Bound<AlgebraicValue>`s.
+///
+/// Matching is then defined by equating `prefix`
+/// to the initial `prefix_elems` columns of the index
+/// and then imposing `rstart` as the starting bound
+/// and `rend` as the ending bound on the `prefix_elems + 1` column of the index.
+/// Remaining columns of the index are then unbounded.
+/// Note that the `prefix` in this case can be empty (`prefix_elems = 0`),
+/// in which case this becomes a ranged index scan on a single-col index
+/// or even a full table scan if `rstart` and `rend` are both unbounded.
+///
+/// The relevant table for the index is found implicitly via the `index_id`,
+/// which is unique for the module.
+///
+/// On success, the iterator handle is written to the `out` pointer.
+/// This handle can be advanced by [`row_iter_bsatn_advance`].
+///
+/// # Non-obvious queries
+///
+/// For an index on columns `[a, b, c]`:
+///
+/// - `a = x, b = y` is encoded as a prefix `[x, y]`
+///   and a range `Range::Unbounded`,
+///   or as a  prefix `[x]` and a range `rstart = rend = Range::Inclusive(y)`.
+/// - `a = x, b = y, c = z` is encoded as a prefix `[x, y]`
+///   and a  range `rstart = rend = Range::Inclusive(z)`.
+/// - A sorted full scan is encoded as an empty prefix
+///   and a range `Range::Unbounded`.
+///
+/// # Errors
+///
+/// Returns an error:
+///
+/// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+/// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+/// - `WRONG_INDEX_ALGO` if the index is not a btree index.
+/// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
+///    a `prefix_elems` number of `AlgebraicValue`
+///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
+///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
+///    where the inner `AlgebraicValue`s are
+///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
+pub fn datastore_btree_scan_bsatn(
+    index_id: IndexId,
+    prefix: &[u8],
+    prefix_elems: ColId,
+    rstart: &[u8],
+    rend: &[u8],
+) -> Result<RowIter, Errno> {
+    let raw = unsafe {
+        call(|out| {
+            raw::_datastore_btree_scan_bsatn(
+                index_id,
+                prefix.as_ptr(),
+                prefix.len(),
+                prefix_elems,
+                rstart.as_ptr(),
+                rstart.len(),
+                rend.as_ptr(),
+                rend.len(),
+                out,
+            )
+        })?
+    };
     Ok(RowIter { raw })
 }
 

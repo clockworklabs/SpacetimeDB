@@ -12,6 +12,7 @@ macro_rules! errnos {
             NOT_IN_TRANSACTION(2, "ABI call can only be made while in a transaction"),
             BSATN_DECODE_ERROR(3, "Couldn't decode the BSATN to the expected type"),
             NO_SUCH_TABLE(4, "No such table"),
+            NO_SUCH_INDEX(5, "No such index"),
             NO_SUCH_ITER(6, "The provided row iterator is not valid"),
             NO_SUCH_CONSOLE_TIMER(7, "The started console timer does not exist"),
             NO_SUCH_BYTES(8, "The provided bytes source or sink is not valid"),
