@@ -11,15 +11,19 @@ jobs:
       github.event.pull_request.base.ref == 'master'
     env:
       CHECK_NAME: Internal Tests
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Set up GitHub CLI
-        uses: actions/setup-gh@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /usr/share/keyrings/githubcli-archive-keyring.gpg > /dev/null
+          sudo apt-get install -y apt-transport-https
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list
+          sudo apt-get update
+          sudo apt-get install gh
 
       - name: Fetch Check Run Results
         run: |
-          RESULT="$(gh pr checks "${{github.event.pull_request.number}}" --json 'name,state' |
+          RESULT="$(gh pr checks "${{github.event.pull_request.html_url}}" --json 'name,state' |
             jq -r ".[] | select(.name==\"${CHECK_NAME}\").state")"
 
           if [ -z "$RESULT" ]; then
