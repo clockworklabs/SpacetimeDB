@@ -48,11 +48,9 @@ namespace SpacetimeDB
     }
 
     public abstract class RemoteBase<DbConnection> {
-#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor.
         protected DbConnection conn;
-#pragma warning restore CS8618
 
-        public void Init(DbConnection conn) {
+        protected RemoteBase(DbConnection conn) {
             this.conn = conn;
         }
     }
