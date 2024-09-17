@@ -39,7 +39,14 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           CHECK_RESULT: ${{ env.CHECK_RESULT }}
+          PING_ON_FAILURE: ${{ secrets.DEV_OPS_ROLE_ID }}
         run: |
-          curl -X POST -H 'Content-Type: application/json' -d '{
-            "content": "'"PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](${PR_URL})\\n${CHECK_NAME} result: ${CHECK_RESULT}"'"
-          }' ${DISCORD_WEBHOOK_URL}
+          message="PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](${PR_URL})"
+          message+=$'\n'
+          message+="${CHECK_NAME} result: ${CHECK_RESULT}"
+          if [[ "${CHECK_RESULT}" != "SUCCESS" ]]; then
+            message+=" (cc <@&${PING_ON_FAILURE}>)"
+          fi
+          # Construct the json data blog to be passed to the webhook
+          data="$(jq --null-input --arg msg "$message" '.content=$msg')"
+          curl -X POST -H 'Content-Type: application/json' -d "$data" "${DISCORD_WEBHOOK_URL}"
