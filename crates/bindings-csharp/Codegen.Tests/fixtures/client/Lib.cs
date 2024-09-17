@@ -43,7 +43,11 @@ namespace System.Runtime.CompilerServices
 
 [SpacetimeDB.Type]
 public partial record CustomTaggedEnum
-    : SpacetimeDB.TaggedEnum<(int IntVariant, string StringVariant)>;
+    : SpacetimeDB.TaggedEnum<(
+        int IntVariant,
+        SpacetimeDB.Unit, // anonymous reserved variant
+        string StringVariant
+    )>;
 
 [SpacetimeDB.Type]
 public partial struct PublicTable

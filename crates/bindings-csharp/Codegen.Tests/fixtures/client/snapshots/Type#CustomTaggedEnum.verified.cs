@@ -9,6 +9,7 @@ partial record CustomTaggedEnum
     internal enum @enum : byte
     {
         IntVariant,
+        Item2,
         StringVariant
     }
 
@@ -20,6 +21,7 @@ partial record CustomTaggedEnum
     {
         internal static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTag = new();
         internal static readonly SpacetimeDB.BSATN.I32 IntVariant = new();
+        internal static readonly SpacetimeDB.Unit.BSATN Item2 = new();
         internal static readonly SpacetimeDB.BSATN.String StringVariant = new();
 
         public CustomTaggedEnum Read(System.IO.BinaryReader reader) =>
@@ -55,6 +57,7 @@ partial record CustomTaggedEnum
                 new SpacetimeDB.BSATN.AggregateElement[]
                 {
                     new(nameof(IntVariant), IntVariant.GetAlgebraicType(registrar)),
+                    new(nameof(Item2), Item2.GetAlgebraicType(registrar)),
                     new(nameof(StringVariant), StringVariant.GetAlgebraicType(registrar))
                 }
             ));

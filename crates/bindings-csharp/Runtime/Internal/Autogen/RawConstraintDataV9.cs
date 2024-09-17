@@ -12,6 +12,6 @@ namespace SpacetimeDB.Internal
 	[SpacetimeDB.Type]
 	public partial record RawConstraintDataV9 : SpacetimeDB.TaggedEnum<(
 		SpacetimeDB.Internal.RawUniqueConstraintDataV9 Unique,
-		SpacetimeDB.Unit _Reserved
+		SpacetimeDB.Unit
 	)>;
 }

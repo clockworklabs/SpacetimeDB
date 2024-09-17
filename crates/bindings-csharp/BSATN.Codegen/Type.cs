@@ -45,10 +45,13 @@ public record MemberDeclaration(string Name, string Type, string TypeInfo)
         );
 }
 
-public enum TypeKind
+public abstract record TypeKind
 {
-    Product,
-    Sum,
+    public record Product : TypeKind;
+
+    public record Sum(EquatableArray<bool> HasExplicitName) : TypeKind;
+
+    public sealed override string ToString() => GetType().Name;
 }
 
 public abstract record BaseTypeDeclaration<M>
@@ -97,8 +100,6 @@ public abstract record BaseTypeDeclaration<M>
         // Check if type implements generic `SpacetimeDB.TaggedEnum<Variants>` and, if so, extract the `Variants` type.
         if (type.BaseType?.OriginalDefinition.ToString() == "SpacetimeDB.TaggedEnum<Variants>")
         {
-            Kind = TypeKind.Sum;
-
             if (
                 type.BaseType.TypeArguments.FirstOrDefault()
                 is not INamedTypeSymbol { IsTupleType: true, TupleElements: var taggedEnumVariants }
@@ -112,11 +113,18 @@ public abstract record BaseTypeDeclaration<M>
                 diag.Report(ErrorDescriptor.TaggedEnumField, field);
             }
 
+            Kind = new TypeKind.Sum(
+                new(
+                    taggedEnumVariants
+                        .Select(v => v.IsExplicitlyNamedTupleElement)
+                        .ToImmutableArray()
+                )
+            );
             fields = taggedEnumVariants;
         }
         else
         {
-            Kind = TypeKind.Product;
+            Kind = new TypeKind.Product();
         }
 
         if (typeSyntax.TypeParameterList is { } typeParams)
@@ -140,7 +148,7 @@ public abstract record BaseTypeDeclaration<M>
         var bsatnDecls = Members.Cast<MemberDeclaration>();
         var fieldNames = bsatnDecls.Select(m => m.Name);
 
-        if (Kind is TypeKind.Sum)
+        if (Kind is TypeKind.Sum(var hasExplicitName))
         {
             extensions.Contents.Append(
                 $$"""
@@ -160,20 +168,24 @@ public abstract record BaseTypeDeclaration<M>
             extensions.Contents.Append(
                 string.Join(
                     "\n",
-                    Members.Select(m =>
-                        // C# puts field names in the same namespace as records themselves, and will complain about clashes if they match.
-                        // To avoid this, we append an underscore to the field name.
-                        // In most cases the field name shouldn't matter anyway as you'll idiomatically use pattern matching to extract the value.
-                        $"public sealed record {m.Name}({m.Type} {m.Name}_) : {ShortName};"
-                    )
+                    Members
+                        .Where((_, i) => hasExplicitName[i])
+                        .Select(m =>
+                            // C# puts field names in the same namespace as records themselves, and will complain about clashes if they match.
+                            // To avoid this, we append an underscore to the field name.
+                            // In most cases the field name shouldn't matter anyway as you'll idiomatically use pattern matching to extract the value.
+                            $"public sealed record {m.Name}({m.Type} {m.Name}_) : {ShortName};"
+                        )
                 )
             );
+
+            var explicitNames = fieldNames.Where((_, i) => hasExplicitName[i]);
 
             read = $$"""
                 __enumTag.Read(reader) switch {
                     {{string.Join(
                         "\n",
-                        fieldNames.Select(name =>
+                        explicitNames.Select(name =>
                             $"@enum.{name} => new {name}({name}.Read(reader)),"
                         )
                     )}}
@@ -185,7 +197,7 @@ public abstract record BaseTypeDeclaration<M>
                 switch (value) {
                     {{string.Join(
                         "\n",
-                        fieldNames.Select(name => $"""
+                        explicitNames.Select(name => $"""
                             case {name}(var inner):
                                 __enumTag.Write(writer, @enum.{name});
                                 {name}.Write(writer, inner);

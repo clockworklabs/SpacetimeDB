@@ -12,6 +12,6 @@ namespace SpacetimeDB.Internal
 	[SpacetimeDB.Type]
 	public partial record MiscModuleExport : SpacetimeDB.TaggedEnum<(
 		SpacetimeDB.Internal.TypeAlias TypeAlias,
-		SpacetimeDB.Unit _Reserved
+		SpacetimeDB.Unit
 	)>;
 }

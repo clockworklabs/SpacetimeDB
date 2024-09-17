@@ -231,10 +231,12 @@ pub fn autogen_csharp_sum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespac
         );
         {
             indent_scope!(output);
-            for (i, variant) in sum_type.variants.iter().enumerate() {
-                if i != 0 {
+            let mut had_items = false;
+            for variant in &*sum_type.variants {
+                if had_items {
                     write!(output, ",");
                 }
+                had_items = true;
                 writeln!(output);
                 if variant.is_unit() {
                     write!(output, "SpacetimeDB.Unit");
@@ -248,18 +250,14 @@ pub fn autogen_csharp_sum(ctx: &GenCtx, name: &str, sum_type: &SumType, namespac
                     .replace("r#", "");
                 write!(output, " {variant_name}");
             }
-            // If we have less than 2 variants, we need to add some dummy variants to make the tuple work.
-            match sum_type.variants.len() {
-                0 => {
-                    writeln!(output);
-                    writeln!(output, "SpacetimeDB.Unit _Reserved1,");
-                    write!(output, "SpacetimeDB.Unit _Reserved2");
+            // If we have fewer than 2 variants, we need to add some dummy variants to make the tuple work.
+            for _ in sum_type.variants.len()..2 {
+                if had_items {
+                    write!(output, ",");
                 }
-                1 => {
-                    writeln!(output, ",");
-                    write!(output, "SpacetimeDB.Unit _Reserved");
-                }
-                _ => {}
+                had_items = true;
+                writeln!(output);
+                write!(output, "SpacetimeDB.Unit");
             }
         }
         writeln!(output);
