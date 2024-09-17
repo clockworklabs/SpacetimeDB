@@ -13,6 +13,7 @@ members = [
   "crates/durability",
   "crates/fs-utils",
   "crates/lib",
+  "crates/planner",
   "crates/metrics",
   "crates/primitives",
   "crates/sats",
