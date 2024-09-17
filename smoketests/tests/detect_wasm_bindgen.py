@@ -3,10 +3,10 @@ from .. import Smoketest
 class WasmBindgen(Smoketest):
     AUTOPUBLISH = False
     MODULE_CODE = """
-use spacetimedb::log;
+use spacetimedb::{log, ReducerContext};
 
 #[spacetimedb::reducer]
-pub fn test() {
+pub fn test(_ctx: &ReducerContext) {
     log::info!("Hello! {}", now());
 }
 
@@ -27,10 +27,10 @@ extern "C" {
 class Getrandom(Smoketest):
     AUTOPUBLISH = False
     MODULE_CODE = """
-use spacetimedb::log;
+use spacetimedb::{log, ReducerContext};
 
 #[spacetimedb::reducer]
-pub fn test() {
+pub fn test(_ctx: &ReducerContext) {
     log::info!("Hello! {}", rand::random::<u8>());
 }
 """

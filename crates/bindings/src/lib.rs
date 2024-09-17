@@ -198,17 +198,14 @@ macro_rules! __volatile_nonatomic_schedule_immediate_impl {
     ([$($cur:tt)*] [$next:tt $($rest:tt)*]) => {
         $crate::__volatile_nonatomic_schedule_immediate_impl!([$($cur)* $next] [$($rest)*])
     };
-    (@process_args $repeater:path, (_$(, $args:expr)* $(,)?)) => {
-        $crate::__volatile_nonatomic_schedule_immediate_impl!(@call $repeater, ($crate::ReducerContext::__dummy(), $($args),*))
-    };
     (@process_args $repeater:path, ($($args:expr),* $(,)?)) => {
         $crate::__volatile_nonatomic_schedule_immediate_impl!(@call $repeater, ($($args),*))
     };
     (@call $repeater:path, ($($args:expr),*)) => {
         if false {
-            let _ = $repeater($($args,)*);
+            let _ = $repeater(&$crate::ReducerContext::__dummy(), $($args,)*);
         } else {
-            $crate::rt::volatile_nonatomic_schedule_immediate::<_, _, $repeater, _>($repeater, ($($args,)*))
+            $crate::rt::volatile_nonatomic_schedule_immediate::<_, _, $repeater>($repeater, ($($args,)*))
         }
     };
 }

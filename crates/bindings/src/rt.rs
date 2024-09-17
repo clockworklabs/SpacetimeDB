@@ -36,9 +36,6 @@ pub fn invoke_reducer<'a, A: Args<'a>>(
 /// A trait for types representing the *execution logic* of a reducer.
 pub trait Reducer<'de, A: Args<'de>> {
     fn invoke(&self, ctx: &ReducerContext, args: A) -> ReducerResult;
-
-    type ArgsWithContext;
-    fn extract_args(args: Self::ArgsWithContext) -> A;
 }
 
 /// A trait for types that can *describe* a reducer.
@@ -191,13 +188,6 @@ macro_rules! impl_reducer {
             fn invoke(&self, ctx: &ReducerContext, args: ($($T,)*)) -> Result<(), Box<str>> {
                 let ($($T,)*) = args;
                 self(ctx, $($T),*).into_result()
-            }
-
-            type ArgsWithContext = (ReducerContext, $($T,)*);
-            #[allow(non_snake_case, clippy::unused_unit)]
-            fn extract_args(args: Self::ArgsWithContext) -> ($($T,)*) {
-                let (_ctx, $($T,)*) = args;
-                ($($T,)*)
             }
         }
 
@@ -554,11 +544,10 @@ macro_rules! __make_register_reftype {
 
 #[cfg(feature = "unstable_abi")]
 #[doc(hidden)]
-pub fn volatile_nonatomic_schedule_immediate<'de, A: Args<'de>, R: Reducer<'de, A, T>, R2: ReducerInfo, T>(
+pub fn volatile_nonatomic_schedule_immediate<'de, A: Args<'de>, R: Reducer<'de, A>, R2: ReducerInfo>(
     _reducer: R,
-    args: R::ArgsWithContext,
+    args: A,
 ) {
-    let args = R::extract_args(args);
     let arg_bytes = bsatn::to_vec(&SerDeArgs(args)).unwrap();
 
     // Schedule the reducer.

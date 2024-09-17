@@ -875,7 +875,6 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
     let field_names = fields.iter().map(|f| f.ident.unwrap()).collect::<Vec<_>>();
     let field_types = fields.iter().map(|f| f.ty).collect::<Vec<_>>();
 
-    let table_name = &sats_ty.name;
     let tabletype_impl = quote! {
         impl spacetimedb::Table for #tablehandle_ident<'_> {
             type Row = #row_type;

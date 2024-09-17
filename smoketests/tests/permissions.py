@@ -77,6 +77,8 @@ class Permissions(Smoketest):
 
 class PrivateTablePermissions(Smoketest):
     MODULE_CODE = """
+use spacetimedb::{ReducerContext, Table};
+
 #[spacetimedb::table(name = secret)]
 pub struct Secret {
     answer: u8,
@@ -88,14 +90,14 @@ pub struct CommonKnowledge {
 }
 
 #[spacetimedb::reducer(init)]
-pub fn init() {
-    Secret::insert(Secret { answer: 42 });
+pub fn init(ctx: &ReducerContext) {
+    ctx.db.secret().insert(Secret { answer: 42 });
 }
 
 #[spacetimedb::reducer]
-pub fn do_thing() {
-    Secret::insert(Secret { answer: 20 });
-    CommonKnowledge::insert(CommonKnowledge { thing: "howdy".to_owned() });
+pub fn do_thing(ctx: &ReducerContext) {
+    ctx.db.secret().insert(Secret { answer: 20 });
+    ctx.db.common_knowledge().insert(CommonKnowledge { thing: "howdy".to_owned() });
 }
 """
 

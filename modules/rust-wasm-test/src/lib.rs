@@ -5,7 +5,6 @@ use spacetimedb::{duration, table, Address, Deserialize, Identity, ReducerContex
 
 #[spacetimedb::table(name = test_a, index(name = foo, btree(columns = [x])))]
 pub struct TestA {
-    #[index(btree)]
     pub x: u32,
     pub y: u32,
     pub z: String,
