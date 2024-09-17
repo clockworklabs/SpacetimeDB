@@ -26,11 +26,6 @@ partial class RawModuleDefV8
 
     private void RegisterTypeName<T>(AlgebraicType.Ref typeRef)
     {
-        // If it's a table, it doesn't need an alias as name will be registered automatically.
-        if (typeof(T).IsDefined(typeof(TableAttribute), false))
-        {
-            return;
-        }
         MiscExports.Add(
             new MiscModuleExport.TypeAlias(new(GetFriendlyName(typeof(T)), (uint)typeRef.Ref_))
         );

@@ -337,17 +337,17 @@ use spacetimedb_sdk::global_connection::with_connection_mut;
 use spacetimedb_sdk::spacetime_module::SpacetimeModule;
 use std::sync::Arc;
 
-pub mod test_b;
-pub mod namespace.test_c;
-pub mod namespace.test_f;
 pub mod has_special_stuff;
 pub mod pk_multi_identity;
 pub mod point;
 pub mod private;
 pub mod repeating_test_arg;
 pub mod test_a;
+pub mod test_b;
 pub mod test_d;
 pub mod test_e;
+pub mod namespace_test_c;
+pub mod namespace_test_f;
 pub mod add_player_reducer;
 pub mod add_private_reducer;
 pub mod delete_player_reducer;
@@ -356,17 +356,17 @@ pub mod query_private_reducer;
 pub mod repeating_test_reducer;
 pub mod test_reducer;
 
-pub use test_b::*;
-pub use namespace.test_c::*;
-pub use namespace.test_f::*;
 pub use has_special_stuff::*;
 pub use pk_multi_identity::*;
 pub use point::*;
 pub use private::*;
 pub use repeating_test_arg::*;
 pub use test_a::*;
+pub use test_b::*;
 pub use test_d::*;
 pub use test_e::*;
+pub use namespace_test_c::*;
+pub use namespace_test_f::*;
 pub use add_player_reducer::*;
 pub use add_private_reducer::*;
 pub use delete_player_reducer::*;
@@ -475,11 +475,9 @@ where
 };
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub enum Namespace.testC {
+pub enum NamespaceTestC {
 	Foo,
-
 	Bar,
-
 }
 '''
 "namespace_test_f.rs" = '''
@@ -497,7 +495,7 @@ pub enum Namespace.testC {
 };
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub enum Namespace.testF {
+pub enum NamespaceTestF {
 	Foo,
 
 	Bar,
@@ -733,6 +731,10 @@ impl RepeatingTestArg {
 	pub fn find_by_scheduled_id(scheduled_id: u64) -> Option<Self> {
 		Self::find(|row| row.scheduled_id == scheduled_id)
 }
+	#[allow(unused)]
+	pub fn filter_by_scheduled_at(scheduled_at: ScheduleAt) -> TableIter<Self> {
+		Self::filter(|row| row.scheduled_at == scheduled_at)
+}
 }
 '''
 "repeating_test_reducer.rs" = '''
@@ -879,11 +881,11 @@ pub struct TestB {
 	spacetimedb_lib,
 	anyhow::{Result, anyhow},
 };
-use super::namespace.test_c::Namespace.testC;
+use super::namespace_test_c::NamespaceTestC;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct TestD {
-	pub test_c: Option::<Namespace.testC>,
+	pub test_c: Option::<NamespaceTestC>,
 }
 
 impl TableType for TestD {
@@ -955,8 +957,8 @@ impl TestE {
 	spacetimedb_lib,
 	anyhow::{Result, anyhow},
 };
-use super::namespace.test_c::Namespace.testC;
-use super::namespace.test_f::Namespace.testF;
+use super::namespace_test_c::NamespaceTestC;
+use super::namespace_test_f::NamespaceTestF;
 use super::test_a::TestA;
 use super::test_b::TestB;
 
@@ -964,8 +966,8 @@ use super::test_b::TestB;
 pub struct TestArgs {
 	pub arg: TestA,
 	pub arg_2: TestB,
-	pub arg_3: Namespace.testC,
-	pub arg_4: Namespace.testF,
+	pub arg_3: NamespaceTestC,
+	pub arg_4: NamespaceTestF,
 }
 
 impl Reducer for TestArgs {
@@ -976,8 +978,8 @@ impl Reducer for TestArgs {
 pub fn test(
 	arg: TestA,
 	arg_2: TestB,
-	arg_3: Namespace.testC,
-	arg_4: Namespace.testF,
+	arg_3: NamespaceTestC,
+	arg_4: NamespaceTestF,
 ) {
 		TestArgs {
 		arg,
@@ -988,7 +990,7 @@ pub fn test(
 }
 
 #[allow(unused)]
-pub fn on_test(mut __callback: impl FnMut(&Identity, Option<Address>, &Status, &TestA, &TestB, &Namespace.testC, &Namespace.testF) + Send + 'static) -> ReducerCallbackId<TestArgs> 
+pub fn on_test(mut __callback: impl FnMut(&Identity, Option<Address>, &Status, &TestA, &TestB, &NamespaceTestC, &NamespaceTestF) + Send + 'static) -> ReducerCallbackId<TestArgs> 
 {
 		TestArgs::on_reducer(move |__identity, __addr, __status, __args| {
 		let TestArgs {
@@ -1010,7 +1012,7 @@ __callback(
 }
 
 #[allow(unused)]
-pub fn once_on_test(__callback: impl FnOnce(&Identity, Option<Address>, &Status, &TestA, &TestB, &Namespace.testC, &Namespace.testF) + Send + 'static) -> ReducerCallbackId<TestArgs> 
+pub fn once_on_test(__callback: impl FnOnce(&Identity, Option<Address>, &Status, &TestA, &TestB, &NamespaceTestC, &NamespaceTestF) + Send + 'static) -> ReducerCallbackId<TestArgs> 
 {
 		TestArgs::once_on_reducer(move |__identity, __addr, __status, __args| {
 		let TestArgs {

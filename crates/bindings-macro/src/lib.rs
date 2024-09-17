@@ -887,7 +887,7 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
 
     let deserialize_impl = derive_deserialize(&sats_ty);
     let serialize_impl = derive_serialize(&sats_ty);
-    let schema_impl = derive_satstype(&sats_ty, *original_struct_ident != table_name);
+    let schema_impl = derive_satstype(&sats_ty, true);
     let column_attrs = columns.iter().map(|col| {
         Ident::new(
             ColumnAttribute::FLAGS
