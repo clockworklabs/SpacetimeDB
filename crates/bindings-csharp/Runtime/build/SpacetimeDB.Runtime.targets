@@ -1,29 +1,20 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
   <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
-    <NativeLibrary Include="$(MSBuildThisFileDirectory)..\bindings.c" />
-    <UnmanagedEntryPointsAssembly Include="SpacetimeDB.Runtime" />
-    <WasmImport Include="$(SpacetimeNamespace)!table_id_from_name" />
-    <WasmImport Include="$(SpacetimeNamespace)!datastore_table_row_count" />
-    <WasmImport Include="$(SpacetimeNamespace)!datastore_table_scan_bsatn" />
-    <WasmImport Include="$(SpacetimeNamespace)!row_iter_bsatn_advance" />
-    <WasmImport Include="$(SpacetimeNamespace)!row_iter_bsatn_close" />
-    <WasmImport Include="$(SpacetimeNamespace)!datastore_insert_bsatn" />
-    <WasmImport Include="$(SpacetimeNamespace)!datastore_delete_all_by_eq_bsatn" />
-    <WasmImport Include="$(SpacetimeNamespace)!bytes_source_read" />
-    <WasmImport Include="$(SpacetimeNamespace)!bytes_sink_write" />
-    <WasmImport Include="$(SpacetimeNamespace)!console_log" />
-
-    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
-    <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
-    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="8.0.0-*" Condition="'$(ILLinkTargetsPath)' == ''" />
-
-    <CustomLinkerArg Include="-DEXPERIMENTAL_WASM_AOT" />
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="9.0.0-*" />
+    <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="9.0.0-*" />
+    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="9.0.0-*" Condition="'$(ILLinkTargetsPath)' == ''" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' != '1'">
-    <NativeFileReference Include="$(MSBuildThisFileDirectory)..\bindings.c" />
-    <_WasmNativeFileForLinking Include="@(NativeFileReference)" />
+  <Target Name="RemoveWasmComponents" BeforeTargets="_WasmWriteRspForLinking">
+    <ItemGroup>
+      <_WasmLinkStepArgs Remove="-Wl,--component-type,&quot;$([MSBuild]::NormalizePath('$(MicrosoftNetCoreAppRuntimePackRidNativeDir)', 'WasiHttpWorld_component_type.wit').Replace('\','/'))&quot;"/>
+      <_WasmLinkStepArgs Include="-fuse-ld=lld" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <NativeLibrary Include="$(MSBuildThisFileDirectory)..\bindings.c" />
   </ItemGroup>
 
   <!-- Auto-download WASI SDK on the first run. -->
@@ -46,9 +37,10 @@
       <WasiSdkUrl>https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$(WasiSdkVersion)/wasi-sdk-$(WasiSdkVersion).0-$(WasiSdkArch)-$(WasiSdkOS).tar.gz</WasiSdkUrl>
 
       <WasiSdkRoot>$([System.IO.Path]::Combine($([System.Environment]::GetFolderPath(SpecialFolder.UserProfile)), '.wasi-sdk', "wasi-sdk-$(WasiSdkVersion)"))</WasiSdkRoot>
-      <WASI_SDK_PATH>$(WasiSdkRoot)</WASI_SDK_PATH>
+      <WASI_SDK_PATH>$(WasiSdkRoot)/</WASI_SDK_PATH>
       <WasiSysRoot>$([System.IO.Path]::Combine($(WasiSdkRoot), 'share', 'wasi-sysroot'))</WasiSysRoot>
-      <WasiClang>$([System.IO.Path]::Combine($(WasiSdkRoot), 'bin', 'clang'))</WasiClang>
+      <WasiSdkBinPath>$([System.IO.Path]::Combine($(WasiSdkRoot), 'bin'))</WasiSdkBinPath>
+      <WasiClang>$([System.IO.Path]::Combine($(WasiSdkBinPath), 'clang'))</WasiClang>
       <WasiClang Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(WasiClang).exe</WasiClang>
     </PropertyGroup>
 
@@ -62,6 +54,9 @@
     <MakeDir Directories="$(WasiSdkRoot)" />
     <!-- Windows 10+ has tar built in, so this should work cross-platform -->
     <Exec Command="tar -xf &quot;$(WasiSdkDownloadTempFile)&quot; -C &quot;$(WasiSdkRoot)&quot; --strip-components=1" Condition="!Exists('$(WasiClang)')" />
+
+    <!-- For .NET 9: https://github.com/dotnet/runtime/blob/74b3518d14be43b77598bcd17c442120399890de/src/mono/mono.proj#L331C5-L331C69 -->
+    <Touch Files="$(WasiSdkRoot)/VERSION$(WasiSdkVersion)" AlwaysCreate="true" />
   </Target>
 
 </Project>

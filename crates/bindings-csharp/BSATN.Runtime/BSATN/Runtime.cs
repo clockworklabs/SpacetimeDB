@@ -47,6 +47,13 @@ public interface IReadWrite<T>
     AlgebraicType GetAlgebraicType(ITypeRegistrar registrar);
 }
 
+#if NET5_0_OR_GREATER
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Usage",
+    "CA2263:Prefer generic overload when type is known",
+    Justification = "We can't use generic overloads of Enum helpers because we also target .NET Standard."
+)]
+#endif
 public readonly struct Enum<T> : IReadWrite<T>
     where T : struct, Enum
 {

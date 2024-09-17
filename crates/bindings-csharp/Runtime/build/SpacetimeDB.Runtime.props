@@ -2,7 +2,8 @@
 
   <PropertyGroup>
     <WasmSingleFileBundle>true</WasmSingleFileBundle>
-    <TrimMode>full</TrimMode>
+    <!-- can't use full trim mode due to https://github.com/dotnet/runtime/issues/101434 -->
+    <TrimMode>partial</TrimMode>
     <InvariantGlobalization>true</InvariantGlobalization>
     <EventSourceSupport>false</EventSourceSupport>
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
