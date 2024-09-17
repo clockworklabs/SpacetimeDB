@@ -24,7 +24,8 @@ public static class Log
             FFI.LogLevel.Debug,
             RESERVED_target,
             RESERVED_filename,
-            RESERVED_lineNumber);
+            RESERVED_lineNumber
+        );
 
     /// <summary>
     /// Write a trace message to module log
@@ -44,7 +45,8 @@ public static class Log
             FFI.LogLevel.Trace,
             RESERVED_target,
             RESERVED_filename,
-            RESERVED_lineNumber);
+            RESERVED_lineNumber
+        );
 
     /// <summary>
     /// Write an info message to module log
@@ -64,7 +66,8 @@ public static class Log
             FFI.LogLevel.Info,
             RESERVED_target,
             RESERVED_filename,
-            RESERVED_lineNumber);
+            RESERVED_lineNumber
+        );
 
     /// <summary>
     /// Write a warning message to module log
@@ -84,7 +87,8 @@ public static class Log
             FFI.LogLevel.Warn,
             RESERVED_target,
             RESERVED_filename,
-            RESERVED_lineNumber);
+            RESERVED_lineNumber
+        );
 
     /// <summary>
     /// Write an error message to module log
@@ -104,7 +108,8 @@ public static class Log
             FFI.LogLevel.Error,
             RESERVED_target,
             RESERVED_filename,
-            RESERVED_lineNumber);
+            RESERVED_lineNumber
+        );
 
     /// <summary>
     /// Write an exception message to module log
@@ -124,7 +129,8 @@ public static class Log
             FFI.LogLevel.Error,
             RESERVED_target,
             RESERVED_filename,
-            RESERVED_lineNumber);
+            RESERVED_lineNumber
+        );
 
     /// <summary>
     /// Write an exception message and stacktrace to module log
@@ -144,7 +150,8 @@ public static class Log
             FFI.LogLevel.Error,
             RESERVED_target,
             RESERVED_filename,
-            RESERVED_lineNumber);
+            RESERVED_lineNumber
+        );
 
     private static void LogInternal(
         string text,
