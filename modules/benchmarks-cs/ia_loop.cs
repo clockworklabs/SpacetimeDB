@@ -138,7 +138,7 @@ public static partial class ia_loop
         {
             new Position(id, id, id + 5, id * 5).Insert();
         }
-        Runtime.Log($"INSERT POSITION: {count}");
+        Log.Info($"INSERT POSITION: {count}");
     }
 
     [SpacetimeDB.Reducer]
@@ -148,7 +148,7 @@ public static partial class ia_loop
         {
             new Velocity(id, id, id + 5, id * 5).Insert();
         }
-        Runtime.Log($"INSERT VELOCITY: {count}");
+        Log.Info($"INSERT VELOCITY: {count}");
     }
 
     [SpacetimeDB.Reducer]
@@ -166,7 +166,7 @@ public static partial class ia_loop
             Position.UpdateByentity_id(position.entity_id, newPosition);
             count++;
         }
-        Runtime.Log($"UPDATE POSITION ALL: {expected}, processed: {count}");
+        Log.Info($"UPDATE POSITION ALL: {expected}, processed: {count}");
     }
 
     [SpacetimeDB.Reducer]
@@ -187,7 +187,7 @@ public static partial class ia_loop
             Position.UpdateByentity_id(position.entity_id, position);
             count++;
         }
-        Runtime.Log($"UPDATE POSITION BY VELOCITY: {expected}, processed: {count}");
+        Log.Info($"UPDATE POSITION BY VELOCITY: {expected}, processed: {count}");
     }
 
     [SpacetimeDB.Reducer]
@@ -223,7 +223,7 @@ public static partial class ia_loop
                 (int)i
             ).Insert();
         }
-        Runtime.Log($"INSERT WORLD PLAYERS: {players}");
+        Log.Info($"INSERT WORLD PLAYERS: {players}");
     }
 
     public static List<GameTargetableState> GetTargetablesNearQuad(
@@ -346,7 +346,7 @@ public static partial class ia_loop
             count++;
         }
 
-        Runtime.Log($"ENEMY IA LOOP PLAYERS: {players}, processed: {count}");
+        Log.Info($"ENEMY IA LOOP PLAYERS: {players}, processed: {count}");
     }
 
     [SpacetimeDB.Reducer]

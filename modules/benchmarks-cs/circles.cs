@@ -65,7 +65,7 @@ public static partial class circles
         {
             new Entity(0, id, id + 5, id * 5).Insert();
         }
-        Runtime.Log($"INSERT ENTITY: {count}");
+        Log.Info($"INSERT ENTITY: {count}");
     }
 
     [SpacetimeDB.Reducer]
@@ -75,7 +75,7 @@ public static partial class circles
         {
             new Circle(id, id, id, id + 5, id * 5).Insert();
         }
-        Runtime.Log($"INSERT CIRCLE: {count}");
+        Log.Info($"INSERT CIRCLE: {count}");
     }
 
     [SpacetimeDB.Reducer]
@@ -85,7 +85,7 @@ public static partial class circles
         {
             new Food(id).Insert();
         }
-        Runtime.Log($"INSERT FOOD: {count}");
+        Log.Info($"INSERT FOOD: {count}");
     }
 
     [SpacetimeDB.Reducer]
@@ -103,7 +103,7 @@ public static partial class circles
             }
         }
 
-        Runtime.Log($"CROSS JOIN ALL: {expected}, processed: {count}");
+        Log.Info($"CROSS JOIN ALL: {expected}, processed: {count}");
     }
 
     [SpacetimeDB.Reducer]
@@ -127,7 +127,7 @@ public static partial class circles
             }
         }
 
-        Runtime.Log($"CROSS JOIN CIRCLE FOOD: {expected}, processed: {count}");
+        Log.Info($"CROSS JOIN CIRCLE FOOD: {expected}, processed: {count}");
     }
 
     [SpacetimeDB.Reducer]
