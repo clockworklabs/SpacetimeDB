@@ -2,9 +2,9 @@
 //! to make sure we don't unknowningly add a bunch of dependencies here,
 //! slowing down compilation for every spacetime module.
 
-// We need to remove the `cpufeatures` and `libc` dependencies from the output, it added on `macOS` with `arm` architecture:
+// We need to remove the `cpufeatures` and `libc` dependencies from the output, it added on `arm` architecture:
 // https://github.com/RustCrypto/sponges/blob/master/keccak/Cargo.toml#L24-L25, breaking local testing.
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+#[cfg(target_arch = "aarch64")]
 fn hack_keccack(cmd: String) -> String {
     let mut found = false;
     let mut lines = cmd.lines().peekable();
@@ -31,7 +31,7 @@ fn hack_keccack(cmd: String) -> String {
 
     output
 }
-#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+#[cfg(not(target_arch = "aarch64"))]
 fn hack_keccack(cmd: String) -> String {
     cmd
 }
