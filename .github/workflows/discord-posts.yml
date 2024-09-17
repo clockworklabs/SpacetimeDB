@@ -44,9 +44,12 @@ jobs:
           message="PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](${PR_URL})"
           message+=$'\n'
           message+="${CHECK_NAME} result: ${CHECK_RESULT}"
+          # Note that anything besides success is treated as a failure (e.g. if the check did not run at all, or if it is still pending).
           if [[ "${CHECK_RESULT}" != "SUCCESS" ]]; then
+            # This uses special Discord syntax for pinging a particular role.
+            # Note the '&' - this is the difference between pinging a *role* and pinging a *person*.
             message+=" (cc <@&${PING_ON_FAILURE}>)"
           fi
-          # Construct the json data blog to be passed to the webhook
+          # Use `jq` to construct the json data blob in the format required by the webhook.
           data="$(jq --null-input --arg msg "$message" '.content=$msg')"
           curl -X POST -H 'Content-Type: application/json' -d "$data" "${DISCORD_WEBHOOK_URL}"
