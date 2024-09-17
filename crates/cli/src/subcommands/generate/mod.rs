@@ -246,11 +246,7 @@ pub struct GenCtx {
 }
 
 pub fn generate(module: RawModuleDef, lang: Language, namespace: &str) -> anyhow::Result<Vec<(String, String)>> {
-    let module = match module {
-        RawModuleDef::V8BackCompat(def) => spacetimedb_schema::def::validate::v8::validate(def)?,
-        RawModuleDef::V9(def) => spacetimedb_schema::def::validate::v9::validate(def)?,
-        _ => unimplemented!(),
-    };
+    let module = ModuleDef::try_from(module)?;
     Ok(match lang {
         Language::Rust => generate_lang(&module, rust::Rust, namespace),
         Language::Csharp | Language::TypeScript => {

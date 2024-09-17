@@ -21,7 +21,7 @@ fn validate_module(module_name: &str) {
     let raw_module_def: RawModuleDef =
         extract_descriptions(module.path()).expect("failed to extract module descriptions");
     let RawModuleDef::V8BackCompat(raw_module_def) = raw_module_def else {
-        panic!("no more v8")
+        panic!("no more v8 - rewrite to v9")
     };
 
     // v8 -> ModuleDef

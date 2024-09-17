@@ -714,7 +714,6 @@ fn print_dispatch_imports(out: &mut Indenter) {
 fn iter_module_names(module: &ModuleDef) -> impl Iterator<Item = String> + '_ {
     dbg!(module.types().map(|ty| (&ty.name, ty.ty)).collect::<Vec<_>>());
     itertools::chain!(
-        // iter_tables(module).map(|table| table.name.deref().to_case(Case::Snake)),
         module
             .types()
             .sorted_by_key(|ty| &ty.name)

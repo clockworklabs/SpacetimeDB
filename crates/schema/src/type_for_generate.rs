@@ -337,6 +337,7 @@ impl AlgebraicTypeUse {
         })
     }
 
+    /// Recurse through this `AlgebraicTypeUse`, calling `f` on every type ref encountered.
     pub fn for_each_ref(&self, mut f: impl FnMut(AlgebraicTypeRef)) {
         self._for_each_ref(&mut f)
     }
