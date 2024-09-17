@@ -760,14 +760,12 @@ public class Module : IIncrementalGenerator
                     static class ModuleRegistration {
                         {{string.Join("\n", addReducers.Select(r => r.Class))}}
 
-                    #if EXPERIMENTAL_WASM_AOT
-                        // In AOT mode we're building a library.
-                        // Main method won't be called automatically, so we need to export it as a preinit function.
-                        [UnmanagedCallersOnly(EntryPoint = "__preinit__10_init_csharp")]
-                    #else
                         // Prevent trimming of FFI exports that are invoked from C and not visible to C# trimmer.
-                        [DynamicDependency(DynamicallyAccessedMemberTypes.PublicMethods, typeof(SpacetimeDB.Internal.Module))]
-                    #endif
+                        // This is a workaround for https://github.com/dotnet/runtime/issues/101434.
+                        [DynamicDependency(
+                            DynamicallyAccessedMemberTypes.PublicMethods,
+                            typeof(SpacetimeDB.Internal.Module)
+                        )]
                         public static void Main() {
                             SpacetimeDB.Internal.Module.SetReducerContextConstructor((identity, address, random, time) => new SpacetimeDB.ReducerContext(identity, address, random, time));
 
@@ -782,37 +780,6 @@ public class Module : IIncrementalGenerator
                                 tableViews.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}>();").Distinct()
                             )}}
                         }
-
-                    // Exports only work from the main assembly, so we need to generate forwarding methods.
-                    #if EXPERIMENTAL_WASM_AOT
-                        [UnmanagedCallersOnly(EntryPoint = "__describe_module__")]
-                        public static void __describe_module__(SpacetimeDB.Internal.BytesSink d) => SpacetimeDB.Internal.Module.__describe_module__(d);
-
-                        [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
-                        public static SpacetimeDB.Internal.Errno __call_reducer__(
-                            uint id,
-                            ulong sender_0,
-                            ulong sender_1,
-                            ulong sender_2,
-                            ulong sender_3,
-                            ulong address_0,
-                            ulong address_1,
-                            SpacetimeDB.Internal.DateTimeOffsetRepr timestamp,
-                            SpacetimeDB.Internal.BytesSource args,
-                            SpacetimeDB.Internal.BytesSink error
-                        ) => SpacetimeDB.Internal.Module.__call_reducer__(
-                            id,
-                            sender_0,
-                            sender_1,
-                            sender_2,
-                            sender_3,
-                            address_0,
-                            address_1,
-                            timestamp,
-                            args,
-                            error
-                        );
-                    #endif
                     }
                     """
                 );

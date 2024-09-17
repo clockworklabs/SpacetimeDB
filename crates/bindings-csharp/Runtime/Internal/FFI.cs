@@ -36,20 +36,8 @@ public enum Errno : short
     SCHEDULE_AT_DELAY_TOO_LONG = 13,
 }
 
-#pragma warning disable IDE1006 // Naming Styles - Not applicable to FFI stuff.
 internal static partial class FFI
 {
-    // For now this must match the name of the `.c` file (`bindings.c`).
-    // In the future C# will allow to specify Wasm import namespace in
-    // `LibraryImport` directly.
-    const string StdbNamespace =
-#if EXPERIMENTAL_WASM_AOT
-        "spacetime_10.0"
-#else
-        "bindings"
-#endif
-    ;
-
     [NativeMarshalling(typeof(Marshaller))]
     public struct CheckedStatus
     {
@@ -122,30 +110,30 @@ internal static partial class FFI
         public static readonly RowIter INVALID = new(0);
     }
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport("*")]
     public static partial CheckedStatus table_id_from_name(
         [In] byte[] name,
         uint name_len,
         out TableId out_
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport("*")]
     public static partial CheckedStatus index_id_from_name(
         [In] byte[] name,
         uint name_len,
         out IndexId out_
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport("*")]
     public static partial CheckedStatus datastore_table_row_count(TableId table_id, out ulong out_);
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport("*")]
     public static partial CheckedStatus datastore_table_scan_bsatn(
         TableId table_id,
         out RowIter out_
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport("*")]
     public static partial CheckedStatus datastore_btree_scan_bsatn(
         IndexId index_id,
         ReadOnlySpan<byte> prefix,
@@ -158,24 +146,24 @@ internal static partial class FFI
         out RowIter out_
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport("*")]
     public static partial Errno row_iter_bsatn_advance(
         RowIter iter_handle,
         [MarshalUsing(CountElementName = nameof(buffer_len))] [Out] byte[] buffer,
         ref uint buffer_len
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport("*")]
     public static partial CheckedStatus row_iter_bsatn_close(RowIter iter_handle);
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport("*")]
     public static partial CheckedStatus datastore_insert_bsatn(
         TableId table_id,
         Span<byte> row,
         ref uint row_len
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport("*")]
     public static partial CheckedStatus datastore_delete_by_btree_scan_bsatn(
         IndexId index_id,
         ReadOnlySpan<byte> prefix,
@@ -188,7 +176,7 @@ internal static partial class FFI
         out uint out_
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport("*")]
     public static partial CheckedStatus datastore_delete_all_by_eq_bsatn(
         TableId table_id,
         [In] byte[] relation,
@@ -196,14 +184,14 @@ internal static partial class FFI
         out uint out_
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport("*")]
     public static partial Errno bytes_source_read(
         BytesSource source,
         Span<byte> buffer,
         ref uint buffer_len
     );
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport("*")]
     public static partial CheckedStatus bytes_sink_write(
         BytesSink sink,
         ReadOnlySpan<byte> buffer,
@@ -220,7 +208,7 @@ internal static partial class FFI
         Panic = 5,
     }
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport("*")]
     public static partial void console_log(
         LogLevel level,
         [In] byte[] target,
@@ -257,13 +245,13 @@ internal static partial class FFI
         }
     }
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport("*")]
     public static partial ConsoleTimerId console_timer_start([In] byte[] name, uint name_len);
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport("*")]
     public static partial CheckedStatus console_timer_end(ConsoleTimerId stopwatch_id);
 
-    [LibraryImport(StdbNamespace)]
+    [LibraryImport("*")]
     public static partial void volatile_nonatomic_schedule_immediate(
         [In] byte[] name,
         uint name_len,

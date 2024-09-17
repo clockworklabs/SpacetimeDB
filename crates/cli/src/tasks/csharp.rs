@@ -61,25 +61,20 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
         .dir(project_path)
         .run()?;
 
-    // check if file exists
-    let subdir = if std::env::var_os("EXPERIMENTAL_WASM_AOT").map_or(false, |v| v == "1") {
-        "publish"
-    } else {
-        "AppBundle"
-    };
-    let mut output_path = project_path.join(format!("bin/{config_name}/net8.0/wasi-wasm/{subdir}/StdbModule.wasm"));
-    if !output_path.exists() {
-        // check for the old .NET 7 path for projects that haven't migrated yet
-        output_path = project_path.join(format!("bin/{config_name}/net7.0/StdbModule.wasm"));
-        if output_path.exists() {
-            anyhow::bail!(concat!(
-                "Looks like your project is using the deprecated .NET 7.0 WebAssembly bindings.\n",
-                "Please migrate your project to the new .NET 8.0 template."
-            ));
-        } else {
-            anyhow::bail!("Built project successfully but couldn't find the output file.");
-        }
-    }
+    let try_path = |subdir: String| Some(project_path.join(subdir)).filter(|p| p.exists());
 
-    Ok(output_path)
+    try_path(format!("bin/{config_name}/net9.0/wasi-wasm/AppBundle/StdbModule.wasm"))
+        .or_else(|| try_path(format!("bin/{config_name}/net8.0/wasi-wasm/AppBundle/StdbModule.wasm")))
+        .ok_or_else(|| {
+            anyhow::Error::msg(
+                // check for the old .NET 7 path for projects that haven't migrated yet
+                match try_path(format!("bin/{config_name}/net7.0/StdbModule.wasm")) {
+                    Some(_) => concat!(
+                        "Looks like your project is using the deprecated .NET 7.0 WebAssembly bindings.\n",
+                        "Please migrate your project to the new .NET 8.0 template."
+                    ),
+                    None => "Built project successfully but couldn't find the output file.",
+                },
+            )
+        })
 }

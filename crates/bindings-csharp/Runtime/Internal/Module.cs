@@ -150,9 +150,8 @@ public static class Module
         }
     }
 
-#pragma warning disable IDE1006 // Naming Styles - methods below are meant for FFI.
-
-    public static void __describe_module__(BytesSink description)
+    // [UnmanagedCallersOnly(EntryPoint = "__describe_module__")]
+    public static void DescribeModule(BytesSink description)
     {
         // replace `module` with a temporary internal module that will register RawModuleDefV8, AlgebraicType and other internal types
         // during the RawModuleDefV8.GetSatsTypeInfo() instead of exposing them via user's module.
@@ -169,7 +168,8 @@ public static class Module
         }
     }
 
-    public static Errno __call_reducer__(
+    // [UnmanagedCallersOnly(EntryPoint = "__call_reducer__impl")]
+    public static Errno CallReducer(
         uint id,
         ulong sender_0,
         ulong sender_1,

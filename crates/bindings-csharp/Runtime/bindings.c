@@ -1,12 +1,6 @@
-#include <assert.h>
-// #include <mono/metadata/appdomain.h>
-// #include <mono/metadata/object.h>
+// Manual imports to work around https://github.com/dotnet/runtime/issues/109181.
 #include <stdint.h>
-#include <unistd.h>
-
-#ifndef EXPERIMENTAL_WASM_AOT
-#include "driver.h"
-#endif
+#include <assert.h>
 
 #define OPAQUE_TYPEDEF(name, T) \
   typedef struct name {         \
@@ -23,19 +17,12 @@ OPAQUE_TYPEDEF(BytesSink, uint32_t);
 OPAQUE_TYPEDEF(BytesSource, uint32_t);
 OPAQUE_TYPEDEF(RowIter, uint32_t);
 OPAQUE_TYPEDEF(ConsoleTimerId, uint32_t);
+OPAQUE_TYPEDEF(DateTimeOffsetRepr, uint64_t);
 
-#define CSTR(s) (uint8_t*)s, sizeof(s) - 1
-
-#define STDB_EXTERN(name) \
-  __attribute__((import_module("spacetime_10.0"), import_name(#name))) extern
-
-#ifndef EXPERIMENTAL_WASM_AOT
-#define IMPORT(ret, name, params, args)    \
-  STDB_EXTERN(name) ret name##_imp params; \
+#define IMPORT(ret, name, params, args) \
+  __attribute__((import_module("spacetime_10.0"), import_name(#name))) extern \
+  ret name##_imp params; \
   ret name params { return name##_imp args; }
-#else
-#define IMPORT(ret, name, params, args) STDB_EXTERN(name) ret name params;
-#endif
 
 IMPORT(Status, table_id_from_name,
        (const uint8_t* name, uint32_t name_len, TableId* id),
@@ -86,59 +73,6 @@ IMPORT(Status, console_timer_end,
 IMPORT(void, volatile_nonatomic_schedule_immediate,
        (const uint8_t* name, size_t name_len, const uint8_t* args, size_t args_len),
        (name, name_len, args, args_len));
-
-#ifndef EXPERIMENTAL_WASM_AOT
-static MonoClass* ffi_class;
-
-#define CEXPORT(name) __attribute__((export_name(#name))) name
-
-#define PREINIT(priority, name) void CEXPORT(__preinit__##priority##_##name)()
-
-PREINIT(10, startup) {
-  // mono_wasm_load_runtime("", 0);
-  // ^ not enough because it doesn't reach to assembly with Main function
-  // so module descriptor remains unpopulated. Invoke actual _start instead.
-  extern void _start();
-  _start();
-
-  ffi_class = mono_wasm_assembly_find_class(
-      mono_wasm_assembly_load("SpacetimeDB.Runtime.dll"),
-      "SpacetimeDB.Internal", "Module");
-  assert(ffi_class &&
-         "FFI export class (SpacetimeDB.Internal.Module) not found");
-}
-
-#define EXPORT_WITH_MONO_RES(ret, res_code, name, params, args...)            \
-  static MonoMethod* ffi_method_##name;                                       \
-  PREINIT(20, find_##name) {                                                  \
-    ffi_method_##name = mono_wasm_assembly_find_method(ffi_class, #name, -1); \
-    assert(ffi_method_##name && "FFI export method not found");               \
-  }                                                                           \
-  ret CEXPORT(name) params {                                                  \
-    MonoObject* res;                                                          \
-    mono_wasm_invoke_method_ref(ffi_method_##name, NULL, (void*[]){args},     \
-                                NULL, &res);                                  \
-    res_code                                                                  \
-  }
-
-#define EXPORT(ret, name, params, args...)                                             \
-  EXPORT_WITH_MONO_RES(ret, return *(ret*)mono_object_unbox(res);, name, params, args) \
-
-#define EXPORT_VOID(name, params, args...)                                    \
-  EXPORT_WITH_MONO_RES(void, return;, name, params, args)                      \
-
-EXPORT_VOID(__describe_module__, (BytesSink description), &description);
-
-EXPORT(int16_t, __call_reducer__,
-       (uint32_t id,
-        uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
-        uint64_t address_0, uint64_t address_1,
-        uint64_t timestamp, BytesSource args, BytesSink error),
-       &id,
-       &sender_0, &sender_1, &sender_2, &sender_3,
-       &address_0, &address_1,
-       &timestamp, &args, &error);
-#endif
 
 // Shims to avoid dependency on WASI in the generated Wasm file.
 
@@ -227,6 +161,8 @@ int32_t WASI_NAME(clock_res_get)(int32_t, uint64_t* timestamp) {
   return 0;
 }
 
+#define CSTR(s) (const uint8_t*)s, sizeof(s) - 1
+
 // For `fd_write`, we need to at least collect and report sum of sizes.
 // If we report size 0, the caller will assume that the write failed and will
 // try again, which will result in an infinite loop.
@@ -236,10 +172,10 @@ int32_t WASI_NAME(fd_write)(__wasi_fd_t fd, const __wasi_ciovec_t* iovs,
     // Note: this will produce ugly broken output, but there's not much we can
     // do about it until we have proper line-buffered WASI writer in the core.
     // It's better than nothing though.
-    console_log((LogLevel){fd == STDERR_FILENO ? /*WARN*/ 1 : /*INFO*/
-                                2},
-                 CSTR("wasi"), CSTR(__FILE__), __LINE__, iovs[i].buf,
-                 iovs[i].buf_len);
+     console_log((LogLevel){fd == 2 ? /*WARN*/ 1 : /*INFO*/
+                                 2},
+                  CSTR("wasi"), CSTR(__FILE__), __LINE__, iovs[i].buf,
+                  iovs[i].buf_len);
     *retptr0 += iovs[i].buf_len;
   }
   return 0;
@@ -254,9 +190,63 @@ int32_t WASI_NAME(fd_prestat_get)(int32_t, int32_t) {
 // Actually exit runtime on `proc_exit`.
 _Noreturn void WASI_NAME(proc_exit)(int32_t code) { exit(code); }
 
-// There is another rogue import of sock_accept somewhere in .NET that doesn't
-// match the scheme above.
-// Maybe this one?
-// https://github.com/dotnet/runtime/blob/085ddb7f9b26f01ae1b6842db7eacb6b4042e031/src/mono/mono/component/mini-wasi-debugger.c#L12-L14
+// This is a new WASI p1 method that, for whatever reason, has a different naming scheme than the existing ones.
+int32_t __wasi_preview1_adapter_close_badfd(int32_t fd) {
+  return 0;
+}
 
-int32_t sock_accept(int32_t, int32_t, int32_t) { return 0; }
+// Resource drops from WASI p2 have yet another naming scheme.
+
+#define WASI_DROP(name) void __wasm_import_##name##_drop(int32_t) {}
+
+WASI_DROP(poll_pollable);
+WASI_DROP(streams_input_stream);
+WASI_DROP(streams_output_stream);
+WASI_DROP(udp_udp_socket);
+WASI_DROP(udp_incoming_datagram_stream);
+WASI_DROP(udp_outgoing_datagram_stream);
+WASI_DROP(tcp_tcp_socket);
+
+typedef struct MonoMethod MonoMethod;
+typedef struct MonoObject MonoObject;
+
+MonoMethod* lookup_dotnet_method(const char* assembly_name, const char* namespace, const char* type_name, const char* method_name, int num_params);
+void *mono_object_unbox (MonoObject *obj);
+MonoObject* mono_runtime_invoke (MonoMethod *method, void *obj, void **params, MonoObject **exc);
+
+#define CEXPORT(name) __attribute__((export_name(#name))) name
+
+#define EXPORT_WITH_MONO_RES(ret, res_code, name, assembly, namespace, type, method_name, params, args...) \
+  ret CEXPORT(name) params {                                                    \
+    static MonoMethod* method = NULL;                                           \
+    if (!method) {                                                              \
+      method = lookup_dotnet_method(assembly, namespace, type, method_name, -1);\
+      assert(method && "Method not found");                                     \
+    }                                                                           \
+    MonoObject* res = mono_runtime_invoke(method, NULL, (void*[])args, NULL);   \
+    return res_code;                                                            \
+  }
+
+#define EXPORT(ret, args...)                                             \
+  EXPORT_WITH_MONO_RES(ret, *(ret*)mono_object_unbox(res), args) \
+
+#define EXPORT_VOID(args...)                                    \
+  EXPORT_WITH_MONO_RES(void, , args)                      \
+
+EXPORT_VOID(__describe_module__, "SpacetimeDB.Runtime", "SpacetimeDB.Internal", "Module", "DescribeModule", (BytesSink description), {&description});
+
+EXPORT(int16_t, __call_reducer__,
+       "SpacetimeDB.Runtime", "SpacetimeDB.Internal", "Module", "CallReducer",
+       (uint32_t id,
+        uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+        uint64_t address_0, uint64_t address_1,
+        uint64_t timestamp, BytesSource args, BytesSink error),
+       {&id,
+       &sender_0, &sender_1, &sender_2, &sender_3,
+       &address_0, &address_1,
+       &timestamp, &args, &error});
+
+void CEXPORT(__preinit__10_init_csharp)() {
+  void _start();
+  _start();
+}

@@ -44,7 +44,7 @@ async fn read_logs(module: &ModuleHandle) -> Vec<String> {
 fn test_calling_a_reducer_in_module(module_name: &'static str) {
     init();
 
-    CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
+    CompiledModule::compile(module_name, CompilationMode::Release).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
             let json =
