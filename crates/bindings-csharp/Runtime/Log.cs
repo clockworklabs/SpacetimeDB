@@ -18,12 +18,12 @@ public static class Log
         [CallerMemberName] string RESERVED_target = "",
         [CallerFilePath] string RESERVED_filename = "",
         [CallerLineNumber] uint RESERVED_lineNumber = 0
-    ) => 
+    ) =>
         LogInternal(
-            message, 
-            FFI.LogLevel.Debug, 
-            RESERVED_target, 
-            RESERVED_filename, 
+            message,
+            FFI.LogLevel.Debug,
+            RESERVED_target,
+            RESERVED_filename,
             RESERVED_lineNumber);
 
     /// <summary>
