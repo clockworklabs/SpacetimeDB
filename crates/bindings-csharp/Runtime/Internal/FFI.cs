@@ -196,9 +196,19 @@ internal static partial class FFI
         uint args_len
     );
 
+    public enum LogLevel : byte
+    {
+        Error = 0,
+        Warn = 1,
+        Info = 2,
+        Debug = 3,
+        Trace = 4,
+        Panic = 5,
+    }
+
     [LibraryImport(StdbNamespace)]
     public static partial void _console_log(
-        byte level,
+        LogLevel level,
         [In] byte[] target,
         uint target_len,
         [In] byte[] filename,
