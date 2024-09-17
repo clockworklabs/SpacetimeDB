@@ -107,12 +107,6 @@ internal static partial class FFI
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public readonly struct LogLevel(byte log_level)
-    {
-        private readonly byte log_level = log_level;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
     public readonly record struct RowIter(uint Handle)
     {
         public static readonly RowIter INVALID = new(0);

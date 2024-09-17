@@ -18,7 +18,13 @@ public static class Log
         [CallerMemberName] string RESERVED_target = "",
         [CallerFilePath] string RESERVED_filename = "",
         [CallerLineNumber] uint RESERVED_lineNumber = 0
-    ) => LogInternal(message, FFI.LogLevel.Debug, RESERVED_target, RESERVED_filename, RESERVED_lineNumber);
+    ) => 
+        LogInternal(
+            message, 
+            FFI.LogLevel.Debug, 
+            RESERVED_target, 
+            RESERVED_filename, 
+            RESERVED_lineNumber);
 
     /// <summary>
     /// Write a trace message to module log
@@ -32,7 +38,13 @@ public static class Log
         [CallerMemberName] string RESERVED_target = "",
         [CallerFilePath] string RESERVED_filename = "",
         [CallerLineNumber] uint RESERVED_lineNumber = 0
-    ) => LogInternal(message, FFI.LogLevel.Trace, RESERVED_target, RESERVED_filename, RESERVED_lineNumber);
+    ) =>
+        LogInternal(
+            message,
+            FFI.LogLevel.Trace,
+            RESERVED_target,
+            RESERVED_filename,
+            RESERVED_lineNumber);
 
     /// <summary>
     /// Write an info message to module log
@@ -46,7 +58,13 @@ public static class Log
         [CallerMemberName] string RESERVED_target = "",
         [CallerFilePath] string RESERVED_filename = "",
         [CallerLineNumber] uint RESERVED_lineNumber = 0
-    ) => LogInternal(message, FFI.LogLevel.Info, RESERVED_target, RESERVED_filename, RESERVED_lineNumber);
+    ) =>
+        LogInternal(
+            message,
+            FFI.LogLevel.Info,
+            RESERVED_target,
+            RESERVED_filename,
+            RESERVED_lineNumber);
 
     /// <summary>
     /// Write a warning message to module log
@@ -60,7 +78,13 @@ public static class Log
         [CallerMemberName] string RESERVED_target = "",
         [CallerFilePath] string RESERVED_filename = "",
         [CallerLineNumber] uint RESERVED_lineNumber = 0
-    ) => LogInternal(message, FFI.LogLevel.Warn, RESERVED_target, RESERVED_filename, RESERVED_lineNumber);
+    ) =>
+        LogInternal(
+            message,
+            FFI.LogLevel.Warn,
+            RESERVED_target,
+            RESERVED_filename,
+            RESERVED_lineNumber);
 
     /// <summary>
     /// Write an error message to module log
@@ -74,7 +98,13 @@ public static class Log
         [CallerMemberName] string RESERVED_target = "",
         [CallerFilePath] string RESERVED_filename = "",
         [CallerLineNumber] uint RESERVED_lineNumber = 0
-    ) => LogInternal(message, FFI.LogLevel.Error, RESERVED_target, RESERVED_filename, RESERVED_lineNumber);
+    ) =>
+        LogInternal(
+            message,
+            FFI.LogLevel.Error,
+            RESERVED_target,
+            RESERVED_filename,
+            RESERVED_lineNumber);
 
     /// <summary>
     /// Write an exception message to module log
@@ -88,7 +118,13 @@ public static class Log
         [CallerMemberName] string RESERVED_target = "",
         [CallerFilePath] string RESERVED_filename = "",
         [CallerLineNumber] uint RESERVED_lineNumber = 0
-    ) => LogInternal(message, FFI.LogLevel.Error, RESERVED_target, RESERVED_filename, RESERVED_lineNumber);
+    ) =>
+        LogInternal(
+            message,
+            FFI.LogLevel.Error,
+            RESERVED_target,
+            RESERVED_filename,
+            RESERVED_lineNumber);
 
     /// <summary>
     /// Write an exception message and stacktrace to module log
@@ -102,7 +138,13 @@ public static class Log
         [CallerMemberName] string RESERVED_target = "",
         [CallerFilePath] string RESERVED_filename = "",
         [CallerLineNumber] uint RESERVED_lineNumber = 0
-    ) => LogInternal(exception.ToString(), FFI.LogLevel.Error, RESERVED_target, RESERVED_filename, RESERVED_lineNumber);
+    ) =>
+        LogInternal(
+            exception.ToString(),
+            FFI.LogLevel.Error,
+            RESERVED_target,
+            RESERVED_filename,
+            RESERVED_lineNumber);
 
     private static void LogInternal(
         string text,
