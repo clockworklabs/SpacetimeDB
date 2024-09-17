@@ -1,8 +1,8 @@
 ﻿namespace SpacetimeDB;
 
-using SpacetimeDB.Internal;
 using System.Runtime.CompilerServices;
 using System.Text;
+using SpacetimeDB.Internal;
 
 public static class Log
 {
