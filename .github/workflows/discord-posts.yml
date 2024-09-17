@@ -39,7 +39,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           CHECK_RESULT: ${{ env.CHECK_RESULT }}
-          PING_ON_FAILURE: ${{ secrets.DEV_OPS_ROLE_ID }}
+          MENTION_ON_FAILURE: ${{ secrets.DEV_OPS_ROLE_ID }}
         run: |
           message="PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](${PR_URL})"
           message+=$'\n'
@@ -48,7 +48,7 @@ jobs:
           if [[ "${CHECK_RESULT}" != "SUCCESS" ]]; then
             # This uses special Discord syntax for pinging a particular role.
             # Note the '&' - this is the difference between pinging a *role* and pinging a *person*.
-            message+=" (cc <@&${PING_ON_FAILURE}>)"
+            message+=" (cc <@&${MENTION_ON_FAILURE}>)"
           fi
           # Use `jq` to construct the json data blob in the format required by the webhook.
           data="$(jq --null-input --arg msg "$message" '.content=$msg')"
