@@ -5,7 +5,7 @@ use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_primitives::ColList;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::type_for_generate::{
     AlgebraicTypeDef, AlgebraicTypeUse, PlainEnumTypeDef, PrimitiveType, ProductTypeDef, SumTypeDef,
 };
@@ -304,7 +304,7 @@ pub fn autogen_rust_table(module: &ModuleDef, table: &TableDef) -> String {
 
     out.newline();
 
-    let table = TableSchema::from_module_def(table, 0.into())
+    let table = TableSchema::from_module_def(module, table, (), 0.into())
         .validated()
         .expect("Failed to generate table due to validation errors");
     print_impl_tabletype(module, out, &type_name, product_def, &table);
@@ -796,8 +796,8 @@ fn print_handle_table_update_defn(module: &ModuleDef, out: &mut Indenter) {
             out.delimited_block(
                 "match table_name {",
                 |out| {
-                    for table_desc in iter_tables(module) {
-                        let table = TableSchema::from_module_def(table_desc, 0.into()).validated().unwrap();
+                    for table_def in iter_tables(module) {
+                        let table = TableSchema::from_module_def(module, table_def, (), 0.into()).validated().unwrap();
                         writeln!(
                             out,
                             "{:?} => client_cache.{}::<{}::{}>(callbacks, table_update),",
@@ -807,8 +807,8 @@ fn print_handle_table_update_defn(module: &ModuleDef, out: &mut Indenter) {
                             } else {
                                 "handle_table_update_no_primary_key"
                             },
-                            type_name(module, table_desc.product_type_ref).to_case(Case::Snake),
-                            type_name(module, table_desc.product_type_ref).to_case(Case::Pascal),
+                            type_name(module, table_def.product_type_ref).to_case(Case::Snake),
+                            type_name(module, table_def.product_type_ref).to_case(Case::Pascal),
                         );
                     }
                     writeln!(

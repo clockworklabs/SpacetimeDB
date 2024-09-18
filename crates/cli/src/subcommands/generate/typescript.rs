@@ -8,12 +8,12 @@ use spacetimedb_lib::sats::product_type::IDENTITY_TAG;
 use spacetimedb_lib::sats::{
     AlgebraicType, AlgebraicTypeRef, ArrayType, ProductType, ProductTypeElement, SumType, SumTypeVariant,
 };
-use spacetimedb_lib::{ReducerDef, TableDesc};
+use spacetimedb_lib::ReducerDef;
 use spacetimedb_primitives::ColList;
 use spacetimedb_schema::schema::TableSchema;
 
 use super::code_indenter::CodeIndenter;
-use super::{GenCtx, GenItem, INDENT};
+use super::{GenCtx, GenItem, TableDescHack, INDENT};
 
 fn scalar_or_string_to_ts(ty: &AlgebraicType) -> Option<(&str, &str)> {
     Some(match ty {
@@ -499,13 +499,13 @@ pub fn autogen_typescript_tuple(ctx: &GenCtx, name: &str, tuple: &ProductType) -
     autogen_typescript_product_table_common(ctx, name, tuple, None)
 }
 #[allow(deprecated)]
-pub fn autogen_typescript_table(ctx: &GenCtx, table: &TableDesc) -> String {
+pub fn autogen_typescript_table(ctx: &GenCtx, table: &TableDescHack) -> String {
     let tuple = ctx.typespace[table.data].as_product().unwrap();
     autogen_typescript_product_table_common(
         ctx,
         typescript_typename(ctx, table.data),
         tuple,
-        Some(TableSchema::from_def(0.into(), table.schema.clone())),
+        Some(table.schema.clone()),
     )
 }
 

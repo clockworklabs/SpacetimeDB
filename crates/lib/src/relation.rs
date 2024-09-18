@@ -3,7 +3,7 @@ use crate::db::error::{RelationError, TypeError};
 use core::fmt;
 use core::hash::Hash;
 use derive_more::From;
-use spacetimedb_primitives::{ColId, ColList, Constraints, TableId};
+use spacetimedb_primitives::{ColId, ColList, ColSet, Constraints, TableId};
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{algebraic_type, AlgebraicType};
@@ -98,26 +98,19 @@ pub struct Header {
 
 impl Header {
     /// Create a new header.
-    /// Note that equal ColLists with different Constraints will have their constraints unioned.
+    /// Input `ColList`s are converted to `ColSet`s, that is, their ordering and duplicates are ignored.
+    /// Note that equal `ColSet`s with different Constraints will have their constraints unioned.
     pub fn new(
         table_id: TableId,
         table_name: Box<str>,
         fields: Vec<Column>,
-        uncompressed_constraints: impl IntoIterator<Item = (ColList, Constraints)>,
+        uncombined_constraints: impl IntoIterator<Item = (ColList, Constraints)>,
     ) -> Self {
-        let mut constraints = BTreeMap::new();
-        for (col_list, constraint) in uncompressed_constraints {
-            constraints
-                .entry(col_list)
-                .or_insert(Constraints::unset())
-                .push(constraint);
-        }
-
         Self {
             table_id,
             table_name,
             fields,
-            constraints,
+            constraints: combine_constraints(uncombined_constraints.into_iter().map(|(cols, ct)| (cols.into(), ct))),
         }
     }
 
@@ -224,6 +217,26 @@ impl Header {
 
         Self::new(self.table_id, self.table_name.clone(), fields, constraints)
     }
+}
+
+/// Combine constraints.
+/// The iterator may have multiple `ColSet`s with the same `Constraints`.
+/// These constraints will be combined into a single `ColSet`.
+///
+/// The inputs are unordered (`ColSet`s), but this function returns a `BTreeMap<ColList, _>` for backwards compatibility.
+/// This should eventually be changed to return `ColSet`.
+pub fn combine_constraints(
+    uncombined: impl IntoIterator<Item = (ColSet, Constraints)>,
+) -> BTreeMap<ColList, Constraints> {
+    let mut constraints = BTreeMap::new();
+    for (col_set, constraint) in uncombined {
+        let col_list = col_set.into();
+        constraints
+            .entry(col_list)
+            .or_insert(Constraints::unset())
+            .push(constraint);
+    }
+    constraints
 }
 
 impl fmt::Display for Header {
