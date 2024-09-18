@@ -388,7 +388,7 @@ mod tests {
     use super::*;
     use spacetimedb_data_structures::expect_error_matching;
     use spacetimedb_lib::{db::raw_def::*, AlgebraicType, ProductType, ScheduleAt};
-    use spacetimedb_primitives::ColList;
+    use spacetimedb_primitives::{ColId, ColList};
     use v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess};
     use validate::tests::expect_identifier;
 
@@ -407,19 +407,19 @@ mod tests {
                 true,
             )
             .with_column_sequence(0, Some("Apples_sequence".into()))
-            .with_unique_constraint(0.into(), Some("Apples_unique_constraint".into()))
+            .with_unique_constraint(ColId(0), Some("Apples_unique_constraint".into()))
             .with_index(
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from([0]),
                 },
-                "id_index".into(),
+                "id_index",
                 Some("Apples_id_index".into()),
             )
             .with_index(
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from([0, 1]),
                 },
-                "id_name_index".into(),
+                "id_name_index",
                 Some("Apples_id_name_index".into()),
             )
             .finish();
@@ -489,7 +489,7 @@ mod tests {
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from([0]),
                 },
-                "id_index".into(),
+                "id_index",
                 Some("Apples_id_index".into()),
             )
             // remove ["id", "name"] index
@@ -498,7 +498,7 @@ mod tests {
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from([0, 2]),
                 },
-                "id_count_index".into(),
+                "id_count_index",
                 Some("Apples_id_count_index".into()),
             )
             .finish();
@@ -626,7 +626,7 @@ mod tests {
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from([0]),
                 },
-                "id_index".into(),
+                "id_index",
                 Some("Apples_id_index".into()),
             )
             .with_unique_constraint(ColList::from_iter([1, 2]), Some("Apples_changing_constraint".into()))
@@ -667,11 +667,11 @@ mod tests {
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from([0]),
                 },
-                "id_index_new_accessor".into(), // change accessor name
+                "id_index_new_accessor", // change accessor name
                 Some("Apples_id_index".into()),
             )
             .with_unique_constraint(ColList::from_iter([0, 1]), Some("Apples_changing_constraint".into()))
-            .with_unique_constraint(0.into(), Some("Apples_name_unique_constraint".into())) // add unique constraint
+            .with_unique_constraint(ColId(0), Some("Apples_name_unique_constraint".into())) // add unique constraint
             .with_type(TableType::System) // change type
             .finish();
 

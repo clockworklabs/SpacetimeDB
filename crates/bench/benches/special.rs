@@ -6,12 +6,11 @@ use spacetimedb_bench::{
     schemas::{create_sequential, u32_u64_str, u32_u64_u64, u64_u64_u32, BenchTable, RandomTable},
     spacetime_module::BENCHMARKS_MODULE,
 };
-use spacetimedb_lib::db::raw_def::RawTableDefV8;
 use spacetimedb_lib::{sats, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_testing::modules::start_runtime;
-use std::hint::black_box;
 use std::time::{Duration, Instant};
+use std::{hint::black_box, sync::Arc};
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -155,9 +154,10 @@ fn serialize_benchmarks<
         );
     });
 
-    #[allow(deprecated)]
+    let mut table_schema = TableSchema::from_product_type(T::product_type());
+    table_schema.table_name = name.into();
     let mut table = spacetimedb_table::table::Table::new(
-        TableSchema::from_def(0.into(), RawTableDefV8::from_product(name, T::product_type().clone())).into(),
+        Arc::new(table_schema),
         spacetimedb_table::indexes::SquashedOffset::COMMITTED_STATE,
     );
     let mut blob_store = spacetimedb_table::blob_store::HashMapBlobStore::default();
