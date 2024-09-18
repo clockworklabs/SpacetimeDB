@@ -207,7 +207,7 @@ impl ModuleValidator<'_> {
         let name = table_in_progress
             .add_to_global_namespace(raw_table_name.clone())
             .and_then(|name| {
-                if name.starts_with("st_") {
+                if table_type != TableType::System && name.starts_with("st_") {
                     Err(ValidationError::TableNameReserved { table: name }.into())
                 } else {
                     Ok(name)

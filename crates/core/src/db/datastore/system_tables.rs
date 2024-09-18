@@ -190,6 +190,7 @@ st_fields_enum!(enum StTableFields {
     "table_name", TableName = 1,
     "table_type", TableType = 2,
     "table_access", TablesAccess = 3,
+    "table_primary_key", PrimaryKey = 4,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StColumnFields {
@@ -1196,8 +1197,8 @@ impl TryFrom<RowRef<'_>> for StVarRow {
 #[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StScheduledRow {
-    pub(crate) table_id: TableId,
     pub(crate) schedule_id: ScheduleId,
+    pub(crate) table_id: TableId,
     pub(crate) reducer_name: Box<str>,
     pub(crate) schedule_name: Box<str>,
 }
