@@ -514,7 +514,7 @@ impl MutTxId {
         prefix_elems: ColId,
         rstart: &[u8],
         rend: &[u8],
-    ) -> Result<impl Iterator<Item = RowRef<'a>>> {
+    ) -> Result<(TableId, impl Iterator<Item = RowRef<'a>>)> {
         // Extract the table and index type for the tx state.
         let (table_id, col_list, tx_idx_key_type) = self
             .get_table_and_index_type(index_id)
@@ -548,7 +548,7 @@ impl MutTxId {
                 }
             }
         }
-        Ok(match commit_iter {
+        let iter = match commit_iter {
             None => Choice::A(tx_iter),
             Some(commit_iter) => match self.tx_state.delete_tables.get(&table_id) {
                 None => Choice::B(tx_iter.chain(commit_iter)),
@@ -556,7 +556,8 @@ impl MutTxId {
                     Choice::C(tx_iter.chain(commit_iter.filter(move |row| !tx_dels.contains(&row.pointer()))))
                 }
             },
-        })
+        };
+        Ok((table_id, iter))
     }
 
     /// Translate `index_id` to the table id, the column list and index key type.
