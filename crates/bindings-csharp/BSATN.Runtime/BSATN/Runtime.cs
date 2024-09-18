@@ -16,7 +16,7 @@ public interface IStructuralWrite
     }
 
     public static byte[] ToBytes<T>(T value)
-        where T : IStructuralReadWrite
+        where T : IStructuralWrite
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);

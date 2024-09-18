@@ -159,8 +159,8 @@ public static class Module
         try
         {
             // We need this explicit cast here to make `ToBytes` understand the types correctly.
-            RawModuleDef versioned = new RawModuleDef.V8BackCompat(moduleDef);
-            var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), versioned);
+            var versioned = new RawModuleDef.V8BackCompat(moduleDef);
+            var moduleBytes = IStructuralWrite.ToBytes(versioned);
             description.Write(moduleBytes);
         }
         catch (Exception e)
