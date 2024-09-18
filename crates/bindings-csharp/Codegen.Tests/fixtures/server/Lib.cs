@@ -1,6 +1,8 @@
 ﻿using System.Runtime.InteropServices;
 using SpacetimeDB;
 
+#pragma warning disable CA1050 // Declare types in namespaces - this is a test fixture, no need for a namespace.
+
 [SpacetimeDB.Type]
 public partial struct CustomStruct
 {

@@ -1,7 +1,7 @@
 use crate::algebraic_type::AlgebraicType;
 use crate::de::Deserialize;
 use crate::meta_type::MetaType;
-use crate::{impl_deserialize, impl_serialize};
+use crate::{impl_deserialize, impl_serialize, impl_st};
 
 /// An array type is a homegeneous product type of dynamic length.
 ///
@@ -16,6 +16,7 @@ pub struct ArrayType {
 
 impl_serialize!([] ArrayType, (self, ser) => self.elem_ty.serialize(ser));
 impl_deserialize!([] ArrayType, de => Deserialize::deserialize(de).map(|elem_ty| Self { elem_ty }));
+impl_st!([] ArrayType, ts => AlgebraicType::make_type(ts));
 
 impl MetaType for ArrayType {
     fn meta_type() -> AlgebraicType {

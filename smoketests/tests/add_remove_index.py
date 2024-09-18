@@ -4,15 +4,13 @@ class AddRemoveIndex(Smoketest):
     AUTOPUBLISH = False
 
     MODULE_CODE = """
-use spacetimedb::spacetimedb;
-
-#[spacetimedb(table)]
+#[spacetimedb::table(name = t1)]
 pub struct T1 { id: u64 }
 
-#[spacetimedb(table)]
+#[spacetimedb::table(name = t2)]
 pub struct T2 { id: u64 }
 
-#[spacetimedb(init)]
+#[spacetimedb::reducer(init)]
 pub fn init() {
     for id in 0..1_000 {
         T1::insert(T1 { id });
@@ -21,17 +19,13 @@ pub fn init() {
 }
 """
     MODULE_CODE_INDEXED = """
-use spacetimedb::spacetimedb;
+#[spacetimedb::table(name = t1)]
+pub struct T1 { #[index(btree)] id: u64 }
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "id", id))]
-pub struct T1 { id: u64 }
+#[spacetimedb::table(name = t2)]
+pub struct T2 { #[index(btree)] id: u64 }
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "id", id))]
-pub struct T2 { id: u64 }
-
-#[spacetimedb(init)]
+#[spacetimedb::reducer(init)]
 pub fn init() {
     for id in 0..1_000 {
         T1::insert(T1 { id });
@@ -39,7 +33,7 @@ pub fn init() {
     }
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add() {
     let id = 1_001;
     T1::insert(T1 { id });
@@ -47,7 +41,7 @@ pub fn add() {
 }
 """
 
-    JOIN_QUERY = "select T1.* from T1 join T2 on T1.id = T2.id where T2.id = 1001"
+    JOIN_QUERY = "select t1.* from t1 join t2 on t1.id = t2.id where t2.id = 1001"
 
     def between_publishes(self):
         """
@@ -82,7 +76,7 @@ pub fn add() {
         self.publish_module(name, clear = False)
         sub = self.subscribe(self.JOIN_QUERY, n = 1)
         self.call("add", anon = True)
-        self.assertEqual(sub(), [{'T1': {'deletes': [], 'inserts': [{'id': 1001}]}}])
+        self.assertEqual(sub(), [{'t1': {'deletes': [], 'inserts': [{'id': 1001}]}}])
 
         self.between_publishes()
 

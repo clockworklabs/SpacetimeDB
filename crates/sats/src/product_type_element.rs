@@ -1,6 +1,5 @@
 use crate::meta_type::MetaType;
-use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, WithTypespace};
+use crate::{AlgebraicType, SpacetimeType, WithTypespace};
 
 /// A factor / element of a product type.
 ///
@@ -8,7 +7,7 @@ use crate::{AlgebraicType, WithTypespace};
 ///
 /// NOTE: Each element has an implicit element tag based on its order.
 /// Uniquely identifies an element similarly to protobuf tags.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct ProductTypeElement {
     /// The name of the field / element.

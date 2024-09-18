@@ -96,13 +96,8 @@ record ColumnDeclaration : MemberDeclaration
     }
 
     // For the `TableDesc` constructor.
-    public string GenerateColumnDefWithAttrs() =>
-        $"""
-            new (
-                new (nameof({Name}), BSATN.{Name}.GetAlgebraicType(registrar)),
-                SpacetimeDB.ColumnAttrs.{Attrs}
-            )
-            """;
+    public string GenerateColumnDef() =>
+        $"new (nameof({Name}), BSATN.{Name}.GetAlgebraicType(registrar))";
 
     // For the `Filter` constructor.
     public string GenerateFilterEntry() =>
@@ -188,7 +183,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
         extensions.Contents.Append(
             $$"""
-            public void ReadGenFields(System.IO.BinaryReader reader) {
+            void {{iTable}}.ReadGenFields(System.IO.BinaryReader reader) {
                 {{string.Join(
                     "\n",
                     autoIncFields.Select(name =>
@@ -202,16 +197,40 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 )}}
             }
 
-            static SpacetimeDB.Internal.Module.TableDesc {{iTable}}.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
+            static SpacetimeDB.Internal.TableDesc {{iTable}}.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
                 new (
-                    nameof({{ShortName}}),
-                    new SpacetimeDB.Internal.Module.ColumnDefWithAttrs[] {
-                        {{string.Join(",\n", Members.Select(f => f.GenerateColumnDefWithAttrs()))}}
-                    },
-                    {{IsPublic.ToString().ToLower()}},
-                    {{(Scheduled is not null ? $"\"{Scheduled}\"" : "null")}}
+                    TableName: nameof({{ShortName}}),
+                    Columns: [
+                        {{string.Join(",\n", Members.Select(m => m.GenerateColumnDef()))}}
+                    ],
+                    Indexes: [],
+                    Constraints: [
+                        {{string.Join(
+                            ",\n",
+                            Members
+                            // Important: the position must be stored here, before filtering.
+                            .Select((col, pos) => (col, pos))
+                            .Where(pair => pair.col.Attrs != ColumnAttrs.UnSet)
+                            .Select(pair =>
+                                $$"""
+                                new (
+                                    nameof({{ShortName}}),
+                                    {{pair.pos}},
+                                    nameof({{pair.col.Name}}),
+                                    SpacetimeDB.ColumnAttrs.{{pair.col.Attrs}}
+                                )
+                                """
+                            )
+                        )}}
+                    ],
+                    Sequences: [],
+                    // "system" | "user"
+                    TableType: "user",
+                    // "public" | "private"
+                    TableAccess: "{{(IsPublic ? "public" : "private")}}",
+                    Scheduled: {{(Scheduled is not null ? $"nameof({Scheduled})" : "null")}}
                 ),
-                (SpacetimeDB.BSATN.AlgebraicType.Ref) new BSATN().GetAlgebraicType(registrar)
+                (uint) ((SpacetimeDB.BSATN.AlgebraicType.Ref) new BSATN().GetAlgebraicType(registrar)).Ref_
             );
 
             static SpacetimeDB.Internal.Filter {{iTable}}.CreateFilter() => new([
@@ -311,12 +330,10 @@ record ReducerDeclaration
             class {{Name}}: SpacetimeDB.Internal.IReducer {
                 {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, NonContextArgs)}}
 
-                public SpacetimeDB.Internal.Module.ReducerDef MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) {
-                    return new (
-                        "{{ExportName}}",
-                        {{MemberDeclaration.GenerateDefs(NonContextArgs)}}
-                    );
-                }
+                public SpacetimeDB.Internal.ReducerDef MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
+                    "{{ExportName}}",
+                    [{{MemberDeclaration.GenerateDefs(NonContextArgs)}}]
+                );
 
                 public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx) {
                     {{FullName}}(
@@ -407,7 +424,9 @@ public class Module : IIncrementalGenerator
                 var addReducers = tuple.Right.Sort((a, b) => a.Key.CompareTo(b.Key));
                 // Don't generate the FFI boilerplate if there are no tables or reducers.
                 if (tableNames.IsEmpty && addReducers.IsEmpty)
+                {
                     return;
+                }
                 context.AddSource(
                     "FFI.cs",
                     $$"""
@@ -448,7 +467,7 @@ public class Module : IIncrementalGenerator
                         public static void __describe_module__(SpacetimeDB.Internal.BytesSink d) => SpacetimeDB.Internal.Module.__describe_module__(d);
 
                         [UnmanagedCallersOnly(EntryPoint = "__call_reducer__")]
-                        public static short __call_reducer__(
+                        public static SpacetimeDB.Internal.Errno __call_reducer__(
                             uint id,
                             ulong sender_0,
                             ulong sender_1,

@@ -24,7 +24,7 @@ pub enum ScheduleAt {
     /// Value is a UNIX timestamp in microseconds.
     Time(u64),
 }
-impl_st!([] ScheduleAt, _ts => ScheduleAt::get_type());
+impl_st!([] ScheduleAt, ScheduleAt::get_type());
 
 impl ScheduleAt {
     /// Converts the `ScheduleAt` to a `std::time::Duration` from now.

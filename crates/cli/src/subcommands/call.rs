@@ -1,7 +1,6 @@
 use crate::common_args;
 use crate::config::Config;
 use crate::edit_distance::{edit_distance, find_best_match_for_name};
-use crate::generate::rust::{write_arglist_no_delimiters, write_type};
 use crate::util;
 use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
 use anyhow::{bail, Context, Error};
@@ -191,10 +190,10 @@ fn reducer_signature(schema_json: Value, reducer_name: &str) -> Option<String> {
     fn ctx(typespace: &Typespace, r: AlgebraicTypeRef) -> String {
         let ty = &typespace[r];
         let mut ty_str = String::new();
-        write_type(&|r| ctx(typespace, r), &mut ty_str, ty).unwrap();
+        write_type::write_type(&|r| ctx(typespace, r), &mut ty_str, ty).unwrap();
         ty_str
     }
-    write_arglist_no_delimiters(&|r| ctx(&typespace, r), &mut args, &params, None).unwrap();
+    write_type::write_arglist_no_delimiters(&|r| ctx(&typespace, r), &mut args, &params, None).unwrap();
     let args = args.trim().trim_end_matches(',').replace('\n', " ");
 
     // Print the full signature to `reducer_fmt`.
@@ -321,4 +320,137 @@ fn find_of_type_in_schema<'v, 't: 'v>(
 fn typespace(value: &serde_json::Value) -> Option<Typespace> {
     let types = value.as_object()?.get("typespace")?;
     deserialize_from(types).map(Typespace::new).ok()
+}
+
+// this is an old version of code in generate::rust that got
+// refactored, but reducer_signature() was using it
+// TODO: port reducer_signature() to use AlgebraicTypeUse et al, somehow.
+mod write_type {
+    use super::*;
+    use convert_case::{Case, Casing};
+    use spacetimedb_lib::sats::ArrayType;
+    use spacetimedb_lib::ProductType;
+    use std::fmt;
+    use std::ops::Deref;
+
+    pub fn write_type<W: fmt::Write>(
+        ctx: &impl Fn(AlgebraicTypeRef) -> String,
+        out: &mut W,
+        ty: &AlgebraicType,
+    ) -> fmt::Result {
+        match ty {
+            p if p.is_identity() => write!(out, "Identity")?,
+            p if p.is_address() => write!(out, "Address")?,
+            p if p.is_schedule_at() => write!(out, "ScheduleAt")?,
+            AlgebraicType::Sum(sum_type) => {
+                if let Some(inner_ty) = sum_type.as_option() {
+                    write!(out, "Option<")?;
+                    write_type(ctx, out, inner_ty)?;
+                    write!(out, ">")?;
+                } else {
+                    write!(out, "enum ")?;
+                    print_comma_sep_braced(out, &sum_type.variants, |out: &mut W, elem: &_| {
+                        if let Some(name) = &elem.name {
+                            write!(out, "{name}: ")?;
+                        }
+                        write_type(ctx, out, &elem.algebraic_type)
+                    })?;
+                }
+            }
+            AlgebraicType::Product(ProductType { elements }) => {
+                print_comma_sep_braced(out, elements, |out: &mut W, elem: &ProductTypeElement| {
+                    if let Some(name) = &elem.name {
+                        write!(out, "{name}: ")?;
+                    }
+                    write_type(ctx, out, &elem.algebraic_type)
+                })?;
+            }
+            AlgebraicType::Bool => write!(out, "bool")?,
+            AlgebraicType::I8 => write!(out, "i8")?,
+            AlgebraicType::U8 => write!(out, "u8")?,
+            AlgebraicType::I16 => write!(out, "i16")?,
+            AlgebraicType::U16 => write!(out, "u16")?,
+            AlgebraicType::I32 => write!(out, "i32")?,
+            AlgebraicType::U32 => write!(out, "u32")?,
+            AlgebraicType::I64 => write!(out, "i64")?,
+            AlgebraicType::U64 => write!(out, "u64")?,
+            AlgebraicType::I128 => write!(out, "i128")?,
+            AlgebraicType::U128 => write!(out, "u128")?,
+            AlgebraicType::I256 => write!(out, "i256")?,
+            AlgebraicType::U256 => write!(out, "u256")?,
+            AlgebraicType::F32 => write!(out, "f32")?,
+            AlgebraicType::F64 => write!(out, "f64")?,
+            AlgebraicType::String => write!(out, "String")?,
+            AlgebraicType::Array(ArrayType { elem_ty }) => {
+                write!(out, "Vec<")?;
+                write_type(ctx, out, elem_ty)?;
+                write!(out, ">")?;
+            }
+            AlgebraicType::Map(ty) => {
+                write!(out, "Map<")?;
+                write_type(ctx, out, &ty.key_ty)?;
+                write!(out, ", ")?;
+                write_type(ctx, out, &ty.ty)?;
+                write!(out, ">")?;
+            }
+            AlgebraicType::Ref(r) => {
+                write!(out, "{}", ctx(*r))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn print_comma_sep_braced<W: fmt::Write, T>(
+        out: &mut W,
+        elems: &[T],
+        on: impl Fn(&mut W, &T) -> fmt::Result,
+    ) -> fmt::Result {
+        write!(out, "{{")?;
+
+        let mut iter = elems.iter();
+
+        // First factor.
+        if let Some(elem) = iter.next() {
+            write!(out, " ")?;
+            on(out, elem)?;
+        }
+        // Other factors.
+        for elem in iter {
+            write!(out, ", ")?;
+            on(out, elem)?;
+        }
+
+        if !elems.is_empty() {
+            write!(out, " ")?;
+        }
+
+        write!(out, "}}")?;
+
+        Ok(())
+    }
+
+    pub fn write_arglist_no_delimiters(
+        ctx: &impl Fn(AlgebraicTypeRef) -> String,
+        out: &mut impl Write,
+        elements: &[ProductTypeElement],
+
+        // Written before each line. Useful for `pub`.
+        prefix: Option<&str>,
+    ) -> fmt::Result {
+        for elt in elements {
+            if let Some(prefix) = prefix {
+                write!(out, "{prefix} ")?;
+            }
+
+            let Some(name) = &elt.name else {
+                panic!("Product type element has no name: {elt:?}");
+            };
+            let name = name.deref().to_case(Case::Snake);
+
+            write!(out, "{name}: ")?;
+            write_type(ctx, out, &elt.algebraic_type)?;
+            writeln!(out, ",")?;
+        }
+        Ok(())
+    }
 }

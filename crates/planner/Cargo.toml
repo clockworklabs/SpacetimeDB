@@ -1,0 +1,17 @@
+[package]
+name = "spacetimedb-query-planner"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+
+[dependencies]
+derive_more.workspace = true
+thiserror.workspace = true
+spacetimedb-lib.workspace = true
+spacetimedb-sats.workspace = true
+spacetimedb-schema.workspace = true
+spacetimedb-sql-parser.workspace = true
+
+[dev-dependencies]
+spacetimedb-lib.workspace = true
+spacetimedb-primitives.workspace = true

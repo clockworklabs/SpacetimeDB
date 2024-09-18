@@ -8,7 +8,7 @@ public interface ITable<T> : IStructuralReadWrite
 {
     // These are the methods that codegen needs to implement.
     void ReadGenFields(BinaryReader reader);
-    static abstract Module.TableDesc MakeTableDesc(ITypeRegistrar registrar);
+    static abstract TableDesc MakeTableDesc(ITypeRegistrar registrar);
     static abstract Filter CreateFilter();
 
     // These are static helpers that codegen can use.

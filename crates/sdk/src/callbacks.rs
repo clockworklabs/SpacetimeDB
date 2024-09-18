@@ -479,14 +479,14 @@ where
 
     /// Callbacks to be invoked upon updating a row which is already resident in the table.
     ///
-    /// Update events are only meaningful for tables with a column annotated as `#[primarykey]`.
+    /// Update events are only meaningful for tables with a column annotated as `#[primary_key]`.
     /// For tables with primary key columns, a delete followed by an insert
     /// where the altered rows have the same primary key is treated as an update.
     ///
     /// In order to prevent client authors from registering `on_update` callbacks
     /// which can never fire, public interfaces for `on_update` are exposed
     /// through the trait `TableWithPrimaryKey`, which is implemented
-    /// only for tables which have a column annotated `#[primarykey]`.
+    /// only for tables which have a column annotated `#[primary_key]`.
     // TODO: split `on_update` into its own map, to avoid spawning a `CallbackMap`
     //       for tables without primary keys.
     //       In fact, consider splitting all three fields into separate `Map`s in the `DbCallbacks`,

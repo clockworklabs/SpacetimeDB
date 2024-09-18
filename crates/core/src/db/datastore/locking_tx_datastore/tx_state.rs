@@ -1,14 +1,19 @@
 use core::ops::RangeBounds;
-use spacetimedb_primitives::{ColList, TableId};
-use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_primitives::{ColList, IndexId, TableId};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
     table::{IndexScanIter, RowRef, Table},
 };
 use std::collections::{btree_map, BTreeMap, BTreeSet};
+use thin_vec::ThinVec;
 
 pub(super) type DeleteTable = BTreeSet<RowPointer>;
+
+/// A mapping to find the actual index given an `IndexId`.
+pub(super) type IndexIdMap = IntMap<IndexId, (TableId, ColList)>;
 
 /// `TxState` tracks all of the modifications made during a particular transaction.
 /// Rows inserted during a transaction will be added to insert_tables, and similarly,
@@ -61,6 +66,12 @@ pub(super) struct TxState {
     ///   and free each of them during rollback.
     /// - Traverse all rows in the `insert_tables` and free each of their blobs during rollback.
     pub(super) blob_store: HashMapBlobStore,
+
+    /// Provides fast lookup for index id -> an index.
+    pub(super) index_id_map: IndexIdMap,
+
+    /// Lists all the `IndexId` that are to be removed from `CommittedState::index_id_map`.
+    pub(super) index_id_map_removals: ThinVec<IndexId>,
 }
 
 impl TxState {
@@ -143,10 +154,16 @@ impl TxState {
         &'this mut self,
         table_id: TableId,
         template: Option<&Table>,
-    ) -> Option<(&'this mut Table, &'this mut dyn BlobStore, &'this mut DeleteTable)> {
+    ) -> Option<(
+        &'this mut Table,
+        &'this mut dyn BlobStore,
+        &'this mut IndexIdMap,
+        &'this mut DeleteTable,
+    )> {
         let insert_tables = &mut self.insert_tables;
         let delete_tables = &mut self.delete_tables;
         let blob_store = &mut self.blob_store;
+        let idx_map = &mut self.index_id_map;
         let tbl = match insert_tables.entry(table_id) {
             btree_map::Entry::Vacant(e) => {
                 let new_table = template?.clone_structure(SquashedOffset::TX_STATE);
@@ -154,6 +171,13 @@ impl TxState {
             }
             btree_map::Entry::Occupied(e) => e.into_mut(),
         };
-        Some((tbl, blob_store, delete_tables.entry(table_id).or_default()))
+        Some((tbl, blob_store, idx_map, delete_tables.entry(table_id).or_default()))
+    }
+
+    /// Returns the table and index associated with the given `table_id` and `col_list`, if any.
+    pub(super) fn get_table_and_index_type(&self, table_id: TableId, col_list: &ColList) -> Option<&AlgebraicType> {
+        let table = self.insert_tables.get(&table_id)?;
+        let index = table.indexes.get(col_list)?;
+        Some(&index.key_type)
     }
 }

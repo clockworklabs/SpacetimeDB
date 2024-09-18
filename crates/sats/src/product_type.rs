@@ -1,8 +1,11 @@
+use spacetimedb_primitives::{ColId, ColList};
+
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
+use crate::de::Deserialize;
 use crate::meta_type::MetaType;
-use crate::{de::Deserialize, ser::Serialize};
-use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, ValueWithType, WithTypespace};
+use crate::product_value::InvalidFieldError;
+use crate::{AlgebraicType, AlgebraicValue, ProductTypeElement, SpacetimeType, ValueWithType, WithTypespace};
 
 /// The tag used inside the special `Identity` product type.
 pub const IDENTITY_TAG: &str = "__identity_bytes";
@@ -32,7 +35,7 @@ pub const ADDRESS_TAG: &str = "__address_bytes";
 /// so for example, `values({ A: U64, B: Bool }) = values(U64) * values(Bool)`.
 ///
 /// [structural]: https://en.wikipedia.org/wiki/Structural_type_system
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct ProductType {
     /// The factors of the product type.
@@ -98,6 +101,32 @@ impl ProductType {
         self.elements
             .iter()
             .position(|field| field.name.as_deref() == Some(name))
+    }
+
+    /// This utility function is designed to project fields based on the supplied `indexes`.
+    ///
+    /// **Important:**
+    ///
+    /// The resulting [AlgebraicType] will wrap into a [ProductType] when projecting multiple
+    /// (including zero) fields, otherwise it will consist of a single [AlgebraicType].
+    ///
+    /// **Parameters:**
+    /// - `cols`: A [ColList] containing the indexes of fields to be projected.
+    pub fn project(&self, cols: &ColList) -> Result<AlgebraicType, InvalidFieldError> {
+        let get_field = |col_pos: ColId| {
+            self.elements
+                .get(col_pos.idx())
+                .ok_or(InvalidFieldError { col_pos, name: None })
+        };
+        if let Some(head) = cols.as_singleton() {
+            get_field(head).map(|f| f.algebraic_type.clone())
+        } else {
+            let mut fields = Vec::with_capacity(cols.len() as usize);
+            for col in cols.iter() {
+                fields.push(get_field(col)?.clone());
+            }
+            Ok(AlgebraicType::product(fields.into_boxed_slice()))
+        }
     }
 }
 

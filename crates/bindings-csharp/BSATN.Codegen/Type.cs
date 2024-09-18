@@ -27,14 +27,10 @@ public record MemberDeclaration(string Name, string Type, string TypeInfo)
     }
 
     public static string GenerateDefs(IEnumerable<MemberDeclaration> members) =>
-        $$"""
-        new SpacetimeDB.BSATN.AggregateElement[] {
-            {{string.Join(
-                ",\n",
-                members.Select(m => $"new(nameof({m.Name}), {m.Name}.GetAlgebraicType(registrar))")
-            )}}
-        }
-        """;
+        string.Join(
+            ",\n",
+            members.Select(m => $"new(nameof({m.Name}), {m.Name}.GetAlgebraicType(registrar))")
+        );
 }
 
 public enum TypeKind
@@ -230,9 +226,9 @@ public abstract record BaseTypeDeclaration<M>
                 }
 
                 public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                    registrar.RegisterType<{{ShortName}}>(_ => new SpacetimeDB.BSATN.AlgebraicType.{{Kind}}(
+                    registrar.RegisterType<{{ShortName}}>(_ => new SpacetimeDB.BSATN.AlgebraicType.{{Kind}}(new SpacetimeDB.BSATN.AggregateElement[] {
                         {{MemberDeclaration.GenerateDefs(Members)}}
-                    ));
+                    }));
             }
             """
         );
@@ -261,7 +257,9 @@ public class Type : IIncrementalGenerator
                 {
                     // structs and classes should be always processed
                     if (node is not EnumDeclarationSyntax enumType)
+                    {
                         return true;
+                    }
 
                     // Ensure variants are contiguous as SATS enums don't support explicit tags.
                     if (enumType.Members.Any(m => m.EqualsValue is not null))

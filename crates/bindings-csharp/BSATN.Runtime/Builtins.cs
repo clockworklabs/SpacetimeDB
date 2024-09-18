@@ -1,8 +1,8 @@
+namespace SpacetimeDB;
+
 using System.Diagnostics;
 using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
-
-namespace SpacetimeDB;
 
 public readonly partial struct Unit
 {

@@ -1,6 +1,6 @@
-using System.Text;
-
 namespace SpacetimeDB.BSATN;
+
+using System.Text;
 
 public interface IStructuralReadWrite
 {

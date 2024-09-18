@@ -303,7 +303,7 @@ impl Snapshot {
     /// - `path` does not refer to a readable file.
     /// - The file at `path` is corrupted,
     ///   as detected by comparing the hash of its bytes to a hash recorded in the file.
-    fn read_from_file(path: &Path) -> Result<Self, SnapshotError> {
+    pub fn read_from_file(path: &Path) -> Result<Self, SnapshotError> {
         let err_read_object = |cause| SnapshotError::ReadObject {
             ty: ObjectType::Snapshot,
             source_repo: path.to_path_buf(),
@@ -562,17 +562,53 @@ impl SnapshotRepository {
         }
     }
 
-    fn snapshot_dir_path(&self, tx_offset: TxOffset) -> PathBuf {
+    /// Get the path to the directory which would contain the snapshot of transaction `tx_offset`.
+    ///
+    /// The directory may not exist if no snapshot has been taken of `tx_offset`.
+    ///
+    /// The directory may exist but be locked or incomplete
+    /// if a file with the same name and the extension `.lock` exists.
+    /// In this case, callers should treat the snapshot as if it did not exist.
+    ///
+    /// Use `[Self::all_snapshots]` to get `tx_offsets` which will return valid extant paths.
+    /// `[Self::all_snapshots]` will never return a `tx_offset` for a locked or incomplete snapshot.
+    /// `[Self::all_snapshots]` does not validate the contents of snapshots,
+    /// so it may return a `tx_offset` whose snapshot is corrupted.
+    ///
+    /// Any mutations to any files contained in the returned directory
+    /// will likely corrupt the snapshot,
+    /// causing attempts to reconstruct it to fail.
+    pub fn snapshot_dir_path(&self, tx_offset: TxOffset) -> PathBuf {
         let dir_name = format!("{tx_offset:0>20}.{SNAPSHOT_DIR_EXT}");
         self.root.join(dir_name)
     }
 
-    fn snapshot_file_path(tx_offset: TxOffset, snapshot_dir: &Path) -> PathBuf {
+    /// Given `snapshot_dir` as the result of `self.snapshot_dir_path(tx_offset)`,
+    /// get the path to the root snapshot file, which contains a serialized [`Snapshot`].
+    ///
+    /// This method does not validate that the `snapshot_dir` exists or is valid,
+    /// so the returned snapshot file path may be nonexistant or refer to a locked or incomplete snapshot file.
+    /// This method also does not check if the snapshot file, or any other part of the snapshot, is corrupted.
+    /// Consumers should verify the hashes stored in the snapshot file and object repository.
+    ///
+    /// Any mutations to the snapshot file will likely render the snapshot corrupted,
+    /// causing future attempts to reconstruct it to fail.
+    pub fn snapshot_file_path(tx_offset: TxOffset, snapshot_dir: &Path) -> PathBuf {
         let file_name = format!("{tx_offset:0>20}.{SNAPSHOT_FILE_EXT}");
         snapshot_dir.join(file_name)
     }
 
-    fn object_repo(snapshot_dir: &Path) -> Result<DirTrie, std::io::Error> {
+    /// Given `snapshot_dir` as the result of [`Self::snapshot_dir_path`],
+    /// get the [`DirTrie`] which contains serialized objects (pages and large blobs)
+    /// referenced by the [`Snapshot`] contained in the [`Self::snapshot_file_path`].
+    ///
+    /// Consequences are unspecified if this method is called from outside this crate
+    /// on a non-existent, locked or incomplete `snapshot_dir`.
+    ///
+    /// Any mutations to the returned [`DirTrie`] or its contents
+    /// will likely render the snapshot corrupted,
+    /// causing future attempts to reconstruct it to fail.
+    pub fn object_repo(snapshot_dir: &Path) -> Result<DirTrie, std::io::Error> {
         DirTrie::open(snapshot_dir.join("objects"))
     }
 

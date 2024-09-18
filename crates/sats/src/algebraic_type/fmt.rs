@@ -39,7 +39,7 @@ pub fn fmt_algebraic_type(ty: &AlgebraicType) -> impl '_ + Display {
 }
 
 /// Wraps the builtin `ty` into a `Display`able.
-fn fmt_product_type(ty: &ProductType) -> impl '_ + Display {
+pub fn fmt_product_type(ty: &ProductType) -> impl '_ + Display {
     fmt_fn(move |f| {
         write!(f, "(")?;
         for (i, e) in ty.elements.iter().enumerate() {

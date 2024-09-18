@@ -1,8 +1,10 @@
 use super::{Serialize, SerializeArray, SerializeMap, SerializeNamedProduct, SerializeSeqProduct, Serializer};
 use crate::{i256, u256};
 use crate::{
-    AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType, F32, F64,
+    impl_st, AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType, F32,
+    F64,
 };
+use core::ops::Bound;
 use spacetimedb_primitives::ColList;
 use std::collections::BTreeMap;
 
@@ -86,6 +88,11 @@ impl_serialize!([T: Serialize, E: Serialize] Result<T, E>, (self, ser) => match 
     Ok(v) => ser.serialize_variant(0, Some("ok"), v),
     Err(e) => ser.serialize_variant(1, Some("err"), e),
 });
+impl_serialize!([T: Serialize] Bound<T>, (self, ser) => match self {
+    Bound::Included(x) => ser.serialize_variant(0, Some("included"), x),
+    Bound::Excluded(x) => ser.serialize_variant(1, Some("excluded"), x),
+    Bound::Unbounded => ser.serialize_variant(2, Some("unbounded"), &()),
+});
 impl_serialize!([K: Serialize, V: Serialize] BTreeMap<K, V>, (self, ser) => {
     let mut map = ser.serialize_map(self.len())?;
     for (k, v) in self {
@@ -115,6 +122,7 @@ impl_serialize!([] AlgebraicValue, (self, ser) => match self {
     Self::F64(v) => ser.serialize_f64((*v).into()),
     // Self::Bytes(v) => ser.serialize_bytes(v),
     Self::String(v) => ser.serialize_str(v),
+    Self::Min | Self::Max => panic!("not defined for Min/Max"),
 });
 impl_serialize!([] ProductValue, (self, ser) => {
     let mut tup = ser.serialize_seq_product(self.elements.len())?;
@@ -250,6 +258,8 @@ impl_serialize!([] ColList, (self, ser) => {
        }
        arr.end()
 });
+
+impl_st!([] ColList, ts => AlgebraicType::array(spacetimedb_primitives::ColId::make_type(ts)));
 
 #[cfg(feature = "blake3")]
 impl_serialize!([] blake3::Hash, (self, ser) => self.as_bytes().serialize(ser));

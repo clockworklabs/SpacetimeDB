@@ -5,19 +5,19 @@ import logging
 
 class AddTablePseudomigration(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
+#[spacetimedb::table(name = person)]
 pub struct Person {
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add_person(name: String) {
     Person::insert(Person { name });
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn print_persons(prefix: String) {
     for person in Person::iter() {
         println!("{}: {}", prefix, person.name);
@@ -28,17 +28,17 @@ pub fn print_persons(prefix: String) {
     MODULE_CODE_UPDATED = (
         MODULE_CODE
         + """
-#[spacetimedb(table)]
+#[spacetimedb::table(name = book)]
 pub struct Book {
     isbn: String,
 }
  
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add_book(isbn: String) {
     Book::insert(Book { isbn });
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn print_books(prefix: String) {
     for book in Book::iter() {
         println!("{}: {}", prefix, book.isbn);
@@ -87,19 +87,19 @@ pub fn print_books(prefix: String) {
 
 class RejectTableChanges(Smoketest):
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
+#[spacetimedb::table(name = person)]
 pub struct Person {
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add_person(name: String) {
     Person::insert(Person { name });
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn print_persons(prefix: String) {
     for person in Person::iter() {
         println!("{}: {}", prefix, person.name);
@@ -108,20 +108,20 @@ pub fn print_persons(prefix: String) {
 """
 
     MODULE_CODE_UPDATED = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
+#[spacetimedb::table(name = person)]
 pub struct Person {
     name: String,
     age: u128,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add_person(name: String) {
     Person::insert(Person { name, age: 70 });
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn print_persons(prefix: String) {
     for person in Person::iter() {
         println!("{}: {}", prefix, person.name);
