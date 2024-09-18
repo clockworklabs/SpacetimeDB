@@ -202,6 +202,7 @@ __pycache__/
 cs-src/
 crates/bench/spacetime.svg
 crates/bench/sqlite.svg
+.vs/
 
 # benchmark files
 out.json
