@@ -53,6 +53,10 @@ public static class Module
     private static readonly RawModuleDefV8 moduleDef = new();
     private static readonly List<IReducer> reducers = [];
 
+    private static IReducerContext? context = null;
+
+    public static void Initialize(IReducerContext ctx) => context = ctx;
+
     readonly struct TypeRegistrar() : ITypeRegistrar
     {
         private readonly Dictionary<Type, AlgebraicType.Ref> types = [];
@@ -95,7 +99,9 @@ public static class Module
     public static void RegisterTable<T>()
         where T : ITable<T>, new()
     {
-        moduleDef.RegisterTable(T.MakeTableDesc(typeRegistrar));
+        foreach (var t in T.MakeTableDesc(typeRegistrar)) {
+            moduleDef.RegisterTable(t);
+        }
     }
 
     private static byte[] Consume(this BytesSource source)
@@ -183,19 +189,21 @@ public static class Module
     )
     {
         // Piece together the sender identity.
-        var sender = Identity.From(
+        Runtime.SenderIdentity = Identity.From(
             MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
         );
 
         // Piece together the sender address.
-        var address = Address.From(MemoryMarshal.AsBytes([address_0, address_1]).ToArray());
+        Runtime.SenderAddress = Address.From(MemoryMarshal.AsBytes([address_0, address_1]).ToArray());
+
+        Runtime.Random = new((int)timestamp.MicrosecondsSinceEpoch);
+        Runtime.Timestamp = timestamp.ToStd();
 
         try
         {
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            var context = new ReducerContext(sender, address, timestamp);
-            reducers[(int)id].Invoke(reader, context);
+            reducers[(int)id].Invoke(reader, context!);
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the reducer arguments");

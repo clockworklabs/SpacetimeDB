@@ -1,36 +1,39 @@
+namespace SpacetimeDB.Examples.QuickStart.Server;
+
 using SpacetimeDB;
+
+[Table(Public = true)]
+public partial struct Person {
+    [AutoInc]
+    [PrimaryKey]
+    public uint Id;
+    public string Name;
+    public byte Age;
+}
 
 static partial class Module
 {
-    [SpacetimeDB.Table(Public = true)]
-    public partial struct Person
+    [Reducer(Name = "add")]
+    public static void Add(ReducerContext ctx, string name, byte age)
     {
-        [SpacetimeDB.Column(ColumnAttrs.PrimaryKeyAuto)]
-        public uint Id;
-        public string Name;
-        public byte Age;
+        var row = new Person { Name = name, Age = age };
+        ctx.Db.Person.Insert(ref row);
     }
 
-    [SpacetimeDB.Reducer("add")]
-    public static void Add(string name, byte age)
+    [Reducer(Name = "say_hello")]
+    public static void SayHello(ReducerContext ctx)
     {
-        new Person { Name = name, Age = age }.Insert();
-    }
-
-    [SpacetimeDB.Reducer("say_hello")]
-    public static void SayHello()
-    {
-        foreach (var person in Person.Iter())
+        foreach (var person in ctx.Db.Person.Iter())
         {
             Log.Info($"Hello, {person.Name}!");
         }
         Log.Info("Hello, World!");
     }
 
-    [SpacetimeDB.Reducer("list_over_age")]
-    public static void ListOverAge(byte age)
+    [Reducer(Name = "list_over_age")]
+    public static void ListOverAge(ReducerContext ctx, byte age)
     {
-        foreach (var person in Person.Query(person => person.Age >= age))
+        foreach (var person in ctx.Db.Person.Query(person => person.Age >= age))
         {
             Log.Info($"{person.Name} has age {person.Age} >= {age}");
         }

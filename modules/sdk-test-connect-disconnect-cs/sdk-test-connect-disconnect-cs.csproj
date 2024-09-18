@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetName>StdbModule</TargetName>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!--
+    Use local package sources instead of published ones.
+    This makes integration test somewhat differ from production configuration, but
+    at least it simplifies workflow for editing and testing C# code itself.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="../../crates/bindings-csharp/Codegen/Codegen.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../crates/bindings-csharp/Runtime/Runtime.csproj" />
+  </ItemGroup>
+
+</Project>
