@@ -28,6 +28,7 @@ use anyhow::Context;
 use anymap::{any::Any, Map};
 use futures::stream::StreamExt;
 use futures_channel::mpsc;
+use spacetimedb_client_api_messages::websocket::BsatnFormat;
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_sats::bsatn;
 use std::{
@@ -636,8 +637,11 @@ impl DbCallbacks {
 /// `Event`.
 ///
 /// Users should not interact with this type directly.
-pub type HandleEventFn =
-    fn(ws_messages::TransactionUpdate, &mut ReducerCallbacks, ClientCacheView) -> Option<Arc<AnyReducerEvent>>;
+pub type HandleEventFn = fn(
+    ws_messages::TransactionUpdate<BsatnFormat>,
+    &mut ReducerCallbacks,
+    ClientCacheView,
+) -> Option<Arc<AnyReducerEvent>>;
 
 /// A collection of reducer callbacks.
 ///
@@ -685,7 +689,7 @@ impl ReducerCallbacks {
     /// `handle_event_of_type`. Users should not call this method directly.
     pub fn handle_event_of_type<R: Reducer, ReducerEvent: Any + Send + Sync>(
         &mut self,
-        event: ws_messages::TransactionUpdate,
+        event: ws_messages::TransactionUpdate<BsatnFormat>,
         state: ClientCacheView,
         wrap: fn(R) -> ReducerEvent,
     ) -> Option<Arc<AnyReducerEvent>> {
@@ -698,7 +702,7 @@ impl ReducerCallbacks {
         } = event;
         let status = Status::from_update_status(status);
         let address = (caller_address != Address::zero()).then_some(caller_address);
-        match bsatn::from_slice::<R>(reducer_call.args.as_binary().unwrap()) {
+        match bsatn::from_slice::<R>(&reducer_call.args) {
             Err(e) => {
                 log::error!("Error while deserializing reducer args from FunctionCall: {:?}", e);
                 None
@@ -751,7 +755,7 @@ impl ReducerCallbacks {
     /// which should be impossible.
     pub(crate) fn handle_event(
         &mut self,
-        event: ws_messages::TransactionUpdate,
+        event: ws_messages::TransactionUpdate<BsatnFormat>,
         state: ClientCacheView,
     ) -> Option<Arc<AnyReducerEvent>> {
         self.module.clone().unwrap().handle_event(event, self, state)

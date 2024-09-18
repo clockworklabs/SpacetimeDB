@@ -4,7 +4,7 @@ use futures::{Sink, SinkExt, TryStream, TryStreamExt};
 use http::header;
 use http::uri::Scheme;
 use serde_json::Value;
-use spacetimedb_client_api_messages::websocket::{self as ws, EncodedValue};
+use spacetimedb_client_api_messages::websocket::{self as ws, JsonFormat};
 use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::de::serde::{DeserializeWrapper, SeedWrapper};
@@ -82,16 +82,16 @@ pub fn cli() -> clap::Command {
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
 }
 
-fn parse_msg_json(msg: &WsMessage) -> Option<ws::ServerMessage> {
+fn parse_msg_json(msg: &WsMessage) -> Option<ws::ServerMessage<JsonFormat>> {
     let WsMessage::Text(msg) = msg else { return None };
-    serde_json::from_str::<DeserializeWrapper<ws::ServerMessage>>(msg)
+    serde_json::from_str::<DeserializeWrapper<ws::ServerMessage<JsonFormat>>>(msg)
         .inspect_err(|e| eprintln!("couldn't parse message from server: {e}"))
         .map(|wrapper| wrapper.0)
         .ok()
 }
 
 fn reformat_update(
-    msg: ws::DatabaseUpdate,
+    msg: ws::DatabaseUpdate<JsonFormat>,
     schema: &RawModuleDefV9,
 ) -> anyhow::Result<HashMap<String, SubscriptionTable>> {
     msg.tables
@@ -104,27 +104,24 @@ fn reformat_update(
                 .context("table not found in schema")?;
             let table_ty = schema.typespace.resolve(table_schema.product_type_ref);
 
-            let reformat_row = |row: EncodedValue| {
-                let EncodedValue::Text(row) = row else {
-                    anyhow::bail!("Expected row in text format but found {row:?}");
-                };
-                let row = serde_json::from_str::<Value>(&row)?;
+            let reformat_row = |row: &str| -> anyhow::Result<Value> {
+                let row = serde_json::from_str::<Value>(row)?;
                 let row = serde::de::DeserializeSeed::deserialize(SeedWrapper(table_ty), row)?;
                 let row = table_ty.with_value(&row);
                 let row = serde_json::to_value(SerializeWrapper::from_ref(&row))?;
                 Ok(row)
             };
 
-            let deletes = upd
-                .deletes
-                .into_iter()
-                .map(reformat_row)
-                .collect::<anyhow::Result<Vec<_>>>()?;
-            let inserts = upd
-                .inserts
-                .into_iter()
-                .map(reformat_row)
-                .collect::<anyhow::Result<Vec<_>>>()?;
+            let mut deletes = Vec::new();
+            let mut inserts = Vec::new();
+            for upd in upd.updates {
+                for s in upd.deletes {
+                    deletes.push(reformat_row(&s)?);
+                }
+                for s in upd.inserts {
+                    inserts.push(reformat_row(&s)?);
+                }
+            }
 
             Ok((upd.table_name, SubscriptionTable { deletes, inserts }))
         })

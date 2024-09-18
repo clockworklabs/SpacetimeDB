@@ -9,7 +9,7 @@ use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_lib::scheduler::ScheduleAt;
 use spacetimedb_lib::Address;
 use spacetimedb_primitives::TableId;
-use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_sats::{bsatn::ToBsatn as _, AlgebraicValue};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_table::table::RowRef;
 use tokio::sync::mpsc;

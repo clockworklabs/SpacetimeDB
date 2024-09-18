@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use spacetimedb_client_api_messages::websocket::BsatnFormat;
+
 use crate::{
     callbacks::{DbCallbacks, ReducerCallbacks},
     client_cache::{ClientCache, ClientCacheView, RowCallbackReminders},
@@ -13,7 +15,7 @@ pub trait SpacetimeModule: Send + Sync {
     /// arg.
     fn handle_event(
         &self,
-        event: ws_messages::TransactionUpdate,
+        event: ws_messages::TransactionUpdate<BsatnFormat>,
         callbacks: &mut ReducerCallbacks,
         state: ClientCacheView,
     ) -> Option<Arc<AnyReducerEvent>>;
@@ -24,7 +26,7 @@ pub trait SpacetimeModule: Send + Sync {
     /// that `TableCache`.
     fn handle_table_update(
         &self,
-        table_update: ws_messages::TableUpdate,
+        table_update: ws_messages::TableUpdate<BsatnFormat>,
         cache: &mut ClientCache,
         callbacks: &mut RowCallbackReminders,
     );
@@ -34,7 +36,7 @@ pub trait SpacetimeModule: Send + Sync {
     /// `reinitialize_for_new_subscribed_set` that `TableCache`.
     fn handle_resubscribe(
         &self,
-        table_update: ws_messages::TableUpdate,
+        table_update: ws_messages::TableUpdate<BsatnFormat>,
         cache: &mut ClientCache,
         callbacks: &mut RowCallbackReminders,
     );

@@ -697,7 +697,7 @@ pub fn autogen_rust_globals(module: &ModuleDef) -> Vec<(String, String)> {
 
 /// Extra imports required by the `mod.rs` file, in addition to the [`SPACETIMEDB_IMPORTS`].
 const DISPATCH_IMPORTS: &[&str] = &[
-    "use spacetimedb_sdk::ws_messages::{TableUpdate, TransactionUpdate};",
+    "use spacetimedb_sdk::ws_messages::{BsatnFormat, TableUpdate, TransactionUpdate};",
     "use spacetimedb_sdk::client_cache::{ClientCache, RowCallbackReminders};",
     "use spacetimedb_sdk::identity::Credentials;",
     "use spacetimedb_sdk::callbacks::{DbCallbacks, ReducerCallbacks};",
@@ -790,7 +790,7 @@ fn print_spacetime_module_struct_defn(module: &ModuleDef, out: &mut Indenter) {
 #[allow(deprecated)]
 fn print_handle_table_update_defn(module: &ModuleDef, out: &mut Indenter) {
     out.delimited_block(
-        "fn handle_table_update(&self, table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
+        "fn handle_table_update(&self, table_update: TableUpdate<BsatnFormat>, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
         |out| {
             writeln!(out, "let table_name = &table_update.table_name[..];");
             out.delimited_block(
@@ -847,7 +847,7 @@ fn print_invoke_row_callbacks_defn(module: &ModuleDef, out: &mut Indenter) {
 /// to invoke `ClientCache::handle_resubscribe_for_type` with an appropriate type arg.
 fn print_handle_resubscribe_defn(module: &ModuleDef, out: &mut Indenter) {
     out.delimited_block(
-        "fn handle_resubscribe(&self, new_subs: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
+        "fn handle_resubscribe(&self, new_subs: TableUpdate<BsatnFormat>, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {",
         |out| {
             writeln!(out, "let table_name = &new_subs.table_name[..];");
             out.delimited_block(
@@ -879,7 +879,7 @@ fn print_handle_resubscribe_defn(module: &ModuleDef, out: &mut Indenter) {
 /// to `ReducerCallbacks::handle_event_of_type` with an appropriate type argument.
 fn print_handle_event_defn(module: &ModuleDef, out: &mut Indenter) {
     out.delimited_block(
-        "fn handle_event(&self, event: TransactionUpdate, _reducer_callbacks: &mut ReducerCallbacks, _state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {",
+        "fn handle_event(&self, event: TransactionUpdate<BsatnFormat>, _reducer_callbacks: &mut ReducerCallbacks, _state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {",
         |out| {
             writeln!(out, "let reducer_call = &event.reducer_call;");
 

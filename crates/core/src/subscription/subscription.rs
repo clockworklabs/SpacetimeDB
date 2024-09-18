@@ -22,7 +22,6 @@
 
 use super::execution_unit::ExecutionUnit;
 use super::query;
-use crate::client::Protocol;
 use crate::db::datastore::locking_tx_datastore::tx::TxId;
 use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
@@ -33,6 +32,7 @@ use crate::vm::{build_query, TxMode};
 use anyhow::Context;
 use itertools::Either;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use spacetimedb_client_api_messages::websocket::WebsocketFormat;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::error::AuthError;
@@ -515,20 +515,19 @@ pub struct ExecutionSet {
 }
 
 impl ExecutionSet {
-    pub fn eval(
+    pub fn eval<F: WebsocketFormat>(
         &self,
         ctx: &ExecutionContext,
-        protocol: Protocol,
         db: &RelationalDB,
         tx: &Tx,
         slow_query_threshold: Option<Duration>,
-    ) -> ws::DatabaseUpdate {
+    ) -> ws::DatabaseUpdate<F> {
         // evaluate each of the execution units in this ExecutionSet in parallel
         let tables = self
             .exec_units
             // if you need eval to run single-threaded for debugging, change this to .iter()
             .par_iter()
-            .filter_map(|unit| unit.eval(ctx, db, tx, &unit.sql, slow_query_threshold, protocol))
+            .filter_map(|unit| unit.eval(ctx, db, tx, &unit.sql, slow_query_threshold))
             .collect();
         ws::DatabaseUpdate { tables }
     }

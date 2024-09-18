@@ -14,7 +14,7 @@ use spacetimedb::client::{ClientActorId, ClientConnection, DataMessage, Protocol
 use spacetimedb::config::{FilesLocal, SpacetimeDbFiles};
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::db::{Config, Storage};
-use spacetimedb::messages::websocket::{self as ws, EncodedValue};
+use spacetimedb::messages::websocket as ws;
 use spacetimedb_client_api::{ControlStateReadAccess, ControlStateWriteAccess, DatabaseDef, NodeDelegate};
 use spacetimedb_lib::{bsatn, sats};
 
@@ -53,7 +53,7 @@ impl ModuleHandle {
         let args = serde_json::to_string(&args).unwrap();
         let message = ws::ClientMessage::CallReducer(ws::CallReducer {
             reducer: reducer.to_string(),
-            args: EncodedValue::Text(args.into()),
+            args,
             request_id: 0,
         });
         self.send(serde_json::to_string(&SerializeWrapper::new(message)).unwrap())
@@ -63,7 +63,7 @@ impl ModuleHandle {
     pub async fn call_reducer_binary(&self, reducer: &str, args: sats::ProductValue) -> anyhow::Result<()> {
         let message = ws::ClientMessage::CallReducer(ws::CallReducer {
             reducer: reducer.to_string(),
-            args: EncodedValue::Binary(bsatn::to_vec(&args).unwrap().into()),
+            args: bsatn::to_vec(&args).unwrap(),
             request_id: 0,
         });
         self.send(bsatn::to_vec(&message).unwrap()).await

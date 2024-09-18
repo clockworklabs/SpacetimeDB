@@ -1,7 +1,8 @@
 use crate::buffer::{BufReader, BufWriter, CountWriter};
 use crate::de::{BasicSmallVecVisitor, Deserialize, DeserializeSeed, Deserializer as _};
 use crate::ser::Serialize;
-use crate::{Typespace, WithTypespace};
+use crate::{ProductValue, Typespace, WithTypespace};
+use ser::BsatnError;
 use smallvec::SmallVec;
 
 pub mod de;
@@ -102,6 +103,39 @@ codec_funcs!(crate::SumTypeVariant);
 codec_funcs!(val: crate::AlgebraicValue);
 codec_funcs!(val: crate::ProductValue);
 codec_funcs!(val: crate::SumValue);
+
+/// Types that can be encoded to BSATN.
+///
+/// Implementations of this trait may be more efficient than directly calling [`bsatn::to_vec`].
+/// In particular, for [`RowRef`], this method will use a [`StaticBsatnLayout`] if one is available,
+/// avoiding expensive runtime type dispatch.
+pub trait ToBsatn {
+    /// BSATN-encode the row referred to by `self` into a freshly-allocated `Vec<u8>`.
+    fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError>;
+
+    /// BSATN-encode the row referred to by `self` into `buf`,
+    /// pushing `self`'s bytes onto the end of `buf`, similar to [`Vec::extend`].
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError>;
+}
+
+impl<T: ToBsatn> ToBsatn for &T {
+    fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
+        T::to_bsatn_vec(*self)
+    }
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+        T::to_bsatn_extend(*self, buf)
+    }
+}
+
+impl ToBsatn for ProductValue {
+    fn to_bsatn_vec(&self) -> Result<Vec<u8>, BsatnError> {
+        to_vec(self)
+    }
+
+    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
+        to_writer(buf, self)
+    }
+}
 
 #[cfg(test)]
 mod tests {

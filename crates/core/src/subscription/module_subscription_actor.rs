@@ -2,8 +2,8 @@ use super::execution_unit::{ExecutionUnit, QueryHash};
 use super::module_subscription_manager::SubscriptionManager;
 use super::query::compile_read_only_query;
 use super::subscription::ExecutionSet;
-use crate::client::messages::{SubscriptionUpdate, SubscriptionUpdateMessage, TransactionUpdateMessage};
-use crate::client::{ClientActorId, ClientConnectionSender};
+use crate::client::messages::{SubscriptionUpdateMessage, TransactionUpdateMessage};
+use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
 use crate::db::datastore::system_tables::StVarTable;
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::{DBError, SubscriptionError};
@@ -13,6 +13,7 @@ use crate::messages::websocket::Subscribe;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
+use spacetimedb_client_api_messages::websocket::FormatSwitch;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
 use spacetimedb_vm::errors::ErrorVm;
@@ -112,7 +113,14 @@ impl ModuleSubscriptions {
         )?;
 
         let slow_query_threshold = StVarTable::sub_limit(&ctx, &self.relational_db, &tx)?.map(Duration::from_millis);
-        let database_update = execution_set.eval(&ctx, sender.protocol, &self.relational_db, &tx, slow_query_threshold);
+        let database_update = match sender.protocol {
+            Protocol::Text => {
+                FormatSwitch::Json(execution_set.eval(&ctx, &self.relational_db, &tx, slow_query_threshold))
+            }
+            Protocol::Binary => {
+                FormatSwitch::Bsatn(execution_set.eval(&ctx, &self.relational_db, &tx, slow_query_threshold))
+            }
+        };
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
@@ -137,11 +145,9 @@ impl ModuleSubscriptions {
         // spawn in another thread messages will need to be buffered until the state is sent out
         // on the wire
         let _ = sender.send_message(SubscriptionUpdateMessage {
-            subscription_update: SubscriptionUpdate {
-                database_update,
-                request_id: Some(request_id),
-                timer: Some(timer),
-            },
+            database_update,
+            request_id: Some(request_id),
+            timer: Some(timer),
         });
         Ok(())
     }
@@ -202,9 +208,9 @@ impl ModuleSubscriptions {
             }
             EventStatus::Failed(_) => {
                 if let Some(client) = client {
-                    let message = TransactionUpdateMessage::<DatabaseUpdate> {
+                    let message = TransactionUpdateMessage {
                         event: event.clone(),
-                        database_update: <_>::default(),
+                        database_update: SubscriptionUpdateMessage::default_for_protocol(client.protocol, None),
                     };
                     let _ = client.send_message(message);
                 } else {

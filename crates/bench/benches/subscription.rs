@@ -1,9 +1,9 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use spacetimedb::client::Protocol;
 use spacetimedb::db::relational_db::RelationalDB;
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::host::module_host::DatabaseTableUpdate;
+use spacetimedb::messages::websocket::BsatnFormat;
 use spacetimedb::subscription::query::compile_read_only_query;
 use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb_bench::database::BenchDatabase as _;
@@ -103,7 +103,7 @@ fn eval(c: &mut Criterion) {
             let query = compile_read_only_query(&raw.db, &tx, sql).unwrap();
             let query: ExecutionSet = query.into();
             let ctx = &ExecutionContext::subscribe(raw.db.address());
-            b.iter(|| drop(black_box(query.eval(ctx, Protocol::Binary, &raw.db, &tx, None))))
+            b.iter(|| drop(black_box(query.eval::<BsatnFormat>(ctx, &raw.db, &tx, None))))
         });
     };
 

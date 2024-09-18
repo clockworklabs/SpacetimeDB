@@ -1,21 +1,19 @@
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-
-use super::messages::{ToProtocol, TransactionUpdateMessage};
+use super::messages::{SubscriptionUpdateMessage, SwitchedServerMessage, ToProtocol, TransactionUpdateMessage};
 use super::{ClientConnection, DataMessage};
 use crate::energy::EnergyQuanta;
 use crate::execution_context::WorkloadType;
-use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
+use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::{ReducerArgs, ReducerId, Timestamp};
 use crate::identity::Identity;
-use crate::messages::websocket::{self as ws, CallReducer, ClientMessage, OneOffQuery};
+use crate::messages::websocket::{CallReducer, ClientMessage, OneOffQuery};
 use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
 use bytestring::ByteString;
-use spacetimedb_client_api_messages::websocket::EncodedValue;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::{bsatn, Address};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 #[derive(thiserror::Error, Debug)]
 pub enum MessageHandleError {
@@ -46,24 +44,17 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
         .with_label_values(&client.database_instance_id, message_kind)
         .inc();
 
-    let parse_args = |args: EncodedValue| -> ReducerArgs {
-        match args {
-            EncodedValue::Binary(args) => ReducerArgs::Bsatn(args),
-            EncodedValue::Text(args) => ReducerArgs::Json(args),
-        }
-    };
-
     let message = match message {
         DataMessage::Text(message) => {
             let message = ByteString::from(message);
             // TODO: update json clients and use the ws version
-            serde_json::from_str::<DeserializeWrapper<ClientMessage>>(&message)?
+            serde_json::from_str::<DeserializeWrapper<ClientMessage<ByteString>>>(&message)?
                 .0
-                .map_args(parse_args)
+                .map_args(ReducerArgs::Json)
         }
         DataMessage::Binary(message_buf) => {
             let message_buf = Bytes::from(message_buf);
-            bsatn::from_slice::<ClientMessage>(&message_buf)?.map_args(parse_args)
+            bsatn::from_slice::<ClientMessage<Bytes>>(&message_buf)?.map_args(ReducerArgs::Bsatn)
         }
     };
 
@@ -150,11 +141,11 @@ impl MessageExecutionError {
 }
 
 impl ToProtocol for MessageExecutionError {
-    type Encoded = ws::ServerMessage;
+    type Encoded = SwitchedServerMessage;
     fn to_protocol(self, protocol: super::Protocol) -> Self::Encoded {
-        TransactionUpdateMessage::<DatabaseUpdate> {
+        TransactionUpdateMessage {
             event: Arc::new(self.into_event()),
-            database_update: Default::default(),
+            database_update: SubscriptionUpdateMessage::default_for_protocol(protocol, None),
         }
         .to_protocol(protocol)
     }

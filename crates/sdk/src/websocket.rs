@@ -1,10 +1,12 @@
+use crate::background_connection::ClientMessage;
 use crate::identity::Credentials;
-use crate::ws_messages::{ClientMessage, ServerMessage};
+use crate::ws_messages::ServerMessage;
 use anyhow::{bail, Context, Result};
 use brotli::BrotliDecompress;
-use futures::{SinkExt, StreamExt, TryStreamExt};
+use futures::{SinkExt, StreamExt as _, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{Scheme, Uri};
+use spacetimedb_client_api_messages::websocket::BsatnFormat;
 use spacetimedb_lib::{bsatn, Address};
 use tokio::task::JoinHandle;
 use tokio::{net::TcpStream, runtime};
@@ -150,7 +152,7 @@ impl DbConnection {
         Ok(DbConnection { sock })
     }
 
-    pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage> {
+    pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage<BsatnFormat>> {
         let mut decompressed = Vec::new();
         BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
         Ok(bsatn::from_slice(&decompressed)?)
@@ -168,7 +170,7 @@ impl DbConnection {
 
     async fn message_loop(
         mut self,
-        incoming_messages: mpsc::UnboundedSender<ServerMessage>,
+        incoming_messages: mpsc::UnboundedSender<ServerMessage<BsatnFormat>>,
         outgoing_messages: mpsc::UnboundedReceiver<ClientMessage>,
     ) {
         let mut outgoing_messages = Some(outgoing_messages);
@@ -223,7 +225,7 @@ impl DbConnection {
         runtime: &runtime::Handle,
     ) -> (
         JoinHandle<()>,
-        mpsc::UnboundedReceiver<ServerMessage>,
+        mpsc::UnboundedReceiver<ServerMessage<BsatnFormat>>,
         mpsc::UnboundedSender<ClientMessage>,
     ) {
         let (outgoing_send, outgoing_recv) = mpsc::unbounded();

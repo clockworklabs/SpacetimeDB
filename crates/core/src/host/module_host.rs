@@ -1,7 +1,6 @@
 use super::wasm_common::{CLIENT_CONNECTED_DUNDER, CLIENT_DISCONNECTED_DUNDER};
 use super::{ArgsTuple, InvalidReducerArguments, ReducerArgs, ReducerCallResult, ReducerId};
-use crate::client::messages::{encode_row, ToProtocol};
-use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
+use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
@@ -13,7 +12,6 @@ use crate::execution_context::{ExecutionContext, ReducerContext};
 use crate::hash::Hash;
 use crate::identity::Identity;
 use crate::messages::control_db::Database;
-use crate::messages::websocket::{self as ws, TableUpdate};
 use crate::sql;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::util::lending_pool::{Closed, LendingPool, LentResource, PoolClosed};
@@ -26,7 +24,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use smallvec::SmallVec;
 use spacetimedb_client_api_messages::timestamp::Timestamp;
-use spacetimedb_client_api_messages::websocket::EncodedValue;
+use spacetimedb_client_api_messages::websocket::{QueryUpdate, WebsocketFormat};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
@@ -91,6 +89,7 @@ impl DatabaseUpdate {
     }
 }
 
+/*
 impl ToProtocol for DatabaseUpdate {
     type Encoded = ws::DatabaseUpdate;
     fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
@@ -100,6 +99,7 @@ impl ToProtocol for DatabaseUpdate {
             .collect()
     }
 }
+*/
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseTableUpdate {
@@ -112,6 +112,7 @@ pub struct DatabaseTableUpdate {
     pub deletes: Arc<[ProductValue]>,
 }
 
+/*
 impl ToProtocol for DatabaseTableUpdate {
     type Encoded = TableUpdate;
     fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
@@ -125,6 +126,7 @@ impl ToProtocol for DatabaseTableUpdate {
         }
     }
 }
+*/
 
 #[derive(Debug)]
 pub struct DatabaseUpdateRelValue<'a> {
@@ -158,11 +160,10 @@ impl UpdatesRelValue<'_> {
             .chain(self.inserts.iter().map(|row| (OpType::Insert, row)))
     }
 
-    pub fn to_protocol(&self, protocol: Protocol) -> (Vec<EncodedValue>, Vec<EncodedValue>) {
-        (
-            self.deletes.iter().map(|row| encode_row(row, protocol)).collect(),
-            self.inserts.iter().map(|row| encode_row(row, protocol)).collect(),
-        )
+    pub fn encode<F: WebsocketFormat>(&self) -> QueryUpdate<F> {
+        let deletes = F::encode_list(self.deletes.iter());
+        let inserts = F::encode_list(self.inserts.iter());
+        QueryUpdate { deletes, inserts }
     }
 }
 

@@ -88,7 +88,6 @@ pub fn classify(expr: &QueryExpr) -> Option<Supported> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::client::Protocol;
     use crate::db::datastore::traits::IsolationLevel;
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::db::relational_db::MutTx;
@@ -100,6 +99,7 @@ mod tests {
     use crate::vm::tests::create_table_with_rows;
     use crate::vm::DbProgram;
     use itertools::Itertools;
+    use spacetimedb_client_api_messages::websocket::BsatnFormat;
     use spacetimedb_lib::bsatn::to_vec;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
@@ -293,7 +293,7 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval(ctx, Protocol::Binary, db, tx, None).tables;
+        let result = s.eval::<BsatnFormat>(ctx, db, tx, None).tables;
         assert_eq!(
             result.len(),
             total_tables,
@@ -302,11 +302,13 @@ mod tests {
 
         let result = result
             .into_iter()
+            .flat_map(|x| x.updates)
             .flat_map(|x| {
-                x.deletes
+                (&x.deletes)
                     .into_iter()
-                    .map(|row| row.into_binary().unwrap())
-                    .chain(x.inserts.into_iter().map(|row| row.into_binary().unwrap()))
+                    .chain(&x.inserts)
+                    .map(|x| x.to_owned())
+                    .collect::<Vec<_>>()
             })
             .sorted()
             .collect_vec();

@@ -8,10 +8,11 @@ use crate::reducer::Reducer;
 use crate::spacetime_module::SpacetimeModule;
 use crate::websocket::DbConnection;
 use crate::ws_messages;
-use anyhow::{Context, Result};
-use futures::stream::StreamExt;
+use anyhow::{Context as _, Result};
+use bytes::Bytes;
+use futures::StreamExt as _;
 use futures_channel::mpsc;
-use spacetimedb_client_api_messages::websocket::EncodedValue;
+use spacetimedb_client_api_messages::websocket::BsatnFormat;
 use spacetimedb_sats::bsatn;
 use std::sync::{Arc, Mutex};
 use tokio::runtime::{self, Builder, Runtime};
@@ -19,6 +20,8 @@ use tokio::task::JoinHandle;
 
 /// A thread-safe mutable place that can be shared by multiple referents.
 type SharedCell<T> = Arc<Mutex<T>>;
+
+pub(super) type ClientMessage = ws_messages::ClientMessage<Bytes>;
 
 pub struct BackgroundDbConnection {
     /// `Some` if not within the context of an outer runtime. The `Runtime` must
@@ -28,7 +31,7 @@ pub struct BackgroundDbConnection {
 
     handle: runtime::Handle,
     /// None if not yet connected.
-    send_chan: Option<mpsc::UnboundedSender<ws_messages::ClientMessage>>,
+    send_chan: Option<mpsc::UnboundedSender<ClientMessage>>,
     #[allow(unused)]
     /// None if not yet connected.
     websocket_loop_handle: Option<JoinHandle<()>>,
@@ -120,7 +123,7 @@ fn update_client_cache(
 }
 
 fn process_transaction_update(
-    mut msg: ws_messages::TransactionUpdate,
+    mut msg: ws_messages::TransactionUpdate<BsatnFormat>,
     client_cache: &Mutex<Option<ClientCacheView>>,
     db_callbacks: &Mutex<DbCallbacks>,
     reducer_callbacks: &Mutex<ReducerCallbacks>,
@@ -157,7 +160,7 @@ fn process_transaction_update(
 // future must be `'static`. As a result, it must own (shared pointers to) the
 // `ClientCache`, `ReducerCallbacks` and `Credentials`, rather than references.
 async fn receiver_loop(
-    mut recv: mpsc::UnboundedReceiver<ws_messages::ServerMessage>,
+    mut recv: mpsc::UnboundedReceiver<ws_messages::ServerMessage<BsatnFormat>>,
     client_cache: SharedCell<Option<ClientCacheView>>,
     db_callbacks: SharedCell<DbCallbacks>,
     reducer_callbacks: SharedCell<ReducerCallbacks>,
@@ -239,7 +242,7 @@ impl BackgroundDbConnection {
 
     fn spawn_receiver(
         &self,
-        recv: mpsc::UnboundedReceiver<ws_messages::ServerMessage>,
+        recv: mpsc::UnboundedReceiver<ws_messages::ServerMessage<BsatnFormat>>,
         client_cache: SharedCell<Option<ClientCacheView>>,
     ) -> JoinHandle<()> {
         self.handle.spawn(receiver_loop(
@@ -343,7 +346,7 @@ impl BackgroundDbConnection {
         }
     }
 
-    fn send_message(&self, message: ws_messages::ClientMessage) -> Result<()> {
+    fn send_message(&self, message: ClientMessage) -> Result<()> {
         self.send_chan
             .as_ref()
             .context("Cannot send message before connecting")?
@@ -356,7 +359,7 @@ impl BackgroundDbConnection {
     }
 
     pub(crate) fn subscribe_owned(&self, queries: Vec<String>) -> Result<()> {
-        self.send_message(ws_messages::ClientMessage::Subscribe(ws_messages::Subscribe {
+        self.send_message(ClientMessage::Subscribe(ws_messages::Subscribe {
             query_strings: queries,
             // TODO: generate a useful `request_id`. This will interact with future changes to the SDK's API.
             request_id: 0,
@@ -365,9 +368,9 @@ impl BackgroundDbConnection {
     }
 
     pub(crate) fn invoke_reducer<R: Reducer>(&self, reducer: R) -> Result<()> {
-        self.send_message(ws_messages::ClientMessage::CallReducer(ws_messages::CallReducer {
+        self.send_message(ClientMessage::CallReducer(ws_messages::CallReducer {
             reducer: R::REDUCER_NAME.to_string(),
-            args: EncodedValue::Binary(bsatn::to_vec(&reducer).expect("Serializing reducer failed").into()),
+            args: bsatn::to_vec(&reducer).expect("Serializing reducer failed").into(),
             request_id: 0,
         }))
         .with_context(|| format!("Invoking reducer {}", R::REDUCER_NAME))
