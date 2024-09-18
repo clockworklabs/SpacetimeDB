@@ -1,24 +1,21 @@
-use parking_lot::{Mutex, MutexGuard};
-use smallvec::SmallVec;
-use spacetimedb_table::table::UniqueConstraintViolation;
-use std::ops::DerefMut;
-use std::sync::Arc;
-
 use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
-use crate::client::messages::ToBsatn;
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{BacktraceProvider, LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
 use crate::error::{IndexError, NodesError};
 use crate::execution_context::ExecutionContext;
 use crate::vm::{build_query, TxMode};
+use parking_lot::{Mutex, MutexGuard};
+use smallvec::SmallVec;
 use spacetimedb_lib::filter::CmpArgs;
 use spacetimedb_lib::operator::OpQuery;
 use spacetimedb_lib::relation::FieldName;
 use spacetimedb_primitives::{ColId, IndexId, TableId};
-use spacetimedb_sats::Typespace;
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_sats::{bsatn::ToBsatn, AlgebraicValue, ProductValue, Typespace};
+use spacetimedb_table::table::UniqueConstraintViolation;
 use spacetimedb_vm::expr::{FieldExpr, FieldOp, NoInMemUsed, QueryExpr};
+use std::ops::DerefMut;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct InstanceEnv {

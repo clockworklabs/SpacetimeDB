@@ -3,6 +3,7 @@ use spacetimedb::db::relational_db::RelationalDB;
 use spacetimedb::error::DBError;
 use spacetimedb::execution_context::ExecutionContext;
 use spacetimedb::host::module_host::DatabaseTableUpdate;
+use spacetimedb::messages::websocket::BsatnFormat;
 use spacetimedb::subscription::query::compile_read_only_query;
 use spacetimedb::subscription::subscription::ExecutionSet;
 use spacetimedb::{client::Protocol, identity::AuthCtx};
@@ -103,7 +104,7 @@ fn eval(c: &mut Criterion) {
             let query = compile_read_only_query(&raw.db, &AuthCtx::for_testing(), &tx, sql).unwrap();
             let query: ExecutionSet = query.into();
             let ctx = &ExecutionContext::subscribe(raw.db.address());
-            b.iter(|| drop(black_box(query.eval(ctx, Protocol::Binary, &raw.db, &tx, None))))
+            b.iter(|| drop(black_box(query.eval::<BsatnFormat>(ctx, &raw.db, &tx, None))))
         });
     };
 
@@ -139,7 +140,11 @@ fn eval(c: &mut Criterion) {
         let query = ExecutionSet::from_iter(query_lhs.into_iter().chain(query_rhs));
         let tx = &tx.into();
 
-        b.iter(|| drop(black_box(query.eval_incr(ctx_incr, &raw.db, tx, &update, None))))
+        b.iter(|| {
+            drop(black_box(
+                query.eval_incr_for_test(ctx_incr, &raw.db, tx, &update, None),
+            ))
+        })
     });
 
     // To profile this benchmark for 30s
@@ -157,7 +162,11 @@ fn eval(c: &mut Criterion) {
         let query: ExecutionSet = query.into();
         let tx = &tx.into();
 
-        b.iter(|| drop(black_box(query.eval_incr(ctx_incr, &raw.db, tx, &update, None))));
+        b.iter(|| {
+            drop(black_box(
+                query.eval_incr_for_test(ctx_incr, &raw.db, tx, &update, None),
+            ))
+        });
     });
 
     // To profile this benchmark for 30s

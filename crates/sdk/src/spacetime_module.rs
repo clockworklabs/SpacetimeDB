@@ -2,6 +2,8 @@
 //!
 //! This module is internal, and may incompatibly change without warning.
 
+use spacetimedb_client_api_messages::websocket::BsatnFormat;
+
 use crate::{
     callbacks::DbCallbacks, client_cache::ClientCache, db_connection::DbContextImpl,
     subscription::SubscriptionHandleImpl, ws_messages as ws, Event,

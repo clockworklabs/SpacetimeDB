@@ -12,6 +12,7 @@ use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
 use derive_more::From;
 use futures::prelude::*;
+use spacetimedb_client_api_messages::websocket::FormatSwitch;
 use spacetimedb_lib::identity::RequestId;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
@@ -20,6 +21,15 @@ use tokio::task::AbortHandle;
 pub enum Protocol {
     Text,
     Binary,
+}
+
+impl Protocol {
+    pub(crate) fn assert_matches_format_switch<B, J>(self, fs: &FormatSwitch<B, J>) {
+        match (self, fs) {
+            (Protocol::Text, FormatSwitch::Json(_)) | (Protocol::Binary, FormatSwitch::Bsatn(_)) => {}
+            _ => unreachable!("requested protocol does not match output format"),
+        }
+    }
 }
 
 #[derive(Debug)]

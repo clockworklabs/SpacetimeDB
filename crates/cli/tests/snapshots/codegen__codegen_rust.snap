@@ -1239,7 +1239,7 @@ pub(super) fn parse_table_update(
                 self.imp.find(col_val)
             }
         }
-        
+
         /// Access to the `other` unique index on the table `pk_multi_identity`,
         /// which allows point queries on the field of the same name
         /// via the [`PkMultiIdentityOtherUnique::find`] method.

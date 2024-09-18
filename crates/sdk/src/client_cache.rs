@@ -10,6 +10,8 @@
 use crate::spacetime_module::{InModule, SpacetimeModule, TableUpdate};
 use anymap::{any::CloneAny, Map};
 use bytes::Bytes;
+use core::hash::{Hash, Hasher};
+use core::ops::Deref;
 use im::HashMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -36,6 +38,23 @@ impl<Row> Default for TableCache<Row> {
     fn default() -> Self {
         Self {
             entries: Default::default(),
+        }
+
+        if !new_subs
+            .updates
+            .iter()
+            // (2) At this point we know that every update is uncompressed,
+            // as we saw to that in (1).
+            .filter_map(|cqu| match cqu {
+                CompressableQueryUpdate::Uncompressed(qu) => Some(qu),
+                _ => None,
+            })
+            .all(|u| u.deletes.is_empty())
+        {
+            log::error!(
+                "Received non-`Insert` `TableRowOperation` for {:?} in new set",
+                T::TABLE_NAME,
+            );
         }
     }
 }

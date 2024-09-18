@@ -95,7 +95,7 @@ fn request_add_header(req: &mut http::Request<()>, key: &'static str, val: http:
 }
 
 const PROTOCOL_HEADER_KEY: &str = "Sec-WebSocket-Protocol";
-const PROTOCOL_HEADER_VALUE: &str = "v1.bin.spacetimedb";
+const PROTOCOL_HEADER_VALUE: &str = "v1.bsatn.spacetimedb";
 
 fn request_insert_protocol_header(req: &mut http::Request<()>) {
     request_add_header(
@@ -153,10 +153,18 @@ impl WsConnection {
         Ok(WsConnection { sock })
     }
 
-    pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage> {
-        let mut decompressed = Vec::new();
-        BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
-        Ok(bsatn::from_slice(&decompressed)?)
+    pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage<BsatnFormat>> {
+        let (compression, bytes) = bytes
+            .split_first()
+            .ok_or_else(|| anyhow!("Empty raw message. Must have at least a byte for the compression."))?;
+
+        Ok(match *compression {
+            SERVER_MSG_COMPRESSION_TAG_NONE => bsatn::from_slice(bytes)?,
+            SERVER_MSG_COMPRESSION_TAG_BROTLI => {
+                bsatn::from_slice(&brotli_decompress(bytes).context("Failed to Brotli decompress message")?)?
+            }
+            c => bail!("Unknown compression format `{c}`"),
+        })
     }
 
     pub(crate) fn encode_message(msg: ClientMessage) -> WebSocketMessage {
@@ -171,7 +179,7 @@ impl WsConnection {
 
     async fn message_loop(
         mut self,
-        incoming_messages: mpsc::UnboundedSender<ServerMessage>,
+        incoming_messages: mpsc::UnboundedSender<ServerMessage<BsatnFormat>>,
         outgoing_messages: mpsc::UnboundedReceiver<ClientMessage>,
     ) {
         let mut outgoing_messages = Some(outgoing_messages);
@@ -226,7 +234,7 @@ impl WsConnection {
         runtime: &runtime::Handle,
     ) -> (
         JoinHandle<()>,
-        mpsc::UnboundedReceiver<ServerMessage>,
+        mpsc::UnboundedReceiver<ServerMessage<BsatnFormat>>,
         mpsc::UnboundedSender<ClientMessage>,
     ) {
         let (outgoing_send, outgoing_recv) = mpsc::unbounded();
