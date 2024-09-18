@@ -143,8 +143,6 @@ public static class Module
 
     public static void __describe_module__(BytesSink description)
     {
-        // replace `module` with a temporary internal module that will register RawModuleDefV8, AlgebraicType and other internal types
-        // during the RawModuleDefV8.GetSatsTypeInfo() instead of exposing them via user's module.
         try
         {
             // We need this explicit cast here to make `ToBytes` understand the types correctly.
