@@ -4,8 +4,10 @@ using System.Diagnostics;
 using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
 
-public readonly partial struct Unit
+public readonly partial struct Unit : IStructuralWrite
 {
+    public void WriteFields(BinaryWriter writer) { }
+
     // Custom BSATN that returns an inline empty product type that can be recognised by SpacetimeDB.
     public readonly struct BSATN : IReadWrite<Unit>
     {
@@ -20,7 +22,7 @@ public readonly partial struct Unit
 
 // A helper for special wrappers around byte arrays like Identity and Address.
 // Makes them equatable, stringifiable, checks length, etc.
-public abstract record BytesWrapper
+public abstract record BytesWrapper : IStructuralWrite
 {
     protected abstract int SIZE { get; }
 
@@ -49,7 +51,7 @@ public abstract record BytesWrapper
 
     protected static byte[] ReadRaw(BinaryReader reader) => ByteArray.Instance.Read(reader);
 
-    protected void Write(BinaryWriter writer) => ByteArray.Instance.Write(writer, bytes);
+    public void WriteFields(BinaryWriter writer) => ByteArray.Instance.Write(writer, bytes);
 
     // Custom BSATN that returns an inline product type with special property name that can be recognised by SpacetimeDB.
     protected static AlgebraicType GetAlgebraicType(
@@ -91,7 +93,7 @@ public record Address : BytesWrapper
     {
         public Address Read(BinaryReader reader) => new(ReadRaw(reader));
 
-        public void Write(BinaryWriter writer, Address value) => value.Write(writer);
+        public void Write(BinaryWriter writer, Address value) => value.WriteFields(writer);
 
         public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
             BytesWrapper.GetAlgebraicType(registrar, "__address_bytes");
@@ -116,7 +118,7 @@ public record Identity : BytesWrapper
     {
         public Identity Read(BinaryReader reader) => new(ReadRaw(reader));
 
-        public void Write(BinaryWriter writer, Identity value) => value.Write(writer);
+        public void Write(BinaryWriter writer, Identity value) => value.WriteFields(writer);
 
         public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
             BytesWrapper.GetAlgebraicType(registrar, "__identity_bytes");

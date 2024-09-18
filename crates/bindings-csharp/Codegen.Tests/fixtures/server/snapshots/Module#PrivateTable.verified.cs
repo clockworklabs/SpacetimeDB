@@ -13,10 +13,8 @@ partial class PrivateTable : SpacetimeDB.Internal.ITable<PrivateTable>
         public PrivateTable Read(System.IO.BinaryReader reader) =>
             SpacetimeDB.BSATN.IStructuralReadWrite.Read<PrivateTable>(reader);
 
-        public void Write(System.IO.BinaryWriter writer, PrivateTable value)
-        {
+        public void Write(System.IO.BinaryWriter writer, PrivateTable value) =>
             value.WriteFields(writer);
-        }
 
         public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
             SpacetimeDB.BSATN.ITypeRegistrar registrar

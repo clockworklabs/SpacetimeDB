@@ -24,10 +24,8 @@ partial struct CustomStruct : SpacetimeDB.BSATN.IStructuralReadWrite
         public CustomStruct Read(System.IO.BinaryReader reader) =>
             SpacetimeDB.BSATN.IStructuralReadWrite.Read<CustomStruct>(reader);
 
-        public void Write(System.IO.BinaryWriter writer, CustomStruct value)
-        {
+        public void Write(System.IO.BinaryWriter writer, CustomStruct value) =>
             value.WriteFields(writer);
-        }
 
         public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
             SpacetimeDB.BSATN.ITypeRegistrar registrar

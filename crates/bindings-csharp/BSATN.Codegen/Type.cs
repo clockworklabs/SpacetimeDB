@@ -123,8 +123,7 @@ public abstract record BaseTypeDeclaration<M>
 
     public virtual Scope.Extensions ToExtensions()
     {
-        string read,
-            write;
+        string read;
 
         var extensions = new Scope.Extensions(Scope, FullName);
 
@@ -133,6 +132,11 @@ public abstract record BaseTypeDeclaration<M>
 
         if (Kind is TypeKind.Sum)
         {
+            extensions.BaseTypes.Add("SpacetimeDB.BSATN.IStructuralWrite");
+
+            // Not technically an attribute, but goes into the same place anyway.
+            extensions.ExtraAttrs.Add("abstract");
+
             extensions.Contents.Append(
                 $$"""
                 private {{ShortName}}() { }
@@ -148,17 +152,24 @@ public abstract record BaseTypeDeclaration<M>
                 new("__enumTag", "@enum", "SpacetimeDB.BSATN.Enum<@enum>")
             );
 
-            extensions.Contents.Append(
-                string.Join(
-                    "\n",
-                    Members.Select(m =>
-                        // C# puts field names in the same namespace as records themselves, and will complain about clashes if they match.
-                        // To avoid this, we append an underscore to the field name.
-                        // In most cases the field name shouldn't matter anyway as you'll idiomatically use pattern matching to extract the value.
-                        $"public sealed record {m.Name}({m.Type} {m.Name}_) : {ShortName};"
-                    )
-                )
-            );
+            foreach (var m in Members)
+            {
+                // C# puts field names in the same namespace as records themselves, and will complain about clashes if they match.
+                // To avoid this, we append an underscore to the field name.
+                // In most cases the field name shouldn't matter anyway as you'll idiomatically use pattern matching to extract the value.
+                extensions.Contents.Append(
+                    $$"""
+                    public sealed record {{m.Name}}({{m.Type}} {{m.Name}}_) : {{ShortName}}
+                    {
+                        public override void WriteFields(System.IO.BinaryWriter writer)
+                        {
+                            BSATN.__enumTag.Write(writer, @enum.{{m.Name}});
+                            BSATN.{{m.Name}}.Write(writer, {{m.Name}}_);
+                        }
+                    }
+                    """
+                );
+            }
 
             read = $$"""
                 __enumTag.Read(reader) switch {
@@ -169,20 +180,6 @@ public abstract record BaseTypeDeclaration<M>
                         )
                     )}}
                     _ => throw new System.InvalidOperationException("Invalid tag value, this state should be unreachable.")
-                }
-                """;
-
-            write = $$"""
-                switch (value) {
-                    {{string.Join(
-                        "\n",
-                        fieldNames.Select(name => $"""
-                            case {name}(var inner):
-                                __enumTag.Write(writer, @enum.{name});
-                                {name}.Write(writer, inner);
-                                break;
-                            """)
-                    )}}
                 }
                 """;
         }
@@ -209,8 +206,6 @@ public abstract record BaseTypeDeclaration<M>
             );
 
             read = $"SpacetimeDB.BSATN.IStructuralReadWrite.Read<{ShortName}>(reader)";
-
-            write = "value.WriteFields(writer);";
         }
 
         extensions.Contents.Append(
@@ -221,9 +216,8 @@ public abstract record BaseTypeDeclaration<M>
 
                 public {{ShortName}} Read(System.IO.BinaryReader reader) => {{read}};
 
-                public void Write(System.IO.BinaryWriter writer, {{ShortName}} value) {
-                    {{write}}
-                }
+                public void Write(System.IO.BinaryWriter writer, {{ShortName}} value) =>
+                    value.WriteFields(writer);
 
                 public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
                     registrar.RegisterType<{{ShortName}}>(_ => new SpacetimeDB.BSATN.AlgebraicType.{{Kind}}(new SpacetimeDB.BSATN.AggregateElement[] {
