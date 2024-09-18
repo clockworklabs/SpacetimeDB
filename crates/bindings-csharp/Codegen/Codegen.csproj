@@ -29,6 +29,16 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.1" PrivateAssets="all" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- dev-dependency to add internal C# classes and attributes not included in .NET Standard -->
+    <PackageReference Include="PolySharp" Version="1.14.1" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- reuse attribute and adjacent types from the runtime -->
+    <Compile Include="../Runtime/Attrs.cs" />
+  </ItemGroup>
+
   <!-- Local project references (used by SpacetimeDB/modules/*-cs) don't use NuGet resolution. -->
   <!-- We need a different hack to include BSATN.Codegen as a transitive analyzer dependency. https://github.com/dotnet/roslyn/issues/47275#issuecomment-685482999 -->
   <ItemGroup>
