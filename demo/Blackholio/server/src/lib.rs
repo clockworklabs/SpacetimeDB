@@ -1,4 +1,4 @@
-use spacetimedb::{spacetimedb, ReducerContext, Identity, SpacetimeType, schedule, Timestamp};
+use spacetimedb::{spacetimedb, spacetimedb_lib::ScheduleAt, Identity, ReducerContext, SpacetimeType, Timestamp};
 use rand::Rng;
 use std::time::Duration;
 
@@ -76,6 +76,16 @@ pub struct Vector2 {
     pub y: f32,
 }
 
+#[spacetimedb(table, scheduled(move_all_players))]
+pub struct MoveAllPlayersTimer {}
+
+#[spacetimedb(table, scheduled(spawn_food))]
+pub struct SpawnFoodTimer {}
+
+#[spacetimedb(table, scheduled(circle_decay))]
+pub struct CircleDecayTimer {}
+
+
 impl Vector2 {
     // Function to normalize the vector
     fn normalize(&self) -> Vector2 {
@@ -97,9 +107,18 @@ const FOOD_MASS_MAX: u32 = 4;
 pub fn init() -> Result<(), String> {
     log::info!("Initializing...");
     Config::insert(Config { id: 0, world_size: 1000 })?;
-    spawn_food()?;
-    move_all_players()?;
-    circle_decay()?;
+    CircleDecayTimer::insert(CircleDecayTimer {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Interval(Duration::from_secs(5).as_micros() as u64),
+    })?;
+    SpawnFoodTimer::insert(SpawnFoodTimer {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Interval(Duration::from_millis(500).as_micros() as u64),
+    })?;
+    MoveAllPlayersTimer::insert(MoveAllPlayersTimer {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).as_micros() as u64),
+    })?;
     Ok(())
 }
 
@@ -211,10 +230,10 @@ fn mass_to_max_move_speed(mass: u32) -> f32 {
     2.0 * START_PLAYER_SPEED as f32 / (1.0 + (mass as f32 / START_PLAYER_MASS as f32).sqrt())
 }
 
-#[spacetimedb(reducer)]
-pub fn move_all_players() -> Result<(), String> {
-    schedule!(Duration::from_millis(50), move_all_players());
 
+
+#[spacetimedb(reducer)]
+pub fn move_all_players(_: ReducerContext, _timer: MoveAllPlayersTimer) -> Result<(), String> {
     let span = spacetimedb::time_span::Span::start("move_all_players");
     let world_size = Config::filter_by_id(&0).ok_or("Config not found")?.world_size;
     for circle in Circle::iter() {
@@ -270,7 +289,7 @@ pub fn player_split(ctx: ReducerContext) -> Result<(), String> {
         if circle_entity.mass >= START_PLAYER_MASS * 2 {
             let half_mass = circle_entity.mass / 2;
             let extra_mass = circle_entity.mass % 2;
-            let mut entity = spawn_circle_at(circle.player_id, half_mass, circle_entity.position.x,
+            spawn_circle_at(circle.player_id, half_mass, circle_entity.position.x,
                                                    circle_entity.position.y, ctx.timestamp)?;
             circle_entity.mass = half_mass + extra_mass;
             circle.last_split_time = ctx.timestamp;
@@ -285,35 +304,33 @@ pub fn player_split(ctx: ReducerContext) -> Result<(), String> {
 }
 
 #[spacetimedb(reducer)]
-pub fn spawn_food() -> Result<(), String> {
+pub fn spawn_food(_ctx: ReducerContext, _timer: SpawnFoodTimer) -> Result<(), String> {
     // Is there too much food already? Are there no players yet?
-    if Food::iter().count() > 600
-    // || Circle::iter().count() == 0
-    {
-        schedule!(Duration::from_millis(500), spawn_food());
-        return Ok(());
+    let mut food_count = Food::iter().count();
+    let player_count = Player::iter().count();
+
+    while food_count < 600 && player_count > 0 {
+        let mut rng = rand::thread_rng();
+        let food_mass = rng.gen_range(FOOD_MASS_MIN..FOOD_MASS_MAX);
+        let world_size = Config::filter_by_id(&0).ok_or("Config not found")?.world_size;
+        let food_radius = mass_to_radius(food_mass);
+        let x = rng.gen_range(food_radius..world_size as f32 - food_radius);
+        let y = rng.gen_range(food_radius..world_size as f32 - food_radius);
+        let entity = Entity::insert(Entity {
+            id: 0,
+            position: Vector2 { x, y },
+            mass: food_mass
+        })?;
+        Food::insert(Food { entity_id: entity.id })?;
+        food_count += 1;
+        log::info!("Spawned food! {}", entity.id);
     }
 
-    let mut rng = rand::thread_rng();
-    let food_mass = rng.gen_range(FOOD_MASS_MIN..FOOD_MASS_MAX);
-    let world_size = Config::filter_by_id(&0).ok_or("Config not found")?.world_size;
-    let food_radius = mass_to_radius(food_mass);
-    let x = rng.gen_range(food_radius..world_size as f32 - food_radius);
-    let y = rng.gen_range(food_radius..world_size as f32 - food_radius);
-    let entity = Entity::insert(Entity {
-        id: 0,
-        position: Vector2 { x, y },
-        mass: food_mass
-    })?;
-    Food::insert(Food { entity_id: entity.id })?;
-    log::info!("Spawned food! {}", entity.id);
-
-    spawn_food().unwrap();
     Ok(())
 }
 
 #[spacetimedb(reducer)]
-pub fn circle_decay() -> Result<(), String> {
+pub fn circle_decay(_ctx: ReducerContext, _timer: CircleDecayTimer) -> Result<(), String> {
     for circle in Circle::iter() {
         let mut circle_entity = Entity::filter_by_id(&circle.entity_id).ok_or("Entity not found")?;
         if circle_entity.mass <= START_PLAYER_MASS {
@@ -324,6 +341,5 @@ pub fn circle_decay() -> Result<(), String> {
         Entity::update_by_id(&id, circle_entity);
     }
 
-    schedule!(Duration::from_millis(5000), circle_decay());
     Ok(())
 }
