@@ -363,7 +363,7 @@ public class Module : IIncrementalGenerator
     {
         var tables = context
             .SyntaxProvider.ForAttributeWithMetadataName(
-                fullyQualifiedMetadataName: "SpacetimeDB.TableAttribute",
+                fullyQualifiedMetadataName: typeof(TableAttribute).FullName,
                 predicate: (node, ct) => true, // already covered by attribute restrictions
                 transform: (context, ct) => new TableDeclaration(context)
             )
