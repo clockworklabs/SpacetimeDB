@@ -378,7 +378,7 @@ public class Module : IIncrementalGenerator
 
         var reducers = context
             .SyntaxProvider.ForAttributeWithMetadataName(
-                fullyQualifiedMetadataName: "SpacetimeDB.ReducerAttribute",
+                fullyQualifiedMetadataName: typeof(ReducerAttribute).FullName,
                 predicate: (node, ct) => true, // already covered by attribute restrictions
                 transform: (context, ct) => new ReducerDeclaration(context)
             )
