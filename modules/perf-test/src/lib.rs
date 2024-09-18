@@ -1,4 +1,4 @@
-use spacetimedb::{log_stopwatch::LogStopwatch, query, spacetimedb};
+use spacetimedb::{log_stopwatch::LogStopwatch, query};
 
 #[spacetimedb::table(name = location, index(name = coordinates, btree(columns = [x, z, dimension])))]
 #[derive(Debug, PartialEq, Eq)]
