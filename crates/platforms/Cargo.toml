@@ -13,6 +13,8 @@ anyhow.workspace = true
 etcetera.workspace = true
 glob.workspace = true
 serde.workspace = true
-tempfile.workspace = true
 thiserror.workspace = true
 toml.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

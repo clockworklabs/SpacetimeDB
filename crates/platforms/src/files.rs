@@ -55,15 +55,11 @@ pub trait Fs {
     ///
     /// Check the structure of the directories and files, but not create them.
     fn verify_layout(&self) -> Result<(), ErrorPlatform>;
-    /// Create the layout of the file system.
-    ///
-    /// Create the directories and the files that are part of the layout (only)
+    /// Create only the directories and the files that are part of the layout.
     ///
     /// **NOTE:** It doesn't create the files that are part of the data, like logs, replicas, etc.
     fn create_layout(&self) -> Result<(), ErrorPlatform>;
-    /// Load the layout of the file system.
-    ///
-    /// Load the directories and the files that are part of the layout (only)
+    /// Load only the directories and the files that are part of the layout.
     ///
     /// **NOTE:** It doesn't load the files that are part of the data, like logs, replicas, etc.
     fn load_layout(&mut self) -> Result<(), ErrorPlatform>;

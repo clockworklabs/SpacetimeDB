@@ -199,9 +199,13 @@ pub struct Directories {
     pub layout: Layout,
     pub home_dir: PathBuf,
     pub root_dir: Option<PathBuf>,
+    /// The `cli-bin-file` file.
     pub bin_file: PathBuf,
+    /// The `cli-bin-dir` directory.
     pub bins_dir: PathBuf,
+    /// The `cli-config-dir` directory.
     pub config_dir: PathBuf,
+    /// The `cli-data-dir` directory.
     pub data_dir: PathBuf,
 }
 
