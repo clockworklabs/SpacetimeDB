@@ -23,6 +23,8 @@ namespace SpacetimeDB.Types
 
 	public sealed class RemoteReducers : RemoteBase<DbConnection>
 	{
+		internal RemoteReducers(DbConnection conn) : base(conn) {}
+
 		public delegate void SendMessageHandler(EventContext ctx, string text);
 		public event SendMessageHandler? OnSendMessage;
 
@@ -73,11 +75,11 @@ namespace SpacetimeDB.Types
 	public class DbConnection : DbConnectionBase<DbConnection, EventContext>
 	{
 		public readonly RemoteTables RemoteTables = new();
-		public readonly RemoteReducers RemoteReducers = new();
+		public readonly RemoteReducers RemoteReducers;
 
 		public DbConnection()
 		{
-			RemoteReducers.Init(this);
+			RemoteReducers = new(this);
 
 			clientDB.AddTable<Message>();
 			clientDB.AddTable<User>();

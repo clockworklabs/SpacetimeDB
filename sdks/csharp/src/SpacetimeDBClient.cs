@@ -160,7 +160,7 @@ namespace SpacetimeDB
             public ServerMessage message;
             public List<DbOp> dbOps;
             public DateTime timestamp;
-            public EventContext reducerEvent;
+            public EventContext? reducerEvent;
         }
 
         struct PreProcessedMessage

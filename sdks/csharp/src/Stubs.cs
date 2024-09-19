@@ -48,7 +48,7 @@ namespace SpacetimeDB
     }
 
     public abstract class RemoteBase<DbConnection> {
-        protected DbConnection conn;
+        protected readonly DbConnection conn;
 
         protected RemoteBase(DbConnection conn) {
             this.conn = conn;

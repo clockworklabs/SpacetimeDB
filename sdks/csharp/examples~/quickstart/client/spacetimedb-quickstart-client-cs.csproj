@@ -11,8 +11,6 @@
 
   <ItemGroup>
     <ProjectReference Include="../../../SpacetimeDB.ClientSDK.csproj" />
-    <ProjectReference Include="..\..\..\..\stdb-module-cs\crates\bindings-csharp\BSATN.Codegen\BSATN.Codegen.csproj"  OutputItemType="Analyzer" />
-    <ProjectReference Include="..\..\..\..\stdb-module-cs\crates\bindings-csharp\BSATN.Runtime\BSATN.Runtime.csproj" />
   </ItemGroup>
 
 </Project>
