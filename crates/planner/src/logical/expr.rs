@@ -1,105 +1,26 @@
-use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 use spacetimedb_lib::AlgebraicValue;
-use spacetimedb_sats::algebraic_type::fmt::{fmt_algebraic_type, fmt_product_type};
-use spacetimedb_sats::AlgebraicType;
-use spacetimedb_sats::ProductType;
-use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
+use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_sql_parser::ast::BinOp;
 
 use crate::static_assert_size;
 
 use super::bind::TypingResult;
-use super::errors::{ConstraintViolation, ResolutionError, TypingError};
-
-/// The type of a relation or scalar expression
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Type {
-    /// A base relation
-    Var(Arc<TableSchema>),
-    /// A derived relation
-    Row(ProductType),
-    /// A join relation
-    Tup(Box<[Type]>),
-    /// A column type
-    Alg(AlgebraicType),
-}
-
-static_assert_size!(Type, 24);
-
-impl Display for Type {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Alg(ty) => write!(f, "{}", fmt_algebraic_type(ty)),
-            Self::Var(schema) => write!(f, "{}", fmt_product_type(schema.get_row_type())),
-            Self::Row(ty) => write!(f, "{}", fmt_product_type(ty)),
-            Self::Tup(types) => {
-                write!(f, "(")?;
-                write!(f, "{}", types[0])?;
-                for t in &types[1..] {
-                    write!(f, ", {}", t)?;
-                }
-                write!(f, ")")
-            }
-        }
-    }
-}
-
-impl Type {
-    /// A constant for the bool type
-    pub const BOOL: Self = Self::Alg(AlgebraicType::Bool);
-
-    /// A constant for the string type
-    pub const STR: Self = Self::Alg(AlgebraicType::String);
-
-    /// Is this a numeric type?
-    pub fn is_num(&self) -> bool {
-        match self {
-            Self::Alg(t) => t.is_integer() || t.is_float(),
-            _ => false,
-        }
-    }
-
-    /// Is this a hex type?
-    pub fn is_hex(&self) -> bool {
-        match self {
-            Self::Alg(t) => t.is_bytes() || t.is_identity() || t.is_address(),
-            _ => false,
-        }
-    }
-
-    /// Find a field and its position in a Row or Var type
-    pub fn find(&self, field: &str) -> Option<(usize, &AlgebraicType)> {
-        match self {
-            Self::Var(schema) => schema
-                .columns()
-                .iter()
-                .enumerate()
-                .find(|(_, ColumnSchema { col_name, .. })| col_name.as_ref() == field)
-                .map(|(i, ColumnSchema { col_type, .. })| (i, col_type)),
-            Self::Row(row) => row
-                .elements
-                .iter()
-                .enumerate()
-                .find(|(_, elem)| elem.has_name(field))
-                .map(|(i, elem)| (i, &elem.algebraic_type)),
-            _ => None,
-        }
-    }
-}
+use super::errors::{ConstraintViolation, TypingError, Unresolved};
+use super::ty::{InvalidTyId, TyCtx, TyId, Type};
 
 /// A logical relational expression
 #[derive(Debug)]
 pub enum RelExpr {
     /// A base table
-    RelVar(Arc<TableSchema>, Type),
+    RelVar(Arc<TableSchema>, TyId),
     /// A filter
     Select(Box<Select>),
     /// A projection
     Proj(Box<Project>),
     /// An n-ary join
-    Join(Box<[RelExpr]>, Type),
+    Join(Box<[RelExpr]>, TyId),
     /// Bag union
     Union(Box<RelExpr>, Box<RelExpr>),
     /// Bag difference
@@ -108,72 +29,60 @@ pub enum RelExpr {
     Dedup(Box<RelExpr>),
 }
 
-static_assert_size!(RelExpr, 40);
+static_assert_size!(RelExpr, 24);
 
 impl RelExpr {
-    pub fn project(input: RelExpr, vars: Vars, refs: Vec<Ref>, ty: Type) -> Self {
+    /// Instantiate a projection [RelExpr::Proj]
+    pub fn project(input: RelExpr, vars: Vars, refs: Vec<Ref>, ty: TyId) -> Self {
         Self::Proj(Box::new(Project { input, vars, refs, ty }))
     }
 
+    /// Instantiate a selection [RelExpr::Select]
     pub fn select(input: RelExpr, vars: Vars, exprs: Vec<Expr>) -> Self {
         Self::Select(Box::new(Select { input, vars, exprs }))
     }
 
-    /// The type of a relation expression
-    pub fn ty(&self) -> &Type {
+    /// The type id of this relation expression
+    pub fn ty_id(&self) -> TyId {
         match self {
-            Self::RelVar(_, ty) => ty,
-            Self::Select(op) => op.input.ty(),
-            Self::Proj(op) => &op.ty,
-            Self::Join(_, ty) => ty,
-            Self::Union(a, _) | Self::Minus(a, _) | Self::Dedup(a) => a.ty(),
+            Self::RelVar(_, id) | Self::Join(_, id) => *id,
+            Self::Select(op) => op.input.ty_id(),
+            Self::Proj(op) => op.ty,
+            Self::Union(input, _) | Self::Minus(input, _) | Self::Dedup(input) => input.ty_id(),
         }
+    }
+
+    /// The [Type] of this relation expression
+    pub fn ty<'a>(&self, ctx: &'a TyCtx) -> TypingResult<&'a Type> {
+        ctx.try_resolve(self.ty_id()).map_err(TypingError::from)
     }
 }
 
 /// A list of bound variables and their types.
 /// Used as a typing context scoped to an expression.
 #[derive(Debug, Clone, Default)]
-pub struct Vars(Vec<(String, Type)>);
+pub struct Vars(Vec<(String, TyId)>);
 
-impl From<&TableSchema> for Vars {
-    fn from(value: &TableSchema) -> Self {
-        Self(
-            value
-                .columns()
-                .iter()
-                .map(|schema| (schema.col_name.to_string(), Type::Alg(schema.col_type.clone())))
-                .collect(),
-        )
-    }
-}
-
-impl From<Vec<(String, Type)>> for Vars {
-    fn from(vars: Vec<(String, Type)>) -> Self {
+impl From<Vec<(String, TyId)>> for Vars {
+    fn from(vars: Vec<(String, TyId)>) -> Self {
         Self(vars)
-    }
-}
-
-impl<I: Into<(String, Type)>> FromIterator<I> for Vars {
-    fn from_iter<T: IntoIterator<Item = I>>(iter: T) -> Self {
-        Self(iter.into_iter().map(|item| item.into()).collect())
     }
 }
 
 impl Vars {
     /// Add a new variable binding to the list
-    pub fn push(&mut self, var: (String, Type)) {
+    pub fn push(&mut self, var: (String, TyId)) {
         self.0.push(var)
     }
 
     /// Returns an iterator over the variable names and types
-    pub fn iter(&self) -> impl Iterator<Item = (&str, &Type)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &TyId)> {
         self.0.iter().map(|(name, ty)| (name.as_str(), ty))
     }
 
     /// Find a variable by name in this list.
     /// Returns its type and position in the list if found.
-    pub fn find(&self, param: &str) -> Option<(usize, &Type)> {
+    pub fn find(&self, param: &str) -> Option<(usize, &TyId)> {
         self.0
             .iter()
             .enumerate()
@@ -184,14 +93,16 @@ impl Vars {
     /// Find a variable from the list of in scope variables.
     /// Return its type and position in the list if found.
     /// Return an error otherwise.
-    pub fn expect_var(&self, param: &str, expected: Option<&Type>) -> TypingResult<(usize, &Type)> {
+    pub fn expect_var(&self, ctx: &TyCtx, param: &str, expected: Option<TyId>) -> TypingResult<(usize, TyId)> {
         self.find(param)
             // Return resolution error if param not in scope
-            .ok_or_else(|| ResolutionError::unresolved_var(param).into())
+            .ok_or_else(|| Unresolved::var(param).into())
             // Return type error if param in scope but wrong type
             .and_then(|(i, ty)| match expected {
-                Some(expected) if ty != expected => Err(ConstraintViolation::eq(expected, ty).into()),
-                _ => Ok((i, ty)),
+                Some(expected) if *ty != expected => {
+                    Err(ConstraintViolation::eq(expected.try_with_ctx(ctx)?, ty.try_with_ctx(ctx)?).into())
+                }
+                _ => Ok((i, *ty)),
             })
     }
 
@@ -200,21 +111,25 @@ impl Vars {
     /// Return an error otherwise.
     pub fn expect_field(
         &self,
+        ctx: &TyCtx,
         table: &str,
         field: &str,
-        expected: Option<&Type>,
-    ) -> TypingResult<(usize, usize, &AlgebraicType)> {
+        expected: Option<TyId>,
+    ) -> TypingResult<(usize, usize, TyId)> {
         self.find(table)
             // Return resolution error if table name not in scope
-            .ok_or_else(|| TypingError::from(ResolutionError::unresolved_table(table)))
+            .ok_or_else(|| Unresolved::table(table))
+            .map_err(TypingError::from)
+            .and_then(|(i, id)| Ok((i, ctx.try_resolve(*id)?)))
             .map(|(i, ty)| ty.find(field).map(|(j, ty)| (i, j, ty)))?
             // Return resolution error if field does not exist
-            .ok_or_else(|| TypingError::from(ResolutionError::unresolved_field(table, field)))
+            .ok_or_else(|| Unresolved::field(table, field))
+            .map_err(TypingError::from)
             // Return type error if field exists but wrong type
             .and_then(|(i, j, ty)| match expected {
-                Some(expected @ Type::Alg(want)) if ty != want => Err(TypingError::from(ConstraintViolation::eq(
-                    expected,
-                    &Type::Alg(ty.clone()),
+                Some(id) if ty != id => Err(TypingError::from(ConstraintViolation::eq(
+                    id.try_with_ctx(ctx)?,
+                    ty.try_with_ctx(ctx)?,
                 ))),
                 _ => Ok((i, j, ty)),
             })
@@ -223,17 +138,23 @@ impl Vars {
     /// Find a param from the list of in scope variables.
     /// Return a variable reference expression if found.
     /// Return an error otherwise.
-    pub fn expect_var_ref(&self, param: &str, expected: Option<&Type>) -> TypingResult<Expr> {
-        self.expect_var(param, expected)
-            .map(|(i, ty)| Expr::Ref(Ref::Var(i, ty.clone())))
+    pub fn expect_var_ref(&self, ctx: &TyCtx, param: &str, expected: Option<TyId>) -> TypingResult<Expr> {
+        self.expect_var(ctx, param, expected)
+            .map(|(i, ty)| Expr::Ref(Ref::Var(i, ty)))
     }
 
     /// Find an in scope table variable and field.
     /// Return a field reference expression if found.
     /// Return an error otherwise.
-    pub fn expect_field_ref(&self, table: &str, field: &str, expected: Option<&Type>) -> TypingResult<Expr> {
-        self.expect_field(table, field, expected)
-            .map(|(i, j, ty)| Expr::Ref(Ref::Field(i, j, Type::Alg(ty.clone()))))
+    pub fn expect_field_ref(
+        &self,
+        ctx: &TyCtx,
+        table: &str,
+        field: &str,
+        expected: Option<TyId>,
+    ) -> TypingResult<Expr> {
+        self.expect_field(ctx, table, field, expected)
+            .map(|(i, j, ty)| Expr::Ref(Ref::Field(i, j, ty)))
     }
 }
 
@@ -258,7 +179,7 @@ pub struct Project {
     /// The projection expressions
     pub refs: Vec<Ref>,
     /// The type of the output relation
-    pub ty: Type,
+    pub ty: TyId,
 }
 
 /// A typed scalar expression
@@ -267,32 +188,37 @@ pub enum Expr {
     /// A binary expression
     Bin(BinOp, Box<Expr>, Box<Expr>),
     /// A typed literal expression
-    Lit(AlgebraicValue, Type),
+    Lit(AlgebraicValue, TyId),
     /// A column or field reference
     Ref(Ref),
 }
 
-static_assert_size!(Expr, 48);
+static_assert_size!(Expr, 32);
 
 impl Expr {
     /// Returns a boolean literal
     pub const fn bool(v: bool) -> Self {
-        Self::Lit(AlgebraicValue::Bool(v), Type::Alg(AlgebraicType::Bool))
+        Self::Lit(AlgebraicValue::Bool(v), TyId::BOOL)
     }
 
     /// Returns a string literal
     pub fn str(v: String) -> Self {
         let s = v.into_boxed_str();
-        Self::Lit(AlgebraicValue::String(s), Type::Alg(AlgebraicType::String))
+        Self::Lit(AlgebraicValue::String(s), TyId::STR)
     }
 
-    /// The type of a scalar expression
-    pub fn ty(&self) -> &Type {
+    /// The type id of this expression
+    pub fn ty_id(&self) -> TyId {
         match self {
-            Self::Bin(..) => &Type::BOOL,
-            Self::Lit(_, t) => t,
-            Self::Ref(var) => var.ty(),
+            Self::Bin(..) => TyId::BOOL,
+            Self::Lit(_, id) => *id,
+            Self::Ref(var) => var.ty_id(),
         }
+    }
+
+    /// The [Type] of this expression
+    pub fn ty<'a>(&self, ctx: &'a TyCtx) -> Result<&'a Type, InvalidTyId> {
+        ctx.try_resolve(self.ty_id())
     }
 }
 
@@ -301,17 +227,20 @@ impl Expr {
 /// Hence we store positions in that list rather than names.
 #[derive(Debug)]
 pub enum Ref {
-    Var(usize, Type),
-    Field(usize, usize, Type),
+    Var(usize, TyId),
+    Field(usize, usize, TyId),
 }
 
-static_assert_size!(Ref, 40);
-
 impl Ref {
-    /// The type of this variable or field expression
-    pub fn ty(&self) -> &Type {
+    /// The type id of this variable or field expression
+    pub fn ty_id(&self) -> TyId {
         match self {
-            Self::Var(_, t) | Self::Field(_, _, t) => t,
+            Self::Var(_, id) | Self::Field(_, _, id) => *id,
         }
+    }
+
+    /// The [Type] of this variable or field expression
+    pub fn ty<'a>(&self, ctx: &'a TyCtx) -> Result<&'a Type, InvalidTyId> {
+        ctx.try_resolve(self.ty_id())
     }
 }
