@@ -1,5 +1,5 @@
-use spacetimedb::{spacetimedb, spacetimedb_lib::ScheduleAt, Identity, ReducerContext, SpacetimeType, Timestamp};
 use rand::Rng;
+use spacetimedb::{spacetimedb, spacetimedb_lib::ScheduleAt, Identity, ReducerContext, SpacetimeType, Timestamp};
 use std::time::Duration;
 
 // TODO:
@@ -177,7 +177,7 @@ pub fn respawn(ctx: ReducerContext) -> Result<(), String> {
 }
 
 fn spawn_circle(player_id: u32, current_time: Timestamp) -> Result<Entity, String> {
-    let mut rng = rand::thread_rng();
+    let mut rng = spacetimedb::rng();
     let world_size = Config::filter_by_id(&0).ok_or("Config not found")?.world_size;
     let player_start_radius = mass_to_radius(START_PLAYER_MASS);
     let x = rng.gen_range(player_start_radius..(world_size as f32 - player_start_radius));
@@ -310,7 +310,7 @@ pub fn spawn_food(_ctx: ReducerContext, _timer: SpawnFoodTimer) -> Result<(), St
     let player_count = Player::iter().count();
 
     while food_count < 600 && player_count > 0 {
-        let mut rng = rand::thread_rng();
+        let mut rng = spacetimedb::rng();
         let food_mass = rng.gen_range(FOOD_MASS_MIN..FOOD_MASS_MAX);
         let world_size = Config::filter_by_id(&0).ok_or("Config not found")?.world_size;
         let food_radius = mass_to_radius(food_mass);
