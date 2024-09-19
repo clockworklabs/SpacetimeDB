@@ -135,7 +135,7 @@ impl CommittedState {
                 table_name: schema.table_name.clone(),
                 table_type: StTableType::System,
                 table_access: StAccess::Public,
-                table_primary_key: None,
+                table_primary_key: schema.primary_key.map(Into::into),
             };
             let row = ProductValue::from(row);
             // Insert the meta-row into the in-memory ST_TABLES.

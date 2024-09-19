@@ -687,8 +687,8 @@ impl ModuleHost {
         let db = &*self.inner.dbic().relational_db;
         let ctx = &ExecutionContext::internal(db.address());
         let row = &StClientRow {
-            identity: caller_identity,
-            address: caller_address,
+            identity: caller_identity.into(),
+            address: caller_address.into(),
         };
 
         if connected {

@@ -285,14 +285,8 @@ fn system_module_def() -> ModuleDef {
         .with_type(TableType::System)
         .with_primary_key(StTableFields::TableId)
         .with_column_sequence(StTableFields::TableId, None)
-        .with_index(
-            v9::RawIndexAlgorithm::BTree {
-                columns: col_list![StTableFields::TableId],
-            },
-            "accessor_name_doesnt_matter",
-            None,
-        )
-        .with_unique_constraint(StTableFields::TableId, None); // Note that unique constraints currently imply indexes.
+        .with_unique_constraint(StTableFields::TableId, None) // Note that unique constraints currently imply indexes.
+        .with_unique_constraint(StTableFields::TableName, None);
 
     // System Table [ST_COLUMN_NAME]
     //
@@ -469,12 +463,13 @@ lazy_static::lazy_static! {
 }
 
 fn st_schema(name: &str, id: TableId) -> TableSchema {
-    TableSchema::from_module_def(
+    let result = TableSchema::from_module_def(
         &SYSTEM_MODULE_DEF,
         SYSTEM_MODULE_DEF.table(name).expect("missing system table definition"),
         (),
         id,
-    )
+    );
+    result
 }
 
 fn st_table_schema() -> TableSchema {
@@ -560,7 +555,7 @@ impl From<StTableRow> for ProductValue {
     }
 }
 
-/// An algebraic type serialized as bytes.
+/// A wrapper around `AlgebraicType` that acts like `AlgegbraicType::bytes()` for serialization purposes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AlgebraicTypeViaBytes(pub AlgebraicType);
 impl_st!([] AlgebraicTypeViaBytes, AlgebraicType::bytes());
@@ -804,6 +799,7 @@ impl_serialize!([] ModuleKind, (self, ser) => self.0.serialize(ser));
 impl_deserialize!([] ModuleKind, de => u8::deserialize(de).map(Self));
 impl_st!([] ModuleKind, AlgebraicType::U8);
 
+/// A wrapper for `Address` that acts like `AlgebraicType::bytes()` for serialization purposes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AddressViaBytes(pub Address);
 impl_serialize!([] AddressViaBytes, (self, ser) => self.0.as_slice().serialize(ser));
@@ -815,6 +811,7 @@ impl From<Address> for AddressViaBytes {
     }
 }
 
+/// A wrapper for `Identity` that acts like `AlgebraicType::bytes()` for serialization purposes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IdentityViaBytes(pub Identity);
 impl_serialize!([] IdentityViaBytes, (self, ser) => self.0.as_bytes().serialize(ser));
@@ -889,8 +886,8 @@ impl From<StModuleRow> for ProductValue {
 #[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StClientRow {
-    pub(crate) identity: Identity,
-    pub(crate) address: Address,
+    pub(crate) identity: IdentityViaBytes,
+    pub(crate) address: AddressViaBytes,
 }
 
 impl From<&StClientRow> for ProductValue {
@@ -903,9 +900,7 @@ impl TryFrom<RowRef<'_>> for StClientRow {
     type Error = DBError;
 
     fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
-        let identity = read_identity_from_col(row, StClientFields::Identity)?;
-        let address = read_addr_from_col(row, StClientFields::Address)?;
-        Ok(Self { identity, address })
+        read_via_bsatn(row)
     }
 }
 

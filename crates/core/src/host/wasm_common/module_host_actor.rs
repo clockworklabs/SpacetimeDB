@@ -537,7 +537,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
     fn insert_st_client(&self, tx: &mut MutTxId, identity: Identity, address: Address) -> Result<(), DBError> {
         let db = &*self.database_instance_context().relational_db;
-        let row = &StClientRow { identity, address };
+        let row = &StClientRow {
+            identity: identity.into(),
+            address: address.into(),
+        };
 
         db.insert(tx, ST_CLIENT_ID, row.into()).map(|_| ())
     }

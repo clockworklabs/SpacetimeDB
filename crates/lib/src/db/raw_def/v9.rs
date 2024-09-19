@@ -737,27 +737,27 @@ impl<'a> RawTableDefBuilder<'a> {
         };
         let column_names = self.concat_column_names(columns);
         let table_name = &self.table.name;
-        format!("{table_name}_{label}_{column_names}").into()
+        format!("idx_{table_name}_{label}_{column_names}").into()
     }
 
     /// YOU CANNOT RELY ON SEQUENCES HAVING THIS NAME FORMAT.
     fn generate_sequence_name(&self, column: ColId) -> RawIdentifier {
         let column_name = self.column_name(column);
         let table_name = &self.table.name;
-        format!("{table_name}_seq_{column_name}").into()
+        format!("seq_{table_name}_{column_name}").into()
     }
 
     /// YOU CANNOT RELY ON SCHEDULES HAVING THIS NAME FORMAT.
     fn generate_schedule_name(&self) -> RawIdentifier {
         let table_name = &self.table.name;
-        format!("{table_name}_schedule").into()
+        format!("schedule_{table_name}").into()
     }
 
     /// YOU CANNOT RELY ON UNIQUE CONSTRAINTS HAVING THIS NAME FORMAT.
     fn generate_unique_constraint_name(&self, columns: &ColList) -> RawIdentifier {
         let column_names = self.concat_column_names(columns);
         let table_name = &self.table.name;
-        format!("{table_name}_unique_{column_names}").into()
+        format!("ct_{table_name}_{column_names}_unique").into()
     }
 }
 
