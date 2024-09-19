@@ -6,7 +6,7 @@ use super::user_type::User;
 use spacetimedb_sdk::{
     self as __sdk,
     anyhow::{self as __anyhow, Context as _},
-    spacetimedb_lib as __lib, ws_messages as __ws,
+    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 pub struct UserTableHandle<'ctx> {
@@ -15,11 +15,12 @@ pub struct UserTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-pub trait user {
+pub trait UserTableAccess {
+    #[allow(non_snake_case)]
     fn user(&self) -> UserTableHandle<'_>;
 }
 
-impl user for super::RemoteTables {
+impl UserTableAccess for super::RemoteTables {
     fn user(&self) -> UserTableHandle<'_> {
         UserTableHandle {
             imp: self.imp.get_table::<User>("user"),

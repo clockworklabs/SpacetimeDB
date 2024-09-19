@@ -37,7 +37,7 @@ fn register_callbacks(ctx: &DbConnection) {
 // ## Save credentials to a file
 
 /// Our `on_connect` callback: save our credentials to a file.
-fn on_connected(_identity: Identity, _token: &str) {
+fn on_connected(_ctx: &DbConnection, _identity: Identity, _token: &str) {
     // todo!("Save credentials")
     // if let Err(e) = save_credentials(CREDS_DIR, creds) {
     //     eprintln!("Failed to save credentials: {:?}", e);
@@ -163,8 +163,6 @@ const DB_NAME: &str = "quickstart-chat";
 
 /// Load credentials from a file and connect to the database.
 fn connect_to_db() -> DbConnection {
-    #![allow(unreachable_code)]
-
     DbConnection::builder()
         .on_connect(on_connected)
         .on_connect_error(|err| panic!("Error while connecting: {err}"))

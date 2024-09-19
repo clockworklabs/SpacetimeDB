@@ -58,8 +58,8 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
         AlgebraicType::U64 => write!(out, "u64")?,
         AlgebraicType::I128 => write!(out, "i128")?,
         AlgebraicType::U128 => write!(out, "u128")?,
-        AlgebraicType::I256 => write!(out, "i256")?,
-        AlgebraicType::U256 => write!(out, "u256")?,
+        AlgebraicType::I256 => write!(out, "__sats::i256")?,
+        AlgebraicType::U256 => write!(out, "__sats::u256")?,
         AlgebraicType::F32 => write!(out, "f32")?,
         AlgebraicType::F64 => write!(out, "f64")?,
         AlgebraicType::String => write!(out, "String")?,
@@ -68,21 +68,7 @@ pub fn write_type<W: Write>(ctx: &impl Fn(AlgebraicTypeRef) -> String, out: &mut
             write_type(ctx, out, elem_ty)?;
             write!(out, ">")?;
         }
-        AlgebraicType::Map(ty) => {
-            // TODO: Should `AlgebraicType::Map` translate to `HashMap`? This requires
-            //       that any map-key type implement `Hash`. We'll have to derive hash
-            //       on generated types, and notably, `HashMap` is not itself `Hash`,
-            //       so any type that holds a `Map` cannot derive `Hash` and cannot
-            //       key a `Map`.
-            // UPDATE: No, `AlgebraicType::Map` is supposed to be `BTreeMap`. Fix this.
-            //         This will require deriving `Ord` for generated types,
-            //         and is likely to be a big headache.
-            write!(out, "HashMap::<")?;
-            write_type(ctx, out, &ty.key_ty)?;
-            write!(out, ", ")?;
-            write_type(ctx, out, &ty.ty)?;
-            write!(out, ">")?;
-        }
+        AlgebraicType::Map(_ty) => unimplemented!("AlgebraicType::Map is not supported and will be removed"),
         AlgebraicType::Ref(r) => {
             write!(out, "{}", normalize_type_name(&ctx(*r)))?;
         }
@@ -163,7 +149,8 @@ const SPACETIMEDB_IMPORTS: &[&str] = &[
     "use spacetimedb_sdk::{",
     "\tself as __sdk,",
     "\tanyhow::{self as __anyhow, Context as _},",
-    "\tspacetimedb_lib as __lib,",
+    "\tlib as __lib,",
+    "\tsats as __sats,",
     "\tws_messages as __ws,",
     "};",
 ];
@@ -187,7 +174,10 @@ fn print_file_header(output: &mut Indenter) {
 //    - Complicated because `HashMap` is not `Hash`.
 // - others?
 
-const ENUM_DERIVES: &[&str] = &["#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]"];
+const ENUM_DERIVES: &[&str] = &[
+    "#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]",
+    "#[sats(crate = __lib)]",
+];
 
 fn print_enum_derives(output: &mut Indenter) {
     print_lines(output, ENUM_DERIVES);
@@ -200,6 +190,8 @@ pub fn autogen_rust_type(ctx: &GenCtx, name: &str, ty_ref: AlgebraicTypeRef) -> 
     let out = &mut output;
 
     print_file_header(out);
+
+    out.newline();
 
     let this_file = (file_name.as_str(), name);
 
@@ -239,10 +231,7 @@ impl __sdk::spacetime_module::InModule for {type_name} {{
 
 /// Generate a file which defines an `enum` corresponding to the `sum_type`.
 pub fn define_enum_for_sum(out: &mut Indenter, ctx: &GenCtx, name: &str, sum_type: &SumType) {
-    print_file_header(out);
-
     print_enum_derives(out);
-
     write!(out, "pub enum {name} ");
 
     out.delimited_block(
@@ -358,13 +347,23 @@ pub fn autogen_rust_table(ctx: &GenCtx, table: &TableDesc) -> (String, String) {
 
     write!(out, "use super::{row_type_module}::{row_type};");
 
-    // TODO: Import types of indexed and unique fields.
+    // Import the types of all fields.
+    // We only need to import fields which have indices or unique constraints,
+    // but it's easier to just import all of 'em, since we have `#![allow(unused)]` anyway.
+    gen_and_print_imports(
+        ctx,
+        out,
+        &table.get_row_type().elements[..],
+        generate_imports_elements,
+        (&file_name, &table_name_pascalcase),
+    );
 
     out.newline();
 
     let table_handle = table_name_pascalcase.clone() + "TableHandle";
     let insert_callback_id = table_name_pascalcase.clone() + "InsertCallbackId";
     let delete_callback_id = table_name_pascalcase.clone() + "DeleteCallbackId";
+    let accessor_trait = table_name_pascalcase.clone() + "TableAccess";
 
     write!(
         out,
@@ -375,11 +374,12 @@ pub struct {table_handle}<'ctx> {{
 }}
 
 #[allow(non_camel_case_types)]
-pub trait {table_name} {{
+pub trait {accessor_trait} {{
+    #[allow(non_snake_case)]
     fn {table_name}(&self) -> {table_handle}<'_>;
 }}
 
-impl {table_name} for super::RemoteTables {{
+impl {accessor_trait} for super::RemoteTables {{
     fn {table_name}(&self) -> {table_handle}<'_> {{
         {table_handle} {{
             imp: self.imp.get_table::<{row_type}>({table_name:?}),
@@ -432,8 +432,6 @@ impl<'ctx> __sdk::table::Table for {table_handle}<'ctx> {{
 
         let pk_field_name = pk_field.col_name.deref().to_case(Case::Snake);
         let pk_field_type = type_name(ctx, &pk_field.col_type);
-
-        // TODO: import pk_field_type
 
         write!(
             out,
@@ -550,7 +548,10 @@ fn reducer_file_name(reducer: &ReducerDef) -> String {
     reducer_module_name(reducer) + ".rs"
 }
 
-const STRUCT_DERIVES: &[&str] = &["#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]"];
+const STRUCT_DERIVES: &[&str] = &[
+    "#[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]",
+    "#[sats(crate = __lib)]",
+];
 
 fn print_struct_derives(output: &mut Indenter) {
     print_lines(output, STRUCT_DERIVES);
@@ -603,6 +604,7 @@ fn reducer_function_name(reducer: &ReducerDef) -> String {
 
 pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> (String, String) {
     let file_name = reducer_file_name(reducer);
+    let reducer_name = reducer.name.as_ref();
     let func_name = reducer_function_name(reducer);
     let args_type = reducer_args_type_name(reducer);
 
@@ -612,6 +614,18 @@ pub fn autogen_rust_reducer(ctx: &GenCtx, reducer: &ReducerDef) -> (String, Stri
     let out = &mut output;
 
     print_file_header(out);
+
+    out.newline();
+
+    gen_and_print_imports(
+        ctx,
+        out,
+        &reducer.args[..],
+        generate_imports_elements,
+        (&file_name, &func_name),
+    );
+
+    out.newline();
 
     define_struct_for_product(out, ctx, &args_type, &reducer.args);
 
@@ -649,19 +663,19 @@ pub trait {func_name} {{
 
 impl {func_name} for super::RemoteReducers {{
     fn {func_name}(&self, {arglist}) -> __anyhow::Result<()> {{
-        self.imp.call_reducer({func_name:?}, {args_type} {{ {arg_names_list} }})
+        self.imp.call_reducer({reducer_name:?}, {args_type} {{ {arg_names_list} }})
     }}
     fn on_{func_name}(
         &self,
         mut callback: impl FnMut(&super::EventContext, {arg_types_ref_list}) + Send + 'static,
     ) -> {callback_id} {{
         {callback_id}(self.imp.on_reducer::<{args_type}>(
-            {func_name:?},
+            {reducer_name:?},
             Box::new(move |ctx: &super::EventContext, args: &{args_type}| callback(ctx, {unboxed_arg_refs})),
         ))
     }}
     fn remove_on_{func_name}(&self, callback: {callback_id}) {{
-        self.imp.remove_on_reducer::<{args_type}>({func_name:?}, callback.0)
+        self.imp.remove_on_reducer::<{args_type}>({reducer_name:?}, callback.0)
     }}
 }}
 "
@@ -847,6 +861,7 @@ impl __sdk::spacetime_module::InModule for Reducer {{
 
 fn print_db_update_defn(ctx: &GenCtx, out: &mut Indenter, items: &[GenItem]) {
     writeln!(out, "#[derive(Default)]");
+    writeln!(out, "#[allow(non_snake_case)]");
     out.delimited_block(
         "pub struct DbUpdate {",
         |out| {
@@ -1014,6 +1029,13 @@ impl __sdk::db_context::DbContext for DbConnection {{
     fn subscription_builder(&self) -> Self::SubscriptionBuilder {{
         __sdk::subscription::SubscriptionBuilder::new(&self.imp)
     }}
+
+    fn identity(&self) -> __sdk::Identity {{
+        self.imp.identity()
+    }}
+    fn address(&self) -> __sdk::Address {{
+        self.imp.address()
+    }}
 }}
 
 impl DbConnection {{
@@ -1091,6 +1113,13 @@ impl __sdk::db_context::DbContext for EventContext {{
     fn subscription_builder(&self) -> Self::SubscriptionBuilder {{
         __sdk::subscription::SubscriptionBuilder::new(&self.imp)
     }}
+
+    fn identity(&self) -> __sdk::Identity {{
+        self.imp.identity()
+    }}
+    fn address(&self) -> __sdk::Address {{
+        self.imp.address()
+    }}
 }}
 
 impl __sdk::spacetime_module::EventContext for EventContext {{
@@ -1120,6 +1149,17 @@ impl __sdk::spacetime_module::SubscriptionHandle for SubscriptionHandle {{
         Self {{ imp }}
     }}
 }}
+
+pub trait RemoteDbContext: __sdk::DbContext<
+    DbView = RemoteTables,
+    Reducers = RemoteReducers,
+    SubscriptionBuilder = __sdk::subscription::SubscriptionBuilder<RemoteModule>,
+> {{}}
+impl<Ctx: __sdk::DbContext<
+    DbView = RemoteTables,
+    Reducers = RemoteReducers,
+    SubscriptionBuilder = __sdk::subscription::SubscriptionBuilder<RemoteModule>,
+>> RemoteDbContext for Ctx {{}}
 ",
     );
 }

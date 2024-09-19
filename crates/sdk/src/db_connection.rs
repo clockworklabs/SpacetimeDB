@@ -51,14 +51,18 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         let res = match msg {
             ParsedMessage::Error(e) => Err(e),
             ParsedMessage::IdentityToken(identity, token, addr) => {
-                let mut inner = self.inner.lock().unwrap();
-                assert_eq!(inner.address, addr);
-                if let Some(prev_identity) = inner.identity {
-                    assert_eq!(prev_identity, identity);
-                }
-                inner.identity = Some(identity);
-                if let Some(on_connect) = inner.on_connect.take() {
-                    on_connect(identity, &token);
+                let callback = {
+                    let mut inner = self.inner.lock().unwrap();
+                    assert_eq!(inner.address, addr);
+                    if let Some(prev_identity) = inner.identity {
+                        assert_eq!(prev_identity, identity);
+                    }
+                    inner.identity = Some(identity);
+                    inner.on_connect.take()
+                };
+                if let Some(on_connect) = callback {
+                    let ctx = <M::DbConnection as DbConnection>::new(self.clone());
+                    on_connect(&ctx, identity, &token);
                 }
                 Ok(())
             }
@@ -106,7 +110,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
     fn make_event_ctx(&self, event: Event<M::Reducer>) -> M::EventContext {
         let imp = self.clone();
-        M::EventContext::new(imp, event)
+        <M::EventContext as EventContext>::new(imp, event)
     }
 
     /// To avoid deadlocks during callbacks, we make all mutations to subscription- and callback-managing structurs
@@ -254,6 +258,15 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         let mut pending_mutations = self.pending_mutations_recv.lock().unwrap();
         let mut recv = self.recv.lock().unwrap();
 
+        // Always process pending mutations before WS messages, if they're available,
+        // so that newly registered callbacks run on messages.
+        // This may be unnecessary, but `tokio::select` does not document any ordering guarantees,
+        // and if both `pending_mutations.next()` and `recv.next()` have values ready,
+        // we want to process the pending mutation first.
+        if let Ok(pending_mutation) = pending_mutations.try_next() {
+            return Message::Local(pending_mutation.unwrap());
+        }
+
         tokio::select! {
             pending_mutation = pending_mutations.next() => Message::Local(pending_mutation.unwrap()),
             incoming_message = recv.next() => Message::Ws(incoming_message),
@@ -329,10 +342,6 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         Ok(())
     }
 
-    pub fn subscribe() {
-        todo!()
-    }
-
     /// Add a [`PendingMutation`] to the `pending_mutations` queue,
     /// to be processed during the next call to [`Self::apply_pending_mutations`].
     ///
@@ -366,14 +375,12 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         reducer_name: &'static str,
         args: Args,
     ) -> Result<()> {
-        log::info!("call_reducer: {reducer_name:?}");
         let args_bsatn = bsatn::to_vec(&args)
             .with_context(|| format!("Failed to BSATN serialize arguments for reducer {reducer_name}"))?;
         self.queue_mutation(PendingMutation::CallReducer {
             reducer: reducer_name,
             args_bsatn,
         });
-        log::info!("call_reducer: done");
         Ok(())
     }
 
@@ -400,6 +407,18 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             callback_id: callback,
         });
     }
+
+    pub fn identity(&self) -> Identity {
+        self.inner
+            .lock()
+            .unwrap()
+            .identity
+            .expect("Connected anonymously and have not yet received identity from server")
+    }
+
+    pub fn address(&self) -> Address {
+        self.inner.lock().unwrap().address
+    }
 }
 
 pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
@@ -418,9 +437,9 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     identity: Option<Identity>,
     address: Address,
 
-    on_connect: Option<Box<dyn FnOnce(Identity, &str) + Send + Sync + 'static>>,
+    on_connect: Option<Box<dyn FnOnce(&M::DbConnection, Identity, &str) + Send + Sync + 'static>>,
     #[allow(unused)]
-    // TODO: Make use of this to handle `ParsedMessage::Error`?
+    // TODO: Make use of this to handle `ParsedMessage::Error` before receiving `IdentityToken`.
     on_connect_error: Option<Box<dyn FnOnce(anyhow::Error) + Send + Sync + 'static>>,
     #[allow(unused)]
     // TODO: implement disconnection logic.
@@ -539,7 +558,7 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
 
     credentials: Option<(Identity, String)>,
 
-    on_connect: Option<Box<dyn FnOnce(Identity, &str) + Send + Sync + 'static>>,
+    on_connect: Option<Box<dyn FnOnce(&M::DbConnection, Identity, &str) + Send + Sync + 'static>>,
     on_connect_error: Option<Box<dyn FnOnce(anyhow::Error) + Send + Sync + 'static>>,
     on_disconnect: Option<Box<dyn FnOnce(&M::DbConnection, Option<anyhow::Error>) + Send + Sync + 'static>>,
 }
@@ -629,7 +648,10 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
         self
     }
 
-    pub fn on_connect(mut self, callback: impl FnOnce(Identity, &str) + Send + Sync + 'static) -> Self {
+    pub fn on_connect(
+        mut self,
+        callback: impl FnOnce(&M::DbConnection, Identity, &str) + Send + Sync + 'static,
+    ) -> Self {
         if self.on_connect.is_some() {
             panic!(
                 "DbConnectionBuilder can only register a single `on_connect` callback.

@@ -6,7 +6,7 @@ use super::message_type::Message;
 use spacetimedb_sdk::{
     self as __sdk,
     anyhow::{self as __anyhow, Context as _},
-    spacetimedb_lib as __lib, ws_messages as __ws,
+    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 pub struct MessageTableHandle<'ctx> {
@@ -15,11 +15,12 @@ pub struct MessageTableHandle<'ctx> {
 }
 
 #[allow(non_camel_case_types)]
-pub trait message {
+pub trait MessageTableAccess {
+    #[allow(non_snake_case)]
     fn message(&self) -> MessageTableHandle<'_>;
 }
 
-impl message for super::RemoteTables {
+impl MessageTableAccess for super::RemoteTables {
     fn message(&self) -> MessageTableHandle<'_> {
         MessageTableHandle {
             imp: self.imp.get_table::<Message>("message"),

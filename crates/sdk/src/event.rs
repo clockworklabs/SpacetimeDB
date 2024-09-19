@@ -4,6 +4,7 @@ use spacetimedb_lib::{Address, Identity};
 use std::time::SystemTime;
 
 #[non_exhaustive]
+#[derive(Debug)]
 pub enum Event<R> {
     /// Event when we are notified that a reducer ran in the remote module.
     ///
@@ -41,6 +42,7 @@ pub enum Event<R> {
 }
 
 #[non_exhaustive]
+#[derive(Debug)]
 pub struct ReducerEvent<R> {
     /// The time at which the reducer was invoked.
     pub timestamp: SystemTime,
@@ -65,6 +67,7 @@ pub struct ReducerEvent<R> {
     pub reducer: R,
 }
 
+#[derive(Debug)]
 pub enum Status {
     Committed,
     Failed(String),

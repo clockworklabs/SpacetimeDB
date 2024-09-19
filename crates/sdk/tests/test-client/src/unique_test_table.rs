@@ -1,34 +1,40 @@
 use crate::module_bindings::*;
-use anyhow::anyhow;
 use spacetimedb_sdk::{
-    identity::Identity,
     sats::{i256, u256},
-    table::TableType,
-    Address,
+    Address, Event, Identity, Table,
 };
 use std::sync::Arc;
 use test_counter::TestCounter;
 
-pub trait UniqueTestTable: TableType {
+pub trait UniqueTestTable: std::fmt::Debug {
     type Key: Clone + Send + Sync + PartialEq + std::fmt::Debug + 'static;
 
     fn as_key(&self) -> &Self::Key;
     fn as_value(&self) -> i32;
 
-    fn is_insert_reducer_event(event: &Self::ReducerEvent) -> bool;
-    fn is_delete_reducer_event(event: &Self::ReducerEvent) -> bool;
+    fn is_insert_reducer_event(event: &Reducer) -> bool;
+    fn is_delete_reducer_event(event: &Reducer) -> bool;
 
-    fn insert(k: Self::Key, v: i32);
-    fn delete(k: Self::Key);
+    fn insert(ctx: &impl RemoteDbContext, k: Self::Key, v: i32);
+    fn delete(ctx: &impl RemoteDbContext, k: Self::Key);
+
+    fn on_insert(ctx: &impl RemoteDbContext, callback: impl FnMut(&EventContext, &Self) + Send + 'static);
+    fn on_delete(ctx: &impl RemoteDbContext, callback: impl FnMut(&EventContext, &Self) + Send + 'static);
 }
 
-pub fn insert_then_delete_one<T: UniqueTestTable>(test_counter: &Arc<TestCounter>, key: T::Key, value: i32) {
-    let mut insert_result = Some(test_counter.add_test(format!("insert-{}", T::TABLE_NAME)));
-    let mut delete_result = Some(test_counter.add_test(format!("delete-{}", T::TABLE_NAME)));
+pub fn insert_then_delete_one<T: UniqueTestTable>(
+    ctx: &impl RemoteDbContext,
+    test_counter: &Arc<TestCounter>,
+    key: T::Key,
+    value: i32,
+) {
+    let mut insert_result = Some(test_counter.add_test(format!("insert-{}", std::any::type_name::<T>())));
+    let mut delete_result = Some(test_counter.add_test(format!("delete-{}", std::any::type_name::<T>())));
 
     let mut on_delete = {
         let key_dup = key.clone();
-        Some(move |row: &T, reducer_event: Option<&T::ReducerEvent>| {
+        Some(move |ctx: &EventContext, row: &T| {
+            println!("on_delete {:?} called", std::any::type_name::<T>());
             if delete_result.is_some() {
                 let run_checks = || {
                     if row.as_key() != &key_dup || row.as_value() != value {
@@ -39,10 +45,14 @@ pub fn insert_then_delete_one<T: UniqueTestTable>(test_counter: &Arc<TestCounter
                             row
                         );
                     }
-                    reducer_event
-                        .ok_or(anyhow!("Expected a reducer event, but found None."))
-                        .map(T::is_delete_reducer_event)
-                        .and_then(|is_good| is_good.then_some(()).ok_or(anyhow!("Unexpected ReducerEvent variant.")))?;
+                    let Event::Reducer(reducer_event) = &ctx.event else {
+                        anyhow::bail!("Expected a reducer event");
+                    };
+                    anyhow::ensure!(
+                        T::is_delete_reducer_event(&reducer_event.reducer),
+                        "Unexpected Reducer variant {:?}",
+                        reducer_event.reducer,
+                    );
                     Ok(())
                 };
 
@@ -53,7 +63,8 @@ pub fn insert_then_delete_one<T: UniqueTestTable>(test_counter: &Arc<TestCounter
 
     let key_dup = key.clone();
 
-    T::on_insert(move |row, reducer_event| {
+    T::on_insert(ctx, move |ctx, row| {
+        println!("on_insert {:?} called", std::any::type_name::<T>());
         if insert_result.is_some() {
             let run_checks = || {
                 if row.as_key() != &key_dup || row.as_value() != value {
@@ -64,27 +75,30 @@ pub fn insert_then_delete_one<T: UniqueTestTable>(test_counter: &Arc<TestCounter
                         row
                     );
                 }
-                reducer_event
-                    .ok_or(anyhow!("Expected a reducer event, but found None."))
-                    .map(T::is_insert_reducer_event)
-                    .and_then(|is_good| is_good.then_some(()).ok_or(anyhow!("Unexpected ReducerEvent variant.")))?;
-
+                let Event::Reducer(reducer_event) = &ctx.event else {
+                    anyhow::bail!("Expected a reducer event");
+                };
+                anyhow::ensure!(
+                    T::is_insert_reducer_event(&reducer_event.reducer),
+                    "Unexpected Reducer variant {:?}",
+                    reducer_event.reducer,
+                );
                 Ok(())
             };
 
             (insert_result.take().unwrap())(run_checks());
 
-            T::on_delete(on_delete.take().unwrap());
+            T::on_delete(ctx, on_delete.take().unwrap());
 
-            T::delete(key_dup.clone());
+            T::delete(ctx, key_dup.clone());
         }
     });
 
-    T::insert(key, value);
+    T::insert(ctx, key, value);
 }
 
 macro_rules! impl_unique_test_table {
-    ($table:ty {
+    ($table:ident {
         Key = $key:ty;
         key_field_name = $field_name:ident;
         insert_reducer = $insert_reducer:ident;
@@ -102,22 +116,29 @@ macro_rules! impl_unique_test_table {
                 self.data
             }
 
-            fn is_insert_reducer_event(event: &Self::ReducerEvent) -> bool {
-                matches!(event, ReducerEvent::$insert_reducer_event(_))
+            fn is_insert_reducer_event(event: &Reducer) -> bool {
+                matches!(event, Reducer::$insert_reducer_event(_))
             }
-            fn is_delete_reducer_event(event: &Self::ReducerEvent) -> bool {
-                matches!(event, ReducerEvent::$delete_reducer_event(_))
+            fn is_delete_reducer_event(event: &Reducer) -> bool {
+                matches!(event, Reducer::$delete_reducer_event(_))
             }
 
-            fn insert(key: Self::Key, value: i32) {
-                $insert_reducer(key, value);
+            fn insert(ctx: &impl RemoteDbContext, key: Self::Key, value: i32) {
+                ctx.reducers().$insert_reducer(key, value).unwrap();
             }
-            fn delete(key: Self::Key) {
-                $delete_reducer(key);
+            fn delete(ctx: &impl RemoteDbContext, key: Self::Key) {
+                ctx.reducers().$delete_reducer(key).unwrap();
+            }
+
+            fn on_insert(ctx: &impl RemoteDbContext, callback: impl FnMut(&EventContext, &$table) + Send + 'static) {
+                ctx.db().$table().on_insert(callback);
+            }
+            fn on_delete(ctx: &impl RemoteDbContext, callback: impl FnMut(&EventContext, &$table) + Send + 'static) {
+                ctx.db().$table().on_delete(callback);
             }
         }
     };
-    ($($table:ty { $($stuff:tt)* })*) => {
+    ($($table:ident { $($stuff:tt)* })*) => {
         $(impl_unique_test_table!($table { $($stuff)* });)*
     };
 }

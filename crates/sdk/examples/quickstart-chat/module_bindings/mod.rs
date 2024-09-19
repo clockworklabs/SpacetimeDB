@@ -5,7 +5,7 @@
 use spacetimedb_sdk::{
     self as __sdk,
     anyhow::{self as __anyhow, Context as _},
-    spacetimedb_lib as __lib, ws_messages as __ws,
+    lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
 pub mod message_table;
@@ -23,6 +23,7 @@ pub use user_table::*;
 pub use user_type::*;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
+#[sats(crate = __lib)]
 pub enum Reducer {
     SendMessage(send_message_reducer::SendMessage),
     SetName(set_name_reducer::SetName),
@@ -64,6 +65,7 @@ impl TryFrom<__ws::ReducerCallInfo> for Reducer {
 }
 
 #[derive(Default)]
+#[allow(non_snake_case)]
 pub struct DbUpdate {
     message: __sdk::spacetime_module::TableUpdate<Message>,
     user: __sdk::spacetime_module::TableUpdate<User>,
@@ -169,6 +171,13 @@ impl __sdk::db_context::DbContext for DbConnection {
     fn subscription_builder(&self) -> Self::SubscriptionBuilder {
         __sdk::subscription::SubscriptionBuilder::new(&self.imp)
     }
+
+    fn identity(&self) -> __sdk::Identity {
+        self.imp.identity()
+    }
+    fn address(&self) -> __sdk::Address {
+        self.imp.address()
+    }
 }
 
 impl DbConnection {
@@ -246,6 +255,13 @@ impl __sdk::db_context::DbContext for EventContext {
     fn subscription_builder(&self) -> Self::SubscriptionBuilder {
         __sdk::subscription::SubscriptionBuilder::new(&self.imp)
     }
+
+    fn identity(&self) -> __sdk::Identity {
+        self.imp.identity()
+    }
+    fn address(&self) -> __sdk::Address {
+        self.imp.address()
+    }
 }
 
 impl __sdk::spacetime_module::EventContext for EventContext {
@@ -274,4 +290,22 @@ impl __sdk::spacetime_module::SubscriptionHandle for SubscriptionHandle {
     fn new(imp: __sdk::subscription::SubscriptionHandleImpl<RemoteModule>) -> Self {
         Self { imp }
     }
+}
+
+pub trait RemoteDbContext:
+    __sdk::DbContext<
+    DbView = RemoteTables,
+    Reducers = RemoteReducers,
+    SubscriptionBuilder = __sdk::subscription::SubscriptionBuilder<RemoteModule>,
+>
+{
+}
+impl<
+        Ctx: __sdk::DbContext<
+            DbView = RemoteTables,
+            Reducers = RemoteReducers,
+            SubscriptionBuilder = __sdk::subscription::SubscriptionBuilder<RemoteModule>,
+        >,
+    > RemoteDbContext for Ctx
+{
 }

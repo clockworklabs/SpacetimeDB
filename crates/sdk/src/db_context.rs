@@ -1,3 +1,5 @@
+use crate::{Address, Identity};
+
 pub trait DbContext {
     type DbView;
     fn db(&self) -> &Self::DbView;
@@ -10,4 +12,7 @@ pub trait DbContext {
 
     type SubscriptionBuilder;
     fn subscription_builder(&self) -> Self::SubscriptionBuilder;
+
+    fn identity(&self) -> Identity;
+    fn address(&self) -> Address;
 }

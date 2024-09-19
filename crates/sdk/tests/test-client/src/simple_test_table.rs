@@ -1,26 +1,28 @@
 use crate::module_bindings::*;
-use anyhow::Context;
 use spacetimedb_sdk::{
-    identity::Identity,
     sats::{i256, u256},
-    table::TableType,
-    Address,
+    Address, Event, Identity, Table,
 };
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use test_counter::TestCounter;
 
-pub trait SimpleTestTable: TableType {
+pub trait SimpleTestTable {
     type Contents: Clone + Send + Sync + PartialEq + std::fmt::Debug + 'static;
 
     fn as_contents(&self) -> &Self::Contents;
 
-    fn is_insert_reducer_event(event: &Self::ReducerEvent) -> bool;
+    fn is_insert_reducer_event(event: &Reducer) -> bool;
 
-    fn insert(contents: Self::Contents);
+    fn insert(ctx: &impl RemoteDbContext, contents: Self::Contents);
+
+    fn on_insert(ctx: &impl RemoteDbContext, callback: impl FnMut(&EventContext, &Self) + Send + 'static);
 }
 
 macro_rules! impl_simple_test_table {
-    ($table:ty {
+    (__impl $table:ident {
         Contents = $contents:ty;
         field_name = $field_name:ident;
         insert_reducer = $insert_reducer:ident;
@@ -33,17 +35,21 @@ macro_rules! impl_simple_test_table {
                 &self.$field_name
             }
 
-            fn is_insert_reducer_event(event: &Self::ReducerEvent) -> bool {
-                matches!(event, ReducerEvent::$insert_reducer_event(_))
+            fn is_insert_reducer_event(event: &Reducer) -> bool {
+                matches!(event, Reducer::$insert_reducer_event(_))
             }
 
-            fn insert(contents: Self::Contents) {
-                $insert_reducer(contents);
+            fn insert(ctx: &impl RemoteDbContext, contents: Self::Contents) {
+                ctx.reducers().$insert_reducer(contents).unwrap();
+            }
+
+            fn on_insert(ctx: &impl RemoteDbContext, callback: impl FnMut(&EventContext, &Self) + Send + 'static) {
+                ctx.db().$table().on_insert(callback);
             }
         }
     };
-    ($($table:ty { $($stuff:tt)* })*) => {
-        $(impl_simple_test_table!($table { $($stuff)* });)*
+    ($($table:ident { $($stuff:tt)* })*) => {
+        $(impl_simple_test_table!(__impl $table { $($stuff)* });)*
     };
 }
 
@@ -391,39 +397,47 @@ impl_simple_test_table! {
     }
 }
 
-pub fn on_insert_one<T: SimpleTestTable>(
+pub fn on_insert_one<T: SimpleTestTable + std::fmt::Debug>(
+    ctx: &impl RemoteDbContext,
     test_counter: &Arc<TestCounter>,
     value: T::Contents,
-    is_expected_variant: impl Fn(&T::ReducerEvent) -> bool + Send + 'static,
-) where
-    T::ReducerEvent: std::fmt::Debug,
-{
-    let mut set_result = Some(test_counter.add_test(format!("insert-{}", T::TABLE_NAME)));
+    is_expected_variant: impl Fn(&Reducer) -> bool + Send + 'static,
+) {
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-    T::on_insert(move |row, reducer_event| {
+    let mut set_result = Some(test_counter.add_test(format!(
+        "insert-{}-{}",
+        std::any::type_name::<T>(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    )));
+
+    T::on_insert(ctx, move |ctx: &EventContext, row| {
         if let Some(set_result) = set_result.take() {
             let run_checks = || {
                 anyhow::ensure!(
-                    *row.as_contents() == value,
-                    "Unexpected row value. Expected {value:?} but found {row:?}"
+                    row.as_contents() == &value,
+                    "Unexpected row value. Expected {value:?} but found {row:?}",
                 );
-                let reducer_event = reducer_event.context("Expected a reducer event, but found None")?;
+                let Event::Reducer(reducer_event) = &ctx.event else {
+                    anyhow::bail!("Expected a reducer event");
+                };
                 anyhow::ensure!(
-                    is_expected_variant(reducer_event),
-                    "Unexpected ReducerEvent variant {reducer_event:?}."
+                    is_expected_variant(&reducer_event.reducer),
+                    "Unexpected Reducer variant {:?}",
+                    reducer_event.reducer,
                 );
                 Ok(())
             };
-
-            set_result(run_checks())
+            set_result(run_checks());
         }
     });
 }
 
-pub fn insert_one<T: SimpleTestTable>(test_counter: &Arc<TestCounter>, value: T::Contents)
-where
-    T::ReducerEvent: std::fmt::Debug,
-{
-    on_insert_one::<T>(test_counter, value.clone(), T::is_insert_reducer_event);
-    T::insert(value);
+pub fn insert_one<T: SimpleTestTable + std::fmt::Debug + 'static>(
+    ctx: &impl RemoteDbContext,
+    test_counter: &Arc<TestCounter>,
+    value: T::Contents,
+) {
+    on_insert_one::<T>(ctx, test_counter, value.clone(), T::is_insert_reducer_event);
+    T::insert(ctx, value);
 }

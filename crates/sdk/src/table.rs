@@ -1,5 +1,5 @@
 pub trait Table {
-    type Row;
+    type Row: 'static;
 
     type EventContext;
 

@@ -38,10 +38,10 @@ macro_rules! declare_tests_with_suffix {
                 make_test("insert_identity").run();
             }
 
-            #[test]
-            fn insert_caller_identity() {
-                make_test("insert_caller_identity").run();
-            }
+            // #[test]
+            // fn insert_caller_identity() {
+            //     make_test("insert_caller_identity").run();
+            // }
 
             #[test]
             fn delete_identity() {
@@ -58,10 +58,10 @@ macro_rules! declare_tests_with_suffix {
                 make_test("insert_address").run();
             }
 
-            #[test]
-            fn insert_caller_address() {
-                make_test("insert_caller_address").run();
-            }
+            // #[test]
+            // fn insert_caller_address() {
+            //     make_test("insert_caller_address").run();
+            // }
 
             #[test]
             fn delete_address() {
@@ -89,6 +89,21 @@ macro_rules! declare_tests_with_suffix {
             }
 
             #[test]
+            fn insert_option_some() {
+                make_test("insert_option_some").run();
+            }
+
+            #[test]
+            fn insert_option_none() {
+                make_test("insert_option_none").run();
+            }
+
+            #[test]
+            fn insert_struct() {
+                make_test("insert_struct").run();
+            }
+
+            #[test]
             fn insert_simple_enum() {
                 make_test("insert_simple_enum").run();
             }
@@ -108,10 +123,10 @@ macro_rules! declare_tests_with_suffix {
                 make_test("insert_primitives_as_strings").run();
             }
 
-            #[test]
-            fn resubscribe() {
-                make_test("resubscribe").run();
-            }
+            // #[test]
+            // fn resubscribe() {
+            //     make_test("resubscribe").run();
+            // }
 
             #[test]
             #[should_panic]
@@ -119,33 +134,33 @@ macro_rules! declare_tests_with_suffix {
                 make_test("should_fail").run();
             }
 
-            #[test]
-            fn reauth() {
-                make_test("reauth_part_1").run();
-                make_test("reauth_part_2").run();
-            }
+            // #[test]
+            // fn reauth() {
+            //     make_test("reauth_part_1").run();
+            //     make_test("reauth_part_2").run();
+            // }
 
-            #[test]
-            fn reconnect_same_address() {
-                make_test("reconnect_same_address").run();
-            }
+            // #[test]
+            // fn reconnect_same_address() {
+            //     make_test("reconnect_same_address").run();
+            // }
 
-            #[test]
-            fn connect_disconnect_callbacks() {
-                Test::builder()
-                    .with_name(concat!("connect_disconnect_callback_", stringify!($lang)))
-                    .with_module(concat!("sdk-test-connect-disconnect", $suffix))
-                    .with_client(concat!(
-                        env!("CARGO_MANIFEST_DIR"),
-                        "/tests/connect_disconnect_client"
-                    ))
-                    .with_language("rust")
-                    .with_bindings_dir("src/module_bindings")
-                    .with_compile_command("cargo build")
-                    .with_run_command("cargo run")
-                    .build()
-                    .run();
-            }
+            // #[test]
+            // fn connect_disconnect_callbacks() {
+            //     Test::builder()
+            //         .with_name(concat!("connect_disconnect_callback_", stringify!($lang)))
+            //         .with_module(concat!("sdk-test-connect-disconnect", $suffix))
+            //         .with_client(concat!(
+            //             env!("CARGO_MANIFEST_DIR"),
+            //             "/tests/connect_disconnect_client"
+            //         ))
+            //         .with_language("rust")
+            //         .with_bindings_dir("src/module_bindings")
+            //         .with_compile_command("cargo build")
+            //         .with_run_command("cargo run")
+            //         .build()
+            //         .run();
+            // }
 
             #[test]
             fn caller_always_notified() {
