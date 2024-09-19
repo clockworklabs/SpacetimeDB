@@ -707,13 +707,11 @@ module_bindings::{TABLE}::find_by_{COLUMN}(
 
 For each unique column of a table (those annotated `#[unique]` and `#[primarykey]`), `spacetime generate` generates a static method on the [table struct](#type-table) to seek a subscribed row where that column matches a requested value.
 
-<<<<<<< HEAD:docs/05-sdks/21-rust-reference.md
 The method's return type depends on the column's attributes:
 
 - For unique columns, including those annotated `#[unique]` and `#[primarykey]`, the `filter_by` method returns an `Option<{TABLE}>`, where `{TABLE}` is the [table struct](#type-table).
 - # For non-unique columns, the `filter_by` method returns an `impl Iterator<Item = {TABLE}>`.
   These methods are named `find_by_{COLUMN}`, where `{COLUMN}` is the column name converted to `snake_case`. The method's return type is `Option<{TABLE}>`.
-  > > > > > > > origin:docs/sdks/rust/index.md
 
 ### Trait `TableType`
 
