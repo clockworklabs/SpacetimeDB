@@ -849,7 +849,7 @@ Save a token to the filesystem.
 ### Class `Identity`
 
 ```cs
-namespace SpacetimeDB 
+namespace SpacetimeDB
 {
     public struct Identity : IEquatable<Identity>
     {
@@ -869,7 +869,7 @@ A unique public identifier for a user of a database.
 Columns of type `Identity` inside a module will be represented in the C# SDK as properties of type `byte[]`. `Identity` is essentially just a wrapper around `byte[]`, and you can use the `Bytes` property to get a `byte[]` that can be used to filter tables and so on.
 
 ```cs
-namespace SpacetimeDB 
+namespace SpacetimeDB
 {
     public struct Address : IEquatable<Address>
     {
@@ -888,7 +888,7 @@ An opaque identifier for a client connection to a database, intended to differen
 
 The SpacetimeDB C# SDK performs internal logging.
 
-A default logger is set up automatically for you - a [`ConsoleLogger`](#class-consolelogger) for C# projects and  [`UnityDebugLogger`](#class-unitydebuglogger) for Unity projects.
+A default logger is set up automatically for you - a [`ConsoleLogger`](#class-consolelogger) for C# projects and [`UnityDebugLogger`](#class-unitydebuglogger) for Unity projects.
 
 If you want to redirect SDK logs elsewhere, you can inherit from the [`ISpacetimeDBLogger`](#interface-ispacetimedblogger) and assign an instance of your class to the `SpacetimeDB.Logger.Current` static property.
 

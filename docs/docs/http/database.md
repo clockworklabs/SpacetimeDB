@@ -15,7 +15,7 @@ The HTTP endpoints in `/database` allow clients to interact with Spacetime datab
 | [`/database/confirm_recovery_code GET`](#databaseconfirm_recovery_code-get)                                         | Recover a login token from a recovery code.                       |
 | [`/database/publish POST`](#databasepublish-post)                                                                   | Publish a database given its module code.                         |
 | [`/database/delete/:address POST`](#databasedeleteaddress-post)                                                     | Delete a database.                                                |
-| [`/database/subscribe/:name_or_address GET`](#databasesubscribename_or_address-get)                                 | Begin a [WebSocket connection](/docs/ws).    |
+| [`/database/subscribe/:name_or_address GET`](#databasesubscribename_or_address-get)                                 | Begin a [WebSocket connection](/docs/ws).                         |
 | [`/database/call/:name_or_address/:reducer POST`](#databasecallname_or_addressreducer-post)                         | Invoke a reducer in a database.                                   |
 | [`/database/schema/:name_or_address GET`](#databaseschemaname_or_address-get)                                       | Get the schema for a database.                                    |
 | [`/database/schema/:name_or_address/:entity_type/:entity GET`](#databaseschemaname_or_addressentity_typeentity-get) | Get a schema for a particular table or reducer.                   |
@@ -92,8 +92,8 @@ Accessible through the CLI as `spacetime dns set-name <domain> <address>`.
 
 #### Required Headers
 
-| Name            | Value                                                                                       |
-| --------------- | ------------------------------------------------------------------------------------------- |
+| Name            | Value                                                           |
+| --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
 #### Returns
@@ -145,8 +145,8 @@ Accessible through the CLI as `spacetime dns register-tld <tld>`.
 
 #### Required Headers
 
-| Name            | Value                                                                                       |
-| --------------- | ------------------------------------------------------------------------------------------- |
+| Name            | Value                                                           |
+| --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
 #### Returns
@@ -183,11 +183,11 @@ Accessible through the CLI as `spacetime identity recover <email> <identity>`.
 
 #### Query Parameters
 
-| Name       | Value                                                                                                                                                                                                                                                                                                                 |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `identity` | The identity whose token should be recovered.                                                                                                                                                                                                                                                                         |
+| Name       | Value                                                                                                                                                                                                                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `identity` | The identity whose token should be recovered.                                                                                                                                                                                                                                         |
 | `email`    | The email to send the recovery code or link to. This email must be associated with the identity, either during creation via [`/identity`](/docs/http/identity#identity-post) or afterwards via [`/identity/:identity/set-email`](/docs/http/identity#identityidentityset_email-post). |
-| `link`     | A boolean; whether to send a clickable link rather than a recovery code.                                                                                                                                                                                                                                              |
+| `link`     | A boolean; whether to send a clickable link rather than a recovery code.                                                                                                                                                                                                              |
 
 ## `/database/confirm_recovery_code GET`
 
@@ -229,8 +229,8 @@ Accessible through the CLI as `spacetime publish`.
 
 #### Required Headers
 
-| Name            | Value                                                                                       |
-| --------------- | ------------------------------------------------------------------------------------------- |
+| Name            | Value                                                           |
+| --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
 #### Data
@@ -281,8 +281,8 @@ Accessible through the CLI as `spacetime delete <address>`.
 
 #### Required Headers
 
-| Name            | Value                                                                                       |
-| --------------- | ------------------------------------------------------------------------------------------- |
+| Name            | Value                                                           |
+| --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
 ## `/database/subscribe/:name_or_address GET`
@@ -299,18 +299,18 @@ Begin a [WebSocket connection](/docs/ws) with a database.
 
 For more information about WebSocket headers, see [RFC 6455](https://datatracker.ietf.org/doc/html/rfc6455).
 
-| Name                     | Value                                                                                                                                          |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Name                     | Value                                                                                                |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- |
 | `Sec-WebSocket-Protocol` | [`v1.bin.spacetimedb`](/docs/ws#binary-protocol) or [`v1.text.spacetimedb`](/docs/ws#text-protocol). |
-| `Connection`             | `Updgrade`                                                                                                                                     |
-| `Upgrade`                | `websocket`                                                                                                                                    |
-| `Sec-WebSocket-Version`  | `13`                                                                                                                                           |
-| `Sec-WebSocket-Key`      | A 16-byte value, generated randomly by the client, encoded as Base64.                                                                          |
+| `Connection`             | `Updgrade`                                                                                           |
+| `Upgrade`                | `websocket`                                                                                          |
+| `Sec-WebSocket-Version`  | `13`                                                                                                 |
+| `Sec-WebSocket-Key`      | A 16-byte value, generated randomly by the client, encoded as Base64.                                |
 
 #### Optional Headers
 
-| Name            | Value                                                                                       |
-| --------------- | ------------------------------------------------------------------------------------------- |
+| Name            | Value                                                           |
+| --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
 ## `/database/call/:name_or_address/:reducer POST`
@@ -326,8 +326,8 @@ Invoke a reducer in a database.
 
 #### Required Headers
 
-| Name            | Value                                                                                       |
-| --------------- | ------------------------------------------------------------------------------------------- |
+| Name            | Value                                                           |
+| --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
 #### Data
@@ -444,10 +444,10 @@ The `"entities"` will be an object whose keys are table and reducer names, and w
 }
 ```
 
-| Entity field | Value                                                                                                                                                                                            |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `arity`      | For tables, the number of colums; for reducers, the number of arguments.                                                                                                                         |
-| `type`       | For tables, `"table"`; for reducers, `"reducer"`.                                                                                                                                                |
+| Entity field | Value                                                                                                                                                       |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `arity`      | For tables, the number of colums; for reducers, the number of arguments.                                                                                    |
+| `type`       | For tables, `"table"`; for reducers, `"reducer"`.                                                                                                           |
 | `schema`     | A [JSON-encoded `ProductType`](/docs/satn); for tables, the table schema; for reducers, the argument schema. Only present if `expand` is supplied and true. |
 
 The `"typespace"` will be a JSON array of [`AlgebraicType`s](/docs/satn) referenced by the module. This can be used to resolve `Ref` types within the schema; the type `{ "Ref": n }` refers to `response["typespace"][n]`.
@@ -484,10 +484,10 @@ Returns a single entity in the same format as in the `"entities"` returned by [t
 }
 ```
 
-| Field    | Value                                                                                                                                                                                            |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `arity`  | For tables, the number of colums; for reducers, the number of arguments.                                                                                                                         |
-| `type`   | For tables, `"table"`; for reducers, `"reducer"`.                                                                                                                                                |
+| Field    | Value                                                                                                                                                       |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `arity`  | For tables, the number of colums; for reducers, the number of arguments.                                                                                    |
+| `type`   | For tables, `"table"`; for reducers, `"reducer"`.                                                                                                           |
 | `schema` | A [JSON-encoded `ProductType`](/docs/satn); for tables, the table schema; for reducers, the argument schema. Only present if `expand` is supplied and true. |
 
 ## `/database/info/:name_or_address GET`
@@ -514,7 +514,7 @@ Returns JSON in the form:
 ```
 
 | Field               | Type   | Meaning                                                          |
-| --------------------| ------ | ---------------------------------------------------------------- |
+| ------------------- | ------ | ---------------------------------------------------------------- |
 | `"address"`         | String | The address of the database.                                     |
 | `"owner_identity"`  | String | The Spacetime identity of the database's owner.                  |
 | `"host_type"`       | String | The module host type; currently always `"wasm"`.                 |
@@ -541,8 +541,8 @@ Accessible through the CLI as `spacetime logs <name_or_address>`.
 
 #### Required Headers
 
-| Name            | Value                                                                                       |
-| --------------- | ------------------------------------------------------------------------------------------- |
+| Name            | Value                                                           |
+| --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
 #### Returns
@@ -563,8 +563,8 @@ Accessible through the CLI as `spacetime sql <name_or_address> <query>`.
 
 #### Required Headers
 
-| Name            | Value                                                                                       |
-| --------------- | ------------------------------------------------------------------------------------------- |
+| Name            | Value                                                           |
+| --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
 #### Data

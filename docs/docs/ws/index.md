@@ -188,7 +188,7 @@ Each `SubscriptionUpdate` contains a `TableUpdate` for each table with subscribe
 | `tableRowOperations` | A `TableRowOperation` for each inserted or deleted row.                                                       |
 
 | `TableRowOperation` field | Value                                                                                                                                                                                                      |
-|---------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `op`                      | `INSERT` for inserted rows during a [`TransactionUpdate`](#transactionupdate) or rows resident upon applying a subscription; `DELETE` for deleted rows during a [`TransactionUpdate`](#transactionupdate). |
 | `row`                     | The altered row, encoded as a BSATN `ProductValue`.                                                                                                                                                        |
 
@@ -225,7 +225,7 @@ Each `SubscriptionUpdate` contains a `TableUpdate` for each table with subscribe
 | `table_row_operations` | A `TableRowOperation` for each inserted or deleted row.                                                        |
 
 | `TableRowOperation` field | Value                                                                                                                                                                                                          |
-|---------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `op`                      | `"insert"` for inserted rows during a [`TransactionUpdate`](#transactionupdate) or rows resident upon applying a subscription; `"delete"` for deleted rows during a [`TransactionUpdate`](#transactionupdate). |
 | `row`                     | The altered row, encoded as a JSON array.                                                                                                                                                                      |
 

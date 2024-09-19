@@ -42,7 +42,7 @@ static partial class Module
     {
         // We can skip (or explicitly set to zero) auto-incremented fields when creating new rows.
         var person = new Person { Name = name, Age = age };
-        
+
         // `Insert()` method is auto-generated and will insert the given row into the table.
         person.Insert();
         // After insertion, the auto-incremented fields will be populated with their actual values.
@@ -119,7 +119,6 @@ And a couple of special custom types:
 - `SpacetimeDB.SATS.Unit` - semantically equivalent to an empty struct, sometimes useful in generic contexts where C# doesn't permit `void`.
 - `Identity` (`SpacetimeDB.Runtime.Identity`) - a unique identifier for each user; internally a byte blob but can be printed, hashed and compared for equality.
 - `Address` (`SpacetimeDB.Runtime.Address`) - an identifier which disamgibuates connections by the same `Identity`; internally a byte blob but can be printed, hashed and compared for equality.
-
 
 #### Custom types
 
@@ -245,10 +244,10 @@ public partial struct Person
 
     // Finds a row in the table with the given value in the `Id` column and returns it, or `null` if no such row exists.
     public static Person? FindById(int id);
-    
+
     // Deletes a row in the table with the given value in the `Id` column and returns `true` if the row was found and deleted, or `false` if no such row exists.
     public static bool DeleteById(int id);
-    
+
     // Updates a row in the table with the given value in the `Id` column and returns `true` if the row was found and updated, or `false` if no such row exists.
     public static bool UpdateById(int oldId, Person newValue);
 }
@@ -295,14 +294,14 @@ public static void PrintInfo(ReducerContext e)
 }
 ```
 
-
 ### Scheduler Tables
+
 Tables can be used to schedule a reducer calls either at a specific timestamp or at regular intervals.
 
 ```csharp
 public static partial class Timers
 {
-  
+
     // The `Scheduled` attribute links this table to a reducer.
     [SpacetimeDB.Table(Scheduled = nameof(SendScheduledMessage))]
     public partial struct SendMessageTimer
@@ -310,7 +309,7 @@ public static partial class Timers
         public string Text;
     }
 
-     
+
     // Define the reducer that will be invoked by the scheduler table.
     // The first parameter is always `ReducerContext`, and the second parameter is an instance of the linked table struct.
     [SpacetimeDB.Reducer]
@@ -354,10 +353,10 @@ public static partial class Timers
     public partial struct SendMessageTimer
     {
         public string Text;         // fields of original struct
-       
+
         [SpacetimeDB.Column(ColumnAttrs.PrimaryKeyAuto)]
         public ulong ScheduledId;   // unique identifier to be used internally
-        
+
         public SpacetimeDB.ScheduleAt ScheduleAt;   // Scheduling details (Time or Inteval)
     }
 }
@@ -375,10 +374,9 @@ These are four special kinds of reducers that can be used to respond to module l
 - `ReducerKind.Connect` - this reducer will be invoked when a client connects to the database.
 - `ReducerKind.Disconnect` - this reducer will be invoked when a client disconnects from the database.
 
-
 Example:
 
-```csharp
+````csharp
 [SpacetimeDB.Reducer(ReducerKind.Init)]
 public static void Init()
 {
@@ -402,3 +400,4 @@ public static void OnDisconnect(DbEventArgs ctx)
 {
     Log($"{ctx.Sender} has disconnected.");
 }```
+````

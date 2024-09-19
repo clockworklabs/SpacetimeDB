@@ -327,6 +327,7 @@ public static void SendChatMessage(ReducerContext ctx, string text)
 ## Wrapping Up
 
 ### Publishing a Module to SpacetimeDB
+
 💡View the [entire lib.cs file](https://gist.github.com/dylanh724/68067b4e843ea6e99fbd297fe1a87c49)
 
 Now that we've written the code for our server module and reached a clean checkpoint, we need to publish it to SpacetimeDB. This will create the database and call the init reducer. In your terminal or command window, run the following commands.

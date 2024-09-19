@@ -57,8 +57,8 @@ Accessible through the CLI as `spacetime energy set-balance <balance> <identity>
 
 #### Required Headers
 
-| Name            | Value                                                                                       |
-| --------------- | ------------------------------------------------------------------------------------------- |
+| Name            | Value                                                           |
+| --------------- | --------------------------------------------------------------- |
 | `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
 
 #### Returns

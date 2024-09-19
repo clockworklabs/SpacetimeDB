@@ -28,6 +28,6 @@ You are ready to start developing SpacetimeDB modules. See below for a quickstar
 ### Client
 
 - [Rust](/docs/sdks/rust/quickstart)
-- [C# (Standalone)](/docs/sdks/c-sharp/quickstart) 
+- [C# (Standalone)](/docs/sdks/c-sharp/quickstart)
 - [C# (Unity)](/docs/unity/part-1)
 - [Typescript](/docs/sdks/typescript/quickstart)

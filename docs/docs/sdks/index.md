@@ -1,4 +1,4 @@
- SpacetimeDB Client SDKs Overview
+SpacetimeDB Client SDKs Overview
 
 The SpacetimeDB Client SDKs provide a comprehensive interface to interact with the SpacetimeDB server engine from various programming languages. Currently, SDKs are available for
 

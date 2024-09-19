@@ -168,12 +168,16 @@ module_bindings
 We need to import these types into our `client/src/App.tsx`. While we are at it, we will also import the SpacetimeDBClient class from our SDK. In order to let the SDK know what tables and reducers we will be using we need to also register them.
 
 ```typescript
-import { SpacetimeDBClient, Identity, Address } from "@clockworklabs/spacetimedb-sdk";
+import {
+  SpacetimeDBClient,
+  Identity,
+  Address,
+} from '@clockworklabs/spacetimedb-sdk';
 
-import Message from "./module_bindings/message";
-import User from "./module_bindings/user";
-import SendMessageReducer from "./module_bindings/send_message_reducer";
-import SetNameReducer from "./module_bindings/set_name_reducer";
+import Message from './module_bindings/message';
+import User from './module_bindings/user';
+import SendMessageReducer from './module_bindings/send_message_reducer';
+import SetNameReducer from './module_bindings/set_name_reducer';
 
 SpacetimeDBClient.registerReducers(SendMessageReducer, SetNameReducer);
 SpacetimeDBClient.registerTables(Message, User);
@@ -190,10 +194,10 @@ Replace `<module-name>` with the name you chose when publishing your module duri
 Add this before the `App` function declaration:
 
 ```typescript
-let token = localStorage.getItem("auth_token") || undefined;
+let token = localStorage.getItem('auth_token') || undefined;
 var spacetimeDBClient = new SpacetimeDBClient(
-  "ws://localhost:3000",
-  "chat",
+  'ws://localhost:3000',
+  'chat',
   token
 );
 ```
@@ -241,13 +245,13 @@ To the body of `App`, add:
 
 ```typescript
 client.current.onConnect((token, identity, address) => {
-  console.log("Connected to SpacetimeDB");
+  console.log('Connected to SpacetimeDB');
 
   local_identity.current = identity;
 
-  localStorage.setItem("auth_token", token);
+  localStorage.setItem('auth_token', token);
 
-  client.current.subscribe(["SELECT * FROM User", "SELECT * FROM Message"]);
+  client.current.subscribe(['SELECT * FROM User', 'SELECT * FROM Message']);
 });
 ```
 
@@ -269,7 +273,7 @@ To the body of `App`, add:
 function userNameOrIdentity(user: User): string {
   console.log(`Name: ${user.name} `);
   if (user.name !== null) {
-    return user.name || "";
+    return user.name || '';
   } else {
     var identityStr = new Identity(user.identity).toHexString();
     console.log(`Name: ${identityStr} `);
@@ -281,11 +285,11 @@ function setAllMessagesInOrder() {
   let messages = Array.from(Message.all());
   messages.sort((a, b) => (a.sent > b.sent ? 1 : a.sent < b.sent ? -1 : 0));
 
-  let messagesType: MessageType[] = messages.map((message) => {
+  let messagesType: MessageType[] = messages.map(message => {
     let sender_identity = User.findByIdentity(message.sender);
     let display_name = sender_identity
       ? userNameOrIdentity(sender_identity)
-      : "unknown";
+      : 'unknown';
 
     return {
       name: display_name,
@@ -296,7 +300,7 @@ function setAllMessagesInOrder() {
   setMessages(messagesType);
 }
 
-client.current.on("initialStateSync", () => {
+client.current.on('initialStateSync', () => {
   setAllMessagesInOrder();
   var user = User.findByIdentity(local_identity?.current?.toUint8Array()!);
   setName(userNameOrIdentity(user!));
@@ -337,7 +341,7 @@ To the body of `App`, add:
 ```typescript
 // Helper function to append a line to the systemMessage state
 function appendToSystemMessage(line: String) {
-  setSystemMessage((prevMessage) => prevMessage + "\n" + line);
+  setSystemMessage(prevMessage => prevMessage + '\n' + line);
 }
 
 User.onInsert((user, reducerEvent) => {
@@ -416,9 +420,9 @@ SetNameReducer.on((reducerEvent, newName) => {
     local_identity.current &&
     reducerEvent.callerIdentity.isEqual(local_identity.current)
   ) {
-    if (reducerEvent.status === "failed") {
+    if (reducerEvent.status === 'failed') {
       appendToSystemMessage(`Error setting name: ${reducerEvent.message} `);
-    } else if (reducerEvent.status === "committed") {
+    } else if (reducerEvent.status === 'committed') {
       setName(newName);
     }
   }
@@ -437,7 +441,7 @@ SendMessageReducer.on((reducerEvent, newMessage) => {
     local_identity.current &&
     reducerEvent.callerIdentity.isEqual(local_identity.current)
   ) {
-    if (reducerEvent.status === "failed") {
+    if (reducerEvent.status === 'failed') {
       appendToSystemMessage(`Error sending message: ${reducerEvent.message} `);
     }
   }
