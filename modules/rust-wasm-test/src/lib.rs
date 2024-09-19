@@ -1,5 +1,5 @@
 #![allow(clippy::disallowed_names)]
-use spacetimedb::spacetimedb_lib::db::auth::StAccess;
+use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
 use spacetimedb::{duration, table, Address, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp};
 
@@ -29,12 +29,12 @@ pub struct TestD {
 
 // uses internal apis that should not be used by user code
 #[allow(dead_code)] // false positive
-const fn get_table_access<T: spacetimedb::table::__MapRowTypeToTable>() -> StAccess {
+const fn get_table_access<T: spacetimedb::table::__MapRowTypeToTable>() -> TableAccess {
     <T::Table<'static> as spacetimedb::table::TableInternal>::TABLE_ACCESS
 }
 
 // This table was specified as public.
-const _: () = assert!(matches!(get_table_access::<TestD>(), StAccess::Public));
+const _: () = assert!(matches!(get_table_access::<TestD>(), TableAccess::Public));
 
 #[spacetimedb::table(name = test_e)]
 #[derive(Debug)]
@@ -55,7 +55,7 @@ pub enum TestF {
 }
 
 // // All tables are private by default.
-const _: () = assert!(matches!(get_table_access::<TestE>(), StAccess::Private));
+const _: () = assert!(matches!(get_table_access::<TestE>(), TableAccess::Private));
 
 #[spacetimedb::table(name = private)]
 pub struct Private {
@@ -69,7 +69,7 @@ pub struct Point {
 }
 
 // It is redundant, but we can explicitly specify a table as private.
-const _: () = assert!(matches!(get_table_access::<Point>(), StAccess::Private));
+const _: () = assert!(matches!(get_table_access::<Point>(), TableAccess::Private));
 
 // Test we can compile multiple constraints
 #[spacetimedb::table(name = pk_multi_identity)]

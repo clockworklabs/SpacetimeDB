@@ -4,9 +4,7 @@ use std::marker::PhantomData;
 use std::{fmt, ops};
 
 use spacetimedb_lib::buffer::{BufReader, Cursor};
-use spacetimedb_lib::db::attr::ColumnAttribute;
-use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_lib::db::raw_def::IndexType;
+pub use spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb_primitives::ColId;
 
 use crate::{bsatn, sys, DeserializeOwned, IterBuf, Serialize, SpacetimeType, TableId};
@@ -120,24 +118,12 @@ pub trait Table: TableInternal {
 #[doc(hidden)]
 pub trait TableInternal: Sized {
     const TABLE_NAME: &'static str;
-    const TABLE_ACCESS: StAccess;
-    const COLUMN_ATTRS: &'static [ColumnAttribute];
+    const TABLE_ACCESS: TableAccess = TableAccess::Private;
+    const UNIQUE_COLUMNS: &'static [u16];
     const INDEXES: &'static [IndexDesc<'static>];
+    const PRIMARY_KEY: Option<u16> = None;
+    const SEQUENCES: &'static [u16];
     const SCHEDULED_REDUCER_NAME: Option<&'static str> = None;
-
-    /// Whether any of [`Self::COLUMN_ATTRS`] have an autoinc constraint.
-    const HAS_AUTOINC: bool = 'autoinc: {
-        // NOTE: Written this way because iterators aren't const-stable.
-        // Same as `T::COLUMN_ATTRS.iter().any(|attr| attr.has_autoinc())`.
-        let mut i = 0;
-        while i < Self::COLUMN_ATTRS.len() {
-            if Self::COLUMN_ATTRS[i].has_autoinc() {
-                break 'autoinc true;
-            }
-            i += 1;
-        }
-        false
-    };
 
     /// Returns the ID of this table.
     fn table_id() -> TableId;
@@ -146,12 +132,13 @@ pub trait TableInternal: Sized {
 /// Describe a named index with an index type over a set of columns identified by their IDs.
 #[derive(Clone, Copy)]
 pub struct IndexDesc<'a> {
-    /// The name of the index.
-    pub name: &'a str,
-    /// The type of index used, i.e. the strategy used for indexing.
-    pub ty: IndexType,
-    /// The set of columns indexed over given by the identifiers of the columns.
-    pub col_ids: &'a [u16],
+    pub accessor_name: &'a str,
+    pub algo: IndexAlgo<'a>,
+}
+
+#[derive(Clone, Copy)]
+pub enum IndexAlgo<'a> {
+    BTree { columns: &'a [u16] },
 }
 
 #[doc(hidden)]

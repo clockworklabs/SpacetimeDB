@@ -2,15 +2,13 @@
 
 use crate::timestamp::with_timestamp_set;
 use crate::{sys, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, Timestamp};
-use spacetimedb_lib::db::auth::StTableType;
-use spacetimedb_lib::db::raw_def::{
-    RawColumnDefV8, RawConstraintDefV8, RawIndexDefV8, RawSequenceDefV8, RawTableDefV8,
-};
+pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
+use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableType};
 use spacetimedb_lib::de::{self, Deserialize, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
-use spacetimedb_lib::{bsatn, Address, Identity, ModuleDefBuilder, RawModuleDef, ReducerDef, TableDesc};
+use spacetimedb_lib::{bsatn, Address, Identity, ProductType, RawModuleDef};
 use spacetimedb_primitives::*;
 use std::fmt;
 use std::marker::PhantomData;
@@ -43,17 +41,14 @@ pub trait ReducerInfo {
     /// The name of the reducer.
     const NAME: &'static str;
 
+    /// The lifecycle of the reducer, if there is one.
+    const LIFECYCLE: Option<LifecycleReducer> = None;
+
     /// A description of the parameter names of the reducer.
     const ARG_NAMES: &'static [Option<&'static str>];
 
     /// The function to call to invoke the reducer.
     const INVOKE: ReducerFn;
-}
-
-/// A trait for reducer types knowing their repeat interval.
-pub trait RepeaterInfo: ReducerInfo {
-    /// At what duration intervals should this reducer repeat?
-    const REPEAT_INTERVAL: Duration;
 }
 
 /// A trait of types representing the arguments of a reducer.
@@ -68,7 +63,7 @@ pub trait Args<'de>: Sized {
     fn serialize_seq_product<S: SerializeSeqProduct>(&self, prod: &mut S) -> Result<(), S::Error>;
 
     /// Returns the schema for this reducer provided a `typespace`.
-    fn schema<I: ReducerInfo>(typespace: &mut impl TypespaceBuilder) -> ReducerDef;
+    fn schema<I: ReducerInfo>(typespace: &mut impl TypespaceBuilder) -> ProductType;
 }
 
 /// A trait of types representing the result of executing a reducer.
@@ -163,18 +158,15 @@ macro_rules! impl_reducer {
 
             #[inline]
             #[allow(non_snake_case, irrefutable_let_patterns)]
-            fn schema<Info: ReducerInfo>(_typespace: &mut impl TypespaceBuilder) -> ReducerDef {
+            fn schema<Info: ReducerInfo>(_typespace: &mut impl TypespaceBuilder) -> ProductType {
                 // Extract the names of the arguments.
                 let [.., $($T),*] = Info::ARG_NAMES else { panic!() };
-                ReducerDef {
-                    name: Info::NAME.into(),
-                    args: vec![
+                ProductType::new(vec![
                         $(ProductTypeElement {
                             name: $T.map(Into::into),
                             algebraic_type: <$T>::make_type(_typespace),
                         }),*
-                    ],
-                }
+                ].into())
             }
         }
 
@@ -244,77 +236,40 @@ pub fn register_reftype<T: SpacetimeType>() {
 /// Registers a describer for the `TableType` `T`.
 pub fn register_table<T: Table>() {
     register_describer(|module| {
-        let data = *T::Row::make_type(&mut module.inner).as_ref().unwrap();
-        let columns: Vec<RawColumnDefV8> = RawColumnDefV8::from_product_type(
-            module
-                .inner
-                .typespace()
-                .with_type(&data)
-                .resolve_refs()
-                .expect("Failed to retrieve the column types from the module")
-                .into_product()
-                .expect("Table is not a product type"),
-        );
+        let product_type_ref = *T::Row::make_type(&mut module.inner).as_ref().unwrap();
 
-        let indexes: Vec<_> = T::INDEXES.iter().copied().map(Into::into).collect();
-        //WARNING: The definition  of table assumes the # of constraints == # of columns elsewhere `T::COLUMN_ATTRS` is queried
-        let constraints: Vec<_> = T::COLUMN_ATTRS
-            .iter()
-            .enumerate()
-            .map(|(col_pos, x)| {
-                let col = &columns[col_pos];
-                let kind = match (*x).try_into() {
-                    Ok(x) => x,
-                    Err(_) => Constraints::unset(),
-                };
+        let mut table = module
+            .inner
+            .build_table(T::TABLE_NAME, product_type_ref)
+            .with_type(TableType::User)
+            .with_access(T::TABLE_ACCESS);
 
-                RawConstraintDefV8::for_column(T::TABLE_NAME, &col.col_name, kind, ColList::new(col_pos.into()))
-            })
-            .collect();
+        for &col in T::UNIQUE_COLUMNS {
+            table = table.with_unique_constraint(col, None);
+        }
+        for &index in T::INDEXES {
+            table = table.with_index(index.algo.into(), index.accessor_name, None);
+        }
+        if let Some(primary_key) = T::PRIMARY_KEY {
+            table = table.with_primary_key(primary_key);
+        }
+        for &col in T::SEQUENCES {
+            table = table.with_column_sequence(col, None);
+        }
+        if let Some(scheduled_reducer) = T::SCHEDULED_REDUCER_NAME {
+            table = table.with_schedule(scheduled_reducer, None);
+        }
 
-        let sequences: Vec<_> = T::COLUMN_ATTRS
-            .iter()
-            .enumerate()
-            .filter_map(|(col_pos, x)| {
-                let col = &columns[col_pos];
-
-                if x.kind() == AttributeKind::AUTO_INC {
-                    Some(RawSequenceDefV8::for_column(
-                        T::TABLE_NAME,
-                        &col.col_name,
-                        col_pos.into(),
-                    ))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        let schema = RawTableDefV8::new(T::TABLE_NAME.into(), columns)
-            .with_type(StTableType::User)
-            .with_access(T::TABLE_ACCESS)
-            .with_constraints(constraints)
-            .with_sequences(sequences)
-            .with_indexes(indexes)
-            .with_scheduled(T::SCHEDULED_REDUCER_NAME.map(Into::into));
-        let schema = TableDesc { schema, data };
-
-        module.inner.add_table(schema)
+        table.finish();
     })
 }
 
-impl From<crate::table::IndexDesc<'_>> for RawIndexDefV8 {
-    fn from(index: crate::table::IndexDesc<'_>) -> RawIndexDefV8 {
-        let columns = index.col_ids.iter().copied().collect::<ColList>();
-        if columns.is_empty() {
-            panic!("Need at least one column in IndexDesc for index `{}`", index.name);
-        };
-
-        RawIndexDefV8 {
-            index_name: index.name.into(),
-            is_unique: false,
-            index_type: index.ty,
-            columns,
+impl From<crate::table::IndexAlgo<'_>> for RawIndexAlgorithm {
+    fn from(algo: crate::table::IndexAlgo<'_>) -> RawIndexAlgorithm {
+        match algo {
+            crate::table::IndexAlgo::BTree { columns } => RawIndexAlgorithm::BTree {
+                columns: columns.iter().copied().collect(),
+            },
         }
     }
 }
@@ -322,8 +277,8 @@ impl From<crate::table::IndexDesc<'_>> for RawIndexDefV8 {
 /// Registers a describer for the reducer `I` with arguments `A`.
 pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>) {
     register_describer(|module| {
-        let schema = A::schema::<I>(&mut module.inner);
-        module.inner.add_reducer(schema);
+        let params = A::schema::<I>(&mut module.inner);
+        module.inner.add_reducer(I::NAME, params, I::LIFECYCLE);
         module.reducers.push(I::INVOKE);
     })
 }
@@ -332,7 +287,7 @@ pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>)
 #[derive(Default)]
 struct ModuleBuilder {
     /// The module definition.
-    inner: ModuleDefBuilder,
+    inner: RawModuleDefV9Builder,
     /// The reducers of the module.
     reducers: Vec<ReducerFn>,
 }
@@ -370,7 +325,7 @@ extern "C" fn __describe_module__(description: BytesSink) {
 
     // Serialize the module to bsatn.
     let module_def = module.inner.finish();
-    let module_def = RawModuleDef::V8BackCompat(module_def);
+    let module_def = RawModuleDef::V9(module_def);
     let bytes = bsatn::to_vec(&module_def).expect("unable to serialize typespace");
 
     // Write the set of reducers.
