@@ -34,7 +34,7 @@ public class CircleController : MonoBehaviour
         entityId = circle.EntityId;
         playerIdentity = player.Identity;
 
-        var entity = Entity.FilterById(circle.EntityId);
+        var entity = Entity.FindById(circle.EntityId);
         targetPosition = positionLerp1 = positionLerp2 = transform.position = new UnityEngine.Vector2
         {
             x = entity.Position.X,

@@ -6,20 +6,12 @@
 
 using System;
 using SpacetimeDB;
-using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.Serialization;
 
 namespace SpacetimeDB.Types
 {
 	[SpacetimeDB.Type]
-	[DataContract]
-	public partial class Vector2
-	{
-		[DataMember(Name = "x")]
-		public float X;
-		[DataMember(Name = "y")]
-		public float Y;
-
-	}
+	public partial record ScheduleAt : SpacetimeDB.TaggedEnum<(
+		ulong Time,
+		ulong Interval
+	)>;
 }

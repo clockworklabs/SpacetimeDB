@@ -17,9 +17,9 @@ public class FoodController : MonoBehaviour
     public void Spawn(uint entityId)
     {
         this.entityId = entityId;
-        Food.OnRowUpdate += FoodOnRowUpdate;
+        Food.OnDelete += OnDelete;
 
-        var entity = Entity.FilterById(entityId);
+        var entity = Entity.FindById(entityId);
         var position = new UnityEngine.Vector2
         {
             x = entity.Position.X,
@@ -38,20 +38,14 @@ public class FoodController : MonoBehaviour
 
     private void OnDestroy()
     {
-        Food.OnRowUpdate -= FoodOnRowUpdate;
+        Food.OnDelete -= OnDelete;
     }
 
-    private void FoodOnRowUpdate(SpacetimeDBClient.TableOp op, Food oldvalue, Food newvalue, ReducerEvent dbevent)
+    private void OnDelete(Food food, ReducerEvent e)
     {
-        switch (op)
+        if (food.EntityId == entityId)
         {
-            case SpacetimeDBClient.TableOp.Delete:
-                if (oldvalue.EntityId == entityId)
-                {
-                    Destroy(gameObject);
-                }
-
-                break;
+            Destroy(gameObject);
         }
     }
 }
