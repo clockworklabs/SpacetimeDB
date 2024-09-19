@@ -12,5 +12,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: de02f9e1d18f588468e474319d09a723, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  shaderVariantLimit: 128
   customInterpolatorErrorThreshold: 32
   customInterpolatorWarningThreshold: 16

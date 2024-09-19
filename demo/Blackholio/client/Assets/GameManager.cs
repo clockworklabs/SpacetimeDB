@@ -83,7 +83,7 @@ public class GameManager : MonoBehaviour
         SpacetimeDBClient.instance.onUnhandledReducerError += InstanceOnUnhandledReducerError;
 
         // Now that we’ve registered all our callbacks, lets connect to spacetimedb
-        SpacetimeDBClient.instance.Connect(AuthToken.Token, "https://testnet.spacetimedb.com", "untitled-circle-game-5");
+        SpacetimeDBClient.instance.Connect(AuthToken.Token, "http://localhost:3000", "untitled-circle-game");
         localCamera = Camera.main;
     }
 
@@ -111,7 +111,7 @@ public class GameManager : MonoBehaviour
 
     private void EntityOnUpdate(Entity oldEntity, Entity newEntity, ReducerEvent dbEvent)
     {
-        var circle = Circle.FilterByEntityId(newEntity.Id);
+        var circle = Circle.FindByEntityId(newEntity.Id);
         if (circle == null)
         {
             return;
@@ -136,7 +136,7 @@ public class GameManager : MonoBehaviour
 
     PlayerController GetOrCreatePlayer(uint playerId)
     {
-        var player = Player.FilterByPlayerId(playerId);
+        var player = Player.FindByPlayerId(playerId);
         // Get the PlayerController for this circle
         if (!playerIdToPlayerController.TryGetValue(playerId, out var playerController))
         {

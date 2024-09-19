@@ -23,7 +23,7 @@ public class PlayerController : MonoBehaviour
     public void Spawn(Identity identity)
     {
         this.identity = identity;
-        playerId = Player.FilterByIdentity(identity).PlayerId;
+        playerId = Player.FindByIdentity(identity).PlayerId;
         if (IsLocalPlayer())
         {
             Local = this;
@@ -82,7 +82,7 @@ public class PlayerController : MonoBehaviour
         uint mass = 0;
         foreach (var circle in circlesByEntityId.Values)
         {
-            var entity = Entity.FilterById(circle.GetEntityId());
+            var entity = Entity.FindById(circle.GetEntityId());
             // If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
             if (entity == null)
             {
@@ -95,7 +95,7 @@ public class PlayerController : MonoBehaviour
         return mass;
     }
 
-    public string GetUsername() => Player.FilterByIdentity(identity).Name;
+    public string GetUsername() => Player.FindByIdentity(identity).Name;
 
     private void OnGUI()
     {
@@ -107,7 +107,7 @@ public class PlayerController : MonoBehaviour
         GUI.Label(new Rect(0, 0, 100, 50), $"Total Mass: {TotalMass()}");
     }
 
-    public bool IsLocalPlayer() => GameManager.localIdentity.HasValue && identity == GameManager.localIdentity.Value;
+    public bool IsLocalPlayer() => GameManager.localIdentity != null && identity == GameManager.localIdentity;
 
     public UnityEngine.Vector2? CenterOfMass()
     {

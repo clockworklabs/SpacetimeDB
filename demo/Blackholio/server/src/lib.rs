@@ -10,14 +10,14 @@ use std::time::Duration;
 // - [ ] Ejecting mass
 // - [ ] Leaderboard
 
-#[spacetimedb(table)]
+#[spacetimedb(table(public))]
 pub struct Config {
     #[primarykey]
     pub id: u32,
     pub world_size: u64,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb(table(public))]
 pub struct Entity {
     #[autoinc]
     #[primarykey]
@@ -26,7 +26,7 @@ pub struct Entity {
     pub mass: u32,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb(table(public))]
 #[spacetimedb(index(btree, name = "player_id_index", player_id))]
 pub struct Circle {
     #[primarykey]
@@ -37,7 +37,7 @@ pub struct Circle {
     pub last_split_time: Timestamp,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb(table(public))]
 pub struct Player {
     #[primarykey]
     identity: Identity,
@@ -47,14 +47,14 @@ pub struct Player {
     name: String,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb(table(public))]
 pub struct LoggedOutPlayer {
     #[primarykey]
     identity: Identity,
     player: Player,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb(table(public))]
 pub struct LoggedOutCircle {
     #[autoinc]
     #[primarykey]
@@ -64,7 +64,7 @@ pub struct LoggedOutCircle {
     entity: Entity,
 }
 
-#[spacetimedb(table)]
+#[spacetimedb(table(public))]
 pub struct Food {
     #[primarykey]
     pub entity_id: u32,
@@ -84,7 +84,6 @@ pub struct SpawnFoodTimer {}
 
 #[spacetimedb(table, scheduled(circle_decay))]
 pub struct CircleDecayTimer {}
-
 
 impl Vector2 {
     // Function to normalize the vector
@@ -159,6 +158,7 @@ pub fn connect(ctx: ReducerContext) -> Result<(), String> {
 
 #[spacetimedb(reducer)]
 pub fn create_player(ctx: ReducerContext, name: String) -> Result<(), String> {
+    log::info!("Creating player with name {}", name);
     let player = Player::insert(Player {
         identity: ctx.sender,
         player_id: 0,
@@ -230,8 +230,6 @@ fn mass_to_max_move_speed(mass: u32) -> f32 {
     2.0 * START_PLAYER_SPEED as f32 / (1.0 + (mass as f32 / START_PLAYER_MASS as f32).sqrt())
 }
 
-
-
 #[spacetimedb(reducer)]
 pub fn move_all_players(_: ReducerContext, _timer: MoveAllPlayersTimer) -> Result<(), String> {
     let span = spacetimedb::time_span::Span::start("move_all_players");
@@ -279,7 +277,6 @@ pub fn move_all_players(_: ReducerContext, _timer: MoveAllPlayersTimer) -> Resul
     span.end();
     Ok(())
 }
-
 
 #[spacetimedb(reducer)]
 pub fn player_split(ctx: ReducerContext) -> Result<(), String> {

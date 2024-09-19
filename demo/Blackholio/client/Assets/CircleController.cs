@@ -30,7 +30,7 @@ public class CircleController : MonoBehaviour
 
     public void Spawn(Circle circle)
     {
-        var player = Player.FilterByPlayerId(circle.PlayerId);
+        var player = Player.FindByPlayerId(circle.PlayerId);
         entityId = circle.EntityId;
         playerIdentity = player.Identity;
 
@@ -53,7 +53,7 @@ public class CircleController : MonoBehaviour
     }
 
     public uint GetEntityId() => entityId;
-    public Entity GetEntity() => Entity.FilterById(entityId);
+    public Entity GetEntity() => Entity.FindById(entityId);
 
     public void Despawn()
     {

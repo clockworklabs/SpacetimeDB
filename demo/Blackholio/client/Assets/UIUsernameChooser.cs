@@ -28,10 +28,12 @@ public class UIUsernameChooser : MonoBehaviour
 
     public void PlayPressed()
     {
+        Debug.Log("Play pressed");
         if (sentCreatePlayer)
         {
             return;
         }
+        Debug.Log("Creating player");
 
         sentCreatePlayer = true;
         Reducer.CreatePlayer(usernameInputField.text);
