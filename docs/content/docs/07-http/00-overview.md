@@ -23,7 +23,7 @@ To construct an appropriate `Authorization` header value for a `token`:
 2. Base64-encode.
 3. Prepend the string `Basic `.
 
-#### Rust
+### Rust
 
 ```rust
 fn auth_header_value(token: &str) -> String {
