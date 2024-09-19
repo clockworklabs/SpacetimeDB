@@ -285,6 +285,13 @@ fn system_module_def() -> ModuleDef {
         .with_type(TableType::System)
         .with_primary_key(StTableFields::TableId)
         .with_column_sequence(StTableFields::TableId, None)
+        .with_index(
+            v9::RawIndexAlgorithm::BTree {
+                columns: col_list![StTableFields::TableId],
+            },
+            "accessor_name_doesnt_matter",
+            None,
+        )
         .with_unique_constraint(StTableFields::TableId, None); // Note that unique constraints currently imply indexes.
 
     // System Table [ST_COLUMN_NAME]
@@ -311,6 +318,13 @@ fn system_module_def() -> ModuleDef {
         .build_table(ST_INDEX_NAME, *st_index_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_primary_key(StIndexFields::IndexId)
+        .with_index(
+            v9::RawIndexAlgorithm::BTree {
+                columns: col_list![StIndexFields::IndexId],
+            },
+            "accessor_name_doesnt_matter",
+            None,
+        )
         .with_column_sequence(StIndexFields::IndexId, None)
         .with_unique_constraint(StIndexFields::IndexId, None);
 
@@ -326,6 +340,13 @@ fn system_module_def() -> ModuleDef {
         .with_type(TableType::System)
         .with_primary_key(StSequenceFields::SequenceId)
         .with_column_sequence(StSequenceFields::SequenceId, None)
+        .with_index(
+            v9::RawIndexAlgorithm::BTree {
+                columns: col_list![StSequenceFields::SequenceId],
+            },
+            "accessor_name_doesnt_matter",
+            None,
+        )
         .with_unique_constraint(StSequenceFields::SequenceId, None);
 
     // System Table [ST_CONSTRAINT_NAME]
@@ -338,6 +359,13 @@ fn system_module_def() -> ModuleDef {
         .build_table(ST_CONSTRAINT_NAME, *st_constraint_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_primary_key(StConstraintFields::ConstraintId)
+        .with_index(
+            v9::RawIndexAlgorithm::BTree {
+                columns: col_list![StConstraintFields::ConstraintId],
+            },
+            "accessor_name_doesnt_matter",
+            None,
+        )
         .with_column_sequence(StConstraintFields::ConstraintId, None)
         .with_unique_constraint(StConstraintFields::ConstraintId, None);
 
@@ -380,6 +408,13 @@ fn system_module_def() -> ModuleDef {
         .with_unique_constraint(StScheduledFields::TableId, None)
         .with_unique_constraint(StScheduledFields::ScheduleId, None)
         .with_primary_key(StScheduledFields::ScheduleId)
+        .with_index(
+            v9::RawIndexAlgorithm::BTree {
+                columns: col_list![StScheduledFields::ScheduleId],
+            },
+            "accessor_name_doesnt_matter",
+            None,
+        )
         .with_column_sequence(StScheduledFields::ScheduleId, None);
 
     // System table [ST_VAR_NAME]
@@ -392,7 +427,14 @@ fn system_module_def() -> ModuleDef {
         .build_table(ST_VAR_NAME, *st_var_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_unique_constraint(StVarFields::Name, None)
-        .with_primary_key(StVarFields::Name);
+        .with_primary_key(StVarFields::Name)
+        .with_index(
+            v9::RawIndexAlgorithm::BTree {
+                columns: col_list![StVarFields::Name],
+            },
+            "accessor_name_doesnt_matter",
+            None,
+        );
 
     let result = builder
         .finish()
@@ -873,7 +915,14 @@ pub struct StVarTable;
 impl StVarTable {
     /// Read the value of [ST_VARNAME_ROW_LIMIT] from `st_var`
     pub fn row_limit(ctx: &ExecutionContext, db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
-        if let Some(StVarValue::U64(limit)) = Self::read_var(ctx, db, tx, StVarName::RowLimit)? {
+        let data = Self::read_var(ctx, db, tx, StVarName::RowLimit);
+        eprintln!("row_limit: {:?}", data);
+
+        for entry in db.iter(ctx, tx, ST_VAR_ID)? {
+            eprintln!("entry: {:?}", StVarRow::try_from(entry)?);
+        }
+
+        if let Some(StVarValue::U64(limit)) = data? {
             return Ok(Some(limit));
         }
         Ok(None)
@@ -984,26 +1033,29 @@ pub const ST_VARNAME_SLOW_SUB: &str = "slow_subscription_query_ms";
 pub const ST_VARNAME_SLOW_INC: &str = "slow_tx_update_ms";
 
 /// The name of a system variable in `st_var`
-#[derive(Debug, Clone, Copy, PartialEq, Eq, SpacetimeType)]
-#[sats(crate = spacetimedb_lib)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StVarName {
     RowLimit,
     SlowQryThreshold,
     SlowSubThreshold,
     SlowIncThreshold,
 }
-
-impl From<StVarName> for AlgebraicValue {
+impl From<StVarName> for &'static str {
     fn from(value: StVarName) -> Self {
         match value {
-            StVarName::RowLimit => AlgebraicValue::String(ST_VARNAME_ROW_LIMIT.to_string().into_boxed_str()),
-            StVarName::SlowQryThreshold => AlgebraicValue::String(ST_VARNAME_SLOW_QRY.to_string().into_boxed_str()),
-            StVarName::SlowSubThreshold => AlgebraicValue::String(ST_VARNAME_SLOW_SUB.to_string().into_boxed_str()),
-            StVarName::SlowIncThreshold => AlgebraicValue::String(ST_VARNAME_SLOW_INC.to_string().into_boxed_str()),
+            StVarName::RowLimit => ST_VARNAME_ROW_LIMIT,
+            StVarName::SlowQryThreshold => ST_VARNAME_SLOW_QRY,
+            StVarName::SlowSubThreshold => ST_VARNAME_SLOW_SUB,
+            StVarName::SlowIncThreshold => ST_VARNAME_SLOW_INC,
         }
     }
 }
-
+impl From<StVarName> for AlgebraicValue {
+    fn from(value: StVarName) -> Self {
+        let value: &'static str = value.into();
+        AlgebraicValue::String(value.into())
+    }
+}
 impl FromStr for StVarName {
     type Err = anyhow::Error;
 
@@ -1015,6 +1067,14 @@ impl FromStr for StVarName {
             ST_VARNAME_SLOW_INC => Ok(StVarName::SlowIncThreshold),
             _ => Err(anyhow::anyhow!("Invalid system variable {}", s)),
         }
+    }
+}
+impl_st!([] StVarName, AlgebraicType::String);
+impl_serialize!([] StVarName, (self, ser) => <&'static str>::from(*self).serialize(ser));
+impl<'de> Deserialize<'de> for StVarName {
+    fn deserialize<D: spacetimedb_lib::de::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
+        let s = <&str>::deserialize(de)?;
+        s.parse().map_err(D::Error::custom)
     }
 }
 
