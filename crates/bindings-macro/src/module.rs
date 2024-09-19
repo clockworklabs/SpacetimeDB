@@ -123,7 +123,7 @@ pub(crate) fn extract_sats_type<'a>(
     })
 }
 
-pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenStream {
+pub(crate) fn derive_satstype(ty: &SatsType<'_>) -> TokenStream {
     let ty_name = &ty.name;
     let name = &ty.ident;
     let krate = &ty.krate;
@@ -190,11 +190,6 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
     }
     let (_, typeid_ty_generics, _) = typeid_generics.split_for_impl();
 
-    let ty_name = if gen_type_alias {
-        quote!(Some(#ty_name))
-    } else {
-        quote!(None)
-    };
     quote! {
         #[automatically_derived]
         impl #impl_generics #krate::SpacetimeType for #name #ty_generics #where_clause {
@@ -202,7 +197,7 @@ pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenS
                 #krate::sats::typespace::TypespaceBuilder::add(
                     __typespace,
                     core::any::TypeId::of::<#name #typeid_ty_generics>(),
-                    #ty_name,
+                    Some(#ty_name),
                     |__typespace| #typ,
                 )
             }

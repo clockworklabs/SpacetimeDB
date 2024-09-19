@@ -887,7 +887,7 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
 
     let deserialize_impl = derive_deserialize(&sats_ty);
     let serialize_impl = derive_serialize(&sats_ty);
-    let schema_impl = derive_satstype(&sats_ty, *original_struct_ident != table_name);
+    let schema_impl = derive_satstype(&sats_ty);
     let column_attrs = columns.iter().map(|col| {
         Ident::new(
             ColumnAttribute::FLAGS
@@ -1088,7 +1088,7 @@ pub fn schema_type(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         let name = &ty.name;
         let krate = &ty.krate;
 
-        let schema_impl = derive_satstype(&ty, true);
+        let schema_impl = derive_satstype(&ty);
         let deserialize_impl = derive_deserialize(&ty);
         let serialize_impl = derive_serialize(&ty);
 
