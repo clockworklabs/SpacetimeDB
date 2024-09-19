@@ -153,7 +153,8 @@ impl MutTxId {
         }
 
         // Create the indexes for the table
-        for index in table_schema.indexes {
+        for mut index in table_schema.indexes {
+            index.table_id = table_id;
             let col_set = ColSet::from(index.index_algorithm.columns());
             let is_unique = table_schema
                 .constraints
