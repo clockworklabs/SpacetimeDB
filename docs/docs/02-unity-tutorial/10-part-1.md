@@ -60,7 +60,7 @@ To work with SpacetimeDB and ensure compatibility, we need to add some essential
 
 In this step, we will import the provided Unity tutorial package that contains the basic single-player game setup. Follow these instructions:
 
-1. Download the tutorial package from the releases page on GitHub: [https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk/releases/latest](https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk/releases/latest)
+1. Download the tutorial package from the releases page on GitHub: [https://github.com/clockworklabs/SpacetimeDBUnityTutorial/releases/latest](https://github.com/clockworklabs/SpacetimeDBUnityTutorial/releases/latest)
 2. In Unity, go to **Assets -> Import Package -> Custom Package**.
 
 ![Unity-ImportCustomPackageB](/images/unity-tutorial/Unity-ImportCustomPackageB.JPG)

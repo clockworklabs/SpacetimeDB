@@ -1,14 +1,15 @@
 {
-    "name": "spacetime-docs",
-    "version": "1.0.0",
-    "description": "This repository contains the markdown files which are used to display documentation on our [website](https://spacetimedb.com/docs).",
-    "main": "index.js",
-    "devDependencies": {
-        "prettier": "^3.2.5"
-    },
-    "scripts": {
-        "format": "prettier docs --write"
-    },
-    "author": "Clockwork Labs",
-    "license": "ISC"
+  "name": "spacetime-docs",
+  "version": "1.0.0",
+  "description": "This repository contains the markdown files which are used to display documentation on our [website](https://spacetimedb.com/docs).",
+  "main": "index.js",
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.3.2"
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "author": "Clockwork Labs",
+  "license": "ISC"
 }
