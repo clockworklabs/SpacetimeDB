@@ -11,7 +11,8 @@
     "tsx": "^4.19.1"
   },
   "scripts": {
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "check-docs": "tsx scripts/index.ts"
   },
   "author": "Clockwork Labs",
   "license": "ISC"
