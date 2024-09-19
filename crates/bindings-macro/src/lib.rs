@@ -15,7 +15,7 @@ use heck::ToSnakeCase;
 use module::{derive_deserialize, derive_satstype, derive_serialize};
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote, quote_spanned};
+use quote::{format_ident, quote, quote_spanned, ToTokens};
 use std::collections::HashMap;
 use std::time::Duration;
 use syn::ext::IdentExt;
@@ -567,12 +567,8 @@ impl IndexArg {
         Ok(IndexArg { kind, name })
     }
 
-    fn to_desc_and_accessor(
-        &self,
-        index_index: u32,
-        cols: &[Column],
-    ) -> Result<(TokenStream, TokenStream), syn::Error> {
-        let (algo, accessor) = match &self.kind {
+    fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'_>> {
+        let kind = match &self.kind {
             IndexType::BTree { columns } => {
                 let cols = columns
                     .iter()
@@ -585,28 +581,97 @@ impl IndexArg {
                     })
                     .collect::<syn::Result<Vec<_>>>()?;
 
-                let col_ids = cols.iter().map(|col| col.index);
-                let algo = quote!(spacetimedb::table::IndexAlgo::BTree {
-                    columns: &[#(#col_ids),*]
-                });
-
-                let index_ident = &self.name;
-                let col_tys = cols.iter().map(|col| col.ty);
-                let accessor = quote! {
-                    fn #index_ident(&self) -> spacetimedb::BTreeIndex<Self, (#(#col_tys,)*), #index_index> {
-                        spacetimedb::BTreeIndex::__new()
-                    }
-                };
-
-                (algo, accessor)
+                ValidatedIndexType::BTree { cols }
             }
         };
-        let accessor_name = ident_to_litstr(&self.name);
-        let desc = quote!(spacetimedb::table::IndexDesc {
+        let index_name = match &kind {
+            ValidatedIndexType::BTree { cols } => ([table_name, "btree"].into_iter())
+                .chain(cols.iter().map(|col| col.field.name.as_deref().unwrap()))
+                .collect::<Vec<_>>()
+                .join("_"),
+        };
+        Ok(ValidatedIndex {
+            index_name,
+            accessor_name: &self.name,
+            kind,
+        })
+    }
+}
+
+struct ValidatedIndex<'a> {
+    index_name: String,
+    accessor_name: &'a Ident,
+    kind: ValidatedIndexType<'a>,
+}
+
+enum ValidatedIndexType<'a> {
+    BTree { cols: Vec<&'a Column<'a>> },
+}
+
+impl ValidatedIndex<'_> {
+    fn desc(&self) -> TokenStream {
+        let algo = match &self.kind {
+            ValidatedIndexType::BTree { cols } => {
+                let col_ids = cols.iter().map(|col| col.index);
+                quote!(spacetimedb::table::IndexAlgo::BTree {
+                    columns: &[#(#col_ids),*]
+                })
+            }
+        };
+        let index_name = &self.index_name;
+        let accessor_name = ident_to_litstr(self.accessor_name);
+        quote!(spacetimedb::table::IndexDesc {
+            name: #index_name,
             accessor_name: #accessor_name,
             algo: #algo,
-        });
-        Ok((desc, accessor))
+        })
+    }
+
+    fn accessor(&self, vis: &syn::Visibility, row_type_ident: &Ident) -> TokenStream {
+        match &self.kind {
+            ValidatedIndexType::BTree { cols } => {
+                let index_ident = self.accessor_name;
+                let col_tys = cols.iter().map(|col| col.ty);
+                let mut doc = format!(
+                    "Gets the `{index_ident}` [`BTreeIndex`][spacetimedb::BTreeIndex] as defined \
+                     on this table. \n\
+                     \n\
+                     This B-tree index is defined on the following columns, in order:\n"
+                );
+                for col in cols {
+                    use std::fmt::Write;
+                    writeln!(
+                        doc,
+                        "- [`{ident}`][{row_type_ident}#structfield.{ident}]: [`{ty}`]",
+                        ident = col.field.ident.unwrap(),
+                        ty = col.ty.to_token_stream()
+                    )
+                    .unwrap();
+                }
+                quote! {
+                    #[doc = #doc]
+                    #vis fn #index_ident(&self) -> spacetimedb::BTreeIndex<Self, (#(#col_tys,)*), __indices::#index_ident> {
+                        spacetimedb::BTreeIndex::__new()
+                    }
+                }
+            }
+        }
+    }
+
+    fn marker_type(&self) -> TokenStream {
+        let index_ident = self.accessor_name;
+        let index_name = &self.index_name;
+        quote! {
+            pub struct #index_ident;
+            impl spacetimedb::table::Index for #index_ident {
+                fn index_id() -> spacetimedb::table::IndexId {
+                    static INDEX_ID: std::sync::OnceLock<spacetimedb::table::IndexId> = std::sync::OnceLock::new();
+                    *INDEX_ID.get_or_init(|| {
+                        spacetimedb::sys::index_id_from_name(#index_name).unwrap()
+                    })
+                }
+            }
+        }
     }
 }
 
@@ -821,16 +886,15 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
 
     let row_type = quote!(#original_struct_ident);
 
-    let (indexes, index_accessors) = args
+    let indices = args
         .indices
         .iter()
-        .enumerate()
-        .map(|(i, index)| index.to_desc_and_accessor(i as u32, &columns))
-        // TODO: stabilized in 1.79
-        // .collect::<syn::Result<(Vec<_>, Vec<_>)>>()?;
-        .collect::<syn::Result<Vec<_>>>()?
-        .into_iter()
-        .unzip::<_, _, Vec<_>, Vec<_>>();
+        .map(|index| index.validate(&table_name, &columns))
+        .collect::<syn::Result<Vec<_>>>()?;
+
+    let index_descs = indices.iter().map(|index| index.desc());
+    let index_accessors = indices.iter().map(|index| index.accessor(vis, original_struct_ident));
+    let index_marker_types = indices.iter().map(|index| index.marker_type());
 
     let unique_field_accessors = unique_columns.iter().map(|unique| {
         let column_index = unique.index;
@@ -907,7 +971,7 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
             // the default value if not specified is Private
             #(const TABLE_ACCESS: spacetimedb::table::TableAccess = #table_access;)*
             const UNIQUE_COLUMNS: &'static [u16] = &[#(#unique_col_ids),*];
-            const INDEXES: &'static [spacetimedb::table::IndexDesc<'static>] = &[#(#indexes),*];
+            const INDEXES: &'static [spacetimedb::table::IndexDesc<'static>] = &[#(#index_descs),*];
             #(const PRIMARY_KEY: Option<u16> = Some(#primary_col_id);)*
             const SEQUENCES: &'static [u16] = &[#(#sequence_col_ids),*];
             #(const SCHEDULED_REDUCER_NAME: Option<&'static str> = Some(<#scheduled_reducer_ident as spacetimedb::rt::ReducerInfo>::NAME);)*
@@ -1005,6 +1069,11 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
             }
 
             #tabletype_impl
+
+            #[allow(non_camel_case_types)]
+            mod __indices {
+                #(#index_marker_types)*
+            }
 
             #describe_table_func
         };

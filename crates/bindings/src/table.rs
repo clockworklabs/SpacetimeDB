@@ -4,8 +4,9 @@ use std::marker::PhantomData;
 use std::{fmt, ops};
 
 use spacetimedb_lib::buffer::{BufReader, Cursor};
+
 pub use spacetimedb_lib::db::raw_def::v9::TableAccess;
-use spacetimedb_primitives::ColId;
+pub use spacetimedb_primitives::{ColId, IndexId};
 
 use crate::{bsatn, sys, DeserializeOwned, IterBuf, Serialize, SpacetimeType, TableId};
 
@@ -132,6 +133,7 @@ pub trait TableInternal: Sized {
 /// Describe a named index with an index type over a set of columns identified by their IDs.
 #[derive(Clone, Copy)]
 pub struct IndexDesc<'a> {
+    pub name: &'a str,
     pub accessor_name: &'a str,
     pub algo: IndexAlgo<'a>,
 }
@@ -337,11 +339,15 @@ where
     }
 }
 
-pub struct BTreeIndex<Tbl: Table, IndexType, const INDEX_INDEX: u32> {
-    _marker: PhantomData<(Tbl, IndexType)>,
+pub trait Index {
+    fn index_id() -> IndexId;
 }
 
-impl<Tbl: Table, IndexType, const INDEX_INDEX: u32> BTreeIndex<Tbl, IndexType, INDEX_INDEX> {
+pub struct BTreeIndex<Tbl: Table, IndexType, Idx: Index> {
+    _marker: PhantomData<(Tbl, IndexType, Idx)>,
+}
+
+impl<Tbl: Table, IndexType, Idx: Index> BTreeIndex<Tbl, IndexType, Idx> {
     #[doc(hidden)]
     pub fn __new() -> Self {
         Self { _marker: PhantomData }
@@ -353,13 +359,16 @@ impl<Tbl: Table, IndexType, const INDEX_INDEX: u32> BTreeIndex<Tbl, IndexType, I
     /// - A value for the first indexed column.
     /// - A range of values for the first indexed column.
     /// - A tuple of values for any prefix of the indexed columns, optionally terminated by a range for the next.
-    pub fn filter<B: BTreeIndexBounds<IndexType, K>, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row> {
+    pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row>
+    where
+        B: BTreeIndexBounds<IndexType, K>,
+    {
+        let index_id = Idx::index_id();
         let args = b.get_args();
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
-        #[allow(unreachable_code)]
-        TableIter::new(todo!(
-            "once implemented: datastore_btree_scan_bsatn({prefix:?}, {prefix_elems:?}, {rstart:?}, {rend:?})"
-        ))
+        let iter = sys::datastore_btree_scan_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| panic!("unexpected error from datastore_btree_scan_bsatn: {e}"));
+        TableIter::new(iter)
     }
 
     /// Deletes all rows in the database state where the indexed column(s) match the bounds `b`.
@@ -371,10 +380,16 @@ impl<Tbl: Table, IndexType, const INDEX_INDEX: u32> BTreeIndex<Tbl, IndexType, I
     ///
     /// May panic if deleting any one of the rows would violate a constraint,
     /// though as of proposing no such constraints exist.
-    pub fn delete<B: BTreeIndexBounds<IndexType, K>, K>(&self, b: B) -> u64 {
+    pub fn delete<B, K>(&self, b: B) -> u64
+    where
+        B: BTreeIndexBounds<IndexType, K>,
+    {
+        let index_id = Idx::index_id();
         let args = b.get_args();
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
-        todo!("once implemented: datastore_delete_by_btree_scan_bsatn({prefix:?}, {prefix_elems:?}, {rstart:?}, {rend:?})")
+        sys::datastore_delete_by_btree_scan_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| panic!("unexpected error from datastore_delete_by_btree_scan_bsatn: {e}"))
+            .into()
     }
 }
 
@@ -394,13 +409,14 @@ pub struct BTreeScanArgs {
 
 impl BTreeScanArgs {
     pub(crate) fn args_for_syscall(&self) -> (&[u8], ColId, &[u8], &[u8]) {
-        let len = self.data.len();
-        (
-            &self.data[..self.rstart_idx],
-            ColId::from(self.prefix_elems),
-            &self.data[self.rstart_idx..self.rend_idx.unwrap_or(len)],
-            &self.data[self.rend_idx.unwrap_or(self.rstart_idx)..],
-        )
+        let prefix = &self.data[..self.rstart_idx];
+        let (rstart, rend) = if let Some(rend_idx) = self.rend_idx {
+            (&self.data[self.rstart_idx..rend_idx], &self.data[rend_idx..])
+        } else {
+            let elem = &self.data[self.rstart_idx..];
+            (elem, elem)
+        };
+        (prefix, ColId::from(self.prefix_elems), rstart, rend)
     }
 }
 
@@ -464,14 +480,10 @@ impl<T: Serialize> TermBound<&T> {
             TermBound::Single(elem) => (elem, None),
             TermBound::Range(start, end) => (start, Some(end)),
         };
-        let serialize_bound = |_buf: &mut Vec<u8>, _bound: &ops::Bound<&T>| {
-            // bsatn::to_writer(buf, bound).unwrap();
-            todo!();
-        };
-        serialize_bound(buf, start);
+        bsatn::to_writer(buf, start).unwrap();
         end.map(|end| {
             let rend_idx = buf.len();
-            serialize_bound(buf, end);
+            bsatn::to_writer(buf, end).unwrap();
             rend_idx
         })
     }
