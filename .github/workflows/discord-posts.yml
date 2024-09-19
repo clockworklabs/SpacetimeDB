@@ -39,7 +39,17 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           CHECK_RESULT: ${{ env.CHECK_RESULT }}
+          MENTION_ON_FAILURE: ${{ secrets.DEV_OPS_ROLE_ID }}
         run: |
-          curl -X POST -H 'Content-Type: application/json' -d '{
-            "content": "'"PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](${PR_URL})\\n${CHECK_NAME} result: ${CHECK_RESULT}"'"
-          }' ${DISCORD_WEBHOOK_URL}
+          message="PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](${PR_URL})"
+          message+=$'\n'
+          message+="${CHECK_NAME} result: ${CHECK_RESULT}"
+          # Note that anything besides success is treated as a failure (e.g. if the check did not run at all, or if it is still pending).
+          if [[ "${CHECK_RESULT}" != "SUCCESS" ]]; then
+            # This uses special Discord syntax for pinging a particular role.
+            # Note the '&' - this is the difference between pinging a *role* and pinging a *person*.
+            message+=" (cc <@&${MENTION_ON_FAILURE}>)"
+          fi
+          # Use `jq` to construct the json data blob in the format required by the webhook.
+          data="$(jq --null-input --arg msg "$message" '.content=$msg')"
+          curl -X POST -H 'Content-Type: application/json' -d "$data" "${DISCORD_WEBHOOK_URL}"
