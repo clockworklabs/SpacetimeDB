@@ -66,9 +66,9 @@ public static class ReducerKind
 }
 
 [AttributeUsage(AttributeTargets.Method, Inherited = false)]
-public sealed class ReducerAttribute : Attribute
+public sealed class ReducerAttribute(string? name = null) : Attribute
 {
-    public string? Name;
+    public string? Name => name;
 }
 
 

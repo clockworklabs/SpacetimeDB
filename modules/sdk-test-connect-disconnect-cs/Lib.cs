@@ -14,14 +14,14 @@ public partial struct Disconnected {
 
 static partial class Module
 {
-    [SpacetimeDB.Reducer(Name = ReducerKind.Connect)]
+    [SpacetimeDB.Reducer(ReducerKind.Connect)]
     public static void OnConnect(ReducerContext ctx)
     {
         var row = new Connected { identity = ctx.Sender };
         ctx.Db.Connected.Insert(ref row);
     }
 
-    [SpacetimeDB.Reducer(Name = ReducerKind.Disconnect)]
+    [SpacetimeDB.Reducer(ReducerKind.Disconnect)]
     public static void OnDisconnect(ReducerContext ctx)
     {
         var row = new Disconnected { identity = ctx.Sender };

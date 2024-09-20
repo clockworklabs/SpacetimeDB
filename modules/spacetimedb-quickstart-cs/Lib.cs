@@ -13,14 +13,14 @@ public partial struct Person {
 
 static partial class Module
 {
-    [Reducer(Name = "add")]
+    [Reducer("add")]
     public static void Add(ReducerContext ctx, string name, byte age)
     {
         var row = new Person { Name = name, Age = age };
         ctx.Db.Person.Insert(ref row);
     }
 
-    [Reducer(Name = "say_hello")]
+    [Reducer("say_hello")]
     public static void SayHello(ReducerContext ctx)
     {
         foreach (var person in ctx.Db.Person.Iter())
@@ -30,7 +30,7 @@ static partial class Module
         Log.Info("Hello, World!");
     }
 
-    [Reducer(Name = "list_over_age")]
+    [Reducer("list_over_age")]
     public static void ListOverAge(ReducerContext ctx, byte age)
     {
         foreach (var person in ctx.Db.Person.Query(person => person.Age >= age))
