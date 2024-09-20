@@ -140,7 +140,7 @@ use crate::ast::{
     sql::{
         OrderByElem, QueryAst, SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlSetOp, SqlShow, SqlUpdate, SqlValues,
     },
-    SqlIdent, SqlLiteral,
+    SqlLiteral,
 };
 
 use super::{
@@ -173,9 +173,8 @@ fn parse_statement(stmt: Statement) -> SqlParseResult<SqlAst> {
             on: None,
             returning: None,
             ..
-        } if after_columns.is_empty() => Ok(SqlAst::Insert(SqlInsert {
+        } if columns.is_empty() && after_columns.is_empty() => Ok(SqlAst::Insert(SqlInsert {
             table: parse_ident(table_name)?,
-            fields: columns.into_iter().map(SqlIdent::from).collect(),
             values: parse_values(*source)?,
         })),
         Statement::Update {
@@ -292,9 +291,10 @@ fn parse_delete(mut from: Vec<TableWithJoins>, selection: Option<Expr>) -> SqlPa
                         partitions,
                     },
                 joins,
-            } if joins.is_empty() && with_hints.is_empty() && partitions.is_empty() => {
-                Ok(SqlDelete(parse_ident(name)?, parse_expr_opt(selection)?))
-            }
+            } if joins.is_empty() && with_hints.is_empty() && partitions.is_empty() => Ok(SqlDelete {
+                table: parse_ident(name)?,
+                filter: parse_expr_opt(selection)?,
+            }),
             t => Err(SqlUnsupported::DeleteTable(t).into()),
         }
     } else {
@@ -498,7 +498,6 @@ mod tests {
             "select * from t order by a limit 5",
             "select * from t where a = 1 union select * from t where a = 2",
             "insert into t values (1, 2)",
-            "insert into t (a, b) values (1, 2)",
             "delete from t",
             "delete from t where a = 1",
             "update t set a = 1, b = 2",

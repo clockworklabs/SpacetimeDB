@@ -8,10 +8,10 @@ license-file = "LICENSE"
 derive_more.workspace = true
 thiserror.workspace = true
 spacetimedb-lib.workspace = true
+spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-schema.workspace = true
 spacetimedb-sql-parser.workspace = true
 
 [dev-dependencies]
 spacetimedb-lib.workspace = true
-spacetimedb-primitives.workspace = true
