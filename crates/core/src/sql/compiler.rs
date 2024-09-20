@@ -308,7 +308,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_index_eq() -> ResultTest<()> {
+    fn compile_index_eq_basic() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
         // Create table [test] with index on [a]
