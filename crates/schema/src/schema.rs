@@ -159,6 +159,16 @@ impl TableSchema {
         )
     }
 
+    /// Update the table id of this schema.
+    /// For use by the core database engine after assigning a table id.
+    pub fn update_table_id(&mut self, id: TableId) {
+        self.table_id = id;
+        self.columns.iter_mut().for_each(|c| c.table_id = id);
+        self.indexes.iter_mut().for_each(|i| i.table_id = id);
+        self.constraints.iter_mut().for_each(|c| c.table_id = id);
+        self.sequences.iter_mut().for_each(|s| s.table_id = id);
+    }
+
     /// Convert a table schema into a list of columns.
     pub fn into_columns(self) -> Vec<ColumnSchema> {
         self.columns

@@ -88,7 +88,7 @@ impl MutTxId {
         Ok(())
     }
 
-    pub fn create_table(&mut self, table_schema: TableSchema, database_address: Address) -> Result<TableId> {
+    pub fn create_table(&mut self, mut table_schema: TableSchema, database_address: Address) -> Result<TableId> {
         log::trace!("TABLE CREATING: {}", table_schema.table_name);
 
         // Insert the table row into `st_tables`
@@ -107,12 +107,14 @@ impl MutTxId {
             .collapse()
             .read_col(StTableFields::TableId)?;
 
+        table_schema.update_table_id(table_id);
+
         // Generate the full definition of the table, with the generated indexes, constraints, sequences...
 
         // Insert the columns into `st_columns`
         for col in table_schema.columns() {
             let row = StColumnRow {
-                table_id,
+                table_id: col.table_id,
                 col_pos: col.col_pos,
                 col_name: col.col_name.clone(),
                 col_type: col.col_type.clone().into(),
@@ -122,17 +124,12 @@ impl MutTxId {
 
         // Create the in memory representation of the table
         // NOTE: This should be done before creating the indexes
-        let mut schema_internal = table_schema.clone();
-        // Remove the adjacent object that has an unset `id = 0`, they will be created below with the correct `id`
-        schema_internal.clear_adjacent_schemas();
-        schema_internal.table_id = table_id;
-
-        self.create_table_internal(schema_internal.into());
+        self.create_table_internal(table_schema.clone().into());
 
         // Insert the scheduled table entry into `st_scheduled`
         if let Some(schedule) = table_schema.schedule {
             let row = StScheduledRow {
-                table_id,
+                table_id: schedule.table_id,
                 schedule_id: 0.into(), // autoinc
                 schedule_name: schedule.schedule_name,
                 reducer_name: schedule.reducer_name,
@@ -142,20 +139,17 @@ impl MutTxId {
 
         // Insert constraints into `st_constraints`
         let ctx = ExecutionContext::internal(database_address);
-        for mut constraint in table_schema.constraints.iter().cloned() {
-            constraint.table_id = table_id;
+        for constraint in table_schema.constraints.iter().cloned() {
             self.create_constraint(&ctx, constraint)?;
         }
 
         // Insert sequences into `st_sequences`
-        for mut seq in table_schema.sequences {
-            seq.table_id = table_id;
+        for seq in table_schema.sequences {
             self.create_sequence(seq, database_address)?;
         }
 
         // Create the indexes for the table
-        for mut index in table_schema.indexes {
-            index.table_id = table_id;
+        for index in table_schema.indexes {
             let col_set = ColSet::from(index.index_algorithm.columns());
             let is_unique = table_schema
                 .constraints
@@ -170,7 +164,7 @@ impl MutTxId {
     }
 
     fn create_table_internal(&mut self, schema: Arc<TableSchema>) {
-        eprintln!("MutTxId::create_table_internal {schema:?}");
+        println!("MutTxId::create_table_internal {schema:?}");
         self.tx_state
             .insert_tables
             .insert(schema.table_id, Table::new(schema, SquashedOffset::TX_STATE));
