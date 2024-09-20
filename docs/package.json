@@ -6,13 +6,14 @@
   "type": "module",
   "devDependencies": {
     "@types/node": "^22.5.5",
+    "kleur": "^4.1.5",
     "marked": "^14.1.2",
     "prettier": "^3.3.3",
     "tsx": "^4.19.1"
   },
   "scripts": {
     "format": "prettier --write .",
-    "check-docs": "tsx scripts/index.ts"
+    "check-docs": "tsx scripts/checks.ts"
   },
   "author": "Clockwork Labs",
   "license": "ISC"
