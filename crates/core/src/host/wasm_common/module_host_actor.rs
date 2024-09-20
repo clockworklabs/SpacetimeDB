@@ -331,20 +331,25 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
 
         let program_hash = program.hash;
         let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
-        let (tx, _) = stdb.with_auto_rollback(&ctx, tx, |tx| stdb.update_program(tx, HostType::Wasm, program))?;
+        let (mut tx, _) = stdb.with_auto_rollback(&ctx, tx, |tx| stdb.update_program(tx, HostType::Wasm, program))?;
         self.system_logger().info(&format!("Updated program to {program_hash}"));
 
-        stdb.with_auto_rollback(&ctx, tx, |tx| {
-            let result = crate::db::update::update_database(stdb, tx, plan, self.system_logger());
+        let res = crate::db::update::update_database(stdb, &mut tx, plan, self.system_logger());
 
-            if let Err(e) = &result {
+        match res {
+            Err(e) => {
+                log::warn!("Database update failed: {} @ {}", e, stdb.address());
                 self.system_logger().warn(&format!("Database update failed: {e}"));
-            } else {
-                self.system_logger().info("Database updated");
+                stdb.rollback_mut_tx(&ctx, tx);
+                Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
             }
-            result
-        })?;
-        Ok(UpdateDatabaseResult::UpdatePerformed)
+            Ok(()) => {
+                stdb.commit_tx(&ctx, tx)?;
+                self.system_logger().info("Database updated");
+                log::info!("Database updated, {}", stdb.address());
+                Ok(UpdateDatabaseResult::UpdatePerformed)
+            }
+        }
     }
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {

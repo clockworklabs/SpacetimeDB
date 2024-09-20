@@ -500,6 +500,7 @@ pub enum UpdateDatabaseResult {
     NoUpdateNeeded,
     UpdatePerformed,
     AutoMigrateError(ErrorStream<AutoMigrateError>),
+    ErrorExecutingMigration(anyhow::Error),
 }
 impl UpdateDatabaseResult {
     /// Check if a database update was successful.

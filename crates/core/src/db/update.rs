@@ -68,6 +68,8 @@ fn auto_migrate_database(
 
     let ctx = &ExecutionContext::internal(stdb.address());
 
+    log::info!("Running database update prechecks: {}", stdb.address());
+
     for precheck in plan.prechecks {
         match precheck {
             spacetimedb_schema::auto_migrate::AutoMigratePrecheck::CheckAddSequenceRangeValid(sequence_name) => {
@@ -95,6 +97,8 @@ fn auto_migrate_database(
         }
     }
 
+    log::info!("Running database update steps: {}", stdb.address());
+
     for step in plan.steps {
         match step {
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddTable(table_name) => {
@@ -105,6 +109,7 @@ fn auto_migrate_database(
                 let table_schema = TableSchema::from_module_def(plan.new, table_def, (), 0.into());
 
                 system_logger.info(&format!("Creating table `{}`", table_name));
+                log::info!("Creating table `{}`", table_name);
                 stdb.create_table(tx, table_schema)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddIndex(index_name) => {
@@ -124,6 +129,7 @@ fn auto_migrate_database(
                     "Creating index `{}` on table `{}`",
                     index_name, table_def.name
                 ));
+                log::info!("Creating index `{}` on table `{}`", index_name, table_def.name);
 
                 let index_schema = IndexSchema::from_module_def(plan.new, index_def, table_schema.table_id, 0.into());
 
@@ -143,6 +149,7 @@ fn auto_migrate_database(
                     "Dropping index `{}` on table `{}`",
                     index_name, table_def.name
                 ));
+                log::info!("Dropping index `{}` on table `{}`", index_name, table_def.name);
                 stdb.drop_index(tx, index_schema.index_id)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveConstraint(constraint_name) => {
@@ -158,6 +165,11 @@ fn auto_migrate_database(
                     "Dropping constraint `{}` on table `{}`",
                     constraint_name, table_def.name
                 ));
+                log::info!(
+                    "Dropping constraint `{}` on table `{}`",
+                    constraint_name,
+                    table_def.name
+                );
                 stdb.drop_constraint(tx, constraint_schema.constraint_id)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddSequence(sequence_name) => {
@@ -169,6 +181,7 @@ fn auto_migrate_database(
                     "Adding sequence `{}` to table `{}`",
                     sequence_name, table_def.name
                 ));
+                log::info!("Adding sequence `{}` to table `{}`", sequence_name, table_def.name);
                 let sequence_schema =
                     SequenceSchema::from_module_def(plan.new, sequence_def, table_schema.table_id, 0.into());
                 stdb.create_sequence(tx, sequence_schema)?;
@@ -186,6 +199,7 @@ fn auto_migrate_database(
                     "Dropping sequence `{}` from table `{}`",
                     sequence_name, table_def.name
                 ));
+                log::info!("Dropping sequence `{}` from table `{}`", sequence_name, table_def.name);
                 stdb.drop_sequence(tx, sequence_schema.sequence_id)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::ChangeAccess(table_name) => {
@@ -200,5 +214,7 @@ fn auto_migrate_database(
             }
         }
     }
+
+    log::info!("Database update complete");
     Ok(())
 }
