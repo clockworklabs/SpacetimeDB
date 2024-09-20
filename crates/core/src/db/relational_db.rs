@@ -845,8 +845,6 @@ impl RelationalDB {
         // Recursively sets all IDs to 0.
         let schema = TableSchema::from_module_def(&module_def, table, (), 0.into());
 
-        println!("create_table_for_test_with_the_works: {:?} {:?}", table, schema);
-
         self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
     }
 
@@ -858,7 +856,7 @@ impl RelationalDB {
         access: StAccess,
     ) -> Result<TableId, DBError> {
         let indexes: Vec<(ColList, &str)> = indexes
-            .into_iter()
+            .iter()
             .map(|(col_id, index_name)| ((*col_id).into(), *index_name))
             .collect();
         self.create_table_for_test_with_the_works(name, schema, &indexes[..], access)
@@ -1531,8 +1529,7 @@ mod tests {
         let raw = builder.finish();
         let def: ModuleDef = raw.try_into().expect("table validation failed");
         let table = def.table(name).expect("table not found");
-        let result = TableSchema::from_module_def(&def, table, (), 0.into());
-        result
+        TableSchema::from_module_def(&def, table, (), 0.into())
     }
 
     fn table_auto_inc() -> TableSchema {

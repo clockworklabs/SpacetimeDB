@@ -121,7 +121,7 @@ fn auto_migrate_database(
                     index_name, table_def.name
                 ));
 
-                let index_schema = IndexSchema::from_module_def(&plan.new, index_def, table_schema.table_id, 0.into());
+                let index_schema = IndexSchema::from_module_def(plan.new, index_def, table_schema.table_id, 0.into());
 
                 stdb.create_index(tx, index_schema, is_unique)?;
             }
@@ -132,7 +132,7 @@ fn auto_migrate_database(
                 let index_schema = table_schema
                     .indexes
                     .iter()
-                    .find(|index| &index.index_name[..] == &index_name[..])
+                    .find(|index| index.index_name[..] == index_name[..])
                     .unwrap();
 
                 system_logger.info(&format!(
@@ -147,7 +147,7 @@ fn auto_migrate_database(
                 let constraint_schema = table_schema
                     .constraints
                     .iter()
-                    .find(|constraint| &constraint.constraint_name[..] == &constraint_name[..])
+                    .find(|constraint| constraint.constraint_name[..] == constraint_name[..])
                     .unwrap();
 
                 system_logger.info(&format!(
@@ -166,7 +166,7 @@ fn auto_migrate_database(
                     sequence_name, table_def.name
                 ));
                 let sequence_schema =
-                    SequenceSchema::from_module_def(&plan.new, sequence_def, table_schema.table_id, 0.into());
+                    SequenceSchema::from_module_def(plan.new, sequence_def, table_schema.table_id, 0.into());
                 stdb.create_sequence(tx, sequence_schema)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::RemoveSequence(sequence_name) => {
@@ -175,7 +175,7 @@ fn auto_migrate_database(
                 let sequence_schema = table_schema
                     .sequences
                     .iter()
-                    .find(|sequence| &sequence.sequence_name[..] == &sequence_name[..])
+                    .find(|sequence| sequence.sequence_name[..] == sequence_name[..])
                     .unwrap();
 
                 system_logger.info(&format!(

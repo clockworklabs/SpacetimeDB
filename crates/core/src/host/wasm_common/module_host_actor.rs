@@ -386,7 +386,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let dbic = self.database_instance_context();
         let stdb = &*dbic.relational_db.clone();
         let address = dbic.address;
-        let reducer_name = &*self
+        let reducer_name = self
             .info
             .reducers_map
             .lookup_name(reducer_id)

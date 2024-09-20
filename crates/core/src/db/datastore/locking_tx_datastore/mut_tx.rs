@@ -97,8 +97,8 @@ impl MutTxId {
         let row = StTableRow {
             table_id: 0.into(), // autoinc
             table_name: table_schema.table_name[..].into(),
-            table_type: table_schema.table_type.into(),
-            table_access: table_schema.table_access.into(),
+            table_type: table_schema.table_type,
+            table_access: table_schema.table_access,
             table_primary_key: table_schema.primary_key.map(Into::into),
         };
         let table_id = self
@@ -168,7 +168,6 @@ impl MutTxId {
     }
 
     fn create_table_internal(&mut self, schema: Arc<TableSchema>) {
-        println!("MutTxId::create_table_internal {schema:?}");
         self.tx_state
             .insert_tables
             .insert(schema.table_id, Table::new(schema, SquashedOffset::TX_STATE));

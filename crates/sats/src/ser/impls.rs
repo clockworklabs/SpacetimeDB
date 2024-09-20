@@ -260,7 +260,7 @@ impl_serialize!([] ColList, (self, ser) => {
        arr.end()
 });
 impl_serialize!([] ColSet, (self, ser) => {
-    let list: &ColList = &**self;
+    let list: &ColList = self;
     list.serialize(ser)
 });
 

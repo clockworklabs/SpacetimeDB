@@ -111,7 +111,7 @@ impl Header {
             table_id,
             table_name,
             fields,
-            constraints: combine_constraints(uncombined_constraints.into_iter().map(|(cols, ct)| (cols.into(), ct))),
+            constraints: combine_constraints(uncombined_constraints),
         }
     }
 
@@ -151,7 +151,7 @@ impl Header {
             .iter()
             // Keep constraints with a col list where at least one col is in `for_columns`.
             .filter(|(cols, _)| cols.iter().any(|c| for_columns.contains(c)))
-            .map(|(cols, constraints)| (cols.clone(), constraints.clone()))
+            .map(|(cols, constraints)| (cols.clone(), *constraints))
             .collect()
     }
 

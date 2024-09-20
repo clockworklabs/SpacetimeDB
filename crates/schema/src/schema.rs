@@ -167,8 +167,9 @@ impl TableSchema {
         self.indexes.iter_mut().for_each(|i| i.table_id = id);
         self.constraints.iter_mut().for_each(|c| c.table_id = id);
         self.sequences.iter_mut().for_each(|s| s.table_id = id);
-        self.schedule.as_mut().map(|s| s.table_id = id);
-        println!("updated table id: {:?}", self);
+        if let Some(s) = self.schedule.as_mut() {
+            s.table_id = id;
+        }
     }
 
     /// Convert a table schema into a list of columns.
@@ -305,7 +306,7 @@ impl TableSchema {
     }
 
     /// Iterate over the constraints on sets of columns on this table.
-    fn backcompat_constraints_iter<'a>(&'a self) -> impl Iterator<Item = (ColList, Constraints)> + 'a {
+    fn backcompat_constraints_iter(&self) -> impl Iterator<Item = (ColList, Constraints)> + '_ {
         self.constraints
             .iter()
             .map(|x| -> (ColList, Constraints) {
@@ -319,12 +320,12 @@ impl TableSchema {
             .chain(
                 self.sequences
                     .iter()
-                    .map(|x| (col_list![x.col_pos].into(), Constraints::auto_inc())),
+                    .map(|x| (col_list![x.col_pos], Constraints::auto_inc())),
             )
             .chain(
                 self.primary_key
                     .iter()
-                    .map(|x| (col_list![*x].into(), Constraints::primary_key())),
+                    .map(|x| (col_list![*x], Constraints::primary_key())),
             )
     }
 
@@ -342,9 +343,7 @@ impl TableSchema {
     pub fn backcompat_column_constraints(&self) -> BTreeMap<ColList, Constraints> {
         let mut result = combine_constraints(self.backcompat_constraints_iter());
         for col in &self.columns {
-            result
-                .entry(col_list![col.col_pos].into())
-                .or_insert(Constraints::unset());
+            result.entry(col_list![col.col_pos]).or_insert(Constraints::unset());
         }
         result
     }
@@ -592,7 +591,7 @@ impl Schema for TableSchema {
             (*table_type).into(),
             (*table_access).into(),
             schedule,
-            primary_key.clone(),
+            *primary_key,
         )
     }
 

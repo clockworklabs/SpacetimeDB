@@ -567,7 +567,7 @@ impl<'de> Deserialize<'de> for AlgebraicTypeViaBytes {
     }
 }
 thread_local! {
-    static ALGEBRAIC_TYPE_WRITE_BUF: RefCell<Vec<u8>> = RefCell::new(Vec::new());
+    static ALGEBRAIC_TYPE_WRITE_BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 impl_serialize!([] AlgebraicTypeViaBytes, (self, ser) => {
     ALGEBRAIC_TYPE_WRITE_BUF.with_borrow_mut(|buf| {
@@ -911,11 +911,6 @@ impl StVarTable {
     /// Read the value of [ST_VARNAME_ROW_LIMIT] from `st_var`
     pub fn row_limit(ctx: &ExecutionContext, db: &RelationalDB, tx: &TxId) -> Result<Option<u64>, DBError> {
         let data = Self::read_var(ctx, db, tx, StVarName::RowLimit);
-        eprintln!("row_limit: {:?}", data);
-
-        for entry in db.iter(ctx, tx, ST_VAR_ID)? {
-            eprintln!("entry: {:?}", StVarRow::try_from(entry)?);
-        }
 
         if let Some(StVarValue::U64(limit)) = data? {
             return Ok(Some(limit));
@@ -1283,7 +1278,7 @@ impl From<StScheduledRow> for ScheduleSchema {
 }
 
 thread_local! {
-    static READ_BUF: RefCell<Vec<u8>> = RefCell::new(Vec::new());
+    static READ_BUF: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Read a value from a system table via BSatn.
