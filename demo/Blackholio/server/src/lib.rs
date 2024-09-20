@@ -10,6 +10,9 @@ use std::time::Duration;
 // - [ ] Ejecting mass
 // - [ ] Leaderboard
 
+const TARGET_FOOD_COUNT: usize = 600;
+const MINIMUM_SAFE_MASS_RATIO: f32 = 0.85;
+
 #[spacetimedb(table(public))]
 pub struct Config {
     #[primarykey]
@@ -215,11 +218,16 @@ pub fn update_player_input(ctx: ReducerContext,
     Ok(())
 }
 
-fn is_overlapping(entity1: &Entity, entity2: &Entity) -> bool {
-    let entity1_radius = mass_to_radius(entity1.mass);
-    let entity2_radius = mass_to_radius(entity2.mass);
-    let distance = ((entity1.position.x - entity2.position.x).powi(2) + (entity1.position.y - entity2.position.y).powi(2)).sqrt();
-    distance < entity1_radius.max(entity2_radius)
+fn is_overlapping(a: &Entity, b: &Entity) -> bool {
+    let dx = a.position.x - b.position.x;
+    let dy = a.position.y - b.position.y;
+    let distance_sq = dx * dx + dy * dy;
+
+    let radius_a = mass_to_radius(a.mass);
+    let radius_b = mass_to_radius(b.mass);
+    let radius_sum = radius_a + radius_b;
+
+    distance_sq <= radius_sum * radius_sum
 }
 
 fn mass_to_radius(mass: u32) -> f32 {
@@ -232,7 +240,7 @@ fn mass_to_max_move_speed(mass: u32) -> f32 {
 
 #[spacetimedb(reducer)]
 pub fn move_all_players(_: ReducerContext, _timer: MoveAllPlayersTimer) -> Result<(), String> {
-    let span = spacetimedb::time_span::Span::start("move_all_players");
+    let span = spacetimedb::time_span::Span::start("tick");
     let world_size = Config::filter_by_id(&0).ok_or("Config not found")?.world_size;
     for circle in Circle::iter() {
         let Some(mut circle_entity) = Entity::filter_by_id(&circle.entity_id) else {
@@ -244,32 +252,35 @@ pub fn move_all_players(_: ReducerContext, _timer: MoveAllPlayersTimer) -> Resul
         circle_entity.position.x = x.clamp(circle_radius, world_size as f32 - circle_radius);
         circle_entity.position.y = y.clamp(circle_radius, world_size as f32 - circle_radius);
 
-        // Check to see if we're overlapping with food
-        for food in Food::iter() {
-            let food_entity = Entity::filter_by_id(&food.entity_id).ok_or("Entity not found")?;
-            if is_overlapping(&circle_entity, &food_entity) {
-                // We're overlapping with food, so eat it
-                Entity::delete_by_id(&food.entity_id);
-                Food::delete_by_entity_id(&food.entity_id);
-                circle_entity.mass += food_entity.mass;
-            }
-        }
-
-        // Check to see if we're overlapping with another circle owned by another player
-        for other_circle in Circle::iter() {
-            if other_circle.player_id == circle.player_id {
+        // Check collisions
+        // let span = spacetimedb::time_span::Span::start("collisions");
+        for entity in Entity::iter() {
+            if entity.id == circle_entity.id {
                 continue;
             }
-            let other_entity = Entity::filter_by_id(&other_circle.entity_id).ok_or("Entity not found")?;
-            let mass_ratio = other_entity.mass as f32 / circle_entity.mass as f32;
+            if is_overlapping(&circle_entity, &entity) {
+                // Check to see if we're overlapping with food
+                if Food::filter_by_entity_id(&entity.id).is_some() {
+                    Entity::delete_by_id(&entity.id);
+                    Food::delete_by_entity_id(&entity.id);
+                    circle_entity.mass += entity.mass;
+                }
 
-            if is_overlapping(&circle_entity, &other_entity) && mass_ratio < 0.85 {
-                // We're overlapping with another player, so eat them
-                Entity::delete_by_id(&other_entity.id);
-                Circle::delete_by_entity_id(&other_circle.entity_id);
-                circle_entity.mass += other_entity.mass;
+                // Check to see if we're overlapping with another circle owned by another player
+                let other_circle = Circle::filter_by_entity_id(&entity.id);
+                if let Some(other_circle) = other_circle {
+                    if other_circle.player_id != circle.player_id {
+                        let mass_ratio = entity.mass as f32 / circle_entity.mass as f32;
+                        if mass_ratio < MINIMUM_SAFE_MASS_RATIO {
+                            Entity::delete_by_id(&entity.id);
+                            Circle::delete_by_entity_id(&entity.id);
+                            circle_entity.mass += entity.mass;
+                        }
+                    }
+                }
             }
         }
+        // span.end();
 
         Entity::update_by_id(&circle_entity.id.clone(), circle_entity);
     }
@@ -306,7 +317,7 @@ pub fn spawn_food(_ctx: ReducerContext, _timer: SpawnFoodTimer) -> Result<(), St
     let mut food_count = Food::iter().count();
     let player_count = Player::iter().count();
 
-    while food_count < 600 && player_count > 0 {
+    while food_count < TARGET_FOOD_COUNT && player_count > 0 {
         let mut rng = spacetimedb::rng();
         let food_mass = rng.gen_range(FOOD_MASS_MIN..FOOD_MASS_MAX);
         let world_size = Config::filter_by_id(&0).ok_or("Config not found")?.world_size;
