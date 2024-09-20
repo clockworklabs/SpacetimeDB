@@ -125,8 +125,9 @@ impl MutTxId {
         let mut schema_internal = table_schema.clone();
         // Remove the adjacent object that has an unset `id = 0`, they will be created below with the correct `id`
         schema_internal.clear_adjacent_schemas();
+        schema_internal.table_id = table_id;
 
-        self.create_table_internal(table_id, schema_internal.into());
+        self.create_table_internal(schema_internal.into());
 
         // Insert the scheduled table entry into `st_scheduled`
         if let Some(schedule) = table_schema.schedule {
@@ -168,10 +169,11 @@ impl MutTxId {
         Ok(table_id)
     }
 
-    fn create_table_internal(&mut self, table_id: TableId, schema: Arc<TableSchema>) {
+    fn create_table_internal(&mut self, schema: Arc<TableSchema>) {
+        eprintln!("MutTxId::create_table_internal {schema:?}");
         self.tx_state
             .insert_tables
-            .insert(table_id, Table::new(schema, SquashedOffset::TX_STATE));
+            .insert(schema.table_id, Table::new(schema, SquashedOffset::TX_STATE));
     }
 
     fn get_row_type(&self, table_id: TableId) -> Option<&ProductType> {

@@ -1793,7 +1793,9 @@ mod tests {
             index_name: "age_idx".into(),
             index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![2] }),
         };
-        datastore.create_index_mut_tx(&mut tx, index_def, false)?;
+        // TODO: it's slightly incorrect to create an index with `is_unique: true` without creating a corresponding constraint.
+        // But the `Table` crate allows it for now.
+        datastore.create_index_mut_tx(&mut tx, index_def, true)?;
         let ctx = ExecutionContext::default();
         let query = query_st_tables(&ctx, &tx);
         let seq_start = FIRST_NON_SYSTEM_ID;
@@ -1843,7 +1845,7 @@ mod tests {
             index_name: "age_idx".into(),
             index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![2] }),
         };
-        datastore.create_index_mut_tx(&mut tx, index_def, false)?;
+        datastore.create_index_mut_tx(&mut tx, index_def, true)?;
         datastore.commit_mut_tx_for_test(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let ctx = ExecutionContext::default();
@@ -1896,7 +1898,7 @@ mod tests {
             index_name: "age_idx".into(),
             index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![2] }),
         };
-        datastore.create_index_mut_tx(&mut tx, index_def, false)?;
+        datastore.create_index_mut_tx(&mut tx, index_def, true)?;
 
         datastore.rollback_mut_tx_for_test(tx);
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
