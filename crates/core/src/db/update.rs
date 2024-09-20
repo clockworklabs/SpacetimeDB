@@ -3,6 +3,7 @@ use super::relational_db::RelationalDB;
 use crate::database_logger::SystemLogger;
 use crate::execution_context::ExecutionContext;
 use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::AlgebraicValue;
 use spacetimedb_primitives::ColSet;
 use spacetimedb_schema::auto_migrate::{AutoMigratePlan, ManualMigratePlan, MigratePlan};
@@ -21,7 +22,10 @@ pub fn update_database(
 
     // TODO: consider using `ErrorStream` here.
     let old_def = plan.old_def();
-    for table in &existing_tables {
+    for table in existing_tables
+        .iter()
+        .filter(|table| table.table_type != StTableType::System)
+    {
         let old_def = old_def
             .table(&table.table_name[..])
             .ok_or_else(|| anyhow::anyhow!("table {} not found in old_def", table.table_name))?;
