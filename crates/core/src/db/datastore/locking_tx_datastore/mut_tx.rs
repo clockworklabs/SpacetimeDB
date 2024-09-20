@@ -122,9 +122,13 @@ impl MutTxId {
             self.insert(ST_COLUMN_ID, &mut row.into(), database_address)?;
         }
 
+        let mut schema_internal = table_schema.clone();
+        // Remove all indexes, constraints, and sequences from the schema; we will add them back later with correct index_id, ...
+        schema_internal.clear_adjacent_schemas();
+
         // Create the in memory representation of the table
         // NOTE: This should be done before creating the indexes
-        self.create_table_internal(table_schema.clone().into());
+        self.create_table_internal(schema_internal.into());
 
         // Insert the scheduled table entry into `st_scheduled`
         if let Some(schedule) = table_schema.schedule {

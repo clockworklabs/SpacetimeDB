@@ -167,6 +167,8 @@ impl TableSchema {
         self.indexes.iter_mut().for_each(|i| i.table_id = id);
         self.constraints.iter_mut().for_each(|c| c.table_id = id);
         self.sequences.iter_mut().for_each(|s| s.table_id = id);
+        self.schedule.as_mut().map(|s| s.table_id = id);
+        println!("updated table id: {:?}", self);
     }
 
     /// Convert a table schema into a list of columns.
