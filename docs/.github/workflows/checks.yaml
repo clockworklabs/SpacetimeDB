@@ -1,7 +1,7 @@
-name: Lint and Audit
+name: Check docs links and headings
 
 concurrency:
-  group: lint-and-audit-${{ github.ref }}
+  group: docs-checks-${{ github.ref }}
   cancel-in-progress: true
 
 on:
