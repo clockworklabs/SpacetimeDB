@@ -1,5 +1,8 @@
 use crate::{def::*, error::PrettyAlgebraicType, identifier::Identifier};
-use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors, ErrorStream};
+use spacetimedb_data_structures::{
+    error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
+    map::HashSet,
+};
 use spacetimedb_lib::db::raw_def::v9::TableType;
 use spacetimedb_sats::WithTypespace;
 
@@ -153,10 +156,20 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
         steps: Vec::new(),
         prechecks: Vec::new(),
     };
+
     let tables_ok = auto_migrate_tables(&mut plan);
-    let indexes_ok = auto_migrate_indexes(&mut plan);
-    let sequences_ok = auto_migrate_sequences(&mut plan);
-    let constraints_ok = auto_migrate_constraints(&mut plan);
+
+    // Our diffing algorithm will detect added constraints / indexes / sequences in new tables, we use this to filter those out.
+    // They're handled by adding the root table.
+    let new_tables: HashSet<&Identifier> = diff(plan.old, plan.new, ModuleDef::tables)
+        .filter_map(|diff| match diff {
+            Diff::Add { new } => Some(&new.name),
+            _ => None,
+        })
+        .collect();
+    let indexes_ok = auto_migrate_indexes(&mut plan, &new_tables);
+    let sequences_ok = auto_migrate_sequences(&mut plan, &new_tables);
+    let constraints_ok = auto_migrate_constraints(&mut plan, &new_tables);
 
     let ((), (), (), ()) = (tables_ok, indexes_ok, sequences_ok, constraints_ok).combine_errors()?;
 
@@ -294,12 +307,14 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
     Ok(())
 }
 
-fn auto_migrate_indexes(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
+fn auto_migrate_indexes(plan: &mut AutoMigratePlan<'_>, new_tables: &HashSet<&Identifier>) -> Result<()> {
     diff(plan.old, plan.new, ModuleDef::indexes)
         .map(|index_diff| -> Result<()> {
             match index_diff {
                 Diff::Add { new } => {
-                    plan.steps.push(AutoMigrateStep::AddIndex(new.key()));
+                    if !new_tables.contains(&plan.new.stored_in_table_def(&new.name).unwrap().name) {
+                        plan.steps.push(AutoMigrateStep::AddIndex(new.key()));
+                    }
                     Ok(())
                 }
                 Diff::Remove { old } => {
@@ -327,14 +342,16 @@ fn auto_migrate_indexes(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
         .collect_all_errors()
 }
 
-fn auto_migrate_sequences(plan: &mut AutoMigratePlan) -> Result<()> {
+fn auto_migrate_sequences(plan: &mut AutoMigratePlan, new_tables: &HashSet<&Identifier>) -> Result<()> {
     diff(plan.old, plan.new, ModuleDef::sequences)
         .map(|sequence_diff| -> Result<()> {
             match sequence_diff {
                 Diff::Add { new } => {
-                    plan.prechecks
-                        .push(AutoMigratePrecheck::CheckAddSequenceRangeValid(new.key()));
-                    plan.steps.push(AutoMigrateStep::AddSequence(new.key()));
+                    if !new_tables.contains(&plan.new.stored_in_table_def(&new.name).unwrap().name) {
+                        plan.prechecks
+                            .push(AutoMigratePrecheck::CheckAddSequenceRangeValid(new.key()));
+                        plan.steps.push(AutoMigrateStep::AddSequence(new.key()));
+                    }
                     Ok(())
                 }
                 Diff::Remove { old } => {
@@ -356,14 +373,22 @@ fn auto_migrate_sequences(plan: &mut AutoMigratePlan) -> Result<()> {
         .collect_all_errors()
 }
 
-fn auto_migrate_constraints(plan: &mut AutoMigratePlan) -> Result<()> {
+fn auto_migrate_constraints(plan: &mut AutoMigratePlan, new_tables: &HashSet<&Identifier>) -> Result<()> {
     diff(plan.old, plan.new, ModuleDef::constraints)
         .map(|constraint_diff| -> Result<()> {
             match constraint_diff {
-                Diff::Add { new } => Err(AutoMigrateError::AddUniqueConstraint {
-                    constraint: new.name.clone(),
+                Diff::Add { new } => {
+                    if new_tables.contains(&plan.new.stored_in_table_def(&new.name).unwrap().name) {
+                        // it's okay to add a constraint in a new table.
+                        Ok(())
+                    } else {
+                        // it's not okay to add a new constraint to an existing table.
+                        Err(AutoMigrateError::AddUniqueConstraint {
+                            constraint: new.name.clone(),
+                        }
+                        .into())
+                    }
                 }
-                .into()),
                 Diff::Remove { old } => {
                     plan.steps.push(AutoMigrateStep::RemoveConstraint(old.key()));
                     Ok(())
@@ -560,6 +585,16 @@ mod tests {
         // Add new table
         new_builder
             .build_table_with_new_type("Oranges", ProductType::from([("id", AlgebraicType::U32)]), true)
+            .with_index(
+                RawIndexAlgorithm::BTree {
+                    columns: ColList::from([0]),
+                },
+                "id_index",
+                None,
+            )
+            .with_column_sequence(0, None)
+            .with_unique_constraint(0, None)
+            .with_primary_key(0)
             .finish();
 
         let new_def: ModuleDef = new_builder
