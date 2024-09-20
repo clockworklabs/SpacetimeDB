@@ -233,10 +233,8 @@ pub fn combine_constraints(
 ) -> BTreeMap<ColList, Constraints> {
     let mut constraints = BTreeMap::new();
     for (col_list, constraint) in uncombined {
-        constraints
-            .entry(col_list)
-            .or_insert(Constraints::unset())
-            .push(constraint);
+        let slot = constraints.entry(col_list).or_insert(Constraints::unset());
+        *slot = slot.push(constraint);
     }
 
     let mut uniques: HashSet<ColSet> = HashSet::new();
@@ -248,7 +246,7 @@ pub fn combine_constraints(
 
     for (cols, constraint) in constraints.iter_mut() {
         if uniques.contains(&ColSet::from(cols)) {
-            constraint.push(Constraints::unique());
+            *constraint = constraint.push(Constraints::unique());
         }
     }
 
@@ -368,5 +366,29 @@ mod tests {
         head_rhs.table_name = head_lhs.table_name.clone();
         let rhs = new.project(&[2, 3].map(ColId).map(ColExpr::Col)).unwrap();
         assert_eq!(head_rhs, rhs);
+    }
+
+    #[test]
+    fn test_combine_constraints() {
+        let raw = vec![
+            (col_list![0], Constraints::indexed()),
+            (col_list![0], Constraints::unique()),
+            (col_list![1], Constraints::identity()),
+            (col_list![1, 0], Constraints::primary_key()),
+            (col_list![0, 1], Constraints::unique()),
+            (col_list![2], Constraints::indexed()),
+            (col_list![3], Constraints::unique()),
+        ];
+        let expected = vec![
+            (col_list![0], Constraints::indexed().push(Constraints::unique())),
+            (col_list![1], Constraints::identity()),
+            (col_list![1, 0], Constraints::primary_key().push(Constraints::unique())),
+            (col_list![0, 1], Constraints::unique()),
+            (col_list![2], Constraints::indexed()),
+            (col_list![3], Constraints::unique()),
+        ]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+        assert_eq!(combine_constraints(raw), expected);
     }
 }

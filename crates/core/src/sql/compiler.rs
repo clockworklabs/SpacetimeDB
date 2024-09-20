@@ -1053,13 +1053,11 @@ mod tests {
         create_table_with_rows(&db, &mut tx, "enum", head.clone(), &rows, StAccess::Public)?;
         db.commit_tx(&ExecutionContext::default(), tx)?;
 
-        println!("run_for_testing 1");
         // Should work with any qualified field
         let sql = "select * from enum where a = 'Player'";
         let result = run_for_testing(&db, sql)?;
         assert_eq!(result[0].data, vec![product![AlgebraicValue::enum_simple(0)]]);
 
-        println!("run_for_testing 2");
         let sql = "select * from enum where 'Player' = a";
         let result = run_for_testing(&db, sql)?;
         assert_eq!(result[0].data, vec![product![AlgebraicValue::enum_simple(0)]]);
