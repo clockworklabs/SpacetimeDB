@@ -364,6 +364,41 @@ impl WasmInstanceEnv {
         })
     }
 
+    /// Queries the `index_id` associated with the given (index) `name`
+    /// where `name` is the UTF-8 slice in WASM memory at `name_ptr[..name_len]`.
+    ///
+    /// The index id is written into the `out` pointer.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `name_ptr` is NULL or `name` is not in bounds of WASM memory.
+    /// - `name` is not valid UTF-8.
+    /// - `out` is NULL or `out[..size_of::<IndexId>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_INDEX`, when `name` is not the name of an index.
+    #[tracing::instrument(skip_all)]
+    pub fn index_id_from_name(
+        caller: Caller<'_, Self>,
+        name: WasmPtr<u8>,
+        name_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret::<u32>(caller, AbiCall::IndexIdFromName, out, |caller| {
+            let (mem, env) = Self::mem_env(caller);
+            // Read the index name from WASM memory.
+            let name = mem.deref_str(name, name_len)?;
+
+            // Query the index id.
+            Ok(env.instance_env.index_id_from_name(name)?.into())
+        })
+    }
+
     /// Writes the number of rows currently in table identified by `table_id` to `out`.
     ///
     /// # Traps
@@ -417,6 +452,107 @@ impl WasmInstanceEnv {
             drop(ctx);
             // Register the iterator and get back the index to write to `out`.
             // Calls to the iterator are done through dynamic dispatch.
+            Ok(env.iters.insert(chunks.into_iter()))
+        })
+    }
+
+    /// Finds all rows in the index identified by `index_id`,
+    /// according to the:
+    /// - `prefix = prefix_ptr[..prefix_len]`,
+    /// - `rstart = rstart_ptr[..rstart_len]`,
+    /// - `rend = rend_ptr[..rend_len]`,
+    /// in WASM memory.
+    ///
+    /// The index itself has a schema/type.
+    /// The `prefix` is decoded to the initial `prefix_elems` `AlgebraicType`s
+    /// whereas `rstart` and `rend` are decoded to the `prefix_elems + 1` `AlgebraicType`
+    /// where the `AlgebraicValue`s are wrapped in `Bound`.
+    /// That is, `rstart, rend` are BSATN-encoded `Bound<AlgebraicValue>`s.
+    ///
+    /// Matching is then defined by equating `prefix`
+    /// to the initial `prefix_elems` columns of the index
+    /// and then imposing `rstart` as the starting bound
+    /// and `rend` as the ending bound on the `prefix_elems + 1` column of the index.
+    /// Remaining columns of the index are then unbounded.
+    /// Note that the `prefix` in this case can be empty (`prefix_elems = 0`),
+    /// in which case this becomes a ranged index scan on a single-col index
+    /// or even a full table scan if `rstart` and `rend` are both unbounded.
+    ///
+    /// The relevant table for the index is found implicitly via the `index_id`,
+    /// which is unique for the module.
+    ///
+    /// On success, the iterator handle is written to the `out` pointer.
+    /// This handle can be advanced by [`row_iter_bsatn_advance`].
+    ///
+    /// # Non-obvious queries
+    ///
+    /// For an index on columns `[a, b, c]`:
+    ///
+    /// - `a = x, b = y` is encoded as a prefix `[x, y]`
+    ///   and a range `Range::Unbounded`,
+    ///   or as a  prefix `[x]` and a range `rstart = rend = Range::Inclusive(y)`.
+    /// - `a = x, b = y, c = z` is encoded as a prefix `[x, y]`
+    ///   and a  range `rstart = rend = Range::Inclusive(z)`.
+    /// - A sorted full scan is encoded as an empty prefix
+    ///   and a range `Range::Unbounded`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `prefix_elems > 0`
+    ///    and (`prefix_ptr` is NULL or `prefix` is not in bounds of WASM memory).
+    /// - `rstart` is NULL or `rstart` is not in bounds of WASM memory.
+    /// - `rend` is NULL or `rend` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+    /// - `WRONG_INDEX_ALGO` if the index is not a btree index.
+    /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
+    ///    a `prefix_elems` number of `AlgebraicValue`
+    ///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
+    ///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
+    ///    where the inner `AlgebraicValue`s are
+    ///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
+    fn datastore_btree_scan_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        prefix_ptr: WasmPtr<u8>,
+        prefix_len: u32,
+        prefix_elems: u32,
+        rstart_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rstart_len: u32,
+        rend_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rend_len: u32,
+        out: WasmPtr<RowIterIdx>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreBtreeScanBsatn, out, |caller| {
+            let prefix_elems = Self::convert_u32_to_col_id(prefix_elems)?;
+
+            let (mem, env) = Self::mem_env(caller);
+            // Read the prefix and range start & end from WASM memory.
+            let prefix = if prefix_elems.idx() == 0 {
+                &[]
+            } else {
+                mem.deref_slice(prefix_ptr, prefix_len)?
+            };
+            let rstart = mem.deref_slice(rstart_ptr, rstart_len)?;
+            let rend = mem.deref_slice(rend_ptr, rend_len)?;
+
+            // Find the relevant rows.
+            let chunks = env.instance_env.datastore_btree_scan_bsatn_chunks(
+                index_id.into(),
+                prefix,
+                prefix_elems,
+                rstart,
+                rend,
+            )?;
+
+            // Insert the encoded + concatenated rows into a new buffer and return its id.
             Ok(env.iters.insert(chunks.into_iter()))
         })
     }
@@ -685,6 +821,78 @@ impl WasmInstanceEnv {
             let row_len = writer.w1.finish();
             u32::try_from(row_len).unwrap().write_to(mem, row_len_ptr)?;
             Ok(())
+        })
+    }
+
+    /// Deletes all rows found in the index identified by `index_id`,
+    /// according to the:
+    /// - `prefix = prefix_ptr[..prefix_len]`,
+    /// - `rstart = rstart_ptr[..rstart_len]`,
+    /// - `rend = rend_ptr[..rend_len]`,
+    /// in WASM memory.
+    ///
+    /// This syscall will delete all the rows found by
+    /// [`datastore_btree_scan_bsatn`] with the same arguments passed,
+    /// including `prefix_elems`.
+    /// See `datastore_btree_scan_bsatn` for details.
+    ///
+    /// The number of rows deleted is written to the WASM pointer `out`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `prefix_elems > 0`
+    ///    and (`prefix_ptr` is NULL or `prefix` is not in bounds of WASM memory).
+    /// - `rstart` is NULL or `rstart` is not in bounds of WASM memory.
+    /// - `rend` is NULL or `rend` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+    /// - `WRONG_INDEX_ALGO` if the index is not a btree index.
+    /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
+    ///    a `prefix_elems` number of `AlgebraicValue`
+    ///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
+    ///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
+    ///    where the inner `AlgebraicValue`s are
+    ///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
+    pub fn datastore_delete_by_btree_scan_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        prefix_ptr: WasmPtr<u8>,
+        prefix_len: u32,
+        prefix_elems: u32,
+        rstart_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rstart_len: u32,
+        rend_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rend_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreDeleteByBtreeScanBsatn, out, |caller| {
+            let prefix_elems = Self::convert_u32_to_col_id(prefix_elems)?;
+
+            let (mem, env) = Self::mem_env(caller);
+            // Read the prefix and range start & end from WASM memory.
+            let prefix = if prefix_elems.idx() == 0 {
+                &[]
+            } else {
+                mem.deref_slice(prefix_ptr, prefix_len)?
+            };
+            let rstart = mem.deref_slice(rstart_ptr, rstart_len)?;
+            let rend = mem.deref_slice(rend_ptr, rend_len)?;
+
+            // Delete the relevant rows.
+            Ok(env.instance_env.datastore_delete_by_btree_scan_bsatn(
+                index_id.into(),
+                prefix,
+                prefix_elems,
+                rstart,
+                rend,
+            )?)
         })
     }
 

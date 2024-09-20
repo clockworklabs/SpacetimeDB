@@ -26,6 +26,11 @@ pub type F64 = decorum::Total<f64>;
 /// So forms like `42 + 24` are not represented in an `AlgebraicValue`.
 #[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, From)]
 pub enum AlgebraicValue {
+    /// The minimum value in the total ordering.
+    /// Cannot be serialized and only exists to facilitate range index scans.
+    /// This variant must always be first.
+    Min,
+
     /// A structural sum value.
     ///
     /// Given a sum type `{ N_0(T_0), N_1(T_1), ..., N_n(T_n) }`
@@ -119,6 +124,11 @@ pub enum AlgebraicValue {
     ///
     /// Uses Rust's standard representation of strings.
     String(Box<str>),
+
+    /// The maximum value in the total ordering.
+    /// Cannot be serialized and only exists to facilitate range index scans.
+    /// This variant must always be last.
+    Max,
 }
 
 /// Wraps `T` making the outer type packed with alignment 1.
@@ -261,6 +271,7 @@ impl AlgebraicValue {
             Self::F32(_) => Some(AlgebraicType::F32),
             Self::F64(_) => Some(AlgebraicType::F64),
             Self::String(_) => Some(AlgebraicType::String),
+            AlgebraicValue::Min | AlgebraicValue::Max => None,
         }
     }
 

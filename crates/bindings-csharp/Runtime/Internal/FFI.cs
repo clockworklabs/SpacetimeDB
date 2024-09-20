@@ -27,6 +27,7 @@ public enum Errno : short
     BSATN_DECODE_ERROR = 3,
     NO_SUCH_TABLE = 4,
     NO_SUCH_ITER = 6,
+    NO_SUCH_CONSOLE_TIMER = 7,
     NO_SUCH_BYTES = 8,
     NO_SPACE = 9,
     BUFFER_TOO_SMALL = 11,
@@ -75,6 +76,7 @@ internal static partial class FFI
                     Errno.BSATN_DECODE_ERROR => new BsatnDecodeException(),
                     Errno.NO_SUCH_TABLE => new NoSuchTableException(),
                     Errno.NO_SUCH_ITER => new NoSuchIterException(),
+                    Errno.NO_SUCH_CONSOLE_TIMER => new NoSuchLogStopwatch(),
                     Errno.NO_SUCH_BYTES => new NoSuchBytesException(),
                     Errno.NO_SPACE => new NoSpaceException(),
                     Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
@@ -221,4 +223,35 @@ internal static partial class FFI
         ReadOnlySpan<byte> buffer,
         ref uint buffer_len
     );
+
+    [NativeMarshalling(typeof(ConsoleTimerIdMarshaller))]
+    [StructLayout(LayoutKind.Sequential)]
+    public readonly struct ConsoleTimerId
+    {
+        private readonly uint timer_id;
+
+        private ConsoleTimerId(uint id)
+        {
+            timer_id = id;
+        }
+
+        //LayoutKind.Sequential is apparently not enough for this struct to be returnable in PInvoke, so we need a custom marshaller unfortunately
+        [CustomMarshaller(
+            typeof(ConsoleTimerId),
+            MarshalMode.Default,
+            typeof(ConsoleTimerIdMarshaller)
+        )]
+        internal static class ConsoleTimerIdMarshaller
+        {
+            public static ConsoleTimerId ConvertToManaged(uint id) => new ConsoleTimerId(id);
+
+            public static uint ConvertToUnmanaged(ConsoleTimerId id) => id.timer_id;
+        }
+    }
+
+    [LibraryImport(StdbNamespace)]
+    public static partial ConsoleTimerId _console_timer_start([In] byte[] name, uint name_len);
+
+    [LibraryImport(StdbNamespace)]
+    public static partial CheckedStatus _console_timer_end(ConsoleTimerId stopwatch_id);
 }

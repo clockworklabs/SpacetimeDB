@@ -110,118 +110,118 @@ fn assert_table_empty<T: Table>(tbl: T) -> anyhow::Result<()> {
 ///
 /// We'll call this function within our initial `on_subscription_applied` callback to verify that.
 fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
-    assert_table_empty(ctx.db().OneU8())?;
-    assert_table_empty(ctx.db().OneU16())?;
-    assert_table_empty(ctx.db().OneU32())?;
-    assert_table_empty(ctx.db().OneU64())?;
-    assert_table_empty(ctx.db().OneU128())?;
-    assert_table_empty(ctx.db().OneU256())?;
+    assert_table_empty(ctx.db().one_u_8())?;
+    assert_table_empty(ctx.db().one_u_16())?;
+    assert_table_empty(ctx.db().one_u_32())?;
+    assert_table_empty(ctx.db().one_u_64())?;
+    assert_table_empty(ctx.db().one_u_128())?;
+    assert_table_empty(ctx.db().one_u_256())?;
 
-    assert_table_empty(ctx.db().OneI8())?;
-    assert_table_empty(ctx.db().OneI16())?;
-    assert_table_empty(ctx.db().OneI32())?;
-    assert_table_empty(ctx.db().OneI64())?;
-    assert_table_empty(ctx.db().OneI128())?;
-    assert_table_empty(ctx.db().OneI256())?;
+    assert_table_empty(ctx.db().one_i_8())?;
+    assert_table_empty(ctx.db().one_i_16())?;
+    assert_table_empty(ctx.db().one_i_32())?;
+    assert_table_empty(ctx.db().one_i_64())?;
+    assert_table_empty(ctx.db().one_i_128())?;
+    assert_table_empty(ctx.db().one_i_256())?;
 
-    assert_table_empty(ctx.db().OneBool())?;
+    assert_table_empty(ctx.db().one_bool())?;
 
-    assert_table_empty(ctx.db().OneF32())?;
-    assert_table_empty(ctx.db().OneF64())?;
+    assert_table_empty(ctx.db().one_f_32())?;
+    assert_table_empty(ctx.db().one_f_64())?;
 
-    assert_table_empty(ctx.db().OneString())?;
-    assert_table_empty(ctx.db().OneIdentity())?;
-    assert_table_empty(ctx.db().OneAddress())?;
+    assert_table_empty(ctx.db().one_string())?;
+    assert_table_empty(ctx.db().one_identity())?;
+    assert_table_empty(ctx.db().one_address())?;
 
-    assert_table_empty(ctx.db().OneSimpleEnum())?;
-    assert_table_empty(ctx.db().OneEnumWithPayload())?;
+    assert_table_empty(ctx.db().one_simple_enum())?;
+    assert_table_empty(ctx.db().one_enum_with_payload())?;
 
-    assert_table_empty(ctx.db().OneUnitStruct())?;
-    assert_table_empty(ctx.db().OneByteStruct())?;
-    assert_table_empty(ctx.db().OneEveryPrimitiveStruct())?;
-    assert_table_empty(ctx.db().OneEveryVecStruct())?;
+    assert_table_empty(ctx.db().one_unit_struct())?;
+    assert_table_empty(ctx.db().one_byte_struct())?;
+    assert_table_empty(ctx.db().one_every_primitive_struct())?;
+    assert_table_empty(ctx.db().one_every_vec_struct())?;
 
-    assert_table_empty(ctx.db().VecU8())?;
-    assert_table_empty(ctx.db().VecU16())?;
-    assert_table_empty(ctx.db().VecU32())?;
-    assert_table_empty(ctx.db().VecU64())?;
-    assert_table_empty(ctx.db().VecU128())?;
-    assert_table_empty(ctx.db().VecU256())?;
+    assert_table_empty(ctx.db().vec_u_8())?;
+    assert_table_empty(ctx.db().vec_u_16())?;
+    assert_table_empty(ctx.db().vec_u_32())?;
+    assert_table_empty(ctx.db().vec_u_64())?;
+    assert_table_empty(ctx.db().vec_u_128())?;
+    assert_table_empty(ctx.db().vec_u_256())?;
 
-    assert_table_empty(ctx.db().VecI8())?;
-    assert_table_empty(ctx.db().VecI16())?;
-    assert_table_empty(ctx.db().VecI32())?;
-    assert_table_empty(ctx.db().VecI64())?;
-    assert_table_empty(ctx.db().VecI128())?;
-    assert_table_empty(ctx.db().VecI256())?;
+    assert_table_empty(ctx.db().vec_i_8())?;
+    assert_table_empty(ctx.db().vec_i_16())?;
+    assert_table_empty(ctx.db().vec_i_32())?;
+    assert_table_empty(ctx.db().vec_i_64())?;
+    assert_table_empty(ctx.db().vec_i_128())?;
+    assert_table_empty(ctx.db().vec_i_256())?;
 
-    assert_table_empty(ctx.db().VecBool())?;
+    assert_table_empty(ctx.db().vec_bool())?;
 
-    assert_table_empty(ctx.db().VecF32())?;
-    assert_table_empty(ctx.db().VecF64())?;
+    assert_table_empty(ctx.db().vec_f_32())?;
+    assert_table_empty(ctx.db().vec_f_64())?;
 
-    assert_table_empty(ctx.db().VecString())?;
-    assert_table_empty(ctx.db().VecIdentity())?;
-    assert_table_empty(ctx.db().VecAddress())?;
+    assert_table_empty(ctx.db().vec_string())?;
+    assert_table_empty(ctx.db().vec_identity())?;
+    assert_table_empty(ctx.db().vec_address())?;
 
-    assert_table_empty(ctx.db().VecSimpleEnum())?;
-    assert_table_empty(ctx.db().VecEnumWithPayload())?;
+    assert_table_empty(ctx.db().vec_simple_enum())?;
+    assert_table_empty(ctx.db().vec_enum_with_payload())?;
 
-    assert_table_empty(ctx.db().VecUnitStruct())?;
-    assert_table_empty(ctx.db().VecByteStruct())?;
-    assert_table_empty(ctx.db().VecEveryPrimitiveStruct())?;
-    assert_table_empty(ctx.db().VecEveryVecStruct())?;
+    assert_table_empty(ctx.db().vec_unit_struct())?;
+    assert_table_empty(ctx.db().vec_byte_struct())?;
+    assert_table_empty(ctx.db().vec_every_primitive_struct())?;
+    assert_table_empty(ctx.db().vec_every_vec_struct())?;
 
-    assert_table_empty(ctx.db().OptionI32())?;
-    assert_table_empty(ctx.db().OptionString())?;
-    assert_table_empty(ctx.db().OptionIdentity())?;
-    assert_table_empty(ctx.db().OptionSimpleEnum())?;
-    assert_table_empty(ctx.db().OptionEveryPrimitiveStruct())?;
-    assert_table_empty(ctx.db().OptionVecOptionI32())?;
+    assert_table_empty(ctx.db().option_i_32())?;
+    assert_table_empty(ctx.db().option_string())?;
+    assert_table_empty(ctx.db().option_identity())?;
+    assert_table_empty(ctx.db().option_simple_enum())?;
+    assert_table_empty(ctx.db().option_every_primitive_struct())?;
+    assert_table_empty(ctx.db().option_vec_option_i_32())?;
 
-    assert_table_empty(ctx.db().UniqueU8())?;
-    assert_table_empty(ctx.db().UniqueU16())?;
-    assert_table_empty(ctx.db().UniqueU32())?;
-    assert_table_empty(ctx.db().UniqueU64())?;
-    assert_table_empty(ctx.db().UniqueU128())?;
-    assert_table_empty(ctx.db().UniqueU256())?;
+    assert_table_empty(ctx.db().unique_u_8())?;
+    assert_table_empty(ctx.db().unique_u_16())?;
+    assert_table_empty(ctx.db().unique_u_32())?;
+    assert_table_empty(ctx.db().unique_u_64())?;
+    assert_table_empty(ctx.db().unique_u_128())?;
+    assert_table_empty(ctx.db().unique_u_256())?;
 
-    assert_table_empty(ctx.db().UniqueI8())?;
-    assert_table_empty(ctx.db().UniqueI16())?;
-    assert_table_empty(ctx.db().UniqueI32())?;
-    assert_table_empty(ctx.db().UniqueI64())?;
-    assert_table_empty(ctx.db().UniqueI128())?;
-    assert_table_empty(ctx.db().UniqueI256())?;
+    assert_table_empty(ctx.db().unique_i_8())?;
+    assert_table_empty(ctx.db().unique_i_16())?;
+    assert_table_empty(ctx.db().unique_i_32())?;
+    assert_table_empty(ctx.db().unique_i_64())?;
+    assert_table_empty(ctx.db().unique_i_128())?;
+    assert_table_empty(ctx.db().unique_i_256())?;
 
-    assert_table_empty(ctx.db().UniqueBool())?;
+    assert_table_empty(ctx.db().unique_bool())?;
 
-    assert_table_empty(ctx.db().UniqueString())?;
-    assert_table_empty(ctx.db().UniqueIdentity())?;
-    assert_table_empty(ctx.db().UniqueAddress())?;
+    assert_table_empty(ctx.db().unique_string())?;
+    assert_table_empty(ctx.db().unique_identity())?;
+    assert_table_empty(ctx.db().unique_address())?;
 
-    assert_table_empty(ctx.db().PkU8())?;
-    assert_table_empty(ctx.db().PkU16())?;
-    assert_table_empty(ctx.db().PkU32())?;
-    assert_table_empty(ctx.db().PkU64())?;
-    assert_table_empty(ctx.db().PkU128())?;
-    assert_table_empty(ctx.db().PkU256())?;
+    assert_table_empty(ctx.db().pk_u_8())?;
+    assert_table_empty(ctx.db().pk_u_16())?;
+    assert_table_empty(ctx.db().pk_u_32())?;
+    assert_table_empty(ctx.db().pk_u_64())?;
+    assert_table_empty(ctx.db().pk_u_128())?;
+    assert_table_empty(ctx.db().pk_u_256())?;
 
-    assert_table_empty(ctx.db().PkI8())?;
-    assert_table_empty(ctx.db().PkI16())?;
-    assert_table_empty(ctx.db().PkI32())?;
-    assert_table_empty(ctx.db().PkI64())?;
-    assert_table_empty(ctx.db().PkI128())?;
-    assert_table_empty(ctx.db().PkI256())?;
+    assert_table_empty(ctx.db().pk_i_8())?;
+    assert_table_empty(ctx.db().pk_i_16())?;
+    assert_table_empty(ctx.db().pk_i_32())?;
+    assert_table_empty(ctx.db().pk_i_64())?;
+    assert_table_empty(ctx.db().pk_i_128())?;
+    assert_table_empty(ctx.db().pk_i_256())?;
 
-    assert_table_empty(ctx.db().PkBool())?;
+    assert_table_empty(ctx.db().pk_bool())?;
 
-    assert_table_empty(ctx.db().PkString())?;
-    assert_table_empty(ctx.db().PkIdentity())?;
-    assert_table_empty(ctx.db().PkAddress())?;
+    assert_table_empty(ctx.db().pk_string())?;
+    assert_table_empty(ctx.db().pk_identity())?;
+    assert_table_empty(ctx.db().pk_address())?;
 
-    assert_table_empty(ctx.db().LargeTable())?;
+    assert_table_empty(ctx.db().large_table())?;
 
-    assert_table_empty(ctx.db().TableHoldsTable())?;
+    assert_table_empty(ctx.db().table_holds_table())?;
 
     Ok(())
 }
@@ -720,10 +720,10 @@ fn exec_on_reducer() {
                 );
             }
 
-            if ctx.db.OneU8().count() != 1 {
-                anyhow::bail!("Expected 1 row in table OneU8, but found {}", ctx.db.OneU8().count());
+            if ctx.db.one_u_8().count() != 1 {
+                anyhow::bail!("Expected 1 row in table OneU8, but found {}", ctx.db.one_u_8().count());
             }
-            let row = ctx.db.OneU8().iter().next().unwrap();
+            let row = ctx.db.one_u_8().iter().next().unwrap();
             if row.n != value {
                 anyhow::bail!("Unexpected row value. Expected {} but found {:?}", value, row);
             }
@@ -808,10 +808,10 @@ fn exec_fail_reducer() {
                     );
                 }
 
-                if ctx.db.PkU8().count() != 1 {
-                    anyhow::bail!("Expected 1 row in table PkU8, but found {}", ctx.db.PkU8().count());
+                if ctx.db.pk_u_8().count() != 1 {
+                    anyhow::bail!("Expected 1 row in table PkU8, but found {}", ctx.db.pk_u_8().count());
                 }
-                let row = ctx.db.PkU8().iter().next().unwrap();
+                let row = ctx.db.pk_u_8().iter().next().unwrap();
                 if row.n != key || row.data != initial_data {
                     anyhow::bail!(
                         "Unexpected row value. Expected ({}, {}) but found {:?}",
@@ -877,10 +877,10 @@ fn exec_fail_reducer() {
                     );
                 }
 
-                if ctx.db.PkU8().count() != 1 {
-                    anyhow::bail!("Expected 1 row in table PkU8, but found {}", ctx.db.PkU8().count());
+                if ctx.db.pk_u_8().count() != 1 {
+                    anyhow::bail!("Expected 1 row in table PkU8, but found {}", ctx.db.pk_u_8().count());
                 }
-                let row = ctx.db.PkU8().iter().next().unwrap();
+                let row = ctx.db.pk_u_8().iter().next().unwrap();
                 if row.n != key || row.data != initial_data {
                     anyhow::bail!(
                         "Unexpected row value. Expected ({}, {}) but found {:?}",
@@ -1234,7 +1234,7 @@ fn exec_insert_long_table() {
         let test_counter = test_counter.clone();
         let mut large_table_result = Some(test_counter.add_test("insert-large-table"));
         move |ctx| {
-            ctx.db.LargeTable().on_insert(move |ctx, row| {
+            ctx.db.large_table().on_insert(move |ctx, row| {
                 if large_table_result.is_some() {
                     let run_tests = || {
                         assert_eq_or_bail!(large_table(), *row);
@@ -1320,7 +1320,7 @@ fn exec_insert_primitives_as_strings() {
                 s.r.to_string(),
             ];
 
-            ctx.db.VecString().on_insert(move |ctx, row| {
+            ctx.db.vec_string().on_insert(move |ctx, row| {
                 if result.is_some() {
                     let run_tests = || {
                         assert_eq_or_bail!(strings, row.s);

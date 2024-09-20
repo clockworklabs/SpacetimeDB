@@ -8,7 +8,7 @@ use crate::{
     ProductValue, SumType, SumValue, WithTypespace, F32, F64,
 };
 use crate::{i256, u256};
-use core::marker::PhantomData;
+use core::{marker::PhantomData, ops::Bound};
 use spacetimedb_primitives::{ColId, ColList};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -292,6 +292,75 @@ impl<'de, T: Deserialize<'de>, U: Deserialize<'de>> VariantVisitor for ResultVis
     }
 }
 
+/// The visitor deserializes a `Bound<T>`.
+#[derive(Clone, Copy)]
+pub struct WithBound<S>(pub S);
+
+impl<'de, S: Copy + DeserializeSeed<'de>> DeserializeSeed<'de> for WithBound<S> {
+    type Output = Bound<S::Output>;
+
+    fn deserialize<D: Deserializer<'de>>(self, de: D) -> Result<Self::Output, D::Error> {
+        de.deserialize_sum(BoundVisitor(self.0))
+    }
+}
+
+/// The visitor deserializes a `Bound<T>`.
+struct BoundVisitor<S>(S);
+
+/// Variant determined by the [`BoundVisitor`] for `Bound<T>`.
+enum BoundVariant {
+    Included,
+    Excluded,
+    Unbounded,
+}
+
+impl<'de, S: Copy + DeserializeSeed<'de>> SumVisitor<'de> for BoundVisitor<S> {
+    type Output = Bound<S::Output>;
+
+    fn sum_name(&self) -> Option<&str> {
+        Some("bound")
+    }
+
+    fn visit_sum<A: SumAccess<'de>>(self, data: A) -> Result<Self::Output, A::Error> {
+        // Determine the variant.
+        let this = self.0;
+        let (variant, data) = data.variant(self)?;
+
+        // Deserialize contents for it.
+        match variant {
+            BoundVariant::Included => data.deserialize_seed(this).map(Bound::Included),
+            BoundVariant::Excluded => data.deserialize_seed(this).map(Bound::Excluded),
+            BoundVariant::Unbounded => data.deserialize::<()>().map(|_| Bound::Unbounded),
+        }
+    }
+}
+
+impl<'de, T: Copy + DeserializeSeed<'de>> VariantVisitor for BoundVisitor<T> {
+    type Output = BoundVariant;
+
+    fn variant_names(&self, names: &mut dyn super::ValidNames) {
+        names.extend(["included", "excluded", "unbounded"])
+    }
+
+    fn visit_tag<E: Error>(self, tag: u8) -> Result<Self::Output, E> {
+        match tag {
+            0 => Ok(BoundVariant::Included),
+            1 => Ok(BoundVariant::Excluded),
+            2 => Ok(BoundVariant::Unbounded),
+            _ => Err(E::unknown_variant_tag(tag, &self)),
+        }
+    }
+
+    fn visit_name<E: Error>(self, name: &str) -> Result<Self::Output, E> {
+        match name {
+            "included" => Ok(BoundVariant::Included),
+            "excluded" => Ok(BoundVariant::Excluded),
+            "unbounded" => Ok(BoundVariant::Unbounded),
+            _ => Err(E::unknown_variant_name(name, &self)),
+        }
+    }
+}
+
 impl<'de> DeserializeSeed<'de> for WithTypespace<'_, AlgebraicType> {
     type Output = AlgebraicValue;
 
@@ -384,26 +453,34 @@ impl<'de> DeserializeSeed<'de> for WithTypespace<'_, ProductType> {
     type Output = ProductValue;
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
+        deserializer.deserialize_product(self.map(|pt| &*pt.elements))
+    }
+}
+
+impl<'de> DeserializeSeed<'de> for WithTypespace<'_, [ProductTypeElement]> {
+    type Output = ProductValue;
+
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Output, D::Error> {
         deserializer.deserialize_product(self)
     }
 }
 
-impl<'de> ProductVisitor<'de> for WithTypespace<'_, ProductType> {
+impl<'de> ProductVisitor<'de> for WithTypespace<'_, [ProductTypeElement]> {
     type Output = ProductValue;
 
     fn product_name(&self) -> Option<&str> {
         None
     }
     fn product_len(&self) -> usize {
-        self.ty().elements.len()
+        self.ty().len()
     }
 
     fn visit_seq_product<A: SeqProductAccess<'de>>(self, tup: A) -> Result<Self::Output, A::Error> {
-        visit_seq_product(self.map(|ty| &*ty.elements), &self, tup)
+        visit_seq_product(self, &self, tup)
     }
 
     fn visit_named_product<A: super::NamedProductAccess<'de>>(self, tup: A) -> Result<Self::Output, A::Error> {
-        visit_named_product(self.map(|ty| &*ty.elements), &self, tup)
+        visit_named_product(self, &self, tup)
     }
 }
 

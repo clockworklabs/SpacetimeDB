@@ -14,25 +14,22 @@ namespace SpacetimeDB.Internal
 {
 	[SpacetimeDB.Type]
 	[DataContract]
-	public partial class RawUniqueConstraintDefV9
+	public partial class RawUniqueConstraintDataV9
 	{
-		[DataMember(Name = "name")]
-		public string Name;
 		[DataMember(Name = "columns")]
 		public System.Collections.Generic.List<ushort> Columns;
 
-		public RawUniqueConstraintDefV9(
-			string Name,
+		public RawUniqueConstraintDataV9(
 			System.Collections.Generic.List<ushort> Columns
 		)
 		{
-			this.Name = Name;
 			this.Columns = Columns;
 		}
 
-		public RawUniqueConstraintDefV9() : this(
-			"",
-			new()
-		) { }
+		public RawUniqueConstraintDataV9()
+		{
+			this.Columns = new();
+		}
+
 	}
 }

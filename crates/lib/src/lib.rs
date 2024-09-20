@@ -252,8 +252,11 @@ impl ModuleDefBuilder {
                 algebraic_type: c.col_type.clone(),
             })
             .collect();
-        // do NOT add a `TypeAlias`: in v8, the `RawTableDef` itself serves as a `TypeAlias`.
         let data = self.module.typespace.add(ty.into());
+        self.add_type_alias(TypeAlias {
+            name: schema.table_name.clone().into(),
+            ty: data,
+        });
         self.add_table(TableDesc { schema, data });
         data
     }
@@ -379,6 +382,12 @@ pub fn from_hex_pad<R: hex::FromHex<Error = hex::FromHexError>, T: AsRef<[u8]>>(
     hex: T,
 ) -> Result<R, hex::FromHexError> {
     let hex = hex.as_ref();
-    let hex = if hex.starts_with(b"0x") { &hex[2..] } else { hex };
+    let hex = if hex.starts_with(b"0x") {
+        &hex[2..]
+    } else if hex.starts_with(b"X'") {
+        &hex[2..hex.len()]
+    } else {
+        hex
+    };
     hex::FromHex::from_hex(hex)
 }

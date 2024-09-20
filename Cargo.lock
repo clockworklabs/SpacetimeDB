@@ -513,9 +513,9 @@ checksum = "ad152d03a2c813c80bb94fedbf3a3f02b28f793e39e7c214c8a0bcc196343de7"
 
 [[package]]
 name = "bytemuck"
-version = "1.16.0"
+version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78834c15cb5d5efe3452d58b1e8ba890dd62d21907f867f383358198e56ebca5"
+checksum = "94bbb0ad554ad961ddc5da507a12a29b14e4ae5bda06b19f575a3e6079d2e2ae"
 dependencies = [
  "bytemuck_derive",
 ]
@@ -1518,6 +1518,12 @@ name = "finl_unicode"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fcfdc7a0362c9f4444381a9e697c79d435fe65b52a37466fc2c1184cee9edc6"
+
+[[package]]
+name = "fixedbitset"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ce7134b9999ecaf8bcd65542e436736ef32ddca1b3e06094cb6ec5755203b80"
 
 [[package]]
 name = "flate2"
@@ -2850,6 +2856,16 @@ version = "0.1.0"
 dependencies = [
  "log",
  "spacetimedb",
+]
+
+[[package]]
+name = "petgraph"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4c5cc86750666a3ed20bdaf5ca2a0344f9c67674cae0515bec2da16fbaa47db"
+dependencies = [
+ "fixedbitset",
+ "indexmap 2.0.2",
 ]
 
 [[package]]
@@ -4375,6 +4391,7 @@ dependencies = [
  "sqlparser",
  "strum",
  "tempfile",
+ "thin-vec",
  "thiserror",
  "tokio",
  "tokio-stream",
@@ -4468,8 +4485,22 @@ version = "0.12.0"
 dependencies = [
  "bitflags 2.4.1",
  "either",
+ "itertools 0.12.0",
  "nohash-hasher",
  "proptest",
+]
+
+[[package]]
+name = "spacetimedb-query-planner"
+version = "0.12.0"
+dependencies = [
+ "derive_more",
+ "spacetimedb-lib",
+ "spacetimedb-primitives",
+ "spacetimedb-sats",
+ "spacetimedb-schema",
+ "spacetimedb-sql-parser",
+ "thiserror",
 ]
 
 [[package]]
@@ -4514,9 +4545,11 @@ dependencies = [
 name = "spacetimedb-schema"
 version = "0.12.0"
 dependencies = [
+ "enum-as-inner",
  "hashbrown 0.14.1",
  "itertools 0.12.0",
  "lazy_static",
+ "petgraph",
  "proptest",
  "serde_json",
  "smallvec",
@@ -5050,6 +5083,12 @@ name = "textwrap"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "222a222a5bfe1bba4a77b45ec488a741b3cb8872e5e499451fd7d0129c9c7c3d"
+
+[[package]]
+name = "thin-vec"
+version = "0.2.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a38c90d48152c236a3ab59271da4f4ae63d678c5d7ad6b7714d7cb9760be5e4b"
 
 [[package]]
 name = "thiserror"

@@ -535,7 +535,7 @@ impl Table {
 
     /// Returns a new [`BTreeIndex`] for `table`.
     pub fn new_index(&self, id: IndexId, cols: &ColList, is_unique: bool) -> Result<BTreeIndex, InvalidFieldError> {
-        BTreeIndex::new(id, self.row_layout(), cols, is_unique)
+        BTreeIndex::new(id, self.get_schema().get_row_type(), cols, is_unique)
     }
 
     /// Inserts a new `index` into the table.

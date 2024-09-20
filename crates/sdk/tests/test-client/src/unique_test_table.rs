@@ -98,13 +98,14 @@ pub fn insert_then_delete_one<T: UniqueTestTable>(
 }
 
 macro_rules! impl_unique_test_table {
-    ($table:ident {
+    (__impl $table:ident {
         Key = $key:ty;
         key_field_name = $field_name:ident;
         insert_reducer = $insert_reducer:ident;
         insert_reducer_event = $insert_reducer_event:ident;
         delete_reducer = $delete_reducer:ident;
         delete_reducer_event = $delete_reducer_event:ident;
+        accessor_method = $accessor_method:ident;
     }) => {
         impl UniqueTestTable for $table {
             type Key = $key;
@@ -131,15 +132,15 @@ macro_rules! impl_unique_test_table {
             }
 
             fn on_insert(ctx: &impl RemoteDbContext, callback: impl FnMut(&EventContext, &$table) + Send + 'static) {
-                ctx.db().$table().on_insert(callback);
+                ctx.db().$accessor_method().on_insert(callback);
             }
             fn on_delete(ctx: &impl RemoteDbContext, callback: impl FnMut(&EventContext, &$table) + Send + 'static) {
-                ctx.db().$table().on_delete(callback);
+                ctx.db().$accessor_method().on_delete(callback);
             }
         }
     };
     ($($table:ident { $($stuff:tt)* })*) => {
-        $(impl_unique_test_table!($table { $($stuff)* });)*
+        $(impl_unique_test_table!(__impl $table { $($stuff)* });)*
     };
 }
 
@@ -151,6 +152,7 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueU8;
         delete_reducer = delete_unique_u_8;
         delete_reducer_event = DeleteUniqueU8;
+        accessor_method = unique_u_8;
     }
     UniqueU16 {
         Key = u16;
@@ -159,6 +161,7 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueU16;
         delete_reducer = delete_unique_u_16;
         delete_reducer_event = DeleteUniqueU16;
+        accessor_method = unique_u_16;
     }
     UniqueU32 {
         Key = u32;
@@ -167,6 +170,7 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueU32;
         delete_reducer = delete_unique_u_32;
         delete_reducer_event = DeleteUniqueU32;
+        accessor_method = unique_u_32;
     }
     UniqueU64 {
         Key = u64;
@@ -175,6 +179,7 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueU64;
         delete_reducer = delete_unique_u_64;
         delete_reducer_event = DeleteUniqueU64;
+        accessor_method = unique_u_64;
     }
     UniqueU128 {
         Key = u128;
@@ -183,6 +188,7 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueU128;
         delete_reducer = delete_unique_u_128;
         delete_reducer_event = DeleteUniqueU128;
+        accessor_method = unique_u_128;
     }
     UniqueU256 {
         Key = u256;
@@ -191,6 +197,7 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueU256;
         delete_reducer = delete_unique_u_256;
         delete_reducer_event = DeleteUniqueU256;
+        accessor_method = unique_u_256;
     }
 
     UniqueI8 {
@@ -200,6 +207,7 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueI8;
         delete_reducer = delete_unique_i_8;
         delete_reducer_event = DeleteUniqueI8;
+        accessor_method = unique_i_8;
     }
     UniqueI16 {
         Key = i16;
@@ -208,6 +216,7 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueI16;
         delete_reducer = delete_unique_i_16;
         delete_reducer_event = DeleteUniqueI16;
+        accessor_method = unique_i_16;
     }
     UniqueI32 {
         Key = i32;
@@ -216,6 +225,7 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueI32;
         delete_reducer = delete_unique_i_32;
         delete_reducer_event = DeleteUniqueI32;
+        accessor_method = unique_i_32;
     }
     UniqueI64 {
         Key = i64;
@@ -224,6 +234,7 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueI64;
         delete_reducer = delete_unique_i_64;
         delete_reducer_event = DeleteUniqueI64;
+        accessor_method = unique_i_64;
     }
     UniqueI128 {
         Key = i128;
@@ -232,6 +243,7 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueI128;
         delete_reducer = delete_unique_i_128;
         delete_reducer_event = DeleteUniqueI128;
+        accessor_method = unique_i_128;
     }
     UniqueI256 {
         Key = i256;
@@ -240,6 +252,7 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueI256;
         delete_reducer = delete_unique_i_256;
         delete_reducer_event = DeleteUniqueI256;
+        accessor_method = unique_i_256;
     }
 
     UniqueBool {
@@ -249,6 +262,7 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueBool;
         delete_reducer = delete_unique_bool;
         delete_reducer_event = DeleteUniqueBool;
+        accessor_method = unique_bool;
     }
 
     UniqueString {
@@ -258,6 +272,7 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueString;
         delete_reducer = delete_unique_string;
         delete_reducer_event = DeleteUniqueString;
+        accessor_method = unique_string;
     }
 
     UniqueIdentity {
@@ -267,6 +282,7 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueIdentity;
         delete_reducer = delete_unique_identity;
         delete_reducer_event = DeleteUniqueIdentity;
+        accessor_method = unique_identity;
     }
 
     UniqueAddress {
@@ -276,5 +292,6 @@ impl_unique_test_table! {
         insert_reducer_event = InsertUniqueAddress;
         delete_reducer = delete_unique_address;
         delete_reducer_event = DeleteUniqueAddress;
+        accessor_method = unique_address;
     }
 }

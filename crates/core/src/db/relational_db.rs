@@ -1,5 +1,5 @@
 use super::datastore::locking_tx_datastore::committed_state::CommittedState;
-use super::datastore::locking_tx_datastore::state_view::StateView as _;
+use super::datastore::locking_tx_datastore::state_view::StateView;
 use super::datastore::system_tables::ST_MODULE_ID;
 use super::datastore::traits::{
     IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
@@ -938,6 +938,10 @@ impl RelationalDB {
         self.inner.table_name_from_id_mut_tx(ctx, tx, table_id)
     }
 
+    pub fn index_id_from_name_mut(&self, tx: &MutTx, index_name: &str) -> Result<Option<IndexId>, DBError> {
+        self.inner.index_id_from_name_mut_tx(tx, index_name)
+    }
+
     pub fn table_row_count_mut(&self, tx: &MutTx, table_id: TableId) -> Option<u64> {
         // TODO(Centril): Go via MutTxDatastore trait instead.
         // Doing this for now to ship this quicker.
@@ -1059,6 +1063,18 @@ impl RelationalDB {
         range: R,
     ) -> Result<IterByColRange<'a, R>, DBError> {
         self.inner.iter_by_col_range_tx(ctx, tx, table_id.into(), cols, range)
+    }
+
+    pub fn btree_scan<'a>(
+        &'a self,
+        tx: &'a MutTx,
+        index_id: IndexId,
+        prefix: &[u8],
+        prefix_elems: ColId,
+        rstart: &[u8],
+        rend: &[u8],
+    ) -> Result<(TableId, impl Iterator<Item = RowRef<'a>>), DBError> {
+        tx.btree_scan(index_id, prefix, prefix_elems, rstart, rend)
     }
 
     pub fn insert<'a>(

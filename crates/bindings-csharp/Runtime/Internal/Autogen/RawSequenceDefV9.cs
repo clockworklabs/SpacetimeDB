@@ -46,13 +46,10 @@ namespace SpacetimeDB.Internal
 			this.Increment = Increment;
 		}
 
-		public RawSequenceDefV9() : this(
-			"",
-			default!,
-			default!,
-			default!,
-			default!,
-			default!
-		) { }
+		public RawSequenceDefV9()
+		{
+			this.Name = "";
+		}
+
 	}
 }
