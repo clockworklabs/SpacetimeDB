@@ -181,6 +181,8 @@ async function checkLinks() {
     const slugErrors = errors.get(slug)!;
     const lines = raw.split('\n');
 
+    const linksToCheck = new Set<string>();
+
     await transform(raw, {
       link({ href }) {
         if (href.startsWith('#')) {
@@ -217,11 +219,27 @@ async function checkLinks() {
               }
             }
           }
+        } else if (/^https?:\/\//.test(href)) {
+          // If the link is an external URL, then add it to the link queue
+          linksToCheck.add(href);
         }
 
         return '';
       },
     });
+
+    // Check links to external URLs
+    for (const link of linksToCheck) {
+      console.log(kleur.dim().bold(`Checking ${slug}:${link}`));
+      const response = await fetch(link);
+      if (!response.ok) {
+        slugErrors.add({
+          message: `External: Link to ${link} is broken`,
+          file: path,
+          line: lines.findIndex(line => line.includes(link)) + 1,
+        });
+      }
+    }
   }
 }
 
