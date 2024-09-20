@@ -547,7 +547,7 @@ mod tests {
                 true,
             )
             // add schedule def
-            .with_schedule("perform_inspection", Some("Inspections_schedule".into()))
+            .with_schedule("perform_inspection", None)
             .finish();
 
         // add reducer.
@@ -577,8 +577,8 @@ mod tests {
         let apples_sequence = expect_identifier("Apples_sequence");
         let apples_id_name_index = expect_identifier("Apples_id_name_index");
         let apples_id_count_index = expect_identifier("Apples_id_count_index");
-        let deliveries_schedule = expect_identifier("Deliveries_schedule");
-        let inspections_schedule = expect_identifier("Inspections_schedule");
+        let deliveries_schedule = expect_identifier("schedule_Deliveries");
+        let inspections_schedule = expect_identifier("schedule_Inspections");
 
         assert_eq!(plan.prechecks.len(), 1);
         assert_eq!(
