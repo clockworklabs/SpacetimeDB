@@ -108,6 +108,21 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         res
     }
 
+    fn invoke_disconnected(&self, err: Option<anyhow::Error>) {
+        let disconnected_callback = {
+            let mut inner = self.inner.lock().unwrap();
+            // TODO: Determine correct behavior here.
+            // - Delete all rows from client cache?
+            // - Invoke `on_disconnect` methods?
+            // - End all subscriptions and invoke their `on_error` methods?
+            inner.on_disconnect.take()
+        };
+        if let Some(disconnect_callback) = disconnected_callback {
+            let ctx = M::DbConnection::new(self.clone());
+            disconnect_callback(&ctx, err);
+        }
+    }
+
     fn make_event_ctx(&self, event: Event<M::Reducer>) -> M::EventContext {
         let imp = self.clone();
         <M::EventContext as EventContext>::new(imp, event)
@@ -239,9 +254,12 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         // Deranged behavior: mpsc's `try_next` returns `Ok(None)` when the channel is closed,
         // and `Err(_)` when the channel is open and waiting. This seems exactly backwards.
         let res = match self.recv.lock().unwrap().try_next() {
-            // TODO: downcastable error that combinators can interpret.
-            // TODO: call `on_disconnect`.
-            Ok(None) => Err(anyhow::anyhow!("`advance_one_message` on closed `DbConnection`")),
+            Ok(None) => {
+                // TODO: Distinguish between normal and erroneous disconnects,
+                // and pass an error to `invoke_disconnected` in the latter case.
+                self.invoke_disconnected(None);
+                Err(anyhow::Error::new(DisconnectedError {}))
+            }
             Err(_) => Ok(false),
             Ok(Some(msg)) => self.process_message(msg).map(|_| true),
         };
@@ -279,9 +297,12 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 self.apply_mutation(pending);
                 Ok(())
             }
-            // TODO: downcastable error that combinators can interpret.
-            // TODO: call `on_disconnect`.
-            Message::Ws(None) => Err(anyhow::anyhow!("`advance_one_message` on closed `DbConnection`")),
+            Message::Ws(None) => {
+                // TODO: Distinguish between normal and erroneous disconnects,
+                // and pass an error to `invoke_disconnected` in the latter case.
+                self.invoke_disconnected(None);
+                Err(anyhow::Error::new(DisconnectedError {}))
+            }
             Message::Ws(Some(msg)) => self.process_message(msg),
         }
     }
@@ -292,9 +313,12 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 self.apply_mutation(pending);
                 Ok(())
             }
-            // TODO: downcastable error that combinators can interpret.
-            // TODO: call `on_disconnect`.
-            Message::Ws(None) => Err(anyhow::anyhow!("`advance_one_message` on closed `DbConnection`")),
+            Message::Ws(None) => {
+                // TODO: Distinguish between normal and erroneous disconnects,
+                // and pass an error to `invoke_disconnected` in the latter case.
+                self.invoke_disconnected(None);
+                Err(anyhow::Error::new(DisconnectedError {}))
+            }
             Message::Ws(Some(msg)) => self.process_message(msg),
         }
     }
@@ -437,13 +461,13 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     identity: Option<Identity>,
     address: Address,
 
-    on_connect: Option<Box<dyn FnOnce(&M::DbConnection, Identity, &str) + Send + Sync + 'static>>,
+    on_connect: Option<Box<dyn FnOnce(&M::DbConnection, Identity, &str) + Send + 'static>>,
     #[allow(unused)]
     // TODO: Make use of this to handle `ParsedMessage::Error` before receiving `IdentityToken`.
-    on_connect_error: Option<Box<dyn FnOnce(anyhow::Error) + Send + Sync + 'static>>,
+    on_connect_error: Option<Box<dyn FnOnce(anyhow::Error) + Send + 'static>>,
     #[allow(unused)]
     // TODO: implement disconnection logic.
-    on_disconnect: Option<Box<dyn FnOnce(&M::DbConnection, Option<anyhow::Error>) + Send + Sync + 'static>>,
+    on_disconnect: Option<Box<dyn FnOnce(&M::DbConnection, Option<anyhow::Error>) + Send + 'static>>,
 
     _module: PhantomData<M>,
 }
@@ -558,9 +582,9 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
 
     credentials: Option<(Identity, String)>,
 
-    on_connect: Option<Box<dyn FnOnce(&M::DbConnection, Identity, &str) + Send + Sync + 'static>>,
-    on_connect_error: Option<Box<dyn FnOnce(anyhow::Error) + Send + Sync + 'static>>,
-    on_disconnect: Option<Box<dyn FnOnce(&M::DbConnection, Option<anyhow::Error>) + Send + Sync + 'static>>,
+    on_connect: Option<Box<dyn FnOnce(&M::DbConnection, Identity, &str) + Send + 'static>>,
+    on_connect_error: Option<Box<dyn FnOnce(anyhow::Error) + Send + 'static>>,
+    on_disconnect: Option<Box<dyn FnOnce(&M::DbConnection, Option<anyhow::Error>) + Send + 'static>>,
 }
 
 impl<M: SpacetimeModule> DbConnectionBuilder<M> {
@@ -648,10 +672,7 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
         self
     }
 
-    pub fn on_connect(
-        mut self,
-        callback: impl FnOnce(&M::DbConnection, Identity, &str) + Send + Sync + 'static,
-    ) -> Self {
+    pub fn on_connect(mut self, callback: impl FnOnce(&M::DbConnection, Identity, &str) + Send + 'static) -> Self {
         if self.on_connect.is_some() {
             panic!(
                 "DbConnectionBuilder can only register a single `on_connect` callback.
@@ -664,7 +685,7 @@ Instead of registering multiple `on_connect` callbacks, register a single callba
         self
     }
 
-    pub fn on_connect_error(mut self, callback: impl FnOnce(anyhow::Error) + Send + Sync + 'static) -> Self {
+    pub fn on_connect_error(mut self, callback: impl FnOnce(anyhow::Error) + Send + 'static) -> Self {
         if self.on_connect_error.is_some() {
             panic!(
                 "DbConnectionBuilder can only register a single `on_connect_error` callback.
@@ -679,7 +700,7 @@ Instead of registering multiple `on_connect_error` callbacks, register a single 
 
     pub fn on_disconnect(
         mut self,
-        callback: impl FnOnce(&M::DbConnection, Option<anyhow::Error>) + Send + Sync + 'static,
+        callback: impl FnOnce(&M::DbConnection, Option<anyhow::Error>) + Send + 'static,
     ) -> Self {
         if self.on_disconnect.is_some() {
             panic!(
@@ -841,3 +862,15 @@ enum Message<M: SpacetimeModule> {
     Ws(Option<ParsedMessage<M>>),
     Local(PendingMutation<M>),
 }
+
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct DisconnectedError {}
+
+impl std::fmt::Display for DisconnectedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "Disconnected")
+    }
+}
+
+impl std::error::Error for DisconnectedError {}

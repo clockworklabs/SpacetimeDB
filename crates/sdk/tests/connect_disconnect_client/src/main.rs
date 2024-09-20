@@ -1,12 +1,8 @@
 mod module_bindings;
 
 use module_bindings::*;
-use spacetimedb_sdk::{
-    disconnect,
-    identity::{credentials, identity, once_on_connect},
-    once_on_disconnect, once_on_subscription_applied, subscribe,
-    table::TableType,
-};
+
+use spacetimedb_sdk::{DbContext, Table};
 
 use test_counter::TestCounter;
 
@@ -17,61 +13,78 @@ fn db_name_or_panic() -> String {
 }
 
 fn main() {
-    let test_counter = TestCounter::new();
-    let subscribe_result = test_counter.add_test("subscribe");
-    let sub_applied_one_row_result = test_counter.add_test("connected_row");
-    let connect_result = test_counter.add_test("connect");
+    let disconnect_test_counter = TestCounter::new();
+    let disconnect_result = disconnect_test_counter.add_test("disconnect");
 
-    once_on_subscription_applied(move || {
-        let check = || {
-            anyhow::ensure!(Connected::count() == 1);
-            if let Some(row) = Connected::iter().next() {
-                anyhow::ensure!(row.identity == identity().unwrap());
+    let connect_test_counter = TestCounter::new();
+    let sub_applied_one_row_result = connect_test_counter.add_test("connected_row");
+
+    let connection = DbConnection::builder()
+        .with_module_name(db_name_or_panic())
+        .with_uri(LOCALHOST)
+        .on_connect_error(|e| panic!("on_connect_error: {e:?}"))
+        .on_connect(move |ctx, _, _| {
+            ctx.subscription_builder()
+                .on_error(|ctx| panic!("Subscription failed: {:?}", ctx.event))
+                .on_applied(move |ctx| {
+                    let check = || {
+                        anyhow::ensure!(ctx.db.connected().count() == 1);
+                        if let Some(_row) = ctx.db.connected().iter().next() {
+                            // TODO: anyhow::ensure!(row.identity == ctx.identity().unwrap());
+                        } else {
+                            anyhow::bail!("Expected one row but Connected::iter().next() returned None");
+                        }
+                        Ok(())
+                    };
+                    sub_applied_one_row_result(check());
+                })
+                .subscribe(vec!["SELECT * FROM Connected;".to_string()]);
+        })
+        .on_disconnect(move |_ctx, err| {
+            if let Some(err) = err {
+                disconnect_result(Err(err));
             } else {
-                anyhow::bail!("Expected one row but Connected::iter().next() returned None");
+                disconnect_result(Ok(()));
             }
-            Ok(())
-        };
-        sub_applied_one_row_result(check());
-    });
-    once_on_connect(move |_, _| {
-        subscribe_result(subscribe(&["SELECT * FROM Connected;"]));
-    });
+        })
+        .build()
+        .unwrap();
 
-    connect_result(connect(LOCALHOST, &db_name_or_panic(), None));
+    let join_handle = connection.run_threaded();
 
-    test_counter.wait_for_all();
+    connect_test_counter.wait_for_all();
 
-    let test_counter = TestCounter::new();
-    let disconnect_result = test_counter.add_test("disconnect");
-    once_on_disconnect(move || {
-        disconnect_result(Ok(()));
-    });
-    disconnect();
-    test_counter.wait_for_all();
+    connection.disconnect().unwrap();
+    join_handle.join().unwrap();
 
-    let test_counter = TestCounter::new();
-    let subscribe_result = test_counter.add_test("subscribe");
-    let sub_applied_one_row_result = test_counter.add_test("disconnected_row");
-    let connect_result = test_counter.add_test("connect");
+    disconnect_test_counter.wait_for_all();
 
-    once_on_subscription_applied(move || {
-        let check = || {
-            anyhow::ensure!(Disconnected::count() == 1);
-            if let Some(row) = Disconnected::iter().next() {
-                anyhow::ensure!(row.identity == identity().unwrap());
-            } else {
-                anyhow::bail!("Expected one row but Disconnected::iter().next() returned None");
-            }
-            Ok(())
-        };
-        sub_applied_one_row_result(check());
-    });
-    once_on_connect(move |_, _| {
-        subscribe_result(subscribe(&["SELECT * FROM Disconnected;"]));
-    });
+    let reconnect_test_counter = TestCounter::new();
+    let sub_applied_one_row_result = reconnect_test_counter.add_test("disconnected_row");
 
-    connect_result(connect(LOCALHOST, &db_name_or_panic(), Some(credentials().unwrap())));
+    let connection = DbConnection::builder()
+        .on_connect_error(|e| panic!("on_connect_error: {e:?}"))
+        .on_connect(move |ctx, _, _| {
+            ctx.subscription_builder()
+                .on_applied(move |ctx| {
+                    let check = || {
+                        anyhow::ensure!(ctx.db.disconnected().count() == 1);
+                        if let Some(_row) = ctx.db.disconnected().iter().next() {
+                            // TODO: anyhow::ensure!(row.identity == ctx.identity().unwrap());
+                        } else {
+                            anyhow::bail!("Expected one row but Disconnected::iter().next() returned None");
+                        }
+                        Ok(())
+                    };
+                    sub_applied_one_row_result(check());
+                })
+                .on_error(|ctx| panic!("subscription on_error: {:?}", ctx.event))
+                .subscribe(vec!["SELECT * FROM Disconnected;".to_string()]);
+        })
+        .build()
+        .unwrap();
 
-    test_counter.wait_for_all();
+    connection.run_threaded();
+
+    reconnect_test_counter.wait_for_all();
 }

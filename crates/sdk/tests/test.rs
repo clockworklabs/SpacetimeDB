@@ -145,22 +145,22 @@ macro_rules! declare_tests_with_suffix {
             //     make_test("reconnect_same_address").run();
             // }
 
-            // #[test]
-            // fn connect_disconnect_callbacks() {
-            //     Test::builder()
-            //         .with_name(concat!("connect_disconnect_callback_", stringify!($lang)))
-            //         .with_module(concat!("sdk-test-connect-disconnect", $suffix))
-            //         .with_client(concat!(
-            //             env!("CARGO_MANIFEST_DIR"),
-            //             "/tests/connect_disconnect_client"
-            //         ))
-            //         .with_language("rust")
-            //         .with_bindings_dir("src/module_bindings")
-            //         .with_compile_command("cargo build")
-            //         .with_run_command("cargo run")
-            //         .build()
-            //         .run();
-            // }
+            #[test]
+            fn connect_disconnect_callbacks() {
+                Test::builder()
+                    .with_name(concat!("connect_disconnect_callback_", stringify!($lang)))
+                    .with_module(concat!("sdk-test-connect-disconnect", $suffix))
+                    .with_client(concat!(
+                        env!("CARGO_MANIFEST_DIR"),
+                        "/tests/connect_disconnect_client"
+                    ))
+                    .with_language("rust")
+                    .with_bindings_dir("src/module_bindings")
+                    .with_compile_command("cargo build")
+                    .with_run_command("cargo run")
+                    .build()
+                    .run();
+            }
 
             #[test]
             fn caller_always_notified() {
