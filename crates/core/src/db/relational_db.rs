@@ -845,6 +845,8 @@ impl RelationalDB {
         // Recursively sets all IDs to 0.
         let schema = TableSchema::from_module_def(&module_def, table, (), 0.into());
 
+        println!("create_table_for_test_with_the_works: {:?} {:?}", table, schema);
+
         self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
     }
 
