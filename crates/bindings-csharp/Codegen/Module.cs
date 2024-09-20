@@ -17,6 +17,13 @@ enum ColumnAttrs : byte
     PrimaryKeyAuto = PrimaryKey | AutoInc,
 }
 
+enum Lifecycle
+{
+    Init,
+    OnConnect,
+    OnDisconnect,
+}
+
 record ColumnDeclaration : MemberDeclaration
 {
     public readonly ColumnAttrs Attrs;
@@ -149,6 +156,27 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
     protected override ColumnDeclaration ConvertMember(IFieldSymbol field) => new(field);
 
+    private IEnumerable<(int Pos, ColumnDeclaration Column)> GetColumnsByConstraint(
+        ColumnAttrs constraint
+    ) =>
+        Members
+            .Select((Column, Pos) => (Pos, Column))
+            .Where(pair => pair.Column.Attrs.HasFlag(constraint));
+
+    // Reimplementation of V8 -> V9 constraint conversion in Rust.
+    // See https://github.com/clockworklabs/SpacetimeDB/blob/13a800e9f88cbe885b98eab9e45b0fcfd3ab7014/crates/schema/src/def/validate/v8.rs#L74-L78
+    // and https://github.com/clockworklabs/SpacetimeDB/blob/13a800e9f88cbe885b98eab9e45b0fcfd3ab7014/crates/lib/src/db/raw_def/v8.rs#L460-L510
+    private string GenConstraintList(ColumnAttrs filterByAttr, string makeConstraintFn) =>
+        $$"""
+        [
+            {{string.Join(
+                ",\n",
+                GetColumnsByConstraint(filterByAttr)
+                    .Select(pair => $"{makeConstraintFn}({pair.Pos}, nameof({pair.Column.Name}))")
+            )}}
+        ]
+        """;
+
     public override Scope.Extensions ToExtensions()
     {
         var extensions = base.ToExtensions();
@@ -181,6 +209,10 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         extensions.BaseTypes.Clear();
         extensions.BaseTypes.Add(iTable);
 
+        var primaryKey = GetColumnsByConstraint(ColumnAttrs.PrimaryKey)
+            .Select(pair => (int?)pair.Pos)
+            .SingleOrDefault();
+
         extensions.Contents.Append(
             $$"""
             void {{iTable}}.ReadGenFields(System.IO.BinaryReader reader) {
@@ -197,40 +229,20 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 )}}
             }
 
-            static SpacetimeDB.Internal.TableDesc {{iTable}}.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
-                new (
-                    TableName: nameof({{ShortName}}),
-                    Columns: [
-                        {{string.Join(",\n", Members.Select(m => m.GenerateColumnDef()))}}
-                    ],
-                    Indexes: [],
-                    Constraints: [
-                        {{string.Join(
-                            ",\n",
-                            Members
-                            // Important: the position must be stored here, before filtering.
-                            .Select((col, pos) => (col, pos))
-                            .Where(pair => pair.col.Attrs != ColumnAttrs.UnSet)
-                            .Select(pair =>
-                                $$"""
-                                new (
-                                    nameof({{ShortName}}),
-                                    {{pair.pos}},
-                                    nameof({{pair.col.Name}}),
-                                    SpacetimeDB.ColumnAttrs.{{pair.col.Attrs}}
-                                )
-                                """
-                            )
-                        )}}
-                    ],
-                    Sequences: [],
-                    // "system" | "user"
-                    TableType: "user",
-                    // "public" | "private"
-                    TableAccess: "{{(IsPublic ? "public" : "private")}}",
-                    Scheduled: {{(Scheduled is not null ? $"nameof({Scheduled})" : "null")}}
-                ),
-                (uint) ((SpacetimeDB.BSATN.AlgebraicType.Ref) new BSATN().GetAlgebraicType(registrar)).Ref_
+            static SpacetimeDB.Internal.RawTableDefV9 {{iTable}}.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
+                Name: nameof({{ShortName}}),
+                ProductTypeRef: (uint) new BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: {{primaryKey?.ToString() ?? "null"}},
+                Indexes: [],
+                Constraints: {{GenConstraintList(ColumnAttrs.Unique, $"{iTable}.MakeUniqueConstraint")}},
+                Sequences: {{GenConstraintList(ColumnAttrs.AutoInc, $"{iTable}.MakeSequence")}},
+                Schedule: {{(
+                    Scheduled is null
+                    ? "null"
+                    : $"{iTable}.MakeSchedule(nameof({Scheduled}))"
+                )}},
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.{{(IsPublic ? "Public" : "Private")}}
             );
 
             static SpacetimeDB.Internal.Filter {{iTable}}.CreateFilter() => new([
@@ -295,9 +307,9 @@ record ReducerParamDeclaration : MemberDeclaration
 record ReducerDeclaration
 {
     public readonly string Name;
-    public readonly string ExportName;
     public readonly string FullName;
     public readonly EquatableArray<ReducerParamDeclaration> Args;
+    public Lifecycle? Lifecycle;
     public readonly Scope Scope;
 
     public ReducerDeclaration(GeneratorAttributeSyntaxContext context)
@@ -311,14 +323,15 @@ record ReducerDeclaration
             throw new Exception($"Reducer {method} must return void");
         }
 
-        var exportName = (string?)attr.ConstructorArguments.SingleOrDefault().Value;
-
         Name = method.Name;
-        ExportName = exportName ?? Name;
         FullName = SymbolToName(method);
         Args = new(
             method.Parameters.Select(p => new ReducerParamDeclaration(p)).ToImmutableArray()
         );
+        Lifecycle = attr
+            .ConstructorArguments.Select(a => (Lifecycle)a.Value!)
+            .Cast<Lifecycle?>()
+            .SingleOrDefault();
         Scope = new Scope(methodSyntax.Parent as MemberDeclarationSyntax);
     }
 
@@ -330,9 +343,10 @@ record ReducerDeclaration
             class {{Name}}: SpacetimeDB.Internal.IReducer {
                 {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, NonContextArgs)}}
 
-                public SpacetimeDB.Internal.ReducerDef MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
-                    "{{ExportName}}",
-                    [{{MemberDeclaration.GenerateDefs(NonContextArgs)}}]
+                public SpacetimeDB.Internal.RawReducerDefV9 MakeReducerDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new (
+                    nameof({{Name}}),
+                    [{{MemberDeclaration.GenerateDefs(NonContextArgs)}}],
+                    {{(Lifecycle is {} lifeCycle ? $"SpacetimeDB.Internal.Lifecycle.{lifeCycle}" : "null")}}
                 );
 
                 public void Invoke(BinaryReader reader, SpacetimeDB.ReducerContext ctx) {
@@ -349,7 +363,7 @@ record ReducerDeclaration
         return new(Name, class_);
     }
 
-    public Scope.Extensions GenerateSchedule()
+    public Scope.Extensions? GenerateSchedule()
     {
         var extensions = new Scope.Extensions(Scope, FullName);
 
@@ -365,7 +379,7 @@ record ReducerDeclaration
                     "\n",
                     NonContextArgs.Select(a => $"new {a.TypeInfo}().Write(writer, {a.Name});")
                 )}}
-                SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate("{{ExportName}}", stream);
+                SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
             }
             """
         );
@@ -404,6 +418,8 @@ public class Module : IIncrementalGenerator
 
         reducers
             .Select((r, ct) => r.GenerateSchedule())
+            .Where(res => res is not null)
+            .Select((res, ct) => res!)
             .WithTrackingName("SpacetimeDB.Reducer.GenerateSchedule")
             .RegisterSourceOutputs(context);
 

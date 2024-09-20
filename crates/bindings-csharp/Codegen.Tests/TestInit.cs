@@ -37,5 +37,10 @@ static class TestInit
             },
             ScrubberLocation.Last
         );
+        // Auto-accept all snapshot updates when AUTO_VERIFY is set.
+        if (Environment.GetEnvironmentVariable("AUTO_VERIFY") == "1")
+        {
+            VerifierSettings.AutoVerify();
+        }
     }
 }

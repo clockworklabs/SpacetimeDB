@@ -97,9 +97,9 @@ public static class GeneratorSnapshotTests
             emitResult.Success,
             string.Join(
                 "\n",
-                emitResult.Diagnostics.Select(diag =>
-                    CSharpDiagnosticFormatter.Instance.Format(diag)
-                )
+                emitResult
+                    .Diagnostics.Where(diag => diag.Severity != DiagnosticSeverity.Hidden)
+                    .Select(diag => CSharpDiagnosticFormatter.Instance.Format(diag))
             )
         );
     }

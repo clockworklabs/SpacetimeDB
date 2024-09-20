@@ -35,7 +35,7 @@ partial class Timers
                 value.WriteFields(writer);
             }
 
-            public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
+            public SpacetimeDB.BSATN.AlgebraicType.Ref GetAlgebraicType(
                 SpacetimeDB.BSATN.ITypeRegistrar registrar
             ) =>
                 registrar.RegisterType<SendMessageTimer>(
@@ -48,6 +48,10 @@ partial class Timers
                         }
                     )
                 );
+
+            SpacetimeDB.BSATN.AlgebraicType SpacetimeDB.BSATN.IReadWrite<SendMessageTimer>.GetAlgebraicType(
+                SpacetimeDB.BSATN.ITypeRegistrar registrar
+            ) => GetAlgebraicType(registrar);
         }
 
         public ulong ScheduledId;
@@ -63,39 +67,33 @@ partial class Timers
             }
         }
 
-        static SpacetimeDB.Internal.TableDesc SpacetimeDB.Internal.ITable<SendMessageTimer>.MakeTableDesc(
+        static SpacetimeDB.Internal.RawTableDefV9 SpacetimeDB.Internal.ITable<SendMessageTimer>.MakeTableDesc(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
-                new(
-                    TableName: nameof(SendMessageTimer),
-                    Columns:
-                    [
-                        new(nameof(Text), BSATN.Text.GetAlgebraicType(registrar)),
-                        new(nameof(ScheduledId), BSATN.ScheduledId.GetAlgebraicType(registrar)),
-                        new(nameof(ScheduledAt), BSATN.ScheduledAt.GetAlgebraicType(registrar))
-                    ],
-                    Indexes: [],
-                    Constraints:
-                    [
-                        new(
-                            nameof(SendMessageTimer),
-                            1,
-                            nameof(ScheduledId),
-                            SpacetimeDB.ColumnAttrs.PrimaryKeyAuto
-                        )
-                    ],
-                    Sequences: [],
-                    // "system" | "user"
-                    TableType: "user",
-                    // "public" | "private"
-                    TableAccess: "private",
-                    Scheduled: nameof(SendScheduledMessage)
+                Name: nameof(SendMessageTimer),
+                ProductTypeRef: (uint)new BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: 1,
+                Indexes: [],
+                Constraints:
+                [
+                    SpacetimeDB.Internal.ITable<SendMessageTimer>.MakeUniqueConstraint(
+                        1,
+                        nameof(ScheduledId)
+                    )
+                ],
+                Sequences:
+                [
+                    SpacetimeDB.Internal.ITable<SendMessageTimer>.MakeSequence(
+                        1,
+                        nameof(ScheduledId)
+                    )
+                ],
+                Schedule: SpacetimeDB.Internal.ITable<SendMessageTimer>.MakeSchedule(
+                    nameof(SendScheduledMessage)
                 ),
-                (uint)
-                    (
-                        (SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)
-                    ).Ref_
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
             );
 
         static SpacetimeDB.Internal.Filter SpacetimeDB.Internal.ITable<SendMessageTimer>.CreateFilter() =>

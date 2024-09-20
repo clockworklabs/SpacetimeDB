@@ -12,7 +12,7 @@ namespace Test.NestingNamespaces
             using var writer = new BinaryWriter(stream);
             new PublicTable.BSATN().Write(writer, data);
             SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(
-                "test_custom_name_and_reducer_ctx",
+                nameof(InsertData2),
                 stream
             );
         }

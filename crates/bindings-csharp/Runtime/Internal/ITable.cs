@@ -8,7 +8,7 @@ public interface ITable<T> : IStructuralReadWrite
 {
     // These are the methods that codegen needs to implement.
     void ReadGenFields(BinaryReader reader);
-    static abstract TableDesc MakeTableDesc(ITypeRegistrar registrar);
+    static abstract RawTableDefV9 MakeTableDesc(ITypeRegistrar registrar);
     static abstract Filter CreateFilter();
 
     // These are static helpers that codegen can use.
@@ -130,11 +130,13 @@ public interface ITable<T> : IStructuralReadWrite
             FFI._iter_by_col_eq(tableId, colId, value, (uint)value.Length, out handle);
     }
 
+    private static readonly string tableName = typeof(T).Name;
+
     // Note: this must be Lazy to ensure that we don't try to get the tableId during startup, before the module is initialized.
     private static readonly Lazy<FFI.TableId> tableId_ =
         new(() =>
         {
-            var name_bytes = System.Text.Encoding.UTF8.GetBytes(typeof(T).Name);
+            var name_bytes = System.Text.Encoding.UTF8.GetBytes(tableName);
             FFI._table_id_from_name(name_bytes, (uint)name_bytes.Length, out var out_);
             return out_;
         });
@@ -199,4 +201,23 @@ public interface ITable<T> : IStructuralReadWrite
             return true;
         }
     }
+
+    protected static RawScheduleDefV9? MakeSchedule(string? reducerName) =>
+        reducerName is null ? null : new(Name: $"{tableName}_schedule", ReducerName: reducerName);
+
+    protected static RawSequenceDefV9 MakeSequence(ushort colIndex, string colName) =>
+        new(
+            Name: $"seq_{tableName}_{colName}",
+            Column: colIndex,
+            Start: null,
+            MinValue: null,
+            MaxValue: null,
+            Increment: 1
+        );
+
+    protected static RawConstraintDefV9 MakeUniqueConstraint(ushort colIndex, string colName) =>
+        new(
+            Name: $"ct_{tableName}_{colName}_unique",
+            Data: new RawConstraintDataV9.Unique(new([colIndex]))
+        );
 }
