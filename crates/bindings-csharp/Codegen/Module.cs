@@ -160,14 +160,21 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             ),
         };
 
-        var views = context.Attributes
-            .Where(a => a.AttributeClass?.ToDisplayString() == "SpacetimeDB.TableAttribute");
+        Views = context.Attributes
+            .Where(a => a.AttributeClass?.ToDisplayString() == "SpacetimeDB.TableAttribute")
+            .Select(a => new TableView(this, a))
+            .ToImmutableArray();
 
-        Views = views.Select(a => new TableView(this, a)).ToImmutableArray();
-        Scheduled = Views.FirstOrDefault(t => t.Scheduled != null)?.Scheduled;
+        var schedules = Views.Where(t => t.Scheduled != null).Select(t => t.Scheduled);
+        var numSchedules = schedules.Count();
+        if (numSchedules > 0) {
+            var distinctSchedules = schedules.Distinct();
+            if (numSchedules != Views.Length || distinctSchedules.Count() != 1) {
+                throw new Exception("When using multiple [Table] attributes with schedule, all [Table] must have the same schedule.");
+            }
 
-        if (Scheduled is not null)
-        {
+            Scheduled = distinctSchedules.First();
+
             // For scheduled tables, we append extra fields early in the pipeline,
             // both to the type itself and to the BSATN information, as if they
             // were part of the original declaration.
@@ -343,6 +350,9 @@ record ReducerDeclaration
         if (!method.ReturnsVoid)
         {
             throw new Exception($"Reducer {method} must return void");
+        }
+        if (method.Parameters.FirstOrDefault()?.Type is not INamedTypeSymbol namedType || namedType.Name != "ReducerContext") {
+            throw new Exception($"Reducer {method} must have a first argument of type ReducerContext");
         }
 
         Name = method.Name;

@@ -41,6 +41,7 @@ public sealed class TableAttribute : Attribute
     /// </summary>
     public bool Public = false;
 
+    public string? Scheduled { get; init; }
 }
 
 [AttributeUsage(AttributeTargets.Field)]
