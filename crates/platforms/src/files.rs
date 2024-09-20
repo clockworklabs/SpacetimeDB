@@ -799,9 +799,6 @@ pub struct SpacetimeFs {
 impl SpacetimeFs {
     /// Resolve the directories & files from the given [FsOptions].
     ///
-    /// * Directories: `root`, `data`, `config`
-    /// * Files: `config_client`, `config_server`
-    ///
     /// Resolution order:
     ///
     /// The following is the order of precedence for a value defined in multiple places
@@ -812,7 +809,7 @@ impl SpacetimeFs {
     /// 3. The value in the `.spacetime.toml` file (TODO)
     /// 4. The value specified in an environment variable (TODO)
     /// 5. The value specified as a CLI argument
-    pub fn resolve(options: FsOptions) -> Result<Directories, ErrorPlatform> {
+    pub fn resolve(options: FsOptions) -> Directories {
         let FsOptions {
             edition: _,
             root,
@@ -829,7 +826,7 @@ impl SpacetimeFs {
             dirs = dirs.data(data);
         }
 
-        Ok(dirs)
+        dirs
     }
 
     /// Open an existing spacetime file system.
@@ -840,7 +837,7 @@ impl SpacetimeFs {
     pub fn open(options: FsOptions) -> Result<Self, ErrorPlatform> {
         let edition = options.edition;
         let use_logs = options.use_logs;
-        let dirs = Self::resolve(options)?;
+        let dirs = Self::resolve(options);
 
         let fs = Self {
             paths: SpacetimePaths::new(edition, dirs, use_logs),
@@ -859,7 +856,7 @@ impl SpacetimeFs {
         let edition = options.edition;
         let use_logs = options.use_logs;
 
-        let dirs = Self::resolve(options)?;
+        let dirs = Self::resolve(options);
 
         let fs = Self {
             paths: SpacetimePaths::new(edition, dirs, use_logs),
