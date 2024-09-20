@@ -1526,9 +1526,11 @@ mod tests {
     ) -> TableSchema {
         let mut builder = RawModuleDefV9Builder::new();
         f(builder.build_table_with_new_type(name, columns, true));
-        let def: ModuleDef = builder.finish().try_into().expect("table validation failed");
+        let raw = builder.finish();
+        let def: ModuleDef = raw.try_into().expect("table validation failed");
         let table = def.table(name).expect("table not found");
-        TableSchema::from_module_def(&def, table, (), 0.into())
+        let result = TableSchema::from_module_def(&def, table, (), 0.into());
+        result
     }
 
     fn table_auto_inc() -> TableSchema {
@@ -1546,8 +1548,8 @@ mod tests {
 
     fn table_indexed(is_unique: bool) -> TableSchema {
         table(
-            "MyTable_my_col_idx",
-            ProductType::from([("my_col", AlgebraicType::I32)]),
+            "MyTable",
+            ProductType::from([("my_col", AlgebraicType::I64)]),
             |builder| {
                 let builder = builder.with_index(
                     RawIndexAlgorithm::BTree { columns: 0.into() },
@@ -1801,7 +1803,6 @@ mod tests {
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = table_auto_inc();
-        println!("{:?}", schema);
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col")?;
@@ -1853,10 +1854,11 @@ mod tests {
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = table_indexed(false);
+
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         assert!(
-            stdb.index_id_from_name(&tx, "MyTable_my_col_idx")?.is_some(),
+            stdb.index_id_from_name(&tx, "idx_MyTable_btree_my_col")?.is_some(),
             "Index not created"
         );
 
@@ -1894,7 +1896,7 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema).expect("stdb.create_table failed");
 
         assert!(
-            stdb.index_id_from_name(&tx, "MyTable_my_col_idx")
+            stdb.index_id_from_name(&tx, "idx_MyTable_btree_my_col")
                 .expect("index_id_from_name failed")
                 .is_some(),
             "Index not created"
@@ -1934,7 +1936,7 @@ mod tests {
         let table_id = stdb.create_table(&mut tx, schema)?;
 
         assert!(
-            stdb.index_id_from_name(&tx, "MyTable_my_col_idx")?.is_some(),
+            stdb.index_id_from_name(&tx, "idx_MyTable_my_col_unique")?.is_some(),
             "Index not created"
         );
 
@@ -1979,6 +1981,9 @@ mod tests {
                         "MyTable_col4_idx",
                         None,
                     )
+                    .with_unique_constraint(0, None)
+                    .with_unique_constraint(1, None)
+                    .with_unique_constraint(3, None)
                     .with_column_sequence(0, None)
             },
         );
@@ -1991,7 +1996,7 @@ mod tests {
             .map(|x| StIndexRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
-        assert_eq!(indexes.len(), 4, "Wrong number of indexes");
+        assert_eq!(indexes.len(), 4, "Wrong number of indexes: {:#?}", indexes);
 
         let sequences = stdb
             .iter_mut(&ctx, &tx, ST_SEQUENCE_ID)?
@@ -2005,7 +2010,7 @@ mod tests {
             .map(|x| StConstraintRow::try_from(x).unwrap())
             .filter(|x| x.table_id == table_id)
             .collect::<Vec<_>>();
-        assert_eq!(constraints.len(), 4, "Wrong number of constraints");
+        assert_eq!(constraints.len(), 3, "Wrong number of constraints");
 
         stdb.drop_table(&ctx, &mut tx, table_id)?;
 
