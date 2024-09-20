@@ -1591,7 +1591,7 @@ mod tests {
             id: ST_RESERVED_SEQUENCE_RANGE + dropped_indexes + 1,
             table: FIRST_NON_SYSTEM_ID,
             col: col_list![0],
-            name: "id_idx",
+            name: "id_index",
         }]
         .map(Into::into);
         assert_eq!(

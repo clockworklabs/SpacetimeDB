@@ -1534,8 +1534,13 @@ mod tests {
     fn table_auto_inc() -> TableSchema {
         table(
             "MyTable",
-            ProductType::from([("my_col", AlgebraicType::I32)]),
-            |builder| builder.with_primary_key(0).with_column_sequence(0, None),
+            ProductType::from([("my_col", AlgebraicType::I64)]),
+            |builder| {
+                builder
+                    .with_primary_key(0)
+                    .with_column_sequence(0, None)
+                    .with_unique_constraint(0, None)
+            },
         )
     }
 
@@ -1780,7 +1785,7 @@ mod tests {
         let schema = table_auto_inc();
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col_primary_key_auto")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![0i64])?;
@@ -1796,9 +1801,10 @@ mod tests {
 
         let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
         let schema = table_auto_inc();
+        println!("{:?}", schema);
         let table_id = stdb.create_table(&mut tx, schema)?;
 
-        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col_primary_key_auto")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![5i64])?;
@@ -1932,7 +1938,7 @@ mod tests {
             "Index not created"
         );
 
-        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col_identity")?;
+        let sequence = stdb.sequence_id_from_name(&tx, "seq_MyTable_my_col")?;
         assert!(sequence.is_some(), "Sequence not created");
 
         stdb.insert(&mut tx, table_id, product![0i64])?;
