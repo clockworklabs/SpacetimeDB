@@ -3,13 +3,11 @@
 import subprocess
 import unittest
 import argparse
-from tempfile import TemporaryDirectory
-from pathlib import Path
 import os
 import re
 import fnmatch
 import json
-from . import TEST_DIR, STDB_DIR, STDB_CONFIG, build_template_target
+from . import TEST_DIR, build_template_target
 import smoketests
 import logging
 
@@ -22,6 +20,16 @@ def check_docker():
     else:
         print("Docker container not found, is SpacetimeDB running?")
         exit(1)
+
+def check_dotnet() -> bool:
+    try:
+        version = smoketests.run_cmd("dotnet", "--version", log=False).strip()
+        if int(version.split(".")[0]) < 8:
+            logging.info(f"dotnet version {version} not high enough (< 8.0), skipping dotnet smoketests")
+            return False
+    except Exception:
+        return False
+    return True
 
 class ExclusionaryTestLoader(unittest.TestLoader):
     def __init__(self, excludelist=()):
@@ -49,6 +57,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("test", nargs="*", default=tests)
     parser.add_argument("--docker", action="store_true")
+    parser.add_argument("--skip-dotnet", action="store_true", help="ignore tests which require dotnet")
     parser.add_argument("--show-all-output", action="store_true", help="show all stdout/stderr from the tests as they're running")
     parser.add_argument("--parallel", action="store_true", help="run test classes in parallel")
     parser.add_argument("-j", dest='jobs', help="Set number of jobs for parallel test runs. Default is `nproc`", type=int, default=0)
@@ -70,6 +79,12 @@ def main():
         # have docker logs print concurrently with the test output
         subprocess.Popen(["docker", "logs", "-f", docker_container])
         smoketests.HAVE_DOCKER = True
+
+    if not args.skip_dotnet:
+        smoketests.HAVE_DOTNET = check_dotnet()
+        if not smoketests.HAVE_DOTNET:
+            print("no suitable dotnet installation found")
+            exit(1)
 
     add_prefix = lambda testlist: [TESTPREFIX + test for test in testlist]
     import fnmatch
