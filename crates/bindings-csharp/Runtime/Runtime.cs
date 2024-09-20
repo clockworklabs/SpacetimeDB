@@ -63,7 +63,7 @@ public abstract class BaseReducerContext<DbView> : DbContext<DbView>, IReducerCo
 {
     public Identity Sender => Runtime.SenderIdentity!;
     public Address Address => Runtime.SenderAddress!;
-    public DateTimeOffset Timestamp => Runtime.Timestamp!;
+    public DateTimeOffset Time => Runtime.Time!;
 }
 
 public static class Runtime
@@ -74,5 +74,5 @@ public static class Runtime
 
     public static Address? SenderAddress { get; internal set; }
 
-    public static DateTimeOffset Timestamp { get; internal set; }
+    public static DateTimeOffset Time { get; internal set; }
 }

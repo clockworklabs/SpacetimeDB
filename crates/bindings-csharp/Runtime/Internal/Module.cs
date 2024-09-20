@@ -197,7 +197,7 @@ public static class Module
         Runtime.SenderAddress = Address.From(MemoryMarshal.AsBytes([address_0, address_1]).ToArray());
 
         Runtime.Random = new((int)timestamp.MicrosecondsSinceEpoch);
-        Runtime.Timestamp = timestamp.ToStd();
+        Runtime.Time = timestamp.ToStd();
 
         try
         {

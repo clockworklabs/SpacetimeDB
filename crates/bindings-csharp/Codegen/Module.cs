@@ -7,7 +7,7 @@ using static Utils;
 
 record ColumnDeclaration : MemberDeclaration
 {
-    public readonly ImmutableArray<(string?, ColumnAttrs)> Attrs;
+    public readonly EquatableArray<(string?, ColumnAttrs)> Attrs;
     public readonly bool IsEquatable;
 
     public ColumnDeclaration(
@@ -20,14 +20,14 @@ record ColumnDeclaration : MemberDeclaration
         : base(name, type, typeInfo)
     {
         (string?, ColumnAttrs)[] x = [(default(string), attrs)];
-        Attrs = x.ToImmutableArray();
+        Attrs = new(x.ToImmutableArray());
         IsEquatable = isEquatable;
     }
 
     public ColumnDeclaration(IFieldSymbol field)
         : base(field)
     {
-        Attrs = field
+        Attrs = new(field
             .GetAttributes()
             .Select(a => (a.NamedArguments.FirstOrDefault(a => a.Key == "Table").Value.Value as string,
                 a.AttributeClass?.ToString() switch {
@@ -37,7 +37,7 @@ record ColumnDeclaration : MemberDeclaration
                     "SpacetimeDB.IndexedAttribute" => ColumnAttrs.Indexed,
                     _ => ColumnAttrs.UnSet,
                 }))
-            .ToImmutableArray();
+            .ToImmutableArray());
 
         var type = field.Type;
 
@@ -106,13 +106,11 @@ record ColumnDeclaration : MemberDeclaration
 }
 
 record TableView {
-    public readonly TableDeclaration Table;
     public readonly string Name;
     public readonly bool IsPublic;
     public readonly string? Scheduled;
 
     public TableView(TableDeclaration table, AttributeData data) {
-        Table = table;
         Name = data.NamedArguments.FirstOrDefault(x => x.Key == "Name").Value.Value as string ?? table.ShortName;
 
         IsPublic = data.NamedArguments.Any(pair => pair is { Key: "Public", Value.Value: true });
@@ -128,7 +126,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 {
     public readonly string Visibility;
     public readonly string? Scheduled;
-    public readonly ImmutableArray<TableView> Views;
+    public readonly EquatableArray<TableView> Views;
 
     private static readonly ColumnDeclaration[] ScheduledColumns =
     [
@@ -160,10 +158,10 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             ),
         };
 
-        Views = context.Attributes
+        Views = new(context.Attributes
             .Where(a => a.AttributeClass?.ToDisplayString() == "SpacetimeDB.TableAttribute")
             .Select(a => new TableView(this, a))
-            .ToImmutableArray();
+            .ToImmutableArray());
 
         var schedules = Views.Where(t => t.Scheduled != null).Select(t => t.Scheduled);
         var numSchedules = schedules.Count();
@@ -190,24 +188,25 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 .Select((field, i) => (field, i))
                 .Where(pair => pair.field.IsEquatable)
         ) {
-            var colEqWhere = $"{iTable}.ColEq.Where({i}, {f.Name}, {FullName}.BSATN.{f.Name})";
+            var globalName = $"global::{FullName}";
+            var colEqWhere = $"{iTable}.ColEq.Where({i}, {f.Name}, {globalName}.BSATN.{f.Name})";
 
             yield return $"""
-                public IEnumerable<{FullName}> FilterBy{f.Name}({f.Type} {f.Name}) =>
+                public IEnumerable<{globalName}> FilterBy{f.Name}({f.Type} {f.Name}) =>
                     {colEqWhere}.Iter();
                 """;
 
             if (f.GetAttrs(viewName).HasFlag(ColumnAttrs.Unique)) {
                 yield return $"""
-                    public {FullName}? FindBy{f.Name}({f.Type} {f.Name}) =>
+                    public {globalName}? FindBy{f.Name}({f.Type} {f.Name}) =>
                         FilterBy{f.Name}({f.Name})
-                        .Cast<{FullName}?>()
+                        .Cast<{globalName}?>()
                         .SingleOrDefault();
 
                     public bool DeleteBy{f.Name}({f.Type} {f.Name}) =>
                         {colEqWhere}.Delete();
 
-                    public bool UpdateBy{f.Name}({f.Type} {f.Name}, ref {FullName} @this) =>
+                    public bool UpdateBy{f.Name}({f.Type} {f.Name}, ref {globalName} @this) =>
                         {colEqWhere}.Update(ref @this);
                     """;
             }
@@ -220,25 +219,26 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 .Where(f => f.GetAttrs(v.Name).HasFlag(ColumnAttrs.AutoInc))
                 .Select(f => f.Name);
 
-            var iTable = $"SpacetimeDB.Internal.ITableView<{v.Name}, {FullName}>";
-            yield return new((v.Name, FullName), ($$"""
+            var globalName = $"global::{FullName}";
+            var iTable = $"SpacetimeDB.Internal.ITableView<{v.Name}, {globalName}>";
+            yield return new((v.Name, globalName), ($$"""
             {{Visibility}} readonly struct {{v.Name}} : {{iTable}} {
-                static void {{iTable}}.ReadGenFields(System.IO.BinaryReader reader, ref {{FullName}} row) {
+                static void {{iTable}}.ReadGenFields(System.IO.BinaryReader reader, ref {{globalName}} row) {
                     {{string.Join(
                         "\n",
                         autoIncFields.Select(name =>
                             $$"""
                             if (row.{{name}} == default)
                             {
-                                row.{{name}} = {{FullName}}.BSATN.{{name}}.Read(reader);
+                                row.{{name}} = {{globalName}}.BSATN.{{name}}.Read(reader);
                             }
                             """
                         )
                     )}}
                 }
-                public IEnumerable<{{FullName}}> Iter() => {{iTable}}.Iter();
-                public IEnumerable<{{FullName}}> Query(System.Linq.Expressions.Expression<Func<{{FullName}}, bool>> predicate) => {{iTable}}.Query(predicate);
-                public void Insert(ref {{FullName}} row) => {{iTable}}.Insert(ref row);
+                public IEnumerable<{{globalName}}> Iter() => {{iTable}}.Iter();
+                public IEnumerable<{{globalName}}> Query(System.Linq.Expressions.Expression<Func<{{globalName}}, bool>> predicate) => {{iTable}}.Query(predicate);
+                public void Insert(ref {{globalName}} row) => {{iTable}}.Insert(ref row);
                 {{string.Join("\n", GenerateViewFilters(v.Name, iTable))}}
             }
             """, $"{Visibility} TableViews.{v.Name} {v.Name} => new();"));
