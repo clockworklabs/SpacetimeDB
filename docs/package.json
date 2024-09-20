@@ -5,6 +5,7 @@
   "main": "index.js",
   "type": "module",
   "devDependencies": {
+    "@orama/orama": "^2.1.1",
     "@types/node": "^22.5.5",
     "kleur": "^4.1.5",
     "marked": "^14.1.2",

@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@orama/orama':
+        specifier: ^2.1.1
+        version: 2.1.1
       '@types/node':
         specifier: ^22.5.5
         version: 22.5.5
@@ -170,6 +173,10 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@orama/orama@2.1.1':
+    resolution: {integrity: sha512-euTV/2kya290SNkl5m8e/H1na8iDygk74nNtl4E0YZNyYIrEMwE1JwamoroMKGZw2Uz+in/8gH3m1+2YfP0j1w==}
+    engines: {node: '>= 16.0.0'}
+
   '@types/node@22.5.5':
     resolution: {integrity: sha512-Xjs4y5UPO/CLdzpgR6GirZJx36yScjh73+2NlLlkFRSoQN8B0DpfXPdZGnvVmLRLOsqDpOfTNv7D9trgGhmOIA==}
 
@@ -284,6 +291,8 @@ snapshots:
 
   '@esbuild/win32-x64@0.23.1':
     optional: true
+
+  '@orama/orama@2.1.1': {}
 
   '@types/node@22.5.5':
     dependencies:

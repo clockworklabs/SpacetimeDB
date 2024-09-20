@@ -1,15 +1,29 @@
-import { Marked, Renderer, TokenizerObject } from 'marked';
-import { readdir, readFile } from 'node:fs/promises';
+import { create, insert, search } from '@orama/orama';
 import kleur from 'kleur';
+import {
+  Marked,
+  type MarkedExtension,
+  type Renderer,
+  type TokenizerObject,
+  type Tokens,
+} from 'marked';
+import { readdir, readFile } from 'node:fs/promises';
+
+const CHECK_EXTERNAL_LINKS = true;
 
 const data = await gatherData();
 
 const errors = new Map<
   string,
-  Set<{ file: string; line: number; message: string }>
+  Set<{
+    file: string;
+    line: number;
+    message: string;
+    suggestion?: string | null;
+  }>
 >([]);
 
-for (const [slug] of Object.entries(data)) {
+for (const [slug] of data) {
   errors.set(slug, new Set([]));
 }
 
@@ -41,6 +55,11 @@ if (errors.size !== 0) {
           )
       );
       console.log(kleur.red().bold(`    ${error.message}`));
+      if (error.suggestion) {
+        console.log(
+          kleur.green().bold(`    Did you mean: ${error.suggestion}`)
+        );
+      }
       console.log();
     }
   }
@@ -56,7 +75,7 @@ if (errors.size !== 0) {
 async function gatherData() {
   const dirs = await readdir(new URL('../content/docs', import.meta.url));
 
-  const data: Record<
+  const data: Map<
     string,
     {
       path: string;
@@ -65,7 +84,7 @@ async function gatherData() {
       content: string;
       raw: string;
     }
-  > = {};
+  > = new Map();
 
   for (const dir of dirs) {
     const dir_contents = await readdir(
@@ -83,13 +102,13 @@ async function gatherData() {
       const { metadata, body } = extractFrontmatter(file_contents);
 
       const slug = `${dir.slice(3)}/${file.slice(3).slice(0, -3)}`;
-      data[slug] = {
+      data.set(slug, {
         path: dir + '/' + file,
         title: metadata.title,
         navTitle: metadata.navTitle,
         content: body,
         raw: file_contents,
-      };
+      });
     }
   }
 
@@ -116,7 +135,11 @@ function removeQuotes(str: string) {
   return str.replace(/(^["']|["']$)/g, '');
 }
 
-async function transform(markdown: string, renderer: Partial<Renderer> = {}) {
+async function transform(
+  markdown: string,
+  renderer: Partial<Renderer> = {},
+  extension?: MarkedExtension
+) {
   const tokenizer: TokenizerObject = {
     url(src) {
       // if `src` is a package version string, eg: adapter-auto@1.2.3
@@ -134,6 +157,8 @@ async function transform(markdown: string, renderer: Partial<Renderer> = {}) {
     tokenizer,
   });
 
+  if (extension) marked.use(extension);
+
   return await marked.parse(markdown);
 }
 
@@ -141,7 +166,7 @@ async function checkLinks() {
   const headingsOnPages = new Map<string, Set<string>>();
 
   // Gather all the headings
-  for (const [slug, { content }] of Object.entries(data)) {
+  for (const [slug, { content }] of data) {
     const headings: string[] = [];
 
     // this is a bit hacky, but it allows us to prevent type declarations
@@ -174,73 +199,140 @@ async function checkLinks() {
     });
   }
 
+  const db = await create({
+    schema: {
+      slug: 'string',
+      hash: 'string',
+      terms: 'string[]',
+    },
+    components: {
+      tokenizer: {
+        stemming: true,
+      },
+    },
+  });
+
+  // Populate the database with all the headings
+  for (const [slug, onPageHeadings] of headingsOnPages) {
+    for (const hash of onPageHeadings) {
+      // @ts-ignore
+      await insert(db, {
+        slug,
+        hash,
+        terms: [...slug.split('/'), ...hash.split(/[^a-zA-Z0-9]+/)],
+      });
+    }
+  }
+
   // Now compare links. What I am looking for:
   // Links starting with # are same-page links, so go through each link on every document and make sure the link is in the set of the page
   // Links starting with /docs/* should be compared properly to the set of headings on the page. if they end with #something, then copare the hash link as well.
-  // Links starting with ./ or ../ should be resolved properly based opn current page and then compared. It should resolve to the above /docs link or so.
   // If the link is not in the set of headings on the page, then it is an error.
-  for (const [slug, { raw, path }] of Object.entries(data)) {
+  for (const [slug, { raw, path }] of data) {
     const slugErrors = errors.get(slug)!;
     const lines = raw.split('\n');
 
     const linksToCheck = new Set<string>();
 
-    await transform(raw, {
-      link({ href }) {
-        if (href.startsWith('#')) {
-          const link = href.slice(1);
-          if (!headingsOnPages.get(slug)!.has(link)) {
-            slugErrors.add({
-              message: `Link to #${link} on page ${slug} does not exist`,
-              file: path,
-              line: lines.findIndex(line => line.includes(href)) + 1,
-            });
-          }
-        } else if (href.startsWith('/docs')) {
-          //  Should start with /docs. Then compare, including any hash it might have. Examples: /docs/data-format/bsatn or /docs/introduction/getting-started#some-heading
-          const link = href.slice(1);
-          const slug = link.slice(5);
-          const hashIfThere = slug.includes('#')
-            ? slug.slice(slug.indexOf('#'))
-            : null;
+    await transform(
+      raw,
+      {},
+      {
+        async: true,
+        async walkTokens(token) {
+          if (token.type !== 'link') return;
 
-          if (!headingsOnPages.has(slug)) {
-            slugErrors.add({
-              message: `Link to ${link} on page ${slug} does not exist`,
-              file: path,
-              line: lines.findIndex(line => line.includes(href)) + 1,
-            });
-          } else {
-            if (hashIfThere) {
-              if (!headingsOnPages.get(slug)!.has(hashIfThere)) {
-                slugErrors.add({
-                  message: `Link to ${link} on page ${slug} does not exist`,
-                  file: path,
-                  line: lines.findIndex(line => line.includes(href)) + 1,
-                });
-              }
+          const { href } = token as Tokens.Link;
+
+          if (href.startsWith('#')) {
+            const hash = href.slice(1);
+            if (!headingsOnPages.get(slug)!.has(hash)) {
+              // Search for the closest heading on the page
+              const results = await search(db, {
+                term: hash.split(/[^a-zA-Z0-9]+/).join(' '),
+                properties: ['terms'],
+                where: {
+                  // @ts-ignore
+                  slug,
+                },
+                limit: 1,
+                tolerance: 1,
+              });
+
+              slugErrors.add({
+                message: `Link to #${hash} on page ${slug} does not exist`,
+                file: path,
+                line: lines.findIndex(line => line.includes(href)) + 1,
+                suggestion:
+                  results.count > 0
+                    ? // @ts-ignore
+                      '#' + results.hits[0].document.hash
+                    : null,
+              });
             }
-          }
-        } else if (/^https?:\/\//.test(href)) {
-          // If the link is an external URL, then add it to the link queue
-          linksToCheck.add(href);
-        }
+          } else if (href.startsWith('/docs')) {
+            //  Should start with /docs. Then compare, including any hash it might have. Examples: /docs/data-format/bsatn or /docs/introduction/getting-started#some-heading
+            const link = href.slice(1);
+            const slug = link.slice(5);
+            const hashIfThere = slug.includes('#')
+              ? slug.slice(slug.indexOf('#'))
+              : null;
 
-        return '';
-      },
-    });
+            if (!headingsOnPages.has(slug)) {
+              const results = await search(db, {
+                term:
+                  slug.split(/[^a-zA-Z0-9]+/).join(' ') +
+                  ' ' +
+                  (hashIfThere
+                    ? hashIfThere.split(/[^a-zA-Z0-9]+/).join(' ')
+                    : ''),
+                properties: ['terms'],
+                limit: 1,
+                tolerance: 1,
+              });
+
+              slugErrors.add({
+                message: `Link to ${link} on page ${slug.split('#')[0]} does not exist`,
+                file: path,
+                line: lines.findIndex(line => line.includes(href)) + 1,
+                suggestion:
+                  results.count > 0
+                    ? '/docs/' +
+                      // @ts-ignore
+                      results.hits[0].document.slug +
+                      // @ts-ignore
+                      (hashIfThere ? '#' + results.hits[0].document.hash : '')
+                    : null,
+              });
+            }
+          } else if (/^https?:\/\//.test(href)) {
+            // If the link is an external URL, then add it to the link queue
+            linksToCheck.add(href);
+          }
+        },
+      }
+    );
 
     // Check links to external URLs
-    for (const link of linksToCheck) {
-      console.log(kleur.dim().bold(`Checking ${slug}:${link}`));
-      const response = await fetch(link);
-      if (!response.ok) {
-        slugErrors.add({
-          message: `External: Link to ${link} is broken`,
-          file: path,
-          line: lines.findIndex(line => line.includes(link)) + 1,
-        });
+    if (CHECK_EXTERNAL_LINKS) {
+      if (linksToCheck.size === 0)
+        console.log(
+          kleur.bgYellow().bold(`Skipping ${slug}: No external links found`)
+        );
+      else console.log(kleur.bgCyan().bold(`Checking ${slug}`) + '\n');
+
+      for (const link of linksToCheck) {
+        console.log(kleur.dim().bold(`    ${link}`));
+        const response = await fetch(link);
+        if (!response.ok) {
+          slugErrors.add({
+            message: `External: Link to ${link} is broken`,
+            file: path,
+            line: lines.findIndex(line => line.includes(link)) + 1,
+          });
+        }
       }
+      console.log('\n');
     }
   }
 }
