@@ -379,7 +379,7 @@ fn autogen_csharp_product_table_common(
 
         // If this is a table, we want to generate event accessor and indexes
         if let Some(schema) = &schema {
-            let constraints = schema.column_constraints();
+            let constraints = schema.backcompat_column_constraints();
             let mut unique_indexes = Vec::new();
             // Declare custom index dictionaries
             for col in schema.columns() {
@@ -446,7 +446,7 @@ fn autogen_csharp_access_funcs_for_struct(
     _table_name: &str,
     schema: &TableSchema,
 ) {
-    let constraints = schema.column_constraints();
+    let constraints = schema.backcompat_column_constraints();
     for col in schema.columns() {
         let is_unique = constraints[&ColList::new(col.col_pos)].has_unique();
 

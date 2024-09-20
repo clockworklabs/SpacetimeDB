@@ -430,7 +430,7 @@ fn print_table_filter_methods(
     table: &TableSchema,
 ) {
     write!(out, "impl {table_type_name} ");
-    let constraints = table.column_constraints();
+    let constraints = table.backcompat_column_constraints();
     out.delimited_block(
         "{",
         |out| {

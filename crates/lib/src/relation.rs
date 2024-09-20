@@ -3,6 +3,7 @@ use crate::db::error::{RelationError, TypeError};
 use core::fmt;
 use core::hash::Hash;
 use derive_more::From;
+use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_primitives::{ColId, ColList, ColSet, Constraints, TableId};
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;
@@ -220,22 +221,37 @@ impl Header {
 }
 
 /// Combine constraints.
-/// The iterator may have multiple `ColSet`s with the same `Constraints`.
-/// These constraints will be combined into a single `ColSet`.
+/// The result is a map from `ColList` to `Constraints`.
+/// In particular, it includes all indexes, and tells you which of them are unique.
+/// The result MAY contain multiple `ColList`s with the same columns in different orders.
+/// This corresponds to differently-ordered indices.
 ///
-/// The inputs are unordered (`ColSet`s), but this function returns a `BTreeMap<ColList, _>` for backwards compatibility.
-/// This should eventually be changed to return `ColSet`.
+/// Unique constraints are considered logically unordered. Information from them will
+/// be propagated to all indices that contain the same columns.
 pub fn combine_constraints(
-    uncombined: impl IntoIterator<Item = (ColSet, Constraints)>,
+    uncombined: impl IntoIterator<Item = (ColList, Constraints)>,
 ) -> BTreeMap<ColList, Constraints> {
     let mut constraints = BTreeMap::new();
-    for (col_set, constraint) in uncombined {
-        let col_list = col_set.into();
+    for (col_list, constraint) in uncombined {
         constraints
             .entry(col_list)
             .or_insert(Constraints::unset())
             .push(constraint);
     }
+
+    let mut uniques: HashSet<ColSet> = HashSet::new();
+    for (col_list, constraint) in &constraints {
+        if constraint.has_unique() {
+            uniques.insert(col_list.into());
+        }
+    }
+
+    for (cols, constraint) in constraints.iter_mut() {
+        if uniques.contains(&ColSet::from(cols)) {
+            constraint.push(Constraints::unique());
+        }
+    }
+
     constraints
 }
 

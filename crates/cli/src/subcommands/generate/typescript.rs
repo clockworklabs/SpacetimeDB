@@ -767,7 +767,7 @@ fn autogen_typescript_access_funcs_for_struct(
     table_name: &str,
     table: &TableSchema,
 ) {
-    let constraints = table.column_constraints();
+    let constraints = table.backcompat_column_constraints();
     for col in table.columns() {
         let is_unique = constraints[&ColList::new(col.col_pos)].has_unique();
         let field = &product_type.elements[col.col_pos.idx()];

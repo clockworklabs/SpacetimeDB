@@ -304,21 +304,17 @@ impl TableSchema {
         self.row_type
     }
 
-    /// Get the constraints on this table.
-    pub fn get_constraints(&self) -> impl Iterator<Item = &ConstraintData> {
-        self.constraints.iter().map(|x| &x.data)
-    }
-
     /// Iterate over the constraints on sets of columns on this table.
-    fn column_constraints_iter<'a>(&'a self) -> impl Iterator<Item = (ColSet, Constraints)> + 'a {
-        self.get_constraints()
-            .map(|x| -> (ColSet, Constraints) {
-                match x {
-                    ConstraintData::Unique(unique) => (unique.columns.clone(), Constraints::unique()),
+    fn backcompat_constraints_iter<'a>(&'a self) -> impl Iterator<Item = (ColList, Constraints)> + 'a {
+        self.constraints
+            .iter()
+            .map(|x| -> (ColList, Constraints) {
+                match &x.data {
+                    ConstraintData::Unique(unique) => (unique.columns.clone().into(), Constraints::unique()),
                 }
             })
             .chain(self.indexes.iter().map(|x| match &x.index_algorithm {
-                IndexAlgorithm::BTree(btree) => (ColSet::from(&btree.columns), Constraints::indexed()),
+                IndexAlgorithm::BTree(btree) => (btree.columns.clone(), Constraints::indexed()),
             }))
             .chain(
                 self.sequences
@@ -332,9 +328,25 @@ impl TableSchema {
             )
     }
 
-    /// TODO: change this to return `ColSet`.
-    pub fn column_constraints(&self) -> BTreeMap<ColList, Constraints> {
-        combine_constraints(self.column_constraints_iter())
+    /// Get backwards-compatible constraints for this table.
+    ///
+    /// This is closer to how `TableSchema` used to work.
+    pub fn backcompat_constraints(&self) -> BTreeMap<ColList, Constraints> {
+        combine_constraints(self.backcompat_constraints_iter())
+    }
+
+    /// Get backwards-compatible constraints for this table.
+    ///
+    /// Resolves the constraints per each column. If the column don't have one, auto-generate [Constraints::unset()].
+    /// This guarantee all columns can be queried for it constraints.
+    pub fn backcompat_column_constraints(&self) -> BTreeMap<ColList, Constraints> {
+        let mut result = combine_constraints(self.backcompat_constraints_iter());
+        for col in &self.columns {
+            result
+                .entry(col_list![col.col_pos].into())
+                .or_insert(Constraints::unset());
+        }
+        result
     }
 
     /// Get the column corresponding to the primary key, if any.
@@ -686,7 +698,7 @@ impl From<&TableSchema> for Header {
             value.table_id,
             value.table_name.clone(),
             fields,
-            value.column_constraints(),
+            value.backcompat_constraints(),
         )
     }
 }
