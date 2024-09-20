@@ -45,6 +45,8 @@ if (errors.size !== 0) {
     }
   }
   console.log(kleur.red().bold(`${totalErrors} ERRORS`));
+
+  throw new Error('');
 } else {
   console.log(
     kleur.green().bold('✅✅✅✅✅✅✅✅✅ No errors found! ✅✅✅✅✅✅✅✅✅')
