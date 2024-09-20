@@ -1531,10 +1531,20 @@ mod tests {
         Ok(())
     }
 
+    fn verify_schemas_consistent(tx: &mut MutTxId, table_id: TableId) {
+        let ctx = &ExecutionContext::default();
+        let s1 = tx.get_schema(table_id).expect("should exist");
+        let s2 = tx.schema_for_table_raw(ctx, table_id).expect("should exist");
+        assert_eq!(**s1, s2);
+    }
+
     #[test]
     fn test_schema_for_table_pre_commit() -> ResultTest<()> {
-        let (datastore, tx, table_id) = setup_table()?;
+        let (datastore, mut tx, table_id) = setup_table()?;
         let schema = &*datastore.schema_for_table_mut_tx(&tx, table_id)?;
+
+        verify_schemas_consistent(&mut tx, table_id);
+
         #[rustfmt::skip]
         assert_eq!(schema, &basic_table_schema_created(table_id));
         Ok(())
@@ -1544,7 +1554,8 @@ mod tests {
     fn test_schema_for_table_post_commit() -> ResultTest<()> {
         let (datastore, tx, table_id) = setup_table()?;
         datastore.commit_mut_tx_for_test(tx)?;
-        let tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
+        verify_schemas_consistent(&mut tx, table_id);
         let schema = &*datastore.schema_for_table_mut_tx(&tx, table_id)?;
         #[rustfmt::skip]
         assert_eq!(schema, &basic_table_schema_created(table_id));
@@ -1576,6 +1587,8 @@ mod tests {
             "no indexes should be left in the schema post-commit"
         );
 
+        verify_schemas_consistent(&mut tx, table_id);
+
         datastore.create_index_mut_tx(
             &mut tx,
             IndexSchema {
@@ -1586,6 +1599,8 @@ mod tests {
             },
             true,
         )?;
+
+        verify_schemas_consistent(&mut tx, table_id);
 
         let expected_indexes = [IndexRow {
             id: ST_RESERVED_SEQUENCE_RANGE + dropped_indexes + 1,
