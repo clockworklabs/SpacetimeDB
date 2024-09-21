@@ -9,7 +9,7 @@ We'll implement a command-line client for the module created in our Rust or C# M
 
 ## Project structure
 
-Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/modules/rust/quickstart) or [C# Module Quickstart](/docs/modules/c-sharp/quickstart) guides:
+Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/module/rust-quickstart) or [C# Module Quickstart](/docs/module/c-sharp-quickstart) guides:
 
 ```bash
 cd quickstart-chat
@@ -474,7 +474,7 @@ User <my-name> connected.
 
 You can find the full code for this client [in the Rust SDK's examples](https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/sdk/examples/quickstart-chat).
 
-Check out the [Rust SDK Reference](/docs/sdks/rust) for a more comprehensive view of the SpacetimeDB Rust SDK.
+Check out the [Rust SDK Reference](/docs/sdk/rust-reference) for a more comprehensive view of the SpacetimeDB Rust SDK.
 
 Our bare-bones terminal interface has some quirks. Incoming messages can appear while the user is typing and be spliced into the middle of user input, which is less than ideal. Also, the user's input is interspersed with the program's output, so messages the user sends will seem to appear twice. Why not try building a better interface using [Rustyline](https://crates.io/crates/rustyline), [Cursive](https://crates.io/crates/cursive), or even a full-fledged GUI? We went for the Cursive route, and you can check out what we came up with [in the Rust SDK's examples](https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/sdk/examples/cursive-chat).
 

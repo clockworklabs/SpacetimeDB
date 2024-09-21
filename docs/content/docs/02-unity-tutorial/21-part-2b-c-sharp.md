@@ -5,7 +5,7 @@ navTitle: 2b - Server (C#)
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
-This progressive tutorial is continued from the [Part 1 Tutorial](/docs/unity/part-1)
+This progressive tutorial is continued from the [Part 1 Tutorial](/docs/unity-tutorial/part-1)
 
 ## Create a Server Module
 
@@ -33,7 +33,7 @@ using SpacetimeDB.Module;
 using static SpacetimeDB.Runtime;
 ```
 
-Then we are going to start by adding the global `Config` table. Right now it only contains the "message of the day" but it can be extended to store other configuration variables. This also uses a couple of attributes, like `[SpacetimeDB.Table]` which you can learn more about in our [C# module reference](/docs/modules/c-sharp). Simply put, this just tells SpacetimeDB to create a table which uses this struct as the schema for the table.
+Then we are going to start by adding the global `Config` table. Right now it only contains the "message of the day" but it can be extended to store other configuration variables. This also uses a couple of attributes, like `[SpacetimeDB.Table]` which you can learn more about in our [C# module reference](/docs/module/c-sharp-reference). Simply put, this just tells SpacetimeDB to create a table which uses this struct as the schema for the table.
 
 **Append to the bottom of lib.cs:**
 
@@ -340,4 +340,4 @@ cd server
 spacetime publish -c unity-tutorial
 ```
 
-From here, the [next tutorial](/docs/unity/part-3) continues with a Client (Unity) focus.
+From here, the [next tutorial](/docs/unity-tutorial/part-3) continues with a Client (Unity) focus.

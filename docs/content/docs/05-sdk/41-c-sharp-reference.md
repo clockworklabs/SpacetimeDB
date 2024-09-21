@@ -5,55 +5,6 @@ navTitle: C#
 
 The SpacetimeDB client C# for Rust contains all the tools you need to build native clients for SpacetimeDB modules using C#.
 
-## Table of Contents
-
-- [The SpacetimeDB C# client SDK](#the-spacetimedb-c-client-sdk)
-  - [Table of Contents](#table-of-contents)
-  - [Install the SDK](#install-the-sdk)
-    - [Using the `dotnet` CLI tool](#using-the-dotnet-cli-tool)
-    - [Using Unity](#using-unity)
-  - [Generate module bindings](#generate-module-bindings)
-  - [Initialization](#initialization)
-    - [Property `SpacetimeDBClient.instance`](#property-spacetimedbclientinstance)
-    - [Class `NetworkManager`](#class-networkmanager)
-    - [Method `SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect)
-    - [Event `SpacetimeDBClient.onIdentityReceived`](#event-spacetimedbclientonidentityreceived)
-    - [Event `SpacetimeDBClient.onConnect`](#event-spacetimedbclientonconnect)
-  - [Query subscriptions & one-time actions](#subscribe-to-queries)
-    - [Method `SpacetimeDBClient.Subscribe`](#method-spacetimedbclientsubscribe)
-    - [Event `SpacetimeDBClient.onSubscriptionApplied`](#event-spacetimedbclientonsubscriptionapplied)
-    - [Method `SpacetimeDBClient.OneOffQuery`](#method-spacetimedbclientoneoffquery)
-  - [View rows of subscribed tables](#view-rows-of-subscribed-tables)
-    - [Class `{TABLE}`](#class-table)
-      - [Static Method `{TABLE}.Iter`](#static-method-tableiter)
-      - [Static Method `{TABLE}.FilterBy{COLUMN}`](#static-method-tablefilterbycolumn)
-      - [Static Method `{TABLE}.FindBy{COLUMN}`](#static-method-tablefindbycolumn)
-      - [Static Method `{TABLE}.Count`](#static-method-tablecount)
-      - [Static Event `{TABLE}.OnInsert`](#static-event-tableoninsert)
-      - [Static Event `{TABLE}.OnBeforeDelete`](#static-event-tableonbeforedelete)
-      - [Static Event `{TABLE}.OnDelete`](#static-event-tableondelete)
-      - [Static Event `{TABLE}.OnUpdate`](#static-event-tableonupdate)
-  - [Observe and invoke reducers](#observe-and-invoke-reducers)
-    - [Class `Reducer`](#class-reducer)
-      - [Static Method `Reducer.{REDUCER}`](#static-method-reducerreducer)
-      - [Static Event `Reducer.On{REDUCER}`](#static-event-reduceronreducer)
-    - [Class `ReducerEvent`](#class-reducerevent)
-      - [Enum `Status`](#enum-status)
-        - [Variant `Status.Committed`](#variant-statuscommitted)
-        - [Variant `Status.Failed`](#variant-statusfailed)
-        - [Variant `Status.OutOfEnergy`](#variant-statusoutofenergy)
-  - [Identity management](#identity-management)
-    - [Class `AuthToken`](#class-authtoken)
-      - [Static Method `AuthToken.Init`](#static-method-authtokeninit)
-      - [Static Property `AuthToken.Token`](#static-property-authtokentoken)
-      - [Static Method `AuthToken.SaveToken`](#static-method-authtokensavetoken)
-    - [Class `Identity`](#class-identity)
-    - [Class `Identity`](#class-identity-1)
-  - [Customizing logging](#customizing-logging)
-    - [Interface `ISpacetimeDBLogger`](#interface-ispacetimedblogger)
-    - [Class `ConsoleLogger`](#class-consolelogger)
-    - [Class `UnityDebugLogger`](#class-unitydebuglogger)
-
 ## Install the SDK
 
 ### Using the `dotnet` CLI tool
@@ -64,7 +15,7 @@ If you would like to create a console application using .NET, you can create a n
 dotnet add package spacetimedbsdk
 ```
 
-(See also the [CSharp Quickstart](/docs/modules/c-sharp/quickstart) for an in-depth example of such a console application.)
+(See also the [CSharp Quickstart](/docs/module/c-sharp-quickstart) for an in-depth example of such a console application.)
 
 ### Using Unity
 
@@ -72,7 +23,7 @@ To install the SpacetimeDB SDK into a Unity project, [download the SpacetimeDB S
 
 In Unity navigate to the `Assets > Import Package > Custom Package` menu in the menu bar. Select your `SpacetimeDB.Unity.Comprehensive.Tutorial.unitypackage` file and leave all folders checked.
 
-(See also the [Unity Tutorial](/docs/unity/part-1))
+(See also the [Unity Tutorial](/docs/unity-tutorial/part-1))
 
 ## Generate module bindings
 
@@ -107,7 +58,7 @@ The Unity SpacetimeDB SDK relies on there being a `NetworkManager` somewhere in 
 
 ![Unity-AddNetworkManager](/images/unity-tutorial/Unity-AddNetworkManager.JPG)
 
-This component will handle updating and closing the [`SpacetimeDBClient.instance`](#property-spacetimedbclientinstance) for you, but will not call [`SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect), you still need to handle that yourself. See the [Unity Quickstart](./UnityQuickStart) and [Unity Tutorial](./UnityTutorialPart1) for more information.
+This component will handle updating and closing the [`SpacetimeDBClient.instance`](#initialization-property-spacetimedbclient-instance) for you, but will not call [`SpacetimeDBClient.Connect`](#initialization-method-spacetimedbclient-connect), you still need to handle that yourself. See the [Unity Tutorial](/docs/unity-tutorial/overview) for more information.
 
 ### Method `SpacetimeDBClient.Connect`
 
@@ -137,7 +88,7 @@ Connect to a database named `addressOrName` accessible over the internet at the 
 | `addressOrName` | `string`  | Address or name of the module.                                             |
 | `sslEnabled`    | `bool`    | Whether or not to use SSL when connecting to SpacetimeDB. Default: `true`. |
 
-If a `token` is supplied, it will be passed to the new connection to identify and authenticate the user. Otherwise, a new token and [`Identity`](#class-identity) will be generated by the server and returned in [`onConnect`](#event-spacetimedbclientonconnect).
+If a `token` is supplied, it will be passed to the new connection to identify and authenticate the user. Otherwise, a new token and [`Identity`](#identity-management-class-identity) will be generated by the server and returned in [`onConnect`](#initialization-event-spacetimedbclient-onconnect).
 
 ```cs
 using SpacetimeDB;
@@ -161,7 +112,7 @@ SpacetimeDBClient.instance.onIdentityReceived += (string authToken, Identity ide
 }
 ```
 
-(You should probably also store the returned `Identity` somewhere; see the [`onIdentityReceived`](#event-spacetimedbclientonidentityreceived) event.)
+(You should probably also store the returned `Identity` somewhere; see the [`onIdentityReceived`](#initialization-event-spacetimedbclient-onidentityreceived) event.)
 
 ### Event `SpacetimeDBClient.onIdentityReceived`
 
@@ -175,9 +126,9 @@ class SpacetimeDBClient {
 }
 ```
 
-Called when we receive an auth token, [`Identity`](#class-identity) and [`Address`](#class-address) from the server. The [`Identity`](#class-identity) serves as a unique public identifier for a user of the database. It can be for several purposes, such as filtering rows in a database for the rows created by a particular user. The auth token is a private access token that allows us to assume an identity. The [`Address`](#class-address) is opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#class-identity).
+Called when we receive an auth token, [`Identity`](#identity-management-class-identity) and `Address` from the server. The [`Identity`](#identity-management-class-identity) serves as a unique public identifier for a user of the database. It can be for several purposes, such as filtering rows in a database for the rows created by a particular user. The auth token is a private access token that allows us to assume an identity. The `Address` is opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#identity-management-class-identity).
 
-To store the auth token to the filesystem, use the static method [`AuthToken.SaveToken`](#static-method-authtokensavetoken). You may also want to store the returned [`Identity`](#class-identity) in a local variable.
+To store the auth token to the filesystem, use the static method [`AuthToken.SaveToken`](#identity-management-class-authtoken-static-method-authtoken-savetoken). You may also want to store the returned [`Identity`](#identity-management-class-identity) in a local variable.
 
 If an existing auth token is used to connect to the database, the same auth token and the identity it came with will be returned verbatim in `onIdentityReceived`.
 
@@ -206,7 +157,7 @@ class SpacetimeDBClient {
 
 Allows registering delegates to be invoked upon authentication with the database.
 
-Once this occurs, the SDK is prepared for calls to [`SpacetimeDBClient.Subscribe`](#method-spacetimedbclientsubscribe).
+Once this occurs, the SDK is prepared for calls to [`SpacetimeDBClient.Subscribe`](#subscribe-to-queries-method-spacetimedbclient-subscribe).
 
 ## Subscribe to queries
 
@@ -228,11 +179,11 @@ class SpacetimeDBClient {
 
 Subscribe to a set of queries, to be notified when rows which match those queries are altered.
 
-`Subscribe` will return an error if called before establishing a connection with the [`SpacetimeDBClient.Connect`](#method-spacetimedbclientconnect) function. In that case, the queries are not registered.
+`Subscribe` will return an error if called before establishing a connection with the [`SpacetimeDBClient.Connect`](#initialization-method-spacetimedbclient-connect) function. In that case, the queries are not registered.
 
-The `Subscribe` method does not return data directly. `spacetime generate` will generate classes [`SpacetimeDB.Types.{TABLE}`](#class-table) for each table in your module. These classes are used to reecive information from the database. See the section [View Rows of Subscribed Tables](#view-rows-of-subscribed-tables) for more information.
+The `Subscribe` method does not return data directly. `spacetime generate` will generate classes [`SpacetimeDB.Types.{TABLE}`](#view-rows-of-subscribed-tables-class-table) for each table in your module. These classes are used to reecive information from the database. See the section [View Rows of Subscribed Tables](#view-rows-of-subscribed-tables) for more information.
 
-A new call to `Subscribe` will remove all previous subscriptions and replace them with the new `queries`. If any rows matched the previous subscribed queries but do not match the new queries, those rows will be removed from the client cache, and [`{TABLE}.OnDelete`](#static-event-tableoninsert) callbacks will be invoked for them.
+A new call to `Subscribe` will remove all previous subscriptions and replace them with the new `queries`. If any rows matched the previous subscribed queries but do not match the new queries, those rows will be removed from the client cache, and [`{TABLE}.OnDelete`](#view-rows-of-subscribed-tables-class-table-static-event-table-oninsert) callbacks will be invoked for them.
 
 ```cs
 using SpacetimeDB;
@@ -305,31 +256,31 @@ SpacetimeDBClient.instance.OneOffQuery<Message>("WHERE sender = \"bob\"");
 
 ## View rows of subscribed tables
 
-The SDK maintains a local view of the database called the "client cache". This cache contains whatever rows are selected via a call to [`SpacetimeDBClient.Subscribe`](#method-spacetimedbclientsubscribe). These rows are represented in the SpacetimeDB .Net SDK as instances of [`SpacetimeDB.Types.{TABLE}`](#class-table).
+The SDK maintains a local view of the database called the "client cache". This cache contains whatever rows are selected via a call to [`SpacetimeDBClient.Subscribe`](#subscribe-to-queries-method-spacetimedbclient-subscribe). These rows are represented in the SpacetimeDB .Net SDK as instances of [`SpacetimeDB.Types.{TABLE}`](#view-rows-of-subscribed-tables-class-table).
 
-ONLY the rows selected in a [`SpacetimeDBClient.Subscribe`](#method-spacetimedbclientsubscribe) call will be available in the client cache. All operations in the client sdk operate on these rows exclusively, and have no information about the state of the rest of the database.
+ONLY the rows selected in a [`SpacetimeDBClient.Subscribe`](#subscribe-to-queries-method-spacetimedbclient-subscribe) call will be available in the client cache. All operations in the client sdk operate on these rows exclusively, and have no information about the state of the rest of the database.
 
 In particular, SpacetimeDB does not support foreign key constraints. This means that if you are using a column as a foreign key, SpacetimeDB will not automatically bring in all of the rows that key might reference. You will need to manually subscribe to all tables you need information from.
 
-To optimize network performance, prefer selecting as few rows as possible in your [`Subscribe`](#method-spacetimedbclientsubscribe) query. Processes that need to view the entire state of the database are better run inside the database -- that is, inside modules.
+To optimize network performance, prefer selecting as few rows as possible in your [`Subscribe`](#subscribe-to-queries-method-spacetimedbclient-subscribe) query. Processes that need to view the entire state of the database are better run inside the database -- that is, inside modules.
 
 ### Class `{TABLE}`
 
-For each table defined by a module, `spacetime generate` will generate a class [`SpacetimeDB.Types.{TABLE}`](#class-table) whose name is that table's name converted to `PascalCase`. The generated class contains a property for each of the table's columns, whose names are the column names converted to `camelCase`. It also contains various static events and methods.
+For each table defined by a module, `spacetime generate` will generate a class [`SpacetimeDB.Types.{TABLE}`](#view-rows-of-subscribed-tables-class-table) whose name is that table's name converted to `PascalCase`. The generated class contains a property for each of the table's columns, whose names are the column names converted to `camelCase`. It also contains various static events and methods.
 
 Static Methods:
 
-- [`{TABLE}.Iter()`](#static-method-tableiter) iterates all subscribed rows in the client cache.
-- [`{TABLE}.FilterBy{COLUMN}(value)`](#static-method-tablefilterbycolumn) filters subscribed rows in the client cache by a column value.
-- [`{TABLE}.FindBy{COLUMN}(value)`](#static-method-tablefindbycolumn) finds a subscribed row in the client cache by a unique column value.
-- [`{TABLE}.Count()`](#static-method-tablecount) counts the number of subscribed rows in the client cache.
+- [`{TABLE}.Iter()`](#view-rows-of-subscribed-tables-class-table-static-method-table-iter) iterates all subscribed rows in the client cache.
+- [`{TABLE}.FilterBy{COLUMN}(value)`](#view-rows-of-subscribed-tables-class-table-static-method-table-filterby-column) filters subscribed rows in the client cache by a column value.
+- [`{TABLE}.FindBy{COLUMN}(value)`](#view-rows-of-subscribed-tables-class-table-static-method-table-findby-column) finds a subscribed row in the client cache by a unique column value.
+- [`{TABLE}.Count()`](#view-rows-of-subscribed-tables-class-table-static-method-table-count) counts the number of subscribed rows in the client cache.
 
 Static Events:
 
-- [`{TABLE}.OnInsert`](#static-event-tableoninsert) is called when a row is inserted into the client cache.
-- [`{TABLE}.OnBeforeDelete`](#static-event-tableonbeforedelete) is called when a row is about to be removed from the client cache.
-- If the table has a primary key attribute, [`{TABLE}.OnUpdate`](#static-event-tableonupdate) is called when a row is updated.
-- [`{TABLE}.OnDelete`](#static-event-tableondelete) is called while a row is being removed from the client cache. You should almost always use [`{TABLE}.OnBeforeDelete`](#static-event-tableonbeforedelete) instead.
+- [`{TABLE}.OnInsert`](#view-rows-of-subscribed-tables-class-table-static-event-table-oninsert) is called when a row is inserted into the client cache.
+- [`{TABLE}.OnBeforeDelete`](#view-rows-of-subscribed-tables-class-table-static-event-table-onbeforedelete) is called when a row is about to be removed from the client cache.
+- If the table has a primary key attribute, [`{TABLE}.OnUpdate`](#view-rows-of-subscribed-tables-class-table-static-event-table-onupdate) is called when a row is updated.
+- [`{TABLE}.OnDelete`](#view-rows-of-subscribed-tables-class-table-static-event-table-ondelete) is called while a row is being removed from the client cache. You should almost always use [`{TABLE}.OnBeforeDelete`](#view-rows-of-subscribed-tables-class-table-static-event-table-onbeforedelete) instead.
 
 Note that it is not possible to directly insert into the database from the client SDK! All insertion validation should be performed inside serverside modules for security reasons. You can instead [invoke reducers](#observe-and-invoke-reducers), which run code inside the database that can insert rows for you.
 
@@ -345,9 +296,9 @@ class TABLE {
 }
 ```
 
-Iterate over all the subscribed rows in the table. This method is only available after [`SpacetimeDBClient.onSubscriptionApplied`](#event-spacetimedbclientonsubscriptionapplied) has occurred.
+Iterate over all the subscribed rows in the table. This method is only available after [`SpacetimeDBClient.onSubscriptionApplied`](#subscribe-to-queries-event-spacetimedbclient-onsubscriptionapplied) has occurred.
 
-When iterating over rows and filtering for those containing a particular column, [`{TABLE}.FilterBy{COLUMN}`](#static-method-tablefilterbycolumn) and [`{TABLE}.FindBy{COLUMN}`](#static-method-tablefindbycolumn) will be more efficient, so prefer those when possible.
+When iterating over rows and filtering for those containing a particular column, [`{TABLE}.FilterBy{COLUMN}`](#view-rows-of-subscribed-tables-class-table-static-method-table-filterby-column) and [`{TABLE}.FindBy{COLUMN}`](#view-rows-of-subscribed-tables-class-table-static-method-table-findby-column) will be more efficient, so prefer those when possible.
 
 ```cs
 using SpacetimeDB;
@@ -377,9 +328,9 @@ class TABLE {
 }
 ```
 
-For each column of a table, `spacetime generate` generates a static method on the [table class](#class-table) to filter subscribed rows where that column matches a requested value.
+For each column of a table, `spacetime generate` generates a static method on the [table class](#view-rows-of-subscribed-tables-class-table) to filter subscribed rows where that column matches a requested value.
 
-These methods are named `filterBy{COLUMN}`, where `{COLUMN}` is the column name converted to `PascalCase`. The method's return type is an `IEnumerable` over the [table class](#class-table).
+These methods are named `filterBy{COLUMN}`, where `{COLUMN}` is the column name converted to `PascalCase`. The method's return type is an `IEnumerable` over the [table class](#view-rows-of-subscribed-tables-class-table).
 
 #### Static Method `{TABLE}.FindBy{COLUMN}`
 
@@ -394,9 +345,9 @@ class TABLE {
 }
 ```
 
-For each unique column of a table (those annotated `#[unique]` or `#[primarykey]`), `spacetime generate` generates a static method on the [table class](#class-table) to seek a subscribed row where that column matches a requested value.
+For each unique column of a table (those annotated `#[unique]` or `#[primarykey]`), `spacetime generate` generates a static method on the [table class](#view-rows-of-subscribed-tables-class-table) to seek a subscribed row where that column matches a requested value.
 
-These methods are named `findBy{COLUMN}`, where `{COLUMN}` is the column name converted to `PascalCase`. Those methods return a single instance of the [table class](#class-table) if a row is found, or `null` if no row matches the query.
+These methods are named `findBy{COLUMN}`, where `{COLUMN}` is the column name converted to `PascalCase`. Those methods return a single instance of the [table class](#view-rows-of-subscribed-tables-class-table) if a row is found, or `null` if no row matches the query.
 
 #### Static Method `{TABLE}.Count`
 
@@ -445,7 +396,7 @@ Register a delegate for when a subscribed row is newly inserted into the databas
 
 The delegate takes two arguments:
 
-- A [`{TABLE}`](#class-table) instance with the data of the inserted row
+- A [`{TABLE}`](#view-rows-of-subscribed-tables-class-table) instance with the data of the inserted row
 - A [`ReducerEvent?`], which contains the data of the reducer that inserted the row, or `null` if the row is being inserted while initializing a subscription.
 
 ```cs
@@ -483,10 +434,10 @@ Register a delegate for when a subscribed row is about to be deleted from the da
 
 The delegate takes two arguments:
 
-- A [`{TABLE}`](#class-table) instance with the data of the deleted row
-- A [`ReducerEvent`](#class-reducerevent), which contains the data of the reducer that deleted the row.
+- A [`{TABLE}`](#view-rows-of-subscribed-tables-class-table) instance with the data of the deleted row
+- A [`ReducerEvent`](#observe-and-invoke-reducers-class-reducerevent), which contains the data of the reducer that deleted the row.
 
-This event should almost always be used instead of [`OnDelete`](#static-event-tableondelete). This is because often, many rows will be deleted at once, and `OnDelete` can be invoked in an arbitrary order on these rows. This means that data related to a row may already be missing when `OnDelete` is called. `OnBeforeDelete` does not have this problem.
+This event should almost always be used instead of [`OnDelete`](#view-rows-of-subscribed-tables-class-table-static-event-table-ondelete). This is because often, many rows will be deleted at once, and `OnDelete` can be invoked in an arbitrary order on these rows. This means that data related to a row may already be missing when `OnDelete` is called. `OnBeforeDelete` does not have this problem.
 
 ```cs
 using SpacetimeDB;
@@ -515,12 +466,12 @@ class TABLE {
 }
 ```
 
-Register a delegate for when a subscribed row is being deleted from the database. If a reducer deletes many rows at once, this delegate will be invoked on those rows in arbitrary order, and data for some rows may already be missing when it is invoked. For this reason, prefer the event [`{TABLE}.OnBeforeDelete`](#static-event-tableonbeforedelete).
+Register a delegate for when a subscribed row is being deleted from the database. If a reducer deletes many rows at once, this delegate will be invoked on those rows in arbitrary order, and data for some rows may already be missing when it is invoked. For this reason, prefer the event [`{TABLE}.OnBeforeDelete`](#view-rows-of-subscribed-tables-class-table-static-event-table-onbeforedelete).
 
 The delegate takes two arguments:
 
-- A [`{TABLE}`](#class-table) instance with the data of the deleted row
-- A [`ReducerEvent`](#class-reducerevent), which contains the data of the reducer that deleted the row.
+- A [`{TABLE}`](#view-rows-of-subscribed-tables-class-table) instance with the data of the deleted row
+- A [`ReducerEvent`](#observe-and-invoke-reducers-class-reducerevent), which contains the data of the reducer that deleted the row.
 
 ```cs
 using SpacetimeDB;
@@ -554,9 +505,9 @@ Register a delegate for when a subscribed row is being updated. This event is on
 
 The delegate takes three arguments:
 
-- A [`{TABLE}`](#class-table) instance with the old data of the updated row
-- A [`{TABLE}`](#class-table) instance with the new data of the updated row
-- A [`ReducerEvent`](#class-reducerevent), which contains the data of the reducer that updated the row.
+- A [`{TABLE}`](#view-rows-of-subscribed-tables-class-table) instance with the old data of the updated row
+- A [`{TABLE}`](#view-rows-of-subscribed-tables-class-table) instance with the new data of the updated row
+- A [`ReducerEvent`](#observe-and-invoke-reducers-class-reducerevent), which contains the data of the reducer that updated the row.
 
 ```cs
 using SpacetimeDB;
@@ -576,7 +527,7 @@ User.OnUpdate += (User oldUser, User newUser, ReducerEvent reducerEvent) => {
 
 "Reducer" is SpacetimeDB's name for the stored procedures that run in modules inside the database. You can invoke reducers from a connected client SDK, and also receive information about which reducers are running.
 
-`spacetime generate` generates a class [`SpacetimeDB.Types.Reducer`](#class-reducer) that contains methods and events for each reducer defined in a module. To invoke a reducer, use the method [`Reducer.{REDUCER}`](#static-method-reducerreducer) generated for it. To receive a callback each time a reducer is invoked, use the static event [`Reducer.On{REDUCER}`](#static-event-reduceronreducer).
+`spacetime generate` generates a class [`SpacetimeDB.Types.Reducer`](#observe-and-invoke-reducers-class-reducer) that contains methods and events for each reducer defined in a module. To invoke a reducer, use the method [`Reducer.{REDUCER}`](#observe-and-invoke-reducers-class-reducer-static-method-reducer-reducer) generated for it. To receive a callback each time a reducer is invoked, use the static event [`Reducer.On{REDUCER}`](#observe-and-invoke-reducers-class-reducer-static-event-reducer-on-reducer).
 
 ### Class `Reducer`
 
@@ -647,7 +598,7 @@ public static event /*{REDUCER}*/Handler On/*{REDUCER}*/Event;
 
 For each reducer defined by a module, `spacetime generate` generates an event to run each time the reducer is invoked. The generated functions are named `on{REDUCER}Event`, where `{REDUCER}` is the reducer's name converted to `PascalCase`.
 
-The first argument to the event handler is an instance of [`SpacetimeDB.Types.ReducerEvent`](#class-reducerevent) describing the invocation -- its timestamp, arguments, and whether it succeeded or failed. The remaining arguments are the arguments passed to the reducer. Reducers cannot have return values, so no return value information is included.
+The first argument to the event handler is an instance of [`SpacetimeDB.Types.ReducerEvent`](#observe-and-invoke-reducers-class-reducerevent) describing the invocation -- its timestamp, arguments, and whether it succeeded or failed. The remaining arguments are the arguments passed to the reducer. Reducers cannot have return values, so no return value information is included.
 
 For example, if we define a reducer in Rust as follows:
 
@@ -885,15 +836,15 @@ namespace SpacetimeDB
 }
 ```
 
-An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#class-identity).
+An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#identity-management-class-identity).
 
 ## Customizing logging
 
 The SpacetimeDB C# SDK performs internal logging.
 
-A default logger is set up automatically for you - a [`ConsoleLogger`](#class-consolelogger) for C# projects and [`UnityDebugLogger`](#class-unitydebuglogger) for Unity projects.
+A default logger is set up automatically for you - a [`ConsoleLogger`](#customizing-logging-class-consolelogger) for C# projects and [`UnityDebugLogger`](#customizing-logging-class-unitydebuglogger) for Unity projects.
 
-If you want to redirect SDK logs elsewhere, you can inherit from the [`ISpacetimeDBLogger`](#interface-ispacetimedblogger) and assign an instance of your class to the `SpacetimeDB.Logger.Current` static property.
+If you want to redirect SDK logs elsewhere, you can inherit from the [`ISpacetimeDBLogger`](#customizing-logging-interface-ispacetimedblogger) and assign an instance of your class to the `SpacetimeDB.Logger.Current` static property.
 
 ### Interface `ISpacetimeDBLogger`
 

@@ -3,9 +3,9 @@ title: Module ABI Reference
 navTitle: Module ABI
 ---
 
-This document specifies the _low level details_ of module-host interactions (_"Module ABI"_). _**Most users**_ looking to interact with the host will want to use derived and higher level functionality like [`bindings`], `#[spacetimedb(table)]`, and `#[derive(SpacetimeType)]` rather than this low level ABI. For more on those, read the [Rust module quick start][module_quick_start] guide and the [Rust module reference][module_ref].
+This document specifies the _low level details_ of module-host interactions (_"Module ABI"_). _**Most users**_ looking to interact with the host will want to use derived and higher level functionality like [`bindings`](https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/bindings/src/lib.rs), `#[spacetimedb(table)]`, and `#[derive(SpacetimeType)]` rather than this low level ABI. For more on those, read the [Rust module quick start](/docs/module/rust-quickstart) guide and the [Rust module reference](/docs/module/rust-reference).
 
-The Module ABI is defined in [`bindings_sys::raw`] and is used by modules to interact with their host and perform various operations like:
+The Module ABI is defined in [`bindings_sys::raw`](https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/bindings-sys/src/lib.rs#L44-L215) and is used by modules to interact with their host and perform various operations like:
 
 - logging,
 - transporting data,
@@ -18,7 +18,7 @@ In the next few sections, we'll define the functions that make up the ABI and wh
 
 ## General notes
 
-The functions in this ABI all use the [`C` ABI on the `wasm32` platform][wasm_c_abi]. They are specified in a Rust `extern "C" { .. }` block. For those more familiar with the `C` notation, an [appendix][c_header] is provided with equivalent definitions as would occur in a `.h` file.
+The functions in this ABI all use the [`C` ABI on the `wasm32` platform](https://github.com/WebAssembly/tool-conventions/blob/main/BasicCABI.md). They are specified in a Rust `extern "C" { .. }` block. For those more familiar with the `C` notation, an [appendix](#appendix-bindings-h) is provided with equivalent definitions as would occur in a `.h` file.
 
 Many functions in the ABI take in- or out-pointers, e.g. `*const u8` and `*mut u8`. The WASM host itself does not have undefined behavior. However, what WASM does not consider a memory access violation could be one according to some other language's abstract machine. For example, running the following on a WASM host would violate Rust's rules around writing across allocations:
 
@@ -493,10 +493,3 @@ uint16_t _iter_start_filtered(
     BufferIter *out
 );
 ```
-
-[`bindings_sys::raw`]: https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/bindings-sys/src/lib.rs#L44-L215
-[`bindings`]: https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/bindings/src/lib.rs
-[module_ref]: /docs/languages/rust/rust-module-reference
-[module_quick_start]: /docs/languages/rust/rust-module-quick-start
-[wasm_c_abi]: https://github.com/WebAssembly/tool-conventions/blob/main/BasicCABI.md
-[c_header]: #appendix-bindingsh

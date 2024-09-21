@@ -9,7 +9,7 @@ We'll implement a basic single page web app for the module created in our Rust o
 
 ## Project structure
 
-Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/modules/rust/quickstart) or [C# Module Quickstart](/docs/modules/c-sharp/quickstart) guides:
+Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/module/rust-quickstart) or [C# Module Quickstart](/docs/module/c-sharp-quickstart) guides:
 
 ```bash
 cd quickstart-chat

@@ -7,8 +7,8 @@ Need help with the tutorial? [Join our Discord server](https://discord.gg/spacet
 
 This progressive tutorial is continued from one of the Part 2 tutorials:
 
-- [Rust Server Module](/docs/unity/part-2a-rust)
-- [C# Server Module](/docs/unity/part-2b-c-sharp)
+- [Rust Server Module](/docs/unity-tutorial/part-2a-rust)
+- [C# Server Module](/docs/unity-tutorial/part-2b-c-sharp)
 
 ## Updating our Unity Project Client to use SpacetimeDB
 
@@ -467,7 +467,7 @@ Now when you run the game you should be able to send chat messages to other play
 
 This concludes the SpacetimeDB basic multiplayer tutorial, where we learned how to create a multiplayer game. In the next Unity tutorial, we will add resource nodes to the game and learn about _scheduled_ reducers:
 
-From here, the tutorial continues with more-advanced topics: The [next tutorial](/docs/unity/part-4) introduces Resources & Scheduling.
+From here, the tutorial continues with more-advanced topics: The [next tutorial](/docs/unity-advanced/part-4) introduces Resources & Scheduling.
 
 ---
 

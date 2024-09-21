@@ -3,19 +3,19 @@ title: SATN JSON Format
 navTitle: SATN
 ---
 
-The Spacetime Algebraic Type Notation JSON format defines how Spacetime `AlgebraicType`s and `AlgebraicValue`s are encoded as JSON. Algebraic types and values are JSON-encoded for transport via the [HTTP Databases API](/docs/http/database) and the [WebSocket text protocol](/docs/ws#text-protocol).
+The Spacetime Algebraic Type Notation JSON format defines how Spacetime `AlgebraicType`s and `AlgebraicValue`s are encoded as JSON. Algebraic types and values are JSON-encoded for transport via the [HTTP Databases API](/docs/http/database) and the [WebSocket text protocol](/docs/ws/overview#protocols-text-protocol).
 
 ## Values
 
 ### At a glance
 
-| Type             | Description                                                      |
-| ---------------- | ---------------------------------------------------------------- |
-| `AlgebraicValue` | A value whose type may be any [`AlgebraicType`](#algebraictype). |
-| `SumValue`       | A value whose type is a [`SumType`](#sumtype).                   |
-| `ProductValue`   | A value whose type is a [`ProductType`](#producttype).           |
-| `BuiltinValue`   | A value whose type is a [`BuiltinType`](#builtintype).           |
-|                  |                                                                  |
+| Type             | Description                                                            |
+| ---------------- | ---------------------------------------------------------------------- |
+| `AlgebraicValue` | A value whose type may be any [`AlgebraicType`](#types-algebraictype). |
+| `SumValue`       | A value whose type is a [`SumType`](#types-sumtype).                   |
+| `ProductValue`   | A value whose type is a [`ProductType`](#types-producttype).           |
+| `BuiltinValue`   | A value whose type is a [`BuiltinType`](#types-builtintype).           |
+|                  |                                                                        |
 
 ### `AlgebraicValue`
 
@@ -25,9 +25,9 @@ SumValue | ProductValue | BuiltinValue
 
 ### `SumValue`
 
-An instance of a [`SumType`](#sumtype). `SumValue`s are encoded as a JSON object with a single key, a non-negative integer tag which identifies the variant. The value associated with this key is the variant data. Variants which hold no data will have an empty array as their value.
+An instance of a [`SumType`](#types-sumtype). `SumValue`s are encoded as a JSON object with a single key, a non-negative integer tag which identifies the variant. The value associated with this key is the variant data. Variants which hold no data will have an empty array as their value.
 
-The tag is an index into the [`SumType.variants`](#sumtype) array of the value's [`SumType`](#sumtype).
+The tag is an index into the [`SumType.variants`](#types-sumtype) array of the value's [`SumType`](#types-sumtype).
 
 ```json
 {
@@ -37,7 +37,7 @@ The tag is an index into the [`SumType.variants`](#sumtype) array of the value's
 
 ### `ProductValue`
 
-An instance of a [`ProductType`](#producttype). `ProductValue`s are encoded as JSON arrays. Each element of the `ProductValue` array is of the type of the corresponding index in the [`ProductType.elements`](#productype) array of the value's [`ProductType`](#producttype).
+An instance of a [`ProductType`](#types-producttype). `ProductValue`s are encoded as JSON arrays. Each element of the `ProductValue` array is of the type of the corresponding index in the [`ProductType.elements`](#types-producttype) array of the value's [`ProductType`](#types-producttype).
 
 ```json
 array<AlgebraicValue>
@@ -45,20 +45,20 @@ array<AlgebraicValue>
 
 ### `BuiltinValue`
 
-An instance of a [`BuiltinType`](#builtintype). `BuiltinValue`s are encoded as JSON values of corresponding types.
+An instance of a [`BuiltinType`](#types-builtintype). `BuiltinValue`s are encoded as JSON values of corresponding types.
 
 ```json
 boolean | number | string | array<AlgebraicValue> | map<AlgebraicValue, AlgebraicValue>
 ```
 
-| [`BuiltinType`](#builtintype) | JSON type                             |
-| ----------------------------- | ------------------------------------- |
-| `Bool`                        | `boolean`                             |
-| Integer types                 | `number`                              |
-| Float types                   | `number`                              |
-| `String`                      | `string`                              |
-| Array types                   | `array<AlgebraicValue>`               |
-| Map types                     | `map<AlgebraicValue, AlgebraicValue>` |
+| [`BuiltinType`](#types-builtintype) | JSON type                             |
+| ----------------------------------- | ------------------------------------- |
+| `Bool`                              | `boolean`                             |
+| Integer types                       | `number`                              |
+| Float types                         | `number`                              |
+| `String`                            | `string`                              |
+| Array types                         | `array<AlgebraicValue>`               |
+| Map types                           | `map<AlgebraicValue, AlgebraicValue>` |
 
 All SATS integer types are encoded as JSON `number`s, so values of 64-bit and 128-bit integer types may lose precision when encoding values larger than 2⁵².
 
@@ -68,17 +68,17 @@ All SATS types are JSON-encoded by converting them to an `AlgebraicValue`, then 
 
 ### At a glance
 
-| Type                                    | Description                                                                          |
-| --------------------------------------- | ------------------------------------------------------------------------------------ |
-| [`AlgebraicType`](#algebraictype)       | Any SATS type.                                                                       |
-| [`SumType`](#sumtype)                   | Sum types, i.e. tagged unions.                                                       |
-| [`ProductType`](#productype)            | Product types, i.e. structures.                                                      |
-| [`BuiltinType`](#builtintype)           | Built-in and primitive types, including booleans, numbers, strings, arrays and maps. |
-| [`AlgebraicTypeRef`](#algebraictyperef) | An indirect reference to a type, used to implement recursive types.                  |
+| Type                                          | Description                                                                          |
+| --------------------------------------------- | ------------------------------------------------------------------------------------ |
+| [`AlgebraicType`](#types-algebraictype)       | Any SATS type.                                                                       |
+| [`SumType`](#types-sumtype)                   | Sum types, i.e. tagged unions.                                                       |
+| [`ProductType`](#types-producttype)           | Product types, i.e. structures.                                                      |
+| [`BuiltinType`](#types-builtintype)           | Built-in and primitive types, including booleans, numbers, strings, arrays and maps. |
+| [`AlgebraicTypeRef`](#types-algebraictyperef) | An indirect reference to a type, used to implement recursive types.                  |
 
-#### `AlgebraicType`
+### `AlgebraicType`
 
-`AlgebraicType` is the most general meta-type in the Spacetime Algebraic Type System. Any SATS type can be represented as an `AlgebraicType`. `AlgebraicType` is encoded as a tagged union, with variants for [`SumType`](#sumtype), [`ProductType`](#producttype), [`BuiltinType`](#builtintype) and [`AlgebraicTypeRef`](#algebraictyperef).
+`AlgebraicType` is the most general meta-type in the Spacetime Algebraic Type System. Any SATS type can be represented as an `AlgebraicType`. `AlgebraicType` is encoded as a tagged union, with variants for [`SumType`](#types-sumtype), [`ProductType`](#types-producttype), [`BuiltinType`](#types-builtintype) and [`AlgebraicTypeRef`](#types-algebraictyperef).
 
 ```json
 { "Sum": SumType }
@@ -87,13 +87,13 @@ All SATS types are JSON-encoded by converting them to an `AlgebraicValue`, then 
 | { "Ref": AlgebraicTypeRef }
 ```
 
-#### `SumType`
+### `SumType`
 
 The meta-type `SumType` represents sum types, also called tagged unions or Rust `enum`s. A sum type has some number of variants, each of which has an `AlgebraicType` of variant data, and an optional string discriminant. For each instance, exactly one variant will be active. The instance will contain only that variant's data.
 
 A `SumType` with zero variants is called an empty type or never type because it is impossible to construct an instance.
 
-Instances of `SumType`s are [`SumValue`s](#sumvalue), and store a tag which identifies the active variant.
+Instances of `SumType`s are [`SumValue`s](#values-sumvalue), and store a tag which identifies the active variant.
 
 ```json
 // SumType:
@@ -114,7 +114,7 @@ The meta-type `ProductType` represents product types, also called structs or tup
 
 A `ProductType` with zero fields is called a unit type because it has a single instance, the unit, which is empty.
 
-Instances of `ProductType`s are [`ProductValue`s](#productvalue), and store an array of field data.
+Instances of `ProductType`s are [`ProductValue`s](#values-productvalue), and store an array of field data.
 
 ```json
 // ProductType:
@@ -163,4 +163,4 @@ SATS array and map types are homogeneous, meaning that each array has a single e
 
 ### `AlgebraicTypeRef`
 
-`AlgebraicTypeRef`s are JSON-encoded as non-negative integers. These are indices into a typespace, like the one returned by the [`/database/schema/:name_or_address GET` HTTP endpoint](/docs/http/database#databaseschemaname_or_address-get).
+`AlgebraicTypeRef`s are JSON-encoded as non-negative integers. These are indices into a typespace, like the one returned by the [`/database/schema/:name_or_address GET` HTTP endpoint](/docs/http/database#database-schema-name-or-address-get).

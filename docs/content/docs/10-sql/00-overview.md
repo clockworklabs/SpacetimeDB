@@ -2,7 +2,7 @@
 title: SQL Reference
 ---
 
-SpacetimeDB supports a subset of SQL as a query language. Developers can evaluate SQL queries against a Spacetime database via the `spacetime sql` command-line tool and the [`/database/sql/:name_or_address POST` HTTP endpoint](/docs/http/database#databasesqlname_or_address-post). Client developers also write SQL queries when subscribing to events in the [WebSocket API](/docs/ws#subscribe) or via an SDK `subscribe` function.
+SpacetimeDB supports a subset of SQL as a query language. Developers can evaluate SQL queries against a Spacetime database via the `spacetime sql` command-line tool and the [`/database/sql/:name_or_address POST` HTTP endpoint](/docs/http/database#database-sql-name-or-address-post). Client developers also write SQL queries when subscribing to events in the [WebSocket API](/docs/ws/overview#messages-client-to-server-subscribe) or via an SDK `subscribe` function.
 
 SpacetimeDB aims to support much of the [SQL 2016 standard](https://www.iso.org/standard/63555.html), and in particular aims to be compatible with [PostgreSQL](https://www.postgresql.org/).
 
@@ -10,31 +10,31 @@ SpacetimeDB 0.6 implements a relatively small subset of SQL. Future SpacetimeDB 
 
 ## Types
 
-| Type                                          | Description                            |
-| --------------------------------------------- | -------------------------------------- |
-| [Nullable types](#nullable-types)             | Types which may not hold a value.      |
-| [Logic types](#logic-types)                   | Booleans, i.e. `true` and `false`.     |
-| [Integer types](#integer-types)               | Numbers without fractional components. |
-| [Floating-point types](#floating-point-types) | Numbers with fractional components.    |
-| [Text types](#text-types)                     | UTF-8 encoded text.                    |
+| Type                                                                   | Description                            |
+| ---------------------------------------------------------------------- | -------------------------------------- |
+| [Nullable types](#data-types-nullable-types)                           | Types which may not hold a value.      |
+| [Logic types](#data-types-logic-types)                                 | Booleans, i.e. `true` and `false`.     |
+| [Integer types](#data-types-numeric-types-integer-types)               | Numbers without fractional components. |
+| [Floating-point types](#data-types-numeric-types-floating-point-types) | Numbers with fractional components.    |
+| [Text types](#data-types-text-types)                                   | UTF-8 encoded text.                    |
 
 ### Definition statements
 
-| Statement                     | Description                          |
-| ----------------------------- | ------------------------------------ |
-| [CREATE TABLE](#create-table) | Create a new table.                  |
-| [DROP TABLE](#drop-table)     | Remove a table, discarding all rows. |
+| Statement                            | Description                          |
+| ------------------------------------ | ------------------------------------ |
+| [CREATE TABLE](#syntax-create-table) | Create a new table.                  |
+| [DROP TABLE](#syntax-drop-table)     | Remove a table, discarding all rows. |
 
 ### Query statements
 
-| Statement         | Description                                                                                  |
-| ----------------- | -------------------------------------------------------------------------------------------- |
-| [FROM](#from)     | A source of data, like a table or a value.                                                   |
-| [JOIN](#join)     | Combine several data sources.                                                                |
-| [SELECT](#select) | Select specific rows and columns from a data source, and optionally compute a derived value. |
-| [DELETE](#delete) | Delete specific rows from a table.                                                           |
-| [INSERT](#insert) | Insert rows into a table.                                                                    |
-| [UPDATE](#update) | Update specific rows in a table.                                                             |
+| Statement                 | Description                                                                                  |
+| ------------------------- | -------------------------------------------------------------------------------------------- |
+| [FROM](#queries-from)     | A source of data, like a table or a value.                                                   |
+| [JOIN](#queries-join)     | Combine several data sources.                                                                |
+| [SELECT](#queries-select) | Select specific rows and columns from a data source, and optionally compute a derived value. |
+| [DELETE](#queries-delete) | Delete specific rows from a table.                                                           |
+| [INSERT](#queries-insert) | Insert rows into a table.                                                                    |
+| [UPDATE](#queries-update) | Update specific rows in a table.                                                             |
 
 ## Data types
 
@@ -209,7 +209,7 @@ CREATE TABLE location (entity_id INTEGER, x REAL, z REAL);
 
 A `DROP TABLE` statement removes a table from the database, deleting all its associated rows, indexes, constraints and sequences.
 
-To empty a table of rows without destroying the table, use [`DELETE`](#delete).
+To empty a table of rows without destroying the table, use [`DELETE`](#queries-delete).
 
 The syntax of the `DROP TABLE` statement is:
 
@@ -302,7 +302,7 @@ SELECT inventory_id FROM inventory;
 SELECT inventory.inventory_id FROM inventory;
 ```
 
-An optional `WHERE` clause can be added to filter the data source using a [logical expression](#logical-expressions). The `SELECT` will return only the rows from the data source for which the expression returns `true`.
+An optional `WHERE` clause can be added to filter the data source using a [logical expression](#syntax-expressions-logical-expressions). The `SELECT` will return only the rows from the data source for which the expression returns `true`.
 
 #### Examples
 

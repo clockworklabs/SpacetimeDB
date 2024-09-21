@@ -5,7 +5,7 @@ navTitle: 2a - Server (Rust)
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
-This progressive tutorial is continued from the [Part 1 Tutorial](/docs/unity/part-1)
+This progressive tutorial is continued from the [Part 1 Tutorial](/docs/unity-tutorial/part-1)
 
 ## Create a Server Module
 
@@ -32,7 +32,7 @@ use spacetimedb::{spacetimedb, Identity, SpacetimeType, ReducerContext};
 use log;
 ```
 
-Then we are going to start by adding the global `Config` table. Right now it only contains the "message of the day" but it can be extended to store other configuration variables. This also uses a couple of macros, like `#[spacetimedb(table)]` which you can learn more about in our [Rust module reference](/docs/modules/rust) (including making your tables `private`!). Simply put, this just tells SpacetimeDB to create a table which uses this struct as the schema for the table.
+Then we are going to start by adding the global `Config` table. Right now it only contains the "message of the day" but it can be extended to store other configuration variables. This also uses a couple of macros, like `#[spacetimedb(table)]` which you can learn more about in our [Rust module reference](/docs/module/rust-reference) (including making your tables `private`!). Simply put, this just tells SpacetimeDB to create a table which uses this struct as the schema for the table.
 
 **Append to the bottom of lib.rs:**
 
@@ -314,4 +314,4 @@ Now that we added chat support, let's publish the latest module version to Space
 spacetime publish -c unity-tutorial
 ```
 
-From here, the [next tutorial](/docs/unity/part-3) continues with a Client (Unity) focus.
+From here, the [next tutorial](/docs/unity-tutorial/part-3) continues with a Client (Unity) focus.

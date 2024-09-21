@@ -94,13 +94,13 @@ console.log(Person, AddReducer, SayHelloReducer);
 
 ### Classes
 
-| Class                                           | Description                                                                  |
-| ----------------------------------------------- | ---------------------------------------------------------------------------- |
-| [`SpacetimeDBClient`](#class-spacetimedbclient) | The database client connection to a SpacetimeDB server.                      |
-| [`Identity`](#class-identity)                   | The user's public identity.                                                  |
-| [`Address`](#class-address)                     | An opaque identifier for differentiating connections by the same `Identity`. |
-| [`{Table}`](#class-table)                       | `{Table}` is a placeholder for each of the generated tables.                 |
-| [`{Reducer}`](#class-reducer)                   | `{Reducer}` is a placeholder for each of the generated reducers.             |
+| Class                                                           | Description                                                                  |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| [`SpacetimeDBClient`](#api-at-a-glance-class-spacetimedbclient) | The database client connection to a SpacetimeDB server.                      |
+| [`Identity`](#events-class-identity)                            | The user's public identity.                                                  |
+| [`Address`](#methods-class-address)                             | An opaque identifier for differentiating connections by the same `Identity`. |
+| [`{Table}`](#methods-class-table)                               | `{Table}` is a placeholder for each of the generated tables.                 |
+| [`{Reducer}`](#methods-class-reducer)                           | `{Reducer}` is a placeholder for each of the generated reducers.             |
 
 ### Class `SpacetimeDBClient`
 
@@ -108,20 +108,20 @@ The database client connection to a SpacetimeDB server.
 
 Defined in [spacetimedb-sdk.spacetimedb](https://github.com/clockworklabs/spacetimedb-typescript-sdk/blob/main/src/spacetimedb.ts):
 
-| Constructors                                                      | Description                                                              |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [`SpacetimeDBClient.constructor`](#spacetimedbclient-constructor) | Creates a new `SpacetimeDBClient` database client.                       |
-| Properties                                                        |
-| [`SpacetimeDBClient.identity`](#spacetimedbclient-identity)       | The user's public identity.                                              |
-| [`SpacetimeDBClient.live`](#spacetimedbclient-live)               | Whether the client is connected.                                         |
-| [`SpacetimeDBClient.token`](#spacetimedbclient-token)             | The user's private authentication token.                                 |
-| Methods                                                           |                                                                          |
-| [`SpacetimeDBClient.connect`](#spacetimedbclient-connect)         | Connect to a SpacetimeDB module.                                         |
-| [`SpacetimeDBClient.disconnect`](#spacetimedbclient-disconnect)   | Close the current connection.                                            |
-| [`SpacetimeDBClient.subscribe`](#spacetimedbclient-subscribe)     | Subscribe to a set of queries.                                           |
-| Events                                                            |                                                                          |
-| [`SpacetimeDBClient.onConnect`](#spacetimedbclient-onconnect)     | Register a callback to be invoked upon authentication with the database. |
-| [`SpacetimeDBClient.onError`](#spacetimedbclient-onerror)         | Register a callback to be invoked upon a error.                          |
+| Constructors                                                                   | Description                                                              |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| [`SpacetimeDBClient.constructor`](#constructors-spacetimedbclient-constructor) | Creates a new `SpacetimeDBClient` database client.                       |
+| Properties                                                                     |
+| [`SpacetimeDBClient.identity`](#properties-spacetimedbclient-identity)         | The user's public identity.                                              |
+| [`SpacetimeDBClient.live`](#properties-spacetimedbclient-live)                 | Whether the client is connected.                                         |
+| [`SpacetimeDBClient.token`](#properties-spacetimedbclient-token)               | The user's private authentication token.                                 |
+| Methods                                                                        |                                                                          |
+| [`SpacetimeDBClient.connect`](#properties-spacetimedbclient-connect)           | Connect to a SpacetimeDB module.                                         |
+| [`SpacetimeDBClient.disconnect`](#properties-spacetimedbclient-disconnect)     | Close the current connection.                                            |
+| [`SpacetimeDBClient.subscribe`](#properties-spacetimedbclient-subscribe)       | Subscribe to a set of queries.                                           |
+| Events                                                                         |                                                                          |
+| [`SpacetimeDBClient.onConnect`](#events-spacetimedbclient-onconnect)           | Register a callback to be invoked upon authentication with the database. |
+| [`SpacetimeDBClient.onError`](#events-spacetimedbclient-onerror)               | Register a callback to be invoked upon a error.                          |
 
 ## Constructors
 
@@ -214,7 +214,7 @@ SpacetimeDBClient.registerTables(User, Player);
 
 ### `SpacetimeDBClient` identity
 
-The user's public [Identity](#class-identity).
+The user's public [Identity](#events-class-identity).
 
 ```
 identity: Identity | undefined
@@ -259,11 +259,11 @@ connect(host: string?, name_or_address: string?, auth_token: string?): Promise<v
 
 #### Parameters
 
-| Name               | Type     | Description                                                                                                                                 |
-| :----------------- | :------- | :------------------------------------------------------------------------------------------------------------------------------------------ |
-| `host?`            | `string` | The hostname of the SpacetimeDB server. Defaults to the value passed to the [constructor](#spacetimedbclient-constructor).                  |
-| `name_or_address?` | `string` | The name or address of the SpacetimeDB module. Defaults to the value passed to the [constructor](#spacetimedbclient-constructor).           |
-| `auth_token?`      | `string` | The credentials to use to authenticate with SpacetimeDB. Defaults to the value passed to the [constructor](#spacetimedbclient-constructor). |
+| Name               | Type     | Description                                                                                                                                              |
+| :----------------- | :------- | :------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host?`            | `string` | The hostname of the SpacetimeDB server. Defaults to the value passed to the [constructor](#constructors-spacetimedbclient-constructor).                  |
+| `name_or_address?` | `string` | The name or address of the SpacetimeDB module. Defaults to the value passed to the [constructor](#constructors-spacetimedbclient-constructor).           |
+| `auth_token?`      | `string` | The credentials to use to authenticate with SpacetimeDB. Defaults to the value passed to the [constructor](#constructors-spacetimedbclient-constructor). |
 
 #### Returns
 
@@ -316,7 +316,7 @@ Subscribe to a set of queries, to be notified when rows which match those querie
 
 > A new call to `subscribe` will remove all previous subscriptions and replace them with the new `queries`.
 > If any rows matched the previous subscribed queries but do not match the new queries,
-> those rows will be removed from the client cache, and [`{Table}.on_delete`](#table-ondelete) callbacks will be invoked for them.
+> those rows will be removed from the client cache, and [`{Table}.on_delete`](#methods-table-ondelete) callbacks will be invoked for them.
 
 ```ts
 subscribe(queryOrQueries: string | string[]): void
@@ -344,15 +344,15 @@ Register a callback to be invoked upon authentication with the database.
 onConnect(callback: (token: string, identity: Identity) => void): void
 ```
 
-The callback will be invoked with the public user [Identity](#class-identity), private authentication token and connection [`Address`](#class-address) provided by the database. If credentials were supplied to [connect](#spacetimedbclient-connect), those passed to the callback will be equivalent to the ones used to connect. If the initial connection was anonymous, a new set of credentials will be generated by the database to identify this user.
+The callback will be invoked with the public user [Identity](#events-class-identity), private authentication token and connection [`Address`](#methods-class-address) provided by the database. If credentials were supplied to [connect](#properties-spacetimedbclient-connect), those passed to the callback will be equivalent to the ones used to connect. If the initial connection was anonymous, a new set of credentials will be generated by the database to identify this user.
 
 The credentials passed to the callback can be saved and used to authenticate the same user in future connections.
 
 #### Parameters
 
-| Name       | Type                                                                                                             |
-| :--------- | :--------------------------------------------------------------------------------------------------------------- |
-| `callback` | (`token`: `string`, `identity`: [`Identity`](#class-identity), `address`: [`Address`](#class-address)) => `void` |
+| Name       | Type                                                                                                                            |
+| :--------- | :------------------------------------------------------------------------------------------------------------------------------ |
+| `callback` | (`token`: `string`, `identity`: [`Identity`](#events-class-identity), `address`: [`Address`](#methods-class-address)) => `void` |
 
 #### Example
 
@@ -395,14 +395,14 @@ A unique public identifier for a user of a database.
 
 Defined in [spacetimedb-sdk.identity](https://github.com/clockworklabs/spacetimedb-typescript-sdk/blob/main/src/identity.ts):
 
-| Constructors                                    | Description                                  |
-| ----------------------------------------------- | -------------------------------------------- |
-| [`Identity.constructor`](#identity-constructor) | Creates a new `Identity`.                    |
-| Methods                                         |                                              |
-| [`Identity.isEqual`](#identity-isequal)         | Compare two identities for equality.         |
-| [`Identity.toHexString`](#identity-tohexstring) | Print the identity as a hexadecimal string.  |
-| Static methods                                  |                                              |
-| [`Identity.fromString`](#identity-fromstring)   | Parse an Identity from a hexadecimal string. |
+| Constructors                                                 | Description                                  |
+| ------------------------------------------------------------ | -------------------------------------------- |
+| [`Identity.constructor`](#constructors-identity-constructor) | Creates a new `Identity`.                    |
+| Methods                                                      |                                              |
+| [`Identity.isEqual`](#methods-identity-isequal)              | Compare two identities for equality.         |
+| [`Identity.toHexString`](#methods-identity-tohexstring)      | Print the identity as a hexadecimal string.  |
+| Static methods                                               |                                              |
+| [`Identity.fromString`](#methods-identity-fromstring)        | Parse an Identity from a hexadecimal string. |
 
 ## Constructors
 
@@ -430,9 +430,9 @@ isEqual(other: Identity): boolean
 
 #### Parameters
 
-| Name    | Type                          |
-| :------ | :---------------------------- |
-| `other` | [`Identity`](#class-identity) |
+| Name    | Type                                 |
+| :------ | :----------------------------------- |
+| `other` | [`Identity`](#events-class-identity) |
 
 #### Returns
 
@@ -470,22 +470,22 @@ Identity.fromString(str: string): Identity
 
 #### Returns
 
-[`Identity`](#class-identity)
+[`Identity`](#events-class-identity)
 
 ### Class `Address`
 
-An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#type-identity).
+An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#events-class-identity).
 
 Defined in [spacetimedb-sdk.address](https://github.com/clockworklabs/spacetimedb-typescript-sdk/blob/main/src/address.ts):
 
-| Constructors                                  | Description                                 |
-| --------------------------------------------- | ------------------------------------------- |
-| [`Address.constructor`](#address-constructor) | Creates a new `Address`.                    |
-| Methods                                       |                                             |
-| [`Address.isEqual`](#address-isequal)         | Compare two identities for equality.        |
-| [`Address.toHexString`](#address-tohexstring) | Print the address as a hexadecimal string.  |
-| Static methods                                |                                             |
-| [`Address.fromString`](#address-fromstring)   | Parse an Address from a hexadecimal string. |
+| Constructors                                               | Description                                 |
+| ---------------------------------------------------------- | ------------------------------------------- |
+| [`Address.constructor`](#constructors-address-constructor) | Creates a new `Address`.                    |
+| Methods                                                    |                                             |
+| [`Address.isEqual`](#methods-address-isequal)              | Compare two identities for equality.        |
+| [`Address.toHexString`](#methods-address-tohexstring)      | Print the address as a hexadecimal string.  |
+| Static methods                                             |                                             |
+| [`Address.fromString`](#methods-address-fromstring)        | Parse an Address from a hexadecimal string. |
 
 ## Constructors
 
@@ -513,9 +513,9 @@ isEqual(other: Address): boolean
 
 #### Parameters
 
-| Name    | Type                        |
-| :------ | :-------------------------- |
-| `other` | [`Address`](#class-address) |
+| Name    | Type                                |
+| :------ | :---------------------------------- |
+| `other` | [`Address`](#methods-class-address) |
 
 #### Returns
 
@@ -553,7 +553,7 @@ Address.fromString(str: string): Address
 
 #### Returns
 
-[`Address`](#class-address)
+[`Address`](#methods-class-address)
 
 ### Class `{Table}`
 
@@ -561,22 +561,21 @@ For each table defined by a module, `spacetime generate` generates a `class` in 
 
 The generated class has a field for each of the table's columns, whose names are the column names converted to `snake_case`.
 
-| Properties                                        | Description                                                                                                                             |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| [`Table.name`](#table-name)                       | The name of the class.                                                                                                                  |
-| [`Table.tableName`](#table-tableName)             | The name of the table in the database.                                                                                                  |
-| Methods                                           |                                                                                                                                         |
-| [`Table.isEqual`](#table-isequal)                 | Method to compare two identities.                                                                                                       |
-| [`Table.all`](#table-all)                         | Return all the subscribed rows in the table.                                                                                            |
-| [`Table.filterBy{COLUMN}`](#table-filterbycolumn) | Autogenerated; return subscribed rows with a given value in a particular column. `{COLUMN}` is a placeholder for a column name.         |
-| [`Table.findBy{COLUMN}`](#table-findbycolumn)     | Autogenerated; return a subscribed row with a given value in a particular unique column. `{COLUMN}` is a placeholder for a column name. |
-| Events                                            |                                                                                                                                         |
-| [`Table.onInsert`](#table-oninsert)               | Register an `onInsert` callback for when a subscribed row is newly inserted into the database.                                          |
-| [`Table.removeOnInsert`](#table-removeoninsert)   | Unregister a previously-registered [`onInsert`](#table-oninsert) callback.                                                              |
-| [`Table.onUpdate`](#table-onupdate)               | Register an `onUpdate` callback for when an existing row is modified.                                                                   |
-| [`Table.removeOnUpdate`](#table-removeonupdate)   | Unregister a previously-registered [`onUpdate`](#table-onupdate) callback.                                                              |
-| [`Table.onDelete`](#table-ondelete)               | Register an `onDelete` callback for when a subscribed row is removed from the database.                                                 |
-| [`Table.removeOnDelete`](#table-removeondelete)   | Unregister a previously-registered [`onDelete`](#table-removeondelete) callback.                                                        |
+| Properties                                                 | Description                                                                                                                             |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| [`Table.name`](#properties-table-name)                     | The name of the class.                                                                                                                  |
+| [`Table.tableName`](#properties-table-tablename)           | The name of the table in the database.                                                                                                  |
+| Methods                                                    |                                                                                                                                         |
+| [`Table.all`](#methods-table-all)                          | Return all the subscribed rows in the table.                                                                                            |
+| [`Table.filterBy{COLUMN}`](#methods-table-filterby-column) | Autogenerated; return subscribed rows with a given value in a particular column. `{COLUMN}` is a placeholder for a column name.         |
+| [`Table.findBy{COLUMN}`](#methods-table-findby-column)     | Autogenerated; return a subscribed row with a given value in a particular unique column. `{COLUMN}` is a placeholder for a column name. |
+| Events                                                     |                                                                                                                                         |
+| [`Table.onInsert`](#methods-table-oninsert)                | Register an `onInsert` callback for when a subscribed row is newly inserted into the database.                                          |
+| [`Table.removeOnInsert`](#methods-table-removeoninsert)    | Unregister a previously-registered [`onInsert`](#methods-table-oninsert) callback.                                                      |
+| [`Table.onUpdate`](#methods-table-onupdate)                | Register an `onUpdate` callback for when an existing row is modified.                                                                   |
+| [`Table.removeOnUpdate`](#methods-table-removeonupdate)    | Unregister a previously-registered [`onUpdate`](#methods-table-onupdate) callback.                                                      |
+| [`Table.onDelete`](#methods-table-ondelete)                | Register an `onDelete` callback for when a subscribed row is removed from the database.                                                 |
+| [`Table.removeOnDelete`](#methods-table-removeondelete)    | Unregister a previously-registered [`onDelete`](#methods-table-removeondelete) callback.                                                |
 
 ## Properties
 
@@ -810,7 +809,7 @@ Person.onInsert((person, reducerEvent) => {
 
 ### {Table} removeOnInsert
 
-Unregister a previously-registered [`onInsert`](#table-oninsert) callback.
+Unregister a previously-registered [`onInsert`](#methods-table-oninsert) callback.
 
 ```ts
 {Table}.removeOnInsert(callback: (value: Person, reducerEvent: ReducerEvent | undefined) => void): void
@@ -860,7 +859,7 @@ Person.onUpdate((oldPerson, newPerson, reducerEvent) => {
 
 ### {Table} removeOnUpdate
 
-Unregister a previously-registered [`onUpdate`](#table-onUpdate) callback.
+Unregister a previously-registered [`onUpdate`](#methods-table-onupdate) callback.
 
 ```ts
 {Table}.removeOnUpdate(callback: (oldValue: {Table}, newValue: {Table}, reducerEvent: ReducerEvent | undefined) => void): void
@@ -915,7 +914,7 @@ Person.onDelete((person, reducerEvent) => {
 
 ### {Table} removeOnDelete
 
-Unregister a previously-registered [`onDelete`](#table-onDelete) callback.
+Unregister a previously-registered [`onDelete`](#methods-table-ondelete) callback.
 
 ```ts
 {Table}.removeOnDelete(callback: (value: {Table}, reducerEvent: ReducerEvent | undefined) => void): void
@@ -933,11 +932,11 @@ Unregister a previously-registered [`onDelete`](#table-onDelete) callback.
 
 The class's name will be the reducer's name converted to `PascalCase`.
 
-| Static methods                  | Description                                                  |
-| ------------------------------- | ------------------------------------------------------------ |
-| [`Reducer.call`](#reducer-call) | Executes the reducer.                                        |
-| Events                          |                                                              |
-| [`Reducer.on`](#reducer-on)     | Register a callback to run each time the reducer is invoked. |
+| Static methods                                 | Description                                                  |
+| ---------------------------------------------- | ------------------------------------------------------------ |
+| [`Reducer.call`](#static-methods-reducer-call) | Executes the reducer.                                        |
+| Events                                         |                                                              |
+| [`Reducer.on`](#events-reducer-on)             | Register a callback to run each time the reducer is invoked. |
 
 ## Static methods
 

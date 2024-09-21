@@ -7,10 +7,10 @@ The HTTP endpoints in `/energy` allow clients to query identities' energy balanc
 
 ## At a glance
 
-| Route                                            | Description                                               |
-| ------------------------------------------------ | --------------------------------------------------------- |
-| [`/energy/:identity GET`](#energyidentity-get)   | Get the remaining energy balance for the user `identity`. |
-| [`/energy/:identity POST`](#energyidentity-post) | Set the energy balance for the user `identity`.           |
+| Route                                             | Description                                               |
+| ------------------------------------------------- | --------------------------------------------------------- |
+| [`/energy/:identity GET`](#energy-identity-get)   | Get the remaining energy balance for the user `identity`. |
+| [`/energy/:identity POST`](#energy-identity-post) | Set the energy balance for the user `identity`.           |
 
 ## `/energy/:identity GET`
 
@@ -60,9 +60,9 @@ Accessible through the CLI as `spacetime energy set-balance <balance> <identity>
 
 ### Required Headers
 
-| Name            | Value                                                           |
-| --------------- | --------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
+| Name            | Value                                                                    |
+| --------------- | ------------------------------------------------------------------------ |
+| `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http/overview). |
 
 ### Returns
 

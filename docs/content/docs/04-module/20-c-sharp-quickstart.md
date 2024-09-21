@@ -315,6 +315,6 @@ spacetime sql <module-name> "SELECT * FROM Message"
 
 ## What's next?
 
-You've just set up your first database in SpacetimeDB! The next step would be to create a client module that interacts with this module. You can use any of SpacetimDB's supported client languages to do this. Take a look at the quick start guide for your client language of choice: [Rust](/docs/languages/rust/rust-sdk-quickstart-guide), [C#](/docs/languages/csharp/csharp-sdk-quickstart-guide), or [TypeScript](/docs/languages/typescript/typescript-sdk-quickstart-guide).
+You've just set up your first database in SpacetimeDB! The next step would be to create a client module that interacts with this module. You can use any of SpacetimDB's supported client languages to do this. Take a look at the quick start guide for your client language of choice: [Rust](/docs/sdk/rust-quickstart), [C#](/docs/sdk/c-sharp-quickstart), or [TypeScript](/docs/sdk/typescript-quickstart).
 
-If you are planning to use SpacetimeDB with the Unity game engine, you can skip right to the [Unity Comprehensive Tutorial](/docs/unity/part-1) or check out our example game, [BitcraftMini](/docs/unity/part-3).
+If you are planning to use SpacetimeDB with the Unity game engine, you can skip right to the [Unity Comprehensive Tutorial](/docs/unity-tutorial/part-1) or check out our example game, [BitcraftMini](/docs/unity-advanced/part-5).

@@ -3,43 +3,43 @@ title: WebSocket API
 navTitle: WebSocket
 ---
 
-As an extension of the [HTTP API](/doc/http-api-reference), SpacetimeDB offers a WebSocket API. Clients can subscribe to a database via a WebSocket connection to receive streaming updates as the database changes, and send requests to invoke reducers. Messages received from the server over a WebSocket will follow the same total ordering of transactions as are committed to the database.
+As an extension of the [HTTP API](/docs/http/overview), SpacetimeDB offers a WebSocket API. Clients can subscribe to a database via a WebSocket connection to receive streaming updates as the database changes, and send requests to invoke reducers. Messages received from the server over a WebSocket will follow the same total ordering of transactions as are committed to the database.
 
 The SpacetimeDB SDKs comminicate with their corresponding database using the WebSocket API.
 
 ## Connecting
 
-To initiate a WebSocket connection, send a `GET` request to the [`/database/subscribe/:name_or_address` endpoint](/docs/http/database#databasesubscribename_or_address-get) with headers appropriate to upgrade to a WebSocket connection as per [RFC 6455](https://datatracker.ietf.org/doc/html/rfc6455).
+To initiate a WebSocket connection, send a `GET` request to the [`/database/subscribe/:name_or_address` endpoint](/docs/http/database#database-subscribe-name-or-address-get) with headers appropriate to upgrade to a WebSocket connection as per [RFC 6455](https://datatracker.ietf.org/doc/html/rfc6455).
 
-To re-connect with an existing identity, include its token in a [SpacetimeDB Authorization header](/docs/http). Otherwise, a new identity and token will be generated for the client.
+To re-connect with an existing identity, include its token in a [SpacetimeDB Authorization header](/docs/http/overview#encoding-authorization-headers). Otherwise, a new identity and token will be generated for the client.
 
 ## Protocols
 
-Clients connecting via WebSocket can choose between two protocols, [`v1.bin.spacetimedb`](#binary-protocol) and [`v1.text.spacetimedb`](#text-protocol). Clients should include one of these protocols in the `Sec-WebSocket-Protocol` header of their request.
+Clients connecting via WebSocket can choose between two protocols, [`v1.bin.spacetimedb`](#protocols-binary-protocol) and [`v1.text.spacetimedb`](#protocols-text-protocol). Clients should include one of these protocols in the `Sec-WebSocket-Protocol` header of their request.
 
-| `Sec-WebSocket-Protocol` header value | Selected protocol          |
-| ------------------------------------- | -------------------------- |
-| `v1.bin.spacetimedb`                  | [Binary](#binary-protocol) |
-| `v1.text.spacetimedb`                 | [Text](#text-protocol)     |
+| `Sec-WebSocket-Protocol` header value | Selected protocol                    |
+| ------------------------------------- | ------------------------------------ |
+| `v1.bin.spacetimedb`                  | [Binary](#protocols-binary-protocol) |
+| `v1.text.spacetimedb`                 | [Text](#protocols-text-protocol)     |
 
 ### Binary Protocol
 
-The SpacetimeDB binary WebSocket protocol, `v1.bin.spacetimedb`, encodes messages using [ProtoBuf 3](https://protobuf.dev), and reducer and row data using [BSATN](/docs/bsatn).
+The SpacetimeDB binary WebSocket protocol, `v1.bin.spacetimedb`, encodes messages using [ProtoBuf 3](https://protobuf.dev), and reducer and row data using [BSATN](/docs/data-format/bsatn).
 
 The binary protocol's messages are defined in [`client_api.proto`](https://github.com/clockworklabs/SpacetimeDB/blob/master/crates/client-api-messages/protobuf/client_api.proto).
 
 ### Text Protocol
 
-The SpacetimeDB text WebSocket protocol, `v1.text.spacetimedb`, encodes messages, reducer and row data as JSON. Reducer arguments and table rows are JSON-encoded according to the [SATN JSON format](/docs/satn).
+The SpacetimeDB text WebSocket protocol, `v1.text.spacetimedb`, encodes messages, reducer and row data as JSON. Reducer arguments and table rows are JSON-encoded according to the [SATN JSON format](/docs/data-format/satn).
 
 ## Messages
 
 ### Client to server
 
-| Message                         | Description                                                                 |
-| ------------------------------- | --------------------------------------------------------------------------- |
-| [`FunctionCall`](#functioncall) | Invoke a reducer.                                                           |
-| [`Subscribe`](#subscribe)       | Register queries to receive streaming updates for a subset of the database. |
+| Message                                                   | Description                                                                 |
+| --------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [`FunctionCall`](#messages-client-to-server-functioncall) | Invoke a reducer.                                                           |
+| [`Subscribe`](#messages-client-to-server-subscribe)       | Register queries to receive streaming updates for a subset of the database. |
 
 #### `FunctionCall`
 
@@ -79,13 +79,13 @@ message FunctionCall {
 
 Clients send a `Subscribe` message to register SQL queries in order to receive streaming updates.
 
-The client will only receive [`TransactionUpdate`s](#transactionupdate) for rows to which it is subscribed, and for reducer runs which alter at least one subscribed row. As a special exception, the client is always notified when a reducer run it requests via a [`FunctionCall` message](#functioncall) fails.
+The client will only receive [`TransactionUpdate`s](#messages-server-to-client-transactionupdate) for rows to which it is subscribed, and for reducer runs which alter at least one subscribed row. As a special exception, the client is always notified when a reducer run it requests via a [`FunctionCall` message](#messages-client-to-server-functioncall) fails.
 
-SpacetimeDB responds to each `Subscribe` message with a [`SubscriptionUpdate` message](#subscriptionupdate) containing all matching rows at the time the subscription is applied.
+SpacetimeDB responds to each `Subscribe` message with a [`SubscriptionUpdate` message](#messages-server-to-client-subscriptionupdate) containing all matching rows at the time the subscription is applied.
 
-Each `Subscribe` message establishes a new set of subscriptions, replacing all previous subscriptions. Clients which want to add a query to an existing subscription must send a `Subscribe` message containing all the previous queries in addition to the new query. In this case, the returned [`SubscriptionUpdate`](#subscriptionupdate) will contain all previously-subscribed rows in addition to the newly-subscribed rows.
+Each `Subscribe` message establishes a new set of subscriptions, replacing all previous subscriptions. Clients which want to add a query to an existing subscription must send a `Subscribe` message containing all the previous queries in addition to the new query. In this case, the returned [`SubscriptionUpdate`](#messages-server-to-client-subscriptionupdate) will contain all previously-subscribed rows in addition to the newly-subscribed rows.
 
-Each query must be a SQL `SELECT * FROM` statement on a single table with an optional `WHERE` clause. See the [SQL Reference](/docs/sql) for the subset of SQL supported by SpacetimeDB.
+Each query must be a SQL `SELECT * FROM` statement on a single table with an optional `WHERE` clause. See the [SQL Reference](/docs/sql/overview) for the subset of SQL supported by SpacetimeDB.
 
 ##### Binary: ProtoBuf definition
 
@@ -115,15 +115,15 @@ message Subscribe {
 
 ### Server to client
 
-| Message                                     | Description                                                                |
-| ------------------------------------------- | -------------------------------------------------------------------------- |
-| [`IdentityToken`](#identitytoken)           | Sent once upon successful connection with the client's identity and token. |
-| [`SubscriptionUpdate`](#subscriptionupdate) | Initial message in response to a [`Subscribe` message](#subscribe).        |
-| [`TransactionUpdate`](#transactionupdate)   | Streaming update after a reducer runs containing altered rows.             |
+| Message                                                               | Description                                                                                   |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [`IdentityToken`](#messages-server-to-client-identitytoken)           | Sent once upon successful connection with the client's identity and token.                    |
+| [`SubscriptionUpdate`](#messages-server-to-client-subscriptionupdate) | Initial message in response to a [`Subscribe` message](#messages-client-to-server-subscribe). |
+| [`TransactionUpdate`](#messages-server-to-client-transactionupdate)   | Streaming update after a reducer runs containing altered rows.                                |
 
 #### `IdentityToken`
 
-Upon establishing a WebSocket connection, the server will send an `IdentityToken` message containing the client's identity and token. If the client included a [SpacetimeDB Authorization header](/docs/http) in their connection request, the `IdentityToken` message will contain the same token used to connect, and its corresponding identity. If the client connected anonymously, SpacetimeDB will generate a new identity and token for the client.
+Upon establishing a WebSocket connection, the server will send an `IdentityToken` message containing the client's identity and token. If the client included a [SpacetimeDB Authorization header](/docs/http/overview) in their connection request, the `IdentityToken` message will contain the same token used to connect, and its corresponding identity. If the client connected anonymously, SpacetimeDB will generate a new identity and token for the client.
 
 ##### Binary: ProtoBuf definition
 
@@ -157,7 +157,7 @@ message IdentityToken {
 
 #### `SubscriptionUpdate`
 
-In response to a [`Subscribe` message](#subscribe), the database sends a `SubscriptionUpdate` containing all of the matching rows which are resident in the database at the time the `Subscribe` was received.
+In response to a [`Subscribe` message](#messages-client-to-server-subscribe), the database sends a `SubscriptionUpdate` containing all of the matching rows which are resident in the database at the time the `Subscribe` was received.
 
 ##### Binary: ProtoBuf definition
 
@@ -182,7 +182,7 @@ message TableRowOperation {
 }
 ```
 
-Each `SubscriptionUpdate` contains a `TableUpdate` for each table with subscribed rows. Each `TableUpdate` contains a `TableRowOperation` for each subscribed row. `SubscriptionUpdate`, `TableUpdate` and `TableRowOperation` are also used by the [`TransactionUpdate` message](#transactionupdate) to encode rows altered by a reducer, so `TableRowOperation` includes an `OperationType` which identifies the row alteration as either an insert or a delete. When a client receives a `SubscriptionUpdate` message in response to a [`Subscribe` message](#subscribe), all of the `TableRowOperation`s will have `op` of `INSERT`.
+Each `SubscriptionUpdate` contains a `TableUpdate` for each table with subscribed rows. Each `TableUpdate` contains a `TableRowOperation` for each subscribed row. `SubscriptionUpdate`, `TableUpdate` and `TableRowOperation` are also used by the [`TransactionUpdate` message](#messages-server-to-client-transactionupdate) to encode rows altered by a reducer, so `TableRowOperation` includes an `OperationType` which identifies the row alteration as either an insert or a delete. When a client receives a `SubscriptionUpdate` message in response to a [`Subscribe` message](#messages-client-to-server-subscribe), all of the `TableRowOperation`s will have `op` of `INSERT`.
 
 | `TableUpdate` field  | Value                                                                                                         |
 | -------------------- | ------------------------------------------------------------------------------------------------------------- |
@@ -190,10 +190,10 @@ Each `SubscriptionUpdate` contains a `TableUpdate` for each table with subscribe
 | `tableName`          | The string name of the table. Clients should use this field to identify the table, rather than the `tableId`. |
 | `tableRowOperations` | A `TableRowOperation` for each inserted or deleted row.                                                       |
 
-| `TableRowOperation` field | Value                                                                                                                                                                                                      |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `op`                      | `INSERT` for inserted rows during a [`TransactionUpdate`](#transactionupdate) or rows resident upon applying a subscription; `DELETE` for deleted rows during a [`TransactionUpdate`](#transactionupdate). |
-| `row`                     | The altered row, encoded as a BSATN `ProductValue`.                                                                                                                                                        |
+| `TableRowOperation` field | Value                                                                                                                                                                                                                                                          |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `op`                      | `INSERT` for inserted rows during a [`TransactionUpdate`](#messages-server-to-client-transactionupdate) or rows resident upon applying a subscription; `DELETE` for deleted rows during a [`TransactionUpdate`](#messages-server-to-client-transactionupdate). |
+| `row`                     | The altered row, encoded as a BSATN `ProductValue`.                                                                                                                                                                                                            |
 
 ##### Text: JSON encoding
 
@@ -219,7 +219,7 @@ Each `SubscriptionUpdate` contains a `TableUpdate` for each table with subscribe
 }
 ```
 
-Each `SubscriptionUpdate` contains a `TableUpdate` for each table with subscribed rows. Each `TableUpdate` contains a `TableRowOperation` for each subscribed row. `SubscriptionUpdate`, `TableUpdate` and `TableRowOperation` are also used by the [`TransactionUpdate` message](#transactionupdate) to encode rows altered by a reducer, so `TableRowOperation` includes an `"op"` field which identifies the row alteration as either an insert or a delete. When a client receives a `SubscriptionUpdate` message in response to a [`Subscribe` message](#subscribe), all of the `TableRowOperation`s will have `"op"` of `"insert"`.
+Each `SubscriptionUpdate` contains a `TableUpdate` for each table with subscribed rows. Each `TableUpdate` contains a `TableRowOperation` for each subscribed row. `SubscriptionUpdate`, `TableUpdate` and `TableRowOperation` are also used by the [`TransactionUpdate` message](#messages-server-to-client-transactionupdate) to encode rows altered by a reducer, so `TableRowOperation` includes an `"op"` field which identifies the row alteration as either an insert or a delete. When a client receives a `SubscriptionUpdate` message in response to a [`Subscribe` message](#messages-client-to-server-subscribe), all of the `TableRowOperation`s will have `"op"` of `"insert"`.
 
 | `TableUpdate` field    | Value                                                                                                          |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
@@ -227,10 +227,10 @@ Each `SubscriptionUpdate` contains a `TableUpdate` for each table with subscribe
 | `table_name`           | The string name of the table. Clients should use this field to identify the table, rather than the `table_id`. |
 | `table_row_operations` | A `TableRowOperation` for each inserted or deleted row.                                                        |
 
-| `TableRowOperation` field | Value                                                                                                                                                                                                          |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `op`                      | `"insert"` for inserted rows during a [`TransactionUpdate`](#transactionupdate) or rows resident upon applying a subscription; `"delete"` for deleted rows during a [`TransactionUpdate`](#transactionupdate). |
-| `row`                     | The altered row, encoded as a JSON array.                                                                                                                                                                      |
+| `TableRowOperation` field | Value                                                                                                                                                                                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `op`                      | `"insert"` for inserted rows during a [`TransactionUpdate`](#messages-server-to-client-transactionupdate) or rows resident upon applying a subscription; `"delete"` for deleted rows during a [`TransactionUpdate`](#messages-server-to-client-transactionupdate). |
+| `row`                     | The altered row, encoded as a JSON array.                                                                                                                                                                                                                          |
 
 #### `TransactionUpdate`
 
@@ -239,7 +239,7 @@ Upon a reducer run, a client will receive a `TransactionUpdate` containing infor
 1. The reducer ran successfully and altered at least one row to which the client subscribes.
 2. The reducer was invoked by the client, and either failed or was terminated due to insufficient energy.
 
-Each `TransactionUpdate` contains a [`SubscriptionUpdate`](#subscriptionupdate) with all rows altered by the reducer, including inserts and deletes; and an `Event` with information about the reducer itself, including a [`FunctionCall`](#functioncall) containing the reducer's name and arguments.
+Each `TransactionUpdate` contains a [`SubscriptionUpdate`](#messages-server-to-client-subscriptionupdate) with all rows altered by the reducer, including inserts and deletes; and an `Event` with information about the reducer itself, including a [`FunctionCall`](#messages-client-to-server-functioncall) containing the reducer's name and arguments.
 
 ##### Binary: ProtoBuf definition
 
@@ -265,16 +265,16 @@ message Event {
 }
 ```
 
-| Field                | Value                                                                                                                       |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `event`              | An `Event` containing information about the reducer run.                                                                    |
-| `subscriptionUpdate` | A [`SubscriptionUpdate`](#subscriptionupdate) containing all the row insertions and deletions committed by the transaction. |
+| Field                | Value                                                                                                                                                 |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `event`              | An `Event` containing information about the reducer run.                                                                                              |
+| `subscriptionUpdate` | A [`SubscriptionUpdate`](#messages-server-to-client-subscriptionupdate) containing all the row insertions and deletions committed by the transaction. |
 
 | `Event` field                    | Value                                                                                                                                                                                                          |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `timestamp`                      | The time when the reducer started, as microseconds since the Unix epoch.                                                                                                                                       |
 | `callerIdentity`                 | The identity of the client which requested the reducer invocation. For event-driven and scheduled reducers, this is the identity of the database owner.                                                        |
-| `functionCall`                   | A [`FunctionCall`](#functioncall) containing the name of the reducer and the arguments passed to it.                                                                                                           |
+| `functionCall`                   | A [`FunctionCall`](#messages-client-to-server-functioncall) containing the name of the reducer and the arguments passed to it.                                                                                 |
 | `status`                         | `committed` if the reducer ran successfully and its changes were committed to the database; `failed` if the reducer signaled an error; `out_of_energy` if the reducer was canceled due to insufficient energy. |
 | `message`                        | The error message with which the reducer failed if `status` is `failed`, or the empty string otherwise.                                                                                                        |
 | `energy_quanta_used`             | The amount of energy consumed by running the reducer.                                                                                                                                                          |
@@ -305,10 +305,10 @@ message Event {
 }
 ```
 
-| Field                 | Value                                                                                                                       |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `event`               | An `Event` containing information about the reducer run.                                                                    |
-| `subscription_update` | A [`SubscriptionUpdate`](#subscriptionupdate) containing all the row insertions and deletions committed by the transaction. |
+| Field                 | Value                                                                                                                                                 |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `event`               | An `Event` containing information about the reducer run.                                                                                              |
+| `subscription_update` | A [`SubscriptionUpdate`](#messages-server-to-client-subscriptionupdate) containing all the row insertions and deletions committed by the transaction. |
 
 | `Event` field           | Value                                                                                                                                                                                                          |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

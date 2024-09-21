@@ -5,11 +5,11 @@ navTitle: C# Quickstart
 
 In this guide we'll show you how to get up and running with a simple SpacetimeDB app with a client written in C#.
 
-We'll implement a command-line client for the module created in our [Rust](../../modules/rust/quickstart) or [C# Module](../../modules/c-sharp/quickstart) Quickstart guides. Ensure you followed one of these guides before continuing.
+We'll implement a command-line client for the module created in our [Rust](/docs/module/rust-quickstart) or [C# Module](/docs/module/c-sharp-quickstart) Quickstart guides. Ensure you followed one of these guides before continuing.
 
 ## Project structure
 
-Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/modules/rust/quickstart) or [C# Module Quickstart](/docs/modules/c-sharp/quickstart) guides:
+Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/module/rust-quickstart) or [C# Module Quickstart](/docs/module/c-sharp-quickstart) guides:
 
 ```bash
 cd quickstart-chat

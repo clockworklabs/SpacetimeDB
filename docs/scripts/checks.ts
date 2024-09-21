@@ -9,7 +9,11 @@ import {
 } from 'marked';
 import { readdir, readFile } from 'node:fs/promises';
 
-const CHECK_EXTERNAL_LINKS = true;
+//////////////////////////////////////////////// !FLAGS ////////////////////////////////////////////////
+// If you want to disable any of these, set them to false
+const CHECK_EXTERNAL_LINKS = false;
+const PRINT_ERRORS = true;
+///////////////////////////////////////////////////////////////////////////////////////////////////
 
 const data = await gatherData();
 
@@ -42,35 +46,38 @@ const totalErrors = Array.from(errors.values()).reduce(
   0
 );
 
-if (errors.size !== 0) {
-  console.log(kleur.red().bold(`${totalErrors} ERRORS`));
-  for (const [slug, slugErrors] of errors) {
-    console.log(kleur.dim().bold(slug.padStart(40, '-').padEnd(60, '-')));
-    for (const error of slugErrors) {
-      console.log(
-        kleur
-          .yellow()
-          .bold(
-            `  ${new URL(`../content/docs/${error.file}`, import.meta.url).pathname}:${error.line}`
-          )
-      );
-      console.log(kleur.red().bold(`    ${error.message}`));
-      if (error.suggestion) {
+if (PRINT_ERRORS)
+  if (errors.size !== 0) {
+    console.log(kleur.red().bold(`${totalErrors} ERRORS`));
+    for (const [slug, slugErrors] of errors) {
+      console.log(kleur.dim().bold(slug.padStart(40, '-').padEnd(60, '-')));
+      for (const error of slugErrors) {
         console.log(
-          kleur.green().bold(`    Did you mean: ${error.suggestion}`)
+          kleur
+            .yellow()
+            .bold(
+              `  ${new URL(`../content/docs/${error.file}`, import.meta.url).pathname}:${error.line}`
+            )
         );
+        console.log(kleur.red().bold(`    ${error.message}`));
+        if (error.suggestion) {
+          console.log(
+            kleur.green().bold(`    Did you mean: ${error.suggestion}`)
+          );
+        }
+        console.log();
       }
-      console.log();
     }
-  }
-  console.log(kleur.red().bold(`${totalErrors} ERRORS`));
+    console.log(kleur.red().bold(`${totalErrors} ERRORS`));
 
-  throw new Error('');
-} else {
-  console.log(
-    kleur.green().bold('✅✅✅✅✅✅✅✅✅ No errors found! ✅✅✅✅✅✅✅✅✅')
-  );
-}
+    throw new Error('');
+  } else {
+    console.log(
+      kleur
+        .green()
+        .bold('✅✅✅✅✅✅✅✅✅ No errors found! ✅✅✅✅✅✅✅✅✅')
+    );
+  }
 
 async function gatherData() {
   const dirs = await readdir(new URL('../content/docs', import.meta.url));
@@ -273,12 +280,17 @@ async function checkLinks() {
           } else if (href.startsWith('/docs')) {
             //  Should start with /docs. Then compare, including any hash it might have. Examples: /docs/data-format/bsatn or /docs/introduction/getting-started#some-heading
             const link = href.slice(1);
-            const slug = link.slice(5);
-            const hashIfThere = slug.includes('#')
-              ? slug.slice(slug.indexOf('#'))
+            const slug = link.slice(5).split('#')[0];
+            const hashIfThere = link.includes('#')
+              ? link.slice(link.indexOf('#') + 1)
               : null;
 
-            if (!headingsOnPages.has(slug)) {
+            if (
+              !headingsOnPages.has(slug) ||
+              (headingsOnPages.has(slug) &&
+                hashIfThere &&
+                !headingsOnPages.get(slug)!.has(hashIfThere))
+            ) {
               const results = await search(db, {
                 term:
                   slug.split(/[^a-zA-Z0-9]+/).join(' ') +

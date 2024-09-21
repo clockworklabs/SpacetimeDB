@@ -27,12 +27,12 @@ To do this, we use inductive definitions, and define the following notation:
 
 ### At a glance
 
-| Type             | Description                                                      |
-| ---------------- | ---------------------------------------------------------------- |
-| `AlgebraicValue` | A value whose type may be any [`AlgebraicType`](#algebraictype). |
-| `SumValue`       | A value whose type is a [`SumType`](#sumtype).                   |
-| `ProductValue`   | A value whose type is a [`ProductType`](#producttype).           |
-| `BuiltinValue`   | A value whose type is a [`BuiltinType`](#builtintype).           |
+| Type             | Description                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------- |
+| `AlgebraicValue` | A value whose type may be any [`AlgebraicType`](/docs/data-format/satn#types-algebraictype). |
+| `SumValue`       | A value whose type is a [`SumType`](/docs/data-format/satn#types-sumtype).                   |
+| `ProductValue`   | A value whose type is a [`ProductType`](/docs/data-format/satn#types-producttype).           |
+| `BuiltinValue`   | A value whose type is a [`BuiltinType`](/docs/data-format/satn#types-builtintype).           |
 
 ### `AlgebraicValue`
 
@@ -44,17 +44,17 @@ bsatn(AlgebraicValue) = bsatn(SumValue) | bsatn(ProductValue) | bsatn(BuiltinVal
 
 ### `SumValue`
 
-An instance of a [`SumType`](#sumtype).
+An instance of a [`SumType`](/docs/data-format/satn#types-sumtype).
 `SumValue`s are binary-encoded as `bsatn(tag) ++ bsatn(variant_data)`
-where `tag: u8` is an index into the [`SumType.variants`](#sumtype)
-array of the value's [`SumType`](#sumtype),
+where `tag: u8` is an index into the [`SumType.variants`](/docs/data-format/satn#types-sumtype)
+array of the value's [`SumType`](/docs/data-format/satn#types-sumtype),
 and where `variant_data` is the data of the variant.
 For variants holding no data, i.e., of some zero sized type,
 `bsatn(variant_data) = []`.
 
 ### `ProductValue`
 
-An instance of a [`ProductType`](#producttype).
+An instance of a [`ProductType`](/docs/data-format/satn#types-producttype).
 `ProductValue`s are binary encoded as:
 
 ```fsharp
@@ -65,7 +65,7 @@ Field names are not encoded.
 
 ### `BuiltinValue`
 
-An instance of a [`BuiltinType`](#builtintype).
+An instance of a [`BuiltinType`](/docs/data-format/satn#types-builtintype).
 The BSATN encoding of `BuiltinValue`s defers to the encoding of each variant:
 
 ```fsharp
@@ -113,6 +113,6 @@ Where
 All SATS types are BSATN-encoded by converting them to an `AlgebraicValue`,
 then BSATN-encoding that meta-value.
 
-See [the SATN JSON Format](/docs/satn-reference-json-format)
+See [the SATN JSON Format](/docs/data-format/satn)
 for more details of the conversion to meta values.
 Note that these meta values are converted to BSATN and _not JSON_.

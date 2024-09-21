@@ -7,14 +7,14 @@ The HTTP endpoints in `/identity` allow clients to generate and manage Spacetime
 
 ## At a glance
 
-| Route                                                                   | Description                                                        |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| [`/identity GET`](#identity-get)                                        | Look up an identity by email.                                      |
-| [`/identity POST`](#identity-post)                                      | Generate a new identity and token.                                 |
-| [`/identity/websocket_token POST`](#identitywebsocket_token-post)       | Generate a short-lived access token for use in untrusted contexts. |
-| [`/identity/:identity/set-email POST`](#identityidentityset-email-post) | Set the email for an identity.                                     |
-| [`/identity/:identity/databases GET`](#identityidentitydatabases-get)   | List databases owned by an identity.                               |
-| [`/identity/:identity/verify GET`](#identityidentityverify-get)         | Verify an identity and token.                                      |
+| Route                                                                     | Description                                                        |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| [`/identity GET`](#identity-get)                                          | Look up an identity by email.                                      |
+| [`/identity POST`](#identity-post)                                        | Generate a new identity and token.                                 |
+| [`/identity/websocket_token POST`](#identity-websocket-token-post)        | Generate a short-lived access token for use in untrusted contexts. |
+| [`/identity/:identity/set-email POST`](#identity-identity-set-email-post) | Set the email for an identity.                                     |
+| [`/identity/:identity/databases GET`](#identity-identity-databases-get)   | List databases owned by an identity.                               |
+| [`/identity/:identity/verify GET`](#identity-identity-verify-get)         | Verify an identity and token.                                      |
 
 ## `/identity GET`
 
@@ -74,9 +74,9 @@ Generate a short-lived access token which can be used in untrusted contexts, e.g
 
 ### Required Headers
 
-| Name            | Value                                                           |
-| --------------- | --------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
+| Name            | Value                                                                    |
+| --------------- | ------------------------------------------------------------------------ |
+| `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http/overview). |
 
 ### Returns
 
@@ -110,9 +110,9 @@ Accessible through the CLI as `spacetime identity set-email <identity> <email>`.
 
 ### Required Headers
 
-| Name            | Value                                                           |
-| --------------- | --------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
+| Name            | Value                                                                    |
+| --------------- | ------------------------------------------------------------------------ |
+| `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http/overview). |
 
 ## `/identity/:identity/databases GET`
 
@@ -148,9 +148,9 @@ Verify the validity of an identity/token pair.
 
 ### Required Headers
 
-| Name            | Value                                                           |
-| --------------- | --------------------------------------------------------------- |
-| `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http). |
+| Name            | Value                                                                    |
+| --------------- | ------------------------------------------------------------------------ |
+| `Authorization` | A Spacetime token [encoded as Basic authorization](/docs/http/overview). |
 
 ### Returns
 
