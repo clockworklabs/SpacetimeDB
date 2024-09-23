@@ -89,18 +89,6 @@ impl DatabaseUpdate {
     }
 }
 
-/*
-impl ToProtocol for DatabaseUpdate {
-    type Encoded = ws::DatabaseUpdate;
-    fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
-        self.tables
-            .into_iter()
-            .map(|table| table.to_protocol(protocol))
-            .collect()
-    }
-}
-*/
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatabaseTableUpdate {
     pub table_id: TableId,
@@ -111,22 +99,6 @@ pub struct DatabaseTableUpdate {
     pub inserts: Arc<[ProductValue]>,
     pub deletes: Arc<[ProductValue]>,
 }
-
-/*
-impl ToProtocol for DatabaseTableUpdate {
-    type Encoded = TableUpdate;
-    fn to_protocol(self, protocol: Protocol) -> Self::Encoded {
-        let deletes = self.deletes.iter().map(|row| encode_row(row, protocol)).collect();
-        let inserts = self.inserts.iter().map(|row| encode_row(row, protocol)).collect();
-        TableUpdate {
-            table_id: self.table_id,
-            table_name: self.table_name.to_string(),
-            deletes,
-            inserts,
-        }
-    }
-}
-*/
 
 #[derive(Debug)]
 pub struct DatabaseUpdateRelValue<'a> {
