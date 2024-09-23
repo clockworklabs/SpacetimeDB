@@ -18,7 +18,7 @@ fn create_dir(path: &PathBuf) -> Result<(), ErrorPlatform> {
 }
 
 /// Returns an iterator over the entries within a directory.
-pub fn read_dir(path: &Path) -> impl Iterator<Item = Result<PathBuf, ErrorPlatform>> + '_ {
+fn read_dir(path: &Path) -> impl Iterator<Item = Result<PathBuf, ErrorPlatform>> + '_ {
     fs::read_dir(path)
         .map_err(|error| ErrorPlatform::IO {
             path: path.into(),
@@ -35,7 +35,7 @@ pub fn read_dir(path: &Path) -> impl Iterator<Item = Result<PathBuf, ErrorPlatfo
 }
 
 /// Filter the entries of a directory by a [glob::Pattern].
-pub fn glob_path<'a>(path: &'a Path, pattern: &'a str) -> impl Iterator<Item = Result<PathBuf, ErrorPlatform>> + 'a {
+fn glob_path<'a>(path: &'a Path, pattern: &'a str) -> impl Iterator<Item = Result<PathBuf, ErrorPlatform>> + 'a {
     let pattern = glob::Pattern::new(&format!("{}/{pattern}", path.display()))
         .map_err(|error| ErrorPlatform::Glob {
             path: path.into(),
@@ -206,6 +206,7 @@ pub struct Binaries {
 }
 
 impl Binaries {
+    /// Constructs a new `binaries` path with the given `path`.
     pub fn new(path: PathBuf, layout: Layout) -> Self {
         Self {
             layout,
@@ -220,13 +221,11 @@ impl Binaries {
     ///
     /// **NOTE:** It doesn't verify the layout.
     pub fn add(&mut self, version: Version) -> &mut Install {
-        let install = Install {
+        self.installed.versions.entry(version).or_insert_with(|| Install {
             layout: self.layout,
             path: self.path.join(version.to_string()),
             version,
-        };
-
-        self.installed.versions.entry(version).or_insert(install)
+        })
     }
 }
 
@@ -313,6 +312,7 @@ pub struct Replicas {
 }
 
 impl Replicas {
+    /// Constructs a new `replicas` path with the given `path`.
     pub fn new(path: PathBuf) -> Self {
         Self {
             path,
@@ -326,22 +326,22 @@ impl Replicas {
     ///
     /// **NOTE:** It doesn't verify the layout.
     pub fn add(&mut self, instance_id: u64) -> &mut Replica {
-        let path = self.path.join(instance_id.to_string());
-        let replica = Replica {
-            instance_id,
-            module_log: Logs {
-                path: path.join("logs"),
-            },
-            clog: CLog {
-                path: path.join("clog"),
-            },
-            snapshots: Snapshots {
-                path: path.join("snapshots"),
-            },
-            path,
-        };
-
-        self.replicas.entry(replica.instance_id).or_insert(replica)
+        self.replicas.entry(instance_id).or_insert_with(|| {
+            let path = self.path.join(instance_id.to_string());
+            Replica {
+                instance_id,
+                module_log: Logs {
+                    path: path.join("logs"),
+                },
+                clog: CLog {
+                    path: path.join("clog"),
+                },
+                snapshots: Snapshots {
+                    path: path.join("snapshots"),
+                },
+                path,
+            }
+        })
     }
 }
 
@@ -794,6 +794,7 @@ impl Fs for Data {
 #[derive(Debug, Clone)]
 pub struct SpacetimeFs {
     paths: SpacetimePaths,
+    layout: Layout,
 }
 
 impl SpacetimeFs {
@@ -822,6 +823,7 @@ impl SpacetimeFs {
         if let Some(root) = root {
             dirs = dirs.root(root);
         }
+        // IMPORTANT! data-dir overrides all the defaults, regardless of platform or whether --root-dir is specified.
         if let Some(data) = data {
             dirs = dirs.data(data);
         }
@@ -840,6 +842,7 @@ impl SpacetimeFs {
         let dirs = Self::resolve(options);
 
         let fs = Self {
+            layout: dirs.layout,
             paths: SpacetimePaths::new(edition, dirs, use_logs),
         };
         fs.verify_layout()?;
@@ -859,11 +862,42 @@ impl SpacetimeFs {
         let dirs = Self::resolve(options);
 
         let fs = Self {
+            layout: dirs.layout,
             paths: SpacetimePaths::new(edition, dirs, use_logs),
         };
         fs.create_layout()?;
 
         Ok(fs)
+    }
+
+    /// Returns if the platform supports symbolic links.
+    ///
+    /// It returns `true` for Unix-like platforms.
+    ///
+    /// **NOTE:** [Symbolic links](https://blogs.windows.com/windowsdeveloper/2016/12/02/symlinks-windows-10/)
+    /// are supported on Windows since Windows Vista, but require admin permissions or activating a special developer mode before Windows 10 build 14972.
+    pub fn support_symbolic_links(&self) -> bool {
+        self.layout.platform().nix_like()
+    }
+
+    /// Adds a new replica with the given `instance_id`, and creates the layout.
+    pub fn with_replica(mut self, instance_id: u64) -> Result<Self, ErrorPlatform> {
+        self.paths.data.replicas.add(instance_id);
+        self.paths.data.create_layout()?;
+        Ok(self)
+    }
+
+    /// Adds a new installation with the given [Version], and creates the layout.
+    pub fn with_install(mut self, version: Version) -> Result<Self, ErrorPlatform> {
+        self.paths.bin.add(version);
+        self.paths.bin.create_layout()?;
+        Ok(self)
+    }
+
+    /// Load the layout of the directories.
+    pub fn load(mut self) -> Result<Self, ErrorPlatform> {
+        self.load_layout()?;
+        Ok(self)
     }
 }
 
@@ -915,6 +949,7 @@ impl fmt::Debug for SpacetimePaths {
 mod tests {
     use super::*;
     use crate::platform::Platform;
+    use spacetimedb_lib::error::ResultTest;
     use std::path::PathBuf;
 
     const LAYOUT_STANDALONE: &str = r#"SpacetimePaths {
@@ -1142,40 +1177,41 @@ mod tests {
     }
 
     #[test]
-    fn fs_create() {
-        let tmp = tempfile::tempdir().unwrap();
+    fn fs_create() -> ResultTest<()> {
+        let tmp = tempfile::tempdir()?;
         let options = FsOptions::standalone(0, 1, 0).root(tmp.into_path());
         let version = Version::new(0, 1, 0);
 
-        let mut fs = SpacetimeFs::create(options.clone()).unwrap();
-        fs.paths.data.replicas.add(1);
-        fs.paths.bin.add(version);
-        fs.create_layout().unwrap();
+        let fs = SpacetimeFs::create(options.clone())?
+            .with_replica(1)?
+            .with_install(version)?;
 
         check_base_paths(&fs);
         check_data_paths(&fs, 1);
         check_version_paths(&fs, version);
 
-        let fs = SpacetimeFs::create(options.use_logs(true)).unwrap();
+        let fs = SpacetimeFs::create(options.use_logs(true))?;
         assert!(fs.paths.data.logs.unwrap().path.exists());
+
+        Ok(())
     }
 
     #[test]
-    fn fs_open() {
-        let tmp = tempfile::tempdir().unwrap();
+    fn fs_open() -> ResultTest<()> {
+        let tmp = tempfile::tempdir()?;
         let version = Version::new(0, 1, 0);
         let options = FsOptions::standalone(0, 1, 0).root(tmp.into_path()).use_logs(true);
 
-        let mut fs = SpacetimeFs::create(options.clone()).unwrap();
-        fs.paths.data.replicas.add(1);
-        fs.paths.bin.add(version);
-        fs.create_layout().unwrap();
+        let _fs = SpacetimeFs::create(options.clone())?
+            .with_replica(1)?
+            .with_install(version)?;
 
-        let mut fs = SpacetimeFs::open(options).unwrap();
-        fs.load_layout().unwrap();
+        let fs = SpacetimeFs::open(options)?.load()?;
 
         check_base_paths(&fs);
         check_data_paths(&fs, 1);
         check_version_paths(&fs, version);
+
+        Ok(())
     }
 }
