@@ -412,7 +412,13 @@ record ReducerDeclaration
         }
 
         Name = method.Name;
-        ExportName = attr.Name ?? Name;
+        ExportName = attr.Kind switch
+        {
+            ReducerKind.Init => "__init__",
+            ReducerKind.ClientConnected => "__identity_connected__",
+            ReducerKind.ClientDisconnected => "__identity_disconnected__",
+            _ => Name,
+        };
         FullName = SymbolToName(method);
         Args = new(
             method
@@ -480,6 +486,17 @@ record ReducerDeclaration
 [Generator]
 public class Module : IIncrementalGenerator
 {
+    private static IGrouping<TKey, TValue>? FindDuplicates<T, TKey, TValue>(
+        IEnumerable<T> source,
+        Func<T, TKey> keySelector,
+        Func<T, TValue> valueSelector
+    )
+    {
+        return source
+            .GroupBy(keySelector, valueSelector)
+            .FirstOrDefault(group => group.Count() > 1);
+    }
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var tables = context
@@ -511,6 +528,51 @@ public class Module : IIncrementalGenerator
             .Select((r, ct) => r.GenerateSchedule())
             .WithTrackingName("SpacetimeDB.Reducer.GenerateSchedule")
             .RegisterSourceOutputs(context);
+
+        // TODO: turn these checks into proper diagnostics when diagnostics PR lands.
+        context.RegisterSourceOutput(
+            reducers
+                .Select((r, ct) => (r.ExportName, r.FullName))
+                .Collect()
+                .WithTrackingName("Reducer.ConflictChecks"),
+            (context, reducers) =>
+            {
+                if (
+                    reducers.FirstOrDefault(r =>
+                        r.ExportName.Length >= 2 && r.ExportName[..2] is "__" or "on" or "On"
+                    ) is
+                    { } reducer
+                )
+                {
+                    throw new Exception($"Reducer {reducer.FullName} has a reserved name prefix.");
+                }
+
+                // TODO: in V9 this will become 2 separate checks, as the reducer kind and export name will be separate fields.
+                if (FindDuplicates(reducers, r => r.ExportName, r => r.FullName) is { } dupByExport)
+                {
+                    throw new Exception(
+                        $"Several reducers have the same export name {dupByExport.Key}: {string.Join(", ", dupByExport)}"
+                    );
+                }
+            }
+        );
+
+        // TODO: turn these checks into proper diagnostics when diagnostics PR lands.
+        context.RegisterSourceOutput(
+            tables
+                .Select((t, ct) => (t.ShortName, t.FullName))
+                .Collect()
+                .WithTrackingName("Table.ConflictChecks"),
+            (context, tables) =>
+            {
+                if (FindDuplicates(tables, t => t.ShortName, t => t.FullName) is { } dupByShortName)
+                {
+                    throw new Exception(
+                        $"Several tables have the same exported name: {string.Join(", ", dupByShortName)}"
+                    );
+                }
+            }
+        );
 
         var addReducers = reducers
             .Select((r, ct) => r.GenerateClass())
