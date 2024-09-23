@@ -276,7 +276,14 @@ mod tests {
         let result = result
             .tables
             .into_iter()
-            .flat_map(|update| <Vec<ProductValue>>::from(&update.updates))
+            .map(|u| u.updates)
+            .flat_map(|u| {
+                u.deletes
+                    .iter()
+                    .chain(&u.inserts)
+                    .map(|rv| rv.clone().into_product_value())
+                    .collect::<Vec<_>>()
+            })
             .sorted()
             .collect::<Vec<_>>();
 

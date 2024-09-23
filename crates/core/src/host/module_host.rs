@@ -124,35 +124,11 @@ impl UpdatesRelValue<'_> {
         !(self.deletes.is_empty() && self.inserts.is_empty())
     }
 
-    /// Returns a combined iterator over both deletes and inserts.
-    fn iter(&self) -> impl Iterator<Item = (OpType, &RelValue<'_>)> {
-        self.deletes
-            .iter()
-            .map(|row| (OpType::Delete, row))
-            .chain(self.inserts.iter().map(|row| (OpType::Insert, row)))
-    }
-
     pub fn encode<F: WebsocketFormat>(&self) -> QueryUpdate<F> {
         let deletes = F::encode_list(self.deletes.iter());
         let inserts = F::encode_list(self.inserts.iter());
         QueryUpdate { deletes, inserts }
     }
-}
-
-impl From<&UpdatesRelValue<'_>> for Vec<ProductValue> {
-    fn from(updates: &UpdatesRelValue<'_>) -> Self {
-        updates
-            .iter()
-            .map(|(_, row)| row.clone().into_product_value())
-            .collect()
-    }
-}
-
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OpType {
-    Delete = 0,
-    Insert = 1,
 }
 
 #[derive(Debug, Clone)]
