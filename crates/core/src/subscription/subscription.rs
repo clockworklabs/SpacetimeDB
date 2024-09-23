@@ -533,7 +533,7 @@ impl ExecutionSet {
     }
 
     #[tracing::instrument(skip_all)]
-    pub fn eval_incr<'a>(
+    pub fn eval_incr_for_test<'a>(
         &'a self,
         ctx: &'a ExecutionContext,
         db: &'a RelationalDB,

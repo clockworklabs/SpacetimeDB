@@ -139,7 +139,7 @@ fn eval(c: &mut Criterion) {
         let query = ExecutionSet::from_iter(query_lhs.into_iter().chain(query_rhs));
         let tx = &tx.into();
 
-        b.iter(|| drop(black_box(query.eval_incr(ctx_incr, &raw.db, tx, &update, None))))
+        b.iter(|| drop(black_box(query.eval_incr_for_test(ctx_incr, &raw.db, tx, &update, None))))
     });
 
     // To profile this benchmark for 30s
@@ -157,7 +157,7 @@ fn eval(c: &mut Criterion) {
         let query: ExecutionSet = query.into();
         let tx = &tx.into();
 
-        b.iter(|| drop(black_box(query.eval_incr(ctx_incr, &raw.db, tx, &update, None))));
+        b.iter(|| drop(black_box(query.eval_incr_for_test(ctx_incr, &raw.db, tx, &update, None))));
     });
 
     // To profile this benchmark for 30s

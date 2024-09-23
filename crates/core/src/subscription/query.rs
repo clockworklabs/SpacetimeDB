@@ -266,7 +266,7 @@ mod tests {
         let ctx = &ExecutionContext::incremental_update(db.address());
         let tx = &tx.into();
         let update = update.tables.iter().collect::<Vec<_>>();
-        let result = s.eval_incr(ctx, db, tx, &update, None);
+        let result = s.eval_incr_for_test(ctx, db, tx, &update, None);
         assert_eq!(
             result.tables.len(),
             total_tables,
@@ -371,7 +371,7 @@ mod tests {
         let ctx = &ExecutionContext::incremental_update(db.address());
         let tx = (&tx).into();
         let update = update.tables.iter().collect::<Vec<_>>();
-        let result = query.eval_incr(ctx, &db, &tx, &update, None);
+        let result = query.eval_incr_for_test(ctx, &db, &tx, &update, None);
 
         assert_eq!(result.tables.len(), 1);
 
@@ -726,7 +726,7 @@ mod tests {
         db.with_read_only(ctx, |tx| {
             let tx = (&*tx).into();
             let update = update.tables.iter().collect::<Vec<_>>();
-            let result = query.eval_incr(ctx, db, &tx, &update, None);
+            let result = query.eval_incr_for_test(ctx, db, &tx, &update, None);
             let tables = result
                 .tables
                 .into_iter()
