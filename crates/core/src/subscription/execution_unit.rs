@@ -295,6 +295,9 @@ impl ExecutionUnit {
                 Self::collect_rows(&mut deletes, query);
             }
         }
+
+        let deletes = deletes.into();
+        let inserts = inserts.into();
         UpdatesRelValue { deletes, inserts }
     }
 

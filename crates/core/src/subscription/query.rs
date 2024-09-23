@@ -275,12 +275,12 @@ mod tests {
 
         let result = result
             .tables
-            .into_iter()
-            .map(|u| u.updates)
+            .iter()
+            .map(|u| &u.updates)
             .flat_map(|u| {
                 u.deletes
                     .iter()
-                    .chain(&u.inserts)
+                    .chain(&*u.inserts)
                     .map(|rv| rv.clone().into_product_value())
                     .collect::<Vec<_>>()
             })
@@ -729,14 +729,14 @@ mod tests {
             let result = query.eval_incr_for_test(ctx, db, &tx, &update, None);
             let tables = result
                 .tables
-                .into_iter()
+                .iter()
                 .map(|update| {
-                    let convert = |rvs: Vec<_>| rvs.into_iter().map(RelValue::into_product_value).collect();
+                    let convert = |rvs: &[_]| rvs.iter().cloned().map(RelValue::into_product_value).collect();
                     DatabaseTableUpdate {
                         table_id: update.table_id,
-                        table_name: update.table_name,
-                        deletes: convert(update.updates.deletes),
-                        inserts: convert(update.updates.inserts),
+                        table_name: update.table_name.clone(),
+                        deletes: convert(&update.updates.deletes),
+                        inserts: convert(&update.updates.inserts),
                     }
                 })
                 .collect();
