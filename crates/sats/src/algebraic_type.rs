@@ -435,18 +435,126 @@ impl AlgebraicType {
             _ => true,
         }
     }
+
+    /// Check if a type is a BSATN-compatible subtype of another type.
+    /// Requires that neither `self` nor `other` contain any `Ref`s.
+    ///
+    /// The rough idea is: `self` is a BSATN-subtype of `other` if any BSATN bytestring that can
+    /// be deserialized to `AlgebraicValue` via `self: DeserializeSeed` can be deserialized to an identical
+    /// `AlgebraicValue` via `other: DeserializeSeed`. We also require that names of fields and variants
+    /// match.
+    ///
+    /// - If `self` is a product, this implies that `other` is a product with the same field names in the same order,
+    ///     and the types of the fields in self are BSATN-subtypes of the corresponding fields in `other`.
+    ///
+    /// - If `self` is a sum, this implies that `other` is a sum, with the same variant names in the same order,
+    ///     but possibly additional variants after the variants of `self`.
+    ///     The types of the variants in `self` are SATN-subtypes of the corresponding variants in `other`.
+    ///
+    /// Similar logic applies to other cases.
+    pub fn is_bsatn_subtype(&self, other: &AlgebraicType) -> bool {
+        // Remark: if we ever want to apply this to recursive AlgebraicTypes,
+        // we will need to use a bisimilarity detection algorithm:
+        // https://en.wikipedia.org/wiki/Bisimulation
+        //
+        // That seems like a hassle and we don't yet need recursive AlgebraicTypes on the wire,
+        // so for now I'm not going to bother.
+        use AlgebraicType::*;
+        match (self, other) {
+            (Sum(s1), Sum(s2)) => {
+                if s1.variants.len() > s2.variants.len() {
+                    return false;
+                }
+                s1.variants
+                    .iter()
+                    .zip(s2.variants.iter())
+                    .all(|(v1, v2)| v1.name == v2.name && v1.algebraic_type.is_bsatn_subtype(&v2.algebraic_type))
+            }
+            (Product(p1), Product(p2)) => {
+                if p1.elements.len() != p2.elements.len() {
+                    return false;
+                }
+                p1.elements
+                    .iter()
+                    .zip(p2.elements.iter())
+                    .all(|(e1, e2)| e1.name == e2.name && e1.algebraic_type.is_bsatn_subtype(&e2.algebraic_type))
+            }
+            (Array(a1), Array(a2)) => a1.elem_ty.is_bsatn_subtype(&a2.elem_ty),
+            (Map(m1), Map(m2)) => m1.key_ty.is_bsatn_subtype(&m2.key_ty) && m1.ty.is_bsatn_subtype(&m2.ty),
+            (String, String)
+            | (Bool, Bool)
+            | (I8, I8)
+            | (U8, U8)
+            | (I16, I16)
+            | (U16, U16)
+            | (I32, I32)
+            | (U32, U32)
+            | (I64, I64)
+            | (U64, U64)
+            | (I128, I128)
+            | (U128, U128)
+            | (I256, I256)
+            | (U256, U256)
+            | (F32, F32)
+            | (F64, F64) => true,
+            (Ref(_), _) | (_, Ref(_)) => panic!("is_bsatn_subtype called with type containing Ref"),
+            _ => false,
+        }
+    }
+}
+
+/// Deterministically create a type that is a bsatn supertype of the given type.
+#[cfg(feature = "test")]
+pub fn make_bsatn_supertype(t: &AlgebraicType) -> AlgebraicType {
+    match t {
+        AlgebraicType::Product(p) => AlgebraicType::Product(
+            p.elements
+                .iter()
+                .map(|e| {
+                    let mut new = e.clone();
+                    new.algebraic_type = make_bsatn_supertype(&e.algebraic_type);
+                    new
+                })
+                .collect(),
+        ),
+        AlgebraicType::Sum(s) => {
+            AlgebraicType::Sum(
+                s.variants
+                    .iter()
+                    .map(|v| {
+                        let mut new = v.clone();
+                        new.algebraic_type = make_bsatn_supertype(&v.algebraic_type);
+                        new
+                    })
+                    // This is the only change we are actually allowed to make.
+                    .chain(std::iter::once(SumTypeVariant {
+                        name: None,
+                        algebraic_type: AlgebraicType::U256,
+                    }))
+                    .collect(),
+            )
+        }
+        AlgebraicType::Array(a) => AlgebraicType::array(make_bsatn_supertype(&a.elem_ty)),
+        AlgebraicType::Map(m) => AlgebraicType::map(make_bsatn_supertype(&m.key_ty), make_bsatn_supertype(&m.ty)),
+        AlgebraicType::Ref(_) => unimplemented!(),
+        other => other.clone(),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::AlgebraicType;
+    use crate::algebraic_type::make_bsatn_supertype;
+    use crate::bsatn::{decode, to_vec};
     use crate::meta_type::MetaType;
+    use crate::proptest::generate_typed_value;
     use crate::satn::Satn;
     use crate::{
         algebraic_type::fmt::fmt_algebraic_type, algebraic_type::map_notation::fmt_algebraic_type as fmt_map,
         algebraic_type_ref::AlgebraicTypeRef, typespace::Typespace,
     };
     use crate::{ValueWithType, WithTypespace};
+    use proptest::prelude::*;
 
     #[test]
     fn never() {
@@ -688,5 +796,44 @@ mod tests {
     fn algebraic_type_from_value() {
         let algebraic_type = AlgebraicType::meta_type();
         AlgebraicType::from_value(&algebraic_type.as_value()).expect("No errors.");
+    }
+
+    #[test]
+    fn is_not_bsatn_subtype() {
+        fn check_not_bsatn_subtype(ty1: AlgebraicType, ty2: AlgebraicType) {
+            assert!(
+                !ty1.is_bsatn_subtype(&ty2),
+                "{:#?} should not be a sub-layout of {:#?}",
+                ty1,
+                ty2
+            );
+        }
+
+        use AlgebraicType as AT;
+
+        check_not_bsatn_subtype(AT::U8, AT::U16);
+        check_not_bsatn_subtype(AT::U8, AT::product([AT::U8]));
+        check_not_bsatn_subtype(AT::U8, AT::product([AT::U16]));
+        check_not_bsatn_subtype(AT::sum([("a", AT::U8)]), AT::sum([("b", AT::U8)]));
+        check_not_bsatn_subtype(
+            AT::sum([("a", AT::U8), ("b", AT::U16)]),
+            AT::sum([("b", AT::U16), ("a", AT::U8)]),
+        );
+        check_not_bsatn_subtype(
+            AT::product([("a", AT::U8), ("b", AT::U16)]),
+            AT::product([("b", AT::U16), ("a", AT::U8)]),
+        );
+    }
+
+    proptest! {
+        #[test]
+        fn test_is_bsatn_subtype((ty, val) in generate_typed_value()) {
+            let supertype = make_bsatn_supertype(&ty);
+            prop_assert!(ty.is_bsatn_subtype(&supertype));
+
+            let bsatn = to_vec(&val).unwrap();
+            let via_supertype = decode(&supertype, &mut &bsatn[..]).unwrap();
+            prop_assert_eq!(val, via_supertype);
+        }
     }
 }

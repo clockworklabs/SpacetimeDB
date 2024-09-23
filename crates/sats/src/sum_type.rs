@@ -170,6 +170,11 @@ impl<const N: usize> From<[AlgebraicType; N]> for SumType {
         fields.map(SumTypeVariant::from).into()
     }
 }
+impl FromIterator<SumTypeVariant> for SumType {
+    fn from_iter<T: IntoIterator<Item = SumTypeVariant>>(iter: T) -> Self {
+        SumType::new(iter.into_iter().collect())
+    }
+}
 
 impl MetaType for SumType {
     fn meta_type() -> AlgebraicType {
