@@ -156,13 +156,7 @@ impl MutTxId {
                 reducer_name: schedule.reducer_name,
             };
             let (generated, ..) = self.insert(ST_SCHEDULED_ID, &mut row.into(), database_address)?;
-            let id = generated.as_product().and_then(|p| {
-                if p.elements.len() == 1 {
-                    p.elements[0].as_u32()
-                } else {
-                    None
-                }
-            });
+            let id = generated.as_u32();
 
             if let Some(&id) = id {
                 let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
