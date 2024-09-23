@@ -44,7 +44,7 @@ namespace SpacetimeDB
                     return true;
                 }
 
-                Logger.LogWarning("Deleting value that we don't have (no cached value available)");
+                Log.Warn("Deleting value that we don't have (no cached value available)");
                 return false;
             }
 
@@ -65,7 +65,7 @@ namespace SpacetimeDB
 
             if (!tables.TryAdd(name, new TableCache<T>()))
             {
-                Logger.LogError($"Table with name already exists: {name}");
+                Log.Error($"Table with name already exists: {name}");
             }
         }
 
@@ -76,7 +76,7 @@ namespace SpacetimeDB
                 return table;
             }
 
-            Logger.LogError($"We don't know that this table is: {name}");
+            Log.Error($"We don't know that this table is: {name}");
             return null;
         }
 

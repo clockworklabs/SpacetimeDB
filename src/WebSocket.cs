@@ -75,7 +75,7 @@ namespace SpacetimeDB
             }
             catch (Exception ex)
             {
-                Logger.LogException(ex);
+                Log.Exception(ex);
                 if (OnConnectError != null)
                 {
                     var message = ex.Message;

@@ -9,10 +9,12 @@ namespace SpacetimeDB
         {
             None = 0,
             Debug = 1,
-            Warning = 2,
-            Error = 4,
-            Exception = 8,
-            All = Debug | Warning | Error | Exception
+            Trace = 2,
+            Info = 4,
+            Warning = 8,
+            Error = 16,
+            Exception = 32,
+            All = ~0
         }
         LogLevel _logLevel;
 
@@ -21,35 +23,59 @@ namespace SpacetimeDB
             _logLevel = logLevel;
         }
 
-        public void Log(string message)
+        public void Debug(string message)
         {
             if (_logLevel.HasFlag(LogLevel.Debug))
             {
-                Console.WriteLine(message);
+                Console.WriteLine($"[D] {message}");
             }
         }
 
-        public void LogError(string message)
+        public void Trace(string message)
         {
-            if (_logLevel.HasFlag(LogLevel.Error))
+            if (_logLevel.HasFlag(LogLevel.Trace))
             {
-                Console.WriteLine($"Error: {message}");
+                Console.WriteLine($"[T] {message}");
             }
         }
 
-        public void LogException(Exception e)
+        public void Info(string message)
         {
-            if (_logLevel.HasFlag(LogLevel.Exception))
+            if (_logLevel.HasFlag(LogLevel.Info))
             {
-                Console.WriteLine($"Exception: {e.Message}");
+                Console.WriteLine($"[I] {message}");
             }
         }
 
-        public void LogWarning(string message)
+        public void Warn(string message)
         {
             if (_logLevel.HasFlag(LogLevel.Warning))
             {
-                Console.WriteLine($"Warning: {message}");
+                Console.WriteLine($"[W] {message}");
+            }
+        }
+
+        public void Error(string message)
+        {
+            if (_logLevel.HasFlag(LogLevel.Error))
+            {
+                Console.WriteLine($"[E] {message}");
+            }
+        }
+
+        public void Exception(string message)
+        {
+            if (_logLevel.HasFlag(LogLevel.Exception))
+            {
+                Console.WriteLine($"[X] {message}");
+            }
+        }
+
+        public void Exception(Exception exception)
+        {
+            if (_logLevel.HasFlag(LogLevel.Exception))
+            {
+                Console.WriteLine($"[X] {exception}");
             }
         }
     }
