@@ -549,16 +549,16 @@ public class Module : IIncrementalGenerator
 
                     namespace SpacetimeDB {
                         public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext {
-                            public readonly Identity Sender;
-                            public readonly Address? Address;
-                            public readonly Random Random;
-                            public readonly DateTimeOffset Time;
+                            public readonly Identity CallerIdentity;
+                            public readonly Address? CallerAddress;
+                            public readonly Random Rng;
+                            public readonly DateTimeOffset Timestamp;
 
-                            internal ReducerContext(Identity sender, Address? address, Random random, DateTimeOffset time) {
-                                Sender = sender;
-                                Address = address;
-                                Random = random;
-                                Time = time;
+                            internal ReducerContext(Identity identity, Address? address, Random random, DateTimeOffset time) {
+                                CallerIdentity = identity;
+                                CallerAddress = address;
+                                Rng = random;
+                                Timestamp = time;
                             }
                         }
 
