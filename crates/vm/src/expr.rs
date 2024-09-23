@@ -2604,7 +2604,7 @@ mod tests {
                 [0, 1]
                     .map(|c| FieldExpr::Name(FieldName::new(lhs.table_id, c.into())))
                     .into(),
-                Some(TableId(0)),
+                Some(TableId::SENTINEL),
             )
             .unwrap();
         let q = q.optimize(&|_, _| 0);

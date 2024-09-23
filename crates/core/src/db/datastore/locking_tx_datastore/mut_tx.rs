@@ -28,7 +28,7 @@ use spacetimedb_lib::{
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
     de::DeserializeSeed,
 };
-use spacetimedb_primitives::{ColId, ColList, ColSet, ConstraintId, IndexId, SequenceId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, DecodeError},
     de::WithBound,
@@ -95,7 +95,7 @@ impl MutTxId {
         // NOTE: Because `st_tables` has a unique index on `table_name`, this will
         // fail if the table already exists.
         let row = StTableRow {
-            table_id: 0.into(), // autoinc
+            table_id: TableId::SENTINEL,
             table_name: table_schema.table_name[..].into(),
             table_type: table_schema.table_type,
             table_access: table_schema.table_access,
@@ -134,7 +134,7 @@ impl MutTxId {
         if let Some(schedule) = table_schema.schedule {
             let row = StScheduledRow {
                 table_id: schedule.table_id,
-                schedule_id: 0.into(), // autoinc
+                schedule_id: ScheduleId::SENTINEL,
                 schedule_name: schedule.schedule_name,
                 reducer_name: schedule.reducer_name,
             };
@@ -350,7 +350,7 @@ impl MutTxId {
         // NOTE: Because st_indexes has a unique index on index_name, this will
         // fail if the index already exists.
         let row = StIndexRow {
-            index_id: 0.into(), // Autogen'd
+            index_id: IndexId::SENTINEL,
             table_id,
             index_name: index.index_name.clone(),
             index_algorithm: index.index_algorithm.clone().into(),
@@ -686,7 +686,7 @@ impl MutTxId {
         // NOTE: Because st_sequences has a unique index on sequence_name, this will
         // fail if the table already exists.
         let mut sequence_row = StSequenceRow {
-            sequence_id: 0.into(), // autogen'd
+            sequence_id: SequenceId::SENTINEL,
             sequence_name: seq.sequence_name,
             table_id,
             col_pos: seq.col_pos,
@@ -760,7 +760,7 @@ impl MutTxId {
         // fail if the table already exists.
         let constraint_row = StConstraintRow {
             table_id,
-            constraint_id: 0.into(), // autogen'd
+            constraint_id: ConstraintId::SENTINEL,
             constraint_name: constraint.constraint_name.clone(),
             constraint_data: constraint.data.clone().into(),
         };

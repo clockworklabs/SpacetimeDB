@@ -614,7 +614,7 @@ pub(crate) mod tests {
             .iter()
             .enumerate()
             .map(|(i, element)| ColumnSchema {
-                table_id: 0.into(),
+                table_id: TableId::SENTINEL,
                 col_name: element.name.as_ref().unwrap().clone(),
                 col_type: element.algebraic_type.clone(),
                 col_pos: ColId(i as _),
@@ -624,7 +624,7 @@ pub(crate) mod tests {
         let table_id = db.create_table(
             tx,
             TableSchema::new(
-                0.into(),
+                TableId::SENTINEL,
                 table_name.into(),
                 columns,
                 vec![],

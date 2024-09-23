@@ -1210,7 +1210,7 @@ pub(crate) mod test {
 
         let def: ModuleDef = builder.finish().try_into().expect("Failed to build schema");
 
-        let schema = TableSchema::from_module_def(&def, def.table(table_name).unwrap(), (), TableId(0));
+        let schema = TableSchema::from_module_def(&def, def.table(table_name).unwrap(), (), TableId::SENTINEL);
         assert_eq!(schema.indexes.len(), 1);
         let index_schema = schema.indexes[0].clone();
 

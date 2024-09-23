@@ -36,6 +36,13 @@ pub trait Schema: Sized {
 
     /// Construct a schema entity from a validated `ModuleDef`.
     /// Panics if `module_def` does not contain `def`.
+    ///
+    /// If this schema entity contains children (e.g. if it is a table schema), they should be constructed with
+    /// IDs set to `ChildId::SENTINEL`.
+    ///
+    /// If this schema entity contains `AlgebraicType`s, they should be fully resolved by this function (via
+    /// `WithTypespace::resolve_refs`). This means they will no longer contain references to any typespace (and be non-recursive).
+    /// This is necessary because the database does not currently attempt to handle typespaces / recursive types.
     fn from_module_def(module_def: &ModuleDef, def: &Self::Def, parent_id: Self::ParentId, id: Self::Id) -> Self;
 
     /// Check that a schema entity is compatible with a definition.
@@ -138,7 +145,7 @@ impl TableSchema {
             .iter()
             .enumerate()
             .map(|(col_pos, element)| ColumnSchema {
-                table_id: TableId(0),
+                table_id: TableId::SENTINEL,
                 col_pos: ColId(col_pos as _),
                 col_name: element.name.clone().unwrap_or_else(|| format!("col{}", col_pos).into()),
                 col_type: element.algebraic_type.clone(),
@@ -146,7 +153,7 @@ impl TableSchema {
             .collect();
 
         TableSchema::new(
-            TableId(0),
+            TableId::SENTINEL,
             "TestTable".into(),
             columns,
             vec![],
@@ -564,22 +571,22 @@ impl Schema for TableSchema {
         // but it would be nice to pass the correct values into this method.
         let indexes = indexes
             .values()
-            .map(|def| IndexSchema::from_module_def(module_def, def, table_id, IndexId(0)))
+            .map(|def| IndexSchema::from_module_def(module_def, def, table_id, IndexId::SENTINEL))
             .collect();
 
         let sequences = sequences
             .values()
-            .map(|def| SequenceSchema::from_module_def(module_def, def, table_id, SequenceId(0)))
+            .map(|def| SequenceSchema::from_module_def(module_def, def, table_id, SequenceId::SENTINEL))
             .collect();
 
         let constraints = constraints
             .values()
-            .map(|def| ConstraintSchema::from_module_def(module_def, def, table_id, ConstraintId(0)))
+            .map(|def| ConstraintSchema::from_module_def(module_def, def, table_id, ConstraintId::SENTINEL))
             .collect();
 
         let schedule = schedule
             .as_ref()
-            .map(|schedule| ScheduleSchema::from_module_def(module_def, schedule, table_id, ScheduleId(0)));
+            .map(|schedule| ScheduleSchema::from_module_def(module_def, schedule, table_id, ScheduleId::SENTINEL));
 
         TableSchema::new(
             table_id,
@@ -966,7 +973,7 @@ impl ConstraintSchema {
     pub fn from_def(table_id: TableId, constraint: RawConstraintDefV8) -> Option<Self> {
         if constraint.constraints.has_unique() {
             Some(ConstraintSchema {
-                constraint_id: ConstraintId(0), // Set to 0 as it may be assigned later.
+                constraint_id: ConstraintId::SENTINEL, // Set to 0 as it may be assigned later.
                 constraint_name: constraint.constraint_name.trim().into(),
                 table_id,
                 data: ConstraintData::Unique(UniqueConstraintData {

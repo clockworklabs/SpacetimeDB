@@ -673,7 +673,7 @@ trait IndexedRow: Row + Sized {
                 None,
             );
         let def: ModuleDef = builder.finish().try_into().expect("failed to build table schema");
-        def.table_schema(&name[..], TableId(0)).unwrap()
+        def.table_schema(&name[..], TableId::SENTINEL).unwrap()
     }
     fn throughput() -> Throughput {
         Throughput::Bytes(mem::size_of::<Self>() as u64)
@@ -715,7 +715,7 @@ fn make_table_with_indexes<R: IndexedRow>() -> Table {
     let mut tbl = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
 
     let cols = R::indexed_columns();
-    let idx = tbl.new_index(IndexId(0), &cols, false).unwrap();
+    let idx = tbl.new_index(IndexId::SENTINEL, &cols, false).unwrap();
     tbl.insert_index(&NullBlobStore, cols, idx);
 
     tbl

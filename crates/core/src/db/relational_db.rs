@@ -842,8 +842,8 @@ impl RelationalDB {
 
         let table: &TableDef = module_def.table(name).expect("table not found");
 
-        // Recursively sets all IDs to 0.
-        let schema = TableSchema::from_module_def(&module_def, table, (), 0.into());
+        // Recursively sets all IDs to `SENTINEL`.
+        let schema = TableSchema::from_module_def(&module_def, table, (), TableId::SENTINEL);
 
         self.with_auto_commit(&ExecutionContext::default(), |tx| self.create_table(tx, schema))
     }
@@ -1529,7 +1529,7 @@ mod tests {
         let raw = builder.finish();
         let def: ModuleDef = raw.try_into().expect("table validation failed");
         let table = def.table(name).expect("table not found");
-        TableSchema::from_module_def(&def, table, (), 0.into())
+        TableSchema::from_module_def(&def, table, (), TableId::SENTINEL)
     }
 
     fn table_auto_inc() -> TableSchema {

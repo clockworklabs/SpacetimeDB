@@ -1203,36 +1203,36 @@ mod tests {
 
     fn basic_table_schema() -> TableSchema {
         TableSchema::new(
-            TableId(0),
+            TableId::SENTINEL,
             "Foo".into(),
             map_array(basic_table_schema_cols()),
             vec![
                 IndexSchema {
                     // 0 here means the system will assign IDs on creation
-                    index_id: IndexId(0),
-                    table_id: TableId(0),
+                    index_id: IndexId::SENTINEL,
+                    table_id: TableId::SENTINEL,
                     index_name: "id_idx".into(),
                     index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![0] }),
                 },
                 IndexSchema {
-                    index_id: IndexId(0),
-                    table_id: TableId(0),
+                    index_id: IndexId::SENTINEL,
+                    table_id: TableId::SENTINEL,
                     index_name: "name_idx".into(),
                     index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![1] }),
                 },
             ],
             vec![
                 ConstraintSchema {
-                    table_id: TableId(0),
-                    constraint_id: ConstraintId(0),
+                    table_id: TableId::SENTINEL,
+                    constraint_id: ConstraintId::SENTINEL,
                     constraint_name: "id_constraint".into(),
                     data: ConstraintData::Unique(UniqueConstraintData {
                         columns: col_list![0].into(),
                     }),
                 },
                 ConstraintSchema {
-                    table_id: TableId(0),
-                    constraint_id: ConstraintId(0),
+                    table_id: TableId::SENTINEL,
+                    constraint_id: ConstraintId::SENTINEL,
                     constraint_name: "name_constraint".into(),
                     data: ConstraintData::Unique(UniqueConstraintData {
                         columns: col_list![1].into(),
@@ -1240,8 +1240,8 @@ mod tests {
                 },
             ],
             vec![SequenceSchema {
-                sequence_id: SequenceId(0),
-                table_id: TableId(0),
+                sequence_id: SequenceId::SENTINEL,
+                table_id: TableId::SENTINEL,
                 col_pos: 0.into(),
                 sequence_name: "id_sequence".into(),
                 start: 1,
@@ -1592,7 +1592,7 @@ mod tests {
         datastore.create_index_mut_tx(
             &mut tx,
             IndexSchema {
-                index_id: IndexId(0),
+                index_id: IndexId::SENTINEL,
                 table_id,
                 index_name: "id_index".into(),
                 index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![0] }),
@@ -1803,7 +1803,7 @@ mod tests {
 
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let index_def = IndexSchema {
-            index_id: IndexId(0),
+            index_id: IndexId::SENTINEL,
             table_id,
             index_name: "age_idx".into(),
             index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![2] }),
@@ -1855,7 +1855,7 @@ mod tests {
         datastore.commit_mut_tx_for_test(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let index_def = IndexSchema {
-            index_id: IndexId(0),
+            index_id: IndexId::SENTINEL,
             table_id,
             index_name: "age_idx".into(),
             index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![2] }),
@@ -1908,7 +1908,7 @@ mod tests {
         datastore.commit_mut_tx_for_test(tx)?;
         let mut tx = datastore.begin_mut_tx(IsolationLevel::Serializable);
         let index_def = IndexSchema {
-            index_id: IndexId(0),
+            index_id: IndexId::SENTINEL,
             table_id,
             index_name: "age_idx".into(),
             index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm { columns: col_list![2] }),

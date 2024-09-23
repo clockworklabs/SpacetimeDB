@@ -2,6 +2,7 @@ use anyhow::Context;
 use bytes::Bytes;
 use once_cell::unsync::Lazy;
 use spacetimedb_client_api_messages::timestamp::Timestamp;
+use spacetimedb_primitives::TableId;
 use spacetimedb_schema::auto_migrate::ponder_migrate;
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::{Schema, TableSchema};
@@ -271,7 +272,7 @@ impl<T: WasmInstance> ModuleInstance for WasmModuleInstance<T> {
                 for def in table_defs {
                     let table_name = &def.name;
                     self.system_logger().info(&format!("Creating table `{table_name}`"));
-                    let schema = TableSchema::from_module_def(&self.info.module_def, def, (), 0.into());
+                    let schema = TableSchema::from_module_def(&self.info.module_def, def, (), TableId::SENTINEL);
                     stdb.create_table(tx, schema)
                         .with_context(|| format!("failed to create table {table_name}"))?;
                 }
