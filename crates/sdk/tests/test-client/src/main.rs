@@ -320,11 +320,13 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM TableHoldsTable;",
 ];
 
-fn connect() -> DbConnection {
+fn connect(test_counter: &std::sync::Arc<TestCounter>) -> DbConnection {
+    let connected_result = test_counter.add_test("on_connect");
     let name = db_name_or_panic();
     let conn = DbConnection::builder()
         .with_module_name(name)
         .with_uri(LOCALHOST)
+        .on_connect(|_, _, _| connected_result(Ok(())))
         .on_connect_error(|e| panic!("Connect errored: {e:?}"))
         .build()
         .unwrap();
@@ -348,7 +350,7 @@ fn exec_insert_primitive() {
 
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -385,7 +387,7 @@ fn exec_insert_primitive() {
 fn exec_delete_primitive() {
     let test_counter = TestCounter::new();
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -423,7 +425,7 @@ fn exec_delete_primitive() {
 fn exec_update_primitive() {
     let test_counter = TestCounter::new();
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
@@ -463,7 +465,7 @@ fn exec_insert_identity() {
 
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -517,7 +519,7 @@ fn exec_delete_identity() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -544,7 +546,7 @@ fn exec_update_identity() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -571,7 +573,7 @@ fn exec_insert_address() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -625,7 +627,7 @@ fn exec_delete_address() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -652,7 +654,7 @@ fn exec_update_address() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -679,7 +681,7 @@ fn exec_on_reducer() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     let mut reducer_result = Some(test_counter.add_test("reducer-callback"));
 
@@ -750,7 +752,7 @@ fn exec_fail_reducer() {
     let mut reducer_success_result = Some(test_counter.add_test("reducer-callback-success"));
     let mut reducer_fail_result = Some(test_counter.add_test("reducer-callback-fail"));
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     let key = 128;
     let initial_data = 0xbeef;
@@ -912,7 +914,7 @@ fn exec_insert_vec() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1044,7 +1046,7 @@ fn exec_insert_option_some() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1077,7 +1079,7 @@ fn exec_insert_option_none() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1101,7 +1103,7 @@ fn exec_insert_struct() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1128,7 +1130,7 @@ fn exec_insert_simple_enum() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1152,7 +1154,7 @@ fn exec_insert_enum_with_payload() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1230,7 +1232,7 @@ fn exec_insert_long_table() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1293,7 +1295,7 @@ fn exec_insert_primitives_as_strings() {
     let test_counter = TestCounter::new();
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     subscribe_all_then(&connection, {
         let test_counter = test_counter.clone();
@@ -1579,7 +1581,7 @@ fn exec_caller_always_notified() {
 
     let mut no_op_result = Some(test_counter.add_test("notified_of_no_op_reducer"));
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     connection.reducers.on_no_op_succeeds(move |ctx| {
         (no_op_result.take().unwrap())(match ctx.event {
@@ -1607,7 +1609,7 @@ fn exec_subscribe_all_select_star() {
 
     let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
 
-    let connection = connect();
+    let connection = connect(&test_counter);
 
     connection
         .subscription_builder()

@@ -49,7 +49,10 @@ impl<M: SpacetimeModule> Clone for DbContextImpl<M> {
 impl<M: SpacetimeModule> DbContextImpl<M> {
     fn process_message(&self, msg: ParsedMessage<M>) -> Result<()> {
         let res = match msg {
-            ParsedMessage::Error(e) => Err(e),
+            ParsedMessage::Error(e) => {
+                self.invoke_disconnected(Some(&e));
+                Err(e)
+            }
             ParsedMessage::IdentityToken(identity, token, addr) => {
                 let callback = {
                     let mut inner = self.inner.lock().unwrap();
@@ -108,13 +111,18 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         res
     }
 
-    fn invoke_disconnected(&self, err: Option<anyhow::Error>) {
+    fn invoke_disconnected(&self, err: Option<&anyhow::Error>) {
         let disconnected_callback = {
             let mut inner = self.inner.lock().unwrap();
             // TODO: Determine correct behavior here.
             // - Delete all rows from client cache?
             // - Invoke `on_disconnect` methods?
             // - End all subscriptions and invoke their `on_error` methods?
+
+            // Set `send_chan` to `None`, since `Self::is_active` checks that.
+            inner.send_chan = None;
+
+            // Grap the `on_disconnect` callback and invoke it.
             inner.on_disconnect.take()
         };
         if let Some(disconnect_callback) = disconnected_callback {
@@ -130,13 +138,14 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
     /// To avoid deadlocks during callbacks, we make all mutations to subscription- and callback-managing structurs
     /// strictly after running those callbacks, stashing them in a channel during the actual callback runs.
-    fn apply_pending_mutations(&self) {
+    fn apply_pending_mutations(&self) -> anyhow::Result<()> {
         while let Ok(Some(pending_mutation)) = self.pending_mutations_recv.lock().unwrap().try_next() {
-            self.apply_mutation(pending_mutation);
+            self.apply_mutation(pending_mutation)?;
         }
+        Ok(())
     }
 
-    fn apply_mutation(&self, mutation: PendingMutation<M>) {
+    fn apply_mutation(&self, mutation: PendingMutation<M>) -> anyhow::Result<()> {
         match mutation {
             PendingMutation::Subscribe {
                 on_applied,
@@ -148,9 +157,11 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 inner.subscriptions.register_subscription(sub_id, on_applied, on_error);
                 inner
                     .send_chan
+                    .as_mut()
+                    .ok_or(DisconnectedError {})?
                     .unbounded_send(ws::ClientMessage::Subscribe(ws::Subscribe {
                         query_strings: queries,
-                        request_id: 0,
+                        request_id: sub_id,
                     }))
                     .expect("Unable to send subscribe message: WS sender loop has dropped its recv channel");
             }
@@ -164,10 +175,18 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     .lock()
                     .unwrap()
                     .send_chan
+                    .as_mut()
+                    .ok_or(DisconnectedError {})?
                     .unbounded_send(msg)
                     .expect("Unable to send reducer call message: WS sender loop has dropped its recv channel");
             }
-            PendingMutation::Disconnect => todo!(),
+            PendingMutation::Disconnect => {
+                // Set `send_chan` to `None`, since `Self::is_active` checks that.
+                // This will close the WebSocket loop in websocket.rs,
+                // sending a close frame to the server,
+                // eventually resulting in disconnect callbacks being called.
+                self.inner.lock().unwrap().send_chan = None;
+            }
             PendingMutation::AddInsertCallback {
                 table,
                 callback_id,
@@ -246,25 +265,23 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     .reducer_callbacks
                     .remove_on_reducer(reducer, callback_id);
             }
-        }
+        };
+        Ok(())
     }
 
     pub fn advance_one_message(&self) -> Result<bool> {
-        self.apply_pending_mutations();
+        self.apply_pending_mutations()?;
         // Deranged behavior: mpsc's `try_next` returns `Ok(None)` when the channel is closed,
         // and `Err(_)` when the channel is open and waiting. This seems exactly backwards.
         let res = match self.recv.lock().unwrap().try_next() {
             Ok(None) => {
-                // TODO: Distinguish between normal and erroneous disconnects,
-                // and pass an error to `invoke_disconnected` in the latter case.
                 self.invoke_disconnected(None);
                 Err(anyhow::Error::new(DisconnectedError {}))
             }
             Err(_) => Ok(false),
-            // TODO: Treat `ParsedMessage::Error` as an erroneous disconnect?
             Ok(Some(msg)) => self.process_message(msg).map(|_| true),
         };
-        self.apply_pending_mutations();
+        self.apply_pending_mutations()?;
         res
     }
 
@@ -294,13 +311,8 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
     pub fn advance_one_message_blocking(&self) -> Result<()> {
         match self.runtime.block_on(self.get_message()) {
-            Message::Local(pending) => {
-                self.apply_mutation(pending);
-                Ok(())
-            }
+            Message::Local(pending) => self.apply_mutation(pending),
             Message::Ws(None) => {
-                // TODO: Distinguish between normal and erroneous disconnects,
-                // and pass an error to `invoke_disconnected` in the latter case.
                 self.invoke_disconnected(None);
                 Err(anyhow::Error::new(DisconnectedError {}))
             }
@@ -310,13 +322,8 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
     pub async fn advance_one_message_async(&self) -> Result<()> {
         match self.get_message().await {
-            Message::Local(pending) => {
-                self.apply_mutation(pending);
-                Ok(())
-            }
+            Message::Local(pending) => self.apply_mutation(pending),
             Message::Ws(None) => {
-                // TODO: Distinguish between normal and erroneous disconnects,
-                // and pass an error to `invoke_disconnected` in the latter case.
                 self.invoke_disconnected(None);
                 Err(anyhow::Error::new(DisconnectedError {}))
             }
@@ -331,13 +338,11 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
 
     pub fn run_threaded(&self) -> std::thread::JoinHandle<()> {
         let this = self.clone();
-        std::thread::spawn(move || {
-            loop {
-                match this.advance_one_message_blocking() {
-                    Ok(()) => (),
-                    // TODO: Err(e) if error_is_normal_disconnect(&e) => return,
-                    Err(e) => panic!("{e:?}"),
-                }
+        std::thread::spawn(move || loop {
+            match this.advance_one_message_blocking() {
+                Ok(()) => (),
+                Err(e) if error_is_normal_disconnect(&e) => return,
+                Err(e) => panic!("{e:?}"),
             }
         })
     }
@@ -347,14 +352,14 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         loop {
             match this.advance_one_message_async().await {
                 Ok(()) => (),
-                // TODO: Err(e) if error_is_normal_disconnect(&e) => return,
+                Err(e) if error_is_normal_disconnect(&e) => return Ok(()),
                 Err(e) => return Err(e),
             }
         }
     }
 
     pub fn is_active(&self) -> bool {
-        todo!()
+        self.inner.lock().unwrap().send_chan.is_some()
     }
 
     pub fn disconnect(&self) -> Result<()> {
@@ -452,8 +457,8 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     #[allow(unused)]
     runtime: Option<Runtime>,
 
-    /// None if not yet connected.
-    send_chan: mpsc::UnboundedSender<ws::ClientMessage>,
+    /// None if we have disconnected.
+    send_chan: Option<mpsc::UnboundedSender<ws::ClientMessage>>,
 
     db_callbacks: DbCallbacks<M>,
     reducer_callbacks: ReducerCallbacks<M>,
@@ -466,9 +471,7 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     #[allow(unused)]
     // TODO: Make use of this to handle `ParsedMessage::Error` before receiving `IdentityToken`.
     on_connect_error: Option<Box<dyn FnOnce(anyhow::Error) + Send + 'static>>,
-    #[allow(unused)]
-    // TODO: implement disconnection logic.
-    on_disconnect: Option<Box<dyn FnOnce(&M::DbConnection, Option<anyhow::Error>) + Send + 'static>>,
+    on_disconnect: Option<Box<dyn FnOnce(&M::DbConnection, Option<&anyhow::Error>) + Send + 'static>>,
 
     _module: PhantomData<M>,
 }
@@ -585,7 +588,7 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
 
     on_connect: Option<Box<dyn FnOnce(&M::DbConnection, Identity, &str) + Send + 'static>>,
     on_connect_error: Option<Box<dyn FnOnce(anyhow::Error) + Send + 'static>>,
-    on_disconnect: Option<Box<dyn FnOnce(&M::DbConnection, Option<anyhow::Error>) + Send + 'static>>,
+    on_disconnect: Option<Box<dyn FnOnce(&M::DbConnection, Option<&anyhow::Error>) + Send + 'static>>,
 }
 
 impl<M: SpacetimeModule> DbConnectionBuilder<M> {
@@ -629,7 +632,7 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
         let inner = Arc::new(Mutex::new(DbContextImplInner {
             runtime,
 
-            send_chan: raw_msg_send,
+            send_chan: Some(raw_msg_send),
             db_callbacks,
             reducer_callbacks,
             subscriptions: SubscriptionManager::default(),
@@ -701,7 +704,7 @@ Instead of registering multiple `on_connect_error` callbacks, register a single 
 
     pub fn on_disconnect(
         mut self,
-        callback: impl FnOnce(&M::DbConnection, Option<anyhow::Error>) + Send + 'static,
+        callback: impl FnOnce(&M::DbConnection, Option<&anyhow::Error>) + Send + 'static,
     ) -> Self {
         if self.on_disconnect.is_some() {
             panic!(
@@ -875,3 +878,7 @@ impl std::fmt::Display for DisconnectedError {
 }
 
 impl std::error::Error for DisconnectedError {}
+
+fn error_is_normal_disconnect(e: &anyhow::Error) -> bool {
+    e.is::<DisconnectedError>()
+}

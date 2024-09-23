@@ -144,7 +144,7 @@ fn on_message_sent(ctx: &EventContext, text: &String) {
 // ## Exit when disconnected
 
 /// Our `on_disconnect` callback: print a note, then exit the process.
-fn on_disconnected(_ctx: &DbConnection, err: Option<anyhow::Error>) {
+fn on_disconnected(_ctx: &DbConnection, err: Option<&anyhow::Error>) {
     if let Some(err) = err {
         panic!("Disconnected abnormally: {err}")
     } else {
