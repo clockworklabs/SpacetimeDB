@@ -72,7 +72,7 @@ pub struct Person_$KEY_TY {
 
 #[spacetimedb::reducer]
 pub fn add_new_$KEY_TY(ctx: &ReducerContext, name: String) -> Result<(), Box<dyn Error>> {
-    let value = ctx.db.person_$KEY_TY().insert(Person_$KEY_TY { key_col: 0, name });
+    let value = ctx.db.person_$KEY_TY().try_insert(Person_$KEY_TY { key_col: 0, name })?;
     println!("Assigned Value: {} -> {}", value.key_col, value.name);
     Ok(())
 }

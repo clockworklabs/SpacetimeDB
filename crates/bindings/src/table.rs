@@ -145,7 +145,7 @@ pub enum IndexAlgo<'a> {
 
 #[doc(hidden)]
 pub trait __MapRowTypeToTable {
-    type Table<'a>: Table;
+    type Table: Table;
 }
 
 /// A UNIQUE constraint violation on a table was attempted.

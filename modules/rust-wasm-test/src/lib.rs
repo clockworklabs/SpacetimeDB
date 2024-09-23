@@ -29,12 +29,12 @@ pub struct TestD {
 
 // uses internal apis that should not be used by user code
 #[allow(dead_code)] // false positive
-const fn get_table_access<T: spacetimedb::table::__MapRowTypeToTable>() -> TableAccess {
-    <T::Table<'static> as spacetimedb::table::TableInternal>::TABLE_ACCESS
+const fn get_table_access<Tbl: spacetimedb::Table>(_: impl Fn(&spacetimedb::Local) -> &Tbl + Copy) -> TableAccess {
+    <Tbl as spacetimedb::table::TableInternal>::TABLE_ACCESS
 }
 
 // This table was specified as public.
-const _: () = assert!(matches!(get_table_access::<TestD>(), TableAccess::Public));
+const _: () = assert!(matches!(get_table_access(test_d::test_d), TableAccess::Public));
 
 #[spacetimedb::table(name = test_e)]
 #[derive(Debug)]
@@ -55,7 +55,7 @@ pub enum TestF {
 }
 
 // // All tables are private by default.
-const _: () = assert!(matches!(get_table_access::<TestE>(), TableAccess::Private));
+const _: () = assert!(matches!(get_table_access(test_e::test_e), TableAccess::Private));
 
 #[spacetimedb::table(name = private)]
 pub struct Private {
@@ -69,7 +69,7 @@ pub struct Point {
 }
 
 // It is redundant, but we can explicitly specify a table as private.
-const _: () = assert!(matches!(get_table_access::<Point>(), TableAccess::Private));
+const _: () = assert!(matches!(get_table_access(points::points), TableAccess::Private));
 
 // Test we can compile multiple constraints
 #[spacetimedb::table(name = pk_multi_identity)]

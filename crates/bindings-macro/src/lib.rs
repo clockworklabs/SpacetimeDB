@@ -958,7 +958,7 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
     let field_types = fields.iter().map(|f| f.ty).collect::<Vec<_>>();
 
     let tabletype_impl = quote! {
-        impl spacetimedb::Table for #tablehandle_ident<'_> {
+        impl spacetimedb::Table for #tablehandle_ident {
             type Row = #row_type;
 
             type UniqueConstraintViolation = #unique_err;
@@ -966,7 +966,7 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
 
             #integrate_generated_columns
         }
-        impl spacetimedb::table::TableInternal for #tablehandle_ident<'_> {
+        impl spacetimedb::table::TableInternal for #tablehandle_ident {
             const TABLE_NAME: &'static str = #table_name;
             // the default value if not specified is Private
             #(const TABLE_ACCESS: spacetimedb::table::TableAccess = #table_access;)*
@@ -985,7 +985,7 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
     let describe_table_func = quote! {
         #[export_name = #register_describer_symbol]
         extern "C" fn __register_describer() {
-            spacetimedb::rt::register_table::<#tablehandle_ident<'static>>()
+            spacetimedb::rt::register_table::<#tablehandle_ident>()
         }
     };
 
@@ -1027,22 +1027,21 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
     let trait_def = quote_spanned! {table_ident.span()=>
         #[allow(non_camel_case_types, dead_code)]
         #vis trait #table_ident {
-            fn #table_ident(&self) -> #row_type_to_table<'_>;
+            fn #table_ident(&self) -> &#row_type_to_table;
         }
         impl #table_ident for spacetimedb::Local {
-            fn #table_ident(&self) -> #row_type_to_table<'_> {
+            fn #table_ident(&self) -> &#row_type_to_table {
                 #[allow(non_camel_case_types)]
-                type #tablehandle_ident<'a> = #row_type_to_table<'a>;
-                #tablehandle_ident { _local: ::core::marker::PhantomData }
+                type #tablehandle_ident = #row_type_to_table;
+                &#tablehandle_ident {}
             }
         }
     };
 
     let tablehandle_def = quote! {
         #[allow(non_camel_case_types)]
-        #vis struct #tablehandle_ident<'a> {
-            _local: ::core::marker::PhantomData<&'a spacetimedb::Local>,
-        }
+        #[non_exhaustive]
+        #vis struct #tablehandle_ident {}
     };
 
     let emission = quote! {
@@ -1060,10 +1059,10 @@ fn table_impl(mut args: TableArgs, mut item: MutItem<syn::DeriveInput>) -> syn::
             #tablehandle_def
 
             impl spacetimedb::table::__MapRowTypeToTable for #row_type {
-                type Table<'a>  = #tablehandle_ident<'a>;
+                type Table = #tablehandle_ident;
             }
 
-            impl<'a> #tablehandle_ident<'a> {
+            impl #tablehandle_ident {
                 #(#unique_field_accessors)*
                 #(#index_accessors)*
             }
