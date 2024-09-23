@@ -586,7 +586,7 @@ pub struct StIndexRow {
 /// An index algorithm for storing in the system tables.
 ///
 /// It is critical that this type never grow in layout, as it is stored in the system tables.
-/// This is checked by (TODO(this PR): add a test!)
+/// This is checked by (TODO(1.0): add a test!)
 ///
 /// It is forbidden to add data to any of the variants of this type.
 /// You have to add a NEW variant.

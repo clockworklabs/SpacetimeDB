@@ -916,7 +916,7 @@ impl MutTxId {
         // This likely will do a clone-write as over time?
         // The schema might have found other referents.
         table.with_mut_schema(|s| s.remove_constraint(constraint_id));
-        // TODO: we should also re-initialize `table` without a unique constraint.
+        // TODO(1.0): we should also re-initialize `table` without a unique constraint.
         // unless some other unique constraint on the same columns exists.
 
         Ok(())
