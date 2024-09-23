@@ -165,7 +165,7 @@ public static class Module
         }
         catch (Exception e)
         {
-            Runtime.Log($"Error while describing the module: {e}", Runtime.LogLevel.Error);
+            Log.Error($"Error while describing the module: {e}");
         }
     }
 

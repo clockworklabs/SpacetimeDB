@@ -84,10 +84,10 @@ public static partial class Reducers
     public static void InsertData(PublicTable data)
     {
         data.Insert();
-        Runtime.Log("New list");
+        Log.Info("New list");
         foreach (var item in PublicTable.Iter())
         {
-            Runtime.Log($"Item: {item.StringField}");
+            Log.Info($"Item: {item.StringField}");
         }
     }
 

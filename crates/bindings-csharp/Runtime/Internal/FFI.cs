@@ -109,12 +109,6 @@ internal static partial class FFI
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    public readonly struct LogLevel(byte log_level)
-    {
-        private readonly byte log_level = log_level;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
     public readonly record struct RowIter(uint Handle)
     {
         public static readonly RowIter INVALID = new(0);
@@ -198,9 +192,19 @@ internal static partial class FFI
         uint args_len
     );
 
+    public enum LogLevel : byte
+    {
+        Error = 0,
+        Warn = 1,
+        Info = 2,
+        Debug = 3,
+        Trace = 4,
+        Panic = 5,
+    }
+
     [LibraryImport(StdbNamespace)]
     public static partial void _console_log(
-        byte level,
+        LogLevel level,
         [In] byte[] target,
         uint target_len,
         [In] byte[] filename,
