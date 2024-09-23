@@ -10,7 +10,7 @@ use log::{debug, info};
 use crate::{
     commit::{self, Commit, StoredCommit},
     error,
-    index::{IndexError, IndexWrite as _},
+    index::IndexError,
     payload::Encode,
     repo::{TxOffset, TxOffsetIndex},
     Options,

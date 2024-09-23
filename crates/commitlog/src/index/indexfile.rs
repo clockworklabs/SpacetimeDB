@@ -9,7 +9,7 @@ use std::{
 use log::debug;
 use memmap2::MmapMut;
 
-use super::{IndexError, IndexRead, IndexWrite};
+use super::IndexError;
 const OFFSET_INDEX_FILE_EXT: &str = ".stdb.ofs";
 const KEY_SIZE: usize = mem::size_of::<u64>();
 const ENTRY_SIZE: usize = KEY_SIZE + mem::size_of::<u64>();
@@ -122,18 +122,23 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
         let key = u64::from_le_bytes(key_bytes.try_into().map_err(|_| IndexError::InvalidFormat)?);
         Ok(key)
     }
-}
 
-impl<Key: Into<u64> + From<u64>> IndexRead<Key> for IndexFileMut<Key> {
-    fn key_lookup(&self, key: Key) -> Result<(Key, u64), IndexError> {
+    // Return (key, value) pair of key just smaller or equal to given key
+    ///
+    /// # Error
+    /// - `IndexError::KeyNotFound`: If the key is smaller than the first entry key
+    pub fn key_lookup(&self, key: Key) -> Result<(Key, u64), IndexError> {
         let (_, idx) = self.find_index(key)?;
         self.index_lookup(idx as usize)
     }
-}
 
-/// Implementation of the `IndexWrite` trait for `IndexFileMut`.
-impl<Key: Into<u64> + From<u64>> IndexWrite<Key> for IndexFileMut<Key> {
-    fn append(&mut self, key: Key, value: u64) -> Result<(), IndexError> {
+    /// Appends a key-value pair to the index file.
+    /// Successive calls to `append` must supply key in ascending order
+    ///
+    /// Errors
+    /// - `IndexError::InvalidInput`: Either Key or Value is 0
+    /// - `IndexError::OutOfMemory`: Append after index file is already full.
+    pub fn append(&mut self, key: Key, value: u64) -> Result<(), IndexError> {
         let key = key.into();
         if self.last_key()? >= key {
             return Err(IndexError::InvalidInput);
@@ -153,11 +158,16 @@ impl<Key: Into<u64> + From<u64>> IndexWrite<Key> for IndexFileMut<Key> {
         Ok(())
     }
 
-    fn async_flush(&self) -> Result<(), IndexError> {
-        self.inner.flush_async().map_err(Into::into)
+    /// Asynchronously flushes any pending changes to the index file
+    ///
+    /// Due to Async nature, `Ok(())` does not guarantee that the changes are flushed.
+    /// an `Err` value indicates it definately did not succeed
+    pub fn async_flush(&self) -> io::Result<()> {
+        self.inner.flush_async()
     }
 
-    fn truncate(&mut self, key: Key) -> Result<(), IndexError> {
+    /// Truncates the index file starting from the entry with a key greater than or equal to the given key.
+    pub fn truncate(&mut self, key: Key) -> Result<(), IndexError> {
         let key = key.into();
         let (found_key, index) = self.find_index(Key::from(key))?;
 
@@ -203,18 +213,23 @@ pub fn create_index_file<Key: Into<u64> + From<u64>>(
         .or_else(|e| {
             if e.kind() == io::ErrorKind::AlreadyExists {
                 debug!("Index file {} already exists", path.display());
-                open_index_file(path, offset)
+                open_index_file(path, offset, cap)
             } else {
                 Err(e)
             }
         })
 }
 
-pub fn open_index_file<Key: Into<u64> + From<u64>>(path: &Path, offset: u64) -> io::Result<IndexFileMut<Key>> {
+pub fn open_index_file<Key: Into<u64> + From<u64>>(
+    path: &Path,
+    offset: u64,
+    cap: u64,
+) -> io::Result<IndexFileMut<Key>> {
     let file = File::options()
         .read(true)
         .write(true)
         .open(offset_index_file_path(path, offset))?;
+    file.set_len(cap * ENTRY_SIZE as u64)?;
     let mmap = unsafe { MmapMut::map_mut(&file)? };
 
     let mut me = IndexFileMut {
@@ -336,7 +351,7 @@ mod tests {
         assert_eq!(index_file.num_entries, 9);
         drop(index_file);
 
-        let open_index_file: IndexFileMut<u64> = open_index_file(&path, 0)?;
+        let open_index_file: IndexFileMut<u64> = open_index_file(&path, 0, 100)?;
         assert_eq!(open_index_file.num_entries, 9);
         assert_eq!(open_index_file.key_lookup(6)?, (6, 600));
 
