@@ -57,22 +57,37 @@ public class SnapshotTests
 
     class TestLogger(Events events) : ISpacetimeDBLogger
     {
-        public void Log(string message)
+        public void Debug(string message)
+        {
+            events.Add("Debug", message);
+        }
+
+        public void Trace(string message)
+        {
+            events.Add("Trace", message);
+        }
+
+        public void Info(string message)
         {
             events.Add("Log", message);
         }
 
-        public void LogWarning(string message)
+        public void Warn(string message)
         {
             events.Add("LogWarning", message);
         }
 
-        public void LogError(string message)
+        public void Error(string message)
         {
             events.Add("LogError", message);
         }
 
-        public void LogException(Exception e)
+        public void Exception(string message)
+        {
+            events.Add("LogException", message);
+        }
+
+        public void Exception(Exception e)
         {
             events.Add("LogException", e.Message);
         }
@@ -238,7 +253,7 @@ public class SnapshotTests
     {
         var events = new Events();
 
-        Logger.Current = new TestLogger(events);
+        Log.Current = new TestLogger(events);
 
         var client = SpacetimeDBClient.instance;
 

@@ -10,24 +10,39 @@ namespace SpacetimeDB
 {
     public class UnityDebugLogger : ISpacetimeDBLogger
     {
-        public void Log(string message)
+        public void Debug(string message)
         {
             Debug.Log(message);
         }
 
-        public void LogError(string message)
+        public void Trace(string message)
+        {
+            Debug.Log(message);
+        }
+
+        public void Info(string message)
+        {
+            Debug.Log(message);
+        }
+
+        public void Warn(string message)
+        {
+            Debug.LogWarning(message);
+        }
+
+        public void Error(string message)
         {
             Debug.LogError(message);
         }
 
-        public void LogException(Exception e)
+        public void Exception(string message)
         {
-            Debug.LogException(e);
+            Debug.LogError(message);
         }
 
-        public void LogWarning(string message)
+        public void Exception(Exception e)
         {
-            Debug.LogWarning(message);
+            Debug.LogException(e);
         }
     }
 }
