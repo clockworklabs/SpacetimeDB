@@ -283,9 +283,7 @@ fn system_module_def() -> ModuleDef {
     builder
         .build_table(ST_TABLE_NAME, *st_table_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_primary_key(StTableFields::TableId)
-        .with_column_sequence(StTableFields::TableId, None)
-        .with_unique_constraint(StTableFields::TableId, None) // Note that unique constraints currently imply indexes.
+        .with_auto_inc_primary_key(StTableFields::TableId)
         .with_unique_constraint(StTableFields::TableName, None);
 
     // System Table [ST_COLUMN_NAME]
@@ -311,16 +309,8 @@ fn system_module_def() -> ModuleDef {
     builder
         .build_table(ST_INDEX_NAME, *st_index_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_primary_key(StIndexFields::IndexId)
-        .with_index(
-            v9::RawIndexAlgorithm::BTree {
-                columns: col_list![StIndexFields::IndexId],
-            },
-            "accessor_name_doesnt_matter",
-            None,
-        )
-        .with_column_sequence(StIndexFields::IndexId, None)
-        .with_unique_constraint(StIndexFields::IndexId, None);
+        .with_auto_inc_primary_key(StIndexFields::IndexId);
+    // TODO(1.0): unique constraint on name?
 
     // System Table [ST_SEQUENCE_NAME]
     //
@@ -332,16 +322,8 @@ fn system_module_def() -> ModuleDef {
     builder
         .build_table(ST_SEQUENCE_NAME, *st_sequence_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_primary_key(StSequenceFields::SequenceId)
-        .with_column_sequence(StSequenceFields::SequenceId, None)
-        .with_index(
-            v9::RawIndexAlgorithm::BTree {
-                columns: col_list![StSequenceFields::SequenceId],
-            },
-            "accessor_name_doesnt_matter",
-            None,
-        )
-        .with_unique_constraint(StSequenceFields::SequenceId, None);
+        .with_auto_inc_primary_key(StSequenceFields::SequenceId);
+    // TODO(1.0): unique constraint on name?
 
     // System Table [ST_CONSTRAINT_NAME]
     //
@@ -352,16 +334,8 @@ fn system_module_def() -> ModuleDef {
     builder
         .build_table(ST_CONSTRAINT_NAME, *st_constraint_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_primary_key(StConstraintFields::ConstraintId)
-        .with_index(
-            v9::RawIndexAlgorithm::BTree {
-                columns: col_list![StConstraintFields::ConstraintId],
-            },
-            "accessor_name_doesnt_matter",
-            None,
-        )
-        .with_column_sequence(StConstraintFields::ConstraintId, None)
-        .with_unique_constraint(StConstraintFields::ConstraintId, None);
+        .with_auto_inc_primary_key(StConstraintFields::ConstraintId);
+    // TODO(1.0): unique constraint on name?
 
     // System table [ST_MODULE_NAME]
     // This table holds exactly one row, describing the latest version of the
@@ -400,16 +374,8 @@ fn system_module_def() -> ModuleDef {
         .build_table(ST_SCHEDULED_NAME, *st_schedule_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_unique_constraint(StScheduledFields::TableId, None)
-        .with_unique_constraint(StScheduledFields::ScheduleId, None)
-        .with_primary_key(StScheduledFields::ScheduleId)
-        .with_index(
-            v9::RawIndexAlgorithm::BTree {
-                columns: col_list![StScheduledFields::ScheduleId],
-            },
-            "accessor_name_doesnt_matter",
-            None,
-        )
-        .with_column_sequence(StScheduledFields::ScheduleId, None);
+        .with_auto_inc_primary_key(StScheduledFields::ScheduleId);
+    // TODO(1.0): unique constraint on name?
 
     // System table [ST_VAR_NAME]
     //
@@ -421,14 +387,7 @@ fn system_module_def() -> ModuleDef {
         .build_table(ST_VAR_NAME, *st_var_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_unique_constraint(StVarFields::Name, None)
-        .with_primary_key(StVarFields::Name)
-        .with_index(
-            v9::RawIndexAlgorithm::BTree {
-                columns: col_list![StVarFields::Name],
-            },
-            "accessor_name_doesnt_matter",
-            None,
-        );
+        .with_primary_key(StVarFields::Name);
 
     let result = builder
         .finish()

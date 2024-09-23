@@ -997,9 +997,6 @@ impl RelationalDB {
     }
 
     /// Adds the index into the [ST_INDEXES_NAME] table
-    /// The index should have zero `index_id` and nonzero `table_id`.
-    ///
-    /// Returns the `index_id`
     ///
     /// NOTE: It loads the data from the table into it before returning
     pub fn create_index(&self, tx: &mut MutTx, schema: IndexSchema, is_unique: bool) -> Result<IndexId, DBError> {

@@ -73,8 +73,6 @@ pub enum TableError {
 pub enum IndexError {
     #[error("Index not found: {0:?}")]
     NotFound(IndexId),
-    #[error("Index already exist: {0:?}: {1}")]
-    IndexAlreadyExists(RawIndexDefV8, String),
     #[error("Column not found: {0:?}")]
     ColumnNotFound(RawIndexDefV8),
     #[error(transparent)]

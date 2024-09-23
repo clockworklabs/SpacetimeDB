@@ -638,6 +638,15 @@ impl<'a> RawTableDefBuilder<'a> {
         self
     }
 
+    /// Adds a primary key to the table, with corresponding unique constraint and sequence definitions.
+    /// This will also result in an index being created for the unique constraint.
+    pub fn with_auto_inc_primary_key(self, column: impl Into<ColId>) -> Self {
+        let column = column.into();
+        self.with_primary_key(column)
+            .with_unique_constraint(column, None)
+            .with_column_sequence(column, None)
+    }
+
     /// Generates a [RawIndexDef] using the supplied `columns`.
     pub fn with_index(
         mut self,

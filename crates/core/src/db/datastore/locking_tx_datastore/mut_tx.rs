@@ -10,8 +10,8 @@ use super::{
 use crate::db::datastore::{
     system_tables::{
         StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StFields as _, StIndexFields, StIndexRow,
-        StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMN_ID,
-        ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
+        StScheduledFields, StScheduledRow, StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable,
+        ST_COLUMN_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
     },
     traits::{RowTypeForTable, TxData},
 };
@@ -88,7 +88,22 @@ impl MutTxId {
         Ok(())
     }
 
+    /// Create a table.
+    ///
+    /// Requires:
+    /// - All system IDs in the `table_schema` must be set to `SENTINEL`.
+    /// - All names in the `table_schema` must be unique among named entities in the database.
+    ///
+    /// Ensures:
+    /// - An in-memory insert table is created for the transaction, allowing the transaction to insert rows into the table.
+    /// - The table metadata is inserted into the system tables.
+    /// - The returned ID is unique and not `TableId::SENTINEL`.
     pub fn create_table(&mut self, mut table_schema: TableSchema, database_address: Address) -> Result<TableId> {
+        if table_schema.table_id != TableId::SENTINEL {
+            return Err(anyhow::anyhow!("`table_id` must be `TableId::SENTINEL` in `{:#?}`", table_schema).into());
+            // checks for children are performed in the relevant `create_...` functions.
+        }
+
         log::trace!("TABLE CREATING: {}", table_schema.table_name);
 
         // Insert the table row into `st_tables`
@@ -128,6 +143,8 @@ impl MutTxId {
 
         // Create the in memory representation of the table
         // NOTE: This should be done before creating the indexes
+        // NOTE: This `TableSchema` will be updated when we call `create_...` below.
+        //       This allows us to create the indexes, constraints, and sequences with the correct `index_id`, ...
         self.create_table_internal(schema_internal.into());
 
         // Insert the scheduled table entry into `st_scheduled`
@@ -138,7 +155,26 @@ impl MutTxId {
                 schedule_name: schedule.schedule_name,
                 reducer_name: schedule.reducer_name,
             };
-            self.insert(ST_SCHEDULED_ID, &mut row.into(), database_address)?;
+            let (generated, ..) = self.insert(ST_SCHEDULED_ID, &mut row.into(), database_address)?;
+            let id = generated.as_product().and_then(|p| {
+                if p.elements.len() == 1 {
+                    p.elements[0].as_u32()
+                } else {
+                    None
+                }
+            });
+
+            if let Some(&id) = id {
+                let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
+                table.with_mut_schema(|s| s.schedule.as_mut().unwrap().schedule_id = id.into());
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Failed to generate a schedule ID for table: {}, generated: {:#?}",
+                    table_schema.table_name,
+                    generated
+                )
+                .into());
+            }
         }
 
         // Insert constraints into `st_constraints`
@@ -235,6 +271,14 @@ impl MutTxId {
             &table_id.into(),
             database_address,
         )?;
+        if let Some(schedule) = &schema.schedule {
+            self.drop_col_eq(
+                ST_SCHEDULED_ID,
+                StScheduledFields::ScheduleId.col_id(),
+                &schedule.schedule_id.into(),
+                database_address,
+            )?;
+        }
 
         // Delete the table and its rows and indexes from memory.
         // TODO: This needs to not remove it from the committed state, because it can still be rolled back.
@@ -334,7 +378,26 @@ impl MutTxId {
         Ok(())
     }
 
+    /// Create an index.
+    ///
+    /// Requires:
+    /// - `index.index_name` must not be used for any other database entity.
+    /// - `index.index_id == IndexId::SENTINEL`
+    /// - `index.table_id != TableId::SENTINEL`
+    /// - `is_unique` must be `true` if and only if a unique constraint will exist on
+    ///     `ColSet::from(&index.index_algorithm.columns())` after this transaction is committed.
+    ///
+    /// Ensures:
+    /// - The index metadata is inserted into the system tables (and other data structures reflecting them).
+    /// - The returned ID is unique and is not `IndexId::SENTINEL`.
     pub fn create_index(&mut self, ctx: &ExecutionContext, mut index: IndexSchema, is_unique: bool) -> Result<IndexId> {
+        if index.index_id != IndexId::SENTINEL {
+            return Err(anyhow::anyhow!("`index_id` must be `IndexId::SENTINEL` in `{:#?}`", index).into());
+        }
+        if index.table_id == TableId::SENTINEL {
+            return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", index).into());
+        }
+
         let table_id = index.table_id;
         log::trace!(
             "INDEX CREATING: {} for table: {} and algorithm: {:?}",
@@ -673,7 +736,23 @@ impl MutTxId {
         Err(SequenceError::UnableToAllocate(seq_id).into())
     }
 
+    /// Create a sequence.
+    /// Requires:
+    /// - `seq.sequence_id == SequenceId::SENTINEL`
+    /// - `seq.table_id != TableId::SENTINEL`
+    /// - `seq.sequence_name` must not be used for any other database entity.
+    ///
+    /// Ensures:
+    /// - The sequence metadata is inserted into the system tables (and other data structures reflecting them).
+    /// - The returned ID is unique and not `SequenceId::SENTINEL`.
     pub fn create_sequence(&mut self, seq: SequenceSchema, database_address: Address) -> Result<SequenceId> {
+        if seq.sequence_id != SequenceId::SENTINEL {
+            return Err(anyhow::anyhow!("`sequence_id` must be `SequenceId::SENTINEL` in `{:#?}`", seq).into());
+        }
+        if seq.table_id == TableId::SENTINEL {
+            return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", seq).into());
+        }
+
         let table_id = seq.table_id;
         log::trace!(
             "SEQUENCE CREATING: {} for table: {} and col: {}",
@@ -745,7 +824,30 @@ impl MutTxId {
             })
     }
 
+    /// Create a constraint.
+    ///
+    /// Requires:
+    /// - `constraint.constraint_name` must not be used for any other database entity.
+    /// - `constraint.constraint_id == ConstraintId::SENTINEL`
+    /// - `constraint.table_id != TableId::SENTINEL`
+    /// - `is_unique` must be `true` if and only if a unique constraint will exist on
+    ///     `ColSet::from(&constraint.constraint_algorithm.columns())` after this transaction is committed.
+    ///
+    /// Ensures:
+    /// - The constraint metadata is inserted into the system tables (and other data structures reflecting them).
+    /// - The returned ID is unique and is not `constraintId::SENTINEL`.
     fn create_constraint(&mut self, ctx: &ExecutionContext, mut constraint: ConstraintSchema) -> Result<ConstraintId> {
+        if constraint.constraint_id != ConstraintId::SENTINEL {
+            return Err(anyhow::anyhow!(
+                "`constraint_id` must be `ConstraintId::SENTINEL` in `{:#?}`",
+                constraint
+            )
+            .into());
+        }
+        if constraint.table_id == TableId::SENTINEL {
+            return Err(anyhow::anyhow!("`table_id` must not be `TableId::SENTINEL` in `{:#?}`", constraint).into());
+        }
+
         let table_id = constraint.table_id;
 
         log::trace!(
@@ -814,6 +916,8 @@ impl MutTxId {
         // This likely will do a clone-write as over time?
         // The schema might have found other referents.
         table.with_mut_schema(|s| s.remove_constraint(constraint_id));
+        // TODO: we should also re-initialize `table` without a unique constraint.
+        // unless some other unique constraint on the same columns exists.
 
         Ok(())
     }
@@ -963,6 +1067,15 @@ impl<'a> RowRefInsertion<'a> {
 }
 
 impl MutTxId {
+    /// Insert a row into a table.
+    ///
+    /// Requires:
+    /// - `TableId` must refer to a valid table for the database at `database_address`.
+    /// - `row` must be a valid row for the table at `table_id`.
+    ///
+    /// Returns:
+    /// - a product value with a projection of the row containing only the generated column values.
+    /// - a ref to the inserted row.
     pub(super) fn insert<'a>(
         &'a mut self,
         table_id: TableId,
