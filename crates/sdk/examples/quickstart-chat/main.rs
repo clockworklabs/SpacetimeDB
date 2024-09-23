@@ -1,7 +1,7 @@
 mod module_bindings;
 use module_bindings::*;
 
-use spacetimedb_sdk::{DbContext, Event, Identity, ReducerEvent, Status, Table, TableWithPrimaryKey};
+use spacetimedb_sdk::{credentials, DbContext, Event, Identity, ReducerEvent, Status, Table, TableWithPrimaryKey};
 
 // # Our main function
 
@@ -36,16 +36,16 @@ fn register_callbacks(ctx: &DbConnection) {
 
 // ## Save credentials to a file
 
-/// Our `on_connect` callback: save our credentials to a file.
-fn on_connected(_ctx: &DbConnection, _identity: Identity, _token: &str) {
-    // todo!("Save credentials")
-    // if let Err(e) = save_credentials(CREDS_DIR, creds) {
-    //     eprintln!("Failed to save credentials: {:?}", e);
-    // }
+fn creds_store() -> credentials::File {
+    credentials::File::new("quickstart-chat")
 }
 
-#[allow(unused)]
-const CREDS_DIR: &str = ".spacetime_chat";
+/// Our `on_connect` callback: save our credentials to a file.
+fn on_connected(_ctx: &DbConnection, identity: Identity, token: &str) {
+    if let Err(e) = creds_store().save(identity, token) {
+        eprintln!("Failed to save credentials: {:?}", e);
+    }
+}
 
 // ## Notify about new users
 
@@ -167,7 +167,7 @@ fn connect_to_db() -> DbConnection {
         .on_connect(on_connected)
         .on_connect_error(|err| panic!("Error while connecting: {err}"))
         .on_disconnect(on_disconnected)
-        // .with_credentials(todo!())
+        .with_credentials(creds_store().load().expect("Error loading credentials"))
         .with_module_name(DB_NAME)
         .with_uri(HOST)
         .build()

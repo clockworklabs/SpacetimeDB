@@ -261,6 +261,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 Err(anyhow::Error::new(DisconnectedError {}))
             }
             Err(_) => Ok(false),
+            // TODO: Treat `ParsedMessage::Error` as an erroneous disconnect?
             Ok(Some(msg)) => self.process_message(msg).map(|_| true),
         };
         self.apply_pending_mutations();

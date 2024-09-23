@@ -5,6 +5,7 @@ mod module_bindings;
 use module_bindings::*;
 
 use spacetimedb_sdk::{
+    credentials,
     sats::{i256, u256},
     Address, DbContext, Event, Identity, ReducerEvent, Status, Table,
 };
@@ -81,9 +82,10 @@ fn main() {
         // "resubscribe" => exec_resubscribe(),
 
         // "reconnect" => exec_reconnect(),
+        //
+        "reauth_part_1" => exec_reauth_part_1(),
+        "reauth_part_2" => exec_reauth_part_2(),
 
-        // "reauth_part_1" => exec_reauth_part_1(),
-        // "reauth_part_2" => exec_reauth_part_2(),
         "should_fail" => exec_should_fail(),
 
         // "reconnect_same_address" => exec_reconnect_same_address(),
@@ -1461,54 +1463,68 @@ fn exec_insert_primitives_as_strings() {
 //     todo!()
 // }
 
-// /// Part of the `reauth` test, this connects to Spacetime to get new credentials,
-// /// and saves them to a file.
-// fn exec_reauth_part_1() {
-//     let test_counter = TestCounter::new();
-//     let name = db_name_or_panic();
+fn creds_store() -> credentials::File {
+    credentials::File::new("rust-sdk-test")
+}
 
-//     let connect_result = test_counter.add_test("connect");
-//     let save_result = test_counter.add_test("save-credentials");
+/// Part of the `reauth` test, this connects to Spacetime to get new credentials,
+/// and saves them to a file.
+fn exec_reauth_part_1() {
+    let test_counter = TestCounter::new();
 
-//     once_on_connect(|creds, _| {
-//         save_result(save_credentials(".spacetime_rust_sdk_test", creds));
-//     });
+    let name = db_name_or_panic();
 
-//     connect_result(connect(LOCALHOST, &name, None));
+    let save_result = test_counter.add_test("save-credentials");
 
-//     test_counter.wait_for_all();
-// }
+    DbConnection::builder()
+        .on_connect(|_, identity, token| {
+            save_result(creds_store().save(identity, token));
+        })
+        .on_connect_error(|e| panic!("Connect failed: {e:?}"))
+        .with_module_name(name)
+        .with_uri(LOCALHOST)
+        .build()
+        .unwrap()
+        .run_threaded();
 
-// /// Part of the `reauth` test, this loads credentials from a file,
-// /// and passes them to `connect`.
-// ///
-// /// Must run after `exec_reauth_part_1`.
-// fn exec_reauth_part_2() {
-//     let test_counter = TestCounter::new();
-//     let name = db_name_or_panic();
+    test_counter.wait_for_all();
+}
 
-//     let connect_result = test_counter.add_test("connect");
-//     let creds_match_result = test_counter.add_test("credentials-match");
+/// Part of the `reauth` test, this loads credentials from a file,
+/// and passes them to `connect`.
+///
+/// Must run after `exec_reauth_part_1`.
+fn exec_reauth_part_2() {
+    let test_counter = TestCounter::new();
 
-//     let creds = load_credentials(".spacetime_rust_sdk_test")
-//         .expect("Failed to load credentials")
-//         .expect("Expected credentials but found none");
+    let name = db_name_or_panic();
 
-//     let creds_dup = creds.clone();
+    let creds_match_result = test_counter.add_test("creds-match");
 
-//     once_on_connect(move |received_creds, _| {
-//         let run_checks = || {
-//             assert_eq_or_bail!(creds_dup, *received_creds);
-//             Ok(())
-//         };
+    let (identity, token) = creds_store().load().unwrap().unwrap();
 
-//         creds_match_result(run_checks());
-//     });
+    DbConnection::builder()
+        .on_connect({
+            let token = token.clone();
+            move |_, recv_identity, recv_token| {
+                let run_checks = || {
+                    assert_eq_or_bail!(identity, recv_identity);
+                    assert_eq_or_bail!(token, recv_token);
+                    Ok(())
+                };
+                creds_match_result(run_checks());
+            }
+        })
+        .on_connect_error(|e| panic!("Connect failed: {e:?}"))
+        .with_module_name(name)
+        .with_credentials(Some((identity, token)))
+        .with_uri(LOCALHOST)
+        .build()
+        .unwrap()
+        .run_threaded();
 
-//     connect_result(connect(LOCALHOST, &name, Some(creds)));
-
-//     test_counter.wait_for_all();
-// }
+    test_counter.wait_for_all();
+}
 
 // fn exec_reconnect_same_address() {
 //     let test_counter = TestCounter::new();

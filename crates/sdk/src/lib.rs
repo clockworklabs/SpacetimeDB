@@ -28,6 +28,7 @@ pub use spacetimedb_lib as lib;
 #[doc(hidden)]
 pub use spacetimedb_sats as sats;
 
+pub mod credentials;
 pub mod db_context;
 pub mod event;
 pub mod table;
