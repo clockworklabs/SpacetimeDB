@@ -11,7 +11,7 @@ import { readdir, readFile } from 'node:fs/promises';
 
 //////////////////////////////////////////////// !FLAGS ////////////////////////////////////////////////
 // If you want to disable any of these, set them to false
-const CHECK_EXTERNAL_LINKS = false;
+const CHECK_EXTERNAL_LINKS = true;
 const PRINT_ERRORS = true;
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -335,7 +335,16 @@ async function checkLinks() {
 
       for (const link of linksToCheck) {
         console.log(kleur.dim().bold(`    ${link}`));
-        const response = await fetch(link);
+        const response = await fetch(link, {
+          // Required as crates.io doesn't allow non browser user agents
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            Accept:
+              'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+          },
+        });
         if (!response.ok) {
           slugErrors.add({
             message: `External: Link to ${link} is broken`,

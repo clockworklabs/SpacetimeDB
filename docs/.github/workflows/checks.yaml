@@ -4,10 +4,13 @@ concurrency:
   group: docs-checks-${{ github.ref }}
   cancel-in-progress: true
 
+# On push on all branches, and cron every 12 hours
 on:
   push:
-    branches-ignore:
-      - main
+    branches:
+      - '**'
+  schedule:
+    - cron: '0 */12 * * *'
 
 jobs:
   docs:

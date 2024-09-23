@@ -106,7 +106,7 @@ console.log(Person, AddReducer, SayHelloReducer);
 
 The database client connection to a SpacetimeDB server.
 
-Defined in [spacetimedb-sdk.spacetimedb](https://github.com/clockworklabs/spacetimedb-typescript-sdk/blob/main/src/spacetimedb.ts):
+Defined in [spacetimedb-sdk.spacetimedb](https://github.com/clockworklabs/spacetimedb-typescript-sdk/blob/main/packages/sdk/src/spacetimedb.ts):
 
 | Constructors                                                                   | Description                                                              |
 | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
@@ -393,7 +393,7 @@ spacetimeDBClient.onError((...args: any[]) => {
 
 A unique public identifier for a user of a database.
 
-Defined in [spacetimedb-sdk.identity](https://github.com/clockworklabs/spacetimedb-typescript-sdk/blob/main/src/identity.ts):
+Defined in [spacetimedb-sdk.identity](https://github.com/clockworklabs/spacetimedb-typescript-sdk/blob/main/packages/sdk/src/identity.ts):
 
 | Constructors                                                 | Description                                  |
 | ------------------------------------------------------------ | -------------------------------------------- |
@@ -476,7 +476,7 @@ Identity.fromString(str: string): Identity
 
 An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#events-class-identity).
 
-Defined in [spacetimedb-sdk.address](https://github.com/clockworklabs/spacetimedb-typescript-sdk/blob/main/src/address.ts):
+Defined in [spacetimedb-sdk.address](https://github.com/clockworklabs/spacetimedb-typescript-sdk/blob/main/packages/sdk/src/address.ts):
 
 | Constructors                                               | Description                                 |
 | ---------------------------------------------------------- | ------------------------------------------- |
