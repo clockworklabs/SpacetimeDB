@@ -31,10 +31,10 @@ pub use user_type::*;
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub enum Reducer {
-    IdentityDisconnected(identity_disconnected_reducer::IdentityDisconnected),
     Init(init_reducer::Init),
-    IdentityConnected(identity_connected_reducer::IdentityConnected),
     SendMessage(send_message_reducer::SendMessage),
+    IdentityConnected(identity_connected_reducer::IdentityConnected),
+    IdentityDisconnected(identity_disconnected_reducer::IdentityDisconnected),
     SetName(set_name_reducer::SetName),
 }
 
@@ -45,19 +45,19 @@ impl __sdk::spacetime_module::InModule for Reducer {
 impl __sdk::spacetime_module::Reducer for Reducer {
     fn reducer_name(&self) -> &'static str {
         match self {
-            Reducer::IdentityDisconnected(_) => "__identity_disconnected__",
             Reducer::Init(_) => "__init__",
-            Reducer::IdentityConnected(_) => "__identity_connected__",
             Reducer::SendMessage(_) => "send_message",
+            Reducer::IdentityConnected(_) => "__identity_connected__",
+            Reducer::IdentityDisconnected(_) => "__identity_disconnected__",
             Reducer::SetName(_) => "set_name",
         }
     }
     fn reducer_args(&self) -> &dyn std::any::Any {
         match self {
-            Reducer::IdentityDisconnected(args) => args,
             Reducer::Init(args) => args,
-            Reducer::IdentityConnected(args) => args,
             Reducer::SendMessage(args) => args,
+            Reducer::IdentityConnected(args) => args,
+            Reducer::IdentityDisconnected(args) => args,
             Reducer::SetName(args) => args,
         }
     }
@@ -66,21 +66,21 @@ impl TryFrom<__ws::ReducerCallInfo> for Reducer {
     type Error = __anyhow::Error;
     fn try_from(value: __ws::ReducerCallInfo) -> __anyhow::Result<Self> {
         match &value.reducer_name[..] {
-            "__identity_disconnected__" => Ok(Reducer::IdentityDisconnected(
-                __sdk::spacetime_module::parse_reducer_args("__identity_disconnected__", &value.args)?,
-            )),
             "__init__" => Ok(Reducer::Init(__sdk::spacetime_module::parse_reducer_args(
                 "__init__",
-                &value.args,
-            )?)),
-            "__identity_connected__" => Ok(Reducer::IdentityConnected(__sdk::spacetime_module::parse_reducer_args(
-                "__identity_connected__",
                 &value.args,
             )?)),
             "send_message" => Ok(Reducer::SendMessage(__sdk::spacetime_module::parse_reducer_args(
                 "send_message",
                 &value.args,
             )?)),
+            "__identity_connected__" => Ok(Reducer::IdentityConnected(__sdk::spacetime_module::parse_reducer_args(
+                "__identity_connected__",
+                &value.args,
+            )?)),
+            "__identity_disconnected__" => Ok(Reducer::IdentityDisconnected(
+                __sdk::spacetime_module::parse_reducer_args("__identity_disconnected__", &value.args)?,
+            )),
             "set_name" => Ok(Reducer::SetName(__sdk::spacetime_module::parse_reducer_args(
                 "set_name",
                 &value.args,
@@ -93,8 +93,8 @@ impl TryFrom<__ws::ReducerCallInfo> for Reducer {
 #[derive(Default)]
 #[allow(non_snake_case)]
 pub struct DbUpdate {
-    user: __sdk::spacetime_module::TableUpdate<User>,
     message: __sdk::spacetime_module::TableUpdate<Message>,
+    user: __sdk::spacetime_module::TableUpdate<User>,
 }
 
 impl TryFrom<__ws::DatabaseUpdate> for DbUpdate {
@@ -103,10 +103,10 @@ impl TryFrom<__ws::DatabaseUpdate> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
             match &table_update.table_name[..] {
-                "user" => db_update.user = user_table::parse_table_update(table_update.deletes, table_update.inserts)?,
                 "message" => {
                     db_update.message = message_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
+                "user" => db_update.user = user_table::parse_table_update(table_update.deletes, table_update.inserts)?,
 
                 unknown => __anyhow::bail!("Unknown table {unknown:?} in DatabaseUpdate"),
             }
@@ -121,12 +121,12 @@ impl __sdk::spacetime_module::InModule for DbUpdate {
 
 impl __sdk::spacetime_module::DbUpdate for DbUpdate {
     fn apply_to_client_cache(&self, cache: &mut __sdk::client_cache::ClientCache<RemoteModule>) {
-        cache.apply_diff_to_table::<User>("user", &self.user);
         cache.apply_diff_to_table::<Message>("message", &self.message);
+        cache.apply_diff_to_table::<User>("user", &self.user);
     }
     fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::callbacks::DbCallbacks<RemoteModule>) {
-        callbacks.invoke_table_row_callbacks::<User>("user", &self.user, event);
         callbacks.invoke_table_row_callbacks::<Message>("message", &self.message, event);
+        callbacks.invoke_table_row_callbacks::<User>("user", &self.user, event);
     }
 }
 
@@ -198,8 +198,8 @@ impl __sdk::db_context::DbContext for DbConnection {
         __sdk::subscription::SubscriptionBuilder::new(&self.imp)
     }
 
-    fn identity(&self) -> __sdk::Identity {
-        self.imp.identity()
+    fn try_identity(&self) -> Option<__sdk::Identity> {
+        self.imp.try_identity()
     }
     fn address(&self) -> __sdk::Address {
         self.imp.address()
@@ -282,8 +282,8 @@ impl __sdk::db_context::DbContext for EventContext {
         __sdk::subscription::SubscriptionBuilder::new(&self.imp)
     }
 
-    fn identity(&self) -> __sdk::Identity {
-        self.imp.identity()
+    fn try_identity(&self) -> Option<__sdk::Identity> {
+        self.imp.try_identity()
     }
     fn address(&self) -> __sdk::Address {
         self.imp.address()

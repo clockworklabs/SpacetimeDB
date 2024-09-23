@@ -13,6 +13,9 @@ pub trait DbContext {
     type SubscriptionBuilder;
     fn subscription_builder(&self) -> Self::SubscriptionBuilder;
 
-    fn identity(&self) -> Identity;
+    fn identity(&self) -> Identity {
+        self.try_identity().unwrap()
+    }
+    fn try_identity(&self) -> Option<Identity>;
     fn address(&self) -> Address;
 }

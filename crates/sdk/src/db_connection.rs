@@ -10,6 +10,7 @@ use anyhow::{bail, Context, Result};
 use futures::StreamExt;
 use futures_channel::mpsc;
 use http::Uri;
+use lazy_static::lazy_static;
 use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize, Address, Identity};
 use std::{
     any::Any,
@@ -438,12 +439,8 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         });
     }
 
-    pub fn identity(&self) -> Identity {
-        self.inner
-            .lock()
-            .unwrap()
-            .identity
-            .expect("Connected anonymously and have not yet received identity from server")
+    pub fn try_identity(&self) -> Option<Identity> {
+        self.inner.lock().unwrap().identity
     }
 
     pub fn address(&self) -> Address {
@@ -589,6 +586,12 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
     on_connect: Option<Box<dyn FnOnce(&M::DbConnection, Identity, &str) + Send + 'static>>,
     on_connect_error: Option<Box<dyn FnOnce(anyhow::Error) + Send + 'static>>,
     on_disconnect: Option<Box<dyn FnOnce(&M::DbConnection, Option<&anyhow::Error>) + Send + 'static>>,
+
+    client_address: Option<Address>,
+}
+
+lazy_static! {
+    static ref CLIENT_ADDRESS: Address = Address::from_byte_array(rand::random());
 }
 
 impl<M: SpacetimeModule> DbConnectionBuilder<M> {
@@ -603,6 +606,7 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
             on_connect: None,
             on_connect_error: None,
             on_disconnect: None,
+            client_address: None,
         }
     }
 
@@ -615,7 +619,7 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
         let (runtime, handle) = enter_or_create_runtime()?;
         let db_callbacks = DbCallbacks::default();
         let reducer_callbacks = ReducerCallbacks::default();
-        let client_address = Address::from_byte_array(rand::random());
+        let client_address = self.client_address.unwrap_or_else(|| *CLIENT_ADDRESS);
 
         let ws_connection = tokio::task::block_in_place(|| {
             handle.block_on(WsConnection::connect(

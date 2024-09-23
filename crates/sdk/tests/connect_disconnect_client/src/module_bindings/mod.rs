@@ -175,8 +175,8 @@ impl __sdk::db_context::DbContext for DbConnection {
         __sdk::subscription::SubscriptionBuilder::new(&self.imp)
     }
 
-    fn identity(&self) -> __sdk::Identity {
-        self.imp.identity()
+    fn try_identity(&self) -> Option<__sdk::Identity> {
+        self.imp.try_identity()
     }
     fn address(&self) -> __sdk::Address {
         self.imp.address()
@@ -259,8 +259,8 @@ impl __sdk::db_context::DbContext for EventContext {
         __sdk::subscription::SubscriptionBuilder::new(&self.imp)
     }
 
-    fn identity(&self) -> __sdk::Identity {
-        self.imp.identity()
+    fn try_identity(&self) -> Option<__sdk::Identity> {
+        self.imp.try_identity()
     }
     fn address(&self) -> __sdk::Address {
         self.imp.address()

@@ -38,10 +38,10 @@ macro_rules! declare_tests_with_suffix {
                 make_test("insert_identity").run();
             }
 
-            // #[test]
-            // fn insert_caller_identity() {
-            //     make_test("insert_caller_identity").run();
-            // }
+            #[test]
+            fn insert_caller_identity() {
+                make_test("insert_caller_identity").run();
+            }
 
             #[test]
             fn delete_identity() {
@@ -58,10 +58,10 @@ macro_rules! declare_tests_with_suffix {
                 make_test("insert_address").run();
             }
 
-            // #[test]
-            // fn insert_caller_address() {
-            //     make_test("insert_caller_address").run();
-            // }
+            #[test]
+            fn insert_caller_address() {
+                make_test("insert_caller_address").run();
+            }
 
             #[test]
             fn delete_address() {
@@ -140,10 +140,10 @@ macro_rules! declare_tests_with_suffix {
                 make_test("reauth_part_2").run();
             }
 
-            // #[test]
-            // fn reconnect_same_address() {
-            //     make_test("reconnect_same_address").run();
-            // }
+            #[test]
+            fn reconnect_same_address() {
+                make_test("reconnect_same_address").run();
+            }
 
             #[test]
             fn connect_disconnect_callbacks() {
