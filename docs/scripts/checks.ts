@@ -347,7 +347,7 @@ async function checkLinks() {
         });
         if (!response.ok) {
           slugErrors.add({
-            message: `External: Link to ${link} is broken`,
+            message: `External: Link to ${link} is ${response.status}:${response.statusText}`,
             file: path,
             line: lines.findIndex(line => line.includes(link)) + 1,
           });
