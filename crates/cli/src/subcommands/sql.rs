@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use crate::api::{from_json_seed, ClientApi, Connection, StmtResultJson};
 use crate::common_args;
-use clap::{Arg, ArgAction, ArgGroup, ArgMatches};
+use clap::{Arg, ArgAction, ArgMatches};
 use itertools::Itertools;
 use reqwest::RequestBuilder;
 use spacetimedb_lib::de::serde::SeedWrapper;
@@ -32,13 +32,7 @@ pub fn cli() -> clap::Command {
                  .long("interactive")
                  .action(ArgAction::SetTrue)
                  .conflicts_with("query")
-                 .help("Runs an interactive command prompt for `SQL` expressions"),)
-        .group(
-            ArgGroup::new("mode")
-                .args(["interactive","query"])
-                .multiple(false)
-                .required(true)
-        )
+                 .help("Instead of using a query, run an interactive command prompt for `SQL` expressions"),)
         .arg(
             common_args::identity()
                 .conflicts_with("anon_identity")

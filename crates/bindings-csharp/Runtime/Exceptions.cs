@@ -42,6 +42,11 @@ public class NoSuchIterException : StdbException
     public override string Message => "The provided row iterator does not exist";
 }
 
+public class NoSuchLogStopwatch : StdbException
+{
+    public override string Message => "The provided stopwatch does not exist";
+}
+
 public class NoSuchBytesException : StdbException
 {
     public override string Message => "The provided bytes source or sink does not exist";

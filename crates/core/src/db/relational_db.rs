@@ -1073,7 +1073,7 @@ impl RelationalDB {
         prefix_elems: ColId,
         rstart: &[u8],
         rend: &[u8],
-    ) -> Result<impl Iterator<Item = RowRef<'a>>, DBError> {
+    ) -> Result<(TableId, impl Iterator<Item = RowRef<'a>>), DBError> {
         tx.btree_scan(index_id, prefix, prefix_elems, rstart, rend)
     }
 

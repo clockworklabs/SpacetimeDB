@@ -50,11 +50,7 @@ fn upgrade_module(def: RawModuleDefV8, extra_errors: &mut Vec<ValidationError>) 
 
     let tables = convert_all(tables, |table| upgrade_table(table, &typespace, extra_errors));
     let reducers = convert_all(reducers, upgrade_reducer);
-    let types = misc_exports
-        .into_iter()
-        .map(upgrade_misc_export_to_type)
-        .chain(tables.iter().map(type_def_for_table))
-        .collect();
+    let types = misc_exports.into_iter().map(upgrade_misc_export_to_type).collect();
 
     RawModuleDefV9 {
         typespace,
@@ -161,19 +157,6 @@ fn check_all_column_defs(
                 ref_: product_type_ref,
             });
         }
-    }
-}
-
-/// In `v8`, tables did NOT get a `MiscModuleExport` for their product type.
-/// So, we generate these.
-fn type_def_for_table(def: &RawTableDefV9) -> RawTypeDefV9 {
-    RawTypeDefV9 {
-        name: RawScopedTypeNameV9 {
-            scope: [].into(),
-            name: def.name.clone(),
-        },
-        ty: def.product_type_ref,
-        custom_ordering: true,
     }
 }
 

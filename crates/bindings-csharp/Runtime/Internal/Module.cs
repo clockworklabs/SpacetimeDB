@@ -26,11 +26,6 @@ partial class RawModuleDefV8
 
     private void RegisterTypeName<T>(AlgebraicType.Ref typeRef)
     {
-        // If it's a table, it doesn't need an alias as name will be registered automatically.
-        if (typeof(T).IsDefined(typeof(TableAttribute), false))
-        {
-            return;
-        }
         MiscExports.Add(
             new MiscModuleExport.TypeAlias(new(GetFriendlyName(typeof(T)), (uint)typeRef.Ref_))
         );
@@ -197,11 +192,10 @@ public static class Module
 
         try
         {
-            Runtime.Random = new((int)timestamp.MicrosecondsSinceEpoch);
-
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            reducers[(int)id].Invoke(reader, new(sender, address, timestamp.ToStd()));
+            var context = new ReducerContext(sender, address, timestamp);
+            reducers[(int)id].Invoke(reader, context);
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the reducer arguments");

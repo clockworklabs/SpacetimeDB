@@ -824,6 +824,78 @@ impl WasmInstanceEnv {
         })
     }
 
+    /// Deletes all rows found in the index identified by `index_id`,
+    /// according to the:
+    /// - `prefix = prefix_ptr[..prefix_len]`,
+    /// - `rstart = rstart_ptr[..rstart_len]`,
+    /// - `rend = rend_ptr[..rend_len]`,
+    /// in WASM memory.
+    ///
+    /// This syscall will delete all the rows found by
+    /// [`datastore_btree_scan_bsatn`] with the same arguments passed,
+    /// including `prefix_elems`.
+    /// See `datastore_btree_scan_bsatn` for details.
+    ///
+    /// The number of rows deleted is written to the WASM pointer `out`.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `prefix_elems > 0`
+    ///    and (`prefix_ptr` is NULL or `prefix` is not in bounds of WASM memory).
+    /// - `rstart` is NULL or `rstart` is not in bounds of WASM memory.
+    /// - `rend` is NULL or `rend` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+    /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+    /// - `WRONG_INDEX_ALGO` if the index is not a btree index.
+    /// - `BSATN_DECODE_ERROR`, when `prefix` cannot be decoded to
+    ///    a `prefix_elems` number of `AlgebraicValue`
+    ///    typed at the initial `prefix_elems` `AlgebraicType`s of the index's key type.
+    ///    Or when `rstart` or `rend` cannot be decoded to an `Bound<AlgebraicValue>`
+    ///    where the inner `AlgebraicValue`s are
+    ///    typed at the `prefix_elems + 1` `AlgebraicType` of the index's key type.
+    pub fn datastore_delete_by_btree_scan_bsatn(
+        caller: Caller<'_, Self>,
+        index_id: u32,
+        prefix_ptr: WasmPtr<u8>,
+        prefix_len: u32,
+        prefix_elems: u32,
+        rstart_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rstart_len: u32,
+        rend_ptr: WasmPtr<u8>, // Bound<AlgebraicValue>
+        rend_len: u32,
+        out: WasmPtr<u32>,
+    ) -> RtResult<u32> {
+        Self::cvt_ret(caller, AbiCall::DatastoreDeleteByBtreeScanBsatn, out, |caller| {
+            let prefix_elems = Self::convert_u32_to_col_id(prefix_elems)?;
+
+            let (mem, env) = Self::mem_env(caller);
+            // Read the prefix and range start & end from WASM memory.
+            let prefix = if prefix_elems.idx() == 0 {
+                &[]
+            } else {
+                mem.deref_slice(prefix_ptr, prefix_len)?
+            };
+            let rstart = mem.deref_slice(rstart_ptr, rstart_len)?;
+            let rend = mem.deref_slice(rend_ptr, rend_len)?;
+
+            // Delete the relevant rows.
+            Ok(env.instance_env.datastore_delete_by_btree_scan_bsatn(
+                index_id.into(),
+                prefix,
+                prefix_elems,
+                rstart,
+                rend,
+            )?)
+        })
+    }
+
     /// Deletes those rows, in the table identified by `table_id`,
     /// that match any row in the byte string `rel = rel_ptr[..rel_len]` in WASM memory.
     ///

@@ -852,6 +852,7 @@ impl Config {
 
         let config = toml::to_string_pretty(&self.home).unwrap();
 
+        eprintln!("Saving config to {}.", home_path.display());
         // TODO: We currently have a race condition if multiple processes are modifying the config.
         // If process X and process Y read the config, each make independent changes, and then save
         // the config, the first writer will have its changes clobbered by the second writer.
@@ -863,7 +864,7 @@ impl Config {
         // We should address this issue, but we currently don't expect it to arise very frequently
         // (see https://github.com/clockworklabs/SpacetimeDB/pull/1341#issuecomment-2150857432).
         if let Err(e) = atomic_write(&home_path, config) {
-            eprintln!("could not save config file: {e}")
+            eprintln!("Could not save config file: {e}")
         }
     }
 

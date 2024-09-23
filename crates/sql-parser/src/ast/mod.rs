@@ -1,21 +1,26 @@
+use std::fmt::{Display, Formatter};
+
 use sqlparser::ast::Ident;
 
 pub mod sql;
 pub mod sub;
 
 /// The FROM clause is either a [RelExpr] or a JOIN
+#[derive(Debug)]
 pub enum SqlFrom<Ast> {
     Expr(RelExpr<Ast>, Option<SqlIdent>),
     Join(RelExpr<Ast>, SqlIdent, Vec<SqlJoin<Ast>>),
 }
 
 /// A RelExpr is an expression that produces a relation
+#[derive(Debug)]
 pub enum RelExpr<Ast> {
     Var(SqlIdent),
     Ast(Box<Ast>),
 }
 
 /// An inner join in a FROM clause
+#[derive(Debug)]
 pub struct SqlJoin<Ast> {
     pub expr: RelExpr<Ast>,
     pub alias: SqlIdent,
@@ -23,9 +28,11 @@ pub struct SqlJoin<Ast> {
 }
 
 /// A projection expression in a SELECT clause
+#[derive(Debug)]
 pub struct ProjectElem(pub SqlExpr, pub Option<SqlIdent>);
 
 /// A SQL SELECT clause
+#[derive(Debug)]
 pub enum Project {
     /// SELECT *
     /// SELECT a.*
@@ -35,6 +42,7 @@ pub enum Project {
 }
 
 /// A scalar SQL expression
+#[derive(Debug)]
 pub enum SqlExpr {
     /// A constant expression
     Lit(SqlLiteral),
@@ -47,7 +55,7 @@ pub enum SqlExpr {
 }
 
 /// A SQL identifier or named reference
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SqlIdent {
     pub name: String,
     pub case_sensitive: bool,
@@ -75,6 +83,7 @@ impl From<Ident> for SqlIdent {
 }
 
 /// A SQL constant expression
+#[derive(Debug)]
 pub enum SqlLiteral {
     /// A boolean constant
     Bool(bool),
@@ -87,6 +96,7 @@ pub enum SqlLiteral {
 }
 
 /// Binary infix operators
+#[derive(Debug, Clone, Copy)]
 pub enum BinOp {
     Eq,
     Ne,
@@ -96,4 +106,19 @@ pub enum BinOp {
     Gte,
     And,
     Or,
+}
+
+impl Display for BinOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Eq => write!(f, "="),
+            Self::Ne => write!(f, "<>"),
+            Self::Lt => write!(f, "<"),
+            Self::Gt => write!(f, ">"),
+            Self::Lte => write!(f, "<="),
+            Self::Gte => write!(f, ">="),
+            Self::And => write!(f, "AND"),
+            Self::Or => write!(f, "OR"),
+        }
+    }
 }
