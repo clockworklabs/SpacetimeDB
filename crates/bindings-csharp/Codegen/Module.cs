@@ -5,18 +5,6 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static Utils;
 
-[Flags]
-enum ColumnAttrs : byte
-{
-    UnSet = 0b0000,
-    Indexed = 0b0001,
-    AutoInc = 0b0010,
-    Unique = Indexed | 0b0100,
-    Identity = Unique | AutoInc,
-    PrimaryKey = Unique | 0b1000,
-    PrimaryKeyAuto = PrimaryKey | AutoInc,
-}
-
 record ColumnDeclaration : MemberDeclaration
 {
     public readonly ColumnAttrs Attrs;
@@ -40,8 +28,8 @@ record ColumnDeclaration : MemberDeclaration
     {
         Attrs = field
             .GetAttributes()
-            .Where(a => a.AttributeClass?.ToString() == "SpacetimeDB.ColumnAttribute")
-            .Select(a => (ColumnAttrs)a.ConstructorArguments[0].Value!)
+            .Where(a => a.AttributeClass?.ToString() == typeof(ColumnAttribute).FullName)
+            .Select(a => a.ParseAs<ColumnAttribute>().Type)
             .SingleOrDefault();
 
         var type = field.Type;
@@ -129,14 +117,10 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             throw new InvalidOperationException("Tagged enums cannot be tables.");
         }
 
-        var attrArgs = context.Attributes.Single().NamedArguments;
+        var attr = context.Attributes.Single().ParseAs<TableAttribute>();
 
-        IsPublic = attrArgs.Any(pair => pair is { Key: "Public", Value.Value: true });
-
-        Scheduled = attrArgs
-            .Where(pair => pair.Key == "Scheduled")
-            .Select(pair => (string?)pair.Value.Value)
-            .SingleOrDefault();
+        IsPublic = attr.Public;
+        Scheduled = attr.Scheduled;
 
         if (Scheduled is not null)
         {
@@ -304,17 +288,15 @@ record ReducerDeclaration
     {
         var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
         var method = (IMethodSymbol)context.TargetSymbol;
-        var attr = context.Attributes.Single();
+        var attr = context.Attributes.Single().ParseAs<ReducerAttribute>();
 
         if (!method.ReturnsVoid)
         {
             throw new Exception($"Reducer {method} must return void");
         }
 
-        var exportName = (string?)attr.ConstructorArguments.SingleOrDefault().Value;
-
         Name = method.Name;
-        ExportName = exportName ?? Name;
+        ExportName = attr.Name ?? Name;
         FullName = SymbolToName(method);
         Args = new(
             method.Parameters.Select(p => new ReducerParamDeclaration(p)).ToImmutableArray()
@@ -381,7 +363,7 @@ public class Module : IIncrementalGenerator
     {
         var tables = context
             .SyntaxProvider.ForAttributeWithMetadataName(
-                fullyQualifiedMetadataName: "SpacetimeDB.TableAttribute",
+                fullyQualifiedMetadataName: typeof(TableAttribute).FullName,
                 predicate: (node, ct) => true, // already covered by attribute restrictions
                 transform: (context, ct) => new TableDeclaration(context)
             )
@@ -396,7 +378,7 @@ public class Module : IIncrementalGenerator
 
         var reducers = context
             .SyntaxProvider.ForAttributeWithMetadataName(
-                fullyQualifiedMetadataName: "SpacetimeDB.ReducerAttribute",
+                fullyQualifiedMetadataName: typeof(ReducerAttribute).FullName,
                 predicate: (node, ct) => true, // already covered by attribute restrictions
                 transform: (context, ct) => new ReducerDeclaration(context)
             )
