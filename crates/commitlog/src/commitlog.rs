@@ -230,8 +230,8 @@ impl<R: Repo, T> Generic<R, T> {
                 } else {
                     let byte_offset = segment::Header::LEN as u64 + bytes_read;
                     debug!("truncating segment {segment} to {offset} at {byte_offset}");
-                    let file = self.repo.open_segment(segment)?;
-                    file.ftruncate(byte_offset)?;
+                    let mut file = self.repo.open_segment(segment)?;
+                    file.ftruncate(offset, byte_offset)?;
                     // Some filesystems require fsync after ftruncate.
                     file.fsync()?;
                     break;

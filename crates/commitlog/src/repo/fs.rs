@@ -4,9 +4,11 @@ use std::{
     path::PathBuf,
 };
 
-use log::debug;
+use log::{debug, warn};
 
-use super::Repo;
+use crate::index::{create_index_file, delete_index_file, offset_index_file_path};
+
+use super::{Repo, TxOffset, TxOffsetIndex};
 
 const SEGMENT_FILE_EXT: &str = ".stdb.log";
 
@@ -57,6 +59,11 @@ impl Fs {
         let mut sz = 0;
         for offset in self.existing_offsets()? {
             sz += self.segment_path(offset).metadata()?.len();
+            // Add the size of the offset index file if present
+            sz += offset_index_file_path(&self.root, offset)
+                .metadata()
+                .map(|m| m.len())
+                .unwrap_or(0);
         }
 
         Ok(sz)
@@ -91,6 +98,9 @@ impl Repo for Fs {
     }
 
     fn remove_segment(&self, offset: u64) -> io::Result<()> {
+        let _ = self.remove_offset_index(offset).map_err(|e| {
+            warn!("failed to remove offset index for segment {offset}, error: {e}");
+        });
         fs::remove_file(self.segment_path(offset))
     }
 
@@ -116,5 +126,13 @@ impl Repo for Fs {
         segments.sort_unstable();
 
         Ok(segments)
+    }
+
+    fn get_offset_index(&self, offset: TxOffset, cap: u64) -> io::Result<TxOffsetIndex> {
+        create_index_file(&self.root, offset, cap)
+    }
+
+    fn remove_offset_index(&self, offset: TxOffset) -> io::Result<()> {
+        delete_index_file(&self.root, offset)
     }
 }

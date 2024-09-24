@@ -2,7 +2,7 @@
 source: crates/bindings/tests/deps.rs
 expression: "cargo tree -p spacetimedb -f {lib} -e no-dev"
 ---
-total crates: 60
+total crates: 62
 spacetimedb
 ├── bytemuck
 ├── derive_more
@@ -26,6 +26,12 @@ spacetimedb
 │   ├── libc
 │   ├── rand_chacha
 │   │   ├── ppv_lite86
+│   │   │   └── zerocopy
+│   │   │       ├── byteorder
+│   │   │       └── zerocopy_derive
+│   │   │           ├── proc_macro2 (*)
+│   │   │           ├── quote (*)
+│   │   │           └── syn (*)
 │   │   └── rand_core
 │   │       └── getrandom (*)
 │   └── rand_core (*)
@@ -42,10 +48,7 @@ spacetimedb
 │   │   ├── itertools
 │   │   │   └── either
 │   │   └── nohash_hasher
-│   └── syn
-│       ├── proc_macro2 (*)
-│       ├── quote (*)
-│       └── unicode_ident
+│   └── syn (*)
 ├── spacetimedb_bindings_sys
 │   └── spacetimedb_primitives (*)
 ├── spacetimedb_lib
@@ -65,7 +68,7 @@ spacetimedb
 │   │   │   ├── ahash
 │   │   │   │   ├── cfg_if
 │   │   │   │   ├── once_cell
-│   │   │   │   └── zerocopy
+│   │   │   │   └── zerocopy (*)
 │   │   │   │   [build-dependencies]
 │   │   │   │   └── version_check
 │   │   │   └── allocator_api2
