@@ -99,8 +99,8 @@ pub struct Header {
 
 impl Header {
     /// Create a new header.
-    /// Input `ColList`s are converted to `ColSet`s, that is, their ordering and duplicates are ignored.
-    /// Note that equal `ColSet`s with different Constraints will have their constraints unioned.
+    ///
+    /// `uncombined_constraints` will be normalized using [`combine_constraints`].
     pub fn new(
         table_id: TableId,
         table_name: Box<str>,

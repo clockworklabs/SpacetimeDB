@@ -810,8 +810,6 @@ impl RelationalDB {
 }
 
 impl RelationalDB {
-    /// Create a table with a given schema.
-    /// The schema should have all IDs set to 0.
     pub fn create_table(&self, tx: &mut MutTx, schema: TableSchema) -> Result<TableId, DBError> {
         self.inner.create_table_mut_tx(tx, schema)
     }
@@ -1141,9 +1139,6 @@ impl RelationalDB {
         self.inner.get_next_sequence_value_mut_tx(tx, seq_id)
     }
 
-    /// Add a Sequence into the database instance, generates a stable [SequenceId] for it that will persist on restart.
-    ///
-    /// The sequence should have nonzero `table_id` and zero `sequence_id`.
     pub fn create_sequence(&self, tx: &mut MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId, DBError> {
         self.inner.create_sequence_mut_tx(tx, sequence_schema)
     }

@@ -1205,7 +1205,6 @@ mod tests {
             map_array(basic_table_schema_cols()),
             vec![
                 IndexSchema {
-                    // 0 here means the system will assign IDs on creation
                     index_id: IndexId::SENTINEL,
                     table_id: TableId::SENTINEL,
                     index_name: "id_idx".into(),

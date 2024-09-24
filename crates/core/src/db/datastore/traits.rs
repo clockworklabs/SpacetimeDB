@@ -391,8 +391,6 @@ pub trait TxDatastore: DataRow + Tx {
 
 pub trait MutTxDatastore: TxDatastore + MutTx {
     // Tables
-    /// Create a table with the given schema.
-    /// The table's ID should be set to 0 (the autoinc sentinel value).
     fn create_table_mut_tx(&self, tx: &mut Self::MutTx, schema: TableSchema) -> Result<TableId>;
     // In these methods, we use `'tx` because the return type must borrow data
     // from `Inner` in the `Locking` implementation,
@@ -421,8 +419,6 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
 
     // Indexes
 
-    /// Create a new index with the given schema.
-    /// The index's ID field should be set to 0 (the autoinc sentinel value), but the table ID should not.
     fn create_index_mut_tx(&self, tx: &mut Self::MutTx, index_schema: IndexSchema, is_unique: bool) -> Result<IndexId>;
     fn drop_index_mut_tx(&self, tx: &mut Self::MutTx, index_id: IndexId) -> Result<()>;
     fn index_id_from_name_mut_tx(&self, tx: &Self::MutTx, index_name: &str) -> super::Result<Option<IndexId>>;
@@ -434,8 +430,6 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
 
     // Sequences
     fn get_next_sequence_value_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<i128>;
-    /// Create a new sequence with the given schema.
-    /// The schema's ID field should be set to 0 (the autoinc sentinel value), but the table ID should not.
     fn create_sequence_mut_tx(&self, tx: &mut Self::MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId>;
     fn drop_sequence_mut_tx(&self, tx: &mut Self::MutTx, seq_id: SequenceId) -> Result<()>;
     fn sequence_id_from_name_mut_tx(&self, tx: &Self::MutTx, sequence_name: &str) -> super::Result<Option<SequenceId>>;
