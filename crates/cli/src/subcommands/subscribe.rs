@@ -37,6 +37,7 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("num-updates")
                 .required(false)
+                .long("num-updates")
                 .short('n')
                 .action(ArgAction::Set)
                 .value_parser(value_parser!(u32))
