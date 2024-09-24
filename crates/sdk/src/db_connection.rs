@@ -1,8 +1,8 @@
 use crate::{
-    callbacks::{CallbackId, DbCallbacks, ReducerCallbacks},
+    callbacks::{CallbackId, DbCallbacks, ReducerCallback, ReducerCallbacks, RowCallback, UpdateCallback},
     client_cache::{ClientCache, ClientCacheView, TableCache, UniqueConstraint},
     spacetime_module::{DbConnection, DbUpdate, EventContext, InModule, SpacetimeModule},
-    subscription::SubscriptionManager,
+    subscription::{OnAppliedCallback, OnErrorCallback, SubscriptionManager},
     websocket::WsConnection,
     ws_messages as ws, Event, ReducerEvent, Status,
 };
@@ -12,8 +12,6 @@ use futures_channel::mpsc;
 use http::Uri;
 use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize, Address, Identity};
 use std::{
-    any::Any,
-    marker::PhantomData,
     sync::{Arc, Mutex, OnceLock},
     time::{Duration, SystemTime},
 };
@@ -456,6 +454,13 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     }
 }
 
+type OnConnectCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::DbConnection, Identity, &str) + Send + 'static>;
+
+type OnConnectErrorCallback = Box<dyn FnOnce(&anyhow::Error) + Send + 'static>;
+
+type OnDisconnectCallback<M> =
+    Box<dyn FnOnce(&<M as SpacetimeModule>::DbConnection, Option<&anyhow::Error>) + Send + 'static>;
+
 pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     /// `Some` if not within the context of an outer runtime. The `Runtime` must
     /// then live as long as `Self`.
@@ -469,13 +474,11 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     reducer_callbacks: ReducerCallbacks<M>,
     pub(crate) subscriptions: SubscriptionManager<M>,
 
-    on_connect: Option<Box<dyn FnOnce(&M::DbConnection, Identity, &str) + Send + 'static>>,
+    on_connect: Option<OnConnectCallback<M>>,
     #[allow(unused)]
     // TODO: Make use of this to handle `ParsedMessage::Error` before receiving `IdentityToken`.
-    on_connect_error: Option<Box<dyn FnOnce(anyhow::Error) + Send + 'static>>,
-    on_disconnect: Option<Box<dyn FnOnce(&M::DbConnection, Option<&anyhow::Error>) + Send + 'static>>,
-
-    _module: PhantomData<M>,
+    on_connect_error: Option<OnConnectErrorCallback>,
+    on_disconnect: Option<OnDisconnectCallback<M>>,
 }
 
 pub struct TableHandle<Row: InModule> {
@@ -588,9 +591,9 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
 
     credentials: Option<(Identity, String)>,
 
-    on_connect: Option<Box<dyn FnOnce(&M::DbConnection, Identity, &str) + Send + 'static>>,
-    on_connect_error: Option<Box<dyn FnOnce(anyhow::Error) + Send + 'static>>,
-    on_disconnect: Option<Box<dyn FnOnce(&M::DbConnection, Option<&anyhow::Error>) + Send + 'static>>,
+    on_connect: Option<OnConnectCallback<M>>,
+    on_connect_error: Option<OnConnectErrorCallback>,
+    on_disconnect: Option<OnDisconnectCallback<M>>,
 }
 
 static CLIENT_ADDRESS: OnceLock<Address> = OnceLock::new();
@@ -668,8 +671,6 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
             on_connect: self.on_connect,
             on_connect_error: self.on_connect_error,
             on_disconnect: self.on_disconnect,
-
-            _module: PhantomData,
         }));
         let cache = Arc::new(Mutex::new(Arc::new(ClientCache::default())));
         let (pending_mutations_send, pending_mutations_recv) = mpsc::unbounded();
@@ -715,7 +716,7 @@ Instead of registering multiple `on_connect` callbacks, register a single callba
         self
     }
 
-    pub fn on_connect_error(mut self, callback: impl FnOnce(anyhow::Error) + Send + 'static) -> Self {
+    pub fn on_connect_error(mut self, callback: impl FnOnce(&anyhow::Error) + Send + 'static) -> Self {
         if self.on_connect_error.is_some() {
             panic!(
                 "DbConnectionBuilder can only register a single `on_connect_error` callback.
@@ -838,8 +839,8 @@ async fn parse_loop<M: SpacetimeModule>(
 /// Operations a user can make to a `DbContext` which must be postponed
 pub(crate) enum PendingMutation<M: SpacetimeModule> {
     Subscribe {
-        on_applied: Option<Box<dyn FnOnce(&M::EventContext) + Send + 'static>>,
-        on_error: Option<Box<dyn FnOnce(&M::EventContext) + Send + 'static>>,
+        on_applied: Option<OnAppliedCallback<M>>,
+        on_error: Option<OnErrorCallback<M>>,
         queries: Vec<String>,
         // TODO: replace `queries` with query_sql: String,
         sub_id: u32,
@@ -852,7 +853,7 @@ pub(crate) enum PendingMutation<M: SpacetimeModule> {
     AddInsertCallback {
         table: &'static str,
         callback_id: CallbackId,
-        callback: Box<dyn FnMut(&M::EventContext, &dyn Any) + Send + 'static>,
+        callback: RowCallback<M>,
     },
     RemoveInsertCallback {
         table: &'static str,
@@ -861,7 +862,7 @@ pub(crate) enum PendingMutation<M: SpacetimeModule> {
     AddDeleteCallback {
         table: &'static str,
         callback_id: CallbackId,
-        callback: Box<dyn FnMut(&M::EventContext, &dyn Any) + Send + 'static>,
+        callback: RowCallback<M>,
     },
     RemoveDeleteCallback {
         table: &'static str,
@@ -870,7 +871,7 @@ pub(crate) enum PendingMutation<M: SpacetimeModule> {
     AddUpdateCallback {
         table: &'static str,
         callback_id: CallbackId,
-        callback: Box<dyn FnMut(&M::EventContext, &dyn Any, &dyn Any) + Send + 'static>,
+        callback: UpdateCallback<M>,
     },
     RemoveUpdateCallback {
         table: &'static str,
@@ -879,7 +880,7 @@ pub(crate) enum PendingMutation<M: SpacetimeModule> {
     AddReducerCallback {
         reducer: &'static str,
         callback_id: CallbackId,
-        callback: Box<dyn FnMut(&M::EventContext, &dyn Any) + Send + 'static>,
+        callback: ReducerCallback<M>,
     },
     RemoveReducerCallback {
         reducer: &'static str,

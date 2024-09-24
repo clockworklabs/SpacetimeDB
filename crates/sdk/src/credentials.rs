@@ -46,7 +46,7 @@ impl File {
         })
         .context("Error serializing credentials for storage in file")?;
         let path = self.path()?;
-        std::fs::write(&path, &creds)
+        std::fs::write(&path, creds)
             .with_context(|| format!("Error writing BSATN-serialized credentials to file {path:?}"))?;
         Ok(())
     }

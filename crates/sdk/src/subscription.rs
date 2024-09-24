@@ -21,12 +21,15 @@ impl<M: SpacetimeModule> Default for SubscriptionManager<M> {
     }
 }
 
+pub(crate) type OnAppliedCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::EventContext) + Send + 'static>;
+pub(crate) type OnErrorCallback<M> = Box<dyn FnOnce(&<M as SpacetimeModule>::EventContext) + Send + 'static>;
+
 impl<M: SpacetimeModule> SubscriptionManager<M> {
     pub(crate) fn register_subscription(
         &mut self,
         sub_id: u32,
-        on_applied: Option<Box<dyn FnOnce(&M::EventContext) + Send + 'static>>,
-        on_error: Option<Box<dyn FnOnce(&M::EventContext) + Send + 'static>>,
+        on_applied: Option<OnAppliedCallback<M>>,
+        on_error: Option<OnErrorCallback<M>>,
     ) {
         self.subscriptions
             .try_insert(
@@ -49,15 +52,15 @@ impl<M: SpacetimeModule> SubscriptionManager<M> {
 }
 
 struct SubscribedQuery<M: SpacetimeModule> {
-    on_applied: Option<Box<dyn FnOnce(&M::EventContext) + Send + 'static>>,
+    on_applied: Option<OnAppliedCallback<M>>,
     #[allow(unused)]
-    on_error: Option<Box<dyn FnOnce(&M::EventContext) + Send + 'static>>,
+    on_error: Option<OnErrorCallback<M>>,
     is_applied: bool,
 }
 
 pub struct SubscriptionBuilder<M: SpacetimeModule> {
-    on_applied: Option<Box<dyn FnOnce(&M::EventContext) + Send + 'static>>,
-    on_error: Option<Box<dyn FnOnce(&M::EventContext) + Send + 'static>>,
+    on_applied: Option<OnAppliedCallback<M>>,
+    on_error: Option<OnErrorCallback<M>>,
     conn: DbContextImpl<M>,
 }
 
