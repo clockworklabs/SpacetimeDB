@@ -24,7 +24,6 @@ import BinaryReader from './binary_reader.ts';
 import * as ws from './client_api.ts';
 import { ClientDB } from './client_db';
 import { DatabaseTable, type DatabaseTableClass } from './database_table.ts';
-import type { SpacetimeDBGlobals } from './global.ts';
 import type { Identity } from './identity.ts';
 import { stdbLogger } from './logger.ts';
 import {
@@ -58,8 +57,6 @@ export {
   type Serializer,
   type ValueAdapter,
 };
-
-const g = (typeof window === 'undefined' ? global : window)!;
 
 export type CreateWSFnType = (
   url: string,
@@ -96,9 +93,8 @@ export class SpacetimeDBClient {
   #queriesQueue: string[];
   #runtime: {
     host: string;
-    name_or_address: string;
-    auth_token?: string;
-    global: SpacetimeDBGlobals;
+    nameOrAddress: string;
+    authToken?: string;
   };
   #createWSFn: CreateWSFnType;
   #ssl: boolean = false;
@@ -148,23 +144,7 @@ export class SpacetimeDBClient {
    * ```
    */
   constructor(host: string, name_or_address: string, auth_token?: string) {
-    const global = g.__SPACETIMEDB__;
-
-    if (global.spacetimeDBClient) {
-      // If a client has been already created earlier it means the developer
-      // wants to create multiple clients and thus let's create a new ClientDB.
-      // The global ClientDB will be onl shared with the first created client
-      this.db = new ClientDB();
-    } else {
-      // if this is the first client let's use the global ClientDB and set this instance
-      // as the global instance
-      this.db = global.clientDB;
-      global.spacetimeDBClient = this;
-    }
-
-    // for (const [_name, reducer] of SpacetimeDBClient.reducerClasses) {
-    //   this.registerReducer(reducer);
-    // }
+    this.db = new ClientDB();
 
     if (SpacetimeDBClient.#tableClasses.size === 0) {
       stdbLogger(
@@ -183,9 +163,8 @@ export class SpacetimeDBClient {
 
     this.#runtime = {
       host,
-      name_or_address,
-      auth_token,
-      global,
+      nameOrAddress: name_or_address,
+      authToken: auth_token,
     };
 
     this.#createWSFn = WebsocketDecompressAdapter.createWebSocketFn;
@@ -301,8 +280,8 @@ export class SpacetimeDBClient {
         }
       } else if (message instanceof IdentityTokenMessage) {
         this.identity = message.identity;
-        if (this.#runtime.auth_token) {
-          this.token = this.#runtime.auth_token;
+        if (this.#runtime.authToken) {
+          this.token = this.#runtime.authToken;
         } else {
           this.token = message.token;
         }
@@ -368,8 +347,8 @@ export class SpacetimeDBClient {
    * Connect to The SpacetimeDB Websocket For Your Module. By default, this will use a secure websocket connection. The parameters are optional, and if not provided, will use the values provided on construction of the client.
    *
    * @param host The hostname of the SpacetimeDB server. Defaults to the value passed to the `constructor`.
-   * @param name_or_address The name or address of the SpacetimeDB module. Defaults to the value passed to the `constructor`.
-   * @param auth_token The credentials to use to authenticate with SpacetimeDB. Defaults to the value passed to the `constructor`.
+   * @param nameOrAddress The name or address of the SpacetimeDB module. Defaults to the value passed to the `constructor`.
+   * @param authToken The credentials to use to authenticate with SpacetimeDB. Defaults to the value passed to the `constructor`.
    *
    * @example
    *
@@ -387,8 +366,8 @@ export class SpacetimeDBClient {
    */
   async connect(
     host?: string,
-    name_or_address?: string,
-    auth_token?: string
+    nameOrAddress?: string,
+    authToken?: string
   ): Promise<void> {
     if (this.live) {
       return;
@@ -400,20 +379,20 @@ export class SpacetimeDBClient {
       this.#runtime.host = host;
     }
 
-    if (name_or_address) {
-      this.#runtime.name_or_address = name_or_address;
+    if (nameOrAddress) {
+      this.#runtime.nameOrAddress = nameOrAddress;
     }
 
-    if (auth_token) {
+    if (authToken) {
       // TODO: do we need both of these
-      this.#runtime.auth_token = auth_token;
-      this.token = auth_token;
+      this.#runtime.authToken = authToken;
+      this.token = authToken;
     }
 
     // TODO: we should probably just accept a host and an ssl boolean flag in stead of this
     // whole dance
     let url = `${this.#runtime.host}/database/subscribe/${
-      this.#runtime.name_or_address
+      this.#runtime.nameOrAddress
     }`;
     if (
       !this.#runtime.host.startsWith('ws://') &&
@@ -432,7 +411,7 @@ export class SpacetimeDBClient {
 
     this.#ws = await this.#createWSFn(url, 'v1.bin.spacetimedb', {
       host: this.#runtime.host,
-      auth_token: this.#runtime.auth_token,
+      auth_token: this.#runtime.authToken,
       ssl: this.#ssl,
     });
 
@@ -749,14 +728,3 @@ export class SpacetimeDBClient {
     return new BinarySerializer();
   }
 }
-
-g.__SPACETIMEDB__ = {
-  clientDB: new ClientDB(),
-  spacetimeDBClient: undefined,
-};
-
-export const __SPACETIMEDB__: SpacetimeDBGlobals = (
-  typeof window === 'undefined'
-    ? global.__SPACETIMEDB__
-    : window.__SPACETIMEDB__
-)!;

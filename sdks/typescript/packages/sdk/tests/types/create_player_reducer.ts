@@ -3,7 +3,6 @@
 
 // @ts-ignore
 import {
-  __SPACETIMEDB__,
   AlgebraicType,
   ProductType,
   ProductTypeElement,

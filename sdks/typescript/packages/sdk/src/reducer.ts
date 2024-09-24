@@ -22,9 +22,11 @@ export class Reducer {
   }
 
   protected static reducer?: any;
-  protected static getReducer<T extends typeof Reducer>(): InstanceType<T> {
-    if (!this.reducer && __SPACETIMEDB__.spacetimeDBClient) {
-      this.reducer = new this(__SPACETIMEDB__.spacetimeDBClient);
+  protected static getReducer<T extends typeof Reducer>(
+    client: SpacetimeDBClient
+  ): InstanceType<T> {
+    if (!this.reducer) {
+      this.reducer = new this(client);
     }
 
     if (this.reducer) {

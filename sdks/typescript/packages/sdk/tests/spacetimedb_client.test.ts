@@ -6,11 +6,7 @@ import * as ws from '../src/client_api';
 import { ClientDB } from '../src/client_db';
 import { Identity } from '../src/identity';
 import { BinarySerializer } from '../src/serializer';
-import {
-  __SPACETIMEDB__,
-  ReducerEvent,
-  SpacetimeDBClient,
-} from '../src/spacetimedb';
+import { ReducerEvent, SpacetimeDBClient } from '../src/spacetimedb';
 import WebsocketTestAdapter from '../src/websocket_test_adapter';
 import CreatePlayerReducer from './types/create_player_reducer';
 import Player from './types/player';
@@ -24,8 +20,8 @@ beforeEach(() => {
   (CreatePlayerReducer as any).reducer = undefined;
   (Player as any).db = undefined;
   (User as any).db = undefined;
-  __SPACETIMEDB__.clientDB = new ClientDB();
-  __SPACETIMEDB__.spacetimeDBClient = undefined;
+  // __SPACETIMEDB__.clientDB = new ClientDB();
+  // __SPACETIMEDB__.spacetimeDBClient = undefined;
 });
 
 function encodePlayer(value: Player): ws.EncodedValue {
