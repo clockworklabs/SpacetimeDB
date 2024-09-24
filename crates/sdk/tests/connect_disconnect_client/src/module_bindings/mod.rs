@@ -66,8 +66,8 @@ impl TryFrom<__ws::ReducerCallInfo> for Reducer {
 #[derive(Default)]
 #[allow(non_snake_case)]
 pub struct DbUpdate {
-    disconnected: __sdk::spacetime_module::TableUpdate<Disconnected>,
     connected: __sdk::spacetime_module::TableUpdate<Connected>,
+    disconnected: __sdk::spacetime_module::TableUpdate<Disconnected>,
 }
 
 impl TryFrom<__ws::DatabaseUpdate> for DbUpdate {
@@ -76,13 +76,13 @@ impl TryFrom<__ws::DatabaseUpdate> for DbUpdate {
         let mut db_update = DbUpdate::default();
         for table_update in raw.tables {
             match &table_update.table_name[..] {
-                "Disconnected" => {
-                    db_update.disconnected =
-                        disconnected_table::parse_table_update(table_update.deletes, table_update.inserts)?
-                }
                 "Connected" => {
                     db_update.connected =
                         connected_table::parse_table_update(table_update.deletes, table_update.inserts)?
+                }
+                "Disconnected" => {
+                    db_update.disconnected =
+                        disconnected_table::parse_table_update(table_update.deletes, table_update.inserts)?
                 }
 
                 unknown => __anyhow::bail!("Unknown table {unknown:?} in DatabaseUpdate"),
@@ -98,12 +98,12 @@ impl __sdk::spacetime_module::InModule for DbUpdate {
 
 impl __sdk::spacetime_module::DbUpdate for DbUpdate {
     fn apply_to_client_cache(&self, cache: &mut __sdk::client_cache::ClientCache<RemoteModule>) {
-        cache.apply_diff_to_table::<Disconnected>("Disconnected", &self.disconnected);
         cache.apply_diff_to_table::<Connected>("Connected", &self.connected);
+        cache.apply_diff_to_table::<Disconnected>("Disconnected", &self.disconnected);
     }
     fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::callbacks::DbCallbacks<RemoteModule>) {
-        callbacks.invoke_table_row_callbacks::<Disconnected>("Disconnected", &self.disconnected, event);
         callbacks.invoke_table_row_callbacks::<Connected>("Connected", &self.connected, event);
+        callbacks.invoke_table_row_callbacks::<Disconnected>("Disconnected", &self.disconnected, event);
     }
 }
 

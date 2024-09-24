@@ -10,12 +10,11 @@ use anyhow::{bail, Context, Result};
 use futures::StreamExt;
 use futures_channel::mpsc;
 use http::Uri;
-use lazy_static::lazy_static;
 use spacetimedb_lib::{bsatn, de::Deserialize, ser::Serialize, Address, Identity};
 use std::{
     any::Any,
     marker::PhantomData,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     time::{Duration, SystemTime},
 };
 use tokio::runtime::{self, Runtime};
@@ -29,6 +28,11 @@ pub struct DbContextImpl<M: SpacetimeModule> {
     recv: SharedCell<mpsc::UnboundedReceiver<ParsedMessage<M>>>,
     pub(crate) pending_mutations_send: mpsc::UnboundedSender<PendingMutation<M>>,
     pending_mutations_recv: SharedCell<mpsc::UnboundedReceiver<PendingMutation<M>>>,
+    /// This connection's `Identity`.
+    ///
+    /// May be `None` if we connected anonymously
+    /// and have not yet received the [`ws::IdentityToken`] message.
+    identity: SharedCell<Option<Identity>>,
 }
 
 impl<M: SpacetimeModule> Clone for DbContextImpl<M> {
@@ -43,6 +47,7 @@ impl<M: SpacetimeModule> Clone for DbContextImpl<M> {
             recv: Arc::clone(&self.recv),
             pending_mutations_send: self.pending_mutations_send.clone(),
             pending_mutations_recv: Arc::clone(&self.pending_mutations_recv),
+            identity: Arc::clone(&self.identity),
         }
     }
 }
@@ -55,16 +60,19 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 Err(e)
             }
             ParsedMessage::IdentityToken(identity, token, addr) => {
-                let callback = {
-                    let mut inner = self.inner.lock().unwrap();
-                    assert_eq!(inner.address, addr);
-                    if let Some(prev_identity) = inner.identity {
+                {
+                    // Don't hold the `self.identity` lock while running callbacks.
+                    // Callbacks can (will) call [`DbContext::identity`], which acquires that lock,
+                    // so holding it while running a callback causes deadlocks.
+                    let mut ident_store = self.identity.lock().unwrap();
+                    if let Some(prev_identity) = *ident_store {
                         assert_eq!(prev_identity, identity);
                     }
-                    inner.identity = Some(identity);
-                    inner.on_connect.take()
-                };
-                if let Some(on_connect) = callback {
+                    *ident_store = Some(identity);
+                }
+                assert_eq!(get_client_address(), addr);
+                let mut inner = self.inner.lock().unwrap();
+                if let Some(on_connect) = inner.on_connect.take() {
                     let ctx = <M::DbConnection as DbConnection>::new(self.clone());
                     on_connect(&ctx, identity, &token);
                 }
@@ -440,11 +448,11 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     }
 
     pub fn try_identity(&self) -> Option<Identity> {
-        self.inner.lock().unwrap().identity
+        *self.identity.lock().unwrap()
     }
 
     pub fn address(&self) -> Address {
-        self.inner.lock().unwrap().address
+        get_client_address()
     }
 }
 
@@ -460,9 +468,6 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     db_callbacks: DbCallbacks<M>,
     reducer_callbacks: ReducerCallbacks<M>,
     pub(crate) subscriptions: SubscriptionManager<M>,
-
-    identity: Option<Identity>,
-    address: Address,
 
     on_connect: Option<Box<dyn FnOnce(&M::DbConnection, Identity, &str) + Send + 'static>>,
     #[allow(unused)]
@@ -586,12 +591,33 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
     on_connect: Option<Box<dyn FnOnce(&M::DbConnection, Identity, &str) + Send + 'static>>,
     on_connect_error: Option<Box<dyn FnOnce(anyhow::Error) + Send + 'static>>,
     on_disconnect: Option<Box<dyn FnOnce(&M::DbConnection, Option<&anyhow::Error>) + Send + 'static>>,
-
-    client_address: Option<Address>,
 }
 
-lazy_static! {
-    static ref CLIENT_ADDRESS: Address = Address::from_byte_array(rand::random());
+static CLIENT_ADDRESS: OnceLock<Address> = OnceLock::new();
+
+fn get_client_address() -> Address {
+    *CLIENT_ADDRESS.get_or_init(|| Address::from_byte_array(rand::random()))
+}
+
+#[doc(hidden)]
+/// Attempt to set this process's client address to a known value.
+///
+/// This functionality is exposed for use in SpacetimeDB-cloud.
+/// It is unstable, and will be removed without warning in a future version.
+///
+/// Clients which want a particular client address must call this method
+/// before constructing any connection.
+/// Once any connection is constructed, the per-process client address value is locked in,
+/// and cannot be overwritten.
+///
+/// Returns `Err` if this process's client address has already been initialized to a random value.
+pub fn set_client_address(addr: Address) -> Result<()> {
+    let stored = *CLIENT_ADDRESS.get_or_init(|| addr);
+    anyhow::ensure!(
+        stored == addr,
+        "Call to set_client_address after CLIENT_ADDRESS was initialized to a different value"
+    );
+    Ok(())
 }
 
 impl<M: SpacetimeModule> DbConnectionBuilder<M> {
@@ -606,7 +632,6 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
             on_connect: None,
             on_connect_error: None,
             on_disconnect: None,
-            client_address: None,
         }
     }
 
@@ -619,14 +644,13 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
         let (runtime, handle) = enter_or_create_runtime()?;
         let db_callbacks = DbCallbacks::default();
         let reducer_callbacks = ReducerCallbacks::default();
-        let client_address = self.client_address.unwrap_or_else(|| *CLIENT_ADDRESS);
 
         let ws_connection = tokio::task::block_in_place(|| {
             handle.block_on(WsConnection::connect(
                 self.uri.unwrap(),
                 self.module_name.as_ref().unwrap(),
                 self.credentials.as_ref(),
-                client_address,
+                get_client_address(),
             ))
         })?;
 
@@ -640,9 +664,6 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
             db_callbacks,
             reducer_callbacks,
             subscriptions: SubscriptionManager::default(),
-
-            identity: self.credentials.as_ref().map(|creds| creds.0),
-            address: client_address,
 
             on_connect: self.on_connect,
             on_connect_error: self.on_connect_error,
@@ -659,6 +680,7 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
             recv: Arc::new(Mutex::new(parsed_recv_chan)),
             pending_mutations_send,
             pending_mutations_recv: Arc::new(Mutex::new(pending_mutations_recv)),
+            identity: Arc::new(Mutex::new(self.credentials.as_ref().map(|creds| creds.0))),
         };
 
         Ok(ctx_imp)
