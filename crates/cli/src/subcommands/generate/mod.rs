@@ -23,7 +23,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use wasmtime::{Caller, StoreContextMut};
 
-use crate::util::confirm_prompt;
+use crate::util::y_or_n;
 use crate::Config;
 
 mod code_indenter;
@@ -197,7 +197,7 @@ pub fn exec(_config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
                 println!("  {}", path.to_str().unwrap());
             }
 
-            if confirm_prompt(force, "Are you sure you want to delete these files?")? {
+            if y_or_n(force, "Are you sure you want to delete these files?")? {
                 for path in files_to_delete {
                     fs::remove_file(path)?;
                 }

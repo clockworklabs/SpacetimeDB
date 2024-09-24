@@ -3,7 +3,7 @@ use std::{env, fs};
 
 extern crate regex;
 
-use crate::util::confirm_prompt;
+use crate::util::y_or_n;
 use crate::{version, Config};
 use clap::{Arg, ArgMatches};
 use flate2::read::GzDecoder;
@@ -153,7 +153,7 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
 
     if release_version == version::CLI_VERSION {
         println!("You're already running the latest version: {}", version::CLI_VERSION);
-        if !confirm_prompt(force, "Do you want to reinstall? ")? {
+        if !y_or_n(force, "Do you want to reinstall? ")? {
             return Ok(());
         }
     }
@@ -177,7 +177,7 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
         current_exe_path.display()
     );
 
-    if !confirm_prompt(force, "Do you want to continue?")? {
+    if !y_or_n(force, "Do you want to continue?")? {
         println!("Aborting upgrade.");
         return Ok(());
     }

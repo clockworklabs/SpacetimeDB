@@ -1,7 +1,7 @@
 use crate::{
     common_args,
     config::{Config, IdentityConfig},
-    util::{confirm_prompt, init_default, IdentityTokenJson, InitDefaultResultType},
+    util::{init_default, y_or_n, IdentityTokenJson, InitDefaultResultType},
 };
 use std::io::Write;
 
@@ -316,7 +316,7 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
     }
 
     fn should_continue(force: bool, prompt: &str) -> anyhow::Result<bool> {
-        confirm_prompt(
+        y_or_n(
             force,
             &format!("Are you sure you want to remove all identities{}?", prompt),
         )

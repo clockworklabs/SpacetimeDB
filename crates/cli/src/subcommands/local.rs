@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::util::confirm_prompt;
+use crate::util::y_or_n;
 use clap::ArgAction::SetTrue;
 use clap::ArgMatches;
 use clap::{Arg, Command};
@@ -61,7 +61,7 @@ async fn exec_clear(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
             println!("Worker node database path: <not found>");
         }
 
-        if !confirm_prompt(
+        if !y_or_n(
             force,
             "Are you sure you want to delete all data from the local database?",
         )? {
