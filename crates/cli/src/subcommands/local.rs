@@ -4,7 +4,6 @@ use clap::ArgAction::SetTrue;
 use clap::ArgMatches;
 use clap::{Arg, Command};
 use spacetimedb::stdb_path;
-use std::io::Write;
 use std::path::PathBuf;
 
 pub fn cli() -> Command {

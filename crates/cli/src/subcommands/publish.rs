@@ -6,7 +6,6 @@ use reqwest::{StatusCode, Url};
 use spacetimedb_client_api_messages::name::PublishOp;
 use spacetimedb_client_api_messages::name::{is_address, parse_domain_name, PublishResult};
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 
 use crate::common_args;
