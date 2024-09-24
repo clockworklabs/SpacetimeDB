@@ -113,12 +113,11 @@ public static void CreatePlayer(ReducerContext ctx, string username)
    // Get the Identity of the client who called this reducer
    Identity sender = ctx.Sender;
 
-   // Make sure we don't already have a player with this identity
-   PlayerComponent? user = PlayerComponent.FindByIdentity(sender);
-   if (user is null)
-   {
-       throw new ArgumentException("Player already exists");
-   }
+    PlayerComponent? existingPlayer = PlayerComponent.FindByIdentity(sender);
+    if (existingPlayer != null)
+    {
+        throw new InvalidOperationException($"Player already exists for identity: {sender}");
+    }
 
    // Create a new entity for this player
    try
