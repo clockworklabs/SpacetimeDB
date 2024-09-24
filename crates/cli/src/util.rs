@@ -341,6 +341,9 @@ pub fn host_or_url_to_host_and_protocol(host_or_url: &str) -> (&str, Option<&str
     }
 }
 
+/// Prompt the user for `y` or `n` from stdin.
+///
+/// Return `false` unless the input is `y`.
 pub fn confirm_prompt(force: bool, prompt_string: &str) -> anyhow::Result<bool> {
     if force {
         println!("Force flag is present, skipping confirmation");
