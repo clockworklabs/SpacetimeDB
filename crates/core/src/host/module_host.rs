@@ -930,31 +930,3 @@ impl WeakModuleHost {
         })
     }
 }
-
-/*
-#[derive(Debug)]
-pub struct Catalog(Arc<ModuleInfo>);
-impl Catalog {
-    pub fn typespace(&self) -> &Typespace {
-        &self.0.typespace
-    }
-
-    pub fn get(&self, name: &str) -> Option<WithTypespace<'_, EntityDef>> {
-        self.0.catalog.get(name).map(|ty| self.0.typespace.with_type(ty))
-    }
-    pub fn get_reducer(&self, name: &str) -> Option<WithTypespace<'_, ReducerDef>> {
-        let schema = self.get(name)?;
-        Some(schema.with(schema.ty().as_reducer()?))
-    }
-    pub fn get_table(&self, name: &str) -> Option<WithTypespace<'_, TableDesc>> {
-        let schema = self.get(name)?;
-        Some(schema.with(schema.ty().as_table()?))
-    }
-    pub fn iter(&self) -> impl Iterator<Item = (&str, WithTypespace<'_, EntityDef>)> + '_ {
-        self.0
-            .catalog
-            .iter()
-            .map(|(name, e)| (&**name, self.0.typespace.with_type(e)))
-    }
-}
-    */

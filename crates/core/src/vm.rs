@@ -786,7 +786,7 @@ pub(crate) mod tests {
 
         let index = IndexSchema {
             table_id,
-            index_id: 0.into(),
+            index_id: IndexId::SENTINEL,
             index_name: index_name.into(),
             index_algorithm: IndexAlgorithm::BTree(BTreeAlgorithm {
                 columns: columns.clone(),
