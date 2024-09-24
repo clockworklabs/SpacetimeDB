@@ -23,6 +23,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use wasmtime::{Caller, StoreContextMut};
 
+use crate::util::confirm_prompt;
 use crate::Config;
 
 mod code_indenter;
@@ -196,16 +197,7 @@ pub fn exec(_config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
                 println!("  {}", path.to_str().unwrap());
             }
 
-            if !force {
-                print!("Are you sure you want to delete these files? [y/N] ");
-                input = "".to_string();
-                std::io::stdout().flush()?;
-                std::io::stdin().read_line(&mut input)?;
-            } else {
-                println!("Force flag present, deleting files without prompting.");
-            }
-
-            if input.trim().to_lowercase() == "y" || input.trim().to_lowercase() == "yes" {
+            if confirm_prompt(force, "Are you sure you want to delete these files?")? {
                 for path in files_to_delete {
                     fs::remove_file(path)?;
                 }

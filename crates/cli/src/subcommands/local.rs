@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::util::confirm_prompt;
 use clap::ArgAction::SetTrue;
 use clap::ArgMatches;
 use clap::{Arg, Command};
@@ -60,17 +61,12 @@ async fn exec_clear(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
             println!("Worker node database path: <not found>");
         }
 
-        if !force {
-            print!("Are you sure you want to delete all data from the local database? (y/n) ");
-            std::io::stdout().flush()?;
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input)?;
-            if input.trim().to_lowercase() != "y" && input.trim().to_lowercase() != "yes" {
-                println!("Aborting");
-                return Ok(());
-            }
-        } else {
-            println!("Force flag is present, skipping confirmation");
+        if !confirm_prompt(
+            force,
+            "Are you sure you want to delete all data from the local database?",
+        )? {
+            println!("Aborting");
+            return Ok(());
         }
 
         if control_node_dir.exists() {

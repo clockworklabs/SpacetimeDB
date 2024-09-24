@@ -1,6 +1,6 @@
 use crate::{
     common_args,
-    util::{host_or_url_to_host_and_protocol, spacetime_server_fingerprint, y_or_n, VALID_PROTOCOLS},
+    util::{confirm_prompt, host_or_url_to_host_and_protocol, spacetime_server_fingerprint, VALID_PROTOCOLS},
     Config,
 };
 use anyhow::Context;
@@ -260,7 +260,7 @@ pub async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), an
         for id in deleted_ids {
             println!("{}", id.identity);
         }
-        if !(force || y_or_n("Continue?")?) {
+        if !confirm_prompt(force, "Continue?")? {
             anyhow::bail!("Aborted");
         }
 
@@ -339,7 +339,7 @@ pub async fn exec_fingerprint(mut config: Config, args: &ArgMatches) -> Result<(
     let force = args.get_flag("force");
 
     if update_server_fingerprint(&mut config, server, delete_identities).await? {
-        if !(force || y_or_n("Continue?")?) {
+        if !confirm_prompt(force, "Continue?")? {
             anyhow::bail!("Aborted");
         }
 
@@ -412,7 +412,7 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
         }
     }
 
-    if !(force || y_or_n("Continue?")?) {
+    if !confirm_prompt(force, "Continue?")? {
         anyhow::bail!("Aborted");
     }
 
