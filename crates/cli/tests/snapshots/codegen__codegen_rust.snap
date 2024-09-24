@@ -436,75 +436,75 @@ impl init for super::RemoteReducers {
 	ws_messages as __ws,
 };
 
-pub mod test_a_type;
-pub mod point_type;
-pub mod private_type;
+pub mod has_special_stuff_type;
+pub mod namespace_test_c_type;
 pub mod namespace_test_f_type;
 pub mod pk_multi_identity_type;
+pub mod point_type;
+pub mod private_type;
+pub mod repeating_test_arg_type;
+pub mod test_a_type;
+pub mod test_b_type;
 pub mod test_d_type;
 pub mod test_e_type;
-pub mod has_special_stuff_type;
-pub mod test_b_type;
-pub mod namespace_test_c_type;
-pub mod repeating_test_arg_type;
-pub mod identity_connected_reducer;
-pub mod query_private_reducer;
-pub mod delete_player_reducer;
-pub mod add_private_reducer;
-pub mod delete_players_by_name_reducer;
-pub mod repeating_test_reducer;
 pub mod add_player_reducer;
+pub mod add_private_reducer;
+pub mod delete_player_reducer;
+pub mod delete_players_by_name_reducer;
+pub mod identity_connected_reducer;
 pub mod init_reducer;
+pub mod query_private_reducer;
+pub mod repeating_test_reducer;
 pub mod test_reducer;
-pub mod private_table;
 pub mod has_special_stuff_table;
 pub mod pk_multi_identity_table;
-pub mod repeating_test_arg_table;
 pub mod points_table;
-pub mod test_d_table;
+pub mod private_table;
+pub mod repeating_test_arg_table;
 pub mod test_a_table;
+pub mod test_d_table;
 pub mod test_e_table;
 
-pub use test_a_type::*;
-pub use point_type::*;
-pub use private_type::*;
+pub use has_special_stuff_type::*;
+pub use namespace_test_c_type::*;
 pub use namespace_test_f_type::*;
 pub use pk_multi_identity_type::*;
+pub use point_type::*;
+pub use private_type::*;
+pub use repeating_test_arg_type::*;
+pub use test_a_type::*;
+pub use test_b_type::*;
 pub use test_d_type::*;
 pub use test_e_type::*;
-pub use has_special_stuff_type::*;
-pub use test_b_type::*;
-pub use namespace_test_c_type::*;
-pub use repeating_test_arg_type::*;
-pub use identity_connected_reducer::*;
-pub use query_private_reducer::*;
-pub use delete_player_reducer::*;
-pub use add_private_reducer::*;
-pub use delete_players_by_name_reducer::*;
-pub use repeating_test_reducer::*;
 pub use add_player_reducer::*;
+pub use add_private_reducer::*;
+pub use delete_player_reducer::*;
+pub use delete_players_by_name_reducer::*;
+pub use identity_connected_reducer::*;
 pub use init_reducer::*;
+pub use query_private_reducer::*;
+pub use repeating_test_reducer::*;
 pub use test_reducer::*;
-pub use private_table::*;
 pub use has_special_stuff_table::*;
 pub use pk_multi_identity_table::*;
-pub use repeating_test_arg_table::*;
 pub use points_table::*;
-pub use test_d_table::*;
+pub use private_table::*;
+pub use repeating_test_arg_table::*;
 pub use test_a_table::*;
+pub use test_d_table::*;
 pub use test_e_table::*;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub enum Reducer {
 		IdentityConnected(identity_connected_reducer::IdentityConnected),
-	QueryPrivate(query_private_reducer::QueryPrivate),
-	DeletePlayer(delete_player_reducer::DeletePlayer),
-	AddPrivate(add_private_reducer::AddPrivate),
-	DeletePlayersByName(delete_players_by_name_reducer::DeletePlayersByName),
-	RepeatingTest(repeating_test_reducer::RepeatingTest),
-	AddPlayer(add_player_reducer::AddPlayer),
 	Init(init_reducer::Init),
+	AddPlayer(add_player_reducer::AddPlayer),
+	AddPrivate(add_private_reducer::AddPrivate),
+	DeletePlayer(delete_player_reducer::DeletePlayer),
+	DeletePlayersByName(delete_players_by_name_reducer::DeletePlayersByName),
+	QueryPrivate(query_private_reducer::QueryPrivate),
+	RepeatingTest(repeating_test_reducer::RepeatingTest),
 	Test(test_reducer::Test),
 }
 
@@ -517,26 +517,26 @@ impl __sdk::spacetime_module::Reducer for Reducer {
 	fn reducer_name(&self) -> &'static str {
 		match self {
 						Reducer::IdentityConnected(_) => "__identity_connected__",
-			Reducer::QueryPrivate(_) => "query_private",
-			Reducer::DeletePlayer(_) => "delete_player",
-			Reducer::AddPrivate(_) => "add_private",
-			Reducer::DeletePlayersByName(_) => "delete_players_by_name",
-			Reducer::RepeatingTest(_) => "repeating_test",
-			Reducer::AddPlayer(_) => "add_player",
 			Reducer::Init(_) => "__init__",
+			Reducer::AddPlayer(_) => "add_player",
+			Reducer::AddPrivate(_) => "add_private",
+			Reducer::DeletePlayer(_) => "delete_player",
+			Reducer::DeletePlayersByName(_) => "delete_players_by_name",
+			Reducer::QueryPrivate(_) => "query_private",
+			Reducer::RepeatingTest(_) => "repeating_test",
 			Reducer::Test(_) => "test",
 }
 }
 fn reducer_args(&self) -> &dyn std::any::Any {
 		match self {
 						Reducer::IdentityConnected(args) => args,
-			Reducer::QueryPrivate(args) => args,
-			Reducer::DeletePlayer(args) => args,
-			Reducer::AddPrivate(args) => args,
-			Reducer::DeletePlayersByName(args) => args,
-			Reducer::RepeatingTest(args) => args,
-			Reducer::AddPlayer(args) => args,
 			Reducer::Init(args) => args,
+			Reducer::AddPlayer(args) => args,
+			Reducer::AddPrivate(args) => args,
+			Reducer::DeletePlayer(args) => args,
+			Reducer::DeletePlayersByName(args) => args,
+			Reducer::QueryPrivate(args) => args,
+			Reducer::RepeatingTest(args) => args,
 			Reducer::Test(args) => args,
 }
 }
@@ -546,13 +546,13 @@ impl TryFrom<__ws::ReducerCallInfo> for Reducer {
 fn try_from(value: __ws::ReducerCallInfo) -> __anyhow::Result<Self> {
 		match &value.reducer_name[..] {
 						"__identity_connected__" => Ok(Reducer::IdentityConnected(__sdk::spacetime_module::parse_reducer_args("__identity_connected__", &value.args)?)),
-			"query_private" => Ok(Reducer::QueryPrivate(__sdk::spacetime_module::parse_reducer_args("query_private", &value.args)?)),
-			"delete_player" => Ok(Reducer::DeletePlayer(__sdk::spacetime_module::parse_reducer_args("delete_player", &value.args)?)),
-			"add_private" => Ok(Reducer::AddPrivate(__sdk::spacetime_module::parse_reducer_args("add_private", &value.args)?)),
-			"delete_players_by_name" => Ok(Reducer::DeletePlayersByName(__sdk::spacetime_module::parse_reducer_args("delete_players_by_name", &value.args)?)),
-			"repeating_test" => Ok(Reducer::RepeatingTest(__sdk::spacetime_module::parse_reducer_args("repeating_test", &value.args)?)),
-			"add_player" => Ok(Reducer::AddPlayer(__sdk::spacetime_module::parse_reducer_args("add_player", &value.args)?)),
 			"__init__" => Ok(Reducer::Init(__sdk::spacetime_module::parse_reducer_args("__init__", &value.args)?)),
+			"add_player" => Ok(Reducer::AddPlayer(__sdk::spacetime_module::parse_reducer_args("add_player", &value.args)?)),
+			"add_private" => Ok(Reducer::AddPrivate(__sdk::spacetime_module::parse_reducer_args("add_private", &value.args)?)),
+			"delete_player" => Ok(Reducer::DeletePlayer(__sdk::spacetime_module::parse_reducer_args("delete_player", &value.args)?)),
+			"delete_players_by_name" => Ok(Reducer::DeletePlayersByName(__sdk::spacetime_module::parse_reducer_args("delete_players_by_name", &value.args)?)),
+			"query_private" => Ok(Reducer::QueryPrivate(__sdk::spacetime_module::parse_reducer_args("query_private", &value.args)?)),
+			"repeating_test" => Ok(Reducer::RepeatingTest(__sdk::spacetime_module::parse_reducer_args("repeating_test", &value.args)?)),
 			"test" => Ok(Reducer::Test(__sdk::spacetime_module::parse_reducer_args("test", &value.args)?)),
 			_ => Err(__anyhow::anyhow!("Unknown reducer {:?}", value.reducer_name)),
 }
@@ -562,13 +562,13 @@ fn try_from(value: __ws::ReducerCallInfo) -> __anyhow::Result<Self> {
 #[derive(Default)]
 #[allow(non_snake_case)]
 pub struct DbUpdate {
-		private: __sdk::spacetime_module::TableUpdate<Private>,
-	has_special_stuff: __sdk::spacetime_module::TableUpdate<HasSpecialStuff>,
+		has_special_stuff: __sdk::spacetime_module::TableUpdate<HasSpecialStuff>,
 	pk_multi_identity: __sdk::spacetime_module::TableUpdate<PkMultiIdentity>,
-	repeating_test_arg: __sdk::spacetime_module::TableUpdate<RepeatingTestArg>,
 	points: __sdk::spacetime_module::TableUpdate<Point>,
-	test_d: __sdk::spacetime_module::TableUpdate<TestD>,
+	private: __sdk::spacetime_module::TableUpdate<Private>,
+	repeating_test_arg: __sdk::spacetime_module::TableUpdate<RepeatingTestArg>,
 	test_a: __sdk::spacetime_module::TableUpdate<TestA>,
+	test_d: __sdk::spacetime_module::TableUpdate<TestD>,
 	test_e: __sdk::spacetime_module::TableUpdate<TestE>,
 }
 
@@ -580,13 +580,13 @@ impl TryFrom<__ws::DatabaseUpdate> for DbUpdate {
         for table_update in raw.tables {
             match &table_update.table_name[..] {
 
-		"private" => db_update.private = private_table::parse_table_update(table_update.deletes, table_update.inserts)?,
-	"has_special_stuff" => db_update.has_special_stuff = has_special_stuff_table::parse_table_update(table_update.deletes, table_update.inserts)?,
+		"has_special_stuff" => db_update.has_special_stuff = has_special_stuff_table::parse_table_update(table_update.deletes, table_update.inserts)?,
 	"pk_multi_identity" => db_update.pk_multi_identity = pk_multi_identity_table::parse_table_update(table_update.deletes, table_update.inserts)?,
-	"repeating_test_arg" => db_update.repeating_test_arg = repeating_test_arg_table::parse_table_update(table_update.deletes, table_update.inserts)?,
 	"points" => db_update.points = points_table::parse_table_update(table_update.deletes, table_update.inserts)?,
-	"test_d" => db_update.test_d = test_d_table::parse_table_update(table_update.deletes, table_update.inserts)?,
+	"private" => db_update.private = private_table::parse_table_update(table_update.deletes, table_update.inserts)?,
+	"repeating_test_arg" => db_update.repeating_test_arg = repeating_test_arg_table::parse_table_update(table_update.deletes, table_update.inserts)?,
 	"test_a" => db_update.test_a = test_a_table::parse_table_update(table_update.deletes, table_update.inserts)?,
+	"test_d" => db_update.test_d = test_d_table::parse_table_update(table_update.deletes, table_update.inserts)?,
 	"test_e" => db_update.test_e = test_e_table::parse_table_update(table_update.deletes, table_update.inserts)?,
 
                 unknown => __anyhow::bail!("Unknown table {unknown:?} in DatabaseUpdate"),
@@ -602,23 +602,23 @@ impl __sdk::spacetime_module::InModule for DbUpdate {
 
 impl __sdk::spacetime_module::DbUpdate for DbUpdate {
 	fn apply_to_client_cache(&self, cache: &mut __sdk::client_cache::ClientCache<RemoteModule>) {
-				cache.apply_diff_to_table::<Private>("private", &self.private);
-		cache.apply_diff_to_table::<HasSpecialStuff>("has_special_stuff", &self.has_special_stuff);
+				cache.apply_diff_to_table::<HasSpecialStuff>("has_special_stuff", &self.has_special_stuff);
 		cache.apply_diff_to_table::<PkMultiIdentity>("pk_multi_identity", &self.pk_multi_identity);
-		cache.apply_diff_to_table::<RepeatingTestArg>("repeating_test_arg", &self.repeating_test_arg);
 		cache.apply_diff_to_table::<Point>("points", &self.points);
-		cache.apply_diff_to_table::<TestD>("test_d", &self.test_d);
+		cache.apply_diff_to_table::<Private>("private", &self.private);
+		cache.apply_diff_to_table::<RepeatingTestArg>("repeating_test_arg", &self.repeating_test_arg);
 		cache.apply_diff_to_table::<TestA>("test_a", &self.test_a);
+		cache.apply_diff_to_table::<TestD>("test_d", &self.test_d);
 		cache.apply_diff_to_table::<TestE>("test_e", &self.test_e);
 }
 fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::callbacks::DbCallbacks<RemoteModule>) {
-				callbacks.invoke_table_row_callbacks::<Private>("private", &self.private, event);
-		callbacks.invoke_table_row_callbacks::<HasSpecialStuff>("has_special_stuff", &self.has_special_stuff, event);
+				callbacks.invoke_table_row_callbacks::<HasSpecialStuff>("has_special_stuff", &self.has_special_stuff, event);
 		callbacks.invoke_table_row_callbacks::<PkMultiIdentity>("pk_multi_identity", &self.pk_multi_identity, event);
-		callbacks.invoke_table_row_callbacks::<RepeatingTestArg>("repeating_test_arg", &self.repeating_test_arg, event);
 		callbacks.invoke_table_row_callbacks::<Point>("points", &self.points, event);
-		callbacks.invoke_table_row_callbacks::<TestD>("test_d", &self.test_d, event);
+		callbacks.invoke_table_row_callbacks::<Private>("private", &self.private, event);
+		callbacks.invoke_table_row_callbacks::<RepeatingTestArg>("repeating_test_arg", &self.repeating_test_arg, event);
 		callbacks.invoke_table_row_callbacks::<TestA>("test_a", &self.test_a, event);
+		callbacks.invoke_table_row_callbacks::<TestD>("test_d", &self.test_d, event);
 		callbacks.invoke_table_row_callbacks::<TestE>("test_e", &self.test_e, event);
 }
 }

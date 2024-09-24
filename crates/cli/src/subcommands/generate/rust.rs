@@ -718,9 +718,9 @@ fn reducer_function_name(reducer: &ReducerDef) -> String {
 /// Iterate over all of the Rust `mod`s for types, reducers and tables in the `module`.
 fn iter_module_names(module: &ModuleDef) -> impl Iterator<Item = String> + '_ {
     itertools::chain!(
-        module.types().map(|ty| type_module_name(&ty.name)),
-        module.reducers().map(|r| reducer_module_name(&r.name)),
-        module.tables().map(|tbl| table_module_name(&tbl.name)),
+        module.types().map(|ty| type_module_name(&ty.name)).sorted(),
+        module.reducers().map(|r| reducer_module_name(&r.name)).sorted(),
+        module.tables().map(|tbl| table_module_name(&tbl.name)).sorted(),
     )
 }
 
@@ -738,12 +738,26 @@ fn print_module_reexports(module: &ModuleDef, out: &mut Indenter) {
     }
 }
 
+/// Iterate over all the [`ReducerDef`]s defined by the module, in alphabetical order by name.
+///
+/// Sorting is necessary to have deterministic reproducable codegen.
+fn iter_reducers(module: &ModuleDef) -> impl Iterator<Item = &ReducerDef> {
+    module.reducers().sorted_by_key(|reducer| &reducer.name)
+}
+
+/// Iterate over all the [`TableDef`]s defined by the module, in alphabetical order by name.
+///
+/// Sorting is necessary to have deterministic reproducable codegen.
+fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef> {
+    module.tables().sorted_by_key(|table| &table.name)
+}
+
 fn print_reducer_enum_defn(module: &ModuleDef, out: &mut Indenter) {
     print_enum_derives(out);
     out.delimited_block(
         "pub enum Reducer {",
         |out| {
-            for reducer in module.reducers() {
+            for reducer in iter_reducers(module) {
                 writeln!(
                     out,
                     "{}({}::{}),",
@@ -774,7 +788,7 @@ impl __sdk::spacetime_module::InModule for Reducer {{
                     out.delimited_block(
                         "match self {",
                         |out| {
-                            for reducer in module.reducers() {
+                            for reducer in iter_reducers(module) {
                                 writeln!(
                                     out,
                                     "Reducer::{}(_) => {:?},",
@@ -794,7 +808,7 @@ impl __sdk::spacetime_module::InModule for Reducer {{
                     out.delimited_block(
                         "match self {",
                         |out| {
-                            for reducer in module.reducers() {
+                            for reducer in iter_reducers(module) {
                                 writeln!(out, "Reducer::{}(args) => args,", reducer_variant_name(&reducer.name));
                             }
                         },
@@ -817,7 +831,7 @@ impl __sdk::spacetime_module::InModule for Reducer {{
                         out.delimited_block(
                             "match &value.reducer_name[..] {",
                             |out| {
-                                for reducer in module.reducers() {
+                                for reducer in iter_reducers(module) {
                                     writeln!(
                                         out,
                                         "{:?} => Ok(Reducer::{}(__sdk::spacetime_module::parse_reducer_args({:?}, &value.args)?)),",
@@ -847,7 +861,7 @@ fn print_db_update_defn(module: &ModuleDef, out: &mut Indenter) {
     out.delimited_block(
         "pub struct DbUpdate {",
         |out| {
-            for table in module.tables() {
+            for table in iter_tables(module) {
                 writeln!(
                     out,
                     "{}: __sdk::spacetime_module::TableUpdate<{}>,",
@@ -871,7 +885,7 @@ impl TryFrom<__ws::DatabaseUpdate> for DbUpdate {
             match &table_update.table_name[..] {
 ",
         |out| {
-            for table in module.tables() {
+            for table in iter_tables(module) {
                 writeln!(
                     out,
                     "{:?} => db_update.{} = {}::parse_table_update(table_update.deletes, table_update.inserts)?,",
@@ -907,7 +921,7 @@ impl __sdk::spacetime_module::InModule for DbUpdate {{
             out.delimited_block(
                 "fn apply_to_client_cache(&self, cache: &mut __sdk::client_cache::ClientCache<RemoteModule>) {",
                 |out| {
-                    for table in module.tables() {
+                    for table in iter_tables(module) {
                         writeln!(
                             out,
                             "cache.apply_diff_to_table::<{}>({:?}, &self.{});",
@@ -923,7 +937,7 @@ impl __sdk::spacetime_module::InModule for DbUpdate {{
             out.delimited_block(
                 "fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::callbacks::DbCallbacks<RemoteModule>) {",
                 |out| {
-                    for table in module.tables() {
+                    for table in iter_tables(module) {
                         writeln!(
                             out,
                             "callbacks.invoke_table_row_callbacks::<{}>({:?}, &self.{}, event);",
