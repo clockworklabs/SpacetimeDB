@@ -108,7 +108,6 @@ pub struct RawConfig {
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    proj: RawConfig,
     home: RawConfig,
 }
 
@@ -583,10 +582,7 @@ Fetch the server's fingerprint with:
 
 impl Config {
     pub fn default_server_name(&self) -> Option<&str> {
-        self.proj
-            .default_server
-            .as_deref()
-            .or(self.home.default_server.as_deref())
+        self.home.default_server.as_deref()
     }
 
     /// Add a `ServerConfig` to the home configuration.
@@ -645,8 +641,6 @@ impl Config {
     ///
     /// Returns the URL of the default server if `server` is `None`.
     ///
-    /// Entries in the project configuration supersede entries in the home configuration.
-    ///
     /// If `server` is `Some` and is a complete URL,
     /// including protocol and hostname,
     /// returns that URL without accessing the configuration.
@@ -654,9 +648,8 @@ impl Config {
     /// Returns an `Err` if:
     /// - `server` is `Some`, but not a complete URL,
     ///   and the supplied name does not refer to any server
-    ///   in either the project or the home configuration.
-    /// - `server` is `None`, but neither the home nor the project configuration
-    ///   has a default server.
+    ///   in the configuration.
+    /// - `server` is `None`, but the configuration does not have a default server.
     pub fn get_host_url(&self, server: Option<&str>) -> anyhow::Result<String> {
         Ok(format!("{}://{}", self.protocol(server)?, self.host(server)?))
     }
@@ -665,8 +658,6 @@ impl Config {
     ///
     /// Returns the hostname of the default server if `server` is `None`.
     ///
-    /// Entries in the project configuration supersede entries in the home configuration.
-    ///
     /// If `server` is `Some` and is a complete URL,
     /// including protocol and hostname,
     /// returns that hostname without accessing the configuration.
@@ -674,26 +665,24 @@ impl Config {
     /// Returns an `Err` if:
     /// - `server` is `Some`, but not a complete URL,
     ///   and the supplied name does not refer to any server
-    ///   in either the project or the home configuration.
-    /// - `server` is `None`, but neither the home nor the project configuration
-    ///   has a default server.
+    ///   in the configuration.
+    /// - `server` is `None`, but the configuration does not
+    ///   have a default server.
     pub fn host<'a>(&'a self, server: Option<&'a str>) -> anyhow::Result<&'a str> {
         if let Some(server) = server {
             if contains_protocol(server) {
                 Ok(host_or_url_to_host_and_protocol(server).0)
             } else {
-                self.proj.host(server).or_else(|_| self.home.host(server))
+                self.home.host(server)
             }
         } else {
-            self.proj.default_host().or_else(|_| self.home.default_host())
+            self.home.default_host()
         }
     }
 
     /// Get the protocol of the specified `server`, either `"http"` or `"https"`.
     ///
     /// Returns the protocol of the default server if `server` is `None`.
-    ///
-    /// Entries in the project configuration supersede entries in the home configuration.
     ///
     /// If `server` is `Some` and is a complete URL,
     /// including protocol and hostname,
@@ -703,31 +692,26 @@ impl Config {
     /// Returns an `Err` if:
     /// - `server` is `Some`, but not a complete URL,
     ///   and the supplied name does not refer to any server
-    ///   in either the project or the home configuration.
-    /// - `server` is `None`, but neither the home nor the project configuration
-    ///   has a default server.
+    ///   in the configuration.
+    /// - `server` is `None`, but the configuration does not have a default server.
     pub fn protocol<'a>(&'a self, server: Option<&'a str>) -> anyhow::Result<&'a str> {
         if let Some(server) = server {
             if contains_protocol(server) {
                 Ok(host_or_url_to_host_and_protocol(server).1.unwrap())
             } else {
-                self.proj.protocol(server).or_else(|_| self.home.protocol(server))
+                self.home.protocol(server)
             }
         } else {
-            self.proj.default_protocol().or_else(|_| self.home.default_protocol())
+            self.home.default_protocol()
         }
     }
 
     pub fn default_identity(&self, server: Option<&str>) -> anyhow::Result<&str> {
         if let Some(server) = server {
             let (host, _) = host_or_url_to_host_and_protocol(server);
-            self.proj
-                .default_identity(host)
-                .or_else(|_| self.home.default_identity(host))
+            self.home.default_identity(host)
         } else {
-            self.proj
-                .default_server_default_identity()
-                .or_else(|_| self.home.default_server_default_identity())
+            self.home.default_server_default_identity()
         }
     }
 
@@ -806,21 +790,6 @@ impl Config {
         Ok(toml::from_str(&text)?)
     }
 
-    fn load_proj_config() -> RawConfig {
-        // TODO(cloutiertyler): For now we're checking for a spacetime.toml file
-        // in the current directory. Eventually this should really be that we
-        // search parent directories above the current directory to find
-        // spacetime.toml files like a .gitignore file
-        let cur_dir = std::env::current_dir().expect("No current working directory!");
-        if let Some(config_path) = Self::find_config_path(&cur_dir) {
-            Self::load_from_file(&config_path)
-                .inspect_err(|e| eprintln!("config file {config_path:?} is invalid: {e:#}"))
-                .unwrap_or_default()
-        } else {
-            Default::default()
-        }
-    }
-
     pub fn load() -> Self {
         let home_path = Self::system_config_path();
         let home = if home_path.exists() {
@@ -831,9 +800,7 @@ impl Config {
             RawConfig::new_with_localhost()
         };
 
-        let proj = Self::load_proj_config();
-
-        Self { home, proj }
+        Self { home }
     }
 
     #[doc(hidden)]
@@ -841,7 +808,6 @@ impl Config {
     pub fn new_with_localhost() -> Self {
         Self {
             home: RawConfig::new_with_localhost(),
-            proj: RawConfig::default(),
         }
     }
 
@@ -990,13 +956,9 @@ Import an existing identity with:
     pub fn set_default_identity_if_unset(&mut self, server: Option<&str>, identity: &str) -> anyhow::Result<()> {
         if let Some(server) = server {
             let (host, _) = host_or_url_to_host_and_protocol(server);
-            self.proj
-                .set_default_identity_if_unset(host, identity)
-                .or_else(|_| self.home.set_default_identity_if_unset(host, identity))
+            self.home.set_default_identity_if_unset(host, identity)
         } else {
-            self.proj
-                .default_server_set_default_identity_if_unset(identity)
-                .or_else(|_| self.home.default_server_set_default_identity_if_unset(identity))
+            self.home.default_server_set_default_identity_if_unset(identity)
         }
     }
 
@@ -1025,23 +987,16 @@ Update the server's fingerprint with:
             let (host, _) = host_or_url_to_host_and_protocol(server);
             Ok(host)
         } else {
-            self.proj
-                .default_server()
-                .or_else(|_| self.home.default_server())
-                .map(ServerConfig::nick_or_host)
+            self.home.default_server().map(ServerConfig::nick_or_host)
         }
     }
 
     pub fn server_fingerprint(&self, server: Option<&str>) -> anyhow::Result<Option<&str>> {
         if let Some(server) = server {
             let (host, _) = host_or_url_to_host_and_protocol(server);
-            self.proj
-                .server_fingerprint(host)
-                .or_else(|_| self.home.server_fingerprint(host))
+            self.home.server_fingerprint(host)
         } else {
-            self.proj
-                .default_server_fingerprint()
-                .or_else(|_| self.home.default_server_fingerprint())
+            self.home.default_server_fingerprint()
         }
     }
 
