@@ -59,6 +59,17 @@ pub struct Options {
     /// If `true`, require that the segment must be synced to disk before an
     /// index entry is added.
     ///
+    /// Setting this to `false` (the default) will update the index every
+    /// `offset_index_interval_bytes`, even if the commitlog wasn't synced.
+    /// This means that the index could contain non-existent entries in the
+    /// event of a crash.
+    ///
+    /// Setting it to `true` will update the index when the commitlog is synced,
+    /// and `offset_index_interval_bytes` have been written.
+    /// This means that the index could contain fewer index entries than
+    //// strictly every `offset_index_interval_bytes`.
+
+    ///
     /// Default: false
     pub offset_index_require_segment_fsync: bool,
 }
