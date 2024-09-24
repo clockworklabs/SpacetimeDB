@@ -1,0 +1,41 @@
+---
+source: crates/testing/src/sdk.rs
+expression: def
+---
+NormalizedModuleDef {
+    tables: {
+        "Connected": RawTableDefV8 {
+            table_name: "Connected",
+            columns: [
+                "identity": ProductType {
+                    "__identity_bytes": ArrayType(U8),
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "Disconnected": RawTableDefV8 {
+            table_name: "Disconnected",
+            columns: [
+                "identity": ProductType {
+                    "__identity_bytes": ArrayType(U8),
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+    },
+    reducers: {
+        "__identity_connected__": ProductType {},
+        "__identity_disconnected__": ProductType {},
+    },
+    exports: {},
+}

@@ -33,12 +33,19 @@ pub enum TypeRefError {
 /// where `&0` is the type reference at index `0`.
 ///
 /// [System F]: https://en.wikipedia.org/wiki/System_F
-#[derive(Debug, Clone, SpacetimeType)]
+#[derive(Clone, SpacetimeType)]
 #[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
 #[sats(crate = crate)]
 pub struct Typespace {
     /// The types in our typing context that can be referred to with [`AlgebraicTypeRef`]s.
     pub types: Vec<AlgebraicType>,
+}
+
+impl std::fmt::Debug for Typespace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Typespace ")?;
+        f.debug_list().entries(&self.types).finish()
+    }
 }
 
 impl Default for Typespace {
@@ -145,7 +152,7 @@ impl Typespace {
     /// Inlines all nested references behind the current [`AlgebraicTypeRef`] recursively using the current typeset.
     ///
     /// Returns the fully-resolved type or an error if the type reference is invalid or self-referential.
-    fn inline_typerefs_in_ref(&mut self, r: AlgebraicTypeRef) -> Result<&AlgebraicType, TypeRefError> {
+    pub fn inline_typerefs_in_ref(&mut self, r: AlgebraicTypeRef) -> Result<&AlgebraicType, TypeRefError> {
         let resolved_ty = match self.get_mut(r) {
             None => return Err(TypeRefError::InvalidTypeRef(r)),
             // If we encountered a type reference, that means one of the parent calls
@@ -172,17 +179,6 @@ impl Typespace {
         // Now we can put the fully-resolved type back and return that place.
         *place = resolved_ty;
         Ok(place)
-    }
-
-    /// Inlines all type references in the typespace recursively.
-    ///
-    /// Errors out if any type reference is invalid or self-referential.
-    pub fn inline_all_typerefs(&mut self) -> Result<(), TypeRefError> {
-        // We need to use indices here to allow mutable reference on each iteration.
-        for r in 0..self.types.len() as u32 {
-            self.inline_typerefs_in_ref(AlgebraicTypeRef(r))?;
-        }
-        Ok(())
     }
 
     /// Iterate over types in the typespace with their references.

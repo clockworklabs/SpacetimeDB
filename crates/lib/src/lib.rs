@@ -1,6 +1,6 @@
 use crate::db::raw_def::RawTableDefV8;
 use anyhow::Context;
-use sats::typespace::TypespaceBuilder;
+use sats::typespace::{TypeRefError, TypespaceBuilder};
 use spacetimedb_sats::{impl_serialize, WithTypespace};
 use std::any::TypeId;
 use std::collections::{btree_map, BTreeMap};
@@ -196,6 +196,15 @@ impl RawModuleDefV8 {
         let mut builder = Self::builder();
         f(&mut builder);
         builder.finish()
+    }
+
+    pub fn inline_table_typerefs(&mut self) -> Result<(), TypeRefError> {
+        for table in &mut self.tables {
+            for col in &mut table.schema.columns {
+                self.typespace.inline_typerefs_in_type(&mut col.col_type)?;
+            }
+        }
+        Ok(())
     }
 }
 

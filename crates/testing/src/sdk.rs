@@ -8,6 +8,11 @@ use std::thread::JoinHandle;
 
 use crate::invoke_cli;
 use crate::modules::{CompilationMode, CompiledModule};
+use spacetimedb_lib::db::raw_def::RawTableDefV8;
+use spacetimedb_lib::sats::primitives::Constraints;
+use spacetimedb_lib::{AlgebraicType, MiscModuleExport, ProductType, RawModuleDefV8, ReducerDef};
+use std::collections::BTreeMap;
+use std::path::Path;
 use tempfile::TempDir;
 
 pub fn ensure_standalone_process() {
@@ -122,7 +127,6 @@ macro_rules! memoized {
             .get_or_insert_with(HashMap::new)
             .entry($key)
             .or_insert_with_key(|$key| -> $value_ty { $body })
-            .clone()
     }};
 }
 
@@ -139,6 +143,7 @@ fn compile_module(module: &str) -> String {
         let module = CompiledModule::compile(module, CompilationMode::Debug);
         module.path().to_str().unwrap().to_owned()
     })
+    .clone()
 }
 
 // Note: this function does not memoize because we want each test to publish the same
@@ -203,7 +208,93 @@ fn generate_bindings(language: &str, wasm_file: &str, client_project: &str, gene
             "--out-dir",
             generate_dir,
         ]);
-    })
+    });
+
+    let wasm_file = wasm_file.to_owned();
+
+    // Make sure that equivalent modules in all source languages result in the same ModuleDef.
+    //
+    // Unlike regular generate, this one is memoized by Wasm file instead of target directory,
+    // as we do want to rerun it per each module.
+    memoized!(|wasm_file: String| -> () {
+        let mut descriptions = spacetimedb_cli::generate::extract_descriptions(wasm_file.as_ref()).unwrap();
+
+        // Inline all typerefs in tables and reducers to make snapshots
+        // stable regardless of the order in which types are defined.
+
+        descriptions.inline_table_typerefs().unwrap();
+
+        let RawModuleDefV8 {
+            mut typespace,
+            mut tables,
+            mut reducers,
+            misc_exports,
+        } = descriptions;
+
+        for reducer in &mut reducers {
+            for arg in &mut reducer.args {
+                typespace.inline_typerefs_in_type(&mut arg.algebraic_type).unwrap();
+            }
+        }
+
+        for table in &mut tables {
+            // Rust generates same number of constraints as number of columns,
+            // as apparently some parts of the codebase expect that to be the case.
+            // For now, cleanup useless no-op constraints here for correct comparison.
+            table
+                .schema
+                .constraints
+                .retain(|c| c.constraints != Constraints::unset());
+
+            // The constraints are named like `ct_<table_name>_<column_name>_<constraint_kind>`.
+            // The constraint kind part has different casing across langs, so we remove it for comparisons.
+            for c in &mut table.schema.constraints {
+                let name = &mut c.constraint_name;
+                if let Some((pos, _)) = name.match_indices('_').nth(2) {
+                    *name = name[..pos].into();
+                }
+            }
+        }
+
+        #[derive(Debug)]
+        #[allow(dead_code)]
+        struct NormalizedModuleDef<'m> {
+            pub tables: BTreeMap<&'m str, &'m RawTableDefV8>,
+            pub reducers: BTreeMap<&'m str, ProductType>,
+            pub exports: BTreeMap<&'m str, AlgebraicType>,
+        }
+
+        let def = NormalizedModuleDef {
+            tables: tables
+                .iter()
+                .map(|t| (t.schema.table_name.as_ref(), &t.schema))
+                .collect(),
+
+            reducers: reducers
+                .iter()
+                .map(|ReducerDef { name, args }| (name.as_ref(), ProductType::new(args.as_slice().into())))
+                .collect(),
+
+            exports: misc_exports
+                .iter()
+                .map(|MiscModuleExport::TypeAlias(alias)| {
+                    (
+                        alias.name.as_ref(),
+                        typespace.inline_typerefs_in_ref(alias.ty).unwrap().clone(),
+                    )
+                })
+                .collect(),
+        };
+
+        insta::allow_duplicates! {
+            insta::with_settings!({
+                // Bindings must be the same across different languages for the same client project.
+                snapshot_suffix => Path::new(client_project).file_name().unwrap().to_str().unwrap()
+            }, {
+                insta::assert_debug_snapshot!("descriptions", def);
+            });
+        }
+    });
 }
 
 fn split_command_string(command: &str) -> (&str, Vec<&str>) {
@@ -230,7 +321,7 @@ fn compile_client(compile_command: &str, client_project: &str) {
             .expect("Error running compile command");
 
         status_ok_or_panic(output, compile_command, "(compiling)");
-    })
+    });
 }
 
 fn run_client(run_command: &str, client_project: &str, db_name: &str) {

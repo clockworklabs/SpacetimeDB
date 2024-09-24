@@ -1,0 +1,2898 @@
+---
+source: crates/testing/src/sdk.rs
+expression: def
+---
+NormalizedModuleDef {
+    tables: {
+        "LargeTable": RawTableDefV8 {
+            table_name: "LargeTable",
+            columns: [
+                "a": U8,
+                "b": U16,
+                "c": U32,
+                "d": U64,
+                "e": U128,
+                "f": U256,
+                "g": I8,
+                "h": I16,
+                "i": I32,
+                "j": I64,
+                "k": I128,
+                "l": I256,
+                "m": Bool,
+                "n": F32,
+                "o": F64,
+                "p": String,
+                "q": SumType {
+                    "Zero": ProductType {},
+                    "One": ProductType {},
+                    "Two": ProductType {},
+                },
+                "r": SumType {
+                    "U8": U8,
+                    "U16": U16,
+                    "U32": U32,
+                    "U64": U64,
+                    "U128": U128,
+                    "U256": U256,
+                    "I8": I8,
+                    "I16": I16,
+                    "I32": I32,
+                    "I64": I64,
+                    "I128": I128,
+                    "I256": I256,
+                    "Bool": Bool,
+                    "F32": F32,
+                    "F64": F64,
+                    "Str": String,
+                    "Identity": ProductType {
+                        "__identity_bytes": ArrayType(U8),
+                    },
+                    "Address": ProductType {
+                        "__address_bytes": ArrayType(U8),
+                    },
+                    "Bytes": ArrayType(U8),
+                    "Ints": ArrayType(I32),
+                    "Strings": ArrayType(String),
+                    "SimpleEnums": ArrayType(SumType {
+                        "Zero": ProductType {},
+                        "One": ProductType {},
+                        "Two": ProductType {},
+                    }),
+                },
+                "s": ProductType {},
+                "t": ProductType {
+                    "b": U8,
+                },
+                "u": ProductType {
+                    "a": U8,
+                    "b": U16,
+                    "c": U32,
+                    "d": U64,
+                    "e": U128,
+                    "f": U256,
+                    "g": I8,
+                    "h": I16,
+                    "i": I32,
+                    "j": I64,
+                    "k": I128,
+                    "l": I256,
+                    "m": Bool,
+                    "n": F32,
+                    "o": F64,
+                    "p": String,
+                    "q": ProductType {
+                        "__identity_bytes": ArrayType(U8),
+                    },
+                    "r": ProductType {
+                        "__address_bytes": ArrayType(U8),
+                    },
+                },
+                "v": ProductType {
+                    "a": ArrayType(U8),
+                    "b": ArrayType(U16),
+                    "c": ArrayType(U32),
+                    "d": ArrayType(U64),
+                    "e": ArrayType(U128),
+                    "f": ArrayType(U256),
+                    "g": ArrayType(I8),
+                    "h": ArrayType(I16),
+                    "i": ArrayType(I32),
+                    "j": ArrayType(I64),
+                    "k": ArrayType(I128),
+                    "l": ArrayType(I256),
+                    "m": ArrayType(Bool),
+                    "n": ArrayType(F32),
+                    "o": ArrayType(F64),
+                    "p": ArrayType(String),
+                    "q": ArrayType(ProductType {
+                        "__identity_bytes": ArrayType(U8),
+                    }),
+                    "r": ArrayType(ProductType {
+                        "__address_bytes": ArrayType(U8),
+                    }),
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneAddress": RawTableDefV8 {
+            table_name: "OneAddress",
+            columns: [
+                "a": ProductType {
+                    "__address_bytes": ArrayType(U8),
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneBool": RawTableDefV8 {
+            table_name: "OneBool",
+            columns: [
+                "b": Bool,
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneByteStruct": RawTableDefV8 {
+            table_name: "OneByteStruct",
+            columns: [
+                "s": ProductType {
+                    "b": U8,
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneEnumWithPayload": RawTableDefV8 {
+            table_name: "OneEnumWithPayload",
+            columns: [
+                "e": SumType {
+                    "U8": U8,
+                    "U16": U16,
+                    "U32": U32,
+                    "U64": U64,
+                    "U128": U128,
+                    "U256": U256,
+                    "I8": I8,
+                    "I16": I16,
+                    "I32": I32,
+                    "I64": I64,
+                    "I128": I128,
+                    "I256": I256,
+                    "Bool": Bool,
+                    "F32": F32,
+                    "F64": F64,
+                    "Str": String,
+                    "Identity": ProductType {
+                        "__identity_bytes": ArrayType(U8),
+                    },
+                    "Address": ProductType {
+                        "__address_bytes": ArrayType(U8),
+                    },
+                    "Bytes": ArrayType(U8),
+                    "Ints": ArrayType(I32),
+                    "Strings": ArrayType(String),
+                    "SimpleEnums": ArrayType(SumType {
+                        "Zero": ProductType {},
+                        "One": ProductType {},
+                        "Two": ProductType {},
+                    }),
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneEveryPrimitiveStruct": RawTableDefV8 {
+            table_name: "OneEveryPrimitiveStruct",
+            columns: [
+                "s": ProductType {
+                    "a": U8,
+                    "b": U16,
+                    "c": U32,
+                    "d": U64,
+                    "e": U128,
+                    "f": U256,
+                    "g": I8,
+                    "h": I16,
+                    "i": I32,
+                    "j": I64,
+                    "k": I128,
+                    "l": I256,
+                    "m": Bool,
+                    "n": F32,
+                    "o": F64,
+                    "p": String,
+                    "q": ProductType {
+                        "__identity_bytes": ArrayType(U8),
+                    },
+                    "r": ProductType {
+                        "__address_bytes": ArrayType(U8),
+                    },
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneEveryVecStruct": RawTableDefV8 {
+            table_name: "OneEveryVecStruct",
+            columns: [
+                "s": ProductType {
+                    "a": ArrayType(U8),
+                    "b": ArrayType(U16),
+                    "c": ArrayType(U32),
+                    "d": ArrayType(U64),
+                    "e": ArrayType(U128),
+                    "f": ArrayType(U256),
+                    "g": ArrayType(I8),
+                    "h": ArrayType(I16),
+                    "i": ArrayType(I32),
+                    "j": ArrayType(I64),
+                    "k": ArrayType(I128),
+                    "l": ArrayType(I256),
+                    "m": ArrayType(Bool),
+                    "n": ArrayType(F32),
+                    "o": ArrayType(F64),
+                    "p": ArrayType(String),
+                    "q": ArrayType(ProductType {
+                        "__identity_bytes": ArrayType(U8),
+                    }),
+                    "r": ArrayType(ProductType {
+                        "__address_bytes": ArrayType(U8),
+                    }),
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneF32": RawTableDefV8 {
+            table_name: "OneF32",
+            columns: [
+                "f": F32,
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneF64": RawTableDefV8 {
+            table_name: "OneF64",
+            columns: [
+                "f": F64,
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneI128": RawTableDefV8 {
+            table_name: "OneI128",
+            columns: [
+                "n": I128,
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneI16": RawTableDefV8 {
+            table_name: "OneI16",
+            columns: [
+                "n": I16,
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneI256": RawTableDefV8 {
+            table_name: "OneI256",
+            columns: [
+                "n": I256,
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneI32": RawTableDefV8 {
+            table_name: "OneI32",
+            columns: [
+                "n": I32,
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneI64": RawTableDefV8 {
+            table_name: "OneI64",
+            columns: [
+                "n": I64,
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneI8": RawTableDefV8 {
+            table_name: "OneI8",
+            columns: [
+                "n": I8,
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneIdentity": RawTableDefV8 {
+            table_name: "OneIdentity",
+            columns: [
+                "i": ProductType {
+                    "__identity_bytes": ArrayType(U8),
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneSimpleEnum": RawTableDefV8 {
+            table_name: "OneSimpleEnum",
+            columns: [
+                "e": SumType {
+                    "Zero": ProductType {},
+                    "One": ProductType {},
+                    "Two": ProductType {},
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneString": RawTableDefV8 {
+            table_name: "OneString",
+            columns: [
+                "s": String,
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneU128": RawTableDefV8 {
+            table_name: "OneU128",
+            columns: [
+                "n": U128,
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneU16": RawTableDefV8 {
+            table_name: "OneU16",
+            columns: [
+                "n": U16,
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneU256": RawTableDefV8 {
+            table_name: "OneU256",
+            columns: [
+                "n": U256,
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneU32": RawTableDefV8 {
+            table_name: "OneU32",
+            columns: [
+                "n": U32,
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneU64": RawTableDefV8 {
+            table_name: "OneU64",
+            columns: [
+                "n": U64,
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneU8": RawTableDefV8 {
+            table_name: "OneU8",
+            columns: [
+                "n": U8,
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OneUnitStruct": RawTableDefV8 {
+            table_name: "OneUnitStruct",
+            columns: [
+                "s": ProductType {},
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OptionEveryPrimitiveStruct": RawTableDefV8 {
+            table_name: "OptionEveryPrimitiveStruct",
+            columns: [
+                "s": SumType {
+                    "some": ProductType {
+                        "a": U8,
+                        "b": U16,
+                        "c": U32,
+                        "d": U64,
+                        "e": U128,
+                        "f": U256,
+                        "g": I8,
+                        "h": I16,
+                        "i": I32,
+                        "j": I64,
+                        "k": I128,
+                        "l": I256,
+                        "m": Bool,
+                        "n": F32,
+                        "o": F64,
+                        "p": String,
+                        "q": ProductType {
+                            "__identity_bytes": ArrayType(U8),
+                        },
+                        "r": ProductType {
+                            "__address_bytes": ArrayType(U8),
+                        },
+                    },
+                    "none": ProductType {},
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OptionI32": RawTableDefV8 {
+            table_name: "OptionI32",
+            columns: [
+                "n": SumType {
+                    "some": I32,
+                    "none": ProductType {},
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OptionIdentity": RawTableDefV8 {
+            table_name: "OptionIdentity",
+            columns: [
+                "i": SumType {
+                    "some": ProductType {
+                        "__identity_bytes": ArrayType(U8),
+                    },
+                    "none": ProductType {},
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OptionSimpleEnum": RawTableDefV8 {
+            table_name: "OptionSimpleEnum",
+            columns: [
+                "e": SumType {
+                    "some": SumType {
+                        "Zero": ProductType {},
+                        "One": ProductType {},
+                        "Two": ProductType {},
+                    },
+                    "none": ProductType {},
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OptionString": RawTableDefV8 {
+            table_name: "OptionString",
+            columns: [
+                "s": SumType {
+                    "some": String,
+                    "none": ProductType {},
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "OptionVecOptionI32": RawTableDefV8 {
+            table_name: "OptionVecOptionI32",
+            columns: [
+                "v": SumType {
+                    "some": ArrayType(SumType {
+                        "some": I32,
+                        "none": ProductType {},
+                    }),
+                    "none": ProductType {},
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "PkAddress": RawTableDefV8 {
+            table_name: "PkAddress",
+            columns: [
+                "a": ProductType {
+                    "__address_bytes": ArrayType(U8),
+                },
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_PkAddress_a",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE | PRIMARY_KEY,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "PkBool": RawTableDefV8 {
+            table_name: "PkBool",
+            columns: [
+                "b": Bool,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_PkBool_b",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE | PRIMARY_KEY,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "PkI128": RawTableDefV8 {
+            table_name: "PkI128",
+            columns: [
+                "n": I128,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_PkI128_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE | PRIMARY_KEY,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "PkI16": RawTableDefV8 {
+            table_name: "PkI16",
+            columns: [
+                "n": I16,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_PkI16_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE | PRIMARY_KEY,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "PkI256": RawTableDefV8 {
+            table_name: "PkI256",
+            columns: [
+                "n": I256,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_PkI256_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE | PRIMARY_KEY,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "PkI32": RawTableDefV8 {
+            table_name: "PkI32",
+            columns: [
+                "n": I32,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_PkI32_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE | PRIMARY_KEY,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "PkI64": RawTableDefV8 {
+            table_name: "PkI64",
+            columns: [
+                "n": I64,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_PkI64_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE | PRIMARY_KEY,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "PkI8": RawTableDefV8 {
+            table_name: "PkI8",
+            columns: [
+                "n": I8,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_PkI8_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE | PRIMARY_KEY,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "PkIdentity": RawTableDefV8 {
+            table_name: "PkIdentity",
+            columns: [
+                "i": ProductType {
+                    "__identity_bytes": ArrayType(U8),
+                },
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_PkIdentity_i",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE | PRIMARY_KEY,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "PkString": RawTableDefV8 {
+            table_name: "PkString",
+            columns: [
+                "s": String,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_PkString_s",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE | PRIMARY_KEY,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "PkU128": RawTableDefV8 {
+            table_name: "PkU128",
+            columns: [
+                "n": U128,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_PkU128_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE | PRIMARY_KEY,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "PkU16": RawTableDefV8 {
+            table_name: "PkU16",
+            columns: [
+                "n": U16,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_PkU16_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE | PRIMARY_KEY,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "PkU256": RawTableDefV8 {
+            table_name: "PkU256",
+            columns: [
+                "n": U256,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_PkU256_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE | PRIMARY_KEY,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "PkU32": RawTableDefV8 {
+            table_name: "PkU32",
+            columns: [
+                "n": U32,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_PkU32_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE | PRIMARY_KEY,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "PkU64": RawTableDefV8 {
+            table_name: "PkU64",
+            columns: [
+                "n": U64,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_PkU64_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE | PRIMARY_KEY,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "PkU8": RawTableDefV8 {
+            table_name: "PkU8",
+            columns: [
+                "n": U8,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_PkU8_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE | PRIMARY_KEY,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "TableHoldsTable": RawTableDefV8 {
+            table_name: "TableHoldsTable",
+            columns: [
+                "a": ProductType {
+                    "n": U8,
+                },
+                "b": ProductType {
+                    "n": ArrayType(U8),
+                },
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "UniqueAddress": RawTableDefV8 {
+            table_name: "UniqueAddress",
+            columns: [
+                "a": ProductType {
+                    "__address_bytes": ArrayType(U8),
+                },
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_UniqueAddress_a",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "UniqueBool": RawTableDefV8 {
+            table_name: "UniqueBool",
+            columns: [
+                "b": Bool,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_UniqueBool_b",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "UniqueI128": RawTableDefV8 {
+            table_name: "UniqueI128",
+            columns: [
+                "n": I128,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_UniqueI128_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "UniqueI16": RawTableDefV8 {
+            table_name: "UniqueI16",
+            columns: [
+                "n": I16,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_UniqueI16_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "UniqueI256": RawTableDefV8 {
+            table_name: "UniqueI256",
+            columns: [
+                "n": I256,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_UniqueI256_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "UniqueI32": RawTableDefV8 {
+            table_name: "UniqueI32",
+            columns: [
+                "n": I32,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_UniqueI32_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "UniqueI64": RawTableDefV8 {
+            table_name: "UniqueI64",
+            columns: [
+                "n": I64,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_UniqueI64_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "UniqueI8": RawTableDefV8 {
+            table_name: "UniqueI8",
+            columns: [
+                "n": I8,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_UniqueI8_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "UniqueIdentity": RawTableDefV8 {
+            table_name: "UniqueIdentity",
+            columns: [
+                "i": ProductType {
+                    "__identity_bytes": ArrayType(U8),
+                },
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_UniqueIdentity_i",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "UniqueString": RawTableDefV8 {
+            table_name: "UniqueString",
+            columns: [
+                "s": String,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_UniqueString_s",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "UniqueU128": RawTableDefV8 {
+            table_name: "UniqueU128",
+            columns: [
+                "n": U128,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_UniqueU128_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "UniqueU16": RawTableDefV8 {
+            table_name: "UniqueU16",
+            columns: [
+                "n": U16,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_UniqueU16_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "UniqueU256": RawTableDefV8 {
+            table_name: "UniqueU256",
+            columns: [
+                "n": U256,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_UniqueU256_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "UniqueU32": RawTableDefV8 {
+            table_name: "UniqueU32",
+            columns: [
+                "n": U32,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_UniqueU32_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "UniqueU64": RawTableDefV8 {
+            table_name: "UniqueU64",
+            columns: [
+                "n": U64,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_UniqueU64_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "UniqueU8": RawTableDefV8 {
+            table_name: "UniqueU8",
+            columns: [
+                "n": U8,
+                "data": I32,
+            ],
+            indexes: [],
+            constraints: [
+                RawConstraintDefV8 {
+                    constraint_name: "ct_UniqueU8_n",
+                    constraints: Constraints {
+                        attr: ColumnAttribute(
+                            INDEXED | UNIQUE,
+                        ),
+                    },
+                    columns: [
+                        ColId(
+                            0,
+                        ),
+                    ],
+                },
+            ],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecAddress": RawTableDefV8 {
+            table_name: "VecAddress",
+            columns: [
+                "a": ArrayType(ProductType {
+                    "__address_bytes": ArrayType(U8),
+                }),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecBool": RawTableDefV8 {
+            table_name: "VecBool",
+            columns: [
+                "b": ArrayType(Bool),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecByteStruct": RawTableDefV8 {
+            table_name: "VecByteStruct",
+            columns: [
+                "s": ArrayType(ProductType {
+                    "b": U8,
+                }),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecEnumWithPayload": RawTableDefV8 {
+            table_name: "VecEnumWithPayload",
+            columns: [
+                "e": ArrayType(SumType {
+                    "U8": U8,
+                    "U16": U16,
+                    "U32": U32,
+                    "U64": U64,
+                    "U128": U128,
+                    "U256": U256,
+                    "I8": I8,
+                    "I16": I16,
+                    "I32": I32,
+                    "I64": I64,
+                    "I128": I128,
+                    "I256": I256,
+                    "Bool": Bool,
+                    "F32": F32,
+                    "F64": F64,
+                    "Str": String,
+                    "Identity": ProductType {
+                        "__identity_bytes": ArrayType(U8),
+                    },
+                    "Address": ProductType {
+                        "__address_bytes": ArrayType(U8),
+                    },
+                    "Bytes": ArrayType(U8),
+                    "Ints": ArrayType(I32),
+                    "Strings": ArrayType(String),
+                    "SimpleEnums": ArrayType(SumType {
+                        "Zero": ProductType {},
+                        "One": ProductType {},
+                        "Two": ProductType {},
+                    }),
+                }),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecEveryPrimitiveStruct": RawTableDefV8 {
+            table_name: "VecEveryPrimitiveStruct",
+            columns: [
+                "s": ArrayType(ProductType {
+                    "a": U8,
+                    "b": U16,
+                    "c": U32,
+                    "d": U64,
+                    "e": U128,
+                    "f": U256,
+                    "g": I8,
+                    "h": I16,
+                    "i": I32,
+                    "j": I64,
+                    "k": I128,
+                    "l": I256,
+                    "m": Bool,
+                    "n": F32,
+                    "o": F64,
+                    "p": String,
+                    "q": ProductType {
+                        "__identity_bytes": ArrayType(U8),
+                    },
+                    "r": ProductType {
+                        "__address_bytes": ArrayType(U8),
+                    },
+                }),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecEveryVecStruct": RawTableDefV8 {
+            table_name: "VecEveryVecStruct",
+            columns: [
+                "s": ArrayType(ProductType {
+                    "a": ArrayType(U8),
+                    "b": ArrayType(U16),
+                    "c": ArrayType(U32),
+                    "d": ArrayType(U64),
+                    "e": ArrayType(U128),
+                    "f": ArrayType(U256),
+                    "g": ArrayType(I8),
+                    "h": ArrayType(I16),
+                    "i": ArrayType(I32),
+                    "j": ArrayType(I64),
+                    "k": ArrayType(I128),
+                    "l": ArrayType(I256),
+                    "m": ArrayType(Bool),
+                    "n": ArrayType(F32),
+                    "o": ArrayType(F64),
+                    "p": ArrayType(String),
+                    "q": ArrayType(ProductType {
+                        "__identity_bytes": ArrayType(U8),
+                    }),
+                    "r": ArrayType(ProductType {
+                        "__address_bytes": ArrayType(U8),
+                    }),
+                }),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecF32": RawTableDefV8 {
+            table_name: "VecF32",
+            columns: [
+                "f": ArrayType(F32),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecF64": RawTableDefV8 {
+            table_name: "VecF64",
+            columns: [
+                "f": ArrayType(F64),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecI128": RawTableDefV8 {
+            table_name: "VecI128",
+            columns: [
+                "n": ArrayType(I128),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecI16": RawTableDefV8 {
+            table_name: "VecI16",
+            columns: [
+                "n": ArrayType(I16),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecI256": RawTableDefV8 {
+            table_name: "VecI256",
+            columns: [
+                "n": ArrayType(I256),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecI32": RawTableDefV8 {
+            table_name: "VecI32",
+            columns: [
+                "n": ArrayType(I32),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecI64": RawTableDefV8 {
+            table_name: "VecI64",
+            columns: [
+                "n": ArrayType(I64),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecI8": RawTableDefV8 {
+            table_name: "VecI8",
+            columns: [
+                "n": ArrayType(I8),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecIdentity": RawTableDefV8 {
+            table_name: "VecIdentity",
+            columns: [
+                "i": ArrayType(ProductType {
+                    "__identity_bytes": ArrayType(U8),
+                }),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecSimpleEnum": RawTableDefV8 {
+            table_name: "VecSimpleEnum",
+            columns: [
+                "e": ArrayType(SumType {
+                    "Zero": ProductType {},
+                    "One": ProductType {},
+                    "Two": ProductType {},
+                }),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecString": RawTableDefV8 {
+            table_name: "VecString",
+            columns: [
+                "s": ArrayType(String),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecU128": RawTableDefV8 {
+            table_name: "VecU128",
+            columns: [
+                "n": ArrayType(U128),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecU16": RawTableDefV8 {
+            table_name: "VecU16",
+            columns: [
+                "n": ArrayType(U16),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecU256": RawTableDefV8 {
+            table_name: "VecU256",
+            columns: [
+                "n": ArrayType(U256),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecU32": RawTableDefV8 {
+            table_name: "VecU32",
+            columns: [
+                "n": ArrayType(U32),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecU64": RawTableDefV8 {
+            table_name: "VecU64",
+            columns: [
+                "n": ArrayType(U64),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecU8": RawTableDefV8 {
+            table_name: "VecU8",
+            columns: [
+                "n": ArrayType(U8),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+        "VecUnitStruct": RawTableDefV8 {
+            table_name: "VecUnitStruct",
+            columns: [
+                "s": ArrayType(ProductType {}),
+            ],
+            indexes: [],
+            constraints: [],
+            sequences: [],
+            table_type: User,
+            table_access: Public,
+            scheduled: None,
+        },
+    },
+    reducers: {
+        "delete_pk_address": ProductType {
+            "a": ProductType {
+                "__address_bytes": ArrayType(U8),
+            },
+        },
+        "delete_pk_bool": ProductType {
+            "b": Bool,
+        },
+        "delete_pk_i128": ProductType {
+            "n": I128,
+        },
+        "delete_pk_i16": ProductType {
+            "n": I16,
+        },
+        "delete_pk_i256": ProductType {
+            "n": I256,
+        },
+        "delete_pk_i32": ProductType {
+            "n": I32,
+        },
+        "delete_pk_i64": ProductType {
+            "n": I64,
+        },
+        "delete_pk_i8": ProductType {
+            "n": I8,
+        },
+        "delete_pk_identity": ProductType {
+            "i": ProductType {
+                "__identity_bytes": ArrayType(U8),
+            },
+        },
+        "delete_pk_string": ProductType {
+            "s": String,
+        },
+        "delete_pk_u128": ProductType {
+            "n": U128,
+        },
+        "delete_pk_u16": ProductType {
+            "n": U16,
+        },
+        "delete_pk_u256": ProductType {
+            "n": U256,
+        },
+        "delete_pk_u32": ProductType {
+            "n": U32,
+        },
+        "delete_pk_u64": ProductType {
+            "n": U64,
+        },
+        "delete_pk_u8": ProductType {
+            "n": U8,
+        },
+        "delete_unique_address": ProductType {
+            "a": ProductType {
+                "__address_bytes": ArrayType(U8),
+            },
+        },
+        "delete_unique_bool": ProductType {
+            "b": Bool,
+        },
+        "delete_unique_i128": ProductType {
+            "n": I128,
+        },
+        "delete_unique_i16": ProductType {
+            "n": I16,
+        },
+        "delete_unique_i256": ProductType {
+            "n": I256,
+        },
+        "delete_unique_i32": ProductType {
+            "n": I32,
+        },
+        "delete_unique_i64": ProductType {
+            "n": I64,
+        },
+        "delete_unique_i8": ProductType {
+            "n": I8,
+        },
+        "delete_unique_identity": ProductType {
+            "i": ProductType {
+                "__identity_bytes": ArrayType(U8),
+            },
+        },
+        "delete_unique_string": ProductType {
+            "s": String,
+        },
+        "delete_unique_u128": ProductType {
+            "n": U128,
+        },
+        "delete_unique_u16": ProductType {
+            "n": U16,
+        },
+        "delete_unique_u256": ProductType {
+            "n": U256,
+        },
+        "delete_unique_u32": ProductType {
+            "n": U32,
+        },
+        "delete_unique_u64": ProductType {
+            "n": U64,
+        },
+        "delete_unique_u8": ProductType {
+            "n": U8,
+        },
+        "insert_caller_one_address": ProductType {},
+        "insert_caller_one_identity": ProductType {},
+        "insert_caller_pk_address": ProductType {
+            "data": I32,
+        },
+        "insert_caller_pk_identity": ProductType {
+            "data": I32,
+        },
+        "insert_caller_unique_address": ProductType {
+            "data": I32,
+        },
+        "insert_caller_unique_identity": ProductType {
+            "data": I32,
+        },
+        "insert_caller_vec_address": ProductType {},
+        "insert_caller_vec_identity": ProductType {},
+        "insert_large_table": ProductType {
+            "a": U8,
+            "b": U16,
+            "c": U32,
+            "d": U64,
+            "e": U128,
+            "f": U256,
+            "g": I8,
+            "h": I16,
+            "i": I32,
+            "j": I64,
+            "k": I128,
+            "l": I256,
+            "m": Bool,
+            "n": F32,
+            "o": F64,
+            "p": String,
+            "q": SumType {
+                "Zero": ProductType {},
+                "One": ProductType {},
+                "Two": ProductType {},
+            },
+            "r": SumType {
+                "U8": U8,
+                "U16": U16,
+                "U32": U32,
+                "U64": U64,
+                "U128": U128,
+                "U256": U256,
+                "I8": I8,
+                "I16": I16,
+                "I32": I32,
+                "I64": I64,
+                "I128": I128,
+                "I256": I256,
+                "Bool": Bool,
+                "F32": F32,
+                "F64": F64,
+                "Str": String,
+                "Identity": ProductType {
+                    "__identity_bytes": ArrayType(U8),
+                },
+                "Address": ProductType {
+                    "__address_bytes": ArrayType(U8),
+                },
+                "Bytes": ArrayType(U8),
+                "Ints": ArrayType(I32),
+                "Strings": ArrayType(String),
+                "SimpleEnums": ArrayType(SumType {
+                    "Zero": ProductType {},
+                    "One": ProductType {},
+                    "Two": ProductType {},
+                }),
+            },
+            "s": ProductType {},
+            "t": ProductType {
+                "b": U8,
+            },
+            "u": ProductType {
+                "a": U8,
+                "b": U16,
+                "c": U32,
+                "d": U64,
+                "e": U128,
+                "f": U256,
+                "g": I8,
+                "h": I16,
+                "i": I32,
+                "j": I64,
+                "k": I128,
+                "l": I256,
+                "m": Bool,
+                "n": F32,
+                "o": F64,
+                "p": String,
+                "q": ProductType {
+                    "__identity_bytes": ArrayType(U8),
+                },
+                "r": ProductType {
+                    "__address_bytes": ArrayType(U8),
+                },
+            },
+            "v": ProductType {
+                "a": ArrayType(U8),
+                "b": ArrayType(U16),
+                "c": ArrayType(U32),
+                "d": ArrayType(U64),
+                "e": ArrayType(U128),
+                "f": ArrayType(U256),
+                "g": ArrayType(I8),
+                "h": ArrayType(I16),
+                "i": ArrayType(I32),
+                "j": ArrayType(I64),
+                "k": ArrayType(I128),
+                "l": ArrayType(I256),
+                "m": ArrayType(Bool),
+                "n": ArrayType(F32),
+                "o": ArrayType(F64),
+                "p": ArrayType(String),
+                "q": ArrayType(ProductType {
+                    "__identity_bytes": ArrayType(U8),
+                }),
+                "r": ArrayType(ProductType {
+                    "__address_bytes": ArrayType(U8),
+                }),
+            },
+        },
+        "insert_one_address": ProductType {
+            "a": ProductType {
+                "__address_bytes": ArrayType(U8),
+            },
+        },
+        "insert_one_bool": ProductType {
+            "b": Bool,
+        },
+        "insert_one_byte_struct": ProductType {
+            "s": ProductType {
+                "b": U8,
+            },
+        },
+        "insert_one_enum_with_payload": ProductType {
+            "e": SumType {
+                "U8": U8,
+                "U16": U16,
+                "U32": U32,
+                "U64": U64,
+                "U128": U128,
+                "U256": U256,
+                "I8": I8,
+                "I16": I16,
+                "I32": I32,
+                "I64": I64,
+                "I128": I128,
+                "I256": I256,
+                "Bool": Bool,
+                "F32": F32,
+                "F64": F64,
+                "Str": String,
+                "Identity": ProductType {
+                    "__identity_bytes": ArrayType(U8),
+                },
+                "Address": ProductType {
+                    "__address_bytes": ArrayType(U8),
+                },
+                "Bytes": ArrayType(U8),
+                "Ints": ArrayType(I32),
+                "Strings": ArrayType(String),
+                "SimpleEnums": ArrayType(SumType {
+                    "Zero": ProductType {},
+                    "One": ProductType {},
+                    "Two": ProductType {},
+                }),
+            },
+        },
+        "insert_one_every_primitive_struct": ProductType {
+            "s": ProductType {
+                "a": U8,
+                "b": U16,
+                "c": U32,
+                "d": U64,
+                "e": U128,
+                "f": U256,
+                "g": I8,
+                "h": I16,
+                "i": I32,
+                "j": I64,
+                "k": I128,
+                "l": I256,
+                "m": Bool,
+                "n": F32,
+                "o": F64,
+                "p": String,
+                "q": ProductType {
+                    "__identity_bytes": ArrayType(U8),
+                },
+                "r": ProductType {
+                    "__address_bytes": ArrayType(U8),
+                },
+            },
+        },
+        "insert_one_every_vec_struct": ProductType {
+            "s": ProductType {
+                "a": ArrayType(U8),
+                "b": ArrayType(U16),
+                "c": ArrayType(U32),
+                "d": ArrayType(U64),
+                "e": ArrayType(U128),
+                "f": ArrayType(U256),
+                "g": ArrayType(I8),
+                "h": ArrayType(I16),
+                "i": ArrayType(I32),
+                "j": ArrayType(I64),
+                "k": ArrayType(I128),
+                "l": ArrayType(I256),
+                "m": ArrayType(Bool),
+                "n": ArrayType(F32),
+                "o": ArrayType(F64),
+                "p": ArrayType(String),
+                "q": ArrayType(ProductType {
+                    "__identity_bytes": ArrayType(U8),
+                }),
+                "r": ArrayType(ProductType {
+                    "__address_bytes": ArrayType(U8),
+                }),
+            },
+        },
+        "insert_one_f32": ProductType {
+            "f": F32,
+        },
+        "insert_one_f64": ProductType {
+            "f": F64,
+        },
+        "insert_one_i128": ProductType {
+            "n": I128,
+        },
+        "insert_one_i16": ProductType {
+            "n": I16,
+        },
+        "insert_one_i256": ProductType {
+            "n": I256,
+        },
+        "insert_one_i32": ProductType {
+            "n": I32,
+        },
+        "insert_one_i64": ProductType {
+            "n": I64,
+        },
+        "insert_one_i8": ProductType {
+            "n": I8,
+        },
+        "insert_one_identity": ProductType {
+            "i": ProductType {
+                "__identity_bytes": ArrayType(U8),
+            },
+        },
+        "insert_one_simple_enum": ProductType {
+            "e": SumType {
+                "Zero": ProductType {},
+                "One": ProductType {},
+                "Two": ProductType {},
+            },
+        },
+        "insert_one_string": ProductType {
+            "s": String,
+        },
+        "insert_one_u128": ProductType {
+            "n": U128,
+        },
+        "insert_one_u16": ProductType {
+            "n": U16,
+        },
+        "insert_one_u256": ProductType {
+            "n": U256,
+        },
+        "insert_one_u32": ProductType {
+            "n": U32,
+        },
+        "insert_one_u64": ProductType {
+            "n": U64,
+        },
+        "insert_one_u8": ProductType {
+            "n": U8,
+        },
+        "insert_one_unit_struct": ProductType {
+            "s": ProductType {},
+        },
+        "insert_option_every_primitive_struct": ProductType {
+            "s": SumType {
+                "some": ProductType {
+                    "a": U8,
+                    "b": U16,
+                    "c": U32,
+                    "d": U64,
+                    "e": U128,
+                    "f": U256,
+                    "g": I8,
+                    "h": I16,
+                    "i": I32,
+                    "j": I64,
+                    "k": I128,
+                    "l": I256,
+                    "m": Bool,
+                    "n": F32,
+                    "o": F64,
+                    "p": String,
+                    "q": ProductType {
+                        "__identity_bytes": ArrayType(U8),
+                    },
+                    "r": ProductType {
+                        "__address_bytes": ArrayType(U8),
+                    },
+                },
+                "none": ProductType {},
+            },
+        },
+        "insert_option_i32": ProductType {
+            "n": SumType {
+                "some": I32,
+                "none": ProductType {},
+            },
+        },
+        "insert_option_identity": ProductType {
+            "i": SumType {
+                "some": ProductType {
+                    "__identity_bytes": ArrayType(U8),
+                },
+                "none": ProductType {},
+            },
+        },
+        "insert_option_simple_enum": ProductType {
+            "e": SumType {
+                "some": SumType {
+                    "Zero": ProductType {},
+                    "One": ProductType {},
+                    "Two": ProductType {},
+                },
+                "none": ProductType {},
+            },
+        },
+        "insert_option_string": ProductType {
+            "s": SumType {
+                "some": String,
+                "none": ProductType {},
+            },
+        },
+        "insert_option_vec_option_i32": ProductType {
+            "v": SumType {
+                "some": ArrayType(SumType {
+                    "some": I32,
+                    "none": ProductType {},
+                }),
+                "none": ProductType {},
+            },
+        },
+        "insert_pk_address": ProductType {
+            "a": ProductType {
+                "__address_bytes": ArrayType(U8),
+            },
+            "data": I32,
+        },
+        "insert_pk_bool": ProductType {
+            "b": Bool,
+            "data": I32,
+        },
+        "insert_pk_i128": ProductType {
+            "n": I128,
+            "data": I32,
+        },
+        "insert_pk_i16": ProductType {
+            "n": I16,
+            "data": I32,
+        },
+        "insert_pk_i256": ProductType {
+            "n": I256,
+            "data": I32,
+        },
+        "insert_pk_i32": ProductType {
+            "n": I32,
+            "data": I32,
+        },
+        "insert_pk_i64": ProductType {
+            "n": I64,
+            "data": I32,
+        },
+        "insert_pk_i8": ProductType {
+            "n": I8,
+            "data": I32,
+        },
+        "insert_pk_identity": ProductType {
+            "i": ProductType {
+                "__identity_bytes": ArrayType(U8),
+            },
+            "data": I32,
+        },
+        "insert_pk_string": ProductType {
+            "s": String,
+            "data": I32,
+        },
+        "insert_pk_u128": ProductType {
+            "n": U128,
+            "data": I32,
+        },
+        "insert_pk_u16": ProductType {
+            "n": U16,
+            "data": I32,
+        },
+        "insert_pk_u256": ProductType {
+            "n": U256,
+            "data": I32,
+        },
+        "insert_pk_u32": ProductType {
+            "n": U32,
+            "data": I32,
+        },
+        "insert_pk_u64": ProductType {
+            "n": U64,
+            "data": I32,
+        },
+        "insert_pk_u8": ProductType {
+            "n": U8,
+            "data": I32,
+        },
+        "insert_primitives_as_strings": ProductType {
+            "s": ProductType {
+                "a": U8,
+                "b": U16,
+                "c": U32,
+                "d": U64,
+                "e": U128,
+                "f": U256,
+                "g": I8,
+                "h": I16,
+                "i": I32,
+                "j": I64,
+                "k": I128,
+                "l": I256,
+                "m": Bool,
+                "n": F32,
+                "o": F64,
+                "p": String,
+                "q": ProductType {
+                    "__identity_bytes": ArrayType(U8),
+                },
+                "r": ProductType {
+                    "__address_bytes": ArrayType(U8),
+                },
+            },
+        },
+        "insert_table_holds_table": ProductType {
+            "a": ProductType {
+                "n": U8,
+            },
+            "b": ProductType {
+                "n": ArrayType(U8),
+            },
+        },
+        "insert_unique_address": ProductType {
+            "a": ProductType {
+                "__address_bytes": ArrayType(U8),
+            },
+            "data": I32,
+        },
+        "insert_unique_bool": ProductType {
+            "b": Bool,
+            "data": I32,
+        },
+        "insert_unique_i128": ProductType {
+            "n": I128,
+            "data": I32,
+        },
+        "insert_unique_i16": ProductType {
+            "n": I16,
+            "data": I32,
+        },
+        "insert_unique_i256": ProductType {
+            "n": I256,
+            "data": I32,
+        },
+        "insert_unique_i32": ProductType {
+            "n": I32,
+            "data": I32,
+        },
+        "insert_unique_i64": ProductType {
+            "n": I64,
+            "data": I32,
+        },
+        "insert_unique_i8": ProductType {
+            "n": I8,
+            "data": I32,
+        },
+        "insert_unique_identity": ProductType {
+            "i": ProductType {
+                "__identity_bytes": ArrayType(U8),
+            },
+            "data": I32,
+        },
+        "insert_unique_string": ProductType {
+            "s": String,
+            "data": I32,
+        },
+        "insert_unique_u128": ProductType {
+            "n": U128,
+            "data": I32,
+        },
+        "insert_unique_u16": ProductType {
+            "n": U16,
+            "data": I32,
+        },
+        "insert_unique_u256": ProductType {
+            "n": U256,
+            "data": I32,
+        },
+        "insert_unique_u32": ProductType {
+            "n": U32,
+            "data": I32,
+        },
+        "insert_unique_u64": ProductType {
+            "n": U64,
+            "data": I32,
+        },
+        "insert_unique_u8": ProductType {
+            "n": U8,
+            "data": I32,
+        },
+        "insert_vec_address": ProductType {
+            "a": ArrayType(ProductType {
+                "__address_bytes": ArrayType(U8),
+            }),
+        },
+        "insert_vec_bool": ProductType {
+            "b": ArrayType(Bool),
+        },
+        "insert_vec_byte_struct": ProductType {
+            "s": ArrayType(ProductType {
+                "b": U8,
+            }),
+        },
+        "insert_vec_enum_with_payload": ProductType {
+            "e": ArrayType(SumType {
+                "U8": U8,
+                "U16": U16,
+                "U32": U32,
+                "U64": U64,
+                "U128": U128,
+                "U256": U256,
+                "I8": I8,
+                "I16": I16,
+                "I32": I32,
+                "I64": I64,
+                "I128": I128,
+                "I256": I256,
+                "Bool": Bool,
+                "F32": F32,
+                "F64": F64,
+                "Str": String,
+                "Identity": ProductType {
+                    "__identity_bytes": ArrayType(U8),
+                },
+                "Address": ProductType {
+                    "__address_bytes": ArrayType(U8),
+                },
+                "Bytes": ArrayType(U8),
+                "Ints": ArrayType(I32),
+                "Strings": ArrayType(String),
+                "SimpleEnums": ArrayType(SumType {
+                    "Zero": ProductType {},
+                    "One": ProductType {},
+                    "Two": ProductType {},
+                }),
+            }),
+        },
+        "insert_vec_every_primitive_struct": ProductType {
+            "s": ArrayType(ProductType {
+                "a": U8,
+                "b": U16,
+                "c": U32,
+                "d": U64,
+                "e": U128,
+                "f": U256,
+                "g": I8,
+                "h": I16,
+                "i": I32,
+                "j": I64,
+                "k": I128,
+                "l": I256,
+                "m": Bool,
+                "n": F32,
+                "o": F64,
+                "p": String,
+                "q": ProductType {
+                    "__identity_bytes": ArrayType(U8),
+                },
+                "r": ProductType {
+                    "__address_bytes": ArrayType(U8),
+                },
+            }),
+        },
+        "insert_vec_every_vec_struct": ProductType {
+            "s": ArrayType(ProductType {
+                "a": ArrayType(U8),
+                "b": ArrayType(U16),
+                "c": ArrayType(U32),
+                "d": ArrayType(U64),
+                "e": ArrayType(U128),
+                "f": ArrayType(U256),
+                "g": ArrayType(I8),
+                "h": ArrayType(I16),
+                "i": ArrayType(I32),
+                "j": ArrayType(I64),
+                "k": ArrayType(I128),
+                "l": ArrayType(I256),
+                "m": ArrayType(Bool),
+                "n": ArrayType(F32),
+                "o": ArrayType(F64),
+                "p": ArrayType(String),
+                "q": ArrayType(ProductType {
+                    "__identity_bytes": ArrayType(U8),
+                }),
+                "r": ArrayType(ProductType {
+                    "__address_bytes": ArrayType(U8),
+                }),
+            }),
+        },
+        "insert_vec_f32": ProductType {
+            "f": ArrayType(F32),
+        },
+        "insert_vec_f64": ProductType {
+            "f": ArrayType(F64),
+        },
+        "insert_vec_i128": ProductType {
+            "n": ArrayType(I128),
+        },
+        "insert_vec_i16": ProductType {
+            "n": ArrayType(I16),
+        },
+        "insert_vec_i256": ProductType {
+            "n": ArrayType(I256),
+        },
+        "insert_vec_i32": ProductType {
+            "n": ArrayType(I32),
+        },
+        "insert_vec_i64": ProductType {
+            "n": ArrayType(I64),
+        },
+        "insert_vec_i8": ProductType {
+            "n": ArrayType(I8),
+        },
+        "insert_vec_identity": ProductType {
+            "i": ArrayType(ProductType {
+                "__identity_bytes": ArrayType(U8),
+            }),
+        },
+        "insert_vec_simple_enum": ProductType {
+            "e": ArrayType(SumType {
+                "Zero": ProductType {},
+                "One": ProductType {},
+                "Two": ProductType {},
+            }),
+        },
+        "insert_vec_string": ProductType {
+            "s": ArrayType(String),
+        },
+        "insert_vec_u128": ProductType {
+            "n": ArrayType(U128),
+        },
+        "insert_vec_u16": ProductType {
+            "n": ArrayType(U16),
+        },
+        "insert_vec_u256": ProductType {
+            "n": ArrayType(U256),
+        },
+        "insert_vec_u32": ProductType {
+            "n": ArrayType(U32),
+        },
+        "insert_vec_u64": ProductType {
+            "n": ArrayType(U64),
+        },
+        "insert_vec_u8": ProductType {
+            "n": ArrayType(U8),
+        },
+        "insert_vec_unit_struct": ProductType {
+            "s": ArrayType(ProductType {}),
+        },
+        "no_op_succeeds": ProductType {},
+        "update_pk_address": ProductType {
+            "a": ProductType {
+                "__address_bytes": ArrayType(U8),
+            },
+            "data": I32,
+        },
+        "update_pk_bool": ProductType {
+            "b": Bool,
+            "data": I32,
+        },
+        "update_pk_i128": ProductType {
+            "n": I128,
+            "data": I32,
+        },
+        "update_pk_i16": ProductType {
+            "n": I16,
+            "data": I32,
+        },
+        "update_pk_i256": ProductType {
+            "n": I256,
+            "data": I32,
+        },
+        "update_pk_i32": ProductType {
+            "n": I32,
+            "data": I32,
+        },
+        "update_pk_i64": ProductType {
+            "n": I64,
+            "data": I32,
+        },
+        "update_pk_i8": ProductType {
+            "n": I8,
+            "data": I32,
+        },
+        "update_pk_identity": ProductType {
+            "i": ProductType {
+                "__identity_bytes": ArrayType(U8),
+            },
+            "data": I32,
+        },
+        "update_pk_string": ProductType {
+            "s": String,
+            "data": I32,
+        },
+        "update_pk_u128": ProductType {
+            "n": U128,
+            "data": I32,
+        },
+        "update_pk_u16": ProductType {
+            "n": U16,
+            "data": I32,
+        },
+        "update_pk_u256": ProductType {
+            "n": U256,
+            "data": I32,
+        },
+        "update_pk_u32": ProductType {
+            "n": U32,
+            "data": I32,
+        },
+        "update_pk_u64": ProductType {
+            "n": U64,
+            "data": I32,
+        },
+        "update_pk_u8": ProductType {
+            "n": U8,
+            "data": I32,
+        },
+        "update_unique_address": ProductType {
+            "a": ProductType {
+                "__address_bytes": ArrayType(U8),
+            },
+            "data": I32,
+        },
+        "update_unique_bool": ProductType {
+            "b": Bool,
+            "data": I32,
+        },
+        "update_unique_i128": ProductType {
+            "n": I128,
+            "data": I32,
+        },
+        "update_unique_i16": ProductType {
+            "n": I16,
+            "data": I32,
+        },
+        "update_unique_i256": ProductType {
+            "n": I256,
+            "data": I32,
+        },
+        "update_unique_i32": ProductType {
+            "n": I32,
+            "data": I32,
+        },
+        "update_unique_i64": ProductType {
+            "n": I64,
+            "data": I32,
+        },
+        "update_unique_i8": ProductType {
+            "n": I8,
+            "data": I32,
+        },
+        "update_unique_identity": ProductType {
+            "i": ProductType {
+                "__identity_bytes": ArrayType(U8),
+            },
+            "data": I32,
+        },
+        "update_unique_string": ProductType {
+            "s": String,
+            "data": I32,
+        },
+        "update_unique_u128": ProductType {
+            "n": U128,
+            "data": I32,
+        },
+        "update_unique_u16": ProductType {
+            "n": U16,
+            "data": I32,
+        },
+        "update_unique_u256": ProductType {
+            "n": U256,
+            "data": I32,
+        },
+        "update_unique_u32": ProductType {
+            "n": U32,
+            "data": I32,
+        },
+        "update_unique_u64": ProductType {
+            "n": U64,
+            "data": I32,
+        },
+        "update_unique_u8": ProductType {
+            "n": U8,
+            "data": I32,
+        },
+    },
+    exports: {
+        "ByteStruct": ProductType {
+            "b": U8,
+        },
+        "EnumWithPayload": SumType {
+            "U8": U8,
+            "U16": U16,
+            "U32": U32,
+            "U64": U64,
+            "U128": U128,
+            "U256": U256,
+            "I8": I8,
+            "I16": I16,
+            "I32": I32,
+            "I64": I64,
+            "I128": I128,
+            "I256": I256,
+            "Bool": Bool,
+            "F32": F32,
+            "F64": F64,
+            "Str": String,
+            "Identity": ProductType {
+                "__identity_bytes": ArrayType(U8),
+            },
+            "Address": ProductType {
+                "__address_bytes": ArrayType(U8),
+            },
+            "Bytes": ArrayType(U8),
+            "Ints": ArrayType(I32),
+            "Strings": ArrayType(String),
+            "SimpleEnums": ArrayType(SumType {
+                "Zero": ProductType {},
+                "One": ProductType {},
+                "Two": ProductType {},
+            }),
+        },
+        "EveryPrimitiveStruct": ProductType {
+            "a": U8,
+            "b": U16,
+            "c": U32,
+            "d": U64,
+            "e": U128,
+            "f": U256,
+            "g": I8,
+            "h": I16,
+            "i": I32,
+            "j": I64,
+            "k": I128,
+            "l": I256,
+            "m": Bool,
+            "n": F32,
+            "o": F64,
+            "p": String,
+            "q": ProductType {
+                "__identity_bytes": ArrayType(U8),
+            },
+            "r": ProductType {
+                "__address_bytes": ArrayType(U8),
+            },
+        },
+        "EveryVecStruct": ProductType {
+            "a": ArrayType(U8),
+            "b": ArrayType(U16),
+            "c": ArrayType(U32),
+            "d": ArrayType(U64),
+            "e": ArrayType(U128),
+            "f": ArrayType(U256),
+            "g": ArrayType(I8),
+            "h": ArrayType(I16),
+            "i": ArrayType(I32),
+            "j": ArrayType(I64),
+            "k": ArrayType(I128),
+            "l": ArrayType(I256),
+            "m": ArrayType(Bool),
+            "n": ArrayType(F32),
+            "o": ArrayType(F64),
+            "p": ArrayType(String),
+            "q": ArrayType(ProductType {
+                "__identity_bytes": ArrayType(U8),
+            }),
+            "r": ArrayType(ProductType {
+                "__address_bytes": ArrayType(U8),
+            }),
+        },
+        "SimpleEnum": SumType {
+            "Zero": ProductType {},
+            "One": ProductType {},
+            "Two": ProductType {},
+        },
+        "UnitStruct": ProductType {},
+    },
+}

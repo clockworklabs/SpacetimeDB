@@ -154,7 +154,7 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
 
         let desc = instance.extract_descriptions()?;
         let desc: RawModuleDef = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
-        let desc: RawModuleDefV8 = match desc {
+        let mut desc: RawModuleDefV8 = match desc {
             RawModuleDef::V8BackCompat(v8) => v8,
             _ => {
                 return Err(InitializationError::Describe(
@@ -164,21 +164,13 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         };
         desc.validate_reducers()?;
         let orig_module_def = desc.clone();
+        desc.inline_table_typerefs()?;
         let RawModuleDefV8 {
-            mut typespace,
-            mut tables,
+            typespace,
+            tables,
             reducers,
             misc_exports: _,
         } = desc;
-        // Tables can't handle typerefs, let alone recursive types, so we need
-        // to walk over the columns and inline all typerefs as the resolved
-        // types to prevent runtime panics when trying to e.g. insert rows.
-        // TODO: support type references properly in the future.
-        for table in &mut tables {
-            for col in &mut table.schema.columns {
-                typespace.inline_typerefs_in_type(&mut col.col_type)?;
-            }
-        }
         let catalog = itertools::chain(
             tables
                 .into_iter()
