@@ -314,7 +314,7 @@ struct Ordinary {
 }
 ```
 
-This table has a unique column. Every row in the `Person` table must have distinct values of the `unique_field` column. Attempting to insert a row with a duplicate value will fail.
+This table has a unique column. Every row in the `Unique` table must have distinct values of the `unique_field` column. Attempting to insert a row with a duplicate value will fail.
 
 ```rust
 #[spacetimedb(table(public))]
