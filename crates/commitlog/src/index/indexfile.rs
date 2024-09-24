@@ -56,7 +56,6 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     /// # Error
     ///
     /// - `IndexError::KeyNotFound`: If the key is smaller than the first entry key
-    // TODO: use binary search
     pub fn find_index(&self, key: Key) -> Result<(Key, u64), IndexError> {
         let key = key.into();
 
