@@ -34,7 +34,6 @@ pub fn insert_then_delete_one<T: UniqueTestTable>(
     let mut on_delete = {
         let key_dup = key.clone();
         Some(move |ctx: &EventContext, row: &T| {
-            println!("on_delete {:?} called", std::any::type_name::<T>());
             if delete_result.is_some() {
                 let run_checks = || {
                     if row.as_key() != &key_dup || row.as_value() != value {
@@ -64,7 +63,6 @@ pub fn insert_then_delete_one<T: UniqueTestTable>(
     let key_dup = key.clone();
 
     T::on_insert(ctx, move |ctx, row| {
-        println!("on_insert {:?} called", std::any::type_name::<T>());
         if insert_result.is_some() {
             let run_checks = || {
                 if row.as_key() != &key_dup || row.as_value() != value {
