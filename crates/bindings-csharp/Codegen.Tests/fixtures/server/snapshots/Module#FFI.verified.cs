@@ -10,7 +10,7 @@ namespace SpacetimeDB
 {
     public sealed class ReducerContext : BaseReducerContext<Local> { }
 
-    namespace TableViews
+    namespace Internal.TableHandles
     {
         public readonly struct PrivateTable
             : SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>
@@ -343,9 +343,9 @@ namespace SpacetimeDB
 
     public sealed class Local
     {
-        public TableViews.PrivateTable PrivateTable => new();
-        public TableViews.PublicTable PublicTable => new();
-        public TableViews.SendMessageTimer SendMessageTimer => new();
+        public Internal.TableHandles.PrivateTable PrivateTable => new();
+        public Internal.TableHandles.PublicTable PublicTable => new();
+        public Internal.TableHandles.SendMessageTimer SendMessageTimer => new();
     }
 }
 

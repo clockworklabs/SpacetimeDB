@@ -1,7 +1,6 @@
-﻿using System.Text;
+﻿namespace SpacetimeDB;
+using System.Text;
 using SpacetimeDB.Internal;
-
-namespace SpacetimeDB;
 
 public sealed class LogStopwatch : IDisposable
 {

@@ -13,7 +13,7 @@ public partial struct CustomStruct
 }
 
 [SpacetimeDB.Type]
-public partial struct CustomClass
+public partial class CustomClass
 {
     public const int IGNORE_ME = 0;
     public static readonly string IGNORE_ME_TOO = "";
@@ -22,7 +22,7 @@ public partial struct CustomClass
 }
 
 [StructLayout(LayoutKind.Auto)]
-public partial struct CustomClass
+public partial class CustomClass
 {
     public int IgnoreExtraFields;
 }

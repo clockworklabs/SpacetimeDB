@@ -58,40 +58,73 @@ partial class Timers
         ) =>
             [
                 new(
-                    TableName: nameof(SendMessageTimer),
-                    Columns:
-                    [
-                        new(nameof(Text), BSATN.Text.GetAlgebraicType(registrar)),
-                        new(nameof(ScheduledId), BSATN.ScheduledId.GetAlgebraicType(registrar)),
-                        new(nameof(ScheduledAt), BSATN.ScheduledAt.GetAlgebraicType(registrar))
-                    ],
-                    Indexes: [],
-                    Constraints:
-                    [
-                        new(
-                            nameof(SendMessageTimer),
-                            1,
-                            nameof(ScheduledId),
-                            SpacetimeDB.ColumnAttrs.PrimaryKeyIdentity
-                        )
-                    ],
-                    Sequences: [],
-                    // "system" | "user"
-                    TableType: "user",
-                    // "public" | "private"
-                    TableAccess: "private",
-                    Scheduled: nameof(SendScheduledMessage)
+                    new(
+                        TableName: nameof(SendMessageTimer),
+                        Columns:
+                        [
+                            new(
+                                nameof(Text),
+                                global::Timers.SendMessageTimer.BSATN.Text.GetAlgebraicType(
+                                    registrar
+                                )
+                            ),
+                            new(
+                                nameof(ScheduledId),
+                                global::Timers.SendMessageTimer.BSATN.ScheduledId.GetAlgebraicType(
+                                    registrar
+                                )
+                            ),
+                            new(
+                                nameof(ScheduledAt),
+                                global::Timers.SendMessageTimer.BSATN.ScheduledAt.GetAlgebraicType(
+                                    registrar
+                                )
+                            )
+                        ],
+                        Indexes: [],
+                        Constraints:
+                        [
+                            new(
+                                nameof(SendMessageTimer),
+                                1,
+                                nameof(ScheduledId),
+                                (SpacetimeDB.ColumnAttrs)15
+                            )
+                        ],
+                        Sequences: [],
+                        // "system" | "user"
+                        TableType: "user",
+                        // "public" | "private"
+                        TableAccess: "private",
+                        Scheduled: nameof(SendScheduledMessage)
+                    ),
+                    (uint)
+                        (
+                            (SpacetimeDB.BSATN.AlgebraicType.Ref)
+                                new BSATN().GetAlgebraicType(registrar)
+                        ).Ref_
                 ),
             ];
 
         static SpacetimeDB.Internal.Filter SpacetimeDB.Internal.ITable<SendMessageTimer>.CreateFilter() =>
             new(
                 [
-                    new(nameof(Text), (w, v) => BSATN.Text.Write(w, (string)v!)),
-                    new(nameof(ScheduledId), (w, v) => BSATN.ScheduledId.Write(w, (ulong)v!)),
+                    new(
+                        nameof(Text),
+                        (w, v) => global::Timers.SendMessageTimer.BSATN.Text.Write(w, (string)v!)
+                    ),
+                    new(
+                        nameof(ScheduledId),
+                        (w, v) =>
+                            global::Timers.SendMessageTimer.BSATN.ScheduledId.Write(w, (ulong)v!)
+                    ),
                     new(
                         nameof(ScheduledAt),
-                        (w, v) => BSATN.ScheduledAt.Write(w, (SpacetimeDB.ScheduleAt)v!)
+                        (w, v) =>
+                            global::Timers.SendMessageTimer.BSATN.ScheduledAt.Write(
+                                w,
+                                (SpacetimeDB.ScheduleAt)v!
+                            )
                     )
                 ]
             );

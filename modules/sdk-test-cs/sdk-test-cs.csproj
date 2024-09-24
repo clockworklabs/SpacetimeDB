@@ -2,7 +2,6 @@
 
   <PropertyGroup>
     <TargetName>StdbModule</TargetName>
-    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <TargetFramework>net8.0</TargetFramework>
     <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
     <ImplicitUsings>enable</ImplicitUsings>

@@ -193,150 +193,285 @@ partial struct PublicTable : SpacetimeDB.Internal.ITable<PublicTable>
     ) =>
         [
             new(
-                TableName: nameof(PublicTable),
-                Columns:
-                [
-                    new(nameof(Id), BSATN.Id.GetAlgebraicType(registrar)),
-                    new(nameof(ByteField), BSATN.ByteField.GetAlgebraicType(registrar)),
-                    new(nameof(UshortField), BSATN.UshortField.GetAlgebraicType(registrar)),
-                    new(nameof(UintField), BSATN.UintField.GetAlgebraicType(registrar)),
-                    new(nameof(UlongField), BSATN.UlongField.GetAlgebraicType(registrar)),
-                    new(nameof(UInt128Field), BSATN.UInt128Field.GetAlgebraicType(registrar)),
-                    new(nameof(U128Field), BSATN.U128Field.GetAlgebraicType(registrar)),
-                    new(nameof(U256Field), BSATN.U256Field.GetAlgebraicType(registrar)),
-                    new(nameof(SbyteField), BSATN.SbyteField.GetAlgebraicType(registrar)),
-                    new(nameof(ShortField), BSATN.ShortField.GetAlgebraicType(registrar)),
-                    new(nameof(IntField), BSATN.IntField.GetAlgebraicType(registrar)),
-                    new(nameof(LongField), BSATN.LongField.GetAlgebraicType(registrar)),
-                    new(nameof(Int128Field), BSATN.Int128Field.GetAlgebraicType(registrar)),
-                    new(nameof(I128Field), BSATN.I128Field.GetAlgebraicType(registrar)),
-                    new(nameof(I256Field), BSATN.I256Field.GetAlgebraicType(registrar)),
-                    new(nameof(BoolField), BSATN.BoolField.GetAlgebraicType(registrar)),
-                    new(nameof(FloatField), BSATN.FloatField.GetAlgebraicType(registrar)),
-                    new(nameof(DoubleField), BSATN.DoubleField.GetAlgebraicType(registrar)),
-                    new(nameof(StringField), BSATN.StringField.GetAlgebraicType(registrar)),
-                    new(nameof(IdentityField), BSATN.IdentityField.GetAlgebraicType(registrar)),
-                    new(nameof(AddressField), BSATN.AddressField.GetAlgebraicType(registrar)),
-                    new(
-                        nameof(CustomStructField),
-                        BSATN.CustomStructField.GetAlgebraicType(registrar)
-                    ),
-                    new(
-                        nameof(CustomClassField),
-                        BSATN.CustomClassField.GetAlgebraicType(registrar)
-                    ),
-                    new(nameof(CustomEnumField), BSATN.CustomEnumField.GetAlgebraicType(registrar)),
-                    new(
-                        nameof(CustomTaggedEnumField),
-                        BSATN.CustomTaggedEnumField.GetAlgebraicType(registrar)
-                    ),
-                    new(nameof(ListField), BSATN.ListField.GetAlgebraicType(registrar)),
-                    new(nameof(DictionaryField), BSATN.DictionaryField.GetAlgebraicType(registrar)),
-                    new(
-                        nameof(NullableValueField),
-                        BSATN.NullableValueField.GetAlgebraicType(registrar)
-                    ),
-                    new(
-                        nameof(NullableReferenceField),
-                        BSATN.NullableReferenceField.GetAlgebraicType(registrar)
-                    ),
-                    new(
-                        nameof(ComplexNestedField),
-                        BSATN.ComplexNestedField.GetAlgebraicType(registrar)
-                    )
-                ],
-                Indexes: [],
-                Constraints:
-                [
-                    new(
-                        nameof(PublicTable),
-                        0,
-                        nameof(Id),
-                        SpacetimeDB.ColumnAttrs.PrimaryKeyIdentity
-                    )
-                ],
-                Sequences: [],
-                // "system" | "user"
-                TableType: "user",
-                // "public" | "private"
-                TableAccess: "private",
-                Scheduled: null
+                new(
+                    TableName: nameof(PublicTable),
+                    Columns:
+                    [
+                        new(nameof(Id), global::PublicTable.BSATN.Id.GetAlgebraicType(registrar)),
+                        new(
+                            nameof(ByteField),
+                            global::PublicTable.BSATN.ByteField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(UshortField),
+                            global::PublicTable.BSATN.UshortField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(UintField),
+                            global::PublicTable.BSATN.UintField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(UlongField),
+                            global::PublicTable.BSATN.UlongField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(UInt128Field),
+                            global::PublicTable.BSATN.UInt128Field.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(U128Field),
+                            global::PublicTable.BSATN.U128Field.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(U256Field),
+                            global::PublicTable.BSATN.U256Field.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(SbyteField),
+                            global::PublicTable.BSATN.SbyteField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(ShortField),
+                            global::PublicTable.BSATN.ShortField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(IntField),
+                            global::PublicTable.BSATN.IntField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(LongField),
+                            global::PublicTable.BSATN.LongField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(Int128Field),
+                            global::PublicTable.BSATN.Int128Field.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(I128Field),
+                            global::PublicTable.BSATN.I128Field.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(I256Field),
+                            global::PublicTable.BSATN.I256Field.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(BoolField),
+                            global::PublicTable.BSATN.BoolField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(FloatField),
+                            global::PublicTable.BSATN.FloatField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(DoubleField),
+                            global::PublicTable.BSATN.DoubleField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(StringField),
+                            global::PublicTable.BSATN.StringField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(IdentityField),
+                            global::PublicTable.BSATN.IdentityField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(AddressField),
+                            global::PublicTable.BSATN.AddressField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(CustomStructField),
+                            global::PublicTable.BSATN.CustomStructField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(CustomClassField),
+                            global::PublicTable.BSATN.CustomClassField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(CustomEnumField),
+                            global::PublicTable.BSATN.CustomEnumField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(CustomTaggedEnumField),
+                            global::PublicTable.BSATN.CustomTaggedEnumField.GetAlgebraicType(
+                                registrar
+                            )
+                        ),
+                        new(
+                            nameof(ListField),
+                            global::PublicTable.BSATN.ListField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(DictionaryField),
+                            global::PublicTable.BSATN.DictionaryField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(NullableValueField),
+                            global::PublicTable.BSATN.NullableValueField.GetAlgebraicType(registrar)
+                        ),
+                        new(
+                            nameof(NullableReferenceField),
+                            global::PublicTable.BSATN.NullableReferenceField.GetAlgebraicType(
+                                registrar
+                            )
+                        ),
+                        new(
+                            nameof(ComplexNestedField),
+                            global::PublicTable.BSATN.ComplexNestedField.GetAlgebraicType(registrar)
+                        )
+                    ],
+                    Indexes: [],
+                    Constraints:
+                    [
+                        new(nameof(PublicTable), 0, nameof(Id), (SpacetimeDB.ColumnAttrs)15)
+                    ],
+                    Sequences: [],
+                    // "system" | "user"
+                    TableType: "user",
+                    // "public" | "private"
+                    TableAccess: "private",
+                    Scheduled: null
+                ),
+                (uint)
+                    (
+                        (SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)
+                    ).Ref_
             ),
         ];
 
     static SpacetimeDB.Internal.Filter SpacetimeDB.Internal.ITable<PublicTable>.CreateFilter() =>
         new(
             [
-                new(nameof(Id), (w, v) => BSATN.Id.Write(w, (int)v!)),
-                new(nameof(ByteField), (w, v) => BSATN.ByteField.Write(w, (byte)v!)),
-                new(nameof(UshortField), (w, v) => BSATN.UshortField.Write(w, (ushort)v!)),
-                new(nameof(UintField), (w, v) => BSATN.UintField.Write(w, (uint)v!)),
-                new(nameof(UlongField), (w, v) => BSATN.UlongField.Write(w, (ulong)v!)),
+                new(nameof(Id), (w, v) => global::PublicTable.BSATN.Id.Write(w, (int)v!)),
+                new(
+                    nameof(ByteField),
+                    (w, v) => global::PublicTable.BSATN.ByteField.Write(w, (byte)v!)
+                ),
+                new(
+                    nameof(UshortField),
+                    (w, v) => global::PublicTable.BSATN.UshortField.Write(w, (ushort)v!)
+                ),
+                new(
+                    nameof(UintField),
+                    (w, v) => global::PublicTable.BSATN.UintField.Write(w, (uint)v!)
+                ),
+                new(
+                    nameof(UlongField),
+                    (w, v) => global::PublicTable.BSATN.UlongField.Write(w, (ulong)v!)
+                ),
                 new(
                     nameof(UInt128Field),
-                    (w, v) => BSATN.UInt128Field.Write(w, (System.UInt128)v!)
+                    (w, v) => global::PublicTable.BSATN.UInt128Field.Write(w, (System.UInt128)v!)
                 ),
-                new(nameof(U128Field), (w, v) => BSATN.U128Field.Write(w, (SpacetimeDB.U128)v!)),
-                new(nameof(U256Field), (w, v) => BSATN.U256Field.Write(w, (SpacetimeDB.U256)v!)),
-                new(nameof(SbyteField), (w, v) => BSATN.SbyteField.Write(w, (sbyte)v!)),
-                new(nameof(ShortField), (w, v) => BSATN.ShortField.Write(w, (short)v!)),
-                new(nameof(IntField), (w, v) => BSATN.IntField.Write(w, (int)v!)),
-                new(nameof(LongField), (w, v) => BSATN.LongField.Write(w, (long)v!)),
-                new(nameof(Int128Field), (w, v) => BSATN.Int128Field.Write(w, (System.Int128)v!)),
-                new(nameof(I128Field), (w, v) => BSATN.I128Field.Write(w, (SpacetimeDB.I128)v!)),
-                new(nameof(I256Field), (w, v) => BSATN.I256Field.Write(w, (SpacetimeDB.I256)v!)),
-                new(nameof(BoolField), (w, v) => BSATN.BoolField.Write(w, (bool)v!)),
-                new(nameof(FloatField), (w, v) => BSATN.FloatField.Write(w, (float)v!)),
-                new(nameof(DoubleField), (w, v) => BSATN.DoubleField.Write(w, (double)v!)),
-                new(nameof(StringField), (w, v) => BSATN.StringField.Write(w, (string)v!)),
+                new(
+                    nameof(U128Field),
+                    (w, v) => global::PublicTable.BSATN.U128Field.Write(w, (SpacetimeDB.U128)v!)
+                ),
+                new(
+                    nameof(U256Field),
+                    (w, v) => global::PublicTable.BSATN.U256Field.Write(w, (SpacetimeDB.U256)v!)
+                ),
+                new(
+                    nameof(SbyteField),
+                    (w, v) => global::PublicTable.BSATN.SbyteField.Write(w, (sbyte)v!)
+                ),
+                new(
+                    nameof(ShortField),
+                    (w, v) => global::PublicTable.BSATN.ShortField.Write(w, (short)v!)
+                ),
+                new(
+                    nameof(IntField),
+                    (w, v) => global::PublicTable.BSATN.IntField.Write(w, (int)v!)
+                ),
+                new(
+                    nameof(LongField),
+                    (w, v) => global::PublicTable.BSATN.LongField.Write(w, (long)v!)
+                ),
+                new(
+                    nameof(Int128Field),
+                    (w, v) => global::PublicTable.BSATN.Int128Field.Write(w, (System.Int128)v!)
+                ),
+                new(
+                    nameof(I128Field),
+                    (w, v) => global::PublicTable.BSATN.I128Field.Write(w, (SpacetimeDB.I128)v!)
+                ),
+                new(
+                    nameof(I256Field),
+                    (w, v) => global::PublicTable.BSATN.I256Field.Write(w, (SpacetimeDB.I256)v!)
+                ),
+                new(
+                    nameof(BoolField),
+                    (w, v) => global::PublicTable.BSATN.BoolField.Write(w, (bool)v!)
+                ),
+                new(
+                    nameof(FloatField),
+                    (w, v) => global::PublicTable.BSATN.FloatField.Write(w, (float)v!)
+                ),
+                new(
+                    nameof(DoubleField),
+                    (w, v) => global::PublicTable.BSATN.DoubleField.Write(w, (double)v!)
+                ),
+                new(
+                    nameof(StringField),
+                    (w, v) => global::PublicTable.BSATN.StringField.Write(w, (string)v!)
+                ),
                 new(
                     nameof(IdentityField),
-                    (w, v) => BSATN.IdentityField.Write(w, (SpacetimeDB.Identity)v!)
+                    (w, v) =>
+                        global::PublicTable.BSATN.IdentityField.Write(w, (SpacetimeDB.Identity)v!)
                 ),
                 new(
                     nameof(AddressField),
-                    (w, v) => BSATN.AddressField.Write(w, (SpacetimeDB.Address)v!)
+                    (w, v) =>
+                        global::PublicTable.BSATN.AddressField.Write(w, (SpacetimeDB.Address)v!)
                 ),
                 new(
                     nameof(CustomStructField),
-                    (w, v) => BSATN.CustomStructField.Write(w, (CustomStruct)v!)
+                    (w, v) => global::PublicTable.BSATN.CustomStructField.Write(w, (CustomStruct)v!)
                 ),
                 new(
                     nameof(CustomClassField),
-                    (w, v) => BSATN.CustomClassField.Write(w, (CustomClass)v!)
+                    (w, v) => global::PublicTable.BSATN.CustomClassField.Write(w, (CustomClass)v!)
                 ),
                 new(
                     nameof(CustomEnumField),
-                    (w, v) => BSATN.CustomEnumField.Write(w, (CustomEnum)v!)
+                    (w, v) => global::PublicTable.BSATN.CustomEnumField.Write(w, (CustomEnum)v!)
                 ),
                 new(
                     nameof(CustomTaggedEnumField),
-                    (w, v) => BSATN.CustomTaggedEnumField.Write(w, (CustomTaggedEnum)v!)
+                    (w, v) =>
+                        global::PublicTable.BSATN.CustomTaggedEnumField.Write(
+                            w,
+                            (CustomTaggedEnum)v!
+                        )
                 ),
                 new(
                     nameof(ListField),
-                    (w, v) => BSATN.ListField.Write(w, (System.Collections.Generic.List<int>)v!)
+                    (w, v) =>
+                        global::PublicTable.BSATN.ListField.Write(
+                            w,
+                            (System.Collections.Generic.List<int>)v!
+                        )
                 ),
                 new(
                     nameof(DictionaryField),
                     (w, v) =>
-                        BSATN.DictionaryField.Write(
+                        global::PublicTable.BSATN.DictionaryField.Write(
                             w,
                             (System.Collections.Generic.Dictionary<string, int>)v!
                         )
                 ),
                 new(
                     nameof(NullableValueField),
-                    (w, v) => BSATN.NullableValueField.Write(w, (int?)v!)
+                    (w, v) => global::PublicTable.BSATN.NullableValueField.Write(w, (int?)v!)
                 ),
                 new(
                     nameof(NullableReferenceField),
-                    (w, v) => BSATN.NullableReferenceField.Write(w, (string?)v!)
+                    (w, v) => global::PublicTable.BSATN.NullableReferenceField.Write(w, (string?)v!)
                 ),
                 new(
                     nameof(ComplexNestedField),
                     (w, v) =>
-                        BSATN.ComplexNestedField.Write(
+                        global::PublicTable.BSATN.ComplexNestedField.Write(
                             w,
                             (System.Collections.Generic.Dictionary<
                                 CustomEnum,

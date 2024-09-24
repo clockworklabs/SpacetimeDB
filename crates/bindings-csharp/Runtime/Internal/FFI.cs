@@ -169,7 +169,7 @@ internal static partial class FFI
     [LibraryImport(StdbNamespace)]
     public static partial Errno _row_iter_bsatn_advance(
         RowIter iter_handle,
-        [MarshalUsing(CountElementName = nameof(buffer_len))] [Out] byte[] buffer,
+        [MarshalUsing(CountElementName = nameof(buffer_len))][Out] byte[] buffer,
         ref uint buffer_len
     );
 

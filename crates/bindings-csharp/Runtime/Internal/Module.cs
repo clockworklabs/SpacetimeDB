@@ -12,7 +12,8 @@ partial class RawConstraintDefV8
             ConstraintName: $"ct_{tableName}_{colName}_{attrs}",
             Constraints: (byte)attrs,
             Columns: [colIndex]
-        ) { }
+        )
+    { }
 }
 
 partial class RawModuleDefV8
@@ -99,7 +100,8 @@ public static class Module
     public static void RegisterTable<T>()
         where T : ITable<T>, new()
     {
-        foreach (var t in T.MakeTableDesc(typeRegistrar)) {
+        foreach (var t in T.MakeTableDesc(typeRegistrar))
+        {
             moduleDef.RegisterTable(t);
         }
     }

@@ -23,7 +23,7 @@ public enum ColumnAttrs : byte
 /// Each attribute instance must have a unique name and will create a SpacetimeDB table.
 /// </para>
 /// </summary>
-[AttributeUsage(AttributeTargets.Struct, AllowMultiple = true)]
+[AttributeUsage(AttributeTargets.Struct | AttributeTargets.Class, AllowMultiple = true)]
 public sealed class TableAttribute : Attribute
 {
     /// <summary>

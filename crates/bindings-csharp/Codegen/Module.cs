@@ -7,10 +7,12 @@ using static Utils;
 
 record ColumnDeclaration : MemberDeclaration
 {
-    public readonly EquatableArray<(string?, ColumnAttrs)> Attrs;
+    public readonly EquatableArray<(string? table, ColumnAttrs mask)> Attrs;
     public readonly bool IsEquatable;
+    public readonly string FullTableName;
 
     public ColumnDeclaration(
+        string tableName,
         string name,
         string type,
         string typeInfo,
@@ -22,15 +24,19 @@ record ColumnDeclaration : MemberDeclaration
         (string?, ColumnAttrs)[] x = [(default(string), attrs)];
         Attrs = new(x.ToImmutableArray());
         IsEquatable = isEquatable;
+        FullTableName = tableName;
     }
 
-    public ColumnDeclaration(IFieldSymbol field)
+    public ColumnDeclaration(string tableName, IFieldSymbol field)
         : base(field)
     {
+        FullTableName = tableName;
+
         Attrs = new(field
             .GetAttributes()
             .Select(a => (a.NamedArguments.FirstOrDefault(a => a.Key == "Table").Value.Value as string,
-                a.AttributeClass?.ToString() switch {
+                a.AttributeClass?.ToString() switch
+                {
                     "SpacetimeDB.AutoIncAttribute" => ColumnAttrs.AutoInc,
                     "SpacetimeDB.PrimaryKeyAttribute" => ColumnAttrs.PrimaryKey,
                     "SpacetimeDB.UniqueAttribute" => ColumnAttrs.Unique,
@@ -61,7 +67,7 @@ record ColumnDeclaration : MemberDeclaration
             _ => false,
         };
 
-        var attrs = Attrs.Aggregate(ColumnAttrs.UnSet, (xs, x) => xs | x.Item2);
+        var attrs = Attrs.Aggregate(ColumnAttrs.UnSet, (xs, x) => xs | x.mask);
 
         if (attrs.HasFlag(ColumnAttrs.AutoInc) && !isInteger)
         {
@@ -93,24 +99,26 @@ record ColumnDeclaration : MemberDeclaration
     }
 
     public ColumnAttrs GetAttrs(string tableName) => Attrs
-        .Where(x => x.Item1 == null || x.Item1 == tableName)
-        .Aggregate(ColumnAttrs.UnSet, (xs, x) => xs | x.Item2);
+        .Where(x => x.table == null || x.table == tableName)
+        .Aggregate(ColumnAttrs.UnSet, (xs, x) => xs | x.mask);
 
     // For the `TableDesc` constructor.
     public string GenerateColumnDef() =>
-        $"new (nameof({Name}), BSATN.{Name}.GetAlgebraicType(registrar))";
+        $"new (nameof({Name}), global::{FullTableName}.BSATN.{Name}.GetAlgebraicType(registrar))";
 
     // For the `Filter` constructor.
     public string GenerateFilterEntry() =>
-        $"new (nameof({Name}), (w, v) => BSATN.{Name}.Write(w, ({Type}) v!))";
+        $"new (nameof({Name}), (w, v) => global::{FullTableName}.BSATN.{Name}.Write(w, ({Type}) v!))";
 }
 
-record TableView {
+record TableView
+{
     public readonly string Name;
     public readonly bool IsPublic;
     public readonly string? Scheduled;
 
-    public TableView(TableDeclaration table, AttributeData data) {
+    public TableView(TableDeclaration table, AttributeData data)
+    {
         Name = data.NamedArguments.FirstOrDefault(x => x.Key == "Name").Value.Value as string ?? table.ShortName;
 
         IsPublic = data.NamedArguments.Any(pair => pair is { Key: "Public", Value.Value: true });
@@ -128,10 +136,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     public readonly string? Scheduled;
     public readonly EquatableArray<TableView> Views;
 
-    private static readonly ColumnDeclaration[] ScheduledColumns =
+    private static ColumnDeclaration[] ScheduledColumns(string tableName) =>
     [
-        new("ScheduledId", "ulong", "SpacetimeDB.BSATN.U64", ColumnAttrs.PrimaryKeyAuto, true),
+        new(tableName, "ScheduledId", "ulong", "SpacetimeDB.BSATN.U64", ColumnAttrs.PrimaryKeyAuto, true),
         new(
+            tableName,
             "ScheduledAt",
             "SpacetimeDB.ScheduleAt",
             "SpacetimeDB.ScheduleAt.BSATN",
@@ -148,7 +157,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             throw new InvalidOperationException("Tagged enums cannot be tables.");
         }
 
-        Visibility = context.TargetSymbol.DeclaredAccessibility switch {
+        Visibility = context.TargetSymbol.DeclaredAccessibility switch
+        {
             Accessibility.ProtectedAndInternal
             or Accessibility.NotApplicable
             or Accessibility.Internal => "internal",
@@ -163,31 +173,37 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             .Select(a => new TableView(this, a))
             .ToImmutableArray());
 
-        var schedules = Views.Where(t => t.Scheduled != null).Select(t => t.Scheduled);
+        var schedules = Views.Select(t => t.Scheduled);
         var numSchedules = schedules.Count();
-        if (numSchedules > 0) {
+        if (numSchedules > 0)
+        {
             var distinctSchedules = schedules.Distinct();
-            if (numSchedules != Views.Length || distinctSchedules.Count() != 1) {
+            if (numSchedules != Views.Length || distinctSchedules.Count() != 1)
+            {
                 throw new Exception("When using multiple [Table] attributes with schedule, all [Table] must have the same schedule.");
             }
 
             Scheduled = distinctSchedules.First();
-
-            // For scheduled tables, we append extra fields early in the pipeline,
-            // both to the type itself and to the BSATN information, as if they
-            // were part of the original declaration.
-            Members = new(Members.Concat(ScheduledColumns).ToImmutableArray());
+            if (Scheduled != null)
+            {
+                // For scheduled tables, we append extra fields early in the pipeline,
+                // both to the type itself and to the BSATN information, as if they
+                // were part of the original declaration.
+                Members = new(Members.Concat(ScheduledColumns(FullName)).ToImmutableArray());
+            }
         }
     }
 
-    protected override ColumnDeclaration ConvertMember(IFieldSymbol field) => new(field);
+    protected override ColumnDeclaration ConvertMember(IFieldSymbol field) => new(FullName, field);
 
-    public IEnumerable<string> GenerateViewFilters(string viewName, string iTable) {
+    public IEnumerable<string> GenerateViewFilters(string viewName, string iTable)
+    {
         foreach (
             var (f, i) in Members
                 .Select((field, i) => (field, i))
                 .Where(pair => pair.field.IsEquatable)
-        ) {
+        )
+        {
             var globalName = $"global::{FullName}";
             var colEqWhere = $"{iTable}.ColEq.Where({i}, {f.Name}, {globalName}.BSATN.{f.Name})";
 
@@ -196,7 +212,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     {colEqWhere}.Iter();
                 """;
 
-            if (f.GetAttrs(viewName).HasFlag(ColumnAttrs.Unique)) {
+            if (f.GetAttrs(viewName).HasFlag(ColumnAttrs.Unique))
+            {
                 yield return $"""
                     public {globalName}? FindBy{f.Name}({f.Type} {f.Name}) =>
                         FilterBy{f.Name}({f.Name})
@@ -213,8 +230,10 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
     }
 
-    public IEnumerable<KeyValuePair<(string, string), (string, string)>> GenerateViews() {
-        foreach (var v in Views) {
+    public IEnumerable<KeyValuePair<(string viewName, string tableName), (string view, string getter)>> GenerateViews()
+    {
+        foreach (var v in Views)
+        {
             var autoIncFields = Members
                 .Where(f => f.GetAttrs(v.Name).HasFlag(ColumnAttrs.AutoInc))
                 .Select(f => f.Name);
@@ -241,7 +260,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 public void Insert(ref {{globalName}} row) => {{iTable}}.Insert(ref row);
                 {{string.Join("\n", GenerateViewFilters(v.Name, iTable))}}
             }
-            """, $"{Visibility} TableViews.{v.Name} {v.Name} => new();"));
+            """, $"{Visibility} Internal.TableHandles.{v.Name} {v.Name} => new();"));
         }
     }
 
@@ -289,15 +308,15 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                             ",\n",
                             Members
                             // Important: the position must be stored here, before filtering.
-                            .Select((col, pos) => (col, pos, col.GetAttrs(v.Name)))
-                            .Where(tuple => tuple.Item3 != ColumnAttrs.UnSet)
-                            .Select(pair =>
+                            .Select((col, pos) => (col, pos, attr: col.GetAttrs(v.Name)))
+                            .Where(tuple => tuple.attr != ColumnAttrs.UnSet)
+                            .Select(tuple =>
                                 $$"""
                                 new (
                                     nameof({{ShortName}}),
-                                    {{pair.pos}},
-                                    nameof({{pair.col.Name}}),
-                                    (SpacetimeDB.ColumnAttrs){{(int)pair.Item3}}
+                                    {{tuple.pos}},
+                                    nameof({{tuple.col.Name}}),
+                                    (SpacetimeDB.ColumnAttrs){{(int)tuple.attr}}
                                 )
                                 """
                             )
@@ -351,7 +370,8 @@ record ReducerDeclaration
         {
             throw new Exception($"Reducer {method} must return void");
         }
-        if (method.Parameters.FirstOrDefault()?.Type is not INamedTypeSymbol namedType || namedType.Name != "ReducerContext") {
+        if (method.Parameters.FirstOrDefault()?.Type is not INamedTypeSymbol namedType || namedType.Name != "ReducerContext")
+        {
             throw new Exception($"Reducer {method} must have a first argument of type ReducerContext");
         }
 
@@ -460,7 +480,7 @@ public class Module : IIncrementalGenerator
                 // Not really important outside of testing, but for testing
                 // it matters because we commit module-bindings
                 // so they need to match 1:1 between different langs.
-                var tableViews = tuple.Left.Sort((a, b) => a.Key.Item1.CompareTo(b.Key.Item1));
+                var tableViews = tuple.Left.Sort((a, b) => a.Key.viewName.CompareTo(b.Key.viewName));
                 var addReducers = tuple.Right.Sort((a, b) => a.Key.CompareTo(b.Key));
                 // Don't generate the FFI boilerplate if there are no tables or reducers.
                 if (tableViews.IsEmpty && addReducers.IsEmpty)
@@ -478,12 +498,12 @@ public class Module : IIncrementalGenerator
                     namespace SpacetimeDB {
                         public sealed class ReducerContext : BaseReducerContext<Local> {}
 
-                        namespace TableViews {
-                            {{string.Join("\n", tableViews.Select(v => v.Value.Item1))}}
+                        namespace Internal.TableHandles {
+                            {{string.Join("\n", tableViews.Select(v => v.Value.view))}}
                         }
 
                         public sealed class Local {
-                            {{string.Join("\n", tableViews.Select(v => v.Value.Item2))}}
+                            {{string.Join("\n", tableViews.Select(v => v.Value.getter))}}
                         }
                     }
 
@@ -509,7 +529,7 @@ public class Module : IIncrementalGenerator
                             )}}
                             {{string.Join(
                                 "\n",
-                                tableViews.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.Key.Item2}>();")
+                                tableViews.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.Key.tableName}>();")
                             )}}
                         }
 
