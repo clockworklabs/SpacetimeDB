@@ -49,7 +49,6 @@ pub struct OrderByElem(pub SqlExpr, pub bool);
 /// INSERT INTO table cols VALUES literals
 pub struct SqlInsert {
     pub table: SqlIdent,
-    pub fields: Vec<SqlIdent>,
     pub values: SqlValues,
 }
 
@@ -64,7 +63,10 @@ pub struct SqlUpdate {
 }
 
 /// DELETE FROM table [ WHERE predicate ]
-pub struct SqlDelete(pub SqlIdent, pub Option<SqlExpr>);
+pub struct SqlDelete {
+    pub table: SqlIdent,
+    pub filter: Option<SqlExpr>,
+}
 
 /// SET var '=' literal
 pub struct SqlSet(pub SqlIdent, pub SqlLiteral);

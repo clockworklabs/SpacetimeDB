@@ -1,19 +1,22 @@
 use spacetimedb_sql_parser::{ast::BinOp, parser::errors::SqlParseError};
 use thiserror::Error;
 
-use super::ty::{InvalidTyId, TypeWithCtx};
+use super::{
+    stmt::InvalidVar,
+    ty::{InvalidTyId, TypeWithCtx},
+};
 
 #[derive(Error, Debug)]
 pub enum ConstraintViolation {
     #[error("(expected) {expected} != {inferred} (inferred)")]
     Eq { expected: String, inferred: String },
-    #[error("{ty} is not a numeric type")]
+    #[error("`{ty}` is not a numeric type")]
     Num { ty: String },
-    #[error("{ty} cannot be interpreted as a byte array")]
+    #[error("`{ty}` cannot be interpreted as a byte array")]
     Hex { ty: String },
-    #[error("{expr} cannot be parsed as type {ty}")]
+    #[error("`{expr}` cannot be parsed as type `{ty}`")]
     Lit { expr: String, ty: String },
-    #[error("The binary operator {op} does not support type {ty}")]
+    #[error("The binary operator `{op}` does not support type `{ty}`")]
     Bin { op: BinOp, ty: String },
 }
 
@@ -52,11 +55,11 @@ impl ConstraintViolation {
 
 #[derive(Error, Debug)]
 pub enum Unresolved {
-    #[error("Cannot resolve {0}")]
+    #[error("Cannot resolve `{0}`")]
     Var(String),
-    #[error("Cannot resolve table {0}")]
+    #[error("Cannot resolve table `{0}`")]
     Table(String),
-    #[error("Cannot resolve field {1} in {0}")]
+    #[error("Cannot resolve field `{1}` in `{0}`")]
     Field(String, String),
     #[error("Cannot resolve type for literal expression")]
     Literal,
@@ -87,6 +90,19 @@ pub enum Unsupported {
     ProjectExpr,
     #[error("Unqualified column projections are not supported")]
     UnqualifiedProjectExpr,
+    #[error("ORDER BY is not supported")]
+    OrderBy,
+    #[error("LIMIT is not supported")]
+    Limit,
+}
+
+// TODO: It might be better to return the missing/extra fields
+#[derive(Error, Debug)]
+#[error("Inserting a row with {values} values into `{table}` which has {fields} fields")]
+pub struct InsertError {
+    pub table: String,
+    pub values: usize,
+    pub fields: usize,
 }
 
 #[derive(Error, Debug)]
@@ -99,6 +115,10 @@ pub enum TypingError {
     Unresolved(#[from] Unresolved),
     #[error(transparent)]
     InvalidTyId(#[from] InvalidTyId),
+    #[error(transparent)]
+    InvalidVar(#[from] InvalidVar),
+    #[error(transparent)]
+    Insert(#[from] InsertError),
     #[error(transparent)]
     ParseError(#[from] SqlParseError),
 }
