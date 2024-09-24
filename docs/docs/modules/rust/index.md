@@ -372,10 +372,10 @@ If we insert two rows which have the same value of a unique column, the second w
 ```rust
 #[spacetimedb(reducer)]
 fn insert_unique(value: u64) {
-    let result = Ordinary::insert(Unique { unique_field: value });
+    let result = Unique::insert(Unique { unique_field: value });
     assert!(result.is_ok());
 
-    let result = Ordinary::insert(Unique { unique_field: value });
+    let result = Unique::insert(Unique { unique_field: value });
     assert!(result.is_err());
 }
 ```
@@ -404,7 +404,7 @@ fn insert_id() {
         // There's no collision and silent failure to insert,
         // because the value of the field is ignored and overwritten
         // with the automatically incremented value.
-        Identity::insert(Identity { autoinc_field: 23 })
+        Identity::insert(Identity { id_field: 23 })
     }
 }
 ```
