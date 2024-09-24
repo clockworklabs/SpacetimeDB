@@ -210,7 +210,7 @@ impl<'ctx> __sdk::table::Table for {table_handle}<'ctx> {{
 
             let (pk_field_ident, pk_field_type_use) = &product_def.elements[pk_field.col_pos.idx()];
             let pk_field_name = pk_field_ident.deref().to_case(Case::Snake);
-            let pk_field_type = type_name(module, &pk_field_type_use);
+            let pk_field_type = type_name(module, pk_field_type_use);
 
             write!(
                 out,
@@ -268,7 +268,7 @@ pub(super) fn parse_table_update(
                 let unique_field_name_pascalcase = unique_field_name.to_case(Case::Pascal);
 
                 let unique_constraint = table_name_pascalcase.clone() + &unique_field_name_pascalcase + "Unique";
-                let unique_field_type = type_name(module, &unique_field_type_use);
+                let unique_field_type = type_name(module, unique_field_type_use);
 
                 write!(
                     out,
