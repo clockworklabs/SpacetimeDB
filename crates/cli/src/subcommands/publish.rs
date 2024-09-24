@@ -6,13 +6,12 @@ use reqwest::{StatusCode, Url};
 use spacetimedb_client_api_messages::name::PublishOp;
 use spacetimedb_client_api_messages::name::{is_address, parse_domain_name, PublishResult};
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 
 use crate::common_args;
 use crate::config::Config;
-use crate::util::unauth_error_context;
 use crate::util::{add_auth_header_opt, get_auth_header};
+use crate::util::{unauth_error_context, y_or_n};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("publish")
@@ -143,25 +142,21 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     );
 
     if clear_database {
-        if force {
-            println!("Skipping confirmation due to --force.");
-        } else {
-            // Note: `name_or_address` should be set, because it is `required` in the CLI arg config.
-            println!(
-                "This will DESTROY the current {} module, and ALL corresponding data.",
+        // Note: `name_or_address` should be set, because it is `required` in the CLI arg config.
+        println!(
+            "This will DESTROY the current {} module, and ALL corresponding data.",
+            name_or_address.unwrap()
+        );
+        if !y_or_n(
+            force,
+            format!(
+                "Are you sure you want to proceed? [deleting {}]",
                 name_or_address.unwrap()
-            );
-            print!(
-                "Are you sure you want to proceed? (y/N) [deleting {}] ",
-                name_or_address.unwrap()
-            );
-            std::io::stdout().flush()?;
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input)?;
-            if input.trim().to_lowercase() != "y" && input.trim().to_lowercase() != "yes" {
-                println!("Aborting");
-                return Ok(());
-            }
+            )
+            .as_str(),
+        )? {
+            println!("Aborting");
+            return Ok(());
         }
         query_params.push(("clear", "true"));
     }

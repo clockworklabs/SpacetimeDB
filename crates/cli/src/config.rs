@@ -790,17 +790,16 @@ impl Config {
         Ok(toml::from_str(&text)?)
     }
 
-    pub fn load() -> Self {
+    pub fn load() -> anyhow::Result<Self> {
         let home_path = Self::system_config_path();
         let home = if home_path.exists() {
             Self::load_from_file(&home_path)
-                .inspect_err(|e| eprintln!("config file {home_path:?} is invalid: {e:#?}"))
-                .unwrap_or_default()
+                .inspect_err(|e| eprintln!("config file {home_path:?} is invalid: {e:#?}"))?
         } else {
             RawConfig::new_with_localhost()
         };
 
-        Self { home }
+        Ok(Self { home })
     }
 
     #[doc(hidden)]

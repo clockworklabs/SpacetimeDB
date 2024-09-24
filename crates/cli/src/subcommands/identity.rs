@@ -312,7 +312,10 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
     }
 
     fn should_continue(force: bool, prompt: &str) -> anyhow::Result<bool> {
-        Ok(force || y_or_n(&format!("Are you sure you want to remove all identities{}?", prompt))?)
+        y_or_n(
+            force,
+            &format!("Are you sure you want to remove all identities{}?", prompt),
+        )
     }
 
     if let Some(identity_or_name) = identity_or_name {
