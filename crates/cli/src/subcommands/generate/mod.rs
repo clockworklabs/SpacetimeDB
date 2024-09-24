@@ -23,6 +23,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use wasmtime::{Caller, StoreContextMut};
 
+use crate::common_args;
 use crate::Config;
 
 mod code_indenter;
@@ -123,6 +124,10 @@ pub fn exec(_config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
     let build_debug = args.get_flag("debug");
     let delete_files = args.get_flag("delete_files");
     let force = args.get_flag("force");
+
+    if args.contains_id("namespace") && lang != Language::Csharp {
+        return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
+    }
 
     let module = if let Some(mut json_module) = json_module {
         let DeserializeWrapper(module) = if let Some(path) = json_module.next() {

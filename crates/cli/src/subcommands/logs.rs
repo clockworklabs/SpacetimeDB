@@ -28,6 +28,8 @@ pub fn cli() -> clap::Command {
         )
         .arg(
             Arg::new("num_lines")
+                .long("num-lines")
+                .short('n')
                 .value_parser(clap::value_parser!(u32))
                 .help("The number of lines to print from the start of the log of this database")
                 .long_help("The number of lines to print from the start of the log of this database. If no num lines is provided, all lines will be returned."),

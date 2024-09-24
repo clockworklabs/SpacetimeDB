@@ -1,4 +1,5 @@
 use clap::Arg;
+use clap::ArgAction::SetTrue;
 
 pub fn server() -> Arg {
     Arg::new("server")

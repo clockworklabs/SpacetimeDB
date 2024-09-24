@@ -170,11 +170,7 @@ fn get_subcommands() -> Vec<Command> {
                     .action(ArgAction::SetTrue)
                     .conflicts_with_all(["identity", "all-server"])
             ).arg(
-                Arg::new("force")
-                    .long("force")
-                    .help("Removes all identities without prompting (for CI usage)")
-                    .action(ArgAction::SetTrue)
-                    .conflicts_with("identity")
+                common_args::yes()
             )
             // TODO: project flag?
             ,
