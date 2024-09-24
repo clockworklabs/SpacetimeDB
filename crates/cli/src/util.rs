@@ -344,13 +344,17 @@ pub fn host_or_url_to_host_and_protocol(host_or_url: &str) -> (&str, Option<&str
 /// Prompt the user for `y` or `n` from stdin.
 ///
 /// Return `false` unless the input is `y`.
-pub fn y_or_n(prompt: &str) -> anyhow::Result<bool> {
+pub fn y_or_n(force: bool, prompt: &str) -> anyhow::Result<bool> {
+    if force {
+        println!("Force flag is present, skipping confirmation");
+        return Ok(true);
+    }
     let mut input = String::new();
-    print!("{} (y/n)", prompt);
+    print!("{} [y/N]", prompt);
     std::io::stdout().flush()?;
     std::io::stdin().read_line(&mut input)?;
-
-    Ok(input.trim() == "y")
+    let input = input.trim().to_lowercase();
+    Ok(input == "y" || input == "yes")
 }
 
 pub fn unauth_error_context<T>(res: anyhow::Result<T>, identity: &str, server: &str) -> anyhow::Result<T> {
