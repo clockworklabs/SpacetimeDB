@@ -137,9 +137,14 @@ jobs:
             <packageSources>
               <!-- Local NuGet repositories -->
               <add key="Local SpacetimeDB.BSATN.Runtime" value="../crates/bindings-csharp/BSATN.Runtime/bin/Release" />
-              <!-- Official NuGet.org server -->
-              <add key="NuGet.org" value="https://api.nuget.org/v3/index.json" />
             </packageSources>
+            <packageSourceMapping>
+              <!-- Ensure that SpacetimeDB.BSATN.Runtime is used from the local folder. -->
+              <!-- Otherwise we risk an outdated version being quietly pulled from NuGet for testing. -->
+              <packageSource key="Local SpacetimeDB.BSATN.Runtime">
+                <package pattern="SpacetimeDB.BSATN.Runtime" />
+              </packageSource>
+            </packageSourceMapping>
           </configuration>
           EOF
 
