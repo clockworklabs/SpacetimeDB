@@ -1,12 +1,14 @@
 use crate::background_connection::ClientMessage;
 use crate::identity::Credentials;
 use crate::ws_messages::ServerMessage;
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use brotli::BrotliDecompress;
 use futures::{SinkExt, StreamExt as _, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{Scheme, Uri};
-use spacetimedb_client_api_messages::websocket::BsatnFormat;
+use spacetimedb_client_api_messages::websocket::{
+    BsatnFormat, SERVER_MSG_COMPRESSION_TAG_BROTLI, SERVER_MSG_COMPRESSION_TAG_NONE,
+};
 use spacetimedb_lib::{bsatn, Address};
 use tokio::task::JoinHandle;
 use tokio::{net::TcpStream, runtime};
@@ -153,9 +155,19 @@ impl DbConnection {
     }
 
     pub(crate) fn parse_response(bytes: &[u8]) -> Result<ServerMessage<BsatnFormat>> {
-        let mut decompressed = Vec::new();
-        BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
-        Ok(bsatn::from_slice(&decompressed)?)
+        let (compression, bytes) = bytes
+            .split_first()
+            .ok_or_else(|| anyhow!("Empty raw message. Must have at least a byte for the compression."))?;
+
+        Ok(match *compression {
+            SERVER_MSG_COMPRESSION_TAG_NONE => bsatn::from_slice(bytes)?,
+            SERVER_MSG_COMPRESSION_TAG_BROTLI => {
+                let mut decompressed = Vec::new();
+                BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
+                bsatn::from_slice(&decompressed)?
+            }
+            c => bail!("Unknown compression format `{c}`"),
+        })
     }
 
     pub(crate) fn encode_message(msg: ClientMessage) -> WebSocketMessage {

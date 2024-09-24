@@ -142,6 +142,12 @@ pub struct OneOffQuery {
     pub query_string: String,
 }
 
+/// The tag recognized by ghe host and SDKs to mean no compression of a [`ServerMessage`].
+pub const SERVER_MSG_COMPRESSION_TAG_NONE: u8 = 0;
+
+/// The tag recognized by the host and SDKs to mean brotli compression  of a [`ServerMessage`].
+pub const SERVER_MSG_COMPRESSION_TAG_BROTLI: u8 = 1;
+
 /// Messages sent from the server to the client.
 #[derive(SpacetimeType, derive_more::From)]
 #[sats(crate = spacetimedb_lib)]

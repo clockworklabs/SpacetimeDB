@@ -5,7 +5,7 @@ use crate::host::ArgsTuple;
 use crate::messages::websocket as ws;
 use brotli::CompressorReader;
 use derive_more::From;
-use spacetimedb_client_api_messages::websocket::{BsatnFormat, FormatSwitch, JsonFormat, WebsocketFormat};
+use spacetimedb_client_api_messages::websocket::{BsatnFormat, FormatSwitch, JsonFormat, WebsocketFormat, SERVER_MSG_COMPRESSION_TAG_BROTLI, SERVER_MSG_COMPRESSION_TAG_NONE};
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::Address;
@@ -29,17 +29,34 @@ pub(super) type SwitchedServerMessage = FormatSwitch<ws::ServerMessage<BsatnForm
 ///
 /// If `protocol` is [`Protocol::Binary`], the message will be compressed by this method.
 pub fn serialize(msg: impl ToProtocol<Encoded = SwitchedServerMessage>, protocol: Protocol) -> DataMessage {
+    // TODO(centril, perf): here we are allocating buffers only to throw them away eventually.
+    // Consider pooling these allocations so that we reuse them.
     match msg.to_protocol(protocol) {
         FormatSwitch::Json(msg) => serde_json::to_string(&SerializeWrapper::new(msg)).unwrap().into(),
         FormatSwitch::Bsatn(msg) => {
-            let msg_bytes = bsatn::to_vec(&msg).unwrap();
-            let msg_bytes = brotli_compress(&msg_bytes);
+            /// The threshold at which we start to compress messages.
+            /// 1KiB was chosen without measurement.
+            /// TODO(perf): measure!
+            const COMPRESS_THRESHOLD: usize = 1024;
+
+            // First write the tag so that we avoid shifting the entire message at the end.
+            let mut msg_bytes = vec![SERVER_MSG_COMPRESSION_TAG_NONE];
+            bsatn::to_writer(&mut msg_bytes, &msg).unwrap();
+
+            // Conditionally compress the message.
+            let msg_bytes = if msg_bytes.len() - 1 <= COMPRESS_THRESHOLD {
+                let mut out = vec![SERVER_MSG_COMPRESSION_TAG_BROTLI];
+                brotli_compress(&msg_bytes[1..], &mut out);
+                out
+            } else {
+                msg_bytes
+            };
             msg_bytes.into()
         }
     }
 }
 
-fn brotli_compress(bytes: &[u8]) -> Vec<u8> {
+fn brotli_compress(bytes: &[u8], out: &mut Vec<u8>) {
     let reader = &mut &bytes[..];
 
     // TODO(perf): Compression should depend on message size and type.
@@ -66,11 +83,9 @@ fn brotli_compress(bytes: &[u8]) -> Vec<u8> {
 
     let mut encoder = CompressorReader::new(reader, BUFFER_SIZE, COMPRESSION_LEVEL, LG_WIN);
 
-    let mut out = Vec::new();
     encoder
-        .read_to_end(&mut out)
+        .read_to_end(out)
         .expect("Failed to Brotli compress `SubscriptionUpdateMessage`");
-    out
 }
 
 #[derive(Debug, From)]
