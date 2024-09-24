@@ -142,6 +142,11 @@ impl<'a, T: ?Sized> WithTypespace<'a, T> {
         Self { typespace, ty }
     }
 
+    /// Wraps `ty` in an empty context.
+    pub const fn empty(ty: &'a T) -> Self {
+        Self::new(Typespace::EMPTY, ty)
+    }
+
     /// Returns the object that the context was created with.
     pub const fn ty(&self) -> &'a T {
         self.ty

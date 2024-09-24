@@ -16,7 +16,7 @@ static partial class Module
     {
         var person = new Person { Name = name, Age = age };
         person.Insert();
-        Runtime.Log($"Inserted {person.Name} under #{person.Id}");
+        Log.Info($"Inserted {person.Name} under #{person.Id}");
     }
 
     [SpacetimeDB.Reducer]
@@ -24,8 +24,8 @@ static partial class Module
     {
         foreach (var person in Person.Iter())
         {
-            Runtime.Log($"Hello, {person.Name}!");
+            Log.Info($"Hello, {person.Name}!");
         }
-        Runtime.Log("Hello, World!");
+        Log.Info("Hello, World!");
     }
 }

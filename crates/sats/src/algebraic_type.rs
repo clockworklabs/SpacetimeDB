@@ -3,12 +3,14 @@ pub mod map_notation;
 
 use crate::algebraic_value::de::{ValueDeserializeError, ValueDeserializer};
 use crate::algebraic_value::ser::value_serialize;
+use crate::de::Deserialize;
 use crate::meta_type::MetaType;
 use crate::product_type::{ADDRESS_TAG, IDENTITY_TAG};
 use crate::sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG};
-use crate::{de::Deserialize, ser::Serialize, MapType};
 use crate::{i256, u256};
-use crate::{AlgebraicTypeRef, AlgebraicValue, ArrayType, ProductType, SumType, SumTypeVariant};
+use crate::{
+    AlgebraicTypeRef, AlgebraicValue, ArrayType, MapType, ProductType, SpacetimeType, SumType, SumTypeVariant,
+};
 use derive_more::From;
 use enum_as_inner::EnumAsInner;
 
@@ -18,7 +20,7 @@ use enum_as_inner::EnumAsInner;
 /// The type system unifies the concepts sum types, product types, scalar value types,
 /// and convenience types strings, arrays, and maps,
 /// into a single type system.
-#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, From)]
+#[derive(EnumAsInner, Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SpacetimeType, From)]
 #[sats(crate = crate)]
 pub enum AlgebraicType {
     /// A type where the definition is given by the typing context (`Typespace`).
@@ -178,6 +180,22 @@ impl AlgebraicType {
     /// Returns whether this type is the conventional `ScheduleAt` type.
     pub fn is_schedule_at(&self) -> bool {
         matches!(self, Self::Sum(p) if p.is_schedule_at())
+    }
+
+    /// Returns whether this type is a unit type.
+    pub fn is_unit(&self) -> bool {
+        matches!(self, Self::Product(p) if p.is_unit())
+    }
+
+    /// Returns whether this type is a never type.
+    pub fn is_never(&self) -> bool {
+        matches!(self, Self::Sum(p) if p.is_empty())
+    }
+
+    /// If this type is the standard option type, returns the type of the `some` variant.
+    /// Otherwise, returns `None`.
+    pub fn as_option(&self) -> Option<&AlgebraicType> {
+        self.as_sum()?.as_option()
     }
 
     /// Returns whether this type is scalar or a string type.

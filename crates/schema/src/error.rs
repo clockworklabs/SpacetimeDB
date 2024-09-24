@@ -3,12 +3,13 @@ use spacetimedb_lib::db::raw_def::v9::{Lifecycle, RawIdentifier, RawScopedTypeNa
 use spacetimedb_lib::{ProductType, SumType};
 use spacetimedb_primitives::{ColId, ColList};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
-use spacetimedb_sats::{typespace::TypeRefError, AlgebraicType, AlgebraicTypeRef};
+use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef};
 use std::borrow::Cow;
 use std::fmt;
 
 use crate::def::ScopedTypeName;
 use crate::identifier::Identifier;
+use crate::type_for_generate::ClientCodegenError;
 
 /// A stream of validation errors, defined using the `ErrorStream` type.
 pub type ValidationErrors = ErrorStream<ValidationError>;
@@ -85,18 +86,10 @@ pub enum ValidationError {
     },
     #[error("A scheduled table must have columns `scheduled_id: u64` and `scheduled_at: ScheduledAt`, but table `{table}` has columns {columns:?}")]
     ScheduledIncorrectColumns { table: RawIdentifier, columns: ProductType },
-    #[error("{location} has type {ty:?} which cannot be used to generate a type use")]
-    NotValidForTypeUse {
+    #[error("error at {location}: {error}")]
+    ClientCodegenError {
         location: TypeLocation<'static>,
-        ty: PrettyAlgebraicType,
-    },
-    #[error("{ref_} stores type {ty:?} which cannot be used to generate a type definition")]
-    NotValidForTypeDefinition { ref_: AlgebraicTypeRef, ty: AlgebraicType },
-    #[error("Type {ty} failed to resolve")]
-    ResolutionFailure {
-        location: TypeLocation<'static>,
-        ty: PrettyAlgebraicType,
-        error: TypeRefError,
+        error: ClientCodegenError,
     },
     #[error("Missing type definition for ref: {ref_}, holds type: {ty}")]
     MissingTypeDef {

@@ -7,17 +7,17 @@ use syn::punctuated::Pair;
 use syn::spanned::Spanned;
 use syn::{LitStr, Token};
 
-use crate::{check_duplicate_meta, sym};
+use crate::{check_duplicate, sym};
 
 pub(crate) struct SatsType<'a> {
     pub ident: &'a syn::Ident,
     pub generics: &'a syn::Generics,
     pub name: String,
     pub krate: TokenStream,
+    // may want to use in the future
+    #[allow(unused)]
     pub original_attrs: &'a [syn::Attribute],
     pub data: SatsTypeData<'a>,
-    pub public: Option<Span>,
-    pub scheduled: Option<String>,
 }
 
 pub(crate) enum SatsTypeData<'a> {
@@ -40,6 +40,7 @@ pub(crate) struct SatsVariant<'a> {
     pub name: String,
     pub ty: Option<&'a syn::Type>,
     pub member: Option<syn::Member>,
+    // may want to use in the future
     #[allow(unused)]
     pub original_attrs: &'a [syn::Attribute],
 }
@@ -87,37 +88,25 @@ pub(crate) fn extract_sats_type<'a>(
 ) -> syn::Result<SatsType<'a>> {
     let mut name = None;
     let mut krate = None;
-    let mut public = None;
-    let mut scheduled = None;
     for attr in attrs {
-        if attr.path() != sym::SATS {
+        if attr.path() != sym::sats {
             continue;
         }
         attr.parse_nested_meta(|meta| {
-            if meta.path == sym::CRATE {
-                check_duplicate_meta(&krate, &meta)?;
-                let value = meta.value()?;
-                let v = value.call(syn::Path::parse_mod_style)?;
-                krate = Some(v.into_token_stream());
-            } else if meta.path == sym::NAME {
-                check_duplicate_meta(&name, &meta)?;
-                let value = meta.value()?;
-                let v = value.parse::<LitStr>()?;
-                name = Some(v.value());
-            } else if meta.path == sym::PUBLIC {
-                check_duplicate_meta(&public, &meta)?;
-                if !meta.input.is_empty() {
-                    return Err(meta.error("public modifier must be empty"));
+            match_meta!(match meta {
+                sym::crate_ => {
+                    check_duplicate(&krate, &meta)?;
+                    let value = meta.value()?;
+                    let v = value.call(syn::Path::parse_mod_style)?;
+                    krate = Some(v.into_token_stream());
                 }
-                public = Some(meta.path.span());
-            } else if meta.path == sym::SCHEDULED {
-                check_duplicate_meta(&scheduled, &meta)?;
-                let value = meta.value()?;
-                let v = value.parse::<LitStr>()?;
-                scheduled = Some(v.value());
-            } else {
-                return Err(meta.error("unknown sats attribute"));
-            }
+                sym::name => {
+                    check_duplicate(&name, &meta)?;
+                    let value = meta.value()?;
+                    let v = value.parse::<LitStr>()?;
+                    name = Some(v.value());
+                }
+            });
             Ok(())
         })?;
     }
@@ -131,17 +120,7 @@ pub(crate) fn extract_sats_type<'a>(
         krate,
         original_attrs: attrs,
         data,
-        public,
-        scheduled,
     })
-}
-
-/// Ensures that the `public` modifier is not present.
-pub(crate) fn ensure_no_public(ty: &SatsType<'_>, mut ts: TokenStream) -> TokenStream {
-    if let Some(span) = ty.public {
-        ts.extend(syn::Error::new(span, "the `public` specifier is not allowed in this context").into_compile_error());
-    }
-    ts
 }
 
 pub(crate) fn derive_satstype(ty: &SatsType<'_>, gen_type_alias: bool) -> TokenStream {

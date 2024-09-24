@@ -8,7 +8,7 @@ use core::fmt;
 use core::str::Utf8Error;
 
 /// An error that occurred when decoding.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodeError {
     /// Not enough data was provided in the input.
     BufferLength {
@@ -274,6 +274,25 @@ impl CountWriter {
 impl BufWriter for CountWriter {
     fn put_slice(&mut self, slice: &[u8]) {
         self.num_bytes += slice.len();
+    }
+}
+
+/// A [`BufWriter`] that writes the bytes to two writers `W1` and `W2`.
+pub struct TeeWriter<W1, W2> {
+    pub w1: W1,
+    pub w2: W2,
+}
+
+impl<W1: BufWriter, W2: BufWriter> TeeWriter<W1, W2> {
+    pub fn new(w1: W1, w2: W2) -> Self {
+        Self { w1, w2 }
+    }
+}
+
+impl<W1: BufWriter, W2: BufWriter> BufWriter for TeeWriter<W1, W2> {
+    fn put_slice(&mut self, slice: &[u8]) {
+        self.w1.put_slice(slice);
+        self.w2.put_slice(slice);
     }
 }
 

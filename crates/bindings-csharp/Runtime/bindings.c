@@ -21,6 +21,7 @@ OPAQUE_TYPEDEF(LogLevel, uint8_t);
 OPAQUE_TYPEDEF(BytesSink, uint32_t);
 OPAQUE_TYPEDEF(BytesSource, uint32_t);
 OPAQUE_TYPEDEF(RowIter, uint32_t);
+OPAQUE_TYPEDEF(ConsoleTimerId, uint32_t);
 
 #define CSTR(s) (uint8_t*)s, sizeof(s) - 1
 
@@ -36,11 +37,11 @@ OPAQUE_TYPEDEF(RowIter, uint32_t);
 #endif
 
 IMPORT(void, _console_log,
-       (LogLevel level, const uint8_t* target, uint32_t target_len,
-        const uint8_t* filename, uint32_t filename_len, uint32_t line_number,
-        const uint8_t* message, uint32_t message_len),
-       (level, target, target_len, filename, filename_len, line_number, message,
-        message_len));
+       (LogLevel level, const uint8_t* target_ptr, uint32_t target_len,
+        const uint8_t* filename_ptr, uint32_t filename_len, uint32_t line_number,
+        const uint8_t* message_ptr, uint32_t message_len),
+       (level, target_ptr, target_len, filename_ptr, filename_len, line_number,
+        message_ptr, message_len));
 
 IMPORT(Status, _table_id_from_name,
        (const uint8_t* name, uint32_t name_len, TableId* id),
@@ -54,8 +55,8 @@ IMPORT(Status, _iter_by_col_eq,
        (TableId table_id, ColId col_id, const uint8_t* value,
         uint32_t value_len, RowIter* iter),
        (table_id, col_id, value, value_len, iter));
-IMPORT(Status, _insert, (TableId table_id, const uint8_t* row, uint32_t len),
-       (table_id, row, len));
+IMPORT(Status, _datastore_insert_bsatn, (TableId table_id, const uint8_t* row_ptr, size_t* row_len_ptr),
+       (table_id, row_ptr, row_len_ptr));
 IMPORT(Status, _delete_by_col_eq,
        (TableId table_id, ColId col_id, const uint8_t* value,
         uint32_t value_len, uint32_t* num_deleted),
@@ -79,6 +80,12 @@ IMPORT(int16_t, _bytes_source_read, (BytesSource source, uint8_t* buffer_ptr, si
        (source, buffer_ptr, buffer_len_ptr));
 IMPORT(uint16_t, _bytes_sink_write, (BytesSink sink, const uint8_t* buffer_ptr, size_t* buffer_len_ptr),
        (sink, buffer_ptr, buffer_len_ptr));
+IMPORT(ConsoleTimerId, _console_timer_start,
+       (const uint8_t* name, size_t name_len),
+       (name, name_len));
+IMPORT(Status, _console_timer_end,
+       (ConsoleTimerId stopwatch_id),
+       (stopwatch_id));
 
 #ifndef EXPERIMENTAL_WASM_AOT
 static MonoClass* ffi_class;

@@ -83,7 +83,8 @@ impl std::fmt::Display for VersionTuple {
 extern crate self as spacetimedb_lib;
 
 //WARNING: Change this structure(or any of their members) is an ABI change.
-#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct TableDesc {
     pub schema: RawTableDefV8,
     /// data should always point to a ProductType in the typespace
@@ -107,7 +108,8 @@ impl TableDesc {
     }
 }
 
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct ReducerDef {
     pub name: Box<str>,
     pub args: Vec<ProductTypeElement>,
@@ -176,7 +178,8 @@ impl_serialize!([] ReducerArgsWithSchema<'_>, (self, ser) => {
 });
 
 //WARNING: Change this structure(or any of their members) is an ABI change.
-#[derive(Debug, Clone, Default, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, Default, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct RawModuleDefV8 {
     pub typespace: sats::Typespace,
     pub tables: Vec<TableDesc>,
@@ -199,7 +202,8 @@ impl RawModuleDefV8 {
 /// A versioned raw module definition.
 ///
 /// This is what is actually returned by the module when `__describe_module__` is called, serialized to BSATN.
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 #[non_exhaustive]
 pub enum RawModuleDef {
     V8BackCompat(RawModuleDefV8),
@@ -248,8 +252,11 @@ impl ModuleDefBuilder {
                 algebraic_type: c.col_type.clone(),
             })
             .collect();
-        // do NOT add a `TypeAlias`: in v8, the `RawTableDef` itself serves as a `TypeAlias`.
         let data = self.module.typespace.add(ty.into());
+        self.add_type_alias(TypeAlias {
+            name: schema.table_name.clone().into(),
+            ty: data,
+        });
         self.add_table(TableDesc { schema, data });
         data
     }
@@ -321,12 +328,14 @@ impl TypespaceBuilder for ModuleDefBuilder {
 }
 
 // an enum to keep it extensible without breaking abi
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 pub enum MiscModuleExport {
     TypeAlias(TypeAlias),
 }
 
-#[derive(Debug, Clone, de::Deserialize, ser::Serialize)]
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
 pub struct TypeAlias {
     pub name: String,
     pub ty: sats::AlgebraicTypeRef,
@@ -373,6 +382,12 @@ pub fn from_hex_pad<R: hex::FromHex<Error = hex::FromHexError>, T: AsRef<[u8]>>(
     hex: T,
 ) -> Result<R, hex::FromHexError> {
     let hex = hex.as_ref();
-    let hex = if hex.starts_with(b"0x") { &hex[2..] } else { hex };
+    let hex = if hex.starts_with(b"0x") {
+        &hex[2..]
+    } else if hex.starts_with(b"X'") {
+        &hex[2..hex.len()]
+    } else {
+        hex
+    };
     hex::FromHex::from_hex(hex)
 }

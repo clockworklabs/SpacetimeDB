@@ -23,14 +23,12 @@
 
 use super::indexes::RowPointer;
 use super::table::RowRef;
-use crate::{
-    layout::{AlgebraicTypeLayout, RowTypeLayout},
-    read_column::ReadColumn,
-    static_assert_size,
-};
+use crate::{read_column::ReadColumn, static_assert_size};
 use core::ops::RangeBounds;
 use spacetimedb_primitives::{ColList, IndexId};
-use spacetimedb_sats::{algebraic_value::Packed, i256, product_value::InvalidFieldError, u256, AlgebraicValue};
+use spacetimedb_sats::{
+    algebraic_value::Packed, i256, product_value::InvalidFieldError, u256, AlgebraicType, AlgebraicValue, ProductType,
+};
 
 mod multimap;
 
@@ -326,51 +324,50 @@ pub struct BTreeIndex {
     pub(crate) is_unique: bool,
     /// The actual index, specialized for the appropriate key type.
     idx: TypedIndex,
+    /// The key type of this index.
+    /// This is the projection of the row type to the types of the columns indexed.
+    pub key_type: AlgebraicType,
 }
 
-static_assert_size!(BTreeIndex, 40);
+static_assert_size!(BTreeIndex, 64);
 
 impl BTreeIndex {
     /// Returns a new possibly unique index, with `index_id` for a set of columns.
     pub fn new(
         index_id: IndexId,
-        row_type: &RowTypeLayout,
+        row_type: &ProductType,
         indexed_columns: &ColList,
         is_unique: bool,
     ) -> Result<Self, InvalidFieldError> {
+        let key_type = row_type.project(indexed_columns)?;
         // If the index is on a single column of a primitive type,
         // use a homogeneous map with a native key type.
-        let typed_index = if let Some(col_pos) = indexed_columns.as_singleton() {
-            let col = row_type.product().elements.get(col_pos.idx()).ok_or(col_pos)?;
+        let typed_index = match key_type {
+            AlgebraicType::Bool => TypedIndex::Bool(Index::new()),
+            AlgebraicType::I8 => TypedIndex::I8(Index::new()),
+            AlgebraicType::U8 => TypedIndex::U8(Index::new()),
+            AlgebraicType::I16 => TypedIndex::I16(Index::new()),
+            AlgebraicType::U16 => TypedIndex::U16(Index::new()),
+            AlgebraicType::I32 => TypedIndex::I32(Index::new()),
+            AlgebraicType::U32 => TypedIndex::U32(Index::new()),
+            AlgebraicType::I64 => TypedIndex::I64(Index::new()),
+            AlgebraicType::U64 => TypedIndex::U64(Index::new()),
+            AlgebraicType::I128 => TypedIndex::I128(Index::new()),
+            AlgebraicType::U128 => TypedIndex::U128(Index::new()),
+            AlgebraicType::I256 => TypedIndex::I256(Index::new()),
+            AlgebraicType::U256 => TypedIndex::U256(Index::new()),
+            AlgebraicType::String => TypedIndex::String(Index::new()),
 
-            match col.ty {
-                AlgebraicTypeLayout::Bool => TypedIndex::Bool(Index::new()),
-                AlgebraicTypeLayout::I8 => TypedIndex::I8(Index::new()),
-                AlgebraicTypeLayout::U8 => TypedIndex::U8(Index::new()),
-                AlgebraicTypeLayout::I16 => TypedIndex::I16(Index::new()),
-                AlgebraicTypeLayout::U16 => TypedIndex::U16(Index::new()),
-                AlgebraicTypeLayout::I32 => TypedIndex::I32(Index::new()),
-                AlgebraicTypeLayout::U32 => TypedIndex::U32(Index::new()),
-                AlgebraicTypeLayout::I64 => TypedIndex::I64(Index::new()),
-                AlgebraicTypeLayout::U64 => TypedIndex::U64(Index::new()),
-                AlgebraicTypeLayout::I128 => TypedIndex::I128(Index::new()),
-                AlgebraicTypeLayout::U128 => TypedIndex::U128(Index::new()),
-                AlgebraicTypeLayout::I256 => TypedIndex::I256(Index::new()),
-                AlgebraicTypeLayout::U256 => TypedIndex::U256(Index::new()),
-                AlgebraicTypeLayout::String => TypedIndex::String(Index::new()),
-
-                // If we don't specialize on the key type, use a map keyed on `AlgebraicValue`.
-                _ => TypedIndex::AlgebraicValue(Index::new()),
-            }
-        } else {
-            // If the index is on multiple columns, use a map keyed on `AlgebraicValue`,
-            // as the keys will be `ProductValue`s.
-            TypedIndex::AlgebraicValue(Index::new())
+            // The index is either multi-column,
+            // or we don't care to specialize on the key type,
+            // so use a map keyed on `AlgebraicValue`.
+            _ => TypedIndex::AlgebraicValue(Index::new()),
         };
         Ok(Self {
             index_id,
             is_unique,
             idx: typed_index,
+            key_type,
         })
     }
 
@@ -474,8 +471,7 @@ mod test {
     }
 
     fn new_index(row_type: &ProductType, cols: &ColList, is_unique: bool) -> BTreeIndex {
-        let row_layout: RowTypeLayout = row_type.clone().into();
-        BTreeIndex::new(0.into(), &row_layout, cols, is_unique).unwrap()
+        BTreeIndex::new(0.into(), row_type, cols, is_unique).unwrap()
     }
 
     fn table(ty: ProductType) -> Table {
@@ -487,7 +483,7 @@ mod test {
 
     /// Extracts from `row` the relevant column values according to what columns are indexed.
     fn get_fields(cols: &ColList, row: &ProductValue) -> AlgebraicValue {
-        row.project_not_empty(cols).unwrap()
+        row.project(cols).unwrap()
     }
 
     /// Returns whether indexing `row` again would violate a unique constraint, if any.

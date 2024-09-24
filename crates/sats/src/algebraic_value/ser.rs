@@ -361,6 +361,7 @@ impl ArrayValueBuilder {
             AlgebraicValue::F64(x) => vec(x, capacity).into(),
             AlgebraicValue::String(x) => vec(x, capacity).into(),
             AlgebraicValue::Array(x) => vec(x, capacity).into(),
+            AlgebraicValue::Min | AlgebraicValue::Max => panic!("not defined for Min/Max"),
         }
     }
 

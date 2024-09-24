@@ -1,6 +1,8 @@
 ﻿using System.Runtime.InteropServices;
 using SpacetimeDB;
 
+#pragma warning disable CA1050 // Declare types in namespaces - this is a test fixture, no need for a namespace.
+
 [SpacetimeDB.Type]
 public partial struct CustomStruct
 {
@@ -82,10 +84,10 @@ public static partial class Reducers
     public static void InsertData(PublicTable data)
     {
         data.Insert();
-        Runtime.Log("New list");
+        Log.Info("New list");
         foreach (var item in PublicTable.Iter())
         {
-            Runtime.Log($"Item: {item.StringField}");
+            Log.Info($"Item: {item.StringField}");
         }
     }
 

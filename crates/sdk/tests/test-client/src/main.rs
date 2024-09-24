@@ -17,7 +17,7 @@ use module_bindings::*;
 use test_counter::TestCounter;
 
 mod simple_test_table;
-use simple_test_table::insert_one;
+use simple_test_table::{insert_one, on_insert_one};
 
 mod pk_test_table;
 use pk_test_table::insert_update_delete_one;
@@ -64,10 +64,12 @@ fn main() {
         "update_primitive" => exec_update_primitive(),
 
         "insert_identity" => exec_insert_identity(),
+        "insert_caller_identity" => exec_insert_caller_identity(),
         "delete_identity" => exec_delete_identity(),
         "update_identity" => exec_update_identity(),
 
         "insert_address" => exec_insert_address(),
+        "insert_caller_address" => exec_insert_caller_address(),
         "delete_address" => exec_delete_address(),
         "update_address" => exec_update_address(),
 
@@ -493,6 +495,36 @@ fn exec_insert_identity() {
     test_counter.wait_for_all();
 }
 
+/// This tests that we can retrieve and use the caller's `Identity` from the reducer context.
+fn exec_insert_caller_identity() {
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
+
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    {
+        let test_counter = test_counter.clone();
+        once_on_subscription_applied(move || {
+            on_insert_one::<OneIdentity>(&test_counter, identity().unwrap(), |event| {
+                matches!(event, ReducerEvent::InsertCallerOneIdentity(_))
+            });
+            insert_caller_one_identity();
+
+            sub_applied_nothing_result(assert_all_tables_empty());
+        });
+    }
+
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
+
+    conn_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
+}
+
 /// This test doesn't add much alongside `exec_insert_identity` and `exec_delete_primitive`,
 /// but it's here for symmetry.
 fn exec_delete_identity() {
@@ -568,6 +600,36 @@ fn exec_insert_address() {
         let test_counter = test_counter.clone();
         once_on_subscription_applied(move || {
             insert_one::<OneAddress>(&test_counter, address().unwrap());
+
+            sub_applied_nothing_result(assert_all_tables_empty());
+        });
+    }
+
+    once_on_connect(move |_, _| sub_result(subscribe(SUBSCRIBE_ALL)));
+
+    conn_result(connect(LOCALHOST, &name, None));
+
+    test_counter.wait_for_all();
+}
+
+/// This tests that we can serialize and deserialize `Address` in various contexts.
+fn exec_insert_caller_address() {
+    let test_counter = TestCounter::new();
+    let name = db_name_or_panic();
+
+    let conn_result = test_counter.add_test("connect");
+
+    let sub_result = test_counter.add_test("subscribe");
+
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    {
+        let test_counter = test_counter.clone();
+        once_on_subscription_applied(move || {
+            on_insert_one::<OneAddress>(&test_counter, address().unwrap(), |event| {
+                matches!(event, ReducerEvent::InsertCallerOneAddress(_))
+            });
+            insert_caller_one_address();
 
             sub_applied_nothing_result(assert_all_tables_empty());
         });

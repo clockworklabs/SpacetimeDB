@@ -7,9 +7,9 @@ public interface ITable<T> : IStructuralReadWrite
     where T : ITable<T>, new()
 {
     // These are the methods that codegen needs to implement.
-    static abstract Module.TableDesc MakeTableDesc(ITypeRegistrar registrar);
+    void ReadGenFields(BinaryReader reader);
+    static abstract TableDesc MakeTableDesc(ITypeRegistrar registrar);
     static abstract Filter CreateFilter();
-    static abstract bool HasAutoIncFields { get; }
 
     // These are static helpers that codegen can use.
 
@@ -150,14 +150,15 @@ public interface ITable<T> : IStructuralReadWrite
 
     protected static void Insert(T row)
     {
+        // Insert the row.
         var bytes = ToBytes(row);
-        FFI._insert(tableId, bytes, (uint)bytes.Length);
-        if (T.HasAutoIncFields)
-        {
-            using var stream = new MemoryStream(bytes);
-            using var reader = new BinaryReader(stream);
-            row.ReadFields(reader);
-        }
+        var bytes_len = (uint)bytes.Length;
+        FFI._datastore_insert_bsatn(tableId, bytes, ref bytes_len);
+
+        // Write back any generated column values.
+        using var stream = new MemoryStream(bytes, 0, (int)bytes_len);
+        using var reader = new BinaryReader(stream);
+        row.ReadGenFields(reader);
     }
 
     protected readonly ref struct ColEq

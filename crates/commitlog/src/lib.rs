@@ -1,9 +1,15 @@
-use std::{io, num::NonZeroU16, path::PathBuf, sync::RwLock};
+use std::{
+    io,
+    num::{NonZeroU16, NonZeroU64},
+    path::PathBuf,
+    sync::RwLock,
+};
 
 use log::trace;
 
-mod commit;
+pub mod commit;
 pub mod commitlog;
+mod index;
 pub mod repo;
 pub mod segment;
 mod varchar;
@@ -45,6 +51,27 @@ pub struct Options {
     ///
     /// Default: 65,535
     pub max_records_in_commit: NonZeroU16,
+    /// Whenever at least this many bytes have been written to the currently
+    /// active segment, an entry is added to its offset index.
+    ///
+    /// Default: 4096
+    pub offset_index_interval_bytes: NonZeroU64,
+    /// If `true`, require that the segment must be synced to disk before an
+    /// index entry is added.
+    ///
+    /// Setting this to `false` (the default) will update the index every
+    /// `offset_index_interval_bytes`, even if the commitlog wasn't synced.
+    /// This means that the index could contain non-existent entries in the
+    /// event of a crash.
+    ///
+    /// Setting it to `true` will update the index when the commitlog is synced,
+    /// and `offset_index_interval_bytes` have been written.
+    /// This means that the index could contain fewer index entries than
+    //// strictly every `offset_index_interval_bytes`.
+
+    ///
+    /// Default: false
+    pub offset_index_require_segment_fsync: bool,
 }
 
 impl Default for Options {
@@ -53,6 +80,8 @@ impl Default for Options {
             log_format_version: DEFAULT_LOG_FORMAT_VERSION,
             max_segment_size: 1024 * 1024 * 1024,
             max_records_in_commit: NonZeroU16::MAX,
+            offset_index_interval_bytes: NonZeroU64::new(4096).unwrap(),
+            offset_index_require_segment_fsync: false,
         }
     }
 }

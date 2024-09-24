@@ -3,7 +3,6 @@ namespace SpacetimeDB;
 using System.Runtime.CompilerServices;
 using SpacetimeDB.BSATN;
 using SpacetimeDB.Internal;
-using static System.Text.Encoding;
 
 public class ReducerContext
 {
@@ -11,15 +10,21 @@ public class ReducerContext
     public readonly DateTimeOffset Time;
     public readonly Address? Address;
 
+    /// <summary>
+    /// A reducer-specific instance of `System.Random` that is seeded by current reducer's timestamp. This object is unchanged throught the entire reducer call
+    /// </summary>
+    public readonly Random Rng;
+
     internal ReducerContext(
         Identity senderIdentity,
         Address? senderAddress,
-        DateTimeOffset timestamp
+        DateTimeOffsetRepr timestamp
     )
     {
         Sender = senderIdentity;
         Address = senderAddress;
-        Time = timestamp;
+        Time = timestamp.ToStd();
+        Rng = new Random((int)timestamp.MicrosecondsSinceEpoch);
     }
 }
 
@@ -75,44 +80,4 @@ public abstract partial record ScheduleAt
                 ]
             );
     }
-}
-
-public static class Runtime
-{
-    public enum LogLevel : byte
-    {
-        Error,
-        Warn,
-        Info,
-        Debug,
-        Trace,
-        Panic,
-    }
-
-    public static void Log(
-        string text,
-        LogLevel level = LogLevel.Info,
-        [CallerMemberName] string target = "",
-        [CallerFilePath] string filename = "",
-        [CallerLineNumber] uint lineNumber = 0
-    )
-    {
-        var target_bytes = UTF8.GetBytes(target);
-        var filename_bytes = UTF8.GetBytes(filename);
-        var text_bytes = UTF8.GetBytes(text);
-
-        FFI._console_log(
-            (byte)level,
-            target_bytes,
-            (uint)target_bytes.Length,
-            filename_bytes,
-            (uint)filename_bytes.Length,
-            lineNumber,
-            text_bytes,
-            (uint)text_bytes.Length
-        );
-    }
-
-    // An instance of `System.Random` that is reseeded by each reducer's timestamp.
-    public static Random Random { get; internal set; } = new();
 }

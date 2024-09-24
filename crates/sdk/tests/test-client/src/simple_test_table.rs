@@ -1,5 +1,5 @@
 use crate::module_bindings::*;
-use anyhow::anyhow;
+use anyhow::Context;
 use spacetimedb_sdk::{
     identity::Identity,
     sats::{i256, u256},
@@ -391,25 +391,39 @@ impl_simple_test_table! {
     }
 }
 
-pub fn insert_one<T: SimpleTestTable>(test_counter: &Arc<TestCounter>, value: T::Contents) {
-    let mut result = Some(test_counter.add_test(format!("insert-{}", T::TABLE_NAME)));
-    let value_dup = value.clone();
-    T::on_insert(move |row, reducer_event| {
-        if result.is_some() {
-            let run_checks = || {
-                if row.as_contents() != &value_dup {
-                    anyhow::bail!("Unexpected row value. Expected {:?} but found {:?}", value_dup, row);
-                }
-                reducer_event
-                    .ok_or(anyhow!("Expected a reducer event, but found None."))
-                    .map(T::is_insert_reducer_event)
-                    .and_then(|is_good| is_good.then_some(()).ok_or(anyhow!("Unexpected ReducerEvent variant.")))?;
+pub fn on_insert_one<T: SimpleTestTable>(
+    test_counter: &Arc<TestCounter>,
+    value: T::Contents,
+    is_expected_variant: impl Fn(&T::ReducerEvent) -> bool + Send + 'static,
+) where
+    T::ReducerEvent: std::fmt::Debug,
+{
+    let mut set_result = Some(test_counter.add_test(format!("insert-{}", T::TABLE_NAME)));
 
+    T::on_insert(move |row, reducer_event| {
+        if let Some(set_result) = set_result.take() {
+            let run_checks = || {
+                anyhow::ensure!(
+                    *row.as_contents() == value,
+                    "Unexpected row value. Expected {value:?} but found {row:?}"
+                );
+                let reducer_event = reducer_event.context("Expected a reducer event, but found None")?;
+                anyhow::ensure!(
+                    is_expected_variant(reducer_event),
+                    "Unexpected ReducerEvent variant {reducer_event:?}."
+                );
                 Ok(())
             };
-            (result.take().unwrap())(run_checks());
+
+            set_result(run_checks())
         }
     });
+}
 
+pub fn insert_one<T: SimpleTestTable>(test_counter: &Arc<TestCounter>, value: T::Contents)
+where
+    T::ReducerEvent: std::fmt::Debug,
+{
+    on_insert_one::<T>(test_counter, value.clone(), T::is_insert_reducer_event);
     T::insert(value);
 }

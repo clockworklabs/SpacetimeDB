@@ -45,23 +45,22 @@ class DockerRestartModule(Smoketest):
     # Note: creating indexes on `Person`
     # exercises more possible failure cases when replaying after restart
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "name_idx", name))]
+#[spacetimedb::table(name = person, index(name = name_idx, btree(columns = [name])))]
 pub struct Person {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u32,
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add(name: String) {
 Person::insert(Person { id: 0, name }).unwrap();
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn say_hello() {
     for person in Person::iter() {
         println!("Hello, {}!", person.name);
@@ -92,23 +91,22 @@ class DockerRestartSql(Smoketest):
     # Note: creating indexes on `Person`
     # exercises more possible failure cases when replaying after restart
     MODULE_CODE = """
-use spacetimedb::{println, spacetimedb};
+use spacetimedb::println;
 
-#[spacetimedb(table)]
-#[spacetimedb(index(btree, name = "name_idx", name))]
+#[spacetimedb::table(name = person, index(name = name_idx, btree(columns = [name])))]
 pub struct Person {
-    #[primarykey]
-    #[autoinc]
+    #[primary_key]
+    #[auto_inc]
     id: u32,
     name: String,
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn add(name: String) {
 Person::insert(Person { id: 0, name }).unwrap();
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 pub fn say_hello() {
     for person in Person::iter() {
         println!("Hello, {}!", person.name);
@@ -132,44 +130,44 @@ pub fn say_hello() {
 
         restart_docker()
 
-        sql_out = self.spacetime("sql", self.address, "SELECT name FROM Person WHERE id = 3")
+        sql_out = self.spacetime("sql", self.address, "SELECT name FROM person WHERE id = 3")
         self.assertMultiLineEqual(sql_out, """ name       \n------------\n "Samantha" \n""")
 
 @requires_docker
 class DockerRestartAutoDisconnect(Smoketest):
     MODULE_CODE = """
 use log::info;
-use spacetimedb::{spacetimedb, Address, Identity, ReducerContext, TableType};
+use spacetimedb::{Address, Identity, ReducerContext, TableType};
 
-#[spacetimedb(table)]
-pub struct ConnectedClients {
+#[spacetimedb::table(name = connected_client)]
+pub struct ConnectedClient {
     identity: Identity,
     address: Address,
 }
 
-#[spacetimedb(connect)]
+#[spacetimedb::reducer(client_connected)]
 fn on_connect(ctx: ReducerContext) {
-    ConnectedClients::insert(ConnectedClients {
+    ConnectedClient::insert(ConnectedClient {
         identity: ctx.sender,
         address: ctx.address.expect("sender address unset"),
     });
 }
 
-#[spacetimedb(disconnect)]
+#[spacetimedb::reducer(client_disconnected)]
 fn on_disconnect(ctx: ReducerContext) {
     let sender_identity = &ctx.sender;
     let sender_address = ctx.address.as_ref().expect("sender address unset");
-    let match_client = |row: &ConnectedClients| {
+    let match_client = |row: &ConnectedClient| {
         &row.identity == sender_identity && &row.address == sender_address
     };
-    if let Some(client) = ConnectedClients::iter().find(match_client) {
-        ConnectedClients::delete(&client);
+    if let Some(client) = ConnectedClient::iter().find(match_client) {
+        ConnectedClient::delete(&client);
     }
 }
 
-#[spacetimedb(reducer)]
+#[spacetimedb::reducer]
 fn print_num_connected() {
-    let n = ConnectedClients::iter().count();
+    let n = ConnectedClient::iter().count();
     info!("CONNECTED CLIENTS: {n}")
 }
 """
@@ -178,8 +176,8 @@ fn print_num_connected() {
         """Tests if clients are automatically disconnected after a restart"""
 
         # Start two subscribers
-        self.subscribe("SELECT * FROM ConnectedClients", n=2)
-        self.subscribe("SELECT * FROM ConnectedClients", n=2)
+        self.subscribe("SELECT * FROM connected_client", n=2)
+        self.subscribe("SELECT * FROM connected_client", n=2)
 
         # Assert that we have two clients + the reducer call
         self.call("print_num_connected")

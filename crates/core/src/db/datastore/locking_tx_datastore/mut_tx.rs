@@ -4,7 +4,7 @@ use super::{
     sequence::{Sequence, SequencesState},
     state_view::{IndexSeekIterMutTxId, Iter, IterByColRange, ScanIterByColRange, StateView},
     tx::TxId,
-    tx_state::TxState,
+    tx_state::{IndexIdMap, TxState},
     SharedMutexGuard, SharedWriteGuard,
 };
 use crate::db::datastore::{
@@ -20,16 +20,24 @@ use crate::{
     execution_context::ExecutionContext,
 };
 use core::ops::RangeBounds;
+use core::{iter, ops::Bound};
+use smallvec::SmallVec;
 use spacetimedb_lib::{
     address::Address,
+    bsatn::Deserializer,
     db::{
         auth::StAccess,
         error::SchemaErrors,
         raw_def::{RawConstraintDefV8, RawIndexDefV8, RawSequenceDefV8, RawTableDefV8, SEQUENCE_ALLOCATION_STEP},
     },
+    de::DeserializeSeed,
 };
 use spacetimedb_primitives::{ColId, ColList, ConstraintId, Constraints, IndexId, SequenceId, TableId};
-use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_sats::{
+    bsatn::{self, DecodeError},
+    de::WithBound,
+    AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace,
+};
 use spacetimedb_schema::schema::{ConstraintSchema, IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
@@ -40,6 +48,8 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+
+type DecodeResult<T> = core::result::Result<T, DecodeError>;
 
 /// Represents a Mutable transaction. Holds locks for its duration
 ///
@@ -108,6 +118,7 @@ impl MutTxId {
         };
         let table_id = self
             .insert(ST_TABLE_ID, &mut row.into(), database_address)?
+            .1
             .collapse()
             .read_col(StTableFields::TableId)?;
 
@@ -283,17 +294,32 @@ impl MutTxId {
     }
 
     /// Retrieves or creates the insert tx table for `table_id`.
+    #[allow(clippy::type_complexity)]
     fn get_or_create_insert_table_mut(
         &mut self,
         table_id: TableId,
-    ) -> Result<(&mut Table, &mut dyn BlobStore, Option<&Table>, &HashMapBlobStore)> {
+    ) -> Result<(
+        &mut Table,
+        &mut dyn BlobStore,
+        &mut IndexIdMap,
+        Option<&Table>,
+        &HashMapBlobStore,
+    )> {
         let commit_table = self.committed_state_write_lock.get_table(table_id);
 
         // Get the insert table, so we can write the row into it.
         self.tx_state
             .get_table_and_blob_store_or_maybe_create_from(table_id, commit_table)
             .ok_or_else(|| TableError::IdNotFoundState(table_id).into())
-            .map(|(tx, bs, _)| (tx, bs, commit_table, &self.committed_state_write_lock.blob_store))
+            .map(|(tx, bs, idx_map, _)| {
+                (
+                    tx,
+                    bs,
+                    idx_map,
+                    commit_table,
+                    &self.committed_state_write_lock.blob_store,
+                )
+            })
     }
 
     /// Set the table access of `table_id` to `access`.
@@ -344,45 +370,41 @@ impl MutTxId {
         };
         let index_id = self
             .insert(ST_INDEX_ID, &mut row.into(), ctx.database())?
+            .1
             .collapse()
             .read_col(StIndexFields::IndexId)?;
 
         // Construct the index schema.
         #[allow(deprecated)]
-        let mut index = IndexSchema::from_def(table_id, index.clone());
+        let mut index = IndexSchema::from_def(table_id, index);
         index.index_id = index_id;
 
         // Add the index to the transaction's insert table.
-        let (table, blob_store, commit_table, commit_blob_store) = self.get_or_create_insert_table_mut(table_id)?;
+        let (table, blob_store, idx_map, commit_table, commit_blob_store) =
+            self.get_or_create_insert_table_mut(table_id)?;
         // Create and build the index.
-        let mut insert_index = table.new_index(index.index_id, &index.columns, is_unique)?;
-        insert_index.build_from_rows(&index.columns, table.scan_rows(blob_store))?;
+        let mut insert_index = table.new_index(index.index_id, &columns, is_unique)?;
+        insert_index.build_from_rows(&columns, table.scan_rows(blob_store))?;
         // NOTE: Also add all the rows in the already committed table to the index.
         // FIXME: Is this correct? Index scan iterators (incl. the existing `Locking` versions)
         // appear to assume that a table's index refers only to rows within that table,
         // and does not handle the case where a `TxState` index refers to `CommittedState` rows.
         if let Some(committed_table) = commit_table {
-            insert_index.build_from_rows(&index.columns, committed_table.scan_rows(commit_blob_store))?;
+            insert_index.build_from_rows(&columns, committed_table.scan_rows(commit_blob_store))?;
         }
         table.indexes.insert(columns.clone(), insert_index);
+        // Associate `index_id -> (table_id, col_list)` for fast lookup.
+        idx_map.insert(index_id, (table_id, columns.clone()));
 
         log::trace!(
             "INDEX CREATED: {} for table: {} and col(s): {:?}",
             index_id,
             table_id,
-            index.columns
+            columns
         );
         // Update the table's schema.
         // This won't clone-write when creating a table but likely to otherwise.
-        let schema = IndexSchema {
-            table_id,
-            columns,
-            index_name: index.index_name,
-            is_unique,
-            index_id,
-            index_type: index.index_type,
-        };
-        table.with_mut_schema(|s| s.indexes.push(schema));
+        table.with_mut_schema(|s| s.indexes.push(index));
 
         Ok(index_id)
     }
@@ -450,7 +472,7 @@ impl MutTxId {
 
         // Remove the index in the transaction's insert table.
         // By altering the insert table, this gets moved over to the committed state on merge.
-        let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
+        let (table, _, idx_map, ..) = self.get_or_create_insert_table_mut(table_id)?;
         if let Some(col) = table
             .indexes
             .iter()
@@ -462,6 +484,9 @@ impl MutTxId {
             table.with_mut_schema(|s| s.indexes.retain(|x| x.columns != col));
             table.indexes.remove(&col);
         }
+        // Remove the `index_id -> (table_id, col_list)` association.
+        idx_map.remove(&index_id);
+        self.tx_state.index_id_map_removals.push(index_id);
 
         log::trace!("INDEX DROPPED: {}", index_id);
         Ok(())
@@ -469,9 +494,187 @@ impl MutTxId {
 
     pub fn index_id_from_name(&self, index_name: &str, database_address: Address) -> Result<Option<IndexId>> {
         let ctx = ExecutionContext::internal(database_address);
-        let name = &<Box<str>>::from(index_name).into();
-        self.iter_by_col_eq(&ctx, ST_INDEX_ID, StIndexFields::IndexName, name)
-            .map(|mut iter| iter.next().map(|row| row.read_col(StIndexFields::IndexId).unwrap()))
+        let name = &index_name.into();
+        let row = self
+            .iter_by_col_eq(&ctx, ST_INDEX_ID, StIndexFields::IndexName, name)?
+            .next();
+        Ok(row.map(|row| row.read_col(StIndexFields::IndexId).unwrap()))
+    }
+
+    /// Returns an iterator yielding rows by performing a btree index scan
+    /// on the btree index identified by `index_id`.
+    ///
+    /// The `prefix` is equated to the first `prefix_elems` values of the index key
+    /// and then `prefix_elem`th value is bounded to the left by by `rstart`
+    /// and to the right by `rend`.
+    pub fn btree_scan<'a>(
+        &'a self,
+        index_id: IndexId,
+        prefix: &[u8],
+        prefix_elems: ColId,
+        rstart: &[u8],
+        rend: &[u8],
+    ) -> Result<(TableId, impl Iterator<Item = RowRef<'a>>)> {
+        // Extract the table and index type for the tx state.
+        let (table_id, col_list, tx_idx_key_type) = self
+            .get_table_and_index_type(index_id)
+            .ok_or_else(|| IndexError::NotFound(index_id))?;
+
+        // TODO(centril): Once we have more index types than `btree`,
+        // we'll need to enforce that `index_id` refers to a btree index.
+
+        // We have the index key type, so we can decode everything.
+        let bounds = Self::btree_decode_bounds(tx_idx_key_type, prefix, prefix_elems, rstart, rend)
+            .map_err(IndexError::Decode)?;
+
+        // Get an index seek iterator for the tx and committed state.
+        let tx_iter = self.tx_state.index_seek(table_id, col_list, &bounds).unwrap();
+        let commit_iter = self.committed_state_write_lock.index_seek(table_id, col_list, &bounds);
+
+        // Chain together the indexed rows in the tx and committed state,
+        // but don't yield rows deleted in the tx state.
+        enum Choice<A, B, C> {
+            A(A),
+            B(B),
+            C(C),
+        }
+        impl<T, A: Iterator<Item = T>, B: Iterator<Item = T>, C: Iterator<Item = T>> Iterator for Choice<A, B, C> {
+            type Item = T;
+            fn next(&mut self) -> Option<Self::Item> {
+                match self {
+                    Self::A(i) => i.next(),
+                    Self::B(i) => i.next(),
+                    Self::C(i) => i.next(),
+                }
+            }
+        }
+        let iter = match commit_iter {
+            None => Choice::A(tx_iter),
+            Some(commit_iter) => match self.tx_state.delete_tables.get(&table_id) {
+                None => Choice::B(tx_iter.chain(commit_iter)),
+                Some(tx_dels) => {
+                    Choice::C(tx_iter.chain(commit_iter.filter(move |row| !tx_dels.contains(&row.pointer()))))
+                }
+            },
+        };
+        Ok((table_id, iter))
+    }
+
+    /// Translate `index_id` to the table id, the column list and index key type.
+    fn get_table_and_index_type(&self, index_id: IndexId) -> Option<(TableId, &ColList, &AlgebraicType)> {
+        // The order of querying the committed vs. tx state for the translation is not important.
+        // But it is vastly more likely that it is in the committed state,
+        // so query that first to avoid two lookups.
+        let (table_id, col_list) = self
+            .committed_state_write_lock
+            .index_id_map
+            .get(&index_id)
+            .or_else(|| self.tx_state.index_id_map.get(&index_id))?;
+        // The tx state must have the index.
+        // If the index was e.g., dropped from the tx state but exists physically in the committed state,
+        // the index does not exist, semantically.
+        let key_ty = self.tx_state.get_table_and_index_type(*table_id, col_list)?;
+        Some((*table_id, col_list, key_ty))
+    }
+
+    /// Decode the bounds for a btree scan for an index typed at `key_type`.
+    fn btree_decode_bounds(
+        key_type: &AlgebraicType,
+        mut prefix: &[u8],
+        prefix_elems: ColId,
+        rstart: &[u8],
+        rend: &[u8],
+    ) -> DecodeResult<(Bound<AlgebraicValue>, Bound<AlgebraicValue>)> {
+        match key_type {
+            // Multi-column index case.
+            AlgebraicType::Product(key_types) => {
+                let key_types = &key_types.elements;
+                // Split into types for the prefix and for the rest.
+                // TODO(centril): replace with `.split_at_checked(...)`.
+                if key_types.len() < prefix_elems.idx() {
+                    return Err(DecodeError::Other(
+                        "index key type has too few fields compared to prefix".into(),
+                    ));
+                }
+                let (prefix_types, rest_types) = key_types.split_at(prefix_elems.idx());
+
+                // The `rstart` and `rend`s must be typed at `Bound<range_type>`.
+                // Extract that type and determine the length of the suffix.
+                let Some((range_type, suffix_types)) = rest_types.split_first() else {
+                    return Err(DecodeError::Other(
+                        "prefix length leaves no room for a range in btree index scan".into(),
+                    ));
+                };
+                let suffix_len = suffix_types.len();
+
+                // We now have the types,
+                // so proceed to decoding the prefix, and the start/end bounds.
+                // Finally combine all of these to a single bound pair.
+                let prefix = bsatn::decode(prefix_types, &mut prefix)?;
+                let (start, end) = Self::btree_decode_ranges(&range_type.algebraic_type, rstart, rend)?;
+                Ok(Self::btree_combine_prefix_and_bounds(prefix, start, end, suffix_len))
+            }
+            // Single-column index case. We implicitly have a PT of len 1.
+            _ if !prefix.is_empty() && prefix_elems.idx() != 0 => Err(DecodeError::Other(
+                "a single-column index cannot be prefix scanned".into(),
+            )),
+            ty => Self::btree_decode_ranges(ty, rstart, rend),
+        }
+    }
+
+    /// Decode `rstart` and `rend` as `Bound<ty>`.
+    fn btree_decode_ranges(
+        ty: &AlgebraicType,
+        mut rstart: &[u8],
+        mut rend: &[u8],
+    ) -> DecodeResult<(Bound<AlgebraicValue>, Bound<AlgebraicValue>)> {
+        let range_type = WithBound(WithTypespace::empty(ty));
+        let range_start = range_type.deserialize(Deserializer::new(&mut rstart))?;
+        let range_end = range_type.deserialize(Deserializer::new(&mut rend))?;
+        Ok((range_start, range_end))
+    }
+
+    /// Combines `prefix` equality constraints with `start` and `end` bounds
+    /// filling with `suffix_len` to ensure that the number of fields matches
+    /// that of the index type.
+    fn btree_combine_prefix_and_bounds(
+        prefix: ProductValue,
+        start: Bound<AlgebraicValue>,
+        end: Bound<AlgebraicValue>,
+        suffix_len: usize,
+    ) -> (Bound<AlgebraicValue>, Bound<AlgebraicValue>) {
+        let prefix_is_empty = prefix.elements.is_empty();
+        // Concatenate prefix, value, and the most permissive value for the suffix.
+        let concat = |prefix: ProductValue, val, fill| {
+            let mut vals: Vec<_> = prefix.elements.into();
+            vals.reserve(1 + suffix_len);
+            vals.push(val);
+            vals.extend(iter::repeat(fill).take(suffix_len));
+            AlgebraicValue::product(vals)
+        };
+        // The start endpoint needs `Min` as the suffix-filling element,
+        // as it imposes the least and acts like `Unbounded`.
+        let concat_start = |val| concat(prefix.clone(), val, AlgebraicValue::Min);
+        let range_start = match start {
+            Bound::Included(r) => Bound::Included(concat_start(r)),
+            Bound::Excluded(r) => Bound::Excluded(concat_start(r)),
+            // Prefix is empty, and suffix will be `Min`,
+            // so simplify `(Min, Min, ...)` to `Unbounded`.
+            Bound::Unbounded if prefix_is_empty => Bound::Unbounded,
+            Bound::Unbounded => Bound::Included(concat_start(AlgebraicValue::Min)),
+        };
+        // The end endpoint needs `Max` as the suffix-filling element,
+        // as it imposes the least and acts like `Unbounded`.
+        let concat_end = |val| concat(prefix, val, AlgebraicValue::Max);
+        let range_end = match end {
+            Bound::Included(r) => Bound::Included(concat_end(r)),
+            Bound::Excluded(r) => Bound::Excluded(concat_end(r)),
+            // Prefix is empty, and suffix will be `Max`,
+            // so simplify `(Max, Max, ...)` to `Unbounded`.
+            Bound::Unbounded if prefix_is_empty => Bound::Unbounded,
+            Bound::Unbounded => Bound::Included(concat_end(AlgebraicValue::Max)),
+        };
+        (range_start, range_end)
     }
 
     pub fn get_next_sequence_value(&mut self, seq_id: SequenceId, database_address: Address) -> Result<i128> {
@@ -553,7 +756,7 @@ impl MutTxId {
             max_value: seq.max_value.unwrap_or(i128::MAX),
         };
         let row = self.insert(ST_SEQUENCE_ID, &mut sequence_row.clone().into(), database_address)?;
-        let seq_id = row.collapse().read_col(StSequenceFields::SequenceId)?;
+        let seq_id = row.1.collapse().read_col(StSequenceFields::SequenceId)?;
         sequence_row.sequence_id = seq_id;
 
         let schema: SequenceSchema = sequence_row.into();
@@ -635,8 +838,8 @@ impl MutTxId {
             &mut ProductValue::from(constraint_row),
             ctx.database(),
         )?;
-        let constraint_id = constraint_row.collapse().read_col(StConstraintFields::ConstraintId)?;
-        let existed = matches!(constraint_row, RowRefInsertion::Existed(_));
+        let constraint_id = constraint_row.1.collapse().read_col(StConstraintFields::ConstraintId)?;
+        let existed = matches!(constraint_row.1, RowRefInsertion::Existed(_));
         // TODO: Can we return early here?
 
         let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
@@ -820,61 +1023,59 @@ pub(super) enum RowRefInsertion<'a> {
     Existed(RowRef<'a>),
 }
 
-impl RowRefInsertion<'_> {
+impl<'a> RowRefInsertion<'a> {
     /// Returns a row,
     /// collapsing the distinction between inserted and existing rows.
-    fn collapse(&self) -> RowRef<'_> {
+    pub(super) fn collapse(&self) -> RowRef<'a> {
         let (Self::Inserted(row) | Self::Existed(row)) = *self;
         row
     }
 }
 
 impl MutTxId {
-    pub(super) fn insert(
+    pub(super) fn insert<'a>(
+        &'a mut self,
+        table_id: TableId,
+        row: &mut ProductValue,
+        database_address: Address,
+    ) -> Result<(AlgebraicValue, RowRefInsertion<'a>)> {
+        let generated = self.write_sequence_values(table_id, row, database_address)?;
+        let row_ref = self.insert_row_internal(table_id, row)?;
+        Ok((generated, row_ref))
+    }
+
+    /// Generate and write sequence values to `row`
+    /// and return a projection of `row` with only the generated column values.
+    fn write_sequence_values(
         &mut self,
         table_id: TableId,
         row: &mut ProductValue,
         database_address: Address,
-    ) -> Result<RowRefInsertion<'_>> {
+    ) -> Result<AlgebraicValue> {
         let ctx = ExecutionContext::internal(database_address);
 
         // TODO: Executing schema_for_table for every row insert is expensive.
         // However we ask for the schema in the [Table] struct instead.
         let schema = self.schema_for_table(&ctx, table_id)?;
 
-        let mut col_to_update = None;
-        for seq in schema
+        // Collect all the columns with sequences that need generation.
+        let (cols_to_update, seqs_to_use): (ColList, SmallVec<[_; 1]>) = schema
             .sequences
             .iter()
             .filter(|seq| row.elements[seq.col_pos.idx()].is_numeric_zero())
-        {
-            for seq_row in self.iter_by_col_eq(&ctx, ST_SEQUENCE_ID, StSequenceFields::TableId, &table_id.into())? {
-                let seq_col_pos: ColId = seq_row.read_col(StSequenceFields::ColPos)?;
-                if seq_col_pos == seq.col_pos {
-                    let seq_id = seq_row.read_col(StSequenceFields::SequenceId)?;
-                    col_to_update = Some((seq.col_pos, seq_id));
-                    break;
-                }
-            }
-        }
+            .map(|seq| (seq.col_pos, seq.sequence_id))
+            .unzip();
 
-        if let Some((col_id, sequence_id)) = col_to_update {
-            let col_idx = col_id.idx();
-            let col = &schema.columns()[col_idx];
-            if !col.col_type.is_integer() {
-                return Err(SequenceError::NotInteger {
-                    col: format!("{}.{}", &schema.table_name, &col.col_name),
-                    found: col.col_type.clone(),
-                }
-                .into());
-            }
-            // At this point, we know this will be essentially a cheap copy.
-            let col_ty = col.col_type.clone();
+        // Update every column in the row that needs it.
+        // We assume here that column with a sequence is of a sequence-compatible type.
+        for (col_id, sequence_id) in cols_to_update.iter().zip(seqs_to_use) {
             let seq_val = self.get_next_sequence_value(sequence_id, database_address)?;
-            row.elements[col_idx] = AlgebraicValue::from_sequence_value(&col_ty, seq_val);
+            let col_typ = &schema.columns()[col_id.idx()].col_type;
+            let gen_val = AlgebraicValue::from_sequence_value(col_typ, seq_val);
+            row.elements[col_id.idx()] = gen_val;
         }
 
-        self.insert_row_internal(table_id, row)
+        Ok(row.project(&cols_to_update)?)
     }
 
     pub(super) fn insert_row_internal(&mut self, table_id: TableId, row: &ProductValue) -> Result<RowRefInsertion<'_>> {
@@ -891,7 +1092,7 @@ impl MutTxId {
         }
 
         // Get the insert table, so we can write the row into it.
-        let (tx_table, tx_blob_store, delete_table) = self
+        let (tx_table, tx_blob_store, _, delete_table) = self
             .tx_state
             .get_table_and_blob_store_or_maybe_create_from(table_id, commit_table)
             .ok_or(TableError::IdNotFoundState(table_id))?;
@@ -1013,7 +1214,7 @@ impl MutTxId {
         // If the tx table exists, get it.
         // If it doesn't exist, but the commit table does,
         // create the tx table using the commit table as a template.
-        let Some((tx_table, tx_blob_store, _)) = self
+        let Some((tx_table, tx_blob_store, ..)) = self
             .tx_state
             .get_table_and_blob_store_or_maybe_create_from(table_id, commit_table.as_deref())
         else {

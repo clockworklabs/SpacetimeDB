@@ -136,54 +136,43 @@ partial struct PublicTable : SpacetimeDB.BSATN.IStructuralReadWrite
         public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
-            registrar.RegisterType<PublicTable>(
-                typeRef => new SpacetimeDB.BSATN.AlgebraicType.Product(
-                    new SpacetimeDB.BSATN.AggregateElement[]
-                    {
-                        new(nameof(ByteField), ByteField.GetAlgebraicType(registrar)),
-                        new(nameof(UshortField), UshortField.GetAlgebraicType(registrar)),
-                        new(nameof(UintField), UintField.GetAlgebraicType(registrar)),
-                        new(nameof(UlongField), UlongField.GetAlgebraicType(registrar)),
-                        new(nameof(U128Field), U128Field.GetAlgebraicType(registrar)),
-                        new(nameof(U256Field), U256Field.GetAlgebraicType(registrar)),
-                        new(nameof(SbyteField), SbyteField.GetAlgebraicType(registrar)),
-                        new(nameof(ShortField), ShortField.GetAlgebraicType(registrar)),
-                        new(nameof(IntField), IntField.GetAlgebraicType(registrar)),
-                        new(nameof(LongField), LongField.GetAlgebraicType(registrar)),
-                        new(nameof(I128Field), I128Field.GetAlgebraicType(registrar)),
-                        new(nameof(I256Field), I256Field.GetAlgebraicType(registrar)),
-                        new(nameof(BoolField), BoolField.GetAlgebraicType(registrar)),
-                        new(nameof(FloatField), FloatField.GetAlgebraicType(registrar)),
-                        new(nameof(DoubleField), DoubleField.GetAlgebraicType(registrar)),
-                        new(nameof(StringField), StringField.GetAlgebraicType(registrar)),
-                        new(nameof(IdentityField), IdentityField.GetAlgebraicType(registrar)),
-                        new(nameof(AddressField), AddressField.GetAlgebraicType(registrar)),
-                        new(
-                            nameof(CustomStructField),
-                            CustomStructField.GetAlgebraicType(registrar)
-                        ),
-                        new(nameof(CustomClassField), CustomClassField.GetAlgebraicType(registrar)),
-                        new(nameof(CustomEnumField), CustomEnumField.GetAlgebraicType(registrar)),
-                        new(
-                            nameof(CustomTaggedEnumField),
-                            CustomTaggedEnumField.GetAlgebraicType(registrar)
-                        ),
-                        new(nameof(ListField), ListField.GetAlgebraicType(registrar)),
-                        new(nameof(DictionaryField), DictionaryField.GetAlgebraicType(registrar)),
-                        new(
-                            nameof(NullableValueField),
-                            NullableValueField.GetAlgebraicType(registrar)
-                        ),
-                        new(
-                            nameof(NullableReferenceField),
-                            NullableReferenceField.GetAlgebraicType(registrar)
-                        ),
-                        new(
-                            nameof(ComplexNestedField),
-                            ComplexNestedField.GetAlgebraicType(registrar)
-                        )
-                    }
-                )
-            );
+            registrar.RegisterType<PublicTable>(_ => new SpacetimeDB.BSATN.AlgebraicType.Product(
+                new SpacetimeDB.BSATN.AggregateElement[]
+                {
+                    new(nameof(ByteField), ByteField.GetAlgebraicType(registrar)),
+                    new(nameof(UshortField), UshortField.GetAlgebraicType(registrar)),
+                    new(nameof(UintField), UintField.GetAlgebraicType(registrar)),
+                    new(nameof(UlongField), UlongField.GetAlgebraicType(registrar)),
+                    new(nameof(U128Field), U128Field.GetAlgebraicType(registrar)),
+                    new(nameof(U256Field), U256Field.GetAlgebraicType(registrar)),
+                    new(nameof(SbyteField), SbyteField.GetAlgebraicType(registrar)),
+                    new(nameof(ShortField), ShortField.GetAlgebraicType(registrar)),
+                    new(nameof(IntField), IntField.GetAlgebraicType(registrar)),
+                    new(nameof(LongField), LongField.GetAlgebraicType(registrar)),
+                    new(nameof(I128Field), I128Field.GetAlgebraicType(registrar)),
+                    new(nameof(I256Field), I256Field.GetAlgebraicType(registrar)),
+                    new(nameof(BoolField), BoolField.GetAlgebraicType(registrar)),
+                    new(nameof(FloatField), FloatField.GetAlgebraicType(registrar)),
+                    new(nameof(DoubleField), DoubleField.GetAlgebraicType(registrar)),
+                    new(nameof(StringField), StringField.GetAlgebraicType(registrar)),
+                    new(nameof(IdentityField), IdentityField.GetAlgebraicType(registrar)),
+                    new(nameof(AddressField), AddressField.GetAlgebraicType(registrar)),
+                    new(nameof(CustomStructField), CustomStructField.GetAlgebraicType(registrar)),
+                    new(nameof(CustomClassField), CustomClassField.GetAlgebraicType(registrar)),
+                    new(nameof(CustomEnumField), CustomEnumField.GetAlgebraicType(registrar)),
+                    new(
+                        nameof(CustomTaggedEnumField),
+                        CustomTaggedEnumField.GetAlgebraicType(registrar)
+                    ),
+                    new(nameof(ListField), ListField.GetAlgebraicType(registrar)),
+                    new(nameof(DictionaryField), DictionaryField.GetAlgebraicType(registrar)),
+                    new(nameof(NullableValueField), NullableValueField.GetAlgebraicType(registrar)),
+                    new(
+                        nameof(NullableReferenceField),
+                        NullableReferenceField.GetAlgebraicType(registrar)
+                    ),
+                    new(nameof(ComplexNestedField), ComplexNestedField.GetAlgebraicType(registrar))
+                }
+            ));
     }
 } // PublicTable

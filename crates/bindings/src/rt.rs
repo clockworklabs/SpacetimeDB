@@ -106,8 +106,7 @@ impl ReducerArg<'_> for ReducerContext {}
 pub fn assert_reducer_arg<'de, T: ReducerArg<'de>>() {}
 /// Assert that `T: IntoReducerResult`.
 pub fn assert_reducer_ret<T: IntoReducerResult>() {}
-/// Assert that `T: TableType`.
-pub const fn assert_table<T: TableType>() {}
+pub const fn assert_reducer_typecheck<'de, A: Args<'de>, T>(_: impl Reducer<'de, A, T> + Copy) {}
 
 /// Used in the last type parameter of `Reducer` to indicate that the
 /// context argument *should* be passed to the reducer logic.

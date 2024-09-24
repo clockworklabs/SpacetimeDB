@@ -88,7 +88,7 @@ impl ProductValue {
     ///
     /// **Parameters:**
     /// - `cols`: A [ColList] containing the indexes of fields to be projected.s
-    pub fn project_not_empty(&self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
+    pub fn project(&self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
         if let Some(head) = cols.as_singleton() {
             self.get_field(head.idx(), None).cloned()
         } else {

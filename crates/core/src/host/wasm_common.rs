@@ -5,7 +5,7 @@ pub mod module_host_actor;
 use std::num::NonZeroU16;
 use std::time::Instant;
 
-use super::AbiCall;
+use super::{scheduler::ScheduleError, AbiCall};
 use crate::error::{DBError, IndexError, NodesError};
 use spacetimedb_primitives::errno;
 use spacetimedb_sats::typespace::TypeRefError;
@@ -302,11 +302,11 @@ pub(super) type RowIters = ResourceSlab<RowIterIdx>;
 
 pub(super) struct TimingSpan {
     pub start: Instant,
-    pub name: Vec<u8>,
+    pub name: String,
 }
 
 impl TimingSpan {
-    pub fn new(name: Vec<u8>) -> Self {
+    pub fn new(name: String) -> Self {
         Self {
             start: Instant::now(),
             name,
@@ -322,6 +322,8 @@ pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
         NodesError::NotInTransaction => Some(errno::NOT_IN_TRANSACTION),
         NodesError::DecodeRow(_) => Some(errno::BSATN_DECODE_ERROR),
         NodesError::TableNotFound => Some(errno::NO_SUCH_TABLE),
+        NodesError::IndexNotFound => Some(errno::NO_SUCH_INDEX),
+        NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => Some(errno::SCHEDULE_AT_DELAY_TOO_LONG),
         NodesError::AlreadyExists(_) => Some(errno::UNIQUE_ALREADY_EXISTS),
         NodesError::Internal(internal) => match **internal {
             DBError::Index(IndexError::UniqueConstraintViolation(UniqueConstraintViolation {
@@ -352,17 +354,17 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::datastore_table_scan_bsatn,
             "spacetime_10.0"::row_iter_bsatn_advance,
             "spacetime_10.0"::row_iter_bsatn_close,
+            "spacetime_10.0"::datastore_insert_bsatn,
             "spacetime_10.0"::datastore_delete_all_by_eq_bsatn,
             "spacetime_10.0"::bytes_source_read,
             "spacetime_10.0"::bytes_sink_write,
-
             "spacetime_10.0"::console_log,
+            "spacetime_10.0"::console_timer_start,
+            "spacetime_10.0"::console_timer_end,
+
             "spacetime_10.0"::delete_by_col_eq,
-            "spacetime_10.0"::insert,
             "spacetime_10.0"::iter_by_col_eq,
             "spacetime_10.0"::iter_start_filtered,
-            "spacetime_10.0"::span_end,
-            "spacetime_10.0"::span_start,
             "spacetime_10.0"::volatile_nonatomic_schedule_immediate,
         }
     };

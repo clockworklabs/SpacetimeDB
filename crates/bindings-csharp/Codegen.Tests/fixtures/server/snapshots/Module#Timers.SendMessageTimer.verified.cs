@@ -4,35 +4,98 @@
 
 partial class Timers
 {
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Auto)]
     partial struct SendMessageTimer : SpacetimeDB.Internal.ITable<SendMessageTimer>
     {
-        static bool SpacetimeDB.Internal.ITable<SendMessageTimer>.HasAutoIncFields => true;
+        public void ReadFields(System.IO.BinaryReader reader)
+        {
+            Text = BSATN.Text.Read(reader);
+            ScheduledId = BSATN.ScheduledId.Read(reader);
+            ScheduledAt = BSATN.ScheduledAt.Read(reader);
+        }
 
-        static SpacetimeDB.Internal.Module.TableDesc SpacetimeDB.Internal.ITable<SendMessageTimer>.MakeTableDesc(
+        public void WriteFields(System.IO.BinaryWriter writer)
+        {
+            BSATN.Text.Write(writer, Text);
+            BSATN.ScheduledId.Write(writer, ScheduledId);
+            BSATN.ScheduledAt.Write(writer, ScheduledAt);
+        }
+
+        public readonly partial struct BSATN : SpacetimeDB.BSATN.IReadWrite<SendMessageTimer>
+        {
+            internal static readonly SpacetimeDB.BSATN.String Text = new();
+            internal static readonly SpacetimeDB.BSATN.U64 ScheduledId = new();
+            internal static readonly SpacetimeDB.ScheduleAt.BSATN ScheduledAt = new();
+
+            public SendMessageTimer Read(System.IO.BinaryReader reader) =>
+                SpacetimeDB.BSATN.IStructuralReadWrite.Read<SendMessageTimer>(reader);
+
+            public void Write(System.IO.BinaryWriter writer, SendMessageTimer value)
+            {
+                value.WriteFields(writer);
+            }
+
+            public SpacetimeDB.BSATN.AlgebraicType GetAlgebraicType(
+                SpacetimeDB.BSATN.ITypeRegistrar registrar
+            ) =>
+                registrar.RegisterType<SendMessageTimer>(
+                    _ => new SpacetimeDB.BSATN.AlgebraicType.Product(
+                        new SpacetimeDB.BSATN.AggregateElement[]
+                        {
+                            new(nameof(Text), Text.GetAlgebraicType(registrar)),
+                            new(nameof(ScheduledId), ScheduledId.GetAlgebraicType(registrar)),
+                            new(nameof(ScheduledAt), ScheduledAt.GetAlgebraicType(registrar))
+                        }
+                    )
+                );
+        }
+
+        public ulong ScheduledId;
+        public SpacetimeDB.ScheduleAt ScheduledAt;
+
+        void SpacetimeDB.Internal.ITable<SendMessageTimer>.ReadGenFields(
+            System.IO.BinaryReader reader
+        )
+        {
+            if (ScheduledId == default)
+            {
+                ScheduledId = BSATN.ScheduledId.Read(reader);
+            }
+        }
+
+        static SpacetimeDB.Internal.TableDesc SpacetimeDB.Internal.ITable<SendMessageTimer>.MakeTableDesc(
             SpacetimeDB.BSATN.ITypeRegistrar registrar
         ) =>
             new(
                 new(
-                    nameof(SendMessageTimer),
-                    new SpacetimeDB.Internal.Module.ColumnDefWithAttrs[]
-                    {
+                    TableName: nameof(SendMessageTimer),
+                    Columns:
+                    [
+                        new(nameof(Text), BSATN.Text.GetAlgebraicType(registrar)),
+                        new(nameof(ScheduledId), BSATN.ScheduledId.GetAlgebraicType(registrar)),
+                        new(nameof(ScheduledAt), BSATN.ScheduledAt.GetAlgebraicType(registrar))
+                    ],
+                    Indexes: [],
+                    Constraints:
+                    [
                         new(
-                            new(nameof(Text), BSATN.Text.GetAlgebraicType(registrar)),
-                            SpacetimeDB.ColumnAttrs.UnSet
-                        ),
-                        new(
-                            new(nameof(ScheduledId), BSATN.ScheduledId.GetAlgebraicType(registrar)),
-                            SpacetimeDB.ColumnAttrs.PrimaryKeyAuto
-                        ),
-                        new(
-                            new(nameof(ScheduledAt), BSATN.ScheduledAt.GetAlgebraicType(registrar)),
-                            SpacetimeDB.ColumnAttrs.UnSet
+                            nameof(SendMessageTimer),
+                            1,
+                            nameof(ScheduledId),
+                            SpacetimeDB.ColumnAttrs.PrimaryKeyIdentity
                         )
-                    },
-                    false,
-                    "SendScheduledMessage"
+                    ],
+                    Sequences: [],
+                    // "system" | "user"
+                    TableType: "user",
+                    // "public" | "private"
+                    TableAccess: "private",
+                    Scheduled: nameof(SendScheduledMessage)
                 ),
-                (SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)
+                (uint)
+                    (
+                        (SpacetimeDB.BSATN.AlgebraicType.Ref)new BSATN().GetAlgebraicType(registrar)
+                    ).Ref_
             );
 
         static SpacetimeDB.Internal.Filter SpacetimeDB.Internal.ITable<SendMessageTimer>.CreateFilter() =>
@@ -43,7 +106,7 @@ partial class Timers
                     new(
                         nameof(ScheduledAt),
                         (w, v) => BSATN.ScheduledAt.Write(w, (SpacetimeDB.ScheduleAt)v!)
-                    ),
+                    )
                 ]
             );
 

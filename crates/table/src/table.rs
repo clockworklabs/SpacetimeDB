@@ -170,7 +170,7 @@ impl Table {
         mut is_deleted: impl FnMut(RowPointer) -> bool,
     ) -> Result<(), UniqueConstraintViolation> {
         for (cols, index) in self.indexes.iter().filter(|(_, index)| index.is_unique) {
-            let value = row.project_not_empty(cols).unwrap();
+            let value = row.project(cols).unwrap();
             if let Some(mut conflicts) = index.get_rows_that_violate_unique_constraint(&value) {
                 if conflicts.any(|ptr| !is_deleted(ptr)) {
                     return Err(self.build_error_unique(index, cols, value));
@@ -535,7 +535,7 @@ impl Table {
 
     /// Returns a new [`BTreeIndex`] for `table`.
     pub fn new_index(&self, id: IndexId, cols: &ColList, is_unique: bool) -> Result<BTreeIndex, InvalidFieldError> {
-        BTreeIndex::new(id, self.row_layout(), cols, is_unique)
+        BTreeIndex::new(id, self.get_schema().get_row_type(), cols, is_unique)
     }
 
     /// Inserts a new `index` into the table.

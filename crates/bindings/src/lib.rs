@@ -4,12 +4,12 @@
 #[macro_use]
 mod io;
 mod impls;
+pub mod log_stopwatch;
 mod logger;
 #[cfg(feature = "rand")]
 mod rng;
 #[doc(hidden)]
 pub mod rt;
-pub mod time_span;
 mod timestamp;
 
 use spacetimedb_lib::buffer::{BufReader, BufWriter, Cursor, DecodeError};
@@ -32,7 +32,9 @@ pub use rand;
 #[cfg(feature = "rand")]
 pub use rng::{random, rng, StdbRng};
 pub use sats::SpacetimeType;
-pub use spacetimedb_bindings_macro::{duration, query, spacetimedb, TableType};
+#[doc(hidden)]
+pub use spacetimedb_bindings_macro::__TableHelper;
+pub use spacetimedb_bindings_macro::{duration, query, reducer, table};
 pub use spacetimedb_bindings_sys as sys;
 pub use spacetimedb_lib;
 pub use spacetimedb_lib::de::{Deserialize, DeserializeOwned};
@@ -123,41 +125,30 @@ pub fn table_id_from_name(table_name: &str) -> TableId {
 }
 
 /// Insert a row of type `T` into the table identified by `table_id`.
-pub fn insert<T: TableType>(table_id: TableId, row: T) -> T::InsertResult {
-    trait HasAutoinc: TableType {
-        const HAS_AUTOINC: bool;
-    }
-    impl<T: TableType> HasAutoinc for T {
-        const HAS_AUTOINC: bool = {
-            // NOTE: Written this way to work on a stable compiler since we don't use nightly.
-            // Same as `T::COLUMN_ATTRS.iter().any(|attr| attr.is_auto_inc())`.
-            let mut i = 0;
-            let mut x = false;
-            while i < T::COLUMN_ATTRS.len() {
-                if T::COLUMN_ATTRS[i].has_autoinc() {
-                    x = true;
-                    break;
-                }
-                i += 1;
-            }
-            x
-        };
-    }
+/// This will call `handle_gen_cols` to write back the generated column values passed in the `&[u8]`.
+pub fn insert_raw<T: Serialize>(
+    table_id: TableId,
+    row: T,
+    handle_gen_cols: impl FnOnce(&mut T, &[u8]),
+) -> Result<T, Errno> {
     with_row_buf(|bytes| {
         // Encode the row as bsatn into the buffer `bytes`.
         bsatn::to_writer(bytes, &row).unwrap();
 
         // Insert row into table.
-        // When table has an auto-incrementing column, we must re-decode the changed `bytes`.
-        let res = sys::insert(table_id, bytes).map(|()| {
-            if <T as HasAutoinc>::HAS_AUTOINC {
-                bsatn::from_slice(bytes).expect("decode error")
-            } else {
-                row
-            }
-        });
-        sealed::InsertResult::from_res(res)
+        sys::insert(table_id, bytes).map(|gen_cols| {
+            let mut row = row;
+            // Let the caller handle any generated columns written back by `sys::insert` to `bytes`.
+            handle_gen_cols(&mut row, gen_cols);
+            row
+        })
     })
+}
+
+/// Insert a row of type `T` into the table identified by `table_id`.
+pub fn insert<T: TableType>(table_id: TableId, row: T) -> T::InsertResult {
+    let res = insert_raw(table_id, row, T::integrate_generated_columns);
+    sealed::InsertResult::from_res(res)
 }
 
 /// Finds all rows in the table identified by `table_id`,
@@ -357,6 +348,9 @@ pub trait TableType: SpacetimeType + DeserializeOwned + Serialize {
     /// Returns the ID of this table.
     fn table_id() -> TableId;
 
+    // Re-integrates the BSATN of the `generated_cols` into `row`.
+    fn integrate_generated_columns(row: &mut Self, generated_cols: &[u8]);
+
     /// Insert `ins` as a row in this table.
     fn insert(ins: Self) -> Self::InsertResult {
         insert(Self::table_id(), ins)
@@ -435,6 +429,17 @@ impl<T: TableType> sealed::InsertResult for T {
     }
 }
 
+/// A trait for types that know if their value will trigger a sequence.
+/// This is used for auto-inc columns to determine if an insertion of a row
+/// will require the column to be updated in the row.
+///
+/// For now, this is equivalent to a "is zero" test.
+pub trait IsSequenceTrigger {
+    /// Is this value one that will trigger a sequence, if any,
+    /// when used as a column value.
+    fn is_sequence_trigger(&self) -> bool;
+}
+
 /// A trait for types that can be serialized and tested for equality.
 ///
 /// A type `T` implementing this trait should uphold the invariant:
@@ -466,7 +471,7 @@ pub mod query {
     /// according to the column's schema and then `Ord for AlgebraicValue`.
     ///
     /// **NOTE:** Do not use directly.
-    /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb(table)]`.
+    /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb::table]`.
     #[doc(hidden)]
     pub fn filter_by_unique_field<
         Table: TableType + FieldAccess<COL_IDX, Field = T>,
@@ -500,7 +505,7 @@ pub mod query {
     /// according to the column's schema and then `Ord for AlgebraicValue`.
     ///
     /// **NOTE:** Do not use directly.
-    /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb(table)]`.
+    /// This is exposed as `filter_by_{$field_name}` on types with `#[spacetimedb::table]`.
     #[doc(hidden)]
     pub fn filter_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(val: &T) -> TableIter<Table> {
         let iter = iter_by_col_eq(Table::table_id(), COL_IDX.into(), val).expect("iter_by_col_eq failed");
@@ -514,7 +519,7 @@ pub mod query {
     /// Returns the number of deleted rows.
     ///
     /// **NOTE:** Do not use directly.
-    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb(table)]`
+    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb::table]`
     /// where the field does not have a unique constraint.
     #[doc(hidden)]
     pub fn delete_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(val: &T) -> u32 {
@@ -531,7 +536,7 @@ pub mod query {
     /// Returns whether any rows were deleted.
     ///
     /// **NOTE:** Do not use directly.
-    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb(table)]`
+    /// This is exposed as `delete_by_{$field_name}` on types with `#[spacetimedb::table]`
     /// where the field has a unique constraint.
     pub fn delete_by_unique_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(val: &T) -> bool {
         let count = delete_by_field::<Table, T, COL_IDX>(val);
@@ -545,7 +550,7 @@ pub mod query {
     /// according to the column's schema and then `Ord for AlgebraicValue`.
     ///
     /// **NOTE:** Do not use directly.
-    /// This is exposed as `update_by_{$field_name}` on types with `#[spacetimedb(table)]`.
+    /// This is exposed as `update_by_{$field_name}` on types with `#[spacetimedb::table]`.
     #[doc(hidden)]
     pub fn update_by_field<Table: TableType, T: FilterableValue, const COL_IDX: u16>(old: &T, new: Table) -> bool {
         // Delete the existing row, if any.
