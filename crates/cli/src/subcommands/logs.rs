@@ -44,11 +44,11 @@ pub fn cli() -> clap::Command {
                 .long_help("A flag that causes logs to not stop when end of the log file is reached, but rather to wait for additional data to be appended to the input."),
         )
         .arg(
-            Arg::new("json")
-                .long("json")
+            Arg::new("format")
+                .long("format")
+                .default_value("text")
                 .required(false)
-                .action(ArgAction::SetTrue)
-                .help("Output raw json log records"),
+                .value_parser(clap::value_parser!(Format))
         )
         .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
@@ -94,13 +94,31 @@ struct LogsParams {
     follow: bool,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum Format {
+    Text,
+    Json,
+}
+
+impl clap::ValueEnum for Format {
+    fn value_variants<'a>() -> &'a [Self] {
+        &[Self::Text, Self::Json]
+    }
+    fn to_possible_value(&self) -> Option<clap::builder::PossibleValue> {
+        match self {
+            Self::Text => Some(clap::builder::PossibleValue::new("text").aliases(["default", "txt"])),
+            Self::Json => Some(clap::builder::PossibleValue::new("json")),
+        }
+    }
+}
+
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_ref());
     let identity = args.get_one::<String>("identity");
     let mut num_lines = args.get_one::<u32>("num_lines").copied();
     let database = args.get_one::<String>("database").unwrap();
     let follow = args.get_flag("follow");
-    let json = args.get_flag("json");
+    let format = *args.get_one::<Format>("format").unwrap();
 
     let auth_header = get_auth_header_only(&mut config, false, identity, server).await?;
 
@@ -124,7 +142,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         anyhow::bail!(err)
     }
 
-    if json {
+    if format == Format::Json {
         let mut stdout = tokio::io::stdout();
         while let Some(chunk) = res.chunk().await? {
             stdout.write_all(&chunk).await?;
