@@ -1,4 +1,4 @@
-//! `CallbackMap`, a set of callbacks which run asynchronously in response to messages.
+//! Internal structures for managing row and reducer callbacks.
 //!
 //! The SpacetimeDB Rust Client SDK embraces a callback-driven API,
 //! where client authors register callbacks to later run in response to some event.
@@ -8,28 +8,28 @@
 //! so we define a `CallbackId` type which uniquely identifies a registered callback,
 //! and can be used to remove it.
 //!
-//! Callbacks may access the global `CONNECTION`, individual `TableCache`s,
-//! or register or remove other callbacks. This means that the event source,
-//! e.g. a `TableCache`, cannot hold its callbacks directly; doing so would require
-//! a `Mutex` or `RwLock` and cause deadlocks when the callbacks attempted to re-acquire it.
-//! Instead, a `CallbackMap` holds a channel to a background worker,
-//! which runs the callbacks without a lock held.
+//! Callbacks may access the database context through an `EventContext`,
+//! and may therefore add or remove callbacks on the same or other events,
+//! query the client cache, add or remove subscriptions, and make many other mutations.
+//! To prevent deadlocks or re-entrancy, the SDK arranges to defer all such mutations in a queue.
+//!
+//! This module is internal, and may incompatibly change without warning.
 
 use crate::spacetime_module::{Reducer, SpacetimeModule, TableUpdate};
 use spacetimedb_data_structures::map::HashMap;
 use std::{
     any::Any,
-    marker::PhantomData,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-/// An identifier for a registered callback of type `Callback<Args>`.
+/// An identifier for a registered callback.
 ///
 /// Registering a callback returns a `CallbackId`,
 /// which can later be used to de-register the callback.
 ///
 /// Exported because codegen needs to reference this type.
-/// SDK users should not interact with [`CallbackId`] directly.
+/// SDK users should not interact with [`CallbackId`] directly,
+/// instead using specific generated callback ID types.
 #[doc(hidden)]
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct CallbackId {
@@ -37,6 +37,9 @@ pub struct CallbackId {
 }
 
 impl CallbackId {
+    /// We maintain a global monotonic counter of [`CallbackId`]s,
+    /// even though we only need local uniqueness,
+    /// because it's easier than keeping track of a bunch of different counters.
     pub(crate) fn get_next() -> Self {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         CallbackId {
@@ -45,25 +48,27 @@ impl CallbackId {
     }
 }
 
+/// Manages row callbacks for a `DbContext`/`DbConnection`.
 pub struct DbCallbacks<M: SpacetimeModule> {
+    /// Maps table name to a set of callbacks.
     table_callbacks: HashMap<&'static str, TableCallbacks<M>>,
-    _module: PhantomData<M>,
 }
 
 impl<M: SpacetimeModule> Default for DbCallbacks<M> {
     fn default() -> Self {
         Self {
             table_callbacks: HashMap::default(),
-            _module: PhantomData,
         }
     }
 }
 
 impl<M: SpacetimeModule> DbCallbacks<M> {
+    /// Get the [`TableCallbacks`] for the table `table_name`.
     pub(crate) fn get_table_callbacks(&mut self, table_name: &'static str) -> &mut TableCallbacks<M> {
         self.table_callbacks.entry(table_name).or_default()
     }
 
+    /// Invoke all row callbacks for rows modified by `table_update` for the table `table_name`.
     pub fn invoke_table_row_callbacks<Row: Any>(
         &mut self,
         table_name: &'static str,
@@ -86,16 +91,30 @@ impl<M: SpacetimeModule> DbCallbacks<M> {
     }
 }
 
+/// An insert or delete callback for a row defined by the module `M`.
+///
+/// Rows are passed to callbacks as `&dyn Any`,
+/// and a wrapper inserted by the SDK will downcast to the actual row type
+/// before invoking the user-supplied function.
 pub(crate) type RowCallback<M> = Box<dyn FnMut(&<M as SpacetimeModule>::EventContext, &dyn Any) + Send + 'static>;
 
 type InsertCallbackMap<M> = HashMap<CallbackId, RowCallback<M>>;
 type DeleteCallbackMap<M> = HashMap<CallbackId, RowCallback<M>>;
 
+/// An update callback for a row defined by the module `M`.
+///
+/// Rows are passed to callbacks as `&dyn Any`,
+/// and a wrapper inserted by the SDK will downcast to the actual row type
+/// before invoking the user-supplied function.
 pub(crate) type UpdateCallback<M> =
     Box<dyn FnMut(&<M as SpacetimeModule>::EventContext, &dyn Any, &dyn Any) + Send + 'static>;
 
 type UpdateCallbackMap<M> = HashMap<CallbackId, UpdateCallback<M>>;
 
+/// A set of insert, delete and update callbacks for a particular table defined by the module `M`.
+///
+/// We store a set of update callbacks for all tables, even those which do not have a primary key field.
+/// The public codegen interface makes it statically impossible to register or invoke such a callback.
 pub(crate) struct TableCallbacks<M: SpacetimeModule> {
     on_insert: InsertCallbackMap<M>,
     on_delete: DeleteCallbackMap<M>,
@@ -180,6 +199,11 @@ impl<M: SpacetimeModule> TableCallbacks<M> {
     }
 }
 
+/// A reducer callback for a reducer defined by the module `M`.
+///
+/// Reducer arguments are passed to callbacks as `&dyn Any` to the argument product,
+/// and a wrapper inserted by the SDK will downcast and unpack the arguments
+/// before invoking the user-supplied function.
 pub(crate) type ReducerCallback<M> = Box<dyn FnMut(&<M as SpacetimeModule>::EventContext, &dyn Any) + Send + 'static>;
 
 type ReducerCallbackMap<M> = HashMap<CallbackId, ReducerCallback<M>>;
@@ -189,6 +213,7 @@ type ReducerCallbackMap<M> = HashMap<CallbackId, ReducerCallback<M>>;
 /// References to this struct are autogenerated in the `handle_event`
 /// function. Users should not reference this struct directly.
 pub(crate) struct ReducerCallbacks<M: SpacetimeModule> {
+    /// Maps reducer name to a set of callbacks.
     callbacks: HashMap<&'static str, ReducerCallbackMap<M>>,
 }
 

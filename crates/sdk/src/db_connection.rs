@@ -1,3 +1,23 @@
+//! Internal implementations of connections to a remote database.
+//!
+//! Contains a whole bunch of stuff that is referenced by the CLI codegen,
+//! most notably [`DbContextImpl`], which implements `DbConnection` and `EventContext`.
+//!
+//! Broadly speaking, the Rust SDK works by having a background Tokio worker [`WsConnection`]
+//! send and receive raw messages.
+//! Incoming messages are then parsed by the [`parse_loop`] into domain types in [`ParsedMessage`],
+//! which are processed and applied to the client cache state
+//! when a user calls `DbConnection::advance_one_message` or its friends.
+//!
+//! Callbacks may access the database context through an `EventContext`,
+//! and may therefore add or remove callbacks on the same or other events,
+//! query the client cache, add or remove subscriptions, and make many other mutations.
+//! To prevent deadlocks or re-entrancy, the SDK arranges to defer all such mutations in a queue
+//! called`pending_mutations`, which are processed and applied during `advance_one_message`,
+//! as with received WebSocket messages.
+//!
+//! This module is internal, and may incompatibly change without warning.
+
 use crate::{
     callbacks::{CallbackId, DbCallbacks, ReducerCallback, ReducerCallbacks, RowCallback, UpdateCallback},
     client_cache::{ClientCache, ClientCacheView, TableCache, UniqueConstraint},
@@ -19,13 +39,34 @@ use tokio::runtime::{self, Runtime};
 
 pub(crate) type SharedCell<T> = Arc<Mutex<T>>;
 
+/// Implementation of `DbConnection`, `EventContext`,
+/// and anything else that provides access to the database connection.
+///
+/// This must be relatively cheaply `Clone`-able, and have internal sharing,
+/// as numerous operations will clone it to get new handles on the connection.
 pub struct DbContextImpl<M: SpacetimeModule> {
     runtime: runtime::Handle,
+
+    /// All the state which is safe to hold a lock on while running callbacks.
     pub(crate) inner: SharedCell<DbContextImplInner<M>>,
+
+    /// The most recent client cache state.
     cache: SharedCell<ClientCacheView<M>>,
+
+    /// Receiver channel for WebSocket messages,
+    /// which are pre-parsed in the background by [`parse_loop`].
     recv: SharedCell<mpsc::UnboundedReceiver<ParsedMessage<M>>>,
+
+    /// Channel into which operations which apparently mutate SDK state,
+    /// e.g. registering callbacks, push [`PendingMutation`] messages,
+    /// rather than immediately locking the connection and applying their change,
+    /// to avoid deadlocks and races.
     pub(crate) pending_mutations_send: mpsc::UnboundedSender<PendingMutation<M>>,
+
+    /// Receive end of `pending_mutations_send`,
+    /// from which [Self::apply_pending_mutations] and friends read mutations.
     pending_mutations_recv: SharedCell<mpsc::UnboundedReceiver<PendingMutation<M>>>,
+
     /// This connection's `Identity`.
     ///
     /// May be `None` if we connected anonymously
@@ -51,12 +92,20 @@ impl<M: SpacetimeModule> Clone for DbContextImpl<M> {
 }
 
 impl<M: SpacetimeModule> DbContextImpl<M> {
+    /// Process a parsed WebSocket message,
+    /// applying its mutations to the client cache and invoking callbacks.
     fn process_message(&self, msg: ParsedMessage<M>) -> Result<()> {
         let res = match msg {
+            // Error: treat this as an erroneous disconnect.
             ParsedMessage::Error(e) => {
                 self.invoke_disconnected(Some(&e));
                 Err(e)
             }
+
+            // Initial `IdentityToken` message:
+            // confirm that the received identity and address are what we expect,
+            // store them,
+            // then invoke the on_connect callback.
             ParsedMessage::IdentityToken(identity, token, addr) => {
                 {
                     // Don't hold the `self.identity` lock while running callbacks.
@@ -76,18 +125,28 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 }
                 Ok(())
             }
+
+            // Subscription applied:
+            // set the received state to store all the rows,
+            // then invoke the on-applied and row callbacks.
             ParsedMessage::InitialSubscription { db_update, sub_id } => {
                 let prev_cache_view = Arc::clone(&*self.cache.lock().unwrap());
                 let mut new_cache = ClientCache::clone(&*prev_cache_view);
+                // FIXME: delete no-longer-subscribed rows.
                 db_update.apply_to_client_cache(&mut new_cache);
                 let new_cache_view = Arc::new(new_cache);
                 *self.cache.lock().unwrap() = new_cache_view;
                 let event_ctx = self.make_event_ctx(Event::SubscribeApplied);
                 let mut inner = self.inner.lock().unwrap();
                 inner.subscriptions.subscription_applied(&event_ctx, sub_id);
+                // FIXME: invoke delete callbacks for no-longer-subscribed rows.
                 db_update.invoke_row_callbacks(&event_ctx, &mut inner.db_callbacks);
                 Ok(())
             }
+
+            // Successful transaction update:
+            // apply the received diff to the client cache,
+            // then invoke on-reducer and row callbacks.
             ParsedMessage::TransactionUpdate(event, Some(update)) => {
                 let prev_cache_view = Arc::clone(&*self.cache.lock().unwrap());
                 let mut new_cache = ClientCache::clone(&*prev_cache_view);
@@ -104,6 +163,9 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 update.invoke_row_callbacks(&event_ctx, &mut inner.db_callbacks);
                 Ok(())
             }
+
+            // Failed transaction update:
+            // invoke on-reducer callbacks.
             ParsedMessage::TransactionUpdate(event, None) => {
                 let event_ctx = self.make_event_ctx(event);
                 if let Event::Reducer(reducer_event) = event_ctx.event() {
@@ -115,9 +177,11 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 Ok(())
             }
         };
+
         res
     }
 
+    /// Invoke the on-disconnect callback, and mark [`Self::is_active`] false.
     fn invoke_disconnected(&self, err: Option<&anyhow::Error>) {
         let disconnected_callback = {
             let mut inner = self.inner.lock().unwrap();
@@ -143,8 +207,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         <M::EventContext as EventContext>::new(imp, event)
     }
 
-    /// To avoid deadlocks during callbacks, we make all mutations to subscription- and callback-managing structurs
-    /// strictly after running those callbacks, stashing them in a channel during the actual callback runs.
+    /// Apply all queued [`PendingMutation`]s.
     fn apply_pending_mutations(&self) -> anyhow::Result<()> {
         while let Ok(Some(pending_mutation)) = self.pending_mutations_recv.lock().unwrap().try_next() {
             self.apply_mutation(pending_mutation)?;
@@ -152,8 +215,11 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         Ok(())
     }
 
+    /// Apply an individual [`PendingMutation`].
     fn apply_mutation(&self, mutation: PendingMutation<M>) -> anyhow::Result<()> {
         match mutation {
+            // Subscribe: register the subscription in the [`SubscriptionManager`]
+            // and send the `Subscribe` WS message.
             PendingMutation::Subscribe {
                 on_applied,
                 queries,
@@ -172,6 +238,8 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     }))
                     .expect("Unable to send subscribe message: WS sender loop has dropped its recv channel");
             }
+
+            // CallReducer: send the `CallReducer` WS message.
             PendingMutation::CallReducer { reducer, args_bsatn } => {
                 let msg = ws::ClientMessage::CallReducer(ws::CallReducer {
                     reducer: reducer.to_string(),
@@ -187,6 +255,8 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     .unbounded_send(msg)
                     .expect("Unable to send reducer call message: WS sender loop has dropped its recv channel");
             }
+
+            // Disconnect: close the connection.
             PendingMutation::Disconnect => {
                 // Set `send_chan` to `None`, since `Self::is_active` checks that.
                 // This will close the WebSocket loop in websocket.rs,
@@ -194,6 +264,8 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                 // eventually resulting in disconnect callbacks being called.
                 self.inner.lock().unwrap().send_chan = None;
             }
+
+            // Callback stuff: these all do what you expect.
             PendingMutation::AddInsertCallback {
                 table,
                 callback_id,
@@ -276,8 +348,15 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         Ok(())
     }
 
+    /// If a WebSocket message is waiting, process it and return `true`.
+    /// If no WebSocket messages are in the queue, immediately return `false`.
+    ///
+    /// Called by the autogenerated `DbConnection` method of the same name.
     pub fn advance_one_message(&self) -> Result<bool> {
+        // Apply any pending mutations before processing a WS message,
+        // so that pending callbacks don't get skipped.
         self.apply_pending_mutations()?;
+
         // Deranged behavior: mpsc's `try_next` returns `Ok(None)` when the channel is closed,
         // and `Err(_)` when the channel is open and waiting. This seems exactly backwards.
         let res = match self.recv.lock().unwrap().try_next() {
@@ -288,7 +367,11 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
             Err(_) => Ok(false),
             Ok(Some(msg)) => self.process_message(msg).map(|_| true),
         };
+
+        // Also apply any new pending messages afterwards,
+        // so that outgoing WS messages get sent as soon as possible.
         self.apply_pending_mutations()?;
+
         res
     }
 
@@ -316,6 +399,9 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         }
     }
 
+    /// Like [`Self::advance_one_message`], but sleeps the thread until a message is available.
+    ///
+    /// Called by the autogenerated `DbConnection` method of the same name.
     pub fn advance_one_message_blocking(&self) -> Result<()> {
         match self.runtime.block_on(self.get_message()) {
             Message::Local(pending) => self.apply_mutation(pending),
@@ -327,6 +413,9 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         }
     }
 
+    /// Like [`Self::advance_one_message`], but `await`s until a message is available.
+    ///
+    /// Called by the autogenerated `DbConnection` method of the same name.
     pub async fn advance_one_message_async(&self) -> Result<()> {
         match self.get_message().await {
             Message::Local(pending) => self.apply_mutation(pending),
@@ -338,11 +427,17 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         }
     }
 
+    /// Call [`Self::advance_one_message`] in a loop until no more messages are waiting.
+    ///
+    /// Called by the autogenerated `DbConnection` method of the same name.
     pub fn frame_tick(&self) -> Result<()> {
         while self.advance_one_message()? {}
         Ok(())
     }
 
+    /// Spawn a thread which does [`Self::advance_one_message_blocking`] in a loop.
+    ///
+    /// Called by the autogenerated `DbConnection` method of the same name.
     pub fn run_threaded(&self) -> std::thread::JoinHandle<()> {
         let this = self.clone();
         std::thread::spawn(move || loop {
@@ -354,6 +449,9 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         })
     }
 
+    /// An async task which does [`Self::advance_one_message_async`] in a loop.
+    ///
+    /// Called by the autogenerated `DbConnection` method of the same name.
     pub async fn run_async(&self) -> Result<()> {
         let this = self.clone();
         loop {
@@ -365,10 +463,12 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         }
     }
 
+    /// Called by the autogenerated `DbConnection` method of the same name.
     pub fn is_active(&self) -> bool {
         self.inner.lock().unwrap().send_chan.is_some()
     }
 
+    /// Called by the autogenerated `DbConnection` method of the same name.
     pub fn disconnect(&self) -> Result<()> {
         if !self.is_active() {
             bail!("Already disconnected in call to `DbContext::disconnect`");
@@ -388,6 +488,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         self.pending_mutations_send.unbounded_send(mutation).unwrap();
     }
 
+    /// Called by autogenerated table access methods.
     pub fn get_table<Row: InModule<Module = M> + Send + Sync + 'static>(
         &self,
         table_name: &'static str,
@@ -407,6 +508,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         }
     }
 
+    /// Called by autogenerated reducer invokation methods.
     pub fn call_reducer<Args: Serialize + InModule<Module = M>>(
         &self,
         reducer_name: &'static str,
@@ -421,6 +523,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         Ok(())
     }
 
+    /// Called by autogenerated reducer callback methods.
     pub fn on_reducer<Args: Deserialize<'static> + InModule<Module = M> + 'static>(
         &self,
         reducer_name: &'static str,
@@ -438,6 +541,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         callback_id
     }
 
+    /// Called by autogenerated reducer callback methods.
     pub fn remove_on_reducer<Args: InModule<Module = M>>(&self, reducer_name: &'static str, callback: CallbackId) {
         self.queue_mutation(PendingMutation::RemoveReducerCallback {
             reducer: reducer_name,
@@ -445,10 +549,12 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         });
     }
 
+    /// Called by the autogenerated `DbConnection` method of the same name.
     pub fn try_identity(&self) -> Option<Identity> {
         *self.identity.lock().unwrap()
     }
 
+    /// Called by the autogenerated `DbConnection` method of the same name.
     pub fn address(&self) -> Address {
         get_client_address()
     }
@@ -461,6 +567,7 @@ type OnConnectErrorCallback = Box<dyn FnOnce(&anyhow::Error) + Send + 'static>;
 type OnDisconnectCallback<M> =
     Box<dyn FnOnce(&<M as SpacetimeModule>::DbConnection, Option<&anyhow::Error>) + Send + 'static>;
 
+/// All the stuff in a [`DbContextImpl`] which can safely be locked while invoking callbacks.
 pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     /// `Some` if not within the context of an outer runtime. The `Runtime` must
     /// then live as long as `Self`.
@@ -481,18 +588,26 @@ pub(crate) struct DbContextImplInner<M: SpacetimeModule> {
     on_disconnect: Option<OnDisconnectCallback<M>>,
 }
 
+/// Internal implementation of a generated `TableHandle` struct,
+/// which mediates access to a table in the client cache.
 pub struct TableHandle<Row: InModule> {
     /// May be `None` if there are no rows in the table cache.
     table_view: Arc<TableCache<Row>>,
+    /// Handle on the connection's `pending_mutations_send` channel,
+    /// so we can send callback-related [`PendingMutation`] messages.
     pending_mutations: mpsc::UnboundedSender<PendingMutation<Row::Module>>,
+
+    /// The name of the table.
     table: &'static str,
 }
 
 impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
+    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
     pub fn count(&self) -> u64 {
         self.table_view.entries.len() as u64
     }
 
+    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
     pub fn iter(&self) -> impl Iterator<Item = Row> + '_ {
         self.table_view.entries.values().cloned()
     }
@@ -502,6 +617,7 @@ impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
         self.pending_mutations.unbounded_send(mutation).unwrap();
     }
 
+    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
     pub fn on_insert(
         &self,
         mut callback: impl FnMut(&<Row::Module as SpacetimeModule>::EventContext, &Row) + Send + 'static,
@@ -518,6 +634,7 @@ impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
         callback_id
     }
 
+    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
     pub fn remove_on_insert(&self, callback: CallbackId) {
         self.queue_mutation(PendingMutation::RemoveInsertCallback {
             table: self.table,
@@ -525,6 +642,7 @@ impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
         });
     }
 
+    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
     pub fn on_delete(
         &self,
         mut callback: impl FnMut(&<Row::Module as SpacetimeModule>::EventContext, &Row) + Send + 'static,
@@ -541,6 +659,7 @@ impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
         callback_id
     }
 
+    /// Called by the autogenerated implementation of the [`crate::Table`] method of the same name.
     pub fn remove_on_delete(&self, callback: CallbackId) {
         self.queue_mutation(PendingMutation::RemoveDeleteCallback {
             table: self.table,
@@ -548,6 +667,7 @@ impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
         });
     }
 
+    /// Called by the autogenerated implementation of the [`crate::TableWithPrimaryKey`] method of the same name.
     pub fn on_update(
         &self,
         mut callback: impl FnMut(&<Row::Module as SpacetimeModule>::EventContext, &Row, &Row) + Send + 'static,
@@ -565,6 +685,7 @@ impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
         callback_id
     }
 
+    /// Called by the autogenerated implementation of the [`crate::TableWithPrimaryKey`] method of the same name.
     pub fn remove_on_update(&self, callback: CallbackId) {
         self.queue_mutation(PendingMutation::RemoveUpdateCallback {
             table: self.table,
@@ -572,6 +693,7 @@ impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
         });
     }
 
+    /// Called by autogenerated unique index access methods.
     pub fn get_unique_constraint<Col>(
         &self,
         _constraint_name: &'static str,
@@ -584,6 +706,12 @@ impl<Row: InModule + Send + Sync + Clone + 'static> TableHandle<Row> {
     }
 }
 
+/// A builder-pattern constructor for a `DbConnection` connection to the module `M`.
+///
+/// `M` will be the autogenerated opaque module type.
+///
+/// Get a builder by calling `DbConnection::builder()`.
+// TODO: Move into its own module which is not #[doc(hidden)]?
 pub struct DbConnectionBuilder<M: SpacetimeModule> {
     uri: Option<Uri>,
 
@@ -596,6 +724,7 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
     on_disconnect: Option<OnDisconnectCallback<M>>,
 }
 
+/// This process's global client address, which will be attacked to all connections it makes.
 static CLIENT_ADDRESS: OnceLock<Address> = OnceLock::new();
 
 fn get_client_address() -> Address {
@@ -638,11 +767,25 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
         }
     }
 
+    /// Open a WebSocket connection to the remote module,
+    /// with all configuration and callbacks registered in the builder `self`.
+    ///
+    /// This method panics if `self` lacks a required configuration,
+    /// or returns an `Err` if some I/O operation during the initial WebSocket connection fails.
+    ///
+    /// Successful return from this method does not necessarily imply a valid `DbConnection`;
+    /// the connection may still fail asynchronously,
+    /// leading to the [`Self::on_connect_error`] callback being invoked.
+    ///
+    /// Before calling this method, make sure to invoke at least [`Self::with_uri`] and [`Self::with_module_name`]
+    /// to configure the connection.
     pub fn build(self) -> Result<M::DbConnection> {
         let imp = self.build_impl()?;
         Ok(<M::DbConnection as DbConnection>::new(imp))
     }
 
+    /// Open a WebSocket connection, build an empty client cache, &c,
+    /// to construct a [`DbContextImpl`].
     fn build_impl(self) -> Result<DbContextImpl<M>> {
         let (runtime, handle) = enter_or_create_runtime()?;
         let db_callbacks = DbCallbacks::default();
@@ -687,22 +830,44 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
         Ok(ctx_imp)
     }
 
+    /// Set the URI of the SpacetimeDB host which is running the remote module.
+    ///
+    /// The URI must have either no scheme or one of the schemes `http`, `https`, `ws` or `wss`.
     pub fn with_uri<E: std::fmt::Debug>(mut self, uri: impl TryInto<Uri, Error = E>) -> Self {
         let uri = uri.try_into().expect("Unable to parse supplied URI");
         self.uri = Some(uri);
         self
     }
 
+    /// Set the name or address of the remote module.
     pub fn with_module_name(mut self, name_or_address: impl ToString) -> Self {
         self.module_name = Some(name_or_address.to_string());
         self
     }
 
+    /// Set the credentials with which to connect to the remote database.
+    ///
+    /// If `credentials` is `None` or this method is not invoked,
+    /// the SpacetimeDB host will generate a new anonymous `Identity`.
+    ///
+    /// If the passed token is invalid, is not recognized by the host,
+    /// or does not authenticate as the passed `Identity`,
+    /// the connection will fail asynchrnonously.
+    // FIXME: currently this causes `disconnect` to be called rather than `on_connect_error`.
     pub fn with_credentials(mut self, credentials: Option<(Identity, String)>) -> Self {
         self.credentials = credentials;
         self
     }
 
+    /// Register a callback to run when the connection is successfully initiated.
+    ///
+    /// The callback will receive three arguments:
+    /// - The `DbConnection` which has successfully connected.
+    /// - The `Identity` of the successful connection.
+    ///   If an identity and token were passed to [`Self::with_credentials`], this will be the same `Identity`.
+    /// - The private access token which can be used to later re-authenticate as the same `Identity`.
+    ///   If an identity and token were passed to [`Self::with_credentials`],
+    ///   this may not be string-equal to the supplied token, but will authenticate as the same `Identity`.
     pub fn on_connect(mut self, callback: impl FnOnce(&M::DbConnection, Identity, &str) + Send + 'static) -> Self {
         if self.on_connect.is_some() {
             panic!(
@@ -716,6 +881,9 @@ Instead of registering multiple `on_connect` callbacks, register a single callba
         self
     }
 
+    /// Register a callback to run when the connection fails asynchronously,
+    /// e.g. due to invalid credentials.
+    // FIXME: currently never called; `on_disconnect` is called instead.
     pub fn on_connect_error(mut self, callback: impl FnOnce(&anyhow::Error) + Send + 'static) -> Self {
         if self.on_connect_error.is_some() {
             panic!(
@@ -729,6 +897,8 @@ Instead of registering multiple `on_connect_error` callbacks, register a single 
         self
     }
 
+    /// Register a callback to run when the connection is closed.
+    // FIXME: currently also called when the connection fails asynchronously, instead of `on_connect_error`.
     pub fn on_disconnect(
         mut self,
         callback: impl FnOnce(&M::DbConnection, Option<&anyhow::Error>) + Send + 'static,
@@ -781,6 +951,8 @@ fn spawn_parse_loop<M: SpacetimeModule>(
     (handle, parsed_message_recv)
 }
 
+/// A loop which reads raw WS messages from `recv`, parses them into domain types,
+/// and pushes the [`ParsedMessage`]s into `send`.
 async fn parse_loop<M: SpacetimeModule>(
     mut recv: mpsc::UnboundedReceiver<ws::ServerMessage>,
     send: mpsc::UnboundedSender<ParsedMessage<M>>,
