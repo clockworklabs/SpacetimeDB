@@ -116,6 +116,11 @@ pub trait ToBsatn {
     /// BSATN-encode the row referred to by `self` into `buf`,
     /// pushing `self`'s bytes onto the end of `buf`, similar to [`Vec::extend`].
     fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError>;
+
+    /// Returns the static size of the type of this object.
+    ///
+    /// When this returns `Some(_)` there is also a `StaticBsatnLayout`.
+    fn static_bsatn_size(&self) -> Option<u16>;
 }
 
 impl<T: ToBsatn> ToBsatn for &T {
@@ -124,6 +129,9 @@ impl<T: ToBsatn> ToBsatn for &T {
     }
     fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
         T::to_bsatn_extend(*self, buf)
+    }
+    fn static_bsatn_size(&self) -> Option<u16> {
+        T::static_bsatn_size(*self)
     }
 }
 
@@ -134,6 +142,10 @@ impl ToBsatn for ProductValue {
 
     fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> Result<(), BsatnError> {
         to_writer(buf, self)
+    }
+
+    fn static_bsatn_size(&self) -> Option<u16> {
+        None
     }
 }
 

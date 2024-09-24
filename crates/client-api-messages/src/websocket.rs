@@ -389,17 +389,31 @@ impl WebsocketFormat for JsonFormat {
 pub struct BsatnFormat;
 
 impl WebsocketFormat for BsatnFormat {
-    type Single = Vec<u8>;
-    type List = InFlightBsatnRowList;
-    fn encode_list<R: ToBsatn + Serialize>(elems: impl Iterator<Item = R>) -> Self::List {
-        let mut list = InFlightBsatnRowList::row_offsets();
-        let mut scratch = Vec::new();
-        for elem in elems {
+    type Single = Box<[u8]>;
+    type List = BsatnRowList;
+    fn encode_list<R: ToBsatn + Serialize>(mut elems: impl Iterator<Item = R>) -> Self::List {
+        // For an empty list, the size of a row is unknown, so use `RowOffsets`.
+        let Some(first) = elems.next() else {
+            return BsatnRowList::row_offsets();
+        };
+        // We have at least one row. Determine the static size from that, if available.
+        let (mut list, mut scratch) = match first.static_bsatn_size() {
+            Some(size) => (BsatnRowListBuilder::fixed(size), Vec::with_capacity(size as usize)),
+            None => (BsatnRowListBuilder::row_offsets(), Vec::new()),
+        };
+        // Add the first element and then the rest.
+        // We assume that the schema of rows yielded by `elems` stays the same,
+        // so once the size is fixed, it will stay that way.
+        let mut push = |elem: R| {
             elem.to_bsatn_extend(&mut scratch).unwrap();
             list.push(&scratch);
             scratch.clear();
+        };
+        push(first);
+        for elem in elems {
+            push(elem);
         }
-        list
+        list.finish()
     }
 }
 
@@ -409,6 +423,7 @@ type RowOffset = u64;
 /// A packed list of BSATN-encoded rows.
 #[derive(SpacetimeType, Debug, Clone, Default)]
 #[sats(crate = spacetimedb_lib)]
+// TODO(centril, perf): consider using `Arc`s instead to avoid copying bytes.
 pub struct BsatnRowList<B = Box<[u8]>, I = Box<[RowOffset]>> {
     /// A size hint about `rows_data`
     /// intended to facilitate parallel decode purposes on large initial updates.
@@ -510,10 +525,11 @@ impl<'a, B: AsRef<[u8]>, I: AsRef<[RowOffset]>> Iterator for BsatnRowListIter<'a
 }
 
 /// A [`BsatnRowList`] that can be added to.
-pub type InFlightBsatnRowList = BsatnRowList<Vec<u8>, Vec<RowOffset>>;
+pub type BsatnRowListBuilder = BsatnRowList<Vec<u8>, Vec<RowOffset>>;
 
-impl InFlightBsatnRowList {
+impl BsatnRowListBuilder {
     /// Adds `row`, BSATN-encoded to this list.
+    #[inline]
     pub fn push(&mut self, row: &[u8]) {
         if let RowSizeHint::RowOffsets(offsets) = &mut self.size_hint {
             offsets.push(self.rows_data.len() as u64);
@@ -521,41 +537,14 @@ impl InFlightBsatnRowList {
         self.rows_data.extend_from_slice(row);
     }
 
-    /// Extends `self` with the existing list `other`.
-    #[allow(dead_code)]
-    fn extend(&mut self, other: Self) {
-        let fixed_to_offsets = |len, fs| (0..len).map(move |n| n * fs as usize).map(|o| o as u64);
-
-        let slen = other.len();
-        let olen = other.len();
-        match (&mut self.size_hint, other.size_hint) {
-            (RowSizeHint::RowOffsets(sro), RowSizeHint::RowOffsets(oro)) => sro.extend(oro),
-            (RowSizeHint::FixedSize(sfs), RowSizeHint::FixedSize(ofs)) => {
-                if *sfs != ofs {
-                    // Convert `self` and `other` to offsets
-                    // and then chain together, but `oro` must be offset to account for `self`.
-                    let sro = fixed_to_offsets(slen, *sfs);
-                    let send = self.rows_data.len() as u64;
-                    let oro = fixed_to_offsets(olen, ofs).map(|o| send + o);
-                    self.size_hint = RowSizeHint::RowOffsets(sro.chain(oro).collect());
-                }
-            }
-            (RowSizeHint::FixedSize(sfs), RowSizeHint::RowOffsets(oro)) => {
-                // Convert `self` side to offsets
-                // and then chain together with an `offset` that has been adjusted.
-                let sro = fixed_to_offsets(slen, *sfs);
-                let send = self.rows_data.len() as u64;
-                let oro = oro.into_iter().map(|o| send + o);
-                self.size_hint = RowSizeHint::RowOffsets(sro.chain(oro).collect());
-            }
-            (RowSizeHint::RowOffsets(sro), RowSizeHint::FixedSize(ofs)) => {
-                // Extend the `self` side with `olen` elements
-                // separated by `ofs` bytes starting at `send`.
-                let send = self.rows_data.len();
-                sro.extend(fixed_to_offsets(olen, ofs).map(|o| send as u64 + o));
-            }
-        }
-
-        self.rows_data.extend_from_slice(&other.rows_data);
+    /// Finish the in flight list, throwing away the capability to mutate.
+    pub fn finish(self) -> BsatnRowList {
+        let Self { size_hint, rows_data } = self;
+        let rows_data = rows_data.into();
+        let size_hint = match size_hint {
+            RowSizeHint::FixedSize(fs) => RowSizeHint::FixedSize(fs),
+            RowSizeHint::RowOffsets(ro) => RowSizeHint::RowOffsets(ro.into()),
+        };
+        BsatnRowList { size_hint, rows_data }
     }
 }

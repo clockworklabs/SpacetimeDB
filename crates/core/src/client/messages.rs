@@ -5,7 +5,10 @@ use crate::host::ArgsTuple;
 use crate::messages::websocket as ws;
 use brotli::CompressorReader;
 use derive_more::From;
-use spacetimedb_client_api_messages::websocket::{BsatnFormat, FormatSwitch, JsonFormat, WebsocketFormat, SERVER_MSG_COMPRESSION_TAG_BROTLI, SERVER_MSG_COMPRESSION_TAG_NONE};
+use spacetimedb_client_api_messages::websocket::{
+    BsatnFormat, FormatSwitch, JsonFormat, WebsocketFormat, SERVER_MSG_COMPRESSION_TAG_BROTLI,
+    SERVER_MSG_COMPRESSION_TAG_NONE,
+};
 use spacetimedb_lib::identity::RequestId;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::Address;
@@ -193,7 +196,7 @@ impl ToProtocol for TransactionUpdateMessage {
         let request_id = database_update.request_id;
         match update {
             FormatSwitch::Bsatn(update) => FormatSwitch::Bsatn(convert(event, request_id, update, |args| {
-                args.get_bsatn().clone().into()
+                Vec::from(args.get_bsatn().clone()).into()
             })),
             FormatSwitch::Json(update) => {
                 FormatSwitch::Json(convert(event, request_id, update, |args| args.get_json().clone()))

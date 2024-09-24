@@ -168,6 +168,13 @@ impl ToBsatn for RelValue<'_> {
             RelValue::ProjRef(this) => this.to_bsatn_extend(buf),
         }
     }
+    fn static_bsatn_size(&self) -> Option<u16> {
+        match self {
+            RelValue::Row(this) => this.static_bsatn_size(),
+            RelValue::Projection(this) => this.static_bsatn_size(),
+            RelValue::ProjRef(this) => this.static_bsatn_size(),
+        }
+    }
 }
 
 /// An in-memory table

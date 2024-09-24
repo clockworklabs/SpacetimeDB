@@ -859,6 +859,10 @@ impl ToBsatn for RowRef<'_> {
             bsatn::to_writer(buf, self)
         }
     }
+
+    fn static_bsatn_size(&self) -> Option<u16> {
+        self.table.static_bsatn_layout.as_ref().map(|sbl| sbl.bsatn_length)
+    }
 }
 
 impl Eq for RowRef<'_> {}
