@@ -82,7 +82,6 @@ fn main() {
     new_connection
         .subscription_builder()
         .on_applied(move |ctx| {
-            println!("new_connection subscription on_applied");
             let check = || {
                 anyhow::ensure!(ctx.db.disconnected().count() == 1);
                 if let Some(_row) = ctx.db.disconnected().iter().next() {
