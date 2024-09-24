@@ -18,16 +18,8 @@ pub fn cli() -> clap::Command {
     clap::Command::new("publish")
         .about("Create and update a SpacetimeDB database")
         .arg(
-            Arg::new("host_type")
-                .long("host-type")
-                .short('t')
-                .value_parser(["wasm"])
-                .default_value("wasm")
-                .help("The type of host that should be for hosting this module"),
-        )
-        .arg(
             Arg::new("clear_database")
-                .long("clear-database")
+                .long("delete-data")
                 .short('c')
                 .action(SetTrue)
                 .requires("name|address")
@@ -95,7 +87,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let identity = args.get_one::<String>("identity").map(String::as_str);
     let name_or_address = args.get_one::<String>("name|address");
     let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
-    let host_type = args.get_one::<String>("host_type").unwrap();
     let clear_database = args.get_flag("clear_database");
     let force = args.get_flag("force");
     let trace_log = args.get_flag("trace_log");
@@ -114,7 +105,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         .unzip();
 
     let mut query_params = Vec::<(&str, &str)>::new();
-    query_params.push(("host_type", host_type.as_str()));
+    query_params.push(("host_type", "wasm"));
     query_params.push(("register_tld", "true"));
 
     // If a domain or address was provided, we should locally make sure it looks correct and

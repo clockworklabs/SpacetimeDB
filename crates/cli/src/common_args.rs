@@ -20,3 +20,10 @@ pub fn anonymous() -> Arg {
         .action(SetTrue)
         .help("Perform this action as an arbitrary newly-created user instead of as myself")
 }
+
+pub fn yes() -> Arg {
+    Arg::new("force")
+        .long("yes")
+        .action(SetTrue)
+        .help("Assume \"yes\" as answer to all prompts and run non-interactively")
+}

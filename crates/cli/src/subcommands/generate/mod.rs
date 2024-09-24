@@ -59,7 +59,7 @@ pub fn cli() -> clap::Command {
                 .hide(true)
                 .num_args(0..=1)
                 .value_parser(clap::value_parser!(PathBuf))
-                .long("json-module")
+                .long("module-def")
                 .group("source")
                 .help("Generate from a ModuleDef encoded as json"),
         )
@@ -75,7 +75,6 @@ pub fn cli() -> clap::Command {
             Arg::new("namespace")
                 .default_value("SpacetimeDB.Types")
                 .long("namespace")
-                .short('n')
                 .help("The namespace that should be used"),
         )
         .arg(
@@ -99,18 +98,13 @@ pub fn cli() -> clap::Command {
                      for CI)",
                 ),
         )
-        .arg(Arg::new("delete_files").long("delete-files").action(SetTrue).help(
-            "Delete outdated generated files whose definitions have been \
-             removed from the module. Prompts before deleting unless --force is \
-             supplied.",
-        ))
         .arg(
-            Arg::new("force")
-                .long("force")
+            Arg::new("delete_files")
+                .long("clear-target-directory")
                 .action(SetTrue)
-                .requires("delete_files")
-                .help("delete-files without prompting first. Useful for scripts."),
+                .help("Delete all files in the target directory before generating files."),
         )
+        .arg(common_args::yes())
         .arg(Arg::new("debug").long("debug").short('d').action(SetTrue).help(
             "Builds the module using debug instead of release (intended to \
              speed up local iteration, not recommended for CI)",
