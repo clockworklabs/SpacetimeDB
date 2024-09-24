@@ -349,15 +349,12 @@ pub fn confirm_prompt(force: bool, prompt: &str) -> anyhow::Result<bool> {
         println!("Force flag is present, skipping confirmation");
         return Ok(true);
     }
+    let mut input = String::new();
     print!("{} [y/N]", prompt);
     std::io::stdout().flush()?;
-    let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
-    if input.trim().to_lowercase() == "y" || input.trim().to_lowercase() == "yes" {
-        Ok(true)
-    } else {
-        Ok(false)
-    }
+    let input = input.trim().to_lowercase();
+    Ok(input == "y" || input == "yes")
 }
 
 pub fn unauth_error_context<T>(res: anyhow::Result<T>, identity: &str, server: &str) -> anyhow::Result<T> {
