@@ -1,8 +1,6 @@
 use crate::common_args;
 use crate::config::Config;
-use clap::ArgAction::SetTrue;
-use clap::ArgMatches;
-use clap::{Arg, Command};
+use clap::{ArgMatches, Command};
 use spacetimedb::stdb_path;
 use std::io::Write;
 use std::path::PathBuf;

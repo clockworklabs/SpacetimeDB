@@ -4,7 +4,7 @@ use crate::edit_distance::{edit_distance, find_best_match_for_name};
 use crate::util;
 use crate::util::{add_auth_header_opt, database_address, get_auth_header_only};
 use anyhow::{bail, Context, Error};
-use clap::{Arg, ArgAction, ArgMatches};
+use clap::{Arg, ArgMatches};
 use itertools::Either;
 use serde_json::Value;
 use spacetimedb_lib::de::serde::deserialize_from;
