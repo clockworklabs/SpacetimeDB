@@ -44,16 +44,10 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("wasm_file")
                 .value_parser(clap::value_parser!(PathBuf))
-                .long("wasm-file")
-                .short('w')
+                .long("bin-path")
+                .short('b')
                 .conflicts_with("project_path")
-                .help("The system path (absolute or relative) to the wasm file we should publish, instead of building the project."),
-        )
-        .arg(
-            Arg::new("trace_log")
-                .long("trace_log")
-                .help("Turn on diagnostic/performance tracing for this project")
-                .action(SetTrue),
+                .help("The system path (absolute or relative) to the compiled wasm binary we should publish, instead of building the project."),
         )
         .arg(
             common_args::identity()
@@ -63,18 +57,13 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("anon_identity")
         )
         .arg(
-            Arg::new("anon_identity")
-                .long("anon-identity")
-                .short('a')
-                .action(SetTrue)
-                .help("Instruct SpacetimeDB to allocate a new identity to own this database"),
+            common_args::anonymous()
         )
         .arg(
             Arg::new("skip_clippy")
-                .long("skip_clippy")
+                .long("skip-println-checks")
                 .short('S')
                 .action(SetTrue)
-                .env("SPACETIME_SKIP_CLIPPY")
                 .value_parser(clap::builder::FalseyValueParser::new())
                 .help("Skips running clippy on the module before publishing (intended to speed up local iteration, not recommended for CI)"),
         )
@@ -150,7 +139,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let path_to_wasm = if !path_to_project.is_dir() && path_to_project.extension().map_or(false, |ext| ext == "wasm") {
         println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
-        println!("removed in a future release. Please use --wasm-file instead.");
+        println!("removed in a future release. Please use --bin-path instead.");
         path_to_project.clone()
     } else if let Some(path) = wasm_file {
         println!("Skipping build. Instead we are publishing {}", path.display());

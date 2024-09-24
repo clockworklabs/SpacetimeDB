@@ -33,14 +33,7 @@ pub fn cli() -> clap::Command {
                 .conflicts_with("anon_identity")
                 .help("The identity to use for the call"),
         )
-        .arg(
-            Arg::new("anon_identity")
-                .long("anon-identity")
-                .short('a')
-                .conflicts_with("identity")
-                .action(ArgAction::SetTrue)
-                .help("If this flag is present, the call will be executed with no identity provided"),
-        )
+        .arg(common_args::anonymous())
         .after_help("Run `spacetime help call` for more detailed information.\n")
 }
 

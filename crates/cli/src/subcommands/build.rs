@@ -19,7 +19,6 @@ pub fn cli() -> clap::Command {
                 .long("skip_clippy")
                 .short('S')
                 .action(SetTrue)
-                .env("SPACETIME_SKIP_CLIPPY")
                 .value_parser(clap::builder::FalseyValueParser::new())
                 .help("Skips running clippy on the module before building (intended to speed up local iteration, not recommended for CI)"),
         )

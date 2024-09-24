@@ -36,14 +36,14 @@ const INDENT: &str = "\t";
 pub fn cli() -> clap::Command {
     clap::Command::new("generate")
         .about("Generate client files for a spacetime module.")
-        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --wasm-file <PATH>]")
+        .override_usage("spacetime generate --lang <LANG> --out-dir <DIR> [--project-path <DIR> | --bin-path <PATH>]")
         .arg(
             Arg::new("wasm_file")
                 .value_parser(clap::value_parser!(PathBuf))
-                .long("wasm-file")
-                .short('w')
+                .long("bin-path")
+                .short('b')
                 .group("source")
-                .help("The system path (absolute or relative) to the wasm file we should inspect"),
+                .help("The system path (absolute or relative) to the compiled wasm binary we should inspect"),
         )
         .arg(
             Arg::new("project_path")
@@ -92,7 +92,6 @@ pub fn cli() -> clap::Command {
                 .short('s')
                 .short('S')
                 .action(SetTrue)
-                .env("SPACETIME_SKIP_CLIPPY")
                 .value_parser(clap::builder::FalseyValueParser::new())
                 .help(
                     "Skips running clippy on the module before generating \
@@ -141,7 +140,7 @@ pub fn exec(_config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
     } else {
         let wasm_path = if !project_path.is_dir() && project_path.extension().map_or(false, |ext| ext == "wasm") {
             println!("Note: Using --project-path to provide a wasm file is deprecated, and will be");
-            println!("removed in a future release. Please use --wasm-file instead.");
+            println!("removed in a future release. Please use --bin-path instead.");
             project_path.clone()
         } else if let Some(path) = wasm_file {
             println!("Skipping build. Instead we are inspecting {}", path.display());
