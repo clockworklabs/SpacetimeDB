@@ -71,5 +71,3 @@ public sealed class ReducerAttribute(string? name = null) : Attribute
 {
     public string? Name => name;
 }
-
-

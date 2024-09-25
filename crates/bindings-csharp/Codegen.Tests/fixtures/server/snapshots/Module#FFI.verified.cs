@@ -8,7 +8,16 @@ using System.Runtime.InteropServices;
 
 namespace SpacetimeDB
 {
-    public sealed record ReducerContext : BaseReducerContext<Local> { }
+    public sealed record ReducerContext : BaseReducerContext<Local>
+    {
+        internal ReducerContext(
+            Identity identity,
+            Address? address,
+            Random random,
+            DateTimeOffset time
+        )
+            : base(identity, address, random, time) { }
+    }
 
     namespace Internal.TableHandles
     {
@@ -444,7 +453,10 @@ static class ModuleRegistration
 #endif
     public static void Main()
     {
-        SpacetimeDB.Internal.Module.Initialize(new SpacetimeDB.ReducerContext());
+        SpacetimeDB.Internal.Module.Initialize(
+            (identity, address, random, time) =>
+                new SpacetimeDB.ReducerContext(identity, address, random, time)
+        );
 
         SpacetimeDB.Internal.Module.RegisterReducer<Init>();
         SpacetimeDB.Internal.Module.RegisterReducer<InsertData>();

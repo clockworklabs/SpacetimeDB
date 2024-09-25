@@ -3,5 +3,6 @@
 public abstract record DbContext<DbView>(DbView Db)
     where DbView : class, new()
 {
-    public DbContext() : this(new DbView()) { }
+    public DbContext()
+        : this(new DbView()) { }
 }

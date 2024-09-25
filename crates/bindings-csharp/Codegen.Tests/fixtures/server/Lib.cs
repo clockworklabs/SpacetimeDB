@@ -134,9 +134,12 @@ public static partial class Timers
     [SpacetimeDB.Reducer(ReducerKind.Init)]
     public static void Init(ReducerContext ctx)
     {
-        ctx.Db.SendMessageTimer.Insert(new SendMessageTimer {
-            Text = "bot sending a message",
-            ScheduledAt = ctx.Time.AddSeconds(10),
-        });
+        ctx.Db.SendMessageTimer.Insert(
+            new SendMessageTimer
+            {
+                Text = "bot sending a message",
+                ScheduledAt = ctx.Time.AddSeconds(10),
+            }
+        );
     }
 }

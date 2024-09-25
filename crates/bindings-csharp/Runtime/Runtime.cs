@@ -61,18 +61,21 @@ public abstract partial record ScheduleAt
 public abstract record BaseReducerContext<DbView> : DbContext<DbView>, IReducerContext
     where DbView : class, new()
 {
-    public Identity Sender => Runtime.SenderIdentity!;
-    public Address Address => Runtime.SenderAddress!;
-    public DateTimeOffset Time => Runtime.Time!;
-}
+    public readonly Identity Sender;
+    public readonly Address? Address;
+    public readonly Random Random;
+    public readonly DateTimeOffset Time;
 
-public static class Runtime
-{
-    public static Random Random { get; internal set; } = new();
-
-    public static Identity? SenderIdentity { get; internal set; }
-
-    public static Address? SenderAddress { get; internal set; }
-
-    public static DateTimeOffset Time { get; internal set; }
+    protected BaseReducerContext(
+        Identity sender,
+        Address? address,
+        Random random,
+        DateTimeOffset time
+    )
+    {
+        Sender = sender;
+        Address = address;
+        Random = random;
+        Time = time;
+    }
 }

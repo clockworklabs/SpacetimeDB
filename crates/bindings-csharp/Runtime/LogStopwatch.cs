@@ -1,4 +1,5 @@
 ﻿namespace SpacetimeDB;
+
 using System.Text;
 using SpacetimeDB.Internal;
 

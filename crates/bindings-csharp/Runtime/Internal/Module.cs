@@ -12,8 +12,7 @@ partial class RawConstraintDefV8
             ConstraintName: $"ct_{tableName}_{colName}_{attrs}",
             Constraints: (byte)attrs,
             Columns: [colIndex]
-        )
-    { }
+        ) { }
 }
 
 partial class RawModuleDefV8
@@ -54,9 +53,12 @@ public static class Module
     private static readonly RawModuleDefV8 moduleDef = new();
     private static readonly List<IReducer> reducers = [];
 
-    private static IReducerContext? context = null;
+    private static Func<Identity, Address?, Random, DateTimeOffset, IReducerContext>? newContext =
+        null;
 
-    public static void Initialize(IReducerContext ctx) => context = ctx;
+    public static void Initialize(
+        Func<Identity, Address?, Random, DateTimeOffset, IReducerContext> ctor
+    ) => newContext = ctor;
 
     readonly struct TypeRegistrar() : ITypeRegistrar
     {
@@ -190,22 +192,22 @@ public static class Module
         BytesSink error
     )
     {
-        // Piece together the sender identity.
-        Runtime.SenderIdentity = Identity.From(
-            MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
-        );
-
-        // Piece together the sender address.
-        Runtime.SenderAddress = Address.From(MemoryMarshal.AsBytes([address_0, address_1]).ToArray());
-
-        Runtime.Random = new((int)timestamp.MicrosecondsSinceEpoch);
-        Runtime.Time = timestamp.ToStd();
-
         try
         {
+            var senderIdentity = Identity.From(
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+            );
+            var senderAddress = Address.From(
+                MemoryMarshal.AsBytes([address_0, address_1]).ToArray()
+            );
+            var random = new Random((int)timestamp.MicrosecondsSinceEpoch);
+            var time = timestamp.ToStd();
+
+            var ctx = newContext!(senderIdentity, senderAddress, random, time);
+
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            reducers[(int)id].Invoke(reader, context!);
+            reducers[(int)id].Invoke(reader, ctx);
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the reducer arguments");
