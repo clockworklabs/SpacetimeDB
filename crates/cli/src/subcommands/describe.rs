@@ -23,8 +23,6 @@ pub fn cli() -> clap::Command {
                 .requires("entity_type")
                 .help("The name of the entity to describe"),
         )
-        .arg(Arg::new("brief").long("brief").short('b').action(SetTrue)
-            .help("If this flag is present, a brief description shall be returned"))
         .arg(
             common_args::identity()
                 .conflicts_with("anon_identity")
