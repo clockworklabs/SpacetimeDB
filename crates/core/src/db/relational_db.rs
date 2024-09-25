@@ -61,7 +61,10 @@ pub type DiskSizeFn = Arc<dyn Fn() -> io::Result<u64> + Send + Sync>;
 
 pub type Txdata = commitlog::payload::Txdata<ProductValue>;
 
-/// The only version modules can have at the moment.
+/// We've added a module version field to the system tables, but we don't yet
+/// have the infrastructure to support multiple versions.
+/// All modules are currently locked to this version, but this will be
+/// relaxed post 1.0.
 pub const ONLY_MODULE_VERSION: &str = "0.0.1";
 
 /// The set of clients considered connected to the database.
