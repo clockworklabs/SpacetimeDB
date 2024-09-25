@@ -779,6 +779,19 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
     ///
     /// Before calling this method, make sure to invoke at least [`Self::with_uri`] and [`Self::with_module_name`]
     /// to configure the connection.
+    #[must_use = "
+You must explicitly advance the connection by calling any one of:
+
+- `DbConnection::frame_tick`.
+- `DbConnection::run_threaded`.
+- `DbConnection::run_async`.
+- `DbConnection::advance_one_message`.
+- `DbConnection::advance_one_message_blocking`.
+- `DbConnection::advance_one_message_async`.
+
+Which of these methods you should call depends on the specific needs of your application,
+but you must call one of them, or else the connection will never progress.
+"]
     pub fn build(self) -> Result<M::DbConnection> {
         let imp = self.build_impl()?;
         Ok(<M::DbConnection as DbConnection>::new(imp))

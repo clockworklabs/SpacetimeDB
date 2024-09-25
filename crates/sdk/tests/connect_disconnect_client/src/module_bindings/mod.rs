@@ -167,19 +167,6 @@ impl __sdk::spacetime_module::InModule for RemoteTables {
 ///
 /// Which of these methods you should call depends on the specific needs of your application,
 /// but you must call one of them, or else the connection will never progress.
-#[must_use = "
-You must explicitly advance the connection by calling any one of:
-
-- `DbConnection::frame_tick`.
-- `DbConnection::run_threaded`.
-- `DbConnection::run_async`.
-- `DbConnection::advance_one_message`.
-- `DbConnection::advance_one_message_blocking`.
-- `DbConnection::advance_one_message_async`.
-
-Which of these methods you should call depends on the specific needs of your application,
-but you must call one of them, or else the connection will never progress.
-"]
 pub struct DbConnection {
     /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
     pub db: RemoteTables,
