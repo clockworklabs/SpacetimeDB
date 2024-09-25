@@ -29,7 +29,7 @@ static partial class Module
 {
     [Reducer]
     public static void AddUser(ReducerContext ctx, string name) {
-        Runtime.Log($"Hello, {name}");
+        Log.Info($"Hello, {name}");
 
         ctx.Db.User.Insert(new User() {
             Id = ulong.MaxValue,
@@ -44,7 +44,7 @@ static partial class Module
         Runtime.Log("Hello All");
         foreach (var user in ctx.Db.User.Iter())
         {
-            Runtime.Log($"Hello, {user.Name}!");
+            Log.Info($"Hello, {user.Name}!");
         }
     }
 }
