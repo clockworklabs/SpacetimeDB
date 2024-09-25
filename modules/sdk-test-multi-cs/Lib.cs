@@ -12,7 +12,7 @@ partial struct User {
     public string Name;
 }
 
-[Table(Name = "MyTable1", Public = true, Index = "Name")]
+[Table(Name = "MyTable1", Public = true)]
 [Table(Name = "MyTable2")]
 partial struct MyTable {
     public string Name;
@@ -31,12 +31,11 @@ static partial class Module
     public static void AddUser(ReducerContext ctx, string name) {
         Runtime.Log($"Hello, {name}");
 
-        var user = new User() {
+        ctx.Db.User.Insert(new User() {
             Id = ulong.MaxValue,
             Owner = ctx.Sender,
             Name = name,
-        };
-        ctx.Db.User.Insert(ref user);
+        });
     }
 
     [Reducer]

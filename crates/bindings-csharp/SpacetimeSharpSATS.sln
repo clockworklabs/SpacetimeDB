@@ -18,6 +18,14 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "config", "config", "{12907A
 		.editorconfig = .editorconfig
 	EndProjectSection
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "sdk-test-connect-disconnect-cs", "..\..\modules\sdk-test-connect-disconnect-cs\sdk-test-connect-disconnect-cs.csproj", "{5393711C-44B0-4752-B8D0-852C73D6866F}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "sdk-test-cs", "..\..\modules\sdk-test-cs\sdk-test-cs.csproj", "{40F1C615-EDD9-463F-A012-B232F6710FA5}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "spacetimedb-quickstart-server-cs", "..\..\modules\spacetimedb-quickstart-cs\spacetimedb-quickstart-server-cs.csproj", "{FDACD960-168E-44F9-B036-2E29EA391BE7}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "sdk-test-multi-cs", "..\..\modules\sdk-test-multi-cs\sdk-test-multi-cs.csproj", "{960384A9-D78F-4C07-986A-1D1F3846AEBE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -44,6 +52,22 @@ Global
 		{2C282EBD-8E37-4F4C-8EE1-E91E21E75FEE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2C282EBD-8E37-4F4C-8EE1-E91E21E75FEE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2C282EBD-8E37-4F4C-8EE1-E91E21E75FEE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5393711C-44B0-4752-B8D0-852C73D6866F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5393711C-44B0-4752-B8D0-852C73D6866F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5393711C-44B0-4752-B8D0-852C73D6866F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5393711C-44B0-4752-B8D0-852C73D6866F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{40F1C615-EDD9-463F-A012-B232F6710FA5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{40F1C615-EDD9-463F-A012-B232F6710FA5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{40F1C615-EDD9-463F-A012-B232F6710FA5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{40F1C615-EDD9-463F-A012-B232F6710FA5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FDACD960-168E-44F9-B036-2E29EA391BE7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FDACD960-168E-44F9-B036-2E29EA391BE7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FDACD960-168E-44F9-B036-2E29EA391BE7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FDACD960-168E-44F9-B036-2E29EA391BE7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{960384A9-D78F-4C07-986A-1D1F3846AEBE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{960384A9-D78F-4C07-986A-1D1F3846AEBE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{960384A9-D78F-4C07-986A-1D1F3846AEBE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{960384A9-D78F-4C07-986A-1D1F3846AEBE}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

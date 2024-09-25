@@ -16,8 +16,7 @@ static partial class Module
     [Reducer("add")]
     public static void Add(ReducerContext ctx, string name, byte age)
     {
-        var row = new Person { Name = name, Age = age };
-        ctx.Db.Person.Insert(ref row);
+        ctx.Db.Person.Insert(new Person { Name = name, Age = age });
     }
 
     [Reducer("say_hello")]

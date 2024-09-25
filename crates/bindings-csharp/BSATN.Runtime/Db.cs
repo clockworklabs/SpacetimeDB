@@ -1,6 +1,6 @@
 ﻿namespace SpacetimeDB;
 
-public abstract class DbContext<DbView>
+public abstract record DbContext<DbView>
     where DbView : class, new()
 {
     public readonly DbView Db;

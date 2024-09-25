@@ -8,17 +8,20 @@ using System.Runtime.InteropServices;
 
 namespace SpacetimeDB
 {
-    public sealed class ReducerContext : BaseReducerContext<Local> { }
+    public sealed record ReducerContext : BaseReducerContext<Local> { }
 
     namespace Internal.TableHandles
     {
         public readonly struct PrivateTable
             : SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>
         {
-            static void SpacetimeDB.Internal.ITableView<
+            static global::PrivateTable SpacetimeDB.Internal.ITableView<
                 PrivateTable,
                 global::PrivateTable
-            >.ReadGenFields(System.IO.BinaryReader reader, ref global::PrivateTable row) { }
+            >.ReadGenFields(System.IO.BinaryReader reader, global::PrivateTable row)
+            {
+                return row;
+            }
 
             public IEnumerable<global::PrivateTable> Iter() =>
                 SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.Iter();
@@ -30,22 +33,23 @@ namespace SpacetimeDB
                     predicate
                 );
 
-            public void Insert(ref global::PrivateTable row) =>
-                SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.Insert(ref row);
+            public void Insert(global::PrivateTable row) =>
+                SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.Insert(row);
         }
 
         public readonly struct PublicTable
             : SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>
         {
-            static void SpacetimeDB.Internal.ITableView<
+            static global::PublicTable SpacetimeDB.Internal.ITableView<
                 PublicTable,
                 global::PublicTable
-            >.ReadGenFields(System.IO.BinaryReader reader, ref global::PublicTable row)
+            >.ReadGenFields(System.IO.BinaryReader reader, global::PublicTable row)
             {
                 if (row.Id == default)
                 {
                     row.Id = global::PublicTable.BSATN.Id.Read(reader);
                 }
+                return row;
             }
 
             public IEnumerable<global::PublicTable> Iter() =>
@@ -55,8 +59,8 @@ namespace SpacetimeDB
                 System.Linq.Expressions.Expression<Func<global::PublicTable, bool>> predicate
             ) => SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.Query(predicate);
 
-            public void Insert(ref global::PublicTable row) =>
-                SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.Insert(ref row);
+            public void Insert(global::PublicTable row) =>
+                SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.Insert(row);
 
             public IEnumerable<global::PublicTable> FilterById(int Id) =>
                 SpacetimeDB
@@ -79,14 +83,14 @@ namespace SpacetimeDB
                     )
                     .Delete();
 
-            public bool UpdateById(int Id, ref global::PublicTable @this) =>
+            public bool UpdateById(int Id, global::PublicTable @this) =>
                 SpacetimeDB
                     .Internal.ITableView<PublicTable, global::PublicTable>.ColEq.Where(
                         0,
                         Id,
                         global::PublicTable.BSATN.Id
                     )
-                    .Update(ref @this);
+                    .Update(@this);
 
             public IEnumerable<global::PublicTable> FilterByByteField(byte ByteField) =>
                 SpacetimeDB
@@ -262,10 +266,10 @@ namespace SpacetimeDB
         public readonly struct SendMessageTimer
             : SpacetimeDB.Internal.ITableView<SendMessageTimer, global::Timers.SendMessageTimer>
         {
-            static void SpacetimeDB.Internal.ITableView<
+            static global::Timers.SendMessageTimer SpacetimeDB.Internal.ITableView<
                 SendMessageTimer,
                 global::Timers.SendMessageTimer
-            >.ReadGenFields(System.IO.BinaryReader reader, ref global::Timers.SendMessageTimer row)
+            >.ReadGenFields(System.IO.BinaryReader reader, global::Timers.SendMessageTimer row)
             {
                 if (row.ScheduledId == default)
                 {
@@ -273,6 +277,7 @@ namespace SpacetimeDB
                         reader
                     );
                 }
+                return row;
             }
 
             public IEnumerable<global::Timers.SendMessageTimer> Iter() =>
@@ -291,11 +296,11 @@ namespace SpacetimeDB
                     global::Timers.SendMessageTimer
                 >.Query(predicate);
 
-            public void Insert(ref global::Timers.SendMessageTimer row) =>
+            public void Insert(global::Timers.SendMessageTimer row) =>
                 SpacetimeDB.Internal.ITableView<
                     SendMessageTimer,
                     global::Timers.SendMessageTimer
-                >.Insert(ref row);
+                >.Insert(row);
 
             public IEnumerable<global::Timers.SendMessageTimer> FilterByText(string Text) =>
                 SpacetimeDB
@@ -330,14 +335,14 @@ namespace SpacetimeDB
 
             public bool UpdateByScheduledId(
                 ulong ScheduledId,
-                ref global::Timers.SendMessageTimer @this
+                global::Timers.SendMessageTimer @this
             ) =>
                 SpacetimeDB
                     .Internal.ITableView<
                         SendMessageTimer,
                         global::Timers.SendMessageTimer
                     >.ColEq.Where(1, ScheduledId, global::Timers.SendMessageTimer.BSATN.ScheduledId)
-                    .Update(ref @this);
+                    .Update(@this);
         }
     }
 

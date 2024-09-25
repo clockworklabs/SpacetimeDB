@@ -21,8 +21,7 @@ record ColumnDeclaration : MemberDeclaration
     )
         : base(name, type, typeInfo)
     {
-        (string?, ColumnAttrs)[] x = [(default(string), attrs)];
-        Attrs = new(x.ToImmutableArray());
+        Attrs = new(ImmutableArray.Create((default(string), attrs)));
         IsEquatable = isEquatable;
         FullTableName = tableName;
     }
@@ -34,8 +33,8 @@ record ColumnDeclaration : MemberDeclaration
 
         Attrs = new(field
             .GetAttributes()
-            .Select(a => (a.NamedArguments.FirstOrDefault(a => a.Key == "Table").Value.Value as string,
-                a.AttributeClass?.ToString() switch
+            .Select(a => (table: a.NamedArguments.FirstOrDefault(a => a.Key == "Table").Value.Value as string,
+                attr: a.AttributeClass?.ToString() switch
                 {
                     "SpacetimeDB.AutoIncAttribute" => ColumnAttrs.AutoInc,
                     "SpacetimeDB.PrimaryKeyAttribute" => ColumnAttrs.PrimaryKey,
@@ -43,6 +42,7 @@ record ColumnDeclaration : MemberDeclaration
                     "SpacetimeDB.IndexedAttribute" => ColumnAttrs.Indexed,
                     _ => ColumnAttrs.UnSet,
                 }))
+            .Where(a => a.attr != ColumnAttrs.UnSet)
             .ToImmutableArray());
 
         var type = field.Type;
@@ -169,7 +169,6 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         };
 
         Views = new(context.Attributes
-            .Where(a => a.AttributeClass?.ToDisplayString() == "SpacetimeDB.TableAttribute")
             .Select(a => new TableView(this, a))
             .ToImmutableArray());
 
@@ -223,8 +222,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     public bool DeleteBy{f.Name}({f.Type} {f.Name}) =>
                         {colEqWhere}.Delete();
 
-                    public bool UpdateBy{f.Name}({f.Type} {f.Name}, ref {globalName} @this) =>
-                        {colEqWhere}.Update(ref @this);
+                    public bool UpdateBy{f.Name}({f.Type} {f.Name}, {globalName} @this) =>
+                        {colEqWhere}.Update(@this);
                     """;
             }
         }
@@ -242,7 +241,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             var iTable = $"SpacetimeDB.Internal.ITableView<{v.Name}, {globalName}>";
             yield return new((v.Name, globalName), ($$"""
             {{Visibility}} readonly struct {{v.Name}} : {{iTable}} {
-                static void {{iTable}}.ReadGenFields(System.IO.BinaryReader reader, ref {{globalName}} row) {
+                static {{globalName}} {{iTable}}.ReadGenFields(System.IO.BinaryReader reader, {{globalName}} row) {
                     {{string.Join(
                         "\n",
                         autoIncFields.Select(name =>
@@ -254,10 +253,11 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                             """
                         )
                     )}}
+                    return row;
                 }
                 public IEnumerable<{{globalName}}> Iter() => {{iTable}}.Iter();
                 public IEnumerable<{{globalName}}> Query(System.Linq.Expressions.Expression<Func<{{globalName}}, bool>> predicate) => {{iTable}}.Query(predicate);
-                public void Insert(ref {{globalName}} row) => {{iTable}}.Insert(ref row);
+                public void Insert({{globalName}} row) => {{iTable}}.Insert(row);
                 {{string.Join("\n", GenerateViewFilters(v.Name, iTable))}}
             }
             """, $"{Visibility} Internal.TableHandles.{v.Name} {v.Name} => new();"));
@@ -496,7 +496,7 @@ public class Module : IIncrementalGenerator
                     using System.Runtime.InteropServices;
 
                     namespace SpacetimeDB {
-                        public sealed class ReducerContext : BaseReducerContext<Local> {}
+                        public sealed record ReducerContext : BaseReducerContext<Local> {}
 
                         namespace Internal.TableHandles {
                             {{string.Join("\n", tableViews.Select(v => v.Value.view))}}

@@ -103,8 +103,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_u8(ReducerContext ctx, byte n)
     {
-        var row = new OneU8 { n = n };
-        ctx.Db.OneU8.Insert(ref row);
+        ctx.Db.OneU8.Insert(new OneU8 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -116,8 +115,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_u16(ReducerContext ctx, ushort n)
     {
-        var row = new OneU16 { n = n };
-        ctx.Db.OneU16.Insert(ref row);
+        ctx.Db.OneU16.Insert(new OneU16 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -129,8 +127,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_u32(ReducerContext ctx, uint n)
     {
-        var row = new OneU32 { n = n };
-        ctx.Db.OneU32.Insert(ref row);
+        ctx.Db.OneU32.Insert(new OneU32 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -142,8 +139,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_u64(ReducerContext ctx, ulong n)
     {
-        var row = new OneU64 { n = n };
-        ctx.Db.OneU64.Insert(ref row);
+        ctx.Db.OneU64.Insert(new OneU64 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -155,8 +151,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_u128(ReducerContext ctx, U128 n)
     {
-        var row = new OneU128 { n = n };
-        ctx.Db.OneU128.Insert(ref row);
+        ctx.Db.OneU128.Insert(new OneU128 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -168,8 +163,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_u256(ReducerContext ctx, U256 n)
     {
-        var row = new OneU256 { n = n };
-        ctx.Db.OneU256.Insert(ref row);
+        ctx.Db.OneU256.Insert(new OneU256 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -181,8 +175,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_i8(ReducerContext ctx, sbyte n)
     {
-        var row = new OneI8 { n = n };
-        ctx.Db.OneI8.Insert(ref row);
+        ctx.Db.OneI8.Insert(new OneI8 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -194,8 +187,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_i16(ReducerContext ctx, short n)
     {
-        var row = new OneI16 { n = n };
-        ctx.Db.OneI16.Insert(ref row);
+        ctx.Db.OneI16.Insert(new OneI16 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -207,8 +199,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_i32(ReducerContext ctx, int n)
     {
-        var row = new OneI32 { n = n };
-        ctx.Db.OneI32.Insert(ref row);
+        ctx.Db.OneI32.Insert(new OneI32 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -220,8 +211,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_i64(ReducerContext ctx, long n)
     {
-        var row = new OneI64 { n = n };
-        ctx.Db.OneI64.Insert(ref row);
+        ctx.Db.OneI64.Insert(new OneI64 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -233,8 +223,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_i128(ReducerContext ctx, I128 n)
     {
-        var row = new OneI128 { n = n };
-        ctx.Db.OneI128.Insert(ref row);
+        ctx.Db.OneI128.Insert(new OneI128 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -246,8 +235,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_i256(ReducerContext ctx, I256 n)
     {
-        var row = new OneI256 { n = n };
-        ctx.Db.OneI256.Insert(ref row);
+        ctx.Db.OneI256.Insert(new OneI256 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -259,8 +247,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_bool(ReducerContext ctx, bool b)
     {
-        var row = new OneBool { b = b };
-        ctx.Db.OneBool.Insert(ref row);
+        ctx.Db.OneBool.Insert(new OneBool { b = b });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -272,8 +259,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_f32(ReducerContext ctx, float f)
     {
-        var row = new OneF32 { f = f };
-        ctx.Db.OneF32.Insert(ref row);
+        ctx.Db.OneF32.Insert(new OneF32 { f = f });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -285,8 +271,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_f64(ReducerContext ctx, double f)
     {
-        var row = new OneF64 { f = f };
-        ctx.Db.OneF64.Insert(ref row);
+        ctx.Db.OneF64.Insert(new OneF64 { f = f });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -298,8 +283,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_string(ReducerContext ctx, string s)
     {
-        var row = new OneString { s = s };
-        ctx.Db.OneString.Insert(ref row);
+        ctx.Db.OneString.Insert(new OneString { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -311,8 +295,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_identity(ReducerContext ctx, Identity i)
     {
-        var row = new OneIdentity { i = i };
-        ctx.Db.OneIdentity.Insert(ref row);
+        ctx.Db.OneIdentity.Insert(new OneIdentity { i = i });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -324,8 +307,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_address(ReducerContext ctx, Address a)
     {
-        var row = new OneAddress { a = a };
-        ctx.Db.OneAddress.Insert(ref row);
+        ctx.Db.OneAddress.Insert(new OneAddress { a = a });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -337,8 +319,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_simple_enum(ReducerContext ctx, SimpleEnum e)
     {
-        var row = new OneSimpleEnum { e = e };
-        ctx.Db.OneSimpleEnum.Insert(ref row);
+        ctx.Db.OneSimpleEnum.Insert(new OneSimpleEnum { e = e });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -350,8 +331,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_enum_with_payload(ReducerContext ctx, EnumWithPayload e)
     {
-        var row = new OneEnumWithPayload { e = e };
-        ctx.Db.OneEnumWithPayload.Insert(ref row);
+        ctx.Db.OneEnumWithPayload.Insert(new OneEnumWithPayload { e = e });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -363,8 +343,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_unit_struct(ReducerContext ctx, UnitStruct s)
     {
-        var row = new OneUnitStruct { s = s };
-        ctx.Db.OneUnitStruct.Insert(ref row);
+        ctx.Db.OneUnitStruct.Insert(new OneUnitStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -376,8 +355,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_byte_struct(ReducerContext ctx, ByteStruct s)
     {
-        var row = new OneByteStruct { s = s };
-        ctx.Db.OneByteStruct.Insert(ref row);
+        ctx.Db.OneByteStruct.Insert(new OneByteStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -389,8 +367,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_every_primitive_struct(ReducerContext ctx, EveryPrimitiveStruct s)
     {
-        var row = new OneEveryPrimitiveStruct { s = s };
-        ctx.Db.OneEveryPrimitiveStruct.Insert(ref row);
+        ctx.Db.OneEveryPrimitiveStruct.Insert(new OneEveryPrimitiveStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -402,8 +379,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_one_every_vec_struct(ReducerContext ctx, EveryVecStruct s)
     {
-        var row = new OneEveryVecStruct { s = s };
-        ctx.Db.OneEveryVecStruct.Insert(ref row);
+        ctx.Db.OneEveryVecStruct.Insert(new OneEveryVecStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -415,8 +391,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_u8(ReducerContext ctx, List<byte> n)
     {
-        var row = new VecU8 { n = n };
-        ctx.Db.VecU8.Insert(ref row);
+        ctx.Db.VecU8.Insert(new VecU8 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -428,8 +403,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_u16(ReducerContext ctx, List<ushort> n)
     {
-        var row = new VecU16 { n = n };
-        ctx.Db.VecU16.Insert(ref row);
+        ctx.Db.VecU16.Insert(new VecU16 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -441,8 +415,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_u32(ReducerContext ctx, List<uint> n)
     {
-        var row = new VecU32 { n = n };
-        ctx.Db.VecU32.Insert(ref row);
+        ctx.Db.VecU32.Insert(new VecU32 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -454,8 +427,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_u64(ReducerContext ctx, List<ulong> n)
     {
-        var row = new VecU64 { n = n };
-        ctx.Db.VecU64.Insert(ref row);
+        ctx.Db.VecU64.Insert(new VecU64 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -467,8 +439,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_u128(ReducerContext ctx, List<U128> n)
     {
-        var row = new VecU128 { n = n };
-        ctx.Db.VecU128.Insert(ref row);
+        ctx.Db.VecU128.Insert(new VecU128 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -480,8 +451,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_u256(ReducerContext ctx, List<U256> n)
     {
-        var row = new VecU256 { n = n };
-        ctx.Db.VecU256.Insert(ref row);
+        ctx.Db.VecU256.Insert(new VecU256 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -493,8 +463,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_i8(ReducerContext ctx, List<sbyte> n)
     {
-        var row = new VecI8 { n = n };
-        ctx.Db.VecI8.Insert(ref row);
+        ctx.Db.VecI8.Insert(new VecI8 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -506,8 +475,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_i16(ReducerContext ctx, List<short> n)
     {
-        var row = new VecI16 { n = n };
-        ctx.Db.VecI16.Insert(ref row);
+        ctx.Db.VecI16.Insert(new VecI16 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -519,8 +487,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_i32(ReducerContext ctx, List<int> n)
     {
-        var row = new VecI32 { n = n };
-        ctx.Db.VecI32.Insert(ref row);
+        ctx.Db.VecI32.Insert(new VecI32 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -532,8 +499,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_i64(ReducerContext ctx, List<long> n)
     {
-        var row = new VecI64 { n = n };
-        ctx.Db.VecI64.Insert(ref row);
+        ctx.Db.VecI64.Insert(new VecI64 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -545,8 +511,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_i128(ReducerContext ctx, List<I128> n)
     {
-        var row = new VecI128 { n = n };
-        ctx.Db.VecI128.Insert(ref row);
+        ctx.Db.VecI128.Insert(new VecI128 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -558,8 +523,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_i256(ReducerContext ctx, List<I256> n)
     {
-        var row = new VecI256 { n = n };
-        ctx.Db.VecI256.Insert(ref row);
+        ctx.Db.VecI256.Insert(new VecI256 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -571,8 +535,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_bool(ReducerContext ctx, List<bool> b)
     {
-        var row = new VecBool { b = b };
-        ctx.Db.VecBool.Insert(ref row);
+        ctx.Db.VecBool.Insert(new VecBool { b = b });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -584,8 +547,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_f32(ReducerContext ctx, List<float> f)
     {
-        var row = new VecF32 { f = f };
-        ctx.Db.VecF32.Insert(ref row);
+        ctx.Db.VecF32.Insert(new VecF32 { f = f });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -597,8 +559,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_f64(ReducerContext ctx, List<double> f)
     {
-        var row = new VecF64 { f = f };
-        ctx.Db.VecF64.Insert(ref row);
+        ctx.Db.VecF64.Insert(new VecF64 { f = f });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -610,8 +571,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_string(ReducerContext ctx, List<string> s)
     {
-        var row = new VecString { s = s };
-        ctx.Db.VecString.Insert(ref row);
+        ctx.Db.VecString.Insert(new VecString { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -623,8 +583,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_identity(ReducerContext ctx, List<Identity> i)
     {
-        var row = new VecIdentity { i = i };
-        ctx.Db.VecIdentity.Insert(ref row);
+        ctx.Db.VecIdentity.Insert(new VecIdentity { i = i });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -636,8 +595,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_address(ReducerContext ctx, List<Address> a)
     {
-        var row = new VecAddress { a = a };
-        ctx.Db.VecAddress.Insert(ref row);
+        ctx.Db.VecAddress.Insert(new VecAddress { a = a });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -649,8 +607,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_simple_enum(ReducerContext ctx, List<SimpleEnum> e)
     {
-        var row = new VecSimpleEnum { e = e };
-        ctx.Db.VecSimpleEnum.Insert(ref row);
+        ctx.Db.VecSimpleEnum.Insert(new VecSimpleEnum { e = e });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -662,8 +619,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_enum_with_payload(ReducerContext ctx, List<EnumWithPayload> e)
     {
-        var row = new VecEnumWithPayload { e = e };
-        ctx.Db.VecEnumWithPayload.Insert(ref row);
+        ctx.Db.VecEnumWithPayload.Insert(new VecEnumWithPayload { e = e });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -675,8 +631,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_unit_struct(ReducerContext ctx, List<UnitStruct> s)
     {
-        var row = new VecUnitStruct { s = s };
-        ctx.Db.VecUnitStruct.Insert(ref row);
+        ctx.Db.VecUnitStruct.Insert(new VecUnitStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -688,8 +643,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_byte_struct(ReducerContext ctx, List<ByteStruct> s)
     {
-        var row = new VecByteStruct { s = s };
-        ctx.Db.VecByteStruct.Insert(ref row);
+        ctx.Db.VecByteStruct.Insert(new VecByteStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -701,8 +655,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_every_primitive_struct(ReducerContext ctx, List<EveryPrimitiveStruct> s)
     {
-        var row = new VecEveryPrimitiveStruct { s = s };
-        ctx.Db.VecEveryPrimitiveStruct.Insert(ref row);
+        ctx.Db.VecEveryPrimitiveStruct.Insert(new VecEveryPrimitiveStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -714,8 +667,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_vec_every_vec_struct(ReducerContext ctx, List<EveryVecStruct> s)
     {
-        var row = new VecEveryVecStruct { s = s };
-        ctx.Db.VecEveryVecStruct.Insert(ref row);
+        ctx.Db.VecEveryVecStruct.Insert(new VecEveryVecStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -727,8 +679,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_option_i32(ReducerContext ctx, int? n)
     {
-        var row = new OptionI32 { n = n };
-        ctx.Db.OptionI32.Insert(ref row);
+        ctx.Db.OptionI32.Insert(new OptionI32 { n = n });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -740,8 +691,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_option_string(ReducerContext ctx, string? s)
     {
-        var row = new OptionString { s = s };
-        ctx.Db.OptionString.Insert(ref row);
+        ctx.Db.OptionString.Insert(new OptionString { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -753,8 +703,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_option_identity(ReducerContext ctx, Identity? i)
     {
-        var row = new OptionIdentity { i = i };
-        ctx.Db.OptionIdentity.Insert(ref row);
+        ctx.Db.OptionIdentity.Insert(new OptionIdentity { i = i });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -766,8 +715,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_option_simple_enum(ReducerContext ctx, SimpleEnum? e)
     {
-        var row = new OptionSimpleEnum { e = e };
-        ctx.Db.OptionSimpleEnum.Insert(ref row);
+        ctx.Db.OptionSimpleEnum.Insert(new OptionSimpleEnum { e = e });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -779,8 +727,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_option_every_primitive_struct(ReducerContext ctx, EveryPrimitiveStruct? s)
     {
-        var row = new OptionEveryPrimitiveStruct { s = s };
-        ctx.Db.OptionEveryPrimitiveStruct.Insert(ref row);
+        ctx.Db.OptionEveryPrimitiveStruct.Insert(new OptionEveryPrimitiveStruct { s = s });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -792,8 +739,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_option_vec_option_i32(ReducerContext ctx, List<int?>? v)
     {
-        var row = new OptionVecOptionI32 { v = v };
-        ctx.Db.OptionVecOptionI32.Insert(ref row);
+        ctx.Db.OptionVecOptionI32.Insert(new OptionVecOptionI32 { v = v });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -807,16 +753,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_unique_u8(ReducerContext ctx, byte n, int data)
     {
-        var row = new UniqueU8 { n = n, data = data };
-        ctx.Db.UniqueU8.Insert(ref row);
+        ctx.Db.UniqueU8.Insert(new UniqueU8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_unique_u8(ReducerContext ctx, byte n, int data)
     {
         var key = n;
-        var row = new UniqueU8 { n = n, data = data };
-        ctx.Db.UniqueU8.UpdateByn(key, ref row);
+        ctx.Db.UniqueU8.UpdateByn(key, new UniqueU8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -836,16 +780,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_unique_u16(ReducerContext ctx, ushort n, int data)
     {
-        var row = new UniqueU16 { n = n, data = data };
-        ctx.Db.UniqueU16.Insert(ref row);
+        ctx.Db.UniqueU16.Insert(new UniqueU16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_unique_u16(ReducerContext ctx, ushort n, int data)
     {
         var key = n;
-        var row = new UniqueU16 { n = n, data = data };
-        ctx.Db.UniqueU16.UpdateByn(key, ref row);
+        ctx.Db.UniqueU16.UpdateByn(key, new UniqueU16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -865,16 +807,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_unique_u32(ReducerContext ctx, uint n, int data)
     {
-        var row = new UniqueU32 { n = n, data = data };
-        ctx.Db.UniqueU32.Insert(ref row);
+        ctx.Db.UniqueU32.Insert(new UniqueU32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_unique_u32(ReducerContext ctx, uint n, int data)
     {
         var key = n;
-        var row = new UniqueU32 { n = n, data = data };
-        ctx.Db.UniqueU32.UpdateByn(key, ref row);
+        ctx.Db.UniqueU32.UpdateByn(key, new UniqueU32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -894,16 +834,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_unique_u64(ReducerContext ctx, ulong n, int data)
     {
-        var row = new UniqueU64 { n = n, data = data };
-        ctx.Db.UniqueU64.Insert(ref row);
+        ctx.Db.UniqueU64.Insert(new UniqueU64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_unique_u64(ReducerContext ctx, ulong n, int data)
     {
         var key = n;
-        var row = new UniqueU64 { n = n, data = data };
-        ctx.Db.UniqueU64.UpdateByn(key, ref row);
+        ctx.Db.UniqueU64.UpdateByn(key, new UniqueU64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -923,16 +861,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_unique_u128(ReducerContext ctx, U128 n, int data)
     {
-        var row = new UniqueU128 { n = n, data = data };
-        ctx.Db.UniqueU128.Insert(ref row);
+        ctx.Db.UniqueU128.Insert(new UniqueU128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_unique_u128(ReducerContext ctx, U128 n, int data)
     {
         var key = n;
-        var row = new UniqueU128 { n = n, data = data };
-        ctx.Db.UniqueU128.UpdateByn(key, ref row);
+        ctx.Db.UniqueU128.UpdateByn(key, new UniqueU128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -952,16 +888,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_unique_u256(ReducerContext ctx, U256 n, int data)
     {
-        var row = new UniqueU256 { n = n, data = data };
-        ctx.Db.UniqueU256.Insert(ref row);
+        ctx.Db.UniqueU256.Insert(new UniqueU256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_unique_u256(ReducerContext ctx, U256 n, int data)
     {
         var key = n;
-        var row = new UniqueU256 { n = n, data = data };
-        ctx.Db.UniqueU256.UpdateByn(key, ref row);
+        ctx.Db.UniqueU256.UpdateByn(key, new UniqueU256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -981,16 +915,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_unique_i8(ReducerContext ctx, sbyte n, int data)
     {
-        var row = new UniqueI8 { n = n, data = data };
-        ctx.Db.UniqueI8.Insert(ref row);
+        ctx.Db.UniqueI8.Insert(new UniqueI8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_unique_i8(ReducerContext ctx, sbyte n, int data)
     {
         var key = n;
-        var row = new UniqueI8 { n = n, data = data };
-        ctx.Db.UniqueI8.UpdateByn(key, ref row);
+        ctx.Db.UniqueI8.UpdateByn(key, new UniqueI8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1010,16 +942,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_unique_i16(ReducerContext ctx, short n, int data)
     {
-        var row = new UniqueI16 { n = n, data = data };
-        ctx.Db.UniqueI16.Insert(ref row);
+        ctx.Db.UniqueI16.Insert(new UniqueI16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_unique_i16(ReducerContext ctx, short n, int data)
     {
         var key = n;
-        var row = new UniqueI16 { n = n, data = data };
-        ctx.Db.UniqueI16.UpdateByn(key, ref row);
+        ctx.Db.UniqueI16.UpdateByn(key, new UniqueI16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1039,16 +969,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_unique_i32(ReducerContext ctx, int n, int data)
     {
-        var row = new UniqueI32 { n = n, data = data };
-        ctx.Db.UniqueI32.Insert(ref row);
+        ctx.Db.UniqueI32.Insert(new UniqueI32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_unique_i32(ReducerContext ctx, int n, int data)
     {
         var key = n;
-        var row = new UniqueI32 { n = n, data = data };
-        ctx.Db.UniqueI32.UpdateByn(key, ref row);
+        ctx.Db.UniqueI32.UpdateByn(key, new UniqueI32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1068,16 +996,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_unique_i64(ReducerContext ctx, long n, int data)
     {
-        var row = new UniqueI64 { n = n, data = data };
-        ctx.Db.UniqueI64.Insert(ref row);
+        ctx.Db.UniqueI64.Insert(new UniqueI64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_unique_i64(ReducerContext ctx, long n, int data)
     {
         var key = n;
-        var row = new UniqueI64 { n = n, data = data };
-        ctx.Db.UniqueI64.UpdateByn(key, ref row);
+        ctx.Db.UniqueI64.UpdateByn(key, new UniqueI64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1097,16 +1023,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_unique_i128(ReducerContext ctx, I128 n, int data)
     {
-        var row = new UniqueI128 { n = n, data = data };
-        ctx.Db.UniqueI128.Insert(ref row);
+        ctx.Db.UniqueI128.Insert(new UniqueI128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_unique_i128(ReducerContext ctx, I128 n, int data)
     {
         var key = n;
-        var row = new UniqueI128 { n = n, data = data };
-        ctx.Db.UniqueI128.UpdateByn(key, ref row);
+        ctx.Db.UniqueI128.UpdateByn(key, new UniqueI128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1126,16 +1050,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_unique_i256(ReducerContext ctx, I256 n, int data)
     {
-        var row = new UniqueI256 { n = n, data = data };
-        ctx.Db.UniqueI256.Insert(ref row);
+        ctx.Db.UniqueI256.Insert(new UniqueI256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_unique_i256(ReducerContext ctx, I256 n, int data)
     {
         var key = n;
-        var row = new UniqueI256 { n = n, data = data };
-        ctx.Db.UniqueI256.UpdateByn(key, ref row);
+        ctx.Db.UniqueI256.UpdateByn(key, new UniqueI256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1155,16 +1077,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_unique_bool(ReducerContext ctx, bool b, int data)
     {
-        var row = new UniqueBool { b = b, data = data };
-        ctx.Db.UniqueBool.Insert(ref row);
+        ctx.Db.UniqueBool.Insert(new UniqueBool { b = b, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_unique_bool(ReducerContext ctx, bool b, int data)
     {
         var key = b;
-        var row = new UniqueBool { b = b, data = data };
-        ctx.Db.UniqueBool.UpdateByb(key, ref row);
+        ctx.Db.UniqueBool.UpdateByb(key, new UniqueBool { b = b, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1184,16 +1104,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_unique_string(ReducerContext ctx, string s, int data)
     {
-        var row = new UniqueString { s = s, data = data };
-        ctx.Db.UniqueString.Insert(ref row);
+        ctx.Db.UniqueString.Insert(new UniqueString { s = s, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_unique_string(ReducerContext ctx, string s, int data)
     {
         var key = s;
-        var row = new UniqueString { s = s, data = data };
-        ctx.Db.UniqueString.UpdateBys(key, ref row);
+        ctx.Db.UniqueString.UpdateBys(key, new UniqueString { s = s, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1213,16 +1131,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_unique_identity(ReducerContext ctx, Identity i, int data)
     {
-        var row = new UniqueIdentity { i = i, data = data };
-        ctx.Db.UniqueIdentity.Insert(ref row);
+        ctx.Db.UniqueIdentity.Insert(new UniqueIdentity { i = i, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_unique_identity(ReducerContext ctx, Identity i, int data)
     {
         var key = i;
-        var row = new UniqueIdentity { i = i, data = data };
-        ctx.Db.UniqueIdentity.UpdateByi(key, ref row);
+        ctx.Db.UniqueIdentity.UpdateByi(key, new UniqueIdentity { i = i, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1242,16 +1158,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_unique_address(ReducerContext ctx, Address a, int data)
     {
-        var row = new UniqueAddress { a = a, data = data };
-        ctx.Db.UniqueAddress.Insert(ref row);
+        ctx.Db.UniqueAddress.Insert(new UniqueAddress { a = a, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_unique_address(ReducerContext ctx, Address a, int data)
     {
         var key = a;
-        var row = new UniqueAddress { a = a, data = data };
-        ctx.Db.UniqueAddress.UpdateBya(key, ref row);
+        ctx.Db.UniqueAddress.UpdateBya(key, new UniqueAddress { a = a, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1271,16 +1185,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_pk_u8(ReducerContext ctx, byte n, int data)
     {
-        var row = new PkU8 { n = n, data = data };
-        ctx.Db.PkU8.Insert(ref row);
+        ctx.Db.PkU8.Insert(new PkU8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_pk_u8(ReducerContext ctx, byte n, int data)
     {
         var key = n;
-        var row = new PkU8 { n = n, data = data };
-        ctx.Db.PkU8.UpdateByn(key, ref row);
+        ctx.Db.PkU8.UpdateByn(key, new PkU8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1300,16 +1212,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_pk_u16(ReducerContext ctx, ushort n, int data)
     {
-        var row = new PkU16 { n = n, data = data };
-        ctx.Db.PkU16.Insert(ref row);
+        ctx.Db.PkU16.Insert(new PkU16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_pk_u16(ReducerContext ctx, ushort n, int data)
     {
         var key = n;
-        var row = new PkU16 { n = n, data = data };
-        ctx.Db.PkU16.UpdateByn(key, ref row);
+        ctx.Db.PkU16.UpdateByn(key, new PkU16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1329,16 +1239,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_pk_u32(ReducerContext ctx, uint n, int data)
     {
-        var row = new PkU32 { n = n, data = data };
-        ctx.Db.PkU32.Insert(ref row);
+        ctx.Db.PkU32.Insert(new PkU32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_pk_u32(ReducerContext ctx, uint n, int data)
     {
         var key = n;
-        var row = new PkU32 { n = n, data = data };
-        ctx.Db.PkU32.UpdateByn(key, ref row);
+        ctx.Db.PkU32.UpdateByn(key, new PkU32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1358,16 +1266,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_pk_u64(ReducerContext ctx, ulong n, int data)
     {
-        var row = new PkU64 { n = n, data = data };
-        ctx.Db.PkU64.Insert(ref row);
+        ctx.Db.PkU64.Insert(new PkU64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_pk_u64(ReducerContext ctx, ulong n, int data)
     {
         var key = n;
-        var row = new PkU64 { n = n, data = data };
-        ctx.Db.PkU64.UpdateByn(key, ref row);
+        ctx.Db.PkU64.UpdateByn(key, new PkU64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1387,16 +1293,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_pk_u128(ReducerContext ctx, U128 n, int data)
     {
-        var row = new PkU128 { n = n, data = data };
-        ctx.Db.PkU128.Insert(ref row);
+        ctx.Db.PkU128.Insert(new PkU128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_pk_u128(ReducerContext ctx, U128 n, int data)
     {
         var key = n;
-        var row = new PkU128 { n = n, data = data };
-        ctx.Db.PkU128.UpdateByn(key, ref row);
+        ctx.Db.PkU128.UpdateByn(key, new PkU128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1416,16 +1320,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_pk_u256(ReducerContext ctx, U256 n, int data)
     {
-        var row = new PkU256 { n = n, data = data };
-        ctx.Db.PkU256.Insert(ref row);
+        ctx.Db.PkU256.Insert(new PkU256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_pk_u256(ReducerContext ctx, U256 n, int data)
     {
         var key = n;
-        var row = new PkU256 { n = n, data = data };
-        ctx.Db.PkU256.UpdateByn(key, ref row);
+        ctx.Db.PkU256.UpdateByn(key, new PkU256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1445,16 +1347,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_pk_i8(ReducerContext ctx, sbyte n, int data)
     {
-        var row = new PkI8 { n = n, data = data };
-        ctx.Db.PkI8.Insert(ref row);
+        ctx.Db.PkI8.Insert(new PkI8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_pk_i8(ReducerContext ctx, sbyte n, int data)
     {
         var key = n;
-        var row = new PkI8 { n = n, data = data };
-        ctx.Db.PkI8.UpdateByn(key, ref row);
+        ctx.Db.PkI8.UpdateByn(key, new PkI8 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1474,16 +1374,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_pk_i16(ReducerContext ctx, short n, int data)
     {
-        var row = new PkI16 { n = n, data = data };
-        ctx.Db.PkI16.Insert(ref row);
+        ctx.Db.PkI16.Insert(new PkI16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_pk_i16(ReducerContext ctx, short n, int data)
     {
         var key = n;
-        var row = new PkI16 { n = n, data = data };
-        ctx.Db.PkI16.UpdateByn(key, ref row);
+        ctx.Db.PkI16.UpdateByn(key, new PkI16 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1503,16 +1401,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_pk_i32(ReducerContext ctx, int n, int data)
     {
-        var row = new PkI32 { n = n, data = data };
-        ctx.Db.PkI32.Insert(ref row);
+        ctx.Db.PkI32.Insert(new PkI32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_pk_i32(ReducerContext ctx, int n, int data)
     {
         var key = n;
-        var row = new PkI32 { n = n, data = data };
-        ctx.Db.PkI32.UpdateByn(key, ref row);
+        ctx.Db.PkI32.UpdateByn(key, new PkI32 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1532,16 +1428,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_pk_i64(ReducerContext ctx, long n, int data)
     {
-        var row = new PkI64 { n = n, data = data };
-        ctx.Db.PkI64.Insert(ref row);
+        ctx.Db.PkI64.Insert(new PkI64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_pk_i64(ReducerContext ctx, long n, int data)
     {
         var key = n;
-        var row = new PkI64 { n = n, data = data };
-        ctx.Db.PkI64.UpdateByn(key, ref row);
+        ctx.Db.PkI64.UpdateByn(key, new PkI64 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1561,16 +1455,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_pk_i128(ReducerContext ctx, I128 n, int data)
     {
-        var row = new PkI128 { n = n, data = data };
-        ctx.Db.PkI128.Insert(ref row);
+        ctx.Db.PkI128.Insert(new PkI128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_pk_i128(ReducerContext ctx, I128 n, int data)
     {
         var key = n;
-        var row = new PkI128 { n = n, data = data };
-        ctx.Db.PkI128.UpdateByn(key, ref row);
+        ctx.Db.PkI128.UpdateByn(key, new PkI128 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1590,16 +1482,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_pk_i256(ReducerContext ctx, I256 n, int data)
     {
-        var row = new PkI256 { n = n, data = data };
-        ctx.Db.PkI256.Insert(ref row);
+        ctx.Db.PkI256.Insert(new PkI256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_pk_i256(ReducerContext ctx, I256 n, int data)
     {
         var key = n;
-        var row = new PkI256 { n = n, data = data };
-        ctx.Db.PkI256.UpdateByn(key, ref row);
+        ctx.Db.PkI256.UpdateByn(key, new PkI256 { n = n, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1619,16 +1509,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_pk_bool(ReducerContext ctx, bool b, int data)
     {
-        var row = new PkBool { b = b, data = data };
-        ctx.Db.PkBool.Insert(ref row);
+        ctx.Db.PkBool.Insert(new PkBool { b = b, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_pk_bool(ReducerContext ctx, bool b, int data)
     {
         var key = b;
-        var row = new PkBool { b = b, data = data };
-        ctx.Db.PkBool.UpdateByb(key, ref row);
+        ctx.Db.PkBool.UpdateByb(key, new PkBool { b = b, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1648,16 +1536,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_pk_string(ReducerContext ctx, string s, int data)
     {
-        var row = new PkString { s = s, data = data };
-        ctx.Db.PkString.Insert(ref row);
+        ctx.Db.PkString.Insert(new PkString { s = s, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_pk_string(ReducerContext ctx, string s, int data)
     {
         var key = s;
-        var row = new PkString { s = s, data = data };
-        ctx.Db.PkString.UpdateBys(key, ref row);
+        ctx.Db.PkString.UpdateBys(key, new PkString { s = s, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1677,16 +1563,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_pk_identity(ReducerContext ctx, Identity i, int data)
     {
-        var row = new PkIdentity { i = i, data = data };
-        ctx.Db.PkIdentity.Insert(ref row);
+        ctx.Db.PkIdentity.Insert(new PkIdentity { i = i, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_pk_identity(ReducerContext ctx, Identity i, int data)
     {
         var key = i;
-        var row = new PkIdentity { i = i, data = data };
-        ctx.Db.PkIdentity.UpdateByi(key, ref row);
+        ctx.Db.PkIdentity.UpdateByi(key, new PkIdentity { i = i, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1706,16 +1590,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_pk_address(ReducerContext ctx, Address a, int data)
     {
-        var row = new PkAddress { a = a, data = data };
-        ctx.Db.PkAddress.Insert(ref row);
+        ctx.Db.PkAddress.Insert(new PkAddress { a = a, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void update_pk_address(ReducerContext ctx, Address a, int data)
     {
         var key = a;
-        var row = new PkAddress { a = a, data = data };
-        ctx.Db.PkAddress.UpdateBya(key, ref row);
+        ctx.Db.PkAddress.UpdateBya(key, new PkAddress { a = a, data = data });
     }
 
     [SpacetimeDB.Reducer]
@@ -1727,36 +1609,31 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_caller_one_identity(ReducerContext ctx)
     {
-        var row = new OneIdentity { i = ctx.Sender };
-        ctx.Db.OneIdentity.Insert(ref row);
+        ctx.Db.OneIdentity.Insert(new OneIdentity { i = ctx.Sender });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_vec_identity(ReducerContext ctx)
     {
-        var row = new VecIdentity { i = new List<Identity> { ctx.Sender } };
-        ctx.Db.VecIdentity.Insert(ref row);
+        ctx.Db.VecIdentity.Insert(new VecIdentity { i = new List<Identity> { ctx.Sender } });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_unique_identity(ReducerContext ctx, int data)
     {
-        var row = new UniqueIdentity { i = ctx.Sender, data = data };
-        ctx.Db.UniqueIdentity.Insert(ref row);
+        ctx.Db.UniqueIdentity.Insert(new UniqueIdentity { i = ctx.Sender, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_pk_identity(ReducerContext ctx, int data)
     {
-        var row = new PkIdentity { i = ctx.Sender, data = data };
-        ctx.Db.PkIdentity.Insert(ref row);
+        ctx.Db.PkIdentity.Insert(new PkIdentity { i = ctx.Sender, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_one_address(ReducerContext ctx)
     {
-        var row = new OneAddress { a = (Address)ctx.Address!, };
-        ctx.Db.OneAddress.Insert(ref row);
+        ctx.Db.OneAddress.Insert(new OneAddress { a = (Address)ctx.Address!, });
     }
 
     [SpacetimeDB.Reducer]
@@ -1773,15 +1650,13 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_caller_unique_address(ReducerContext ctx, int data)
     {
-        var row = new UniqueAddress { a = (Address)ctx.Address!, data = data };
-        ctx.Db.UniqueAddress.Insert(ref row);
+        ctx.Db.UniqueAddress.Insert(new UniqueAddress { a = (Address)ctx.Address!, data = data });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_pk_address(ReducerContext ctx, int data)
     {
-        var row = new PkAddress { a = (Address)ctx.Address!, data = data };
-        ctx.Db.PkAddress.Insert(ref row);
+        ctx.Db.PkAddress.Insert(new PkAddress { a = (Address)ctx.Address!, data = data });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -1838,7 +1713,7 @@ public static partial class Module
         EveryVecStruct v
     )
     {
-        var row = new LargeTable {
+        ctx.Db.LargeTable.Insert(new LargeTable {
             a = a,
             b = b,
             c = c,
@@ -1861,20 +1736,18 @@ public static partial class Module
             t = t,
             u = u,
             v = v,
-        };
-        ctx.Db.LargeTable.Insert(ref row);
+        });
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_primitives_as_strings(ReducerContext ctx, EveryPrimitiveStruct s)
     {
-        var row = new VecString {
+        ctx.Db.VecString.Insert(new VecString {
             s = typeof(EveryPrimitiveStruct)
                 .GetFields()
                 .Select(f => f.GetValue(s)!.ToString()!.ToLowerInvariant())
                 .ToList()
-        };
-        ctx.Db.VecString.Insert(ref row);
+        });
     }
 
     [SpacetimeDB.Table(Public = true)]
@@ -1887,8 +1760,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_table_holds_table(ReducerContext ctx, OneU8 a, VecU8 b)
     {
-        var row = new TableHoldsTable { a = a, b = b };
-        ctx.Db.TableHoldsTable.Insert(ref row);
+        ctx.Db.TableHoldsTable.Insert(new TableHoldsTable { a = a, b = b });
     }
 
     [SpacetimeDB.Reducer]

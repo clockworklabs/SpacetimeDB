@@ -58,7 +58,7 @@ public abstract partial record ScheduleAt
     }
 }
 
-public abstract class BaseReducerContext<DbView> : DbContext<DbView>, IReducerContext
+public abstract record BaseReducerContext<DbView> : DbContext<DbView>, IReducerContext
     where DbView : class, new()
 {
     public Identity Sender => Runtime.SenderIdentity!;

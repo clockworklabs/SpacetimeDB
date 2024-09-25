@@ -17,14 +17,12 @@ static partial class Module
     [SpacetimeDB.Reducer(ReducerKind.Connect)]
     public static void OnConnect(ReducerContext ctx)
     {
-        var row = new Connected { identity = ctx.Sender };
-        ctx.Db.Connected.Insert(ref row);
+        ctx.Db.Connected.Insert(new Connected { identity = ctx.Sender });
     }
 
     [SpacetimeDB.Reducer(ReducerKind.Disconnect)]
     public static void OnDisconnect(ReducerContext ctx)
     {
-        var row = new Disconnected { identity = ctx.Sender };
-        ctx.Db.Disconnected.Insert(ref row);
+        ctx.Db.Disconnected.Insert(new Disconnected { identity = ctx.Sender });
     }
 }

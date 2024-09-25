@@ -12,6 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="../../../BSATN.Runtime/BSATN.Runtime.csproj" />
     <ProjectReference Include="../../../Runtime/Runtime.csproj" />
+    <ProjectReference Include="../../../Codegen/Codegen.csproj" OutputItemType="Analyzer" />
   </ItemGroup>
 
 </Project>

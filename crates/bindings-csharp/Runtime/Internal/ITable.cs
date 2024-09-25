@@ -16,7 +16,7 @@ public interface ITableView<View, T>
     where View : ITableView<View, T>
     where T : ITable<T>, new()
 {
-    static abstract void ReadGenFields(BinaryReader reader, ref T row);
+    static abstract T ReadGenFields(BinaryReader reader, T row);
 
     // These are static helpers that codegen can use.
     private abstract class RawTableIterBase
@@ -154,7 +154,7 @@ public interface ITableView<View, T>
     public static IEnumerable<T> Query(Expression<Func<T, bool>> query) =>
         new RawTableIterFiltered(tableId, filter.Value.Compile(query)).Parse();
 
-    protected static void Insert(ref T row)
+    protected static T Insert(T row)
     {
         // Insert the row.
         var bytes = IStructuralReadWrite.ToBytes(row);
@@ -164,7 +164,7 @@ public interface ITableView<View, T>
         // Write back any generated column values.
         using var stream = new MemoryStream(bytes, 0, (int)bytes_len);
         using var reader = new BinaryReader(stream);
-        View.ReadGenFields(reader, ref row);
+        return View.ReadGenFields(reader, row);
     }
 
     protected readonly ref struct ColEq
@@ -194,14 +194,14 @@ public interface ITableView<View, T>
             return out_ > 0;
         }
 
-        public bool Update(ref T row)
+        public bool Update(T row)
         {
             // Just like in Rust bindings, updating is just deleting and inserting for now.
             if (!Delete())
             {
                 return false;
             }
-            Insert(ref row);
+            Insert(row);
             return true;
         }
     }
