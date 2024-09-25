@@ -11,7 +11,7 @@ namespace SpacetimeDB
 
     public abstract class DbContext<DbView, ReducerView> : DbContext<DbView>
         where DbView : class, new()
-        where ReducerView : class, new()
+        where ReducerView : class
     {
         public ReducerView Reducers;
 
@@ -24,7 +24,7 @@ namespace SpacetimeDB
 
     public abstract class EventContextBase<RemoteTables, RemoteReducers> : DbContext<RemoteTables, RemoteReducers>, IEventContext
         where RemoteTables : class, new()
-        where RemoteReducers : class, new()
+        where RemoteReducers : class
     {
         public ulong Timestamp { get; }
         public Identity? Identity { get; }
