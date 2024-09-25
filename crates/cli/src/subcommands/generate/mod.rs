@@ -1,7 +1,7 @@
 #![warn(clippy::uninlined_format_args)]
 
 use clap::Arg;
-use clap::ArgAction::SetTrue;
+use clap::ArgAction::{Set, SetTrue};
 use convert_case::{Case, Casing};
 use core::mem;
 use duct::cmd;
@@ -22,6 +22,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use wasmtime::{Caller, StoreContextMut};
 
+use crate::build;
 use crate::util::y_or_n;
 use crate::Config;
 
@@ -111,7 +112,7 @@ pub fn cli() -> clap::Command {
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
-pub fn exec(_config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
+pub async fn exec(config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let wasm_file = args.get_one::<PathBuf>("wasm_file").cloned();
     let json_module = args.get_many::<PathBuf>("json_module");
@@ -140,7 +141,7 @@ pub fn exec(_config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
         } else {
             // Note: "build" must be the start of the string, because `build::cli()` is the entire build subcommand.
             // If we don't include this, the args will be misinterpreted (e.g. as commands).
-            let build_options = format!("build {} --project-path {}", build_options, path_to_project.display());
+            let build_options = format!("build {} --project-path {}", build_options, project_path.display());
             let build_args = build::cli().get_matches_from(build_options.split_whitespace());
             build::exec(config.clone(), &build_args).await?
         };

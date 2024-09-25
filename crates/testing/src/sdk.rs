@@ -149,10 +149,9 @@ fn publish_module(wasm_file: &str) -> String {
         "publish",
         "--server",
         "local",
-        "--build-options=--debug",
+        "--build-options=\"--debug --skip_clippy\"",
         "--project-path",
         wasm_file,
-        "--skip_clippy",
         &name,
     ]);
     name
@@ -194,8 +193,7 @@ fn generate_bindings(language: &str, wasm_file: &str, client_project: &str, gene
         create_dir_all(generate_dir).expect("Error creating generate subdir");
         invoke_cli(&[
             "generate",
-            "--debug",
-            "--skip_clippy",
+            "--build-options=\"--debug --skip_clippy\"",
             "--lang",
             language,
             "--wasm-file",
