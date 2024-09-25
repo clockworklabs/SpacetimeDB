@@ -1,3 +1,7 @@
+//! Low-level WebSocket plumbing.
+//!
+//! This module is internal, and may incompatibly change without warning.
+
 use crate::ws_messages::{ClientMessage, ServerMessage};
 use anyhow::{bail, Context, Result};
 use brotli::BrotliDecompress;

@@ -1,3 +1,15 @@
+//! The [`Event`] enum, which encodes the different things that can happen
+//! to cause callbacks to run with an `EventContext`.
+//!
+//! The SpacetimeDB per-module bindings will define a struct `EventContext`,
+//! representing a connection to a remote database during some particular event.
+//! That `EventContext` struct will have a field `event`, whose type is `Event<Reducer>`,
+//! where [`Event`] is defined here and `Reducer` is an enum defined by the per-module bindings.
+//!
+//! Each callback invoked by the SpacetimeDB SDK will receive an `EventContext` as an argument.
+//! You can inspect its `event` field
+//! to determine what change in your connection's state caused the callback to run.
+
 use crate::spacetime_module::SpacetimeModule;
 use anyhow::Context;
 use spacetimedb_lib::{Address, Identity};
@@ -5,6 +17,7 @@ use std::time::SystemTime;
 
 #[non_exhaustive]
 #[derive(Debug)]
+/// A change in the state of a [`crate::DbContext`] which causes callbacks to run.
 pub enum Event<R> {
     /// Event when we are notified that a reducer ran in the remote module.
     ///
@@ -43,6 +56,7 @@ pub enum Event<R> {
 
 #[non_exhaustive]
 #[derive(Debug)]
+/// A state change due to a reducer, which may or may not have committed successfully.
 pub struct ReducerEvent<R> {
     /// The time at which the reducer was invoked.
     pub timestamp: SystemTime,
@@ -68,9 +82,18 @@ pub struct ReducerEvent<R> {
 }
 
 #[derive(Debug)]
+/// The termination status of a [`ReducerEvent`].
 pub enum Status {
+    /// The reducer terminated successfully, and its mutations were committed to the database's state.
     Committed,
+
+    /// The reducer encountered an error during its execution, and its mutations were discarded or rolled back.
+    ///
+    /// The `String` payload is the error message signaled by the reducer,
+    /// either as an `Err` return, a `panic` message, or a thrown exception.
     Failed(String),
+
+    /// The reducer was aborted due to insufficient energy, and its mutations were discarded or rolled back.
     OutOfEnergy,
 }
 

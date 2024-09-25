@@ -1,8 +1,6 @@
 //! Interfaces used by per-module codegen.
 //!
-//! SDK users beware: while these items are public, they are not intended for downstream use!
-//! These interfaces are not stable and may change without warning.
-//! Misusing these interfaces may cause strange and unexpected behavior by the SDK.
+//! This module is internal, and may incompatibly change without warning.
 
 use crate::{
     callbacks::DbCallbacks, client_cache::ClientCache, db_connection::DbContextImpl,
