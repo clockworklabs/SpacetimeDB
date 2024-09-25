@@ -14,7 +14,7 @@ pub fn cli() -> clap::Command {
 }
 
 fn get_energy_subcommands() -> Vec<clap::Command> {
-    vec![clap::Command::new("status")
+    vec![clap::Command::new("balance")
         .about("Show current energy balance for an identity")
         .arg(
             common_args::identity()
