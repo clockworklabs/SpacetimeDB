@@ -13,13 +13,13 @@ use spacetimedb_sql_parser::{
 use thiserror::Error;
 
 use super::{
-    bind::{
-        assert_eq_types, parse, type_expr, type_proj, type_select, unexpected_type, SchemaView, TypeChecker,
-        TypingResult,
-    },
-    errors::{InsertError, TypingError, Unresolved, Unsupported},
-    expr::{Expr, RelExpr, Vars},
-    ty::{TyCtx, TyId, Type},
+    assert_eq_types,
+    bind::{SchemaView, TypeChecker, TypingResult},
+    errors::{InsertFieldsError, InsertValuesError, TypingError, UnexpectedType, Unresolved, Unsupported},
+    expr::{Expr, RelExpr},
+    parse,
+    ty::{TyCtx, TyEnv, TyId, Type},
+    type_expr, type_proj, type_select,
 };
 
 pub enum Stmt {
@@ -63,23 +63,36 @@ pub struct ShowVar {
 pub fn type_insert(ctx: &mut TyCtx, insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<TableInsert> {
     let SqlInsert {
         table: SqlIdent { name, case_sensitive },
+        fields,
         values,
     } = insert;
+
     let schema = tx
         .schema(&name, case_sensitive)
         .ok_or_else(|| Unresolved::table(&name))
         .map_err(TypingError::from)?;
+
+    // Expect n fields
+    let n = schema.columns().len();
+    if fields.len() != schema.columns().len() {
+        return Err(TypingError::from(InsertFieldsError {
+            table: name,
+            nfields: fields.len(),
+            ncols: schema.columns().len(),
+        }));
+    }
+
     let mut types = Vec::new();
     for ColumnSchema { col_type, .. } in schema.columns() {
         let id = ctx.add(Type::Alg(col_type.clone()));
         types.push(id);
     }
-    let n = schema.columns().len();
+
     let mut rows = Vec::new();
     for row in values.0 {
         // Expect each row to have n values
         if row.len() != n {
-            return Err(TypingError::from(InsertError {
+            return Err(TypingError::from(InsertValuesError {
                 table: name,
                 values: row.len(),
                 fields: n,
@@ -95,13 +108,14 @@ pub fn type_insert(ctx: &mut TyCtx, insert: SqlInsert, tx: &impl SchemaView) -> 
                     values.push(AlgebraicValue::String(v.into_boxed_str()));
                 }
                 (SqlLiteral::Bool(_), id) => {
-                    return Err(unexpected_type(Type::BOOL.with_ctx(ctx), id.try_with_ctx(ctx)?));
+                    return Err(UnexpectedType::new(&ctx.bool(), &id.try_with_ctx(ctx)?).into());
                 }
                 (SqlLiteral::Str(_), id) => {
-                    return Err(unexpected_type(Type::STR.with_ctx(ctx), id.try_with_ctx(ctx)?));
+                    return Err(UnexpectedType::new(&ctx.str(), &id.try_with_ctx(ctx)?).into());
                 }
                 (SqlLiteral::Hex(v), id) | (SqlLiteral::Num(v), id) => {
-                    values.push(parse(ctx, v, id)?);
+                    let ty = id.try_with_ctx(ctx)?;
+                    values.push(parse(v, ty)?);
                 }
             }
         }
@@ -122,16 +136,27 @@ pub fn type_delete(ctx: &mut TyCtx, delete: SqlDelete, tx: &impl SchemaView) -> 
         .schema(&name, case_sensitive)
         .ok_or_else(|| Unresolved::table(&name))
         .map_err(TypingError::from)?;
-    let mut vars = Vec::new();
+
+    let table_name = ctx.gen_symbol(name);
+
+    let mut types = Vec::new();
+    let mut env = TyEnv::default();
+
     for ColumnSchema { col_name, col_type, .. } in schema.columns() {
         let ty = Type::Alg(col_type.clone());
         let id = ctx.add(ty);
-        vars.push((col_name.clone().into_string(), id))
+        let name = ctx.gen_symbol(col_name);
+        env.add(name, id);
+        types.push((name, id));
     }
-    let vars = vars.into();
+
+    let ty = Type::Var(types.into_boxed_slice());
+    let ty = ctx.add(ty);
+    env.add(table_name, ty);
+
     let from = schema;
     let expr = filter
-        .map(|expr| type_expr(ctx, &vars, expr, Some(TyId::BOOL)))
+        .map(|expr| type_expr(ctx, &env, expr, Some(TyId::BOOL)))
         .transpose()?;
     Ok(TableDelete { from, expr })
 }
@@ -139,24 +164,31 @@ pub fn type_delete(ctx: &mut TyCtx, delete: SqlDelete, tx: &impl SchemaView) -> 
 /// Type check an UPDATE statement
 pub fn type_update(ctx: &mut TyCtx, update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<TableUpdate> {
     let SqlUpdate {
-        table: SqlIdent { name, case_sensitive },
+        table,
         assignments,
         filter,
     } = update;
     let schema = tx
-        .schema(&name, case_sensitive)
-        .ok_or_else(|| Unresolved::table(&name))
+        .schema(&table.name, table.case_sensitive)
+        .ok_or_else(|| Unresolved::table(&table.name))
         .map_err(TypingError::from)?;
-    let mut vars = Vec::new();
+    let mut env = TyEnv::default();
     for ColumnSchema { col_name, col_type, .. } in schema.columns() {
         let id = ctx.add(Type::Alg(col_type.clone()));
-        vars.push((col_name.to_string(), id));
+        let name = ctx.gen_symbol(col_name);
+        env.add(name, id);
     }
-    let vars = Vars::from(vars);
     let mut values = Vec::new();
-    for SqlSet(var, lit) in assignments {
-        let (i, ty) = vars.expect_var(ctx, &var.name, None)?;
-        let col_id = ColId(i as u16);
+    for SqlSet(field, lit) in assignments {
+        let col_id = schema
+            .get_column_id_by_name(&field.name)
+            .ok_or_else(|| Unresolved::field(&table.name, &field.name))?;
+        let field_name = ctx
+            .get_symbol(&field.name)
+            .ok_or_else(|| Unresolved::field(&table.name, &field.name))?;
+        let ty = env
+            .find(field_name)
+            .ok_or_else(|| Unresolved::field(&table.name, &field.name))?;
         match (lit, ty) {
             (SqlLiteral::Bool(v), TyId::BOOL) => {
                 values.push((col_id, AlgebraicValue::Bool(v)));
@@ -165,19 +197,20 @@ pub fn type_update(ctx: &mut TyCtx, update: SqlUpdate, tx: &impl SchemaView) -> 
                 values.push((col_id, AlgebraicValue::String(v.into_boxed_str())));
             }
             (SqlLiteral::Bool(_), id) => {
-                return Err(unexpected_type(Type::BOOL.with_ctx(ctx), id.try_with_ctx(ctx)?));
+                return Err(UnexpectedType::new(&ctx.bool(), &id.try_with_ctx(ctx)?).into());
             }
             (SqlLiteral::Str(_), id) => {
-                return Err(unexpected_type(Type::STR.with_ctx(ctx), id.try_with_ctx(ctx)?));
+                return Err(UnexpectedType::new(&ctx.str(), &id.try_with_ctx(ctx)?).into());
             }
             (SqlLiteral::Hex(v), id) | (SqlLiteral::Num(v), id) => {
-                values.push((col_id, parse(ctx, v, id)?));
+                let ty = id.try_with_ctx(ctx)?;
+                values.push((col_id, parse(v, ty)?));
             }
         }
     }
     let values = values.into_boxed_slice();
     let filter = filter
-        .map(|expr| type_expr(ctx, &vars, expr, Some(TyId::BOOL)))
+        .map(|expr| type_expr(ctx, &env, expr, Some(TyId::BOOL)))
         .transpose()?;
     Ok(TableUpdate { schema, values, filter })
 }
@@ -199,23 +232,23 @@ fn is_var_valid(var: &str) -> bool {
 
 pub fn type_set(ctx: &TyCtx, set: SqlSet) -> TypingResult<SetVar> {
     let SqlSet(SqlIdent { name, .. }, lit) = set;
-    if is_var_valid(&name) {
+    if !is_var_valid(&name) {
         return Err(InvalidVar { name }.into());
     }
     match lit {
-        SqlLiteral::Bool(_) => Err(unexpected_type(Type::U64.with_ctx(ctx), Type::BOOL.with_ctx(ctx))),
-        SqlLiteral::Str(_) => Err(unexpected_type(Type::U64.with_ctx(ctx), Type::STR.with_ctx(ctx))),
-        SqlLiteral::Hex(_) => Err(unexpected_type(Type::U64.with_ctx(ctx), TyId::BYTES.with_ctx(ctx))),
+        SqlLiteral::Bool(_) => Err(UnexpectedType::new(&ctx.u64(), &ctx.bool()).into()),
+        SqlLiteral::Str(_) => Err(UnexpectedType::new(&ctx.u64(), &ctx.str()).into()),
+        SqlLiteral::Hex(_) => Err(UnexpectedType::new(&ctx.u64(), &ctx.bytes()).into()),
         SqlLiteral::Num(n) => Ok(SetVar {
             name,
-            value: parse(ctx, n, TyId::U64)?,
+            value: parse(n, ctx.u64())?,
         }),
     }
 }
 
 pub fn type_show(show: SqlShow) -> TypingResult<ShowVar> {
     let SqlShow(SqlIdent { name, .. }) = show;
-    if is_var_valid(&name) {
+    if !is_var_valid(&name) {
         return Err(InvalidVar { name }.into());
     }
     Ok(ShowVar { name })
@@ -244,25 +277,25 @@ impl TypeChecker for SqlChecker {
             SqlSetOp::Union(a, b, true) => {
                 let a = Self::type_set(ctx, *a, tx)?;
                 let b = Self::type_set(ctx, *b, tx)?;
-                assert_eq_types(a.ty_id().try_with_ctx(ctx)?, b.ty_id().try_with_ctx(ctx)?)?;
+                assert_eq_types(ctx, a.ty_id(), b.ty_id())?;
                 Ok(RelExpr::Union(Box::new(a), Box::new(b)))
             }
             SqlSetOp::Union(a, b, false) => {
                 let a = Self::type_set(ctx, *a, tx)?;
                 let b = Self::type_set(ctx, *b, tx)?;
-                assert_eq_types(a.ty_id().try_with_ctx(ctx)?, b.ty_id().try_with_ctx(ctx)?)?;
+                assert_eq_types(ctx, a.ty_id(), b.ty_id())?;
                 Ok(RelExpr::Dedup(Box::new(RelExpr::Union(Box::new(a), Box::new(b)))))
             }
             SqlSetOp::Minus(a, b, true) => {
                 let a = Self::type_set(ctx, *a, tx)?;
                 let b = Self::type_set(ctx, *b, tx)?;
-                assert_eq_types(a.ty_id().try_with_ctx(ctx)?, b.ty_id().try_with_ctx(ctx)?)?;
+                assert_eq_types(ctx, a.ty_id(), b.ty_id())?;
                 Ok(RelExpr::Minus(Box::new(a), Box::new(b)))
             }
             SqlSetOp::Minus(a, b, false) => {
                 let a = Self::type_set(ctx, *a, tx)?;
                 let b = Self::type_set(ctx, *b, tx)?;
-                assert_eq_types(a.ty_id().try_with_ctx(ctx)?, b.ty_id().try_with_ctx(ctx)?)?;
+                assert_eq_types(ctx, a.ty_id(), b.ty_id())?;
                 Ok(RelExpr::Dedup(Box::new(RelExpr::Minus(Box::new(a), Box::new(b)))))
             }
             SqlSetOp::Query(ast) => Self::type_ast(ctx, *ast, tx),
@@ -272,8 +305,8 @@ impl TypeChecker for SqlChecker {
                 from,
                 filter: None,
             }) => {
-                let (arg, vars) = Self::type_from(ctx, from, tx)?;
-                type_proj(ctx, project, arg, vars)
+                let (input, alias) = Self::type_from(ctx, from, tx)?;
+                type_proj(ctx, input, alias, project)
             }
             SqlSetOp::Select(SqlSelect {
                 project,
@@ -281,9 +314,8 @@ impl TypeChecker for SqlChecker {
                 from,
                 filter: None,
             }) => {
-                let (input, vars) = Self::type_from(ctx, from, tx)?;
-                let input = type_proj(ctx, project, input, vars)?;
-                Ok(RelExpr::Dedup(Box::new(input)))
+                let (input, alias) = Self::type_from(ctx, from, tx)?;
+                Ok(RelExpr::Dedup(Box::new(type_proj(ctx, input, alias, project)?)))
             }
             SqlSetOp::Select(SqlSelect {
                 project,
@@ -291,9 +323,9 @@ impl TypeChecker for SqlChecker {
                 from,
                 filter: Some(expr),
             }) => {
-                let (from, vars) = Self::type_from(ctx, from, tx)?;
-                let arg = type_select(ctx, expr, from, vars.clone())?;
-                type_proj(ctx, project, arg, vars.clone())
+                let (from, alias) = Self::type_from(ctx, from, tx)?;
+                let input = type_select(ctx, from, alias, expr)?;
+                type_proj(ctx, input, alias, project)
             }
             SqlSetOp::Select(SqlSelect {
                 project,
@@ -301,10 +333,9 @@ impl TypeChecker for SqlChecker {
                 from,
                 filter: Some(expr),
             }) => {
-                let (from, vars) = Self::type_from(ctx, from, tx)?;
-                let input = type_select(ctx, expr, from, vars.clone())?;
-                let input = type_proj(ctx, project, input, vars.clone())?;
-                Ok(RelExpr::Dedup(Box::new(input)))
+                let (from, alias) = Self::type_from(ctx, from, tx)?;
+                let input = type_select(ctx, from, alias, expr)?;
+                Ok(RelExpr::Dedup(Box::new(type_proj(ctx, input, alias, project)?)))
             }
         }
     }

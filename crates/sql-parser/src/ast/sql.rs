@@ -49,6 +49,7 @@ pub struct OrderByElem(pub SqlExpr, pub bool);
 /// INSERT INTO table cols VALUES literals
 pub struct SqlInsert {
     pub table: SqlIdent,
+    pub fields: Vec<SqlIdent>,
     pub values: SqlValues,
 }
 

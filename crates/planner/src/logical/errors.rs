@@ -3,63 +3,16 @@ use thiserror::Error;
 
 use super::{
     stmt::InvalidVar,
-    ty::{InvalidTyId, TypeWithCtx},
+    ty::{InvalidTypeId, TypeWithCtx},
 };
 
 #[derive(Error, Debug)]
-pub enum ConstraintViolation {
-    #[error("(expected) {expected} != {inferred} (inferred)")]
-    Eq { expected: String, inferred: String },
-    #[error("`{ty}` is not a numeric type")]
-    Num { ty: String },
-    #[error("`{ty}` cannot be interpreted as a byte array")]
-    Hex { ty: String },
-    #[error("`{expr}` cannot be parsed as type `{ty}`")]
-    Lit { expr: String, ty: String },
-    #[error("The binary operator `{op}` does not support type `{ty}`")]
-    Bin { op: BinOp, ty: String },
-}
-
-impl ConstraintViolation {
-    // Types are not equal
-    pub fn eq(expected: TypeWithCtx<'_>, inferred: TypeWithCtx<'_>) -> Self {
-        Self::Eq {
-            expected: expected.to_string(),
-            inferred: inferred.to_string(),
-        }
-    }
-
-    // Not a numeric type
-    pub fn num(ty: TypeWithCtx<'_>) -> Self {
-        Self::Num { ty: ty.to_string() }
-    }
-
-    // Not a type that can be compared to a hex value
-    pub fn hex(ty: TypeWithCtx<'_>) -> Self {
-        Self::Hex { ty: ty.to_string() }
-    }
-
-    // This literal expression cannot be parsed as this type
-    pub fn lit(v: &str, ty: TypeWithCtx<'_>) -> Self {
-        Self::Lit {
-            expr: v.to_string(),
-            ty: ty.to_string(),
-        }
-    }
-
-    // This operator does not support this type
-    pub fn bin(op: BinOp, ty: TypeWithCtx<'_>) -> Self {
-        Self::Bin { op, ty: ty.to_string() }
-    }
-}
-
-#[derive(Error, Debug)]
 pub enum Unresolved {
-    #[error("Cannot resolve `{0}`")]
+    #[error("`{0}` is not in scope")]
     Var(String),
-    #[error("Cannot resolve table `{0}`")]
+    #[error("`{0}` is not a valid table")]
     Table(String),
-    #[error("Cannot resolve field `{1}` in `{0}`")]
+    #[error("`{0}` does not have a field `{1}`")]
     Field(String, String),
     #[error("Cannot resolve type for literal expression")]
     Literal,
@@ -68,28 +21,34 @@ pub enum Unresolved {
 impl Unresolved {
     /// Cannot resolve name
     pub fn var(name: &str) -> Self {
-        Self::Var(name.to_string())
+        Self::Var(name.to_owned())
     }
 
     /// Cannot resolve table name
     pub fn table(name: &str) -> Self {
-        Self::Table(name.to_string())
+        Self::Table(name.to_owned())
     }
 
     /// Cannot resolve field name within table
     pub fn field(table: &str, field: &str) -> Self {
-        Self::Field(table.to_string(), field.to_string())
+        Self::Field(table.to_owned(), field.to_owned())
     }
 }
 
 #[derive(Error, Debug)]
+pub enum InvalidWildcard {
+    #[error("SELECT * is not supported for joins")]
+    Join,
+    #[error("SELECT * is not valid for scalar types")]
+    Scalar,
+}
+
+#[derive(Error, Debug)]
 pub enum Unsupported {
-    #[error("Subscriptions must return a single table type")]
-    SubReturnType,
+    #[error("Column projections are not supported in subscriptions; Subscriptions must return a table type")]
+    ReturnType,
     #[error("Unsupported expression in projection")]
     ProjectExpr,
-    #[error("Unqualified column projections are not supported")]
-    UnqualifiedProjectExpr,
     #[error("ORDER BY is not supported")]
     OrderBy,
     #[error("LIMIT is not supported")]
@@ -99,26 +58,109 @@ pub enum Unsupported {
 // TODO: It might be better to return the missing/extra fields
 #[derive(Error, Debug)]
 #[error("Inserting a row with {values} values into `{table}` which has {fields} fields")]
-pub struct InsertError {
+pub struct InsertValuesError {
     pub table: String,
     pub values: usize,
     pub fields: usize,
 }
+
+// TODO: It might be better to return the missing/extra fields
+#[derive(Error, Debug)]
+#[error("The number of fields ({nfields}) in the INSERT does not match the number of columns ({ncols}) of the table `{table}`")]
+pub struct InsertFieldsError {
+    pub table: String,
+    pub ncols: usize,
+    pub nfields: usize,
+}
+
+#[derive(Debug, Error)]
+#[error("Invalid binary operator `{op}` for type `{ty}`")]
+pub struct InvalidOp {
+    op: BinOp,
+    ty: String,
+}
+
+impl InvalidOp {
+    pub fn new(op: BinOp, ty: &TypeWithCtx) -> Self {
+        Self { op, ty: ty.to_string() }
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("Expected a relation, but found a scalar type `{ty}` instead")]
+pub struct ExpectedRelation {
+    ty: String,
+}
+
+impl ExpectedRelation {
+    pub fn new(ty: &TypeWithCtx) -> Self {
+        Self { ty: ty.to_string() }
+    }
+}
+
+#[derive(Error, Debug)]
+#[error("The literal expression `{literal}` cannot be parsed as type `{ty}`")]
+pub struct InvalidLiteral {
+    literal: String,
+    ty: String,
+}
+
+impl InvalidLiteral {
+    pub fn new(literal: String, expected: &TypeWithCtx) -> Self {
+        Self {
+            literal,
+            ty: expected.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("Unexpected type: (expected) {expected} != {inferred} (inferred)")]
+pub struct UnexpectedType {
+    expected: String,
+    inferred: String,
+}
+
+impl UnexpectedType {
+    pub fn new(expected: &TypeWithCtx, inferred: &TypeWithCtx) -> Self {
+        Self {
+            expected: expected.to_string(),
+            inferred: inferred.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+#[error("Duplicate name `{0}`")]
+pub struct DuplicateName(pub String);
 
 #[derive(Error, Debug)]
 pub enum TypingError {
     #[error(transparent)]
     Unsupported(#[from] Unsupported),
     #[error(transparent)]
-    Constraint(#[from] ConstraintViolation),
-    #[error(transparent)]
     Unresolved(#[from] Unresolved),
     #[error(transparent)]
-    InvalidTyId(#[from] InvalidTyId),
+    InvalidTyId(#[from] InvalidTypeId),
     #[error(transparent)]
     InvalidVar(#[from] InvalidVar),
     #[error(transparent)]
-    Insert(#[from] InsertError),
+    InsertValues(#[from] InsertValuesError),
+    #[error(transparent)]
+    InsertFields(#[from] InsertFieldsError),
     #[error(transparent)]
     ParseError(#[from] SqlParseError),
+
+    #[error(transparent)]
+    InvalidOp(#[from] InvalidOp),
+    #[error(transparent)]
+    Literal(#[from] InvalidLiteral),
+    #[error(transparent)]
+    Relation(#[from] ExpectedRelation),
+    #[error(transparent)]
+    Unexpected(#[from] UnexpectedType),
+    #[error(transparent)]
+    Wildcard(#[from] InvalidWildcard),
+    #[error(transparent)]
+    DuplicateName(#[from] DuplicateName),
 }

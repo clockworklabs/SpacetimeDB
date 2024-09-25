@@ -29,7 +29,14 @@ pub struct SqlJoin<Ast> {
 
 /// A projection expression in a SELECT clause
 #[derive(Debug)]
-pub struct ProjectElem(pub SqlExpr, pub Option<SqlIdent>);
+pub struct ProjectElem(pub ProjectExpr, pub Option<SqlIdent>);
+
+/// A column projection in a SELECT clause
+#[derive(Debug)]
+pub enum ProjectExpr {
+    Var(SqlIdent),
+    Field(SqlIdent, SqlIdent),
+}
 
 /// A SQL SELECT clause
 #[derive(Debug)]

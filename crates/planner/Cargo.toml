@@ -6,6 +6,7 @@ license-file = "LICENSE"
 
 [dependencies]
 derive_more.workspace = true
+string-interner.workspace = true
 thiserror.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-primitives.workspace = true
