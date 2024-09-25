@@ -145,15 +145,7 @@ fn compile_module(module: &str) -> String {
 // module as a separate clean database instance for isolation purposes.
 fn publish_module(wasm_file: &str) -> String {
     let name = random_module_name();
-    invoke_cli(&[
-        "publish",
-        "--server",
-        "local",
-        "--build-options=\"--debug --skip_clippy\"",
-        "--project-path",
-        wasm_file,
-        &name,
-    ]);
+    invoke_cli(&["publish", "--server", "local", "--wasm-file", wasm_file, &name]);
     name
 }
 
