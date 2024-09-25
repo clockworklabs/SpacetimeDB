@@ -105,7 +105,7 @@ record ColumnDeclaration : MemberDeclaration
 
     // For the `TableDesc` constructor.
     public string GenerateColumnDef() =>
-        $"new (nameof({Name}), global::{FullTableName}.BSATN.{Name}.GetAlgebraicType(registrar))";
+        $"new (nameof({Name}), BSATN.{Name}.GetAlgebraicType(registrar))";
 
     // For the `Filter` constructor.
     public string GenerateFilterEntry() =>
@@ -387,8 +387,7 @@ record ReducerDeclaration
 
     public KeyValuePair<string, string> GenerateClass()
     {
-        var args = string.Join(", ", Args.Select(a => $"{a.Name}.Read(reader)"));
-        var argsSep = args == "" ? "" : ", ";
+        var args = string.Join(", ", Args.Select(a => $"{a.Name}.Read(reader)").Prepend("ctx"));
         var class_ = $$"""
             class {{Name}}: SpacetimeDB.Internal.IReducer {
                 {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
@@ -399,7 +398,7 @@ record ReducerDeclaration
                 );
 
                 public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
-                    {{FullName}}((SpacetimeDB.ReducerContext)ctx{{argsSep}}{{args}});
+                    {{FullName}}((SpacetimeDB.ReducerContext){{args}});
                 }
             }
             """;
@@ -485,7 +484,9 @@ public class Module : IIncrementalGenerator
                 var addReducers = tuple.Right.Sort((a, b) => a.Key.CompareTo(b.Key));
                 // Don't generate the FFI boilerplate if there are no tables or reducers.
                 if (tableViews.IsEmpty && addReducers.IsEmpty)
+                {
                     return;
+                }
                 context.AddSource(
                     "FFI.cs",
                     $$"""

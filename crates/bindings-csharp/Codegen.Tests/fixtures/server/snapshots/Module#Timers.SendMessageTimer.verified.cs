@@ -62,24 +62,9 @@ partial class Timers
                         TableName: nameof(SendMessageTimer),
                         Columns:
                         [
-                            new(
-                                nameof(Text),
-                                global::Timers.SendMessageTimer.BSATN.Text.GetAlgebraicType(
-                                    registrar
-                                )
-                            ),
-                            new(
-                                nameof(ScheduledId),
-                                global::Timers.SendMessageTimer.BSATN.ScheduledId.GetAlgebraicType(
-                                    registrar
-                                )
-                            ),
-                            new(
-                                nameof(ScheduledAt),
-                                global::Timers.SendMessageTimer.BSATN.ScheduledAt.GetAlgebraicType(
-                                    registrar
-                                )
-                            )
+                            new(nameof(Text), BSATN.Text.GetAlgebraicType(registrar)),
+                            new(nameof(ScheduledId), BSATN.ScheduledId.GetAlgebraicType(registrar)),
+                            new(nameof(ScheduledAt), BSATN.ScheduledAt.GetAlgebraicType(registrar))
                         ],
                         Indexes: [],
                         Constraints:

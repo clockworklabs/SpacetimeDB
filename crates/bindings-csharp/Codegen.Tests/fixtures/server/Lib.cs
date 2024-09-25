@@ -17,8 +17,8 @@ public partial class CustomClass
 {
     public const int IGNORE_ME = 0;
     public static readonly string IGNORE_ME_TOO = "";
-    public int IntField;
-    public string StringField;
+    public int IntField = 0;
+    public string StringField = "";
 }
 
 [StructLayout(LayoutKind.Auto)]
@@ -84,8 +84,8 @@ public static partial class Reducers
     [SpacetimeDB.Reducer]
     public static void InsertData(ReducerContext ctx, PublicTable data)
     {
-        ctx.Db.PublicTable.Insert(ref data);
-        Runtime.Log("New list");
+        ctx.Db.PublicTable.Insert(data);
+        Log.Info("New list");
         foreach (var item in ctx.Db.PublicTable.Iter())
         {
             Log.Info($"Item: {item.StringField}");
@@ -108,7 +108,7 @@ namespace Test
             [SpacetimeDB.Reducer("test_custom_name_and_reducer_ctx")]
             public static void InsertData2(ReducerContext ctx, PublicTable data)
             {
-                ctx.Db.PublicTable.Insert(ref data);
+                ctx.Db.PublicTable.Insert(data);
             }
         }
     }
@@ -134,10 +134,9 @@ public static partial class Timers
     [SpacetimeDB.Reducer(ReducerKind.Init)]
     public static void Init(ReducerContext ctx)
     {
-        var row = new SendMessageTimer {
+        ctx.Db.SendMessageTimer.Insert(new SendMessageTimer {
             Text = "bot sending a message",
             ScheduledAt = ctx.Time.AddSeconds(10),
-        };
-        ctx.Db.SendMessageTimer.Insert(ref row);
+        });
     }
 }

@@ -32,14 +32,14 @@ public sealed class TableAttribute : Attribute
     ///
     /// <para>Defaults to the <c>nameof</c> of the target type.</para>
     /// </summary>
-    public string? Name;
+    public string? Name { get; init; }
 
     /// <summary>
     /// Set to <c>true</c> to make the table visible to everyone.
     ///
     /// <para>Defaults to the table only being visible to its owner.</para>
     /// </summary>
-    public bool Public = false;
+    public bool Public { get; init; } = false;
 
     public string? Scheduled { get; init; }
 }
@@ -47,7 +47,7 @@ public sealed class TableAttribute : Attribute
 [AttributeUsage(AttributeTargets.Field)]
 public abstract class ColumnAttribute : Attribute
 {
-    public string? Table;
+    public string? Table { get; init; }
 }
 
 public sealed class AutoIncAttribute : ColumnAttribute { }
