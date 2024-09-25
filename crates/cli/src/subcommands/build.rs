@@ -58,10 +58,14 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<PathBuf, anyhow:
     Ok(bin_path)
 }
 
-pub async fn exec_with_argstring(config: Config, project_path: &Path, args: &str) -> Result<PathBuf, anyhow::Error> {
+pub async fn exec_with_argstring(
+    config: Config,
+    project_path: &Path,
+    arg_string: &str,
+) -> Result<PathBuf, anyhow::Error> {
     // Note: "build" must be the start of the string, because `build::cli()` is the entire build subcommand.
     // If we don't include this, the args will be misinterpreted (e.g. as commands).
-    let build_options = format!("build {} --project-path {}", args, project_path.display());
-    let build_args = cli().get_matches_from(build_options.split_whitespace());
-    exec(config.clone(), &build_args).await
+    let arg_string = format!("build {} --project-path {}", arg_string, project_path.display());
+    let arg_matches = cli().get_matches_from(arg_string.split_whitespace());
+    exec(config.clone(), &arg_matches).await
 }
