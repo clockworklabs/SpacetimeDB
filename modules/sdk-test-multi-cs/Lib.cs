@@ -41,7 +41,7 @@ static partial class Module
     [Reducer]
     public static void GreetAllUsers(ReducerContext ctx)
     {
-        Runtime.Log("Hello All");
+        Log.Info("Hello All");
         foreach (var user in ctx.Db.User.Iter())
         {
             Log.Info($"Hello, {user.Name}!");

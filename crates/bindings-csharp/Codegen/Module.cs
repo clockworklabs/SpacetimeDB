@@ -2,6 +2,7 @@ namespace SpacetimeDB.Codegen;
 
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using static Utils;
 
@@ -132,7 +133,7 @@ record TableView
 
 record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 {
-    public readonly string Visibility;
+    public readonly Accessibility Visibility;
     public readonly string? Scheduled;
     public readonly EquatableArray<TableView> Views;
 
@@ -157,15 +158,15 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             throw new InvalidOperationException("Tagged enums cannot be tables.");
         }
 
-        Visibility = context.TargetSymbol.DeclaredAccessibility switch
-        {
-            Accessibility.ProtectedAndInternal
-            or Accessibility.NotApplicable
-            or Accessibility.Internal => "internal",
-            Accessibility.Public => "public",
-            _ => throw new Exception(
-                "Table row type visibility must be public or internal."
-            ),
+        Visibility = context.TargetSymbol.DeclaredAccessibility;
+        switch (Visibility) {
+            case Accessibility.ProtectedAndInternal:
+            case Accessibility.NotApplicable:
+            case Accessibility.Internal:
+            case Accessibility.Public:
+                break;
+            default:
+                throw new Exception("Table row type visibility must be public or internal.");
         };
 
         Views = new(context.Attributes
@@ -240,7 +241,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             var globalName = $"global::{FullName}";
             var iTable = $"SpacetimeDB.Internal.ITableView<{v.Name}, {globalName}>";
             yield return new((v.Name, globalName), ($$"""
-            {{Visibility}} readonly struct {{v.Name}} : {{iTable}} {
+            {{SyntaxFacts.GetText(Visibility)}} readonly struct {{v.Name}} : {{iTable}} {
                 static {{globalName}} {{iTable}}.ReadGenFields(System.IO.BinaryReader reader, {{globalName}} row) {
                     {{string.Join(
                         "\n",
@@ -260,7 +261,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 public void Insert({{globalName}} row) => {{iTable}}.Insert(row);
                 {{string.Join("\n", GenerateViewFilters(v.Name, iTable))}}
             }
-            """, $"{Visibility} Internal.TableHandles.{v.Name} {v.Name} => new();"));
+            """, $"{SyntaxFacts.GetText(Visibility)} Internal.TableHandles.{v.Name} {v.Name} => new();"));
         }
     }
 
