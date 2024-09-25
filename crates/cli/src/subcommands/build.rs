@@ -32,7 +32,7 @@ pub fn cli() -> clap::Command {
         )
 }
 
-pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
+pub async fn exec(_config: Config, args: &ArgMatches) -> Result<PathBuf, anyhow::Error> {
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let skip_clippy = args.get_flag("skip_clippy");
     let build_debug = args.get_flag("debug");
@@ -52,8 +52,8 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
         ));
     }
 
-    crate::tasks::build(project_path, skip_clippy, build_debug)?;
+    let bin_path = crate::tasks::build(project_path, skip_clippy, build_debug)?;
     println!("Build finished successfully.");
 
-    Ok(())
+    Ok(bin_path)
 }
