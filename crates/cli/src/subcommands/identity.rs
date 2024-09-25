@@ -305,12 +305,6 @@ async fn exec_remove(mut config: Config, args: &ArgMatches) -> Result<(), anyhow
         return Err(anyhow::anyhow!("Must provide an identity or name to remove"));
     }
 
-    if force && !(all || all_server.is_some()) {
-        return Err(anyhow::anyhow!(
-            "The --force flag can only be used with --all or --all-server"
-        ));
-    }
-
     fn should_continue(force: bool, prompt: &str) -> anyhow::Result<bool> {
         y_or_n(
             force,
