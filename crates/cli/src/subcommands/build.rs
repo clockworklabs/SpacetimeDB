@@ -1,7 +1,7 @@
 use crate::Config;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub fn cli() -> clap::Command {
     clap::Command::new("build")
@@ -58,7 +58,7 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<PathBuf, anyhow:
     Ok(bin_path)
 }
 
-pub async fn exec_with_argstring(config: Config, project_path: &PathBuf, args: &str) -> Result<PathBuf, anyhow::Error> {
+pub async fn exec_with_argstring(config: Config, project_path: &Path, args: &str) -> Result<PathBuf, anyhow::Error> {
     // Note: "build" must be the start of the string, because `build::cli()` is the entire build subcommand.
     // If we don't include this, the args will be misinterpreted (e.g. as commands).
     let build_options = format!("build {} --project-path {}", args, project_path.display());
