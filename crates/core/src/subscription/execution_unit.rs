@@ -9,7 +9,7 @@ use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateRelValue,
 use crate::messages::websocket::TableUpdate;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
-use spacetimedb_client_api_messages::websocket::{RowListLen as _, QueryUpdate, WebsocketFormat};
+use spacetimedb_client_api_messages::websocket::{QueryUpdate, RowListLen as _, WebsocketFormat};
 use spacetimedb_lib::db::error::AuthError;
 use spacetimedb_lib::relation::DbTable;
 use spacetimedb_lib::{Identity, ProductValue};
@@ -216,7 +216,7 @@ impl ExecutionUnit {
         let tx = &tx.into();
         let mut inserts = build_query(ctx, db, tx, &self.eval_plan, &mut NoInMemUsed);
         let inserts = inserts.iter();
-        let inserts = F::encode_list(inserts);
+        let (inserts, num_rows) = F::encode_list(inserts);
 
         (!inserts.is_empty()).then(|| {
             let deletes = F::List::default();
@@ -224,6 +224,7 @@ impl ExecutionUnit {
             TableUpdate {
                 table_id: self.return_table(),
                 table_name: self.return_name().to_string(),
+                num_rows,
                 updates,
             }
         })

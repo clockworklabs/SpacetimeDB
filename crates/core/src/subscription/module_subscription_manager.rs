@@ -161,8 +161,8 @@ impl SubscriptionManager {
                     // but we only fill `ops_bin` and `ops_json` at most once.
                     // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
                     // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
-                    let mut ops_bin: Option<QueryUpdate<BsatnFormat>> = None;
-                    let mut ops_json: Option<QueryUpdate<JsonFormat>> = None;
+                    let mut ops_bin: Option<(QueryUpdate<BsatnFormat>, _)> = None;
+                    let mut ops_json: Option<(QueryUpdate<JsonFormat>, _)> = None;
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
                         let ops = match self.clients[id].protocol {
                             Protocol::Binary => {
@@ -189,21 +189,29 @@ impl SubscriptionManager {
                             Entry::Occupied(mut entry) => {
                                 let tbl_upd = entry.get_mut();
                                 match tbl_upd.zip_mut(update) {
-                                    FormatSwitch::Bsatn((tbl_upd, update)) => tbl_upd.updates.push(update),
-                                    FormatSwitch::Json((tbl_upd, update)) => tbl_upd.updates.push(update),
+                                    FormatSwitch::Bsatn((tbl_upd, (update, num_rows))) => {
+                                        tbl_upd.updates.push(update);
+                                        tbl_upd.num_rows += num_rows;
+                                    }
+                                    FormatSwitch::Json((tbl_upd, (update, num_rows))) => {
+                                        tbl_upd.updates.push(update);
+                                        tbl_upd.num_rows += num_rows;
+                                    }
                                 }
                             }
                             Entry::Vacant(entry) => {
                                 let table_name = table_name.into();
                                 entry.insert(match update {
-                                    FormatSwitch::Bsatn(update) => FormatSwitch::Bsatn(TableUpdate {
+                                    FormatSwitch::Bsatn((update, num_rows)) => FormatSwitch::Bsatn(TableUpdate {
                                         table_id,
                                         table_name,
+                                        num_rows,
                                         updates: [update].into(),
                                     }),
-                                    FormatSwitch::Json(update) => FormatSwitch::Json(TableUpdate {
+                                    FormatSwitch::Json((update, num_rows)) => FormatSwitch::Json(TableUpdate {
                                         table_id,
                                         table_name,
+                                        num_rows,
                                         updates: [update].into(),
                                     }),
                                 });

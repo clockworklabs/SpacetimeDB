@@ -51,8 +51,8 @@ pub trait WebsocketFormat {
     /// The type used for the encoding of a list of items.
     type List: SpacetimeType + for<'de> Deserialize<'de> + Serialize + RowListLen + Debug + Clone + Default + Send;
 
-    /// Encodes the `elems` to a list in the format.
-    fn encode_list<R: ToBsatn + Serialize>(elems: impl Iterator<Item = R>) -> Self::List;
+    /// Encodes the `elems` to a list in the format and also returns the length of the list.
+    fn encode_list<R: ToBsatn + Serialize>(elems: impl Iterator<Item = R>) -> (Self::List, u64);
 }
 
 /// Messages sent from the client to the server.
@@ -291,13 +291,15 @@ pub struct TableUpdate<F: WebsocketFormat> {
     pub table_id: TableId,
     /// The name of the table.
     pub table_name: String,
+    /// The sum total of rows in `self.updates`,
+    pub num_rows: u64,
     /// The actual insert and delete updates for this table.
     pub updates: SmallVec<[QueryUpdate<F>; 1]>,
 }
 
 impl<F: WebsocketFormat> TableUpdate<F> {
     pub fn num_rows(&self) -> usize {
-        self.updates.iter().map(|u| u.num_rows()).sum()
+        self.num_rows as usize
     }
 }
 
@@ -317,12 +319,6 @@ pub struct QueryUpdate<F: WebsocketFormat> {
     /// Rows are encoded as BSATN or JSON according to the table's schema
     /// and the client's requested protocol.
     pub inserts: F::List,
-}
-
-impl<F: WebsocketFormat> QueryUpdate<F> {
-    fn num_rows(&self) -> usize {
-        self.deletes.len() + self.inserts.len()
-    }
 }
 
 /// A response to a [`OneOffQuery`].
@@ -379,10 +375,13 @@ pub struct JsonFormat;
 impl WebsocketFormat for JsonFormat {
     type Single = ByteString;
     type List = Vec<ByteString>;
-    fn encode_list<R: ToBsatn + Serialize>(elems: impl Iterator<Item = R>) -> Self::List {
-        elems
+    fn encode_list<R: ToBsatn + Serialize>(elems: impl Iterator<Item = R>) -> (Self::List, u64) {
+        let mut count = 0;
+        let list = elems
             .map(|elem| serde_json::to_string(&SerializeWrapper::new(elem)).unwrap().into())
-            .collect()
+            .inspect(|_| count += 1)
+            .collect();
+        (list, count)
     }
 }
 
@@ -392,10 +391,10 @@ pub struct BsatnFormat;
 impl WebsocketFormat for BsatnFormat {
     type Single = Box<[u8]>;
     type List = BsatnRowList;
-    fn encode_list<R: ToBsatn + Serialize>(mut elems: impl Iterator<Item = R>) -> Self::List {
+    fn encode_list<R: ToBsatn + Serialize>(mut elems: impl Iterator<Item = R>) -> (Self::List, u64) {
         // For an empty list, the size of a row is unknown, so use `RowOffsets`.
         let Some(first) = elems.next() else {
-            return BsatnRowList::row_offsets();
+            return (BsatnRowList::row_offsets(), 0);
         };
         // We have at least one row. Determine the static size from that, if available.
         let (mut list, mut scratch) = match first.static_bsatn_size() {
@@ -405,16 +404,18 @@ impl WebsocketFormat for BsatnFormat {
         // Add the first element and then the rest.
         // We assume that the schema of rows yielded by `elems` stays the same,
         // so once the size is fixed, it will stay that way.
+        let mut count = 0;
         let mut push = |elem: R| {
             elem.to_bsatn_extend(&mut scratch).unwrap();
             list.push(&scratch);
             scratch.clear();
+            count += 1;
         };
         push(first);
         for elem in elems {
             push(elem);
         }
-        list.finish()
+        (list.finish(), count)
     }
 }
 
