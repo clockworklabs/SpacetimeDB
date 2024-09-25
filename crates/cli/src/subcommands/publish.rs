@@ -148,7 +148,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         path.clone()
     } else {
         let build_options = format!("build {} --project-path {}", build_options, path_to_project.display());
-        let build_args = build::cli().try_get_matches_from(build_options.split_whitespace())?;
+        let build_args = build::cli().get_matches_from(build_options.split_whitespace());
         build::exec(config.clone(), &build_args).await?
     };
     let program_bytes = fs::read(path_to_wasm)?;
