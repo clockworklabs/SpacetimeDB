@@ -199,12 +199,12 @@ impl SubscriptionManager {
                                     FormatSwitch::Bsatn(update) => FormatSwitch::Bsatn(TableUpdate {
                                         table_id,
                                         table_name,
-                                        updates: vec![update],
+                                        updates: [update].into(),
                                     }),
                                     FormatSwitch::Json(update) => FormatSwitch::Json(TableUpdate {
                                         table_id,
                                         table_name,
-                                        updates: vec![update],
+                                        updates: [update].into(),
                                     }),
                                 });
                             }

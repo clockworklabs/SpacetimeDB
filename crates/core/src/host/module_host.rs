@@ -102,7 +102,7 @@ pub struct DatabaseTableUpdate {
 
 #[derive(Debug)]
 pub struct DatabaseUpdateRelValue<'a> {
-    pub tables: Box<[DatabaseTableUpdateRelValue<'a>]>,
+    pub tables: Vec<DatabaseTableUpdateRelValue<'a>>,
 }
 
 #[derive(PartialEq, Debug)]
@@ -114,8 +114,8 @@ pub struct DatabaseTableUpdateRelValue<'a> {
 
 #[derive(Default, PartialEq, Debug)]
 pub struct UpdatesRelValue<'a> {
-    pub deletes: Box<[RelValue<'a>]>,
-    pub inserts: Box<[RelValue<'a>]>,
+    pub deletes: Vec<RelValue<'a>>,
+    pub inserts: Vec<RelValue<'a>>,
 }
 
 impl UpdatesRelValue<'_> {

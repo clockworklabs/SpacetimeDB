@@ -3,9 +3,10 @@ use crate::{i256, u256};
 use crate::{
     AlgebraicType, AlgebraicValue, ArrayValue, MapType, MapValue, ProductValue, SumValue, ValueWithType, F32, F64,
 };
+use core::ops::Bound;
+use smallvec::SmallVec;
 use spacetimedb_primitives::{ColList, ColSet};
 use std::collections::BTreeMap;
-use std::ops::Bound;
 
 /// Implements [`Serialize`] for a type in a simplified manner.
 ///
@@ -74,6 +75,7 @@ impl Serialize for u8 {
 impl_serialize!([] F32, (self, ser) => f32::from(*self).serialize(ser));
 impl_serialize!([] F64, (self, ser) => f64::from(*self).serialize(ser));
 impl_serialize!([T: Serialize] Vec<T>, (self, ser)  => (**self).serialize(ser));
+impl_serialize!([T: Serialize, const N: usize] SmallVec<[T; N]>, (self, ser)  => (**self).serialize(ser));
 impl_serialize!([T: Serialize] [T], (self, ser) => T::__serialize_array(self, ser));
 impl_serialize!([T: Serialize, const N: usize] [T; N], (self, ser) => T::__serialize_array(self, ser));
 impl_serialize!([T: Serialize + ?Sized] Box<T>, (self, ser) => (**self).serialize(ser));

@@ -18,6 +18,7 @@ use crate::energy::EnergyQuanta;
 use crate::timestamp::Timestamp;
 use bytestring::ByteString;
 use core::{fmt::Debug, ops::Deref};
+use smallvec::SmallVec;
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{bsatn::ToBsatn, de::Deserialize, ser::serde::SerializeWrapper, ser::Serialize, SpacetimeType};
@@ -291,7 +292,7 @@ pub struct TableUpdate<F: WebsocketFormat> {
     /// The name of the table.
     pub table_name: String,
     /// The actual insert and delete updates for this table.
-    pub updates: Vec<QueryUpdate<F>>,
+    pub updates: SmallVec<[QueryUpdate<F>; 1]>,
 }
 
 impl<F: WebsocketFormat> TableUpdate<F> {

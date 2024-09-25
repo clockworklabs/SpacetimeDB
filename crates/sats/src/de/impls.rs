@@ -1,6 +1,7 @@
 use super::{
-    BasicMapVisitor, BasicVecVisitor, Deserialize, DeserializeSeed, Deserializer, Error, FieldNameVisitor, ProductKind,
-    ProductVisitor, SeqProductAccess, SliceVisitor, SumAccess, SumVisitor, VariantAccess, VariantVisitor,
+    BasicMapVisitor, BasicSmallVecVisitor, BasicVecVisitor, Deserialize, DeserializeSeed, Deserializer, Error,
+    FieldNameVisitor, ProductKind, ProductVisitor, SeqProductAccess, SliceVisitor, SumAccess, SumVisitor,
+    VariantAccess, VariantVisitor,
 };
 use crate::{
     de::{array_visit, ArrayAccess, ArrayVisitor, GrowingVec},
@@ -9,6 +10,7 @@ use crate::{
 };
 use crate::{i256, u256};
 use core::{marker::PhantomData, ops::Bound};
+use smallvec::SmallVec;
 use spacetimedb_primitives::{ColId, ColList};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -97,6 +99,9 @@ impl_deserialize!([] F32, de => f32::deserialize(de).map(Into::into));
 impl_deserialize!([] F64, de => f64::deserialize(de).map(Into::into));
 impl_deserialize!([] String, de => de.deserialize_str(OwnedSliceVisitor));
 impl_deserialize!([T: Deserialize<'de>] Vec<T>, de => T::__deserialize_vec(de));
+impl_deserialize!([T: Deserialize<'de>, const N: usize] SmallVec<[T; N]>, de => {
+    de.deserialize_array(BasicSmallVecVisitor)
+});
 impl_deserialize!([T: Deserialize<'de>, const N: usize] [T; N], de => T::__deserialize_array(de));
 impl_deserialize!([] Box<str>, de => String::deserialize(de).map(|s| s.into_boxed_str()));
 impl_deserialize!([T: Deserialize<'de>] Box<[T]>, de => Vec::deserialize(de).map(|s| s.into_boxed_slice()));

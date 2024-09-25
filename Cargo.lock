@@ -4410,6 +4410,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "smallvec",
  "spacetimedb-lib",
  "spacetimedb-primitives",
  "spacetimedb-sats",

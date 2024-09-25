@@ -16,6 +16,7 @@ chrono = { workspace = true, features = ["serde"] }
 enum-as-inner.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+smallvec.workspace = true
 strum.workspace = true
 thiserror.workspace = true
 derive_more.workspace = true
