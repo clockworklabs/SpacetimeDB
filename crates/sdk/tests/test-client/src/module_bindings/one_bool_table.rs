@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `OneBool`.
+///
+/// Obtain a handle from the [`OneBoolTableAccess::one_bool`] method on [`super::RemoteTables`],
+/// like `ctx.db.one_bool()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.one_bool().on_insert(...)`.
 pub struct OneBoolTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<OneBool>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `OneBool`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait OneBoolTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`OneBoolTableHandle`], which mediates access to the table `OneBool`.
     fn one_bool(&self) -> OneBoolTableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for OneBoolTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

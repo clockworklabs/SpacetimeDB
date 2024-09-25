@@ -10,14 +10,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `OneUnitStruct`.
+///
+/// Obtain a handle from the [`OneUnitStructTableAccess::one_unit_struct`] method on [`super::RemoteTables`],
+/// like `ctx.db.one_unit_struct()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.one_unit_struct().on_insert(...)`.
 pub struct OneUnitStructTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<OneUnitStruct>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `OneUnitStruct`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait OneUnitStructTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`OneUnitStructTableHandle`], which mediates access to the table `OneUnitStruct`.
     fn one_unit_struct(&self) -> OneUnitStructTableHandle<'_>;
 }
 
@@ -71,6 +83,7 @@ impl<'ctx> __sdk::table::Table for OneUnitStructTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

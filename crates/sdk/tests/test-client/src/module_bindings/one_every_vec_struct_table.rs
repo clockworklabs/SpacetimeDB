@@ -10,14 +10,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `OneEveryVecStruct`.
+///
+/// Obtain a handle from the [`OneEveryVecStructTableAccess::one_every_vec_struct`] method on [`super::RemoteTables`],
+/// like `ctx.db.one_every_vec_struct()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.one_every_vec_struct().on_insert(...)`.
 pub struct OneEveryVecStructTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<OneEveryVecStruct>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `OneEveryVecStruct`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait OneEveryVecStructTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`OneEveryVecStructTableHandle`], which mediates access to the table `OneEveryVecStruct`.
     fn one_every_vec_struct(&self) -> OneEveryVecStructTableHandle<'_>;
 }
 
@@ -71,6 +83,7 @@ impl<'ctx> __sdk::table::Table for OneEveryVecStructTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

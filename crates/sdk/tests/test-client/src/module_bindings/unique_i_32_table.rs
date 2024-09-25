@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `UniqueI32`.
+///
+/// Obtain a handle from the [`UniqueI32TableAccess::unique_i_32`] method on [`super::RemoteTables`],
+/// like `ctx.db.unique_i_32()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.unique_i_32().on_insert(...)`.
 pub struct UniqueI32TableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<UniqueI32>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `UniqueI32`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait UniqueI32TableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`UniqueI32TableHandle`], which mediates access to the table `UniqueI32`.
     fn unique_i_32(&self) -> UniqueI32TableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for UniqueI32TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -78,12 +91,20 @@ pub(super) fn parse_table_update(
         .context("Failed to parse table update for table \"UniqueI32\"")
 }
 
+/// Access to the `n` unique index on the table `UniqueI32`,
+/// which allows point queries on the field of the same name
+/// via the [`UniqueI32NUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.unique_i_32().n().find(...)`.
 pub struct UniqueI32NUnique<'ctx> {
     imp: __sdk::client_cache::UniqueConstraint<UniqueI32, i32>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> UniqueI32TableHandle<'ctx> {
+    /// Get a handle on the `n` unique index on the table `UniqueI32`.
     pub fn n(&self) -> UniqueI32NUnique<'ctx> {
         UniqueI32NUnique {
             imp: self.imp.get_unique_constraint::<i32>("n", |row| &row.n),
@@ -93,6 +114,8 @@ impl<'ctx> UniqueI32TableHandle<'ctx> {
 }
 
 impl<'ctx> UniqueI32NUnique<'ctx> {
+    /// Find the subscribed row whose `n` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &i32) -> Option<UniqueI32> {
         self.imp.find(col_val)
     }

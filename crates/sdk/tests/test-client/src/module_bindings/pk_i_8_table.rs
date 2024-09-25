@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `PkI8`.
+///
+/// Obtain a handle from the [`PkI8TableAccess::pk_i_8`] method on [`super::RemoteTables`],
+/// like `ctx.db.pk_i_8()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_i_8().on_insert(...)`.
 pub struct PkI8TableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<PkI8>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `PkI8`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait PkI8TableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`PkI8TableHandle`], which mediates access to the table `PkI8`.
     fn pk_i_8(&self) -> PkI8TableHandle<'_>;
 }
 
@@ -87,6 +99,7 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkI8TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -97,12 +110,20 @@ pub(super) fn parse_table_update(
     .context("Failed to parse table update for table \"PkI8\"")
 }
 
+/// Access to the `n` unique index on the table `PkI8`,
+/// which allows point queries on the field of the same name
+/// via the [`PkI8NUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_i_8().n().find(...)`.
 pub struct PkI8NUnique<'ctx> {
     imp: __sdk::client_cache::UniqueConstraint<PkI8, i8>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> PkI8TableHandle<'ctx> {
+    /// Get a handle on the `n` unique index on the table `PkI8`.
     pub fn n(&self) -> PkI8NUnique<'ctx> {
         PkI8NUnique {
             imp: self.imp.get_unique_constraint::<i8>("n", |row| &row.n),
@@ -112,6 +133,8 @@ impl<'ctx> PkI8TableHandle<'ctx> {
 }
 
 impl<'ctx> PkI8NUnique<'ctx> {
+    /// Find the subscribed row whose `n` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &i8) -> Option<PkI8> {
         self.imp.find(col_val)
     }

@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `Connected`.
+///
+/// Obtain a handle from the [`ConnectedTableAccess::connected`] method on [`super::RemoteTables`],
+/// like `ctx.db.connected()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.connected().on_insert(...)`.
 pub struct ConnectedTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<Connected>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `Connected`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait ConnectedTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`ConnectedTableHandle`], which mediates access to the table `Connected`.
     fn connected(&self) -> ConnectedTableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for ConnectedTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

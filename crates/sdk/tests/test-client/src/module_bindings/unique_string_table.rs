@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `UniqueString`.
+///
+/// Obtain a handle from the [`UniqueStringTableAccess::unique_string`] method on [`super::RemoteTables`],
+/// like `ctx.db.unique_string()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.unique_string().on_insert(...)`.
 pub struct UniqueStringTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<UniqueString>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `UniqueString`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait UniqueStringTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`UniqueStringTableHandle`], which mediates access to the table `UniqueString`.
     fn unique_string(&self) -> UniqueStringTableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for UniqueStringTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -78,12 +91,20 @@ pub(super) fn parse_table_update(
         .context("Failed to parse table update for table \"UniqueString\"")
 }
 
+/// Access to the `s` unique index on the table `UniqueString`,
+/// which allows point queries on the field of the same name
+/// via the [`UniqueStringSUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.unique_string().s().find(...)`.
 pub struct UniqueStringSUnique<'ctx> {
     imp: __sdk::client_cache::UniqueConstraint<UniqueString, String>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> UniqueStringTableHandle<'ctx> {
+    /// Get a handle on the `s` unique index on the table `UniqueString`.
     pub fn s(&self) -> UniqueStringSUnique<'ctx> {
         UniqueStringSUnique {
             imp: self.imp.get_unique_constraint::<String>("s", |row| &row.s),
@@ -93,6 +114,8 @@ impl<'ctx> UniqueStringTableHandle<'ctx> {
 }
 
 impl<'ctx> UniqueStringSUnique<'ctx> {
+    /// Find the subscribed row whose `s` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &String) -> Option<UniqueString> {
         self.imp.find(col_val)
     }

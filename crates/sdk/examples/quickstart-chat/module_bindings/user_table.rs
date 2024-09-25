@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `user`.
+///
+/// Obtain a handle from the [`UserTableAccess::user`] method on [`super::RemoteTables`],
+/// like `ctx.db.user()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.user().on_insert(...)`.
 pub struct UserTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<User>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `user`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait UserTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`UserTableHandle`], which mediates access to the table `user`.
     fn user(&self) -> UserTableHandle<'_>;
 }
 
@@ -87,6 +99,7 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for UserTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -99,12 +112,20 @@ pub(super) fn parse_table_update(
     .context("Failed to parse table update for table \"user\"")
 }
 
+/// Access to the `identity` unique index on the table `user`,
+/// which allows point queries on the field of the same name
+/// via the [`UserIdentityUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.user().identity().find(...)`.
 pub struct UserIdentityUnique<'ctx> {
     imp: __sdk::client_cache::UniqueConstraint<User, __sdk::Identity>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> UserTableHandle<'ctx> {
+    /// Get a handle on the `identity` unique index on the table `user`.
     pub fn identity(&self) -> UserIdentityUnique<'ctx> {
         UserIdentityUnique {
             imp: self
@@ -116,6 +137,8 @@ impl<'ctx> UserTableHandle<'ctx> {
 }
 
 impl<'ctx> UserIdentityUnique<'ctx> {
+    /// Find the subscribed row whose `identity` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &__sdk::Identity) -> Option<User> {
         self.imp.find(col_val)
     }

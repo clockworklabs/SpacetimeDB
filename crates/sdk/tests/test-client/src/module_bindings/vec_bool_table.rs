@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `VecBool`.
+///
+/// Obtain a handle from the [`VecBoolTableAccess::vec_bool`] method on [`super::RemoteTables`],
+/// like `ctx.db.vec_bool()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.vec_bool().on_insert(...)`.
 pub struct VecBoolTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<VecBool>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `VecBool`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait VecBoolTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`VecBoolTableHandle`], which mediates access to the table `VecBool`.
     fn vec_bool(&self) -> VecBoolTableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for VecBoolTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `PkAddress`.
+///
+/// Obtain a handle from the [`PkAddressTableAccess::pk_address`] method on [`super::RemoteTables`],
+/// like `ctx.db.pk_address()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_address().on_insert(...)`.
 pub struct PkAddressTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<PkAddress>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `PkAddress`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait PkAddressTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`PkAddressTableHandle`], which mediates access to the table `PkAddress`.
     fn pk_address(&self) -> PkAddressTableHandle<'_>;
 }
 
@@ -87,6 +99,7 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkAddressTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -99,12 +112,20 @@ pub(super) fn parse_table_update(
     .context("Failed to parse table update for table \"PkAddress\"")
 }
 
+/// Access to the `a` unique index on the table `PkAddress`,
+/// which allows point queries on the field of the same name
+/// via the [`PkAddressAUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_address().a().find(...)`.
 pub struct PkAddressAUnique<'ctx> {
     imp: __sdk::client_cache::UniqueConstraint<PkAddress, __sdk::Address>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> PkAddressTableHandle<'ctx> {
+    /// Get a handle on the `a` unique index on the table `PkAddress`.
     pub fn a(&self) -> PkAddressAUnique<'ctx> {
         PkAddressAUnique {
             imp: self.imp.get_unique_constraint::<__sdk::Address>("a", |row| &row.a),
@@ -114,6 +135,8 @@ impl<'ctx> PkAddressTableHandle<'ctx> {
 }
 
 impl<'ctx> PkAddressAUnique<'ctx> {
+    /// Find the subscribed row whose `a` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &__sdk::Address) -> Option<PkAddress> {
         self.imp.find(col_val)
     }

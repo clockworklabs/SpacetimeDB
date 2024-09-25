@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `UniqueBool`.
+///
+/// Obtain a handle from the [`UniqueBoolTableAccess::unique_bool`] method on [`super::RemoteTables`],
+/// like `ctx.db.unique_bool()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.unique_bool().on_insert(...)`.
 pub struct UniqueBoolTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<UniqueBool>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `UniqueBool`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait UniqueBoolTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`UniqueBoolTableHandle`], which mediates access to the table `UniqueBool`.
     fn unique_bool(&self) -> UniqueBoolTableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for UniqueBoolTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -78,12 +91,20 @@ pub(super) fn parse_table_update(
         .context("Failed to parse table update for table \"UniqueBool\"")
 }
 
+/// Access to the `b` unique index on the table `UniqueBool`,
+/// which allows point queries on the field of the same name
+/// via the [`UniqueBoolBUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.unique_bool().b().find(...)`.
 pub struct UniqueBoolBUnique<'ctx> {
     imp: __sdk::client_cache::UniqueConstraint<UniqueBool, bool>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> UniqueBoolTableHandle<'ctx> {
+    /// Get a handle on the `b` unique index on the table `UniqueBool`.
     pub fn b(&self) -> UniqueBoolBUnique<'ctx> {
         UniqueBoolBUnique {
             imp: self.imp.get_unique_constraint::<bool>("b", |row| &row.b),
@@ -93,6 +114,8 @@ impl<'ctx> UniqueBoolTableHandle<'ctx> {
 }
 
 impl<'ctx> UniqueBoolBUnique<'ctx> {
+    /// Find the subscribed row whose `b` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &bool) -> Option<UniqueBool> {
         self.imp.find(col_val)
     }

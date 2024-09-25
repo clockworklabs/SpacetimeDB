@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `VecI64`.
+///
+/// Obtain a handle from the [`VecI64TableAccess::vec_i_64`] method on [`super::RemoteTables`],
+/// like `ctx.db.vec_i_64()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.vec_i_64().on_insert(...)`.
 pub struct VecI64TableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<VecI64>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `VecI64`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait VecI64TableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`VecI64TableHandle`], which mediates access to the table `VecI64`.
     fn vec_i_64(&self) -> VecI64TableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for VecI64TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

@@ -146,14 +146,26 @@ Requested namespace: {namespace}",
         write!(
             out,
             "
+/// Table handle for the table `{table_name}`.
+///
+/// Obtain a handle from the [`{accessor_trait}::{accessor_method}`] method on [`super::RemoteTables`],
+/// like `ctx.db.{accessor_method}()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.{accessor_method}().on_insert(...)`.
 pub struct {table_handle}<'ctx> {{
     imp: __sdk::db_connection::TableHandle<{row_type}>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }}
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `{table_name}`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait {accessor_trait} {{
     #[allow(non_snake_case)]
+    /// Obtain a [`{table_handle}`], which mediates access to the table `{table_name}`.
     fn {accessor_method}(&self) -> {table_handle}<'_>;
 }}
 
@@ -232,6 +244,7 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for {table_handle}<'ctx> {{
     }}
 }}
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -248,6 +261,7 @@ pub(super) fn parse_table_update(
             write!(
                 out,
                 "
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -273,12 +287,20 @@ pub(super) fn parse_table_update(
                 write!(
                     out,
                     "
+        /// Access to the `{unique_field_name}` unique index on the table `{table_name}`,
+        /// which allows point queries on the field of the same name
+        /// via the [`{unique_constraint}::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.{accessor_method}().{unique_field_name}().find(...)`.
         pub struct {unique_constraint}<'ctx> {{
             imp: __sdk::client_cache::UniqueConstraint<{row_type}, {unique_field_type}>,
             phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }}
 
         impl<'ctx> {table_handle}<'ctx> {{
+            /// Get a handle on the `{unique_field_name}` unique index on the table `{table_name}`.
             pub fn {unique_field_name}(&self) -> {unique_constraint}<'ctx> {{
                 {unique_constraint} {{
                     imp: self.imp.get_unique_constraint::<{unique_field_type}>({unique_field_name:?}, |row| &row.{unique_field_name}),
@@ -288,6 +310,8 @@ pub(super) fn parse_table_update(
         }}
 
         impl<'ctx> {unique_constraint}<'ctx> {{
+            /// Find the subscribed row whose `{unique_field_name}` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
             pub fn find(&self, col_val: &{unique_field_type}) -> Option<{row_type}> {{
                 self.imp.find(col_val)
             }}
@@ -377,9 +401,29 @@ impl __sdk::spacetime_module::InModule for {args_type} {{
 pub struct {callback_id}(__sdk::callbacks::CallbackId);
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the reducer `{reducer_name}`.
+///
+/// Implemented for [`super::RemoteReducers`].
 pub trait {func_name} {{
+    /// Request that the remote module invoke the reducer `{reducer_name}` to run as soon as possible.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed by listening for [`Self::on_{func_name}`] callbacks.
     fn {func_name}(&self, {arglist}) -> __anyhow::Result<()>;
+    /// Register a callback to run whenever we are notified of an invocation of the reducer `{reducer_name}`.
+    ///
+    /// The [`super::EventContext`] passed to the `callback`
+    /// will always have [`__sdk::Event::Reducer`] as its `event`,
+    /// but it may or may not have terminated successfully and been committed.
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// to determine the reducer's status.
+    ///
+    /// The returned [`{callback_id}`] can be passed to [`Self::remove_on_{func_name}`]
+    /// to cancel the callback.
     fn on_{func_name}(&self, callback: impl FnMut(&super::EventContext, {arg_types_ref_list}) + Send + 'static) -> {callback_id};
+    /// Cancel a callback previously registered by [`Self::on_{func_name}`],
+    /// causing it not to run in the future.
     fn remove_on_{func_name}(&self, callback: {callback_id});
 }}
 
@@ -754,6 +798,15 @@ fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef> {
 
 fn print_reducer_enum_defn(module: &ModuleDef, out: &mut Indenter) {
     print_enum_derives(out);
+    writeln!(
+        out,
+        "
+/// One of the reducers defined by this module.
+///
+/// Contained within a [`__sdk::ReducerEvent`] in [`EventContext`]s for reducer events
+/// to indicate which reducer caused the event.
+",
+    );
     out.delimited_block(
         "pub enum Reducer {",
         |out| {
@@ -858,6 +911,7 @@ impl __sdk::spacetime_module::InModule for Reducer {{
 fn print_db_update_defn(module: &ModuleDef, out: &mut Indenter) {
     writeln!(out, "#[derive(Default)]");
     writeln!(out, "#[allow(non_snake_case)]");
+    writeln!(out, "#[doc(hidden)]");
     out.delimited_block(
         "pub struct DbUpdate {",
         |out| {
@@ -958,6 +1012,7 @@ fn print_const_db_context_types(out: &mut Indenter) {
     writeln!(
         out,
         "
+#[doc(hidden)]
 pub struct RemoteModule;
 
 impl __sdk::spacetime_module::InModule for RemoteModule {{
@@ -974,6 +1029,8 @@ impl __sdk::spacetime_module::SpacetimeModule for RemoteModule {{
     type SubscriptionHandle = SubscriptionHandle;
 }}
 
+/// The `reducers` field of [`EventContext`] and [`DbConnection`],
+/// with methods provided by extension traits for each reducer defined by the module.
 pub struct RemoteReducers {{
     imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
 }}
@@ -982,6 +1039,8 @@ impl __sdk::spacetime_module::InModule for RemoteReducers {{
     type Module = RemoteModule;
 }}
 
+/// The `db` field of [`EventContext`] and [`DbConnection`],
+/// with methods provided by extension traits for each table defined by the module.
 pub struct RemoteTables {{
     imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
 }}
@@ -990,8 +1049,39 @@ impl __sdk::spacetime_module::InModule for RemoteTables {{
     type Module = RemoteModule;
 }}
 
+/// A connection to a remote module, including a materialized view of a subset of the database.
+///
+/// Connect to a remote module by calling [`DbConnection::builder`]
+/// and using the [`__sdk::DbConnectionBuilder`] builder-pattern constructor.
+///
+/// You must explicitly advance the connection by calling any one of:
+///
+/// - [`DbConnection::frame_tick`].
+/// - [`DbConnection::run_threaded`].
+/// - [`DbConnection::run_async`].
+/// - [`DbConnection::advance_one_message`].
+/// - [`DbConnection::advance_one_message_blocking`].
+/// - [`DbConnection::advance_one_message_async`].
+///
+/// Which of these methods you should call depends on the specific needs of your application,
+/// but you must call one of them, or else the connection will never progress.
+#[must_use = \"
+You must explicitly advance the connection by calling any one of:
+
+- `DbConnection::frame_tick`.
+- `DbConnection::run_threaded`.
+- `DbConnection::run_async`.
+- `DbConnection::advance_one_message`.
+- `DbConnection::advance_one_message_blocking`.
+- `DbConnection::advance_one_message_async`.
+
+Which of these methods you should call depends on the specific needs of your application,
+but you must call one of them, or else the connection will never progress.
+\"]
 pub struct DbConnection {{
+    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
     pub db: RemoteTables,
+    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
 
     imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
@@ -1035,30 +1125,71 @@ impl __sdk::db_context::DbContext for DbConnection {{
 }}
 
 impl DbConnection {{
-    pub fn builder() -> __sdk::db_connection::DbConnectionBuilder<RemoteModule> {{
+    /// Builder-pattern constructor for a connection to a remote module.
+    ///
+    /// See [`__sdk::DbConnectionBuilder`] for required and optional configuration for the new connection.
+    pub fn builder() -> __sdk::DbConnectionBuilder<RemoteModule> {{
         __sdk::db_connection::DbConnectionBuilder::new()
     }}
 
+    /// If any WebSocket messages are waiting, process one of them.
+    ///
+    /// Returns `true` if a message was processed, or `false` if the queue is empty.
+    /// Callers should invoke this message in a loop until it returns `false`
+    /// or for as much time is available to process messages.
+    ///
+    /// Returns an error if the connection is disconnected.
+    /// If the disconnection in question was normal,
+    ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
+    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
+    ///
+    /// This is a low-level primitive exposed for power users who need significant control over scheduling.
+    /// Most applications should call [`Self::frame_tick`] each frame
+    /// to fully exhaust the queue whenever time is available.
     pub fn advance_one_message(&self) -> __anyhow::Result<bool> {{
         self.imp.advance_one_message()
     }}
 
+    /// Process one WebSocket message, potentially blocking the current thread until one is received.
+    ///
+    /// Returns an error if the connection is disconnected.
+    /// If the disconnection in question was normal,
+    ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
+    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
+    ///
+    /// This is a low-level primitive exposed for power users who need significant control over scheduling.
+    /// Most applications should call [`Self::run_threaded`] to spawn a thread
+    /// which advances the connection automatically.
     pub fn advance_one_message_blocking(&self) -> __anyhow::Result<()> {{
         self.imp.advance_one_message_blocking()
     }}
 
+    /// Process one WebSocket message, `await`ing until one is received.
+    ///
+    /// Returns an error if the connection is disconnected.
+    /// If the disconnection in question was normal,
+    ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
+    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
+    ///
+    /// This is a low-level primitive exposed for power users who need significant control over scheduling.
+    /// Most applications should call [`Self::run_async`] to run an `async` loop
+    /// which advances the connection when polled.
     pub async fn advance_one_message_async(&self) -> __anyhow::Result<()> {{
         self.imp.advance_one_message_async().await
     }}
 
+    /// Process all WebSocket messages waiting in the queue,
+    /// then return without `await`ing or blocking the current thread.
     pub fn frame_tick(&self) -> __anyhow::Result<()> {{
         self.imp.frame_tick()
     }}
 
+    /// Spawn a thread which processes WebSocket messages as they are received.
     pub fn run_threaded(&self) -> std::thread::JoinHandle<()> {{
         self.imp.run_threaded()
     }}
 
+    /// Run an `async` loop which processes WebSocket messages when polled.
     pub async fn run_async(&self) -> __anyhow::Result<()> {{
         self.imp.run_async().await
     }}
@@ -1074,9 +1205,14 @@ impl __sdk::spacetime_module::DbConnection for DbConnection {{
     }}
 }}
 
+/// A [`DbConnection`] augmented with an [`__sdk::Event`],
+/// passed to various callbacks invoked by the SDK.
 pub struct EventContext {{
+    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
     pub db: RemoteTables,
+    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
+    /// The event which caused these callbacks to run.
     pub event: __sdk::event::Event<Reducer>,
     imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
 }}
@@ -1132,6 +1268,8 @@ impl __sdk::spacetime_module::EventContext for EventContext {{
     }}
 }}
 
+/// A handle on a subscribed query.
+// TODO: Document this better after implementing the new subscription API.
 pub struct SubscriptionHandle {{
     imp: __sdk::subscription::SubscriptionHandleImpl<RemoteModule>,
 }}
@@ -1146,6 +1284,11 @@ impl __sdk::spacetime_module::SubscriptionHandle for SubscriptionHandle {{
     }}
 }}
 
+/// Alias trait for a [`__sdk::DbContext`] connected to this module,
+/// with that trait's associated types bounded to this module's concrete types.
+///
+/// Users can use this trait as a boundary on definitions which should accept
+/// either a [`DbConnection`] or an [`EventContext`] and operate on either.
 pub trait RemoteDbContext: __sdk::DbContext<
     DbView = RemoteTables,
     Reducers = RemoteReducers,

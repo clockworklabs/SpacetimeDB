@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `UniqueI128`.
+///
+/// Obtain a handle from the [`UniqueI128TableAccess::unique_i_128`] method on [`super::RemoteTables`],
+/// like `ctx.db.unique_i_128()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.unique_i_128().on_insert(...)`.
 pub struct UniqueI128TableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<UniqueI128>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `UniqueI128`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait UniqueI128TableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`UniqueI128TableHandle`], which mediates access to the table `UniqueI128`.
     fn unique_i_128(&self) -> UniqueI128TableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for UniqueI128TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -78,12 +91,20 @@ pub(super) fn parse_table_update(
         .context("Failed to parse table update for table \"UniqueI128\"")
 }
 
+/// Access to the `n` unique index on the table `UniqueI128`,
+/// which allows point queries on the field of the same name
+/// via the [`UniqueI128NUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.unique_i_128().n().find(...)`.
 pub struct UniqueI128NUnique<'ctx> {
     imp: __sdk::client_cache::UniqueConstraint<UniqueI128, i128>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> UniqueI128TableHandle<'ctx> {
+    /// Get a handle on the `n` unique index on the table `UniqueI128`.
     pub fn n(&self) -> UniqueI128NUnique<'ctx> {
         UniqueI128NUnique {
             imp: self.imp.get_unique_constraint::<i128>("n", |row| &row.n),
@@ -93,6 +114,8 @@ impl<'ctx> UniqueI128TableHandle<'ctx> {
 }
 
 impl<'ctx> UniqueI128NUnique<'ctx> {
+    /// Find the subscribed row whose `n` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &i128) -> Option<UniqueI128> {
         self.imp.find(col_val)
     }

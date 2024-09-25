@@ -10,14 +10,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `OneSimpleEnum`.
+///
+/// Obtain a handle from the [`OneSimpleEnumTableAccess::one_simple_enum`] method on [`super::RemoteTables`],
+/// like `ctx.db.one_simple_enum()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.one_simple_enum().on_insert(...)`.
 pub struct OneSimpleEnumTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<OneSimpleEnum>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `OneSimpleEnum`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait OneSimpleEnumTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`OneSimpleEnumTableHandle`], which mediates access to the table `OneSimpleEnum`.
     fn one_simple_enum(&self) -> OneSimpleEnumTableHandle<'_>;
 }
 
@@ -71,6 +83,7 @@ impl<'ctx> __sdk::table::Table for OneSimpleEnumTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

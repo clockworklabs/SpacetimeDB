@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `PkI256`.
+///
+/// Obtain a handle from the [`PkI256TableAccess::pk_i_256`] method on [`super::RemoteTables`],
+/// like `ctx.db.pk_i_256()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_i_256().on_insert(...)`.
 pub struct PkI256TableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<PkI256>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `PkI256`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait PkI256TableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`PkI256TableHandle`], which mediates access to the table `PkI256`.
     fn pk_i_256(&self) -> PkI256TableHandle<'_>;
 }
 
@@ -87,6 +99,7 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkI256TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -99,12 +112,20 @@ pub(super) fn parse_table_update(
     .context("Failed to parse table update for table \"PkI256\"")
 }
 
+/// Access to the `n` unique index on the table `PkI256`,
+/// which allows point queries on the field of the same name
+/// via the [`PkI256NUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_i_256().n().find(...)`.
 pub struct PkI256NUnique<'ctx> {
     imp: __sdk::client_cache::UniqueConstraint<PkI256, __sats::i256>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> PkI256TableHandle<'ctx> {
+    /// Get a handle on the `n` unique index on the table `PkI256`.
     pub fn n(&self) -> PkI256NUnique<'ctx> {
         PkI256NUnique {
             imp: self.imp.get_unique_constraint::<__sats::i256>("n", |row| &row.n),
@@ -114,6 +135,8 @@ impl<'ctx> PkI256TableHandle<'ctx> {
 }
 
 impl<'ctx> PkI256NUnique<'ctx> {
+    /// Find the subscribed row whose `n` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &__sats::i256) -> Option<PkI256> {
         self.imp.find(col_val)
     }

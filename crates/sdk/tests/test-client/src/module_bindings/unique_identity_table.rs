@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `UniqueIdentity`.
+///
+/// Obtain a handle from the [`UniqueIdentityTableAccess::unique_identity`] method on [`super::RemoteTables`],
+/// like `ctx.db.unique_identity()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.unique_identity().on_insert(...)`.
 pub struct UniqueIdentityTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<UniqueIdentity>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `UniqueIdentity`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait UniqueIdentityTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`UniqueIdentityTableHandle`], which mediates access to the table `UniqueIdentity`.
     fn unique_identity(&self) -> UniqueIdentityTableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for UniqueIdentityTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -78,12 +91,20 @@ pub(super) fn parse_table_update(
         .context("Failed to parse table update for table \"UniqueIdentity\"")
 }
 
+/// Access to the `i` unique index on the table `UniqueIdentity`,
+/// which allows point queries on the field of the same name
+/// via the [`UniqueIdentityIUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.unique_identity().i().find(...)`.
 pub struct UniqueIdentityIUnique<'ctx> {
     imp: __sdk::client_cache::UniqueConstraint<UniqueIdentity, __sdk::Identity>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> UniqueIdentityTableHandle<'ctx> {
+    /// Get a handle on the `i` unique index on the table `UniqueIdentity`.
     pub fn i(&self) -> UniqueIdentityIUnique<'ctx> {
         UniqueIdentityIUnique {
             imp: self.imp.get_unique_constraint::<__sdk::Identity>("i", |row| &row.i),
@@ -93,6 +114,8 @@ impl<'ctx> UniqueIdentityTableHandle<'ctx> {
 }
 
 impl<'ctx> UniqueIdentityIUnique<'ctx> {
+    /// Find the subscribed row whose `i` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &__sdk::Identity) -> Option<UniqueIdentity> {
         self.imp.find(col_val)
     }

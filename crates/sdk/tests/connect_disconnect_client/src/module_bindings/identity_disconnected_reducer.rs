@@ -19,12 +19,32 @@ impl __sdk::spacetime_module::InModule for IdentityDisconnected {
 pub struct IdentityDisconnectedCallbackId(__sdk::callbacks::CallbackId);
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the reducer `__identity_disconnected__`.
+///
+/// Implemented for [`super::RemoteReducers`].
 pub trait identity_disconnected {
+    /// Request that the remote module invoke the reducer `__identity_disconnected__` to run as soon as possible.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed by listening for [`Self::on_identity_disconnected`] callbacks.
     fn identity_disconnected(&self) -> __anyhow::Result<()>;
+    /// Register a callback to run whenever we are notified of an invocation of the reducer `__identity_disconnected__`.
+    ///
+    /// The [`super::EventContext`] passed to the `callback`
+    /// will always have [`__sdk::Event::Reducer`] as its `event`,
+    /// but it may or may not have terminated successfully and been committed.
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// to determine the reducer's status.
+    ///
+    /// The returned [`IdentityDisconnectedCallbackId`] can be passed to [`Self::remove_on_identity_disconnected`]
+    /// to cancel the callback.
     fn on_identity_disconnected(
         &self,
         callback: impl FnMut(&super::EventContext) + Send + 'static,
     ) -> IdentityDisconnectedCallbackId;
+    /// Cancel a callback previously registered by [`Self::on_identity_disconnected`],
+    /// causing it not to run in the future.
     fn remove_on_identity_disconnected(&self, callback: IdentityDisconnectedCallbackId);
 }
 

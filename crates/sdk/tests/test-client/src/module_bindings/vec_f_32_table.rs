@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `VecF32`.
+///
+/// Obtain a handle from the [`VecF32TableAccess::vec_f_32`] method on [`super::RemoteTables`],
+/// like `ctx.db.vec_f_32()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.vec_f_32().on_insert(...)`.
 pub struct VecF32TableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<VecF32>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `VecF32`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait VecF32TableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`VecF32TableHandle`], which mediates access to the table `VecF32`.
     fn vec_f_32(&self) -> VecF32TableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for VecF32TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

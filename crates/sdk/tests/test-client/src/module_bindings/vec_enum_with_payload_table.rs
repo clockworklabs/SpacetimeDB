@@ -10,14 +10,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `VecEnumWithPayload`.
+///
+/// Obtain a handle from the [`VecEnumWithPayloadTableAccess::vec_enum_with_payload`] method on [`super::RemoteTables`],
+/// like `ctx.db.vec_enum_with_payload()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.vec_enum_with_payload().on_insert(...)`.
 pub struct VecEnumWithPayloadTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<VecEnumWithPayload>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `VecEnumWithPayload`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait VecEnumWithPayloadTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`VecEnumWithPayloadTableHandle`], which mediates access to the table `VecEnumWithPayload`.
     fn vec_enum_with_payload(&self) -> VecEnumWithPayloadTableHandle<'_>;
 }
 
@@ -71,6 +83,7 @@ impl<'ctx> __sdk::table::Table for VecEnumWithPayloadTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

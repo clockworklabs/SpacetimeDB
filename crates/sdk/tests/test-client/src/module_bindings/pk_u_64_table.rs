@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `PkU64`.
+///
+/// Obtain a handle from the [`PkU64TableAccess::pk_u_64`] method on [`super::RemoteTables`],
+/// like `ctx.db.pk_u_64()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_u_64().on_insert(...)`.
 pub struct PkU64TableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<PkU64>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `PkU64`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait PkU64TableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`PkU64TableHandle`], which mediates access to the table `PkU64`.
     fn pk_u_64(&self) -> PkU64TableHandle<'_>;
 }
 
@@ -87,6 +99,7 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkU64TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -97,12 +110,20 @@ pub(super) fn parse_table_update(
     .context("Failed to parse table update for table \"PkU64\"")
 }
 
+/// Access to the `n` unique index on the table `PkU64`,
+/// which allows point queries on the field of the same name
+/// via the [`PkU64NUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_u_64().n().find(...)`.
 pub struct PkU64NUnique<'ctx> {
     imp: __sdk::client_cache::UniqueConstraint<PkU64, u64>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> PkU64TableHandle<'ctx> {
+    /// Get a handle on the `n` unique index on the table `PkU64`.
     pub fn n(&self) -> PkU64NUnique<'ctx> {
         PkU64NUnique {
             imp: self.imp.get_unique_constraint::<u64>("n", |row| &row.n),
@@ -112,6 +133,8 @@ impl<'ctx> PkU64TableHandle<'ctx> {
 }
 
 impl<'ctx> PkU64NUnique<'ctx> {
+    /// Find the subscribed row whose `n` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &u64) -> Option<PkU64> {
         self.imp.find(col_val)
     }

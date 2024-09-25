@@ -21,12 +21,32 @@ impl __sdk::spacetime_module::InModule for DeletePkI256 {
 pub struct DeletePkI256CallbackId(__sdk::callbacks::CallbackId);
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the reducer `delete_pk_i256`.
+///
+/// Implemented for [`super::RemoteReducers`].
 pub trait delete_pk_i_256 {
+    /// Request that the remote module invoke the reducer `delete_pk_i256` to run as soon as possible.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed by listening for [`Self::on_delete_pk_i_256`] callbacks.
     fn delete_pk_i_256(&self, n: __sats::i256) -> __anyhow::Result<()>;
+    /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_pk_i256`.
+    ///
+    /// The [`super::EventContext`] passed to the `callback`
+    /// will always have [`__sdk::Event::Reducer`] as its `event`,
+    /// but it may or may not have terminated successfully and been committed.
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// to determine the reducer's status.
+    ///
+    /// The returned [`DeletePkI256CallbackId`] can be passed to [`Self::remove_on_delete_pk_i_256`]
+    /// to cancel the callback.
     fn on_delete_pk_i_256(
         &self,
         callback: impl FnMut(&super::EventContext, &__sats::i256) + Send + 'static,
     ) -> DeletePkI256CallbackId;
+    /// Cancel a callback previously registered by [`Self::on_delete_pk_i_256`],
+    /// causing it not to run in the future.
     fn remove_on_delete_pk_i_256(&self, callback: DeletePkI256CallbackId);
 }
 

@@ -30,6 +30,12 @@ pub use user_type::*;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
+
+/// One of the reducers defined by this module.
+///
+/// Contained within a [`__sdk::ReducerEvent`] in [`EventContext`]s for reducer events
+/// to indicate which reducer caused the event.
+
 pub enum Reducer {
     IdentityConnected(identity_connected_reducer::IdentityConnected),
     IdentityDisconnected(identity_disconnected_reducer::IdentityDisconnected),
@@ -92,6 +98,7 @@ impl TryFrom<__ws::ReducerCallInfo> for Reducer {
 
 #[derive(Default)]
 #[allow(non_snake_case)]
+#[doc(hidden)]
 pub struct DbUpdate {
     message: __sdk::spacetime_module::TableUpdate<Message>,
     user: __sdk::spacetime_module::TableUpdate<User>,
@@ -130,6 +137,7 @@ impl __sdk::spacetime_module::DbUpdate for DbUpdate {
     }
 }
 
+#[doc(hidden)]
 pub struct RemoteModule;
 
 impl __sdk::spacetime_module::InModule for RemoteModule {
@@ -146,6 +154,8 @@ impl __sdk::spacetime_module::SpacetimeModule for RemoteModule {
     type SubscriptionHandle = SubscriptionHandle;
 }
 
+/// The `reducers` field of [`EventContext`] and [`DbConnection`],
+/// with methods provided by extension traits for each reducer defined by the module.
 pub struct RemoteReducers {
     imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
 }
@@ -154,6 +164,8 @@ impl __sdk::spacetime_module::InModule for RemoteReducers {
     type Module = RemoteModule;
 }
 
+/// The `db` field of [`EventContext`] and [`DbConnection`],
+/// with methods provided by extension traits for each table defined by the module.
 pub struct RemoteTables {
     imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
 }
@@ -162,8 +174,39 @@ impl __sdk::spacetime_module::InModule for RemoteTables {
     type Module = RemoteModule;
 }
 
+/// A connection to a remote module, including a materialized view of a subset of the database.
+///
+/// Connect to a remote module by calling [`DbConnection::builder`]
+/// and using the [`__sdk::DbConnectionBuilder`] builder-pattern constructor.
+///
+/// You must explicitly advance the connection by calling any one of:
+///
+/// - [`DbConnection::frame_tick`].
+/// - [`DbConnection::run_threaded`].
+/// - [`DbConnection::run_async`].
+/// - [`DbConnection::advance_one_message`].
+/// - [`DbConnection::advance_one_message_blocking`].
+/// - [`DbConnection::advance_one_message_async`].
+///
+/// Which of these methods you should call depends on the specific needs of your application,
+/// but you must call one of them, or else the connection will never progress.
+#[must_use = "
+You must explicitly advance the connection by calling any one of:
+
+- `DbConnection::frame_tick`.
+- `DbConnection::run_threaded`.
+- `DbConnection::run_async`.
+- `DbConnection::advance_one_message`.
+- `DbConnection::advance_one_message_blocking`.
+- `DbConnection::advance_one_message_async`.
+
+Which of these methods you should call depends on the specific needs of your application,
+but you must call one of them, or else the connection will never progress.
+"]
 pub struct DbConnection {
+    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
     pub db: RemoteTables,
+    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
 
     imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
@@ -207,30 +250,71 @@ impl __sdk::db_context::DbContext for DbConnection {
 }
 
 impl DbConnection {
-    pub fn builder() -> __sdk::db_connection::DbConnectionBuilder<RemoteModule> {
+    /// Builder-pattern constructor for a connection to a remote module.
+    ///
+    /// See [`__sdk::DbConnectionBuilder`] for required and optional configuration for the new connection.
+    pub fn builder() -> __sdk::DbConnectionBuilder<RemoteModule> {
         __sdk::db_connection::DbConnectionBuilder::new()
     }
 
+    /// If any WebSocket messages are waiting, process one of them.
+    ///
+    /// Returns `true` if a message was processed, or `false` if the queue is empty.
+    /// Callers should invoke this message in a loop until it returns `false`
+    /// or for as much time is available to process messages.
+    ///
+    /// Returns an error if the connection is disconnected.
+    /// If the disconnection in question was normal,
+    ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
+    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
+    ///
+    /// This is a low-level primitive exposed for power users who need significant control over scheduling.
+    /// Most applications should call [`Self::frame_tick`] each frame
+    /// to fully exhaust the queue whenever time is available.
     pub fn advance_one_message(&self) -> __anyhow::Result<bool> {
         self.imp.advance_one_message()
     }
 
+    /// Process one WebSocket message, potentially blocking the current thread until one is received.
+    ///
+    /// Returns an error if the connection is disconnected.
+    /// If the disconnection in question was normal,
+    ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
+    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
+    ///
+    /// This is a low-level primitive exposed for power users who need significant control over scheduling.
+    /// Most applications should call [`Self::run_threaded`] to spawn a thread
+    /// which advances the connection automatically.
     pub fn advance_one_message_blocking(&self) -> __anyhow::Result<()> {
         self.imp.advance_one_message_blocking()
     }
 
+    /// Process one WebSocket message, `await`ing until one is received.
+    ///
+    /// Returns an error if the connection is disconnected.
+    /// If the disconnection in question was normal,
+    ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
+    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
+    ///
+    /// This is a low-level primitive exposed for power users who need significant control over scheduling.
+    /// Most applications should call [`Self::run_async`] to run an `async` loop
+    /// which advances the connection when polled.
     pub async fn advance_one_message_async(&self) -> __anyhow::Result<()> {
         self.imp.advance_one_message_async().await
     }
 
+    /// Process all WebSocket messages waiting in the queue,
+    /// then return without `await`ing or blocking the current thread.
     pub fn frame_tick(&self) -> __anyhow::Result<()> {
         self.imp.frame_tick()
     }
 
+    /// Spawn a thread which processes WebSocket messages as they are received.
     pub fn run_threaded(&self) -> std::thread::JoinHandle<()> {
         self.imp.run_threaded()
     }
 
+    /// Run an `async` loop which processes WebSocket messages when polled.
     pub async fn run_async(&self) -> __anyhow::Result<()> {
         self.imp.run_async().await
     }
@@ -246,9 +330,14 @@ impl __sdk::spacetime_module::DbConnection for DbConnection {
     }
 }
 
+/// A [`DbConnection`] augmented with an [`__sdk::Event`],
+/// passed to various callbacks invoked by the SDK.
 pub struct EventContext {
+    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
     pub db: RemoteTables,
+    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
+    /// The event which caused these callbacks to run.
     pub event: __sdk::event::Event<Reducer>,
     imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
 }
@@ -304,6 +393,8 @@ impl __sdk::spacetime_module::EventContext for EventContext {
     }
 }
 
+/// A handle on a subscribed query.
+// TODO: Document this better after implementing the new subscription API.
 pub struct SubscriptionHandle {
     imp: __sdk::subscription::SubscriptionHandleImpl<RemoteModule>,
 }
@@ -318,6 +409,11 @@ impl __sdk::spacetime_module::SubscriptionHandle for SubscriptionHandle {
     }
 }
 
+/// Alias trait for a [`__sdk::DbContext`] connected to this module,
+/// with that trait's associated types bounded to this module's concrete types.
+///
+/// Users can use this trait as a boundary on definitions which should accept
+/// either a [`DbConnection`] or an [`EventContext`] and operate on either.
 pub trait RemoteDbContext:
     __sdk::DbContext<
     DbView = RemoteTables,

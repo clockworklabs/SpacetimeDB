@@ -10,14 +10,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `OneEnumWithPayload`.
+///
+/// Obtain a handle from the [`OneEnumWithPayloadTableAccess::one_enum_with_payload`] method on [`super::RemoteTables`],
+/// like `ctx.db.one_enum_with_payload()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.one_enum_with_payload().on_insert(...)`.
 pub struct OneEnumWithPayloadTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<OneEnumWithPayload>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `OneEnumWithPayload`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait OneEnumWithPayloadTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`OneEnumWithPayloadTableHandle`], which mediates access to the table `OneEnumWithPayload`.
     fn one_enum_with_payload(&self) -> OneEnumWithPayloadTableHandle<'_>;
 }
 
@@ -71,6 +83,7 @@ impl<'ctx> __sdk::table::Table for OneEnumWithPayloadTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `OneF32`.
+///
+/// Obtain a handle from the [`OneF32TableAccess::one_f_32`] method on [`super::RemoteTables`],
+/// like `ctx.db.one_f_32()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.one_f_32().on_insert(...)`.
 pub struct OneF32TableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<OneF32>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `OneF32`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait OneF32TableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`OneF32TableHandle`], which mediates access to the table `OneF32`.
     fn one_f_32(&self) -> OneF32TableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for OneF32TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

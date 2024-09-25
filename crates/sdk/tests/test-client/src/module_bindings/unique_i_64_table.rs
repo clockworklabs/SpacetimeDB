@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `UniqueI64`.
+///
+/// Obtain a handle from the [`UniqueI64TableAccess::unique_i_64`] method on [`super::RemoteTables`],
+/// like `ctx.db.unique_i_64()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.unique_i_64().on_insert(...)`.
 pub struct UniqueI64TableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<UniqueI64>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `UniqueI64`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait UniqueI64TableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`UniqueI64TableHandle`], which mediates access to the table `UniqueI64`.
     fn unique_i_64(&self) -> UniqueI64TableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for UniqueI64TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -78,12 +91,20 @@ pub(super) fn parse_table_update(
         .context("Failed to parse table update for table \"UniqueI64\"")
 }
 
+/// Access to the `n` unique index on the table `UniqueI64`,
+/// which allows point queries on the field of the same name
+/// via the [`UniqueI64NUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.unique_i_64().n().find(...)`.
 pub struct UniqueI64NUnique<'ctx> {
     imp: __sdk::client_cache::UniqueConstraint<UniqueI64, i64>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> UniqueI64TableHandle<'ctx> {
+    /// Get a handle on the `n` unique index on the table `UniqueI64`.
     pub fn n(&self) -> UniqueI64NUnique<'ctx> {
         UniqueI64NUnique {
             imp: self.imp.get_unique_constraint::<i64>("n", |row| &row.n),
@@ -93,6 +114,8 @@ impl<'ctx> UniqueI64TableHandle<'ctx> {
 }
 
 impl<'ctx> UniqueI64NUnique<'ctx> {
+    /// Find the subscribed row whose `n` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &i64) -> Option<UniqueI64> {
         self.imp.find(col_val)
     }

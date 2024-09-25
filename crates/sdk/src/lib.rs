@@ -41,7 +41,7 @@ pub mod db_context;
 pub mod event;
 pub mod table;
 
-pub use db_connection::DbConnectionBuilder;
+pub use db_connection::{DbConnectionBuilder, DisconnectedError};
 pub use db_context::DbContext;
 pub use event::{Event, ReducerEvent, Status};
 pub use table::{Table, TableWithPrimaryKey};

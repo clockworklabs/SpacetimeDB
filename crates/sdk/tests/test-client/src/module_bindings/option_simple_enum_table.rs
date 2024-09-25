@@ -10,14 +10,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `OptionSimpleEnum`.
+///
+/// Obtain a handle from the [`OptionSimpleEnumTableAccess::option_simple_enum`] method on [`super::RemoteTables`],
+/// like `ctx.db.option_simple_enum()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.option_simple_enum().on_insert(...)`.
 pub struct OptionSimpleEnumTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<OptionSimpleEnum>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `OptionSimpleEnum`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait OptionSimpleEnumTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`OptionSimpleEnumTableHandle`], which mediates access to the table `OptionSimpleEnum`.
     fn option_simple_enum(&self) -> OptionSimpleEnumTableHandle<'_>;
 }
 
@@ -71,6 +83,7 @@ impl<'ctx> __sdk::table::Table for OptionSimpleEnumTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

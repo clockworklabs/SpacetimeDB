@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `PkBool`.
+///
+/// Obtain a handle from the [`PkBoolTableAccess::pk_bool`] method on [`super::RemoteTables`],
+/// like `ctx.db.pk_bool()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_bool().on_insert(...)`.
 pub struct PkBoolTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<PkBool>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `PkBool`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait PkBoolTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`PkBoolTableHandle`], which mediates access to the table `PkBool`.
     fn pk_bool(&self) -> PkBoolTableHandle<'_>;
 }
 
@@ -87,6 +99,7 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkBoolTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -99,12 +112,20 @@ pub(super) fn parse_table_update(
     .context("Failed to parse table update for table \"PkBool\"")
 }
 
+/// Access to the `b` unique index on the table `PkBool`,
+/// which allows point queries on the field of the same name
+/// via the [`PkBoolBUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_bool().b().find(...)`.
 pub struct PkBoolBUnique<'ctx> {
     imp: __sdk::client_cache::UniqueConstraint<PkBool, bool>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> PkBoolTableHandle<'ctx> {
+    /// Get a handle on the `b` unique index on the table `PkBool`.
     pub fn b(&self) -> PkBoolBUnique<'ctx> {
         PkBoolBUnique {
             imp: self.imp.get_unique_constraint::<bool>("b", |row| &row.b),
@@ -114,6 +135,8 @@ impl<'ctx> PkBoolTableHandle<'ctx> {
 }
 
 impl<'ctx> PkBoolBUnique<'ctx> {
+    /// Find the subscribed row whose `b` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &bool) -> Option<PkBool> {
         self.imp.find(col_val)
     }

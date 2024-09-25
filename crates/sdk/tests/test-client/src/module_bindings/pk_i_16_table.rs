@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `PkI16`.
+///
+/// Obtain a handle from the [`PkI16TableAccess::pk_i_16`] method on [`super::RemoteTables`],
+/// like `ctx.db.pk_i_16()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_i_16().on_insert(...)`.
 pub struct PkI16TableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<PkI16>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `PkI16`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait PkI16TableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`PkI16TableHandle`], which mediates access to the table `PkI16`.
     fn pk_i_16(&self) -> PkI16TableHandle<'_>;
 }
 
@@ -87,6 +99,7 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkI16TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -97,12 +110,20 @@ pub(super) fn parse_table_update(
     .context("Failed to parse table update for table \"PkI16\"")
 }
 
+/// Access to the `n` unique index on the table `PkI16`,
+/// which allows point queries on the field of the same name
+/// via the [`PkI16NUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_i_16().n().find(...)`.
 pub struct PkI16NUnique<'ctx> {
     imp: __sdk::client_cache::UniqueConstraint<PkI16, i16>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> PkI16TableHandle<'ctx> {
+    /// Get a handle on the `n` unique index on the table `PkI16`.
     pub fn n(&self) -> PkI16NUnique<'ctx> {
         PkI16NUnique {
             imp: self.imp.get_unique_constraint::<i16>("n", |row| &row.n),
@@ -112,6 +133,8 @@ impl<'ctx> PkI16TableHandle<'ctx> {
 }
 
 impl<'ctx> PkI16NUnique<'ctx> {
+    /// Find the subscribed row whose `n` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &i16) -> Option<PkI16> {
         self.imp.find(col_val)
     }

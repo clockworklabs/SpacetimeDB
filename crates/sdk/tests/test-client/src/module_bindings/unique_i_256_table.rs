@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `UniqueI256`.
+///
+/// Obtain a handle from the [`UniqueI256TableAccess::unique_i_256`] method on [`super::RemoteTables`],
+/// like `ctx.db.unique_i_256()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.unique_i_256().on_insert(...)`.
 pub struct UniqueI256TableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<UniqueI256>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `UniqueI256`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait UniqueI256TableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`UniqueI256TableHandle`], which mediates access to the table `UniqueI256`.
     fn unique_i_256(&self) -> UniqueI256TableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for UniqueI256TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -78,12 +91,20 @@ pub(super) fn parse_table_update(
         .context("Failed to parse table update for table \"UniqueI256\"")
 }
 
+/// Access to the `n` unique index on the table `UniqueI256`,
+/// which allows point queries on the field of the same name
+/// via the [`UniqueI256NUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.unique_i_256().n().find(...)`.
 pub struct UniqueI256NUnique<'ctx> {
     imp: __sdk::client_cache::UniqueConstraint<UniqueI256, __sats::i256>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> UniqueI256TableHandle<'ctx> {
+    /// Get a handle on the `n` unique index on the table `UniqueI256`.
     pub fn n(&self) -> UniqueI256NUnique<'ctx> {
         UniqueI256NUnique {
             imp: self.imp.get_unique_constraint::<__sats::i256>("n", |row| &row.n),
@@ -93,6 +114,8 @@ impl<'ctx> UniqueI256TableHandle<'ctx> {
 }
 
 impl<'ctx> UniqueI256NUnique<'ctx> {
+    /// Find the subscribed row whose `n` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &__sats::i256) -> Option<UniqueI256> {
         self.imp.find(col_val)
     }

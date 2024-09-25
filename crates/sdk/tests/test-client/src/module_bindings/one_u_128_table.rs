@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `OneU128`.
+///
+/// Obtain a handle from the [`OneU128TableAccess::one_u_128`] method on [`super::RemoteTables`],
+/// like `ctx.db.one_u_128()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.one_u_128().on_insert(...)`.
 pub struct OneU128TableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<OneU128>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `OneU128`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait OneU128TableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`OneU128TableHandle`], which mediates access to the table `OneU128`.
     fn one_u_128(&self) -> OneU128TableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for OneU128TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

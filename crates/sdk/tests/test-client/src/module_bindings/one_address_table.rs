@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `OneAddress`.
+///
+/// Obtain a handle from the [`OneAddressTableAccess::one_address`] method on [`super::RemoteTables`],
+/// like `ctx.db.one_address()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.one_address().on_insert(...)`.
 pub struct OneAddressTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<OneAddress>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `OneAddress`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait OneAddressTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`OneAddressTableHandle`], which mediates access to the table `OneAddress`.
     fn one_address(&self) -> OneAddressTableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for OneAddressTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

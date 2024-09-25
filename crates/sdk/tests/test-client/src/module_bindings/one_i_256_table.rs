@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `OneI256`.
+///
+/// Obtain a handle from the [`OneI256TableAccess::one_i_256`] method on [`super::RemoteTables`],
+/// like `ctx.db.one_i_256()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.one_i_256().on_insert(...)`.
 pub struct OneI256TableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<OneI256>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `OneI256`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait OneI256TableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`OneI256TableHandle`], which mediates access to the table `OneI256`.
     fn one_i_256(&self) -> OneI256TableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for OneI256TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

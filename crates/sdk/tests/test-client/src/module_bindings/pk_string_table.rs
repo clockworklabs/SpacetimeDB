@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `PkString`.
+///
+/// Obtain a handle from the [`PkStringTableAccess::pk_string`] method on [`super::RemoteTables`],
+/// like `ctx.db.pk_string()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_string().on_insert(...)`.
 pub struct PkStringTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<PkString>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `PkString`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait PkStringTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`PkStringTableHandle`], which mediates access to the table `PkString`.
     fn pk_string(&self) -> PkStringTableHandle<'_>;
 }
 
@@ -87,6 +99,7 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkStringTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -99,12 +112,20 @@ pub(super) fn parse_table_update(
     .context("Failed to parse table update for table \"PkString\"")
 }
 
+/// Access to the `s` unique index on the table `PkString`,
+/// which allows point queries on the field of the same name
+/// via the [`PkStringSUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_string().s().find(...)`.
 pub struct PkStringSUnique<'ctx> {
     imp: __sdk::client_cache::UniqueConstraint<PkString, String>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> PkStringTableHandle<'ctx> {
+    /// Get a handle on the `s` unique index on the table `PkString`.
     pub fn s(&self) -> PkStringSUnique<'ctx> {
         PkStringSUnique {
             imp: self.imp.get_unique_constraint::<String>("s", |row| &row.s),
@@ -114,6 +135,8 @@ impl<'ctx> PkStringTableHandle<'ctx> {
 }
 
 impl<'ctx> PkStringSUnique<'ctx> {
+    /// Find the subscribed row whose `s` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &String) -> Option<PkString> {
         self.imp.find(col_val)
     }

@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `PkU128`.
+///
+/// Obtain a handle from the [`PkU128TableAccess::pk_u_128`] method on [`super::RemoteTables`],
+/// like `ctx.db.pk_u_128()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_u_128().on_insert(...)`.
 pub struct PkU128TableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<PkU128>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `PkU128`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait PkU128TableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`PkU128TableHandle`], which mediates access to the table `PkU128`.
     fn pk_u_128(&self) -> PkU128TableHandle<'_>;
 }
 
@@ -87,6 +99,7 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkU128TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -99,12 +112,20 @@ pub(super) fn parse_table_update(
     .context("Failed to parse table update for table \"PkU128\"")
 }
 
+/// Access to the `n` unique index on the table `PkU128`,
+/// which allows point queries on the field of the same name
+/// via the [`PkU128NUnique::find`] method.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_u_128().n().find(...)`.
 pub struct PkU128NUnique<'ctx> {
     imp: __sdk::client_cache::UniqueConstraint<PkU128, u128>,
     phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 impl<'ctx> PkU128TableHandle<'ctx> {
+    /// Get a handle on the `n` unique index on the table `PkU128`.
     pub fn n(&self) -> PkU128NUnique<'ctx> {
         PkU128NUnique {
             imp: self.imp.get_unique_constraint::<u128>("n", |row| &row.n),
@@ -114,6 +135,8 @@ impl<'ctx> PkU128TableHandle<'ctx> {
 }
 
 impl<'ctx> PkU128NUnique<'ctx> {
+    /// Find the subscribed row whose `n` column value is equal to `col_val`,
+    /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &u128) -> Option<PkU128> {
         self.imp.find(col_val)
     }

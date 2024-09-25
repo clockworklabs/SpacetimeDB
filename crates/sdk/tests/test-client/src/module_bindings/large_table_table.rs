@@ -15,14 +15,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `LargeTable`.
+///
+/// Obtain a handle from the [`LargeTableTableAccess::large_table`] method on [`super::RemoteTables`],
+/// like `ctx.db.large_table()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.large_table().on_insert(...)`.
 pub struct LargeTableTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<LargeTable>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `LargeTable`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait LargeTableTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`LargeTableTableHandle`], which mediates access to the table `LargeTable`.
     fn large_table(&self) -> LargeTableTableHandle<'_>;
 }
 
@@ -76,6 +88,7 @@ impl<'ctx> __sdk::table::Table for LargeTableTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

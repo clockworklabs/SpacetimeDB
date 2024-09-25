@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `message`.
+///
+/// Obtain a handle from the [`MessageTableAccess::message`] method on [`super::RemoteTables`],
+/// like `ctx.db.message()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.message().on_insert(...)`.
 pub struct MessageTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<Message>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `message`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait MessageTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`MessageTableHandle`], which mediates access to the table `message`.
     fn message(&self) -> MessageTableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for MessageTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

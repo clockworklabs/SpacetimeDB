@@ -10,14 +10,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `OptionEveryPrimitiveStruct`.
+///
+/// Obtain a handle from the [`OptionEveryPrimitiveStructTableAccess::option_every_primitive_struct`] method on [`super::RemoteTables`],
+/// like `ctx.db.option_every_primitive_struct()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.option_every_primitive_struct().on_insert(...)`.
 pub struct OptionEveryPrimitiveStructTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<OptionEveryPrimitiveStruct>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `OptionEveryPrimitiveStruct`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait OptionEveryPrimitiveStructTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`OptionEveryPrimitiveStructTableHandle`], which mediates access to the table `OptionEveryPrimitiveStruct`.
     fn option_every_primitive_struct(&self) -> OptionEveryPrimitiveStructTableHandle<'_>;
 }
 
@@ -73,6 +85,7 @@ impl<'ctx> __sdk::table::Table for OptionEveryPrimitiveStructTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

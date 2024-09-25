@@ -11,14 +11,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `TableHoldsTable`.
+///
+/// Obtain a handle from the [`TableHoldsTableTableAccess::table_holds_table`] method on [`super::RemoteTables`],
+/// like `ctx.db.table_holds_table()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.table_holds_table().on_insert(...)`.
 pub struct TableHoldsTableTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<TableHoldsTable>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `TableHoldsTable`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait TableHoldsTableTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`TableHoldsTableTableHandle`], which mediates access to the table `TableHoldsTable`.
     fn table_holds_table(&self) -> TableHoldsTableTableHandle<'_>;
 }
 
@@ -72,6 +84,7 @@ impl<'ctx> __sdk::table::Table for TableHoldsTableTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,

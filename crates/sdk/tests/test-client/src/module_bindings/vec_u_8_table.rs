@@ -9,14 +9,26 @@ use spacetimedb_sdk::{
     lib as __lib, sats as __sats, ws_messages as __ws,
 };
 
+/// Table handle for the table `VecU8`.
+///
+/// Obtain a handle from the [`VecU8TableAccess::vec_u_8`] method on [`super::RemoteTables`],
+/// like `ctx.db.vec_u_8()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.vec_u_8().on_insert(...)`.
 pub struct VecU8TableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<VecU8>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `VecU8`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait VecU8TableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`VecU8TableHandle`], which mediates access to the table `VecU8`.
     fn vec_u_8(&self) -> VecU8TableHandle<'_>;
 }
 
@@ -70,6 +82,7 @@ impl<'ctx> __sdk::table::Table for VecU8TableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
