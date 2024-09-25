@@ -6,7 +6,7 @@ use spacetimedb_lib::{
     AlgebraicValue,
 };
 use spacetimedb_primitives::ColId;
-use spacetimedb_testing::modules::{start_runtime, CompilationMode, CompiledModule, LoggerRecord, ModuleHandle};
+use spacetimedb_testing::modules::{start_runtime, CompiledModule, LoggerRecord, ModuleHandle, ReleaseLevel};
 use tokio::runtime::Runtime;
 
 use crate::{
@@ -18,14 +18,14 @@ use crate::{
 lazy_static::lazy_static! {
     pub static ref BENCHMARKS_MODULE: CompiledModule = {
         if std::env::var_os("STDB_BENCH_CS").is_some() {
-            CompiledModule::compile("benchmarks-cs", CompilationMode::Release)
+            CompiledModule::compile("benchmarks-cs", ReleaseLevel::ReleaseWithWasmOpt)
         } else {
             // Temporarily add CARGO_TARGET_DIR override to avoid conflicts with main target dir.
             // Otherwise for some reason Cargo will mark all dependencies with build scripts as
             // fresh - but only if running benchmarks (if modules are built in release mode).
             // See https://github.com/clockworklabs/SpacetimeDB/issues/401.
             std::env::set_var("CARGO_TARGET_DIR", concat!(env!("CARGO_MANIFEST_DIR"), "/target"));
-            let module = CompiledModule::compile("benchmarks", CompilationMode::Release);
+            let module = CompiledModule::compile("benchmarks", ReleaseLevel::ReleaseWithWasmOpt);
             std::env::remove_var("CARGO_TARGET_DIR");
             module
         }

@@ -11,13 +11,13 @@ use spacetimedb_schema::{
     identifier::Identifier,
     schema::TableSchema,
 };
-use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
+use spacetimedb_testing::modules::{CompiledModule, ReleaseLevel};
 
 const TEST_TABLE_ID: TableId = TableId(1337);
 
 #[allow(clippy::disallowed_macros)] // LET ME PRINTLN >:(
 fn validate_module(module_name: &str) {
-    let module = CompiledModule::compile(module_name, CompilationMode::Debug);
+    let module = CompiledModule::compile(module_name, ReleaseLevel::Debug);
     let raw_module_def: RawModuleDef =
         extract_descriptions(module.path()).expect("failed to extract module descriptions");
     let RawModuleDef::V8BackCompat(raw_module_def) = raw_module_def else {

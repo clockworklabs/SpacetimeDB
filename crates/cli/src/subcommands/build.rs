@@ -1,3 +1,4 @@
+use crate::tasks::ReleaseLevel;
 use crate::Config;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches};
@@ -30,12 +31,21 @@ pub fn cli() -> clap::Command {
                 .action(SetTrue)
                 .help("Builds the module using debug instead of release (intended to speed up local iteration, not recommended for CI)"),
         )
+        .arg(
+            Arg::new("wasm_opt")
+                .long("wasm-opt")
+                .value_parser(clap::builder::BoolishValueParser::new())
+                .default_value("true")
+                .conflicts_with("debug")
+                .help("Whether to optimize the compiled module with wasm-opt (default: true)"),
+        )
 }
 
 pub async fn exec(_config: Config, args: &ArgMatches) -> Result<PathBuf, anyhow::Error> {
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let skip_clippy = args.get_flag("skip_clippy");
     let build_debug = args.get_flag("debug");
+    let wasm_opt = args.get_flag("wasm_opt");
 
     // Create the project path, or make sure the target project path is empty.
     if project_path.exists() {
@@ -52,7 +62,15 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<PathBuf, anyhow:
         ));
     }
 
-    let bin_path = crate::tasks::build(project_path, skip_clippy, build_debug)?;
+    let release_level = if build_debug {
+        ReleaseLevel::Debug
+    } else if wasm_opt {
+        ReleaseLevel::ReleaseWithWasmOpt
+    } else {
+        ReleaseLevel::Release
+    };
+
+    let bin_path = crate::tasks::build(project_path, skip_clippy, release_level)?;
     println!("Build finished successfully.");
 
     Ok(bin_path)

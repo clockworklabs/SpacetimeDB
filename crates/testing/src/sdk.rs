@@ -7,7 +7,8 @@ use std::sync::Mutex;
 use std::thread::JoinHandle;
 
 use crate::invoke_cli;
-use crate::modules::{CompilationMode, CompiledModule};
+use crate::modules::CompiledModule;
+use spacetimedb_cli::ReleaseLevel;
 use tempfile::TempDir;
 
 pub fn ensure_standalone_process() {
@@ -136,7 +137,7 @@ fn compile_module(module: &str) -> String {
     let module = module.to_owned();
 
     memoized!(|module: String| -> String {
-        let module = CompiledModule::compile(module, CompilationMode::Debug);
+        let module = CompiledModule::compile(module, ReleaseLevel::Debug);
         module.path().to_str().unwrap().to_owned()
     })
 }

@@ -7,13 +7,14 @@ use crate::tasks::rust::build_rust;
 
 use duct::cmd;
 
-pub fn build(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyhow::Result<PathBuf> {
+pub fn build(project_path: &Path, skip_clippy: bool, release_level: ReleaseLevel) -> anyhow::Result<PathBuf> {
+    let build_debug = release_level == ReleaseLevel::Debug;
     let lang = util::detect_module_language(project_path);
     let mut wasm_path = match lang {
         ModuleLanguage::Rust => build_rust(project_path, skip_clippy, build_debug),
         ModuleLanguage::Csharp => build_csharp(project_path, build_debug),
     }?;
-    if !build_debug {
+    if release_level == ReleaseLevel::ReleaseWithWasmOpt {
         eprintln!("Optimising module with wasm-opt...");
         let wasm_path_opt = wasm_path.with_extension("opt.wasm");
         match cmd!("wasm-opt", "-all", "-g", "-O2", &wasm_path, "-o", &wasm_path_opt).run() {
@@ -35,6 +36,13 @@ pub fn build(project_path: &Path, skip_clippy: bool, build_debug: bool) -> anyho
         }
     }
     Ok(wasm_path)
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum ReleaseLevel {
+    Debug,
+    Release,
+    ReleaseWithWasmOpt,
 }
 
 pub mod csharp;

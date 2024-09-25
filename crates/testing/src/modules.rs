@@ -5,6 +5,7 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use spacetimedb::messages::control_db::HostType;
+pub use spacetimedb_cli::ReleaseLevel;
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use tokio::runtime::{Builder, Runtime};
 
@@ -86,15 +87,9 @@ pub struct CompiledModule {
     program_bytes: OnceLock<Vec<u8>>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum CompilationMode {
-    Debug,
-    Release,
-}
-
 impl CompiledModule {
-    pub fn compile(name: &str, mode: CompilationMode) -> Self {
-        let path = spacetimedb_cli::build(&module_path(name), false, mode == CompilationMode::Debug).unwrap();
+    pub fn compile(name: &str, mode: ReleaseLevel) -> Self {
+        let path = spacetimedb_cli::build(&module_path(name), false, mode).unwrap();
         Self {
             name: name.to_owned(),
             path,

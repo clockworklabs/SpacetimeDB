@@ -1,7 +1,7 @@
 use serial_test::serial;
 use spacetimedb_lib::sats::{product, AlgebraicValue};
 use spacetimedb_testing::modules::{
-    CompilationMode, CompiledModule, LogLevel, LoggerRecord, ModuleHandle, DEFAULT_CONFIG, IN_MEMORY_CONFIG,
+    CompiledModule, LogLevel, LoggerRecord, ModuleHandle, ReleaseLevel, DEFAULT_CONFIG, IN_MEMORY_CONFIG,
 };
 use std::{
     future::Future,
@@ -43,39 +43,34 @@ async fn read_logs(module: &ModuleHandle) -> Vec<String> {
 fn test_calling_a_reducer_in_module(module_name: &'static str) {
     init();
 
-    CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
-        DEFAULT_CONFIG,
-        |module| async move {
-            let json =
-                r#"{"CallReducer": {"reducer": "add", "args": { "Text": "[\"Tyrion\", 24]" }, "request_id": 0 }}"#
-                    .to_string();
-            module.send(json).await.unwrap();
+    CompiledModule::compile(module_name, ReleaseLevel::Debug).with_module_async(DEFAULT_CONFIG, |module| async move {
+        let json = r#"{"CallReducer": {"reducer": "add", "args": { "Text": "[\"Tyrion\", 24]" }, "request_id": 0 }}"#
+            .to_string();
+        module.send(json).await.unwrap();
 
-            let json =
-                r#"{"CallReducer": {"reducer": "add", "args": { "Text": "[\"Cersei\", 31]" }, "request_id": 1 }}"#
-                    .to_string();
-            module.send(json).await.unwrap();
+        let json = r#"{"CallReducer": {"reducer": "add", "args": { "Text": "[\"Cersei\", 31]" }, "request_id": 1 }}"#
+            .to_string();
+        module.send(json).await.unwrap();
 
-            let json =
-                r#"{"CallReducer": {"reducer": "say_hello", "args": { "Text": "[]" }, "request_id": 2 }}"#.to_string();
-            module.send(json).await.unwrap();
+        let json =
+            r#"{"CallReducer": {"reducer": "say_hello", "args": { "Text": "[]" }, "request_id": 2 }}"#.to_string();
+        module.send(json).await.unwrap();
 
-            let json = r#"{"CallReducer": {"reducer": "list_over_age", "args": { "Text": "[30]" }, "request_id": 3 }}"#
-                .to_string();
-            module.send(json).await.unwrap();
+        let json = r#"{"CallReducer": {"reducer": "list_over_age", "args": { "Text": "[30]" }, "request_id": 3 }}"#
+            .to_string();
+        module.send(json).await.unwrap();
 
-            assert_eq!(
-                read_logs(&module).await,
-                [
-                    "Hello, Tyrion!",
-                    "Hello, Cersei!",
-                    "Hello, World!",
-                    "Cersei has age 31 >= 30",
-                ]
-                .map(String::from)
-            );
-        },
-    );
+        assert_eq!(
+            read_logs(&module).await,
+            [
+                "Hello, Tyrion!",
+                "Hello, Cersei!",
+                "Hello, World!",
+                "Cersei has age 31 >= 30",
+            ]
+            .map(String::from)
+        );
+    });
 }
 
 #[test]
@@ -95,7 +90,7 @@ fn test_calling_a_reducer_csharp() {
 fn test_calling_a_reducer_with_private_table() {
     init();
 
-    CompiledModule::compile("rust-wasm-test", CompilationMode::Debug).with_module_async(
+    CompiledModule::compile("rust-wasm-test", ReleaseLevel::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
             module
@@ -135,7 +130,7 @@ fn test_calling_a_reducer_with_private_table() {
 /// ]
 /// ```
 fn test_call_query_macro_with_caller<F: Future<Output = ()>>(caller: impl FnOnce(ModuleHandle) -> F) {
-    CompiledModule::compile("rust-wasm-test", CompilationMode::Debug).with_module_async(
+    CompiledModule::compile("rust-wasm-test", ReleaseLevel::Debug).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
             caller(module.clone()).await;
@@ -212,7 +207,7 @@ fn test_call_query_macro() {
 /// Otherwise these workloads will degenerate into full table scans.
 fn test_index_scans() {
     init();
-    CompiledModule::compile("perf-test", CompilationMode::Release).with_module_async(
+    CompiledModule::compile("perf-test", ReleaseLevel::ReleaseWithWasmOpt).with_module_async(
         IN_MEMORY_CONFIG,
         |module| async move {
             module
@@ -284,7 +279,7 @@ async fn _run_bench_db(module: ModuleHandle, benches: &[(&str, u32, &str)]) {
 #[test]
 #[serial]
 fn test_calling_bench_db_circles() {
-    CompiledModule::compile("benchmarks", CompilationMode::Release).with_module_async(
+    CompiledModule::compile("benchmarks", ReleaseLevel::ReleaseWithWasmOpt).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
             #[rustfmt::skip]
@@ -303,7 +298,7 @@ fn test_calling_bench_db_circles() {
 #[test]
 #[serial]
 fn test_calling_bench_db_ia_loop() {
-    CompiledModule::compile("benchmarks", CompilationMode::Release).with_module_async(
+    CompiledModule::compile("benchmarks", ReleaseLevel::ReleaseWithWasmOpt).with_module_async(
         DEFAULT_CONFIG,
         |module| async move {
             #[rustfmt::skip]

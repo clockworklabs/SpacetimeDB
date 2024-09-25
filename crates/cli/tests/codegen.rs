@@ -1,13 +1,13 @@
 use spacetimedb_cli::generate;
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
+use spacetimedb_testing::modules::{CompiledModule, ReleaseLevel};
 use std::path::Path;
 use std::sync::OnceLock;
 
 fn compiled_module() -> &'static Path {
     static COMPILED_MODULE: OnceLock<CompiledModule> = OnceLock::new();
     COMPILED_MODULE
-        .get_or_init(|| CompiledModule::compile("rust-wasm-test", CompilationMode::Debug))
+        .get_or_init(|| CompiledModule::compile("rust-wasm-test", ReleaseLevel::Debug))
         .path()
 }
 
