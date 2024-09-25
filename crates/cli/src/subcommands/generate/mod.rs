@@ -10,13 +10,13 @@ use spacetimedb::host::wasmtime::{Mem, MemView, WasmPointee as _};
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, Typespace};
-use spacetimedb_lib::{bsatn, RawModuleDefV8, TableDesc, TypeAlias};
+use spacetimedb_lib::{bsatn, RawModuleDefV8, TypeAlias};
 use spacetimedb_lib::{RawModuleDef, MODULE_ABI_MAJOR_VERSION};
 use spacetimedb_primitives::errno;
 use spacetimedb_schema;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::schema::{Schema, TableSchema};
 use std::fs;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -254,8 +254,8 @@ pub fn generate(module: RawModuleDef, lang: Language, namespace: &str) -> anyhow
             let tableset = module.tables().map(|t| t.product_type_ref).collect::<HashSet<_>>();
             let tables = module
                 .tables()
-                .map(|table| TableDesc {
-                    schema: TableSchema::from_module_def(table, 0.into()).into(),
+                .map(|table| TableDescHack {
+                    schema: TableSchema::from_module_def(&module, table, (), 0.into()),
                     data: table.product_type_ref,
                 })
                 .sorted_by(|a, b| a.schema.table_name.cmp(&b.schema.table_name));
@@ -337,8 +337,14 @@ trait Lang {
     fn generate_globals(&self, module: &ModuleDef, namespace: &str) -> Vec<(String, String)>;
 }
 
+/// Backwards-compatibible imitation of `TableDesc` that should be removed once the generators are updated to rely on `ModuleDef`.
+pub struct TableDescHack {
+    schema: TableSchema,
+    data: AlgebraicTypeRef,
+}
+
 pub enum GenItem {
-    Table(TableDesc),
+    Table(TableDescHack),
     TypeAlias(TypeAlias),
     Reducer(spacetimedb_lib::ReducerDef),
 }

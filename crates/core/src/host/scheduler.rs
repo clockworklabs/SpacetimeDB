@@ -283,12 +283,10 @@ impl SchedulerActor {
             let id = match item {
                 QueueItem::Id(id) => id,
                 QueueItem::VolatileNonatomicImmediate { reducer_name, args } => {
-                    let (reducer_id, schema) = module_info
-                        .reducers
-                        .lookup(&reducer_name)
-                        .ok_or(ReducerCallError::NoSuchReducer)?;
-
-                    let reducer_args = args.into_tuple(module_info.typespace.with_type(schema))?;
+                    let (reducer_seed, reducer_id) = module_info
+                        .reducer_seed_and_id(&reducer_name[..])
+                        .ok_or_else(|| anyhow!("Reducer not found: {}", reducer_name))?;
+                    let reducer_args = args.into_tuple(reducer_seed)?;
 
                     return Ok(Some(CallReducerParams {
                         timestamp: Timestamp::now(),
@@ -316,13 +314,11 @@ impl SchedulerActor {
             let ScheduledReducer { reducer, bsatn_args } =
                 proccess_schedule(&ctx, tx, &db, id.table_id, &schedule_row)?;
 
-            let (reducer_id, schema) = module_info
-                .reducers
-                .lookup(&reducer)
-                .ok_or(ReducerCallError::NoSuchReducer)?;
+            let (reducer_seed, reducer_id) = module_info
+                .reducer_seed_and_id(&reducer[..])
+                .ok_or_else(|| anyhow!("Reducer not found: {}", reducer))?;
 
-            let reducer_args =
-                ReducerArgs::Bsatn(bsatn_args.into()).into_tuple(module_info.typespace.with_type(schema))?;
+            let reducer_args = ReducerArgs::Bsatn(bsatn_args.into()).into_tuple(reducer_seed)?;
 
             Ok(Some(CallReducerParams {
                 timestamp: Timestamp::now(),

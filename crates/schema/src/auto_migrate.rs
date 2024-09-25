@@ -1,9 +1,45 @@
 use crate::{def::*, error::PrettyAlgebraicType, identifier::Identifier};
-use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors, ErrorStream};
+use spacetimedb_data_structures::{
+    error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
+    map::HashSet,
+};
 use spacetimedb_lib::db::raw_def::v9::TableType;
 use spacetimedb_sats::WithTypespace;
 
 pub type Result<T> = std::result::Result<T, ErrorStream<AutoMigrateError>>;
+
+/// A plan for a migration.
+#[derive(Debug)]
+pub enum MigratePlan<'def> {
+    Manual(ManualMigratePlan<'def>),
+    Auto(AutoMigratePlan<'def>),
+}
+
+impl<'def> MigratePlan<'def> {
+    /// Get the old `ModuleDef` for this migration plan.
+    pub fn old_def(&self) -> &'def ModuleDef {
+        match self {
+            MigratePlan::Manual(plan) => plan.old,
+            MigratePlan::Auto(plan) => plan.old,
+        }
+    }
+
+    /// Get the new `ModuleDef` for this migration plan.
+    pub fn new_def(&self) -> &'def ModuleDef {
+        match self {
+            MigratePlan::Manual(plan) => plan.new,
+            MigratePlan::Auto(plan) => plan.new,
+        }
+    }
+}
+
+/// A plan for a manual migration.
+/// `new` must have a reducer marked with `Lifecycle::Update`.
+#[derive(Debug)]
+pub struct ManualMigratePlan<'def> {
+    pub old: &'def ModuleDef,
+    pub new: &'def ModuleDef,
+}
 
 /// A plan for an automatic migration.
 #[derive(Debug)]
@@ -13,6 +49,7 @@ pub struct AutoMigratePlan<'def> {
     /// The new database definition.
     pub new: &'def ModuleDef,
     /// The checks to perform before the automatic migration.
+    /// There is also an implied check: that the schema in the database is compatible with the old ModuleDef.
     pub prechecks: Vec<AutoMigratePrecheck<'def>>,
     /// The migration steps to perform.
     /// Order should not matter, as the steps are independent.
@@ -100,6 +137,15 @@ pub enum AutoMigrateError {
     },
 }
 
+/// Construct a migration plan.
+/// If `new` has an `__update__` reducer, return a manual migration plan.
+/// Otherwise, try to plan an automatic migration. This may fail.
+pub fn ponder_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> Result<MigratePlan<'def>> {
+    // TODO(1.0): Implement this function.
+    // Currently we only can do automatic migrations.
+    ponder_auto_migrate(old, new).map(MigratePlan::Auto)
+}
+
 /// Construct an automatic migration plan, or reject with reasons why automatic migration can't be performed.
 pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> Result<AutoMigratePlan<'def>> {
     // Both the old and new database definitions have already been validated (this is enforced by the types).
@@ -110,10 +156,20 @@ pub fn ponder_auto_migrate<'def>(old: &'def ModuleDef, new: &'def ModuleDef) -> 
         steps: Vec::new(),
         prechecks: Vec::new(),
     };
+
     let tables_ok = auto_migrate_tables(&mut plan);
-    let indexes_ok = auto_migrate_indexes(&mut plan);
-    let sequences_ok = auto_migrate_sequences(&mut plan);
-    let constraints_ok = auto_migrate_constraints(&mut plan);
+
+    // Our diffing algorithm will detect added constraints / indexes / sequences in new tables, we use this to filter those out.
+    // They're handled by adding the root table.
+    let new_tables: HashSet<&Identifier> = diff(plan.old, plan.new, ModuleDef::tables)
+        .filter_map(|diff| match diff {
+            Diff::Add { new } => Some(&new.name),
+            _ => None,
+        })
+        .collect();
+    let indexes_ok = auto_migrate_indexes(&mut plan, &new_tables);
+    let sequences_ok = auto_migrate_sequences(&mut plan, &new_tables);
+    let constraints_ok = auto_migrate_constraints(&mut plan, &new_tables);
 
     let ((), (), (), ()) = (tables_ok, indexes_ok, sequences_ok, constraints_ok).combine_errors()?;
 
@@ -251,12 +307,14 @@ fn auto_migrate_table<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def TableDe
     Ok(())
 }
 
-fn auto_migrate_indexes(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
+fn auto_migrate_indexes(plan: &mut AutoMigratePlan<'_>, new_tables: &HashSet<&Identifier>) -> Result<()> {
     diff(plan.old, plan.new, ModuleDef::indexes)
         .map(|index_diff| -> Result<()> {
             match index_diff {
                 Diff::Add { new } => {
-                    plan.steps.push(AutoMigrateStep::AddIndex(new.key()));
+                    if !new_tables.contains(&plan.new.stored_in_table_def(&new.name).unwrap().name) {
+                        plan.steps.push(AutoMigrateStep::AddIndex(new.key()));
+                    }
                     Ok(())
                 }
                 Diff::Remove { old } => {
@@ -284,14 +342,16 @@ fn auto_migrate_indexes(plan: &mut AutoMigratePlan<'_>) -> Result<()> {
         .collect_all_errors()
 }
 
-fn auto_migrate_sequences(plan: &mut AutoMigratePlan) -> Result<()> {
+fn auto_migrate_sequences(plan: &mut AutoMigratePlan, new_tables: &HashSet<&Identifier>) -> Result<()> {
     diff(plan.old, plan.new, ModuleDef::sequences)
         .map(|sequence_diff| -> Result<()> {
             match sequence_diff {
                 Diff::Add { new } => {
-                    plan.prechecks
-                        .push(AutoMigratePrecheck::CheckAddSequenceRangeValid(new.key()));
-                    plan.steps.push(AutoMigrateStep::AddSequence(new.key()));
+                    if !new_tables.contains(&plan.new.stored_in_table_def(&new.name).unwrap().name) {
+                        plan.prechecks
+                            .push(AutoMigratePrecheck::CheckAddSequenceRangeValid(new.key()));
+                        plan.steps.push(AutoMigrateStep::AddSequence(new.key()));
+                    }
                     Ok(())
                 }
                 Diff::Remove { old } => {
@@ -313,14 +373,22 @@ fn auto_migrate_sequences(plan: &mut AutoMigratePlan) -> Result<()> {
         .collect_all_errors()
 }
 
-fn auto_migrate_constraints(plan: &mut AutoMigratePlan) -> Result<()> {
+fn auto_migrate_constraints(plan: &mut AutoMigratePlan, new_tables: &HashSet<&Identifier>) -> Result<()> {
     diff(plan.old, plan.new, ModuleDef::constraints)
         .map(|constraint_diff| -> Result<()> {
             match constraint_diff {
-                Diff::Add { new } => Err(AutoMigrateError::AddUniqueConstraint {
-                    constraint: new.name.clone(),
+                Diff::Add { new } => {
+                    if new_tables.contains(&plan.new.stored_in_table_def(&new.name).unwrap().name) {
+                        // it's okay to add a constraint in a new table.
+                        Ok(())
+                    } else {
+                        // it's not okay to add a new constraint to an existing table.
+                        Err(AutoMigrateError::AddUniqueConstraint {
+                            constraint: new.name.clone(),
+                        }
+                        .into())
+                    }
                 }
-                .into()),
                 Diff::Remove { old } => {
                     plan.steps.push(AutoMigrateStep::RemoveConstraint(old.key()));
                     Ok(())
@@ -345,7 +413,7 @@ mod tests {
     use super::*;
     use spacetimedb_data_structures::expect_error_matching;
     use spacetimedb_lib::{db::raw_def::*, AlgebraicType, ProductType, ScheduleAt};
-    use spacetimedb_primitives::ColList;
+    use spacetimedb_primitives::{ColId, ColList};
     use v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess};
     use validate::tests::expect_identifier;
 
@@ -364,19 +432,19 @@ mod tests {
                 true,
             )
             .with_column_sequence(0, Some("Apples_sequence".into()))
-            .with_unique_constraint(0.into(), Some("Apples_unique_constraint".into()))
+            .with_unique_constraint(ColId(0), Some("Apples_unique_constraint".into()))
             .with_index(
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from([0]),
                 },
-                "id_index".into(),
+                "id_index",
                 Some("Apples_id_index".into()),
             )
             .with_index(
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from([0, 1]),
                 },
-                "id_name_index".into(),
+                "id_name_index",
                 Some("Apples_id_name_index".into()),
             )
             .finish();
@@ -446,7 +514,7 @@ mod tests {
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from([0]),
                 },
-                "id_index".into(),
+                "id_index",
                 Some("Apples_id_index".into()),
             )
             // remove ["id", "name"] index
@@ -455,7 +523,7 @@ mod tests {
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from([0, 2]),
                 },
-                "id_count_index".into(),
+                "id_count_index",
                 Some("Apples_id_count_index".into()),
             )
             .finish();
@@ -504,7 +572,7 @@ mod tests {
                 true,
             )
             // add schedule def
-            .with_schedule("perform_inspection", Some("Inspections_schedule".into()))
+            .with_schedule("perform_inspection", None)
             .finish();
 
         // add reducer.
@@ -517,6 +585,16 @@ mod tests {
         // Add new table
         new_builder
             .build_table_with_new_type("Oranges", ProductType::from([("id", AlgebraicType::U32)]), true)
+            .with_index(
+                RawIndexAlgorithm::BTree {
+                    columns: ColList::from([0]),
+                },
+                "id_index",
+                None,
+            )
+            .with_column_sequence(0, None)
+            .with_unique_constraint(0, None)
+            .with_primary_key(0)
             .finish();
 
         let new_def: ModuleDef = new_builder
@@ -534,8 +612,8 @@ mod tests {
         let apples_sequence = expect_identifier("Apples_sequence");
         let apples_id_name_index = expect_identifier("Apples_id_name_index");
         let apples_id_count_index = expect_identifier("Apples_id_count_index");
-        let deliveries_schedule = expect_identifier("Deliveries_schedule");
-        let inspections_schedule = expect_identifier("Inspections_schedule");
+        let deliveries_schedule = expect_identifier("schedule_Deliveries");
+        let inspections_schedule = expect_identifier("schedule_Inspections");
 
         assert_eq!(plan.prechecks.len(), 1);
         assert_eq!(
@@ -583,7 +661,7 @@ mod tests {
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from([0]),
                 },
-                "id_index".into(),
+                "id_index",
                 Some("Apples_id_index".into()),
             )
             .with_unique_constraint(ColList::from_iter([1, 2]), Some("Apples_changing_constraint".into()))
@@ -624,11 +702,11 @@ mod tests {
                 RawIndexAlgorithm::BTree {
                     columns: ColList::from([0]),
                 },
-                "id_index_new_accessor".into(), // change accessor name
+                "id_index_new_accessor", // change accessor name
                 Some("Apples_id_index".into()),
             )
             .with_unique_constraint(ColList::from_iter([0, 1]), Some("Apples_changing_constraint".into()))
-            .with_unique_constraint(0.into(), Some("Apples_name_unique_constraint".into())) // add unique constraint
+            .with_unique_constraint(ColId(0), Some("Apples_name_unique_constraint".into())) // add unique constraint
             .with_type(TableType::System) // change type
             .finish();
 

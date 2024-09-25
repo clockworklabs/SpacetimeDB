@@ -6,12 +6,12 @@ use std::ops::Deref;
 
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::{AlgebraicType, AlgebraicTypeRef, ArrayType, ProductType, SumType};
-use spacetimedb_lib::{ReducerDef, TableDesc};
+use spacetimedb_lib::ReducerDef;
 use spacetimedb_primitives::ColList;
 use spacetimedb_schema::schema::TableSchema;
 
 use super::code_indenter::CodeIndenter;
-use super::{GenCtx, GenItem};
+use super::{GenCtx, GenItem, TableDescHack};
 
 fn scalar_or_string_name(b: &AlgebraicType) -> Option<&str> {
     Some(match b {
@@ -279,17 +279,13 @@ pub fn autogen_csharp_tuple(ctx: &GenCtx, name: &str, tuple: &ProductType, names
 }
 
 #[allow(deprecated)]
-pub fn autogen_csharp_table(ctx: &GenCtx, table: &TableDesc, namespace: &str) -> String {
+pub fn autogen_csharp_table(ctx: &GenCtx, table: &TableDescHack, namespace: &str) -> String {
     let tuple = ctx.typespace[table.data].as_product().unwrap();
     autogen_csharp_product_table_common(
         ctx,
         csharp_typename(ctx, table.data),
         tuple,
-        Some(
-            TableSchema::from_def(0.into(), table.schema.clone())
-                .validated()
-                .expect("Failed to generate table due to validation errors"),
-        ),
+        Some(table.schema.clone()),
         namespace,
     )
 }
@@ -317,7 +313,7 @@ fn autogen_csharp_product_table_common(
         write!(
             output,
             " : SpacetimeDB.{parent}<{name}, {namespace}.ReducerEvent>",
-            parent = if schema.pk().is_some() {
+            parent = if schema.primary_key.is_some() {
                 "DatabaseTableWithPrimaryKey"
             } else {
                 "DatabaseTable"
@@ -383,7 +379,7 @@ fn autogen_csharp_product_table_common(
 
         // If this is a table, we want to generate event accessor and indexes
         if let Some(schema) = &schema {
-            let constraints = schema.column_constraints();
+            let constraints = schema.backcompat_column_constraints();
             let mut unique_indexes = Vec::new();
             // Declare custom index dictionaries
             for col in schema.columns() {
@@ -450,7 +446,7 @@ fn autogen_csharp_access_funcs_for_struct(
     _table_name: &str,
     schema: &TableSchema,
 ) {
-    let constraints = schema.column_constraints();
+    let constraints = schema.backcompat_column_constraints();
     for col in schema.columns() {
         let is_unique = constraints[&ColList::new(col.col_pos)].has_unique();
 

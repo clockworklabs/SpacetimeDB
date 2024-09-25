@@ -441,19 +441,17 @@ impl BTreeIndex {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{blob_store::HashMapBlobStore, indexes::SquashedOffset, table::Table};
+    use crate::{blob_store::HashMapBlobStore, table::test::table};
     use core::ops::Bound::*;
     use proptest::prelude::*;
     use proptest::{collection::vec, test_runner::TestCaseResult};
     use spacetimedb_data_structures::map::HashMap;
-    use spacetimedb_lib::db::raw_def::RawTableDefV8;
     use spacetimedb_primitives::ColId;
     use spacetimedb_sats::{
         product,
         proptest::{generate_product_value, generate_row_type},
         AlgebraicType, ProductType, ProductValue,
     };
-    use spacetimedb_schema::schema::TableSchema;
 
     fn gen_cols(ty_len: usize) -> impl Strategy<Value = ColList> {
         vec((0..ty_len as u16).prop_map_into::<ColId>(), 1..=ty_len)
@@ -472,13 +470,6 @@ mod test {
 
     fn new_index(row_type: &ProductType, cols: &ColList, is_unique: bool) -> BTreeIndex {
         BTreeIndex::new(0.into(), row_type, cols, is_unique).unwrap()
-    }
-
-    fn table(ty: ProductType) -> Table {
-        let def = RawTableDefV8::from_product("", ty);
-        #[allow(deprecated)]
-        let schema = TableSchema::from_def(0.into(), def);
-        Table::new(schema.into(), SquashedOffset::COMMITTED_STATE)
     }
 
     /// Extracts from `row` the relevant column values according to what columns are indexed.

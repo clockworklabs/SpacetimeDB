@@ -82,8 +82,11 @@ impl BenchDatabase for SpacetimeModule {
                 .await
         });
 
-        for thing in module.client.module.catalog().iter() {
-            log::trace!("SPACETIME_MODULE: LOADED: {} {:?}", thing.0, thing.1.ty());
+        for table in module.client.module.info.module_def.tables() {
+            log::trace!("SPACETIME_MODULE: LOADED TABLE: {:?}", table);
+        }
+        for reducer in module.client.module.info.module_def.reducers() {
+            log::trace!("SPACETIME_MODULE: LOADED REDUCER: {:?}", reducer);
         }
         Ok(SpacetimeModule {
             runtime,

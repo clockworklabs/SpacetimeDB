@@ -1,3 +1,4 @@
+use crate::db::raw_def::v9::RawModuleDefV9Builder;
 use crate::db::raw_def::RawTableDefV8;
 use anyhow::Context;
 use sats::typespace::TypespaceBuilder;
@@ -177,7 +178,7 @@ impl_serialize!([] ReducerArgsWithSchema<'_>, (self, ser) => {
     seq.end()
 });
 
-//WARNING: Change this structure(or any of their members) is an ABI change.
+//WARNING: Change this structure (or any of their members) is an ABI change.
 #[derive(Debug, Clone, Default, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct RawModuleDefV8 {
@@ -341,38 +342,6 @@ pub struct TypeAlias {
     pub ty: sats::AlgebraicTypeRef,
 }
 
-impl RawModuleDefV8 {
-    pub fn validate_reducers(&self) -> Result<(), ModuleValidationError> {
-        for reducer in &self.reducers {
-            match &*reducer.name {
-                // in the future, these should maybe be flagged as lifecycle reducers by a MiscModuleExport
-                //  or something, rather than by magic names
-                "__init__" => {}
-                "__identity_connected__" | "__identity_disconnected__" | "__update__" | "__migrate__" => {
-                    if !reducer.args.is_empty() {
-                        return Err(ModuleValidationError::InvalidLifecycleReducer {
-                            reducer: reducer.name.clone(),
-                        });
-                    }
-                }
-                name if name.starts_with("__") && name.ends_with("__") => {
-                    return Err(ModuleValidationError::UnknownDunderscore)
-                }
-                _ => {}
-            }
-        }
-        Ok(())
-    }
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum ModuleValidationError {
-    #[error("lifecycle reducer {reducer:?} has invalid signature")]
-    InvalidLifecycleReducer { reducer: Box<str> },
-    #[error("reducers with double-underscores at the start and end of their names are not allowed")]
-    UnknownDunderscore,
-}
-
 /// Converts a hexadecimal string reference to a byte array.
 ///
 /// This function takes a reference to a hexadecimal string and attempts to convert it into a byte array.
@@ -390,4 +359,19 @@ pub fn from_hex_pad<R: hex::FromHex<Error = hex::FromHexError>, T: AsRef<[u8]>>(
         hex
     };
     hex::FromHex::from_hex(hex)
+}
+
+/// Returns a resolved `AlgebraicType` (containing no `AlgebraicTypeRefs`) for a given `SpacetimeType`,
+/// using the v9 moduledef infrastructure.
+/// Panics if the type is recursive.
+///
+/// TODO: we could implement something like this in `sats` itself, but would need a lightweight `TypespaceBuilder` implementation there.
+pub fn resolved_type_via_v9<T: SpacetimeType>() -> AlgebraicType {
+    let mut builder = RawModuleDefV9Builder::new();
+    let ty = T::make_type(&mut builder);
+    let module = builder.finish();
+
+    WithTypespace::new(&module.typespace, &ty)
+        .resolve_refs()
+        .expect("recursive types not supported")
 }
