@@ -17,7 +17,7 @@
 use crate::energy::EnergyQuanta;
 use crate::timestamp::Timestamp;
 use bytestring::ByteString;
-use core::fmt::Debug;
+use core::{fmt::Debug, ops::Deref};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::{bsatn::ToBsatn, de::Deserialize, ser::serde::SerializeWrapper, ser::Serialize, SpacetimeType};
@@ -31,12 +31,12 @@ pub trait RowListLen {
     }
 }
 
-impl<T> RowListLen for Vec<T> {
+impl<T, L: Deref<Target = [T]>> RowListLen for L {
     fn len(&self) -> usize {
-        self.len()
+        self.deref().len()
     }
     fn is_empty(&self) -> bool {
-        self.is_empty()
+        self.deref().is_empty()
     }
 }
 

@@ -220,7 +220,7 @@ impl ExecutionUnit {
 
         (!inserts.is_empty()).then(|| {
             let deletes = F::List::default();
-            let updates = vec![QueryUpdate { deletes, inserts }];
+            let updates = [QueryUpdate { deletes, inserts }].into();
             TableUpdate {
                 table_id: self.return_table(),
                 table_name: self.return_name().to_string(),
