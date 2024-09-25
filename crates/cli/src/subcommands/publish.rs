@@ -147,11 +147,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         println!("Skipping build. Instead we are publishing {}", path.display());
         path.clone()
     } else {
-        // Note: "build" must be the start of the string, because `build::cli()` is the entire build subcommand.
-        // If we don't include this, the args will be misinterpreted (e.g. as commands).
-        let build_options = format!("build {} --project-path {}", build_options, path_to_project.display());
-        let build_args = build::cli().get_matches_from(build_options.split_whitespace());
-        build::exec(config.clone(), &build_args).await?
+        build::exec_with_argstring(config.clone(), path_to_project, build_options).await?
     };
     let program_bytes = fs::read(path_to_wasm)?;
     println!(
