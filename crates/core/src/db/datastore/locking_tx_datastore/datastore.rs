@@ -1140,7 +1140,7 @@ mod tests {
                 increment: 1,
                 start: value.start,
                 min_value: 1,
-                max_value: 170141183460469231731687303715884105727,
+                max_value: i128::MAX,
                 allocated: 0,
             }
         }
@@ -1156,7 +1156,7 @@ mod tests {
                 increment: 1,
                 start: value.start,
                 min_value: 1,
-                max_value: 170141183460469231731687303715884105727,
+                max_value: i128::MAX,
                 allocated: 0,
             }
         }
@@ -1243,7 +1243,7 @@ mod tests {
                 start: 1,
                 increment: 1,
                 min_value: 1,
-                max_value: 170141183460469231731687303715884105727,
+                max_value: i128::MAX,
                 allocated: 0,
             }],
             StTableType::User,

@@ -274,11 +274,6 @@ fn validate_system_table<T: StFields + 'static>(def: &ModuleDef, table_name: &st
 fn system_module_def() -> ModuleDef {
     let mut builder = RawModuleDefV9Builder::new();
 
-    // System Table [ST_TABLE_NAME]
-    //
-    // | table_id | table_name  | table_type | table_access |
-    // |----------|-------------|----------- |------------- |
-    // | 4        | "customers" | "user"     | "public"     |
     let st_table_type = builder.add_type::<StTableRow>();
     builder
         .build_table(ST_TABLE_NAME, *st_table_type.as_ref().expect("should be ref"))
@@ -286,11 +281,6 @@ fn system_module_def() -> ModuleDef {
         .with_auto_inc_primary_key(StTableFields::TableId)
         .with_unique_constraint(StTableFields::TableName, None);
 
-    // System Table [ST_COLUMN_NAME]
-    //
-    // | table_id | col_id | col_name | col_type            |
-    // |----------|---------|----------|--------------------|
-    // | 1        | 0       | "id"     | AlgebraicType::U32 |
     let st_raw_column_type = builder.add_type::<StColumnRow>();
     builder
         .build_table(ST_COLUMN_NAME, *st_raw_column_type.as_ref().expect("should be ref"))
@@ -300,23 +290,12 @@ fn system_module_def() -> ModuleDef {
             None,
         );
 
-    // System Table [ST_INDEX_NAME]
-    //
-    // | index_id | table_id | index_name  | index_algorithm            |
-    // |----------|----------|-------------|----------------------------|
-    // | 1        |          | "ix_sample" | btree({"columns": [1, 2]}) |
     let st_index_type = builder.add_type::<StIndexRow>();
     builder
         .build_table(ST_INDEX_NAME, *st_index_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_auto_inc_primary_key(StIndexFields::IndexId);
     // TODO(1.0): unique constraint on name?
-
-    // System Table [ST_SEQUENCE_NAME]
-    //
-    // | sequence_id | sequence_name     | increment | start | min_value | max_value | table_id | col_pos| allocated |
-    // |-------------|-------------------|-----------|-------|-----------|-----------|----------|--------|-----------|
-    // | 1           | "seq_customer_id" | 1         | 100   | 10        | 1200      | 1        | 1      | 200       |
 
     let st_sequence_type = builder.add_type::<StSequenceRow>();
     builder
@@ -325,11 +304,6 @@ fn system_module_def() -> ModuleDef {
         .with_auto_inc_primary_key(StSequenceFields::SequenceId);
     // TODO(1.0): unique constraint on name?
 
-    // System Table [ST_CONSTRAINT_NAME]
-    //
-    // | constraint_id | constraint_name      | table_id    | constraint_data    -------------|
-    // |---------------|-------------------- -|-------------|---------------------------------|
-    // | 1             | "unique_customer_id" | 1           | unique({"columns": [1, 2]})     |
     let st_constraint_type = builder.add_type::<StConstraintRow>();
     builder
         .build_table(ST_CONSTRAINT_NAME, *st_constraint_type.as_ref().expect("should be ref"))
@@ -337,38 +311,18 @@ fn system_module_def() -> ModuleDef {
         .with_auto_inc_primary_key(StConstraintFields::ConstraintId);
     // TODO(1.0): unique constraint on name?
 
-    // System table [ST_MODULE_NAME]
-    // This table holds exactly one row, describing the latest version of the
-    // SpacetimeDB module associated with the database:
-    //
-    // * `database_address` is the [`Address`] of the database.
-    // * `owner_identity` is the [`Identity`] of the owner of the database.
-    // * `program_kind` is the [`ModuleKind`] (currently always [`WASM_MODULE`]).
-    // * `program_hash` is the [`Hash`] of the raw bytes of the (compiled) module.
-    // * `program_bytes` are the raw bytes of the (compiled) module.
-    //
-    // | database_address | owner_identity |  program_kind | program_bytes | program_hash        |
-    // |------------------|----------------|---------------|---------------|---------------------|
-    // | <bytes>          | <bytes>        |  0            | <bytes>       | <bytes>             |
     let st_module_type = builder.add_type::<StModuleRow>();
     builder
         .build_table(ST_MODULE_NAME, *st_module_type.as_ref().expect("should be ref"))
         .with_type(TableType::System);
     // TODO: add empty unique constraint here, once we've implemented those.
 
-    // System table [ST_CLIENT_NAME]
-    //
-    // identity                                                                                | address
-    // -----------------------------------------------------------------------------------------+--------------------------------------------------------
-    //  (__identity_bytes = 0x7452047061ea2502003412941d85a42f89b0702588b823ab55fc4f12e9ea8363) | (__address_bytes = 0x6bdea3ab517f5857dc9b1b5fe99e1b14)
     let st_client_type = builder.add_type::<StClientRow>();
     builder
         .build_table(ST_CLIENT_NAME, *st_client_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
         .with_unique_constraint(col_list![StClientFields::Identity, StClientFields::Address], None); // FIXME: this is a noop?
 
-    // System table [ST_SCHEDULED_NAME]
-    // | table_id | reducer_name |
     let st_schedule_type = builder.add_type::<StScheduledRow>();
     builder
         .build_table(ST_SCHEDULED_NAME, *st_schedule_type.as_ref().expect("should be ref"))
@@ -377,11 +331,6 @@ fn system_module_def() -> ModuleDef {
         .with_auto_inc_primary_key(StScheduledFields::ScheduleId);
     // TODO(1.0): unique constraint on name?
 
-    // System table [ST_VAR_NAME]
-    //
-    // | name        | value     |
-    // |-------------|-----------|
-    // | "row_limit" | (U64 = 5) |
     let st_var_type = builder.add_type::<StVarRow>();
     builder
         .build_table(ST_VAR_NAME, *st_var_type.as_ref().expect("should be ref"))
@@ -488,6 +437,11 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
     }
 }
 
+/// System Table [ST_TABLE_NAME]
+///
+/// | table_id | table_name  | table_type | table_access |
+/// |----------|-------------|----------- |------------- |
+/// | 4        | "customers" | "user"     | "public"     |
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StTableRow {
@@ -541,6 +495,11 @@ impl From<AlgebraicType> for AlgebraicTypeViaBytes {
     }
 }
 
+/// System Table [ST_COLUMN_NAME]
+///
+/// | table_id | col_id | col_name | col_type            |
+/// |----------|---------|----------|--------------------|
+/// | 1        | 0       | "id"     | AlgebraicType::U32 |
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StColumnRow {
@@ -574,6 +533,11 @@ impl From<StColumnRow> for ColumnSchema {
     }
 }
 
+/// System Table [ST_INDEX_NAME]
+///
+/// | index_id | table_id | index_name  | index_algorithm            |
+/// |----------|----------|-------------|----------------------------|
+/// | 1        |          | "ix_sample" | btree({"columns": [1, 2]}) |
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StIndexRow {
@@ -636,6 +600,11 @@ impl From<StIndexRow> for IndexSchema {
     }
 }
 
+/// System Table [ST_SEQUENCE_NAME]
+///
+/// | sequence_id | sequence_name     | increment | start | min_value | max_value | table_id | col_pos| allocated |
+/// |-------------|-------------------|-----------|-------|-----------|-----------|----------|--------|-----------|
+/// | 1           | "seq_customer_id" | 1         | 100   | 10        | 1200      | 1        | 1      | 200       |
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StSequenceRow {
@@ -679,6 +648,11 @@ impl From<StSequenceRow> for SequenceSchema {
     }
 }
 
+/// System Table [ST_CONSTRAINT_NAME]
+///
+/// | constraint_id | constraint_name      | table_id    | constraint_data    -------------|
+/// |---------------|-------------------- -|-------------|---------------------------------|
+/// | 1             | "unique_customer_id" | 1           | unique({"columns": [1, 2]})     |
 #[derive(Debug, Clone, PartialEq, Eq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StConstraintRow {
@@ -782,6 +756,20 @@ impl From<Identity> for IdentityViaBytes {
     }
 }
 
+/// System table [ST_MODULE_NAME]
+/// This table holds exactly one row, describing the latest version of the
+/// SpacetimeDB module associated with the database:
+///
+/// * `database_address` is the [`Address`] of the database.
+/// * `owner_identity` is the [`Identity`] of the owner of the database.
+/// * `program_kind` is the [`ModuleKind`] (currently always [`WASM_MODULE`]).
+/// * `program_hash` is the [`Hash`] of the raw bytes of the (compiled) module.
+/// * `program_bytes` are the raw bytes of the (compiled) module.
+/// * `module_version` is the version of the module.
+///
+/// | database_address | owner_identity |  program_kind | program_bytes | program_hash        | module_version |
+/// |------------------|----------------|---------------|---------------|---------------------|----------------|
+/// | <bytes>          | <bytes>        |  0            | <bytes>       | <bytes>             | <string>       |
 #[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StModuleRow {
@@ -842,6 +830,11 @@ impl From<StModuleRow> for ProductValue {
     }
 }
 
+/// System table [ST_CLIENT_NAME]
+///
+/// identity                                                                                | address
+/// -----------------------------------------------------------------------------------------+--------------------------------------------------------
+///  (__identity_bytes = 0x7452047061ea2502003412941d85a42f89b0702588b823ab55fc4f12e9ea8363) | (__address_bytes = 0x6bdea3ab517f5857dc9b1b5fe99e1b14)
 #[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StClientRow {
@@ -950,7 +943,11 @@ impl StVarTable {
     }
 }
 
-/// A row in the system table `st_var`
+/// System table [ST_VAR_NAME]
+///
+/// | name        | value     |
+/// |-------------|-----------|
+/// | "row_limit" | (U64 = 5) |
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StVarRow {
@@ -1203,6 +1200,8 @@ impl TryFrom<RowRef<'_>> for StVarRow {
     }
 }
 
+/// System table [ST_SCHEDULED_NAME]
+/// | schedule_id | table_id | reducer_name | schedule_name |
 #[derive(Clone, Debug, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub struct StScheduledRow {

@@ -12,6 +12,15 @@ use spacetimedb_schema::schema::{IndexSchema, Schema, SequenceSchema, TableSchem
 use std::sync::Arc;
 
 /// Update the database according to the migration plan.
+///
+/// The update is performed within the transactional context `tx`.
+// NOTE: Manual migration support is predicated on the transactionality of
+// dropping database objects (tables, indexes, etc.).
+// Currently, none of the drop_* methods are transactional.
+// This is safe because the __update__ reducer is no longer supported,
+// and the auto plan guarantees that the migration can't fail.
+// But when implementing manual migrations, we need to make sure that
+// drop_* become transactional.
 pub fn update_database(
     stdb: &RelationalDB,
     tx: &mut MutTxId,

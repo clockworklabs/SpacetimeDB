@@ -387,9 +387,17 @@ impl HostController {
             let program = load_program(&self.program_storage, program_hash).await?;
             let update_result = host
                 .update_module(host_type, program, self.unregister_fn(instance_id))
-                .await;
-            if update_result.is_ok() {
-                *guard = Some(host);
+                .await?;
+            match update_result {
+                UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed => {
+                    *guard = Some(host);
+                }
+                UpdateDatabaseResult::AutoMigrateError(e) => {
+                    return Err(anyhow::anyhow!(e));
+                }
+                UpdateDatabaseResult::ErrorExecutingMigration(e) => {
+                    return Err(e);
+                }
             }
         }
 
