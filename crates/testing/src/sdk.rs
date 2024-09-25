@@ -149,7 +149,7 @@ fn publish_module(wasm_file: &str) -> String {
         "publish",
         "--server",
         "local",
-        "--debug",
+        "--build-options=--debug",
         "--project-path",
         wasm_file,
         "--skip_clippy",
