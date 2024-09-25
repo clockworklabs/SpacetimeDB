@@ -3,12 +3,14 @@ namespace SpacetimeDB.Sdk.Test.ConnectDisconnect;
 using SpacetimeDB;
 
 [SpacetimeDB.Table(Public = true)]
-public partial struct Connected {
+public partial struct Connected
+{
     public Identity identity;
 }
 
 [SpacetimeDB.Table(Public = true)]
-public partial struct Disconnected {
+public partial struct Disconnected
+{
     public Identity identity;
 }
 

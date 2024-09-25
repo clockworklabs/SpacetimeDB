@@ -117,7 +117,7 @@ record ColumnDeclaration : MemberDeclaration
 
     // For the `Filter` constructor.
     public string GenerateFilterEntry() =>
-        $"new (nameof({Name}), (w, v) => global::{FullTableName}.BSATN.{Name}.Write(w, ({Type}) v!))";
+        $"new (nameof({Name}), (w, v) => BSATN.{Name}.Write(w, ({Type}) v!))";
 }
 
 record TableView
