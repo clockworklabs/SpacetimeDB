@@ -193,7 +193,6 @@ fn generate_bindings(language: &str, wasm_file: &str, client_project: &str, gene
         create_dir_all(generate_dir).expect("Error creating generate subdir");
         invoke_cli(&[
             "generate",
-            "--build-options=\"--debug --skip_clippy\"",
             "--lang",
             language,
             "--wasm-file",
