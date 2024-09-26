@@ -8,15 +8,25 @@ using System.Runtime.InteropServices;
 
 namespace SpacetimeDB
 {
-    public sealed record ReducerContext : BaseReducerContext<Local>
+    public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext
     {
+        public readonly Identity Sender;
+        public readonly Address? Address;
+        public readonly Random Random;
+        public readonly DateTimeOffset Time;
+
         internal ReducerContext(
-            Identity identity,
+            Identity sender,
             Address? address,
             Random random,
             DateTimeOffset time
         )
-            : base(identity, address, random, time) { }
+        {
+            Sender = sender;
+            Address = address;
+            Random = random;
+            Time = time;
+        }
     }
 
     namespace Internal.TableHandles

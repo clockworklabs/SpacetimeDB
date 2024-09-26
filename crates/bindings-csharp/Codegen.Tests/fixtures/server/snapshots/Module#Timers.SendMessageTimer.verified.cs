@@ -94,22 +94,11 @@ partial class Timers
         static SpacetimeDB.Internal.Filter SpacetimeDB.Internal.ITable<SendMessageTimer>.CreateFilter() =>
             new(
                 [
-                    new(
-                        nameof(Text),
-                        (w, v) => global::Timers.SendMessageTimer.BSATN.Text.Write(w, (string)v!)
-                    ),
-                    new(
-                        nameof(ScheduledId),
-                        (w, v) =>
-                            global::Timers.SendMessageTimer.BSATN.ScheduledId.Write(w, (ulong)v!)
-                    ),
+                    new(nameof(Text), (w, v) => BSATN.Text.Write(w, (string)v!)),
+                    new(nameof(ScheduledId), (w, v) => BSATN.ScheduledId.Write(w, (ulong)v!)),
                     new(
                         nameof(ScheduledAt),
-                        (w, v) =>
-                            global::Timers.SendMessageTimer.BSATN.ScheduledAt.Write(
-                                w,
-                                (SpacetimeDB.ScheduleAt)v!
-                            )
+                        (w, v) => BSATN.ScheduledAt.Write(w, (SpacetimeDB.ScheduleAt)v!)
                     )
                 ]
             );
