@@ -39,7 +39,7 @@ public partial record CustomTaggedEnum
     : SpacetimeDB.TaggedEnum<(int IntVariant, string StringVariant)>;
 
 [SpacetimeDB.Table]
-public partial struct PrivateTable { }
+public partial class PrivateTable { }
 
 [SpacetimeDB.Table]
 public partial struct PublicTable
