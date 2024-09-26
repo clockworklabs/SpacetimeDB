@@ -1,6 +1,6 @@
 using SpacetimeDB;
 
-static partial class Module
+public static partial class Module
 {
     [SpacetimeDB.Table]
     public partial struct Person
