@@ -81,7 +81,7 @@ pub struct ReducerEvent<R> {
     pub reducer: R,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// The termination status of a [`ReducerEvent`].
 pub enum Status {
     /// The reducer terminated successfully, and its mutations were committed to the database's state.
