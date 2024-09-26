@@ -135,18 +135,15 @@ fn compile_columns(table: &TableSchema, cols: &[ColId]) -> DbTable {
     let mut columns = Vec::with_capacity(cols.len());
     let cols = cols
         .iter()
+        // TODO: should we error here instead?
+        // When would the user be passing in columns that aren't present?
         .filter_map(|col| table.get_column(col.idx()))
         .map(|col| relation::Column::new(FieldName::new(table.table_id, col.col_pos), col.col_type.clone()));
     columns.extend(cols);
 
-    let header = Arc::new(Header::new(
-        table.table_id,
-        table.table_name.clone(),
-        columns,
-        table.get_constraints(),
-    ));
+    let header = Header::from(table).project_col_list(&columns.iter().map(|x| x.field.col).collect());
 
-    DbTable::new(header, table.table_id, table.table_type, table.table_access)
+    DbTable::new(Arc::new(header), table.table_id, table.table_type, table.table_access)
 }
 
 /// Compiles a `INSERT ...` clause
@@ -311,7 +308,7 @@ mod tests {
     }
 
     #[test]
-    fn compile_index_eq() -> ResultTest<()> {
+    fn compile_index_eq_basic() -> ResultTest<()> {
         let db = TestDB::durable()?;
 
         // Create table [test] with index on [a]

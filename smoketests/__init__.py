@@ -31,6 +31,9 @@ TEMPLATE_CARGO_TOML = (re.compile(r"^spacetimedb\s*=.*$", re.M) \
 
 # this is set to true when the --docker flag is passed to the cli
 HAVE_DOCKER = False
+# this is set to true when the --skip-dotnet flag is not passed to the cli,
+# and a dotnet installation is detected
+HAVE_DOTNET = False
 
 # we need to late-bind the output stream to allow unittests to capture stdout/stderr.
 class CapturableHandler(logging.StreamHandler):
@@ -137,21 +140,6 @@ def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=
 
 def spacetime(*args, **kwargs):
     return run_cmd(SPACETIME_BIN, *args, cmd_name="spacetime", **kwargs)
-
-
-def _check_for_dotnet() -> bool:
-    try:
-        version = run_cmd("dotnet", "--version", log=False).strip()
-        if int(version.split(".")[0]) < 8:
-            logging.info(f"dotnet version {version} not high enough (< 8.0), skipping dotnet smoketests")
-            return False
-    except Exception as e:
-        raise e
-        return False
-    return True
-
-HAVE_DOTNET = _check_for_dotnet()
-
 
 class Smoketest(unittest.TestCase):
     MODULE_CODE = TEMPLATE_LIB_RS

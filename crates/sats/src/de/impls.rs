@@ -673,10 +673,12 @@ impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
     }
 }
 
-impl_deserialize!([] spacetimedb_primitives::ColId, de => u16::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::TableId, de => u32::deserialize(de).map(Self));
-impl_deserialize!([] spacetimedb_primitives::IndexId, de => u32::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::SequenceId, de => u32::deserialize(de).map(Self));
+impl_deserialize!([] spacetimedb_primitives::IndexId, de => u32::deserialize(de).map(Self));
+impl_deserialize!([] spacetimedb_primitives::ConstraintId, de => u32::deserialize(de).map(Self));
+impl_deserialize!([] spacetimedb_primitives::ColId, de => u16::deserialize(de).map(Self));
+impl_deserialize!([] spacetimedb_primitives::ScheduleId, de => u32::deserialize(de).map(Self));
 
 impl GrowingVec<ColId> for ColList {
     fn with_capacity(cap: usize) -> Self {
@@ -697,6 +699,7 @@ impl_deserialize!([] spacetimedb_primitives::ColList, de => {
     }
     de.deserialize_array(ColListVisitor)
 });
+impl_deserialize!([] spacetimedb_primitives::ColSet, de => ColList::deserialize(de).map(Into::into));
 
 #[cfg(feature = "blake3")]
 impl_deserialize!([] blake3::Hash, de => <[u8; blake3::OUT_LEN]>::deserialize(de).map(blake3::Hash::from_bytes));

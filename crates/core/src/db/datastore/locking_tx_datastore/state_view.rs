@@ -14,7 +14,7 @@ use core::ops::RangeBounds;
 use spacetimedb_lib::address::Address;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
-use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema, TableSchema};
+use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_table::table::{IndexScanIter, RowRef, TableScanIter};
 use std::sync::Arc;
 
@@ -75,18 +75,14 @@ pub trait StateView {
         let table_id: TableId = row.table_id;
         let table_type = row.table_type;
         let table_access = row.table_access;
+        let table_primary_key = row.table_primary_key.as_ref().and_then(ColList::as_singleton);
 
         // Look up the columns for the table in question.
-        let mut columns = self
+        let mut columns: Vec<ColumnSchema> = self
             .iter_by_col_eq(ctx, ST_COLUMN_ID, StColumnFields::TableId, value_eq)?
             .map(|row| {
                 let row = StColumnRow::try_from(row)?;
-                Ok(ColumnSchema {
-                    table_id: row.table_id,
-                    col_pos: row.col_pos,
-                    col_name: row.col_name,
-                    col_type: row.col_type,
-                })
+                Ok(row.into())
             })
             .collect::<Result<Vec<_>>>()?;
         columns.sort_by_key(|col| col.col_pos);
@@ -96,13 +92,7 @@ pub trait StateView {
             .iter_by_col_eq(ctx, ST_CONSTRAINT_ID, StConstraintFields::TableId, value_eq)?
             .map(|row| {
                 let row = StConstraintRow::try_from(row)?;
-                Ok(ConstraintSchema {
-                    constraint_id: row.constraint_id,
-                    constraint_name: row.constraint_name,
-                    constraints: row.constraints,
-                    table_id: row.table_id,
-                    columns: row.columns,
-                })
+                Ok(row.into())
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -111,17 +101,7 @@ pub trait StateView {
             .iter_by_col_eq(ctx, ST_SEQUENCE_ID, StSequenceFields::TableId, value_eq)?
             .map(|row| {
                 let row = StSequenceRow::try_from(row)?;
-                Ok(SequenceSchema {
-                    sequence_id: row.sequence_id,
-                    sequence_name: row.sequence_name,
-                    table_id: row.table_id,
-                    col_pos: row.col_pos,
-                    increment: row.increment,
-                    start: row.start,
-                    min_value: row.min_value,
-                    max_value: row.max_value,
-                    allocated: row.allocated,
-                })
+                Ok(row.into())
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -130,23 +110,16 @@ pub trait StateView {
             .iter_by_col_eq(ctx, ST_INDEX_ID, StIndexFields::TableId, value_eq)?
             .map(|row| {
                 let row = StIndexRow::try_from(row)?;
-                Ok(IndexSchema {
-                    table_id: row.table_id,
-                    columns: row.columns,
-                    index_name: row.index_name,
-                    is_unique: row.is_unique,
-                    index_id: row.index_id,
-                    index_type: row.index_type,
-                })
+                Ok(row.into())
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let scheduled = self
+        let schedule = self
             .iter_by_col_eq(ctx, ST_SCHEDULED_ID, StScheduledFields::TableId, value_eq)?
             .next()
             .map(|row| -> Result<_> {
                 let row = StScheduledRow::try_from(row)?;
-                Ok(row.reducer_name)
+                Ok(row.into())
             })
             .transpose()?;
 
@@ -159,7 +132,8 @@ pub trait StateView {
             sequences,
             table_type,
             table_access,
-            scheduled,
+            schedule,
+            table_primary_key,
         ))
     }
 

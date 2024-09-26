@@ -309,7 +309,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     .update_module_host(database, spec.host_type, leader.id, spec.program_bytes.into())
                     .await?;
 
-                if update_result.is_ok() {
+                if update_result.was_successful() {
                     let instances = self.control_db.get_database_instances_by_database(database_id)?;
                     let desired_instances = spec.num_replicas as usize;
                     if desired_instances == 0 {

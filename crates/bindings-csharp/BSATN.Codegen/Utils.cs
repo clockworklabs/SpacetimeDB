@@ -175,6 +175,32 @@ public static class Utils
         return sb;
     }
 
+    private static object? ResolveConstant(TypedConstant constant) =>
+        constant.Kind switch
+        {
+            TypedConstantKind.Array => constant.Values.Select(ResolveConstant).ToArray(),
+            _ => constant.Value,
+        };
+
+    public static T ParseAs<T>(this AttributeData attrData)
+        where T : Attribute
+    {
+        var ctorArgs = attrData.ConstructorArguments.Select(ResolveConstant).ToArray();
+        // For now only support attributes with a single constructor.
+        //
+        // Proper overload resolution is complicated due to implicit casts
+        // (in particular, enums are represented as integers in the attribute data),
+        // which prevent APIs like `Activator.CreateInstance` from finding the constructor.
+        //
+        // Expand logic in the future if it ever becomes actually necessary.
+        var attr = (T)typeof(T).GetConstructors().Single().Invoke(ctorArgs);
+        foreach (var arg in attrData.NamedArguments)
+        {
+            typeof(T).GetProperty(arg.Key).SetValue(attr, ResolveConstant(arg.Value));
+        }
+        return attr;
+    }
+
     // Borrowed & modified code for generating in-place extensions for partial structs/classes/etc. Source:
     // https://andrewlock.net/creating-a-source-generator-part-5-finding-a-type-declarations-namespace-and-type-hierarchy/
 

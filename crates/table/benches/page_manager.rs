@@ -7,9 +7,11 @@ use criterion::{
 };
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use spacetimedb_lib::db::raw_def::RawTableDefV8;
+use spacetimedb_lib::db::raw_def::v9::RawIndexAlgorithm;
+use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_table::blob_store::NullBlobStore;
 use spacetimedb_table::indexes::Byte;
@@ -450,8 +452,9 @@ criterion_group!(
 );
 
 fn schema_from_ty(ty: ProductType, name: &str) -> TableSchema {
-    #[allow(deprecated)]
-    TableSchema::from_def(TableId(0), RawTableDefV8::from_product(name, ty))
+    let mut result = TableSchema::from_product_type(ty);
+    result.table_name = name.into();
+    result
 }
 
 fn make_table(c: &mut Criterion) {
@@ -650,13 +653,27 @@ trait IndexedRow: Row + Sized {
     fn indexed_columns() -> ColList {
         0.into()
     }
-    fn make_table_def() -> RawTableDefV8 {
-        RawTableDefV8::from_product(std::any::type_name::<Self>(), Self::row_type())
-            .with_column_index(Self::indexed_columns(), false)
+    fn table_name() -> String {
+        std::any::type_name::<Self>()
+            .chars()
+            .filter(|c| c.is_alphabetic())
+            .collect()
     }
+    /// Don't call this in a loop, it runs validation code.
     fn make_schema() -> TableSchema {
-        #[allow(deprecated)]
-        TableSchema::from_def(TableId(0), Self::make_table_def())
+        let name = Self::table_name();
+        let mut builder = RawModuleDefV9Builder::new();
+        builder
+            .build_table_with_new_type(name.clone(), Self::row_type(), true)
+            .with_index(
+                RawIndexAlgorithm::BTree {
+                    columns: Self::indexed_columns(),
+                },
+                "accessor_name_doesnt_matter",
+                None,
+            );
+        let def: ModuleDef = builder.finish().try_into().expect("failed to build table schema");
+        def.table_schema(&name[..], TableId::SENTINEL).unwrap()
     }
     fn throughput() -> Throughput {
         Throughput::Bytes(mem::size_of::<Self>() as u64)
@@ -698,7 +715,7 @@ fn make_table_with_indexes<R: IndexedRow>() -> Table {
     let mut tbl = Table::new(schema.into(), SquashedOffset::COMMITTED_STATE);
 
     let cols = R::indexed_columns();
-    let idx = tbl.new_index(IndexId(0), &cols, false).unwrap();
+    let idx = tbl.new_index(IndexId::SENTINEL, &cols, false).unwrap();
     tbl.insert_index(&NullBlobStore, cols, idx);
 
     tbl

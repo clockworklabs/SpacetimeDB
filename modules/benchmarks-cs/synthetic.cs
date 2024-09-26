@@ -418,37 +418,37 @@ public static partial class synthetic
     [SpacetimeDB.Reducer]
     public static void count_unique_0_u32_u64_str()
     {
-        Runtime.Log("COUNT: " + unique_0_u32_u64_str.Iter().Count());
+        Log.Info("COUNT: " + unique_0_u32_u64_str.Iter().Count());
     }
 
     [SpacetimeDB.Reducer]
     public static void count_no_index_u32_u64_str()
     {
-        Runtime.Log("COUNT: " + no_index_u32_u64_str.Iter().Count());
+        Log.Info("COUNT: " + no_index_u32_u64_str.Iter().Count());
     }
 
     [SpacetimeDB.Reducer]
     public static void count_btree_each_column_u32_u64_str()
     {
-        Runtime.Log("COUNT: " + btree_each_column_u32_u64_str.Iter().Count());
+        Log.Info("COUNT: " + btree_each_column_u32_u64_str.Iter().Count());
     }
 
     [SpacetimeDB.Reducer]
     public static void count_unique_0_u32_u64_u64()
     {
-        Runtime.Log("COUNT: " + unique_0_u32_u64_u64.Iter().Count());
+        Log.Info("COUNT: " + unique_0_u32_u64_u64.Iter().Count());
     }
 
     [SpacetimeDB.Reducer]
     public static void count_no_index_u32_u64_u64()
     {
-        Runtime.Log("COUNT: " + no_index_u32_u64_u64.Iter().Count());
+        Log.Info("COUNT: " + no_index_u32_u64_u64.Iter().Count());
     }
 
     [SpacetimeDB.Reducer]
     public static void count_btree_each_column_u32_u64_u64()
     {
-        Runtime.Log("COUNT: " + btree_each_column_u32_u64_u64.Iter().Count());
+        Log.Info("COUNT: " + btree_each_column_u32_u64_u64.Iter().Count());
     }
 
     // ---------- module-specific stuff ----------
@@ -498,7 +498,7 @@ public static partial class synthetic
     {
         for (int i = 0; i < n; i++)
         {
-            Runtime.Log("hello again!");
+            Log.Info("hello again!");
         }
     }
 }

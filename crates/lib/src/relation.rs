@@ -3,10 +3,12 @@ use crate::db::error::{RelationError, TypeError};
 use core::fmt;
 use core::hash::Hash;
 use derive_more::From;
-use spacetimedb_primitives::{ColId, ColList, Constraints, TableId};
+use spacetimedb_data_structures::map::HashSet;
+use spacetimedb_primitives::{ColId, ColList, ColSet, Constraints, TableId};
 use spacetimedb_sats::algebraic_value::AlgebraicValue;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{algebraic_type, AlgebraicType};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Ord, Hash)]
@@ -92,21 +94,24 @@ pub struct Header {
     pub table_id: TableId,
     pub table_name: Box<str>,
     pub fields: Vec<Column>,
-    pub constraints: Vec<(ColList, Constraints)>,
+    pub constraints: BTreeMap<ColList, Constraints>,
 }
 
 impl Header {
+    /// Create a new header.
+    ///
+    /// `uncombined_constraints` will be normalized using [`combine_constraints`].
     pub fn new(
         table_id: TableId,
         table_name: Box<str>,
         fields: Vec<Column>,
-        constraints: Vec<(ColList, Constraints)>,
+        uncombined_constraints: impl IntoIterator<Item = (ColList, Constraints)>,
     ) -> Self {
         Self {
             table_id,
             table_name,
             fields,
-            constraints,
+            constraints: combine_constraints(uncombined_constraints),
         }
     }
 
@@ -140,13 +145,13 @@ impl Header {
     }
 
     /// Copy the [Constraints] that are referenced in the list of `for_columns`
-    fn retain_constraints(&self, for_columns: &ColList) -> Vec<(ColList, Constraints)> {
+    fn retain_constraints(&self, for_columns: &ColList) -> BTreeMap<ColList, Constraints> {
         // Copy the constraints of the selected columns and retain the multi-column ones...
         self.constraints
             .iter()
             // Keep constraints with a col list where at least one col is in `for_columns`.
             .filter(|(cols, _)| cols.iter().any(|c| for_columns.contains(c)))
-            .cloned()
+            .map(|(cols, constraints)| (cols.clone(), *constraints))
             .collect()
     }
 
@@ -158,28 +163,43 @@ impl Header {
 
     /// Project the [ColExpr]s & the [Constraints] that referenced them
     pub fn project(&self, cols: &[ColExpr]) -> Result<Self, RelationError> {
-        let mut p = Vec::with_capacity(cols.len());
+        let mut fields = Vec::with_capacity(cols.len());
         let mut to_keep = ColList::with_capacity(cols.len() as _);
 
         for (pos, col) in cols.iter().enumerate() {
             match col {
                 ColExpr::Col(col) => {
                     to_keep.push(*col);
-                    p.push(self.fields[col.idx()].clone());
+                    fields.push(self.fields[col.idx()].clone());
                 }
                 ColExpr::Value(val) => {
+                    // TODO: why should this field name be relevant?
+                    // We should generate immediate names instead.
                     let field = FieldName::new(self.table_id, pos.into());
                     let ty = val.type_of().ok_or_else(|| {
                         RelationError::TypeInference(field, TypeError::CannotInferType { value: val.clone() })
                     })?;
-                    p.push(Column::new(field, ty));
+                    fields.push(Column::new(field, ty));
                 }
             }
         }
 
         let constraints = self.retain_constraints(&to_keep);
 
-        Ok(Self::new(self.table_id, self.table_name.clone(), p, constraints))
+        Ok(Self::new(self.table_id, self.table_name.clone(), fields, constraints))
+    }
+
+    /// Project the ourself onto the `ColList`, keeping constraints that reference the columns in the ColList.
+    /// Does not change `ColIDs`.
+    pub fn project_col_list(&self, cols: &ColList) -> Self {
+        let mut fields = Vec::with_capacity(cols.len() as usize);
+
+        for col in cols.iter() {
+            fields.push(self.fields[col.idx()].clone());
+        }
+
+        let constraints = self.retain_constraints(cols);
+        Self::new(self.table_id, self.table_name.clone(), fields, constraints)
     }
 
     /// Adds the fields &  [Constraints] from `right` to this [`Header`],
@@ -198,6 +218,39 @@ impl Header {
 
         Self::new(self.table_id, self.table_name.clone(), fields, constraints)
     }
+}
+
+/// Combine constraints.
+/// The result is a map from `ColList` to `Constraints`.
+/// In particular, it includes all indexes, and tells you which of them are unique.
+/// The result MAY contain multiple `ColList`s with the same columns in different orders.
+/// This corresponds to differently-ordered indices.
+///
+/// Unique constraints are considered logically unordered. Information from them will
+/// be propagated to all indices that contain the same columns.
+pub fn combine_constraints(
+    uncombined: impl IntoIterator<Item = (ColList, Constraints)>,
+) -> BTreeMap<ColList, Constraints> {
+    let mut constraints = BTreeMap::new();
+    for (col_list, constraint) in uncombined {
+        let slot = constraints.entry(col_list).or_insert(Constraints::unset());
+        *slot = slot.push(constraint);
+    }
+
+    let mut uniques: HashSet<ColSet> = HashSet::new();
+    for (col_list, constraint) in &constraints {
+        if constraint.has_unique() {
+            uniques.insert(col_list.into());
+        }
+    }
+
+    for (cols, constraint) in constraints.iter_mut() {
+        if uniques.contains(&ColSet::from(cols)) {
+            *constraint = constraint.push(Constraints::unique());
+        }
+    }
+
+    constraints
 }
 
 impl fmt::Display for Header {
@@ -313,5 +366,29 @@ mod tests {
         head_rhs.table_name = head_lhs.table_name.clone();
         let rhs = new.project(&[2, 3].map(ColId).map(ColExpr::Col)).unwrap();
         assert_eq!(head_rhs, rhs);
+    }
+
+    #[test]
+    fn test_combine_constraints() {
+        let raw = vec![
+            (col_list![0], Constraints::indexed()),
+            (col_list![0], Constraints::unique()),
+            (col_list![1], Constraints::identity()),
+            (col_list![1, 0], Constraints::primary_key()),
+            (col_list![0, 1], Constraints::unique()),
+            (col_list![2], Constraints::indexed()),
+            (col_list![3], Constraints::unique()),
+        ];
+        let expected = vec![
+            (col_list![0], Constraints::indexed().push(Constraints::unique())),
+            (col_list![1], Constraints::identity()),
+            (col_list![1, 0], Constraints::primary_key().push(Constraints::unique())),
+            (col_list![0, 1], Constraints::unique()),
+            (col_list![2], Constraints::indexed()),
+            (col_list![3], Constraints::unique()),
+        ]
+        .into_iter()
+        .collect::<BTreeMap<_, _>>();
+        assert_eq!(combine_constraints(raw), expected);
     }
 }

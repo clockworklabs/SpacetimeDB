@@ -1,9 +1,9 @@
 use crate::config::Config;
+use crate::util::y_or_n;
 use clap::ArgAction::SetTrue;
 use clap::ArgMatches;
 use clap::{Arg, Command};
 use spacetimedb::stdb_path;
-use std::io::Write;
 use std::path::PathBuf;
 
 pub fn cli() -> Command {
@@ -60,17 +60,12 @@ async fn exec_clear(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Er
             println!("Worker node database path: <not found>");
         }
 
-        if !force {
-            print!("Are you sure you want to delete all data from the local database? (y/n) ");
-            std::io::stdout().flush()?;
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input)?;
-            if input.trim().to_lowercase() != "y" && input.trim().to_lowercase() != "yes" {
-                println!("Aborting");
-                return Ok(());
-            }
-        } else {
-            println!("Force flag is present, skipping confirmation");
+        if !y_or_n(
+            force,
+            "Are you sure you want to delete all data from the local database?",
+        )? {
+            println!("Aborting");
+            return Ok(());
         }
 
         if control_node_dir.exists() {

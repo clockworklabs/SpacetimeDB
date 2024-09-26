@@ -6,7 +6,7 @@ use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_primitives::ColList;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, PrimitiveType};
 use std::collections::BTreeSet;
 use std::fmt::{self, Write};
@@ -107,7 +107,7 @@ impl __sdk::spacetime_module::InModule for {type_name} {{
 Requested namespace: {namespace}",
         );
 
-        let schema = TableSchema::from_module_def(table, 0.into())
+        let schema = TableSchema::from_module_def(module, table, (), 0.into())
             .validated()
             .expect("Failed to generate table due to validation errors");
 
@@ -273,7 +273,7 @@ pub(super) fn parse_table_update(
             );
         }
 
-        let constraints = schema.column_constraints();
+        let constraints = schema.backcompat_column_constraints();
 
         for field in schema.columns() {
             if constraints[&ColList::from(field.col_pos)].has_unique() {

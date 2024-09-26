@@ -5,9 +5,8 @@ use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
 use crate::database_instance_context::DatabaseInstanceContext;
 use crate::database_logger::{LogLevel, Record};
 use crate::db::datastore::locking_tx_datastore::MutTxId;
-use crate::db::datastore::system_tables::{StClientFields, StClientsRow, ST_CLIENT_ID};
+use crate::db::datastore::system_tables::{StClientFields, StClientRow, ST_CLIENT_ID};
 use crate::db::datastore::traits::{IsolationLevel, Program, TxData};
-use crate::db::update::UpdateDatabaseError;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::execution_context::{ExecutionContext, ReducerContext};
@@ -23,15 +22,20 @@ use anyhow::Context;
 use bytes::Bytes;
 use derive_more::From;
 use futures::{Future, FutureExt};
-use indexmap::IndexMap;
+use indexmap::IndexSet;
+use itertools::Itertools;
 use smallvec::SmallVec;
 use spacetimedb_client_api_messages::timestamp::Timestamp;
 use spacetimedb_client_api_messages::websocket::EncodedValue;
-use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, IntMap};
+use spacetimedb_data_structures::error_stream::ErrorStream;
+use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
-use spacetimedb_lib::{Address, RawModuleDefV8, ReducerDef, TableDesc};
+use spacetimedb_lib::Address;
 use spacetimedb_primitives::{col_list, TableId};
-use spacetimedb_sats::{algebraic_value, ProductValue, Typespace, WithTypespace};
+use spacetimedb_sats::{algebraic_value, ProductValue};
+use spacetimedb_schema::auto_migrate::AutoMigrateError;
+use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
+use spacetimedb_schema::def::{ModuleDef, ReducerDef};
 use spacetimedb_vm::relation::{MemTable, RelValue};
 use std::fmt;
 use std::sync::{Arc, Weak};
@@ -214,20 +218,84 @@ pub struct ModuleEvent {
     pub timer: Option<Instant>,
 }
 
+/// Information about a running module.
 #[derive(Debug)]
 pub struct ModuleInfo {
-    pub module_def: RawModuleDefV8,
+    /// The definition of the module.
+    /// Loaded by loading the module's program from the system tables, extracting its definition,
+    /// and validating.
+    pub module_def: ModuleDef,
+    /// Map between reducer IDs and reducer names.
+    /// Reducer names are sorted alphabetically.
+    pub reducers_map: ReducersMap,
+    /// The identity of the module.
     pub identity: Identity,
+    /// The address of the module.
     pub address: Address,
+    /// The hash of the module.
     pub module_hash: Hash,
-    pub typespace: Typespace,
-    pub reducers: ReducersMap,
-    pub catalog: HashMap<Box<str>, EntityDef>,
+    /// Allows subscribing to module logs.
     pub log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
+    /// Subscriptions to this module.
     pub subscriptions: ModuleSubscriptions,
 }
 
-pub struct ReducersMap(pub IndexMap<Box<str>, ReducerDef>);
+impl ModuleInfo {
+    /// Create a new `ModuleInfo`.
+    /// Reducers are sorted alphabetically by name and assigned IDs.
+    pub fn new(
+        module_def: ModuleDef,
+        identity: Identity,
+        address: Address,
+        module_hash: Hash,
+        log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
+        subscriptions: ModuleSubscriptions,
+    ) -> Arc<Self> {
+        // Note: sorts alphabetically!
+        let reducers_map = module_def.reducers().map(|r| &*r.name).collect();
+        Arc::new(ModuleInfo {
+            module_def,
+            reducers_map,
+            identity,
+            address,
+            module_hash,
+            log_tx,
+            subscriptions,
+        })
+    }
+
+    /// Get the reducer seed and ID for a reducer name, if any.
+    pub fn reducer_seed_and_id(&self, reducer_name: &str) -> Option<(ReducerArgsDeserializeSeed, ReducerId)> {
+        let seed = self.module_def.reducer_arg_deserialize_seed(reducer_name)?;
+        let reducer_id = self
+            .reducers_map
+            .lookup_id(reducer_name)
+            .expect("seed was present, so ID should be present!");
+        Some((seed, reducer_id))
+    }
+
+    /// Get a reducer by its ID.
+    pub fn get_reducer_by_id(&self, reducer_id: ReducerId) -> Option<&ReducerDef> {
+        let name = self.reducers_map.lookup_name(reducer_id)?;
+        Some(
+            self.module_def
+                .reducer(name)
+                .expect("id was present, so reducer should be present!"),
+        )
+    }
+}
+
+/// A bidirectional map between `Identifiers` (reducer names) and `ReducerId`s.
+/// Invariant: the reducer names are in alphabetical order.
+pub struct ReducersMap(IndexSet<Box<str>>);
+
+impl<'a> FromIterator<&'a str> for ReducersMap {
+    fn from_iter<T: IntoIterator<Item = &'a str>>(iter: T) -> Self {
+        let mut sorted = Vec::from_iter(iter);
+        sorted.sort();
+        ReducersMap(sorted.into_iter().map_into().collect())
+    }
+}
 
 impl fmt::Debug for ReducersMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -235,20 +303,16 @@ impl fmt::Debug for ReducersMap {
     }
 }
 
-impl std::ops::Index<ReducerId> for ReducersMap {
-    type Output = ReducerDef;
-    fn index(&self, index: ReducerId) -> &Self::Output {
-        &self.0[index.0 as usize]
-    }
-}
-
 impl ReducersMap {
+    /// Lookup the ID for a reducer name.
     pub fn lookup_id(&self, reducer_name: &str) -> Option<ReducerId> {
         self.0.get_index_of(reducer_name).map(ReducerId::from)
     }
 
-    pub fn lookup(&self, reducer_name: &str) -> Option<(ReducerId, &ReducerDef)> {
-        self.0.get_full(reducer_name).map(|(id, _, def)| (id.into(), def))
+    /// Lookup the name for a reducer ID.
+    pub fn lookup_name(&self, reducer_id: ReducerId) -> Option<&str> {
+        let result = self.0.get_index(reducer_id.0 as _)?;
+        Some(&**result)
     }
 }
 
@@ -269,9 +333,15 @@ pub trait Module: Send + Sync + 'static {
 pub trait ModuleInstance: Send + 'static {
     fn trapped(&self) -> bool;
 
+    /// If the module instance's dbic is uninitialized, initialize it.
     fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>>;
 
-    fn update_database(&mut self, program: Program) -> anyhow::Result<UpdateDatabaseResult>;
+    /// Update the module instance's database to match the schema of the module instance.
+    fn update_database(
+        &mut self,
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
+    ) -> anyhow::Result<UpdateDatabaseResult>;
 
     fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult;
 }
@@ -311,8 +381,12 @@ impl<T: Module> ModuleInstance for AutoReplacingModuleInstance<T> {
         self.check_trap();
         ret
     }
-    fn update_database(&mut self, program: Program) -> anyhow::Result<UpdateDatabaseResult> {
-        let ret = self.inst.update_database(program);
+    fn update_database(
+        &mut self,
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
+    ) -> anyhow::Result<UpdateDatabaseResult> {
+        let ret = self.inst.update_database(program, old_module_info);
         self.check_trap();
         ret
     }
@@ -421,7 +495,22 @@ pub struct WeakModuleHost {
     on_panic: Weak<dyn Fn() + Send + Sync + 'static>,
 }
 
-pub type UpdateDatabaseResult = Result<(), UpdateDatabaseError>;
+#[derive(Debug)]
+pub enum UpdateDatabaseResult {
+    NoUpdateNeeded,
+    UpdatePerformed,
+    AutoMigrateError(ErrorStream<AutoMigrateError>),
+    ErrorExecutingMigration(anyhow::Error),
+}
+impl UpdateDatabaseResult {
+    /// Check if a database update was successful.
+    pub fn was_successful(&self) -> bool {
+        matches!(
+            self,
+            UpdateDatabaseResult::UpdatePerformed | UpdateDatabaseResult::NoUpdateNeeded
+        )
+    }
+}
 
 #[derive(thiserror::Error, Debug)]
 #[error("no such module")]
@@ -598,9 +687,9 @@ impl ModuleHost {
     ) -> Result<(), DBError> {
         let db = &*self.inner.dbic().relational_db;
         let ctx = &ExecutionContext::internal(db.address());
-        let row = &StClientsRow {
-            identity: caller_identity,
-            address: caller_address,
+        let row = &StClientRow {
+            identity: caller_identity.into(),
+            address: caller_address.into(),
         };
 
         if connected {
@@ -631,13 +720,19 @@ impl ModuleHost {
         reducer_name: &str,
         args: ReducerArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let (reducer_id, schema) = self
+        let reducer_seed = self
             .info
-            .reducers
-            .lookup(reducer_name)
+            .module_def
+            .reducer_arg_deserialize_seed(reducer_name)
             .ok_or(ReducerCallError::NoSuchReducer)?;
 
-        let args = args.into_tuple(self.info.typespace.with_type(schema))?;
+        let reducer_id = self
+            .info
+            .reducers_map
+            .lookup_id(reducer_name)
+            .expect("if we found the seed, we should find the ID!");
+
+        let args = args.into_tuple(reducer_seed)?;
         let caller_address = caller_address.unwrap_or(Address::__DUMMY);
 
         self.call(reducer_name, move |inst| {
@@ -730,10 +825,6 @@ impl ModuleHost {
         .map_err(Into::into)
     }
 
-    pub fn catalog(&self) -> Catalog {
-        Catalog(self.info.clone())
-    }
-
     pub fn subscribe_to_logs(&self) -> anyhow::Result<tokio::sync::broadcast::Receiver<bytes::Bytes>> {
         Ok(self.info().log_tx.subscribe())
     }
@@ -744,10 +835,16 @@ impl ModuleHost {
             .map_err(InitDatabaseError::Other)
     }
 
-    pub async fn update_database(&self, program: Program) -> Result<UpdateDatabaseResult, anyhow::Error> {
-        self.call("<update_database>", move |inst| inst.update_database(program))
-            .await?
-            .map_err(Into::into)
+    pub async fn update_database(
+        &self,
+        program: Program,
+        old_module_info: Arc<ModuleInfo>,
+    ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        self.call("<update_database>", move |inst| {
+            inst.update_database(program, old_module_info)
+        })
+        .await?
+        .map_err(Into::into)
     }
 
     pub async fn exit(&self) {
@@ -831,51 +928,5 @@ impl WeakModuleHost {
             inner,
             on_panic,
         })
-    }
-}
-
-#[derive(Debug)]
-pub enum EntityDef {
-    Reducer(ReducerDef),
-    Table(TableDesc),
-}
-impl EntityDef {
-    pub fn as_reducer(&self) -> Option<&ReducerDef> {
-        match self {
-            Self::Reducer(x) => Some(x),
-            _ => None,
-        }
-    }
-    pub fn as_table(&self) -> Option<&TableDesc> {
-        match self {
-            Self::Table(x) => Some(x),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Catalog(Arc<ModuleInfo>);
-impl Catalog {
-    pub fn typespace(&self) -> &Typespace {
-        &self.0.typespace
-    }
-
-    pub fn get(&self, name: &str) -> Option<WithTypespace<'_, EntityDef>> {
-        self.0.catalog.get(name).map(|ty| self.0.typespace.with_type(ty))
-    }
-    pub fn get_reducer(&self, name: &str) -> Option<WithTypespace<'_, ReducerDef>> {
-        let schema = self.get(name)?;
-        Some(schema.with(schema.ty().as_reducer()?))
-    }
-    pub fn get_table(&self, name: &str) -> Option<WithTypespace<'_, TableDesc>> {
-        let schema = self.get(name)?;
-        Some(schema.with(schema.ty().as_table()?))
-    }
-    pub fn iter(&self) -> impl Iterator<Item = (&str, WithTypespace<'_, EntityDef>)> + '_ {
-        self.0
-            .catalog
-            .iter()
-            .map(|(name, e)| (&**name, self.0.typespace.with_type(e)))
     }
 }

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use spacetimedb_lib::{from_hex_pad, Address, AlgebraicValue, Identity};
-use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement};
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_sats::AlgebraicType;
+use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
 use spacetimedb_sql_parser::{
     ast::{
         self,
@@ -12,34 +12,152 @@ use spacetimedb_sql_parser::{
     parser::sub::parse_subscription,
 };
 
-use super::errors::{ConstraintViolation, ResolutionError, TypingError, Unsupported};
-use super::expr::{Expr, Ref, RelExpr, Type, Vars};
+use super::{
+    errors::{ConstraintViolation, TypingError, Unresolved, Unsupported},
+    expr::{Expr, Ref, RelExpr, Vars},
+    ty::{TyCtx, TyId, Type, TypeWithCtx},
+};
 
+/// The result of type checking and name resolution
 pub type TypingResult<T> = core::result::Result<T, TypingError>;
 
 pub trait SchemaView {
     fn schema(&self, name: &str, case_sensitive: bool) -> Option<Arc<TableSchema>>;
 }
 
+pub trait TypeChecker {
+    type Ast;
+    type Set;
+
+    fn type_ast(ctx: &mut TyCtx, ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<RelExpr>;
+
+    fn type_set(ctx: &mut TyCtx, ast: Self::Set, tx: &impl SchemaView) -> TypingResult<RelExpr>;
+
+    fn type_from(ctx: &mut TyCtx, from: SqlFrom<Self::Ast>, tx: &impl SchemaView) -> TypingResult<(RelExpr, Vars)> {
+        match from {
+            SqlFrom::Expr(expr, None) => Self::type_rel(ctx, expr, tx),
+            SqlFrom::Expr(expr, Some(alias)) => {
+                let (expr, _) = Self::type_rel(ctx, expr, tx)?;
+                let ty = expr.ty_id();
+                Ok((expr, vec![(alias.name, ty)].into()))
+            }
+            SqlFrom::Join(r, alias, joins) => {
+                let (mut vars, mut args, mut exprs) = (Vars::default(), Vec::new(), Vec::new());
+
+                let (r, _) = Self::type_rel(ctx, r, tx)?;
+                let ty = r.ty_id();
+
+                args.push(r);
+                vars.push((alias.name, ty));
+
+                for join in joins {
+                    let (r, _) = Self::type_rel(ctx, join.expr, tx)?;
+                    let ty = r.ty_id();
+
+                    args.push(r);
+                    vars.push((join.alias.name, ty));
+
+                    if let Some(on) = join.on {
+                        exprs.push(type_expr(ctx, &vars, on, Some(TyId::BOOL))?);
+                    }
+                }
+                let types = vars.iter().map(|(_, ty)| *ty).collect();
+                let ty = Type::Tup(types);
+                let input = RelExpr::Join(args.into(), ctx.add(ty));
+                Ok((RelExpr::select(input, vars.clone(), exprs), vars))
+            }
+        }
+    }
+
+    fn type_rel(ctx: &mut TyCtx, expr: ast::RelExpr<Self::Ast>, tx: &impl SchemaView) -> TypingResult<(RelExpr, Vars)> {
+        match expr {
+            ast::RelExpr::Var(var) => {
+                let schema = tx
+                    .schema(&var.name, var.case_sensitive)
+                    .ok_or_else(|| Unresolved::table(&var.name))
+                    .map_err(TypingError::from)?;
+                let mut types = Vec::new();
+                for ColumnSchema { col_name, col_type, .. } in schema.columns() {
+                    let ty = Type::Alg(col_type.clone());
+                    let id = ctx.add(ty);
+                    types.push((col_name.to_string(), id));
+                }
+                let ty = Type::Var(types.into_boxed_slice());
+                let id = ctx.add(ty);
+                Ok((RelExpr::RelVar(schema, id), vec![(var.name, id)].into()))
+            }
+            ast::RelExpr::Ast(ast) => Ok((Self::type_ast(ctx, *ast, tx)?, Vars::default())),
+        }
+    }
+}
+
+/// Type checker for subscriptions
+struct SubChecker;
+
+impl TypeChecker for SubChecker {
+    type Ast = SqlAst;
+    type Set = SqlAst;
+
+    fn type_ast(ctx: &mut TyCtx, ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<RelExpr> {
+        Self::type_set(ctx, ast, tx)
+    }
+
+    fn type_set(ctx: &mut TyCtx, ast: Self::Set, tx: &impl SchemaView) -> TypingResult<RelExpr> {
+        match ast {
+            SqlAst::Union(a, b) => {
+                let a = type_ast(ctx, *a, tx)?;
+                let b = type_ast(ctx, *b, tx)?;
+                assert_eq_types(a.ty_id().try_with_ctx(ctx)?, b.ty_id().try_with_ctx(ctx)?)?;
+                Ok(RelExpr::Union(Box::new(a), Box::new(b)))
+            }
+            SqlAst::Minus(a, b) => {
+                let a = type_ast(ctx, *a, tx)?;
+                let b = type_ast(ctx, *b, tx)?;
+                assert_eq_types(a.ty_id().try_with_ctx(ctx)?, b.ty_id().try_with_ctx(ctx)?)?;
+                Ok(RelExpr::Minus(Box::new(a), Box::new(b)))
+            }
+            SqlAst::Select(SqlSelect {
+                project,
+                from,
+                filter: None,
+            }) => {
+                let (arg, vars) = type_from(ctx, from, tx)?;
+                type_proj(ctx, project, arg, vars)
+            }
+            SqlAst::Select(SqlSelect {
+                project,
+                from,
+                filter: Some(expr),
+            }) => {
+                let (from, vars) = type_from(ctx, from, tx)?;
+                let arg = type_select(ctx, expr, from, vars.clone())?;
+                type_proj(ctx, project, arg, vars.clone())
+            }
+        }
+    }
+}
+
 /// Parse and type check a subscription query
 pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<RelExpr> {
-    expect_table_type(type_ast(parse_subscription(sql)?, tx)?)
+    let mut ctx = TyCtx::default();
+    let expr = SubChecker::type_ast(&mut ctx, parse_subscription(sql)?, tx)?;
+    expect_table_type(&ctx, expr)
 }
 
 /// Type check and lower a [SqlAst] into a [RelExpr].
 /// This includes name resolution and variable binding.
-pub fn type_ast(expr: SqlAst, tx: &impl SchemaView) -> TypingResult<RelExpr> {
+pub fn type_ast(ctx: &mut TyCtx, expr: SqlAst, tx: &impl SchemaView) -> TypingResult<RelExpr> {
     match expr {
         SqlAst::Union(a, b) => {
-            let a = type_ast(*a, tx)?;
-            let b = type_ast(*b, tx)?;
-            assert_eq_types(a.ty(), b.ty())?;
+            let a = type_ast(ctx, *a, tx)?;
+            let b = type_ast(ctx, *b, tx)?;
+            assert_eq_types(a.ty_id().try_with_ctx(ctx)?, b.ty_id().try_with_ctx(ctx)?)?;
             Ok(RelExpr::Union(Box::new(a), Box::new(b)))
         }
         SqlAst::Minus(a, b) => {
-            let a = type_ast(*a, tx)?;
-            let b = type_ast(*b, tx)?;
-            assert_eq_types(a.ty(), b.ty())?;
+            let a = type_ast(ctx, *a, tx)?;
+            let b = type_ast(ctx, *b, tx)?;
+            assert_eq_types(a.ty_id().try_with_ctx(ctx)?, b.ty_id().try_with_ctx(ctx)?)?;
             Ok(RelExpr::Minus(Box::new(a), Box::new(b)))
         }
         SqlAst::Select(SqlSelect {
@@ -47,87 +165,93 @@ pub fn type_ast(expr: SqlAst, tx: &impl SchemaView) -> TypingResult<RelExpr> {
             from,
             filter: None,
         }) => {
-            let (arg, vars) = type_from(from, tx)?;
-            type_proj(project, arg, vars)
+            let (arg, vars) = type_from(ctx, from, tx)?;
+            type_proj(ctx, project, arg, vars)
         }
         SqlAst::Select(SqlSelect {
             project,
             from,
             filter: Some(expr),
         }) => {
-            let (from, vars) = type_from(from, tx)?;
-            let arg = type_select(expr, from, vars.clone())?;
-            type_proj(project, arg, vars.clone())
+            let (from, vars) = type_from(ctx, from, tx)?;
+            let arg = type_select(ctx, expr, from, vars.clone())?;
+            type_proj(ctx, project, arg, vars.clone())
         }
     }
 }
 
 /// Type check and lower a [SqlFrom<SqlAst>]
-pub fn type_from(from: SqlFrom<SqlAst>, tx: &impl SchemaView) -> TypingResult<(RelExpr, Vars)> {
+pub fn type_from(ctx: &mut TyCtx, from: SqlFrom<SqlAst>, tx: &impl SchemaView) -> TypingResult<(RelExpr, Vars)> {
     match from {
-        SqlFrom::Expr(expr, None) => type_rel(expr, tx),
+        SqlFrom::Expr(expr, None) => type_rel(ctx, expr, tx),
         SqlFrom::Expr(expr, Some(alias)) => {
-            let (expr, _) = type_rel(expr, tx)?;
-            let ty = expr.ty().clone();
+            let (expr, _) = type_rel(ctx, expr, tx)?;
+            let ty = expr.ty_id();
             Ok((expr, vec![(alias.name, ty)].into()))
         }
         SqlFrom::Join(r, alias, joins) => {
             let (mut vars, mut args, mut exprs) = (Vars::default(), Vec::new(), Vec::new());
 
-            let (r, _) = type_rel(r, tx)?;
-            let ty = r.ty().clone();
+            let (r, _) = type_rel(ctx, r, tx)?;
+            let ty = r.ty_id();
 
             args.push(r);
             vars.push((alias.name, ty));
 
             for join in joins {
-                let (r, _) = type_rel(join.expr, tx)?;
-                let ty = r.ty().clone();
+                let (r, _) = type_rel(ctx, join.expr, tx)?;
+                let ty = r.ty_id();
 
                 args.push(r);
                 vars.push((join.alias.name, ty));
 
                 if let Some(on) = join.on {
-                    exprs.push(type_expr(&vars, on, Some(&Type::BOOL))?);
+                    exprs.push(type_expr(ctx, &vars, on, Some(TyId::BOOL))?);
                 }
             }
-            let types = vars.iter().map(|(_, ty)| ty.clone()).collect();
-            let input = RelExpr::Join(args.into(), Type::Tup(types));
+            let types = vars.iter().map(|(_, ty)| *ty).collect();
+            let ty = Type::Tup(types);
+            let input = RelExpr::Join(args.into(), ctx.add(ty));
             Ok((RelExpr::select(input, vars.clone(), exprs), vars))
         }
     }
 }
 
 /// Type check and lower a [ast::RelExpr<SqlAst>]
-fn type_rel(expr: ast::RelExpr<SqlAst>, tx: &impl SchemaView) -> TypingResult<(RelExpr, Vars)> {
+fn type_rel(ctx: &mut TyCtx, expr: ast::RelExpr<SqlAst>, tx: &impl SchemaView) -> TypingResult<(RelExpr, Vars)> {
     match expr {
-        ast::RelExpr::Var(var) => tx
-            .schema(&var.name, var.case_sensitive)
-            .ok_or_else(|| ResolutionError::unresolved_table(&var.name).into())
-            .map(|schema| {
-                (
-                    RelExpr::RelVar(schema.clone(), Type::Var(schema.clone())),
-                    vec![(var.name, Type::Var(schema))].into(),
-                )
-            }),
-        ast::RelExpr::Ast(ast) => Ok((type_ast(*ast, tx)?, Vars::default())),
+        ast::RelExpr::Var(var) => {
+            let schema = tx
+                .schema(&var.name, var.case_sensitive)
+                .ok_or_else(|| Unresolved::table(&var.name))
+                .map_err(TypingError::from)?;
+            let mut types = Vec::new();
+            for ColumnSchema { col_name, col_type, .. } in schema.columns() {
+                let ty = Type::Alg(col_type.clone());
+                let id = ctx.add(ty);
+                types.push((col_name.to_string(), id));
+            }
+            let ty = Type::Var(types.into_boxed_slice());
+            let id = ctx.add(ty);
+            Ok((RelExpr::RelVar(schema, id), vec![(var.name, id)].into()))
+        }
+        ast::RelExpr::Ast(ast) => Ok((type_ast(ctx, *ast, tx)?, Vars::default())),
     }
 }
 
 /// Type check and lower a [SqlExpr]
-fn type_select(expr: SqlExpr, input: RelExpr, vars: Vars) -> TypingResult<RelExpr> {
-    let exprs = vec![type_expr(&vars, expr, Some(&Type::BOOL))?];
+pub(crate) fn type_select(ctx: &mut TyCtx, expr: SqlExpr, input: RelExpr, vars: Vars) -> TypingResult<RelExpr> {
+    let exprs = vec![type_expr(ctx, &vars, expr, Some(TyId::BOOL))?];
     Ok(RelExpr::select(input, vars, exprs))
 }
 
 /// Type check and lower a [ast::Project]
-fn type_proj(proj: ast::Project, input: RelExpr, vars: Vars) -> TypingResult<RelExpr> {
+pub(crate) fn type_proj(ctx: &mut TyCtx, proj: ast::Project, input: RelExpr, vars: Vars) -> TypingResult<RelExpr> {
     match proj {
         ast::Project::Star(None) => Ok(input),
         ast::Project::Star(Some(var)) => {
-            let (i, ty) = vars.expect_var(&var.name, None)?;
-            let ty = ty.clone();
-            let refs = vec![Ref::Var(i, ty.clone())];
+            let (i, ty) = vars.expect_var(ctx, &var.name, None)?;
+            let refs = vec![Ref::Var(i, ty)];
             Ok(RelExpr::project(input, vars, refs, ty))
         }
         ast::Project::Exprs(elems) => {
@@ -139,163 +263,138 @@ fn type_proj(proj: ast::Project, input: RelExpr, vars: Vars) -> TypingResult<Rel
                 let SqlExpr::Field(table, field) = expr else {
                     return Err(Unsupported::ProjectExpr.into());
                 };
-                let (i, j, ty) = vars.expect_field(&table.name, &field.name, None)?;
-                refs.push(Ref::Field(i, j, Type::Alg(ty.clone())));
+                let (i, j, ty) = vars.expect_field(ctx, &table.name, &field.name, None)?;
+                refs.push(Ref::Field(i, j, ty));
                 if let Some(alias) = alias {
-                    fields.push((alias.name, ty.clone()));
+                    fields.push((alias.name, ty));
                 } else {
-                    fields.push((field.name, ty.clone()));
+                    fields.push((field.name, ty));
                 }
             }
-            let ty = Type::Row(ProductType::from_iter(
-                fields
-                    .into_iter()
-                    .map(|(name, t)| ProductTypeElement::new_named(t, name.into_boxed_str())),
-            ));
+            let ty = Type::Row(fields.into_boxed_slice());
+            let ty = ctx.add(ty);
             Ok(RelExpr::project(input, vars, refs, ty))
         }
     }
 }
 
 /// Type check and lower a [SqlExpr] into a logical [Expr].
-fn type_expr(vars: &Vars, expr: SqlExpr, expected: Option<&Type>) -> TypingResult<Expr> {
+pub(crate) fn type_expr(ctx: &TyCtx, vars: &Vars, expr: SqlExpr, expected: Option<TyId>) -> TypingResult<Expr> {
     match (expr, expected) {
-        (SqlExpr::Lit(SqlLiteral::Bool(v)), None | Some(Type::Alg(AlgebraicType::Bool))) => Ok(Expr::bool(v)),
-        (SqlExpr::Lit(SqlLiteral::Bool(_)), Some(t)) => Err(unexpected_type(&Type::BOOL, t)),
-        (SqlExpr::Lit(SqlLiteral::Str(v)), None | Some(Type::Alg(AlgebraicType::String))) => Ok(Expr::str(v)),
-        (SqlExpr::Lit(SqlLiteral::Str(_)), Some(t)) => Err(unexpected_type(&Type::STR, t)),
-        (SqlExpr::Lit(SqlLiteral::Num(_) | SqlLiteral::Hex(_)), None) => Err(ResolutionError::UntypedLiteral.into()),
-        (SqlExpr::Lit(SqlLiteral::Num(v) | SqlLiteral::Hex(v)), Some(t)) => parse(v, t),
-        (SqlExpr::Var(var), expected) => vars.expect_var_ref(&var.name, expected),
-        (SqlExpr::Field(table, field), expected) => vars.expect_field_ref(&table.name, &field.name, expected),
-        (SqlExpr::Bin(a, b, op), None | Some(Type::Alg(AlgebraicType::Bool))) => match (*a, *b) {
+        (SqlExpr::Lit(SqlLiteral::Bool(v)), None | Some(TyId::BOOL)) => Ok(Expr::bool(v)),
+        (SqlExpr::Lit(SqlLiteral::Bool(_)), Some(id)) => {
+            Err(unexpected_type(Type::BOOL.with_ctx(ctx), id.try_with_ctx(ctx)?))
+        }
+        (SqlExpr::Lit(SqlLiteral::Str(v)), None | Some(TyId::STR)) => Ok(Expr::str(v)),
+        (SqlExpr::Lit(SqlLiteral::Str(_)), Some(id)) => {
+            Err(unexpected_type(Type::STR.with_ctx(ctx), id.try_with_ctx(ctx)?))
+        }
+        (SqlExpr::Lit(SqlLiteral::Num(_) | SqlLiteral::Hex(_)), None) => Err(Unresolved::Literal.into()),
+        (SqlExpr::Lit(SqlLiteral::Num(v) | SqlLiteral::Hex(v)), Some(id)) => {
+            parse(ctx, v, id).map(|v| Expr::Lit(v, id))
+        }
+        (SqlExpr::Var(var), expected) => vars.expect_var_ref(ctx, &var.name, expected),
+        (SqlExpr::Field(table, field), expected) => vars.expect_field_ref(ctx, &table.name, &field.name, expected),
+        (SqlExpr::Bin(a, b, op), None | Some(TyId::BOOL)) => match (*a, *b) {
             (a, b @ SqlExpr::Lit(_)) | (b @ SqlExpr::Lit(_), a) | (a, b) => {
-                let a = expect_op_type(op, type_expr(vars, a, None)?)?;
-                let b = expect_op_type(op, type_expr(vars, b, Some(a.ty()))?)?;
+                let a = expect_op_type(ctx, op, type_expr(ctx, vars, a, None)?)?;
+                let b = expect_op_type(ctx, op, type_expr(ctx, vars, b, Some(a.ty_id()))?)?;
                 Ok(Expr::Bin(op, Box::new(a), Box::new(b)))
             }
         },
-        (SqlExpr::Bin(..), Some(t)) => Err(unexpected_type(&Type::BOOL, t)),
+        (SqlExpr::Bin(..), Some(id)) => Err(unexpected_type(Type::BOOL.with_ctx(ctx), id.try_with_ctx(ctx)?)),
     }
 }
 
 /// Parses a source text literal as a particular type
-fn parse(v: String, ty: &Type) -> TypingResult<Expr> {
-    let constraint_err = |v, ty| TypingError::from(ConstraintViolation::lit(v, ty));
-    match ty {
-        Type::Alg(AlgebraicType::I8) => v
+pub(crate) fn parse(ctx: &TyCtx, v: String, id: TyId) -> TypingResult<AlgebraicValue> {
+    let err = |v, ty| TypingError::from(ConstraintViolation::lit(v, ty));
+    match ctx.try_resolve(id)? {
+        ty @ Type::Alg(AlgebraicType::I8) => v
             .parse::<i8>()
             .map(AlgebraicValue::I8)
-            .map(|v| Expr::Lit(v, ty.clone()))
-            .map_err(|_| constraint_err(&v, ty)),
-        Type::Alg(AlgebraicType::U8) => v
+            .map_err(|_| err(&v, ty.with_ctx(ctx))),
+        ty @ Type::Alg(AlgebraicType::U8) => v
             .parse::<u8>()
             .map(AlgebraicValue::U8)
-            .map(|v| Expr::Lit(v, ty.clone()))
-            .map_err(|_| constraint_err(&v, ty)),
-        Type::Alg(AlgebraicType::I16) => v
+            .map_err(|_| err(&v, ty.with_ctx(ctx))),
+        ty @ Type::Alg(AlgebraicType::I16) => v
             .parse::<i16>()
             .map(AlgebraicValue::I16)
-            .map(|v| Expr::Lit(v, ty.clone()))
-            .map_err(|_| constraint_err(&v, ty)),
-        Type::Alg(AlgebraicType::U16) => v
+            .map_err(|_| err(&v, ty.with_ctx(ctx))),
+        ty @ Type::Alg(AlgebraicType::U16) => v
             .parse::<u16>()
             .map(AlgebraicValue::U16)
-            .map(|v| Expr::Lit(v, ty.clone()))
-            .map_err(|_| constraint_err(&v, ty)),
-        Type::Alg(AlgebraicType::I32) => v
+            .map_err(|_| err(&v, ty.with_ctx(ctx))),
+        ty @ Type::Alg(AlgebraicType::I32) => v
             .parse::<i32>()
             .map(AlgebraicValue::I32)
-            .map(|v| Expr::Lit(v, ty.clone()))
-            .map_err(|_| constraint_err(&v, ty)),
-        Type::Alg(AlgebraicType::U32) => v
+            .map_err(|_| err(&v, ty.with_ctx(ctx))),
+        ty @ Type::Alg(AlgebraicType::U32) => v
             .parse::<u32>()
             .map(AlgebraicValue::U32)
-            .map(|v| Expr::Lit(v, ty.clone()))
-            .map_err(|_| constraint_err(&v, ty)),
-        Type::Alg(AlgebraicType::I64) => v
+            .map_err(|_| err(&v, ty.with_ctx(ctx))),
+        ty @ Type::Alg(AlgebraicType::I64) => v
             .parse::<i64>()
             .map(AlgebraicValue::I64)
-            .map(|v| Expr::Lit(v, ty.clone()))
-            .map_err(|_| constraint_err(&v, ty)),
-        Type::Alg(AlgebraicType::U64) => v
+            .map_err(|_| err(&v, ty.with_ctx(ctx))),
+        ty @ Type::Alg(AlgebraicType::U64) => v
             .parse::<u64>()
             .map(AlgebraicValue::U64)
-            .map(|v| Expr::Lit(v, ty.clone()))
-            .map_err(|_| constraint_err(&v, ty)),
-        Type::Alg(AlgebraicType::F32) => v
+            .map_err(|_| err(&v, ty.with_ctx(ctx))),
+        ty @ Type::Alg(AlgebraicType::F32) => v
             .parse::<f32>()
             .map(|v| AlgebraicValue::F32(v.into()))
-            .map(|v| Expr::Lit(v, ty.clone()))
-            .map_err(|_| constraint_err(&v, ty)),
-        Type::Alg(AlgebraicType::F64) => v
+            .map_err(|_| err(&v, ty.with_ctx(ctx))),
+        ty @ Type::Alg(AlgebraicType::F64) => v
             .parse::<f64>()
             .map(|v| AlgebraicValue::F64(v.into()))
-            .map(|v| Expr::Lit(v, ty.clone()))
-            .map_err(|_| constraint_err(&v, ty)),
-        Type::Alg(AlgebraicType::I128) => v
+            .map_err(|_| err(&v, ty.with_ctx(ctx))),
+        ty @ Type::Alg(AlgebraicType::I128) => v
             .parse::<i128>()
             .map(|v| AlgebraicValue::I128(v.into()))
-            .map(|v| Expr::Lit(v, ty.clone()))
-            .map_err(|_| constraint_err(&v, ty)),
-        Type::Alg(AlgebraicType::U128) => v
+            .map_err(|_| err(&v, ty.with_ctx(ctx))),
+        ty @ Type::Alg(AlgebraicType::U128) => v
             .parse::<u128>()
             .map(|v| AlgebraicValue::U128(v.into()))
-            .map(|v| Expr::Lit(v, ty.clone()))
-            .map_err(|_| constraint_err(&v, ty)),
-        Type::Alg(t) if t.is_bytes() => from_hex_pad::<Vec<u8>, _>(&v)
+            .map_err(|_| err(&v, ty.with_ctx(ctx))),
+        ty @ Type::Alg(t) if t.is_bytes() => from_hex_pad::<Vec<u8>, _>(&v)
             .map(|v| AlgebraicValue::Bytes(v.into_boxed_slice()))
-            .map(|v| Expr::Lit(v, ty.clone()))
-            .map_err(|_| constraint_err(&v, ty)),
-        Type::Alg(t) if t.is_identity() => Identity::from_hex(&v)
+            .map_err(|_| err(&v, ty.with_ctx(ctx))),
+        ty @ Type::Alg(t) if t.is_identity() => Identity::from_hex(&v)
             .map(AlgebraicValue::from)
-            .map(|v| Expr::Lit(v, ty.clone()))
-            .map_err(|_| constraint_err(&v, ty)),
-        Type::Alg(t) if t.is_address() => Address::from_hex(&v)
+            .map_err(|_| err(&v, ty.with_ctx(ctx))),
+        ty @ Type::Alg(t) if t.is_address() => Address::from_hex(&v)
             .map(AlgebraicValue::from)
-            .map(|v| Expr::Lit(v, ty.clone()))
-            .map_err(|_| constraint_err(&v, ty)),
-        _ => Err(constraint_err(&v, ty)),
+            .map_err(|_| err(&v, ty.with_ctx(ctx))),
+        ty => Err(err(&v, ty.with_ctx(ctx))),
     }
 }
 
 /// Returns a type constraint violation for an unexpected type
-fn unexpected_type(expected: &Type, actual: &Type) -> TypingError {
-    ConstraintViolation::eq(expected, actual).into()
+pub(crate) fn unexpected_type(expected: TypeWithCtx<'_>, inferred: TypeWithCtx<'_>) -> TypingError {
+    ConstraintViolation::eq(expected, inferred).into()
 }
 
 /// Returns an error if the input type is not a table type [Type::Var]
-fn expect_table_type(expr: RelExpr) -> TypingResult<RelExpr> {
-    match expr.ty() {
+fn expect_table_type(ctx: &TyCtx, expr: RelExpr) -> TypingResult<RelExpr> {
+    match expr.ty(ctx)? {
         Type::Var(_) => Ok(expr),
         _ => Err(Unsupported::SubReturnType.into()),
     }
 }
 
 /// Assert that this type is compatible with this operator
-fn expect_op_type(op: BinOp, expr: Expr) -> TypingResult<Expr> {
-    match (op, expr.ty()) {
-        // Logic operators take booleans
-        (BinOp::And | BinOp::Or, Type::Alg(AlgebraicType::Bool)) => Ok(expr),
-        // Comparison operators take integers or floats
-        (BinOp::Lt | BinOp::Gt | BinOp::Lte | BinOp::Gte, Type::Alg(t)) if t.is_integer() || t.is_float() => Ok(expr),
-        // Equality supports numerics, strings, and bytes
-        (BinOp::Eq | BinOp::Ne, Type::Alg(t))
-            if t.is_bool()
-                || t.is_integer()
-                || t.is_float()
-                || t.is_string()
-                || t.is_bytes()
-                || t.is_identity()
-                || t.is_address() =>
-        {
-            Ok(expr)
-        }
-        (op, ty) => Err(ConstraintViolation::op(op, ty).into()),
+fn expect_op_type(ctx: &TyCtx, op: BinOp, expr: Expr) -> TypingResult<Expr> {
+    let ty = expr.ty(ctx)?;
+    if ty.is_compatible_with(op) {
+        Ok(expr)
+    } else {
+        Err(ConstraintViolation::bin(op, ty.with_ctx(ctx)).into())
     }
 }
 
-fn assert_eq_types(a: &Type, b: &Type) -> TypingResult<()> {
+pub(crate) fn assert_eq_types(a: TypeWithCtx<'_>, b: TypeWithCtx<'_>) -> TypingResult<()> {
     if a == b {
         Ok(())
     } else {
@@ -307,7 +406,10 @@ fn assert_eq_types(a: &Type, b: &Type) -> TypingResult<()> {
 mod tests {
     use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, AlgebraicType, ProductType};
     use spacetimedb_primitives::TableId;
-    use spacetimedb_schema::{def::ModuleDef, schema::TableSchema};
+    use spacetimedb_schema::{
+        def::ModuleDef,
+        schema::{Schema, TableSchema},
+    };
     use std::sync::Arc;
 
     use super::{parse_and_type_sub, SchemaView};
@@ -343,7 +445,9 @@ mod tests {
         fn schema(&self, name: &str, _: bool) -> Option<Arc<TableSchema>> {
             self.0.table(name).map(|def| {
                 Arc::new(TableSchema::from_module_def(
+                    &self.0,
                     def,
+                    (),
                     TableId(if *def.name == *"t" { 0 } else { 1 }),
                 ))
             })
@@ -365,10 +469,9 @@ mod tests {
             "select * from (select t.* from t join s)",
             "select * from (select t.* from t join s on t.u32 = s.u32 where t.f32 = 0.1)",
             "select * from (select t.* from t join (select s.u32 from s) s on t.u32 = s.u32)",
+            "select * from (select * from t union all select * from t)",
         ] {
-            let result = parse_and_type_sub(sql, &tx).inspect_err(|_| {
-                // println!("sql: {}\n\n\terr: {}\n", sql, err);
-            });
+            let result = parse_and_type_sub(sql, &tx);
             assert!(result.is_ok());
         }
     }
@@ -404,10 +507,10 @@ mod tests {
             "select * from (select s.* from t join (select s.u32 from s) s on t.u32 = s.u32)",
             // Field bytes is no longer in scope
             "select * from (select t.* from t join (select s.u32 from s) s on s.bytes = 0xABCD)",
+            // Union arguments are of different types
+            "select * from (select * from t union all select * from s)",
         ] {
-            let result = parse_and_type_sub(sql, &tx).inspect_err(|_| {
-                // println!("sql: {}\n\n\terr: {}\n", sql, err);
-            });
+            let result = parse_and_type_sub(sql, &tx);
             assert!(result.is_err());
         }
     }

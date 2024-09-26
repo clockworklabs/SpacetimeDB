@@ -3,6 +3,7 @@ use std::{env, fs};
 
 extern crate regex;
 
+use crate::util::y_or_n;
 use crate::{version, Config};
 use clap::{Arg, ArgMatches};
 use flate2::read::GzDecoder;
@@ -152,10 +153,8 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
 
     if release_version == version::CLI_VERSION {
         println!("You're already running the latest version: {}", version::CLI_VERSION);
-        if !force {
+        if !y_or_n(force, "Do you want to reinstall? ")? {
             return Ok(());
-        } else {
-            println!("Force flag is set, continuing with upgrade.");
         }
     }
 
@@ -177,11 +176,8 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(), anyhow::Erro
         "This will replace the current executable at {}.",
         current_exe_path.display()
     );
-    print!("Do you want to continue? [y/N] ");
-    std::io::stdout().flush()?;
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
-    if input.trim().to_lowercase() != "y" && input.trim().to_lowercase() != "yes" {
+
+    if !y_or_n(force, "Do you want to continue?")? {
         println!("Aborting upgrade.");
         return Ok(());
     }

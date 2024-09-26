@@ -82,7 +82,7 @@ partial class Timers
                             nameof(SendMessageTimer),
                             1,
                             nameof(ScheduledId),
-                            SpacetimeDB.ColumnAttrs.PrimaryKeyAuto
+                            SpacetimeDB.ColumnAttrs.PrimaryKeyIdentity
                         )
                     ],
                     Sequences: [],

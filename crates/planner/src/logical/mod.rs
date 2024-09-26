@@ -1,6 +1,8 @@
 pub mod bind;
 pub mod errors;
 pub mod expr;
+pub mod stmt;
+pub mod ty;
 
 /// Asserts that `$ty` is `$size` bytes in `static_assert_size($ty, $size)`.
 ///

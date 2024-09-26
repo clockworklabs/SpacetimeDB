@@ -1,76 +1,83 @@
 use spacetimedb_sql_parser::{ast::BinOp, parser::errors::SqlParseError};
 use thiserror::Error;
 
-use super::expr::Type;
+use super::{
+    stmt::InvalidVar,
+    ty::{InvalidTyId, TypeWithCtx},
+};
 
 #[derive(Error, Debug)]
 pub enum ConstraintViolation {
-    #[error("(expected) {expected} != (actual) {actual}")]
-    Eq { expected: Type, actual: Type },
-    #[error("{0} is not a numeric type")]
-    Num(Type),
-    #[error("{0} cannot be interpreted as a byte array")]
-    Hex(Type),
-    #[error("{0} cannot be parsed as {1}")]
-    Lit(String, Type),
-    #[error("{1} is not supported by the binary operator {0}")]
-    Op(BinOp, Type),
+    #[error("(expected) {expected} != {inferred} (inferred)")]
+    Eq { expected: String, inferred: String },
+    #[error("`{ty}` is not a numeric type")]
+    Num { ty: String },
+    #[error("`{ty}` cannot be interpreted as a byte array")]
+    Hex { ty: String },
+    #[error("`{expr}` cannot be parsed as type `{ty}`")]
+    Lit { expr: String, ty: String },
+    #[error("The binary operator `{op}` does not support type `{ty}`")]
+    Bin { op: BinOp, ty: String },
 }
 
 impl ConstraintViolation {
     // Types are not equal
-    pub fn eq(expected: &Type, actual: &Type) -> Self {
-        let expected = expected.clone();
-        let actual = actual.clone();
-        Self::Eq { expected, actual }
+    pub fn eq(expected: TypeWithCtx<'_>, inferred: TypeWithCtx<'_>) -> Self {
+        Self::Eq {
+            expected: expected.to_string(),
+            inferred: inferred.to_string(),
+        }
     }
 
     // Not a numeric type
-    pub fn num(t: &Type) -> Self {
-        Self::Num(t.clone())
+    pub fn num(ty: TypeWithCtx<'_>) -> Self {
+        Self::Num { ty: ty.to_string() }
     }
 
     // Not a type that can be compared to a hex value
-    pub fn hex(t: &Type) -> Self {
-        Self::Hex(t.clone())
+    pub fn hex(ty: TypeWithCtx<'_>) -> Self {
+        Self::Hex { ty: ty.to_string() }
     }
 
     // This literal expression cannot be parsed as this type
-    pub fn lit(v: &str, ty: &Type) -> Self {
-        Self::Lit(v.to_string(), ty.clone())
+    pub fn lit(v: &str, ty: TypeWithCtx<'_>) -> Self {
+        Self::Lit {
+            expr: v.to_string(),
+            ty: ty.to_string(),
+        }
     }
 
-    // This type is not supported by this operator
-    pub fn op(op: BinOp, ty: &Type) -> Self {
-        Self::Op(op, ty.clone())
+    // This operator does not support this type
+    pub fn bin(op: BinOp, ty: TypeWithCtx<'_>) -> Self {
+        Self::Bin { op, ty: ty.to_string() }
     }
 }
 
 #[derive(Error, Debug)]
-pub enum ResolutionError {
-    #[error("Cannot resolve {0}")]
+pub enum Unresolved {
+    #[error("Cannot resolve `{0}`")]
     Var(String),
-    #[error("Cannot resolve table {0}")]
+    #[error("Cannot resolve table `{0}`")]
     Table(String),
-    #[error("Cannot resolve field {1} in {0}")]
+    #[error("Cannot resolve field `{1}` in `{0}`")]
     Field(String, String),
     #[error("Cannot resolve type for literal expression")]
-    UntypedLiteral,
+    Literal,
 }
 
-impl ResolutionError {
+impl Unresolved {
     /// Cannot resolve name
-    pub fn unresolved_var(name: &str) -> Self {
+    pub fn var(name: &str) -> Self {
         Self::Var(name.to_string())
     }
 
     /// Cannot resolve table name
-    pub fn unresolved_table(name: &str) -> Self {
+    pub fn table(name: &str) -> Self {
         Self::Table(name.to_string())
     }
 
     /// Cannot resolve field name within table
-    pub fn unresolved_field(table: &str, field: &str) -> Self {
+    pub fn field(table: &str, field: &str) -> Self {
         Self::Field(table.to_string(), field.to_string())
     }
 }
@@ -83,6 +90,19 @@ pub enum Unsupported {
     ProjectExpr,
     #[error("Unqualified column projections are not supported")]
     UnqualifiedProjectExpr,
+    #[error("ORDER BY is not supported")]
+    OrderBy,
+    #[error("LIMIT is not supported")]
+    Limit,
+}
+
+// TODO: It might be better to return the missing/extra fields
+#[derive(Error, Debug)]
+#[error("Inserting a row with {values} values into `{table}` which has {fields} fields")]
+pub struct InsertError {
+    pub table: String,
+    pub values: usize,
+    pub fields: usize,
 }
 
 #[derive(Error, Debug)]
@@ -92,7 +112,13 @@ pub enum TypingError {
     #[error(transparent)]
     Constraint(#[from] ConstraintViolation),
     #[error(transparent)]
-    ResolutionError(#[from] ResolutionError),
+    Unresolved(#[from] Unresolved),
+    #[error(transparent)]
+    InvalidTyId(#[from] InvalidTyId),
+    #[error(transparent)]
+    InvalidVar(#[from] InvalidVar),
+    #[error(transparent)]
+    Insert(#[from] InsertError),
     #[error(transparent)]
     ParseError(#[from] SqlParseError),
 }

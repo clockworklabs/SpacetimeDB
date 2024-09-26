@@ -161,9 +161,9 @@ pub struct Snapshot {
     version: u8,
 
     /// The address of the snapshotted database.
-    database_address: Address,
+    pub database_address: Address,
     /// The instance ID of the snapshotted database.
-    database_instance_id: u64,
+    pub database_instance_id: u64,
 
     /// ABI version of the module from which this snapshot was created, as [MAJOR, MINOR].
     ///
@@ -171,7 +171,7 @@ pub struct Snapshot {
     module_abi_version: [u16; 2],
 
     /// The transaction offset of the state this snapshot reflects.
-    tx_offset: TxOffset,
+    pub tx_offset: TxOffset,
 
     /// The hashes and reference counts of all objects in the blob store.
     blobs: Vec<BlobEntry>,
@@ -449,6 +449,15 @@ impl Snapshot {
             .iter()
             .map(|tbl| Self::reconstruct_one_table(object_repo, tbl))
             .collect()
+    }
+
+    /// Obtain an iterator over the [`blake3::Hash`]es of all objects
+    /// this snapshot is referring to.
+    pub fn objects(&self) -> impl Iterator<Item = blake3::Hash> + '_ {
+        self.blobs
+            .iter()
+            .map(|b| blake3::Hash::from_bytes(b.hash.data))
+            .chain(self.tables.iter().flat_map(|t| t.pages.iter().copied()))
     }
 }
 

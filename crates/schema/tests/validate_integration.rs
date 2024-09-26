@@ -9,7 +9,7 @@ use spacetimedb_primitives::TableId;
 use spacetimedb_schema::{
     def::{ModuleDef, TableDef},
     identifier::Identifier,
-    schema::TableSchema,
+    schema::{Schema, TableSchema},
 };
 use spacetimedb_testing::modules::{CompilationMode, CompiledModule};
 
@@ -38,33 +38,16 @@ fn validate_module(module_name: &str) {
     let result_from_raw = ModuleDef::try_from(result_as_raw).expect("failed to convert back to ModuleDef");
     assert_identical(result.clone(), result_from_raw);
 
-    let mut tables = vec![];
-
-    // (v8 -> ModuleDef -> TableSchema) == (v8 -> TableSchema)
-    let mut failed = false;
+    // Check that all tables in the module are valid according to the old validation rules, too.
     for table in raw_module_def.tables.into_iter() {
         let name = Identifier::new(table.schema.table_name.clone()).expect("already validated");
         let new_def: &TableDef = result.lookup(&name).expect("already validated");
 
-        #[allow(deprecated)]
-        let mut schema_old_path = TableSchema::from_def(TEST_TABLE_ID, table.schema);
-        let mut schema_new_path = TableSchema::from_module_def(new_def, TEST_TABLE_ID);
+        let mut schema_new_path = TableSchema::from_module_def(&result, new_def, (), TEST_TABLE_ID);
 
-        schema_old_path.janky_fix_column_defs(&result);
-        schema_old_path.normalize();
         schema_new_path.janky_fix_column_defs(&result);
         schema_new_path.normalize();
-
-        if schema_old_path != schema_new_path {
-            failed = true;
-            eprintln!("Mismatched TableSchemas: Old path:\n{schema_old_path:#?}\nNew path:\n{schema_new_path:#?}");
-        }
-
-        schema_old_path.validated().expect("TableSchema is invalid");
-        tables.push(schema_new_path.validated().expect("TableSchema is invalid"));
-    }
-    if failed {
-        panic!("TableSchemas mismatched");
+        schema_new_path.validated().expect("TableSchema is invalid");
     }
 }
 

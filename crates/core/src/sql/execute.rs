@@ -219,16 +219,17 @@ pub fn translate_col(tx: &Tx, field: FieldName) -> Option<Box<str>> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::db::datastore::system_tables::{ST_TABLE_ID, ST_TABLE_NAME};
+    use crate::db::datastore::system_tables::{StTableFields, ST_TABLE_ID, ST_TABLE_NAME};
     use crate::db::relational_db::tests_utils::TestDB;
     use crate::vm::tests::create_table_with_rows;
+    use pretty_assertions::assert_eq;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::{ResultTest, TestError};
     use spacetimedb_lib::relation::ColExpr;
     use spacetimedb_lib::relation::Header;
-    use spacetimedb_lib::Identity;
+    use spacetimedb_lib::{AlgebraicValue, Identity};
     use spacetimedb_primitives::{col_list, ColId};
-    use spacetimedb_sats::{product, AlgebraicType, ProductType};
+    use spacetimedb_sats::{product, AlgebraicType, ArrayValue, ProductType};
     use spacetimedb_vm::eval::test_helpers::{create_game_data, mem_table, mem_table_without_table_name};
     use std::sync::Arc;
 
@@ -366,11 +367,13 @@ pub(crate) mod tests {
 
         assert_eq!(result.len(), 1, "Not return results");
         let result = result.first().unwrap().clone();
+        let pk_col_id: ColId = StTableFields::TableId.into();
         let row = product![
             ST_TABLE_ID,
             ST_TABLE_NAME,
             StTableType::System.as_str(),
             StAccess::Public.as_str(),
+            Some(AlgebraicValue::Array(ArrayValue::U16(vec![pk_col_id.0].into()))),
         ];
         let input = MemTable::new(Header::from(&*schema).into(), schema.table_access, vec![row]);
 
