@@ -52,7 +52,7 @@ namespace SpacetimeDB
                     predicate
                 );
 
-            public void Insert(global::PrivateTable row) =>
+            public global::PrivateTable Insert(global::PrivateTable row) =>
                 SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.Insert(row);
         }
 
@@ -78,7 +78,7 @@ namespace SpacetimeDB
                 System.Linq.Expressions.Expression<Func<global::PublicTable, bool>> predicate
             ) => SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.Query(predicate);
 
-            public void Insert(global::PublicTable row) =>
+            public global::PublicTable Insert(global::PublicTable row) =>
                 SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.Insert(row);
 
             public IEnumerable<global::PublicTable> FilterById(int Id) =>
@@ -315,7 +315,7 @@ namespace SpacetimeDB
                     global::Timers.SendMessageTimer
                 >.Query(predicate);
 
-            public void Insert(global::Timers.SendMessageTimer row) =>
+            public global::Timers.SendMessageTimer Insert(global::Timers.SendMessageTimer row) =>
                 SpacetimeDB.Internal.ITableView<
                     SendMessageTimer,
                     global::Timers.SendMessageTimer
