@@ -56,7 +56,7 @@ public static class Module
     private static Func<Identity, Address?, Random, DateTimeOffset, IReducerContext>? newContext =
         null;
 
-    public static void Initialize(
+    public static void SetReducerContextConstructor(
         Func<Identity, Address?, Random, DateTimeOffset, IReducerContext> ctor
     ) => newContext = ctor;
 

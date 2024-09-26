@@ -176,40 +176,44 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
 
         Visibility = context.TargetSymbol.DeclaredAccessibility;
-        switch (Visibility)
+
+        var container = context.TargetSymbol;
+        while (container != null)
         {
-            case Accessibility.ProtectedAndInternal:
-            case Accessibility.NotApplicable:
-            case Accessibility.Internal:
-            case Accessibility.Public:
-                break;
-            default:
-                throw new Exception("Table row type visibility must be public or internal.");
+            switch (Visibility)
+            {
+                case Accessibility.ProtectedAndInternal:
+                case Accessibility.NotApplicable:
+                case Accessibility.Internal:
+                case Accessibility.Public:
+                    break;
+                default:
+                    throw new Exception(
+                        "Table row type visibility must be public or internal, including containing types."
+                    );
+            }
+            ;
+
+            container = container.ContainingType;
         }
-        ;
 
         Views = new(context.Attributes.Select(a => new TableView(this, a)).ToImmutableArray());
 
-        var schedules = Views.Select(t => t.Scheduled);
-        var numSchedules = schedules.Count();
-        if (numSchedules > 0)
+        var schedules = Views.Select(t => t.Scheduled).Distinct();
+        if (schedules.Count() != 1)
         {
-            var distinctSchedules = schedules.Distinct();
-            if (numSchedules != Views.Length || distinctSchedules.Count() != 1)
-            {
-                throw new Exception(
-                    "When using multiple [Table] attributes with schedule, all [Table] must have the same schedule."
-                );
-            }
+            throw new Exception(
+                "When using multiple [Table] attributes with schedule, all [Table] must have the same schedule."
+            );
+        }
 
-            Scheduled = distinctSchedules.First();
-            if (Scheduled != null)
-            {
-                // For scheduled tables, we append extra fields early in the pipeline,
-                // both to the type itself and to the BSATN information, as if they
-                // were part of the original declaration.
-                Members = new(Members.Concat(ScheduledColumns(FullName)).ToImmutableArray());
-            }
+        Scheduled = schedules.First();
+        if (Scheduled != null)
+        {
+            // For scheduled tables, we append extra fields early in the pipeline,
+            // both to the type itself and to the BSATN information, as if they
+            // were part of the original declaration.
+            Members = new(Members.Concat(ScheduledColumns(FullName)).ToImmutableArray());
         }
     }
 
@@ -249,9 +253,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         }
     }
 
-    public IEnumerable<
-        KeyValuePair<(string viewName, string tableName), (string view, string getter)>
-    > GenerateViews()
+    public record struct View(string viewName, string tableName, string view, string getter);
+
+    public IEnumerable<View> GenerateViews()
     {
         foreach (var v in Views)
         {
@@ -262,9 +266,9 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             var globalName = $"global::{FullName}";
             var iTable = $"SpacetimeDB.Internal.ITableView<{v.Name}, {globalName}>";
             yield return new(
-                (v.Name, globalName),
-                (
-                    $$"""
+                v.Name,
+                globalName,
+                $$"""
             {{SyntaxFacts.GetText(Visibility)}} readonly struct {{v.Name}} : {{iTable}} {
                 static {{globalName}} {{iTable}}.ReadGenFields(System.IO.BinaryReader reader, {{globalName}} row) {
                     {{string.Join(
@@ -286,8 +290,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 {{string.Join("\n", GenerateViewFilters(v.Name, iTable))}}
             }
             """,
-                    $"{SyntaxFacts.GetText(Visibility)} Internal.TableHandles.{v.Name} {v.Name} => new();"
-                )
+                $"{SyntaxFacts.GetText(Visibility)} Internal.TableHandles.{v.Name} {v.Name} => new();"
             );
         }
     }
@@ -507,9 +510,7 @@ public class Module : IIncrementalGenerator
                 // Not really important outside of testing, but for testing
                 // it matters because we commit module-bindings
                 // so they need to match 1:1 between different langs.
-                var tableViews = tuple.Left.Sort(
-                    (a, b) => a.Key.viewName.CompareTo(b.Key.viewName)
-                );
+                var tableViews = tuple.Left.Sort((a, b) => a.viewName.CompareTo(b.viewName));
                 var addReducers = tuple.Right.Sort((a, b) => a.Key.CompareTo(b.Key));
                 // Don't generate the FFI boilerplate if there are no tables or reducers.
                 if (tableViews.IsEmpty && addReducers.IsEmpty)
@@ -527,16 +528,26 @@ public class Module : IIncrementalGenerator
                     using System.Runtime.InteropServices;
 
                     namespace SpacetimeDB {
-                        public sealed record ReducerContext : BaseReducerContext<Local> {
-                            internal ReducerContext(Identity identity, Address? address, Random random, DateTimeOffset time) : base(identity, address, random, time) {}
+                        public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext {
+                            public readonly Identity Sender;
+                            public readonly Address? Address;
+                            public readonly Random Random;
+                            public readonly DateTimeOffset Time;
+
+                            internal ReducerContext(Identity sender, Address? address, Random random, DateTimeOffset time) {
+                                Sender = sender;
+                                Address = address;
+                                Random = random;
+                                Time = time;
+                            }
                         }
 
                         namespace Internal.TableHandles {
-                            {{string.Join("\n", tableViews.Select(v => v.Value.view))}}
+                            {{string.Join("\n", tableViews.Select(v => v.view))}}
                         }
 
                         public sealed class Local {
-                            {{string.Join("\n", tableViews.Select(v => v.Value.getter))}}
+                            {{string.Join("\n", tableViews.Select(v => v.getter))}}
                         }
                     }
 
@@ -552,7 +563,7 @@ public class Module : IIncrementalGenerator
                         [DynamicDependency(DynamicallyAccessedMemberTypes.PublicMethods, typeof(SpacetimeDB.Internal.Module))]
                     #endif
                         public static void Main() {
-                            SpacetimeDB.Internal.Module.Initialize((identity, address, random, time) => new SpacetimeDB.ReducerContext(identity, address, random, time));
+                            SpacetimeDB.Internal.Module.SetReducerContextConstructor((identity, address, random, time) => new SpacetimeDB.ReducerContext(identity, address, random, time));
 
                             {{string.Join(
                                 "\n",
@@ -562,7 +573,7 @@ public class Module : IIncrementalGenerator
                             )}}
                             {{string.Join(
                                 "\n",
-                                tableViews.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.Key.tableName}>();")
+                                tableViews.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}>();")
                             )}}
                         }
 
