@@ -125,7 +125,7 @@ pub fn exec(_config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
     let delete_files = args.get_flag("delete_files");
     let force = args.get_flag("force");
 
-    if args.contains_id("namespace") && lang != Language::Csharp {
+    if namespace.is_some() && lang != Language::Csharp {
         return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
     }
 
