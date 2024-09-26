@@ -29,10 +29,30 @@ impl __sdk::spacetime_module::InModule for AddPlayer {
 pub struct AddPlayerCallbackId(__sdk::callbacks::CallbackId);
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the reducer `add_player`.
+///
+/// Implemented for [`super::RemoteReducers`].
 pub trait add_player {
+    /// Request that the remote module invoke the reducer `add_player` to run as soon as possible.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed by listening for [`Self::on_add_player`] callbacks.
     fn add_player(&self, name: String,
 ) -> __anyhow::Result<()>;
+    /// Register a callback to run whenever we are notified of an invocation of the reducer `add_player`.
+    ///
+    /// The [`super::EventContext`] passed to the `callback`
+    /// will always have [`__sdk::Event::Reducer`] as its `event`,
+    /// but it may or may not have terminated successfully and been committed.
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// to determine the reducer's status.
+    ///
+    /// The returned [`AddPlayerCallbackId`] can be passed to [`Self::remove_on_add_player`]
+    /// to cancel the callback.
     fn on_add_player(&self, callback: impl FnMut(&super::EventContext, &String, ) + Send + 'static) -> AddPlayerCallbackId;
+    /// Cancel a callback previously registered by [`Self::on_add_player`],
+    /// causing it not to run in the future.
     fn remove_on_add_player(&self, callback: AddPlayerCallbackId);
 }
 
@@ -83,10 +103,30 @@ impl __sdk::spacetime_module::InModule for AddPrivate {
 pub struct AddPrivateCallbackId(__sdk::callbacks::CallbackId);
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the reducer `add_private`.
+///
+/// Implemented for [`super::RemoteReducers`].
 pub trait add_private {
+    /// Request that the remote module invoke the reducer `add_private` to run as soon as possible.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed by listening for [`Self::on_add_private`] callbacks.
     fn add_private(&self, name: String,
 ) -> __anyhow::Result<()>;
+    /// Register a callback to run whenever we are notified of an invocation of the reducer `add_private`.
+    ///
+    /// The [`super::EventContext`] passed to the `callback`
+    /// will always have [`__sdk::Event::Reducer`] as its `event`,
+    /// but it may or may not have terminated successfully and been committed.
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// to determine the reducer's status.
+    ///
+    /// The returned [`AddPrivateCallbackId`] can be passed to [`Self::remove_on_add_private`]
+    /// to cancel the callback.
     fn on_add_private(&self, callback: impl FnMut(&super::EventContext, &String, ) + Send + 'static) -> AddPrivateCallbackId;
+    /// Cancel a callback previously registered by [`Self::on_add_private`],
+    /// causing it not to run in the future.
     fn remove_on_add_private(&self, callback: AddPrivateCallbackId);
 }
 
@@ -137,10 +177,30 @@ impl __sdk::spacetime_module::InModule for DeletePlayer {
 pub struct DeletePlayerCallbackId(__sdk::callbacks::CallbackId);
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the reducer `delete_player`.
+///
+/// Implemented for [`super::RemoteReducers`].
 pub trait delete_player {
+    /// Request that the remote module invoke the reducer `delete_player` to run as soon as possible.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed by listening for [`Self::on_delete_player`] callbacks.
     fn delete_player(&self, id: u64,
 ) -> __anyhow::Result<()>;
+    /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_player`.
+    ///
+    /// The [`super::EventContext`] passed to the `callback`
+    /// will always have [`__sdk::Event::Reducer`] as its `event`,
+    /// but it may or may not have terminated successfully and been committed.
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// to determine the reducer's status.
+    ///
+    /// The returned [`DeletePlayerCallbackId`] can be passed to [`Self::remove_on_delete_player`]
+    /// to cancel the callback.
     fn on_delete_player(&self, callback: impl FnMut(&super::EventContext, &u64, ) + Send + 'static) -> DeletePlayerCallbackId;
+    /// Cancel a callback previously registered by [`Self::on_delete_player`],
+    /// causing it not to run in the future.
     fn remove_on_delete_player(&self, callback: DeletePlayerCallbackId);
 }
 
@@ -191,10 +251,30 @@ impl __sdk::spacetime_module::InModule for DeletePlayersByName {
 pub struct DeletePlayersByNameCallbackId(__sdk::callbacks::CallbackId);
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the reducer `delete_players_by_name`.
+///
+/// Implemented for [`super::RemoteReducers`].
 pub trait delete_players_by_name {
+    /// Request that the remote module invoke the reducer `delete_players_by_name` to run as soon as possible.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed by listening for [`Self::on_delete_players_by_name`] callbacks.
     fn delete_players_by_name(&self, name: String,
 ) -> __anyhow::Result<()>;
+    /// Register a callback to run whenever we are notified of an invocation of the reducer `delete_players_by_name`.
+    ///
+    /// The [`super::EventContext`] passed to the `callback`
+    /// will always have [`__sdk::Event::Reducer`] as its `event`,
+    /// but it may or may not have terminated successfully and been committed.
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// to determine the reducer's status.
+    ///
+    /// The returned [`DeletePlayersByNameCallbackId`] can be passed to [`Self::remove_on_delete_players_by_name`]
+    /// to cancel the callback.
     fn on_delete_players_by_name(&self, callback: impl FnMut(&super::EventContext, &String, ) + Send + 'static) -> DeletePlayersByNameCallbackId;
+    /// Cancel a callback previously registered by [`Self::on_delete_players_by_name`],
+    /// causing it not to run in the future.
     fn remove_on_delete_players_by_name(&self, callback: DeletePlayersByNameCallbackId);
 }
 
@@ -231,14 +311,26 @@ impl delete_players_by_name for super::RemoteReducers {
 };
 use super::has_special_stuff_type::HasSpecialStuff;
 
+/// Table handle for the table `has_special_stuff`.
+///
+/// Obtain a handle from the [`HasSpecialStuffTableAccess::has_special_stuff`] method on [`super::RemoteTables`],
+/// like `ctx.db.has_special_stuff()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.has_special_stuff().on_insert(...)`.
 pub struct HasSpecialStuffTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<HasSpecialStuff>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `has_special_stuff`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait HasSpecialStuffTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`HasSpecialStuffTableHandle`], which mediates access to the table `has_special_stuff`.
     fn has_special_stuff(&self) -> HasSpecialStuffTableHandle<'_>;
 }
 
@@ -288,6 +380,7 @@ impl<'ctx> __sdk::table::Table for HasSpecialStuffTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -348,9 +441,29 @@ impl __sdk::spacetime_module::InModule for IdentityConnected {
 pub struct IdentityConnectedCallbackId(__sdk::callbacks::CallbackId);
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the reducer `__identity_connected__`.
+///
+/// Implemented for [`super::RemoteReducers`].
 pub trait identity_connected {
+    /// Request that the remote module invoke the reducer `__identity_connected__` to run as soon as possible.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed by listening for [`Self::on_identity_connected`] callbacks.
     fn identity_connected(&self, ) -> __anyhow::Result<()>;
+    /// Register a callback to run whenever we are notified of an invocation of the reducer `__identity_connected__`.
+    ///
+    /// The [`super::EventContext`] passed to the `callback`
+    /// will always have [`__sdk::Event::Reducer`] as its `event`,
+    /// but it may or may not have terminated successfully and been committed.
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// to determine the reducer's status.
+    ///
+    /// The returned [`IdentityConnectedCallbackId`] can be passed to [`Self::remove_on_identity_connected`]
+    /// to cancel the callback.
     fn on_identity_connected(&self, callback: impl FnMut(&super::EventContext, ) + Send + 'static) -> IdentityConnectedCallbackId;
+    /// Cancel a callback previously registered by [`Self::on_identity_connected`],
+    /// causing it not to run in the future.
     fn remove_on_identity_connected(&self, callback: IdentityConnectedCallbackId);
 }
 
@@ -399,9 +512,29 @@ impl __sdk::spacetime_module::InModule for Init {
 pub struct InitCallbackId(__sdk::callbacks::CallbackId);
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the reducer `__init__`.
+///
+/// Implemented for [`super::RemoteReducers`].
 pub trait init {
+    /// Request that the remote module invoke the reducer `__init__` to run as soon as possible.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed by listening for [`Self::on_init`] callbacks.
     fn init(&self, ) -> __anyhow::Result<()>;
+    /// Register a callback to run whenever we are notified of an invocation of the reducer `__init__`.
+    ///
+    /// The [`super::EventContext`] passed to the `callback`
+    /// will always have [`__sdk::Event::Reducer`] as its `event`,
+    /// but it may or may not have terminated successfully and been committed.
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// to determine the reducer's status.
+    ///
+    /// The returned [`InitCallbackId`] can be passed to [`Self::remove_on_init`]
+    /// to cancel the callback.
     fn on_init(&self, callback: impl FnMut(&super::EventContext, ) + Send + 'static) -> InitCallbackId;
+    /// Cancel a callback previously registered by [`Self::on_init`],
+    /// causing it not to run in the future.
     fn remove_on_init(&self, callback: InitCallbackId);
 }
 
@@ -496,6 +629,12 @@ pub use test_e_table::*;
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
+
+/// One of the reducers defined by this module.
+///
+/// Contained within a [`__sdk::ReducerEvent`] in [`EventContext`]s for reducer events
+/// to indicate which reducer caused the event.
+
 pub enum Reducer {
 		IdentityConnected(identity_connected_reducer::IdentityConnected),
 	Init(init_reducer::Init),
@@ -561,6 +700,7 @@ fn try_from(value: __ws::ReducerCallInfo) -> __anyhow::Result<Self> {
 
 #[derive(Default)]
 #[allow(non_snake_case)]
+#[doc(hidden)]
 pub struct DbUpdate {
 		has_special_stuff: __sdk::spacetime_module::TableUpdate<HasSpecialStuff>,
 	pk_multi_identity: __sdk::spacetime_module::TableUpdate<PkMultiIdentity>,
@@ -624,6 +764,7 @@ fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::call
 }
 
 
+#[doc(hidden)]
 pub struct RemoteModule;
 
 impl __sdk::spacetime_module::InModule for RemoteModule {
@@ -640,6 +781,8 @@ impl __sdk::spacetime_module::SpacetimeModule for RemoteModule {
     type SubscriptionHandle = SubscriptionHandle;
 }
 
+/// The `reducers` field of [`EventContext`] and [`DbConnection`],
+/// with methods provided by extension traits for each reducer defined by the module.
 pub struct RemoteReducers {
     imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
 }
@@ -648,6 +791,8 @@ impl __sdk::spacetime_module::InModule for RemoteReducers {
     type Module = RemoteModule;
 }
 
+/// The `db` field of [`EventContext`] and [`DbConnection`],
+/// with methods provided by extension traits for each table defined by the module.
 pub struct RemoteTables {
     imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
 }
@@ -656,8 +801,26 @@ impl __sdk::spacetime_module::InModule for RemoteTables {
     type Module = RemoteModule;
 }
 
+/// A connection to a remote module, including a materialized view of a subset of the database.
+///
+/// Connect to a remote module by calling [`DbConnection::builder`]
+/// and using the [`__sdk::DbConnectionBuilder`] builder-pattern constructor.
+///
+/// You must explicitly advance the connection by calling any one of:
+///
+/// - [`DbConnection::frame_tick`].
+/// - [`DbConnection::run_threaded`].
+/// - [`DbConnection::run_async`].
+/// - [`DbConnection::advance_one_message`].
+/// - [`DbConnection::advance_one_message_blocking`].
+/// - [`DbConnection::advance_one_message_async`].
+///
+/// Which of these methods you should call depends on the specific needs of your application,
+/// but you must call one of them, or else the connection will never progress.
 pub struct DbConnection {
+    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
     pub db: RemoteTables,
+    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
 
     imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
@@ -701,30 +864,71 @@ impl __sdk::db_context::DbContext for DbConnection {
 }
 
 impl DbConnection {
-    pub fn builder() -> __sdk::db_connection::DbConnectionBuilder<RemoteModule> {
+    /// Builder-pattern constructor for a connection to a remote module.
+    ///
+    /// See [`__sdk::DbConnectionBuilder`] for required and optional configuration for the new connection.
+    pub fn builder() -> __sdk::DbConnectionBuilder<RemoteModule> {
         __sdk::db_connection::DbConnectionBuilder::new()
     }
 
+    /// If any WebSocket messages are waiting, process one of them.
+    ///
+    /// Returns `true` if a message was processed, or `false` if the queue is empty.
+    /// Callers should invoke this message in a loop until it returns `false`
+    /// or for as much time is available to process messages.
+    ///
+    /// Returns an error if the connection is disconnected.
+    /// If the disconnection in question was normal,
+    ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
+    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
+    ///
+    /// This is a low-level primitive exposed for power users who need significant control over scheduling.
+    /// Most applications should call [`Self::frame_tick`] each frame
+    /// to fully exhaust the queue whenever time is available.
     pub fn advance_one_message(&self) -> __anyhow::Result<bool> {
         self.imp.advance_one_message()
     }
 
+    /// Process one WebSocket message, potentially blocking the current thread until one is received.
+    ///
+    /// Returns an error if the connection is disconnected.
+    /// If the disconnection in question was normal,
+    ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
+    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
+    ///
+    /// This is a low-level primitive exposed for power users who need significant control over scheduling.
+    /// Most applications should call [`Self::run_threaded`] to spawn a thread
+    /// which advances the connection automatically.
     pub fn advance_one_message_blocking(&self) -> __anyhow::Result<()> {
         self.imp.advance_one_message_blocking()
     }
 
+    /// Process one WebSocket message, `await`ing until one is received.
+    ///
+    /// Returns an error if the connection is disconnected.
+    /// If the disconnection in question was normal,
+    ///  i.e. the result of a call to [`__sdk::DbContext::disconnect`],
+    /// the returned error will be downcastable to [`__sdk::DisconnectedError`].
+    ///
+    /// This is a low-level primitive exposed for power users who need significant control over scheduling.
+    /// Most applications should call [`Self::run_async`] to run an `async` loop
+    /// which advances the connection when polled.
     pub async fn advance_one_message_async(&self) -> __anyhow::Result<()> {
         self.imp.advance_one_message_async().await
     }
 
+    /// Process all WebSocket messages waiting in the queue,
+    /// then return without `await`ing or blocking the current thread.
     pub fn frame_tick(&self) -> __anyhow::Result<()> {
         self.imp.frame_tick()
     }
 
+    /// Spawn a thread which processes WebSocket messages as they are received.
     pub fn run_threaded(&self) -> std::thread::JoinHandle<()> {
         self.imp.run_threaded()
     }
 
+    /// Run an `async` loop which processes WebSocket messages when polled.
     pub async fn run_async(&self) -> __anyhow::Result<()> {
         self.imp.run_async().await
     }
@@ -740,9 +944,14 @@ impl __sdk::spacetime_module::DbConnection for DbConnection {
     }
 }
 
+/// A [`DbConnection`] augmented with an [`__sdk::Event`],
+/// passed to various callbacks invoked by the SDK.
 pub struct EventContext {
+    /// Access to tables defined by the module via extension traits implemented for [`RemoteTables`].
     pub db: RemoteTables,
+    /// Access to reducers defined by the module via extension traits implemented for [`RemoteReducers`].
     pub reducers: RemoteReducers,
+    /// The event which caused these callbacks to run.
     pub event: __sdk::event::Event<Reducer>,
     imp: __sdk::db_connection::DbContextImpl<RemoteModule>,
 }
@@ -798,6 +1007,8 @@ impl __sdk::spacetime_module::EventContext for EventContext {
     }
 }
 
+/// A handle on a subscribed query.
+// TODO: Document this better after implementing the new subscription API.
 pub struct SubscriptionHandle {
     imp: __sdk::subscription::SubscriptionHandleImpl<RemoteModule>,
 }
@@ -812,6 +1023,11 @@ impl __sdk::spacetime_module::SubscriptionHandle for SubscriptionHandle {
     }
 }
 
+/// Alias trait for a [`__sdk::DbContext`] connected to this module,
+/// with that trait's associated types bounded to this module's concrete types.
+///
+/// Users can use this trait as a boundary on definitions which should accept
+/// either a [`DbConnection`] or an [`EventContext`] and operate on either.
 pub trait RemoteDbContext: __sdk::DbContext<
     DbView = RemoteTables,
     Reducers = RemoteReducers,
@@ -896,14 +1112,26 @@ impl __sdk::spacetime_module::InModule for NamespaceTestF {
 };
 use super::pk_multi_identity_type::PkMultiIdentity;
 
+/// Table handle for the table `pk_multi_identity`.
+///
+/// Obtain a handle from the [`PkMultiIdentityTableAccess::pk_multi_identity`] method on [`super::RemoteTables`],
+/// like `ctx.db.pk_multi_identity()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.pk_multi_identity().on_insert(...)`.
 pub struct PkMultiIdentityTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<PkMultiIdentity>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `pk_multi_identity`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait PkMultiIdentityTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`PkMultiIdentityTableHandle`], which mediates access to the table `pk_multi_identity`.
     fn pk_multi_identity(&self) -> PkMultiIdentityTableHandle<'_>;
 }
 
@@ -970,6 +1198,7 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for PkMultiIdentityTableHandle<'ctx
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -981,12 +1210,20 @@ pub(super) fn parse_table_update(
     ).context("Failed to parse table update for table \"pk_multi_identity\"")
 }
 
+        /// Access to the `id` unique index on the table `pk_multi_identity`,
+        /// which allows point queries on the field of the same name
+        /// via the [`PkMultiIdentityIdUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.pk_multi_identity().id().find(...)`.
         pub struct PkMultiIdentityIdUnique<'ctx> {
             imp: __sdk::client_cache::UniqueConstraint<PkMultiIdentity, u32>,
             phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
 
         impl<'ctx> PkMultiIdentityTableHandle<'ctx> {
+            /// Get a handle on the `id` unique index on the table `pk_multi_identity`.
             pub fn id(&self) -> PkMultiIdentityIdUnique<'ctx> {
                 PkMultiIdentityIdUnique {
                     imp: self.imp.get_unique_constraint::<u32>("id", |row| &row.id),
@@ -996,17 +1233,27 @@ pub(super) fn parse_table_update(
         }
 
         impl<'ctx> PkMultiIdentityIdUnique<'ctx> {
+            /// Find the subscribed row whose `id` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
             pub fn find(&self, col_val: &u32) -> Option<PkMultiIdentity> {
                 self.imp.find(col_val)
             }
         }
         
+        /// Access to the `other` unique index on the table `pk_multi_identity`,
+        /// which allows point queries on the field of the same name
+        /// via the [`PkMultiIdentityOtherUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.pk_multi_identity().other().find(...)`.
         pub struct PkMultiIdentityOtherUnique<'ctx> {
             imp: __sdk::client_cache::UniqueConstraint<PkMultiIdentity, u32>,
             phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
 
         impl<'ctx> PkMultiIdentityTableHandle<'ctx> {
+            /// Get a handle on the `other` unique index on the table `pk_multi_identity`.
             pub fn other(&self) -> PkMultiIdentityOtherUnique<'ctx> {
                 PkMultiIdentityOtherUnique {
                     imp: self.imp.get_unique_constraint::<u32>("other", |row| &row.other),
@@ -1016,6 +1263,8 @@ pub(super) fn parse_table_update(
         }
 
         impl<'ctx> PkMultiIdentityOtherUnique<'ctx> {
+            /// Find the subscribed row whose `other` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
             pub fn find(&self, col_val: &u32) -> Option<PkMultiIdentity> {
                 self.imp.find(col_val)
             }
@@ -1086,14 +1335,26 @@ impl __sdk::spacetime_module::InModule for Point {
 };
 use super::point_type::Point;
 
+/// Table handle for the table `points`.
+///
+/// Obtain a handle from the [`PointsTableAccess::points`] method on [`super::RemoteTables`],
+/// like `ctx.db.points()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.points().on_insert(...)`.
 pub struct PointsTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<Point>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `points`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait PointsTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`PointsTableHandle`], which mediates access to the table `points`.
     fn points(&self) -> PointsTableHandle<'_>;
 }
 
@@ -1143,6 +1404,7 @@ impl<'ctx> __sdk::table::Table for PointsTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -1164,14 +1426,26 @@ pub(super) fn parse_table_update(
 };
 use super::private_type::Private;
 
+/// Table handle for the table `private`.
+///
+/// Obtain a handle from the [`PrivateTableAccess::private`] method on [`super::RemoteTables`],
+/// like `ctx.db.private()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.private().on_insert(...)`.
 pub struct PrivateTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<Private>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `private`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait PrivateTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`PrivateTableHandle`], which mediates access to the table `private`.
     fn private(&self) -> PrivateTableHandle<'_>;
 }
 
@@ -1221,6 +1495,7 @@ impl<'ctx> __sdk::table::Table for PrivateTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -1280,9 +1555,29 @@ impl __sdk::spacetime_module::InModule for QueryPrivate {
 pub struct QueryPrivateCallbackId(__sdk::callbacks::CallbackId);
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the reducer `query_private`.
+///
+/// Implemented for [`super::RemoteReducers`].
 pub trait query_private {
+    /// Request that the remote module invoke the reducer `query_private` to run as soon as possible.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed by listening for [`Self::on_query_private`] callbacks.
     fn query_private(&self, ) -> __anyhow::Result<()>;
+    /// Register a callback to run whenever we are notified of an invocation of the reducer `query_private`.
+    ///
+    /// The [`super::EventContext`] passed to the `callback`
+    /// will always have [`__sdk::Event::Reducer`] as its `event`,
+    /// but it may or may not have terminated successfully and been committed.
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// to determine the reducer's status.
+    ///
+    /// The returned [`QueryPrivateCallbackId`] can be passed to [`Self::remove_on_query_private`]
+    /// to cancel the callback.
     fn on_query_private(&self, callback: impl FnMut(&super::EventContext, ) + Send + 'static) -> QueryPrivateCallbackId;
+    /// Cancel a callback previously registered by [`Self::on_query_private`],
+    /// causing it not to run in the future.
     fn remove_on_query_private(&self, callback: QueryPrivateCallbackId);
 }
 
@@ -1318,14 +1613,26 @@ impl query_private for super::RemoteReducers {
 };
 use super::repeating_test_arg_type::RepeatingTestArg;
 
+/// Table handle for the table `repeating_test_arg`.
+///
+/// Obtain a handle from the [`RepeatingTestArgTableAccess::repeating_test_arg`] method on [`super::RemoteTables`],
+/// like `ctx.db.repeating_test_arg()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.repeating_test_arg().on_insert(...)`.
 pub struct RepeatingTestArgTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<RepeatingTestArg>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `repeating_test_arg`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait RepeatingTestArgTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`RepeatingTestArgTableHandle`], which mediates access to the table `repeating_test_arg`.
     fn repeating_test_arg(&self) -> RepeatingTestArgTableHandle<'_>;
 }
 
@@ -1392,6 +1699,7 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for RepeatingTestArgTableHandle<'ct
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -1403,12 +1711,20 @@ pub(super) fn parse_table_update(
     ).context("Failed to parse table update for table \"repeating_test_arg\"")
 }
 
+        /// Access to the `scheduled_id` unique index on the table `repeating_test_arg`,
+        /// which allows point queries on the field of the same name
+        /// via the [`RepeatingTestArgScheduledIdUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.repeating_test_arg().scheduled_id().find(...)`.
         pub struct RepeatingTestArgScheduledIdUnique<'ctx> {
             imp: __sdk::client_cache::UniqueConstraint<RepeatingTestArg, u64>,
             phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
 
         impl<'ctx> RepeatingTestArgTableHandle<'ctx> {
+            /// Get a handle on the `scheduled_id` unique index on the table `repeating_test_arg`.
             pub fn scheduled_id(&self) -> RepeatingTestArgScheduledIdUnique<'ctx> {
                 RepeatingTestArgScheduledIdUnique {
                     imp: self.imp.get_unique_constraint::<u64>("scheduled_id", |row| &row.scheduled_id),
@@ -1418,6 +1734,8 @@ pub(super) fn parse_table_update(
         }
 
         impl<'ctx> RepeatingTestArgScheduledIdUnique<'ctx> {
+            /// Find the subscribed row whose `scheduled_id` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
             pub fn find(&self, col_val: &u64) -> Option<RepeatingTestArg> {
                 self.imp.find(col_val)
             }
@@ -1478,10 +1796,30 @@ impl __sdk::spacetime_module::InModule for RepeatingTest {
 pub struct RepeatingTestCallbackId(__sdk::callbacks::CallbackId);
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the reducer `repeating_test`.
+///
+/// Implemented for [`super::RemoteReducers`].
 pub trait repeating_test {
+    /// Request that the remote module invoke the reducer `repeating_test` to run as soon as possible.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed by listening for [`Self::on_repeating_test`] callbacks.
     fn repeating_test(&self, arg: RepeatingTestArg,
 ) -> __anyhow::Result<()>;
+    /// Register a callback to run whenever we are notified of an invocation of the reducer `repeating_test`.
+    ///
+    /// The [`super::EventContext`] passed to the `callback`
+    /// will always have [`__sdk::Event::Reducer`] as its `event`,
+    /// but it may or may not have terminated successfully and been committed.
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// to determine the reducer's status.
+    ///
+    /// The returned [`RepeatingTestCallbackId`] can be passed to [`Self::remove_on_repeating_test`]
+    /// to cancel the callback.
     fn on_repeating_test(&self, callback: impl FnMut(&super::EventContext, &RepeatingTestArg, ) + Send + 'static) -> RepeatingTestCallbackId;
+    /// Cancel a callback previously registered by [`Self::on_repeating_test`],
+    /// causing it not to run in the future.
     fn remove_on_repeating_test(&self, callback: RepeatingTestCallbackId);
 }
 
@@ -1518,14 +1856,26 @@ impl repeating_test for super::RemoteReducers {
 };
 use super::test_a_type::TestA;
 
+/// Table handle for the table `test_a`.
+///
+/// Obtain a handle from the [`TestATableAccess::test_a`] method on [`super::RemoteTables`],
+/// like `ctx.db.test_a()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.test_a().on_insert(...)`.
 pub struct TestATableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<TestA>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `test_a`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait TestATableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`TestATableHandle`], which mediates access to the table `test_a`.
     fn test_a(&self) -> TestATableHandle<'_>;
 }
 
@@ -1575,6 +1925,7 @@ impl<'ctx> __sdk::table::Table for TestATableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -1649,14 +2000,26 @@ impl __sdk::spacetime_module::InModule for TestB {
 use super::test_d_type::TestD;
 use super::namespace_test_c_type::NamespaceTestC;
 
+/// Table handle for the table `test_d`.
+///
+/// Obtain a handle from the [`TestDTableAccess::test_d`] method on [`super::RemoteTables`],
+/// like `ctx.db.test_d()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.test_d().on_insert(...)`.
 pub struct TestDTableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<TestD>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `test_d`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait TestDTableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`TestDTableHandle`], which mediates access to the table `test_d`.
     fn test_d(&self) -> TestDTableHandle<'_>;
 }
 
@@ -1706,6 +2069,7 @@ impl<'ctx> __sdk::table::Table for TestDTableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -1753,14 +2117,26 @@ impl __sdk::spacetime_module::InModule for TestD {
 };
 use super::test_e_type::TestE;
 
+/// Table handle for the table `test_e`.
+///
+/// Obtain a handle from the [`TestETableAccess::test_e`] method on [`super::RemoteTables`],
+/// like `ctx.db.test_e()`.
+///
+/// Users are encouraged not to explicitly reference this type,
+/// but to directly chain method calls,
+/// like `ctx.db.test_e().on_insert(...)`.
 pub struct TestETableHandle<'ctx> {
     imp: __sdk::db_connection::TableHandle<TestE>,
     ctx: std::marker::PhantomData<&'ctx super::RemoteTables>,
 }
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the table `test_e`.
+///
+/// Implemented for [`super::RemoteTables`].
 pub trait TestETableAccess {
     #[allow(non_snake_case)]
+    /// Obtain a [`TestETableHandle`], which mediates access to the table `test_e`.
     fn test_e(&self) -> TestETableHandle<'_>;
 }
 
@@ -1827,6 +2203,7 @@ impl<'ctx> __sdk::table::TableWithPrimaryKey for TestETableHandle<'ctx> {
     }
 }
 
+#[doc(hidden)]
 pub(super) fn parse_table_update(
     deletes: Vec<__ws::EncodedValue>,
     inserts: Vec<__ws::EncodedValue>,
@@ -1838,12 +2215,20 @@ pub(super) fn parse_table_update(
     ).context("Failed to parse table update for table \"test_e\"")
 }
 
+        /// Access to the `id` unique index on the table `test_e`,
+        /// which allows point queries on the field of the same name
+        /// via the [`TestEIdUnique::find`] method.
+        ///
+        /// Users are encouraged not to explicitly reference this type,
+        /// but to directly chain method calls,
+        /// like `ctx.db.test_e().id().find(...)`.
         pub struct TestEIdUnique<'ctx> {
             imp: __sdk::client_cache::UniqueConstraint<TestE, u64>,
             phantom: std::marker::PhantomData<&'ctx super::RemoteTables>,
         }
 
         impl<'ctx> TestETableHandle<'ctx> {
+            /// Get a handle on the `id` unique index on the table `test_e`.
             pub fn id(&self) -> TestEIdUnique<'ctx> {
                 TestEIdUnique {
                     imp: self.imp.get_unique_constraint::<u64>("id", |row| &row.id),
@@ -1853,6 +2238,8 @@ pub(super) fn parse_table_update(
         }
 
         impl<'ctx> TestEIdUnique<'ctx> {
+            /// Find the subscribed row whose `id` column value is equal to `col_val`,
+            /// if such a row is present in the client cache.
             pub fn find(&self, col_val: &u64) -> Option<TestE> {
                 self.imp.find(col_val)
             }
@@ -1918,13 +2305,33 @@ impl __sdk::spacetime_module::InModule for Test {
 pub struct TestCallbackId(__sdk::callbacks::CallbackId);
 
 #[allow(non_camel_case_types)]
+/// Extension trait for access to the reducer `test`.
+///
+/// Implemented for [`super::RemoteReducers`].
 pub trait test {
+    /// Request that the remote module invoke the reducer `test` to run as soon as possible.
+    ///
+    /// This method returns immediately, and errors only if we are unable to send the request.
+    /// The reducer will run asynchronously in the future,
+    ///  and its status can be observed by listening for [`Self::on_test`] callbacks.
     fn test(&self, arg: TestA,
 arg_2: TestB,
 arg_3: NamespaceTestC,
 arg_4: NamespaceTestF,
 ) -> __anyhow::Result<()>;
+    /// Register a callback to run whenever we are notified of an invocation of the reducer `test`.
+    ///
+    /// The [`super::EventContext`] passed to the `callback`
+    /// will always have [`__sdk::Event::Reducer`] as its `event`,
+    /// but it may or may not have terminated successfully and been committed.
+    /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::EventContext`]
+    /// to determine the reducer's status.
+    ///
+    /// The returned [`TestCallbackId`] can be passed to [`Self::remove_on_test`]
+    /// to cancel the callback.
     fn on_test(&self, callback: impl FnMut(&super::EventContext, &TestA, &TestB, &NamespaceTestC, &NamespaceTestF, ) + Send + 'static) -> TestCallbackId;
+    /// Cancel a callback previously registered by [`Self::on_test`],
+    /// causing it not to run in the future.
     fn remove_on_test(&self, callback: TestCallbackId);
 }
 
