@@ -22,20 +22,13 @@ use std::sync::Arc;
 
 pub mod connected;
 pub mod disconnected;
-pub mod on_connect_reducer;
-pub mod on_disconnect_reducer;
 
 pub use connected::*;
 pub use disconnected::*;
-pub use on_connect_reducer::*;
-pub use on_disconnect_reducer::*;
 
 #[allow(unused)]
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
-pub enum ReducerEvent {
-    OnConnect(on_connect_reducer::OnConnectArgs),
-    OnDisconnect(on_disconnect_reducer::OnDisconnectArgs),
-}
+pub enum ReducerEvent {}
 
 #[allow(unused)]
 pub struct Module;
@@ -76,17 +69,6 @@ impl SpacetimeModule for Module {
         let reducer_call = &event.reducer_call;
         #[allow(clippy::match_single_binding)]
         match &reducer_call.reducer_name[..] {
-            "OnConnect" => _reducer_callbacks.handle_event_of_type::<on_connect_reducer::OnConnectArgs, ReducerEvent>(
-                event,
-                _state,
-                ReducerEvent::OnConnect,
-            ),
-            "OnDisconnect" => _reducer_callbacks
-                .handle_event_of_type::<on_disconnect_reducer::OnDisconnectArgs, ReducerEvent>(
-                    event,
-                    _state,
-                    ReducerEvent::OnDisconnect,
-                ),
             unknown => {
                 spacetimedb_sdk::log::error!("Event on an unknown reducer: {:?}", unknown);
                 None
