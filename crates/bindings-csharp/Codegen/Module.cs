@@ -286,7 +286,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 }
                 public IEnumerable<{{globalName}}> Iter() => {{iTable}}.Iter();
                 public IEnumerable<{{globalName}}> Query(System.Linq.Expressions.Expression<Func<{{globalName}}, bool>> predicate) => {{iTable}}.Query(predicate);
-                public void Insert({{globalName}} row) => {{iTable}}.Insert(row);
+                public {{globalName}} Insert({{globalName}} row) => {{iTable}}.Insert(row);
                 {{string.Join("\n", GenerateViewFilters(v.Name, iTable))}}
             }
             """,
