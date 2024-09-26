@@ -107,3 +107,9 @@ system_id! {
     pub struct ColId(pub u16);
 }
 // ColId works differently from other system IDs and is not auto-incremented.
+
+system_id! {
+    /// An identifier for a row-level security rule, unique within a database.
+    pub struct RowLevelSecurityId(pub u32);
+}
+auto_inc_system_id!(RowLevelSecurityId);

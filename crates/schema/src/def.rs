@@ -30,8 +30,8 @@ use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawConstraintDataV9, RawConstraintDefV9, RawIdentifier, RawIndexAlgorithm, RawIndexDefV9,
-    RawModuleDefV9, RawReducerDefV9, RawScheduleDefV9, RawScopedTypeNameV9, RawSequenceDefV9, RawTableDefV9,
-    RawTypeDefV9, RawUniqueConstraintDataV9, TableAccess, TableType,
+    RawModuleDefV9, RawReducerDefV9, RawRowLevelSecurityDefV9, RawScheduleDefV9, RawScopedTypeNameV9, RawSequenceDefV9,
+    RawTableDefV9, RawTypeDefV9, RawUniqueConstraintDataV9, TableAccess, TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
 use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
@@ -416,6 +416,9 @@ pub struct TableDef {
     /// The sequences for the table, indexed by name.
     pub sequences: IdentifierMap<SequenceDef>,
 
+    /// The row-level security policies for the table, indexed by name.
+    pub row_level_security: IdentifierMap<RowLevelSecurityDef>,
+
     /// The schedule for the table, if present.
     pub schedule: Option<ScheduleDef>,
 
@@ -447,6 +450,7 @@ impl From<TableDef> for RawTableDefV9 {
             indexes,
             constraints,
             sequences,
+            row_level_security,
             schedule,
             table_type,
             table_access,
@@ -458,6 +462,7 @@ impl From<TableDef> for RawTableDefV9 {
             primary_key,
             indexes: to_raw(indexes, |index: &RawIndexDefV9| &index.name),
             constraints: to_raw(constraints, |constraint: &RawConstraintDefV9| &constraint.name),
+            row_level_security: to_raw(row_level_security, |policy: &RawRowLevelSecurityDefV9| &policy.name),
             sequences: to_raw(sequences, |sequence: &RawSequenceDefV9| &sequence.name),
             schedule: schedule.map(Into::into),
             table_type,
@@ -685,6 +690,24 @@ impl From<UniqueConstraintData> for RawUniqueConstraintDataV9 {
 impl From<UniqueConstraintData> for ConstraintData {
     fn from(val: UniqueConstraintData) -> Self {
         ConstraintData::Unique(val)
+    }
+}
+
+/// Data for the `RLS` policy on a table.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct RowLevelSecurityDef {
+    /// The name of the policy. Must be unique within the containing `ModuleDef`.
+    pub name: Identifier,
+    /// The `sql` expression to use for row-level security.
+    pub sql: Box<str>,
+}
+
+impl From<RowLevelSecurityDef> for RawRowLevelSecurityDefV9 {
+    fn from(val: RowLevelSecurityDef) -> Self {
+        RawRowLevelSecurityDefV9 {
+            name: val.name.into(),
+            sql: val.sql,
+        }
     }
 }
 
@@ -934,6 +957,18 @@ impl ModuleDefLookup for ConstraintDef {
 
     fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
         module_def.stored_in_table_def(key)?.constraints.get(key)
+    }
+}
+
+impl ModuleDefLookup for RowLevelSecurityDef {
+    type Key<'a> = &'a Identifier;
+
+    fn key(&self) -> Self::Key<'_> {
+        &self.name
+    }
+
+    fn lookup<'a>(module_def: &'a ModuleDef, key: Self::Key<'_>) -> Option<&'a Self> {
+        module_def.stored_in_table_def(key)?.row_level_security.get(key)
     }
 }
 

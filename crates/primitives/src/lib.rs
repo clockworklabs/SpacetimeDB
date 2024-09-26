@@ -7,7 +7,7 @@ mod ids;
 
 pub use attr::{AttributeKind, ColumnAttribute, ConstraintKind, Constraints};
 pub use col_list::{ColList, ColSet};
-pub use ids::{ColId, ConstraintId, IndexId, ScheduleId, SequenceId, TableId};
+pub use ids::{ColId, ConstraintId, IndexId, RowLevelSecurityId, ScheduleId, SequenceId, TableId};
 
 /// The minimum size of a chunk yielded by a wasm abi RowIter.
 pub const ROW_ITER_CHUNK_SIZE: usize = 32 * 1024;

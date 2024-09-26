@@ -139,6 +139,7 @@ impl ModuleValidator<'_> {
             indexes,
             constraints,
             sequences,
+            row_level_security,
             schedule,
             table_type,
             table_access,
@@ -200,6 +201,15 @@ impl ModuleValidator<'_> {
             })
             .collect_all_errors();
 
+        let row_level_security = row_level_security
+            .into_iter()
+            .map(|policy| {
+                table_in_progress
+                    .validate_row_level_security_def(policy)
+                    .map(|policy| (policy.name.clone(), policy))
+            })
+            .collect_all_errors();
+
         let schedule = schedule
             .map(|schedule| table_in_progress.validate_schedule_def(schedule))
             .transpose();
@@ -214,8 +224,16 @@ impl ModuleValidator<'_> {
                 }
             });
 
-        let (name, columns, indexes, (constraints, primary_key), sequences, schedule) =
-            (name, columns, indexes, constraints_primary_key, sequences, schedule).combine_errors()?;
+        let (name, columns, indexes, (constraints, primary_key), sequences, row_level_security, schedule) = (
+            name,
+            columns,
+            indexes,
+            constraints_primary_key,
+            sequences,
+            row_level_security,
+            schedule,
+        )
+            .combine_errors()?;
 
         Ok(TableDef {
             name,
@@ -225,6 +243,7 @@ impl ModuleValidator<'_> {
             indexes,
             constraints,
             sequences,
+            row_level_security,
             schedule,
             table_type,
             table_access,
@@ -580,6 +599,12 @@ impl TableValidator<'_, '_> {
         } else {
             unimplemented!("Unknown constraint type")
         }
+    }
+
+    fn validate_row_level_security_def(&mut self, policy: RawRowLevelSecurityDefV9) -> Result<RowLevelSecurityDef> {
+        let RawRowLevelSecurityDefV9 { name, sql } = policy;
+        let name = self.add_to_global_namespace(name)?;
+        Ok(RowLevelSecurityDef { name, sql })
     }
 
     /// Validate a schedule definition.

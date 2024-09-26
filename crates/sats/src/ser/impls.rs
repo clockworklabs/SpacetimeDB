@@ -257,6 +257,7 @@ impl_serialize!([] spacetimedb_primitives::IndexId, (self, ser) => ser.serialize
 impl_serialize!([] spacetimedb_primitives::ConstraintId, (self, ser) => ser.serialize_u32(self.0));
 impl_serialize!([] spacetimedb_primitives::ColId, (self, ser) => ser.serialize_u16(self.0));
 impl_serialize!([] spacetimedb_primitives::ScheduleId, (self, ser) => ser.serialize_u32(self.0));
+impl_serialize!([] spacetimedb_primitives::RowLevelSecurityId, (self, ser) => ser.serialize_u32(self.0));
 
 impl_serialize!([] ColList, (self, ser) => {
     let mut arr = ser.serialize_array(self.len() as usize)?;

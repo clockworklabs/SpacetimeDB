@@ -1506,6 +1506,7 @@ mod tests {
     use spacetimedb_sats::bsatn;
     use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::product;
+    use spacetimedb_schema::schema::RowLevelSecuritySchema;
     use spacetimedb_table::read_column::ReadColumn;
     use spacetimedb_table::table::RowRef;
 
@@ -1876,6 +1877,44 @@ mod tests {
         let stdb = stdb.reopen()?;
         let tx = stdb.begin_tx();
         assert_eq!(tx.table_row_count(table_id).unwrap(), 2);
+        Ok(())
+    }
+
+    // Because we don't create `rls` when first creating the database, check we pass the bootstrap
+    #[test]
+    fn test_row_level_reopen() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+        let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let ctx = ExecutionContext::default();
+
+        let schema = my_table(AlgebraicType::I64);
+        let table_id = stdb.create_table(&mut tx, schema)?;
+
+        let rls = RowLevelSecuritySchema {
+            row_level_security_id: RowLevelSecurityId::SENTINEL,
+            row_level_security_name: "rls_foo".into(),
+            sql: "SELECT * FROM bar".into(),
+            table_id,
+        };
+
+        let rls_id = tx.create_row_level_security(&ctx, table_id, rls)?;
+        stdb.commit_tx(&ctx, tx)?;
+
+        let stdb = stdb.reopen()?;
+        let tx = stdb.begin_mut_tx(IsolationLevel::Serializable);
+        let rls = tx.row_level_security_id_from_name(&ctx, "rls_foo")?;
+        assert_eq!(rls, Some(rls_id));
+
+        let table = stdb.schema_for_table_mut(&tx, table_id)?;
+        assert_eq!(
+            table.row_level_security,
+            vec![RowLevelSecuritySchema {
+                row_level_security_id: rls_id,
+                row_level_security_name: "rls_foo".into(),
+                table_id,
+                sql: "SELECT * FROM bar".into(),
+            }]
+        );
         Ok(())
     }
 

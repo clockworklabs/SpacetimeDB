@@ -113,6 +113,7 @@ fn upgrade_table(
         indexes,
         constraints: unique_constraints,
         sequences,
+        row_level_security: vec![],
         schedule,
         table_type,
         table_access,

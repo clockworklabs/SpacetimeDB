@@ -340,6 +340,7 @@ impl_st!([] spacetimedb_primitives::IndexId, AlgebraicType::U32);
 impl_st!([] spacetimedb_primitives::SequenceId, AlgebraicType::U32);
 impl_st!([] spacetimedb_primitives::ConstraintId, AlgebraicType::U32);
 impl_st!([] spacetimedb_primitives::ScheduleId, AlgebraicType::U32);
+impl_st!([] spacetimedb_primitives::RowLevelSecurityId, AlgebraicType::U32);
 
 impl_st!([] spacetimedb_primitives::ColList, ts => AlgebraicType::array(spacetimedb_primitives::ColId::make_type(ts)));
 impl_st!([] spacetimedb_primitives::ColSet, ts => AlgebraicType::array(spacetimedb_primitives::ColId::make_type(ts)));

@@ -125,6 +125,9 @@ pub struct RawTableDefV9 {
     /// The sequences for the table.
     pub sequences: Vec<RawSequenceDefV9>,
 
+    /// The row-level security policies for the table.
+    pub row_level_security: Vec<RawRowLevelSecurityDefV9>,
+
     /// The schedule for the table.
     pub schedule: Option<RawScheduleDefV9>,
 
@@ -330,6 +333,17 @@ pub struct RawUniqueConstraintDataV9 {
     pub columns: ColList,
 }
 
+/// Data for the `RLS` policy on a table.
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+#[cfg_attr(feature = "test", derive(PartialEq, Eq, PartialOrd, Ord))]
+pub struct RawRowLevelSecurityDefV9 {
+    /// The name of the policy. Must be unique within the containing `ModuleDef`.
+    pub name: RawIdentifier,
+    /// The `sql` expression to use for row-level security.
+    pub sql: Box<str>,
+}
+
 /// A miscellaneous module export.
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
@@ -452,6 +466,7 @@ impl RawModuleDefV9Builder {
                 product_type_ref,
                 indexes: vec![],
                 constraints: vec![],
+                row_level_security: vec![],
                 sequences: vec![],
                 schedule: None,
                 primary_key: None,
@@ -688,6 +703,17 @@ impl<'a> RawTableDefBuilder<'a> {
         let reducer_name = reducer_name.into();
         let name = name.unwrap_or_else(|| self.generate_schedule_name());
         self.table.schedule = Some(RawScheduleDefV9 { name, reducer_name });
+        self
+    }
+
+    /// Adds a row-level security policy to the table.
+    ///
+    /// The `sql` expression should be a valid SQL expression.
+    pub fn with_row_level_security(mut self, name: impl Into<RawIdentifier>, sql: impl Into<Box<str>>) -> Self {
+        self.table.row_level_security.push(RawRowLevelSecurityDefV9 {
+            name: name.into(),
+            sql: sql.into(),
+        });
         self
     }
 

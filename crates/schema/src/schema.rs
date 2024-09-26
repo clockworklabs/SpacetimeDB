@@ -6,6 +6,7 @@
 // TODO(1.0): change all the `Box<str>`s in this file to `Identifier`.
 // This doesn't affect the ABI so can wait until 1.0.
 
+use anyhow::Error;
 use itertools::Itertools;
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
 use spacetimedb_lib::db::error::{DefType, SchemaError};
@@ -19,8 +20,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::def::{
-    ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, ScheduleDef,
-    SequenceDef, TableDef, UniqueConstraintData,
+    ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup,
+    RowLevelSecurityDef, ScheduleDef, SequenceDef, TableDef, UniqueConstraintData,
 };
 use crate::identifier::Identifier;
 
@@ -80,6 +81,9 @@ pub struct TableSchema {
     /// The constraints on the table.
     pub constraints: Vec<ConstraintSchema>,
 
+    /// The row-level security policies on the table.
+    pub row_level_security: Vec<RowLevelSecuritySchema>,
+
     /// The sequences on the table.
     pub sequences: Vec<SequenceSchema>,
 
@@ -105,6 +109,7 @@ impl TableSchema {
         columns: Vec<ColumnSchema>,
         indexes: Vec<IndexSchema>,
         constraints: Vec<ConstraintSchema>,
+        row_level_security: Vec<RowLevelSecuritySchema>,
         sequences: Vec<SequenceSchema>,
         table_type: StTableType,
         table_access: StAccess,
@@ -127,6 +132,7 @@ impl TableSchema {
             columns,
             indexes,
             constraints,
+            row_level_security,
             sequences,
             table_type,
             table_access,
@@ -156,6 +162,7 @@ impl TableSchema {
             TableId::SENTINEL,
             "TestTable".into(),
             columns,
+            vec![],
             vec![],
             vec![],
             vec![],
@@ -243,6 +250,25 @@ impl TableSchema {
     /// Removes the given `index_id`
     pub fn remove_constraint(&mut self, constraint_id: ConstraintId) {
         self.constraints.retain(|x| x.constraint_id != constraint_id)
+    }
+
+    /// Add OR replace the [RowLevelSecuritySchema]
+    pub fn update_row_level_security(&mut self, of: RowLevelSecuritySchema) {
+        if let Some(x) = self
+            .row_level_security
+            .iter_mut()
+            .find(|x| x.row_level_security_id == of.row_level_security_id)
+        {
+            *x = of;
+        } else {
+            self.row_level_security.push(of);
+        }
+    }
+
+    /// Removes the given `row_level_security_id`
+    pub fn remove_row_level_security(&mut self, row_level_security_id: RowLevelSecurityId) {
+        self.row_level_security
+            .retain(|x| x.row_level_security_id != row_level_security_id)
     }
 
     /// Concatenate the column names from the `columns`
@@ -556,6 +582,7 @@ impl Schema for TableSchema {
             indexes,
             constraints,
             sequences,
+            row_level_security,
             schedule,
             table_type,
             table_access,
@@ -584,6 +611,11 @@ impl Schema for TableSchema {
             .map(|def| ConstraintSchema::from_module_def(module_def, def, table_id, ConstraintId::SENTINEL))
             .collect();
 
+        let row_level_security = row_level_security
+            .values()
+            .map(|def| RowLevelSecuritySchema::from_module_def(module_def, def, table_id, RowLevelSecurityId(0)))
+            .collect();
+
         let schedule = schedule
             .as_ref()
             .map(|schedule| ScheduleSchema::from_module_def(module_def, schedule, table_id, ScheduleId::SENTINEL));
@@ -594,6 +626,7 @@ impl Schema for TableSchema {
             columns,
             indexes,
             constraints,
+            row_level_security,
             sequences,
             (*table_type).into(),
             (*table_access).into(),
@@ -1005,6 +1038,47 @@ impl Schema for ConstraintSchema {
     fn check_compatible(&self, def: &Self::Def) -> Result<(), anyhow::Error> {
         ensure_eq!(&self.constraint_name[..], &def.name[..], "Constraint name mismatch");
         ensure_eq!(&self.data, &def.data, "Constraint data mismatch");
+        Ok(())
+    }
+}
+
+/// A struct representing the schema of a row-level security policy.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowLevelSecuritySchema {
+    pub row_level_security_id: RowLevelSecurityId,
+    pub row_level_security_name: Box<str>,
+    pub table_id: TableId,
+    pub sql: Box<str>,
+}
+
+impl Schema for RowLevelSecuritySchema {
+    type Def = RowLevelSecurityDef;
+    type Id = RowLevelSecurityId;
+    type ParentId = TableId;
+
+    fn from_module_def(
+        module_def: &ModuleDef,
+        def: &Self::Def,
+        parent_id: Self::ParentId,
+        row_level_security_id: Self::Id,
+    ) -> Self {
+        module_def.expect_contains(def);
+
+        RowLevelSecuritySchema {
+            row_level_security_id,
+            row_level_security_name: def.name.trim().into(),
+            table_id: parent_id,
+            sql: (*def.sql).into(),
+        }
+    }
+
+    fn check_compatible(&self, def: &Self::Def) -> Result<(), Error> {
+        ensure_eq!(
+            &self.row_level_security_name[..],
+            &def.name[..],
+            "Row-level security name mismatch"
+        );
+        ensure_eq!(&self.sql[..], &def.sql[..], "Row-level security SQL mismatch");
         Ok(())
     }
 }

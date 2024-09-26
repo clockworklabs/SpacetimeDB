@@ -7,6 +7,7 @@ use super::{
     tx_state::{DeleteTable, IndexIdMap, TxState},
     SharedMutexGuard, SharedWriteGuard,
 };
+use crate::db::datastore::system_tables::{StRowLevelSecurityFields, StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
 use crate::db::datastore::{
     system_tables::{
         StColumnFields, StColumnRow, StConstraintFields, StConstraintRow, StFields as _, StIndexFields, StIndexRow,
@@ -28,7 +29,9 @@ use spacetimedb_lib::{
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
     de::DeserializeSeed,
 };
-use spacetimedb_primitives::{ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId};
+use spacetimedb_primitives::{
+    ColId, ColList, ColSet, ConstraintId, IndexId, RowLevelSecurityId, ScheduleId, SequenceId, TableId,
+};
 use spacetimedb_sats::{
     bsatn::{self, DecodeError},
     de::WithBound,
@@ -36,7 +39,7 @@ use spacetimedb_sats::{
 };
 use spacetimedb_schema::{
     def::{BTreeAlgorithm, IndexAlgorithm},
-    schema::{ConstraintSchema, IndexSchema, SequenceSchema, TableSchema},
+    schema::{ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
 };
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
@@ -943,6 +946,121 @@ impl MutTxId {
         .map(|mut iter| {
             iter.next()
                 .map(|row| row.read_col(StConstraintFields::ConstraintId).unwrap())
+        })
+    }
+
+    /// Create a row level security policy.
+    ///
+    /// Requires:
+    /// - `row_level_security_schema.row_level_security_id == RowLevelSecurityId::SENTINEL`
+    /// - `row_level_security_schema.table_id != TableId::SENTINEL`
+    /// - `row_level_security_schema.row_level_security_name` must not be used for any other database entity.
+    ///
+    /// Ensures:
+    ///
+    /// - The row level security policy metadata is inserted into the system tables (and other data structures reflecting them).
+    /// - The returned ID is unique and is not `RowLevelSecurityId::SENTINEL`.
+    pub fn create_row_level_security(
+        &mut self,
+        ctx: &ExecutionContext,
+        table_id: TableId,
+        mut row_level_security_schema: RowLevelSecuritySchema,
+    ) -> Result<RowLevelSecurityId> {
+        if row_level_security_schema.row_level_security_id != RowLevelSecurityId::SENTINEL {
+            return Err(anyhow::anyhow!(
+                "`row_level_security_id` must be `RowLevelSecurityId::SENTINEL` in `{:#?}`",
+                row_level_security_schema
+            )
+            .into());
+        }
+
+        if row_level_security_schema.table_id == TableId::SENTINEL {
+            return Err(anyhow::anyhow!(
+                "`table_id` must not be `TableId::SENTINEL` in `{:#?}`",
+                row_level_security_schema
+            )
+            .into());
+        }
+
+        log::trace!(
+            "ROW LEVEL SECURITY CREATING: {} for table: {}",
+            row_level_security_schema.row_level_security_name,
+            table_id
+        );
+
+        // Insert the row into st_row_level_security
+        // NOTE: Because st_row_level_security has a unique index on security_name, this will
+        // fail if already exists.
+        let row = StRowLevelSecurityRow {
+            table_id,
+            row_level_security_id: RowLevelSecurityId::SENTINEL,
+            row_level_security_name: row_level_security_schema.row_level_security_name.clone(),
+            sql: row_level_security_schema.sql.clone(),
+        };
+
+        let row = self.insert(ST_ROW_LEVEL_SECURITY_ID, &mut ProductValue::from(row), ctx.database())?;
+        let row_level_security_id = row.1.collapse().read_col(StRowLevelSecurityFields::SecurityId)?;
+        let existed = matches!(row.1, RowRefInsertion::Existed(_));
+
+        // Add the row level security to the transaction's insert table.
+        let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
+        row_level_security_schema.row_level_security_id = row_level_security_id;
+
+        // This won't clone-write when creating a table but likely to otherwise.
+        table.with_mut_schema(|s| s.update_row_level_security(row_level_security_schema));
+
+        if existed {
+            log::trace!("ROW LEVEL SECURITY ALREADY EXISTS: {row_level_security_id}");
+        } else {
+            log::trace!("ROW LEVEL SECURITY CREATED: {row_level_security_id}");
+        }
+
+        Ok(row_level_security_id)
+    }
+
+    pub fn drop_row_level_security(
+        &mut self,
+        ctx: &ExecutionContext,
+        row_level_security_policy_id: RowLevelSecurityId,
+    ) -> Result<()> {
+        // Delete row in `st_row_level_security`.
+        let st_rls_ref = self
+            .iter_by_col_eq(
+                ctx,
+                ST_ROW_LEVEL_SECURITY_ID,
+                StRowLevelSecurityFields::SecurityId,
+                &row_level_security_policy_id.into(),
+            )?
+            .next()
+            .ok_or_else(|| {
+                TableError::IdNotFound(SystemTable::st_row_level_security, row_level_security_policy_id.into())
+            })?;
+        let table_id = st_rls_ref.read_col(StRowLevelSecurityFields::TableId)?;
+        self.delete(ST_ROW_LEVEL_SECURITY_ID, st_rls_ref.pointer())?;
+
+        // Remove rls in transaction's insert table.
+        let (table, ..) = self.get_or_create_insert_table_mut(table_id)?;
+        // This likely will do a clone-write as over time?
+        // The schema might have found other referents.
+        table.with_mut_schema(|s| s.remove_row_level_security(row_level_security_policy_id));
+
+        Ok(())
+    }
+
+    pub fn row_level_security_id_from_name(
+        &self,
+        ctx: &ExecutionContext,
+        row_level_security_name: &str,
+    ) -> Result<Option<RowLevelSecurityId>> {
+        self.iter_by_col_eq(
+            ctx,
+            ST_ROW_LEVEL_SECURITY_ID,
+            StRowLevelSecurityFields::SecurityName,
+            &<Box<str>>::from(row_level_security_name).into(),
+        )
+        .map(|mut iter| {
+            iter.next()
+                .map(|row| row.read_col(StRowLevelSecurityFields::SecurityId).unwrap())
         })
     }
 

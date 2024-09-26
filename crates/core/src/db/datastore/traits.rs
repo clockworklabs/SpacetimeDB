@@ -12,7 +12,7 @@ use spacetimedb_lib::{hash_bytes, Address, Identity};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::{AlgebraicValue, ProductType, ProductValue};
-use spacetimedb_schema::schema::{IndexSchema, SequenceSchema, TableSchema};
+use spacetimedb_schema::schema::{IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema};
 use spacetimedb_table::table::RowRef;
 
 /// The `IsolationLevel` enum specifies the degree to which a transaction is
@@ -437,6 +437,24 @@ pub trait MutTxDatastore: TxDatastore + MutTx {
     // Constraints
     fn drop_constraint_mut_tx(&self, tx: &mut Self::MutTx, constraint_id: ConstraintId) -> super::Result<()>;
     fn constraint_id_from_name(&self, tx: &Self::MutTx, constraint_name: &str) -> super::Result<Option<ConstraintId>>;
+
+    // Row-level security
+    fn create_row_level_security_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        table_id: TableId,
+        row_level_security_schema: RowLevelSecuritySchema,
+    ) -> super::Result<RowLevelSecurityId>;
+    fn drop_row_level_security_mut_tx(
+        &self,
+        tx: &mut Self::MutTx,
+        row_level_security_policy_id: RowLevelSecurityId,
+    ) -> super::Result<()>;
+    fn row_level_security_id_from_name(
+        &self,
+        tx: &Self::MutTx,
+        row_level_security_name: &str,
+    ) -> super::Result<Option<RowLevelSecurityId>>;
 
     // Data
     fn iter_mut_tx<'a>(

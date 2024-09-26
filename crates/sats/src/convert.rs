@@ -1,6 +1,6 @@
 use crate::{i256, u256};
 use crate::{AlgebraicType, AlgebraicValue, MapType, MapValue, ProductType, ProductValue};
-use spacetimedb_primitives::{ColId, ConstraintId, IndexId, ScheduleId, SequenceId, TableId};
+use spacetimedb_primitives::{ColId, ConstraintId, IndexId, RowLevelSecurityId, ScheduleId, SequenceId, TableId};
 
 impl crate::Value for AlgebraicValue {
     type Type = AlgebraicType;
@@ -67,3 +67,4 @@ system_id!(SequenceId);
 system_id!(IndexId);
 system_id!(ConstraintId);
 system_id!(ScheduleId);
+system_id!(RowLevelSecurityId);

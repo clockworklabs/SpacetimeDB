@@ -4,6 +4,9 @@ use super::{
     state_view::{Iter, IterByColRange, ScanIterByColRange, StateView},
     tx_state::{DeleteTable, IndexIdMap, RemovedIndexIdSet, TxState},
 };
+use crate::db::datastore::system_tables::{
+    StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_ROW_LEVEL_SECURITY_NAME,
+};
 use crate::{
     db::{
         datastore::{
@@ -224,6 +227,26 @@ impl CommittedState {
         self.create_table(ST_VAR_ID, schemas[ST_VAR_IDX].clone());
 
         self.create_table(ST_SCHEDULED_ID, schemas[ST_SCHEDULED_IDX].clone());
+
+        // Insert the rls into `st_row_level_security`
+        let (st_rls, blob_store) =
+            self.get_table_and_blob_store_or_create(ST_ROW_LEVEL_SECURITY_ID, &schemas[ST_ROW_LEVEL_SECURITY_IDX]);
+        for rls in ref_schemas.iter().flat_map(|x| &x.row_level_security).cloned() {
+            let row = StRowLevelSecurityRow {
+                table_id: rls.table_id,
+                row_level_security_id: rls.row_level_security_id,
+                row_level_security_name: rls.row_level_security_name,
+                sql: rls.sql,
+            };
+            let row = ProductValue::from(row);
+            // Insert the meta-row into the in-memory ST_ROW_LEVEL_SECURITY.
+            // If the row is already there, no-op.
+            ignore_duplicate_insert_error(st_rls.insert(blob_store, &row))?;
+            // Increment row count for st_row_level_security.
+            with_label_values(ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_NAME).inc();
+        }
+
+        // IMPORTANT: It is crucial that the `st_sequences` table is created last
 
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store) =
