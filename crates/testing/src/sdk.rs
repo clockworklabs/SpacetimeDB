@@ -198,7 +198,7 @@ fn generate_bindings(language: &str, wasm_file: &str, client_project: &str, gene
             "--skip_clippy",
             "--lang",
             language,
-            "--wasm-file",
+            "--bin-path",
             wasm_file,
             "--out-dir",
             generate_dir,
