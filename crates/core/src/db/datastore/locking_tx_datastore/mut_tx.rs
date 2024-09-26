@@ -488,7 +488,10 @@ impl MutTxId {
         }
         // Remove the `index_id -> (table_id, col_list)` association.
         idx_map.remove(&index_id);
-        self.tx_state.index_id_map_removals.push(index_id);
+        self.tx_state
+            .index_id_map_removals
+            .get_or_insert_with(Default::default)
+            .insert(index_id);
 
         log::trace!("INDEX DROPPED: {}", index_id);
         Ok(())
@@ -530,34 +533,54 @@ impl MutTxId {
             .map_err(IndexError::Decode)?;
 
         // Get an index seek iterator for the tx and committed state.
-        let tx_iter = self.tx_state.index_seek(table_id, col_list, &bounds).unwrap();
+        let tx_iter = self.tx_state.index_seek(table_id, col_list, &bounds);
         let commit_iter = self.committed_state_write_lock.index_seek(table_id, col_list, &bounds);
 
         // Chain together the indexed rows in the tx and committed state,
         // but don't yield rows deleted in the tx state.
-        enum Choice<A, B, C> {
+        use itertools::Either::{Left, Right};
+        // this is gross, but nested `Either`s don't optimize
+        enum Choice<A, B, C, D, E, F> {
             A(A),
             B(B),
             C(C),
+            D(D),
+            E(E),
+            F(F),
         }
-        impl<T, A: Iterator<Item = T>, B: Iterator<Item = T>, C: Iterator<Item = T>> Iterator for Choice<A, B, C> {
+        impl<
+                T,
+                A: Iterator<Item = T>,
+                B: Iterator<Item = T>,
+                C: Iterator<Item = T>,
+                D: Iterator<Item = T>,
+                E: Iterator<Item = T>,
+                F: Iterator<Item = T>,
+            > Iterator for Choice<A, B, C, D, E, F>
+        {
             type Item = T;
             fn next(&mut self) -> Option<Self::Item> {
                 match self {
                     Self::A(i) => i.next(),
                     Self::B(i) => i.next(),
                     Self::C(i) => i.next(),
+                    Self::D(i) => i.next(),
+                    Self::E(i) => i.next(),
+                    Self::F(i) => i.next(),
                 }
             }
         }
-        let iter = match commit_iter {
-            None => Choice::A(tx_iter),
-            Some(commit_iter) => match self.tx_state.delete_tables.get(&table_id) {
-                None => Choice::B(tx_iter.chain(commit_iter)),
-                Some(tx_dels) => {
-                    Choice::C(tx_iter.chain(commit_iter.filter(move |row| !tx_dels.contains(&row.pointer()))))
-                }
-            },
+        let commit_iter = commit_iter.map(|commit_iter| match self.tx_state.delete_tables.get(&table_id) {
+            None => Left(commit_iter),
+            Some(tx_dels) => Right(commit_iter.filter(move |row| !tx_dels.contains(&row.pointer()))),
+        });
+        let iter = match (tx_iter, commit_iter) {
+            (None, None) => Choice::A(std::iter::empty()),
+            (Some(tx_iter), None) => Choice::B(tx_iter),
+            (None, Some(Left(commit_iter))) => Choice::C(commit_iter),
+            (None, Some(Right(commit_iter))) => Choice::D(commit_iter),
+            (Some(tx_iter), Some(Left(commit_iter))) => Choice::E(tx_iter.chain(commit_iter)),
+            (Some(tx_iter), Some(Right(commit_iter))) => Choice::F(tx_iter.chain(commit_iter)),
         };
         Ok((table_id, iter))
     }
@@ -567,16 +590,34 @@ impl MutTxId {
         // The order of querying the committed vs. tx state for the translation is not important.
         // But it is vastly more likely that it is in the committed state,
         // so query that first to avoid two lookups.
-        let (table_id, col_list) = self
+        let &(table_id, ref col_list) = self
             .committed_state_write_lock
             .index_id_map
             .get(&index_id)
             .or_else(|| self.tx_state.index_id_map.get(&index_id))?;
+
         // The tx state must have the index.
         // If the index was e.g., dropped from the tx state but exists physically in the committed state,
         // the index does not exist, semantically.
-        let key_ty = self.tx_state.get_table_and_index_type(*table_id, col_list)?;
-        Some((*table_id, col_list, key_ty))
+        // TODO: handle the case where the table has been dropped in this transaction.
+        let key_ty = if let Some(key_ty) = self
+            .committed_state_write_lock
+            .get_table_and_index_type(table_id, col_list)
+        {
+            if self
+                .tx_state
+                .index_id_map_removals
+                .as_ref()
+                .is_some_and(|s| s.contains(&index_id))
+            {
+                return None;
+            }
+            key_ty
+        } else {
+            self.tx_state.get_table_and_index_type(table_id, col_list)?
+        };
+
+        Some((table_id, col_list, key_ty))
     }
 
     /// Decode the bounds for a btree scan for an index typed at `key_type`.

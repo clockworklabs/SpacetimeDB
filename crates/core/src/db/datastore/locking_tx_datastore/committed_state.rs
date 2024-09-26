@@ -2,7 +2,7 @@ use super::{
     datastore::Result,
     sequence::{Sequence, SequencesState},
     state_view::{Iter, IterByColRange, ScanIterByColRange, StateView},
-    tx_state::{DeleteTable, IndexIdMap, TxState},
+    tx_state::{DeleteTable, IndexIdMap, RemovedIndexIdSet, TxState},
 };
 use crate::{
     db::{
@@ -30,8 +30,8 @@ use spacetimedb_lib::{
     address::Address,
     db::auth::{StAccess, StTableType},
 };
-use spacetimedb_primitives::{ColList, ColSet, IndexId, TableId};
-use spacetimedb_sats::{AlgebraicValue, ProductValue};
+use spacetimedb_primitives::{ColList, ColSet, TableId};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
@@ -469,7 +469,7 @@ impl CommittedState {
         self.merge_apply_inserts(&mut tx_data, tx_state.insert_tables, tx_state.blob_store);
 
         // Merge index id fast-lookup map changes.
-        self.merge_index_map(tx_state.index_id_map, &tx_state.index_id_map_removals);
+        self.merge_index_map(tx_state.index_id_map, tx_state.index_id_map_removals.as_deref());
 
         // If the TX will be logged, record its projected tx offset,
         // then increment the counter.
@@ -562,8 +562,8 @@ impl CommittedState {
         }
     }
 
-    fn merge_index_map(&mut self, index_id_map: IndexIdMap, index_id_map_removals: &[IndexId]) {
-        for index_id in index_id_map_removals {
+    fn merge_index_map(&mut self, index_id_map: IndexIdMap, index_id_map_removals: Option<&RemovedIndexIdSet>) {
+        for index_id in index_id_map_removals.into_iter().flatten() {
             self.index_id_map.remove(index_id);
         }
         self.index_id_map.extend(index_id_map);
@@ -608,6 +608,13 @@ impl CommittedState {
             .or_insert_with(|| Self::make_table(schema.clone()));
         let blob_store = &mut self.blob_store;
         (table, blob_store)
+    }
+
+    /// Returns the table and index associated with the given `table_id` and `col_list`, if any.
+    pub(super) fn get_table_and_index_type(&self, table_id: TableId, col_list: &ColList) -> Option<&AlgebraicType> {
+        let table = self.tables.get(&table_id)?;
+        let index = table.indexes.get(col_list)?;
+        Some(&index.key_type)
     }
 }
 

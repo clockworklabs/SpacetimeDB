@@ -1,19 +1,20 @@
 use core::ops::RangeBounds;
-use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
+    static_assert_size,
     table::{IndexScanIter, RowRef, Table},
 };
 use std::collections::{btree_map, BTreeMap, BTreeSet};
-use thin_vec::ThinVec;
 
 pub(super) type DeleteTable = BTreeSet<RowPointer>;
 
 /// A mapping to find the actual index given an `IndexId`.
 pub(super) type IndexIdMap = IntMap<IndexId, (TableId, ColList)>;
+pub(super) type RemovedIndexIdSet = IntSet<IndexId>;
 
 /// `TxState` tracks all of the modifications made during a particular transaction.
 /// Rows inserted during a transaction will be added to insert_tables, and similarly,
@@ -71,8 +72,12 @@ pub(super) struct TxState {
     pub(super) index_id_map: IndexIdMap,
 
     /// Lists all the `IndexId` that are to be removed from `CommittedState::index_id_map`.
-    pub(super) index_id_map_removals: ThinVec<IndexId>,
+    // This is in an `Option<Box<>>` to reduce the size of `TxState` - it's very uncommon
+    // that this would be created.
+    pub(super) index_id_map_removals: Option<Box<RemovedIndexIdSet>>,
 }
+
+static_assert_size!(TxState, 120);
 
 impl TxState {
     /// Returns the row count in insert tables
