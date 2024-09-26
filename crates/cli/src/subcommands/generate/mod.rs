@@ -1,5 +1,6 @@
 #![warn(clippy::uninlined_format_args)]
 
+use clap::parser::ValueSource;
 use clap::Arg;
 use clap::ArgAction::SetTrue;
 use convert_case::{Case, Casing};
@@ -125,7 +126,7 @@ pub fn exec(_config: Config, args: &clap::ArgMatches) -> anyhow::Result<()> {
     let delete_files = args.get_flag("delete_files");
     let force = args.get_flag("force");
 
-    if namespace.is_some() && lang != Language::Csharp {
+    if args.value_source("namespace") == Some(ValueSource::CommandLine) && lang != Language::Csharp {
         return Err(anyhow::anyhow!("--namespace is only supported with --lang csharp"));
     }
 
