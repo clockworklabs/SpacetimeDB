@@ -4,7 +4,7 @@ use super::{
     sequence::{Sequence, SequencesState},
     state_view::{IndexSeekIterMutTxId, Iter, IterByColRange, ScanIterByColRange, StateView},
     tx::TxId,
-    tx_state::{IndexIdMap, TxState},
+    tx_state::{DeleteTable, IndexIdMap, TxState},
     SharedMutexGuard, SharedWriteGuard,
 };
 use crate::db::datastore::{
@@ -41,7 +41,7 @@ use spacetimedb_schema::{
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
-    table::{InsertError, RowRef, Table},
+    table::{IndexScanIter, InsertError, RowRef, Table},
 };
 use std::{
     sync::Arc,
@@ -519,7 +519,7 @@ impl MutTxId {
         prefix_elems: ColId,
         rstart: &[u8],
         rend: &[u8],
-    ) -> Result<(TableId, impl Iterator<Item = RowRef<'a>>)> {
+    ) -> Result<(TableId, BTreeScan<'a>)> {
         // Extract the table and index type for the tx state.
         let (table_id, col_list, tx_idx_key_type) = self
             .get_table_and_index_type(index_id)
@@ -538,51 +538,23 @@ impl MutTxId {
 
         // Chain together the indexed rows in the tx and committed state,
         // but don't yield rows deleted in the tx state.
-        use itertools::Either::{Left, Right};
-        // this is gross, but nested `Either`s don't optimize
-        enum Choice<A, B, C, D, E, F> {
-            A(A),
-            B(B),
-            C(C),
-            D(D),
-            E(E),
-            F(F),
-        }
-        impl<
-                T,
-                A: Iterator<Item = T>,
-                B: Iterator<Item = T>,
-                C: Iterator<Item = T>,
-                D: Iterator<Item = T>,
-                E: Iterator<Item = T>,
-                F: Iterator<Item = T>,
-            > Iterator for Choice<A, B, C, D, E, F>
-        {
-            type Item = T;
-            fn next(&mut self) -> Option<Self::Item> {
-                match self {
-                    Self::A(i) => i.next(),
-                    Self::B(i) => i.next(),
-                    Self::C(i) => i.next(),
-                    Self::D(i) => i.next(),
-                    Self::E(i) => i.next(),
-                    Self::F(i) => i.next(),
-                }
-            }
-        }
-        let commit_iter = commit_iter.map(|commit_iter| match self.tx_state.delete_tables.get(&table_id) {
-            None => Left(commit_iter),
-            Some(tx_dels) => Right(commit_iter.filter(move |row| !tx_dels.contains(&row.pointer()))),
+        use itertools::Either::*;
+        use BTreeScanInner::*;
+        let commit_iter = commit_iter.map(|iter| match self.tx_state.delete_tables.get(&table_id) {
+            None => Left(iter),
+            Some(deletes) => Right(IndexScanFilterDeleted { iter, deletes }),
         });
+        // this is effectively just `tx_iter.into_iter().flatten().chain(commit_iter.into_iter().flatten())`,
+        // but with all the branching and `Option`s flattened to just one layer.
         let iter = match (tx_iter, commit_iter) {
-            (None, None) => Choice::A(std::iter::empty()),
-            (Some(tx_iter), None) => Choice::B(tx_iter),
-            (None, Some(Left(commit_iter))) => Choice::C(commit_iter),
-            (None, Some(Right(commit_iter))) => Choice::D(commit_iter),
-            (Some(tx_iter), Some(Left(commit_iter))) => Choice::E(tx_iter.chain(commit_iter)),
-            (Some(tx_iter), Some(Right(commit_iter))) => Choice::F(tx_iter.chain(commit_iter)),
+            (None, None) => Empty(iter::empty()),
+            (Some(tx_iter), None) => TxOnly(tx_iter),
+            (None, Some(Left(commit_iter))) => CommitOnly(commit_iter),
+            (None, Some(Right(commit_iter))) => CommitOnlyWithDeletes(commit_iter),
+            (Some(tx_iter), Some(Left(commit_iter))) => Both(tx_iter.chain(commit_iter)),
+            (Some(tx_iter), Some(Right(commit_iter))) => BothWithDeletes(tx_iter.chain(commit_iter)),
         };
-        Ok((table_id, iter))
+        Ok((table_id, BTreeScan { inner: iter }))
     }
 
     /// Translate `index_id` to the table id, the column list and index key type.
@@ -1098,6 +1070,47 @@ impl<'a> RowRefInsertion<'a> {
     pub(super) fn collapse(&self) -> RowRef<'a> {
         let (Self::Inserted(row) | Self::Existed(row)) = *self;
         row
+    }
+}
+
+/// The iterator returned by [`MutTx::btree_scan`].
+pub struct BTreeScan<'a> {
+    inner: BTreeScanInner<'a>,
+}
+
+enum BTreeScanInner<'a> {
+    Empty(iter::Empty<RowRef<'a>>),
+    TxOnly(IndexScanIter<'a>),
+    CommitOnly(IndexScanIter<'a>),
+    CommitOnlyWithDeletes(IndexScanFilterDeleted<'a>),
+    Both(iter::Chain<IndexScanIter<'a>, IndexScanIter<'a>>),
+    BothWithDeletes(iter::Chain<IndexScanIter<'a>, IndexScanFilterDeleted<'a>>),
+}
+
+struct IndexScanFilterDeleted<'a> {
+    iter: IndexScanIter<'a>,
+    deletes: &'a DeleteTable,
+}
+
+impl<'a> Iterator for BTreeScan<'a> {
+    type Item = RowRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match &mut self.inner {
+            BTreeScanInner::Empty(it) => it.next(),
+            BTreeScanInner::TxOnly(it) => it.next(),
+            BTreeScanInner::CommitOnly(it) => it.next(),
+            BTreeScanInner::CommitOnlyWithDeletes(it) => it.next(),
+            BTreeScanInner::Both(it) => it.next(),
+            BTreeScanInner::BothWithDeletes(it) => it.next(),
+        }
+    }
+}
+
+impl<'a> Iterator for IndexScanFilterDeleted<'a> {
+    type Item = RowRef<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.find(|row| !self.deletes.contains(&row.pointer()))
     }
 }
 
