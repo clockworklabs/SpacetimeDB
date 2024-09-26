@@ -328,7 +328,7 @@ impl HasSpecialStuff {
 	spacetimedb_lib,
 	anyhow::{Result, anyhow},
 };
-use spacetimedb_sdk::ws_messages::{TableUpdate, TransactionUpdate};
+use spacetimedb_sdk::ws_messages::{BsatnFormat, TableUpdate, TransactionUpdate};
 use spacetimedb_sdk::client_cache::{ClientCache, RowCallbackReminders};
 use spacetimedb_sdk::identity::Credentials;
 use spacetimedb_sdk::callbacks::{DbCallbacks, ReducerCallbacks};
@@ -390,7 +390,7 @@ pub enum ReducerEvent {
 #[allow(unused)]
 pub struct Module;
 impl SpacetimeModule for Module {
-	fn handle_table_update(&self, table_update: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {
+	fn handle_table_update(&self, table_update: TableUpdate<BsatnFormat>, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {
 				let table_name = &table_update.table_name[..];
 match table_name {
 						"has_special_stuff" => client_cache.handle_table_update_no_primary_key::<has_special_stuff::HasSpecialStuff>(callbacks, table_update),
@@ -414,7 +414,7 @@ fn invoke_row_callbacks(&self, reminders: &mut RowCallbackReminders, worker: &mu
 		reminders.invoke_callbacks::<test_d::TestD>(worker, &reducer_event, state);
 		reminders.invoke_callbacks::<test_e::TestE>(worker, &reducer_event, state);
 }
-fn handle_event(&self, event: TransactionUpdate, _reducer_callbacks: &mut ReducerCallbacks, _state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {
+fn handle_event(&self, event: TransactionUpdate<BsatnFormat>, _reducer_callbacks: &mut ReducerCallbacks, _state: Arc<ClientCache>) -> Option<Arc<AnyReducerEvent>> {
 				let reducer_call = &event.reducer_call;
 		#[allow(clippy::match_single_binding)]
 match &reducer_call.reducer_name[..] {
@@ -428,7 +428,7 @@ match &reducer_call.reducer_name[..] {
 			unknown => { spacetimedb_sdk::log::error!("Event on an unknown reducer: {:?}", unknown); None }
 }
 }
-fn handle_resubscribe(&self, new_subs: TableUpdate, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {
+fn handle_resubscribe(&self, new_subs: TableUpdate<BsatnFormat>, client_cache: &mut ClientCache, callbacks: &mut RowCallbackReminders) {
 				let table_name = &new_subs.table_name[..];
 match table_name {
 						"has_special_stuff" => client_cache.handle_resubscribe_for_type::<has_special_stuff::HasSpecialStuff>(callbacks, new_subs),
