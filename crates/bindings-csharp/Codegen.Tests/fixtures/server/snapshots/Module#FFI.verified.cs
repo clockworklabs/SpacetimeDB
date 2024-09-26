@@ -463,7 +463,7 @@ static class ModuleRegistration
 #endif
     public static void Main()
     {
-        SpacetimeDB.Internal.Module.Initialize(
+        SpacetimeDB.Internal.Module.SetReducerContextConstructor(
             (identity, address, random, time) =>
                 new SpacetimeDB.ReducerContext(identity, address, random, time)
         );
