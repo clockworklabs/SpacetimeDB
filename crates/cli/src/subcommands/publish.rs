@@ -85,7 +85,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let path_to_project = args.get_one::<PathBuf>("project_path").unwrap();
     let clear_database = args.get_flag("clear_database");
     let force = args.get_flag("force");
-    let trace_log = args.get_flag("trace_log");
     let anon_identity = args.get_flag("anon_identity");
     let skip_clippy = args.get_flag("skip_clippy");
     let build_debug = args.get_flag("debug");
@@ -118,10 +117,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             "Project path does not exist: {}",
             path_to_project.display()
         ));
-    }
-
-    if trace_log {
-        query_params.push(("trace_log", "true"));
     }
 
     let path_to_wasm = if !path_to_project.is_dir() && path_to_project.extension().map_or(false, |ext| ext == "wasm") {
