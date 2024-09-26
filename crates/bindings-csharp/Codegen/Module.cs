@@ -417,7 +417,10 @@ record ReducerDeclaration
 
     public KeyValuePair<string, string> GenerateClass()
     {
-        var args = string.Join(", ", Args.Select(a => $"{a.Name}.Read(reader)").Prepend("ctx"));
+        var args = string.Join(
+            ", ",
+            Args.Select(a => $"{a.Name}.Read(reader)").Prepend("(SpacetimeDB.ReducerContext)ctx")
+        );
         var class_ = $$"""
             class {{Name}}: SpacetimeDB.Internal.IReducer {
                 {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
@@ -428,7 +431,7 @@ record ReducerDeclaration
                 );
 
                 public void Invoke(BinaryReader reader, SpacetimeDB.Internal.IReducerContext ctx) {
-                    {{FullName}}((SpacetimeDB.ReducerContext){{args}});
+                    {{FullName}}({{args}});
                 }
             }
             """;

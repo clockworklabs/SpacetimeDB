@@ -5,7 +5,7 @@ public static partial class Module
     [SpacetimeDB.Table]
     public partial struct Person
     {
-	    [SpacetimeDB.AutoInc]
+        [SpacetimeDB.AutoInc]
         [SpacetimeDB.PrimaryKey]
         public int Id;
         public string Name;
