@@ -481,8 +481,6 @@ impl IncrementalJoin {
         }
         inserts.extend(join_5);
 
-        let deletes = deletes.into();
-        let inserts = inserts.into();
         UpdatesRelValue { deletes, inserts }
     }
 }
@@ -557,7 +555,6 @@ impl ExecutionSet {
             }
         }
 
-        let tables = tables.into();
         DatabaseUpdateRelValue { tables }
     }
 

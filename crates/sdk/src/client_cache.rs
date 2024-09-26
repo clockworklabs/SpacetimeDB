@@ -11,7 +11,9 @@ use bytes::Bytes;
 use core::hash::{Hash, Hasher};
 use core::ops::Deref;
 use im::HashMap;
-use spacetimedb_client_api_messages::websocket::{BsatnFormat, RowListLen as _, WebsocketFormat};
+use spacetimedb_client_api_messages::websocket::{
+    decompress_cqu_inplace, BsatnFormat, CompressableQueryUpdate, RowListLen as _, WebsocketFormat,
+};
 use spacetimedb_data_structures::map::{Entry, HashMap as StdHashMap};
 use spacetimedb_sats::bsatn;
 use std::fmt::Debug;
@@ -56,8 +58,7 @@ impl<T: TableType> TableCache<T> {
         let row_bytes = self.entries.contains_key(row_bytes).then(|| {
             // TODO(centril): consider taking `Bytes` again
             // that has been `split_of`ed from a `Bytes` row list.
-            let row_bytes: Box<[u8]> = row_bytes.into();
-            row_bytes.into()
+            row_bytes.to_vec().into()
         });
         self.insert_inner(callbacks, row_bytes, value);
     }
@@ -124,13 +125,20 @@ impl<T: TableType> TableCache<T> {
     /// For each `insert` or `delete` in the `table_update`, insert or remove the row into
     /// or from the cache as appropriate. Do not handle primary keys, and do not generate
     /// `on_update` methods.
-    fn handle_table_update_no_primary_key(&mut self, callbacks: &mut Vec<RowCallback<T>>, table_update: TableUpdate) {
-        for query_update in table_update.updates {
+    fn handle_table_update_no_primary_key(
+        &mut self,
+        callbacks: &mut Vec<RowCallback<T>>,
+        mut table_update: TableUpdate,
+    ) {
+        for query_update in &mut table_update.updates {
+            let query_update = decompress_cqu_inplace(query_update);
+
             for row in &query_update.deletes {
                 if let Some(value) = Self::decode_row(row) {
                     self.delete(callbacks, row, value)
                 }
             }
+
             for row in &query_update.inserts {
                 if let Some(value) = Self::decode_row(row) {
                     self.insert_slice(callbacks, row, value)
@@ -180,7 +188,7 @@ impl<T: TableType> TableCache<T> {
     /// For each previously-subscribed row not in the `new_subs`, delete it from the cache
     /// and issue an `on_delete` event for it. For each new row in the `new_subs` not
     /// already in the cache, add it to the cache and issue an `on_insert` event for it.
-    fn reinitialize_for_new_subscribed_set(&mut self, callbacks: &mut Vec<RowCallback<T>>, new_subs: TableUpdate) {
+    fn reinitialize_for_new_subscribed_set(&mut self, callbacks: &mut Vec<RowCallback<T>>, mut new_subs: TableUpdate) {
         /// The keys of the diff we're building.
         enum Key<'a> {
             Slice(&'a [u8]),
@@ -247,14 +255,11 @@ impl<T: TableType> TableCache<T> {
             }
         }
 
-        if !new_subs.updates.iter().all(|u| u.deletes.is_empty()) {
-            log::error!(
-                "Received non-`Insert` `TableRowOperation` for {:?} in new set",
-                T::TABLE_NAME,
-            );
-        }
+        for query_update in &mut new_subs.updates {
+            // (1) Remove any compression, but do it in-place so that we can
+            // still borrow and use the uncompressed version in (2).
+            let query_update = decompress_cqu_inplace(query_update);
 
-        for query_update in &new_subs.updates {
             for row in &query_update.inserts {
                 match diff.entry(Key::Slice(row)) {
                     Entry::Vacant(v) => {
@@ -310,6 +315,23 @@ impl<T: TableType> TableCache<T> {
                 }
             }
         }
+
+        if !new_subs
+            .updates
+            .iter()
+            // (2) At this point we know that every update is uncompressed,
+            // as we saw to that in (1).
+            .filter_map(|cqu| match cqu {
+                CompressableQueryUpdate::Uncompressed(qu) => Some(qu),
+                _ => None,
+            })
+            .all(|u| u.deletes.is_empty())
+        {
+            log::error!(
+                "Received non-`Insert` `TableRowOperation` for {:?} in new set",
+                T::TABLE_NAME,
+            );
+        }
     }
 }
 
@@ -317,7 +339,11 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
     /// Generate a diff from the `TableRowOperation`s in the `table_update` in order to
     /// merge `delete` and `insert` operations into `update`s, then perform the operations
     /// specified in the diff and invoke callbacks as appropriate.
-    fn handle_table_update_with_primary_key(&mut self, callbacks: &mut Vec<RowCallback<T>>, table_update: TableUpdate) {
+    fn handle_table_update_with_primary_key(
+        &mut self,
+        callbacks: &mut Vec<RowCallback<T>>,
+        mut table_update: TableUpdate,
+    ) {
         log::trace!("Handling TableUpdate for table {:?} with primary key", T::TABLE_NAME);
 
         enum DiffEntry<'a, T> {
@@ -399,7 +425,8 @@ impl<T: TableWithPrimaryKey> TableCache<T> {
             }
         }
 
-        for query_update in &table_update.updates {
+        for query_update in &mut table_update.updates {
+            let query_update = decompress_cqu_inplace(query_update);
             traverse_rows(DiffEntry::Delete, &query_update.deletes, &mut diff);
             traverse_rows(DiffEntry::Insert, &query_update.inserts, &mut diff);
         }

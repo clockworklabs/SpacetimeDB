@@ -99,8 +99,8 @@ mod tests {
     use crate::vm::tests::create_table_with_rows;
     use crate::vm::DbProgram;
     use itertools::Itertools;
-    use spacetimedb_client_api_messages::websocket::BsatnFormat;
-    use spacetimedb_lib::bsatn::to_vec;
+    use spacetimedb_client_api_messages::websocket::{brotli_decompress_qu, BsatnFormat, CompressableQueryUpdate};
+    use spacetimedb_lib::bsatn;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::identity::AuthCtx;
@@ -310,6 +310,10 @@ mod tests {
         let result = result
             .into_iter()
             .flat_map(|x| x.updates)
+            .map(|x| match x {
+                CompressableQueryUpdate::Uncompressed(qu) => qu,
+                CompressableQueryUpdate::Brotli(bytes) => brotli_decompress_qu(&bytes),
+            })
             .flat_map(|x| {
                 (&x.deletes)
                     .into_iter()
@@ -320,7 +324,7 @@ mod tests {
             .sorted()
             .collect_vec();
 
-        let rows = rows.iter().map(|r| to_vec(r).unwrap()).collect_vec();
+        let rows = rows.iter().map(|r| bsatn::to_vec(r).unwrap()).collect_vec();
 
         assert_eq!(result, rows, "Must return the correct row(s)");
 

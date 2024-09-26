@@ -1,5 +1,7 @@
 use std::any::TypeId;
 use std::ops::{Index, IndexMut};
+use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::algebraic_type::AlgebraicType;
 use crate::algebraic_type_ref::AlgebraicTypeRef;
@@ -326,6 +328,8 @@ impl_st!([](), AlgebraicType::unit());
 impl_st!([] str, AlgebraicType::String);
 impl_st!([T] [T], ts => AlgebraicType::array(T::make_type(ts)));
 impl_st!([T: ?Sized] Box<T>, ts => T::make_type(ts));
+impl_st!([T: ?Sized] Rc<T>, ts => T::make_type(ts));
+impl_st!([T: ?Sized] Arc<T>, ts => T::make_type(ts));
 impl_st!([T] Vec<T>, ts => <[T]>::make_type(ts));
 impl_st!([T, const N: usize] SmallVec<[T; N]>, ts => <[T]>::make_type(ts));
 impl_st!([T] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));

@@ -124,12 +124,13 @@ impl UpdatesRelValue<'_> {
         !(self.deletes.is_empty() && self.inserts.is_empty())
     }
 
-    pub fn encode<F: WebsocketFormat>(&self) -> (QueryUpdate<F>, u64) {
+    pub fn encode<F: WebsocketFormat>(&self) -> (F::QueryUpdate, u64) {
         let (deletes, nr_del) = F::encode_list(self.deletes.iter());
         let (inserts, nr_ins) = F::encode_list(self.inserts.iter());
         let num_rows = nr_del + nr_ins;
-        let update = QueryUpdate { deletes, inserts };
-        (update, num_rows)
+        let qu = QueryUpdate { deletes, inserts };
+        let cqu = F::into_query_update(qu);
+        (cqu, num_rows)
     }
 }
 

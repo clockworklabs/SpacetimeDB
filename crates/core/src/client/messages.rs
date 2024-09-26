@@ -3,7 +3,6 @@ use crate::execution_context::WorkloadType;
 use crate::host::module_host::{EventStatus, ModuleEvent};
 use crate::host::ArgsTuple;
 use crate::messages::websocket as ws;
-use brotli::CompressorReader;
 use derive_more::From;
 use spacetimedb_client_api_messages::websocket::{
     BsatnFormat, FormatSwitch, JsonFormat, WebsocketFormat, SERVER_MSG_COMPRESSION_TAG_BROTLI,
@@ -14,7 +13,6 @@ use spacetimedb_lib::ser::serde::SerializeWrapper;
 use spacetimedb_lib::Address;
 use spacetimedb_sats::bsatn;
 use spacetimedb_vm::relation::MemTable;
-use std::io::Read;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -37,19 +35,14 @@ pub fn serialize(msg: impl ToProtocol<Encoded = SwitchedServerMessage>, protocol
     match msg.to_protocol(protocol) {
         FormatSwitch::Json(msg) => serde_json::to_string(&SerializeWrapper::new(msg)).unwrap().into(),
         FormatSwitch::Bsatn(msg) => {
-            /// The threshold at which we start to compress messages.
-            /// 1KiB was chosen without measurement.
-            /// TODO(perf): measure!
-            const COMPRESS_THRESHOLD: usize = 1024;
-
             // First write the tag so that we avoid shifting the entire message at the end.
             let mut msg_bytes = vec![SERVER_MSG_COMPRESSION_TAG_NONE];
             bsatn::to_writer(&mut msg_bytes, &msg).unwrap();
 
             // Conditionally compress the message.
-            let msg_bytes = if msg_bytes.len() - 1 <= COMPRESS_THRESHOLD {
+            let msg_bytes = if ws::should_compress(msg_bytes[1..].len()) {
                 let mut out = vec![SERVER_MSG_COMPRESSION_TAG_BROTLI];
-                brotli_compress(&msg_bytes[1..], &mut out);
+                ws::brotli_compress(&msg_bytes[1..], &mut out);
                 out
             } else {
                 msg_bytes
@@ -57,38 +50,6 @@ pub fn serialize(msg: impl ToProtocol<Encoded = SwitchedServerMessage>, protocol
             msg_bytes.into()
         }
     }
-}
-
-fn brotli_compress(bytes: &[u8], out: &mut Vec<u8>) {
-    let reader = &mut &bytes[..];
-
-    // TODO(perf): Compression should depend on message size and type.
-    //
-    // SubscriptionUpdate messages will typically be quite large,
-    // while TransactionUpdate messages will typically be quite small.
-    //
-    // If we are optimizing for SubscriptionUpdates,
-    // we want a large buffer.
-    // But if we are optimizing for TransactionUpdates,
-    // we probably want to skip compression altogether.
-    //
-    // For now we choose a reasonable middle ground,
-    // which is to compress everything using a 32KB buffer.
-    const BUFFER_SIZE: usize = 32 * 1024;
-    // Again we are optimizing for compression speed,
-    // so we choose the lowest (fastest) level of compression.
-    // Experiments on internal workloads have shown compression ratios between 7:1 and 10:1
-    // for large `SubscriptionUpdate` messages at this level.
-    const COMPRESSION_LEVEL: u32 = 1;
-    // The default value for an internal compression parameter.
-    // See `BrotliEncoderParams` for more details.
-    const LG_WIN: u32 = 22;
-
-    let mut encoder = CompressorReader::new(reader, BUFFER_SIZE, COMPRESSION_LEVEL, LG_WIN);
-
-    encoder
-        .read_to_end(out)
-        .expect("Failed to Brotli compress `SubscriptionUpdateMessage`");
 }
 
 #[derive(Debug, From)]

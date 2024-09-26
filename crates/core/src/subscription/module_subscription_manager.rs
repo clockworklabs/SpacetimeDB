@@ -7,7 +7,9 @@ use crate::host::module_host::{DatabaseTableUpdate, ModuleEvent};
 use crate::messages::websocket::{self as ws, TableUpdate};
 use arrayvec::ArrayVec;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use spacetimedb_client_api_messages::websocket::{BsatnFormat, FormatSwitch, JsonFormat, QueryUpdate};
+use spacetimedb_client_api_messages::websocket::{
+    BsatnFormat, CompressableQueryUpdate, FormatSwitch, JsonFormat, QueryUpdate,
+};
 use spacetimedb_data_structures::map::{Entry, HashMap, HashSet, IntMap};
 use spacetimedb_lib::{Address, Identity};
 use spacetimedb_primitives::TableId;
@@ -161,16 +163,20 @@ impl SubscriptionManager {
                     // but we only fill `ops_bin` and `ops_json` at most once.
                     // The former will be `Some(_)` if some subscriber uses `Protocol::Binary`
                     // and the latter `Some(_)` if some subscriber uses `Protocol::Text`.
-                    let mut ops_bin: Option<(QueryUpdate<BsatnFormat>, _)> = None;
+                    let mut ops_bin: Option<(CompressableQueryUpdate<BsatnFormat>, _)> = None;
                     let mut ops_json: Option<(QueryUpdate<JsonFormat>, _)> = None;
                     self.subscribers.get(hash).into_iter().flatten().map(move |id| {
                         let ops = match self.clients[id].protocol {
-                            Protocol::Binary => {
-                                FormatSwitch::Bsatn(ops_bin.get_or_insert_with(|| delta.updates.encode()).clone())
-                            }
-                            Protocol::Text => {
-                                FormatSwitch::Json(ops_json.get_or_insert_with(|| delta.updates.encode()).clone())
-                            }
+                            Protocol::Binary => FormatSwitch::Bsatn(
+                                ops_bin
+                                    .get_or_insert_with(|| delta.updates.encode::<BsatnFormat>())
+                                    .clone(),
+                            ),
+                            Protocol::Text => FormatSwitch::Json(
+                                ops_json
+                                    .get_or_insert_with(|| delta.updates.encode::<JsonFormat>())
+                                    .clone(),
+                            ),
                         };
                         (id, table_id, table_name.clone(), ops)
                     })

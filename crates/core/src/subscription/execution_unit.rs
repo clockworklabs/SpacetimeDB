@@ -212,7 +212,7 @@ impl ExecutionUnit {
     ) -> Option<TableUpdate<F>> {
         let _slow_query = SlowQueryLogger::new(sql, slow_query_threshold, ctx.workload()).log_guard();
 
-        // Get an iterator over the
+        // Build & execute the query and then encode it to a row list.
         let tx = &tx.into();
         let mut inserts = build_query(ctx, db, tx, &self.eval_plan, &mut NoInMemUsed);
         let inserts = inserts.iter();
@@ -220,12 +220,11 @@ impl ExecutionUnit {
 
         (!inserts.is_empty()).then(|| {
             let deletes = F::List::default();
-            let updates = [QueryUpdate { deletes, inserts }].into();
             TableUpdate {
                 table_id: self.return_table(),
                 table_name: self.return_name().to_string(),
                 num_rows,
-                updates,
+                updates: [F::into_query_update(QueryUpdate { deletes, inserts })].into(),
             }
         })
     }
@@ -288,25 +287,16 @@ impl ExecutionUnit {
             // without forgetting which are inserts and which are deletes.
             // Previously, we used to add such a column `"__op_type: AlgebraicType::U8"`.
             if !table.inserts.is_empty() {
-                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.inserts, eval_incr_plan);
-                Self::collect_rows(&mut inserts, query);
+                inserts
+                    .extend(Self::eval_query_expr_against_memtable(ctx, db, tx, &table.inserts, eval_incr_plan).iter());
             }
             if !table.deletes.is_empty() {
-                let query = Self::eval_query_expr_against_memtable(ctx, db, tx, &table.deletes, eval_incr_plan);
-                Self::collect_rows(&mut deletes, query);
+                deletes
+                    .extend(Self::eval_query_expr_against_memtable(ctx, db, tx, &table.deletes, eval_incr_plan).iter());
             }
         }
 
-        let deletes = deletes.into();
-        let inserts = inserts.into();
         UpdatesRelValue { deletes, inserts }
-    }
-
-    /// Collect the results of `query` into a vec `sink`.
-    fn collect_rows<'a>(sink: &mut Vec<RelValue<'a>>, mut query: Box<IterRows<'a>>) {
-        while let Some(row) = query.next() {
-            sink.push(row);
-        }
     }
 
     /// The estimated number of rows returned by this execution unit.

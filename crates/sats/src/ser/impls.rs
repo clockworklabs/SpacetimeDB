@@ -7,6 +7,8 @@ use core::ops::Bound;
 use smallvec::SmallVec;
 use spacetimedb_primitives::{ColList, ColSet};
 use std::collections::BTreeMap;
+use std::rc::Rc;
+use std::sync::Arc;
 
 /// Implements [`Serialize`] for a type in a simplified manner.
 ///
@@ -79,6 +81,8 @@ impl_serialize!([T: Serialize, const N: usize] SmallVec<[T; N]>, (self, ser)  =>
 impl_serialize!([T: Serialize] [T], (self, ser) => T::__serialize_array(self, ser));
 impl_serialize!([T: Serialize, const N: usize] [T; N], (self, ser) => T::__serialize_array(self, ser));
 impl_serialize!([T: Serialize + ?Sized] Box<T>, (self, ser) => (**self).serialize(ser));
+impl_serialize!([T: Serialize + ?Sized] Rc<T>, (self, ser) => (**self).serialize(ser));
+impl_serialize!([T: Serialize + ?Sized] Arc<T>, (self, ser) => (**self).serialize(ser));
 impl_serialize!([T: Serialize + ?Sized] &T, (self, ser) => (**self).serialize(ser));
 impl_serialize!([] String, (self, ser) => ser.serialize_str(self));
 impl_serialize!([T: Serialize] Option<T>, (self, ser) => match self {

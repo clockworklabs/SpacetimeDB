@@ -12,8 +12,8 @@ use crate::{i256, u256};
 use core::{marker::PhantomData, ops::Bound};
 use smallvec::SmallVec;
 use spacetimedb_primitives::{ColId, ColList};
-use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::{borrow::Cow, rc::Rc, sync::Arc};
 
 /// Implements [`Deserialize`] for a type in a simplified manner.
 ///
@@ -105,6 +105,8 @@ impl_deserialize!([T: Deserialize<'de>, const N: usize] SmallVec<[T; N]>, de => 
 impl_deserialize!([T: Deserialize<'de>, const N: usize] [T; N], de => T::__deserialize_array(de));
 impl_deserialize!([] Box<str>, de => String::deserialize(de).map(|s| s.into_boxed_str()));
 impl_deserialize!([T: Deserialize<'de>] Box<[T]>, de => Vec::deserialize(de).map(|s| s.into_boxed_slice()));
+impl_deserialize!([T: Deserialize<'de>] Rc<[T]>, de => Vec::deserialize(de).map(|s| s.into()));
+impl_deserialize!([T: Deserialize<'de>] Arc<[T]>, de => Vec::deserialize(de).map(|s| s.into()));
 
 /// The visitor converts the slice to its owned version.
 struct OwnedSliceVisitor;

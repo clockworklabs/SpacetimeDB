@@ -2,12 +2,11 @@ use crate::background_connection::ClientMessage;
 use crate::identity::Credentials;
 use crate::ws_messages::ServerMessage;
 use anyhow::{anyhow, bail, Context, Result};
-use brotli::BrotliDecompress;
 use futures::{SinkExt, StreamExt as _, TryStreamExt};
 use futures_channel::mpsc;
 use http::uri::{Scheme, Uri};
 use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, SERVER_MSG_COMPRESSION_TAG_BROTLI, SERVER_MSG_COMPRESSION_TAG_NONE,
+    brotli_decompress, BsatnFormat, SERVER_MSG_COMPRESSION_TAG_BROTLI, SERVER_MSG_COMPRESSION_TAG_NONE,
 };
 use spacetimedb_lib::{bsatn, Address};
 use tokio::task::JoinHandle;
@@ -162,9 +161,7 @@ impl DbConnection {
         Ok(match *compression {
             SERVER_MSG_COMPRESSION_TAG_NONE => bsatn::from_slice(bytes)?,
             SERVER_MSG_COMPRESSION_TAG_BROTLI => {
-                let mut decompressed = Vec::new();
-                BrotliDecompress(&mut &bytes[..], &mut decompressed).context("Failed to Brotli decompress message")?;
-                bsatn::from_slice(&decompressed)?
+                bsatn::from_slice(&brotli_decompress(bytes).context("Failed to Brotli decompress message")?)?
             }
             c => bail!("Unknown compression format `{c}`"),
         })
