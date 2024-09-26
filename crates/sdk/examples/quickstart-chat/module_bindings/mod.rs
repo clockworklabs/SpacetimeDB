@@ -8,7 +8,7 @@ use spacetimedb_sdk::global_connection::with_connection_mut;
 use spacetimedb_sdk::identity::Credentials;
 use spacetimedb_sdk::reducer::AnyReducerEvent;
 use spacetimedb_sdk::spacetime_module::SpacetimeModule;
-use spacetimedb_sdk::ws_messages::{TableUpdate, TransactionUpdate};
+use spacetimedb_sdk::ws_messages::{BsatnFormat, TableUpdate, TransactionUpdate};
 use spacetimedb_sdk::{
     anyhow::{anyhow, Result},
     identity::Identity,
@@ -42,7 +42,7 @@ pub struct Module;
 impl SpacetimeModule for Module {
     fn handle_table_update(
         &self,
-        table_update: TableUpdate,
+        table_update: TableUpdate<BsatnFormat>,
         client_cache: &mut ClientCache,
         callbacks: &mut RowCallbackReminders,
     ) {
@@ -65,7 +65,7 @@ impl SpacetimeModule for Module {
     }
     fn handle_event(
         &self,
-        event: TransactionUpdate,
+        event: TransactionUpdate<BsatnFormat>,
         _reducer_callbacks: &mut ReducerCallbacks,
         _state: Arc<ClientCache>,
     ) -> Option<Arc<AnyReducerEvent>> {
@@ -91,7 +91,7 @@ impl SpacetimeModule for Module {
     }
     fn handle_resubscribe(
         &self,
-        new_subs: TableUpdate,
+        new_subs: TableUpdate<BsatnFormat>,
         client_cache: &mut ClientCache,
         callbacks: &mut RowCallbackReminders,
     ) {
