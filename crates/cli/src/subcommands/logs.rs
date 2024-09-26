@@ -49,6 +49,7 @@ pub fn cli() -> clap::Command {
                 .default_value("text")
                 .required(false)
                 .value_parser(clap::value_parser!(Format))
+                .help("Output format for the logs")
         )
         .after_help("Run `spacetime help logs` for more detailed information.\n")
 }
